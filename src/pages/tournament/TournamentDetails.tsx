@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { tournamentService } from '../../services/TournamentService';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -89,6 +89,7 @@ export default function TournamentDetails({
   const { tournamentId: routeTournamentId } = useParams<{ tournamentId: string }>();
   const tournamentId = tournamentIdOverride || routeTournamentId;
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, isHydrating } = useAuthUser();
   const toast = useToast();
 
@@ -700,6 +701,7 @@ export default function TournamentDetails({
         is_mystery_bounty: !!(tournament as any).is_mystery_bounty,
         start_time: tournament.start_time,
         club_id: (tournament as any).club_id ?? null,
+        status: tournament.status,
         is_late_registration: isLate,
       },
       () => {
@@ -747,10 +749,17 @@ export default function TournamentDetails({
       tables.filter((t) => (t.status || '').toLowerCase() !== 'closed').map((t) => t.id)
     );
 
+    /* 2026-08-25, second audit: this filter used to disable ITSELF when the
+       live-table set was empty (`activeTableIds.size === 0 || ...`), which is
+       exactly the state during the first render before the tables query
+       resolves, and also the state when every table is closed. The leader's
+       possibly-stale `table_id` was then returned before the live-only
+       fallback below was ever reached — so the very bug this guard was added
+       to prevent survived it. No live tables now means no leader: the button
+       is simply not offered until we know of one. */
     const leader = entries
       .filter((e) => e.status === 'playing' && e.table_id)
-      // A table id that is not in the live table list is a stale roster row.
-      .filter((e) => activeTableIds.size === 0 || activeTableIds.has(e.table_id as string))
+      .filter((e) => activeTableIds.has(e.table_id as string))
       .sort((a, b) => (b.chips || 0) - (a.chips || 0))[0];
     if (leader?.table_id) return leader.table_id;
 
@@ -791,6 +800,27 @@ export default function TournamentDetails({
     },
     [navigate, toast]
   );
+
+  /**
+   * `?watch=1` — a Watch button somewhere else asked us to open the featured
+   * table as soon as we know which one it is.
+   *
+   * 2026-08-25, second audit. A surface that only holds a tournament id cannot
+   * resolve the featured table without a query of its own, so it passes the
+   * INTENT instead and this page, which already computes `featuredTableId` from
+   * data it keeps live, acts on it. Fires at most once (`watchIntentDoneRef`)
+   * so a re-render, a realtime tick or the player navigating back cannot
+   * re-open the table on top of them.
+   */
+  const watchIntentDoneRef = useRef(false);
+  useEffect(() => {
+    if (watchIntentDoneRef.current) return;
+    if (new URLSearchParams(location.search).get('watch') !== '1') return;
+    if (tournament?.status !== 'RUNNING') return;
+    if (!featuredTableId) return; // still resolving; try again when it lands
+    watchIntentDoneRef.current = true;
+    watchTable(featuredTableId);
+  }, [featuredTableId, tournament?.status, location.search, watchTable]);
 
   const handleUnregister = async () => {
     if (isProcessing || !tournament) return;

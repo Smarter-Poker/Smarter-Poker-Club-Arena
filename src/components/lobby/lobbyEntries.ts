@@ -81,6 +81,16 @@ export interface LobbyTournamentRow {
    * and it goes through the same reveal gate. Before the draw it is 0.
    */
   prize_pool?: number | null;
+  /**
+   * Bounty facts, selected since 2026-08-25 so the shared buy-in card can show
+   * the same Bounty row here that it shows on the tournament details page.
+   * They were read through `as any` casts before the columns were in the
+   * SELECT at all, so the row silently rendered without them.
+   */
+  is_bounty?: boolean | null;
+  bounty_amount?: number | null;
+  is_pko?: boolean | null;
+  is_mystery_bounty?: boolean | null;
 }
 
 // ─── View model ────────────────────────────────────────────────────────────

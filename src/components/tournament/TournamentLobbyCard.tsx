@@ -625,7 +625,18 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
             className={styles.playBtn}
             onClick={(e) => {
               e.stopPropagation();
-              navigate(`/tournaments/${tournament.id}`);
+              /* 2026-08-25, second audit: both labels navigated to the
+                 details page, so a button that says "Watch" dropped the player
+                 on a screen where they still had to find the real WATCH
+                 button. This card has only a tournament id — it cannot know
+                 which table is featured without a query per card — so it hands
+                 the intent along in the URL and the details page acts on it
+                 the moment its featured table resolves. */
+              navigate(
+                isRegistered
+                  ? `/tournaments/${tournament.id}`
+                  : `/tournaments/${tournament.id}?watch=1`
+              );
             }}
           >
             {isRegistered ? 'Open Tournament' : 'Watch'}

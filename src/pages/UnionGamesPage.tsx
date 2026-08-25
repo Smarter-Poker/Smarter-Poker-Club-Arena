@@ -329,8 +329,16 @@ export default function UnionGamesPage() {
         buy_in_amount: Number((t as any).buy_in_amount ?? (t as any).buy_in ?? 0),
         buy_in_fee: Number((t as any).buy_in_fee ?? 0),
         start_time: (t as any).start_time ?? null,
-        club_id: (t as any).club_id ?? null,
-        is_late_registration: String(t.status).toUpperCase() === 'RUNNING',
+        /* Deliberately NOT `t.club_id`. A union-owned tournament carries the
+           UNION container in that column, and a union id handed to
+           `fn_player_spendable_balance` resolves to no wallet at all. Null lets
+           the hook fall back to the player's ambient club, which is the club
+           they entered through and the one that will actually be charged. */
+        club_id: null,
+        bounty_amount: (t as any).is_bounty ? (t as any).bounty_amount || 0 : 0,
+        is_pko: !!(t as any).is_pko,
+        is_mystery_bounty: !!(t as any).is_mystery_bounty,
+        status: t.status,
       },
       () => loadUnionData(unionId || undefined)
     );

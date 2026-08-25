@@ -596,7 +596,9 @@ export default function TournamentLobbyPage() {
         is_mystery_bounty: !!t.isMysteryBounty,
         start_time: t.startTime,
         club_id: t.clubId ?? null,
-        is_late_registration: t.status === 'RUNNING',
+        // The hook derives late-registration from status — one definition for
+        // every surface, because five hand-rolled copies all missed LATE_REG.
+        status: t.status,
       },
       () => loadTournaments()
     );

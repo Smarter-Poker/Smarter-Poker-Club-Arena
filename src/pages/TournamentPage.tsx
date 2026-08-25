@@ -516,7 +516,7 @@ export default function TournamentPage() {
         is_mystery_bounty: !!(selectedTournament as any).is_mystery_bounty,
         start_time: (selectedTournament as any).start_time ?? null,
         club_id: (selectedTournament as any).club_id ?? null,
-        is_late_registration: String(selectedTournament.status).toUpperCase() === 'RUNNING',
+        status: selectedTournament.status,
       },
       () => {
         setIsRegistered(true);

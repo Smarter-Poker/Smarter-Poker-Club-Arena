@@ -93,56 +93,67 @@ export function ChipPhysics({
 
   if (amount <= 0) return null;
 
-  // Compact (in front of a seat) and full (the pot) differ only in chip size
-  // and how much room the stacks get — both draw the real, exact breakdown.
+  // Flatten the stacks to render multiple chips in one column, highest denom on bottom
+  const flattenedChips: {
+    denom: any;
+    partial: boolean;
+    isTopInDenom: boolean;
+    truncated: boolean;
+    count: number;
+    groupIdx: number;
+  }[] = [];
+
+  stacks.forEach((stack, groupIdx) => {
+    for (let i = 0; i < stack.drawn; i++) {
+      flattenedChips.push({
+        denom: stack.denom,
+        partial: stack.partial,
+        isTopInDenom: i === stack.drawn - 1,
+        truncated: stack.truncated,
+        count: stack.count,
+        groupIdx,
+      });
+    }
+  });
+
   return (
     <div
       className={`chip-physics${compact ? ' cp--compact' : ''} ${isVisible ? 'cp--visible' : ''} cp--${animate} ${className}`}
     >
       <div className="cp-stacks">
-        {stacks.map((stack, groupIdx) => (
-          <ChipTower key={stack.denom.value} stack={stack} groupIdx={groupIdx} />
-        ))}
+        <div className="cp-stack" style={{ '--group-idx': 0 } as React.CSSProperties}>
+          {flattenedChips.map((chip, chipIdx) => (
+            <div
+              key={`${chip.denom.value}-${chipIdx}`}
+              className={`cp-chip${chip.partial ? ' cp-chip--partial' : ''}`}
+              style={
+                {
+                  '--chip-color': chip.denom.color,
+                  '--chip-accent': chip.denom.accent,
+                  '--chip-ink': chip.denom.ink,
+                  '--chip-idx': chipIdx,
+                  '--total-chips': flattenedChips.length,
+                  transform: `translateX(${Math.sin(chipIdx * 23.45) * 1.5}px)`,
+                } as React.CSSProperties
+              }
+            >
+              {/* Clamped stacks print their real count */}
+              {chip.truncated && chip.isTopInDenom && (
+                <span className="cp-stack__multi">×{chip.count.toLocaleString()}</span>
+              )}
+
+              <div className="cp-chip__face">
+                {!chip.partial && chip.isTopInDenom && (
+                  <span className="cp-chip__label">{chip.denom.label}</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Amount display */}
       {showAmount && <span className="cp-amount">{formatChipAmount(amount)}</span>}
-    </div>
-  );
-}
-
-/** One denomination's stack: N discs of a single colour, tallest disc labelled. */
-function ChipTower({ stack, groupIdx }: { stack: ChipStackVisual; groupIdx: number }) {
-  const { denom, count, drawn, truncated, partial } = stack;
-
-  return (
-    <div className="cp-stack" style={{ '--group-idx': groupIdx } as React.CSSProperties}>
-      {/* A stack too tall to draw prints its real count, so the pile never
-          claims a value it is not showing. See visualChipStacks. */}
-      {truncated && <span className="cp-stack__multi">×{count.toLocaleString()}</span>}
-
-      {Array.from({ length: drawn }, (_, chipIdx) => (
-        <div
-          key={chipIdx}
-          className={`cp-chip${partial ? ' cp-chip--partial' : ''}`}
-          style={
-            {
-              '--chip-color': denom.color,
-              '--chip-accent': denom.accent,
-              '--chip-ink': denom.ink,
-              '--chip-idx': chipIdx,
-              '--total-chips': drawn,
-            } as React.CSSProperties
-          }
-        >
-          <div className="cp-chip__face">
-            {/* The partial disc stands in for a sub-1 remainder that no chip on
-                the ladder can represent (a 0.5 small blind). Labelling it "1"
-                would be a lie about its value, so it carries no label. */}
-            {!partial && <span className="cp-chip__label">{denom.label}</span>}
-          </div>
-        </div>
-      ))}
     </div>
   );
 }

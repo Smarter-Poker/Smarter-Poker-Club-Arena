@@ -53,12 +53,11 @@ describe('a bet in front of a seat', () => {
     expect(colors).toEqual([byValue(5).color, byValue(1).color, byValue(1).color]);
   });
 
-  it('groups them into two stacks, the red one first', () => {
+  it('groups them into a single stack', () => {
     const { container } = render(<ChipPhysics amount={7} compact />);
     const stacks = container.querySelectorAll('.cp-stack');
-    expect(stacks).toHaveLength(2);
-    expect(stacks[0].querySelectorAll('.cp-chip')).toHaveLength(1); // the red 5
-    expect(stacks[1].querySelectorAll('.cp-chip')).toHaveLength(2); // two white 1s
+    expect(stacks).toHaveLength(1);
+    expect(stacks[0].querySelectorAll('.cp-chip')).toHaveLength(3); // 1 red 5 + 2 white 1s
   });
 
   it('no longer collapses every bet to a single chip', () => {
@@ -111,14 +110,19 @@ describe('a bet in front of a seat', () => {
 // ============================================================================
 
 describe('the pot', () => {
-  it('shows ONE chip, coloured by the dominant denomination, for a 21 pot', () => {
-    // Dan 2026-08-24: "REMOVE THE MULTI CHIP IN POT FUNCTIONALITY, JUST USE
-    // THE ONE CHIP PLUS COLOR SCHEMA." The amount is printed on the pill;
-    // the chip is a colour cue, not an abacus. 21 is dominated by red 5s.
+  it('shows MULTIPLE chips, correctly representing a 21 pot', () => {
+    // Dan 2026-08-24 (Update): "AND THE 'POT' ISN'T DISPLAYING MULTIPLE CHIPS AS IT SHOULD BE EITHER..."
     const { container } = render(<PotDisplay mainPot={21} />);
     const colors = chipColors(container, POT_CHIP, '--pile-chip-color');
 
-    expect(colors).toEqual([byValue(5).color]);
+    // 21 = 4 x 5 (red) + 1 x 1 (white)
+    expect(colors).toEqual([
+      byValue(5).color,
+      byValue(5).color,
+      byValue(5).color,
+      byValue(5).color,
+      byValue(1).color,
+    ]);
   });
 
   it('still reads the amount', () => {
@@ -133,11 +137,14 @@ describe('the pot', () => {
     expect(chipColors(container, POT_CHIP, '--pile-chip-color')).toEqual([byValue(1000000).color]);
   });
 
-  it('draws the live street bets as one dominant-denomination chip', () => {
-    // Same single-chip rule as the pot (Dan 2026-08-24). 7 is dominated by
-    // a red 5.
+  it('draws the live street bets as multiple chips', () => {
+    // 7 is 1 red 5 and 2 white 1s
     const { container } = render(<PotDisplay mainPot={30} streetBets={7} />);
-    expect(chipColors(container, STREET_CHIP, '--pile-chip-color')).toEqual([byValue(5).color]);
+    expect(chipColors(container, STREET_CHIP, '--pile-chip-color')).toEqual([
+      byValue(5).color,
+      byValue(1).color,
+      byValue(1).color,
+    ]);
   });
 
   it('keeps the chips out of the POT pill itself', () => {
@@ -170,7 +177,7 @@ describe('the felt is internally consistent', () => {
     const pot = render(<PotDisplay mainPot={175} />);
     const potColors = chipColors(pot.container, POT_CHIP, '--pile-chip-color');
 
-    expect(potColors).toHaveLength(1);
+    expect(potColors).toHaveLength(seatColors.length);
     expect(seatColors[0]).toEqual(potColors[0]);
   });
 });

@@ -33,7 +33,37 @@ export function computePlacePrize(
   place: number
 ): number {
   if (!Array.isArray(payouts) || payouts.length === 0) return 0;
-  if (!payouts.some((p) => Number(p?.place) === place)) return 0;
+  if (!Number.isFinite(place)) return 0;
+
+  // PAYOUT-INTEGRITY 2026-08-25: sanitise the structure BEFORE any arithmetic
+  // reads it. Three malformations were reachable and each one broke the
+  // "places sum to the pool" rule in the OVERPAYING direction:
+  //
+  //   * a non-numeric `place` (null, "2nd", undefined) made `lastPlace` NaN
+  //     via Math.max, and `place !== NaN` is true for every place — so the
+  //     residual branch below became unreachable and EVERY place, including
+  //     the last, was paid its own rounded percentage. That is exactly the
+  //     independently-rounded scheme the residual rule replaced.
+  //   * a DUPLICATE place entry was counted once by `find` (the payment) but
+  //     twice by the `others` sum (the residual), silently shrinking the last
+  //     paid place by a whole extra share.
+  //   * a NEGATIVE percentage produced a negative prize for that place while
+  //     inflating the residual, and only the last place was clamped at 0.
+  //
+  // Normalising first and clamping every share is what makes the invariant
+  // hold for any input, not just for the structures we happen to ship.
+  const entries: Array<{ place: number; percentage: number }> = [];
+  const seen = new Set<number>();
+  for (const p of payouts) {
+    const pl = Number(p?.place);
+    if (!Number.isFinite(pl) || pl <= 0) continue;
+    if (seen.has(pl)) continue; // first entry for a place wins, exactly as `find` did
+    seen.add(pl);
+    const pct = Number(p?.percentage ?? 0);
+    entries.push({ place: pl, percentage: Number.isFinite(pct) && pct > 0 ? pct : 0 });
+  }
+  if (entries.length === 0) return 0;
+  if (!entries.some((p) => p.place === place)) return 0;
 
   const safePool = Number.isFinite(pool) && pool > 0 ? pool : 0;
   if (safePool === 0) return 0;
@@ -46,21 +76,18 @@ export function computePlacePrize(
   // proportionally instead of over-paying the top places and starving the
   // last one. recoverStuckCompletingTournaments already did this, and folding
   // it in here is what lets that path share this single rule.
-  const pctSum = payouts.reduce((sum, p) => sum + Number(p?.percentage ?? 0), 0);
+  const pctSum = entries.reduce((sum, p) => sum + p.percentage, 0);
   const norm = pctSum > 0 ? 100 / pctSum : 0;
   if (norm === 0) return 0;
 
-  const pctOf = (p: { percentage?: number }) =>
-    round2((safePool * Number(p?.percentage ?? 0) * norm) / 100);
+  const pctOf = (p: { percentage: number }) => round2((safePool * p.percentage * norm) / 100);
 
-  const lastPlace = payouts.reduce((m, p) => Math.max(m, Number(p?.place ?? 0)), 0);
+  const lastPlace = entries.reduce((m, p) => Math.max(m, p.place), 0);
   if (place !== lastPlace) {
-    return pctOf(payouts.find((p) => Number(p?.place) === place)!);
+    return pctOf(entries.find((p) => p.place === place)!);
   }
 
-  const others = payouts
-    .filter((p) => Number(p?.place) !== lastPlace)
-    .reduce((sum, p) => sum + pctOf(p), 0);
+  const others = entries.filter((p) => p.place !== lastPlace).reduce((sum, p) => sum + pctOf(p), 0);
   // Never exceed the pool and never go negative if a structure is malformed
   // (percentages summing past 100).
   return Math.max(0, round2(safePool - others));

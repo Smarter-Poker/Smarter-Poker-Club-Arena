@@ -15,7 +15,13 @@ import { monteCarloEquity } from './MonteCarloEquity.js';
 import { getEquityPool } from './equity/EquityWorkerPool.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { insuranceEquity } from './InsuranceEquity.js';
-import { evaluateHand, evaluateOmahaHand, compareHands, determineWinners } from './PokerEngine.js';
+import {
+  evaluateHand,
+  evaluateOmahaHand,
+  compareHands,
+  determineWinners,
+  describeHand,
+} from './PokerEngine.js';
 import type { SeatPlayer, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineTurns } from './ServerTableEngineTurns.js';
@@ -1022,18 +1028,53 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // was skipped entirely — a qualifying bad beat on a run-it-twice hand could
     // never win the jackpot even though the fee was still taken.
     const firstBoard = boards[0];
-    this.currentHandShowdownResults = allInPlayers
+    // SHOWDOWN POLISH 2026-08-25 (RIT parity): a run-it-twice hand is an
+    // all-in showdown, so it gets the SAME reveal metadata as every other
+    // showdown — seat, reveal order (clockwise from the seat left of the
+    // button; an all-in hand has no final-street aggressor by definition
+    // here, since RIT only ever follows an all-in with cards to come),
+    // mucked always false (all-in hands are force-exposed), and the
+    // engine-generated hand description for board 1.
+    const ritDealerSeat = this.handController.getState().dealerSeat ?? 0;
+    const maxRitSeat = Math.max(...allInPlayers.map((p) => p.seat), ritDealerSeat) + 1;
+    const ritClockwise = (seat: number) => {
+      const d = (seat - ritDealerSeat + maxRitSeat * 10) % maxRitSeat;
+      return d === 0 ? maxRitSeat : d;
+    };
+    const ritOrdered = allInPlayers
       .filter((p) => p.cards && p.cards.length > 0)
-      .map((p) => {
-        const hand = boardEvaluator(p.cards, firstBoard);
-        return {
-          userId: p.user_id,
-          handRanking: hand.ranking ?? 0,
-          handName: hand.name ?? '',
-          kickers: hand.kickers ?? [],
-          holeCards: p.cards.map((c) => ({ rank: c.rank, suit: c.suit })),
-        };
-      });
+      .sort((a, b) => ritClockwise(a.seat) - ritClockwise(b.seat));
+    this.currentHandShowdownResults = ritOrdered.map((p, i) => {
+      const hand = boardEvaluator(p.cards, firstBoard);
+      return {
+        userId: p.user_id,
+        handRanking: hand.ranking ?? 0,
+        handName: hand.name ?? '',
+        kickers: hand.kickers ?? [],
+        holeCards: p.cards.map((c) => ({ rank: c.rank, suit: c.suit })),
+        seat: p.seat,
+        revealOrder: i,
+        mucked: false,
+        handDescription: describeHand(hand),
+      };
+    });
+    // Emit the discrete showdown event so RIT hands get the sequenced flip,
+    // the MUCKED-free reveal, and the description line like every other
+    // showdown. Board-by-board results still ride rit_result below.
+    this.hub?.emitEvent(this.tableId, {
+      type: 'showdown',
+      table_id: this.tableId,
+      hand_number: this.handCount,
+      results: this.currentHandShowdownResults.map((r) => ({
+        user_id: r.userId,
+        seat: r.seat ?? -1,
+        reveal_order: r.revealOrder ?? 0,
+        mucked: false,
+        hand_name: r.handName,
+        hand_ranking: r.handRanking,
+        hand_description: r.handDescription ?? '',
+      })),
+    });
     this.currentHandWinnerIds = boardWinners[0] ? [boardWinners[0]] : [];
     // E1 FIX 2026-08-18 (Master Gap Ledger): `currentHandWinners` was never
     // pre-set on the RIT path, so finalizeRunout(true)'s empty WINNERS event

@@ -739,6 +739,21 @@
   margin-top: 0.1em;
 }
 
+/* SHOWDOWN POLISH 2026-08-25 (spec 33): the hi-lo LOW WINNER line — third
+   tier of the label stack, visually distinct from the high hand's gold. */
+.community-cards__low-winner {
+  font-size: 0.34em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(147, 197, 253, 0.9);
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.8),
+    0 0 10px rgba(59, 130, 246, 0.5);
+  text-align: center;
+  margin-top: 0.12em;
+  text-transform: uppercase;
+}
+
 /* Bright horizontal flare behind the text */
 .community-cards__hand-name::before {
   content: '';

@@ -32,6 +32,18 @@ export interface HandPlayer {
   final_hand?: string;
   result: number;
   is_winner: boolean;
+  /**
+   * SHOWDOWN POLISH 2026-08-25: the persisted reveal record (hand_history.
+   * showdown, migration 20260825) — what the table actually SAW. mucked
+   * entries carry no hand identity by design. Absent on hands that predate
+   * the column or never reached showdown.
+   */
+  showdown_reveal?: {
+    reveal_order: number;
+    mucked: boolean;
+    hand_name?: string;
+    hand_description?: string;
+  };
 }
 
 export interface HandAction {
@@ -105,7 +117,7 @@ class HandHistoryServiceClass {
     const { data, error } = await supabase
       .from('hand_history')
       .select(
-        'id, created_at, table_id, hand_number, pot_size, community_cards, community_cards2, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, hole_cards'
+        'id, created_at, table_id, hand_number, pot_size, community_cards, community_cards2, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, hole_cards, showdown'
       )
       .eq('id', handId)
       .maybeSingle();
@@ -140,7 +152,7 @@ class HandHistoryServiceClass {
     const { data, error } = await supabase
       .from('hand_history')
       .select(
-        'id, created_at, table_id, hand_number, pot_size, community_cards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, hole_cards'
+        'id, created_at, table_id, hand_number, pot_size, community_cards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, hole_cards, showdown'
       )
       .contains('players', containmentJson)
       .order('created_at', { ascending: false })
@@ -218,6 +230,14 @@ class HandHistoryServiceClass {
         ? ((row as any).hole_cards as Record<string, unknown[]>)
         : {};
 
+    /* SHOWDOWN POLISH 2026-08-25: the reveal record, keyed by user id. */
+    const showdownByUser = new Map<string, any>();
+    if (Array.isArray((row as any).showdown)) {
+      for (const e of (row as any).showdown as any[]) {
+        if (e && typeof e.user_id === 'string') showdownByUser.set(e.user_id, e);
+      }
+    }
+
     const players: HandPlayer[] = jsonbPlayers.map((p: any): HandPlayer => {
       const uid: string = p?.userId || '';
       const profile = profileMap.get(uid);
@@ -255,6 +275,14 @@ class HandHistoryServiceClass {
         final_hand: jsonbWinners.find((w) => w?.userId === uid)?.hand?.name || undefined,
         result: buildResult(uid),
         is_winner: isWinner,
+        showdown_reveal: showdownByUser.has(uid)
+          ? {
+              reveal_order: Number(showdownByUser.get(uid)?.reveal_order) || 0,
+              mucked: showdownByUser.get(uid)?.mucked === true,
+              hand_name: showdownByUser.get(uid)?.hand_name || undefined,
+              hand_description: showdownByUser.get(uid)?.hand_description || undefined,
+            }
+          : undefined,
       };
     });
 

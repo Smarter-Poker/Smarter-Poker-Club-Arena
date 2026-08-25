@@ -37,6 +37,12 @@ export interface CommunityCardsProps {
    * Engine-generated (describeHand), never composed here.
    */
   winningHandDescription?: string;
+  /**
+   * SHOWDOWN POLISH 2026-08-25 (spec 33): the low half's own line on a hi-lo
+   * split ("Low: 8-6-4-3-2"), rendered under the high hand's label as
+   * "LOW WINNER" context. Empty/absent when no low was awarded.
+   */
+  lowWinnerLabel?: string;
   deckStyle?: '4color' | '2color';
   /**
    * The player's chosen card-back design.
@@ -183,6 +189,7 @@ function CommunityCardsComponent({
   highlightedIndices = [],
   winningHandName,
   winningHandDescription,
+  lowWinnerLabel,
   deckStyle,
   cardBack,
   playSounds = true,
@@ -412,6 +419,11 @@ function CommunityCardsComponent({
           {winningHandDescription && (
             <div className="community-cards__hand-description">{winningHandDescription}</div>
           )}
+          {/* SHOWDOWN POLISH 2026-08-25 (spec 33): the hi-lo split's low
+              half gets its own line so HIGH WINNER and LOW WINNER are
+              visually distinguished. The engine's low name is already
+              self-describing ("Low: 8-6-4-3-2"). */}
+          {lowWinnerLabel && <div className="community-cards__low-winner">{lowWinnerLabel}</div>}
         </div>
       )}
 
@@ -435,6 +447,8 @@ export const CommunityCards = memo(CommunityCardsComponent, (prev, next) => {
   if (prev.winningHandName !== next.winningHandName) return false;
   // SHOWDOWN SYSTEM 2026-08-25: the secondary description line must re-render.
   if (prev.winningHandDescription !== next.winningHandDescription) return false;
+  // SHOWDOWN POLISH 2026-08-25: the hi-lo low line must re-render too.
+  if (prev.lowWinnerLabel !== next.lowWinnerLabel) return false;
   if (prev.deckStyle !== next.deckStyle) return false;
   if (prev.playSounds !== next.playSounds) return false;
   // AUDIT-2 FIX 2026-08-20: cardBack was missing — it was added as a prop

@@ -487,13 +487,90 @@ abbr.lt-variant[title] {
     display: none;
   }
 
+  /* The wrapper stops being a framed table and becomes a plain stack, so
+     each row can read as its own object. */
+  .lobby-table-wrap {
+    border: none;
+    background: transparent;
+    border-radius: 0;
+  }
+
+  .lobby-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 2px 0 4px;
+  }
+
+  /* ── THE GAME CARD ──────────────────────────────────────────────────────
+     Dan 2026-08-24: "IT FITS, BUT IT LOOKS FLAT, BORING AND SLIGHTLY
+     CONFUSING — ADD DESCRIPTIONS, SOME DEPTH, A 3D LOOK AND FEEL."
+
+     Depth here is three real layers, not a drop shadow bolted on: a vertical
+     surface gradient so the card catches light from above, a 1px inset
+     highlight along its top edge (the lit bevel), and an outer shadow that
+     separates it from the black page. The left edge carries a status-coloured
+     rail, so a column of cards can be read at a glance without parsing any
+     text — running is blue, registering is blue-dim, full is red. */
   .lobby-table tr {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 2px 12px;
-    padding: 7px 10px;
-    border-bottom: 1px solid var(--border-subtle, rgba(65, 105, 225, 0.14));
+    gap: 6px 10px;
+    padding: 10px 12px 10px 14px;
+    position: relative;
+    border: 1px solid rgba(120, 150, 220, 0.16);
+    border-radius: 12px;
+    background:
+      linear-gradient(180deg, rgba(30, 36, 50, 0.95) 0%, rgba(14, 17, 25, 0.98) 62%),
+      var(--club-dark, #0a0b0f);
+    box-shadow:
+      0 2px 0 rgba(0, 0, 0, 0.55),
+      0 6px 16px rgba(0, 0, 0, 0.55),
+      inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    overflow: hidden;
+  }
+
+  /* The status rail. ::after rather than a border so the card's own radius
+     clips it into a soft capsule at both ends. */
+  .lobby-table tr::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: rgba(120, 150, 220, 0.35);
+  }
+  .lobby-table tr:has(.lt-status--running)::after,
+  .lobby-table tr:has(.lt-status--late_reg)::after {
+    background: linear-gradient(180deg, #4dd2ff, #1e7fd6);
+    box-shadow: 0 0 10px rgba(77, 210, 255, 0.5);
+  }
+  .lobby-table tr:has(.lt-status--registering)::after {
+    background: linear-gradient(180deg, #7aa5ff, #3f63c8);
+  }
+  .lobby-table tr:has(.lt-status--full)::after,
+  .lobby-table tr:has(.lt-status--waitlist)::after {
+    background: linear-gradient(180deg, #ff7a6b, #c0392b);
+  }
+
+  /* Pressing a card pushes it into the page instead of just tinting it. */
+  .lobby-table tr:active {
+    transform: translateY(1px);
+    box-shadow:
+      0 1px 0 rgba(0, 0, 0, 0.5),
+      0 3px 8px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .lobby-table tr.is-selected {
+    border-color: rgba(77, 210, 255, 0.55);
+    box-shadow:
+      0 2px 0 rgba(0, 0, 0, 0.55),
+      0 6px 18px rgba(0, 0, 0, 0.6),
+      inset 0 1px 0 rgba(255, 255, 255, 0.09),
+      0 0 0 1px rgba(77, 210, 255, 0.25);
   }
 
   .lobby-table td {
@@ -535,6 +612,101 @@ abbr.lt-variant[title] {
   .lobby-table {
     font-size: 0.75rem;
   }
+
+  /* ── DESCRIPTIONS ───────────────────────────────────────────────────────
+     Every value gets the word that belongs to it. The header row is gone on
+     a phone, so "5" and "7/50" were floating unlabelled — the "slightly
+     confusing" part. data-label comes from the column definition itself, so
+     Stakes and Buy-In are never mixed up even though they share a class. */
+  .lobby-table td.lt-col-num::before,
+  .lobby-table td.lt-col-players::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-tertiary, #7d8698);
+    margin-bottom: 1px;
+  }
+
+  /* Values sit in their own recessed well — the counter-depth to the card's
+     raised surface. */
+  .lobby-table td.lt-col-num,
+  .lobby-table td.lt-col-players {
+    padding: 3px 8px 4px;
+    border-radius: 7px;
+    background: rgba(0, 0, 0, 0.32);
+    box-shadow:
+      inset 0 1px 2px rgba(0, 0, 0, 0.6),
+      0 1px 0 rgba(255, 255, 255, 0.04);
+    line-height: 1.15;
+  }
+
+  .lobby-table td.lt-col-num .lt-mono,
+  .lobby-table td.lt-col-players .lt-seats__num {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: #eef2f8;
+  }
+
+  /* The name is the headline of the card. */
+  .lt-col-name {
+    padding-bottom: 1px;
+  }
+  .lt-name__line1 {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #f4f7fb;
+    letter-spacing: 0.01em;
+  }
+  .lt-name:not(.lt-name--mtt) {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #f4f7fb;
+  }
+  .lt-name__meta {
+    font-size: 0.6875rem;
+    margin-top: 1px;
+  }
+
+  /* The live dot earns a halo so a running game is visible while scrolling. */
+  .lt-live {
+    box-shadow: 0 0 8px rgba(46, 213, 115, 0.85);
+  }
+
+  /* The status badge is the card's right-hand anchor: raised, not flat. */
+  .lt-status {
+    padding: 4px 10px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    border-radius: 999px;
+    box-shadow:
+      0 1px 0 rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+
+  /* Type and variant come back as small chips — they are the "what game is
+     this" line, and hiding them is what left the card reading as two numbers
+     and a badge. */
+  .lobby-table td.lt-col-kind,
+  .lobby-table td.lt-col-variant {
+    display: block;
+  }
+  .lt-kind,
+  .lt-variant {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 6px;
+    font-size: 0.5875rem;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: #cfe0ff;
+    background: linear-gradient(180deg, rgba(80, 120, 200, 0.35), rgba(40, 60, 110, 0.35));
+    border: 1px solid rgba(120, 160, 240, 0.3);
+    text-decoration: none;
+  }
   .lobby-table thead th {
     padding: 7px 6px;
     font-size: 0.625rem;
@@ -547,10 +719,12 @@ abbr.lt-variant[title] {
      `.lt-col-fav` is (0,1,0) and loses NO MATTER WHERE IT SITS in the file.
      Measured live: every one of these columns was still rendering, which is
      why the phone row wrapped to 211px tall. Same weight, and they win. */
+  /* Rules, start time, speed and the favourite star stay off the card: the
+     panel shows all four the moment a card is opened, and they are what push
+     the card past two lines. Type and variant are NOT in this list any more
+     — see the chip styling below. */
   .lobby-table td.lt-col-starts,
-  .lobby-table td.lt-col-kind,
   .lobby-table td.lt-col-fav,
-  .lobby-table td.lt-col-variant,
   .lobby-table td.lt-col-rules,
   .lobby-table td.lt-col-speed {
     display: none;

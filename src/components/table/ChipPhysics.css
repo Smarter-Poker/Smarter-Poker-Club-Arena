@@ -115,10 +115,14 @@
    its own "xN" badge and its own stagger delay. */
 .cp-stacks {
   display: flex;
-  flex-direction: row;
-  align-items: flex-end;
+  flex-direction: column-reverse;
+  align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 0;
+}
+
+.cp-stack + .cp-stack {
+  margin-bottom: var(--cp-chip-overlap);
 }
 
 .cp-stack {

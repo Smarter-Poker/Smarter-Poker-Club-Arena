@@ -166,25 +166,34 @@ function PotChipPile({ amount, size }: { amount: number; size: 'pot' | 'street' 
 
   if (stacks.length === 0) return null;
 
-  /* Dan 2026-08-24: "REMOVE THE MULTI CHIP IN POT FUNCTIONALITY, JUST USE THE
-     ONE CHIP PLUS COLOR SCHEMA." One chip, colored by the pot's dominant
-     (highest) denomination on the ladder — the amount itself is printed on
-     the pill right next to it, so the tower of discs was noise. */
-  const dominant = stacks[0];
+  // Flatten the stacks to render multiple chips in one column, highest denom on bottom
+  const flattenedChips: { denom: any; partial: boolean }[] = [];
+  stacks.forEach((stack) => {
+    for (let i = 0; i < stack.drawn; i++) {
+      flattenedChips.push({
+        denom: stack.denom,
+        partial: stack.partial,
+      });
+    }
+  });
 
   return (
     /* aria-hidden: the amount is already announced by the pill's aria-label. */
     <div className={`pot-display__pile pot-display__pile--${size}`} aria-hidden="true">
       <div className="pot-display__pile-stack" style={{ '--pile-group': 0 } as React.CSSProperties}>
-        <span
-          className="pot-display__pile-chip"
-          style={
-            {
-              '--pile-chip-color': dominant.denom.color,
-              '--pile-chip-accent': dominant.denom.accent,
-            } as React.CSSProperties
-          }
-        />
+        {flattenedChips.map((chip, index) => (
+          <span
+            key={index}
+            className={`pot-display__pile-chip${chip.partial ? ' pot-display__pile-chip--partial' : ''}`}
+            style={
+              {
+                '--pile-chip-color': chip.denom.color,
+                '--pile-chip-accent': chip.denom.accent,
+                transform: `translateX(${Math.sin(index * 23.45) * 1.5}px)`,
+              } as React.CSSProperties
+            }
+          />
+        ))}
       </div>
     </div>
   );

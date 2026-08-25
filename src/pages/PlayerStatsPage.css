@@ -888,6 +888,30 @@
   color: rgba(255, 255, 255, 0.4);
 }
 
+/* Retry for a FAILED hands read. The empty state and the failure state used to
+   be the same sentence; this one has to be actionable. */
+.hand-retry {
+  margin-left: 6px;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  border-radius: 8px;
+  background: rgba(0, 212, 255, 0.1);
+  color: #00d4ff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hand-retry:hover {
+  background: rgba(0, 212, 255, 0.18);
+}
+
+.hand-retry:focus-visible {
+  outline: 2px solid #00d4ff;
+  outline-offset: 2px;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    DEPTH PASS — Dan 2026-08-21: "player stats page needs to be massively
    improved... flat, boring, no depth or 3d look or feel."
@@ -1389,6 +1413,19 @@
      cannot silently miss a class someone adds later. */
   .stats-page :is(p, span, td, th, li, h1, h2, h3, h4, h5, h6, strong, em, div, button, a) {
     color: #1f2937 !important;
+  }
+
+  /* SVG text takes `fill`, not `color`, so the blanket rule above does nothing
+     for it - and the three recharts axes were left at the screen palette's
+     rgba(255,255,255,.5), i.e. white on white, exactly the failure the comment
+     above describes. The radar labels were rescued individually further down;
+     the charts were missed. Dan 2026-08-25. */
+  .stats-page :is(.recharts-text, .recharts-cartesian-axis-tick-value, .recharts-label) {
+    fill: #374151 !important;
+  }
+
+  .stats-page .recharts-cartesian-grid line {
+    stroke: rgba(0, 0, 0, 0.12) !important;
   }
 
   .row-label,

@@ -51,6 +51,11 @@ export default function MyItemsTab({
   const handleRefund = async (purchaseId: string, itemName: string, currency?: string | null) => {
     if (refunding || !clubId) return;
     const unit = unitOf(currency);
+    // CLAIM THE FLAG BEFORE THE DIALOG (Dan 2026-08-25). It was set after the
+    // await, so for the whole time the confirm dialog was open `refunding` was
+    // still null and every Refund button was still enabled - two dialogs could
+    // be opened and both confirmed, for two refunds.
+    setRefunding(purchaseId);
     if (
       !(await confirmDialog({
         title: 'Refund Purchase',
@@ -58,9 +63,10 @@ export default function MyItemsTab({
         confirmText: 'Refund',
         variant: 'danger',
       }))
-    )
+    ) {
+      setRefunding(null);
       return;
-    setRefunding(purchaseId);
+    }
     try {
       const res = await callClubArenaApi<{
         amount: number;
@@ -83,6 +89,8 @@ export default function MyItemsTab({
 
   const handleRedeem = async (inventoryId: string) => {
     if (redeeming) return;
+    // Same shape as handleRefund: claim first, release on cancel.
+    setRedeeming(inventoryId);
     if (
       !(await confirmDialog({
         title: 'Redeem Item',
@@ -91,9 +99,10 @@ export default function MyItemsTab({
         confirmText: 'Redeem',
         variant: 'default',
       }))
-    )
+    ) {
+      setRedeeming(null);
       return;
-    setRedeeming(inventoryId);
+    }
     try {
       const { data, error } = await supabase.rpc('fn_redeem_shop_item', {
         p_inventory_id: inventoryId,
@@ -141,7 +150,11 @@ export default function MyItemsTab({
   // Inventory rows inherit their purchase's currency (legacy rows were chips).
   const currencyByPurchase = useMemo(() => {
     const m = new Map<string, string>();
-    purchases.forEach((p) => m.set(p.id, p.currency || 'chips'));
+    // 'diamonds', matching unitOf's default. These two disagreed, so a row with a
+    // null currency showed "500 Chips" in the inventory table and "500 Diamonds"
+    // in the history table - the same purchase, on the same screen. Chips have
+    // not been purchasable since 2026-08-23 either.
+    purchases.forEach((p) => m.set(p.id, p.currency || 'diamonds'));
     return m;
   }, [purchases]);
 
@@ -195,8 +208,24 @@ export default function MyItemsTab({
             <tbody>
               {inventory.map((it) => {
                 const spent = !isOwnedRow(it);
-                const refunded = it.status === 'refunded';
                 const redeemed = spent;
+                /* SPENT_STATUSES is {redeemed, refunded, revoked, expired}, and
+                   `redeemed = spent` collapsed all four into one badge - so a
+                   revoked or expired row told the member they had USED
+                   something that was actually taken away or had timed out.
+                   Dan 2026-08-25. */
+                const statusLabel =
+                  it.status === 'refunded'
+                    ? 'Refunded'
+                    : it.status === 'revoked'
+                      ? 'Revoked'
+                      : it.status === 'expired'
+                        ? 'Expired'
+                        : it.status === 'redeemed'
+                          ? 'Redeemed'
+                          : spent
+                            ? 'Spent'
+                            : 'Owned';
                 const rowUnit = unitOf(
                   it.purchase_id ? currencyByPurchase.get(it.purchase_id) : undefined
                 );
@@ -230,7 +259,7 @@ export default function MyItemsTab({
                           background: redeemed ? 'rgba(139,141,145,0.12)' : 'rgba(49,162,76,0.12)',
                         }}
                       >
-                        {refunded ? 'Refunded' : redeemed ? 'Redeemed' : 'Owned'}
+                        {statusLabel}
                       </span>
                     </td>
                     <td>

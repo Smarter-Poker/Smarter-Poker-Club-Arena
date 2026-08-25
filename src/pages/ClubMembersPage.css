@@ -473,6 +473,21 @@
   padding: 2.5rem 1.5rem;
 }
 
+/* A FAILED roster read. This used to render as .members-empty ("No Members
+   Found / Invite Players To Grow Your Club") - the page stating the club was
+   empty when the request had failed, with the toast gone in four seconds and
+   no way to retry. Dan 2026-08-25. */
+.members-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  color: var(--ca-text-dim, rgba(255, 255, 255, 0.6));
+  font-size: 0.9rem;
+}
+
 .members-empty__mark {
   font-size: 2.5rem;
   display: block;

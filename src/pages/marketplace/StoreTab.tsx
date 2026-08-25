@@ -34,6 +34,13 @@ interface StoreTabProps {
   isAdmin: boolean;
   /** true while the shop is still loading — do NOT claim the shop is empty */
   loading: boolean;
+  /**
+   * Set when the shop FETCH failed. An empty list and a failed read are
+   * different statements, and this rendered both as "The Club Shop Is
+   * Currently Empty." - complete with an admin "Add First Item" call to
+   * action - while the real reason sat in a banner above.
+   */
+  error?: string | null;
   /** server catalog categories (drives the filter chips + grant wording) */
   categories: ShopCategoryInfo[];
   onGoManage: () => void;
@@ -48,6 +55,7 @@ export default function StoreTab({
   onGoDiamonds,
   isAdmin,
   loading,
+  error = null,
   categories,
   onGoManage,
   onPurchased,
@@ -60,7 +68,26 @@ export default function StoreTab({
   // L18: category chips come from the server catalog when it is available.
   const categoryNames =
     categories.length > 0 ? ['All', ...categories.map((c) => c.name)] : CATEGORIES;
-  const [buyTarget, setBuyTarget] = useState<MarketplaceItem | null>(null);
+  /**
+   * The modal holds an ID and derives the item LIVE (Dan 2026-08-25).
+   *
+   * It used to hold a frozen snapshot taken at click time, while the page
+   * refreshes `items` behind it on every balance bus event and on visibility
+   * return. End a sale or raise a price with the modal open and the modal kept
+   * rendering the OLD price and checking affordability against it, while the
+   * server charged the new one: confirm 500, get debited 900.
+   */
+  const [buyTargetId, setBuyTargetId] = useState<string | null>(null);
+  const buyTarget = useMemo(
+    () => (buyTargetId ? (items.find((i) => i.id === buyTargetId) ?? null) : null),
+    [items, buyTargetId]
+  );
+  /**
+   * One key per purchase INTENT, minted when the modal opens and reused by
+   * every retry of that same intent. See ClubArenaApiOptions.idempotencyKey.
+   */
+  const purchaseKeyRef = useRef<string | null>(null);
+  const inFlightRef = useRef(false);
   const [processing, setProcessing] = useState(false);
   const confirmBtnRef = useRef<HTMLButtonElement | null>(null);
   const [searchFilter, setSearchFilter] = useState('');
@@ -121,7 +148,7 @@ export default function StoreTab({
   useEffect(() => {
     if (!buyTarget) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !processing) setBuyTarget(null);
+      if (e.key === 'Escape' && !processing) closeBuy();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -129,17 +156,47 @@ export default function StoreTab({
 
   const modalImg = buyTarget ? safeImageUrl(buyTarget.image_url) : null;
 
+  const openBuy = (item: MarketplaceItem) => {
+    purchaseKeyRef.current =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setBuyTargetId(item.id);
+  };
+
+  const closeBuy = () => {
+    purchaseKeyRef.current = null;
+    setBuyTargetId(null);
+  };
+
+  /**
+   * Re-checked on every render, not captured at click time. `ownedItemIds` and
+   * `stock` change while the modal sits open (the page reloads inventory and
+   * the shop behind it), so Confirm stayed live for an item that had since
+   * become owned / sold out / ended, and only the server stopped the charge.
+   */
+  const modalBlocked = buyTarget
+    ? unavailableReason(buyTarget, ownedItemIds.has(buyTarget.id), !!buyTarget.stackable)
+    : null;
+
   const handlePurchase = async () => {
-    if (!buyTarget || processing) return;
+    if (!buyTarget) return;
+    // A REF, not the state flag. `processing` is only visible to a later event
+    // after React commits, so a synthetic double-fire in the same tick (iOS
+    // touch-then-click, Enter landing with a click) passed both guards.
+    if (inFlightRef.current) return;
+    if (modalBlocked) return;
+    inFlightRef.current = true;
     setProcessing(true);
     try {
-      const data = await callClubArenaApi<{ newBalance: number }>('marketplace-purchase', {
-        clubId,
-        itemId: buyTarget.id,
-      });
+      const data = await callClubArenaApi<{ newBalance: number }>(
+        'marketplace-purchase',
+        { clubId, itemId: buyTarget.id },
+        { idempotencyKey: purchaseKeyRef.current ?? undefined }
+      );
       toast.success(`Purchased ${buyTarget.name}`);
       masterBus.emit('BALANCE_UPDATED', { source: 'marketplace_purchase', clubId });
-      setBuyTarget(null);
+      closeBuy();
       onPurchased(typeof data.newBalance === 'number' ? data.newBalance : null);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Purchase failed');
@@ -149,10 +206,11 @@ export default function StoreTab({
         err as { data?: { soldOut?: boolean; alreadyOwned?: boolean; limitReached?: boolean } }
       )?.data;
       if (flags?.soldOut || flags?.alreadyOwned || flags?.limitReached) {
-        setBuyTarget(null);
+        closeBuy();
         onPurchased(null);
       }
     } finally {
+      inFlightRef.current = false;
       setProcessing(false);
     }
   };
@@ -161,6 +219,19 @@ export default function StoreTab({
     return (
       <div className={styles.emptyState}>
         <span className={styles.emptyText}>Loading The Shop...</span>
+      </div>
+    );
+  }
+
+  // A failed read is NOT an empty shop. Checked before the empty state so the
+  // page never tells an owner their stock is gone because a request failed.
+  if (items.length === 0 && error) {
+    return (
+      <div className={styles.emptyState} role="alert">
+        <span className={styles.emptyText}>Could Not Load The Shop.</span>
+        <span className={styles.emptySubText}>
+          Your Items Are Still There. We Just Could Not Reach Them Right Now.
+        </span>
       </div>
     );
   }
@@ -189,7 +260,7 @@ export default function StoreTab({
     <>
       {/* Buy confirm modal */}
       {buyTarget && (
-        <div className={styles.modalOverlay} onClick={() => !processing && setBuyTarget(null)}>
+        <div className={styles.modalOverlay} onClick={() => !processing && closeBuy()}>
           <div
             className={styles.modal}
             onClick={(e) => e.stopPropagation()}
@@ -245,7 +316,7 @@ export default function StoreTab({
                 <button
                   className={styles.inlineLink}
                   onClick={() => {
-                    setBuyTarget(null);
+                    closeBuy();
                     onGoDiamonds();
                   }}
                 >
@@ -254,18 +325,14 @@ export default function StoreTab({
               </div>
             )}
             <div className={styles.modalActions}>
-              <button
-                onClick={() => setBuyTarget(null)}
-                className={styles.btnGhost}
-                disabled={processing}
-              >
+              <button onClick={closeBuy} className={styles.btnGhost} disabled={processing}>
                 Cancel
               </button>
               <button
                 ref={confirmBtnRef}
                 onClick={handlePurchase}
                 className={styles.btnPrimary}
-                disabled={processing || balance < effectivePrice(buyTarget)}
+                disabled={processing || !!modalBlocked || balance < effectivePrice(buyTarget)}
               >
                 {processing ? 'Purchasing...' : 'Confirm Purchase'}
               </button>
@@ -404,7 +471,7 @@ export default function StoreTab({
                       )}
                     </div>
                     <button
-                      onClick={() => setBuyTarget(item)}
+                      onClick={() => openBuy(item)}
                       className={blocked === 'owned' ? styles.btnOwned : styles.btnPrimary}
                       disabled={!!blocked || processing}
                       title={

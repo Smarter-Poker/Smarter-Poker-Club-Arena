@@ -19,6 +19,7 @@ import AuditLog from '../components/admin/AuditLog';
 import { StatsExport } from '../components/admin/StatsExport';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { useIsMounted } from '../hooks/useIsMounted';
 import '../components/common/ButtonSpinner.css';
 import './ClubSettingsPage.css';
 import { reportError } from '../utils/errorReporter';
@@ -82,6 +83,24 @@ export default function ClubSettingsPage() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  /**
+   * The two rake fields are held as RAW TEXT while the owner types and only
+   * parsed/clamped on blur. See the onBlur handlers for why: clamping a
+   * controlled number input on every keystroke makes a decimal impossible to
+   * enter, and turns "0.5" into 5.
+   */
+  const [rakePercentText, setRakePercentText] = useState('');
+  const [rakeCapText, setRakeCapText] = useState('');
+  // Keep the text in step whenever the settings change from anywhere other
+  // than typing (load, realtime, discard, "load theirs").
+  useEffect(() => {
+    setRakePercentText(
+      settings.default_rake_percent < 0 ? '' : String(settings.default_rake_percent)
+    );
+  }, [settings.default_rake_percent]);
+  useEffect(() => {
+    setRakeCapText(settings.rake_cap < 0 ? '' : String(settings.rake_cap));
+  }, [settings.rake_cap]);
   const [isOwner, setIsOwner] = useState(false);
   const originalSettings = useRef<ClubSettings | null>(null);
   // Bumped every time originalSettings.current is reassigned. changedFields
@@ -153,6 +172,13 @@ export default function ClubSettingsPage() {
   // refuse while anything is live.
   const [deleteImpact, setDeleteImpact] = useState<ClubDeletionImpact | null>(null);
   const [impactLoading, setImpactLoading] = useState(false);
+  /** Why the deletion check failed. Without it the modal said only "Could Not
+   *  Check What This Would Delete" and the Delete button stayed permanently
+   *  disabled with no retry - Cancel and reopen was the only recourse. */
+  const [impactError, setImpactError] = useState<string | null>(null);
+  /** True when we could not confirm the reader's role, so the page can say so
+   *  instead of silently degrading them to `player`. */
+  const [roleLoadFailed, setRoleLoadFailed] = useState(false);
   const [showStatsExport, setShowStatsExport] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmText, setConfirmText] = useState('');
@@ -220,6 +246,9 @@ export default function ClubSettingsPage() {
   // can clean it up if the row update fails.
   const uploadedPathRef = useRef<string | null>(null);
   const currentLogoUrlRef = useRef<string | null>(null);
+  const isMountedRef = useIsMounted();
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
+  const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     pendingLogoRef.current = pendingLogo;
   }, [pendingLogo]);
@@ -236,7 +265,11 @@ export default function ClubSettingsPage() {
   // Re-fetch settings when user tabs back (covers WS disconnect gap).
   // Silent: tabbing away and back must not replace the form with a skeleton,
   // and must not throw away edits the owner has not saved yet.
-  useVisibilityRefresh(() => loadClubSettings(undefined, { silent: true }));
+  /* getIsMounted passed through (Dan 2026-08-25). Without it every branch of
+     the loader - setSettings, setLoadError, setNotFound, setLoading and
+     toast.error('Failed to load club settings') - ran after the user had
+     navigated away mid-request. A toast for a page they had left. */
+  useVisibilityRefresh(() => loadClubSettings(() => isMountedRef.current, { silent: true }));
 
   // In-app navigation loses edits silently. beforeunload only covers a reload
   // or a tab close; clicking the bottom nav is a React Router <Link>, which
@@ -293,12 +326,19 @@ export default function ClubSettingsPage() {
     return () => window.removeEventListener('beforeunload', warn);
   }, [hasUnsavedChanges, isOwner]);
 
-  // Keyboard shortcut: Ctrl+S to save settings
+  /**
+   * Ctrl+S. Through a REF (Dan 2026-08-25).
+   *
+   * `saveSettings` closes over `settings`, but this effect only re-registered
+   * when one of four booleans changed. Rename the club A -> B (the effect
+   * re-runs, capturing B), then B -> C, press Ctrl+S: it wrote **B**.
+   */
+  const saveRef = useRef<(() => void | Promise<void>) | null>(null);
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        if (isOwner && hasUnsavedChanges && !saving && !formError) saveSettings();
+        if (isOwner && hasUnsavedChanges && !saving && !formError) void saveRef.current?.();
       }
     };
     window.addEventListener('keydown', handler);
@@ -404,8 +444,20 @@ export default function ClubSettingsPage() {
   ) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
-    setLoadError(false);
-    setNotFound(false);
+    /**
+     * SILENT MEANS SILENT (Dan 2026-08-25).
+     *
+     * These were cleared at the TOP of every load, including background ones.
+     * On a deleted or RLS-hidden club that flipped `notFound` to false while
+     * `loading` stayed false, so for the duration of the request the page
+     * rendered the full EDITABLE settings form, with defaults, for a club that
+     * does not exist. Reset only on a foreground load, where the skeleton
+     * covers the gap.
+     */
+    if (!opts?.silent) {
+      setLoadError(false);
+      setNotFound(false);
+    }
     // silent = a background refresh (tab focus, realtime, bus). It must not
     // tear the rendered form down to a skeleton.
     if (!opts?.silent && (!getIsMounted || getIsMounted())) setLoading(true);
@@ -477,12 +529,23 @@ export default function ClubSettingsPage() {
         } else if (user?.id) {
           // Fetch actual role from club_members
           try {
-            const { data: membership } = await supabase
+            // Supabase RETURNS errors, it does not throw them, so the
+            // surrounding try/catch could never fire and `error` was discarded.
+            // A failed or RLS-blocked read left userRole at 'player', which
+            // hides Role Management and the Admin Activity Log from an
+            // admin/agent with no indication anything went wrong.
+            const { data: membership, error: roleErr } = await supabase
               .from('club_members')
               .select('role')
               .eq('club_id', data.id)
               .eq('user_id', user.id)
               .maybeSingle();
+            if (roleErr) {
+              reportError(roleErr, 'ClubSettingsPage.role_lookup');
+              setRoleLoadFailed(true);
+            } else {
+              setRoleLoadFailed(false);
+            }
             if (getIsMounted && !getIsMounted()) return;
             if (membership?.role) {
               setUserRole(membership.role as ClubRole);
@@ -497,7 +560,11 @@ export default function ClubSettingsPage() {
       }
     } catch (error) {
       reportError(error, 'ClubSettingsPage.Failed_to_load_club_settings');
-      setLoadError(true);
+      // A SILENT refresh must not replace the whole form with the error screen.
+      // Tab away for 30s, come back, hit a network blip, and the owner's typed
+      // changes vanished from view - and the only control offered was a Retry
+      // that overwrites them with the server copy.
+      if (!opts?.silent) setLoadError(true);
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load club settings');
     } finally {
       loadingRef.current = false;
@@ -544,12 +611,21 @@ export default function ClubSettingsPage() {
           supabase.storage.from('club-assets').getPublicUrl(path).data?.publicUrl || null;
       }
       // Phase 13: Optimistic save — emit events instantly, then confirm with server
+      /**
+       * ROLLBACK, AND EMIT AFTER THE WRITE (Dan 2026-08-25).
+       *
+       * Two faults in one call. `executeOptimistic` takes a fourth argument,
+       * the rollback payload it emits when the async function throws, and this
+       * call omitted it - so a rejected save left every other surface holding
+       * the un-saved values for the rest of the session. And CLUB_UPDATED /
+       * CLUB_SETTINGS_UPDATED were emitted BEFORE the UPDATE ran, so the lobby
+       * and every open club surface repainted with a name and a rake that might
+       * never land. Both moved below the zero-rows guard.
+       */
       await masterBus.executeOptimistic(
         'SETTINGS_UPDATED',
         { settings: { clubId, ...toSave } },
         async () => {
-          if (clubId) masterBus.emit('CLUB_UPDATED', { clubId });
-          if (clubId) masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
           const { data: updated, error } = await supabase
             .from('clubs')
             .update({
@@ -580,7 +656,13 @@ export default function ClubSettingsPage() {
               'Settings were not saved - you may no longer own this club, or it no longer exists.'
             );
           }
-        }
+          // Only now is it true.
+          if (clubId) {
+            masterBus.emit('CLUB_UPDATED', { clubId });
+            masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
+          }
+        },
+        { settings: { clubId, ...(originalSettings.current ?? settings) } }
       );
       // Saving strips HTML. Silently changing what the owner typed and
       // showing a plain success toast made the edit look corrupted.
@@ -601,7 +683,11 @@ export default function ClubSettingsPage() {
       if (newLogoUrl) {
         // The logo it replaced would otherwise sit in the bucket forever.
         // Best-effort: a failed cleanup must never fail a successful save.
-        const stale = clubAssetPathFromPublicUrl(currentLogoUrl);
+        // The REF, not the closure. currentLogoUrlRef is maintained for exactly
+        // this: if another admin replaces the logo during the save, the closed-
+        // over value is stale and the wrong object gets deleted (or the real
+        // predecessor leaks in the bucket).
+        const stale = clubAssetPathFromPublicUrl(currentLogoUrlRef.current);
         if (stale) {
           await supabase.storage
             .from('club-assets')
@@ -634,9 +720,18 @@ export default function ClubSettingsPage() {
       toast.error(error instanceof Error ? error.message : 'Failed to save settings');
     } finally {
       uploadedPathRef.current = null;
+      // INSIDE the finally. Anything that threw within the catch above - the
+      // storage remove() rejecting before .catch attached, reportError, the
+      // toast - skipped this line and left `saving` stuck true: Save
+      // permanently disabled with a spinner, Remove Logo disabled with it, and
+      // no way out but a reload.
+      setSaving(false);
     }
-    setSaving(false);
   };
+
+  // Kept current on every render so the Ctrl+S handler above always calls the
+  // latest closure rather than the one captured when it last re-registered.
+  saveRef.current = saveSettings;
 
   const updateSetting = <K extends keyof ClubSettings>(key: K, value: ClubSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -690,8 +785,9 @@ export default function ClubSettingsPage() {
     } catch (e) {
       reportError(e, 'ClubSettingsPage.Failed_to_remove_logo');
       toast.error(e instanceof Error ? e.message : 'Failed to remove logo');
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   const clearPendingLogo = () => {
@@ -715,6 +811,7 @@ export default function ClubSettingsPage() {
     if (!clubId) return;
     setImpactLoading(true);
     setDeleteImpact(null);
+    setImpactError(null);
     try {
       const resolvedId = await resolveClubUUID(clubId);
       // One authoritative read instead of three client queries. The previous
@@ -727,19 +824,38 @@ export default function ClubSettingsPage() {
         p_club_id: resolvedId,
       });
       if (error) throw error;
-      const impact = (data || {}) as {
-        members?: number;
-        running_tables?: number;
-        wallet_chips?: number | string;
-      };
-      setDeleteImpact({
-        members: Number(impact.members ?? 0),
-        runningTables: Number(impact.running_tables ?? 0),
-        walletChips: Number(impact.wallet_chips ?? 0),
-      });
+      /**
+       * SHAPE-CHECKED (Dan 2026-08-25).
+       *
+       * `(data || {})` plus `?? 0` meant that if the RPC ever returned a row
+       * SET rather than a json object, every field was undefined, every figure
+       * became 0, blockingDeletionReason returned null - and the Delete button
+       * armed on a live club with members and running tables. A non-numeric
+       * wallet_chips gave NaN, and `NaN > 0` is false, for the same outcome.
+       */
+      const impact = (Array.isArray(data) ? data[0] : data) as {
+        members?: unknown;
+        running_tables?: unknown;
+        wallet_chips?: unknown;
+      } | null;
+      const members = Number(impact?.members ?? NaN);
+      const runningTables = Number(impact?.running_tables ?? NaN);
+      const walletChips = Number(impact?.wallet_chips ?? NaN);
+      if (
+        !impact ||
+        typeof impact !== 'object' ||
+        !Number.isFinite(members) ||
+        !Number.isFinite(runningTables) ||
+        !Number.isFinite(walletChips)
+      ) {
+        throw new Error('The deletion check returned something unreadable.');
+      }
+      setImpactError(null);
+      setDeleteImpact({ members, runningTables, walletChips });
     } catch (e) {
       reportError(e, 'ClubSettingsPage.Failed_to_load_delete_impact');
       // Unknown impact must not read as "safe to delete".
+      setImpactError(e instanceof Error ? e.message : 'Could not check what this would delete.');
       setDeleteImpact(null);
     } finally {
       setImpactLoading(false);
@@ -866,6 +982,15 @@ export default function ClubSettingsPage() {
           </div>
         )}
         {/* Basic Info */}
+        {/* A failed role lookup used to leave the reader silently demoted to
+            `player`, which hides Role Management and the Admin Activity Log.
+            Say it out loud instead of quietly removing their tools. */}
+        {roleLoadFailed && (
+          <div className="settings-notice" role="status">
+            We Could Not Confirm Your Role In This Club, So Some Staff Tools May Be Hidden. Reload
+            To Try Again.
+          </div>
+        )}
         {/* Role Management (Moved to Profile Tab conceptually as requested) */}
         {canSeeAuditLog && (
           <section className="settings-section">
@@ -983,19 +1108,32 @@ export default function ClubSettingsPage() {
                   No Logo
                 </div>
               )}
+              {/* A REAL BUTTON (Dan 2026-08-25). This was a <label> wrapping an
+                  input with `display: none` - which removes the input from the
+                  tab order, and a <label> is not focusable, so there was no
+                  keyboard or screen-reader path to the file picker AT ALL. The
+                  input is now visually hidden but still focusable, and the
+                  button drives it. */}
               {isOwner && (
-                <label
-                  className="btn btn-secondary"
-                  style={{ cursor: 'pointer', padding: '6px 14px', fontSize: '0.8rem' }}
-                >
-                  {pendingLogo ? 'Change' : currentLogoUrl ? 'Replace' : 'Upload'}
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                    onClick={() => logoInputRef.current?.click()}
+                  >
+                    {pendingLogo ? 'Change' : currentLogoUrl ? 'Replace' : 'Upload'}
+                  </button>
                   <input
+                    ref={logoInputRef}
+                    id="club-logo-input"
+                    className="visually-hidden-input"
                     type="file"
+                    aria-label="Choose A Club Logo"
                     accept="image/png,image/jpeg,image/webp,image/gif"
-                    style={{ display: 'none' }}
                     onChange={onLogoSelect}
                   />
-                </label>
+                </>
               )}
               {pendingLogo && (
                 <button
@@ -1101,13 +1239,23 @@ export default function ClubSettingsPage() {
               id="club-rake-percent"
               type="number"
               placeholder="Use house schedule"
-              value={settings.default_rake_percent < 0 ? '' : settings.default_rake_percent}
-              onChange={(e) => {
-                if (e.target.value === '') {
+              /* DECIMALS HAVE TO BE TYPEABLE (Dan 2026-08-25).
+                 This clamped on every keystroke against a CONTROLLED value, so
+                 typing "0.5" went "0" -> 0, then "0." -> parseFloat -> 0 -> the
+                 input re-rendered as "0", and the next keystroke produced **5**
+                 - ten times the intended rake, on the field that decides how
+                 much money the club takes. Hold the raw string while typing and
+                 clamp on blur, which is exactly what the buy-in inputs below
+                 already do. */
+              value={rakePercentText}
+              onChange={(e) => setRakePercentText(e.target.value)}
+              onBlur={() => {
+                const raw = rakePercentText.trim();
+                if (raw === '') {
                   updateSetting('default_rake_percent', RAKE_INHERIT);
                   return;
                 }
-                const val = parseFloat(e.target.value);
+                const val = parseFloat(raw);
                 updateSetting(
                   'default_rake_percent',
                   isNaN(val) ? RAKE_INHERIT : Math.min(MAX_RAKE_PERCENT, Math.max(0, val))
@@ -1131,13 +1279,17 @@ export default function ClubSettingsPage() {
               id="club-rake-cap"
               type="number"
               placeholder="Use house schedule"
-              value={settings.rake_cap < 0 ? '' : settings.rake_cap}
-              onChange={(e) => {
-                if (e.target.value === '') {
+              /* Same shape as the rake field above: raw while typing, clamp on
+                 blur, so "1.5" cannot be read as 15. */
+              value={rakeCapText}
+              onChange={(e) => setRakeCapText(e.target.value)}
+              onBlur={() => {
+                const raw = rakeCapText.trim();
+                if (raw === '') {
                   updateSetting('rake_cap', RAKE_INHERIT);
                   return;
                 }
-                const val = parseFloat(e.target.value);
+                const val = parseFloat(raw);
                 updateSetting(
                   'rake_cap',
                   isNaN(val) ? RAKE_INHERIT : Math.min(MAX_RAKE_CAP_BB, Math.max(0, val))
@@ -1297,6 +1449,7 @@ export default function ClubSettingsPage() {
                 </span>
               </div>
               <button
+                ref={deleteTriggerRef}
                 className="btn btn-danger"
                 onClick={() => {
                   setShowDeleteModal(true);
@@ -1314,7 +1467,11 @@ export default function ClubSettingsPage() {
             className="btn btn-primary save-btn"
             onClick={saveSettings}
             disabled={saving || !hasUnsavedChanges || !!formError}
-            title={hasUnsavedChanges ? undefined : 'No changes to save'}
+            /* formError first: blanking the club name greyed the button out
+               while the tooltip stayed empty, because there ARE changes - so
+               the owner got no explanation at all. The unsaved bar already
+               does it in this order. */
+            title={formError || (hasUnsavedChanges ? undefined : 'No changes to save')}
           >
             {saving ? (
               <>
@@ -1328,10 +1485,24 @@ export default function ClubSettingsPage() {
       </div>
 
       {/* Delete Confirmation Modal */}
+      {/* Dialog semantics (Dan 2026-08-25). The overlay was an interactive div
+          with no role, Escape did nothing, Tab walked straight out into the
+          page behind it, and nothing announced this as a modal - on the control
+          that permanently destroys a club. */}
       {showDeleteModal && (
-        <div className="modal-overlay" onClick={() => setShowDeleteModal(false)}>
-          <div className="modal-content delete-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Delete Club</h3>
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => !isDeleting && setShowDeleteModal(false)}
+        >
+          <div
+            className="modal-content delete-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-club-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="delete-club-title">Delete Club</h3>
             <p>
               This Action <strong>Cannot Be Undone</strong>. This Will Permanently Delete The Club{' '}
               <strong>{savedClubName}</strong>.
@@ -1353,6 +1524,10 @@ export default function ClubSettingsPage() {
               <p className="delete-impact delete-impact--blocked">
                 Could Not Check What This Would Delete. Deletion Is Disabled Until That Check
                 Succeeds.
+                {impactError ? ` ${impactError}` : ''}{' '}
+                <button type="button" className="btn-link" onClick={loadDeleteImpact}>
+                  Check Again
+                </button>
               </p>
             )}
             {deleteBlockedReason && (
@@ -1410,47 +1585,23 @@ export default function ClubSettingsPage() {
       />
 
       {/* Someone else saved this club while you were editing */}
+      {/* Moved out of inline styles into .conflict-bar (Dan 2026-08-25). It was
+          a fixed flex row with no flex-wrap holding ~90 characters plus a
+          button inside 90vw - at 375px that is ~338px, so it squashed or
+          overflowed. Everything about it duplicated .unsaved-bar, which had
+          already been fixed for exactly this. The `bottom` was also inline and
+          sat UNDER the bottom nav; both bars now use the shared clearance. */}
       {serverChanged && isOwner && (
-        <div
-          role="status"
-          style={{
-            position: 'fixed',
-            bottom: clubId ? 128 : 72,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 999,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            padding: '0.6rem 1.2rem',
-            borderRadius: '14px',
-            background: 'rgba(255, 176, 32, 0.14)',
-            border: '1px solid rgba(255, 176, 32, 0.35)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            maxWidth: '90vw',
-          }}
-        >
-          <span style={{ color: '#ffb020', fontSize: '0.75rem', fontWeight: 600 }}>
-            These Settings Changed Elsewhere
-          </span>
-          <span style={{ color: '#6a7a8a', fontSize: '0.7rem' }}>
+        <div className="conflict-bar" role="status">
+          <span className="conflict-bar__title">These Settings Changed Elsewhere</span>
+          <span className="conflict-bar__body">
             Your Edits Are Still Here. Saving Overwrites The Newer Values.
           </span>
           <button
+            className="conflict-bar__action"
             onClick={() => {
               setServerChanged(false);
               loadClubSettings(undefined, { force: true });
-            }}
-            style={{
-              padding: '0.35rem 0.75rem',
-              background: 'rgba(255, 255, 255, 0.1)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '8px',
-              color: '#ddd',
-              fontSize: '0.7rem',
-              cursor: 'pointer',
-              flexShrink: 0,
             }}
           >
             Load Theirs
@@ -1473,6 +1624,10 @@ export default function ClubSettingsPage() {
             onClick={() => {
               if (originalSettings.current) setSettings({ ...originalSettings.current });
               clearPendingLogo();
+              // Without this the "These Settings Changed Elsewhere / Your Edits
+              // Are Still Here" banner kept warning about edits that had just
+              // been thrown away. The save path already clears it.
+              setServerChanged(false);
             }}
           >
             Discard

@@ -500,10 +500,14 @@
    480px up. */
 .unsaved-bar {
   position: fixed;
-  bottom: 72px;
+  /* ABOVE the bottom nav, not under it (Dan 2026-08-25). 72px was below the
+     bar's 74px min-height, and on a home-indicator iPhone the nav is ~108px
+     tall with z-index 1000 - so the entire Save/Discard row disappeared behind
+     it and the owner had no way to save at all. */
+  bottom: calc(var(--bottom-nav-clearance, 74px) + 8px);
   left: 50%;
   transform: translateX(-50%);
-  z-index: 999;
+  z-index: 1001;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -608,4 +612,88 @@
   padding-left: 0;
   color: #ffb020;
   font-weight: 600;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONFLICT BAR — "these settings changed elsewhere"
+   Was ~20 inline style properties on a fixed flex row with no flex-wrap, which
+   at 375px held ~90 characters plus a button in ~338px. It is the same
+   component as .unsaved-bar and now shares its geometry, including sitting
+   ABOVE the bottom nav rather than behind it. Dan 2026-08-25.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.conflict-bar {
+  position: fixed;
+  bottom: calc(var(--bottom-nav-clearance, 74px) + 74px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1001;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 0.75rem;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  padding: 0.6rem 1.2rem;
+  border-radius: 14px;
+  background: rgba(255, 176, 32, 0.14);
+  border: 1px solid rgba(255, 176, 32, 0.35);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.conflict-bar__title {
+  color: #ffb020;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.conflict-bar__body {
+  color: #8fa0b0;
+  font-size: 0.7rem;
+}
+
+.conflict-bar__action {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 0.35rem 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #ddd;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.conflict-bar__action:focus-visible {
+  outline: 2px solid #ffb020;
+  outline-offset: 2px;
+}
+
+/* Inline notice for a degraded-but-usable page state (e.g. the role lookup
+   failed, so staff tools may be missing). Dan 2026-08-25. */
+.settings-notice {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  background: rgba(255, 176, 32, 0.1);
+  border: 1px solid rgba(255, 176, 32, 0.3);
+  color: #ffb020;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+/* Visually hidden but FOCUSABLE. `display: none` on a file input removes it
+   from the tab order entirely, which is how the logo picker ended up with no
+   keyboard path. Dan 2026-08-25. */
+.visually-hidden-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }

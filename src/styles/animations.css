@@ -775,3 +775,24 @@
     opacity: 1;
   }
 }
+
+/* NOTIFICATIONS SPINNER (2026-08-25)
+ *
+ * This lived in a JSX <style> tag inside NotificationsPage, which had two
+ * problems. React re-inserted the same rule into the document on every mount,
+ * and inlineAnimationsResolve could not see it at all - the guard reads
+ * stylesheets, so a keyframes defined in a template string is indistinguishable
+ * from one that does not exist. It flagged ca-notif-spin as unreachable and
+ * blocked the PR.
+ *
+ * It belongs HERE and not in NotificationsPage.css, which is orphaned: nothing
+ * imports it, because that page became a thin iframe wrapper. Moving the rule
+ * there would have satisfied the guard and stopped the spinner turning - a
+ * green check over a broken animation, which is the failure this repo keeps
+ * paying for. animations.css is loaded by main.tsx, so the rule is reachable
+ * wherever the spinner is. */
+@keyframes ca-notif-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

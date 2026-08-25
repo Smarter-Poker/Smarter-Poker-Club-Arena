@@ -628,6 +628,13 @@ const COL_ACTIONS: ColumnDef = {
     }
 
     const registered = ctx.registeredIds.has(e.id);
+
+    /* A tournament past late registration is still worth opening — Dan
+       2026-08-24: "people can click and watch and see the events finish up."
+       It cannot be entered, so offering Register would be a button that only
+       ever fails. Watch says what the tap actually does. */
+    const closedToEntry = e.status === 'running' || e.status === 'completed';
+
     return (
       <span className="lt-actions">
         {ctx.onViewTable && (
@@ -635,13 +642,18 @@ const COL_ACTIONS: ColumnDef = {
             Details
           </button>
         )}
-        {ctx.onRegister && (
+        {ctx.onRegister && !closedToEntry && (
           <button
             type="button"
             className={`lt-act ${registered ? 'lt-act--done' : 'lt-act--primary'}`}
             onClick={stop(registered ? ctx.onViewTable : ctx.onRegister)}
           >
             {registered ? 'Registered' : 'Register'}
+          </button>
+        )}
+        {closedToEntry && ctx.onViewTable && (
+          <button type="button" className="lt-act lt-act--primary" onClick={stop(ctx.onViewTable)}>
+            {registered ? 'Return To Game' : 'Watch'}
           </button>
         )}
       </span>

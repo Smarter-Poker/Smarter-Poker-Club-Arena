@@ -215,18 +215,43 @@ interface TournamentSummary {
   best_finish: number | null;
   itm_percent: number;
   total_buyins: number;
+  /** Placement prizes PLUS bounty earnings. Unchanged meaning. */
   total_winnings: number;
+  /** Placement prizes only (Dan section 37). */
+  total_prizes: number;
+  /** Every bounty collected, mystery and flat alike. */
+  total_bounty_winnings: number;
+  /** Knockouts that paid. */
+  total_bounties: number;
   net_profit: number;
   roi: number;
 }
 
+/**
+ * One past event (Dan section 45).
+ *
+ * `prize` is the PLACEMENT prize only and `total_won` is prize + bounties. Until
+ * 2026-08-25 the RPC returned a single `prize` field that was already the sum,
+ * which made a mystery bounty result unreadable: a min-cash plus a 5,000 chest
+ * reported "prize 5,040" and nothing could get the split back. See
+ * supabase/migrations/20260825600000_player_history_splits_prize_from_bounty.sql.
+ */
 interface RecentTournament {
+  tournament_id: string | null;
   name: string;
   start_time: string | null;
   variant: string | null;
+  is_mystery_bounty: boolean;
   finish_rank: number | null;
   status: string | null;
+  /** Placement prize only. */
   prize: number;
+  /** Bounty earnings. */
+  bounty_winnings: number;
+  /** Knockouts that paid. */
+  bounties: number;
+  /** prize + bounty_winnings. */
+  total_won: number;
   buyin: number;
 }
 
@@ -340,6 +365,9 @@ const EMPTY_FULL: FullStats = {
     itm_percent: 0,
     total_buyins: 0,
     total_winnings: 0,
+    total_prizes: 0,
+    total_bounty_winnings: 0,
+    total_bounties: 0,
     net_profit: 0,
     roi: 0,
   },
@@ -480,16 +508,27 @@ function normalizeFull(data: any): FullStats {
       itm_percent: num(t.itm_percent),
       total_buyins: num(t.total_buyins),
       total_winnings: num(t.total_winnings),
+      total_prizes: num(t.total_prizes),
+      total_bounty_winnings: num(t.total_bounty_winnings),
+      total_bounties: num(t.total_bounties),
       net_profit: num(t.net_profit),
       roi: num(t.roi),
     },
     recent_tournaments: arr(data?.recent_tournaments).map((x) => ({
+      tournament_id: typeof x?.tournament_id === 'string' ? x.tournament_id : null,
       name: str(x?.name, 'Tournament'),
       start_time: x?.start_time ?? null,
       variant: x?.variant ?? null,
+      is_mystery_bounty: x?.is_mystery_bounty === true,
       finish_rank: typeof x?.finish_rank === 'number' ? x.finish_rank : null,
       status: x?.status ?? null,
       prize: num(x?.prize),
+      bounty_winnings: num(x?.bounty_winnings),
+      bounties: num(x?.bounties),
+      /* An older cached payload has no total_won and its `prize` was already
+         the sum. Falling back to `prize` keeps such a row's net figure right
+         rather than reporting a bounty-heavy result as a loss. */
+      total_won: x?.total_won == null ? num(x?.prize) : num(x?.total_won),
       buyin: num(x?.buyin),
     })),
   };
@@ -1306,6 +1345,12 @@ export default function PlayerStatsPage() {
         tournament_best_finish: tourn.best_finish ?? '',
         tournament_total_buyins: tourn.total_buyins,
         tournament_total_winnings: tourn.total_winnings,
+        /* Section 37: the export carries the halves as well as the sum, so a
+           spreadsheet can separate placement money from bounty money without
+           re-deriving one from the other. */
+        tournament_total_prizes: tourn.total_prizes,
+        tournament_total_bounty_winnings: tourn.total_bounty_winnings,
+        tournament_total_bounties: tourn.total_bounties,
         tournament_net_profit: tourn.net_profit,
         itm_percent: tourn.itm_percent,
         roi: tourn.roi,
@@ -1925,17 +1970,44 @@ export default function PlayerStatsPage() {
                                 })
                               : '-'}
                             {t.variant ? ` · ${t.variant.toUpperCase()}` : ''}
+                            {t.is_mystery_bounty ? ' · MYSTERY BOUNTY' : ''}
                           </span>
                         </div>
                         <div className="tournament-item-result">
                           <span className="tournament-item-rank">
                             {t.finish_rank ? `#${t.finish_rank}` : t.status || '-'}
                           </span>
+                          {/* Dan section 45: Finish / Prize / Bounties / Bounty
+                              Earnings / Total Won. The net below is
+                              total_won - buyin, which is the same number this
+                              line always showed - the old `prize` field WAS
+                              prize + bounty. What changed is that the two
+                              halves are now visible instead of merged. */}
                           <span
-                            className={`tournament-item-net ${num(t.prize) - num(t.buyin) >= 0 ? 'positive' : 'negative'}`}
+                            style={{
+                              fontSize: 10,
+                              color: '#94a3b8',
+                              display: 'block',
+                              marginTop: 2,
+                            }}
                           >
-                            {num(t.prize) - num(t.buyin) >= 0 ? '+' : ''}
-                            {(num(t.prize) - num(t.buyin)).toLocaleString()}
+                            Prize {num(t.prize).toLocaleString()}
+                            {num(t.bounty_winnings) > 0 && (
+                              <>
+                                {' '}
+                                / {num(t.bounties).toLocaleString()} KO
+                                {num(t.bounties) === 1 ? '' : 's'}{' '}
+                                {num(t.bounty_winnings).toLocaleString()}
+                              </>
+                            )}
+                            {' / Total '}
+                            {num(t.total_won).toLocaleString()}
+                          </span>
+                          <span
+                            className={`tournament-item-net ${num(t.total_won) - num(t.buyin) >= 0 ? 'positive' : 'negative'}`}
+                          >
+                            {num(t.total_won) - num(t.buyin) >= 0 ? '+' : ''}
+                            {(num(t.total_won) - num(t.buyin)).toLocaleString()}
                           </span>
                         </div>
                       </div>

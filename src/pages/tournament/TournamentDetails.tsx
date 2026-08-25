@@ -27,6 +27,13 @@ import { reportError } from '../../utils/errorReporter';
 import { spinMultiplierLabel } from '../../utils/spinReveal';
 import { formatBuyIn, money } from '../../utils/buyIn';
 import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
+import MysteryBountyPanel from '../../components/tournament/MysteryBountyPanel';
+import { useMysteryBounty } from '../../hooks/useMysteryBounty';
+import {
+  activationStatusLine,
+  formatCents,
+  topBountyCents,
+} from '../../services/MysteryBountyService';
 
 type TabId =
   | 'detail'
@@ -36,7 +43,8 @@ type TabId =
   | 'ranking'
   | 'unions'
   | 'tables'
-  | 'rewards';
+  | 'rewards'
+  | 'mystery';
 
 interface TournamentEntry {
   id: string;
@@ -116,6 +124,17 @@ export default function TournamentDetails({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lateRegTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [visibleEntries, setVisibleEntries] = useState<Set<string>>(new Set());
+
+  /**
+   * MYSTERY BOUNTY (sections 10, 31 to 36, 67, 68, 73).
+   *
+   * One hook for the whole page: the Detail tab advertises the top bounty and
+   * the activation status off it, and the Mystery tab renders the three
+   * sections from the same fetch. `enabled` is false for every other format, so
+   * a freezeout makes no RPC calls at all.
+   */
+  const isMysteryBountyEvent = Boolean((tournament as any)?.is_mystery_bounty);
+  const mysteryBounty = useMysteryBounty(tournamentId ?? null, isMysteryBountyEvent);
 
   useEffect(() => {
     let isMounted = true;
@@ -831,6 +850,9 @@ export default function TournamentDetails({
     { id: 'unions', label: 'Unions' },
     { id: 'tables', label: 'Tables' },
     { id: 'rewards', label: 'Rewards' },
+    /* Only a mystery bounty event gets the tab. Adding it unconditionally would
+       give every freezeout a tab that says "No Mystery Bounties Were Drawn". */
+    ...(isMysteryBountyEvent ? [{ id: 'mystery' as TabId, label: 'Mystery' }] : []),
   ];
 
   /**
@@ -1383,17 +1405,56 @@ export default function TournamentDetails({
                     {money((tournament as any).bounty_amount || 0)} Chips Per Knockout
                     {(tournament as any).is_pko &&
                       ' (Progressive: 50% to knocker, 50% added to bounty)'}
-                    {/* MYSTERY RANGE 2026-08-21: these columns hold CURRENCY,
-                        not multipliers — rendering them with an "x" told a
-                        player a $6 head could pay "60x". They now carry the
-                        true payout range the draw table produces. */}
-                    {(tournament as any).is_mystery_bounty &&
-                      (tournament as any).mystery_bounty_min != null &&
-                      ` (Mystery: ${money((tournament as any).mystery_bounty_min)} - ${money(
-                        (tournament as any).mystery_bounty_max
-                      )} Per Knockout)`}
                   </span>
                 </div>
+              )}
+              {/* MYSTERY BOUNTY (sections 10 and 73).
+                  `mystery_bounty_min` / `mystery_bounty_max` used to be printed
+                  here. They were a per-head advertised RANGE drawn at
+                  registration time, and since the chest inventory shipped the
+                  engine does not read them at all: the draw now happens once,
+                  when the mystery phase opens, and produces a real ladder. So
+                  the advertisement is the TOP CHEST THAT EXISTS, and the row
+                  underneath says when the chests open. */}
+              {isMysteryBountyEvent && (
+                <>
+                  <div className="info-row">
+                    <span className="info-label">Top Mystery Bounty:</span>
+                    <span className="info-value" style={{ color: '#6fdcff', fontWeight: 700 }}>
+                      {topBountyCents(mysteryBounty.inventory) > 0
+                        ? `${formatCents(topBountyCents(mysteryBounty.inventory))} Chips`
+                        : 'Drawn When The Mystery Phase Opens'}
+                    </span>
+                  </div>
+                  <div className="info-row">
+                    <span className="info-label">Mystery Status:</span>
+                    <span className="info-value">
+                      {activationStatusLine(mysteryBounty.inventory)}
+                    </span>
+                  </div>
+                  <div className="info-row">
+                    <span className="info-label">Full Ladder:</span>
+                    <span className="info-value">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('mystery')}
+                        style={{
+                          background: 'none',
+                          border: '1px solid rgba(111,220,255,0.4)',
+                          color: '#6fdcff',
+                          borderRadius: 6,
+                          padding: '6px 10px',
+                          minHeight: 32,
+                          cursor: 'pointer',
+                          touchAction: 'manipulation',
+                          font: 'inherit',
+                        }}
+                      >
+                        Open The Mystery Tab
+                      </button>
+                    </span>
+                  </div>
+                </>
               )}
               <div className="info-row">
                 <span className="info-label">Blind Structure:</span>
@@ -1720,6 +1781,19 @@ export default function TournamentDetails({
               <p>Chip Counts Appear Once The Tournament Is Under Way.</p>
             </div>
           ))}
+
+        {/* MYSTERY BOUNTY TAB (sections 31 to 36, 41, 47, 67, 68, 73). Three
+            sections, one panel, fed by the page-level hook so the Detail tab's
+            advertisement and this ladder can never disagree. */}
+        {activeTab === 'mystery' && isMysteryBountyEvent && (
+          <MysteryBountyPanel
+            tournamentId={tournament.id}
+            isMysteryBounty
+            data={mysteryBounty}
+            currentUserId={user?.id ?? null}
+            isCompleted={tournament.status === 'COMPLETED'}
+          />
+        )}
 
         {activeTab === 'rewards' &&
           (() => {

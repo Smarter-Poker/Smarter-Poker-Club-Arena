@@ -64,6 +64,25 @@ export interface TournamentResult {
   rebuys: number;
   addOns: number;
   /**
+   * MYSTERY BOUNTY (Dan sections 43 and 44), the chest half broken out.
+   *
+   * `bountyWinnings` above is every bounty this player collected, which in a
+   * mystery event includes the flat bounties paid before the chests opened.
+   * These three say how much of it came out of a chest, how many chests, and
+   * the biggest single one - the number a player actually tells people about.
+   *
+   * IN CENTS, like everything the mystery engine emits, and divided by 100
+   * exactly once at the render boundary. `bountyWinnings` is in whole chips
+   * because it comes off `tournament_players.bounty_winnings`, which is a
+   * numeric column; mixing the two units silently would report a 5,000 chest
+   * as 500,000.
+   *
+   * Optional: an older payload, or any non-mystery event, simply has none.
+   */
+  mysteryBounties?: number;
+  mysteryBountyCents?: number;
+  largestMysteryBountyCents?: number;
+  /**
    * Is this a Spin?
    *
    * Only the card's BRANDING turns on this — a Spin is still a tournament and

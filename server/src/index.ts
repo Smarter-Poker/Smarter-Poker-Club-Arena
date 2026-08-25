@@ -100,6 +100,26 @@ const PORT = parseInt(process.env.PORT || '8080', 10);
 const MEMBER_FEE_ROLLUP_ENABLED = process.env.MEMBER_FEE_ROLLUP_ENABLED !== 'false';
 const ROLLUP_BATCH_HANDS = 250;
 const ROLLUP_BACKFILL_MS = 2_000;
+/**
+ * DUTY CYCLE CAP (2026-08-25). The backfill must never saturate a core.
+ *
+ * Measured on production this day: a 250-hand batch had drifted from the 5.7s
+ * recorded on 2026-08-23 to 15.3s, while the loop still slept only
+ * ROLLUP_BACKFILL_MS (2s) between calls. That is a ~88% duty cycle - on a
+ * 2 vCPU instance this ONE reporting rollup was consuming roughly half the
+ * platform's total query capacity, and pg_stat_statements confirmed it at
+ * 13.7% of all database time with 565,894 hands still to go (about 11 more
+ * hours at that rate).
+ *
+ * A fixed longer delay would be wrong in the other direction: it would waste
+ * genuine idle capacity when the database is quiet. Instead we sleep for at
+ * least as long as the batch just took, so the loop self-tunes to a <=50% duty
+ * cycle - fast when the database is fast, politely backing off exactly when it
+ * is slow, which is precisely when live play needs the core. Backfill wall
+ * time roughly doubles; nobody is watching a reporting rollup, and players are
+ * watching the table.
+ */
+const ROLLUP_MAX_DUTY_CYCLE = 0.5;
 const ROLLUP_STEADY_MS = 30_000;
 const ROLLUP_RETRY_MS = 60_000;
 
@@ -108,9 +128,11 @@ let rollupStopped = false;
 
 /** Run one batch. Returns the delay before the next run. Throws on RPC failure. */
 async function refreshMemberFeeRollupOnce(): Promise<number> {
+  const startedAt = Date.now();
   const { data, error } = await supabase.rpc('fn_refresh_member_fee_rollup', {
     p_batch_hands: ROLLUP_BATCH_HANDS,
   });
+  const elapsedMs = Date.now() - startedAt;
   if (error) throw new Error(error.message);
   const r = (data ?? {}) as { processed?: number; rollup_rows?: number; caught_up?: boolean };
   if ((r.processed ?? 0) > 0) {
@@ -119,7 +141,13 @@ async function refreshMemberFeeRollupOnce(): Promise<number> {
         (r.caught_up ? ' - caught up' : '')
     );
   }
-  return r.caught_up === false ? ROLLUP_BACKFILL_MS : ROLLUP_STEADY_MS;
+  if (r.caught_up !== false) return ROLLUP_STEADY_MS;
+
+  // Backfilling. Yield for at least as long as the batch itself ran, so the
+  // loop can never exceed ROLLUP_MAX_DUTY_CYCLE of one core. Still floored at
+  // ROLLUP_BACKFILL_MS so a very fast batch does not become a busy loop.
+  const yieldMs = Math.round(elapsedMs * ((1 - ROLLUP_MAX_DUTY_CYCLE) / ROLLUP_MAX_DUTY_CYCLE));
+  return Math.max(ROLLUP_BACKFILL_MS, yieldMs);
 }
 
 function scheduleMemberFeeRollup(delayMs: number): void {

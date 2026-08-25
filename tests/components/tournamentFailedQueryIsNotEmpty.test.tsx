@@ -92,7 +92,6 @@ vi.mock('react-router-dom', async (importOriginal) => {
 });
 
 import TournamentStandings from '@/components/tournament/TournamentStandings';
-import { LiveChipCounts } from '@/components/tournament/LiveChipCounts';
 import TournamentInfoPanel from '@/components/tournament/TournamentInfoPanel';
 import TournamentLobbyCard, {
   isStartingSoon,
@@ -146,25 +145,19 @@ describe('TournamentStandings — failure and emptiness are different sentences'
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-describe('LiveChipCounts — "No Players Found" is a claim about the tournament', () => {
-  it('says the feed stalled instead of claiming the field is empty', async () => {
-    setResult('tournament_players', DB_DOWN);
-    render(<LiveChipCounts tournamentId="t1" currentBigBlind={100} />);
-
-    await waitFor(() => expect(screen.getByText(/Not Updating/i)).toBeTruthy());
-    expect(screen.queryByText(/No Players Found/i)).toBeNull();
-    expect(reportErrorMock).toHaveBeenCalled();
-  });
-
-  it('still says "No Players Found" when the query really returns nothing', async () => {
-    setResult('tournament_players', NO_ROWS);
-    render(<LiveChipCounts tournamentId="t1" currentBigBlind={100} />);
-
-    await waitFor(() => expect(screen.getByText(/No Players Found/i)).toBeTruthy());
-    expect(screen.queryByText(/Not Updating/i)).toBeNull();
-  });
-});
+/* ═══════════════════════════════════════════════════════════════════════════
+ * LiveChipCounts had a pair of cases here, pinning the same distinction: a
+ * failed feed said "Not Updating", an empty one said "No Players Found". The
+ * component was deleted on 2026-08-25 when the tournament lobby was rebuilt —
+ * RankingTab replaced it, and those two cases moved with the behaviour rather
+ * than being dropped.
+ *
+ * They are NOT re-pointed at RankingTab here, because RankingTab renders from
+ * the page's `entries` prop and issues no query of its own, so there is no
+ * failed query for it to distinguish. The claim this file exists to prevent is
+ * made where the fetch is: EntriesTab, whose own supabase call and its
+ * props-fallback are covered in that tab's spec.
+ * ═══════════════════════════════════════════════════════════════════════════ */
 
 // ═══════════════════════════════════════════════════════════════════════════
 describe('TournamentInfoPanel — the stat masthead must not invent zeros', () => {

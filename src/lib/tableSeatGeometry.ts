@@ -28,14 +28,14 @@ export const SEAT_POSITIONS_6MAX = [
 
 export const SEAT_POSITIONS_9MAX = [
   { x: 50, y: 100 }, // Seat 1 (Hero, bottom-center; Dan 2026-08-22: avatar centre ON the scaler's bottom edge so it barely overlaps the table)
-  { x: 19, y: 82.5 }, // Seat 2 (lower-left, bottom cap)
+  { x: 10.5, y: 82.5 }, // Seat 2 (lower-left, bottom cap)
   { x: 10.5, y: 58 }, // Seat 3 (left-low, on rail side)
   { x: 10.5, y: 36 }, // Seat 4 (left-high, on rail side)
-  { x: 27, y: 13 }, // Seat 5 (top-left, top cap)
-  { x: 73, y: 13 }, // Seat 6 (top-right, top cap)
+  { x: 27, y: 8.5 }, // Seat 5 (top-left, top cap)
+  { x: 73, y: 8.5 }, // Seat 6 (top-right, top cap)
   { x: 89.5, y: 36 }, // Seat 7 (right-high, on rail side)
   { x: 89.5, y: 58 }, // Seat 8 (right-low, on rail side)
-  { x: 81, y: 82.5 }, // Seat 9 (lower-right, bottom cap)
+  { x: 89.5, y: 82.5 }, // Seat 9 (lower-right, bottom cap)
 ];
 
 /* Dan 2026-08-17 — PER-SIZE SEAT RINGS.
@@ -62,8 +62,8 @@ export const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
   ],
   3: [
     { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
-    { x: 20.5, y: 14 }, // upper-left diagonal, on rail cap circle
-    { x: 79.5, y: 14 }, // upper-right diagonal
+    { x: 20.5, y: 8.5 }, // upper-left diagonal, on rail cap circle
+    { x: 79.5, y: 8.5 }, // upper-right diagonal
   ],
   4: [
     { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
@@ -74,8 +74,8 @@ export const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
   5: [
     { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
     { x: 10.5, y: 55 }, // left-low
-    { x: 20.5, y: 14 }, // upper-left diagonal
-    { x: 79.5, y: 14 }, // upper-right diagonal
+    { x: 20.5, y: 8.5 }, // upper-left diagonal
+    { x: 79.5, y: 8.5 }, // upper-right diagonal
     { x: 89.5, y: 55 }, // right-low
   ],
   6: SEAT_POSITIONS_6MAX,
@@ -83,20 +83,20 @@ export const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
     { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
     { x: 10.5, y: 62 }, // left-low
     { x: 10.5, y: 33 }, // left-high
-    { x: 27, y: 13 }, // top-left diagonal
-    { x: 73, y: 13 }, // top-right diagonal
+    { x: 27, y: 8.5 }, // top-left diagonal
+    { x: 73, y: 8.5 }, // top-right diagonal
     { x: 89.5, y: 33 }, // right-high
     { x: 89.5, y: 62 }, // right-low
   ],
   8: [
     { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
-    { x: 19, y: 82.5 }, // lower-left bottom cap
+    { x: 10.5, y: 82.5 }, // lower-left bottom cap
     { x: 10.5, y: 52 }, // left-low
     { x: 10.5, y: 28 }, // left-high
     { x: 50, y: 6 }, // top-center, box on the rail
     { x: 89.5, y: 28 }, // right-high
     { x: 89.5, y: 52 }, // right-low
-    { x: 81, y: 82.5 }, // lower-right bottom cap
+    { x: 89.5, y: 82.5 }, // lower-right bottom cap
   ],
   9: SEAT_POSITIONS_9MAX,
 };

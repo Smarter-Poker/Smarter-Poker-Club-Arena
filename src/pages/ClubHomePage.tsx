@@ -2934,6 +2934,18 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               registeredIds: registeredTournamentIds,
               favoriteIds: favoriteTableIds,
               onToggleFavorite: currentUserId ? handleToggleFavorite : undefined,
+              /* The card's buttons run the SAME flows the game-lobby panel
+                 runs — registerMtt for a tournament, the table navigation for
+                 a cash seat, the panel itself for a look first. Nothing new
+                 is invented at the card level, so there is one registration
+                 path and one join path in this page, not three. */
+              onRegister: (e) => {
+                const row = filteredTournaments.find((t) => t.id === e.id);
+                if (row) handleRegister(row);
+                else openEntry(e);
+              },
+              onJoinTable: (e) => handleJoinTable(e.id),
+              onViewTable: (e) => openEntry(e),
             }}
           />
         )}

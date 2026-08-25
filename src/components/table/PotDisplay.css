@@ -478,17 +478,18 @@
 /* Groups butt into each other with the same slice as the chips inside them, so
    two denominations meet with no seam and the pile reads as one tower. */
 .pot-display__pile-stack + .pot-display__pile-stack {
-  margin-top: calc(var(--cp-chip-slice, 6px) - var(--cp-chip-size, 24px));
+  margin-top: calc(-1 * var(--cp-chip-size, 24px));
 }
 
-/* The collected pot: floats just above the POT pill, centred on it, and out of
+/* The collected pot: floats just below the POT pill, centred on it, and out of
    flow so the pill itself does not move. */
 .pot-display__pile--pot {
   position: absolute;
-  bottom: 100%;
+  top: 100%;
   left: 50%;
   transform: translateX(-50%);
-  margin-bottom: 5px;
+  margin-top: 5px;
+  z-index: 1;
 }
 
 /* The live-bets pill: inline, one pill-height of room, so smaller chips. */
@@ -529,7 +530,7 @@
      derived and the two can never drift apart. */
   width: var(--cp-chip-size, 24px);
   height: var(--cp-chip-size, 24px);
-  margin-top: calc(var(--cp-chip-slice, 6px) - var(--cp-chip-size, 24px));
+  margin-top: calc(-1 * var(--cp-chip-size, 24px));
   border-radius: 50%;
   box-sizing: border-box;
   border: 1.5px solid rgba(255, 255, 255, 0.4);
@@ -649,6 +650,9 @@
 
 .pot-display__side-pots {
   display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
   margin-top: 4px;
 }

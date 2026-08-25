@@ -7,6 +7,134 @@
 
 ---
 
+## Cowork session 2026-08-25 (part 2) — ANON COULD READ EVERY MEMBER'S WALLET
+
+### The finding that mattered more than any of the CPU work
+
+Supabase's own security advisor reported 104 SECURITY DEFINER functions
+executable by `anon`. Chasing it down found a live, unauthenticated data
+exposure. Proven in production BEFORE the fix, running as the anon role:
+
+    set role anon;
+    select count(*), max(chip_balance)
+      from public.ca_club_members_overview('<any club id>');
+    -> 584 rows, max chip_balance 442967.95
+
+`ca_club_member_detail` is worse: it takes an ARBITRARY `p_user_id` and returns
+that member's `chip_balance`, `player_wallet`, `agent_wallet`, `promo_wallet`,
+upline, downline and `last_login`. A club id and a user id are the only inputs,
+and both appear in ordinary application traffic. The anon key ships inside the
+client bundle, so `POST /rest/v1/rpc/<name>` from anywhere on the internet
+reached all of it. None of these functions check `auth.uid()`, and being
+SECURITY DEFINER they bypass RLS by design.
+
+### The trap inside the fix
+
+The first `REVOKE EXECUTE ... FROM anon` **silently did nothing** for 7 of the
+12 functions. Postgres grants EXECUTE to PUBLIC on every new function, so
+`anon` mostly held the privilege *through PUBLIC*, not through a grant of its
+own — `has_function_privilege('anon', ...)` stayed `true` after the revoke.
+The correct removal is `REVOKE FROM PUBLIC` and then an explicit grant back.
+Anyone doing this again must verify with `has_function_privilege`, not assume
+the REVOKE worked.
+
+30 functions were locked down across two migrations. `authenticated` and
+`service_role` keep EXECUTE throughout, so no real caller changed.
+
+### The three gates checked before revoking anything
+
+Breaking these breaks logged-out reads rather than merely tightening them:
+
+1. **RLS policies are evaluated as the INVOKING role.** Revoking a function a
+   policy calls makes that policy ERROR for anon. Every candidate was checked
+   against `pg_policy` qual/withcheck. The seven that ARE used in policies —
+   `fn_is_any_union_overseer` (16 policies), `fn_union_oversees_club` (16),
+   `fn_home_is_group_staff` (15), `fn_is_union_overseer` (3),
+   `fn_can_create_games` (1), `fn_has_club_role` (1), `fn_is_agent_of_player`
+   (1) — deliberately KEEP anon EXECUTE.
+2. **Views.** Checked against `pg_get_viewdef` for every view and matview:
+   all zero except `fn_spin_reserve_owner` (2 views), also excluded.
+3. **Volatility.** All STABLE, so this is information disclosure, not writes.
+
+Verified after: anon gets 42501 on `ca_club_members_overview`; anon can still
+read clubs, tables, tournaments, unions and union_clubs with no policy errors.
+
+### sp_prune_hand_history: a comment that lied
+
+Its own comment says *"Only cast what IS a uuid. A malformed id yields NULL...
+the same fail-safe as an unknown account."* The code used `length(...) = 36`,
+which a 36-character non-UUID passes before throwing 22P02 on the cast. Rather
+than failing safe, one bad id would abort the whole prune batch and stop
+retention silently. Regex guard added behind the length pre-filter. Verified:
+2,500 rows deleted in 10.4s.
+
+---
+
+## Things deliberately NOT changed, with the evidence
+
+Recorded so the next agent does not "fix" them and break production.
+
+**Realtime is 26-29% of database time and there is no safe cut.** All three
+heavy WAL producers are genuinely subscribed:
+- `table_hole_cards` (90k ins + 88k del / 35 min) is the SECURE HOLE-CARD
+  DELIVERY PATH — `TablePage.tsx:4079` subscribes to it and the engine
+  comments confirm it. Removing it from the publication breaks dealing.
+- `tournament_players` (183k updates) has SIX subscriber components
+  (TournamentClock, TournamentStandings, TournamentRegistration,
+  TournamentDetails, TournamentResultsPage, TablePage bounties).
+- `tournaments` must KEEP `REPLICA IDENTITY FULL`: `UnionDetailPage` filters
+  `union_id=eq.X` server-side and reads `club_id` from `payload.old` on
+  DELETE. With DEFAULT identity `payload.old` carries only the PK and union
+  tournament updates silently stop working.
+The ~90 published tables with zero writes cost nothing — trimming the
+publication is not the win it looks like.
+
+**No hand_history index is droppable.** Over ~1h45m of production traffic
+`idx_hand_history_players_gin` took 3 scans and
+`idx_hand_history_tournament_created` took 1 — but the GIN index is what
+`ca_player_hands` and `ca_player_stats_full` use for `players @>` containment.
+Dropping it turns those into sequential scans of an 8.7 GB table.
+
+**The planner is NOT blind.** `pg_stat_user_tables.n_live_tup` showed
+`solved_spots_gold` at 2,319 rows against 8,659,016 actual, and 11 large
+tables read "NEVER ANALYZED". That is a post-restart stats-collector artifact.
+The planner uses `pg_class.reltuples`, which reads 8,524,830 — accurate to
+1.5%. Do not "fix" this.
+
+**Two SECURITY DEFINER views left alone.** `trivia_tournaments_public` is
+named public and exposes nothing sensitive; `v_spin_tier_availability` exposes
+one boolean. Converting them to security_invoker would break anon access for
+no real gain.
+
+---
+
+## The best remaining optimisation, with proof
+
+`club_members` SELECT runs at **295 ms mean** on a **1,500-row / 824 kB**
+table — 2.5% of all database time, and it is why club roster pages feel slow.
+
+Measured directly on the same query and club:
+
+| | time | rows |
+|---|---|---|
+| as `postgres`, RLS bypassed | **4.19 ms** | 584 |
+| as `authenticated`, RLS enforced | **130.87 ms** | 0 |
+
+**31x**, and the 130 ms case is the CHEAPEST path (`auth.uid()` null, zero rows
+returned). Cause: four separate permissive SELECT policies, three of which call
+SECURITY DEFINER helpers **per row** on columns that vary per row —
+`is_club_admin(club_id)`, `fn_is_agent_of_player(..., user_id)`,
+`fn_union_oversees_club(club_id, ...)`. None can be hoisted to an InitPlan the
+way `(SELECT auth.uid())` is.
+
+The fix is to consolidate the four SELECT policies into one whose OR branches
+are ordered cheapest-first. That is a security-critical rewrite and needs
+explicit per-role verification (member, club admin, agent, union overseer,
+service_role) — it was NOT attempted here rather than risk exposing rosters,
+which is the exact bug class this same session just closed.
+
+---
+
 ## Cowork session 2026-08-25 — THE FEE ROLLUP WAS SLOW FOR A REASON NOBODY HAD CHECKED
 
 ### What was claimed vs what production actually said

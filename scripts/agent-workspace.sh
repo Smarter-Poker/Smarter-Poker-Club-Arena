@@ -161,33 +161,65 @@ bash "$ROOT/scripts/check-unpushed-work.sh" --quiet 2>&1 | sed "s/^/# /" >&2 || 
 # when the directory is already there, so the steady-state cost is one `[ -e ]`
 # per package root.
 provision_node_modules() {
-  # $1 = relative package dir ("" for the repo root)
+  # $1 = package dir relative to the repo root ("" for the root itself)
   local rel="$1"
   local src="$ROOT${rel:+/$rel}"
   local dst="$DIR${rel:+/$rel}"
   local label="${rel:-.}/node_modules"
 
-  [ -d "$dst" ] || return 0                 # package does not exist in this tree
-  [ -d "$src/node_modules" ] || return 0    # nothing to clone from
-  [ -e "$dst/node_modules" ] && return 0    # already provisioned
+  [ -d "$dst" ] || return 0
+  # A directory is not a package. Without this, a branch where server/ exists
+  # but carries no manifest still gets ~700 packages dropped into it.
+  [ -f "$dst/package.json" ] || return 0
 
-  if cp -Rc "$src/node_modules" "$dst/node_modules" 2>/dev/null; then
-    echo "# $label: cloned from the main clone (copy-on-write, no extra disk)" >&2
-  elif cp -R "$src/node_modules" "$dst/node_modules" 2>/dev/null; then
+  if [ ! -d "$src/node_modules" ]; then
+    # Silence here is how the server/ hole survived: nothing was provisioned
+    # and nothing said so.
+    echo "# $label: the main clone has none either - run 'npm ci' in ${rel:-the clone root}" >&2
+    return 0
+  fi
+
+  [ -e "$dst/node_modules" ] && return 0
+
+  # ATOMIC, because `[ -e ]` above is a presence test and not a completeness
+  # test. Copying straight to the destination means any interruption - a killed
+  # session, a full disk, a TCC prompt - leaves a partial tree that every later
+  # run then treats as provisioned forever. That is the exact hole this block
+  # was written to close, and the first version of it reintroduced the hole one
+  # line below the fix. Build beside the target, then rename.
+  #
+  # It also means we never copy ONTO an existing directory, which is what
+  # produces node_modules/node_modules and poisons a tree permanently.
+  local tmp="$dst/.node_modules-provision.$$"
+  rm -rf "$dst"/.node_modules-provision.* 2>/dev/null || true
+
+  if cp -Rc "$src/node_modules" "$tmp" 2>/dev/null; then
+    mv "$tmp" "$dst/node_modules" && echo "# $label: cloned from the main clone (copy-on-write, no extra disk)" >&2
+  elif cp -R "$src/node_modules" "$tmp" 2>/dev/null; then
     # Not APFS. Slower and it really does use the disk, but still ISOLATED,
     # which is the property that matters.
-    echo "# $label: copied from the main clone (no copy-on-write here)" >&2
+    mv "$tmp" "$dst/node_modules" && echo "# $label: copied from the main clone (no copy-on-write here)" >&2
   else
+    rm -rf "$tmp" 2>/dev/null || true
     echo "# $label: could not be provisioned - run 'npm ci' in ${rel:-the tree root}" >&2
   fi
 }
 
-# The repo root first, then every nested package that carries its own manifest.
+# EVERY package root, discovered rather than listed. The first version of this
+# was `for _pkg in server`, under a comment promising "every nested package that
+# carries its own manifest" - so the next package added would have been silently
+# unprovisioned, which is the same failure one package later.
 provision_node_modules ""
-for _pkg in server; do
-  provision_node_modules "$_pkg"
-done
-unset _pkg
+while IFS= read -r _manifest; do
+  [ -n "$_manifest" ] || continue
+  provision_node_modules "${_manifest%/package.json}"
+done <<EOF_PKGS
+$(cd "$ROOT" 2>/dev/null && find . -name package.json \
+    -not -path '*/node_modules/*' -not -path './.git/*' \
+    -not -path './.cowork-trees/*' -not -path './.agent-trees/*' \
+    -mindepth 2 -maxdepth 3 2>/dev/null | sed 's|^\./||')
+EOF_PKGS
+unset _manifest
 
 echo "# worktree: $DIR" >&2
 echo "# branch:   $BRANCH  (from origin/main)" >&2

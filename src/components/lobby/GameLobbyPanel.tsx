@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import CasinoPlaque, { PlaqueSeats } from './CasinoPlaque';
 import type { LobbyEntry, LobbyTableRow, LobbyTournamentRow } from './lobbyEntries';
+import { tournamentBlinds, tournamentLevel } from './tournamentFigures';
 import { parseTableSettings } from './lobbyEntries';
 import { tournamentService } from '../../services/TournamentService';
 import { waitlistService, type WaitlistEntry } from '../../services/WaitlistService';
@@ -169,14 +170,24 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       return;
     }
     let cancelled = false;
-    supabase
-      .from('table_seats')
-      .select('seat_number, user_id')
-      .eq('table_id', entry.id)
-      .is('left_at', null)
-      .then(({ data, error }) => {
+    /* Awaited inside a try, not left as a bare `.then`. A Supabase builder is
+       a PromiseLike that REJECTS on a transport failure - it only resolves
+       with `{ error }` for query-level errors - and a PromiseLike has no
+       `.catch`, so there was nowhere to put the handler and a dropped
+       connection here surfaced as an unhandled rejection. The seat map is a
+       nice-to-have; failing to get it must not raise. */
+    void (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('table_seats')
+          .select('seat_number, user_id')
+          .eq('table_id', entry.id)
+          .is('left_at', null);
         if (!cancelled && !error && data) setSeatMap(data);
-      });
+      } catch {
+        /* transport failure - the panel simply shows no seat map */
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -301,9 +312,24 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   const ctaDisabled = cta.kind === 'disabled' || busy || (cta.needsAuth === true && !currentUserId);
 
   // ── Right zone of the plaque ──
+  /* The lobby row is the fallback for the two figures the table now prints
+     in columns of their own. When the detail fetch fails the panel used to
+     hide a Starting Stack the card behind it was still showing, and it never
+     showed Current Level at all - so opening a row could tell you LESS than
+     the row did. Both come off `entry.raw` when the fetched tournament has
+     nothing to add. */
+  const tRaw = entry.kind === 'cash' ? null : (entry.raw as LobbyTournamentRow);
+  const panelStartingChips = Number(tournament?.starting_chips ?? tRaw?.starting_chips ?? 0) || 0;
+  const panelLevel = tRaw ? tournamentLevel(tRaw) : 0;
+  const panelBlinds = tRaw ? tournamentBlinds(tRaw) : null;
+
   const cashRaw = isCash ? (entry.raw as LobbyTableRow) : null;
-  const minBuy = cashRaw ? cashRaw.min_buy_in || cashRaw.big_blind * 20 : 0;
-  const maxBuy = cashRaw ? cashRaw.max_buy_in || cashRaw.big_blind * 100 : 0;
+  /* `cashRaw.big_blind * 20` is NaN the moment big_blind is null, and
+     NaN.toLocaleString() renders the literal text "NaN" on the buy-in plaque
+     and in the Buy-In row. Coerce first, then fall back. */
+  const bigBlind = Number(cashRaw?.big_blind) || 0;
+  const minBuy = cashRaw ? Number(cashRaw.min_buy_in) || bigBlind * 20 : 0;
+  const maxBuy = cashRaw ? Number(cashRaw.max_buy_in) || bigBlind * 100 : 0;
 
   const joinZone = (
     <>
@@ -338,7 +364,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         )}
       </div>
       <PlaqueSeats players={entry.players} capacity={entry.capacity} />
-      {cta.link ? (
+      {cta.link && !busy ? (
         <Link
           className={`cplaque__cta${cta.kind !== 'primary' && cta.kind !== 'disabled' ? ` cplaque__cta--${cta.kind}` : ''}`}
           to={cta.link}
@@ -349,6 +375,10 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         <button
           type="button"
           className={`cplaque__cta${cta.kind !== 'primary' && cta.kind !== 'disabled' ? ` cplaque__cta--${cta.kind}` : ''}`}
+          /* When an action is in flight the link CTA renders as this button
+             instead, so "Return To Tournament" cannot be tapped a second time
+             mid-registration and shows the same One Moment state every other
+             CTA shows. */
           disabled={ctaDisabled}
           onClick={() => cta.run?.()}
         >
@@ -589,11 +619,23 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                           : 'When Full'}
                       </dd>
                     </div>
-                    {tournament && Number(tournament.starting_chips) > 0 && (
+                    {/* The lobby row already carries starting_chips, and the
+                        table now prints it in a column of its own - so when
+                        the detail fetch fails this panel was hiding a figure
+                        the card behind it is still showing. Fall back to the
+                        row, the way the note below promises. */}
+                    {panelStartingChips > 0 && (
                       <div>
                         <dt>Starting Stack</dt>
+                        <dd className="glp__mono">{panelStartingChips.toLocaleString()}</dd>
+                      </div>
+                    )}
+                    {panelLevel > 0 && (
+                      <div>
+                        <dt>Current Level</dt>
                         <dd className="glp__mono">
-                          {Number(tournament.starting_chips).toLocaleString()}
+                          {panelLevel}
+                          {panelBlinds ? ` (${panelBlinds})` : ''}
                         </dd>
                       </div>
                     )}

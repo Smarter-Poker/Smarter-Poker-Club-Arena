@@ -51,8 +51,12 @@ describe('the club lobby does not re-serialise its round trips', () => {
     const resolved = at('const resolvedId = clubData.id;');
     const unionStart = at('const unionRowPromise = supabase');
     const countStart = at('const liveMemberCountPromise = supabase');
-    // The membership batch is the first thing that used to block them.
-    const membershipAwait = at('const [memberResult, diamondWallet] = await Promise.all([');
+    /* The membership read is the first thing that used to block them. It was
+       a Promise.all of the club_members row AND a DiamondService balance;
+       the balance fed a `wallet` state nothing in the file ever read, so the
+       round trip is gone and this is a single awaited query now. What this
+       test pins is unchanged: both hoisted promises must be ISSUED before it. */
+    const membershipAwait = at('const memberResult = await supabase');
 
     expect(unionStart).toBeGreaterThan(resolved);
     expect(countStart).toBeGreaterThan(resolved);
@@ -79,8 +83,12 @@ describe('the club lobby does not re-serialise its round trips', () => {
     // union-wide count a few lines further down uses .in('club_id',
     // unionClubIds) and genuinely cannot be hoisted - it depends on a value
     // two round trips away - so it must not trip this.
+    /* Matched on the COUNT form specifically. A bare club_members read is not
+       the thing being guarded against - the viewer's own membership row is
+       one, is awaited inline on purpose, and cannot be hoisted because it
+       needs the authenticated user id. Only the head/count query is. */
     expect(
-      /await supabase\s*\n\s*\.from\('club_members'\)[\s\S]{0,240}?\.eq\('club_id', resolvedId\)/.test(
+      /await supabase\s*\n\s*\.from\('club_members'\)[\s\S]{0,240}?count: 'exact'[\s\S]{0,240}?\.eq\('club_id', resolvedId\)/.test(
         src
       ),
       'the standalone live member count is being queried inline inside loadClubData again'

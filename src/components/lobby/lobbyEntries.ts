@@ -17,6 +17,7 @@
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import { isInLateRegistration } from '../../utils/tournamentFilters';
 import { stakesLabel as stakesLabelFor } from '../../lib/bettingStructure';
+import { blindLevelMinutes, parseBlindStructure, tournamentLevel } from './tournamentFigures';
 
 // ─── Raw row shapes (subset the lobby queries actually select) ─────────────
 export interface LobbyTableRow {
@@ -520,10 +521,10 @@ export function formatClock(ms: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-interface BlindLevel {
-  level?: number;
-  durationMinutes?: number;
-}
+/* The local BlindLevel shadow that used to sit here declared only
+   `durationMinutes`, which is why both readers below silently ignored the
+   canonical `duration_minutes`. They read through tournamentFigures now,
+   which takes either spelling and is the only parser in the folder. */
 
 /**
  * When does late registration CLOSE, in ms epoch — or null when the row does
@@ -544,28 +545,20 @@ export function lateRegEndMs(t: LobbyTournamentRow): number | null {
   if (lateMins > 0 && Number.isFinite(begun)) candidates.push(begun + lateMins * 60000);
 
   const lateLevels = Number(t.late_reg_levels) || 0;
-  if (lateLevels > 0 && t.blind_structure) {
-    try {
-      const structure = JSON.parse(t.blind_structure) as BlindLevel[];
-      if (Array.isArray(structure)) {
-        const durationOf = (lvl: number): number => {
-          const row = structure.find((b) => Number(b.level) === lvl) || structure[lvl - 1];
-          const mins = Number(row?.durationMinutes);
-          return Number.isFinite(mins) && mins > 0 ? mins : 0;
-        };
-        const cur = Math.max(1, Number(t.current_level) || 1);
-        const levelBegun = new Date(t.level_started_at || t.started_at || '').getTime();
-        if (Number.isFinite(levelBegun) && cur <= lateLevels) {
-          // Rest of the current level, then every configured level through the
-          // last late-reg level. A level with no configured duration adds 0 —
-          // the estimate degrades toward "sooner", never invents time.
-          let end = levelBegun + durationOf(cur) * 60000;
-          for (let lvl = cur + 1; lvl <= lateLevels; lvl++) end += durationOf(lvl) * 60000;
-          candidates.push(end);
-        }
+  if (lateLevels > 0) {
+    const structure = parseBlindStructure(t.blind_structure);
+    if (structure) {
+      const cur = tournamentLevel(t);
+      const levelBegun = new Date(t.level_started_at || t.started_at || '').getTime();
+      if (Number.isFinite(levelBegun) && cur <= lateLevels) {
+        // Rest of the current level, then every configured level through the
+        // last late-reg level. A level with no configured duration adds 0 —
+        // the estimate degrades toward "sooner", never invents time.
+        let end = levelBegun + blindLevelMinutes(structure, cur) * 60000;
+        for (let lvl = cur + 1; lvl <= lateLevels; lvl++)
+          end += blindLevelMinutes(structure, lvl) * 60000;
+        candidates.push(end);
       }
-    } catch {
-      /* malformed structure - the minutes window still stands */
     }
   }
 
@@ -579,21 +572,15 @@ export function lateRegEndMs(t: LobbyTournamentRow): number | null {
 /** Time left in the level a running tournament is on, or null when the blind
     structure does not say. */
 export function levelRemainingMs(t: LobbyTournamentRow, now: number): number | null {
-  if (!t.blind_structure || !t.level_started_at) return null;
-  try {
-    const structure = JSON.parse(t.blind_structure) as BlindLevel[];
-    if (!Array.isArray(structure)) return null;
-    const cur = Math.max(1, Number(t.current_level) || 1);
-    const row = structure.find((b) => Number(b.level) === cur) || structure[cur - 1];
-    const mins = Number(row?.durationMinutes);
-    if (!Number.isFinite(mins) || mins <= 0) return null;
-    const began = new Date(t.level_started_at).getTime();
-    if (!Number.isFinite(began)) return null;
-    const left = began + mins * 60000 - now;
-    return left > 0 ? left : 0;
-  } catch {
-    return null;
-  }
+  if (!t.level_started_at) return null;
+  const structure = parseBlindStructure(t.blind_structure);
+  if (!structure) return null;
+  const mins = blindLevelMinutes(structure, tournamentLevel(t));
+  if (mins <= 0) return null;
+  const began = new Date(t.level_started_at).getTime();
+  if (!Number.isFinite(began)) return null;
+  const left = began + mins * 60000 - now;
+  return left > 0 ? left : 0;
 }
 
 /**

@@ -13,6 +13,7 @@
 
 import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import type { LobbyEntry, LobbyStatusKey, LobbyTournamentRow } from './lobbyEntries';
+import { tournamentBlinds, tournamentLevel } from './tournamentFigures';
 import { mttPhaseText, mttTitleLine } from './lobbyEntries';
 import { prefetchIntent } from '../../utils/ChunkPreloader';
 import './LobbyTable.css';
@@ -105,24 +106,13 @@ interface ColumnDef {
 }
 
 // ─── Cell renderers ────────────────────────────────────────────────────────
-const RULE_ABBR: Record<string, string> = {
-  rit: 'RIT',
-  insurance: 'INS',
-  straddle: 'STR',
-  bomb: 'BOMB',
-  ante: 'ANTE',
-  double_board: '2BRD',
-  seven_deuce: '72',
-  time_bank: 'TB',
-  vpip: 'VPIP',
-  call_time: 'CT',
-  no_rathole: 'NR',
-};
 
+/* Every rule medallion is shown. `hidden` was a hard-coded empty array left
+   behind when the truncation was removed, so `extra` was always 0 and the
+   "+2" overflow chip below it was unreachable code guarding a tooltip that
+   could never be built - along with its .lt-rule--more stylesheet rule. */
 function RulesCell({ entry }: { entry: LobbyEntry }) {
   const shown = entry.rules;
-  const hidden: typeof entry.rules = [];
-  const extra = hidden.length;
   if (shown.length === 0) return <span className="lt-dim">-</span>;
   return (
     <span className="lt-rules">
@@ -131,18 +121,6 @@ function RulesCell({ entry }: { entry: LobbyEntry }) {
           {r.label}
         </abbr>
       ))}
-      {/* "+2" used to be the end of the sentence: the player could see that
-          something was hidden and had no way to learn what without opening the
-          game. It names them now, and the panel still lists all of them with
-          full explanations. */}
-      {extra > 0 && (
-        <abbr
-          className="lt-rule lt-rule--more"
-          title={`Also: ${hidden.map((r) => r.label).join(', ')}`}
-        >
-          +{extra}
-        </abbr>
-      )}
     </span>
   );
 }
@@ -164,20 +142,12 @@ function LiveCountdown({ time }: { time: string | number | Date }) {
   }, [time]);
 
   if (isNaN(mins) || mins <= 0 || mins > 60) return null;
-  return (
-    <span
-      className="lt-countdown"
-      style={{
-        fontSize: '0.65rem',
-        color: 'var(--text-secondary, #c8ccd4)',
-        fontWeight: 700,
-        marginRight: '8px',
-        letterSpacing: '0.02em',
-      }}
-    >
-      Starts In {mins} Min...
-    </span>
-  );
+  /* No inline style. An inline declaration outranks any class rule, so the
+     phone card's own .lt-countdown sizing (set for the Starting Time well)
+     never applied, and the stylesheet had grown an !important trying to win
+     a fight it could not - three rules for one property. The class carries
+     all of it now. */
+  return <span className="lt-countdown">Starts In {mins} Min...</span>;
 }
 
 /**
@@ -532,27 +502,6 @@ const COL_COST: ColumnDef = {
    dealt a hand is on level 1 by definition — that is the level it will open
    at, and it is exactly what a player deciding whether to register wants to
    read. */
-function levelOf(t: LobbyTournamentRow): number {
-  return Math.max(1, Number(t.current_level) || 1);
-}
-
-function blindsForLevel(t: LobbyTournamentRow): string | null {
-  if (!t.blind_structure) return null;
-  try {
-    const levels = JSON.parse(t.blind_structure) as Array<{
-      level?: number;
-      smallBlind?: number;
-      bigBlind?: number;
-    }>;
-    const n = levelOf(t);
-    const lv = levels.find((l) => l.level === n) || levels[n - 1];
-    if (!lv?.smallBlind || !lv?.bigBlind) return null;
-    return `${lv.smallBlind.toLocaleString()}/${lv.bigBlind.toLocaleString()}`;
-  } catch {
-    return null;
-  }
-}
-
 /* Dan 2026-08-24: "STARTING STACK SHOULD BE IN THE HEADER AS A TITLE, NOT IN
    THE DESCRIPTION. THE STARTING STACK AMOUNT SHOULD BE CENTERED UNDER IT. NEXT
    TO STARTING STACK SHOULD BE CURRENT LEVEL WITH THE CURRENT LEVEL AND BLINDS
@@ -569,12 +518,17 @@ const COL_TSTACK: ColumnDef = {
   label: 'Starting Stack',
   className: 'lt-col-tstack',
   sortable: true,
+  /* Infinity, not -1 or 0. The comparator above parks every non-finite value
+     LAST in both directions, which is where a row that has no starting stack
+     belongs. -1 is finite, so ascending would have floated every cash game -
+     the rows that print nothing in this column - to the top of the ALL tab,
+     with stackless tournaments (|| 0) interleaved above them. */
   sortValue: (e) =>
-    e.kind === 'cash' ? -1 : Number((e.raw as LobbyTournamentRow).starting_chips) || 0,
+    e.kind === 'cash' ? Infinity : Number((e.raw as LobbyTournamentRow).starting_chips) || Infinity,
   render: (e) => {
-    if (e.kind === 'cash') return null;
+    if (e.kind === 'cash') return <span className="lt-dim">-</span>;
     const t = e.raw as LobbyTournamentRow;
-    if (!t.starting_chips) return null;
+    if (!t.starting_chips) return <span className="lt-dim">-</span>;
     return <span className="lt-mono">{Number(t.starting_chips).toLocaleString()}</span>;
   },
 };
@@ -584,14 +538,18 @@ const COL_TLEVEL: ColumnDef = {
   label: 'Current Level',
   className: 'lt-col-tlevel',
   sortable: true,
-  sortValue: (e) => (e.kind === 'cash' ? -1 : levelOf(e.raw as LobbyTournamentRow)),
+  sortValue: (e) => (e.kind === 'cash' ? Infinity : tournamentLevel(e.raw as LobbyTournamentRow)),
   render: (e) => {
-    if (e.kind === 'cash') return null;
+    if (e.kind === 'cash') return <span className="lt-dim">-</span>;
     const t = e.raw as LobbyTournamentRow;
-    const blinds = blindsForLevel(t);
+    const blinds = tournamentBlinds(t);
+    /* The number alone. Printing "Level 3" under a heading that reads Current
+       Level is the same cell-repeats-its-own-label problem these two columns
+       were split up to remove, and on the phone card the ::before prints the
+       heading in full again right above it. */
     return (
       <span className="lt-tlevel">
-        <span className="lt-tlevel__n">Level {levelOf(t)}</span>
+        <span className="lt-tlevel__n">{tournamentLevel(t)}</span>
         {blinds && <span className="lt-tlevel__b">{blinds}</span>}
       </span>
     );
@@ -888,15 +846,32 @@ export default function LobbyTable({
       </span>
       <table className="lobby-table" role="grid">
         <thead>
-          <tr>
+          {/* The explicit row/gridcell roles below are not redundant. Under
+              640px this table stops being a table - thead/tbody/tr/td all
+              become block or flex boxes so each row can be a card - and a
+              browser drops the implicit table roles the moment `display` is
+              not a table value. role="grid" on the ancestor does not put them
+              back, so on every phone the grid contained no rows and the
+              aria-selected state below was attached to nothing. */}
+          <tr role="row">
             {columns.map((col) => {
               const active = sort?.key === col.key;
               return (
                 <th
                   key={col.key}
                   className={`${col.className || ''}${col.sortable ? ' is-sortable' : ''}${active ? ' is-sorted' : ''}${col.hideOnMobile ? ' hide-on-mobile' : ''}`}
+                  /* A sortable column that is not the active sort announces
+                     "none", which is what tells a screen reader it CAN be
+                     sorted. Leaving it undefined named only the one column
+                     already sorted, so the other nine looked inert. */
                   aria-sort={
-                    active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : undefined
+                    active
+                      ? sort!.dir === 'asc'
+                        ? 'ascending'
+                        : 'descending'
+                      : col.sortable
+                        ? 'none'
+                        : undefined
                   }
                   /* Sorting was mouse-only: a click handler on a <th> with
                      no role, no tab stop and no key handler, so keyboard and
@@ -929,10 +904,16 @@ export default function LobbyTable({
           {loading &&
             entries.length === 0 &&
             Array.from({ length: 8 }).map((_, i) => (
-              <tr key={`skel-${i}`} className="lt-row lt-row--skeleton" aria-hidden="true">
+              <tr
+                key={`skel-${i}`}
+                className="lt-row lt-row--skeleton"
+                aria-hidden="true"
+                role="row"
+              >
                 {columns.map((c) => (
                   <td
                     key={c.key}
+                    role="gridcell"
                     className={`${c.className || ''} ${c.hideOnMobile ? 'hide-on-mobile' : ''}`}
                   >
                     <span className="lt-skel" />
@@ -948,6 +929,7 @@ export default function LobbyTable({
                 data-id={entry.id}
                 className={`lt-row lt-row--${entry.status}${selected ? ' is-selected' : ''}`}
                 data-kind={entry.kind}
+                role="row"
                 aria-selected={selected}
                 // Hover / touch / keyboard-focus on a lobby row is the earliest
                 // honest signal that this table is where the player is going, so
@@ -966,6 +948,7 @@ export default function LobbyTable({
                 {columns.map((col) => (
                   <td
                     key={col.key}
+                    role="gridcell"
                     /* data-label carries the column's own heading down to the
                        cell. On a phone the header row is gone, so the card
                        layout prints it above the value — and it is always the

@@ -289,6 +289,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
         this.playerTurnStartTime > 0
           ? this.playerTurnStartTime + this.playerTurnDuration * 1000
           : 0,
+      time_bank_active: this.timeBankActivatedThisTurn,
       // Phase 1.2 PR-F: per-user disconnect FSM map for client UI toasts
       // (MISSING / DISCONNECTED). Same shape the DB stores.
       disconnect_states: this.disconnectEngine.getFsmStatesForTable(this.tableId),
@@ -450,6 +451,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       turn_duration_ms: 0,
       server_time_ms: Date.now(),
       turn_deadline_ms: 0,
+      time_bank_active: false,
       disconnect_states: this.disconnectEngine.getFsmStatesForTable(this.tableId),
       waiting_for_bb_user_ids: Array.from(this.waitingForBB),
       pots: [],

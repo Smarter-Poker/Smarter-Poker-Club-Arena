@@ -33,6 +33,10 @@ export interface TabInfo {
    *  timer bar under the tab. undefined when it is not your turn there. */
   turnProgress?: number;
   pot?: number;
+  isAutoRebuyEnabled?: boolean;
+  standUpNextBB?: boolean;
+  soundEnabled?: boolean;
+  vibrationsEnabled?: boolean;
   /**
    * PokerBros parity: the hero's hole cards at this table, comma-joined
    * ("Ah,Qc" / "Td,9h"; "" or undefined when not in a hand or folded).
@@ -426,45 +430,67 @@ export function TableTabBar({
 
   const menuSections = useMemo(
     () =>
-      createDefaultMenuSections({
-        onSitOut: () =>
-          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SIT_OUT' }),
-        onRebuy: () =>
-          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'REBUY' }),
-        onAddOn: () =>
-          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'ADD_ON' }),
-        onSessionStats: () =>
-          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SESSION_STATS' }),
-        onSettings: () =>
-          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SETTINGS' }),
-        onHandHistory: () =>
-          masterBus.emit('TABLE_MENU_ACTION', {
-            tableId: activeTabId,
-            action: 'HAND_HISTORY',
-          }),
-        onLeaderboard: () =>
-          masterBus.emit('TABLE_MENU_ACTION', {
-            tableId: activeTabId,
-            action: 'LEADERBOARD',
-          }),
-        onHelp: () => masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'HELP' }),
-        onLeaveTable: () =>
-          masterBus.emit('TABLE_MENU_ACTION', {
-            tableId: activeTabId,
-            action: 'LEAVE_TABLE',
-          }),
-        onChangeAvatar: () =>
-          masterBus.emit('TABLE_MENU_ACTION', {
-            tableId: activeTabId,
-            action: 'CHANGE_AVATAR',
-          }),
-        onToggleAlias: () =>
-          masterBus.emit('TABLE_MENU_ACTION', {
-            tableId: activeTabId,
-            action: 'TOGGLE_ALIAS',
-          }),
-      }),
-    [activeTabId]
+      createDefaultMenuSections(
+        {
+          onSitOut: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SIT_OUT' }),
+          onStandUpBB: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'STAND_UP_BB' }),
+          onRebuy: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'REBUY' }),
+          onAutoTopUp: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'AUTO_TOP_UP' }),
+          onAddOn: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'ADD_ON' }),
+          onSessionStats: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SESSION_STATS' }),
+          onSettings: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SETTINGS' }),
+          onToggleSounds: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'TOGGLE_SOUNDS' }),
+          onToggleVibrations: () =>
+            masterBus.emit('TABLE_MENU_ACTION', {
+              tableId: activeTabId,
+              action: 'TOGGLE_VIBRATIONS',
+            }),
+          onHandHistory: () =>
+            masterBus.emit('TABLE_MENU_ACTION', {
+              tableId: activeTabId,
+              action: 'HAND_HISTORY',
+            }),
+          onLeaderboard: () =>
+            masterBus.emit('TABLE_MENU_ACTION', {
+              tableId: activeTabId,
+              action: 'LEADERBOARD',
+            }),
+          onHelp: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'HELP' }),
+          onLeaveTable: () =>
+            masterBus.emit('TABLE_MENU_ACTION', {
+              tableId: activeTabId,
+              action: 'LEAVE_TABLE',
+            }),
+          onChangeAvatar: () =>
+            masterBus.emit('TABLE_MENU_ACTION', {
+              tableId: activeTabId,
+              action: 'CHANGE_AVATAR',
+            }),
+          onToggleAlias: () =>
+            masterBus.emit('TABLE_MENU_ACTION', {
+              tableId: activeTabId,
+              action: 'TOGGLE_ALIAS',
+            }),
+        },
+        {
+          standUpBBBadge: tabs.find((t) => t.id === activeTabId)?.standUpNextBB ? 'ON' : undefined,
+          autoTopUpBadge: tabs.find((t) => t.id === activeTabId)?.isAutoRebuyEnabled
+            ? 'ON'
+            : undefined,
+          soundsBadge: tabs.find((t) => t.id === activeTabId)?.soundEnabled ? 'ON' : 'OFF',
+          vibrationsBadge: tabs.find((t) => t.id === activeTabId)?.vibrationsEnabled ? 'ON' : 'OFF',
+        }
+      ),
+    [activeTabId, tabs]
   );
 
   return (

@@ -91,6 +91,7 @@ export interface EnginePublishedState {
   turn_duration_ms?: number;
   /** Phase 1.2 PR-F: absolute wall-clock deadline for the current turn. */
   turn_deadline_ms?: number;
+  time_bank_active?: boolean;
   /** Engine wall clock at broadcast time. Lets the client correct for device
    *  clock drift when working out how much of a turn has elapsed. */
   server_time_ms?: number;
@@ -154,6 +155,7 @@ export interface MappedTableStatePatch {
   /** Server-authoritative turn start wall-clock (for CSS ring animation). */
   actionTimerStartTime?: number;
   actionTimerPlayerId?: string;
+  isTimeBankActive?: boolean;
   /** hand number */
   handNumber: number;
   /** side pots */
@@ -367,6 +369,7 @@ export function mapEngineSnapshot(
     actionTimerDeadline,
     actionTimerStartTime: s.turn_start_time_ms,
     actionTimerPlayerId: s.current_player ?? undefined,
+    isTimeBankActive: s.time_bank_active ?? false,
     handNumber: s.hand_number ?? 0,
     sidePots,
     disconnectStates: s.disconnect_states ?? {},

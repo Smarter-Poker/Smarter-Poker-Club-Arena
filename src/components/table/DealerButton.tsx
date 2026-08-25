@@ -55,15 +55,20 @@ export function DealerButton({
 
   const pos = seatPositions[dealerVisualIndex];
 
-  // Offset the button slightly toward the center of the table so it doesn't
-  // overlap the player avatar. The factors live in tableGeometry so the bet
-  // chips can position themselves relative to the button rather than guessing
-  // at it — see betChipOffsetPx() in tableGeometry.
+  // Where the puck stands, in scaler percentages. tableGeometry owns this: it
+  // builds the button off the SAME chip rail the bet chips rest on, so the two
+  // markers cannot drift apart, and it guarantees two things this component
+  // must not try to reproduce - the puck is always on the felt and never on the
+  // painted rail (Dan 2026-08-25 item 11), and it is never on top of the chips
+  // it belongs beside (item 13). Called with the seat alone; the module knows
+  // the scaler's own 605/1000 shape, which is all the geometry needs.
   const { x: btnX, y: btnY } = dealerButtonPosition(pos);
 
   // Only position is inlined — every other visual property lives on the
   // `.dealer-button` CSS class so theme tokens, drop-in animation, and the
-  // premium multi-layer shadows stay authoritative in one place.
+  // premium multi-layer shadows stay authoritative in one place. Its SIZE is
+  // now a proportion of the table rather than a per-breakpoint pixel count:
+  // --dealer-btn-size in TableVisualHotfix.css, section 4.
   return (
     <div
       className="dealer-button"

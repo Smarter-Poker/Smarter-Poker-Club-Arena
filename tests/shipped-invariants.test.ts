@@ -58,10 +58,21 @@ const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
     'ca_club_my_downline',
     'a super agent sees their downline, not the whole club',
   ],
+  // 2026-08-25: re-anchored from ca_club_my_downline to fn_club_cashier_members.
+  // The CAPABILITY pinned here is "the trade grid offers only the downline", and
+  // it now comes from the function the SEND ITSELF refuses on
+  // (fn_club_cashier_can_transact walks the same edge), so the list and the
+  // refusal cannot disagree. The old call built the list a third way and its
+  // super_agent branch also swept in every unassigned member of the club.
   [
     'src/pages/CashierTradePage.tsx',
-    'ca_club_my_downline',
-    'a super agent sees their whole downline, not only direct assignees',
+    'fn_club_cashier_members',
+    'the trade grid offers only the downline the send RPC will accept',
+  ],
+  [
+    'src/pages/CashierTradePage.tsx',
+    'fn_agent_wallet_send',
+    'the trade grid spends the agent wallet, not a second club-ledger path',
   ],
 
   // Union statements — the settlement lifecycle.

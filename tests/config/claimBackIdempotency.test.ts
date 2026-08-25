@@ -1,29 +1,35 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- *  A RETRIED CLAIM BACK MUST NOT CHARGE TWICE (2026-08-24)
+ *  A CLAIM BACK MUST BE ANCHORED, BOUNDED, AND UNREPEATABLE (2026-08-25)
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * fn_cashier_claim_back moves chips off a player and onto the caller. It had no
- * replay protection, so the one shape that matters most was unhandled: a claim
- * that COMMITTED on the server and then failed on the way back - a dropped
- * connection, a proxy timeout. To the client that is indistinguishable from a
- * claim that never ran. It reports an error, the operator retries, and the
- * player is charged a second time. Every other money path on this platform
- * already carries an idempotency key.
+ * WHAT THIS FILE USED TO PIN
  *
- * `busyRef` does NOT cover this. It stops a double-TAP inside one render; it
- * knows nothing about a request whose response was lost.
+ * fn_cashier_claim_back moved chips off a player and onto the caller, with no
+ * time limit of any kind: an agent could pull chips off a downline player days
+ * after sending them, with no request from that player. It was given an
+ * idempotency key on 2026-08-24 and this file pinned that key. The key was
+ * real. The AUTHORITY behind it was not.
  *
- * The server half is enforced by the partial unique index
- * ux_chip_transactions_idempotency_key, which is what settles a true race
- * between two concurrent identical submissions - the pre-check alone loses it.
- * These tests pin the CLIENT half, which the server cannot enforce for itself:
+ * Dan 2026-08-25, binding: "THE CLAWBACK IS ONLY IN EFFECT FOR THE FIRST 10
+ * MINUTES WHEN CHIPS ARE SENT, AND AGENT CAN ONLY REMOVE CHIPS IF REQUESTED BY
+ * THE PLAYER AFTER THAT."
  *
- *   1. a key is actually sent, or the server's guard is dead code;
- *   2. the key survives a failure, or the retry mints a fresh one and the
- *      double-charge comes straight back;
- *   3. the key varies by target and amount, or a legitimate second claim of a
- *      different size gets silently swallowed as a "replay".
+ * So the trade grid now calls fn_agent_wallet_claim_back, which is a different
+ * shape and a stricter one:
+ *
+ *   1. ANCHORED on one originating `agent_wallet_send` row, not on a member and
+ *      an amount. You can only take back a specific send you actually made.
+ *   2. BOUNDED by reversible_until, re-read from that row by the DATABASE's
+ *      clock. A phone with a skewed clock cannot buy itself more time.
+ *   3. UNREPEATABLE: the originating row records what has already been taken
+ *      (`claimed_back`), and p_op_id makes a lost response replay rather than
+ *      collect twice.
+ *
+ * The double-charge shape this file was written for is unchanged and still
+ * covered — a claim that COMMITTED and then failed on the way back is
+ * indistinguishable from one that never ran, and the natural retry must not
+ * charge again. It is now covered by (3) rather than by a composed text key.
  *
  * Source-level on purpose: the failure is a MISSING ARGUMENT on an RPC call,
  * which renders identically to the correct code until you read the payload.
@@ -32,66 +38,109 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const SRC = readFileSync(resolve(__dirname, '../..', 'src/pages/CashierTradePage.tsx'), 'utf8');
+const ROOT = resolve(__dirname, '../..');
+const SRC = readFileSync(resolve(ROOT, 'src/pages/CashierTradePage.tsx'), 'utf8');
+const SQL = readFileSync(
+  resolve(
+    ROOT,
+    'supabase/migrations/20260825_role_scoped_cashier_agent_wallet_and_cashout_escrow.sql'
+  ),
+  'utf8'
+);
 
 /**
- * The claim branch of runTransfers, isolated from send and ticket.
- *
- * Sliced to the END OF THE CALL, not to a fixed character count. It used to be
- * `+ 700`, and on 2026-08-25 a comment added inside the call pushed
- * p_idempotency_key past the 700th character - so the assertions below started
- * failing on a change that made the key STRICTER (it gained the club scope).
- * A window measured in characters silently stops covering what it is named
- * after; measure it in syntax instead.
+ * One RPC call's argument object, sliced to the END OF THE CALL rather than to
+ * a fixed character count. It used to be `+ 700`, and on 2026-08-25 a comment
+ * added inside the call pushed the argument past the 700th character - so the
+ * assertions started failing on a change that made the key STRICTER. A window
+ * measured in characters silently stops covering what it is named after.
  */
 function callArgs(src: string, rpc: string): string {
   const start = src.indexOf(`supabase.rpc('${rpc}'`);
   if (start < 0) return '';
-  // the argument object ends at the first `});` after the call opens
   const end = src.indexOf('});', start);
   return end < 0 ? src.slice(start) : src.slice(start, end + 3);
 }
 
-const CLAIM_CALL = callArgs(SRC, 'fn_cashier_claim_back');
+/** The body of one `create or replace function fn_x(...)` up to the next one. */
+function fn(name: string): string {
+  const start = SQL.indexOf(`create or replace function public.${name}(`);
+  expect(start, `${name} is not declared in the migration`).toBeGreaterThan(-1);
+  const rest = SQL.slice(start + 1);
+  const next = rest.indexOf('create or replace function public.');
+  return next === -1 ? rest : rest.slice(0, next);
+}
 
-describe('the claim back RPC carries an idempotency key', () => {
-  it('sends p_idempotency_key at all', () => {
-    expect(SRC).toContain("supabase.rpc('fn_cashier_claim_back'");
-    expect(CLAIM_CALL).toContain('p_idempotency_key');
+const CLAIM_CALL = callArgs(SRC, 'fn_agent_wallet_claim_back');
+
+// ───────────────────────────────────────────────────────────────────────────
+describe('the client asks for a claim it is allowed to make', () => {
+  it('calls the anchored RPC, and not the unbounded one', () => {
+    expect(SRC).toContain("supabase.rpc('fn_agent_wallet_claim_back'");
+    // The name survives in the header comment that explains why it left; a CALL
+    // must not. The SQL function is deliberately still in Postgres.
+    expect(SRC).not.toContain("supabase.rpc('fn_cashier_claim_back'");
+    // fn_admin_remove_player_chips is the staff-only pull, which has no time
+    // limit BY DESIGN and refuses agents outright. It is not this screen's.
+    expect(SRC).not.toContain("supabase.rpc('fn_admin_remove_player_chips'");
   });
 
-  it('derives the key from the submission, the target AND the amount', () => {
-    // Target: two players in one batch must not collide onto one key, or the
-    // second player is refused as a replay of the first.
-    // Amount: claiming a different amount from the same player is a NEW
-    // intent, and must not be swallowed as a replay of the earlier one.
-    expect(CLAIM_CALL).toMatch(/p_idempotency_key:\s*`[^`]*\$\{submissionId\}/);
-    expect(CLAIM_CALL).toMatch(/p_idempotency_key:\s*`[^`]*\$\{t\.userId\}/);
-    expect(CLAIM_CALL).toMatch(/p_idempotency_key:\s*`[^`]*\$\{claim\}/);
-    /* CLUB, added 2026-08-25. ux_chip_transactions_idempotency_key is GLOBAL on
-       chip_transactions, so a key without the club in it can collide ACROSS
-       clubs - and chips are per club. A cross-club collision replays the other
-       club's outcome, moves nothing, and reports success. */
-    expect(CLAIM_CALL).toMatch(/p_idempotency_key:\s*`[^`]*\$\{clubUuid\}/);
+  it('identifies ONE originating send, not a member and a number', () => {
+    expect(CLAIM_CALL).toContain('p_transaction_id: row.transaction_id');
+    expect(CLAIM_CALL).toContain('p_amount: row.remaining');
+    expect(CLAIM_CALL).not.toContain('p_from_user_id');
+  });
+
+  it('carries an op id, so a lost response replays instead of collecting twice', () => {
+    expect(CLAIM_CALL).toMatch(/p_op_id:\s*newOpId\(\)/);
+  });
+
+  it('offers only what the server says is still claimable', () => {
+    expect(SRC).toContain("supabase.rpc('fn_agent_wallet_reversible'");
+    // And re-filters as the modal sits open, so a row that ages out loses its
+    // button rather than failing on tap.
+    expect(SRC).toMatch(/new Date\(r\.reversible_until\)\.getTime\(\) > nowTick/);
+  });
+
+  it('cannot fire twice from one tap, or from two', () => {
+    const body = SRC.slice(
+      SRC.indexOf('const claimBack = async'),
+      SRC.indexOf('const stillClaimable = useMemo(')
+    );
+    expect(body).toMatch(/if \(!clubUuid \|\| claimingId \|\| busyRef\.current\) return;/);
   });
 });
 
-describe('the submission id survives a failure', () => {
-  it('is held in a ref, not in component state', () => {
-    // State would be reset by the re-render that follows the error toast.
-    expect(SRC).toMatch(/submissionIdRef\s*=\s*useRef<string \| null>\(null\)/);
+// ───────────────────────────────────────────────────────────────────────────
+describe('and the server is what actually decides', () => {
+  const claim = fn('fn_agent_wallet_claim_back');
+
+  it('refuses anything that is not one of the caller own agent wallet sends', () => {
+    expect(claim).toContain("v_src.transaction_type <> 'agent_wallet_send'");
+    expect(claim).toContain('v_src.from_user_id is distinct from v_actor');
   });
 
-  it('is minted only when absent, so a retry reuses it', () => {
-    expect(SRC).toMatch(/if\s*\(!submissionIdRef\.current\)/);
+  it('refuses once the window has closed, by its own clock', () => {
+    expect(claim).toContain('now() > v_src.reversible_until');
+    expect(claim).toMatch(/Ten Minute Window To Claim These Chips Back Has Closed/);
+    expect(claim).toMatch(/Must Request A Cash Out/);
   });
 
-  it('is cleared ONLY when every target succeeded', () => {
-    // The whole protection is that a FAILED batch keeps its id. Clearing it
-    // unconditionally in `finally` would mint a fresh key on the retry and
-    // reinstate the double-charge this exists to prevent.
-    const fin = SRC.slice(SRC.indexOf('busyRef.current = false;'));
-    expect(fin).toMatch(/skipped \+ ok === targets\.length.*submissionIdRef\.current = null/s);
-    expect(fin).not.toMatch(/^\s*submissionIdRef\.current = null;\s*$/m);
+  it('records what has already been taken, so the rest cannot be taken twice', () => {
+    expect(claim).toContain("jsonb_build_object('claimed_back', v_claimed + v_take)");
+    expect(claim).toContain('is_reversed = ((v_claimed + v_take) >= v_src.amount)');
+  });
+
+  it('is idempotent on p_op_id, settled by the unique index rather than a pre-check', () => {
+    expect(claim).toMatch(/metadata ->> 'op_id' = v_op_id::text/);
+    expect(claim).toContain('when unique_violation then');
+    expect(claim).toContain("'replayed', true");
+  });
+
+  it('and the chips land back in the AGENT WALLET, with a ledger row', () => {
+    expect(claim).toMatch(
+      /update agents\s+set agent_wallet_balance = coalesce\(agent_wallet_balance, 0\) \+ v_take/
+    );
+    expect(claim).toContain("'agent_wallet_claim_back'");
   });
 });

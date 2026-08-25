@@ -579,7 +579,7 @@ abbr.lt-variant[title] {
    between 1100 and 1586 the board was scrolling sideways and the first thing
    scrolled off was the leftmost column. The ladder now begins where the board
    genuinely stops fitting. */
-@media (max-width: 1600px) {
+@media (max-width: 1880px) {
   .lt-col-rules {
     width: 120px;
   }
@@ -604,20 +604,81 @@ abbr.lt-variant[title] {
     width: 92px;
   }
 }
-/* A 1024-1360 laptop - the width Dan's screenshots were taken at - still
-   measured 1302px after the rung above. Starting Stack, Current Level and Max
-   Payout are the next three by the same priority the whole ladder uses: detail
-   about a game, not the identity of one. Both boards measure ~1010px here, so
-   the title is on screen without a sideways scroll rather than merely first in
-   a row that scrolls. The game panel and the phone card still carry all three. */
-@media (max-width: 1360px) {
-  .lt-col-tstack,
-  .lt-col-tlevel,
+/* THE RUNGS BELOW ARE MEASURED, NOT GUESSED (2026-08-25).
+   Every column here is content-box, so a stated width costs 20px more than it
+   says once padding is added - which is why the earlier arithmetic on this
+   ladder was 20px per column short and the board still scrolled sideways at
+   laptop widths. Each rung was measured in Chromium with the shipped
+   stylesheet, and the threshold is the width the rung ABOVE it actually needs:
+
+     full set                                        ALL 1866px  MTT 1708px
+     - Blind Levels, Format                          ALL 1542px  MTT 1384px
+     - narrowed, Max Payout / Stack / Level kept     ALL 1332px  MTT 1190px
+     - Max Payout                                    ALL 1216px  MTT 1190px
+     - Starting Stack, Current Level                 ALL 1020px  MTT 1021px
+     - Rules, Variant                                ALL  824px  MTT  825px
+
+   So nothing is dropped before it stops fitting, and nothing that does not fit
+   is kept. A 1440px laptop keeps Starting Stack and Current Level, which the
+   first pass at this ladder had thrown away at 1360. */
+@media (max-width: 1550px) {
+  /* Narrow, do not drop. The title gives up 32px here and keeps the rest. */
+  .lt-col-name {
+    width: 200px;
+  }
+  .lt-col-status {
+    width: 110px;
+  }
+  .lt-col-rules {
+    width: 96px;
+  }
+  .lt-col-num,
+  .lt-col-starts,
+  .lt-col-players {
+    width: 92px;
+  }
+  .lt-col-kind {
+    width: 64px;
+  }
+  .lt-col-variant {
+    width: 60px;
+  }
+  .lt-col-tstack {
+    width: 76px;
+  }
+  .lt-col-tlevel {
+    width: 80px;
+  }
+  .lt-col-payout {
+    width: 96px;
+  }
+}
+@media (max-width: 1340px) {
   .lt-col-payout {
     display: none;
   }
 }
-@media (max-width: 900px) {
+@media (max-width: 1220px) {
+  /* Both figures are still on the game panel and on the phone card. */
+  .lt-col-tstack,
+  .lt-col-tlevel {
+    display: none;
+  }
+}
+@media (max-width: 1023px) {
+  /* Tablet landscape. Type goes with Rules and Variant - the row's own chip
+     already says MTT or Cash - and the title gives up another 20px, which is
+     what keeps this band off a sideways scroll now that the title states a
+     width instead of silently absorbing whatever was left over. */
+  .lt-col-name {
+    width: 180px;
+  }
+  .lt-col-status {
+    width: 104px;
+  }
+  .lt-col-kind {
+    display: none;
+  }
   .lt-col-rules,
   .lt-col-variant,
   .lt-col-tstack,
@@ -654,6 +715,22 @@ abbr.lt-variant[title] {
   }
   .hide-on-mobile {
     display: none !important;
+  }
+  /* The last rung before the card. Six columns at their tablet widths measured
+     772px on the MTT board against a 641px viewport; the title used to swallow
+     that overflow by shrinking to nothing, which is the whole defect this pass
+     removes, so the numbers give it up instead. Measured at 641px: MTT 626px,
+     ALL 581px. */
+  .lt-col-name {
+    width: 150px;
+  }
+  .lt-col-num,
+  .lt-col-starts,
+  .lt-col-players {
+    width: 72px;
+  }
+  .lt-col-status {
+    width: 76px;
   }
 }
 

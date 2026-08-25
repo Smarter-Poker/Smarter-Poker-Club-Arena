@@ -1,14 +1,34 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * 🐰 RABBIT HUNT — Styles
+ * RABBIT HUNT — Styles
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+/* The panel positions ITSELF. It renders from TableModalsLayer, which returns a
+   bare fragment mounted as a direct child of `.table-page` — a
+   `position: fixed; inset: 0; display: flex; flex-direction: column;
+   height: 100dvh; overflow: hidden` column. As an unpositioned flex item it was
+   appended below the felt, inside a clipped viewport-height box, so on a phone
+   the reveal could sit entirely out of view: the player paid and saw nothing.
+   Every other overlay in that layer is fixed; this one was not. */
 .rabbit-hunt {
+  position: fixed;
+  left: 50%;
+  bottom: 22vh;
+  transform: translateX(-50%);
+  z-index: 900;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
+  pointer-events: auto;
+}
+
+@media (max-width: 480px) {
+  .rabbit-hunt {
+    /* Clear of the action buttons on a 375px phone. */
+    bottom: 28vh;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -61,6 +81,15 @@
 
 .rabbit-hunt__icon {
   font-size: 1.25rem;
+}
+
+.rabbit-hunt__icon-img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  flex: 0 0 auto;
+  user-select: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
 }
 
 .rabbit-hunt__label {
@@ -141,7 +170,12 @@
   background: linear-gradient(180deg, #ffffff 0%, #f0f0f0 100%);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  animation: cardReveal 0.5s ease;
+  /* `backwards` is load-bearing. The component sets an inline animationDelay to
+     stagger the cards; without a fill mode each card paints in its DEFAULT
+     state during its delay (opaque, unrotated) and then snaps back to the 0%
+     keyframe when the delay expires. So all five appeared at once, blinked out,
+     and re-animated. `backwards` holds the 0% frame through the delay. */
+  animation: cardReveal 0.5s ease backwards;
 }
 
 @keyframes cardReveal {

@@ -130,11 +130,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
         // Bible V8 §4.2: Detect new joiners. Any userId that appears in
         // seatedPlayers but wasn't known before is a new player. After the
-        // first dealingLoop iteration, every such player is flagged as
-        // waiting-for-BB so they can't play until the BB reaches their seat
-        // (they can opt out via POST /post-bb). On the very first iteration
-        // — cold start OR crash recovery — all seated players are treated as
-        // the initial roster and no wait is required.
+        // first dealingLoop iteration every such player is registered — which
+        // since 2026-08-25 no longer means "wait for the big blind". Cash entry
+        // is free and the release a few lines below happens on this same tick.
+        // The set now exists only so the two positional hold-outs (never dealt
+        // into the small blind, never handed the button on your first hand) get
+        // a chance to look at the seat before the deal. On the very first
+        // iteration — cold start OR crash recovery — all seated players are
+        // treated as the initial roster and none of that applies.
         if (this.dealingLoopFirstIteration) {
           for (const p of this.seatedPlayers) {
             this.knownPlayerIds.add(p.user_id);
@@ -243,9 +246,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           continue;
         }
 
-        // Bible V8 §4.2: Wait-for-BB — new/returning players can't play until
-        // the big blind reaches their position. Check each waiting player:
-        // if this hand's BB position equals their seat, clear the wait flag.
+        // Bible V8 §4.2: if the big blind is arriving at a waiting player's seat
+        // this hand, release them here so they post it as their own blind rather
+        // than being treated as a new joiner by the block below.
         if (this.waitingForBB.size > 0 && this.tableInfo) {
           const bbSeatIndex = this.getBBSeatIndex();
           for (const userId of this.waitingForBB) {
@@ -260,13 +263,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // Dan 2026-08-20 (live repro): "Seat Reserved, You'll Be Dealt In Next
         // Hand" must be TRUE. A probe seat sat through 6 straight hands still
         // gated by wait-for-BB — on slow tables the natural BB rotation takes
-        // MINUTES to reach a new seat, and nothing on screen explains the
-        // wait. Every remaining waiter is auto-entered as "post BB to enter":
-        // they pay one live BB (the same fair price PokerBros charges for
-        // immediate entry, via the existing bbOnlyPosts path) and are dealt
-        // into THIS hand. POST /post-bb stays for players who beat the loop
-        // to it; the natural-BB release above still wins when the blind is
-        // reaching their seat anyway, in which case they just post normally.
+        // MINUTES to reach a new seat, and nothing on screen explains the wait.
+        //
+        // That was first solved by billing every waiter a live big blind and
+        // dealing them in. Dan 2026-08-25 replaced the price with nothing:
+        // "you don't have to post when you first come to a table." Every
+        // remaining waiter is released FREE on this tick, so the promise on
+        // screen is kept and it costs them a blind less than it used to.
         if (this.waitingForBB.size > 0) {
           // Dan 2026-08-21, BINDING: "CASH GAME PLAYERS CAN NEVER BE DEALT
           // INTO THE SMALL BLIND. THEY MUST WAIT FOR THE BUTTON TO PASS."
@@ -724,7 +727,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandNotificationLog = []; // Bible V8 §2.16: Reset notification log
     this.currentHandBBJHit = null; // BBJ: Reset hit detection for new hand
     this.currentHandBBJPayoutConfig = null;
-    this.currentHandRabbitCards = []; // Rabbit Hunt: Reset remaining deck
+    this.rabbitHuntInFlight.clear(); // Rabbit Hunt: no purchase survives a hand boundary
     this.currentHandRitBoards = 0; // RIT VERIFIER FIX 2026-08-21: new hand, no boards
     this.timeBankActivatedThisTurn = false; // Bible V8 §6.2: Reset time bank flag for new hand
     this.showHandPlayers = null; // Reset voluntary show-hand set for new hand

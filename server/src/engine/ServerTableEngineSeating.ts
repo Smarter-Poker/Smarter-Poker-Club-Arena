@@ -642,9 +642,14 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
 
   /**
    * Bible V8 §4.2: Player opts to "Post BB" to enter immediately.
-   * When a new player sits at a cash game, they choose: post the BB now to be dealt
-   * in immediately, OR wait for the BB to reach their seat naturally.
-   * If they post, they pay 1× BB as a live blind and get dealt into the current hand.
+   *
+   * Dan 2026-08-25: THIS NO LONGER HAS A CALLER IN THE PRODUCT, deliberately.
+   * Sitting down is free and a new joiner is dealt in on the next loop tick, so
+   * the only players left in `waitingForBB` are the two being held out for one
+   * hand for positional reasons — and paying a live big blind to skip either is
+   * paying for something that is one hand away and free. Both are refused
+   * below. The endpoint and the bbOnlyPosts path it feeds stay for the fuzzer
+   * and for any future opt-in that has a real wait to skip.
    */
   public postBBToEnter(userId: string): { success: boolean; error?: string } {
     if (!this.waitingForBB.has(userId)) {
@@ -660,7 +665,16 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     const seat = this.seatedPlayers.find((p) => p.user_id === userId);
     if (seat && !this.isTournamentTable()) {
       const sbSeatIndex = this.getSBSeatIndex();
-      if (sbSeatIndex > 0 && seat.seat_number === sbSeatIndex) {
+      const buttonSeatIndex = this.getButtonSeatIndex();
+      // BOTH hold-outs, not just the small blind. A player held out because they
+      // took the seat the button is about to reach was still able to call this
+      // and pay a live big blind for a hand the dealing loop would have dealt
+      // them free on the very next tick — the same asymmetry the SB guard
+      // exists to prevent, left open on the other half of the rule.
+      if (
+        (sbSeatIndex > 0 && seat.seat_number === sbSeatIndex) ||
+        (buttonSeatIndex > 0 && seat.seat_number === buttonSeatIndex)
+      ) {
         return {
           success: false,
           error: 'You Will Be Dealt In Free Next Hand, The Button Has To Pass Your Seat First',

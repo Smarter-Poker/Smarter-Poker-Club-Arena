@@ -253,6 +253,13 @@ export default function TournamentRankingCard({
   const place = result.finishPlace;
   const eventName = formatGameTitle(result.name || tableName || 'Tournament');
   const totalWon = (result.prize || 0) + (result.bountyWinnings || 0);
+  /* MYSTERY BOUNTY (section 43). Cents, and absent on any non-mystery event. */
+  const mysteryBounties = Math.max(0, Number(result.mysteryBounties) || 0);
+  const mysteryCents = Math.max(0, Math.round(Number(result.mysteryBountyCents) || 0));
+  const largestMysteryCents = Math.max(
+    0,
+    Math.round(Number(result.largestMysteryBountyCents) || 0)
+  );
 
   /* "FIDGET SPINNER #3(11)" — event, finishing place, field size.
      Dan 2026-08-23: "remove the (3) after Spin PLO6 #1". On a Spin the field
@@ -376,10 +383,31 @@ export default function TournamentRankingCard({
             )}
           </div>
           <div className="trc2__reward">
-            <span className="trc2__reward-label">Reward:</span>
+            {/* Dan section 44: the champion's card must not imply the placement
+                prize was the whole story. It never was on this card - "Reward"
+                has always been prize + bounties - but a single opaque figure
+                does not SAY so, and in a mystery bounty event the split is
+                frequently most of the interest. The label names it as the
+                total, and the line underneath shows the two halves whenever
+                there are two. */}
+            <span className="trc2__reward-label">Total Payout:</span>
             <span className="trc2__reward-value">{formatMoney(totalWon)}</span>
           </div>
         </div>
+
+        {result.bountyWinnings > 0 && (
+          <div className="trc2__payout-split">
+            <span className="trc2__payout-part">
+              Prize <strong>{formatMoney(result.prize || 0)}</strong>
+            </span>
+            <span className="trc2__payout-plus" aria-hidden="true">
+              +
+            </span>
+            <span className="trc2__payout-part">
+              Bounties <strong>{formatMoney(result.bountyWinnings)}</strong>
+            </span>
+          </div>
+        )}
 
         {/* Knockouts only appear when there were any — the reference card has
             no room for a zero, and a zero says nothing. Same rule for rebuys
@@ -387,6 +415,8 @@ export default function TournamentRankingCard({
             never shown: in a rebuy event they are most of the story. */}
         {(result.knockouts > 0 ||
           result.bountyWinnings > 0 ||
+          mysteryCents > 0 ||
+          mysteryBounties > 0 ||
           result.rebuys > 0 ||
           result.addOns > 0) && (
           <div className="trc2__extras">
@@ -398,6 +428,26 @@ export default function TournamentRankingCard({
             {result.bountyWinnings > 0 && (
               <span className="trc2__extra">
                 <strong>{formatMoney(result.bountyWinnings)}</strong> In Bounties
+              </span>
+            )}
+            {/* MYSTERY BOUNTY (Dan section 43). Three facts the bounty line
+                above cannot carry: how many of those bounties were CHESTS, what
+                they paid, and the biggest single one. In cents, so divided by
+                100 here and nowhere else. */}
+            {mysteryBounties > 0 && (
+              <span className="trc2__extra">
+                <strong>{mysteryBounties.toLocaleString('en-US')}</strong> Mystery Bount
+                {mysteryBounties === 1 ? 'y' : 'ies'}
+              </span>
+            )}
+            {mysteryCents > 0 && (
+              <span className="trc2__extra">
+                <strong>{formatMoney(mysteryCents / 100)}</strong> In Mystery Bounties
+              </span>
+            )}
+            {largestMysteryCents > 0 && (
+              <span className="trc2__extra">
+                <strong>{formatMoney(largestMysteryCents / 100)}</strong> Largest Mystery Bounty
               </span>
             )}
             {result.rebuys > 0 && (

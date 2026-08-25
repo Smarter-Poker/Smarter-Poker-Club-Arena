@@ -19,6 +19,10 @@ import { resolve } from 'path';
 const DIR = resolve(__dirname, '../supabase/migrations');
 const ROLLUP = readFileSync(resolve(DIR, '20260825400000_stats_hand_rollup.sql'), 'utf8');
 const RPC = readFileSync(resolve(DIR, '20260825410000_stats_rpc_reads_the_rollup.sql'), 'utf8');
+const FWDPRUNE = readFileSync(
+  resolve(DIR, '20260825440000_forward_roll_prunes_what_it_touched.sql'),
+  'utf8'
+);
 const VACUUM = readFileSync(
   resolve(DIR, '20260825430000_ca_hand_player_idx_gets_autovacuum_settings.sql'),
   'utf8'
@@ -193,5 +197,39 @@ describe('the tail asks for one player', () => {
   it('keeps the redundant WHERE as a belt-and-braces', () => {
     // So a future change to the argument list cannot silently widen this branch.
     expect(RPC).toMatch(/WHERE f\.user_id = p_user/);
+  });
+});
+
+describe('retention is self-enforcing', () => {
+  it('prunes inside the forward roll, not in a second job somebody must remember', () => {
+    /**
+     * ca_prune_hand_player_stat existed and was called by the one-off backfill
+     * runner and by nothing else, so the 15-minute cron only ever added rows.
+     * Measured 25 minutes after the backfill: 584,887 rows had become 721,397.
+     * At ~142,000 hands a day and ~13 seated players a hand that is ~1.85m rows
+     * a day, and the table would have passed the 14.2m rows this design exists
+     * to avoid inside a week - with nothing red to say so.
+     */
+    expect(FWDPRUNE).toMatch(/FUNCTION public\.ca_roll_hand_stats_forward\(\)/);
+    expect(FWDPRUNE).toMatch(/DELETE FROM ca_hand_player_stat s/);
+    expect(FWDPRUNE).toMatch(/WHERE r\.rn > 1000/);
+  });
+
+  it('scopes the prune to the players the roll just touched', () => {
+    // A full-table sweep is a window function over every row and took 24-40s
+    // during the backfill. This one is bounded by who actually played.
+    expect(FWDPRUNE).toMatch(/RETURNING user_id/);
+    expect(FWDPRUNE).toMatch(/WHERE user_id = ANY\(v_users\)/);
+  });
+
+  it('does not try to prune in the same statement as the insert', () => {
+    /**
+     * A DELETE in the same statement as the INSERT cannot see the rows that
+     * INSERT is adding - they are not in its snapshot - so the row_number()
+     * ranking would be computed without the newest hands and would delete
+     * exactly the wrong ones. The array round-trip is the fix, not clumsiness.
+     */
+    expect(FWDPRUNE).toMatch(/SELECT array_agg\(DISTINCT user_id\) INTO v_users FROM ins;/);
+    expect(FWDPRUNE).not.toMatch(/RETURNING user_id\s*\)\s*,\s*\w+\s+AS\s*\(\s*DELETE/i);
   });
 });

@@ -109,16 +109,31 @@ describe('Tournament Table UI & Avatar Sizing in TablePage', () => {
   });
 });
 
-describe('MiniStatsCard Tournament STATS Button', () => {
-  it('renders STATS button in tournament mode even when not seated', () => {
+describe('MiniStatsCard Tournament Stats Bar', () => {
+  /**
+   * Dan 2026-08-25 (binding): "tournaments are still missing the stats bar in
+   * the right corner."
+   *
+   * This spec used to assert `toHaveTextContent('STATS')` — i.e. it pinned the
+   * exact bug. The tournament branch of MiniStatsCard short-circuited past every
+   * figure the card exists to show and rendered a bare chart glyph labelled
+   * STATS, and this test guarded that. Rewritten in the same commit as the fix
+   * (CLAUDE.md §5.8: if you replace behaviour a test pins, update it here, not
+   * later) to assert what the corner must now actually contain.
+   *
+   * The two things worth protecting are unchanged and are both still asserted:
+   * it renders for a tournament EVEN WHEN NOT SEATED, and tapping it still
+   * opens the tournament lobby / info panel.
+   */
+  it('renders the real stats bar in tournament mode even when not seated', () => {
     const handleTap = vi.fn();
     render(
       <MiniStatsCard
-        currentStack={0}
+        currentStack={12345}
         totalBuyIn={0}
-        handsPlayed={0}
-        vpipCount={0}
-        handsWon={0}
+        handsPlayed={20}
+        vpipCount={5}
+        handsWon={3}
         isSeated={false}
         isTournament={true}
         onTap={handleTap}
@@ -127,7 +142,22 @@ describe('MiniStatsCard Tournament STATS Button', () => {
 
     const statsBtn = screen.getByRole('button', { name: /tournament stats/i });
     expect(statsBtn).toBeInTheDocument();
-    expect(statsBtn).toHaveTextContent('STATS');
+
+    // Figures, not a placeholder glyph. Stack is the one a tournament player
+    // actually needs; hands/VPIP/won are the session colour beside it.
+    expect(statsBtn).toHaveTextContent('Stack');
+    expect(statsBtn).toHaveTextContent('12,345');
+    expect(statsBtn).toHaveTextContent('Hands');
+    expect(statsBtn).toHaveTextContent('20');
+    expect(statsBtn).toHaveTextContent('VPIP');
+    expect(statsBtn).toHaveTextContent('25%');
+    expect(statsBtn).toHaveTextContent('Won');
+
+    // Buy-In and P&L are deliberately absent: in a tournament the buy-in is
+    // money and the stack is chips, so subtracting one from the other is
+    // meaningless. Asserted so nobody "restores" them.
+    expect(statsBtn).not.toHaveTextContent(/Buy-In/i);
+    expect(statsBtn).not.toHaveTextContent(/P&L/i);
 
     fireEvent.click(statsBtn);
     expect(handleTap).toHaveBeenCalledTimes(1);

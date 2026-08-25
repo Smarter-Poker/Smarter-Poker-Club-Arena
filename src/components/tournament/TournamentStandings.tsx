@@ -20,16 +20,32 @@ interface StandingsPlayer {
   chips: number;
   eliminated: boolean;
   finishPosition?: number;
+  /**
+   * The table this player is sitting at, when they are still in.
+   *
+   * Dan 2026-08-25 (binding): "you can go to Tables or Ranking and see any
+   * player and be redirected to that table directly." The column was already on
+   * `tournament_players` and already read by TournamentDetails - this component
+   * simply never selected it, so a name on the leaderboard was a dead end.
+   */
+  tableId?: string | null;
 }
 
 interface TournamentStandingsProps {
   tournamentId: string;
   totalPlayers: number;
+  /**
+   * Called with a player's table id when their row is activated. Supplying it
+   * is what makes the rows clickable; without it the board is read-only, which
+   * is correct for a finished tournament where no table exists to watch.
+   */
+  onWatchPlayer?: (tableId: string) => void;
 }
 
 export default function TournamentStandings({
   tournamentId,
   totalPlayers,
+  onWatchPlayer,
 }: TournamentStandingsProps) {
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [players, setPlayers] = useState<StandingsPlayer[]>([]);
@@ -131,7 +147,7 @@ export default function TournamentStandings({
     try {
       const { data, error } = await supabase
         .from('tournament_players')
-        .select('user_id, username, chips, status, position')
+        .select('user_id, username, chips, status, position, table_id')
         .eq('tournament_id', tournamentId);
 
       if (error) {
@@ -152,6 +168,7 @@ export default function TournamentStandings({
         chips: p.chips || 0,
         eliminated: p.status === 'eliminated',
         finishPosition: p.position,
+        tableId: p.table_id ?? null,
       }));
 
       // Sort by chips (active) or finish position (eliminated)
@@ -256,38 +273,64 @@ export default function TournamentStandings({
       <div className={styles.section}>
         <h4>Still In ({activePlayers.length})</h4>
         <div className={styles.playerGrid}>
-          {activePlayers.map((player, index) => (
-            <div
-              key={player.userId}
-              className={styles.playerCard}
-              style={{
-                opacity: visibleActive.has(index) ? 1 : 0,
-                transform: visibleActive.has(index) ? 'translateY(0)' : 'translateY(8px)',
-                transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              }}
-            >
-              <span className={styles.rank}>{index + 1}</span>
-              <div className={styles.avatar}>
-                {player.avatarUrl ? (
-                  <img
-                    loading="lazy"
-                    decoding="async"
-                    src={player.avatarUrl}
-                    alt=""
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = generateDefaultAvatar();
-                    }}
-                  />
-                ) : (
-                  <span>●</span>
-                )}
+          {activePlayers.map((player, index) => {
+            /* Dan 2026-08-25: clicking a player takes you to their table. Only
+               when there IS one - a player still waiting on a seat has a null
+               table_id, and a row that looks clickable and does nothing is
+               worse than a row that does not look clickable. */
+            const watchable = !!(onWatchPlayer && player.tableId);
+            const goWatch = () => {
+              if (watchable) onWatchPlayer!(player.tableId as string);
+            };
+            return (
+              <div
+                key={player.userId}
+                className={styles.playerCard}
+                role={watchable ? 'button' : undefined}
+                tabIndex={watchable ? 0 : undefined}
+                aria-label={watchable ? `Watch ${player.displayName} at their table` : undefined}
+                title={watchable ? 'Watch this player\u2019s table' : undefined}
+                onClick={watchable ? goWatch : undefined}
+                onKeyDown={
+                  watchable
+                    ? (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          goWatch();
+                        }
+                      }
+                    : undefined
+                }
+                style={{
+                  opacity: visibleActive.has(index) ? 1 : 0,
+                  transform: visibleActive.has(index) ? 'translateY(0)' : 'translateY(8px)',
+                  transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                  cursor: watchable ? 'pointer' : undefined,
+                }}
+              >
+                <span className={styles.rank}>{index + 1}</span>
+                <div className={styles.avatar}>
+                  {player.avatarUrl ? (
+                    <img
+                      loading="lazy"
+                      decoding="async"
+                      src={player.avatarUrl}
+                      alt=""
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = generateDefaultAvatar();
+                      }}
+                    />
+                  ) : (
+                    <span>●</span>
+                  )}
+                </div>
+                <div className={styles.info}>
+                  <span className={styles.name}>{player.displayName}</span>
+                  <span className={styles.chips}> {formatChips(player.chips)}</span>
+                </div>
               </div>
-              <div className={styles.info}>
-                <span className={styles.name}>{player.displayName}</span>
-                <span className={styles.chips}> {formatChips(player.chips)}</span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

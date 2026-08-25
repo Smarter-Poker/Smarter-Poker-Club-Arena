@@ -29,13 +29,11 @@ import type { SeatPlayer, Card, LastAction, PositionBadge } from '../components/
 import type { SidePot } from '../components/table/PotDisplay';
 import type { BoardStage } from '../components/table/CommunityCards';
 import { normalizeCardBack } from '../components/table/CardImage';
-// Rabbit-hunt button artwork (Dan: "use the actual rabbit hunt dynamic image").
-// Imported through Vite rather than referenced from public/ on purpose: an
-// imported asset is emitted into dist/assets/, and sync-club-arena.sh copies
-// assets/ wholesale while it deliberately PRESERVES (i.e. never updates)
-// public/hub/club-arena/images/. A new file dropped in images/ would never
-// reach production, and git-safe-push.sh's `git clean` sweeps untracked files
-// there — assets/ is explicitly excluded from that clean.
+// (The rabbit-hunt artwork note that used to sit here moved to RabbitHunt.tsx,
+// which is where the image is now actually imported and rendered. It had been
+// stranded above the table-skin registry for weeks, describing an import that
+// did not exist, while the button drew a text glyph.)
+//
 // Dan 2026-08-17 — five new composite skins (his renders) + three derived
 // colorways, all sharing the SAME canonical geometry as the original five
 // (felt window 20.3-79.6% x 8.9-89.2% of the 896x1200 frame, measured by
@@ -209,7 +207,12 @@ import GameServerAPI, {
   setSitOut,
   showHand as serverShowHand,
   toggleStraddle as serverToggleStraddle,
-  postBBToEnter as serverPostBBToEnter,
+  // `postBBToEnter` is deliberately NOT imported here any more. The overlay
+  // that called it is a notice now: cash entry is free, the only players still
+  // waiting are the two the engine holds out for one hand, and the engine
+  // refuses that call for both of them. The endpoint and its bbOnlyPosts path
+  // stay on the server for the fuzzer and for any future opt-in, but nothing
+  // in the product may bill a player for a hand they are about to get free.
   requestRabbitHunt,
 } from '../services/GameServerAPI';
 import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
@@ -299,6 +302,7 @@ import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
 import { getAnimationSpeed } from '../utils/animationSpeed';
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
 import { TableModalsLayer } from '../components/table/TableModalsLayer';
+import { MysteryBountyService, playerTotalsFromAwards } from '../services/MysteryBountyService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TOURNAMENT RESULT — what the Session Complete popup shows instead of chips
@@ -355,8 +359,11 @@ async function fetchTournamentResult(
         /* variant + tournament_type: the two columns isSpinTournament reads.
            Either one may carry it, which is why the helper checks both and
            nothing here re-derives it. Without them the ranking card branded
-           EVERY finished event a Spin. */
-        .select('name, current_players, variant, tournament_type')
+           EVERY finished event a Spin.
+
+           is_mystery_bounty gates the second read below, so an ordinary
+           freezeout makes no extra RPC calls on the way out of the table. */
+        .select('name, current_players, variant, tournament_type, is_mystery_bounty')
         .eq('id', tournamentId)
         .maybeSingle(),
       supabase
@@ -365,6 +372,24 @@ async function fetchTournamentResult(
         .eq('tournament_id', tournamentId),
     ]);
 
+    /* MYSTERY BOUNTY (sections 43, 44). The chest half of what this player won,
+       from the RPCs - `tournament_bounty_awards` has RLS on with no select
+       policy, so reading the table directly returns nothing and no error. */
+    let mystery: { bounties: number; cents: number; largestCents: number } | null = null;
+    if ((tourney as { is_mystery_bounty?: boolean } | null)?.is_mystery_bounty) {
+      const [board, awards] = await Promise.all([
+        MysteryBountyService.getLeaderboard(tournamentId),
+        MysteryBountyService.getAllAwards(tournamentId),
+      ]);
+      const boardRow = board.find((r) => r.userId === userId);
+      const fromAwards = playerTotalsFromAwards(awards.rows).get(userId);
+      const bounties = boardRow?.bountiesWon ?? fromAwards?.bountiesWon ?? 0;
+      const cents = boardRow?.earningsCents ?? fromAwards?.earningsCents ?? 0;
+      if (bounties > 0 || cents > 0) {
+        mystery = { bounties, cents, largestCents: fromAwards?.largestCents ?? 0 };
+      }
+    }
+
     return {
       name: tourney?.name || undefined,
       finishPlace: entry?.position ?? null,
@@ -372,6 +397,9 @@ async function fetchTournamentResult(
       prize: Number(entry?.prize) || 0,
       bountyWinnings: Number(entry?.bounty_winnings) || 0,
       knockouts: Number(entry?.bounties_collected) || 0,
+      mysteryBounties: mystery?.bounties,
+      mysteryBountyCents: mystery?.cents,
+      largestMysteryBountyCents: mystery?.largestCents,
       rebuys: Number(entry?.rebuys) || 0,
       // add_on is a count on some rows and a boolean on older ones; both mean
       // "how many add-ons", so coerce rather than trusting the column type.
@@ -2336,6 +2364,100 @@ export default function TablePage({
   const goToLobbyWithResultRef = useRef<
     ((position: number, prize: number, delayMs: number) => void) | null
   >(null);
+
+  /**
+   * BUST HOLD — Dan 2026-08-25 (binding)
+   *
+   * "When I just busted the tournament, it did not pause and ask me if I wanted
+   *  to rebuy, it just knocked me out. As soon as a player loses all their
+   *  chips it should HOLD ACTION for 5 seconds unless the user declines the
+   *  rebuy, then it starts the next hand right away."
+   *
+   * WHY IT KNOCKED HIM OUT. Two things watched the hero's stack reach zero and
+   * they raced, and the wrong one always won:
+   *
+   *   1. the tournament bust watcher, which asks `canRebuy` and opens the rebuy
+   *      modal — but only fires `if (!tableState.isHandInProgress)`, i.e. AFTER
+   *      the hand that busted him had fully settled; and
+   *   2. the `player_eliminated` realtime handler, which fires the INSTANT the
+   *      engine eliminates him — mid-settlement — and unconditionally called
+   *      `goToLobbyWithResult(position, prize, 2500)`.
+   *
+   * (2) always arrives first, `goToLobbyWithResult` sets `exitStarted = true`
+   * and is idempotent forever after, so by the time (1) was allowed to look,
+   * the exit was already scheduled and the rebuy prompt — even when the player
+   * was fully entitled to rebuy — was pointless. That is the bug, exactly as
+   * described: no pause, no question, straight out.
+   *
+   * THE HOLD. `bustHoldRef` is claimed by whichever watcher notices the bust
+   * first and it makes the elimination path WAIT rather than navigate. It
+   * releases in one of three ways and can never leak:
+   *
+   *   • the rebuy prompt opens   -> the modal is the pause; the hold is handed
+   *                                 to it, and its accept/decline paths decide
+   *                                 what happens next (decline already exits).
+   *   • rebuy is not available   -> released immediately, normal exit resumes.
+   *   • BUST_HOLD_MS elapses     -> released by the deadline timer below, so a
+   *                                 hung `canRebuy` call, a dead network or an
+   *                                 unmount cannot strand a player at a table
+   *                                 they have no chips at.
+   *
+   * The deferred exit is stored, not dropped: whatever position/prize the
+   * elimination broadcast carried is replayed when the hold releases, so the
+   * result card is still correct.
+   */
+  const BUST_HOLD_MS = 5000;
+  const bustHoldRef = useRef<{
+    active: boolean;
+    /** The exit that was deferred, replayed verbatim when the hold releases. */
+    pendingExit: { position: number; prize: number; delayMs: number } | null;
+    deadline: ReturnType<typeof setTimeout> | null;
+  }>({ active: false, pendingExit: null, deadline: null });
+
+  /** Release the hold and run any exit that was deferred while it was held. */
+  const releaseBustHold = useCallback(() => {
+    const hold = bustHoldRef.current;
+    if (hold.deadline) {
+      clearTimeout(hold.deadline);
+      hold.deadline = null;
+    }
+    if (!hold.active) return;
+    hold.active = false;
+    const pending = hold.pendingExit;
+    hold.pendingExit = null;
+    if (pending) {
+      goToLobbyWithResultRef.current?.(pending.position, pending.prize, pending.delayMs);
+    }
+  }, []);
+
+  /**
+   * Claim the hold. Returns false when one is already running, so two watchers
+   * noticing the same bust cannot start two deadlines.
+   */
+  const beginBustHold = useCallback(() => {
+    const hold = bustHoldRef.current;
+    if (hold.active) return false;
+    hold.active = true;
+    hold.pendingExit = null;
+    hold.deadline = setTimeout(() => {
+      // Fail OPEN: the grace period is over, whatever happened to the check.
+      bustHoldRef.current.deadline = null;
+      releaseBustHold();
+    }, BUST_HOLD_MS);
+    return true;
+  }, [releaseBustHold]);
+
+  // A player who navigates away inside the grace window must not leave a timer
+  // behind that fires against a torn-down page.
+  useEffect(() => {
+    return () => {
+      const hold = bustHoldRef.current;
+      if (hold.deadline) clearTimeout(hold.deadline);
+      hold.deadline = null;
+      hold.active = false;
+      hold.pendingExit = null;
+    };
+  }, []);
   const vpipCountRef = useRef(0);
   // Dan 2026-08-15 (Session Stats fix): per-HAND voluntary-action flags.
   // vpipCountRef above is cumulative and cannot answer "did hero VPIP THIS
@@ -3648,6 +3770,8 @@ export default function TablePage({
   // pack, then five diamonds) and answers only the caller that paid.
   const [isRabbitAvailable, setIsRabbitAvailable] = useState(false);
   const [rabbitCardsAvailable, setRabbitCardsAvailable] = useState(0);
+  /** Live diamond price from feature_pricing, sent with the offer. */
+  const [rabbitDiamondCost, setRabbitDiamondCost] = useState<number | null>(null);
   const rabbitHandNumberRef = useRef<number | null>(null);
 
   const handleRabbitReveal = useCallback(async (): Promise<RabbitHuntRevealResult> => {
@@ -3684,6 +3808,10 @@ export default function TablePage({
       // which is why the button could say FREE on the 101st hunt and then
       // silently charge five diamonds.
       vipRemaining: result.vip_remaining,
+      // Uses left on a purchased pack. Without it a pack reveal spent neither
+      // diamonds nor a VIP use, so the player burned one of something they had
+      // paid for and nothing on screen acknowledged it.
+      usesRemaining: result.uses_remaining,
     };
   }, [tableId]);
 
@@ -4229,10 +4357,23 @@ export default function TablePage({
       bustPromptFiredRef.current = false;
       return;
     }
-    if (tableState.isHandInProgress) return;
+    /* Dan 2026-08-25 (binding): `if (tableState.isHandInProgress) return;` used
+     * to sit here, and it is the second half of "it just knocked me out". It
+     * made this watcher wait for the busting hand to finish settling, while the
+     * `player_eliminated` broadcast fired mid-settlement and scheduled the exit
+     * — so the prompt was always asking a question that had already been
+     * answered. The prompt now fires the moment the stack reaches zero, and
+     * claims the bust hold so the elimination path waits for it instead. The
+     * cash-game watcher above KEEPS its in-hand guard: a cash player is not
+     * being removed from anything, so there is nothing to race and no reason to
+     * throw a modal over a hand that is still paying out. */
     if (bustPromptFiredRef.current) return;
     if (showRebuyModal) return;
     bustPromptFiredRef.current = true;
+
+    // Claim the grace period BEFORE any await — the elimination broadcast can
+    // land inside the very next tick.
+    beginBustHold();
 
     (async () => {
       try {
@@ -4243,12 +4384,24 @@ export default function TablePage({
             const quote = tournamentService.quoteFromTournament(tournament, 'rebuy');
             setRebuyData({ cost: quote.baseCost, fee: quote.fee, chips: quote.chips });
             setShowRebuyModal(true);
+            /* The modal IS the pause now, so the 5s deadline must not fire out
+             * from under a player who is reading a price. Cancel the timer but
+             * keep the hold (and any exit deferred into it) claimed: the
+             * modal's confirm / decline paths release it. */
+            const hold = bustHoldRef.current;
+            if (hold.deadline) {
+              clearTimeout(hold.deadline);
+              hold.deadline = null;
+            }
             return;
           }
         }
       } catch (err) {
         console.warn('[TablePage] Tournament rebuy check error:', err);
       }
+
+      // No rebuy on offer — nothing to hold for. Let the deferred exit run.
+      releaseBustHold();
 
       // If rebuy not available or not allowed, check if eliminated and exit cleanly
       try {
@@ -4273,10 +4426,11 @@ export default function TablePage({
     userId,
     tableState.heroSeat,
     tableState.players,
-    tableState.isHandInProgress,
     tableState.isTournament,
     tableState.tournamentId,
     showRebuyModal,
+    beginBustHold,
+    releaseBustHold,
   ]);
 
   const confirmBustRebuy = useCallback(
@@ -5210,9 +5364,22 @@ export default function TablePage({
         // only to players who folded. Gating on heroFolded meant the player who
         // won the pot when everyone else folded — the one person most likely to
         // wonder what was coming — was never offered a rabbit hunt at all.
-        if (available > 0) {
+        //
+        // But it goes ONLY to them. This is a room-wide broadcast, so it now
+        // names who was dealt in: without this check a spectator, or someone who
+        // had just sat down, saw a live Rabbit Hunt button whose only possible
+        // outcome was the server refusing them.
+        const eligibleIds = Array.isArray(handState.eligible_user_ids)
+          ? (handState.eligible_user_ids as string[])
+          : null;
+        const heroMayHunt = !eligibleIds || (!!userId && eligibleIds.includes(userId));
+        if (available > 0 && heroMayHunt) {
           rabbitHandNumberRef.current = Number(handState.hand_number ?? 0) || null;
           setRabbitCardsAvailable(available);
+          // The live price from feature_pricing, so a repricing reaches the
+          // button without a deploy.
+          const cost = Number(handState.diamond_cost);
+          if (Number.isFinite(cost) && cost > 0) setRabbitDiamondCost(cost);
           setIsRabbitAvailable(true);
         }
         return;
@@ -6319,14 +6486,26 @@ export default function TablePage({
                     });
                     goToLobbyWithResult(1, elimData.prize || 0, 7000);
                   } else {
-                    // Busted: a short beat so the elimination lands, then out.
-                    // The result card in the lobby says everything the old
-                    // toast said, in a place you can actually read it.
-                    goToLobbyWithResult(
-                      Number(elimData.position) || 0,
-                      Number(elimData.prize) || 0,
-                      2500
-                    );
+                    /* Busted: a short beat so the elimination lands, then out.
+                       The result card in the lobby says everything the old
+                       toast said, in a place you can actually read it.
+
+                       Dan 2026-08-25 (binding): this line is what "it just
+                       knocked me out" was. It raced the rebuy watcher and won
+                       every time, and `goToLobbyWithResult` is one-shot, so the
+                       rebuy prompt could never get in front of it. If a bust
+                       hold is running, the exit is DEFERRED into it and replayed
+                       verbatim when the hold releases (see bustHoldRef). */
+                    const exit = {
+                      position: Number(elimData.position) || 0,
+                      prize: Number(elimData.prize) || 0,
+                      delayMs: 2500,
+                    };
+                    if (bustHoldRef.current.active) {
+                      bustHoldRef.current.pendingExit = exit;
+                    } else {
+                      goToLobbyWithResult(exit.position, exit.prize, exit.delayMs);
+                    }
                   }
                 }
 
@@ -6606,7 +6785,14 @@ export default function TablePage({
                     : 0;
                   if (durSec > 0) setLevelClock({ startedAtMs: Date.now(), durationSec: durSec });
                 }
-                setAnnouncement({ type: 'level_up', data: levelData });
+                /* Dan 2026-08-25 (binding): the banner used to receive
+                 * `levelData` raw, and `levelData.level` is the engine's
+                 * 0-BASED structure index — the same value we add 1 to on the
+                 * line above for the masthead. So the masthead said LEVEL 2
+                 * while the banner announcing that very change said LEVEL 1.
+                 * Hand the banner the human level; it must not know about the
+                 * engine's indexing. */
+                setAnnouncement({ type: 'level_up', data: { ...levelData, level: lvlIdx + 1 } });
                 // COMPETITOR-PARITY 2026-08-19: the level-up banner animated
                 // in silence — give it its fanfare.
                 if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playLevelUp();
@@ -11904,20 +12090,33 @@ export default function TablePage({
           )
         }
         upperRight={
-          <MiniStatsCard
-            currentStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
-            totalBuyIn={totalBuyInRef.current}
-            handsPlayed={handsPlayedRef.current}
-            vpipCount={vpipCountRef.current}
-            handsWon={handsWonRef.current}
-            isSeated={tableState.heroSeat > 0}
-            isTournament={tableState.isTournament}
-            onTap={() =>
-              tableState.isTournament && tableState.tournamentId
-                ? setShowTournamentInfo(true)
-                : setShowSessionStats(true)
-            }
-          />
+          /* Dan 2026-08-25: "tournaments are still missing the stats bar in the
+             right corner." Two separate faults produced one empty corner:
+             MiniStatsCard bailed out to a bare STATS button for tournaments
+             (fixed in that component), and TournamentHUD — the level / blinds /
+             ante / countdown bar — was rendered as a loose inline-flex div at
+             the very END of this page's tree, outside the fixed HUD layer, so
+             it had no corner to be in and nothing anchored it on screen. Both
+             now live here, stacked, in the corner Dan is pointing at. */
+          <div className="hud-ur-column">
+            {tableState.isTournament && tableState.tournamentId && (
+              <TournamentHUD tournamentId={tableState.tournamentId} />
+            )}
+            <MiniStatsCard
+              currentStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
+              totalBuyIn={totalBuyInRef.current}
+              handsPlayed={handsPlayedRef.current}
+              vpipCount={vpipCountRef.current}
+              handsWon={handsWonRef.current}
+              isSeated={tableState.heroSeat > 0}
+              isTournament={tableState.isTournament}
+              onTap={() =>
+                tableState.isTournament && tableState.tournamentId
+                  ? setShowTournamentInfo(true)
+                  : setShowSessionStats(true)
+              }
+            />
+          </div>
         }
         bottomLeft={
           <div className="hud-ul-column hud-ul-column--stack">
@@ -13253,6 +13452,11 @@ export default function TablePage({
                            keys arrive here. Before 2026-08-20 they set a
                            `showRaiseSlider` flag that nothing rendered. */
                         raiseIntent={raiseIntent}
+                        /* Dan 2026-08-25 (binding): amounts are ACTUAL TOTALS
+                           unless this player turned BB on. The panel used to
+                           print BB unconditionally while every seat next to it
+                           printed chips. Same setting the seats and pot read. */
+                        showStackInBB={v8Settings.show_stack_in_bb}
                         isMyTurn={true}
                         isPreflop={tableState.boardStage === 'preflop'}
                         /* Dan 2026-08-19 item 4b: PLO must always offer
@@ -14035,6 +14239,7 @@ export default function TablePage({
         // Rabbit Hunt
         isRabbitAvailable={isRabbitAvailable}
         rabbitCardsAvailable={rabbitCardsAvailable}
+        rabbitDiamondCost={rabbitDiamondCost}
         onRabbitReveal={handleRabbitReveal}
         // Leaderboard
         showLeaderboard={showLeaderboard}
@@ -14146,6 +14351,12 @@ export default function TablePage({
             await tournamentService.processRebuy(tableState.tournamentId, userId);
             toast?.success('Rebuy successful - chips added to your stack');
             setShowRebuyModal(false);
+            /* Dan 2026-08-25: the player REBOUGHT, so any exit the elimination
+               broadcast deferred into the bust hold must be thrown away rather
+               than replayed — replaying it would navigate a player with a fresh
+               stack out of the tournament they just paid to stay in. */
+            bustHoldRef.current.pendingExit = null;
+            releaseBustHold();
           } catch (err: any) {
             toast?.error(err.message || 'Rebuy failed');
           } finally {
@@ -14154,6 +14365,12 @@ export default function TablePage({
         }}
         onCloseRebuyModal={() => {
           setShowRebuyModal(false);
+          /* Declined: "unless the user declines the rebuy, then it starts the
+             next hand right away." Release immediately — no waiting out the
+             rest of the 5 seconds. This runs BEFORE the manual exit below so a
+             deferred elimination (which carries the real finishing position and
+             prize) wins over the 0/0 fallback. */
+          releaseBustHold();
           if (tableId && userId) {
             GameServerAPI.notifyServerRejectRebuy(tableId).catch(console.error);
             if (
@@ -14194,16 +14411,16 @@ export default function TablePage({
           break, there should be a countdown clock."
 
           TournamentHUD is exactly that - level, blinds, ante, a live countdown
-          to the next level, players remaining and average stack, sized to sit
-          on the felt - and it was built, documented and rendered NOWHERE. Same
-          shape of miss as lazyWithRetry: a finished component wired to
-          nothing, so the feature looked absent when it was only unmounted.
-          The break countdown (TournamentBreakScreen) already ticks; this is
-          the other half, the one you watch while you are still playing. */}
-      {tableState.isTournament && tableState.tournamentId && (
-        <TournamentHUD tournamentId={tableState.tournamentId} />
-      )}
+          to the next level, players remaining and average stack.
 
+          2026-08-25: it used to be rendered HERE, as a bare `inline-flex` div
+          with no positioning, at the end of a page whose layout is a fixed
+          full-viewport stack. Mounted, yes - but with nothing to anchor it, so
+          it never appeared in any corner, which is Dan's "tournaments are still
+          missing the stats bar in the right corner". It has moved into the
+          TableHUD upper-right slot above (search `hud-ur-column`), which is the
+          fixed overlay layer the cash-game stats card already used. Do not
+          render it a second time here. */}
       {/* Tournament lobby/stats, opened from the upper-right button while
           seated in an MTT, Spin or Heads-Up (Dan 2026-08-23). Mounted last so
           it layers above the felt, and only while open so it costs nothing on

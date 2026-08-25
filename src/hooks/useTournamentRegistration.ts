@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useUserStore } from '../stores/useUserStore';
 import { tournamentService } from '../services/TournamentService';
 import { supabase } from '../lib/supabase';
-import { fmtChips } from '../utils/format';
-import confirmDialog from '../components/common/confirmDialog';
+import { signUpDialog } from '../components/tournament/signUpDialog';
 import { useToast } from '../components/common/Toast';
 import { reportError } from '../utils/errorReporter';
 
@@ -23,6 +22,16 @@ export interface RegisterTournamentParams {
   name: string;
   buy_in_amount: number;
   buy_in_fee?: number;
+  /* Dan 2026-08-25: the confirmation is now the full Sign Up card rather than a
+     one-line "this will debit N" prompt, so it can show the rest of what a
+     player is buying. All optional — a caller that only has the two money
+     fields still gets a correct dialog, just a shorter one. */
+  bounty_amount?: number | null;
+  is_pko?: boolean;
+  is_mystery_bounty?: boolean;
+  start_time?: string | null;
+  /** True when registering after the off, so the card says Late Register. */
+  is_late_registration?: boolean;
 }
 
 export function useTournamentRegistration() {
@@ -59,11 +68,36 @@ export function useTournamentRegistration() {
       if (registeringRef.current) return;
       registeringRef.current = true;
 
-      const totalCost = t.buy_in_amount + (t.buy_in_fee || 0);
-      const confirmed = await confirmDialog({
-        title: 'Confirm Buy In',
-        message: `Register for ${t.name}? This will debit ${fmtChips(totalCost)} from your wallet.`,
-        confirmText: 'Confirm Buy In',
+      /**
+       * ONE CONFIRMATION, AND THIS IS IT (Dan 2026-08-25, binding).
+       *
+       * "You don't need a secondary confirmation for buy ins. That's not
+       *  needed."
+       *
+       * This used to be a generic `confirmDialog` — "Register for X? This will
+       * debit 50 from your wallet." — and TournamentDetails had ALREADY shown
+       * its own, far better Sign Up card before calling here, so registering
+       * from the details page asked the same question twice. The other four
+       * callers (ClubHomePage, TournamentPage, XMTTPage, UnionGamesPage) had no
+       * card of their own, so simply deleting this would have left them taking
+       * money with nothing asked at all.
+       *
+       * So the good card was promoted, not the terse one deleted: every path
+       * through this hook now shows the SAME Sign Up dialog, exactly once, with
+       * entry fee, bounty, start time and wallet balance on it. The details
+       * page no longer renders a local copy — see TournamentDetails
+       * `handleRegister`.
+       */
+      const confirmed = await signUpDialog({
+        name: t.name,
+        buyInAmount: t.buy_in_amount,
+        buyInFee: t.buy_in_fee ?? 0,
+        bountyAmount: t.bounty_amount ?? 0,
+        isPko: t.is_pko,
+        isMysteryBounty: t.is_mystery_bounty,
+        startTime: t.start_time ?? null,
+        userId: currentUserId,
+        isLateRegistration: t.is_late_registration,
       });
       if (!confirmed) {
         registeringRef.current = false;

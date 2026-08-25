@@ -352,6 +352,11 @@ export interface CashFeatureSource {
   pineapple_holdem?: boolean | null;
   is_anonymous?: boolean | null;
   restrict_observers?: boolean | null;
+  /* NIT GAME. The switch, then the three numbers it governs. */
+  nit_game?: boolean | null;
+  maintain_percent_min?: number | null;
+  maintain_hands?: number | null;
+  career_percent_min?: number | null;
   /**
    * Legacy JSONB. All 50 live tables carry `{}` and get_club_home stopped
    * sending it on 2026-08-25 - the fields are columns now. Kept optional
@@ -515,6 +520,37 @@ export function cashRuleMedallions(row: CashFeatureSource): RuleMedallion[] {
     });
   }
 
+  /* NIT GAME. fn_nit_check is the enforcer: career VPIP at the door
+     (atomic_table_buyin) and table VPIP between hands (fn_nit_evictions, read
+     by the dealing loop). The chip states the numbers rather than just the
+     name, because "NIT GAME" alone tells a player nothing about whether they
+     would survive it. The switch is the master: with it off the three numbers
+     do nothing, so a table carrying stale numbers must not advertise them. */
+  if (col(row.nit_game) === true) {
+    const career = Number(row.career_percent_min) || 0;
+    const maintain = Number(row.maintain_percent_min) || 0;
+    const hands = Number(row.maintain_hands) || 0;
+    const parts: string[] = [];
+    if (career > 0) parts.push(`${career}% career`);
+    if (maintain > 0) parts.push(`${maintain}% here`);
+    rules.push({
+      key: 'nit_game',
+      label: 'NIT GAME',
+      detail: parts.length ? parts.join(' / ') : undefined,
+      tip:
+        parts.length === 0
+          ? 'This table penalises tight play'
+          : [
+              career > 0 ? `A career VPIP of ${career}% or more is needed to take a seat` : '',
+              maintain > 0
+                ? `Play under ${maintain}% VPIP over ${hands || 10} hands here and you are stood up`
+                : '',
+            ]
+              .filter(Boolean)
+              .join('. '),
+    });
+  }
+
   /* The engine substitutes seat aliases for names at an anonymous table. */
   if (col(row.is_anonymous) === true) {
     rules.push({
@@ -536,14 +572,16 @@ export function cashRuleMedallions(row: CashFeatureSource): RuleMedallion[] {
      Dan asked for VPIP and for a minimum-hands rule, and the honest answer is
      that this platform does not have either yet:
 
-       VPIP        - there is no vpip column on `tables` at all. The seat HUD
-                     shows VPIP to everyone unconditionally, so a chip would
-                     be true of every table and would distinguish nothing.
-       MIN HANDS   - `maintain_hands` is 10 on all 46 rows and is read by
-                     NOTHING. A player can sit, play one hand and leave.
-                     "MIN 10 HANDS" would be a rule the table will not keep.
-       CALL TIME   - `calltime_enabled` likewise, and the old medallion read
-                     `call_time_enabled`, a name that is not even a column.
+       CALL TIME   - `calltime_enabled` has no reader anywhere, and the old
+                     medallion read `call_time_enabled`, a name that is not
+                     even a column.
+
+     VPIP AND MIN HANDS LEFT THIS LIST on 2026-08-25. They were never a chip of
+     their own: they are the NIT GAME rule, which now has an enforcer at the
+     door (atomic_table_buyin, career VPIP) and one between hands
+     (fn_nit_evictions, VPIP at this table over maintain_hands). The chip above
+     prints the actual thresholds, because "NIT GAME" on its own tells a player
+     nothing about whether they would survive it.
 
      NO RATHOLE LEFT THIS LIST on 2026-08-25, when atomic_table_buyin started
      enforcing it. That is the bar: a chip appears the day something refuses to

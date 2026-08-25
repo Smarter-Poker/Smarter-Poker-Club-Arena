@@ -169,6 +169,7 @@ import SpinWheel, {
   parseLockedTiers,
   type SpinWheelData,
 } from '../components/tournament/SpinWheel';
+import { spinRevealTotalMs } from '../config/spinSpec';
 import TournamentWinnerOverlay from '../components/table/TournamentWinnerOverlay';
 import { isSpinTournament, type SpinRevealSubject } from '../utils/spinReveal';
 // RealtimeChannelService imported if needed for future use
@@ -739,6 +740,105 @@ function formatBlindPair(small: unknown, big: unknown): string {
   return `${one(small)}/${one(big)}`;
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE SPIN REVEAL GATE - "PLAYED", NOT "ARRIVED" (defects D1 + D4, 2026-08-25)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * D1. `spin-reveal-<tournament_id>` used to be stamped the instant a
+ * SPIN_REVEAL event LANDED, and the DB fallback then refused to run because it
+ * found the stamp. sessionStorage survives a same-tab reload, so the one case
+ * the gate was written for - "the player refreshed mid-reveal" - was the exact
+ * case it blocked. The wheel stayed down for the rest of that tab's life and
+ * the player never saw the draw they opened the Spin for.
+ *
+ * The key now records COMPLETION, written from the wheel's own onDone. A
+ * reload inside the sequence finds nothing, replays, and - because the reveal
+ * carries the engine's clock - picks the wheel up exactly where the other
+ * seats already are. A reload after the wheel finished finds the completion
+ * stamp and the wheel stays down.
+ *
+ * The legacy '1' value meant "an event arrived" and is deliberately NOT read
+ * as a completion: only a wall-clock millisecond stamp suppresses.
+ *
+ * D4. A reveal is a LIVE moment, not a record. The old gate allowed a
+ * started_at up to 90s old while the engine holds the deal for roughly 18s,
+ * and it handed the wheel no revealAtMs at all - so a late arrival replayed
+ * the whole 3-2-1 countdown as a modal takeover over a hand already being
+ * played. The reveal instant now travels with the draw, and past
+ * spinRevealTotalMs() the wheel does not open at all.
+ */
+function spinRevealPlayedKey(tournamentId: string): string {
+  return `spin-reveal-${tournamentId}`;
+}
+
+/** Did the wheel run to completion for this tournament in THIS tab? */
+function spinRevealAlreadyPlayed(tournamentId: string | null | undefined): boolean {
+  if (!tournamentId) return false;
+  try {
+    const raw = sessionStorage.getItem(spinRevealPlayedKey(tournamentId));
+    if (!raw) return false;
+    /* Only a real timestamp counts (D1). 1e12 ms is 2001, i.e. anything that
+       could plausibly have come from Date.now(); the legacy '1' cannot. */
+    const at = Number(raw);
+    return Number.isFinite(at) && at > 1_000_000_000_000;
+  } catch {
+    return false;
+  }
+}
+
+function markSpinRevealPlayed(tournamentId: string | null | undefined): void {
+  if (!tournamentId) return;
+  try {
+    sessionStorage.setItem(spinRevealPlayedKey(tournamentId), String(Date.now()));
+  } catch {
+    /* private mode - the in-memory ref still stops a replay within this mount */
+  }
+}
+
+/** Is the shared sequence still running, or is it already history? (D4) */
+function spinRevealStillLive(revealAtMs: number | null): boolean {
+  // No clock at all (older tournament rows carry no started_at): keep the old
+  // behaviour and let it play rather than silently swallowing a live draw.
+  if (revealAtMs == null || !Number.isFinite(revealAtMs)) return true;
+  return Date.now() - revealAtMs < spinRevealTotalMs();
+}
+
+/** The tournament columns the wheel needs, and nothing else. */
+interface SpinDrawRow {
+  spin_multiplier?: number | string | null;
+  spin_locked_tiers?: unknown;
+  buy_in_amount?: number | string | null;
+  started_at?: string | null;
+}
+
+/**
+ * Build the wheel payload from a tournament row, or null when there is no
+ * live reveal to show. The multiplier is a SERVER fact (crypto-grade draw at
+ * creation); nothing here decides anything, it only decides whether to LOOK.
+ */
+function buildSpinDrawFromRow(row: SpinDrawRow | null | undefined): SpinWheelData | null {
+  const multiplier = Number(row?.spin_multiplier) || 0;
+  if (multiplier <= 0) return null;
+  const startedAtMs = row?.started_at ? Date.parse(row.started_at) : NaN;
+  const revealAtMs = Number.isFinite(startedAtMs) ? startedAtMs : null;
+  if (!spinRevealStillLive(revealAtMs)) return null;
+  return {
+    multiplier,
+    buyIn: Number(row?.buy_in_amount) || 0,
+    tiers: DEFAULT_SPIN_TIERS,
+    // The tiers the Reserve Pool could not fund AT THE MOMENT OF THIS DRAW,
+    // recorded on the row by fn_spin_draw_multiplier. Older Spins have no
+    // column value and simply show none.
+    lockedTiers: parseLockedTiers(row?.spin_locked_tiers),
+    /* D4: the engine draws the multiplier AT START, so started_at is the
+       reveal instant every seat is animating against. Passing it lets
+       SpinWheel skip to wherever the shared sequence already is instead of
+       starting a private countdown from the top. */
+    revealAtMs: revealAtMs ?? Date.now(),
+  };
+}
+
 export default function TablePage({
   embeddedTableId,
   onTableInfoUpdate,
@@ -896,6 +996,43 @@ export default function TablePage({
   const [chestRemoteOpened, setChestRemoteOpened] = useState(false);
   // The Spin multiplier draw. Server-decided, shown once per tournament.
   const [spinDraw, setSpinDraw] = useState<SpinWheelData | null>(null);
+  /**
+   * D1: has THIS mount already put the wheel on screen? The sessionStorage
+   * stamp records only a COMPLETED reveal, so this in-memory ref is what stops
+   * the SPIN_REVEAL event and the DB fallback from both opening it in the same
+   * instant. It resets on reload, which is the whole point of D1: a refresh
+   * inside the reveal window is entitled to see the wheel again.
+   */
+  const spinRevealPlayedRef = useRef(false);
+  /** Which tournament the wheel on screen belongs to, so onDone can stamp it. */
+  const spinRevealTournamentRef = useRef<string | null>(null);
+  /**
+   * D2 + D8: has play actually BEGUN on this table? Derived from state this
+   * page already receives - the button has been drawn, a hand has started, or
+   * seats that were bought at zero chips now hold a stack (a seat-first seat
+   * is a reservation until the multiplier is known, so a non-zero stack means
+   * the spin resolved). Latches once: play does not un-begin.
+   */
+  const [playHasBegun, setPlayHasBegun] = useState(false);
+  /**
+   * The one place the wheel is opened from a tournament ROW (the DB fallback
+   * path, used both at mount and by the post-start re-check for D2). Returns
+   * whether the wheel was actually opened, so callers can stop retrying.
+   */
+  const showSpinDrawFromRow = useCallback(
+    (tournamentId: string | null | undefined, row: SpinDrawRow | null | undefined): boolean => {
+      if (!tournamentId || !row) return false;
+      if (spinRevealPlayedRef.current) return false;
+      if (spinRevealAlreadyPlayed(tournamentId)) return false;
+      const draw = buildSpinDrawFromRow(row);
+      if (!draw) return false;
+      spinRevealPlayedRef.current = true;
+      spinRevealTournamentRef.current = tournamentId;
+      setSpinDraw(draw);
+      return true;
+    },
+    []
+  );
   const chestChannelRef = useRef<ReturnType<typeof masterBus.getOrCreateChannel> | null>(null);
 
   /**
@@ -5056,13 +5193,23 @@ export default function TablePage({
 
         // ─── Load bounty data for KO/PKO tournaments ───
         if (table.tournament_id) {
-          const { data: tournData } = await supabase
+          /* AUDIT 2026-08-25: this destructured `data` only, so a query that
+             FAILED (RLS, network, PostgREST error) was indistinguishable from
+             "there is no such tournament" - it fell into the else-branch below
+             and the table settled on an unknown format forever, silently. We
+             asked and could not get an answer; say so. */
+          const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
               'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, buy_in_amount, buy_in_fee, max_players, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
+          if (tournError) {
+            reportError(tournError, 'TablePage.loadTableInfo_tournament_row', {
+              tournamentId: table.tournament_id,
+            });
+          }
 
           // ─── Resolve initial tournament blind level ───
           // Tournament tables don't have static small_blind/big_blind columns —
@@ -5326,67 +5473,22 @@ export default function TablePage({
           // to stop. Nothing is decided on the client, and all three players
           // watch the same result land at the same moment.
           //
-          // Shown once per table visit, gated on sessionStorage so a reconnect
-          // mid-tournament does not replay a draw that already happened.
-          if (tournData?.spin_multiplier && tournData.spin_multiplier > 0) {
-            const seenKey = `ca_spin_seen:${table.tournament_id}`;
-            let alreadySeen = false;
-            try {
-              alreadySeen = sessionStorage.getItem(seenKey) === '1';
-            } catch {
-              /* storage unavailable — show it, a repeat beats never seeing it */
-            }
-            // sessionStorage is per-TAB, so a fresh tab used to replay a draw
-            // from minutes ago as if it were happening now — a fake reveal of
-            // an old result, which is the same dishonesty as the spoiler in
-            // the other direction. The draw happens at start, so the wheel is
-            // only a live moment within ~90s of started_at; after that the
-            // persistent badge is the record and the wheel stays down.
-            const startedAtMs = tournData.started_at ? Date.parse(tournData.started_at) : NaN;
-            const drawIsFresh = Number.isFinite(startedAtMs)
-              ? Date.now() - startedAtMs < 90_000
-              : true; // no started_at (older rows): keep the old behaviour
-            /**
-             * FALLBACK ONLY (Dan 2026-08-21). The wheel is now driven by the
-             * engine's SPIN_REVEAL broadcast so every seat sees one shared
-             * moment. This DB-derived path remains for a client that was not
-             * connected when the event went out — a refresh mid-reveal, or a
-             * socket that reconnected a second late. It marks the same
-             * sessionStorage key the event handler uses, so whichever arrives
-             * first wins and the wheel never plays twice.
-             */
-            const sharedKey = `spin-reveal-${table.tournament_id}`;
-            let sharedAlreadyShown = false;
-            try {
-              sharedAlreadyShown = !!sessionStorage.getItem(sharedKey);
-            } catch {
-              /* private mode */
-            }
-            if (!alreadySeen && drawIsFresh && !sharedAlreadyShown) {
-              try {
-                sessionStorage.setItem(sharedKey, '1');
-              } catch {
-                /* ignore */
-              }
-              try {
-                sessionStorage.setItem(seenKey, '1');
-              } catch {
-                /* ignore */
-              }
-              setSpinDraw({
-                multiplier: Number(tournData.spin_multiplier),
-                buyIn: Number(tournData.buy_in_amount) || 0,
-                tiers: DEFAULT_SPIN_TIERS,
-                // The tiers the Reserve Pool could not fund AT THE MOMENT OF
-                // THIS DRAW, recorded on the row by fn_spin_draw_multiplier.
-                // SpinWheel had rendered locked segments, shipped the CSS and
-                // been tested since the day it was written; nothing had ever
-                // passed the value, so the feature was dead on arrival.
-                // Older Spins have no column value and simply show none.
-                lockedTiers: parseLockedTiers(tournData.spin_locked_tiers),
-              });
-            }
-          }
+          // FALLBACK ONLY (Dan 2026-08-21). The wheel is driven by the
+          // engine's SPIN_REVEAL broadcast so every seat sees one shared
+          // moment. This DB-derived path is for a client that was not
+          // connected when the event went out — a refresh mid-reveal, or a
+          // socket that reconnected a second late.
+          //
+          // D1 + D4 (2026-08-25): this block used to carry its own gate. It
+          // held TWO sessionStorage keys (`ca_spin_seen:` and the shared
+          // `spin-reveal-`), both written on ARRIVAL, so the refresh case it
+          // named in its own comment was the case it blocked; and it built the
+          // draw with no revealAtMs behind a 90s window, so a client arriving
+          // 80s late replayed a countdown over a hand in progress. Both gates
+          // now live in one place — showSpinDrawFromRow / buildSpinDrawFromRow
+          // — which suppress only on a COMPLETED reveal and hand the wheel the
+          // engine's own clock.
+          showSpinDrawFromRow(table.tournament_id, tournData);
         }
 
         // Subscribe to tournament break + add-on events via Realtime
@@ -7241,15 +7343,26 @@ export default function TablePage({
         };
         const mult = Number(d?.multiplier) || 0;
         if (!mult) break;
-        // Only ever show it once per game, however many times the event is
-        // replayed by a reconnect.
-        const key = `spin-reveal-${(evt.data as { tournament_id?: string })?.tournament_id || tableState.tournamentId || tableId}`;
-        try {
-          if (sessionStorage.getItem(key)) break;
-          sessionStorage.setItem(key, '1');
-        } catch {
-          /* private mode — showing it twice is better than not at all */
-        }
+        const revealTournamentId =
+          (evt.data as { tournament_id?: string })?.tournament_id ||
+          tableState.tournamentId ||
+          tableId ||
+          null;
+        /* D1 (2026-08-25): this used to stamp the shared sessionStorage key on
+           ARRIVAL, which is what suppressed the wheel for the rest of the tab's
+           life after a same-tab reload. Arrival is now guarded in memory (one
+           wheel per mount, however many times a reconnect replays the event);
+           the sessionStorage stamp is written by onDone, when the reveal has
+           actually been PLAYED. */
+        if (spinRevealPlayedRef.current) break;
+        if (spinRevealAlreadyPlayed(revealTournamentId)) break;
+        const revealAtMs = Number(d?.reveal_at) || Date.now();
+        /* D4: a reconnect can replay this event long after the sequence ended.
+           Opening the wheel then is a modal takeover over a hand already being
+           played, so once the shared sequence is over it does not open at all. */
+        if (!spinRevealStillLive(revealAtMs)) break;
+        spinRevealPlayedRef.current = true;
+        spinRevealTournamentRef.current = revealTournamentId;
         setSpinDraw({
           multiplier: mult,
           buyIn: Number(d?.buy_in) || 0,
@@ -7257,7 +7370,7 @@ export default function TablePage({
           lockedTiers: parseLockedTiers(d?.locked_tiers),
           // The shared clock. A client that joins mid-sequence starts partway
           // through rather than replaying from the top.
-          revealAtMs: Number(d?.reveal_at) || Date.now(),
+          revealAtMs,
         });
         break;
       }
@@ -9300,20 +9413,44 @@ export default function TablePage({
           const reason = error?.message || res.reason || '';
           setSeatFirstConfirm(null);
 
+          /* D8 (2026-08-25): `game_already_started` is not a stale table, it
+             is THIS table, running. It was in the stale set, so a viewer who
+             mounted before the start and tapped a seat afterwards could be
+             navigated to a DIFFERENT table of the same tournament - which for
+             a Spin is somebody else's game. The game starting under a viewer
+             is answered by taking the seat sheet away (below), never by moving
+             them. `already_started` went with it: the alternation matched
+             `game_already_started` too. */
+          const gameAlreadyStarted = /already_started/.test(reason);
+          if (gameAlreadyStarted) {
+            // The felt was showing a pre-start table. It is not one any more.
+            setPlayHasBegun(true);
+            setSeatFirstBuyIn(null);
+          }
+
           // Stale table: the recycler replaced it while this page was open.
           // Follow the tournament to whatever table is live now.
           const stale =
-            /table_not_found|table_closed|not_a_game_table|game_not_found|game_already_started|already_started|tournament_full|seat_taken/.test(
+            !gameAlreadyStarted &&
+            /table_not_found|table_closed|not_a_game_table|game_not_found|tournament_full|seat_taken/.test(
               reason
             );
           if (stale && tableState.tournamentId) {
-            const { data: live } = await supabase
+            /* AUDIT 2026-08-25: `data` only. A failed lookup read as "there is
+               no live table" and dropped through to the generic error toast,
+               hiding a recycled table the player could have been sent to. */
+            const { data: live, error: liveError } = await supabase
               .from('tables')
               .select('id, created_at')
               .eq('tournament_id', tableState.tournamentId)
               .neq('status', 'closed')
               .order('created_at', { ascending: false })
               .limit(1);
+            if (liveError) {
+              reportError(liveError, 'TablePage.seat_first_live_table_lookup', {
+                tournamentId: tableState.tournamentId,
+              });
+            }
             const liveId = (live || [])[0]?.id as string | undefined;
             if (liveId && liveId !== tableId) {
               toast?.info?.('This Table Was Recycled, Opening The Live One');
@@ -9345,6 +9482,10 @@ export default function TablePage({
 
         if (res.starts_now) {
           toast?.success?.('Seats Full, Game Starting');
+          /* D8: the seats are no longer for sale from this instant. Say so
+             here rather than waiting for a broadcast, so the buy-in sheet
+             cannot be reopened on a seat in a game that is starting. */
+          setPlayHasBegun(true);
         } else {
           // Dan 2026-08-21: "THEY ARE SIMPLY SECURING A SEAT." Say exactly
           // that — chips arrive when the spin resolves and play begins.
@@ -9368,6 +9509,113 @@ export default function TablePage({
   );
 
   /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  HAS PLAY BEGUN? (defects D2 + D8, 2026-08-25)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Two separate bugs shared one missing fact: nothing on this page ever
+   * noticed the moment a seat-first game stopped being a seat-first game.
+   *
+   * The signals are all state this page ALREADY receives, so no new socket, no
+   * new poll: the button has been drawn (SPIN_BUTTON), a hand has started
+   * (HAND_STARTED / GAME_START), or a seat that was bought at zero chips now
+   * holds a stack. That last one is decisive for a Spin specifically - a
+   * seat-first seat is a RESERVATION until the multiplier is known, because
+   * the starting stack is a property of the tier that has not been drawn yet,
+   * so a non-zero stack means the draw resolved and the game is running.
+   *
+   * It latches. Play does not un-begin, and a latched boolean means the two
+   * effects below run once rather than on every snapshot.
+   */
+  useEffect(() => {
+    if (playHasBegun) return;
+    const begun =
+      tableState.dealerSeat > 0 ||
+      (tableState.handNumber ?? 0) > 0 ||
+      tableState.players.some((p) => p && Number(p.stack ?? 0) > 0);
+    if (begun) setPlayHasBegun(true);
+  }, [playHasBegun, tableState.dealerSeat, tableState.handNumber, tableState.players]);
+
+  /**
+   * D8: `seatFirstBuyIn` was set once, in the mount-only effect, and never
+   * recomputed. A viewer who opened a Spin while it was still REGISTERING kept
+   * the seat-first buy-in sheet after it flipped to RUNNING, so a seat tap
+   * offered to sell them a seat in a game already in progress. The RPC
+   * answered `game_already_started`, which the stale-table regex above then
+   * misread as "this table was recycled" and used to navigate them to a
+   * different table of the same tournament.
+   *
+   * The seats stop being for sale the instant play begins. Say so here.
+   */
+  useEffect(() => {
+    if (!playHasBegun || !seatFirstBuyIn) return;
+    /* Money already in flight: let fn_take_seat_and_buy_in answer rather than
+       pulling the sheet out from under a confirm the player has committed to.
+       If it fails with `game_already_started` the handler clears it anyway. */
+    if (seatFirstPending || seatFirstPendingRef.current) return;
+    setSeatFirstBuyIn(null);
+    setSeatFirstConfirm(null);
+  }, [playHasBegun, seatFirstBuyIn, seatFirstPending]);
+
+  /**
+   * D2: the DB fallback for the Spin wheel lived in the mount-only effect
+   * (deps [tableId, userId]), and it read `tournaments.spin_multiplier`. But a
+   * seat-first player is ALREADY sitting at the table before the game starts,
+   * and the multiplier is NULL until it is drawn AT start - so on the one
+   * client the fallback was written for, it ran exactly once, against a NULL,
+   * and never ran again. A missed SPIN_REVEAL broadcast had no second chance.
+   *
+   * This is that second chance, and it is bounded: it fires only on the
+   * begun-latch above, at most three reads spaced 1.5s, and it stops the
+   * moment the tournament row can answer the question - whether the answer
+   * opens the wheel or (past the reveal window) declines to. No standing poll.
+   */
+  useEffect(() => {
+    const tournId = tableState.tournamentId;
+    if (!playHasBegun || tournamentFormat !== 'spin' || !tournId) return;
+    if (spinRevealPlayedRef.current) return;
+    if (spinRevealAlreadyPlayed(tournId)) return;
+
+    const MAX_ATTEMPTS = 3;
+    const RETRY_MS = 1500;
+    let cancelled = false;
+    let attempts = 0;
+    let timer = 0;
+
+    const check = async () => {
+      if (cancelled || spinRevealPlayedRef.current) return;
+      attempts += 1;
+      const { data, error } = await supabase
+        .from('tournaments')
+        .select('spin_multiplier, spin_locked_tiers, buy_in_amount, started_at')
+        .eq('id', tournId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        reportError(error, 'TablePage.spin_reveal_post_start_recheck', {
+          tournamentId: tournId,
+        });
+      }
+      // A row that carries a multiplier has ANSWERED, whichever way it lands:
+      // either the wheel opens now, or the shared sequence is already over and
+      // buildSpinDrawFromRow declines. Either way there is nothing to retry.
+      const row = (data ?? null) as SpinDrawRow | null;
+      if (!error && Number(row?.spin_multiplier) > 0) {
+        showSpinDrawFromRow(tournId, row);
+        return;
+      }
+      if (attempts >= MAX_ATTEMPTS) return;
+      timer = window.setTimeout(() => void check(), RETRY_MS);
+    };
+    void check();
+
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [playHasBegun, tournamentFormat, tableState.tournamentId, showSpinDrawFromRow]);
+
+  /**
    * RECYCLED-TABLE WATCH (Dan 2026-08-23). Spin tables are torn down and
    * rebuilt continuously — roughly ten a minute across the lobby — so a player
    * who opens a spin and hesitates is left holding a table id that has already
@@ -9388,13 +9636,22 @@ export default function TablePage({
 
     let cancelled = false;
     const check = async () => {
-      const { data } = await supabase
+      /* AUDIT 2026-08-25: `data` only. A failed poll was indistinguishable
+         from "this table is still the live one", so a genuinely recycled table
+         was followed only if the very next poll happened to succeed - and the
+         failure itself was invisible. Log it and treat it as "we could not
+         ask", never as an answer. */
+      const { data, error } = await supabase
         .from('tables')
         .select('id, created_at')
         .eq('tournament_id', tournId)
         .neq('status', 'closed')
         .order('created_at', { ascending: false })
         .limit(1);
+      if (error) {
+        reportError(error, 'TablePage.recycled_table_watch', { tournamentId: tournId });
+        return;
+      }
       const liveId = (data || [])[0]?.id as string | undefined;
       if (cancelled || !liveId || liveId === tableId) return;
       console.debug('[Seat] Table recycled - following tournament to', liveId);
@@ -10733,7 +10990,14 @@ export default function TablePage({
           seat. */}
       <SpinWheel
         data={spinDraw}
-        onDone={() => setSpinDraw(null)}
+        onDone={() => {
+          /* D1: the shared sessionStorage key is stamped HERE, at completion,
+             never on arrival. A tab that reloads mid-sequence finds no stamp
+             and replays from wherever the engine's clock says everyone else
+             is; a tab that saw the whole thing does not see it twice. */
+          markSpinRevealPlayed(spinRevealTournamentRef.current);
+          setSpinDraw(null);
+        }}
         playSounds={ambientSoundsAllowed}
       />
 

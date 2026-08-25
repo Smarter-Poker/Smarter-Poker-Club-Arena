@@ -55,8 +55,10 @@ export interface SettingsPanelProps {
   currentCardBack?: string;
   ownedCardBacks?: string[];
   onAvatarChanged?: (url: string) => void;
-  onCardBackChanged?: (id: string) => void;
-  onCardBackPurchase?: (id: string, price: number) => void;
+  /* Both may be async and may reject. CardBackSelector awaits them before it
+     reports success, so a failed write cannot show as a success. */
+  onCardBackChanged?: (id: string) => void | Promise<unknown>;
+  onCardBackPurchase?: (id: string, price: number) => void | Promise<unknown>;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -417,6 +419,11 @@ export function SettingsPanel({
               currentCardBack={currentCardBack}
               ownedCardBacks={ownedCardBacks}
               userDiamonds={userDiamonds}
+              /* 2026-08-25: the store gated paid designs on a purchase alone
+                 while Theme Settings gated the same designs on VIP alone, so a
+                 VIP was quoted a price here for something that was already
+                 theirs one modal across. Same resolvedVip both places. */
+              isVip={resolvedVip}
               onChange={onCardBackChanged}
               onPurchase={onCardBackPurchase}
             />

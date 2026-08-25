@@ -70,7 +70,9 @@ import type { SeatPlayer } from './SeatSlot';
 
 export interface TableModalsLayerProps {
   currentCardBack?: string;
-  onCardBackChanged?: (id: string) => void;
+  /* May be async and may reject: CardBackSelector only reports success once
+     this has resolved, so a failed write cannot render as a success. */
+  onCardBackChanged?: (id: string) => void | Promise<unknown>;
   // Core context
   tableId: string | undefined;
   userId: string;
@@ -623,14 +625,23 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
       });
 
       if (error || (data as any)?.success === false) {
-        toast.error('Failed to purchase card back. Please try again.');
-        return;
+        // THROW, do not just return. The store awaits this call to decide
+        // whether to equip the design and congratulate the player; a silent
+        // return let a FAILED purchase equip a card back the player does not
+        // own and report it as bought.
+        reportError(
+          error || new Error('fn_purchase_feature returned success:false'),
+          'TableModalsLayer.cardBackPurchaseFailed'
+        );
+        throw error || new Error('Card back purchase failed');
       }
 
       setLocalDiamonds((prev: number) => Math.max(0, prev - price));
       setOwnedCardBacks((prev: string[]) => [...prev, id]);
-      toast.success('Card back purchased!');
-      onCardBackChanged?.(id);
+      // The equip toast comes from the store once the change has landed, so
+      // this one only reports the purchase itself.
+      toast.success('Card Back Purchased');
+      await onCardBackChanged?.(id);
     },
     [userId, toast, onCardBackChanged]
   );

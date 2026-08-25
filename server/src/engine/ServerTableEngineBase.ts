@@ -1181,6 +1181,10 @@ export abstract class ServerTableEngineBase {
       // able to reuse that hand's exact number.
       await this.seedHandCountFromHistory();
 
+      // Dan 2026-08-25, BINDING: "IN THE EVENT OF AN ENGINE RESTART, WHILE PLAY
+      // IS RUNNING, IT MUST ALWAYS RESTART IN THE SAME POSITION."
+      await this.restoreButtonFromHistory();
+
       // FIX 137: Bible V8 §7.17 — Check for interrupted hand from a server crash
       const recovered = await this.checkCrashRecovery();
       if (recovered) {
@@ -1207,6 +1211,7 @@ export abstract class ServerTableEngineBase {
           await this.sleep(5000);
           continue;
         }
+        this.restoreSitOutsFromSeats();
         // IDLE BROADCAST (2026-08-22): publish the waiting-state snapshot so
         // a client joining an idle table gets a real SNAPSHOT (seats, stacks,
         // 'waiting' stage) instead of an eternal spinner. The hub drops
@@ -2520,6 +2525,92 @@ export abstract class ServerTableEngineBase {
       console.warn(
         `[ServerTableEngine:${this.tableId}] Hand counter seed threw (${(err as Error)?.message}) — ` +
           `continuing from #${this.handCount}.`
+      );
+    }
+  }
+
+  /**
+   * PUT SITTING-OUT PLAYERS BACK IN THE CHAIR THEY LEFT.
+   *
+   * Restart fidelity, Dan 2026-08-25. The engine writes `table_seats
+   * .is_sitting_out` on every PLAYER_SAT_OUT / PLAYER_SAT_BACK and, until now,
+   * never read it back — `loadSeatedPlayers` did not even select the column.
+   * DisconnectEngine's sit-out set is in memory, so a restart between hands
+   * emptied it and the very next deal dealt cards, and took blinds, from
+   * players who had sat out. Every client meanwhile read the column and
+   * correctly showed them as out: the felt and the database disagreed, and the
+   * felt was the one taking money.
+   *
+   * Runs on every seat sweep rather than once: `sitOut` is idempotent, and a
+   * seat that appears later (a player who was mid-buy-in at boot) still gets
+   * its state applied. Never un-sits anyone — sitting back in is a player
+   * action, and a stale `false` must not override a live sit-out.
+   */
+  protected restoreSitOutsFromSeats(): void {
+    for (const p of this.seatedPlayers) {
+      if (p.is_sitting_out !== true) continue;
+      if (this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) continue;
+      this.disconnectEngine.sitOut(this.tableId, p.user_id, 'voluntary');
+      console.log(
+        `[ServerTableEngine:${this.tableId}] Restored sit-out for ${p.user_id} from table_seats`
+      );
+    }
+  }
+
+  /**
+   * PUT THE BUTTON BACK WHERE IT WAS.
+   *
+   * Dan 2026-08-25, BINDING: "IN THE EVENT OF AN ENGINE RESTART, WHILE PLAY IS
+   * RUNNING, IT MUST ALWAYS RESTART IN THE SAME POSITION... EVERYTHING RESTARTS
+   * EXACTLY AS IT WAS BEFORE THE RESTART."
+   *
+   * `lastButtonSeat` is declared `= 0` and nothing ever restored it. The
+   * rotation reads that as "no hand dealt yet" and falls back to
+   * `buttonSeats[0]` — THE LOWEST OCCUPIED SEAT NUMBER. So every engine restart
+   * threw the button backwards to seat 1 regardless of where it actually was,
+   * and the blinds were taken again from whoever sat in the seats behind it.
+   * A player could pay the big blind, watch the engine restart, and pay it
+   * again on the next hand. On a busy table that is real money, silently, every
+   * deploy.
+   *
+   * The seat was already being written to `hand_history.button_seat` on every
+   * settled hand and read by nobody (100% populated in production). Reading it
+   * back costs one indexed row and closes the hole with no schema change.
+   *
+   * Deliberately NOT fatal: a table that cannot read its history still deals.
+   * Losing the button costs one orbit of position; refusing to start costs the
+   * whole table.
+   */
+  private async restoreButtonFromHistory(): Promise<void> {
+    try {
+      // Same (table_id, hand_number DESC) index seedHandCountFromHistory uses.
+      const { data, error } = await supabase
+        .from('hand_history')
+        .select('button_seat')
+        .eq('table_id', this.tableId)
+        .order('hand_number', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] Could not restore button seat (${error.message}) — ` +
+            `it will start at the lowest occupied seat and blinds may be re-taken for one orbit.`
+        );
+        return;
+      }
+
+      const seat = Number((data as { button_seat?: number } | null)?.button_seat ?? 0);
+      if (Number.isFinite(seat) && seat > 0) {
+        this.lastButtonSeat = seat;
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Button restored to seat ${seat} from the last settled hand`
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[ServerTableEngine:${this.tableId}] Button restore threw (${(err as Error)?.message}) — ` +
+          `starting from the lowest occupied seat.`
       );
     }
   }

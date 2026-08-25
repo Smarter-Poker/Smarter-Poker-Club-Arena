@@ -215,6 +215,12 @@ export interface SeatedPlayer {
   horse_profile?: string | Record<string, unknown>;
   time_bank_remaining?: number;
   time_bank_uses_remaining?: number;
+  /**
+   * Persisted sit-out flag from `table_seats`. Restart fidelity, 2026-08-25:
+   * the engine writes this column and, until now, never read it — so a restart
+   * between hands dealt cards to a player who had sat out.
+   */
+  is_sitting_out?: boolean;
   /** Bible V8 §2.3: Player avatar for broadcast */
   avatar_url?: string;
   /** Bible V8 §4.2: Player returning from sit-out must post dead blind */

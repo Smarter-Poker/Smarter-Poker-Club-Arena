@@ -491,8 +491,8 @@ abbr.lt-variant[title] {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 3px 10px;
-    padding: 8px 10px;
+    gap: 2px 12px;
+    padding: 7px 10px;
     border-bottom: 1px solid var(--border-subtle, rgba(65, 105, 225, 0.14));
   }
 
@@ -502,6 +502,12 @@ abbr.lt-variant[title] {
     min-width: 0;
     padding: 0;
     border: none;
+    /* width:auto is the whole point. The desktop column widths (110/108/168)
+       are declared as `width` on these same classes, and a `width` on a flex
+       item is its flex-basis — so the three chips claimed 348px of a 312px
+       line and the status badge wrapped onto a third row. Measured live: the
+       row ran 134px tall for two values and a badge. */
+    width: auto;
   }
 
   /* The name owns line one. Everything else is a chip on line two, with the

@@ -10681,6 +10681,13 @@ export default function TablePage({
                         icon: <SitOutIcon />,
                         onClick: () => void handleSitOut(),
                       },
+                      {
+                        id: 'standup-bb',
+                        label: 'Stand Up Next Big Blind',
+                        icon: <SitOutIcon />,
+                        badge: standUpNextBB ? 'ON' : undefined,
+                        onClick: () => setStandUpNextBB(!standUpNextBB),
+                      },
                       ...(tableState.isTournament
                         ? [
                             {
@@ -10751,6 +10758,20 @@ export default function TablePage({
                           ]
                         : []),
                       // Bible V8 §11.1 — Settings accessible from BOTH table HUD menu AND hamburger menu
+                      {
+                        id: 'sounds',
+                        label: 'Sounds',
+                        icon: <SettingsIcon />,
+                        badge: isSoundEnabled ? 'ON' : 'OFF',
+                        onClick: () => setIsSoundEnabled(!isSoundEnabled),
+                      },
+                      {
+                        id: 'vibrations',
+                        label: 'Vibrations',
+                        icon: <SettingsIcon />,
+                        badge: isVibrationEnabled ? 'ON' : 'OFF',
+                        onClick: () => setIsVibrationEnabled(!isVibrationEnabled),
+                      },
                       {
                         id: 'settings',
                         label: 'Table Settings',

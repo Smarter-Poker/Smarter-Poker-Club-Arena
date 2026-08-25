@@ -221,6 +221,33 @@ const CASH2 = cashEntry(
   })
 );
 
+/* Dan 2026-08-25: the five lobby flags plus the five newly-enforced rule
+   medallions all land in the title area, which is the most crowded part of the
+   card. This row carries every one of them at once so the width sweep fails if
+   any of them pushes something off the card. */
+const CASH_EVERY_FLAG = cashEntry(
+  table({
+    name: 'NLH 2/5 The Vault',
+    small_blind: 2,
+    big_blind: 5,
+    min_buy_in: 200,
+    max_buy_in: 1000,
+    current_players: 5,
+    max_players: 6,
+    is_featured: true,
+    is_vip_only: true,
+    label_as_new: true,
+    cap_enabled: true,
+    cap_bb: 40,
+    no_rathole: true,
+    pineapple_holdem: true,
+    is_anonymous: true,
+    restrict_observers: true,
+    time_bank_enabled: true,
+    insurance_enabled: true,
+  })
+);
+
 const CTX = {
   waitlistedIds: new Set<string>(),
   seatedIds: new Set<string>([CASH.id]),
@@ -237,9 +264,9 @@ const TABS: { cat: LobbyCategory; rows: (typeof MTT)[] }[] = [
      ("SPINS AND HEADS UP ARE NEVER HERE", pinned by allTabScope.test.ts).
      Feeding it a Spin made the harness exercise a state production cannot
      reach, which is how a synthetic pass hides a real gap. */
-  { cat: 'ALL', rows: [MTT, MTT2, CASH, CASH2] },
+  { cat: 'ALL', rows: [MTT, MTT2, CASH, CASH2, CASH_EVERY_FLAG] },
   { cat: 'MTT', rows: [MTT, MTT2, MTT_MANYTAGS] },
-  { cat: 'HOLDEM', rows: [CASH, CASH2] },
+  { cat: 'HOLDEM', rows: [CASH, CASH2, CASH_EVERY_FLAG] },
   { cat: 'OMAHA', rows: [CASH_NONAME, CASH2] },
   { cat: 'SPIN', rows: [SPIN, SPIN_RUN] },
   { cat: 'SNG', rows: [HU] },

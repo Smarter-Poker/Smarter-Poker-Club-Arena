@@ -41,6 +41,7 @@ import {
   type LobbyEntry,
   type LobbyTableRow,
   type LobbyTournamentRow,
+  withClubLabel,
 } from '../components/lobby/lobbyEntries';
 import { tournamentService } from '../services/TournamentService';
 import { getClubLevel, ClubLevelInfo } from '../utils/clubLevels';
@@ -475,6 +476,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       where it is set - the stale clubs.online_count is never used. */
   const [playersPlaying, setPlayersPlaying] = useState<number | null>(null);
   const [unionIdForCreate, setUnionIdForCreate] = useState<string | undefined>(undefined);
+  /** Owning-club names for a union board. Empty for a club that is in no union. */
+  const [clubNames, setClubNames] = useState<Record<string, string>>({});
   const [showCreateTournament, setShowCreateTournament] = useState(false);
   const [clubLevel, setClubLevel] = useState<ClubLevelInfo | null>(null);
   /* The last COMMITTED club level. The level-up celebration compares against
@@ -1179,6 +1182,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             if (home.union_id) {
               setIsInUnion(true);
               setUnionIdForCreate(home.union_id);
+            }
+            /* id -> name for every club whose games can land on this board.
+               A union lobby lists games from several clubs side by side and
+               had no way to say whose was whose. */
+            if (home.club_names && typeof home.club_names === 'object') {
+              setClubNames(home.club_names as Record<string, string>);
             }
             if (home.membership) {
               setUserRole((home.membership.role as ClubRole) || 'player');
@@ -2545,15 +2554,20 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const entryCacheRef = useRef<Map<string, { sig: string; entry: LobbyEntry }>>(new Map());
 
   const lobbyEntries = useMemo<LobbyEntry[]>(() => {
+    /* One token for "the club naming inputs changed", so the signature stays a
+       string compare rather than a deep one. Both parts are stable for the
+       lifetime of a board. */
+    const clubKey = `${club?.id ?? ''}:${Object.keys(clubNames).length}`;
     const prev = entryCacheRef.current;
     const next = new Map<string, { sig: string; entry: LobbyEntry }>();
     const stable = <R extends { id: string }>(row: R, build: (r: R) => LobbyEntry): LobbyEntry => {
       /* The waitlist count is not on the row, so it has to be part of the
          signature or a card would keep a stale "Waitlist 2" after the third
          player joined. */
-      const sig = `${JSON.stringify(row)}|${waitlistCounts.get(row.id) ?? 0}`;
+      const sig = `${JSON.stringify(row)}|${waitlistCounts.get(row.id) ?? 0}|${clubKey}`;
       const hit = prev.get(row.id);
-      const entry = hit && hit.sig === sig ? hit.entry : build(row);
+      const entry =
+        hit && hit.sig === sig ? hit.entry : withClubLabel(build(row), club?.id, clubNames);
       next.set(row.id, { sig, entry });
       return entry;
     };
@@ -2617,6 +2631,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     favoriteTableIds,
     gameType,
     waitlistCounts,
+    club?.id,
+    clubNames,
   ]);
 
   const selectedEntry = useMemo(

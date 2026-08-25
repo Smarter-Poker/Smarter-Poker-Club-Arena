@@ -43,6 +43,14 @@ export interface LobbyTableRow extends CashFeatureSource {
   current_players: number;
   max_players: number;
   status: string;
+  /* ── LOBBY FLAGS ────────────────────────────────────────────────────────
+     `is_private` is deliberately absent: it does not decorate a row, it
+     decides whether the row is returned at all (fn_club_home_in_scope). A
+     private table the viewer may not see never reaches this type. */
+  is_vip_only?: boolean | null;
+  label_as_new?: boolean | null;
+  is_featured?: boolean | null;
+  hide_club_name?: boolean | null;
   settings?: unknown;
 }
 
@@ -91,6 +99,12 @@ export interface LobbyTournamentRow {
   bounty_amount?: number | null;
   is_pko?: boolean | null;
   is_mystery_bounty?: boolean | null;
+  /* Same four flags as a cash row, plus is_pinned, which is what actually
+     holds a tournament at the top of the board. */
+  is_vip_only?: boolean | null;
+  label_as_new?: boolean | null;
+  hide_club_name?: boolean | null;
+  is_pinned?: boolean | null;
 }
 
 // ─── View model ────────────────────────────────────────────────────────────
@@ -141,7 +155,70 @@ export interface LobbyEntry {
   statusLabel: string;
   live: boolean;
   rules: RuleMedallion[];
+  /**
+   * The lobby-only flags, resolved once so no renderer has to know which
+   * column a kind keeps them in. `featured` and `isNew` decorate; `vipOnly`
+   * also GATES, and the gate is enforced server-side (see the VIP check in
+   * atomic_table_buyin) — this is only the sign on the door.
+   *
+   * `hideClubName` is carried rather than applied here because whether a club
+   * name is shown at all depends on the BOARD: a single-club lobby never
+   * prints one, a union board does.
+   */
+  featured: boolean;
+  isNew: boolean;
+  vipOnly: boolean;
+  hideClubName: boolean;
+  /**
+   * The owning club's name, but ONLY when it is worth printing: a union board
+   * showing another club's game, with `hide_club_name` off. Null everywhere
+   * else, including on every single-club board — repeating the name of the
+   * club you are standing in on all 46 of its rows is noise.
+   *
+   * Filled in by the page (which knows which club is being viewed), not by the
+   * adapters, which see one row at a time and have no board to compare it to.
+   */
+  clubLabel: string | null;
   raw: LobbyTableRow | LobbyTournamentRow;
+}
+
+/**
+ * Names the owning club on an entry, for a board that mixes clubs.
+ *
+ * Returns the SAME object when there is nothing to add, so the page's entry
+ * identity cache is not defeated by a pass that changes nothing — which is the
+ * common case, since most clubs are in no union.
+ */
+export function withClubLabel(
+  entry: LobbyEntry,
+  viewingClubId: string | null | undefined,
+  clubNames: Record<string, string>
+): LobbyEntry {
+  if (entry.hideClubName) return entry;
+  const owner = (entry.raw as { club_id?: string | null }).club_id;
+  if (!owner || !viewingClubId || owner === viewingClubId) return entry;
+  const name = clubNames[owner];
+  if (!name) return entry;
+  return { ...entry, clubLabel: name };
+}
+
+/** True for the handful of flags that read as decoration on any kind of row. */
+function lobbyFlags(r: {
+  is_vip_only?: boolean | null;
+  label_as_new?: boolean | null;
+  is_featured?: boolean | null;
+  is_pinned?: boolean | null;
+  hide_club_name?: boolean | null;
+}) {
+  return {
+    /* A cash table is featured by `is_featured`; a tournament by `is_pinned`,
+       which is the column TournamentPage already sorts on. Two names, one
+       meaning — resolved here so the board does not have to branch. */
+    featured: r.is_featured === true || r.is_pinned === true,
+    isNew: r.label_as_new === true,
+    vipOnly: r.is_vip_only === true,
+    hideClubName: r.hide_club_name === true,
+  };
 }
 
 // ─── Display maps (lobby-canonical; DynamicGameCard keeps its legacy copy) ──
@@ -275,6 +352,22 @@ export interface CashFeatureSource {
   seven_deuce_amount?: number | null;
   time_bank_enabled?: boolean | null;
   all_in_or_fold?: boolean | null;
+  /* Shipped by get_club_home since 2026-08-25. Every one of these was already
+     written by the table creation page and enforced by the engine; the lobby
+     simply never received them, so a Cap table and an uncapped one looked
+     identical on the board. */
+  cap_enabled?: boolean | null;
+  cap_bb?: number | null;
+  no_rathole?: boolean | null;
+  pineapple_holdem?: boolean | null;
+  is_anonymous?: boolean | null;
+  restrict_observers?: boolean | null;
+  /**
+   * Legacy JSONB. All 50 live tables carry `{}` and get_club_home stopped
+   * sending it on 2026-08-25 - the fields are columns now. Kept optional
+   * because other callers (TableService's `select('*')`) still hand it over,
+   * and parseTableSettings still reads it as a last-resort fallback.
+   */
   settings?: unknown;
 }
 
@@ -382,6 +475,65 @@ export function cashRuleMedallions(row: CashFeatureSource): RuleMedallion[] {
     });
   }
 
+  /* ── THE FOUR THAT BECAME REAL (2026-08-25) ─────────────────────────────
+     Each of these was on the "deliberately not here" list below until the
+     engine or the seat sale actually started enforcing it. They are cited to
+     their enforcer, and each comes back only because a player who reads the
+     chip and sits down will now get what it promised. */
+
+  /* ServerTableEngineTurns: a bet is clamped to cap_bb big blinds once
+     cap_enabled is on. */
+  if (col(row.cap_enabled) === true) {
+    const capBB = Number(row.cap_bb) || 0;
+    rules.push({
+      key: 'cap',
+      label: 'CAP',
+      detail: capBB > 0 ? `${capBB}BB` : undefined,
+      tip:
+        capBB > 0
+          ? `Betting is capped at ${capBB} big blinds a hand`
+          : 'Betting is capped each hand',
+    });
+  }
+
+  /* atomic_table_buyin: a returning player must bring back what they left
+     with, capped at the table maximum. */
+  if (col(row.no_rathole) === true) {
+    rules.push({
+      key: 'no_rathole',
+      label: 'NO RATHOLE',
+      tip: 'Leave and come back and you must return with the stack you left with',
+    });
+  }
+
+  /* ServerTableEngineBase.dealtGameVariant maps a Hold'em table with this
+     column on to a three-card Pineapple deal. */
+  if (col(row.pineapple_holdem) === true) {
+    rules.push({
+      key: 'pineapple',
+      label: 'PINEAPPLE',
+      tip: 'Three cards are dealt and one is discarded after the flop',
+    });
+  }
+
+  /* EngineWebSocketServer refuses an observer socket when this is on. */
+  if (col(row.restrict_observers) === true) {
+    rules.push({
+      key: 'restrict_observers',
+      label: 'NO RAILBIRDS',
+      tip: 'Only seated players may watch this table',
+    });
+  }
+
+  /* The engine substitutes seat aliases for names at an anonymous table. */
+  if (col(row.is_anonymous) === true) {
+    rules.push({
+      key: 'anonymous',
+      label: 'ANONYMOUS',
+      tip: 'Player names are hidden at this table',
+    });
+  }
+
   if (on(s, 'double_board', 'doubleBoard')) {
     rules.push({
       key: 'double_board',
@@ -400,9 +552,12 @@ export function cashRuleMedallions(row: CashFeatureSource): RuleMedallion[] {
        MIN HANDS   - `maintain_hands` is 10 on all 46 rows and is read by
                      NOTHING. A player can sit, play one hand and leave.
                      "MIN 10 HANDS" would be a rule the table will not keep.
-       NO RATHOLE  - `no_rathole` has no reader in server/src either.
        CALL TIME   - `calltime_enabled` likewise, and the old medallion read
                      `call_time_enabled`, a name that is not even a column.
+
+     NO RATHOLE LEFT THIS LIST on 2026-08-25, when atomic_table_buyin started
+     enforcing it. That is the bar: a chip appears the day something refuses to
+     let a player do the thing the chip forbids, and not a day earlier.
 
      They come back the moment the engine enforces them, and not before: a
      lobby chip is a promise about what happens when you sit down.
@@ -656,6 +811,8 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
     statusLabel: st.label,
     live: (t.current_players || 0) > 0,
     rules: cashRuleMedallions(t),
+    ...lobbyFlags(t),
+    clubLabel: null,
     raw: t,
   };
 }
@@ -698,6 +855,8 @@ export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 's
     statusLabel: st.label,
     live: String(t.status).toUpperCase() === 'RUNNING',
     rules: tournamentMedallions(t),
+    ...lobbyFlags(t),
+    clubLabel: null,
     raw: t,
   };
 }

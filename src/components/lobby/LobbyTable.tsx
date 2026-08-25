@@ -129,32 +129,14 @@ interface ColumnDef {
 
 // ─── Cell renderers ────────────────────────────────────────────────────────
 
-/* Every rule medallion is shown. `hidden` was a hard-coded empty array left
-   behind when the truncation was removed, so `extra` was always 0 and the
-   "+2" overflow chip below it was unreachable code guarding a tooltip that
-   could never be built - along with its .lt-rule--more stylesheet rule. */
-function RulesCell({ entry }: { entry: LobbyEntry }) {
-  const shown = entry.rules;
-  /* Nothing, not a dash. A phone card drops a cell that renders empty
-     (`td:empty`), so a Spin with no traits loses the well instead of showing a
-     heading called RULES with a hyphen under it. */
-  if (shown.length === 0) return null;
-  return (
-    <span className="lt-rules">
-      {shown.map((r) => (
-        /* `title` is a hover affordance and a phone has no hover, so the
-           explanation of "BOMB POTS 1 IN 25" was unreachable on the surface
-           where the medallions matter most — they are what distinguishes
-           eleven identical NLH 5/10 tables. aria-label carries the same
-           sentence to a screen reader, and the tip is also rendered in the
-           game panel a tap away. */
-        <abbr key={r.key} title={r.tip} aria-label={`${r.label}: ${r.tip}`} className="lt-rule">
-          {r.label}
-        </abbr>
-      ))}
-    </span>
-  );
-}
+/* RulesCell lived here and is deleted (2026-08-25). Dan: "FOR RULES, REMOVE IT
+   FROM THE MAIN SCREEN BUT MAKE SURE ALL RULES AND TAGS ARE ON THE LOBBY
+   SCREEN WHEN YOU CLICK THE GAME." The medallions were a row of abbreviations
+   that had to be hovered to mean anything, on the one surface that has no
+   hover on half its traffic. GameLobbyPanel already renders every one of them
+   with its full sentence - `entry.rules` is unchanged and still computed by
+   cashRuleMedallions / tournamentMedallions - so nothing is lost by taking the
+   abbreviations off the board, and 168px goes back to the games themselves. */
 
 /* LiveCountdown lived here and is deleted (2026-08-25). It rendered a coarse
    whole-minutes countdown into the status cell of any non-MTT tournament — in
@@ -412,6 +394,53 @@ function SpinTopTierBadge() {
   );
 }
 
+/**
+ * NEW / VIP / FEATURED, from the three flags the table creation page has been
+ * writing since it was built and that no reader ever consumed. They ride in
+ * the title, beside the game name, because that is where a player looks first
+ * and because all three are claims about the GAME rather than about its state
+ * (which is what the status pill is for).
+ *
+ * Order is fixed and not data-driven: FEATURED is the host's choice and reads
+ * first, VIP is a door, NEW is the smallest claim of the three.
+ */
+function LobbyFlagChips({ entry }: { entry: LobbyEntry }) {
+  if (!entry.featured && !entry.vipOnly && !entry.isNew && !entry.clubLabel) return null;
+  return (
+    <span className="lt-flags">
+      {/* Only ever set on a union board, for a game belonging to another club,
+          and only when that club has not switched `hide_club_name` on. On a
+          single-club board this is null and nothing renders. */}
+      {entry.clubLabel && (
+        <span className="lt-flag lt-flag--club" title={`Hosted by ${entry.clubLabel}`}>
+          {entry.clubLabel}
+        </span>
+      )}
+      {entry.featured && (
+        <span
+          className="lt-flag lt-flag--featured"
+          title="Pinned to the top of the board by the host"
+        >
+          FEATURED
+        </span>
+      )}
+      {entry.vipOnly && (
+        <span
+          className="lt-flag lt-flag--vip"
+          title="VIP members only. A seat here needs VIP membership"
+        >
+          VIP
+        </span>
+      )}
+      {entry.isNew && (
+        <span className="lt-flag lt-flag--new" title="Recently opened">
+          NEW
+        </span>
+      )}
+    </span>
+  );
+}
+
 const COL_NAME: ColumnDef = {
   key: 'name',
   label: 'Game',
@@ -431,6 +460,7 @@ const COL_NAME: ColumnDef = {
             {mttTitleLine(e)}
           </span>
           <MttTitleMeta entry={e} />
+          <LobbyFlagChips entry={e} />
           <PlayerStateChip entry={e} ctx={ctx} />
         </span>
       );
@@ -448,6 +478,7 @@ const COL_NAME: ColumnDef = {
             {headline}
           </span>
           {subtitle && <span className="lt-name__table">{subtitle}</span>}
+          <LobbyFlagChips entry={e} />
           <PlayerStateChip entry={e} ctx={ctx} />
         </span>
       );
@@ -460,6 +491,7 @@ const COL_NAME: ColumnDef = {
           {e.name}
         </span>
         {e.kind === 'spin' && ctx.spinTopTierLive && <SpinTopTierBadge />}
+        <LobbyFlagChips entry={e} />
         <PlayerStateChip entry={e} ctx={ctx} />
       </span>
     );
@@ -528,12 +560,6 @@ const COL_GTD: ColumnDef = {
      without a guarantee grew a labelled GUARANTEE well containing a hyphen. */
   render: (e) =>
     e.guaranteeLabel ? <span className="lt-mono lt-gtd">{e.guaranteeLabel}</span> : null,
-};
-const COL_RULES: ColumnDef = {
-  key: 'rules',
-  label: 'Rules',
-  className: 'lt-col-rules',
-  render: (e) => <RulesCell entry={e} />,
 };
 const COL_STARTS: ColumnDef = {
   key: 'starts',
@@ -702,6 +728,11 @@ const COL_TLEVEL: ColumnDef = {
    They are ordinary columns, so the desktop board gets a heading and the phone
    card gets the same heading printed above the value from data-label — the two
    layouts cannot say different things about the same fact. */
+/* SPINS ONLY (Dan 2026-08-25: "REMOVE THE MAX PAYOUT ON ANY PAGE BESIDES
+   SPINS. ITS ONLY FOR THAT CATEGORY."). spinPayoutLabel returns null for
+   anything that is not a Spin, so on any other board this is a column of
+   nothing - and the multiplier IS the Spin, which is why it stays there.
+   Pinned by lobbyTitleColumn.test.ts. */
 const COL_PAYOUT: ColumnDef = {
   key: 'payout',
   label: 'Max Payout',
@@ -988,7 +1019,6 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_VARIANT,
         COL_PLAYERS,
         COL_BUYIN,
-        COL_RULES,
         COL_STATUS,
         COL_ACTIONS,
       ];
@@ -1022,7 +1052,6 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_TLEVEL,
         COL_LEVELTIME,
         COL_FORMAT,
-        COL_RULES,
         COL_ACTIONS,
       ];
     case 'SPIN':
@@ -1084,7 +1113,6 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
            ALL tab. */
         COL_PLAYERS,
         COL_STARTS,
-        COL_RULES,
         COL_STATUS,
         COL_TSTACK,
         COL_TLEVEL,
@@ -1178,10 +1206,28 @@ export default function LobbyTable({
        sort was there for), and evaluates the predicate exactly once per row.
        The identical array reference is returned when nothing needs to sink, so
        the memo below still sees no change. */
+    const pinned: LobbyEntry[] = [];
     const open: LobbyEntry[] = [];
     const gone: LobbyEntry[] = [];
-    for (const r of rows) (seatFirstJoinable(r) ? open : gone).push(r);
-    return gone.length === 0 ? rows : open.concat(gone);
+    for (const r of rows) {
+      /* FEATURED floats and a dead seat-first game sinks, in one pass.
+
+         A featured game nobody can enter does NOT float. The host meant "look
+         at this game", not "look at this result", and a full table pinned above
+         forty joinable ones is worse than not pinning it at all. seatFirstJoinable
+         alone is not that test - it returns true for every cash row by design,
+         so the status has to be checked here too. */
+      const enterable =
+        seatFirstJoinable(r) &&
+        r.status !== 'full' &&
+        r.status !== 'closed' &&
+        r.status !== 'completed';
+      if (!seatFirstJoinable(r)) gone.push(r);
+      else if (r.featured && enterable) pinned.push(r);
+      else open.push(r);
+    }
+    if (pinned.length === 0 && gone.length === 0) return rows;
+    return pinned.concat(open, gone);
   }, []);
 
   const sorted = useMemo(() => {

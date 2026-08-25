@@ -133,10 +133,6 @@ describe('the card is allowed to grow (Dan 1, 2)', () => {
     expect(rule![1]).toContain('white-space: normal');
   });
 
-  it('lets the medallion list run to as many lines as it needs', () => {
-    expect(PHONE_BLOCK).toMatch(/\.lt-rules \{[^}]*max-height: none/);
-  });
-
   it('drops a cell with nothing in it rather than drawing an empty well', () => {
     expect(PHONE_BLOCK).toMatch(/\.lobby-table td:empty \{\s*display: none/);
   });
@@ -242,9 +238,12 @@ describe('a cash card is two lines and the second one is the table name (Dan 3, 
 });
 
 describe('cash tables show what makes them different from each other (Dan 3, 4)', () => {
-  it('renders the medallion row on a phone instead of hiding it', () => {
-    expect(PHONE_BLOCK).toMatch(/tr\[data-kind='cash'\] td\.lt-col-rules \{\s*display: block/);
-  });
+  /* The medallions used to be pinned HERE, on the card. Dan moved them on
+     2026-08-25: "FOR RULES, REMOVE IT FROM THE MAIN SCREEN BUT MAKE SURE ALL
+     RULES AND TAGS ARE ON THE LOBBY SCREEN WHEN YOU CLICK THE GAME." What
+     still has to be true is that they are COMPUTED - the tests below read
+     cashRuleMedallions directly - and that the panel renders them. Where they
+     are rendered is pinned by lobbyTitleColumn.test.ts. */
 
   it('reads the COLUMNS the host actually set, not the empty settings blob', () => {
     // All 46 live cash tables carry `settings = {}` — TableConfigPage writes
@@ -492,12 +491,10 @@ describe('no card claims a clock it does not have', () => {
     expect(TSX).not.toContain('<LiveCountdown');
   });
 
-  it('renders no medallion cell rather than a dash', () => {
-    const cell = TSX.slice(
-      TSX.indexOf('function RulesCell'),
-      TSX.indexOf('/* LiveCountdown lived')
-    );
-    expect(cell).toContain('if (shown.length === 0) return null;');
+  it('has no medallion cell at all - the rules live in the game panel now', () => {
+    expect(TSX).not.toContain('function RulesCell');
+    expect(TSX).not.toContain('<RulesCell');
+    expect(CSS).not.toContain('lt-col-rules');
   });
 });
 

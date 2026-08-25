@@ -13336,17 +13336,25 @@ export default function TablePage({
       />
       <TableModalsLayer
         currentCardBack={activeCardBack}
-        onCardBackChanged={(id) => {
+        /* 2026-08-25: this used to end `.then(() => {})`, which discards the
+           PostgREST error object. A card back the player had just paid for
+           could fail to save and the store would still report success, because
+           nothing on this path could tell it otherwise. The handler is async
+           now and THROWS on failure, so CardBackSelector reverts its tick and
+           says what happened instead of congratulating the player. */
+        onCardBackChanged={async (id) => {
           masterBus.emit('UI_THEME_CHANGED', { key: 'ALL', value: { cards_id: id } });
           masterBus.emit('SETTINGS_CHANGED', { setting: 'cardBack', value: id });
-          if (userId) {
-            supabase
-              .from('user_theme_settings')
-              .upsert(
-                { user_id: userId, game_type: 'ALL', cards_id: id },
-                { onConflict: 'user_id,game_type' }
-              )
-              .then(() => {});
+          if (!userId) return;
+          const { error } = await supabase
+            .from('user_theme_settings')
+            .upsert(
+              { user_id: userId, game_type: 'ALL', cards_id: id },
+              { onConflict: 'user_id,game_type' }
+            );
+          if (error) {
+            reportError(error, 'TablePage.cardBackSaveFailed');
+            throw error;
           }
         }}
         tableId={tableId}

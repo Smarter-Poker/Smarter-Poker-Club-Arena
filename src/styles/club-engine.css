@@ -1002,7 +1002,26 @@ textarea:focus-visible,
    that are already fine and start stealing taps.
 
    `.dw__plus` is the one that also fails horizontally (22x22), so it is the
-   only one that grows both ways. */
+   only one that grows both ways.
+
+   TWO WAYS THIS SILENTLY STOPS WORKING, both found live on 2026-08-25:
+
+   1. THE BAND OVERHANGS INTO A WRAPPED SECOND ROW. A 32px control with a 44px
+      ::after reaches 6px past its own box on each side. Put those controls in
+      a `flex-wrap: wrap` row with a 3px row-gap and every control on the upper
+      row loses its lower half to the ::after of the control BELOW it, which
+      paints later and therefore wins. That is not a metric failure, it is a
+      thumb landing on the wrong filter. `.game-bar__type` did exactly this
+      (24px of reach measured on production, all seven chips). The container
+      needs a row-gap of at least 12px, not the ::after a smaller height —
+      see .game-bar__types in ClubHomePage.css.
+
+   2. A LATER SIBLING QUIETLY BECOMES A STACKING CONTEXT. `position: static` is
+      not a promise: a bare `transform` makes an element a stacking context, so
+      it paints over this ::after, which carries no z-index of its own. That is
+      what cost the settings Reset button 8px of reach; the fix there was
+      `z-index: 1` on the host, applied in SettingsPage.module.css where it was
+      measured rather than blanket-applied here where it was not. */
 @media (pointer: coarse) {
   .pt-range-tab,
   .pl-tab,

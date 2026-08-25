@@ -293,7 +293,21 @@
   justify-content: flex-start;
   flex-wrap: wrap;
   align-items: center;
-  gap: 3px;
+  /* ROW-GAP IS A TAP TARGET, NOT DECORATION (2026-08-25).
+     These chips are 32px tall and carry the shared 44px invisible ::after hit
+     area from club-engine.css, so each one reaches 6px past its own box top
+     and bottom. At 375px the seven chips wrap onto three rows, and with the
+     3px row-gap this used to have, every chip on an upper row had its lower
+     half covered by the ::after of the chip directly beneath it — which comes
+     later in the document and therefore wins the hit test. Measured on
+     production: 24px of reach on all six upper-row chips against the 40px the
+     audit requires, and, in plain terms, a thumb aimed just under NLH
+     selecting LIMIT instead.
+     12px is the smallest row-gap that separates the two bands (the overhangs
+     are 6px each). Re-measured after the change: all seven chips at 40px.
+     Column gap stays at 3px — the chips are wide and were never at risk
+     sideways, and widening them there WOULD steal the neighbour's taps. */
+  gap: 12px 3px;
   overflow: visible;
   padding-block: 6px;
 }

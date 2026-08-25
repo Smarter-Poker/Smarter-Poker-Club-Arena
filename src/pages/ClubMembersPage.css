@@ -251,6 +251,20 @@
   border-color: var(--ca-cyan);
 }
 
+/* iOS zooms the whole viewport when a field under 16px is focused and never
+   zooms back out. club-engine.css already guards every field platform-wide
+   with `@media (max-width: 600px) { input, textarea, select { font-size:
+   16px } }` - but that rule is a bare `select`, and `.members-sort select`
+   above outscores it on specificity, so this one control opted itself back
+   out at 13.12px. It was the only field in the whole 6-route audit sweep
+   still under the threshold. Restate the guard here at matching specificity
+   rather than weakening the global rule; desktop keeps 0.82rem. */
+@media (max-width: 600px) {
+  .members-sort select {
+    font-size: 16px;
+  }
+}
+
 .members-export {
   padding: 0.45rem 0.9rem;
   min-height: 44px;

@@ -19,31 +19,29 @@ import {
 // THE FIVE THEME PRESETS PAINT FIVE DIFFERENT TABLES (2026-08-25)
 // ═══════════════════════════════════════════════════════════════════════════════
 //
-// The Theme Settings "Themes" tab offers five presets — default-dark,
+// The Theme Settings "Themes" tab offers five presets - default-dark,
 // classic-brown, neon-blue, rustic-wood, casino-green. NOT ONE of those ids is
 // a key in TABLE_SKINS, so wherever a theme id reaches resolveSkin (the felt
 // reads `table_id || theme_id || settings.theme`, and a row saved before the
-// Table tab existed has no table_id at all) every one of the five fell through
-// to classic green. Five names, one felt.
+// Table tab existed carries no table_id at all) every one of the five fell
+// through to classic green. Five names, one felt.
 //
 // The CSS written for them was inert in the same way: a block per preset
-// setting `--felt-gradient` / `--bg-gradient`, custom properties that were
-// defined 41 times across the stylesheets and read by `var()` exactly zero
-// times. It was left over from a gradient-painted table that the image-based
-// skin system replaced, so it looked like a feature and did nothing. Deleted
-// in this commit; feltAndThemePresetsAreDistinct.test.ts keeps it deleted.
+// setting --felt-gradient / --bg-gradient, custom properties defined 37 times
+// across the stylesheets and read by var() exactly zero times. Left over from a
+// gradient-painted table that the image-based skin system replaced, so it
+// looked like a feature and did nothing.
 //
-// The fix is one named alias map rather than a special case inside resolveSkin,
-// and the SAME map supplies ThemeSettingsModal's preset bundles, so the felt a
-// preset paints and the felt it saves can never drift apart.
+// One named alias map rather than a special case inside resolveSkin, and the
+// SAME map supplies ThemeSettingsModal's preset bundles, so the felt a preset
+// paints and the felt it saves cannot drift apart.
 //
-// Two of the bundled pairings were also simply wrong before this map existed:
-// "Rustic Wood" bundled the green casino felt and "Casino Green" bundled the
-// VIP jade neon felt. Each preset now names the skin its label promises, and
-// no two name the same one.
+// Two bundled pairings were also simply wrong: "Rustic Wood" bundled the green
+// casino felt and "Casino Green" bundled the VIP jade neon felt. Each preset
+// now names the skin its label promises, and no two name the same one.
 export const THEME_PRESET_SKINS: Readonly<Record<string, string>> = {
-  // Neon City is also DEFAULT_SELECTION.table_id / DEFAULT_THEME.table_id —
-  // the app default felt, so the default preset must not disagree with it.
+  // Neon City is also DEFAULT_SELECTION.table_id / DEFAULT_THEME.table_id - the
+  // app default felt, so the default preset must not disagree with it.
   'default-dark': 'neon_city',
   'classic-brown': 'mahogany_red',
   'neon-blue': 'ice_cavern',

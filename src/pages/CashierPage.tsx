@@ -2561,7 +2561,7 @@ export default function CashierPage() {
         </section>
       )}
 
-      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole as ClubRole} />}
+      {clubId && <ClubBottomNav clubId={clubId} />}
 
       {/* Cashout Request Modal — Full step tracker UX */}
       {clubId && user?.id && (

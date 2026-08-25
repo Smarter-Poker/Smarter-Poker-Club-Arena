@@ -857,7 +857,7 @@ export default function ClubDashboard() {
             Retry
           </button>
         </div>
-        {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
+        {clubId && <ClubBottomNav clubId={clubId} />}
       </div>
     );
   }
@@ -1750,7 +1750,7 @@ export default function ClubDashboard() {
         )}
       </div>
 
-      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
+      {clubId && <ClubBottomNav clubId={clubId} />}
 
       {clubId && user?.id && (
         <div style={{ padding: '0 16px 80px', maxWidth: '100%' }}>

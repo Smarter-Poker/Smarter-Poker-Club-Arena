@@ -527,7 +527,7 @@ export default function PromoVaultPage() {
         />
       )}
 
-      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
+      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

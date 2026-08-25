@@ -598,7 +598,7 @@ export default function ClubFinancialsPage() {
         </section>
       )}
 
-      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
+      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

@@ -265,7 +265,7 @@ export default function ClubRulesPage() {
             Retry
           </button>
         </div>
-        <ClubBottomNav clubId={clubId || ''} userRole={userRole} />
+        <ClubBottomNav clubId={clubId || ''} />
       </StandardContentLayout>
     );
   }
@@ -337,7 +337,7 @@ export default function ClubRulesPage() {
         )}
       </div>
 
-      <ClubBottomNav clubId={clubId || ''} userRole={userRole} />
+      <ClubBottomNav clubId={clubId || ''} />
     </StandardContentLayout>
   );
 }

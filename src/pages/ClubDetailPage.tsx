@@ -1936,7 +1936,7 @@ export default function ClubDetailPage() {
       )}
 
       {/* Fixed Bottom Navigation Bar */}
-      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} clubName={club?.name} />}
+      {clubId && <ClubBottomNav clubId={clubId} />}
 
       {/* Confirm Modal for Table Deletion */}
       <ConfirmModal

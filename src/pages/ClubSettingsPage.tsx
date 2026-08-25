@@ -813,7 +813,7 @@ export default function ClubSettingsPage() {
             Browse Clubs
           </button>
         </div>
-        <ClubBottomNav clubId={clubId} userRole={userRole} />
+        <ClubBottomNav clubId={clubId} />
       </div>
     );
   }
@@ -839,7 +839,7 @@ export default function ClubSettingsPage() {
             Retry
           </button>
         </div>
-        {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
+        {clubId && <ClubBottomNav clubId={clubId} />}
       </div>
     );
   }
@@ -1489,7 +1489,7 @@ export default function ClubSettingsPage() {
         </div>
       )}
 
-      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
+      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

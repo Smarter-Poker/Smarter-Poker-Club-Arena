@@ -722,6 +722,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandCommunityCards = [];
     this.currentHandCommunityCards2 = [];
     this.currentHandWinnersByBoard = [];
+    // SHOWDOWN POLISH 2026-08-25: per-pot award breakdown is per-hand.
+    this.currentHandPerPotAwards = [];
     this.currentHandActions = [];
     this.currentHandWinners = [];
     // Dan section 29: a stale pot breakdown would attribute THIS hand's

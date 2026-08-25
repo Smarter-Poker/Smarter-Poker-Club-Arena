@@ -216,6 +216,18 @@
   color: var(--text-muted);
 }
 
+/* SHOWDOWN POLISH 2026-08-25: the persisted reveal record in replays. */
+.player-hand-ranking--mucked {
+  color: rgba(255, 255, 255, 0.45);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.player-hand-description {
+  color: rgba(255, 255, 255, 0.55);
+  font-style: italic;
+}
+
 /* Community Cards Row */
 .community-cards-row {
   display: flex;

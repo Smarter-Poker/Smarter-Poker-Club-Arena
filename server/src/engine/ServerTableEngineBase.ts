@@ -406,6 +406,20 @@ export abstract class ServerTableEngineBase {
     amount: number;
     handName?: string;
   }> = [];
+  /**
+   * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the unmerged per-pot(-half)
+   * award breakdown from the WINNERS event — one entry per (board, pot,
+   * hi/lo half, winner) with that pot's exact post-rake display share.
+   * Feeds pot_win's pot_awards groups. Reset per hand in dealHand.
+   */
+  protected currentHandPerPotAwards: Array<{
+    userId: string;
+    potIndex: number;
+    low: boolean;
+    amount: number;
+    hand?: { name?: string; ranking?: number; cards?: Array<{ rank?: string; suit?: string }> };
+    board?: 1 | 2;
+  }> = [];
   // Round 38: track wall-clock start so logHandHistory can write started_at +
   // ended_at (was missing — every completed hand_history row had null
   // ended_at, breaking replay timestamps and audit reconciliation).

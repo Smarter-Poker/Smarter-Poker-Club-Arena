@@ -330,11 +330,15 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // the client reads, keep `userId` for any internal consumer, and stop
       // shipping the evaluated hand's full card list in every snapshot — the
       // clients that need the winning cards get them from pot_win.
+      // SHOWDOWN POLISH 2026-08-25 (hygiene): the transitional `userId`
+      // duplicate is gone. Every first-party consumer reads `user_id` (the
+      // documented contract), the mapper accepts both spellings for skew,
+      // and pre-fix clients also read `user_id` — nothing ever consumed the
+      // duplicate.
       winners:
         this.currentHandWinners.length > 0
           ? this.currentHandWinners.map((w) => ({
               user_id: w.userId,
-              userId: w.userId,
               amount: w.amount,
               pot_index: w.potIndex ?? 0,
             }))

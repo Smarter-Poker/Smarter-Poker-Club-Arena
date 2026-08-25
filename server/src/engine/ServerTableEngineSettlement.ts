@@ -1047,6 +1047,55 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           false
         );
 
+        // ── MUCKED-WINNER INVARIANT (2026-08-25) ────────────────────────────
+        // A hand the reveal system withheld can NEVER be a hand that was paid:
+        // applyShowdownRevealRules auto-tables every hand that wins or ties.
+        // If this ever fires, the muck ruling and the payout disagreed — a
+        // money/privacy consistency break worth a page, not a log line. It
+        // runs per hand, in the settlement path, so it can't be missed by a
+        // sampling job. RIT hands pass trivially (all hands force-revealed).
+        if (this.currentHandShowdownResults.length >= 2) {
+          const revealedIds = new Set(revealedShowdownResults.map((r) => r.userId));
+          const paidButHidden = [...winnerIds].filter(
+            (id) =>
+              !revealedIds.has(id) && this.currentHandShowdownResults.some((r) => r.userId === id)
+          );
+          if (paidButHidden.length > 0) {
+            await raiseFinancialAlert(
+              'critical',
+              'ServerTableEngine.mucked_winner_invariant',
+              `Hand ${this.handCount} on table ${this.tableId}: winner(s) ${paidButHidden.join(
+                ','
+              )} were withheld from the reveal set - the muck ruling and the payout disagree`,
+              { tableId: this.tableId, handNumber: this.handCount, userIds: paidButHidden }
+            );
+          }
+        }
+
+        // SHOWDOWN POLISH 2026-08-25 (persistence): what the table actually
+        // SAW, for replays and dispute review — reveal order, muck ruling,
+        // and hand identity for revealed hands only. A mucked entry carries
+        // no hand name, description, or cards: participants can read this
+        // row back, and a mucked range stays private (2026-08-17 leak rule).
+        const showdownReveal = this.currentHandShowdownResults.map((r) => {
+          const mucked = this.isMuckedAtShowdown(r.userId);
+          return mucked
+            ? {
+                user_id: r.userId,
+                seat: r.seat ?? -1,
+                reveal_order: r.revealOrder ?? 0,
+                mucked: true,
+              }
+            : {
+                user_id: r.userId,
+                seat: r.seat ?? -1,
+                reveal_order: r.revealOrder ?? 0,
+                mucked: false,
+                hand_name: r.handName,
+                hand_description: r.handDescription ?? '',
+              };
+        });
+
         const result = await logHandHistory({
           tableId: this.tableId,
           tournamentId: this.tableInfo.tournament_id || undefined,
@@ -1094,6 +1143,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // positional leak at all.
           showdownResults: revealedShowdownResults,
           buttonSeat: this.currentHandDealerSeat,
+          showdownReveal,
         });
         v_handHistoryId = result.handId;
 

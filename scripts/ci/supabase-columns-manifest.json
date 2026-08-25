@@ -739,6 +739,15 @@
       "metadata",
       "created_at"
     ],
+    "bbj_pool_restorations": [
+      "id",
+      "source_pool_id",
+      "dest_pool_id",
+      "amount",
+      "bank",
+      "reason",
+      "restored_at"
+    ],
     "bbj_pools": [
       "id",
       "club_id",

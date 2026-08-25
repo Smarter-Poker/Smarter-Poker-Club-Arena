@@ -163,3 +163,60 @@ describe('follow-up: AUTO-MUCK is a real setting, with no prompt (spec 37)', () 
     expect(TABLE_PAGE).toMatch(/updateSetting\('autoMuck', settingsUpdate\.autoMuckLosers\)/);
   });
 });
+
+/**
+ * SHOWDOWN AUDIT 2026-08-25 — wire pins for the adversarial-review fixes.
+ */
+describe('audit: the snapshot winners wire actually matches at both ends', () => {
+  it('the engine emits user_id on snapshot winners (the key the mapper reads)', () => {
+    const at = ENGINE.indexOf('winners:');
+    expect(at).toBeGreaterThan(-1);
+    expect(ENGINE.slice(at, at + 700)).toMatch(/user_id:\s*w\.userId/);
+  });
+
+  it('the mapper accepts both user_id and legacy userId', () => {
+    const MAPPER = strip(read('src/utils/mapEngineSnapshot.ts'));
+    expect(MAPPER).toMatch(/w\.user_id \?\? \(w as unknown as \{ userId\?: string \}\)\.userId/);
+  });
+});
+
+describe('audit: showdown event ordering and muck-label reconciliation', () => {
+  it('the showdown event is emitted BEFORE the revealing snapshot', () => {
+    const sdCase = EVENTS.slice(EVENTS.indexOf("case 'SHOWDOWN':"));
+    const emitAt = sdCase.indexOf("type: 'showdown',");
+    const broadcastAt = sdCase.indexOf('this.broadcastCurrentState()');
+    expect(emitAt).toBeGreaterThan(-1);
+    expect(broadcastAt).toBeGreaterThan(-1);
+    expect(emitAt).toBeLessThan(broadcastAt);
+  });
+
+  it('the MUCKED label unions the event mask with the snapshot flag and clears on reveal', () => {
+    expect(TABLE_PAGE).toMatch(/muckedLabelSeats\[idx\] \|\| player\?\.isMucked === true/);
+    expect(TABLE_PAGE).toMatch(
+      /!\(player\?\.showCards && \(player\?\.holeCards\?\.length \?\? 0\) > 0\)/
+    );
+  });
+
+  it('a plays-the-board winner keeps its EMPTY hole_card_indices (no false highlight)', () => {
+    expect(TABLE_PAGE).toMatch(/if \(Array\.isArray\(w\.hole_card_indices\)\) \{/);
+  });
+});
+
+describe('audit: engine muck rules cover the cases the review found', () => {
+  const CONTROLLER = strip(read('server/src/engine/HandController.ts'));
+
+  it('an all-in showdown without a runout still exposes every live hand', () => {
+    expect(CONTROLLER).toMatch(/liveCanStillBet/);
+    expect(CONTROLLER).toMatch(/if \(liveCanStillBet <= 1\) return;/);
+  });
+
+  it('four of a kind or better can never be mucked', () => {
+    expect(CONTROLLER).toMatch(/r\.hand\.ranking >= 8 \|\| \(r\.hand2 && r\.hand2\.ranking >= 8\)/);
+  });
+
+  it("double-board hi-lo tracks board 2's low half", () => {
+    expect(CONTROLLER).toMatch(/bestShownLo2/);
+    expect(CONTROLLER).toMatch(/lowByUser2/);
+    expect(CONTROLLER).toMatch(/evaluateOmahaLowHand\(r\.cards, this\.state\.communityCards2\)/);
+  });
+});

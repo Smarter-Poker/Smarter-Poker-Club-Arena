@@ -112,7 +112,6 @@ export default function NotificationsPage() {
               animation: 'ca-notif-spin 0.8s linear infinite',
             }}
           />
-          <style>{'@keyframes ca-notif-spin { to { transform: rotate(360deg); } }'}</style>
         </div>
       )}
 

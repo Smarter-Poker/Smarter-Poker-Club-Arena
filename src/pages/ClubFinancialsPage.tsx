@@ -19,6 +19,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { FinancialExportService } from '../services/FinancialExportService';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
 import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import './ClubFinancialsPage.css';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -415,7 +416,7 @@ export default function ClubFinancialsPage() {
             onClose={() => setActiveCashier(null)}
             clubId={clubId}
             role={userRole}
-            walletType={activeCashier || 'club_bank'}
+            walletType={activeCashier || DEFAULT_CASHIER_WALLET}
           />
           <PlayerWalletModal
             isOpen={showPlayerWallet}

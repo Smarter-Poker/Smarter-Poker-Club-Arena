@@ -437,6 +437,10 @@ export default function SettlementPage() {
       const resolvedClubId = clubId ? await resolveClubUUID(clubId) : null;
       if (cancelled) return;
 
+      /* Same rule as PromotionsPage: a club route whose slug does not resolve
+         must not silently widen to an unfiltered subscription. Bail instead. */
+      if (!unionId && clubId && !resolvedClubId) return;
+
       const periodScope = unionId
         ? { filter: `union_id=eq.${unionId}` }
         : resolvedClubId

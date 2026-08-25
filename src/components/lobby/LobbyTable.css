@@ -537,9 +537,16 @@ abbr.lt-variant[title] {
   .lt-row td {
     padding: 6px;
   }
-  .lt-col-starts,
-  .lt-col-kind,
-  .lt-col-fav {
+  /* `.lobby-table td { display: block }` above is (0,1,1); a bare
+     `.lt-col-fav` is (0,1,0) and loses NO MATTER WHERE IT SITS in the file.
+     Measured live: every one of these columns was still rendering, which is
+     why the phone row wrapped to 211px tall. Same weight, and they win. */
+  .lobby-table td.lt-col-starts,
+  .lobby-table td.lt-col-kind,
+  .lobby-table td.lt-col-fav,
+  .lobby-table td.lt-col-variant,
+  .lobby-table td.lt-col-rules,
+  .lobby-table td.lt-col-speed {
     display: none;
   }
   /* The MTT title's meta line sheds the wall-clock start time on phones —

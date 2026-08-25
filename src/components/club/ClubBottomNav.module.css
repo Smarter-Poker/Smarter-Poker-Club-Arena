@@ -272,3 +272,14 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+
+/* Dan 2026-08-24: "THE FOOTER NEEDS TO ACTUALLY BE ATTACHED TO THE BOTTOM,
+   WITH NO PADDING." The safe-area inset was reserving ~34px of empty bar
+   under the labels on a home-indicator iPhone. The bar's own background still
+   runs to the physical edge; only the reserved strip goes. The 74px min-height
+   keeps the labels themselves clear of the indicator. */
+@media (max-width: 768px) {
+  .bottomNav {
+    padding-bottom: 0;
+  }
+}

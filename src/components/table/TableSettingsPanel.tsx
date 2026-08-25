@@ -74,7 +74,7 @@ export function TableSettingsPanel({
         <div className="tsp-header">
           <h3 className="tsp-title">Table Settings</h3>
           {onClose && (
-            <button className="tsp-close" onClick={onClose} aria-label="Close settings">
+            <button className="tsp-close" onClick={onClose} aria-label="Close Settings">
               ×
             </button>
           )}

@@ -1200,10 +1200,10 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           { key: '?', desc: 'Show Shortcuts' },
           { key: 'Esc', desc: 'Close Menu / Modal' },
           { key: 'H', desc: 'Go Home' },
-          { key: 'L', desc: 'Go to Home' },
-          { key: 'T', desc: 'Go to Tournaments' },
-          { key: 'P', desc: 'Go to Profile' },
-          { key: 'S', desc: 'Go to Settings' },
+          { key: 'L', desc: 'Go To Home' },
+          { key: 'T', desc: 'Go To Tournaments' },
+          { key: 'P', desc: 'Go To Profile' },
+          { key: 'S', desc: 'Go To Settings' },
         ].map((shortcut, i) => (
           <div
             key={`shortcut-${i}`}
@@ -1245,7 +1245,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         <div style={sectionHeaderStyle}>Support & Legal</div>
         {[
           { label: 'Help & FAQ', path: '/help' },
-          { label: 'Terms of Service', path: '/legal/tos' },
+          { label: 'Terms Of Service', path: '/legal/tos' },
           { label: 'Privacy Policy', path: '/legal/privacy' },
           { label: 'Fair Gaming', path: '/legal/fair-gaming' },
           { label: 'Promotion Rules', path: '/legal/promotions' },

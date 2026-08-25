@@ -831,7 +831,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // time this runs the controller may already be nulled, and an optional
     // chain onto a null controller yields [], i.e. "board length 0", which
     // offers a rabbit hunt on a hand that ran all the way to the river.
-    const offer = this.rabbitHuntOffers.get(this.handCount);
+    // Captured, not re-read. `this.handCount` is a live field reassigned by
+    // allocateGlobalHandNumber() at the next deal, and the emit below runs in a
+    // .then(). Reading it there could stamp the NEXT hand's number onto THIS
+    // hand's cards and eligibility set — the client posts that number back, the
+    // lookup misses, and the player is told the hand is no longer available for
+    // a hand they are still looking at.
+    const handNumber = this.handCount;
+    const offer = this.rabbitHuntOffers.get(handNumber);
     const boardLength = offer?.boardLength ?? 5;
     const handReachedRiver = boardLength >= 5;
     // FIX-D3 2026-07-19 (Bible V8 §11): honor the table's rabbit-hunt toggle.
@@ -862,7 +869,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           this.hub?.emitEvent(this.tableId, {
             type: 'rabbit_hunt_available',
             table_id: this.tableId,
-            hand_number: this.handCount,
+            hand_number: handNumber,
             // How many cards a reveal would show: flop-fold → turn+river, turn-fold
             // → river only, preflop-fold → the full five.
             current_board_length: boardLength,

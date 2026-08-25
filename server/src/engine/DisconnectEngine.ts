@@ -777,6 +777,19 @@ export class DisconnectEngine {
         consecutiveTimeouts: 0,
         isSittingOut: sittingOut,
         disconnectedAt: connected || sittingOut ? undefined : entry.sinceMs || Date.now(),
+        // These five were omitted, and one of them mattered. Dan's rule is "a
+        // player sitting out is removed after the button passes them twice, OR
+        // after 5 minutes, whichever comes first" — and the 5-minute half is
+        // gated on `state.sitOutSince != null` in tickSitOutsAndCollectEvictions.
+        // Leaving it `undefined` meant a crash-recovered sit-out could only ever
+        // be evicted by the orbit counter, so on a table that stopped dealing
+        // they sat there forever. Seeded from when the sit-out actually began,
+        // not from now, or every restart would restart their clock.
+        sitOutSince: sittingOut ? entry.sinceMs || Date.now() : null,
+        sitOutOrbits: 0,
+        awayBlindSbCharged: false,
+        awayBlindBbCharged: false,
+        pageLeftAt: null,
       });
       restored++;
     }

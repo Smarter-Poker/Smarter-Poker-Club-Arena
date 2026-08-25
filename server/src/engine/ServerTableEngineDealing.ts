@@ -86,6 +86,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
           loadSeatedPlayers(this.tableId)
         );
+        // Restart fidelity: apply persisted is_sitting_out to seats the engine
+        // has not seen yet. The start-up loop calls this too, but it breaks the
+        // moment enough players are seated and never runs again — so a player
+        // who was mid-buy-in at boot, or who joined during the wait, would be
+        // dealt in despite the database saying they are sitting out.
+        this.restoreSitOutsFromSeats();
         await this.withStepBudget(
           'refresh_blinds',
           ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
@@ -737,7 +743,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandNotificationLog = []; // Bible V8 §2.16: Reset notification log
     this.currentHandBBJHit = null; // BBJ: Reset hit detection for new hand
     this.currentHandBBJPayoutConfig = null;
-    this.rabbitHuntInFlight.clear(); // Rabbit Hunt: no purchase survives a hand boundary
+    // NOTE: rabbitHuntInFlight is deliberately NOT cleared here. It looks like
+    // per-hand state and is not — it is a concurrency LOCK, taken immediately
+    // before the billing RPC and released in that call's `finally`. Clearing it
+    // at the hand boundary drops the lock out from under an in-flight purchase,
+    // so a second tap sails past the "already loading" check and the player is
+    // billed twice: exactly the failure the lock was added to prevent. The
+    // `finally` is what bounds this set, on every path including a throw.
     this.currentHandRitBoards = 0; // RIT VERIFIER FIX 2026-08-21: new hand, no boards
     this.timeBankActivatedThisTurn = false; // Bible V8 §6.2: Reset time bank flag for new hand
     this.showHandPlayers = null; // Reset voluntary show-hand set for new hand
@@ -1184,36 +1196,40 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // Only initialize time bank if player is NEW (don't reset existing pool per session)
       if (!this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)) {
         const tbTotal = this.timeBankBaseSeconds + (tbExtras.get(p.user_id) ?? 0);
-        // RESTART FIDELITY (Dan 2026-08-25). `syncStacks` has always written
-        // time_bank_remaining and time_bank_uses_remaining, and loadSeatedPlayers
-        // has always read them back — and then this line threw them away and
-        // handed every player a FULL bank. So an engine restart silently refilled
-        // the time banks of everyone at the table: a player who had burned all of
-        // theirs stalling got a fresh set for free on the next deploy.
+        // ── REVERTED 2026-08-25, same day it shipped. Read this before trying
+        //    the restart-fidelity time-bank restore again. ──
         //
-        // The persisted value wins when there IS one. `?? tbTotal` covers a
-        // genuinely new seat (columns null) and keeps the VIP/purchased extras
-        // path exactly as it was.
-        const seated = this.seatedPlayers.find((s) => s.user_id === p.user_id);
-        const persistedSeconds = Number(seated?.time_bank_remaining);
-        const persistedUses = Number(seated?.time_bank_uses_remaining);
-        const hasPersisted = Number.isFinite(persistedSeconds) && persistedSeconds >= 0;
-        const remainingSeconds = hasPersisted ? persistedSeconds : tbTotal;
-        const usesRemaining =
-          hasPersisted && Number.isFinite(persistedUses) && persistedUses >= 0
-            ? persistedUses
-            : Math.ceil(remainingSeconds / 20);
-
+        // The intent was right: syncStacks writes time_bank_remaining,
+        // loadSeatedPlayers reads it back, and this line threw it away, so a
+        // restart refilled everyone's bank for free. The implementation was
+        // wrong in a way that made things strictly WORSE than the refill:
+        //
+        //   `time_bank_remaining INTEGER DEFAULT 30` (20260313_time_bank_
+        //   persistence.sql) — the column is never null, and loadSeatedPlayers
+        //   additionally coerces `|| 0`. So "is there a persisted value?" was
+        //   ALWAYS true and the fallback branch was unreachable for every
+        //   player on every table.
+        //
+        // The damage: every seat got 30s/4 uses instead of the table base plus
+        // their VIP and purchased extras, which made fetchTimeBankExtras dead
+        // code; and dbConsumedSeconds was seeded at (tbTotal - 30), so a VIP
+        // with 300s of extras had 310 seconds of their monthly quota booked as
+        // spent the instant they sat down.
+        //
+        // A correct version needs a way to tell "this seat has never been
+        // seeded" from "this seat has 30 seconds left", which the schema cannot
+        // currently express. That needs a nullable marker column, not a cleverer
+        // read of these two. Until then the generous behaviour is the safe one:
+        // a free refill on a restart costs the house a few seconds of clock; the
+        // broken version silently overcharged VIP quota on every table.
         this.timeBankEngine.initializePlayer(this.tableId, p.user_id, {
-          remainingSeconds,
-          usesRemaining,
+          remainingSeconds: tbTotal,
+          usesRemaining: Math.ceil(tbTotal / 20),
         });
         this.timeBankMeta.set(p.user_id, {
-          // initialSeconds is what this seat STARTED the session with, which is
-          // still the full allowance — the consumed part is the difference.
           initialSeconds: tbTotal,
           baseSeconds: this.timeBankBaseSeconds,
-          dbConsumedSeconds: Math.max(0, tbTotal - remainingSeconds),
+          dbConsumedSeconds: 0,
         });
       }
       this.disconnectEngine.registerPlayer(this.tableId, p.user_id);

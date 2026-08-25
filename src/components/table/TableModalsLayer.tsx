@@ -18,7 +18,7 @@ import SitOutModal from './SitOutModal';
 import WaitListModal from './WaitListModal';
 import { waitlistService } from '../../services/WaitlistService';
 import InsuranceModal, { type InsuranceOffer } from './InsuranceModal';
-import { RunItTwicePrompt, RunItTwiceResult, type RitResultData } from './RunItTwice';
+import { RunItTwicePrompt, type RitResultData } from './RunItTwice';
 import BadBeatJackpot from './BadBeatJackpot';
 import { getBBJQualifyingInfo, getBBJPayoutPercentForBB } from '../../config/RakeConfig';
 import BBJInfoModal from '../bbj/BBJInfoModal';
@@ -835,14 +835,6 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         maxRuns={ritMaxRuns}
         playerCount={ritPlayerCount}
         opponentName={_ritOpponent}
-      />
-
-      {/* Run It Twice result — the boards and payouts (2026-08-18) */}
-      <RunItTwiceResult
-        isOpen={ritResult !== null}
-        data={ritResult}
-        resolveName={ritResolveName}
-        onClose={onRitResultClose}
       />
 
       {/* Bad Beat Jackpot Display — per-variant qualifying rule (2026-08-18).

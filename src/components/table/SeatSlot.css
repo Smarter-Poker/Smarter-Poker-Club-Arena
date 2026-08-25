@@ -1249,18 +1249,8 @@
    most important thing on the table for those few seconds, and stacking the
    cards on top of each other hides the very ranks the player is trying to read.
    That is "crooked and mis alligned". */
-.seat__cards--opponent:not(.seat__cards--revealed) > * + * {
-  margin-left: -13px;
-}
-
-/* Fan the unrevealed backs behind the avatar */
-.seat__cards--opponent:not(.seat__cards--revealed) .seat__card:nth-child(1) {
-  transform: rotate(-8deg);
-  --card-rotation: -8deg;
-}
 .seat__cards--opponent:not(.seat__cards--revealed) .seat__card:nth-child(n + 2) {
-  transform: rotate(8deg);
-  --card-rotation: 8deg;
+  margin-left: -12px;
 }
 
 /* A shown hand lies flat and evenly spaced, in rank order (see SeatSlot.tsx).

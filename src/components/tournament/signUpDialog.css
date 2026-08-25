@@ -25,7 +25,12 @@
 .signup-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  /* R5 (2026-08-25 audit): was 1000. This app has roughly twenty overlays
+     declared above that — the offline banner alone sits at 9999 — so the ONE
+     confirmation that takes a player's money could be painted over by ordinary
+     chrome. It is now the highest thing in the app, deliberately above the
+     9999 banner, because nothing may obscure a purchase prompt. */
+  z-index: 100001;
   display: flex;
   align-items: center; /* "middle of the screen" — vertically too */
   justify-content: center;
@@ -260,4 +265,30 @@
   .signup-modal .modal-close:hover {
     transform: none;
   }
+}
+
+/* Value modifiers — replace the inline `style={{ color }}` the first version
+   used, so the palette lives with the rest of the stylesheet. */
+.signup-value--bounty {
+  color: #f87171;
+}
+.signup-value--ok {
+  color: #10b981;
+}
+.signup-value--short {
+  color: #ef4444;
+}
+.signup-note--error {
+  color: #ef4444;
+}
+
+/* The card takes focus on open (see SignUpHost) — do not paint a focus ring on
+   the card itself, only on the controls inside it. */
+.signup-modal:focus {
+  outline: none;
+}
+.signup-modal .btn:focus-visible,
+.signup-modal .modal-close:focus-visible {
+  outline: 2px solid #6fdcff;
+  outline-offset: 2px;
 }

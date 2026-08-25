@@ -305,20 +305,35 @@ export default function UnionGamesPage() {
   const emptyTables = useMemo(() => tables.filter((t) => (t.current_players || 0) === 0), [tables]);
 
   // Register / Unregister
+  /**
+   * Dan 2026-08-25 (binding): one confirmation per buy-in — and this page had
+   * ZERO. Direct `registerPlayer`, one tap, chips gone, while `registerMtt`
+   * sat destructured and unused at the top of the file.
+   *
+   * Routed through the shared hook. `club_id` is carried because a union game
+   * is bought with the chips of the club the player entered through, and the
+   * balance on the card has to be read against that same club or it can refuse
+   * a player who is perfectly well funded.
+   */
   const handleRegister = async (tournamentId: string) => {
     if (!user) return;
-    try {
-      // registerPlayer handles buy-in deduction, escrow, duplicate check, and event emission
-      await tournamentService.registerPlayer(
-        tournamentId,
-        user.id,
-        user.display_name || user.username || 'Player'
-      );
-      toast.success('Registered!');
-      loadUnionData(unionId || undefined);
-    } catch (err: any) {
-      toast.error(err.message);
+    const t = tournaments.find((x) => x.id === tournamentId);
+    if (!t) {
+      toast.error('That Tournament Is No Longer Listed');
+      return;
     }
+    await registerMtt(
+      {
+        id: t.id,
+        name: t.name,
+        buy_in_amount: Number((t as any).buy_in_amount ?? (t as any).buy_in ?? 0),
+        buy_in_fee: Number((t as any).buy_in_fee ?? 0),
+        start_time: (t as any).start_time ?? null,
+        club_id: (t as any).club_id ?? null,
+        is_late_registration: String(t.status).toUpperCase() === 'RUNNING',
+      },
+      () => loadUnionData(unionId || undefined)
+    );
   };
 
   const handleUnregister = async (tournamentId: string) => {

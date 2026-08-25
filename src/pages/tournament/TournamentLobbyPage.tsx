@@ -34,6 +34,11 @@ interface Tournament {
   clubId: string;
   clubName: string;
   buyIn: number;
+  /* The two halves behind `buyIn`, kept so the Sign Up card can print the
+     "20 (18 + 2)" split the rest of the app uses. `buyIn` alone is the rounded
+     total and cannot be un-summed (2026-08-25). */
+  buyInPrize: number;
+  buyInFee: number;
   prizePool: number;
   guaranteedPrize: number;
   startTime: string;
@@ -493,6 +498,8 @@ export default function TournamentLobbyPage() {
           // the split - buy_in_amount alone understated every price by the fee.
           // totalBuyIn also rounds, so no decimal reaches the lobby.
           buyIn: totalBuyIn(t.buy_in_amount || 0, t.buy_in_fee),
+          buyInPrize: Number(t.buy_in_amount) || 0,
+          buyInFee: Number(t.buy_in_fee) || 0,
           prizePool: Math.round(Number(t.prize_pool) || 0),
           startTime: t.start_time,
           status: t.status,
@@ -553,18 +560,46 @@ export default function TournamentLobbyPage() {
     if (isMounted.current) setLoading(false);
   };
 
+  /**
+   * Dan 2026-08-25 (binding): "you don't need a secondary confirmation for buy
+   * ins" — but you do need ONE, and this surface had NONE.
+   *
+   * This is the GLOBAL tournament lobby, the busiest register button in the
+   * app, and it called `tournamentService.registerPlayer` directly: one tap on
+   * a card and the buy-in was gone, no price confirmed, no balance shown, no
+   * way back. The hook was already imported at the top of this file and its
+   * return value was never used — so the page LOOKED wired to the shared path
+   * and was not.
+   *
+   * It now goes through `useTournamentRegistration`, which is the only thing
+   * that shows the Sign Up card, and which also handles the re-entrancy guard
+   * (a double-tapped card used to debit twice) and the post-registration seat
+   * lookup. The list refresh stays, as the hook's onSuccess.
+   */
   const handleRegister = async (tournamentId: string) => {
     if (!user?.id) return;
-    try {
-      await tournamentService.registerPlayer(tournamentId, user.id, user.username || 'Player');
-      toast.success('Registered! Buy-in deducted from your wallet');
-      loadTournaments();
-    } catch (error) {
-      reportError(error, 'TournamentLobbyPage.Registration_failed');
-      const msg = (error as Error).message || 'Unknown error';
-      toast.error(`Registration failed: ${msg}`);
-      throw error; // Re-throw so card can react
+    const t = tournamentsRef.current.find((x) => x.id === tournamentId);
+    if (!t) {
+      toast.error('That Tournament Is No Longer Listed');
+      return;
     }
+    await registerMtt(
+      {
+        id: t.id,
+        name: t.name,
+        // This page's row shape is camelCase and carries the split separately
+        // from the rounded total — see `buyInPrize` / `buyInFee` above.
+        buy_in_amount: t.buyInPrize,
+        buy_in_fee: t.buyInFee,
+        bounty_amount: t.isBounty ? t.bountyAmount || 0 : 0,
+        is_pko: !!t.isPko,
+        is_mystery_bounty: !!t.isMysteryBounty,
+        start_time: t.startTime,
+        club_id: t.clubId ?? null,
+        is_late_registration: t.status === 'RUNNING',
+      },
+      () => loadTournaments()
+    );
   };
 
   const handleUnregister = async (tournamentId: string) => {

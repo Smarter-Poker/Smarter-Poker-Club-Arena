@@ -1083,35 +1083,47 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 }}
                 onClick={async () => {
                   setSelectedCardColor(preset.id);
-                  localStorage.setItem(STORAGE_KEYS.CARD_COLOR, preset.id);
-                  try {
-                    masterBus.emit('CARD_COLOR_CHANGED', { preset: preset.id });
-                  } catch (err) {
-                    reportError(err, 'HamburgerMenu.Error');
-                    /* */
-                  }
+                  const presetMap: Record<string, string> = {
+                    default: 'blue',
+                    emerald: 'black',
+                    crimson: 'red',
+                    royal: 'blue',
+                    gold: 'gold',
+                    midnight: 'navy',
+                    obsidian: 'black',
+                    neon: 'white',
+                  };
+                  const realCardId = presetMap[preset.id] || 'black';
+
+                  masterBus.emit('UI_THEME_CHANGED', {
+                    key: 'ALL',
+                    value: { cards_id: realCardId },
+                  });
+                  masterBus.emit('CARD_COLOR_CHANGED', { preset: preset.id });
+                  toast.success('Card Color Applied');
+
                   if (user?.id) {
                     try {
-                      const { data: currentProfile } = await supabase
-                        .from('profiles')
-                        .select('preferences')
-                        .eq('id', user.id)
+                      const { data: currentSettings } = await supabase
+                        .from('user_theme_settings')
+                        .select('*')
+                        .eq('user_id', user.id)
+                        .eq('game_type', 'ALL')
                         .maybeSingle();
-                      const prefs = (currentProfile?.preferences as Record<string, unknown>) || {};
-                      const { error: saveErr } = await supabase
-                        .from('profiles')
-                        .update({ preferences: { ...prefs, card_color_preset: preset.id } })
-                        .eq('id', user.id);
-                      if (saveErr) {
-                        reportError(saveErr, 'HamburgerMenu.Card_color_save_failed');
-                        toast.error('Card color could not be saved. Please try again.');
-                      }
+
+                      await supabase.from('user_theme_settings').upsert(
+                        {
+                          user_id: user.id,
+                          game_type: 'ALL',
+                          ...(currentSettings || {}),
+                          cards_id: realCardId,
+                        },
+                        { onConflict: 'user_id,game_type' }
+                      );
                     } catch (err) {
-                      reportError(err, 'HamburgerMenu.Error');
-                      toast.error('Card color could not be saved. Please try again.');
+                      reportError(err, 'HamburgerMenu.Card_color_save_failed');
                     }
                   }
-                  toast.success(`Card color: ${preset.name}`);
                 }}
               >
                 <div

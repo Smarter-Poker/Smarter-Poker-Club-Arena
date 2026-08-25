@@ -128,26 +128,33 @@ describe('a table skin you can pick is a skin that exists', () => {
     expect(new Set(hashes).size, 'two table skins are byte-identical').toBe(files.length);
   });
 
-  it('every skin id the Theme Settings picker offers is in the registry', () => {
+  it('the Theme Settings table tab is GENERATED, so it cannot offer a dead skin', () => {
     const registry = new Set(
       [...TABLE_ASSETS.matchAll(/^\s{2}'?([a-z0-9_-]+)'?:\s*skin/gm)].map((m) => m[1])
     );
     expect(registry.size, 'TABLE_SKINS registry parsed empty').toBeGreaterThan(0);
 
-    // FIXED 2026-08-25 — this assertion was RED ON MAIN, which stops the World
-    // Hub sync for every agent. It parsed a `table: [ ... ]` literal out of the
-    // modal; #833 replaced that literal with `table: TABLE_ASSETS`, generated
-    // from TABLE_FELT_CATALOG. The duplicate list this file exists to forbid
-    // was removed, and the regex that depended on the duplicate then matched
-    // nothing. Read the generated catalogue instead, and pin the absence of a
-    // second hand-written copy rather than its presence.
-    const literal = THEME_MODAL.match(/\n\s{2}table: \[([\s\S]*?)\n\s{2}\],/);
+    // 2026-08-25: this used to read a hand-maintained `table: [ ... ]` array out
+    // of the modal and check each id against the registry. That array is gone -
+    // the tab is derived from TABLE_FELT_CATALOG, which is itself built from the
+    // skin registry - so the old locator matched nothing and the test failed on
+    // a change that made the bug it guards against impossible. It was RED ON
+    // MAIN, which stops the World Hub sync for every agent.
+    //
+    // Two invariants are pinned now, because they catch different regressions.
+    //
+    // STRUCTURAL: the tab must be generated, never hand-listed. A literal array
+    // here is a regression by itself, since it can drift from the registry.
+    expect(THEME_MODAL).toMatch(/^\s{2}table: TABLE_ASSETS,$/m);
+    expect(THEME_MODAL).toMatch(/const TABLE_ASSETS: ThemeAsset\[\] = TABLE_FELT_CATALOG\.map/);
     expect(
-      literal,
-      'the modal is hand-listing felts again instead of reading TABLE_FELT_CATALOG'
-    ).toBeNull();
-    expect(THEME_MODAL).toMatch(/\n\s{2}table: TABLE_ASSETS,/);
+      THEME_MODAL,
+      'the table tab is a literal array again - it can drift from the skin registry'
+    ).not.toMatch(/\n\s{2}table: \[/);
 
+    // RESOLUTION: and every id the catalogue offers must still resolve to real
+    // artwork. Generating the list makes a hand-typed dead id impossible; it
+    // does not make a dead id in the CATALOGUE impossible.
     const offered = TABLE_FELT_CATALOG.map((f) => f.id);
     expect(offered.length).toBeGreaterThan(0);
     const dead = offered.filter((id) => !registry.has(id));

@@ -15,6 +15,7 @@ import { reportError } from '../services/errorReporter.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { TournamentManagerEliminations } from './TournamentManagerEliminations.js';
 import { clampSeatsForVariant } from '../config/tableSeating.js';
+import { mayTakeSeat } from './seatClaim.js';
 
 export class TournamentManager extends TournamentManagerEliminations {
   protected async checkTableBalance(): Promise<void> {
@@ -240,6 +241,38 @@ export class TournamentManager extends TournamentManagerEliminations {
               `[Tournament:${this.tournamentId.slice(0, 8)}] Aborting move for ${move.playerId.slice(0, 8)} — could not read source stack (readErr=${readErr?.message ?? 'none'}, seat=${oldSeat ? 'found' : 'null'}). Leaving player at source table to avoid 0-stack elimination; will retry next rebalance.`
             ),
             'Tournament.Move_aborted_no_source_stack'
+          );
+          continue;
+        }
+
+        /**
+         * A MOVE MUST NOT COMPOUND A DUPLICATE (2026-08-25).
+         *
+         * Vacating the source seat, below, only guarantees ONE live seat if
+         * the source is the only one the player holds. On `bae46dbf` 72
+         * players were holding two live seats each before any move was
+         * attempted; moving one of them writes a THIRD live row and carries
+         * the source stack to it, while the other seat keeps being dealt.
+         *
+         * Checked BEFORE anything is stamped, so a refusal leaves the player
+         * exactly where they were and touches nothing. Which of two diverged
+         * stacks is the real one is a money decision — it is not this
+         * balancer's to make, so it reports and stands down.
+         */
+        const moveClaim = await mayTakeSeat(
+          supabase,
+          this.tournamentId,
+          move.playerId,
+          move.fromTableId
+        );
+        if (!moveClaim.allowed) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Aborting move for ${move.playerId.slice(0, 8)} — ${moveClaim.reason}. The player stays at table ${move.fromTableId.slice(0, 8)}; moving them would leave a third live seat.`
+            ),
+            moveClaim.unknown
+              ? 'Tournament.Move_aborted_seat_claim_unreadable'
+              : 'Tournament.Move_aborted_player_already_seated_twice'
           );
           continue;
         }
@@ -715,6 +748,34 @@ export class TournamentManager extends TournamentManagerEliminations {
         let seatNumber = 1;
         while (occ.taken.has(seatNumber) && seatNumber <= occ.max) seatNumber++;
         if (seatNumber > occ.max) continue;
+
+        /**
+         * THE SNAPSHOT IS NOT THE CHECK (2026-08-25).
+         *
+         * `seatedUsers` is read once at the top of this pass. The pass then
+         * walks the whole field one player at a time, and the start-seating
+         * loop in createTablesAndSeatPlayers is doing the same thing beside
+         * it — five minutes of writes on a 497-entrant freeroll. Anyone seated
+         * by the other writer inside that window is still on this pass's
+         * `unseated` list, and the per-TABLE unique index does not stop a
+         * second seat at a DIFFERENT table.
+         *
+         * Re-read immediately before the write. Refusing costs this player one
+         * five-second cycle; seating them twice double-counts their stack for
+         * the rest of the tournament.
+         */
+        const claim = await mayTakeSeat(supabase, this.tournamentId, player.user_id);
+        if (!claim.allowed) {
+          if (claim.unknown) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Not seating ${player.user_id.slice(0, 8)} — ${claim.reason}. The sweep retries in 5s.`
+              ),
+              'Tournament.late_reg_seat_claim_unreadable'
+            );
+          }
+          continue;
+        }
 
         // LIVE E2E FIX 2026-08-15: same one-row-per-seat rule as
         // executePlayerMoves — `occ.taken` only tracks ACTIVE seats, so the

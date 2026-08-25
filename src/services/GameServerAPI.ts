@@ -865,4 +865,9 @@ export default {
   showHand,
   submitDiscard, // FIX 120: Crazy Pineapple
   notifyServerRejectRebuy,
+  // Was the only member of this module missing from the default export, so
+  // anyone reaching for GameServerAPI.requestRabbitHunt got undefined while
+  // its seventeen siblings resolved.
+  requestRabbitHunt,
+  postBBToEnter,
 };

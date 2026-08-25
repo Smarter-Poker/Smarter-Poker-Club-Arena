@@ -626,6 +626,65 @@ export default function MultiTablePage() {
     setActiveIndex(prev.length);
   });
 
+  /**
+   * Dan 2026-08-25 — OBSERVE A TABLE IN A NEW SCREEN.
+   *
+   * The tournament lobby's Ranking and Tables tabs let a player watch any
+   * table in the event. "Watch" must never cost them a screen they are
+   * already using, so this ADDS a tab rather than converting one, and the
+   * screens already open keep dealing behind it.
+   *
+   * Three cases, in this order:
+   *   1. Already open  -> focus it. Watching a table twice is not a thing,
+   *                       and stacking duplicates burns the cap.
+   *   2. A lobby tab is parked -> take THAT slot. A lobby tab holds no chips
+   *                       and no engine socket, so reusing it is free, and it
+   *                       is what the player was just looking at.
+   *   3. Otherwise     -> append if under the cap, else say so out loud.
+   *                       Silently doing nothing is how "the button is
+   *                       broken" bugs are born (see the route effect below).
+   */
+  useMasterBusSubscription(
+    'OPEN_OBSERVE_TABLE',
+    (payload: { tableId: string; tableName?: string; stakes?: string }) => {
+      if (!payload?.tableId) return;
+      const prev = tablesRef.current;
+
+      const existingIdx = prev.findIndex((t) => t.id === payload.tableId);
+      if (existingIdx !== -1) {
+        setActiveIndex(existingIdx);
+        return;
+      }
+
+      const observerTab: TableInstance = {
+        id: payload.tableId,
+        name: formatGameTitle(payload.tableName) || `Table ${prev.length + 1}`,
+        stakes: payload.stakes || '',
+        isMyTurn: false,
+        pot: 0,
+        kind: 'table',
+        // `seated` stays undefined on purpose: that is what marks this tab an
+        // observer. TABLE_SEATED flips it if the player later takes a seat.
+      };
+
+      const lobbyIdx = prev.findIndex(isLobbyTab);
+      if (lobbyIdx !== -1) {
+        const next = [...prev];
+        next[lobbyIdx] = observerTab;
+        setTables(next);
+        setActiveIndex(lobbyIdx);
+        return;
+      }
+
+      if (prev.length >= MAX_TABLES) {
+        notifyCapReached('add');
+        return;
+      }
+      setTables([...prev, observerTab]);
+      setActiveIndex(prev.length);
+    }
+  );
+
   useMasterBusSubscription('TABLE_LEFT', (payload: LeftPayload) => {
     const e = payload;
     if (e.tableId) {

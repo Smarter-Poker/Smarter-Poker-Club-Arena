@@ -29,7 +29,31 @@ import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
 import { effectivePrizePool } from './startRules.js';
+import { resolveMysteryBountyProfile } from '../config/mysteryBountySpec.js';
+import { buildInventory, poolCentsFromNumeric } from './mysteryBountyPool.js';
+import { shuffleChests } from './mysteryBountyDraw.js';
+import {
+  mysteryPoolCents,
+  shouldActivateMysteryBounty,
+  type MysteryBountyActivationMode,
+  type MysteryBountyStage,
+} from './mysteryBountyActivation.js';
+import { mayTakeSeat } from './seatClaim.js';
 import type { GameServer } from '../GameServer.js';
+
+/** How many places this payout structure pays, whichever shape it arrived in. */
+function countPaidPlaces(structure: unknown): number {
+  if (Array.isArray(structure)) return structure.length;
+  if (typeof structure === 'string') {
+    try {
+      const parsed = JSON.parse(structure);
+      return Array.isArray(parsed) ? parsed.length : 0;
+    } catch {
+      return 0;
+    }
+  }
+  return 0;
+}
 
 export abstract class TournamentManagerBase {
   protected tournamentId: string;
@@ -528,6 +552,171 @@ export abstract class TournamentManagerBase {
     return cap > 0 && this.currentLevel >= cap;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  MYSTERY BOUNTY — ACTIVATION
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** Local mirror of `tournaments.mystery_bounty_stage`, so the sweep below is
+   *  free until the phase is genuinely eligible. Refreshed from the seed RPC's
+   *  own answer, which is the only thing allowed to change it. */
+  protected mysteryBountyStage: MysteryBountyStage = 'pending';
+  /** Guard against two sweeps overlapping across an await. */
+  private mysteryBountySeeding = false;
+
+  /** True only when NO table in this event has a hand in progress. */
+  protected allTablesBetweenHands(): boolean {
+    for (const engine of this.tableEngines.values()) {
+      try {
+        if (!engine.isBetweenHands()) return false;
+      } catch {
+        // An engine that cannot answer is an engine we cannot vouch for.
+        // Refusing to activate costs a few seconds; activating over a live
+        // hand changes the value of a decision already made.
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Open the mystery phase, if this is the moment.
+   *
+   * Called from the elimination sweep, which already runs between hands and
+   * already knows how many players are left. Everything expensive is behind
+   * the cheap `stage !== 'pending'` test, so a non-mystery event pays one
+   * boolean per sweep.
+   *
+   * The INVENTORY is built here, in TypeScript, from the one tier ladder in
+   * `config/mysteryBountySpec.ts`, and shuffled with the CSPRNG before it goes
+   * anywhere near the database. `fn_mystery_bounty_seed` refuses to invent
+   * chests of its own precisely so a second ladder cannot come into existence
+   * — three of them already had, and none agreed.
+   */
+  protected async maybeActivateMysteryBounty(playersRemaining: number): Promise<void> {
+    if (this.mysteryBountyStage !== 'pending') return;
+    const t = this.tournamentCache;
+    if (!t?.is_mystery_bounty) return;
+    if (this.mysteryBountySeeding) return;
+
+    // The bounty pool grows with every late entry, so read it fresh rather
+    // than from the cache: the cached row was loaded at start().
+    // `as any` on the row, not on the query: the generated Supabase types were
+    // last regenerated before the mystery_bounty_* columns existed, so the
+    // typed client resolves a select naming them to GenericStringError and
+    // every field access below is an error. The columns are real — they are
+    // created by 20260825410000 and CHECK 17 verifies that against the live
+    // schema on every branch.
+    const { data: freshRow } = await supabase
+      .from('tournaments')
+      .select(
+        'bounty_pool, prize_pool_finalized, mystery_bounty_stage, mystery_bounty_pool_percent, ' +
+          'mystery_bounty_regular_pool_percent, mystery_bounty_profile, mystery_bounty_activation, ' +
+          'mystery_bounty_activation_value, payout_structure, current_players'
+      )
+      .eq('id', this.tournamentId)
+      .maybeSingle();
+    const fresh = freshRow as any;
+    if (!fresh) return;
+
+    if (fresh.mystery_bounty_stage && fresh.mystery_bounty_stage !== 'pending') {
+      // Another process (a previous incarnation of this manager, most likely)
+      // already opened it. Adopt its answer rather than racing it.
+      this.mysteryBountyStage = fresh.mystery_bounty_stage as MysteryBountyStage;
+      return;
+    }
+
+    let poolCents = 0;
+    try {
+      poolCents = mysteryPoolCents(
+        poolCentsFromNumeric(fresh.bounty_pool),
+        fresh.mystery_bounty_pool_percent,
+        fresh.mystery_bounty_regular_pool_percent
+      );
+    } catch (err) {
+      // A bounty pool that is not a whole number of cents means something
+      // upstream started writing fractions of a cent. Seeding an inventory
+      // from it would put the event permanently out of balance.
+      reportError(err, 'Tournament.mystery_bounty_pool_not_in_cents');
+      return;
+    }
+
+    // `payout_structure` is jsonb, and the client reads it back as an array in
+    // most rows and as a JSON STRING in some — old rows written before the
+    // column was jsonb. Reading only the array form would leave those events
+    // with zero paid places, and the default activation mode (at the money)
+    // would then never fire for them: the chests would sit unopened for the
+    // whole tournament and every knockout would keep paying the flat bounty.
+    const paidPlaces =
+      countPaidPlaces(t?.payout_structure) || countPaidPlaces(fresh.payout_structure);
+
+    const decision = shouldActivateMysteryBounty({
+      isMysteryBounty: true,
+      stage: 'pending',
+      entryClosed: Boolean(fresh.prize_pool_finalized) || this.prizePoolFinalized,
+      allTablesBetweenHands: this.allTablesBetweenHands(),
+      playersRemaining,
+      totalEntries: Number(fresh.current_players) || playersRemaining,
+      paidPlaces,
+      mode: (fresh.mystery_bounty_activation || 'at_the_money') as MysteryBountyActivationMode,
+      modeValue: fresh.mystery_bounty_activation_value,
+      mysteryPoolCents: poolCents,
+    });
+    if (!decision.activate) return;
+
+    this.mysteryBountySeeding = true;
+    try {
+      const profile = resolveMysteryBountyProfile(fresh.mystery_bounty_profile);
+      const chests = shuffleChests(buildInventory(poolCents, decision.drawCount, profile)).map(
+        (c) => ({ tier: c.tier, amount_cents: c.amountCents, seq: c.seq })
+      );
+
+      const { data: seeded, error: seedErr } = await supabase.rpc('fn_mystery_bounty_seed', {
+        p_tournament_id: this.tournamentId,
+        p_players_remaining: decision.drawCount,
+        p_chests: chests,
+      });
+
+      if (seedErr) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty seed FAILED (${seedErr.message}) — chests never opened, knockouts keep paying the flat bounty`
+          ),
+          'Tournament.mystery_bounty_seed_failed'
+        );
+        return;
+      }
+      const res = (seeded ?? {}) as { ok?: boolean; reason?: string; pool_cents?: number };
+      if (!res.ok) {
+        // `entry_still_open` is the ordinary "not yet" and is not worth an
+        // error report; anything else means the engine and the database
+        // disagree about the event, which is.
+        if (res.reason !== 'entry_still_open') {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] mystery bounty seed refused: ${res.reason}`
+            ),
+            'Tournament.mystery_bounty_seed_refused'
+          );
+        }
+        return;
+      }
+
+      this.mysteryBountyStage = 'active';
+      await this.broadcast('mystery_bounty_activated', {
+        poolCents: Number(res.pool_cents) || poolCents,
+        chests: decision.drawCount,
+        profile,
+      });
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY BOUNTY OPEN — ${decision.drawCount} chests, ${poolCents}c, profile ${profile}`
+      );
+    } catch (err) {
+      reportError(err, 'Tournament.mystery_bounty_activation_threw');
+    } finally {
+      this.mysteryBountySeeding = false;
+    }
+  }
+
   /** Check if this is an MTT or XMTT (eligible for synchronized breaks) */
   isMttOrXmtt(): boolean {
     const type = this.tournamentCache?.tournament_type;
@@ -618,6 +807,10 @@ export abstract class TournamentManagerBase {
 
       this.tournamentCache = tournament;
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
+      // Adopt whatever the row says the mystery phase is. A redeploy
+      // mid-tournament must not re-seed an inventory that already exists.
+      this.mysteryBountyStage =
+        (tournament.mystery_bounty_stage as typeof this.mysteryBountyStage) || 'pending';
 
       /**
        * Enforce a minimum field of three -- OR EVERY SEAT, WHEN THERE ARE
@@ -1404,6 +1597,10 @@ export abstract class TournamentManagerBase {
 
       this.tournamentCache = tournament;
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
+      // Adopt whatever the row says the mystery phase is. A redeploy
+      // mid-tournament must not re-seed an inventory that already exists.
+      this.mysteryBountyStage =
+        (tournament.mystery_bounty_stage as typeof this.mysteryBountyStage) || 'pending';
 
       // Find existing tables
       const { data: tables } = await supabase
@@ -2141,6 +2338,40 @@ export abstract class TournamentManagerBase {
     // is how a full adopted table was handed an eleventh player.
     let cursor = 0;
     for (let i = 0; i < toSeat.length; i++) {
+      /**
+       * THE SNAPSHOT IS NOT THE CHECK (2026-08-25).
+       *
+       * `alreadySeated` is read ONCE, above, and this loop then writes one
+       * seat per statement for the whole field — five minutes on a 497-entrant
+       * freeroll. A second pass over the same tournament (a re-entered start,
+       * a resume, a second engine instance) takes its own snapshot inside that
+       * window, sees every not-yet-written player as unseated, and seats them
+       * again at a different table. `idx_unique_active_user_per_table` is
+       * scoped to ONE table, so it cannot object.
+       *
+       * Live footprint on `bae46dbf` 2026-08-25: 72 players holding 144 live
+       * seats, 46 of the pairs exactly 14 tables apart — two round-robin
+       * cursors, this loop, running twice. Both seats were dealt and both
+       * stacks diverged.
+       *
+       * So the seat is claimed against the DATABASE, immediately before the
+       * write. A player who has acquired a seat since the snapshot is skipped,
+       * and an unreadable answer skips too: the 5s seat sweep will seat them
+       * on a later pass, and a guess here is a double stack.
+       */
+      const claim = await mayTakeSeat(supabase, this.tournamentId, toSeat[i].user_id);
+      if (!claim.allowed) {
+        if (claim.unknown) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Not seating ${toSeat[i].user_id.slice(0, 8)} — ${claim.reason}. Leaving them to the 5s seat sweep rather than risking a second live seat.`
+            ),
+            'Tournament.seat_claim_unreadable'
+          );
+        }
+        continue;
+      }
+
       // Next table, from the cursor, that has a genuinely free seat number
       // within its own capacity.
       let tableId: string | null = null;

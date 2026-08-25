@@ -739,6 +739,15 @@
       "metadata",
       "created_at"
     ],
+    "bbj_pool_restorations": [
+      "id",
+      "source_pool_id",
+      "dest_pool_id",
+      "amount",
+      "bank",
+      "reason",
+      "restored_at"
+    ],
     "bbj_pools": [
       "id",
       "club_id",
@@ -4757,7 +4766,8 @@
       "reported_at",
       "button_seat",
       "has_human",
-      "community_cards2"
+      "community_cards2",
+      "pots"
     ],
     "hand_players": [
       "id",
@@ -7044,7 +7054,8 @@
       "memory_elo",
       "arena_avatar_url",
       "equipped_frame",
-      "equipped_aura"
+      "equipped_aura",
+      "use_avatar_as_profile_pic"
     ],
     "promo_code_redemptions": [
       "id",
@@ -8872,7 +8883,8 @@
       "seven_deuce_amount",
       "hands_dealt",
       "avg_pot",
-      "bomb_pot_double_board"
+      "bomb_pot_double_board",
+      "cap_bb"
     ],
     "theme_unlocks": [
       "id",
@@ -9182,6 +9194,40 @@
       "is_mystery_revealed",
       "created_at"
     ],
+    "tournament_bounty_award_recipients": [
+      "id",
+      "award_id",
+      "user_id",
+      "amount_cents",
+      "is_designated_revealer",
+      "paid_at"
+    ],
+    "tournament_bounty_awards": [
+      "id",
+      "tournament_id",
+      "chest_id",
+      "table_id",
+      "hand_id",
+      "eliminated_user_id",
+      "amount_cents",
+      "tier",
+      "status",
+      "op_id",
+      "reserved_at",
+      "revealed_at",
+      "paid_at",
+      "reveal_deadline_at"
+    ],
+    "tournament_bounty_chests": [
+      "id",
+      "tournament_id",
+      "seq",
+      "tier",
+      "amount_cents",
+      "status",
+      "award_id",
+      "created_at"
+    ],
     "tournament_deal_votes": [
       "tournament_id",
       "user_id",
@@ -9423,7 +9469,17 @@
       "restart_every_minutes",
       "synchronized_breaks",
       "satellite_seats",
-      "schedule_id"
+      "schedule_id",
+      "mystery_bounty_activation",
+      "mystery_bounty_activation_value",
+      "mystery_bounty_profile",
+      "mystery_bounty_top_percent",
+      "mystery_bounty_regular_pool_percent",
+      "mystery_bounty_pool_percent",
+      "mystery_bounty_stage",
+      "mystery_bounty_activated_at",
+      "mystery_bounty_activated_players",
+      "mystery_bounty_pool_cents"
     ],
     "tours_due_for_refresh": [
       "tour_code",
@@ -11391,6 +11447,29 @@
       "diamond_cost",
       "is_active",
       "created_at"
+    ],
+    "vip_reward_catalog": [
+      "id",
+      "name",
+      "description",
+      "category",
+      "points_cost",
+      "grant_type",
+      "grant_ref",
+      "stock",
+      "featured",
+      "is_active",
+      "sort_order",
+      "created_at"
+    ],
+    "vip_reward_claims": [
+      "id",
+      "user_id",
+      "reward_id",
+      "points_spent",
+      "status",
+      "claimed_at",
+      "fulfilled_at"
     ],
     "vip_subscriptions": [
       "id",

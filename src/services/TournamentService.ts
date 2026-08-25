@@ -90,15 +90,20 @@ export type TournamentType =
 export interface BountyConfig {
   bountyType: 'fixed' | 'mystery' | 'progressive';
   baseBounty: number; // Starting bounty per player
-  mysteryTiers?: MysteryBountyTier[]; // For mystery bounties
   progressiveStartLevel?: number; // When progressive bounties start
 }
 
-export interface MysteryBountyTier {
-  minMultiplier: number;
-  maxMultiplier: number;
-  probability: number; // Percentage chance
-}
+/* DELETED 2026-08-25: `MysteryBountyTier` and `BountyConfig.mysteryTiers`.
+ *
+ * A client-supplied multiplier ladder. It was built by CreateTournamentModal
+ * from a min/max pair, handed to `BountyConfig` — and then dropped: nothing in
+ * `buildRpcConfig` ever sent it, so no tournament ever ran on it. The only
+ * function that read it, `rollMysteryBounty`, had no callers either.
+ *
+ * The ladder is server-side now and there is exactly one of it:
+ * `server/src/config/mysteryBountySpec.ts`. A club chooses BETWEEN ladders
+ * (balanced / classic / jackpot) via `mysteryBountyProfile` below; it does not
+ * hand one in, because a browser must not decide what a chest is worth. */
 
 export interface SpinConfig {
   possibleMultipliers: SpinMultiplier[];
@@ -236,6 +241,22 @@ export interface TournamentConfig {
   /** Mystery bounty advertised range, as MULTIPLIERS of the bounty head. */
   mysteryBountyMin?: number;
   mysteryBountyMax?: number;
+  /**
+   * MYSTERY BOUNTY OPTIONS (Dan section 72). Applied by
+   * `fn_apply_mystery_bounty_config` immediately after creation, not by
+   * `fn_create_tournament` — see the note at the call site.
+   */
+  /** Which tier ladder. 'jackpot' is top-heavy, 'balanced' is flat. */
+  mysteryBountyProfile?: 'balanced' | 'classic' | 'jackpot';
+  /** When the chests open. */
+  mysteryBountyActivation?: 'at_the_money' | 'percent_field' | 'player_count';
+  /** Percent of field for 'percent_field'; an absolute count for 'player_count'. */
+  mysteryBountyActivationValue?: number;
+  /** Percent of the bounty pool held back for chests. The rest funds ordinary
+   *  knockouts before the phase opens. */
+  mysteryBountyPoolPercent?: number;
+  /** Advertised share of the mystery pool sitting on the single top chest. */
+  mysteryBountyTopPercent?: number;
   /** Writes tournaments.is_pinned — pinned/featured in every lobby sort. */
   isFeatured?: boolean;
 }
@@ -311,14 +332,8 @@ export const BOUNTY_PRESETS: Record<string, BountyConfig> = {
   mystery: {
     bountyType: 'mystery',
     baseBounty: 10,
-    mysteryTiers: [
-      { minMultiplier: 1, maxMultiplier: 1, probability: 60 },
-      { minMultiplier: 2, maxMultiplier: 2, probability: 25 },
-      { minMultiplier: 5, maxMultiplier: 5, probability: 10 },
-      { minMultiplier: 10, maxMultiplier: 10, probability: 4 },
-      { minMultiplier: 50, maxMultiplier: 50, probability: 0.9 },
-      { minMultiplier: 500, maxMultiplier: 500, probability: 0.1 },
-    ],
+    // No tier ladder here on purpose — see the note on BountyConfig. The
+    // chests are sized server-side from the funded pool when the phase opens.
   },
 };
 
@@ -804,6 +819,38 @@ class TournamentService {
       throw new Error(
         TOURNAMENT_CREATE_ERRORS[result?.error ?? ''] ?? 'Could not create tournament'
       );
+    }
+
+    // MYSTERY BOUNTY OPTIONS (Dan section 72). A second call rather than more
+    // keys on `fn_create_tournament`, which is a 15KB SECURITY DEFINER
+    // function this change has no other reason to touch — and rewriting one
+    // from a dashboard dump to add six columns is how a creation path acquires
+    // a silent regression.
+    //
+    // A failure here is deliberately NOT fatal. The tournament exists and is
+    // valid; it simply runs on the defaults (classic ladder, chests open at
+    // the money, pool split 50/50), which is what most clubs pick anyway. The
+    // alternative — throwing — would leave a paid-for, correctly created event
+    // behind an error message saying it failed.
+    if (config.type === 'mystery_bounty' && result.tournament_id) {
+      const mysteryConfig: Record<string, unknown> = {
+        profile: config.mysteryBountyProfile ?? 'classic',
+        activation: config.mysteryBountyActivation ?? 'at_the_money',
+        activationValue: config.mysteryBountyActivationValue ?? null,
+        topPercent: config.mysteryBountyTopPercent ?? 20,
+        poolPercent: config.mysteryBountyPoolPercent ?? 50,
+        regularPoolPercent: 100 - (config.mysteryBountyPoolPercent ?? 50),
+      };
+      const { data: cfgResult, error: cfgError } = await supabase.rpc(
+        'fn_apply_mystery_bounty_config',
+        { p_tournament_id: result.tournament_id, p_config: mysteryConfig }
+      );
+      const cfg = cfgResult as { ok?: boolean; reason?: string } | null;
+      if (cfgError || !cfg?.ok) {
+        console.warn(
+          `[TournamentService] mystery bounty options not applied (${cfgError?.message ?? cfg?.reason ?? 'unknown'}); the event runs on the defaults`
+        );
+      }
     }
 
     const { data } = await supabase
@@ -2552,33 +2599,25 @@ class TournamentService {
   // It had no callers anywhere outside this file. Deleting it removes a
   // duplicate money path; it removes no function.
 
-  /**
-   * Roll mystery bounty value
-   */
-  rollMysteryBounty(config: BountyConfig): number {
-    // Whole chips only (Dan 2026-08-20): a x0.5 tier on a 5 base would
-    // otherwise hand out a 2.5 head.
-    const base = Math.max(0, Math.round(Number(config.baseBounty) || 0));
-    if (!config.mysteryTiers) return base;
-
-    const random = Math.random() * 100;
-    let cumulative = 0;
-
-    for (const tier of config.mysteryTiers) {
-      cumulative += tier.probability;
-      if (random < cumulative) {
-        // Random value within the tier range
-        const multiplier =
-          tier.minMultiplier === tier.maxMultiplier
-            ? tier.minMultiplier
-            : Math.floor(Math.random() * (tier.maxMultiplier - tier.minMultiplier + 1)) +
-              tier.minMultiplier;
-        return Math.max(0, Math.round(base * multiplier));
-      }
-    }
-
-    return base;
-  }
+  /* DELETED 2026-08-25: `rollMysteryBounty`.
+   *
+   * It rolled a mystery bounty from `Math.random()` against a client-supplied
+   * tier ladder, and it had ZERO callers anywhere in src/ — verified before
+   * deletion. It is removed rather than left "just in case" for the same
+   * reason `collectBounty` above was: a second, unused money path is a live
+   * hazard, and this one decided an amount from the browser.
+   *
+   * What replaces it is not a client function at all. Mystery bounties are now
+   * an INVENTORY: the whole mystery pool is divided into one chest per
+   * surviving player when the phase opens, the order is shuffled with the
+   * server's CSPRNG, and a knockout takes the next chest through
+   * `fn_mystery_bounty_reserve`. The ladder that decides the tier sizes lives
+   * in exactly one place, `server/src/config/mysteryBountySpec.ts`.
+   *
+   * To show a player what is still in the inventory, call
+   * `fn_mystery_bounty_inventory(tournamentId)`; it returns the tiers, their
+   * amounts, and how many of each are left, and it never reveals which chest
+   * is next. */
 
   /**
    * Get total bounties won by a player in a tournament

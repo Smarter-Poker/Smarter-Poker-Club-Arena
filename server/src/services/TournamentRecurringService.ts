@@ -16,7 +16,7 @@
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
-import { buyInFor, wholeChips } from '../config/buyIn.js';
+import { DEFAULT_RAKE_RATE, buyInFor, wholeChips } from '../config/buyIn.js';
 
 /**
  * Derive the two buy-in columns from ONE whole-dollar total.
@@ -32,8 +32,21 @@ import { buyInFor, wholeChips } from '../config/buyIn.js';
  * `config.rake` is no longer read by anything — it was the second half of a
  * pair that nothing kept in agreement.
  */
-function buyInColumns(buyIn: number): { buy_in_amount: number; buy_in_fee: number } {
-  const { prize, fee } = buyInFor(buyIn);
+/**
+ * Dan 2026-08-25: "HEADS UP EVENTS ARE ONLY A 5% RAKE, SO A 1 CHIP BUY IN X 2
+ * PLAYERS = 5% OF 2 CHIPS, SO WINNER TAKES ALL = 1.90 PAYOUT."
+ *
+ * A duel is two entries, so a 5% cut of the table is 5% of each seat: 0.95 in,
+ * 0.05 to the house, twice, and the winner takes the 1.90 pool. Exactly the
+ * number Dan wrote.
+ */
+export const SNG_RAKE_RATE = 0.05;
+
+function buyInColumns(
+  buyIn: number,
+  rakeRate: number = DEFAULT_RAKE_RATE
+): { buy_in_amount: number; buy_in_fee: number } {
+  const { prize, fee } = buyInFor(buyIn, rakeRate);
   return { buy_in_amount: prize, buy_in_fee: fee };
 }
 
@@ -2263,7 +2276,7 @@ export class TournamentRecurringService {
           game_type: dbGameType,
           variant: 'sng',
           tournament_type: 'SNG',
-          ...buyInColumns(config.buyIn),
+          ...buyInColumns(config.buyIn, SNG_RAKE_RATE),
           guaranteed_prize: 0,
           starting_chips: config.startingStack,
           max_players: config.maxPlayers,

@@ -3240,6 +3240,8 @@ export default function TablePage({
     setIsSoundEnabled,
     isVibrationEnabled,
     setIsVibrationEnabled,
+    isAutoRebuyEnabled,
+    setIsAutoRebuyEnabled,
     playTurnAlert,
   } = useTableSound();
 
@@ -4653,6 +4655,8 @@ export default function TablePage({
    * what is left to play for, and when do the blinds move.
    */
   const [showTournamentInfo, setShowTournamentInfo] = useState(false);
+  const [standUpNextBB, setStandUpNextBB] = useState(false);
+
   const [sharedHandData, setSharedHandData] = useState<any>(null);
 
   // Real Name vs Alias
@@ -10610,11 +10614,24 @@ export default function TablePage({
                         : [
                             {
                               id: 'rebuy',
-                              label: 'Add Chips',
+                              label: 'Top Up',
                               icon: <RebuyIcon />,
                               onClick: () => setShowCashier(true),
                             },
                           ]),
+                      {
+                        id: 'auto-top-up',
+                        label: 'Auto Top Up',
+                        icon: <RebuyIcon />,
+                        badge: isAutoRebuyEnabled ? 'ON' : undefined,
+                        onClick: () => setIsAutoRebuyEnabled(!isAutoRebuyEnabled),
+                      },
+                      {
+                        id: 'marketplace',
+                        label: 'Club Marketplace',
+                        icon: <SettingsIcon />,
+                        onClick: () => window.open('/hub/marketplace', '_blank'),
+                      },
                       // AUTO-REBUY TOGGLE REMOVED 2026-08-20. It set React state and
                       // a localStorage key and nothing else: `isAutoRebuyEnabled`
                       // had no consumers anywhere in the repo, and no server code

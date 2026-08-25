@@ -263,7 +263,15 @@ export function TableMenu({
         {
           id: 'avatar',
           label: 'Change Avatar',
-          icon: <AvatarIcon />,
+          icon: avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt="Avatar"
+              style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'contain' }}
+            />
+          ) : (
+            <AvatarIcon />
+          ),
           onClick: () => setShowAvatarGallery(true),
         },
         {

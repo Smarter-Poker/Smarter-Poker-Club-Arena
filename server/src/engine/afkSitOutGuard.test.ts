@@ -27,8 +27,7 @@ import { DisconnectEngine } from './DisconnectEngine.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { DeadlineScheduler } from './DeadlineScheduler.js';
 
-const strip = (src: string) =>
-  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const read = (p: string) => readFileSync(path.join(process.cwd(), p), 'utf8');
 
 // ── Behavioral: the strike/auto-sit-out machinery itself ─────────────────────
@@ -113,9 +112,7 @@ describe('tournament sit-outs are dealt in and blinded off (bug 2)', () => {
   it('the deal roster only excludes sit-outs at CASH tables', () => {
     const dealing = strip(read('src/engine/ServerTableEngineDealing.ts'));
     expect(dealing).toMatch(/dealInWhileSittingOut\s*=\s*this\.isTournamentTable\(\)/);
-    expect(dealing).toMatch(
-      /dealInWhileSittingOut\s*\|\|\s*!this\.disconnectEngine\.isSittingOut/
-    );
+    expect(dealing).toMatch(/dealInWhileSittingOut\s*\|\|\s*!this\.disconnectEngine\.isSittingOut/);
   });
 
   it('dealableCount, blind rotation, and the watchdog all agree', () => {
@@ -128,7 +125,14 @@ describe('tournament sit-outs are dealt in and blinded off (bug 2)', () => {
     // SAME roster as getBBSeatIndex - it has to, or the SB and BB would be
     // computed from different rosters, which is a real bug. So the third
     // occurrence is required, not accidental.
-    expect((base.match(gated) || []).length, 'Base: dealableCount + getBBSeatIndex + getSBSeatIndex').toBe(3);
+    // Updated 2026-08-25: four. getButtonSeatIndex() joined them for "new
+    // players never get the button", and builds that same roster for the same
+    // reason - the wait-for-BB gate has to be looking at the seat the rotation
+    // is actually about to choose.
+    expect(
+      (base.match(gated) || []).length,
+      'Base: dealableCount + getBBSeatIndex + getSBSeatIndex + getButtonSeatIndex'
+    ).toBe(4);
     expect((turns.match(gated) || []).length, 'Turns: watchdog dealable count').toBe(1);
   });
 
@@ -139,9 +143,7 @@ describe('tournament sit-outs are dealt in and blinded off (bug 2)', () => {
     // must stay hardcoded false; sit-out UI state lives on table_seats.
     const dealing = strip(read('src/engine/ServerTableEngineDealing.ts'));
     expect(dealing).toMatch(/is_sitting_out:\s*false,/);
-    expect(dealing).not.toMatch(
-      /is_sitting_out:\s*this\.disconnectEngine\.isSittingOut/
-    );
+    expect(dealing).not.toMatch(/is_sitting_out:\s*this\.disconnectEngine\.isSittingOut/);
   });
 
   it('sit-out transitions are persisted to table_seats for the clients', () => {

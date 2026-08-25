@@ -579,7 +579,17 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             userId: w.userId || w.user_id || '',
             amount: w.amount || 0,
             potIndex: w.potIndex ?? 0,
-            hand: w.hand ? { name: w.hand.name || '', ranking: w.hand.ranking ?? 0 } : undefined,
+            // `cards` MUST be carried through. Dropping it here is what made the
+            // winning-card highlight dead for months: the pot_win builder below
+            // derives card_indices from w.hand.cards, so a narrowed hand object
+            // yields an empty highlight set on every single hand.
+            hand: w.hand
+              ? {
+                  name: w.hand.name || '',
+                  ranking: w.hand.ranking ?? 0,
+                  cards: Array.isArray(w.hand.cards) ? w.hand.cards : undefined,
+                }
+              : undefined,
           }));
         }
         if (this.handController) {

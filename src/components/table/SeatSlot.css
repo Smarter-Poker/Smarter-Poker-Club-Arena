@@ -992,9 +992,9 @@
    and absent the moment the hand is folded, so this override is self-limiting:
    a folded hero still dims via .seat--folded. Declared last and with two
    classes so it out-specifies any single-class dim rule. */
-.seat--hero.seat--in-hand,
-.seat--hero.seat--in-hand .seat__avatar-img,
-.seat--hero.seat--in-hand .seat__cards {
+.seat--in-hand,
+.seat--in-hand .seat__avatar-img,
+.seat--in-hand .seat__cards {
   opacity: 1 !important;
   filter: none !important;
 }

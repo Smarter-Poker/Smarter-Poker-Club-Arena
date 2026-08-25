@@ -8452,7 +8452,11 @@ export default function TablePage({
           setRitResult(null);
           setWinnerParticle((prev) => ({ ...prev, active: false }));
           setMuckingSeats(Array(9).fill(false));
-        }, 3000);
+          // holdMs, NOT a hardcoded 3000. The server holds the pot ship for
+          // showdownSettleMs (3000ms) and emits pot_win AFTER hand_complete, so a
+          // 3000ms wipe cleared winnerInfo in the same tick the winning hand name
+          // and card indices arrived. The name never became visible.
+        }, holdMs);
         break;
       }
 
@@ -11893,11 +11897,17 @@ export default function TablePage({
             // still in the hand.
             const someoneActing = tableState.currentPlayerSeat > 0;
             const isActingSeat = someoneActing && seatNumber === tableState.currentPlayerSeat;
-            // Dan: hero is NEVER faded while holding a live hand, even when the
-            // action is elsewhere. A folded hero dims like anyone else.
-            const heroHasLiveHand =
-              !!player?.isHero && player.status !== 'folded' && player.status !== 'sitting_out';
-            const seatDimmed = someoneActing && !isActingSeat && !heroHasLiveHand;
+            // Dan 2026-08-25: NOBODY holding a live hand is ever faded — hero and
+            // villain alike. Fading is reserved for players who are out: folded,
+            // sitting out, or away. The spotlight dim used to apply to every seat
+            // that was not the actor, which greyed live villains for ~83% of a
+            // 6-max hand and made them read as folded.
+            const hasLiveHand =
+              !!player &&
+              player.status !== 'folded' &&
+              player.status !== 'sitting_out' &&
+              player.status !== 'away';
+            const seatDimmed = someoneActing && !isActingSeat && !hasLiveHand;
 
             // FIX: Apply use_alias and table_alias from settings directly to the hero's rendered name
             let derivedHeroName = player?.name;

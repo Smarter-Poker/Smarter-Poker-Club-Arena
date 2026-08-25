@@ -40,8 +40,10 @@ import {
   cashTitleLines,
   levelRemainingMs,
   levelSpeedLabel,
+  seatFirstJoinable,
   seatsTakenLabel,
   spinPayoutLabel,
+  spinPrizeLabel,
   stackDepthLabel,
   tournamentEntry,
   tournamentStatus,
@@ -50,6 +52,7 @@ import {
   type LobbyTournamentRow,
 } from '../../src/components/lobby/lobbyEntries';
 import { cashBuyInLabel, cashBuyInRange } from '../../src/lib/cashBuyIn';
+import { FILTER_SPECS, variantKey } from '../../src/components/lobby/advancedFilterSpec';
 import { blindLevelMinutes } from '../../src/components/lobby/tournamentFigures';
 
 const CSS = readFileSync(resolve(__dirname, '../../src/components/lobby/LobbyTable.css'), 'utf8');
@@ -210,6 +213,15 @@ describe('a cash card is two lines and the second one is the table name (Dan 3, 
     });
   });
 
+  it('strips PLO6, which the character class used to miss', () => {
+    // The class was plo[458]? — so "PLO6 1/2" kept its whole name as the
+    // subtitle and the card printed it twice, once per line.
+    expect(lines('PLO6 1/2', { game_variant: 'plo6', small_blind: 1, big_blind: 2 })).toEqual({
+      headline: 'PLO6 1/2',
+      subtitle: null,
+    });
+  });
+
   it('handles a variant token the headline abbreviates differently', () => {
     expect(
       lines('PLO4 1/2 (audit)', { game_variant: 'plo4', small_blind: 1, big_blind: 2 })
@@ -230,18 +242,77 @@ describe('cash tables show what makes them different from each other (Dan 3, 4)'
     expect(PHONE_BLOCK).toMatch(/tr\[data-kind='cash'\] td\.lt-col-rules \{\s*display: block/);
   });
 
-  it('carries the flags the host actually set', () => {
+  it('reads the COLUMNS the host actually set, not the empty settings blob', () => {
+    // All 46 live cash tables carry `settings = {}` — TableConfigPage writes
+    // the host's choices to top-level columns. Reading the blob is why not one
+    // table showed a single tag.
     const rules = cashEntry(
       tableRow({
-        settings: {
-          run_it_twice: true,
-          insurance_enabled: true,
-          vpip_display: true,
-          no_rathole: true,
-        },
+        settings: {},
+        insurance_enabled: true,
+        straddle_enabled: true,
+        bomb_pot_enabled: true,
+        bomb_pot_frequency: 10,
+        time_bank_enabled: true,
+        all_in_or_fold: true,
       })
     ).rules.map((r) => r.key);
-    expect(rules).toEqual(expect.arrayContaining(['rit', 'insurance', 'vpip', 'no_rathole']));
+    expect(rules).toEqual(
+      expect.arrayContaining(['insurance', 'straddle', 'bomb', 'time_bank', 'all_in_or_fold'])
+    );
+  });
+
+  it('does not promise run it twice at an insurance table', () => {
+    // ServerTableEngineBase: `ritEnabled && !insurance_enabled`. Insurance
+    // silently switches RIT off, so a card offering both lies about one.
+    const rules = cashEntry(
+      tableRow({ insurance_enabled: true, run_it_twice: true, allow_run_it_twice: true })
+    ).rules.map((r) => r.key);
+    expect(rules).toContain('insurance');
+    expect(rules).not.toContain('rit');
+  });
+
+  it('shows run it twice on the 43 tables that really have it', () => {
+    const rules = cashEntry(
+      tableRow({ run_it_twice: true, run_it_twice_enabled: true, allow_run_it_twice: true })
+    ).rules.map((r) => r.key);
+    expect(rules).toContain('rit');
+  });
+
+  it('ignores the club-level straddle spellings the engine never loads', () => {
+    // Live shape: straddle_enabled=false while allow_straddle/enable_straddle
+    // are true. Only straddle_enabled gates a straddle at the table.
+    expect(cashEntry(tableRow({ straddle_enabled: false })).rules.map((r) => r.key)).not.toContain(
+      'straddle'
+    );
+  });
+
+  it('does not claim bomb pots when the frequency is zero', () => {
+    // The engine needs `bomb_pot_enabled && bomb_pot_frequency > 0`.
+    expect(
+      cashEntry(tableRow({ bomb_pot_enabled: true, bomb_pot_frequency: 0 })).rules.map((r) => r.key)
+    ).not.toContain('bomb');
+  });
+
+  it('prints no chip for a rule the platform does not enforce', () => {
+    // VPIP has no column at all; maintain_hands, no_rathole and calltime are
+    // written by the config page and read by nothing.
+    const all = cashEntry(
+      tableRow({ settings: { vpip_display: true, no_rathole: true, call_time_enabled: true } })
+    ).rules.map((r) => r.key);
+    expect(all).not.toContain('vpip');
+    expect(all).not.toContain('no_rathole');
+    expect(all).not.toContain('call_time');
+  });
+
+  it('does not guess a feature from the table name', () => {
+    // "NLH 25/50 INSURANCE TEST" with insurance_enabled false is a
+    // misconfigured table, not an insurance table.
+    expect(
+      cashEntry(tableRow({ name: 'NLH 25/50 INSURANCE TEST', insurance_enabled: false })).rules.map(
+        (r) => r.key
+      )
+    ).not.toContain('insurance');
   });
 });
 
@@ -280,7 +351,7 @@ describe('spins say what they pay and how they play (Dan 5)', () => {
   });
 
   it('reads the level clock out of the SECONDS key a spin actually writes', () => {
-    expect(levelSpeedLabel(tournRow({ blind_structure: SPIN_BLINDS }))).toBe('3 Min Levels');
+    expect(levelSpeedLabel(tournRow({ blind_structure: SPIN_BLINDS }))).toBe('3 Min');
   });
 
   it('counts the three seats as a fraction', () => {
@@ -334,7 +405,7 @@ describe('heads-up says how many seats are gone and how deep it starts (Dan 6)',
   });
 
   it('reads the level clock out of the MINUTES key an SNG writes', () => {
-    expect(levelSpeedLabel(hu().raw as LobbyTournamentRow)).toBe('10 Min Levels');
+    expect(levelSpeedLabel(hu().raw as LobbyTournamentRow)).toBe('10 Min');
   });
 
   it('measures the format off the stack rather than guessing from the name', () => {
@@ -450,5 +521,100 @@ describe('a game the player is already in (Dan 7)', () => {
     expect(fn).toContain('seatedIds');
     expect(fn).toContain('registeredIds');
     expect(fn).toContain('waitlistedIds');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ROUND TWO — Dan 2026-08-25, second pass over the same six screenshots
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('a seat-first game with every seat gone', () => {
+  const seatFirst = (o: Partial<LobbyTournamentRow>, kind: 'spin' | 'sng') =>
+    tournamentEntry(tournRow({ blind_structure: SPIN_BLINDS, ...o }), kind);
+
+  it('says Running, not Starting (Dan: "IT NEEDS TO SAY RUNNING NOT STARTING")', () => {
+    const full = seatFirst({ current_players: 3, max_players: 3 }, 'spin');
+    expect(full.status).toBe('running');
+    expect(full.statusLabel).toBe('Running');
+  });
+
+  it('is not joinable, so the board sinks it', () => {
+    expect(seatFirstJoinable(seatFirst({ current_players: 3, max_players: 3 }, 'spin'))).toBe(
+      false
+    );
+    expect(seatFirstJoinable(seatFirst({ current_players: 1, max_players: 2 }, 'sng'))).toBe(true);
+  });
+
+  it('never sinks a cash table or an MTT — they have their own rules', () => {
+    expect(seatFirstJoinable(cashEntry(tableRow({ current_players: 6, max_players: 6 })))).toBe(
+      true
+    );
+    expect(
+      seatFirstJoinable(tournamentEntry(tournRow({ variant: 'mtt', status: 'RUNNING' }), 'mtt'))
+    ).toBe(true);
+  });
+
+  it('is applied AFTER the chosen sort, and not as a column', () => {
+    // A sort by buy-in must not be able to float a sold-out game back up
+    // between two joinable ones at the same price.
+    expect(TSX).toContain('const sink = useCallback');
+    const payout = TSX.slice(TSX.indexOf('const COL_PAYOUT'), TSX.indexOf('const COL_LEVELTIME'));
+    expect(payout).not.toContain('sortValue');
+  });
+});
+
+describe('what a Spin pays, in chips (Dan 4)', () => {
+  const spin = (o: Partial<LobbyTournamentRow> = {}) =>
+    tournamentEntry(tournRow({ blind_structure: SPIN_BLINDS, buy_in_amount: 10, ...o }), 'spin');
+
+  it('turns "Win Up To 100x" into money at THIS buy-in', () => {
+    // Dan: "SHOW WHAT THE TOP PRIZE IS (BUY IN AMOUNT X 100 = 100 TOP PRIZE)".
+    expect(spinPrizeLabel(spin())).toBe('Top Prize 1,000');
+    expect(spinPrizeLabel(spin({ buy_in_amount: 1 }))).toBe('Top Prize 100');
+  });
+
+  it('shows the real pool once the wheel has turned', () => {
+    expect(spinPrizeLabel(spin({ status: 'RUNNING', spin_multiplier: 25, prize_pool: 250 }))).toBe(
+      'Prize Pool 250'
+    );
+  });
+
+  it('derives the pool when the row has not been re-read since the draw', () => {
+    expect(spinPrizeLabel(spin({ status: 'RUNNING', spin_multiplier: 5, prize_pool: 0 }))).toBe(
+      'Prize Pool 50'
+    );
+  });
+
+  it('leaks nothing before the draw, even from a row that carries a pool', () => {
+    // prize_pool IS buy_in x multiplier, so printing it early gives the draw
+    // away by division. Same gate as the multiplier itself.
+    expect(spinPrizeLabel(spin({ spin_multiplier: 100, prize_pool: 1000 }))).toBe(
+      'Top Prize 1,000'
+    );
+  });
+
+  it('says nothing at all on a game that is not a Spin', () => {
+    expect(spinPrizeLabel(tournamentEntry(tournRow({ variant: 'sng' }), 'sng'))).toBeNull();
+  });
+});
+
+describe('the Omaha tab is four games, not one (Dan 3)', () => {
+  it('offers a chip for every PLO variant', () => {
+    const keys = (FILTER_SPECS.OMAHA.games ?? []).map((g) => g.key);
+    expect(keys).toEqual(['plo4', 'plo5', 'plo6', 'plo8']);
+  });
+
+  it('offers only chips variantKey can actually produce', () => {
+    // The precedent this file records twice: a chip whose key can never be
+    // returned empties the tab instead of narrowing it.
+    for (const key of FILTER_SPECS.OMAHA.games ?? []) {
+      expect(variantKey(key.key), key.key).toBe(key.key);
+    }
+  });
+
+  it('keeps hi-lo out of the four-card bucket', () => {
+    expect(variantKey('plo8')).toBe('plo8');
+    expect(variantKey('PLO6')).toBe('plo6');
+    expect(variantKey('plo')).toBe('plo4');
   });
 });

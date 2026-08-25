@@ -157,6 +157,10 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
   // prefers-reduced-motion (everything visible at once, no transition).
   const { style } = useStaggerAnimation(tabs.length, { staggerMs: 60 });
 
+  /* Defensive only. `marketplace` and `stats` never resolve to null and the
+     filter removes at most one entry, so this cannot fire today - but the
+     alternative is rendering an empty <nav>, and a future tab list that is
+     entirely club-scoped would make it reachable. */
   if (tabs.length === 0) return null;
 
   return (

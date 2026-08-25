@@ -34,11 +34,25 @@ import { resolve } from 'node:path';
 
 const SRC = readFileSync(resolve(__dirname, '../..', 'src/pages/CashierTradePage.tsx'), 'utf8');
 
-/** The claim branch of runTransfers, isolated from send and ticket. */
-const CLAIM_CALL = SRC.slice(
-  SRC.indexOf("supabase.rpc('fn_cashier_claim_back'"),
-  SRC.indexOf("supabase.rpc('fn_cashier_claim_back'") + 700
-);
+/**
+ * The claim branch of runTransfers, isolated from send and ticket.
+ *
+ * Sliced to the END OF THE CALL, not to a fixed character count. It used to be
+ * `+ 700`, and on 2026-08-25 a comment added inside the call pushed
+ * p_idempotency_key past the 700th character - so the assertions below started
+ * failing on a change that made the key STRICTER (it gained the club scope).
+ * A window measured in characters silently stops covering what it is named
+ * after; measure it in syntax instead.
+ */
+function callArgs(src: string, rpc: string): string {
+  const start = src.indexOf(`supabase.rpc('${rpc}'`);
+  if (start < 0) return '';
+  // the argument object ends at the first `});` after the call opens
+  const end = src.indexOf('});', start);
+  return end < 0 ? src.slice(start) : src.slice(start, end + 3);
+}
+
+const CLAIM_CALL = callArgs(SRC, 'fn_cashier_claim_back');
 
 describe('the claim back RPC carries an idempotency key', () => {
   it('sends p_idempotency_key at all', () => {
@@ -54,6 +68,11 @@ describe('the claim back RPC carries an idempotency key', () => {
     expect(CLAIM_CALL).toMatch(/p_idempotency_key:\s*`[^`]*\$\{submissionId\}/);
     expect(CLAIM_CALL).toMatch(/p_idempotency_key:\s*`[^`]*\$\{t\.userId\}/);
     expect(CLAIM_CALL).toMatch(/p_idempotency_key:\s*`[^`]*\$\{claim\}/);
+    /* CLUB, added 2026-08-25. ux_chip_transactions_idempotency_key is GLOBAL on
+       chip_transactions, so a key without the club in it can collide ACROSS
+       clubs - and chips are per club. A cross-club collision replays the other
+       club's outcome, moves nothing, and reports success. */
+    expect(CLAIM_CALL).toMatch(/p_idempotency_key:\s*`[^`]*\$\{clubUuid\}/);
   });
 });
 

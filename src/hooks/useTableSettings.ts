@@ -46,7 +46,15 @@ const DEFAULT_SETTINGS: TableUserSettings = {
   showPotOdds: false,
   showBetSizePresets: true,
   confirmAllIn: true,
-  autoMuck: false,
+  // SHOWDOWN follow-up 2026-08-25 (Dan spec section 37): AUTO-MUCK LOSING
+  // HANDS, on by default — the engine mucks a beaten hand automatically at
+  // showdown. Switching it OFF means "always table my hand": the client
+  // answers the engine's muck ruling with the existing voluntary-show call
+  // (POST /showhand), so the hand turns face up with NO prompt — prompts
+  // remain forbidden (Dan 2026-08-18, binding). The setting can never muck
+  // a winner (the engine auto-tables winners regardless) and can never hide
+  // an all-in showdown (every live all-in hand is force-exposed).
+  autoMuck: true,
   autoMuckWinners: false,
   autoPostBlinds: true,
   // Dan 2026-08-18: was 'black', which has no `.card-back--black` rule in

@@ -52,6 +52,7 @@ import AgentPromoPanel from '../components/agent/AgentPromoPanel';
 import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
 import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './CashierPage.module.css';
@@ -1736,7 +1737,7 @@ export default function CashierPage() {
             onClose={() => setActiveCashier(null)}
             clubId={clubId}
             role={userRole}
-            walletType={activeCashier || 'club_bank'}
+            walletType={activeCashier || DEFAULT_CASHIER_WALLET}
           />
           <PlayerWalletModal
             isOpen={showPlayerWallet}

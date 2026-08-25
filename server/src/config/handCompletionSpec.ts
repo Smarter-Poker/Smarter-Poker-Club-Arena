@@ -78,6 +78,16 @@ export const HAND_COMPLETION = {
    */
   SHOWDOWN_REVEAL_STAGGER_MS: 300,
   /**
+   * SHOWDOWN SYSTEM follow-up 2026-08-25 (Dan spec sections 16/19/20): when
+   * more than one player is paid — different pots, or a chopped pot — each
+   * winner's award animation (chip fan + "+N" float) starts this long after
+   * the previous one, in pot order: main pot first, then each side pot. The
+   * engine's Winner list is already emitted in that order (determineWinners
+   * iterates pots[0..n] and distributePot appends), so the client only has
+   * to respect the order it was handed. A single winner is unaffected.
+   */
+  POT_AWARD_STAGGER_MS: 600,
+  /**
    * A Bad Beat Jackpot is real money and plays a ~9s full-screen celebration.
    * Nothing about a jackpot is rushed: the table waits for the whole thing.
    */

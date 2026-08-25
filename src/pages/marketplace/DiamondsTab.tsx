@@ -178,7 +178,7 @@ export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabPro
                   <span className={styles.pkgLabel}>Diamonds</span>
                   <span className={styles.pkgAmount}>{totalDiamonds.toLocaleString()}</span>
                   <span className={styles.pkgSub}>
-                    {pkg.name} — ${pkg.priceUsd.toFixed(2)}
+                    {pkg.name} - ${pkg.priceUsd.toFixed(2)}
                   </span>
                 </div>
               </div>

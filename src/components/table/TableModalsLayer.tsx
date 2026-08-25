@@ -1068,6 +1068,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         isOpen={showLeaveConfirm}
         currentStack={heroStack}
         tableName={tableName || 'this table'}
+        isTournament={isTournament}
         onConfirm={() => {
           onCloseLeaveConfirm();
           onConfirmLeaveTable();

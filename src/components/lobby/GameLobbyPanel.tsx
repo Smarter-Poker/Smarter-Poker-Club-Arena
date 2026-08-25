@@ -17,6 +17,7 @@ import CasinoPlaque, { PlaqueSeats } from './CasinoPlaque';
 import type { LobbyEntry, LobbyTableRow, LobbyTournamentRow } from './lobbyEntries';
 import { tournamentBlinds, tournamentLevel } from './tournamentFigures';
 import { parseTableSettings } from './lobbyEntries';
+import { cashBuyInRange } from '../../lib/cashBuyIn';
 import { tournamentService } from '../../services/TournamentService';
 import { waitlistService, type WaitlistEntry } from '../../services/WaitlistService';
 import { tableService } from '../../services/TableService';
@@ -335,12 +336,14 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   const panelBlinds = tRaw ? tournamentBlinds(tRaw) : null;
 
   const cashRaw = isCash ? (entry.raw as LobbyTableRow) : null;
-  /* `cashRaw.big_blind * 20` is NaN the moment big_blind is null, and
-     NaN.toLocaleString() renders the literal text "NaN" on the buy-in plaque
-     and in the Buy-In row. Coerce first, then fall back. */
-  const bigBlind = Number(cashRaw?.big_blind) || 0;
-  const minBuy = cashRaw ? Number(cashRaw.min_buy_in) || bigBlind * 20 : 0;
-  const maxBuy = cashRaw ? Number(cashRaw.max_buy_in) || bigBlind * 100 : 0;
+  /* One helper, so the panel and the card behind it cannot quote different
+     buy-ins for the same table — see src/lib/cashBuyIn.ts for why the raw
+     columns were the wrong thing to print. It also coerces before it falls
+     back, which is what stopped the literal text "NaN" appearing on the
+     buy-in plaque when a row carried a null big_blind. */
+  const cashRange = cashRaw ? cashBuyInRange(cashRaw) : null;
+  const minBuy = cashRange ? cashRange.min : 0;
+  const maxBuy = cashRange ? cashRange.max : 0;
 
   const joinZone = (
     <>

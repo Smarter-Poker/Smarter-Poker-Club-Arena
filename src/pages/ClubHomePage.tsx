@@ -1518,7 +1518,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       const clubTournamentQuery = supabase
         .from('tournaments')
         .select(
-          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at'
+          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier'
         )
         // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
         // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
@@ -1566,7 +1566,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               supabase
                 .from('tournaments')
                 .select(
-                  'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, union_id, variant, table_size, is_xmtt, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at'
+                  'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, union_id, variant, table_size, is_xmtt, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier'
                 )
                 // Union governance (2026-08-19): ALL union-owned tournaments
                 // (XMTT and union-stamped recurring games), not just XMTT.

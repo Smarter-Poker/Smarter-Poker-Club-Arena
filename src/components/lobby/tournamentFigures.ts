@@ -61,9 +61,23 @@ export function tournamentBlinds(t: {
   return `${sb.toLocaleString()}/${bb.toLocaleString()}`;
 }
 
-/** Minutes configured for a level. 0 when unknown — never a guess. */
+/**
+ * Minutes configured for a level. 0 when unknown — never a guess.
+ *
+ * THREE spellings, not two (found 2026-08-25 while putting "3 Min Levels" on
+ * a Spin card). Spins do not use either of the documented keys: createSpin
+ * writes `duration` in SECONDS. So every Spin read 0 here, which meant
+ * levelRemainingMs and lateRegEndMs returned null for the entire Spin board —
+ * the level countdown on a running Spin was not merely unlabelled, it was
+ * dead, and it looked exactly like a tournament with no structure. Reading
+ * the seconds key last keeps the canonical spellings authoritative where a
+ * row carries both.
+ */
 export function blindLevelMinutes(levels: BlindLevel[], level: number): number {
   const row = blindLevelAt(levels, level);
   const mins = Number(row?.duration_minutes ?? row?.durationMinutes ?? 0);
-  return Number.isFinite(mins) && mins > 0 ? mins : 0;
+  if (Number.isFinite(mins) && mins > 0) return mins;
+  const secs = Number(row?.duration ?? 0);
+  if (Number.isFinite(secs) && secs > 0) return secs / 60;
+  return 0;
 }

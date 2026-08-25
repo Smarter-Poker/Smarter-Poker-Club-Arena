@@ -18,6 +18,9 @@ import { formatGameTitle } from '../../utils/formatGameTitle';
 import { isInLateRegistration } from '../../utils/tournamentFilters';
 import { stakesLabel as stakesLabelFor } from '../../lib/bettingStructure';
 import { blindLevelMinutes, parseBlindStructure, tournamentLevel } from './tournamentFigures';
+import { cashBuyInLabel, cashBuyInRange } from '../../lib/cashBuyIn';
+import { spinMultiplierLabel } from '../../utils/spinReveal';
+import { SPIN_TIERS } from '../../config/spinSpec';
 
 // ─── Raw row shapes (subset the lobby queries actually select) ─────────────
 export interface LobbyTableRow {
@@ -51,9 +54,19 @@ export interface LobbyTournamentRow {
   late_reg_levels?: number | null;
   started_at?: string | null;
   current_level?: number | null;
-  /** JSON text: [{level, smallBlind, bigBlind, ante, durationMinutes}, ...] */
+  /**
+   * JSON text. MTT and SNG rows write `durationMinutes`; Spin rows write
+   * `duration` in SECONDS (TournamentRecurringService.createSpin). Read both —
+   * see blindLevelMinutes in tournamentFigures.
+   */
   blind_structure?: string | null;
   level_started_at?: string | null;
+  /**
+   * Drawn at START, never at creation (TournamentManagerBase). A registering
+   * Spin carries null here by design, which is why the card advertises the
+   * ladder ceiling until the wheel has actually turned.
+   */
+  spin_multiplier?: number | null;
 }
 
 // ─── View model ────────────────────────────────────────────────────────────
@@ -410,8 +423,12 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
     if (seatFirst) {
       const cap = t.max_players || 0;
       const taken = t.current_players || 0;
+      /* The COUNT moved out of the badge on 2026-08-25: every seat-first card
+         now carries a labelled "Registered 2/3" well of its own (Dan asked for
+         it by name), and printing the same fraction twice on a 375px card cost
+         a line for nothing. The badge says the STATE; the well says the seats. */
       if (cap > 0 && taken >= cap) return { key: 'full', label: 'Starting' };
-      if (taken > 0) return { key: 'registering', label: `Filling ${taken}/${cap}` };
+      if (taken > 0) return { key: 'registering', label: 'Filling' };
       return { key: 'registering', label: 'Open Seats' };
     }
 
@@ -435,8 +452,10 @@ export function tournamentJoinable(t: LobbyTournamentRow): boolean {
 export function cashEntry(t: LobbyTableRow): LobbyEntry {
   const v = variantDisplay(t.game_variant);
   const st = cashStatus(t);
-  const minBuy = t.min_buy_in || t.big_blind * 20;
-  const maxBuy = t.max_buy_in || t.big_blind * 100;
+  /* Dan 2026-08-25: the lobby used to print tables.max_buy_in raw, which on 42
+     of 46 live tables is 200bb — a ceiling the table's own BuyInModal will not
+     sell. cashBuyInRange reports what a player can actually bring. */
+  const { min: minBuy } = cashBuyInRange(t);
   return {
     id: t.id,
     kind: 'cash',
@@ -452,7 +471,7 @@ export function cashEntry(t: LobbyTableRow): LobbyEntry {
     // unchanged — stakesLabelFor returns the blinds for them.
     stakesLabel: stakesLabelFor(t.small_blind || 0, t.big_blind || 0, t.game_variant),
     stakesValue: Number(t.big_blind) || 0,
-    buyInLabel: `${minBuy.toLocaleString()} - ${maxBuy.toLocaleString()}`,
+    buyInLabel: cashBuyInLabel(t),
     buyInValue: minBuy,
     guaranteeLabel: null,
     guaranteeValue: 0,
@@ -581,6 +600,122 @@ export function levelRemainingMs(t: LobbyTournamentRow, now: number): number | n
   if (!Number.isFinite(began)) return null;
   const left = began + mins * 60000 - now;
   return left > 0 ? left : 0;
+}
+
+/* ── SEAT-FIRST CARD FACTS (Dan 2026-08-25) ────────────────────────────────
+   "for spins, it needs to show the 'max payout' 'Win Up To 100x' ... the game
+   type, deep stack or turbo, and the default starting stacks ... the level
+   times to '3 Min Levels' and the amount of players registered."
+   "Heads Up, needs to have the amount of players registered 0/2 ... the type,
+   turbo or deep stack, should say the starting stack and blind speed."
+
+   Every one of these already existed in the row or in spinSpec; none of them
+   had ever been asked for by the lobby. They are pure functions here so the
+   table renders them and the tests pin them, in the same shape as the MTT
+   title helpers directly above. */
+
+/** The top of the Spin ladder — 100x since the 500x tier was retired. */
+export const SPIN_MAX_MULTIPLIER = SPIN_TIERS.reduce((max, t) => Math.max(max, t.multiplier), 0);
+
+/**
+ * A Spin's headline prize. The multiplier is NOT drawn until the game starts
+ * (TournamentManagerBase writes spin_multiplier at start, and the row carries
+ * null before that) — so a game still filling advertises the ceiling of the
+ * ladder, and one that has turned the wheel shows what it actually pays.
+ */
+export function spinPayoutLabel(entry: LobbyEntry): string | null {
+  if (entry.kind !== 'spin') return null;
+  /* THE DRAW IS THE PRODUCT, so the column is never read raw here — the gate
+     in utils/spinReveal decides whether this Spin has actually turned its
+     wheel, and returns null while the answer is still secret. A game still
+     filling advertises the ceiling of the ladder instead, which is the honest
+     thing to shop by and gives nothing away. */
+  const revealed = spinMultiplierLabel(entry.raw as Parameters<typeof spinMultiplierLabel>[0]);
+  if (revealed) return revealed;
+  return `Win Up To ${SPIN_MAX_MULTIPLIER}x`;
+}
+
+/** "3 Min Levels" / "10 Min Levels" — the blind clock, from level 1. */
+export function levelSpeedLabel(t: LobbyTournamentRow): string | null {
+  const structure = parseBlindStructure(t.blind_structure);
+  if (!structure) return null;
+  const mins = blindLevelMinutes(structure, 1);
+  if (mins <= 0) return null;
+  const rounded = Math.round(mins * 10) / 10;
+  return `${rounded} Min Levels`;
+}
+
+/**
+ * Turbo / Standard / Deepstack, measured rather than guessed.
+ *
+ * A name keyword wins when the creator supplied one. Otherwise the honest
+ * signal is how many big blinds the starting stack actually is at level 1 —
+ * which is exactly how spinSpec describes its own ladder ("300 chips … over
+ * fast", "1000 chips … deep stack"). A Spin at 300 chips into 10/20 is 15bb
+ * and plays like a turbo; the same 3-minute levels at 5,000 chips do not.
+ */
+export function stackDepthLabel(entry: LobbyEntry): string | null {
+  if (entry.kind === 'cash') return null;
+  const t = entry.raw as LobbyTournamentRow;
+  const named = tournamentSpeed(t.name);
+  if (named) return named;
+
+  const chips = Number(t.starting_chips) || 0;
+  if (chips <= 0) return null;
+  const structure = parseBlindStructure(t.blind_structure);
+  const first = structure?.[0];
+  const firstBig = Number(first?.big_blind ?? first?.bigBlind ?? 0) || 0;
+  if (firstBig <= 0) return null;
+
+  const depth = chips / firstBig;
+  if (depth >= 40) return 'Deepstack';
+  if (depth >= 20) return 'Standard';
+  return 'Turbo';
+}
+
+/**
+ * Seats taken on a game that starts when it fills: "2/3", "1/2".
+ *
+ * An MTT keeps a bare count — Dan 2026-08-24, "THERE ARE NO LIMITATIONS ON THE
+ * AMOUNT OF PLAYERS THAT CAN REGISTER, IT SHOULDN'T DEFAULT TO /500" — but a
+ * Spin and a Heads-Up have a real, small denominator that IS the information.
+ */
+export function seatsTakenLabel(entry: LobbyEntry): string {
+  if (entry.kind === 'spin' || entry.kind === 'sng')
+    return `${entry.players}/${entry.capacity || '-'}`;
+  return entry.players.toLocaleString();
+}
+
+/**
+ * A cash card's two lines. Dan 2026-08-25: "the 2nd line below the game type
+ * and stakes is for the table name, make sure it doesn't get cut off by the
+ * other fields."
+ *
+ * `tables.name` arrives as one string that already opens with the variant and
+ * the stakes — "NLH 25/50 INSURANCE TEST" — so line 1 is rebuilt from the
+ * canonical fields (which is also how a fixed-limit table gets its BET-size
+ * stakes rather than its blinds) and line 2 is whatever the host actually
+ * named the table. A table with no name beyond its stakes has no second line
+ * rather than an empty one.
+ */
+const VARIANT_HEAD =
+  /^\s*(nlhe?|plo[458]?|flh|flo8?|limit[_\s-]?(?:holdem|omaha)|pineapple|short[\s_-]?deck|6\+)\b/i;
+const STAKES_HEAD = /^\s*\$?\d+(?:\.\d+)?\s*\/\s*\$?\d+(?:\.\d+)?/;
+
+export function cashTitleLines(entry: LobbyEntry): { headline: string; subtitle: string | null } {
+  const headline = [entry.gameLabel, entry.stakesLabel].filter(Boolean).join(' ').trim();
+  const rest = String(entry.name || '')
+    .replace(VARIANT_HEAD, '')
+    .replace(STAKES_HEAD, '')
+    /* Separators written as escapes, not literals: the en and em dash are here
+       to be STRIPPED off a table name, but check-ui-text scans source for the
+       character and cannot tell a matcher from a message. */
+    .replace(/^[\s\-\u2013\u2014:|,]+/, '')
+    .trim();
+  return {
+    headline: headline || String(entry.name || ''),
+    subtitle: rest.length > 0 ? rest : null,
+  };
 }
 
 /**

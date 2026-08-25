@@ -383,6 +383,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           continue;
         }
 
+        // MYSTERY BOUNTY REVEAL GATE (Dan sections 21-26, 61-65). The table
+        // waits for the chest, and for EVERY chest behind it — the button may
+        // not move until the queue is empty (sections 25 and 64). This sits
+        // immediately before dealHand(), which is the single place the button
+        // advances and the blinds are posted, so closing the gate here is what
+        // makes "no button move, no next hand, no blinds, no action timers"
+        // one condition rather than four.
+        //
+        // Deliberately a COUNT and not a deadline; see beginBountyReveal().
+        // Entries expire on their own, so a settle path that dies mid-reveal
+        // costs an animation, never a wedged table.
+        if (this.hasOpenBountyReveal()) {
+          this.setLoopPhase('mystery_bounty_hold');
+          await this.sleep(250);
+          continue;
+        }
+
         // Bible V8 §3.1: Table FSM — waiting → seating → running (players returned)
         if (this.tableFSM.state === 'waiting') {
           this.tableFSM.transition('seating');
@@ -654,6 +671,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandWinnersByBoard = [];
     this.currentHandActions = [];
     this.currentHandWinners = [];
+    // Dan section 29: a stale pot breakdown would attribute THIS hand's
+    // knockout to the previous hand's side pots, so it is cleared with the
+    // winners it belongs to and never independently of them.
+    this.currentHandPots = [];
     this.currentHandContributions.clear(); // Bible V8 §4.18: Reset equal-share rakeback tracking (FIX 144)
     this.currentHandInsuranceSettlements = []; // Bible V8 §4.19: Reset insurance settlements
     this.currentHandShowdownResults = []; // BBJ: Reset showdown results for new hand

@@ -209,6 +209,75 @@ export abstract class ServerTableEngineBase {
   public holdDealingUntil(atMs: number): void {
     if (atMs > this.dealHoldUntilMs) this.dealHoldUntilMs = atMs;
   }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  MYSTERY BOUNTY REVEAL GATE (Dan sections 21-26, 61-65)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * "When an award is reserved, the affected table enters a reveal state.
+   * During it: no dealer button move, no next hand, no blinds or antes
+   * posted, no player action timers. Only the reveal timeout runs."
+   *
+   * WHY THIS IS NOT `holdDealingUntil()`. The hold is a DEADLINE — a wall
+   * clock the loop compares itself against. That is right for the spin
+   * wheel, which is one fixed-length animation. It is wrong here, because
+   * section 25/64 is a COUNT, not a duration: the button may not move until
+   * the QUEUE IS EMPTY, and three knockouts in one hand are three reveals
+   * one after another. Timer arithmetic that tried to express "however long
+   * three chests take" would be wrong the first time a reveal ran slow, and
+   * a table that deals underneath a live chest has moved the button during
+   * a reveal — the exact thing sections 25 and 64 forbid.
+   *
+   * So this is a SET of open awards, and dealing resumes when it empties.
+   *
+   * EVERY ENTRY STILL CARRIES A DEADLINE, because a set that only empties on
+   * a call is a set that a crashed settle path leaves full forever, and a
+   * wedged table is worse than a missed animation. `hasOpenBountyReveal()`
+   * prunes expired entries on every read, so the gate is self-healing: the
+   * worst case is that the table resumes on its own a few seconds after the
+   * reveal should have ended.
+   *
+   * ONLY THIS TABLE STOPS (sections 22 and 61). This state lives on one
+   * engine instance. The tournament clock, the blind-level clock and every
+   * other table run from the TournamentManager and never consult it.
+   *
+   * ACTION TIMERS: there is nothing to cancel. The gate is checked in the
+   * dealing loop BEFORE `dealHand()`, so no hand exists while it is closed
+   * and therefore no player is on the clock. A knockout detected while the
+   * next hand is already in progress holds from the next hand boundary —
+   * which is also section 23's end-of-hand order (settle, THEN reveal).
+   */
+  private bountyRevealHolds: Map<string, number> = new Map();
+
+  /** Open a reveal gate. `deadlineMs` is an absolute epoch-ms failsafe. */
+  public beginBountyReveal(awardId: string, deadlineMs: number): void {
+    const id = String(awardId ?? '').trim();
+    if (!id) return;
+    const prev = this.bountyRevealHolds.get(id) ?? 0;
+    // Monotonic, like holdDealingUntil: a second reserve of the same award
+    // (an idempotent re-sweep) may extend the gate but never shorten it.
+    this.bountyRevealHolds.set(id, Math.max(prev, deadlineMs));
+  }
+
+  /** Close one award's gate. Safe to call for an award that never opened. */
+  public endBountyReveal(awardId: string): void {
+    this.bountyRevealHolds.delete(String(awardId ?? '').trim());
+  }
+
+  /** How many reveals are still holding this table. Prunes expired entries. */
+  public openBountyRevealCount(): number {
+    const now = Date.now();
+    for (const [id, deadline] of this.bountyRevealHolds) {
+      if (deadline <= now) this.bountyRevealHolds.delete(id);
+    }
+    return this.bountyRevealHolds.size;
+  }
+
+  /** True while this table must not deal, post blinds, or move the button. */
+  public hasOpenBountyReveal(): boolean {
+    return this.openBountyRevealCount() > 0;
+  }
   protected maintenanceLock: boolean = false;
 
   // FIX 143: Bible V8 §7.12: Deferred sit-out — can't fold mid-hand
@@ -357,6 +426,24 @@ export abstract class ServerTableEngineBase {
      */
     hand?: { name: string; ranking: number; cards?: Array<{ rank?: string; suit?: string }> };
   }[] = [];
+  /**
+   * POT-LEVEL SETTLEMENT (Dan section 29, 2026-08-25).
+   *
+   * The pots as `calculatePots()` returned them at the moment the hand was
+   * scored — before distribution, so `eligible` still names everyone who had
+   * a claim on each pot. Persisted to `hand_history.pots`.
+   *
+   * It is captured rather than recomputed because after settlement the answer
+   * is gone: `HandController.getPots()` recalculates from the live players,
+   * and by then the winners' stacks have already moved. This is the only
+   * moment the true breakdown exists.
+   *
+   * Read back by `attributeKnockout()` to credit a knockout to the winner(s)
+   * of the pot that held the busted player's LAST chips rather than to
+   * whoever won the most money in the hand. Without it, a short stack busting
+   * against a large side pot paid its bounty to the side-pot winner.
+   */
+  protected currentHandPots: { index: number; amount: number; eligible: string[] }[] = [];
   protected currentHandContributions: Map<string, number> = new Map(); // userId → totalInvested
   protected currentHandInsuranceSettlements: InsuranceSettlement[] = [];
   protected currentHandBBJHit: BBJDetectionResult | null = null;

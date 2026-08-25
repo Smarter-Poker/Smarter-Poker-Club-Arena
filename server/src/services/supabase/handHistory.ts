@@ -53,6 +53,19 @@ export async function logHandHistory(params: {
     potIndex?: number;
     hand?: { name: string; ranking: number };
   }[];
+  /**
+   * POT-LEVEL SETTLEMENT (Dan section 29, 2026-08-25).
+   *
+   * `winners[].potIndex` has been persisted since Bible V8 §2.7 and has been
+   * uninterpretable the whole time, because nothing recorded what the pots
+   * WERE. This is that record: one entry per pot in pot order, with the
+   * players who were entitled to contest it.
+   *
+   * Optional so every other caller of logHandHistory is unaffected, and
+   * written as NULL when empty so the two million historical rows and a
+   * fold-around hand look the same to a reader.
+   */
+  pots?: { index: number; amount: number; eligible: string[] }[];
   players: { userId: string; username: string; seat: number; stack: number; cards: string[] }[];
   actions: {
     seat: number;
@@ -149,6 +162,10 @@ export async function logHandHistory(params: {
     started_at: startedAtIso,
     ended_at: endedAtIso,
     winners: params.winners,
+    // Dan section 29. NULL rather than [] on a hand with no recorded
+    // breakdown, so "this hand predates the column" and "this hand had one
+    // uncontested pot" are not the same value to attributeKnockout().
+    pots: params.pots?.length ? params.pots : null,
     players: params.players,
     actions: params.actions,
     hole_cards: holeCardsPayload,

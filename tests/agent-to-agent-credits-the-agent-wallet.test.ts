@@ -123,6 +123,12 @@ describe('canHoldAgentWallet is the single answer to "does this member run a flo
     for (const role of FLOAT_ROLES) {
       expect(canHoldAgentWallet(role)).toBe(true);
     }
+    // 'player' is the literal role a plain member carries in club_members -
+    // 540 of the 584 rows in club a0000000-...-0001. Proved live: a send to one
+    // of them asking for agent_wallet is refused with "Only Staff Or Agents
+    // Hold An Agent Wallet", and asking for player_wallet credits their
+    // chip_balance, exactly as before.
+    expect(canHoldAgentWallet('player')).toBe(false);
     expect(canHoldAgentWallet('member')).toBe(false);
   });
 

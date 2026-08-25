@@ -1921,6 +1921,14 @@ export abstract class ServerTableEngineBase {
    * never empty the rotation or make the caller spin.
    */
   protected buttonEligible(roster: SeatedPlayer[]): SeatedPlayer[] {
+    // CASH ONLY. Dan's rule is about sitting down at a cash game. In a
+    // tournament nobody "sits down": the seating sweep places late registrants
+    // and TableBalancer moves players between tables deliberately, positioning
+    // them relative to the big blind so the rotation stays honest. Filtering
+    // those players out of the button rotation would silently override that
+    // placement, and a table that has just been balanced into is mostly players
+    // this set has never seen.
+    if (this.isTournamentTable()) return roster;
     const veterans = roster.filter((p) => this.dealtInUserIds.has(p.user_id));
     return veterans.length > 0 ? veterans : roster;
   }

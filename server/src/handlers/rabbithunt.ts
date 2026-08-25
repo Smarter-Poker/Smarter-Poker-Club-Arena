@@ -71,10 +71,20 @@ export async function handleRabbitHunt(
     // history of run-outs.
     const hand = Number.isFinite(Number(handNumber)) ? Number(handNumber) : undefined;
 
-    const result = await engine.revealRabbitHunt(userId, hand);
-    return sendJSON(res, result.success ? 200 : 400, result);
+    // The engine call gets its OWN try. Folding it into the outer one meant a
+    // server-side fault — a Supabase client blowing up, a null tableInfo — was
+    // answered with "Invalid request body", and the client toasts that verbatim,
+    // so the player was told their own request was malformed when the fault was
+    // entirely ours.
+    try {
+      const result = await engine.revealRabbitHunt(userId, hand);
+      return sendJSON(res, result.success ? 200 : 400, result);
+    } catch (err: unknown) {
+      reportError(err, 'HTTP.rabbithunt_reveal_error');
+      return sendJSON(res, 500, { success: false, error: 'Rabbit Hunt Is Unavailable Right Now' });
+    }
   } catch (err: unknown) {
     reportError(err, 'HTTP.rabbithunt_error');
-    return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
+    return sendJSON(res, 400, { success: false, error: 'Invalid request body' });
   }
 }

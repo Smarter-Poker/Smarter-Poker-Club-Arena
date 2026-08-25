@@ -73,6 +73,37 @@ describe('coming in behind the button costs nothing', () => {
     );
     expect(DEALING).toMatch(/seatedWaiter\.seat_number === sbSeatIndex/);
   });
+
+  it('a table setting cannot switch off the small-blind rule', () => {
+    // registerWaitForBB used to be gated on tableInfo.wait_for_big_blind, and
+    // that set is what the SB and button hold-outs read. So a host who turned
+    // the setting off skipped registration, skipped the hold-out, and had brand
+    // new players dealt straight into the small blind on their first hand.
+    // The set no longer gates a WAIT — entry is free and released next tick —
+    // it only gates the two positional hold-outs, one of which is a house rule.
+    const seating = strip(read('src/engine/ServerTableEngineSeating.ts'));
+    const at = seating.indexOf('public registerWaitForBB');
+    expect(at).toBeGreaterThan(-1);
+    const body = seating.slice(at, at + 300);
+    expect(body).not.toMatch(/wait_for_big_blind/);
+    expect(body).toMatch(/if \(!this\.isTournamentTable\(\)\)/);
+  });
+
+  it('POST /post-bb cannot buy its way into the small blind', () => {
+    // Once entry became free, the only players still waiting are the two the
+    // engine holds out for a hand. So this endpoint stopped being a shortcut
+    // past a long wait and became the one way to pay a live big blind for the
+    // privilege of being dealt into the small blind.
+    const seating = strip(read('src/engine/ServerTableEngineSeating.ts'));
+    const at = seating.indexOf('public postBBToEnter');
+    expect(at).toBeGreaterThan(-1);
+    const body = seating.slice(at, at + 900);
+    const guard = body.indexOf('getSBSeatIndex');
+    const release = body.indexOf('this.waitingForBB.delete(userId)');
+    expect(guard, 'no small-blind guard on postBBToEnter').toBeGreaterThan(-1);
+    // The refusal must come BEFORE the player is released and billed.
+    expect(guard).toBeLessThan(release);
+  });
 });
 
 describe('a new player never receives the button', () => {
@@ -114,11 +145,43 @@ describe('a new player never receives the button', () => {
     expect(DEALING).toMatch(/seatedWaiter\.seat_number === buttonSeatIndex/);
   });
 
-  it('the SB, BB and button predictors all agree on where the button lands', () => {
-    // One definition, three callers. Separate walks could disagree about the
-    // button, which would bill the wrong seat — the same class of bug the
-    // shared sbSeat/bbSeat computation was introduced to kill.
-    expect((BASE.match(/this\.predictButtonSeat\(roster\)/g) || []).length).toBe(3);
+  it('every predictor of the next button shares one definition', () => {
+    // Separate walks could disagree about the button, which would bill the wrong
+    // seat — the same class of bug the shared sbSeat/bbSeat computation was
+    // introduced to kill. Counted as "at least", not exactly: a future caller
+    // that correctly adopts the shared helper must not fail this test.
+    expect((BASE.match(/this\.predictButtonSeat\(/g) || []).length).toBeGreaterThanOrEqual(3);
+    // The horse auto-cashout predicts the next big blind to decide when a horse
+    // stands up. It was a FOURTH independent getNextSeat walk over the raw
+    // roster, so once new players stopped being button-eligible it could name a
+    // different button than the deal used, and horses left on the wrong hand.
+    const settlement = strip(read('src/engine/ServerTableEngineSettlement.ts'));
+    expect(settlement).toMatch(/nextButtonSeat = this\.predictButtonSeat\(players\)/);
+  });
+
+  it('button eligibility is a CASH rule and never touches tournaments', () => {
+    // In a tournament nobody sits down: the seating sweep places late
+    // registrants and TableBalancer moves players between tables deliberately,
+    // positioning them relative to the big blind. Filtering those players out of
+    // the rotation would silently override that placement, and a freshly
+    // balanced table is mostly players this set has never seen.
+    const at = BASE.indexOf('protected buttonEligible');
+    expect(at).toBeGreaterThan(-1);
+    expect(BASE.slice(at, at + 300)).toMatch(/if \(this\.isTournamentTable\(\)\) return roster;/);
+  });
+
+  it('the button always moves, so nobody posts the same blind twice', () => {
+    // getNextSeat over a ONE-seat roster returns that seat from both branches,
+    // so a single eligible player already on the button kept it, and the same
+    // two players posted the small and big blind two hands running.
+    const at = DEALING.indexOf('dealerSeat === prevButtonSeat');
+    expect(at, 'no guard against a stationary button').toBeGreaterThan(-1);
+    const block = DEALING.slice(at - 200, at + 300);
+    // Heads-up is deliberately exempt: with two players the button IS the small
+    // blind, so forcing it across would put the newcomer in the small blind, the
+    // hold-out would refuse them, and the table would never deal again.
+    expect(block).toMatch(/players\.length > 2/);
+    expect(block).toMatch(/getNextSeat\(prevButtonSeat, players\)/);
   });
 
   it('leaving the table forfeits button eligibility', () => {

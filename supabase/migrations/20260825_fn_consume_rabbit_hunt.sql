@@ -130,7 +130,9 @@ BEGIN
       'success', true,
       'source', 'diamonds',
       'diamonds_spent', v_cost,
-      'diamonds_remaining', (v_deduct->>'balance')
+      -- ->> yields TEXT, so this used to serialise as "42" rather than 42 while
+      -- the API type promised a number. ::numeric makes the wire format match.
+      'diamonds_remaining', (v_deduct->>'balance')::numeric
     );
   END IF;
 

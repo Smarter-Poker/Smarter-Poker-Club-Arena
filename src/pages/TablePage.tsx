@@ -101,7 +101,6 @@ import TimebankCounter from '../components/table/TimebankCounter';
 // Dan 2026-08-21, item 3: buy more time banks with diamonds (1/10/25/100/500).
 import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
-import RabbitHunt from '../components/table/RabbitHunt';
 import HandNotation from '../components/table/HandNotation';
 import { soundService, haptic } from '../services/SoundService';
 import { ConfettiCanvas } from '../components/table/ConfettiCanvas';
@@ -3387,12 +3386,13 @@ export default function TablePage({
   const [rabbitCardsAvailable, setRabbitCardsAvailable] = useState(0);
   const rabbitHandNumberRef = useRef<number | null>(null);
 
-  const handleRabbitReveal = async (): Promise<{
+  const handleRabbitReveal = useCallback(async (): Promise<{
     success: boolean;
     cards?: Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>;
     error?: string;
     source?: string;
     diamondsSpent?: number;
+    vipRemaining?: number | null;
   }> => {
     if (!tableId) return { success: false, error: 'Table Not Ready' };
 
@@ -3422,8 +3422,13 @@ export default function TablePage({
       })),
       source: result.source,
       diamondsSpent: result.diamonds_spent,
+      // The server counts the VIP monthly pool down on every reveal and has
+      // always returned it. It used to be dropped here, one line from the UI,
+      // which is why the button could say FREE on the 101st hunt and then
+      // silently charge five diamonds.
+      vipRemaining: result.vip_remaining,
     };
-  };
+  }, [tableId]);
 
   // Leaderboard state
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -8466,11 +8471,27 @@ export default function TablePage({
          * engine is ready to deal and never a beat before. Changing an
          * animation length in that file moves both sides together.
          */
-        const holdMs =
-          handCompletionHoldMs({
-            wentToShowdown: handShowdownRef.current.wentToShowdown,
-            showdownHands: handShowdownRef.current.hands,
-          }) * getAnimationSpeed();
+        const holdBaseMs = handCompletionHoldMs({
+          wentToShowdown: handShowdownRef.current.wentToShowdown,
+          showdownHands: handShowdownRef.current.hands,
+          // bbjHit was the one input the client did not pass, and it is the one
+          // that matters most: the spec returns BBJ_CELEBRATION_MS (9000) for it.
+          // Without it the client held ~7.9s against the server's 9s, so the
+          // board, pot and winner were wiped roughly a second into the Bad Beat
+          // Jackpot celebration that the spec says is never rushed.
+          bbjHit: !!bbjHitDataRef.current,
+        });
+        // The player's animation-speed preference scales this, but only within
+        // bounds. The SERVER holds `holdBaseMs` flat, so scaling below 1x used to
+        // clear the winner name before the pot-win float it is describing had
+        // finished — at 0.25x, a 6.5s showdown hold became 1.6s. And scaling to
+        // 3x left ~12s of stale board on screen if a HAND_STARTED event is ever
+        // dropped, where the old hardcoded 3000ms risked about one second.
+        // Never shorter than the engine's own hold, never more than double it.
+        const holdMs = Math.min(
+          holdBaseMs * 2,
+          Math.max(holdBaseMs, holdBaseMs * getAnimationSpeed())
+        );
         // CA-22: track so unmount can cancel — prevents setTableState on dead page
         if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
         handCompleteTimerRef.current = window.setTimeout(() => {
@@ -12836,22 +12857,23 @@ export default function TablePage({
         !tableState.isTournament &&
         Array.isArray(tableState.waitingForBBUserIds) &&
         tableState.waitingForBBUserIds.includes(userId) && (
-          <button
-            type="button"
-            className="post-bb-overlay-button"
-            onClick={async () => {
-              const result = await serverPostBBToEnter(tableId);
-              if (!result.success) {
-                toast?.error(result.error || 'Could not post BB');
-              } else {
-                toast?.success('Will be dealt in next hand');
-              }
-            }}
-            aria-label="Post the big blind to enter the next hand"
-          >
-            <span className="post-bb-overlay-button__title">Post BB To Enter</span>
-            <span className="post-bb-overlay-button__sub">Skip The Wait, Pay The BB Now</span>
-          </button>
+          /* Dan 2026-08-25: this is a NOTICE now, not a button.
+             It used to read "Post BB To Enter — Skip The Wait, Pay The BB Now",
+             which was fair when a new player faced a long wait for the big
+             blind to rotate to them. Entry is free now and the wait is at most
+             one hand, so the only players still waiting are the two the engine
+             deliberately holds out for a hand: the seat the small blind is
+             about to reach, and the seat the button is about to reach. For
+             those, the offer was no longer a shortcut — it was a way to pay a
+             live big blind to be dealt into the small blind, which the house
+             rule forbids outright. The engine now refuses that call; there is
+             no reason to keep asking the player to make it. */
+          <div className="post-bb-overlay-button post-bb-overlay-button--notice">
+            <span className="post-bb-overlay-button__title">Seat Reserved</span>
+            <span className="post-bb-overlay-button__sub">
+              You'll Be Dealt In Free Once The Button Passes
+            </span>
+          </div>
         )}
 
       {/* ═══════════════════════════════════════════════════════════════════════

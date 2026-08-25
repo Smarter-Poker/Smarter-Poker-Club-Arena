@@ -992,12 +992,24 @@
    and absent the moment the hand is folded, so this override is self-limiting:
    a folded hero still dims via .seat--folded. Declared last and with two
    classes so it out-specifies any single-class dim rule. */
-.seat--in-hand,
-.seat--in-hand .seat__avatar-img,
-.seat--in-hand .seat__cards {
+.seat--hero.seat--in-hand,
+.seat--hero.seat--in-hand .seat__avatar-img,
+.seat--hero.seat--in-hand .seat__cards {
   opacity: 1 !important;
   filter: none !important;
 }
+/* Dan 2026-08-25: this was briefly generalised to `.seat--in-hand` to stop live
+   VILLAINS being faded. That fixed the fade and broke five other things, because
+   `filter: none !important` is a sledgehammer that lands on every seat in a live
+   hand — it killed the acting-player spotlight (TablePage.css .seat-wrapper--spot
+   brightness), the gold stack-change glow, avatar hover brightening, the bust-art
+   drop shadow, and it out-ranked `.seat--folded` during the window where
+   lastAction is 'fold' but status has not flipped yet, putting a bright frame on
+   every fold.
+   The villain fade is fixed properly one level up instead: `seatDimmed` in
+   TablePage.tsx no longer dims ANY seat holding a live hand, so the vignette
+   never reaches them and there is nothing here to override. This rule stays
+   hero-only and two-class, which is what its specificity note above assumes. */
 
 /* ─── ACTIVE PLAYER ───────────────────────────────────────────────────── */
 

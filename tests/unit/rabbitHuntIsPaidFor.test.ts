@@ -172,12 +172,69 @@ describe('who is offered a hunt, and for how many cards', () => {
     expect(COMPONENT).not.toMatch(/currentBoard/);
   });
 
+  it('a RUN IT TWICE hand is never offered one', () => {
+    // On a RIT hand communityCards holds only the shared pre-all-in prefix, so
+    // the board-length gate read 0, decided the hand ended pre-flop, and sold
+    // five cards. RIT had already burned two or three run-outs off that deck —
+    // what remained was noise, charged at five diamonds.
+    expect(SETTLEMENT).toMatch(/currentHandRitBoards \?\? 0\) >= 2/);
+    const guard = SETTLEMENT.indexOf('ranItTwice');
+    const capture = SETTLEMENT.indexOf('rabbitHuntOffers.set');
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(capture);
+  });
+
+  it('a capture failure is reported, never swallowed', () => {
+    // A bare catch here meant no offer, no event, and a rabbit hunt that had
+    // quietly stopped working on that table with nothing to say why — the exact
+    // blind spot that would have hidden the RIT bug above.
+    const at = SETTLEMENT.indexOf('rabbitHuntOffers.set');
+    const block = SETTLEMENT.slice(at, at + 1200);
+    expect(block).toMatch(/reportError\(err, 'ServerTableEngine\.rabbit_hunt_capture_error'\)/);
+  });
+
+  it('the offer history is trimmed by insertion order, not by hand number', () => {
+    // Hand numbers come from allocateGlobalHandNumber and are global to the
+    // server, so they jump by arbitrary amounts: `handNumber < handCount - 1`
+    // was almost never the previous hand at this table, and silently kept one
+    // offer instead of two, halving the window for a late click.
+    expect(SETTLEMENT).toMatch(/rabbitHuntOffers\.size > 2/);
+    expect(SETTLEMENT).not.toMatch(/handNumber < this\.handCount - 1/);
+  });
+
   it('a hand that ran to the river is never offered one', () => {
     expect(SETTLEMENT).toMatch(/handReachedRiver/);
     // Read from the CAPTURED board length: the live controller is nulled by
     // this point and an optional chain onto it yields [], i.e. "length 0",
     // which would offer a rabbit hunt on a completed board.
     expect(SETTLEMENT).toMatch(/offer\?\.boardLength \?\? 5/);
+  });
+
+  it('a VIP is told how many free hunts are left', () => {
+    // vip_remaining is counted by the server on every reveal and was returned
+    // all the way to TablePage, then dropped one line from the UI — so the
+    // button said FREE on the 101st hunt and silently took five diamonds.
+    expect(TABLE_PAGE).toMatch(/vipRemaining: result\.vip_remaining/);
+    expect(COMPONENT).toMatch(/vipRemaining/);
+    // And the label must stop claiming FREE once the pool is spent.
+    expect(COMPONENT).toMatch(/vipRemaining === 0/);
+  });
+
+  it('the reveal cannot be torn down mid-animation', () => {
+    // Awaiting 500ms PER CARD before the first appeared meant a pre-flop fold
+    // took 2.5s to finish drawing; the next hand starting inside that window
+    // unmounted the panel and the player had paid for cards they never saw.
+    // All cards are set at once and CSS staggers them.
+    expect(COMPONENT).toMatch(/setRevealedCards\(result\.cards\)/);
+    expect(COMPONENT).not.toMatch(/setTimeout\(resolve, 500\)/);
+  });
+
+  it('the VIP lookup can never disable the button', () => {
+    // isCheckingVIP started true and was only cleared inside the async lookup,
+    // so a HUNG (not rejected) VIP query disabled Rabbit Hunt forever with
+    // nothing on screen to explain it. The lookup is label-only.
+    expect(COMPONENT).toMatch(/disabled=\{isRevealing\}/);
+    expect(COMPONENT).not.toMatch(/isCheckingVIP/);
   });
 
   it('there is exactly one rabbit hunt button', () => {

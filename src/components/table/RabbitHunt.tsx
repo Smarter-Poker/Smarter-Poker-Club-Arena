@@ -51,6 +51,8 @@ export interface RabbitHuntRevealResult {
   error?: string;
   source?: string;
   diamondsSpent?: number;
+  /** VIP monthly hunts left AFTER this one. Server-counted; null for non-VIP. */
+  vipRemaining?: number | null;
 }
 
 export interface RabbitHuntProps {
@@ -91,19 +93,21 @@ export function RabbitHunt({ isAvailable, cardsAvailable, onReveal }: RabbitHunt
   const [revealedCards, setRevealedCards] = useState<Card[]>([]);
   const [hasRevealed, setHasRevealed] = useState(false);
   const [isVIP, setIsVIP] = useState(false);
-  const [isCheckingVIP, setIsCheckingVIP] = useState(true);
+  const [vipRemaining, setVipRemaining] = useState<number | null>(null);
 
   const cost = FEATURE_PRICING.rabbit_hunt.cost;
 
-  // Label only. The server decides the actual price.
+  // Label only. The server decides the actual price, so this lookup must never
+  // be able to block the button: it used to drive a `disabled={isCheckingVIP}`
+  // that started true and was only cleared inside this async function, so a
+  // hung (as opposed to rejected) VIP query disabled Rabbit Hunt forever with
+  // nothing on screen to say why. The button is enabled from the first frame
+  // and the label fills in when the answer arrives.
   useEffect(() => {
     let cancelled = false;
     const checkVIP = async () => {
       if (!user?.id) {
-        if (!cancelled) {
-          setIsVIP(false);
-          setIsCheckingVIP(false);
-        }
+        if (!cancelled) setIsVIP(false);
         return;
       }
       try {
@@ -113,7 +117,6 @@ export function RabbitHunt({ isAvailable, cardsAvailable, onReveal }: RabbitHunt
         reportError(err, 'RabbitHunt.Error');
         if (!cancelled) setIsVIP(false);
       }
-      if (!cancelled) setIsCheckingVIP(false);
     };
     checkVIP();
     return () => {
@@ -150,12 +153,25 @@ export function RabbitHunt({ isAvailable, cardsAvailable, onReveal }: RabbitHunt
 
       if (result.diamondsSpent && result.diamondsSpent > 0) {
         toast.info(`${result.diamondsSpent} Diamonds Charged`);
+      } else if (typeof result.vipRemaining === 'number') {
+        // Tell a VIP what they have left. Without this the 100th free hunt and
+        // the 101st paid one look identical until the diamonds toast appears,
+        // which is the first the player hears that the free pool ran out.
+        setVipRemaining(result.vipRemaining);
+        toast.info(
+          result.vipRemaining > 0
+            ? `Free Rabbit Hunt, ${result.vipRemaining} Left This Month`
+            : 'Last Free Rabbit Hunt This Month'
+        );
       }
 
-      for (let i = 0; i < result.cards.length; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        setRevealedCards((prev) => [...prev, result.cards![i]]);
-      }
+      // Set every card at once and let CSS stagger them. Awaiting 500ms PER
+      // CARD before the first one appeared left the player paying for a reveal
+      // and then watching it get unmounted: a pre-flop fold took 2.5s to finish
+      // drawing, and the next hand starting inside that window tore the panel
+      // down mid-animation. The cards carry animationDelay below, so the
+      // staggered feel survives without holding the reveal open for seconds.
+      setRevealedCards(result.cards);
       setHasRevealed(true);
     } catch (error) {
       reportError(error, 'RabbitHunt.Rabbit_hunt_failed');
@@ -177,13 +193,17 @@ export function RabbitHunt({ isAvailable, cardsAvailable, onReveal }: RabbitHunt
         <button
           className={`rabbit-hunt__button ${isRevealing ? 'rabbit-hunt__button--loading' : ''} ${isVIP ? 'rabbit-hunt__button--vip' : ''}`}
           onClick={handleReveal}
-          disabled={isRevealing || isCheckingVIP}
+          disabled={isRevealing}
         >
           <span className="rabbit-hunt__icon">◆</span>
           <span className="rabbit-hunt__label">{isRevealing ? 'Revealing...' : 'Rabbit Hunt'}</span>
-          {!isRevealing && !isCheckingVIP && (
-            <span className={`rabbit-hunt__cost ${isVIP ? 'rabbit-hunt__cost--free' : ''}`}>
-              {isVIP ? ' FREE' : `${cost} `}
+          {!isRevealing && (
+            <span
+              className={`rabbit-hunt__cost ${isVIP && vipRemaining !== 0 ? 'rabbit-hunt__cost--free' : ''}`}
+            >
+              {/* A VIP whose monthly pool is spent pays like anyone else, so the
+                  label has to stop saying FREE the moment it runs out. */}
+              {isVIP && vipRemaining === 0 ? `${cost}` : isVIP ? 'FREE' : `${cost}`}
             </span>
           )}
         </button>

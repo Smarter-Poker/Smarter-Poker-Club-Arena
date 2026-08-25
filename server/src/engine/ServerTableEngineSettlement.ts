@@ -115,12 +115,19 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     }
 
     if (!charge || charge.success !== true) {
+      // Name the reason. "Could Not Complete Purchase" for every refusal left
+      // the player unable to tell a shortfall from an outage, and support
+      // unable to tell either from a broken RPC.
+      const reason = String(charge?.error ?? '');
+      const message =
+        reason === 'insufficient_diamonds'
+          ? 'Not Enough Diamonds'
+          : reason === 'unknown user'
+            ? 'Your Account Could Not Be Verified'
+            : 'Could Not Complete Purchase';
       return {
         success: false,
-        error:
-          charge?.error === 'insufficient_diamonds'
-            ? 'Not Enough Diamonds'
-            : 'Could Not Complete Purchase',
+        error: message,
         diamonds_remaining:
           charge?.diamonds_remaining != null ? Number(charge.diamonds_remaining) : null,
       };
@@ -210,7 +217,17 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     //     on a hand that had already run to the river;
     //   - who was dealt in, so a spectator cannot buy a look at a hand they
     //     were never part of.
-    if (this.handController) {
+    // RUN IT TWICE IS NEVER OFFERED A RABBIT HUNT.
+    //
+    // On a RIT hand `communityCards` holds only the shared pre-all-in prefix —
+    // 0 cards for a pre-flop all-in — because each board is dealt into
+    // dealAndResolveRIT's own arrays. So the board-length gate reads 0, decides
+    // the hand ended pre-flop, and offers five cards. But RIT has already burned
+    // two or three run-outs off this deck: what is left is not "what would have
+    // come", it is noise the player would be charged five diamonds for. There is
+    // also nothing to rabbit hunt on a hand that ran out twice to showdown.
+    const ranItTwice = (this.currentHandRitBoards ?? 0) >= 2;
+    if (this.handController && !ranItTwice) {
       try {
         const state = this.handController.getState();
         const remainingDeck = this.handController.getRemainingDeck();
@@ -227,12 +244,24 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           revealed: new Set<string>(),
           offeredAt: Date.now(),
         });
-        // Two hands of history is enough for a player who clicks late, and
-        // keeps this bounded on a table that runs for days.
-        for (const handNumber of this.rabbitHuntOffers.keys()) {
-          if (handNumber < this.handCount - 1) this.rabbitHuntOffers.delete(handNumber);
+        // Keep the two most recent offers, by INSERTION ORDER. Trimming on
+        // `handNumber < handCount - 1` looked equivalent and was not: hand
+        // numbers come from allocateGlobalHandNumber and are global to the
+        // server, so they jump by arbitrary amounts and `handCount - 1` is
+        // almost never the previous hand at this table. That silently kept one
+        // entry instead of two, cutting the grace period for a late click in
+        // half. Map iterates in insertion order, so this is exact.
+        while (this.rabbitHuntOffers.size > 2) {
+          const oldest = this.rabbitHuntOffers.keys().next().value;
+          if (oldest === undefined) break;
+          this.rabbitHuntOffers.delete(oldest);
         }
-      } catch {
+      } catch (err) {
+        // Never silent. A throw here means no offer, no event, and a rabbit hunt
+        // that has quietly stopped working on this table with nothing to explain
+        // why — which is precisely the blind spot that would hide a bug like the
+        // RIT one above.
+        reportError(err, 'ServerTableEngine.rabbit_hunt_capture_error');
         this.currentHandRabbitCards = [];
       }
     }
@@ -1375,7 +1404,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // seat-based from the current button. Next hand's button is the next
         // occupied seat clockwise from lastButtonSeat; BB is one seat past SB
         // (HU: BB is the non-button, i.e. one seat past the button).
-        const nextButtonSeat = this.getNextSeat(this.lastButtonSeat, players);
+        // Uses the SAME predictButtonSeat as getSBSeatIndex, getBBSeatIndex and
+        // the rotation itself. This was a fourth, independent walk over the raw
+        // roster, so once new players stopped being button-eligible it could
+        // name a different next button than the deal actually uses — and this
+        // one decides when a horse stands up to dodge the big blind, so
+        // disagreeing means it leaves on the wrong hand.
+        const nextButtonSeat = this.predictButtonSeat(players);
         const nextSbSeat =
           players.length === 2 ? nextButtonSeat : this.getNextSeat(nextButtonSeat, players);
         const nextBbSeat = this.getNextSeat(nextSbSeat, players);

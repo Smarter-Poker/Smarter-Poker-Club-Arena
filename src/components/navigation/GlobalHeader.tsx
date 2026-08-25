@@ -318,7 +318,7 @@ export default function GlobalHeader() {
           {/* Diamond Wallet Icon */}
           <button
             className={styles.orbBtn}
-            onClick={() => navigateToHub('/hub/diamond-store')}
+            onClick={() => navigate('/marketplace?tab=diamonds')}
             title="Diamond Wallet"
           >
             <img

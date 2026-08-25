@@ -403,8 +403,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           );
         }
 
-        if (activePlayers.length < 2) {
-          // Bible V8 §3.1: Table FSM — running → waiting (not enough players)
+        if (activePlayers.length < this.minPlayersToDeal()) {
+          // Bible V8 §3.1: Table FSM — running → waiting (not enough players).
+          // "Enough" is the host's AutoStart figure now, not a hard-coded 2 —
+          // see minPlayersToDeal on the base class, which the watchdog reads
+          // too so the two cannot disagree
           if (this.tableFSM.state === 'running') {
             this.tableFSM.transition('waiting');
           }
@@ -419,6 +422,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         if (this.dealHoldUntilMs > Date.now()) {
           this.setLoopPhase('spin_reveal_hold');
           await this.sleep(Math.min(this.dealHoldUntilMs - Date.now(), 1000));
+          continue;
+        }
+
+        // MYSTERY BOUNTY REVEAL GATE (Dan sections 21-26, 61-65). The table
+        // waits for the chest, and for EVERY chest behind it — the button may
+        // not move until the queue is empty (sections 25 and 64). This sits
+        // immediately before dealHand(), which is the single place the button
+        // advances and the blinds are posted, so closing the gate here is what
+        // makes "no button move, no next hand, no blinds, no action timers"
+        // one condition rather than four.
+        //
+        // Deliberately a COUNT and not a deadline; see beginBountyReveal().
+        // Entries expire on their own, so a settle path that dies mid-reveal
+        // costs an animation, never a wedged table.
+        if (this.hasOpenBountyReveal()) {
+          this.setLoopPhase('mystery_bounty_hold');
+          await this.sleep(250);
           continue;
         }
 
@@ -693,6 +713,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandWinnersByBoard = [];
     this.currentHandActions = [];
     this.currentHandWinners = [];
+    // Dan section 29: a stale pot breakdown would attribute THIS hand's
+    // knockout to the previous hand's side pots, so it is cleared with the
+    // winners it belongs to and never independently of them.
+    this.currentHandPots = [];
     this.currentHandContributions.clear(); // Bible V8 §4.18: Reset equal-share rakeback tracking (FIX 144)
     this.currentHandInsuranceSettlements = []; // Bible V8 §4.19: Reset insurance settlements
     this.currentHandShowdownResults = []; // BBJ: Reset showdown results for new hand
@@ -994,7 +1018,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const config: HandConfig = {
       tableId: this.tableId,
       handNumber,
-      gameVariant: this.tableInfo.game_variant as GameVariant,
+      gameVariant: this.dealtGameVariant() as GameVariant,
       smallBlind: this.tableInfo.small_blind,
       bigBlind: this.tableInfo.big_blind,
       // FIX-219: Bible V8 §4.3 — Respect ante_enabled toggle; if disabled, zero out ante

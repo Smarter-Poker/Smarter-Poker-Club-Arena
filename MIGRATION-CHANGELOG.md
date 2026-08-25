@@ -14829,3 +14829,110 @@ before we start making mobile updates." Full audit in
    noted: `Smarter-Poker-Club-Arena` is a third real clone, not the symlink
    AGENT-PLAYBOOK section 1b claims, and that is where the phantom stranded work
    lives.
+
+---
+
+## 2026-08-25 — The stats page was being cancelled, not running slowly
+
+Two separate costs inside one RPC, both of which had to go. Numbers are from
+production (`kuklfnapbkmacvwxktbh`), not from reading the code.
+
+`ca_player_stats_full`, heaviest account (89,401 indexed hands):
+
+|                                  | before        | after            |
+| -------------------------------- | ------------- | ---------------- |
+| fully warm                       | 34 ms         | —                |
+| partly warm                      | 1,315 ms      | —                |
+| **cold**                         | **15,071 ms** | —                |
+| steady state, as `authenticated` | cancelled     | **909–1,302 ms** |
+| immediately after a forward roll | cancelled     | 44–153 ms        |
+
+`authenticated` carries `statement_timeout = 8s`. Past that Postgres does not
+return a slow answer — it cancels. On a cold cache the page did not render at
+all for the heaviest accounts. The 34 ms warm figure is what proves this was
+never CPU and never the analysis SQL, which was already capped at 750 hands.
+
+**Cost 1 — 750 hands cost ~3,730 random page reads.** `hand_history` is 8,700 MB
+over 1,416,541 rows: ~6.4 KB a row, because `players`/`actions`/`winners` are
+JSONB stored INLINE (TOAST is only 100 MB, so almost nothing spilled out of
+line). At that width a page holds about one hand.
+
+**Cost 2 — `ca_hand_player_idx` had never been vacuumed.** `last_vacuum`,
+`last_autovacuum` and `last_autoanalyze` were all NULL on 14,180,471 rows. The
+"lifetime hands" count is an index-only scan, and an index-only scan is only
+index-only where the VISIBILITY MAP says a page is all-visible — nothing but
+VACUUM sets that bit. So every tuple fell back to a heap fetch:
+`Heap Fetches: 17308`, **14,257 ms for a COUNT**. That also explains why the
+source comment claimed "23 ms after VACUUM" while production disagreed by three
+orders of magnitude: the comment was right, the VACUUM had never run.
+
+Fixing either alone would have moved the page from cancelled to still cancelled.
+
+### What landed
+
+- **`ca_hand_player_stat`** — a narrow per-(player,hand) rollup of the ~28
+  scalars the page uses, so the RPC reads ~20 pages instead of 3,730. Retention
+  is each player's most recent 1,000 hands: **584,887 rows across 585 players**,
+  not the 14,180,471 that one row per player per hand would be. Pruned _during_
+  the backfill, not only after — it would otherwise have passed 19m rows.
+- **`ca_hand_player_facts`** — one definition of the math. The builder calls it
+  and so does the RPC, for the tail not yet rolled. A rollup that computes its
+  own VPIP eventually disagrees with the page it feeds, and the disagreement
+  surfaces as a number a player believes.
+- **autovacuum settings on `ca_hand_player_idx`**, copied from `hand_history`,
+  which already carries them for the same append-heavy shape. Scale factors
+  pinned to 0 so the thresholds stay absolute — a default 0.2 on 14m rows means
+  "wait for 2.8 million more", which is how it went unvacuumed indefinitely.
+- **`ca_roll_hand_stats_forward`**, called every 15 minutes from
+  `club-stats-maintenance.js` (World Hub #738). Whatever it has not rolled, the
+  RPC computes live, so the gap since it last ran is directly a term in the
+  page's response time.
+
+Backfill: **1,397,746 hands in 30.8 minutes**, complete to the oldest hand.
+
+### Verified, not assumed
+
+- Parity against the ORIGINAL per-hand math, on live data, before anything was
+  written: 1,138 (hand, player) rows over 400 hands, **zero differences on all
+  fifteen derived facts**.
+- Stored-vs-recomputed, per hand, 400 rows, **zero differences on all fifteen
+  columns** — the check that catches an INSERT column-mapping bug, which no
+  aggregate comparison reliably would.
+- Of a player's 750-hand window, the 6 hands absent from the rollup were exactly
+  the 6 newer than `rolled_ceil`, **0 unexplained**.
+- The 15-minute cron was observed advancing `rolled_ceil` on its own in
+  production after the World Hub deploy.
+
+### Three things that looked right and were not
+
+1. **A faithful generalisation is quadratic.** Keeping the original's four
+   correlated subqueries per player is fine over one hand's ~30 actions and
+   catastrophic over a 2,000-hand chunk's ~9,200: >55 ms/hand, 21 hours for the
+   table. Rewritten as aggregates and hash joins: 1.6 ms/hand, a 34x cut.
+2. **Selecting hands by id list is 60x worse than by time range** — 25.0 ms/hand
+   against 0.4 ms/hand — because the table is physically ordered by `created_at`,
+   so a range is near-sequential while an id list is thousands of independent
+   random fetches of 6.4 KB rows.
+3. **Revoking PUBLIC and anon does not lock a function down in this database.**
+   It carries `ALTER DEFAULT PRIVILEGES ... GRANT EXECUTE ... TO anon,
+authenticated, service_role`, so a new function is born with an EXPLICIT
+   grant to `authenticated` that `REVOKE ... FROM PUBLIC` does not touch. The
+   first version of this work used the repo's usual pattern and left
+   `ca_hand_player_facts` — SECURITY DEFINER, arbitrary time range, one row per
+   player per hand for EVERY player — callable from any logged-in browser.
+   Caught by the Supabase security advisor, **not** by the migration's own
+   assertion, which checked `grantee = 0` and anon only and so could not fail on
+   the one grant that mattered. An assertion that cannot fail is worse than
+   none: it reads as a guarantee. Name `authenticated` explicitly and assert it.
+
+### Open, deliberately not changed
+
+`ca_player_stats_full(p_user, ...)` does not check `auth.uid()`. That is
+pre-existing and appears intentional — `PlayerStatsPage` takes a route param
+(`targetUserId = userId || user?.id`) and `ProfileService.getPublicProfile`
+reads other players, so public player profiles are a product feature. It does
+mean any logged-in user can read any other player's VPIP, PFR and **cash
+profit** by uuid. Flagged for Dan rather than changed unilaterally, since
+tightening it would break that feature.
+
+Shipped as club-arena #848 and World-Hub #738.

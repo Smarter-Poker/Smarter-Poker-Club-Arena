@@ -452,14 +452,17 @@ export default function StoreTab({
                   )}
                   <span className={styles.categoryTag}>{item.category || 'Time Banks'}</span>
                   {soldOut && <span className={styles.soldOutTag}>SOLD OUT</span>}
+                  {/* Every number a member reads goes through fmt (house rule:
+                      .toLocaleString, never a raw interpolation). A shop with
+                      12000 units in stock printed "12000 Left". */}
                   {limited && !soldOut && (
-                    <span className={styles.stockTag}>{item.stock} Left</span>
+                    <span className={styles.stockTag}>{fmt(item.stock)} Left</span>
                   )}
                   {onSale && !soldOut && <span className={styles.saleTag}>SALE</span>}
                   {item.per_user_limit && !blocked ? (
                     <span className={styles.stockTag}>
-                      {Math.max(0, item.per_user_limit - (item.my_purchase_count ?? 0))} Left For
-                      You
+                      {fmt(Math.max(0, item.per_user_limit - (item.my_purchase_count ?? 0)))} Left
+                      For You
                     </span>
                   ) : null}
                 </div>
@@ -476,7 +479,7 @@ export default function StoreTab({
                         {fmt(effectivePrice(item))} Diamonds
                       </span>
                       {(item.purchase_count || 0) > 0 && (
-                        <div className={styles.soldCount}>{item.purchase_count} Sold</div>
+                        <div className={styles.soldCount}>{fmt(item.purchase_count)} Sold</div>
                       )}
                     </div>
                     <button

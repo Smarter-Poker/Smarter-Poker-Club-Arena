@@ -104,26 +104,27 @@ test.describe('Club lobby', () => {
   });
 
   /**
-   * A tournament that has ALREADY STARTED does not open the panel — it goes to
-   * its own screen. ClubHomePage `openEntry` short-circuits on
-   * `kind === 'mtt'` with status running / late_reg / completed and navigates
-   * to `/tournaments/<id>` (2026-08-23, "observe links"), which is a day newer
-   * than this file's Lobby V2 rewrite and is why the assertion below used to
-   * click blindly and fail.
+   * A TOURNAMENT goes to its own screen. A CASH game opens the panel.
    *
-   * That is not a hole in the contract this spec defends. The rule is that
-   * selecting a row never JOINS, REGISTERS or SPENDS, and a read-only
-   * tournament screen does none of those. What changed is only where the
-   * review happens, so both destinations are pinned below rather than one
-   * being asserted over the other.
+   * Dan 2026-08-25: "when you click any of the MTT fields in the display
+   * inside of ALL or MTT, it should open to the tournament lobby." The old
+   * rule here was narrower — only a tournament already RUNNING / in LATE REG /
+   * COMPLETED routed, and a REGISTERING one fell through to the pre-commit
+   * panel. Same row, same tab, two destinations depending on a status the
+   * player cannot see. `openEntry` now short-circuits on `kind === 'mtt'`
+   * alone, so this selector drops the status classes with it.
    *
-   * Lobby rows carry `data-kind` and `lt-row--<status>`, so which of the two a
-   * row is can be read off the row itself instead of guessed from its
-   * position — the lobby sorts tournaments first, so "the first row" is
-   * usually one of these.
+   * The contract this spec defends is UNCHANGED and still asserted on both
+   * destinations: selecting a row never JOINS, REGISTERS or SPENDS. A
+   * read-only tournament screen does none of those (verified: `registerMtt`
+   * is reachable only from the sign-up modal's onClick, and the auto-open-seat
+   * effect requires an existing `tournament_players` row). Only WHERE the
+   * review happens changed.
+   *
+   * Lobby rows carry `data-kind`, so which of the two a row is can be read off
+   * the row itself instead of guessed from its position.
    */
-  const STARTED_MTT =
-    '[data-kind="mtt"].lt-row--running, [data-kind="mtt"].lt-row--late_reg, [data-kind="mtt"].lt-row--completed';
+  const ROUTED_MTT = '[data-kind="mtt"]';
 
   /**
    * Index of the first row of one kind or the other, or -1. Reading the index
@@ -131,13 +132,13 @@ test.describe('Club lobby', () => {
    * real click, with the actionability checks intact — only the CHOICE of row
    * is made in the page.
    */
-  async function firstRow(page: Page, kind: 'panel' | 'started'): Promise<number> {
+  async function firstRow(page: Page, kind: 'panel' | 'mtt'): Promise<number> {
     return page.evaluate(
-      ({ sel, started }) =>
+      ({ sel, wantMtt }) =>
         [
           ...document.querySelectorAll('.club-home__games .lt-row:not(.lt-row--skeleton)'),
-        ].findIndex((r) => r.matches(sel) === started),
-      { sel: STARTED_MTT, started: kind === 'started' }
+        ].findIndex((r) => r.matches(sel) === wantMtt),
+      { sel: ROUTED_MTT, wantMtt: kind === 'mtt' }
     );
   }
 
@@ -150,7 +151,7 @@ test.describe('Club lobby', () => {
     test.skip(rows === 0, 'no games in this lobby right now');
 
     const i = await firstRow(page, 'panel');
-    test.skip(i < 0, 'every game in this lobby is a tournament already in progress');
+    test.skip(i < 0, 'every game in this lobby is a tournament, which routes instead');
 
     const before = page.url();
     await page.locator('.club-home__games .lt-row:not(.lt-row--skeleton)').nth(i).click();
@@ -182,15 +183,15 @@ test.describe('Club lobby', () => {
     await expect(panel, 'Escape did not close the game lobby panel').toBeHidden({ timeout: 8000 });
   });
 
-  test('selecting a tournament already in progress opens its own screen, and still does not register', async ({
+  test('selecting a tournament at ANY status opens its own screen, and still does not register', async ({
     page,
   }) => {
     const ok = await expectRoute(page, LOBBY);
     if (!ok) return;
     await lobbySettled(page);
 
-    const i = await firstRow(page, 'started');
-    test.skip(i < 0, 'no tournament is running or in late registration right now');
+    const i = await firstRow(page, 'mtt');
+    test.skip(i < 0, 'no tournament in this lobby right now');
 
     const row = page.locator('.club-home__games .lt-row:not(.lt-row--skeleton)').nth(i);
     const id = await row.getAttribute('data-id');
@@ -200,7 +201,7 @@ test.describe('Club lobby', () => {
 
     // It reviews the tournament. It must be THAT tournament, and it must not
     // have committed the player to anything on the way there.
-    await expect(page, 'a started tournament row did not open its own screen').toHaveURL(
+    await expect(page, 'a tournament row did not open its own screen').toHaveURL(
       new RegExp(`/tournaments/${id}(?:[/?#]|$)`),
       { timeout: 10000 }
     );

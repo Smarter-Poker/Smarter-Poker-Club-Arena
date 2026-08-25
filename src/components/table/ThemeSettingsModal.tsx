@@ -20,6 +20,7 @@ import {
   isFeltUnlocked,
   normalizeFeltId,
   normalizeBackgroundId,
+  THEME_PRESET_SKINS,
 } from '../../lib/tableTheme';
 import { CardBack, normalizeCardBack, CARD_BACK_CATALOG, isCardBackUnlocked } from './CardImage';
 import { useNavigate } from 'react-router-dom';
@@ -258,39 +259,47 @@ const DEFAULT_SELECTION: ThemeSelection = {
  * overridden before Confirm). Free presets bundle only free assets; the two
  * VIP presets may bundle VIP assets because the preset tile itself is
  * VIP-gated by canAccessAsset before the bundle is applied.
+ *
+ * Dan 2026-08-25: the `table_id` half is NOT written here. It comes from
+ * THEME_PRESET_SKINS in lib/tableTheme, the same map resolveSkin consults when
+ * a stored row carries a theme id and no table id. Two copies of that pairing
+ * is precisely how "Rustic Wood" ended up bundling the green casino felt while
+ * the felt code sent the same preset somewhere else entirely.
  */
-const THEME_PRESET_BUNDLES: Record<string, Partial<ThemeSelection>> = {
+const PRESET_TRIMMINGS: Record<string, Omit<Partial<ThemeSelection>, 'table_id'>> = {
   'default-dark': {
-    table_id: 'neon_city',
     button_id: 'classic-white',
     background_id: 'midnight',
     cards_id: 'classic_red',
   },
   'classic-brown': {
-    table_id: 'mahogany_red',
     button_id: 'gray-d-gear',
     background_id: 'midnight',
     cards_id: 'classic_red',
   },
   'neon-blue': {
-    table_id: 'ice_cavern',
     button_id: 'blue-crystal',
     background_id: 'galaxy',
     cards_id: 'classic_blue',
   },
   'rustic-wood': {
-    table_id: 'classic_green',
     button_id: 'gold-star',
     background_id: 'golden_dusk',
     cards_id: 'gold',
   },
   'casino-green': {
-    table_id: 'jade_city',
     button_id: 'gold-star',
     background_id: 'jade_neon',
     cards_id: 'carbon',
   },
 };
+
+const THEME_PRESET_BUNDLES: Record<string, Partial<ThemeSelection>> = Object.fromEntries(
+  Object.entries(PRESET_TRIMMINGS).map(([id, rest]) => [
+    id,
+    { table_id: THEME_PRESET_SKINS[id], ...rest },
+  ])
+);
 
 /**
  * Can this player use this asset?

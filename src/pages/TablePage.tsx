@@ -160,6 +160,7 @@ import TournamentBreakScreen from '../components/table/TournamentBreakScreen';
 import TournamentAnnouncementOverlay from '../components/table/TournamentAnnouncementOverlay';
 import KnockoutAnimation, { type KnockoutData } from '../components/tournament/KnockoutAnimation';
 import MysteryBountyChest, {
+  formatBountyTierLabel,
   type MysteryChestData,
 } from '../components/tournament/MysteryBountyChest';
 import { useAnimationQueue } from '../hooks/useAnimationQueue';
@@ -993,8 +994,82 @@ export default function TablePage({
   const knockoutQueue = useAnimationQueue<KnockoutData>();
   const chestQueue = useAnimationQueue<MysteryChestData>();
   const knockout = knockoutQueue.current;
-  const mysteryChest = chestQueue.current;
   const [chestRemoteOpened, setChestRemoteOpened] = useState(false);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  TWO-PHASE MYSTERY BOUNTY REVEAL (Dan sections 19, 21-26, 51-57)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The chest now arrives BEFORE its contents. `mystery_bounty_pending`
+   * carries the award, the queue position and who may tap it — and no amount,
+   * because the surest way to keep a number out of a broadcast is for the
+   * server that builds the broadcast never to have seen it.
+   *
+   * The amount reaches this page by two independent routes, and both must
+   * land in the same place:
+   *
+   *   THE TAP. The designated revealer's client calls
+   *   `fn_mystery_bounty_reveal(awardId, myUserId, false)` itself and gets the
+   *   number straight back. That is the drama — they see it before the table
+   *   does. `revealMysteryBounty` below.
+   *
+   *   THE BROADCAST. The engine calls the same function at the deadline with
+   *   `p_auto = true`, pays, and broadcasts `mystery_bounty_revealed` to the
+   *   whole table. Idempotent and identical, so the private reveal and the
+   *   public one can never disagree.
+   *
+   * This map is where either of them lands. It is keyed by award id, so a
+   * duplicate broadcast (section 80/33) writes the same values over the same
+   * key rather than queueing a second chest, and a reconnect that replays a
+   * reveal cannot double-anything.
+   */
+  const [chestReveals, setChestReveals] = useState<
+    Record<
+      string,
+      {
+        amount: number;
+        tier?: string;
+        tierLabel?: string;
+        isJackpot?: boolean;
+        recipients?: { userId: string; name: string; amount: number }[];
+      }
+    >
+  >({});
+  /**
+   * Award ids this page has already put on screen.
+   *
+   * A ref rather than state because the decision is made synchronously inside
+   * a broadcast handler: pending and revealed for the same award can land in
+   * the same tick, and reading a state value there would see the pre-pending
+   * snapshot and enqueue the chest twice.
+   */
+  const chestSeenRef = useRef<Set<string>>(new Set());
+
+  /**
+   * The chest on screen, with whatever is known about it right now.
+   *
+   * Merged at render rather than mutated into the queue: `useAnimationQueue`
+   * hands out the object it was given, and rewriting queue entries in place
+   * would make "what is showing" depend on when the reveal happened to arrive.
+   * MysteryBountyChest is keyed on the award id precisely so this merge can
+   * produce a new object every render without restarting its animation.
+   */
+  const queuedChest = chestQueue.current;
+  const mysteryChest = useMemo<MysteryChestData | null>(() => {
+    if (!queuedChest) return null;
+    const revealed = queuedChest.awardId ? chestReveals[queuedChest.awardId] : undefined;
+    if (!revealed) return queuedChest;
+    return {
+      ...queuedChest,
+      amount: revealed.amount,
+      amountPending: false,
+      tier: revealed.tier ?? queuedChest.tier,
+      tierLabel: revealed.tierLabel ?? queuedChest.tierLabel,
+      isJackpot: revealed.isJackpot ?? queuedChest.isJackpot,
+      recipients: revealed.recipients ?? queuedChest.recipients,
+    };
+  }, [queuedChest, chestReveals]);
   // The Spin multiplier draw. Server-decided, shown once per tournament.
   const [spinDraw, setSpinDraw] = useState<SpinWheelData | null>(null);
   /**
@@ -1057,6 +1132,161 @@ export default function TablePage({
       // It must never stop the winner from seeing their prize.
       reportError(err, 'TablePage.broadcastChestOpen');
     }
+  }, [tableId]);
+
+  /**
+   * THE TAP (Dan sections 19, 51-54).
+   *
+   * The designated revealer's own client opens the chest — from the browser,
+   * against `fn_mystery_bounty_reveal`, which returns the amount immediately.
+   * That is the entire reason there is a tap: the player who made the knockout
+   * sees the number before the table does.
+   *
+   * WHAT IT CANNOT DO:
+   *   - it cannot re-roll. The chest was drawn and its value fixed at reserve
+   *     time, inside `fn_mystery_bounty_reserve`. This call only uncovers it;
+   *     calling it twice returns the identical payload.
+   *   - it cannot pay. Money moves in `fn_mystery_bounty_pay`, which only the
+   *     engine calls, once, after its own idempotent reveal.
+   *   - it cannot fire twice. MysteryBountyChest requests exactly one reveal
+   *     per award, from the tap and the auto-open alike, and the award id key
+   *     below means a second answer overwrites rather than accumulates.
+   *
+   * If it fails, nothing is lost: the engine reveals the same award on its own
+   * deadline and broadcasts the result to everyone including this client. The
+   * tapper simply loses their head start.
+   */
+  const revealMysteryBounty = useCallback(
+    async (awardId: string) => {
+      if (!awardId || !userId || userId === 'guest') return;
+      try {
+        const { data, error } = await supabase.rpc('fn_mystery_bounty_reveal', {
+          p_award_id: awardId,
+          p_actor_user_id: userId,
+          p_auto: false,
+        });
+        const res = (data ?? {}) as {
+          ok?: boolean;
+          amount_cents?: number;
+          tier?: string;
+          is_jackpot?: boolean;
+          recipients?: Array<{ user_id: string; amount_cents: number }>;
+        };
+        if (error || !res.ok || typeof res.amount_cents !== 'number') return;
+        setChestReveals((prev) => ({
+          ...prev,
+          [awardId]: {
+            amount: Math.round(res.amount_cents! / 100),
+            tier: res.tier,
+            tierLabel: formatBountyTierLabel(res.tier),
+            isJackpot: !!res.is_jackpot,
+            // The private reveal knows the ids and the shares but not the
+            // names; the table broadcast that follows carries both and
+            // overwrites this entry. Until then the split is shown by share.
+            recipients:
+              (res.recipients ?? []).length > 1
+                ? res.recipients!.map((r) => ({
+                    userId: r.user_id,
+                    name: r.user_id === userId ? 'You' : 'Player',
+                    amount: Math.round(r.amount_cents / 100),
+                  }))
+                : undefined,
+          },
+        }));
+      } catch (err) {
+        reportError(err, 'TablePage.revealMysteryBounty');
+      }
+    },
+    [userId]
+  );
+
+  /**
+   * RECONNECT / LATE ARRIVAL (Dan section 57).
+   *
+   * "Reconnect during pending, waiting or reveal restores the CURRENT state
+   * from the server — never re-rolls, never re-pays, never restarts the hand."
+   *
+   * Realtime broadcasts are fire-and-forget: a player who refreshed, tabbed
+   * away, dropped signal in a lift, or simply opened the table two seconds
+   * after the knockout has already missed `mystery_bounty_pending` and it will
+   * never be sent again. Their table is stopped — the engine's reveal gate is
+   * closed until the queue empties — and they are looking at a felt where
+   * nothing happens for seventeen seconds with no explanation.
+   *
+   * `fn_mystery_bounty_table_state` is the one read that answers it, and it
+   * withholds `amount_cents` for as long as the award is still `reserved`, so
+   * restoring the state cannot leak what is in an unopened chest (section 19).
+   * The three bounty tables have RLS on with NO select policy for exactly that
+   * reason; this RPC is the only way in and it is SECURITY DEFINER.
+   *
+   * Nothing here can pay or re-roll: it is a SELECT wrapped in a function.
+   */
+  const restoreMysteryBountyState = useCallback(() => {
+    if (!tableId) return () => {};
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data, error } = await supabase.rpc('fn_mystery_bounty_table_state', {
+          p_table_id: tableId,
+        });
+        if (cancelled || error) return;
+        const open = ((data as { open?: any[] } | null)?.open ?? []) as any[];
+        for (const a of open) {
+          const awardKey = String(a?.award_id || '');
+          if (!awardKey || chestSeenRef.current.has(awardKey)) continue;
+          chestSeenRef.current.add(awardKey);
+          const cents = typeof a?.amount_cents === 'number' ? a.amount_cents : null;
+          const recipients: Array<{ userId: string; name: string; amount: number }> = Array.isArray(
+            a?.recipients
+          )
+            ? a.recipients.map((r: any) => ({
+                userId: String(r?.user_id ?? ''),
+                name: String(r?.username ?? 'Player'),
+                amount: typeof r?.amount_cents === 'number' ? Math.round(r.amount_cents / 100) : 0,
+              }))
+            : [];
+          if (cents !== null) {
+            // Already revealed before this client arrived. Seed the amount so
+            // the chest opens onto the real figure rather than asking for it
+            // again — which would be harmless (the RPC is idempotent) but is
+            // a round trip for something we have already been told.
+            setChestReveals((prev) => ({
+              ...prev,
+              [awardKey]: {
+                amount: Math.round(cents / 100),
+                tier: a?.tier ?? undefined,
+                tierLabel: formatBountyTierLabel(a?.tier),
+                isJackpot: !!a?.is_jackpot,
+                recipients: recipients.length > 1 ? recipients : undefined,
+              },
+            }));
+          }
+          chestQueue.enqueue({
+            awardId: awardKey,
+            knockerUserId: String(a?.designated_revealer || ''),
+            knockerName: String(a?.designated_revealer_name || 'Player'),
+            eliminatedName: String(a?.eliminated?.username || 'Player'),
+            amount: cents !== null ? Math.round(cents / 100) : 0,
+            amountPending: cents === null,
+            tier: a?.tier ?? undefined,
+            tierLabel: formatBountyTierLabel(a?.tier),
+            isJackpot: !!a?.is_jackpot,
+            queueIndex: 1,
+            queueTotal: open.length,
+            recipients: recipients.length > 1 ? recipients : undefined,
+          });
+        }
+      } catch (err) {
+        // A restore that fails leaves the table exactly as it is today: the
+        // engine still reveals, pays and broadcasts on its own deadline, and
+        // this client picks the sequence up from there.
+        reportError(err, 'TablePage.restoreMysteryBountyState');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableId]);
 
   // Listen for that tap. Every client subscribes, including the winner's —
@@ -1224,6 +1454,16 @@ export default function TablePage({
       isBountyTournament: false,
     };
   });
+
+  /**
+   * Run the section-57 restore once this table is known to be a tournament
+   * table. Gated on `tournamentId` rather than fired at mount so a cash table
+   * — which can never hold a mystery bounty award — makes no call at all.
+   */
+  useEffect(() => {
+    if (!tableState.tournamentId) return;
+    return restoreMysteryBountyState();
+  }, [tableState.tournamentId, restoreMysteryBountyState]);
 
   // REST fetch for initial seats while WS connects (3-5s speedup)
   useEffect(() => {
@@ -2096,6 +2336,100 @@ export default function TablePage({
   const goToLobbyWithResultRef = useRef<
     ((position: number, prize: number, delayMs: number) => void) | null
   >(null);
+
+  /**
+   * BUST HOLD — Dan 2026-08-25 (binding)
+   *
+   * "When I just busted the tournament, it did not pause and ask me if I wanted
+   *  to rebuy, it just knocked me out. As soon as a player loses all their
+   *  chips it should HOLD ACTION for 5 seconds unless the user declines the
+   *  rebuy, then it starts the next hand right away."
+   *
+   * WHY IT KNOCKED HIM OUT. Two things watched the hero's stack reach zero and
+   * they raced, and the wrong one always won:
+   *
+   *   1. the tournament bust watcher, which asks `canRebuy` and opens the rebuy
+   *      modal — but only fires `if (!tableState.isHandInProgress)`, i.e. AFTER
+   *      the hand that busted him had fully settled; and
+   *   2. the `player_eliminated` realtime handler, which fires the INSTANT the
+   *      engine eliminates him — mid-settlement — and unconditionally called
+   *      `goToLobbyWithResult(position, prize, 2500)`.
+   *
+   * (2) always arrives first, `goToLobbyWithResult` sets `exitStarted = true`
+   * and is idempotent forever after, so by the time (1) was allowed to look,
+   * the exit was already scheduled and the rebuy prompt — even when the player
+   * was fully entitled to rebuy — was pointless. That is the bug, exactly as
+   * described: no pause, no question, straight out.
+   *
+   * THE HOLD. `bustHoldRef` is claimed by whichever watcher notices the bust
+   * first and it makes the elimination path WAIT rather than navigate. It
+   * releases in one of three ways and can never leak:
+   *
+   *   • the rebuy prompt opens   -> the modal is the pause; the hold is handed
+   *                                 to it, and its accept/decline paths decide
+   *                                 what happens next (decline already exits).
+   *   • rebuy is not available   -> released immediately, normal exit resumes.
+   *   • BUST_HOLD_MS elapses     -> released by the deadline timer below, so a
+   *                                 hung `canRebuy` call, a dead network or an
+   *                                 unmount cannot strand a player at a table
+   *                                 they have no chips at.
+   *
+   * The deferred exit is stored, not dropped: whatever position/prize the
+   * elimination broadcast carried is replayed when the hold releases, so the
+   * result card is still correct.
+   */
+  const BUST_HOLD_MS = 5000;
+  const bustHoldRef = useRef<{
+    active: boolean;
+    /** The exit that was deferred, replayed verbatim when the hold releases. */
+    pendingExit: { position: number; prize: number; delayMs: number } | null;
+    deadline: ReturnType<typeof setTimeout> | null;
+  }>({ active: false, pendingExit: null, deadline: null });
+
+  /** Release the hold and run any exit that was deferred while it was held. */
+  const releaseBustHold = useCallback(() => {
+    const hold = bustHoldRef.current;
+    if (hold.deadline) {
+      clearTimeout(hold.deadline);
+      hold.deadline = null;
+    }
+    if (!hold.active) return;
+    hold.active = false;
+    const pending = hold.pendingExit;
+    hold.pendingExit = null;
+    if (pending) {
+      goToLobbyWithResultRef.current?.(pending.position, pending.prize, pending.delayMs);
+    }
+  }, []);
+
+  /**
+   * Claim the hold. Returns false when one is already running, so two watchers
+   * noticing the same bust cannot start two deadlines.
+   */
+  const beginBustHold = useCallback(() => {
+    const hold = bustHoldRef.current;
+    if (hold.active) return false;
+    hold.active = true;
+    hold.pendingExit = null;
+    hold.deadline = setTimeout(() => {
+      // Fail OPEN: the grace period is over, whatever happened to the check.
+      bustHoldRef.current.deadline = null;
+      releaseBustHold();
+    }, BUST_HOLD_MS);
+    return true;
+  }, [releaseBustHold]);
+
+  // A player who navigates away inside the grace window must not leave a timer
+  // behind that fires against a torn-down page.
+  useEffect(() => {
+    return () => {
+      const hold = bustHoldRef.current;
+      if (hold.deadline) clearTimeout(hold.deadline);
+      hold.deadline = null;
+      hold.active = false;
+      hold.pendingExit = null;
+    };
+  }, []);
   const vpipCountRef = useRef(0);
   // Dan 2026-08-15 (Session Stats fix): per-HAND voluntary-action flags.
   // vpipCountRef above is cumulative and cannot answer "did hero VPIP THIS
@@ -3080,7 +3414,10 @@ export default function TablePage({
   // auto-show that answers the engine's muck ruling when the hero has
   // AUTO-MUCK LOSING HANDS switched off. A re-delivered showdown event must
   // not fire a second POST /showhand.
-  const autoShowFiredHandRef = useRef<number>(0);
+  // AUDIT FIX 2026-08-25: initialised to -1, NOT 0 — a client that joins
+  // mid-hand has heroHandRef 0 until its first HAND_STARTED, and a 0 here
+  // made the guard read "already fired" and suppress that hand's auto-show.
+  const autoShowFiredHandRef = useRef<number>(-1);
   const muckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -3986,10 +4323,23 @@ export default function TablePage({
       bustPromptFiredRef.current = false;
       return;
     }
-    if (tableState.isHandInProgress) return;
+    /* Dan 2026-08-25 (binding): `if (tableState.isHandInProgress) return;` used
+     * to sit here, and it is the second half of "it just knocked me out". It
+     * made this watcher wait for the busting hand to finish settling, while the
+     * `player_eliminated` broadcast fired mid-settlement and scheduled the exit
+     * — so the prompt was always asking a question that had already been
+     * answered. The prompt now fires the moment the stack reaches zero, and
+     * claims the bust hold so the elimination path waits for it instead. The
+     * cash-game watcher above KEEPS its in-hand guard: a cash player is not
+     * being removed from anything, so there is nothing to race and no reason to
+     * throw a modal over a hand that is still paying out. */
     if (bustPromptFiredRef.current) return;
     if (showRebuyModal) return;
     bustPromptFiredRef.current = true;
+
+    // Claim the grace period BEFORE any await — the elimination broadcast can
+    // land inside the very next tick.
+    beginBustHold();
 
     (async () => {
       try {
@@ -4000,12 +4350,24 @@ export default function TablePage({
             const quote = tournamentService.quoteFromTournament(tournament, 'rebuy');
             setRebuyData({ cost: quote.baseCost, fee: quote.fee, chips: quote.chips });
             setShowRebuyModal(true);
+            /* The modal IS the pause now, so the 5s deadline must not fire out
+             * from under a player who is reading a price. Cancel the timer but
+             * keep the hold (and any exit deferred into it) claimed: the
+             * modal's confirm / decline paths release it. */
+            const hold = bustHoldRef.current;
+            if (hold.deadline) {
+              clearTimeout(hold.deadline);
+              hold.deadline = null;
+            }
             return;
           }
         }
       } catch (err) {
         console.warn('[TablePage] Tournament rebuy check error:', err);
       }
+
+      // No rebuy on offer — nothing to hold for. Let the deferred exit run.
+      releaseBustHold();
 
       // If rebuy not available or not allowed, check if eliminated and exit cleanly
       try {
@@ -4030,10 +4392,11 @@ export default function TablePage({
     userId,
     tableState.heroSeat,
     tableState.players,
-    tableState.isHandInProgress,
     tableState.isTournament,
     tableState.tournamentId,
     showRebuyModal,
+    beginBustHold,
+    releaseBustHold,
   ]);
 
   const confirmBustRebuy = useCallback(
@@ -6076,14 +6439,26 @@ export default function TablePage({
                     });
                     goToLobbyWithResult(1, elimData.prize || 0, 7000);
                   } else {
-                    // Busted: a short beat so the elimination lands, then out.
-                    // The result card in the lobby says everything the old
-                    // toast said, in a place you can actually read it.
-                    goToLobbyWithResult(
-                      Number(elimData.position) || 0,
-                      Number(elimData.prize) || 0,
-                      2500
-                    );
+                    /* Busted: a short beat so the elimination lands, then out.
+                       The result card in the lobby says everything the old
+                       toast said, in a place you can actually read it.
+
+                       Dan 2026-08-25 (binding): this line is what "it just
+                       knocked me out" was. It raced the rebuy watcher and won
+                       every time, and `goToLobbyWithResult` is one-shot, so the
+                       rebuy prompt could never get in front of it. If a bust
+                       hold is running, the exit is DEFERRED into it and replayed
+                       verbatim when the hold releases (see bustHoldRef). */
+                    const exit = {
+                      position: Number(elimData.position) || 0,
+                      prize: Number(elimData.prize) || 0,
+                      delayMs: 2500,
+                    };
+                    if (bustHoldRef.current.active) {
+                      bustHoldRef.current.pendingExit = exit;
+                    } else {
+                      goToLobbyWithResult(exit.position, exit.prize, exit.delayMs);
+                    }
                   }
                 }
 
@@ -6174,6 +6549,51 @@ export default function TablePage({
                     `[TablePage] Rebuy: ${rebuyData.userId.slice(0, 8)} +${rebuyData.chips} chips`
                   );
                 }
+              } else if (data?.type === 'mystery_bounty_pending') {
+                // ── THE CHEST ARRIVES, THE AMOUNT DOES NOT (Dan section 19) ──
+                //
+                // A knockout has been scored and a chest reserved for it. The
+                // engine has already stopped this table (sections 21-26): no
+                // button move, no next hand, no blinds, no action timers until
+                // the queue empties. All this page has to do is put the chest
+                // on screen and let the designated revealer tap it.
+                //
+                // There is deliberately NO AMOUNT in this payload. The number
+                // arrives from `fn_mystery_bounty_reveal` — either because the
+                // revealer tapped, or because the engine's deadline fired.
+                const p = data.payload || {};
+                // Same table scoping as the reveal: this rides the tournament
+                // channel, so a knockout on table 3 must not open a chest here.
+                if (p.tableId && p.tableId !== tableId) return;
+                const awardKey = String(p.awardId || '');
+                if (!awardKey || chestSeenRef.current.has(awardKey)) return;
+                chestSeenRef.current.add(awardKey);
+                chestQueue.enqueue({
+                  awardId: awardKey,
+                  // SECTIONS 52/53: exactly one player may tap. Everyone else
+                  // at the table, and every spectator, watches. On a split the
+                  // server has already picked which claimant that is.
+                  knockerUserId: String(p.designatedRevealer || ''),
+                  knockerName: String(p.designatedRevealerName || 'Player'),
+                  eliminatedName: String(p.eliminatedName || 'Player'),
+                  amount: 0,
+                  amountPending: true,
+                  queueIndex: Number(p.queueIndex) || 1,
+                  queueTotal: Number(p.queueTotal) || 1,
+                });
+                setChestRemoteOpened(false);
+              } else if (data?.type === 'mystery_bounty_complete') {
+                // SECTION 63: reveal, animation done, UI clears, button moves,
+                // next hand. The queue at this table is empty, so nothing more
+                // is coming and the reveal cache can be dropped.
+                //
+                // The overlay is NOT force-closed here: the last chest's own
+                // dismissal timer owns that, and cutting it short would be the
+                // "rushed animation" Dan's standing rule forbids. This only
+                // stops the page holding award ids nobody will ask about again.
+                const c = data.payload || {};
+                if (c.tableId && c.tableId !== tableId) return;
+                setChestReveals({});
               } else if (
                 data?.type === 'bounty_collected' ||
                 data?.type === 'mystery_bounty_revealed'
@@ -6207,16 +6627,66 @@ export default function TablePage({
                   if (b.tableId && b.tableId !== tableId) {
                     return;
                   }
-                  chestQueue.enqueue({
-                    knockerUserId: b.knockerUserId || '',
-                    knockerName: b.knockerName || 'Player',
-                    eliminatedName: b.eliminatedName || 'Player',
-                    amount: Number(b.amount) || 0,
-                    tierLabel: b.tierLabel,
-                    isJackpot: !!b.isJackpot,
-                    avgBounty: Number(b.avgBounty) || undefined,
-                  });
-                  setChestRemoteOpened(false);
+                  // TWO-PHASE REVEAL. The amount now arrives in CENTS on
+                  // `amountCents`; `amount` is the pre-2026-08-25 field and is
+                  // kept as the fallback so an older engine build still shows a
+                  // figure rather than zero.
+                  const revealedAmount =
+                    typeof b.amountCents === 'number'
+                      ? Math.round(b.amountCents / 100)
+                      : Number(b.amount) || 0;
+                  const revealedRecipients: Array<{
+                    userId: string;
+                    name: string;
+                    amount: number;
+                  }> = Array.isArray(b.recipients)
+                    ? b.recipients.map((r: any) => ({
+                        userId: String(r.userId ?? r.user_id ?? ''),
+                        name: String(r.name ?? r.username ?? 'Player'),
+                        amount:
+                          typeof r.amountCents === 'number'
+                            ? Math.round(r.amountCents / 100)
+                            : Number(r.amount) || 0,
+                      }))
+                    : [];
+                  if (b.awardId) {
+                    // Keyed by award: a duplicate broadcast (section 80/33)
+                    // overwrites the same entry instead of queueing a second
+                    // chest or crediting anything twice.
+                    setChestReveals((prev) => ({
+                      ...prev,
+                      [String(b.awardId)]: {
+                        amount: revealedAmount,
+                        tier: b.tier,
+                        tierLabel: b.tierLabel || formatBountyTierLabel(b.tier),
+                        isJackpot: !!b.isJackpot,
+                        recipients: revealedRecipients.length > 1 ? revealedRecipients : undefined,
+                      },
+                    }));
+                  }
+                  // Enqueue only if the pending broadcast never reached us —
+                  // a client that joined between the reserve and the reveal,
+                  // or an engine build old enough not to send one. The normal
+                  // path already has this chest on screen.
+                  const awardKey = b.awardId ? String(b.awardId) : '';
+                  if (!awardKey || !chestSeenRef.current.has(awardKey)) {
+                    if (awardKey) chestSeenRef.current.add(awardKey);
+                    chestQueue.enqueue({
+                      awardId: awardKey || undefined,
+                      knockerUserId: b.knockerUserId || '',
+                      knockerName: b.knockerName || 'Player',
+                      eliminatedName: b.eliminatedName || 'Player',
+                      amount: revealedAmount,
+                      tier: b.tier,
+                      tierLabel: b.tierLabel || formatBountyTierLabel(b.tier),
+                      isJackpot: !!b.isJackpot,
+                      avgBounty: Number(b.avgBounty) || undefined,
+                      queueIndex: Number(b.queueIndex) || undefined,
+                      queueTotal: Number(b.queueTotal) || undefined,
+                      recipients: revealedRecipients.length > 1 ? revealedRecipients : undefined,
+                    });
+                    setChestRemoteOpened(false);
+                  }
                 } else {
                   knockoutQueue.enqueue({
                     knockerName: b.knockerName || 'Player',
@@ -6268,7 +6738,14 @@ export default function TablePage({
                     : 0;
                   if (durSec > 0) setLevelClock({ startedAtMs: Date.now(), durationSec: durSec });
                 }
-                setAnnouncement({ type: 'level_up', data: levelData });
+                /* Dan 2026-08-25 (binding): the banner used to receive
+                 * `levelData` raw, and `levelData.level` is the engine's
+                 * 0-BASED structure index — the same value we add 1 to on the
+                 * line above for the masthead. So the masthead said LEVEL 2
+                 * while the banner announcing that very change said LEVEL 1.
+                 * Hand the banner the human level; it must not know about the
+                 * engine's indexing. */
+                setAnnouncement({ type: 'level_up', data: { ...levelData, level: lvlIdx + 1 } });
                 // COMPETITOR-PARITY 2026-08-19: the level-up banner animated
                 // in silence — give it its fanfare.
                 if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playLevelUp();
@@ -8548,6 +9025,12 @@ export default function TablePage({
           // SHOWDOWN SYSTEM 2026-08-25 cleanup (spec section 39): no showdown
           // artifact may leak into the next hand.
           setMuckedLabelSeats(Array(9).fill(false));
+          // SHOWDOWN AUDIT 2026-08-25 (spec 21 backstop): a client that
+          // joined or reconnected AFTER pot_win never schedules the release
+          // timer, so without this the winner's stack would sit reduced until
+          // the next HAND_STARTED. The hold must never outlive the hold
+          // window itself.
+          setStackHoldReleased(true);
         }, holdMs);
         break;
       }
@@ -8662,9 +9145,13 @@ export default function TablePage({
           [];
         // SHOWDOWN SYSTEM 2026-08-25 (spec section 15): which of each
         // winner's own hole cards belong to the winning five.
+        // AUDIT FIX 2026-08-25: keep EMPTY arrays too. A winner who plays the
+        // board has hole_card_indices [] — dropping it made SeatSlot fall
+        // back to "highlight the whole hand", lighting two cards that are not
+        // part of the win. [] and payload-absent mean different things.
         const winHoleCardIndices: Record<string, number[]> = {};
         for (const w of winnersArray) {
-          if (Array.isArray(w.hole_card_indices) && w.hole_card_indices.length > 0) {
+          if (Array.isArray(w.hole_card_indices)) {
             winHoleCardIndices[w.user_id] = w.hole_card_indices;
           }
         }
@@ -11193,6 +11680,11 @@ export default function TablePage({
         viewerUserId={userId}
         remoteOpened={chestRemoteOpened}
         onBroadcastOpen={broadcastChestOpen}
+        /* THE TAP (section 19). Fired once per chest, by the designated
+           revealer's client only, from the tap and the auto-open alike. */
+        onRequestReveal={
+          mysteryChest?.awardId ? () => void revealMysteryBounty(mysteryChest.awardId!) : undefined
+        }
         queuedBehind={chestQueue.pending}
         onDone={() => {
           chestQueue.complete();
@@ -11551,20 +12043,33 @@ export default function TablePage({
           )
         }
         upperRight={
-          <MiniStatsCard
-            currentStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
-            totalBuyIn={totalBuyInRef.current}
-            handsPlayed={handsPlayedRef.current}
-            vpipCount={vpipCountRef.current}
-            handsWon={handsWonRef.current}
-            isSeated={tableState.heroSeat > 0}
-            isTournament={tableState.isTournament}
-            onTap={() =>
-              tableState.isTournament && tableState.tournamentId
-                ? setShowTournamentInfo(true)
-                : setShowSessionStats(true)
-            }
-          />
+          /* Dan 2026-08-25: "tournaments are still missing the stats bar in the
+             right corner." Two separate faults produced one empty corner:
+             MiniStatsCard bailed out to a bare STATS button for tournaments
+             (fixed in that component), and TournamentHUD — the level / blinds /
+             ante / countdown bar — was rendered as a loose inline-flex div at
+             the very END of this page's tree, outside the fixed HUD layer, so
+             it had no corner to be in and nothing anchored it on screen. Both
+             now live here, stacked, in the corner Dan is pointing at. */
+          <div className="hud-ur-column">
+            {tableState.isTournament && tableState.tournamentId && (
+              <TournamentHUD tournamentId={tableState.tournamentId} />
+            )}
+            <MiniStatsCard
+              currentStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
+              totalBuyIn={totalBuyInRef.current}
+              handsPlayed={handsPlayedRef.current}
+              vpipCount={vpipCountRef.current}
+              handsWon={handsWonRef.current}
+              isSeated={tableState.heroSeat > 0}
+              isTournament={tableState.isTournament}
+              onTap={() =>
+                tableState.isTournament && tableState.tournamentId
+                  ? setShowTournamentInfo(true)
+                  : setShowSessionStats(true)
+              }
+            />
+          </div>
         }
         bottomLeft={
           <div className="hud-ul-column hud-ul-column--stack">
@@ -12370,7 +12875,15 @@ export default function TablePage({
                   /* SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the engine
                      ruled this hand muckable — cards stay private, seat says
                      MUCKED. */
-                  isMuckedShowdown={muckedLabelSeats[idx] || false}
+                  /* AUDIT FIX 2026-08-25: union of the showdown event's mask
+                     and the snapshot's is_mucked (covers a reconnect that
+                     missed the event), suppressed the moment the hand is
+                     actually revealed — a voluntary or autoMuck-off show must
+                     not leave a MUCKED label under face-up cards. */
+                  isMuckedShowdown={
+                    (muckedLabelSeats[idx] || player?.isMucked === true) &&
+                    !(player?.showCards && (player?.holeCards?.length ?? 0) > 0)
+                  }
                   /* SHOWDOWN SYSTEM 2026-08-25 (spec section 3): stagger the
                      flip by reveal order — aggressor first, then clockwise. */
                   showdownRevealDelayMs={
@@ -12892,6 +13405,11 @@ export default function TablePage({
                            keys arrive here. Before 2026-08-20 they set a
                            `showRaiseSlider` flag that nothing rendered. */
                         raiseIntent={raiseIntent}
+                        /* Dan 2026-08-25 (binding): amounts are ACTUAL TOTALS
+                           unless this player turned BB on. The panel used to
+                           print BB unconditionally while every seat next to it
+                           printed chips. Same setting the seats and pot read. */
+                        showStackInBB={v8Settings.show_stack_in_bb}
                         isMyTurn={true}
                         isPreflop={tableState.boardStage === 'preflop'}
                         /* Dan 2026-08-19 item 4b: PLO must always offer
@@ -13785,6 +14303,12 @@ export default function TablePage({
             await tournamentService.processRebuy(tableState.tournamentId, userId);
             toast?.success('Rebuy successful - chips added to your stack');
             setShowRebuyModal(false);
+            /* Dan 2026-08-25: the player REBOUGHT, so any exit the elimination
+               broadcast deferred into the bust hold must be thrown away rather
+               than replayed — replaying it would navigate a player with a fresh
+               stack out of the tournament they just paid to stay in. */
+            bustHoldRef.current.pendingExit = null;
+            releaseBustHold();
           } catch (err: any) {
             toast?.error(err.message || 'Rebuy failed');
           } finally {
@@ -13793,6 +14317,12 @@ export default function TablePage({
         }}
         onCloseRebuyModal={() => {
           setShowRebuyModal(false);
+          /* Declined: "unless the user declines the rebuy, then it starts the
+             next hand right away." Release immediately — no waiting out the
+             rest of the 5 seconds. This runs BEFORE the manual exit below so a
+             deferred elimination (which carries the real finishing position and
+             prize) wins over the 0/0 fallback. */
+          releaseBustHold();
           if (tableId && userId) {
             GameServerAPI.notifyServerRejectRebuy(tableId).catch(console.error);
             if (
@@ -13833,16 +14363,16 @@ export default function TablePage({
           break, there should be a countdown clock."
 
           TournamentHUD is exactly that - level, blinds, ante, a live countdown
-          to the next level, players remaining and average stack, sized to sit
-          on the felt - and it was built, documented and rendered NOWHERE. Same
-          shape of miss as lazyWithRetry: a finished component wired to
-          nothing, so the feature looked absent when it was only unmounted.
-          The break countdown (TournamentBreakScreen) already ticks; this is
-          the other half, the one you watch while you are still playing. */}
-      {tableState.isTournament && tableState.tournamentId && (
-        <TournamentHUD tournamentId={tableState.tournamentId} />
-      )}
+          to the next level, players remaining and average stack.
 
+          2026-08-25: it used to be rendered HERE, as a bare `inline-flex` div
+          with no positioning, at the end of a page whose layout is a fixed
+          full-viewport stack. Mounted, yes - but with nothing to anchor it, so
+          it never appeared in any corner, which is Dan's "tournaments are still
+          missing the stats bar in the right corner". It has moved into the
+          TableHUD upper-right slot above (search `hud-ur-column`), which is the
+          fixed overlay layer the cash-game stats card already used. Do not
+          render it a second time here. */}
       {/* Tournament lobby/stats, opened from the upper-right button while
           seated in an MTT, Spin or Heads-Up (Dan 2026-08-23). Mounted last so
           it layers above the felt, and only while open so it costs nothing on

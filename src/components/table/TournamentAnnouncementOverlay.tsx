@@ -77,7 +77,22 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
     },
     level_up: {
       icon: '⬆',
-      title: `LEVEL ${data?.level || 1}`,
+      /**
+       * Dan 2026-08-25 (binding): "blind levels on the screen are never
+       * increasing... still says LEVEL 1 even though it's clearly LEVEL 2."
+       *
+       * `data.level` is now the HUMAN level (1-based). It used to be handed
+       * straight through from the engine broadcast, where it is the 0-BASED
+       * structure index, so this banner was permanently one behind the felt
+       * masthead beside it — announcing "LEVEL 1" at the exact moment the
+       * blinds became level 2's. The +1 is applied once, at the emit site in
+       * TablePage (`level_up` handler), so there is a single place that knows
+       * the engine's indexing. Do not add another +1 here.
+       *
+       * `??` not `||`: a genuine 0 must not be laundered into 1, it must look
+       * wrong so the indexing bug cannot hide again.
+       */
+      title: `LEVEL ${data?.level ?? '-'}`,
       subtitle: `Blinds: ${data?.smallBlind ?? '-'}/${data?.bigBlind ?? '-'}${data?.ante ? ` Ante: ${data.ante}` : ''}`,
       color: '#3b82f6',
     },

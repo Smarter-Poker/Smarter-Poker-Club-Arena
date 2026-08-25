@@ -34,8 +34,12 @@ describe('PlayerStatsPage does not run maintenance', () => {
 
   it('calls no *_refresh_* or *_reconcile_* maintenance RPC at all', () => {
     // Catches the whole family, not just the one that bit us.
+    // `roll` was added 2026-08-25 with ca_roll_hand_stats / _forward. The
+    // rollup builder is the same shape of hazard as the index refresh this file
+    // was written for - a bulk job over hand_history, carrying its own 10-minute
+    // statement_timeout - and the existing word list would not have caught it.
     const maintenanceRpc =
-      /rpc\(\s*['"][a-z_]*(refresh|reconcile|rebuild|backfill|prune)[a-z_]*['"]/i;
+      /rpc\(\s*['"][a-z_]*(refresh|reconcile|rebuild|backfill|prune|roll)[a-z_]*['"]/i;
     expect(PAGE).not.toMatch(maintenanceRpc);
   });
 });

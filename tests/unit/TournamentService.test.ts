@@ -191,14 +191,22 @@ describe('TournamentService', () => {
       expect(BOUNTY_PRESETS.fixed.bountyType).toBe('fixed');
     });
 
-    it('mystery should have mysteryTiers array', () => {
-      expect(BOUNTY_PRESETS.mystery.mysteryTiers).toBeDefined();
-      expect(BOUNTY_PRESETS.mystery.mysteryTiers!.length).toBeGreaterThan(0);
+    // REPLACED 2026-08-25. These two used to assert that the mystery preset
+    // carried a client-side multiplier ladder whose probabilities summed to
+    // 100. That ladder is gone: it was never sent to the server, nothing ever
+    // read it, and the tier sizes are now derived server-side from the funded
+    // pool (server/src/config/mysteryBountySpec.ts). The preset's job is to
+    // name the format and its base bounty, and that is what is pinned here.
+    it('mystery should name the format and a whole-chip base bounty', () => {
+      expect(BOUNTY_PRESETS.mystery.bountyType).toBe('mystery');
+      expect(BOUNTY_PRESETS.mystery.baseBounty).toBeGreaterThan(0);
+      expect(Number.isInteger(BOUNTY_PRESETS.mystery.baseBounty)).toBe(true);
     });
 
-    it('mystery tier probabilities should sum to ≈100%', () => {
-      const total = BOUNTY_PRESETS.mystery.mysteryTiers!.reduce((s, t) => s + t.probability, 0);
-      expect(total).toBe(100);
+    it('no preset carries a client-side tier ladder', () => {
+      for (const preset of Object.values(BOUNTY_PRESETS)) {
+        expect(preset).not.toHaveProperty('mysteryTiers');
+      }
     });
   });
 

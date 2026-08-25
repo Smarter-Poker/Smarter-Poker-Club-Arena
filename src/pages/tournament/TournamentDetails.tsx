@@ -6,7 +6,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { tournamentService } from '../../services/TournamentService';
-import { WalletService } from '../../services/WalletService';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
@@ -26,7 +25,7 @@ import { FinalTableOverlay } from '../../components/tournament/FinalTableOverlay
 import RegistrationApprovalsPanel from '../../components/tournament/RegistrationApprovalsPanel';
 import { reportError } from '../../utils/errorReporter';
 import { spinMultiplierLabel } from '../../utils/spinReveal';
-import { formatBuyIn, money, totalBuyIn } from '../../utils/buyIn';
+import { formatBuyIn, money } from '../../utils/buyIn';
 import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
 
 type TabId =
@@ -92,10 +91,15 @@ export default function TournamentDetails({
   const autoOpenedTableRef = useRef(false);
   const [tables, setTables] = useState<TournamentTable[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [showSignUpModal, setShowSignUpModal] = useState(false);
+  /* `showSignUpModal` deleted 2026-08-25 — this page no longer owns a buy-in
+     modal. See handleRegister. */
   const [countdown, setCountdown] = useState({ hours: 0, minutes: 0, seconds: 0 });
 
-  const [walletBalance, setWalletBalance] = useState<number>(0);
+  /* `walletBalance` deleted 2026-08-25. It existed only to fill the Your
+     Balance row and the insufficient-funds gate on this page's own Sign Up
+     modal, and that modal is gone (see handleRegister). SignUpHost reads the
+     balance itself, when the dialog opens, so the figure a player is shown is
+     never one this page happened to fetch minutes earlier. */
   const [lateRegCountdown, setLateRegCountdown] = useState<string>('');
   // SWEEP #6: 1s tick to drive the live level countdown in the quick-stats grid.
   const [clockTick, setClockTick] = useState(0);
@@ -118,26 +122,12 @@ export default function TournamentDetails({
     if (tournamentId) {
       loadTournament(() => isMounted);
     }
-    if (user?.id) {
-      loadWalletBalance();
-    }
     return () => {
       isMounted = false;
       if (timerRef.current) clearInterval(timerRef.current);
       if (lateRegTimerRef.current) clearInterval(lateRegTimerRef.current);
     };
   }, [tournamentId, user?.id]);
-
-  const loadWalletBalance = async () => {
-    if (!user?.id) return;
-    try {
-      const balance = await WalletService.getPlayerBalance(user.id);
-      setWalletBalance(balance);
-    } catch (e) {
-      reportError(e, 'TournamentDetails.loadWalletBalance');
-      /* ignore */
-    }
-  };
 
   // ── Late-reg level-based status ──
   useEffect(() => {
@@ -476,18 +466,11 @@ export default function TournamentDetails({
     };
   }, [tournamentId]);
 
-  // ── Refresh wallet balance when BALANCE_UPDATED fires ──
-  useEffect(() => {
-    if (!user?.id) return;
-    const unsub = masterBus.subscribeDebounced(
-      'BALANCE_UPDATED',
-      () => {
-        loadWalletBalance();
-      },
-      500
-    );
-    return () => unsub();
-  }, [user?.id]);
+  /* A BALANCE_UPDATED subscription used to live here. It refreshed a
+     `walletBalance` this page no longer holds - see the note at its old
+     declaration. SignUpHost fetches the balance when the buy-in dialog opens,
+     so there is nothing on this page left to keep fresh, and an empty effect
+     that subscribes to nothing is worse than no effect. */
 
   // ── Refresh tournament data when tournament is updated ──
   useMasterBusSubscription(
@@ -671,15 +654,32 @@ export default function TournamentDetails({
     timerRef.current = setInterval(updateCountdown, 1000);
   };
 
-  const handleRegister = () => {
+  /**
+   * Dan 2026-08-25 (binding): "you don't need a secondary confirmation for buy
+   * ins."
+   *
+   * This page used to open its OWN Sign Up card (local `showSignUpModal`
+   * state), and then, on Confirm, call `registerMtt` — which opened a SECOND,
+   * generic "Confirm Buy In" dialog inside the hook. Two dialogs, one buy-in.
+   *
+   * The card itself was the good one, so it moved into
+   * `components/tournament/signUpDialog` and the hook now shows it. This page
+   * therefore just registers: the hook asks, once, with the same card the
+   * player saw before. `isLate` only changes its heading.
+   */
+  const handleRegister = (isLate = false) => {
     if (!tournament) return;
-    setShowSignUpModal(false);
     registerMtt(
       {
         id: tournament.id,
         name: tournament.name,
         buy_in_amount: tournament.buy_in_amount,
         buy_in_fee: tournament.buy_in_fee,
+        bounty_amount: (tournament as any).is_bounty ? (tournament as any).bounty_amount || 0 : 0,
+        is_pko: !!(tournament as any).is_pko,
+        is_mystery_bounty: !!(tournament as any).is_mystery_bounty,
+        start_time: tournament.start_time,
+        is_late_registration: isLate,
       },
       () => {
         setIsRegistered(true);
@@ -687,6 +687,68 @@ export default function TournamentDetails({
       }
     );
   };
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  THE FEATURED TABLE — Dan 2026-08-25 (binding)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * "In MTT, when I click on a tournament that's RUNNING I should be able to
+   *  click a button and watch the tournament. It should take you directly to
+   *  the FEATURED TABLE of the tournament automatically."
+   *
+   * There was no way to watch a running tournament you were not in. Every
+   * surface either sent you to this page (`onViewTable` in ClubHomePage sends a
+   * running MTT to `/tournaments/:id`, not to a felt), disabled its own button
+   * unless you were registered (TournamentPage, TournamentLobbyCard), or showed
+   * an inert "In Progress" badge (the footer below). The ONLY clickable path to
+   * a running tournament's felt was the Tables tab — three taps in, and only if
+   * you knew to look there.
+   *
+   * WHAT MAKES A TABLE "FEATURED". The chip leader's table, which is what a
+   * televised final table is and what a player means by "the featured table" —
+   * the action that decides the tournament. Falling back, in order:
+   *
+   *   1. the table of the highest-stacked player who is still PLAYING;
+   *   2. the fullest ACTIVE table, when no entry carries a table id yet (an
+   *      early running tournament whose roster rows have not been stamped);
+   *   3. any table at all, so the button still works rather than disappearing;
+   *   4. null — and then no button is offered, rather than one that errors.
+   *
+   * Deliberately derived on the client from data this page already holds and
+   * already keeps live over realtime (`entries` and `tables` both have their
+   * own subscriptions), rather than a `featured_table_id` column that would
+   * need writing, backfilling and keeping correct as the chip lead changes
+   * hands every few hands.
+   */
+  const featuredTableId = useMemo(() => {
+    const activeTableIds = new Set(
+      tables.filter((t) => (t.status || '').toLowerCase() !== 'closed').map((t) => t.id)
+    );
+
+    const leader = entries
+      .filter((e) => e.status === 'playing' && e.table_id)
+      // A table id that is not in the live table list is a stale roster row.
+      .filter((e) => activeTableIds.size === 0 || activeTableIds.has(e.table_id as string))
+      .sort((a, b) => (b.chips || 0) - (a.chips || 0))[0];
+    if (leader?.table_id) return leader.table_id;
+
+    const fullest = [...tables]
+      .filter((t) => (t.status || '').toLowerCase() !== 'closed')
+      .sort((a, b) => (b.current_players || 0) - (a.current_players || 0))[0];
+    if (fullest?.id) return fullest.id;
+
+    return tables[0]?.id ?? null;
+  }, [entries, tables]);
+
+  /** Open a table as a spectator. Used by Watch, and by a row in Ranking. */
+  const watchTable = useCallback(
+    (tableId: string) => {
+      if (!tableId) return;
+      navigate(`/table/${tableId}`);
+    },
+    [navigate]
+  );
 
   const handleUnregister = async () => {
     if (isProcessing || !tournament) return;
@@ -1455,15 +1517,44 @@ export default function TournamentDetails({
                   sorted.map((entry, idx) => {
                     const isPlaying = entry.status === 'playing';
                     const rank = isPlaying ? idx + 1 : entry.position || '-';
+                    /* Dan 2026-08-25: "see any player and be redirected to that
+                       table directly." `table_id` has always been SELECTED for
+                       these rows and has never been used by them - it fed only
+                       the auto-open effect and the footer's own ENTER TABLE
+                       link. A player who is still in, at a live table, in a
+                       running tournament, is now a link to that table. */
+                    const watchable = isRunning && isPlaying && !!entry.table_id;
+                    const goWatch = () => {
+                      if (watchable) watchTable(entry.table_id as string);
+                    };
                     return (
                       <div
                         key={entry.id}
                         className={`entry-row ${entry.status === 'eliminated' ? 'eliminated-row' : ''} ${visibleEntries.has(entry.id) ? 'fadeInUp' : 'hidden'}`}
+                        role={watchable ? 'button' : undefined}
+                        tabIndex={watchable ? 0 : undefined}
+                        aria-label={
+                          watchable ? `Watch ${entry.username} at their table` : undefined
+                        }
+                        title={watchable ? 'Watch this player’s table' : undefined}
+                        onClick={watchable ? goWatch : undefined}
+                        onKeyDown={
+                          watchable
+                            ? (e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  goWatch();
+                                }
+                              }
+                            : undefined
+                        }
                         style={
                           visibleEntries.has(entry.id)
                             ? entry.status === 'eliminated'
                               ? { opacity: 0.5 }
-                              : undefined
+                              : watchable
+                                ? { cursor: 'pointer' }
+                                : undefined
                             : { opacity: 0, transform: 'translateY(8px)' }
                         }
                       >
@@ -1506,6 +1597,11 @@ export default function TournamentDetails({
               totalPlayers={
                 tournament.max_players || entries.length || tournament.current_players || 0
               }
+              /* Dan 2026-08-25: "you can go to Tables or Ranking and see any
+                 player and be redirected to that table directly." Only while
+                 the tournament is actually running - a finished event's
+                 table_ids point at closed tables. */
+              onWatchPlayer={tournament.status === 'RUNNING' ? watchTable : undefined}
             />
           </div>
         )}
@@ -1854,30 +1950,64 @@ export default function TournamentDetails({
                   </Link>
                 );
               }
+              /* Dan 2026-08-25: every branch below used to END the footer — a
+                 badge, a countdown, or nothing. So a running tournament you
+                 were not playing in offered no way onto its felt at all. WATCH
+                 rides alongside whatever else the branch says, because "I am
+                 waiting for a seat" and "I want to see the action" are not
+                 mutually exclusive, and a busted player still wants to watch
+                 the rest of it out. See featuredTableId. */
+              const watchBtn = featuredTableId ? (
+                <button
+                  className="btn btn-watch"
+                  onClick={() => watchTable(featuredTableId)}
+                  title="Watch the featured table"
+                >
+                  WATCH
+                </button>
+              ) : null;
+
               if (myEntry?.status === 'registered') {
                 return (
-                  <span
-                    className="tournament-status-badge running"
-                    style={{ color: '#6fdcff', borderColor: '#6fdcff' }}
-                  >
-                    WAITING FOR SEAT...
-                  </span>
+                  <>
+                    <span
+                      className="tournament-status-badge running"
+                      style={{ color: '#6fdcff', borderColor: '#6fdcff' }}
+                    >
+                      WAITING FOR SEAT...
+                    </span>
+                    {watchBtn}
+                  </>
                 );
               }
               if (myEntry?.status === 'eliminated') {
-                return <span className="tournament-status-badge cancelled">ELIMINATED</span>;
+                return (
+                  <>
+                    <span className="tournament-status-badge cancelled">ELIMINATED</span>
+                    {watchBtn}
+                  </>
+                );
               }
               if (!isRegistered && lateRegCountdown) {
                 return (
-                  <button
-                    className="btn btn-register late-reg"
-                    onClick={() => setShowSignUpModal(true)}
-                  >
-                    Late Register ({lateRegCountdown})
-                  </button>
+                  <>
+                    <button
+                      className="btn btn-register late-reg"
+                      onClick={() => handleRegister(true)}
+                      disabled={isRegisteringMtt}
+                    >
+                      Late Register ({lateRegCountdown})
+                    </button>
+                    {watchBtn}
+                  </>
                 );
               }
-              return <span className="tournament-status-badge running">In Progress</span>;
+              return (
+                <>
+                  <span className="tournament-status-badge running">In Progress</span>
+                  {watchBtn}
+                </>
+              );
             }
 
             if (tournament.status === 'COMPLETED') {
@@ -1900,92 +2030,23 @@ export default function TournamentDetails({
             }
 
             return (
-              <button className="btn btn-register" onClick={() => setShowSignUpModal(true)}>
-                Register
+              <button
+                className="btn btn-register"
+                onClick={() => handleRegister(false)}
+                disabled={isRegisteringMtt}
+              >
+                {isRegisteringMtt ? 'Processing...' : 'Register'}
               </button>
             );
           })()}
         </div>
 
-        {/* Sign Up Modal */}
-        {showSignUpModal && (
-          <div className="modal-overlay" onClick={() => setShowSignUpModal(false)}>
-            <div className="signup-modal" onClick={(e) => e.stopPropagation()}>
-              <button className="modal-close" onClick={() => setShowSignUpModal(false)}>
-                ✕
-              </button>
-              <h2>Sign Up</h2>
-              {/* One line, not three.
-                  This asked the player to read "Buy-in 18", "Rake 1.8" and
-                  "Total 19.8" and work out for themselves which number leaves
-                  their wallet — on the confirmation step, the one screen where
-                  the charge must be unambiguous. It is a single row now, in the
-                  same notation the rest of the app uses: "20 (18 + 2)". */}
-              <div className="signup-row total">
-                <span className="signup-label">Entry Fee:</span>
-                <span className="signup-value">
-                  {formatBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)}
-                </span>
-              </div>
-              {(tournament as any).is_bounty && (
-                <div className="signup-row">
-                  <span className="signup-label">Bounty:</span>
-                  <span className="signup-value" style={{ color: '#f87171' }}>
-                    {money((tournament as any).bounty_amount || 0)} Chips
-                    {(tournament as any).is_pko && ' (PKO)'}
-                    {(tournament as any).is_mystery_bounty && ' (Mystery)'}
-                  </span>
-                </div>
-              )}
-              <div className="signup-row">
-                <span className="signup-label">Start Time:</span>
-                <span className="signup-value">{formatDate(tournament.start_time)}</span>
-              </div>
-              <div
-                className="signup-row"
-                style={{
-                  borderTop: '1px solid rgba(255,255,255,0.1)',
-                  paddingTop: 8,
-                  marginTop: 4,
-                }}
-              >
-                <span className="signup-label">Your Balance:</span>
-                <span
-                  className="signup-value"
-                  style={{
-                    color:
-                      walletBalance >= totalBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)
-                        ? '#10b981'
-                        : '#ef4444',
-                  }}
-                >
-                  {money(walletBalance)} Chips
-                </span>
-              </div>
-              {walletBalance < totalBuyIn(tournament.buy_in_amount, tournament.buy_in_fee) && (
-                <p className="signup-note" style={{ color: '#ef4444' }}>
-                  Insufficient Balance. Please Add Chips Via Your Cashier.
-                </p>
-              )}
-              <p className="signup-note">Cannot Unregister Within 1 Minute Of The Start Time</p>
-              <div className="signup-actions">
-                <button className="btn btn-cancel" onClick={() => setShowSignUpModal(false)}>
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-confirm"
-                  onClick={handleRegister}
-                  disabled={
-                    isProcessing ||
-                    walletBalance < totalBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)
-                  }
-                >
-                  {isProcessing ? 'Processing...' : 'Confirm'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* The Sign Up card that used to live here is now
+            `components/tournament/signUpDialog`, shown by
+            useTournamentRegistration for EVERY register button in the app.
+            Dan 2026-08-25: "you don't need a secondary confirmation for buy
+            ins" — this local copy plus the hook's own prompt was the pair that
+            asked twice. Do not re-add a page-local buy-in modal. */}
       </div>
 
       {/* Final Table Overlay */}

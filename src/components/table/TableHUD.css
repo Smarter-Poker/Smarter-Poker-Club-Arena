@@ -103,6 +103,33 @@
   z-index: 99;
 }
 
+/* ── Upper-right stack (Dan 2026-08-25) ──
+   A tournament table puts TWO things in this corner: the level/blinds/countdown
+   bar and the player's own stats bar. They stack, right-aligned, and the
+   tournament bar is the wider of the two so the column is sized by it. */
+.hud-ur-column {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  /* TournamentHUD is a single unbreakable row of segments; scaling from the
+     top-right keeps it hugging the corner instead of pushing the felt. */
+  transform-origin: top right;
+}
+
+@media (max-width: 900px) {
+  .hud-ur-column {
+    transform: scale(0.88);
+  }
+}
+
+@media (max-width: 600px) {
+  .hud-ur-column {
+    transform: scale(0.74);
+    gap: 4px;
+  }
+}
+
 /* ── Responsive ── */
 @media (max-width: 480px) {
   .table-hud__upper {

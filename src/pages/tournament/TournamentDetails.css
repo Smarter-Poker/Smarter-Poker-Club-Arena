@@ -297,6 +297,13 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  /* Dan 2026-08-25: "there needs to be a space after every : ... change that
+     for all areas of this." `space-between` alone leaves NO gap the moment a
+     row is narrow enough for the label and value to meet — which `.info-row.half`
+     (50% width) does routinely — and the label/value spans are adjacent in the
+     JSX with no whitespace between them. A minimum gap makes the space a
+     layout guarantee instead of a function of how long the value happens to be. */
+  gap: 12px;
   padding: 10px 0;
   border-bottom: 1px solid rgba(136, 146, 164, 0.1);
   transition: background 0.2s;
@@ -712,6 +719,46 @@
 
 .details-footer button:active {
   transform: translateY(1px);
+}
+
+/* A row in Entries that leads somewhere says so on hover (Dan 2026-08-25).
+   Only the rows that actually carry a live table id get `role="button"`, so
+   this cannot advertise a link that does nothing. */
+.entry-row[role='button']:hover {
+  background: rgba(111, 220, 255, 0.07);
+}
+
+.entry-row[role='button']:focus-visible {
+  outline: 2px solid #6fdcff;
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+/* WATCH — Dan 2026-08-25. Sits beside whatever else the running footer says,
+   never instead of it, so a spectator, a player waiting on a seat and a busted
+   player all get the same one-tap route onto the featured table. Cyan house
+   accent rather than the blue action colour: watching is not registering, and
+   the two must not look like the same button. */
+.details-footer .btn-watch {
+  flex: 0 0 auto;
+  min-width: 108px;
+  background: linear-gradient(180deg, #1a2436 0%, #131b28 100%);
+  color: #6fdcff;
+  border: 1px solid #6fdcff;
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.35),
+    0 0 10px rgba(111, 220, 255, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.details-footer .btn-watch:hover {
+  background: linear-gradient(180deg, #223046 0%, #1a2436 100%);
+  color: #ffffff;
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.45),
+    0 0 16px rgba(111, 220, 255, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .details-footer .btn-register {

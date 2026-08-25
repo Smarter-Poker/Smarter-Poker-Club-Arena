@@ -179,6 +179,26 @@ export interface TableInfo {
   /** Buy-in limits from database — used for add-on cap enforcement */
   min_buy_in?: number;
   max_buy_in?: number;
+  /* ── Parity pass, Dan 2026-08-25 ────────────────────────────────────────
+     Each of these is a control a host has always been able to set and the
+     engine has never been able to see. Adding a field here is necessary and
+     not sufficient: it must also be in the loadTable select in
+     services/supabase/tables.ts, which is the real contract. */
+  /** Seats that must be filled before a hand is dealt. Clamped at 2. */
+  auto_start_players?: number;
+  /** 'none' | 'player_choice' | 'mandatory_twice' | 'mandatory_three' */
+  run_it_mode?: string | null;
+  /** Hide usernames and avatars in the broadcast state. */
+  is_anonymous?: boolean;
+  /** Silence table chat. Enforced in RLS; carried here for the UI mirror. */
+  ban_chat?: boolean;
+  /** Refuse a socket from anyone not holding a seat. */
+  restrict_observers?: boolean;
+  /** Per-hand betting cap. cap_bb is the ceiling in big blinds. */
+  cap_enabled?: boolean;
+  cap_bb?: number | null;
+  /** Deal a Hold'em table as Pineapple. See dealtGameVariant. */
+  pineapple_holdem?: boolean;
 }
 
 export interface SeatedPlayer {

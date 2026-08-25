@@ -786,6 +786,53 @@ export async function postBBToEnter(tableId: string): Promise<ActionResult> {
   }
 }
 
+/**
+ * POST /rabbit-hunt — buy the cards that would have come. Dan 2026-08-25.
+ *
+ * This is the ONLY way the rabbit-hunt cards reach a client. They are not in
+ * any broadcast and never have been since this endpoint existed: the engine
+ * used to put all five into the room-wide `rabbit_hunt_available` event, so
+ * every opponent received them in cleartext and the charge was a client-side
+ * `if` anyone could skip.
+ *
+ * The server charges first (VIP monthly pool, then a purchased pack, then five
+ * diamonds) and returns the cards only to the caller that paid. So the response
+ * is the reveal — there is nothing to re-fetch and nothing to bill afterwards.
+ */
+export interface RabbitHuntResult {
+  success: boolean;
+  error?: string;
+  cards?: { rank: string; suit: string }[];
+  board_length?: number;
+  source?: string;
+  diamonds_spent?: number;
+  diamonds_remaining?: number | null;
+  vip_remaining?: number | null;
+}
+
+export async function requestRabbitHunt(
+  tableId: string,
+  handNumber?: number
+): Promise<RabbitHuntResult> {
+  try {
+    const headers = await getAuthHeaders();
+    const resp = await fetch(`${GAME_SERVER_URL}/rabbit-hunt`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId, handNumber }),
+    });
+    // A 400 carries a real, human-readable reason from the engine ("Not Enough
+    // Diamonds", "You Were Not Dealt Into That Hand"), so parse the body rather
+    // than flattening every non-200 into a generic failure.
+    const data = (await resp.json().catch(() => null)) as RabbitHuntResult | null;
+    if (data) return data;
+    return { success: false, error: `Server error (${resp.status})` };
+  } catch (err: unknown) {
+    console.warn('[GameServerAPI] requestRabbitHunt failed:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // WEBSOCKET CONNECTIVITY
 // -----------------------------------------------------------------------------
@@ -818,4 +865,9 @@ export default {
   showHand,
   submitDiscard, // FIX 120: Crazy Pineapple
   notifyServerRejectRebuy,
+  // Was the only member of this module missing from the default export, so
+  // anyone reaching for GameServerAPI.requestRabbitHunt got undefined while
+  // its seventeen siblings resolved.
+  requestRabbitHunt,
+  postBBToEnter,
 };

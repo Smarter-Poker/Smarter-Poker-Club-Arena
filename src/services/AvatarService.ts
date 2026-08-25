@@ -42,6 +42,22 @@ export interface UserAvatar {
   displayName: string;
 }
 
+/**
+ * What `getAvatarLibraryResult` reports back.
+ *
+ * The plain `Avatar[]` this service used to return could not tell an empty
+ * library from a broken one, and the gallery rendered both as the same calm
+ * "No preset avatars available." — a failed query drawn as a successful empty
+ * state. The flags exist so the caller can say which one actually happened.
+ */
+export interface AvatarLibraryResult {
+  avatars: Avatar[];
+  /** The Hub preset API did not answer. Presets and VIP art are UNKNOWN, not absent. */
+  presetsFailed: boolean;
+  /** The user_avatars read failed. "Mine" is UNKNOWN, not empty. */
+  customFailed: boolean;
+}
+
 // Re-export for convenience
 export { getAvatarWithFallback } from '../utils/avatarGenerator';
 
@@ -128,6 +144,65 @@ export function isLibraryAvatarUrl(url: string): boolean {
   return false;
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  UNLOCK MATCHING — three id conventions for one ledger
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * `avatar_unlocks.avatar_id` is written by three different producers that never
+ * agreed on a format, which is why the gallery ignoring the table was easy to
+ * miss: nothing would have matched even if it had looked.
+ *
+ *   unlock_free_avatars()   'free_shark'          tier prefix + slug
+ *   fn_redeem_shop_item     'shark'               bare slug (the one live row)
+ *   AVATAR_LIBRARY entry id 'free-animal-004'     library id, hyphenated
+ *
+ * So ownership is decided on a TOKEN SET, not a string compare: an avatar is
+ * owned when any of its identities appears in the player's unlock set. Hyphens
+ * and underscores are the same character here, and a `free_`/`vip_` prefix on a
+ * stored unlock is stripped as well as kept.
+ */
+export function normalizeUnlockToken(raw: string | null | undefined): string {
+  return String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+}
+
+/** Every id under which this avatar could legitimately have been unlocked. */
+export function unlockTokensForAvatar(avatar: {
+  id: string;
+  imageUrl: string;
+  category: Avatar['category'];
+}): string[] {
+  const tokens = new Set<string>();
+  tokens.add(normalizeUnlockToken(avatar.id));
+
+  /* The retina suffix is stripped AFTER the match, not inside it: `[^/.]+` is
+     greedy and swallows `@2x` whole, so an inline `(?:@2x)?` never fires and
+     `/avatars/table/vip_wolf@2x.webp` yielded the slug `vip_wolf@2x` — a token
+     that matches no unlock row anywhere. */
+  const slugMatch = avatar.imageUrl.match(/\/([^/.]+)\.(?:png|jpe?g|webp)$/i);
+  const rawSlug = slugMatch ? slugMatch[1].replace(/@\d+x$/i, '') : '';
+  const slug = normalizeUnlockToken(rawSlug);
+  if (slug) {
+    tokens.add(slug);
+    tokens.add(`${avatar.category === 'vip' ? 'vip' : 'free'}_${slug}`);
+  }
+
+  tokens.delete('');
+  return Array.from(tokens);
+}
+
+/** True when any identity of `avatar` appears in the player's unlock set. */
+export function isAvatarUnlocked(
+  avatar: { id: string; imageUrl: string; category: Avatar['category'] },
+  unlocked: Set<string>
+): boolean {
+  if (unlocked.size === 0) return false;
+  return unlockTokensForAvatar(avatar).some((t) => unlocked.has(t));
+}
+
 class AvatarServiceClass {
   /** In-memory cache to avoid re-fetching storage listings */
   private _presetCache: Avatar[] | null = null;
@@ -154,17 +229,38 @@ class AvatarServiceClass {
    * Returns Avatar[] compatible with AvatarGallery component.
    */
   async getAvatarLibrary(userId?: string): Promise<Avatar[]> {
-    const results: Avatar[] = [];
+    return (await this.getAvatarLibraryResult(userId)).avatars;
+  }
 
-    // ── 1. Fetch ALL preset avatars (Free + VIP) from Hub API ──
-    try {
-      const presets = await this._getPresetAvatars();
-      results.push(...presets);
-    } catch (err) {
-      console.warn('[AvatarService] Failed to load preset avatars:', err);
+  /**
+   * The same library, plus whether each source actually answered.
+   *
+   * `getAvatarLibrary` stays for callers that only want the list; anything that
+   * RENDERS the list should use this instead, so "the API is down" and "there
+   * are none" do not reach the player as the same sentence.
+   */
+  async getAvatarLibraryResult(userId?: string): Promise<AvatarLibraryResult> {
+    const results: Avatar[] = [];
+    let customFailed = false;
+
+    // ── 1. Presets (Free + VIP) from the Hub API, and what this player owns ──
+    const [presetOutcome, unlocked] = await Promise.all([
+      this._getPresetAvatars(),
+      userId ? this.getUnlockedAvatarIds(userId) : Promise.resolve(new Set<string>()),
+    ]);
+
+    for (const preset of presetOutcome.avatars) {
+      /* Free art is owned by everyone. VIP art is owned when the player bought
+         or was granted it — which is what avatar_unlocks records and what this
+         gallery used to ignore entirely, so a redeemed shop avatar stayed
+         locked behind the VIP badge the player had just paid to bypass. */
+      results.push({
+        ...preset,
+        isOwned: preset.category === 'free' || isAvatarUnlocked(preset, unlocked),
+      });
     }
 
-    // ── 3. Fetch user's custom avatars from user_avatars table ──
+    // ── 2. The user's own generated avatars from user_avatars ──
     if (userId) {
       try {
         const { data: userAvatars, error } = await supabase
@@ -173,7 +269,12 @@ class AvatarServiceClass {
           .eq('user_id', userId)
           .order('created_at', { ascending: false });
 
-        if (!error && userAvatars) {
+        if (error) {
+          customFailed = true;
+          reportWarning('user_avatars read failed', 'AvatarService.getAvatarLibraryResult', {
+            code: error.code,
+          });
+        } else if (userAvatars) {
           for (const ua of userAvatars) {
             const imageUrl = ua.custom_image_url || '';
             if (!imageUrl) continue;
@@ -190,20 +291,63 @@ class AvatarServiceClass {
           }
         }
       } catch (err) {
+        customFailed = true;
         console.warn('[AvatarService] Failed to load custom avatars:', err);
       }
     }
 
-    return results;
+    return { avatars: results, presetsFailed: presetOutcome.failed, customFailed };
   }
 
   /**
-   * Fetch preset avatar images from the social-media/avatars storage bucket.
-   * Results are cached for 5 minutes to avoid repeated storage API calls.
+   * Which avatars this player has unlocked, as a normalized token set.
+   *
+   * A read failure returns an EMPTY set and says so in the breadcrumb rather
+   * than pretending everything is owned — failing closed here means at worst a
+   * player sees a lock they should not; failing open would hand VIP art to
+   * everyone the first time the query hiccups.
    */
-  private async _getPresetAvatars(): Promise<Avatar[]> {
+  async getUnlockedAvatarIds(userId: string): Promise<Set<string>> {
+    const out = new Set<string>();
+    if (!userId) return out;
+
+    try {
+      const { data, error } = await supabase
+        .from('avatar_unlocks')
+        .select('avatar_id')
+        .eq('user_id', userId);
+
+      if (error) {
+        reportWarning('avatar_unlocks read failed', 'AvatarService.getUnlockedAvatarIds', {
+          code: error.code,
+        });
+        return out;
+      }
+
+      for (const row of data || []) {
+        const token = normalizeUnlockToken(row?.avatar_id);
+        if (!token) continue;
+        out.add(token);
+        // Stored as 'free_shark' by unlock_free_avatars, as 'shark' by the shop.
+        out.add(token.replace(/^(free|vip)_/, ''));
+      }
+    } catch (err) {
+      reportError(err, 'AvatarService.getUnlockedAvatarIds');
+    }
+
+    return out;
+  }
+
+  /**
+   * Fetch the preset avatar catalog from the Hub's unified avatar API.
+   * Results are cached for 5 minutes to avoid repeated round trips.
+   *
+   * Returns `failed` rather than just an empty list: the caller has to be able
+   * to tell "the Hub said there are none" from "the Hub said nothing".
+   */
+  private async _getPresetAvatars(): Promise<{ avatars: Avatar[]; failed: boolean }> {
     if (this._presetCache && Date.now() - this._presetCacheTs < AvatarServiceClass.CACHE_TTL) {
-      return this._presetCache;
+      return { avatars: this._presetCache, failed: false };
     }
 
     try {
@@ -226,17 +370,22 @@ class AvatarServiceClass {
           imageUrl: entry.image,
           thumbUrl,
           category: tierLower === 'vip' ? 'vip' : 'free',
-          isOwned: true,
+          /* Placeholder. Real ownership is decided per-player in
+             getAvatarLibraryResult against avatar_unlocks; the cache is shared
+             across users so it must not carry anyone's entitlements. */
+          isOwned: false,
         };
       });
 
       this._presetCache = avatars;
       this._presetCacheTs = Date.now();
-      return avatars;
+      return { avatars, failed: false };
     } catch (err) {
       console.warn('[AvatarService] Unified Avatar API fetch failed:', err);
-      if (this._presetCache) return this._presetCache;
-      return [];
+      // A stale cache is a better answer than none, and it is not a failure to
+      // report: the player still sees the real library.
+      if (this._presetCache) return { avatars: this._presetCache, failed: false };
+      return { avatars: [], failed: true };
     }
   }
 

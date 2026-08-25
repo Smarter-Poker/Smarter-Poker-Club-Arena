@@ -101,7 +101,6 @@ import TimebankCounter from '../components/table/TimebankCounter';
 // Dan 2026-08-21, item 3: buy more time banks with diamonds (1/10/25/100/500).
 import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
-import RabbitHunt from '../components/table/RabbitHunt';
 import HandNotation from '../components/table/HandNotation';
 import { soundService, haptic } from '../services/SoundService';
 import { ConfettiCanvas } from '../components/table/ConfettiCanvas';
@@ -210,7 +209,9 @@ import GameServerAPI, {
   showHand as serverShowHand,
   toggleStraddle as serverToggleStraddle,
   postBBToEnter as serverPostBBToEnter,
+  requestRabbitHunt,
 } from '../services/GameServerAPI';
+import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
 import { retryAsync } from '../utils/retryAsync';
 //monteCarloEquity import removed — server-authoritative
 import './TablePage.css';
@@ -1643,6 +1644,19 @@ export default function TablePage({
    */
   const potShipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const potPushDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // SHOWDOWN follow-up 2026-08-25 (spec 16/19): one timer per pot-award group
+  // — main pot fires first, each side pot POT_AWARD_STAGGER_MS later. All
+  // cancelled at HAND_STARTED and on unmount so a fast next hand can never
+  // receive a late side-pot fan from the previous one.
+  const potAwardStaggerTimersRef = useRef<number[]>([]);
+  // SHOWDOWN follow-up 2026-08-25 (spec 21): while false AND the snapshot
+  // carries winners, each winner's SEAT displays stack minus their share —
+  // the number only rises once the pot-push animation has landed on them.
+  // Flipped true by a timer scheduled at POT_WIN (after the last award
+  // group's fan arrives); reset false at HAND_STARTED. Purely visual: the
+  // authoritative stacks in tableState are never modified.
+  const [stackHoldReleased, setStackHoldReleased] = useState(false);
+  const stackHoldReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Guards the diamond charge in handleBuyTimeBank against a double-tap. */
   const buyingTimeBankRef = useRef(false);
   /**
@@ -3062,6 +3076,11 @@ export default function TablePage({
   // clockwise). Drives a small per-seat stagger on the card flip so the
   // reveal reads as a SEQUENCE, the way live poker tables hands in turn.
   const showdownRevealOrderRef = useRef<Record<number, number>>({});
+  // SHOWDOWN follow-up 2026-08-25 (spec 37): once-per-hand guard for the
+  // auto-show that answers the engine's muck ruling when the hero has
+  // AUTO-MUCK LOSING HANDS switched off. A re-delivered showdown event must
+  // not fire a second POST /showhand.
+  const autoShowFiredHandRef = useRef<number>(0);
   const muckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -3121,6 +3140,8 @@ export default function TablePage({
       if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
       if (potShipTimerRef.current) clearTimeout(potShipTimerRef.current);
       if (potPushDelayTimerRef.current) clearTimeout(potPushDelayTimerRef.current);
+      for (const t of potAwardStaggerTimersRef.current) clearTimeout(t);
+      if (stackHoldReleaseTimerRef.current) clearTimeout(stackHoldReleaseTimerRef.current);
     };
   }, []);
 
@@ -3370,38 +3391,58 @@ export default function TablePage({
     };
   }, [tableId]);
 
-  // Rabbit Hunt state
+  // ── RABBIT HUNT (Dan 2026-08-25) ────────────────────────────────────────
+  // The client no longer holds the cards, because it never should have. The
+  // engine used to broadcast all five remaining cards to every socket at the
+  // table the instant a hand ended; this page cached them in a ref and the
+  // RabbitHunt component decided for itself whether to bill. The cards were on
+  // every opponent's machine before anyone clicked, and free to anyone reading
+  // the websocket.
+  //
+  // What arrives now is an availability signal — how many cards a reveal would
+  // show, and nothing else. The cards come back in the response to
+  // POST /rabbit-hunt, which charges first (VIP monthly pool, then a purchased
+  // pack, then five diamonds) and answers only the caller that paid.
   const [isRabbitAvailable, setIsRabbitAvailable] = useState(false);
-  const [currentBoard, setCurrentBoard] = useState<
-    Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>
-  >([]);
-  /** Server-provided remaining deck cards for authentic rabbit hunt reveal */
-  const serverRabbitCardsRef = useRef<Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>>([]);
+  const [rabbitCardsAvailable, setRabbitCardsAvailable] = useState(0);
+  const rabbitHandNumberRef = useRef<number | null>(null);
 
-  // Handle rabbit hunt reveal — uses real server-dealt deck cards
-  const handleRabbitReveal = async (): Promise<
-    Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>
-  > => {
-    const cardsNeeded = 5 - currentBoard.length;
-    if (cardsNeeded <= 0) return [];
+  const handleRabbitReveal = useCallback(async (): Promise<RabbitHuntRevealResult> => {
+    if (!tableId) return { success: false, error: 'Table Not Ready' };
 
-    // Use server-provided cards (authentic from the actual deck)
-    if (serverRabbitCardsRef.current.length > 0) {
-      const cards = serverRabbitCardsRef.current.slice(0, cardsNeeded);
-      // Clear after reveal (one-time use)
-      serverRabbitCardsRef.current = [];
-      setIsRabbitAvailable(false);
-      return cards;
+    const result = await requestRabbitHunt(tableId, rabbitHandNumberRef.current ?? undefined);
+    if (!result.success || !result.cards?.length) {
+      // Leave the offer up: a refusal for "Not Enough Diamonds" should not also
+      // remove the button, or topping up cannot be followed by a retry.
+      return { success: false, error: result.error };
     }
 
-    // P2-2 FIX: Do NOT fabricate random cards when the server didn't provide
-    // them (edge case: stale state, reconnection). On a real-money platform
-    // inventing a card outcome misrepresents the deck, so short-circuit the
-    // reveal instead — surface "unavailable" and return no cards.
-    toast.error('Rabbit Hunt unavailable - no card data from server.');
-    setIsRabbitAvailable(false);
-    return [];
-  };
+    // Server card format (hearts/diamonds/clubs/spades) → client shorthand.
+    const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
+      hearts: 'h',
+      diamonds: 'd',
+      clubs: 'c',
+      spades: 's',
+      h: 'h',
+      d: 'd',
+      c: 'c',
+      s: 's',
+    };
+    return {
+      success: true,
+      cards: result.cards.map((c) => ({
+        rank: String(c.rank),
+        suit: suitMap[String(c.suit)] || 'h',
+      })),
+      source: result.source,
+      diamondsSpent: result.diamonds_spent,
+      // The server counts the VIP monthly pool down on every reveal and has
+      // always returned it. It used to be dropped here, one line from the UI,
+      // which is why the button could say FREE on the 101st hunt and then
+      // silently charge five diamonds.
+      vipRemaining: result.vip_remaining,
+    };
+  }, [tableId]);
 
   // Leaderboard state
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -4918,26 +4959,17 @@ export default function TablePage({
         return;
       }
 
-      // Rabbit Hunt: Server sends remaining deck cards after hand completes
+      // Rabbit Hunt: an AVAILABILITY SIGNAL. It carries no cards — see the
+      // handleRabbitReveal comment above for why it used to and no longer does.
       if (eventType === 'rabbit_hunt_available') {
-        const rabbitCards = (handState.rabbit_cards as any[]) || [];
-        if (rabbitCards.length > 0 && heroFoldedInCurrentHandRef.current) {
-          // Convert server card format (hearts/diamonds/clubs/spades) to client shorthand (h/d/c/s)
-          const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
-            hearts: 'h',
-            diamonds: 'd',
-            clubs: 'c',
-            spades: 's',
-            h: 'h',
-            d: 'd',
-            c: 'c',
-            s: 's',
-          };
-          const converted = rabbitCards.map((c: any) => ({
-            rank: String(c.rank),
-            suit: suitMap[c.suit] || 'h',
-          }));
-          serverRabbitCardsRef.current = converted;
+        const available = Number(handState.cards_available ?? 0);
+        // Dan 2026-08-25: the offer goes to everyone who was in the hand, not
+        // only to players who folded. Gating on heroFolded meant the player who
+        // won the pot when everyone else folded — the one person most likely to
+        // wonder what was coming — was never offered a rabbit hunt at all.
+        if (available > 0) {
+          rabbitHandNumberRef.current = Number(handState.hand_number ?? 0) || null;
+          setRabbitCardsAvailable(available);
           setIsRabbitAvailable(true);
         }
         return;
@@ -7754,6 +7786,18 @@ export default function TablePage({
           clearTimeout(potPushDelayTimerRef.current);
           potPushDelayTimerRef.current = null;
         }
+        // SHOWDOWN follow-up 2026-08-25 (spec 40): no late side-pot award may
+        // fire into the new hand.
+        for (const t of potAwardStaggerTimersRef.current) clearTimeout(t);
+        potAwardStaggerTimersRef.current = [];
+        // SHOWDOWN follow-up 2026-08-25 (spec 21): the stack hold is scoped to
+        // one hand. The fresh snapshot has no winners, so re-arming the hold
+        // here can never mask a stack.
+        if (stackHoldReleaseTimerRef.current) {
+          clearTimeout(stackHoldReleaseTimerRef.current);
+          stackHoldReleaseTimerRef.current = null;
+        }
+        setStackHoldReleased(false);
         // ANIMATION AUDIT 2026-08-19: the previous hand's 3s reset timer was
         // NEVER cancelled here. The server's fold-win inter-hand gap is
         // 2000ms, so on every fold-win that stale timer fired ~1s INTO the
@@ -8453,11 +8497,27 @@ export default function TablePage({
          * engine is ready to deal and never a beat before. Changing an
          * animation length in that file moves both sides together.
          */
-        const holdMs =
-          handCompletionHoldMs({
-            wentToShowdown: handShowdownRef.current.wentToShowdown,
-            showdownHands: handShowdownRef.current.hands,
-          }) * getAnimationSpeed();
+        const holdBaseMs = handCompletionHoldMs({
+          wentToShowdown: handShowdownRef.current.wentToShowdown,
+          showdownHands: handShowdownRef.current.hands,
+          // bbjHit was the one input the client did not pass, and it is the one
+          // that matters most: the spec returns BBJ_CELEBRATION_MS (9000) for it.
+          // Without it the client held ~7.9s against the server's 9s, so the
+          // board, pot and winner were wiped roughly a second into the Bad Beat
+          // Jackpot celebration that the spec says is never rushed.
+          bbjHit: !!bbjHitDataRef.current,
+        });
+        // The player's animation-speed preference scales this, but only within
+        // bounds. The SERVER holds `holdBaseMs` flat, so scaling below 1x used to
+        // clear the winner name before the pot-win float it is describing had
+        // finished — at 0.25x, a 6.5s showdown hold became 1.6s. And scaling to
+        // 3x left ~12s of stale board on screen if a HAND_STARTED event is ever
+        // dropped, where the old hardcoded 3000ms risked about one second.
+        // Never shorter than the engine's own hold, never more than double it.
+        const holdMs = Math.min(
+          holdBaseMs * 2,
+          Math.max(holdBaseMs, holdBaseMs * getAnimationSpeed())
+        );
         // CA-22: track so unmount can cancel — prevents setTableState on dead page
         if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
         handCompleteTimerRef.current = window.setTimeout(() => {
@@ -8533,6 +8593,29 @@ export default function TablePage({
             }
             showdownRevealOrderRef.current = orderBySeat;
             if (muckedMask.some(Boolean)) setMuckedLabelSeats(muckedMask);
+            // SHOWDOWN follow-up 2026-08-25 (Dan spec section 37): AUTO-MUCK
+            // LOSING HANDS as a real player setting, with NO prompt (prompts
+            // stay forbidden — Dan 2026-08-18, binding). autoMuck ON (the
+            // default) keeps the engine's ruling: the beaten hand stays
+            // private. autoMuck OFF means "always table my hand": when the
+            // engine rules the HERO's hand muckable, the client immediately
+            // answers with the existing voluntary-show call and the hand
+            // turns face up for the table. The setting cannot muck a winner
+            // (the engine auto-tables winners) and cannot hide an all-in
+            // showdown (all-in hands are force-exposed with mucked=false).
+            const heroMucked = sdResults.some((r) => r.user_id === userId && r.mucked === true);
+            if (
+              heroMucked &&
+              userSettingsRef.current.autoMuck === false &&
+              tableId &&
+              autoShowFiredHandRef.current !== heroHandRef.current
+            ) {
+              autoShowFiredHandRef.current = heroHandRef.current;
+              GameServerAPI.showHand(tableId).catch(() => {
+                // Voluntary show is best-effort decoration; the hand result
+                // is already settled server-side.
+              });
+            }
           }
         }
         // Bible V8 §4.6: Showdown — play showdown sound, trigger card reveal animations
@@ -8563,6 +8646,7 @@ export default function TablePage({
             hand_name?: string;
             hand_description?: string;
             hole_card_indices?: number[];
+            pot_index?: number;
           }>) || [];
         const winHandName =
           ((evt.data as any).hand_name as string) ||
@@ -8780,14 +8864,32 @@ export default function TablePage({
           const potPos = seatPctToViewportPx(tableScalerRef.current, POT_ANCHOR_PCT);
           // Resolve each winner's seat from the current player list (rotated
           // positions already account for hero-at-bottom view).
-          const events: ChipAnimationEvent[] = [];
-          const potWinFloatPlans: Array<{
-            fromX: number;
-            fromY: number;
-            toX: number;
-            toY: number;
-            amount: number;
-          }> = [];
+          // SHOWDOWN follow-up 2026-08-25 (Dan spec sections 16/19/20): when
+          // pots resolve to different winners they are awarded as a SEQUENCE —
+          // main pot first, then each side pot, one POT_AWARD_STAGGER_MS
+          // apart — so the table reads "A takes the main, then C takes the
+          // side" instead of one simultaneous blur. Winners of the SAME pot
+          // (a chop) still fire together: their separate "+N" floats at their
+          // own seats are the story there (spec section 12). The pot rank
+          // comes from the engine's per-winner pot_index (0 = main).
+          const winnerPotIndex: Record<string, number> = {};
+          for (const w of winnersArray) winnerPotIndex[w.user_id] = w.pot_index ?? 0;
+          const distinctPotIdxs = [
+            ...new Set(winnerIds.map((wid) => winnerPotIndex[wid] ?? 0)),
+          ].sort((a, b) => a - b);
+          const potGroupRank = new Map(distinctPotIdxs.map((p, i) => [p, i]));
+
+          interface AwardGroup {
+            events: ChipAnimationEvent[];
+            floats: Array<{
+              fromX: number;
+              fromY: number;
+              toX: number;
+              toY: number;
+              amount: number;
+            }>;
+          }
+          const awardGroups: AwardGroup[] = distinctPotIdxs.map(() => ({ events: [], floats: [] }));
           for (const wid of winnerIds) {
             // SeatPlayer.id is the userId — players[] index = seatNumber - 1.
             const seatIdx = tableStateRef.current.players.findIndex((p) => p?.id === wid);
@@ -8800,13 +8902,14 @@ export default function TablePage({
             // potAmount/n split labelled side-pot chops with wrong numbers.
             const share =
               winnerInfoRef.current?.amounts?.[wid] ?? potAmount / (winnerIds.length || 1);
+            const group = awardGroups[potGroupRank.get(winnerPotIndex[wid] ?? 0) ?? 0];
             // createPotToWinnerEvent already returns a fan of 3-8 chips with
             // bezier arc, staggered 40ms each, 600ms duration — spec match.
-            events.push(...createPotToWinnerEvent(potPos, winnerPos, share));
+            group.events.push(...createPotToWinnerEvent(potPos, winnerPos, share));
             // Dan 2026-08-21: the floating "+N" rides with this fan and ends
             // above the winner's seat naming the exact share they won —
             // accurate per winner, so chops read right too.
-            potWinFloatPlans.push({
+            group.floats.push({
               fromX: potPos.x,
               fromY: potPos.y,
               toX: winnerPos.x,
@@ -8814,28 +8917,57 @@ export default function TablePage({
               amount: share,
             });
           }
-          if (events.length > 0) {
-            const fireFan = () => {
-              setChipAnimations((prev) => [...prev, ...events]);
+          if (awardGroups.some((g) => g.events.length > 0)) {
+            const fireGroup = (g: AwardGroup) => {
+              if (g.events.length === 0) return;
+              setChipAnimations((prev) => [...prev, ...g.events]);
               // Dan 2026-08-21: launch each winner's floating "+N" in the same
               // frame as their chip fan so the number travels WITH the pot.
-              for (const plan of potWinFloatPlans) {
+              for (const plan of g.floats) {
                 spawnPotWinFloat(plan.fromX, plan.fromY, plan.toX, plan.toY, plan.amount);
               }
               // Bible V8 §5.3: pot collect sweep sound — synced with chip animation
               // #175 gated for multi-table: only play on the active tab
               if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playPotCollect();
             };
-            if (shipDelayMs > 0) {
-              if (potShipTimerRef.current) clearTimeout(potShipTimerRef.current);
-              potShipTimerRef.current = setTimeout(() => {
-                potShipTimerRef.current = null;
-                fireFan();
-              }, shipDelayMs);
-            } else {
-              fireFan();
-            }
+            for (const t of potAwardStaggerTimersRef.current) clearTimeout(t);
+            potAwardStaggerTimersRef.current = [];
+            awardGroups.forEach((g, rank) => {
+              const groupDelay =
+                shipDelayMs + rank * HAND_COMPLETION.POT_AWARD_STAGGER_MS * getAnimationSpeed();
+              if (groupDelay > 0) {
+                const t = window.setTimeout(() => {
+                  potAwardStaggerTimersRef.current = potAwardStaggerTimersRef.current.filter(
+                    (x) => x !== t
+                  );
+                  fireGroup(g);
+                }, groupDelay);
+                potAwardStaggerTimersRef.current.push(t);
+              } else {
+                fireGroup(g);
+              }
+            });
           }
+          // SHOWDOWN follow-up 2026-08-25 (spec 21): the winner's displayed
+          // stack rises only once the pot has visibly reached them — after
+          // the LAST award group's fan lands (fan travel is ~600ms; 700
+          // leaves it settled). Until then the seat shows stack minus the
+          // pending share (see the displayPlayer hold at render). Scheduled
+          // even when no fan could be built (seat lookup failure), so the
+          // hold can never outlive the hand it belongs to.
+          const lastGroupDelay =
+            shipDelayMs +
+            Math.max(0, awardGroups.length - 1) *
+              HAND_COMPLETION.POT_AWARD_STAGGER_MS *
+              getAnimationSpeed();
+          if (stackHoldReleaseTimerRef.current) clearTimeout(stackHoldReleaseTimerRef.current);
+          stackHoldReleaseTimerRef.current = setTimeout(
+            () => {
+              stackHoldReleaseTimerRef.current = null;
+              setStackHoldReleased(true);
+            },
+            lastGroupDelay + 700 * getAnimationSpeed()
+          );
 
           // Dan 2026-08-19, bug list item 6: push the POT ITSELF to the winner,
           // not just a fan of chips. `.pot-display--collect` and its
@@ -9191,8 +9323,8 @@ export default function TablePage({
       heroFoldedInCurrentHandRef.current = false; // Reset for new hand
       // Rabbit Hunt: Reset for new hand
       setIsRabbitAvailable(false);
-      serverRabbitCardsRef.current = [];
-      setCurrentBoard([]);
+      setRabbitCardsAvailable(0);
+      rabbitHandNumberRef.current = null;
       // NOTE: the deal animation is triggered by the discrete HAND_STARTED
       // handler (single source). AUDIT FIX 2026-07-19: the redundant bump that
       // used to live here was removed — now that handNumber advances via the
@@ -11979,11 +12111,17 @@ export default function TablePage({
             // still in the hand.
             const someoneActing = tableState.currentPlayerSeat > 0;
             const isActingSeat = someoneActing && seatNumber === tableState.currentPlayerSeat;
-            // Dan: hero is NEVER faded while holding a live hand, even when the
-            // action is elsewhere. A folded hero dims like anyone else.
-            const heroHasLiveHand =
-              !!player?.isHero && player.status !== 'folded' && player.status !== 'sitting_out';
-            const seatDimmed = someoneActing && !isActingSeat && !heroHasLiveHand;
+            // Dan 2026-08-25: NOBODY holding a live hand is ever faded — hero and
+            // villain alike. Fading is reserved for players who are out: folded,
+            // sitting out, or away. The spotlight dim used to apply to every seat
+            // that was not the actor, which greyed live villains for ~83% of a
+            // 6-max hand and made them read as folded.
+            const hasLiveHand =
+              !!player &&
+              player.status !== 'folded' &&
+              player.status !== 'sitting_out' &&
+              player.status !== 'away';
+            const seatDimmed = someoneActing && !isActingSeat && !hasLiveHand;
 
             // FIX: Apply use_alias and table_alias from settings directly to the hero's rendered name
             let derivedHeroName = player?.name;
@@ -12011,6 +12149,26 @@ export default function TablePage({
                   name: derivedHeroName!,
                 }
               : null;
+            /* SHOWDOWN follow-up 2026-08-25 (Dan spec section 21): do not show
+               the winner's stack increasing before the pot has visibly reached
+               them. The engine credits stacks the moment the hand settles, so
+               the snapshot that reveals the showdown already carries POST-win
+               totals — the number jumped a full pot before the chips moved.
+               Until the pot-push animation lands (stackHoldReleased, set on a
+               timer from POT_WIN, backstopped at HAND_STARTED), each winner's
+               seat displays their stack minus the share they were just paid.
+               Authoritative state is untouched — this is presentation only. */
+            if (displayPlayer && !stackHoldReleased) {
+              const pendingWin = tableState.engineWinners?.find(
+                (w) => w.userId === displayPlayer!.id
+              );
+              if (pendingWin && pendingWin.amount > 0) {
+                displayPlayer = {
+                  ...displayPlayer,
+                  stack: Math.max(0, displayPlayer.stack - pendingWin.amount),
+                };
+              }
+            }
             // The seat hero just tapped: show them SITTING immediately, with a
             // pending stack, while the buy-in modal is still open. Replaced by
             // real server data the moment the buy-in lands.
@@ -12590,19 +12748,13 @@ export default function TablePage({
                 </div>
               )}
 
-            {/* Rabbit Hunt — shows AFTER hand completes, not during */}
-            {!tableState.isHandInProgress && isRabbitAvailable && (
-              <div className="control-strip control-strip--transparent">
-                <button
-                  className="control-strip__btn"
-                  title="Rabbit Hunt - reveal remaining cards"
-                  onClick={handleRabbitReveal}
-                >
-                  <span className="control-strip__icon">R</span>
-                  <span className="control-strip__label">Rabbit Hunt</span>
-                </button>
-              </div>
-            )}
+            {/* Rabbit Hunt lives in TableModalsLayer, which renders the
+                <RabbitHunt> component that actually SHOWS the cards.
+                A second button used to sit here calling handleRabbitReveal
+                directly and throwing the result away — it spent the reveal (and,
+                now, the player's diamonds) and displayed nothing. Removed
+                2026-08-25; the twin of it was removed from the ActionPanel on
+                2026-08-15 for exactly the same reason. There is one button. */}
 
             {/* ─── ACTION PANEL — Premium 3-button layout ─── */}
             {/* QuickActionsBar REMOVED — Auto-Rebuy is a hamburger menu setting,
@@ -12823,22 +12975,23 @@ export default function TablePage({
         !tableState.isTournament &&
         Array.isArray(tableState.waitingForBBUserIds) &&
         tableState.waitingForBBUserIds.includes(userId) && (
-          <button
-            type="button"
-            className="post-bb-overlay-button"
-            onClick={async () => {
-              const result = await serverPostBBToEnter(tableId);
-              if (!result.success) {
-                toast?.error(result.error || 'Could not post BB');
-              } else {
-                toast?.success('Will be dealt in next hand');
-              }
-            }}
-            aria-label="Post the big blind to enter the next hand"
-          >
-            <span className="post-bb-overlay-button__title">Post BB To Enter</span>
-            <span className="post-bb-overlay-button__sub">Skip The Wait, Pay The BB Now</span>
-          </button>
+          /* Dan 2026-08-25: this is a NOTICE now, not a button.
+             It used to read "Post BB To Enter — Skip The Wait, Pay The BB Now",
+             which was fair when a new player faced a long wait for the big
+             blind to rotate to them. Entry is free now and the wait is at most
+             one hand, so the only players still waiting are the two the engine
+             deliberately holds out for a hand: the seat the small blind is
+             about to reach, and the seat the button is about to reach. For
+             those, the offer was no longer a shortcut — it was a way to pay a
+             live big blind to be dealt into the small blind, which the house
+             rule forbids outright. The engine now refuses that call; there is
+             no reason to keep asking the player to make it. */
+          <div className="post-bb-overlay-button post-bb-overlay-button--notice">
+            <span className="post-bb-overlay-button__title">Seat Reserved</span>
+            <span className="post-bb-overlay-button__sub">
+              You'll Be Dealt In Free Once The Button Passes
+            </span>
+          </div>
         )}
 
       {/* ═══════════════════════════════════════════════════════════════════════
@@ -13212,17 +13365,25 @@ export default function TablePage({
       />
       <TableModalsLayer
         currentCardBack={activeCardBack}
-        onCardBackChanged={(id) => {
+        /* 2026-08-25: this used to end `.then(() => {})`, which discards the
+           PostgREST error object. A card back the player had just paid for
+           could fail to save and the store would still report success, because
+           nothing on this path could tell it otherwise. The handler is async
+           now and THROWS on failure, so CardBackSelector reverts its tick and
+           says what happened instead of congratulating the player. */
+        onCardBackChanged={async (id) => {
           masterBus.emit('UI_THEME_CHANGED', { key: 'ALL', value: { cards_id: id } });
           masterBus.emit('SETTINGS_CHANGED', { setting: 'cardBack', value: id });
-          if (userId) {
-            supabase
-              .from('user_theme_settings')
-              .upsert(
-                { user_id: userId, game_type: 'ALL', cards_id: id },
-                { onConflict: 'user_id,game_type' }
-              )
-              .then(() => {});
+          if (!userId) return;
+          const { error } = await supabase
+            .from('user_theme_settings')
+            .upsert(
+              { user_id: userId, game_type: 'ALL', cards_id: id },
+              { onConflict: 'user_id,game_type' }
+            );
+          if (error) {
+            reportError(error, 'TablePage.cardBackSaveFailed');
+            throw error;
           }
         }}
         tableId={tableId}
@@ -13501,7 +13662,7 @@ export default function TablePage({
         }}
         // Rabbit Hunt
         isRabbitAvailable={isRabbitAvailable}
-        currentBoard={currentBoard}
+        rabbitCardsAvailable={rabbitCardsAvailable}
         onRabbitReveal={handleRabbitReveal}
         // Leaderboard
         showLeaderboard={showLeaderboard}

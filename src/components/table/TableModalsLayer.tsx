@@ -29,6 +29,7 @@ import DiamondWalletModal from '../wallet/DiamondWalletModal';
 import CashierModal from './CashierModal';
 import BuyInModal from './BuyInModal';
 import RabbitHunt from './RabbitHunt';
+import type { RabbitHuntRevealResult } from './RabbitHunt';
 import LeaderboardPanel from './LeaderboardPanel';
 import LeaveTableConfirm from './LeaveTableConfirm';
 import { SessionHUD } from './SessionHUD';
@@ -70,7 +71,9 @@ import type { SeatPlayer } from './SeatSlot';
 
 export interface TableModalsLayerProps {
   currentCardBack?: string;
-  onCardBackChanged?: (id: string) => void;
+  /* May be async and may reject: CardBackSelector only reports success once
+     this has resolved, so a failed write cannot render as a success. */
+  onCardBackChanged?: (id: string) => void | Promise<unknown>;
   // Core context
   tableId: string | undefined;
   userId: string;
@@ -265,8 +268,16 @@ export interface TableModalsLayerProps {
 
   // Rabbit Hunt
   isRabbitAvailable: boolean;
-  currentBoard: Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>;
-  onRabbitReveal: () => Promise<Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>>;
+  /**
+   * Cards a reveal will show, as counted by the SERVER. Replaces the old
+   * `currentBoard` prop, which was only ever passed [] — so every reveal
+   * claimed five cards regardless of the street the hand actually ended on.
+   */
+  rabbitCardsAvailable: number;
+  // One contract, declared once, in the component that consumes it. This shape
+  // was written out inline here AND in TablePage AND in RabbitHunt — three
+  // copies of the same object, which is three chances for them to drift.
+  onRabbitReveal: () => Promise<RabbitHuntRevealResult>;
 
   // Leaderboard
   showLeaderboard: boolean;
@@ -514,7 +525,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     onConfirmBuyIn,
     // Rabbit Hunt
     isRabbitAvailable,
-    currentBoard,
+    rabbitCardsAvailable,
     onRabbitReveal,
     // Leaderboard
     showLeaderboard,
@@ -623,14 +634,23 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
       });
 
       if (error || (data as any)?.success === false) {
-        toast.error('Failed to purchase card back. Please try again.');
-        return;
+        // THROW, do not just return. The store awaits this call to decide
+        // whether to equip the design and congratulate the player; a silent
+        // return let a FAILED purchase equip a card back the player does not
+        // own and report it as bought.
+        reportError(
+          error || new Error('fn_purchase_feature returned success:false'),
+          'TableModalsLayer.cardBackPurchaseFailed'
+        );
+        throw error || new Error('Card back purchase failed');
       }
 
       setLocalDiamonds((prev: number) => Math.max(0, prev - price));
       setOwnedCardBacks((prev: string[]) => [...prev, id]);
-      toast.success('Card back purchased!');
-      onCardBackChanged?.(id);
+      // The equip toast comes from the store once the change has landed, so
+      // this one only reports the purchase itself.
+      toast.success('Card Back Purchased');
+      await onCardBackChanged?.(id);
     },
     [userId, toast, onCardBackChanged]
   );
@@ -1048,8 +1068,8 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
       {!isHandInProgress && isRabbitAvailable && (
         <RabbitHunt
           isAvailable={isRabbitAvailable}
+          cardsAvailable={rabbitCardsAvailable}
           onReveal={onRabbitReveal}
-          currentBoard={currentBoard}
         />
       )}
 

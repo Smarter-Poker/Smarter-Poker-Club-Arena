@@ -319,6 +319,35 @@
     min-height: 44px;
     min-width: 44px;
     touch-action: manipulation;
+    /* Dan 2026-08-25: the tab strip beside this has to hold four tables at
+       375px, and the base 6px right margin was 6px of that budget. The 44px
+       tap target is untouched — only the empty space next to it. */
+    margin-right: 2px;
+  }
+
+  /* The strip is the thing that must survive a narrow screen, so give it every
+     pixel the two chips beside it do not claim. Without an explicit min-width:0
+     a flex item refuses to shrink past its content, and the overflow lands on
+     the tab strip's own scroller — which is the "Lobby tab is cut off" symptom
+     Dan reported. */
+  .multi-table-page__tab-bar-wrapper > .table-tab-bar {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* The strip's four-pill budget (see the arithmetic in TableTabBar.css) is
+     computed from a fixed 52px for this chip, so the chip has to actually hold
+     to it. A six-figure swing ellipsises rather than pushing a table off the
+     screen — the exact figure is one tap away in the breakdown this opens. */
+  .multi-table-page__pnl-chip {
+    /* border-box is the global reset (src/styles/club-engine.css), so 52px is
+       the whole chip, border and padding included. */
+    max-width: 52px;
+    padding: 4px 6px;
+    font-size: 0.62rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .table-grid {

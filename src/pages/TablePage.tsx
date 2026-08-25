@@ -11410,7 +11410,18 @@ export default function TablePage({
           TABLE AREA
           ═══════════════════════════════════════════════════════════════════════ */}
       <div className="table-container">
-        <div className="table-scaler" ref={tableScalerRef}>
+        {/* --table-w: the table's MEASURED width, published to CSS.
+            Dan 2026-08-25 (item 8): the dealer button and the chips are sized
+            as a proportion of this in TableVisualHotfix.css, so one table size
+            gives one consistent set of proportions instead of a per-breakpoint
+            guess. scalerSize comes from the ResizeObserver already on this
+            element, so it is the real painted width - including in landscape,
+            where the table is height-driven and has no width to infer from. */}
+        <div
+          className="table-scaler"
+          ref={tableScalerRef}
+          style={{ '--table-w': `${scalerSize.w}px` } as React.CSSProperties}
+        >
           {/* Table Felt */}
           <div className="table-felt">
             {/* Dan 2026-08-17 — the painted table itself. object-fit: cover

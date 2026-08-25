@@ -31,6 +31,7 @@ import RiveAvatar from './RiveAvatar';
 import { startMotionBudget } from '../../utils/motionBudget';
 import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
 import { sortCardsByRank } from '../../lib/tableCardDisplay';
+import { outboardCardSide, type CardSide } from '../../lib/tableSeatGeometry';
 import './avatarChoreography.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -462,6 +463,32 @@ function HoleCard({
   );
 }
 
+/**
+ * Where this seat sits across the table, as a percentage of the table's width.
+ *
+ * A seat is handed its NUMBER and nothing else — the ring, the rotation and the
+ * table size all live in the parent — so the only place the seat's own x still
+ * exists by the time it renders is on the element the parent wrapped it in:
+ * TablePage sets `left: ${pos.x}%` inline on `.seat-wrapper`. Reading that
+ * string back is exact, costs no layout, and is scale-invariant, which is why
+ * it is tried first.
+ *
+ * The offsetLeft fallback covers any host that positions the wrapper some other
+ * way (SimPage mounts SeatSlot outside the table page entirely). It is a
+ * layout-forcing read, so it runs once per seat per mount and only when the
+ * cheap path found nothing.
+ *
+ * NaN, deliberately, when neither works: `outboardCardSide` then answers
+ * 'right', which is where every seat's cards hung before this existed.
+ */
+function seatCentrePercent(wrap: HTMLElement): number {
+  const inline = /^\s*([\d.]+)%\s*$/.exec(wrap.style.left || '');
+  if (inline) return Number(inline[1]);
+  const host = wrap.offsetParent as HTMLElement | null;
+  if (!host || !host.offsetWidth) return NaN;
+  return (wrap.offsetLeft / host.offsetWidth) * 100;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // NEON TIMER BORDER — premium-style disappearing border
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -578,6 +605,32 @@ export const SeatSlot = memo(
       if (cards.some((c) => c == null)) return cards;
       return sortCardsByRank(cards as Card[]);
     }, [player?.holeCards]);
+
+    /**
+     * OUTBOARD CARDS 2026-08-25 (Dan, item 7): "The guy on the left, his cards
+     * should be on the left."
+     *
+     * A top-cap seat hangs its face-down row beside the avatar rather than
+     * under the plate (there is no felt under a top seat, only the banner), and
+     * the side has to be the one AWAY from the middle of the table. Sending
+     * both top seats' cards to the same side is what made five and five read as
+     * a single row of ten (item 12).
+     *
+     * Measured rather than passed as a prop: adding one would mean editing
+     * TablePage, which four other workstreams are in at once, and the seat can
+     * recover its own x from the wrapper the parent already positions it with.
+     * Re-runs when the seat gains or loses an occupant because the measured
+     * element only exists on the occupied branch; a seat's x never changes
+     * otherwise (it is a percentage, so a resize cannot flip the answer).
+     */
+    const seatRef = useRef<HTMLDivElement | null>(null);
+    const [cardSide, setCardSide] = useState<CardSide>('right');
+    const hasPlayer = !!player;
+    useEffect(() => {
+      const wrap = seatRef.current?.parentElement;
+      if (!wrap) return;
+      setCardSide(outboardCardSide(seatCentrePercent(wrap)));
+    }, [seatNumber, hasPlayer]);
 
     // Animated stack change — flash green/red when stack changes
     const [stackDelta, setStackDelta] = useState<number>(0);
@@ -1287,7 +1340,11 @@ export const SeatSlot = memo(
 
     return (
       <div
-        className={containerClasses}
+        ref={seatRef}
+        /* `seat--cards-left` / `seat--cards-right` is the outboard side derived
+           above. It rides on the seat rather than on the card row so the CSS can
+           key both the hero row and the opponent row off one class. */
+        className={`${containerClasses} seat--cards-${cardSide}`}
         onClick={onAction}
         data-seat-num={seatNumber}
         role="region"

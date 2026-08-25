@@ -50,6 +50,7 @@ import TournamentWinnerOverlay from './TournamentWinnerOverlay';
 import HandHistoryPanel, { type HandRecord } from './HandHistoryPanel';
 import { ConfettiCanvas } from './ConfettiCanvas';
 import { ParticleSystem } from './ParticleSystem';
+import { useWallet } from '../../hooks';
 // ChipAnimationManager is inline in TablePage — imported via parent
 import { HandReveal } from './HandReveal';
 import { BombPotOverlay } from './BombPotOverlay';
@@ -68,6 +69,8 @@ import type { SeatPlayer } from './SeatSlot';
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 export interface TableModalsLayerProps {
+  currentCardBack?: string;
+  onCardBackChanged?: (id: string) => void;
   // Core context
   tableId: string | undefined;
   userId: string;
@@ -380,7 +383,10 @@ export interface TableModalsLayerProps {
 import React from 'react';
 
 export function TableModalsLayer(props: TableModalsLayerProps) {
+  const { diamonds } = useWallet();
   const {
+    currentCardBack,
+    onCardBackChanged,
     tableId,
     userId,
     username,
@@ -1055,6 +1061,10 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           tableTheme: userSettings.theme,
         }}
         onSettingsChange={onSettingsChange}
+        userId={userId}
+        userDiamonds={diamonds}
+        currentCardBack={currentCardBack}
+        onCardBackChanged={onCardBackChanged}
       />
 
       {/* Share Hand */}

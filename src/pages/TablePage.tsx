@@ -12497,6 +12497,19 @@ export default function TablePage({
         }}
       />
       <TableModalsLayer
+        currentCardBack={activeCardBack}
+        onCardBackChanged={(id) => {
+          masterBus.emit('UI_THEME_CHANGED', { key: tableState.gameType, value: { cards_id: id } });
+          if (userId) {
+            supabase
+              .from('user_theme_settings')
+              .upsert(
+                { user_id: userId, game_type: tableState.gameType, cards_id: id },
+                { onConflict: 'user_id,game_type' }
+              )
+              .then(() => {});
+          }
+        }}
         tableId={tableId}
         userId={userId}
         username={username}

@@ -252,7 +252,7 @@
    CardImage.css's plain `background-size: cover` cannot win it back and the
    artwork would tile at natural size instead of filling the card. */
 .table-page .seat .card-image--back .card-back {
-  background:
+  background-image:
     var(--cb-image, none),
     var(--cb-gradient, var(--card-back-gradient, linear-gradient(135deg, #35598f 0%, #1c3560 100%))) !important;
   background-size: cover !important;

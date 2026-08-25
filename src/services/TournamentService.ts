@@ -40,7 +40,13 @@ const REGISTER_REASON_TEXT: Record<string, string> = {
   insufficient_balance: 'Insufficient chips in Player Wallet.',
 };
 
-function registerReasonText(reason: string | undefined): string {
+/**
+ * Exported so every registration surface reads the SAME refusal text.
+ * `fn_register_for_tournament` answers an ordinary refusal with
+ * `{ ok: false, reason }` rather than raising, so any caller that only checks
+ * the PostgREST `error` renders "Insufficient chips" as a successful buy-in.
+ */
+export function registerReasonText(reason: string | undefined): string {
   return REGISTER_REASON_TEXT[reason ?? ''] ?? `Could not register (${reason ?? 'unknown'})`;
 }
 
@@ -885,13 +891,22 @@ class TournamentService {
       (freshTournament.current_players ?? 0) >= freshTournament.max_players &&
       (freshTournament.variant === 'sng' || freshTournament.variant === 'spin')
     ) {
-      try {
-        await supabase
-          .from('tournaments')
-          .update({ start_time: new Date().toISOString() })
-          .eq('id', tournamentId);
-      } catch (autoStartErr) {
-        reportError(autoStartErr, 'TournamentService.SNG_autostart_failed');
+      // DEFECT D7: this was an unchecked `.update()` wrapped in a try/catch.
+      // A PostgREST call RESOLVES with `{ error }` instead of throwing, so the
+      // catch could only ever have caught a transport failure - an RLS denial
+      // on this client-side write (the likely outcome, since `tournaments` is
+      // not player-writable) resolved normally and was discarded. The nudge
+      // silently did nothing and the SNG/Spin sat waiting for a start that the
+      // discovery loop had not been told to bring forward.
+      const { error: autoStartError } = await supabase
+        .from('tournaments')
+        .update({ start_time: new Date().toISOString() })
+        .eq('id', tournamentId);
+      if (autoStartError) {
+        // Reported, not thrown: the player IS registered and paid, and the
+        // server discovery loop still starts the game on its own schedule.
+        // Failing the registration here would be a worse lie than the old one.
+        reportError(autoStartError, 'TournamentService.SNG_autostart_failed', { tournamentId });
       }
     }
 
@@ -1011,7 +1026,11 @@ class TournamentService {
         });
       });
     }
-    await supabase
+    // Same defect shape as D7: an unchecked `.update()`. If this one is denied
+    // the refunds have already happened but the row still reads REGISTERING, so
+    // the lobby keeps advertising a tournament nobody is in. Surfaced rather
+    // than thrown - the refund is the part that moved money and it succeeded.
+    const { error: cancelStatusError } = await supabase
       .from('tournaments')
       .update({
         status: 'CANCELLED',
@@ -1019,6 +1038,11 @@ class TournamentService {
         prize_pool: 0,
       })
       .eq('id', tournamentId);
+    if (cancelStatusError) {
+      reportError(cancelStatusError, 'TournamentService.cancelTournament_status_update', {
+        tournamentId,
+      });
+    }
 
     console.debug(
       `[TournamentService] Cancelled tournament ${tournament.name}: refunded ${playersRefunded} players, ${refunded} chips`
@@ -1091,12 +1115,20 @@ class TournamentService {
     // "Start" while the server loop fired created DOUBLE tables and DOUBLE
     // seating for the same tournament. Whoever loses the CAS backs off.
     {
-      const { data: claimed } = await supabase
+      // Same defect shape as D7: `error` was dropped here, so a denied or
+      // failed claim produced `claimed === null` and was reported to the owner
+      // as "already starting" - a race that never happened. A real failure has
+      // to read as a real failure, not as the benign branch next to it.
+      const { data: claimed, error: claimError } = await supabase
         .from('tournaments')
         .update({ status: 'RUNNING', started_at: new Date().toISOString() })
         .eq('id', tournamentId)
         .in('status', ['ANNOUNCED', 'REGISTERING'])
         .select('id');
+      if (claimError) {
+        reportError(claimError, 'TournamentService.start_claim', { tournamentId });
+        throw new Error(`Could not start tournament: ${claimError.message}`);
+      }
       if (!claimed || claimed.length === 0) {
         throw new Error('Tournament is already starting (server or another admin claimed it)');
       }
@@ -1194,7 +1226,10 @@ class TournamentService {
     // PERF 2026-08-24: was awaited one table at a time. Each update targets a
     // different row and carries a different value, so they are independent -
     // running them together costs the slowest one instead of the sum.
-    await Promise.all(
+    // Same defect shape as D7: these updates resolve with `{ error }`, they do
+    // not throw, so a denied seat-count write used to vanish and leave the
+    // lobby showing an empty table that is actually full.
+    const seatCountResults = await Promise.all(
       tableSeats.map((ts) =>
         supabase
           .from('tables')
@@ -1202,6 +1237,14 @@ class TournamentService {
           .eq('id', ts.tableId)
       )
     );
+    seatCountResults.forEach((r, i) => {
+      if (r.error) {
+        reportError(r.error, 'TournamentService.start_table_seat_count', {
+          tournamentId,
+          tableId: tableSeats[i].tableId,
+        });
+      }
+    });
 
     // 4. Refresh tournament row (status/started_at were already CAS-claimed above)
     const { data, error } = await supabase
@@ -1213,7 +1256,11 @@ class TournamentService {
     if (error) throw error;
 
     // 5. Update Player Stacks
-    await supabase
+    // Same defect shape as D7. This one is not survivable silently: if it is
+    // denied, every player sits at 0 chips with status 'registered' and the
+    // elimination sweep busts the whole field on its next pass. The caller
+    // must not be told the tournament started.
+    const { error: stackError } = await supabase
       .from('tournament_players')
       .update({
         chips: tournament.starting_chips,
@@ -1221,6 +1268,10 @@ class TournamentService {
       })
       .eq('tournament_id', tournamentId)
       .eq('status', 'registered');
+    if (stackError) {
+      reportError(stackError, 'TournamentService.start_player_stacks', { tournamentId });
+      throw stackError;
+    }
 
     masterBus.emit('TOURNAMENT_STARTED', { tournamentId, clubId: tournament.club_id });
 
@@ -1577,10 +1628,18 @@ class TournamentService {
           .eq('id', tournamentId)
           .maybeSingle();
         if (tData) {
-          await supabase
+          // Same defect shape as D7: the catch below cannot see a PostgREST
+          // `{ error }`, so a failed rake counter fallback was invisible and
+          // the club's rake total silently under-reported.
+          const { error: rakeUpdErr } = await supabase
             .from('tournaments')
             .update({ total_rake: (tData.total_rake || 0) + fee })
             .eq('id', tournamentId);
+          if (rakeUpdErr) {
+            reportError(rakeUpdErr, 'TournamentService.recordTournamentFee_total_rake', {
+              tournamentId,
+            });
+          }
         }
       }
     } catch (e: unknown) {
@@ -1596,10 +1655,17 @@ class TournamentService {
           .eq('id', unionId)
           .maybeSingle();
         if (unionData) {
-          await supabase
+          // Same defect shape as D7, on the union ledger this time.
+          const { error: unionUpdErr } = await supabase
             .from('unions')
             .update({ total_rake: (unionData.total_rake || 0) + fee })
             .eq('id', unionId);
+          if (unionUpdErr) {
+            reportError(unionUpdErr, 'TournamentService.recordTournamentFee_union_total_rake', {
+              tournamentId,
+              unionId,
+            });
+          }
         }
       } catch (e: unknown) {
         reportError(e, 'TournamentService.recordTournamentFee_union_total_rake');
@@ -2080,12 +2146,24 @@ class TournamentService {
     const finalPool = guarantee > 0 ? Math.max(calculatedPool, guarantee) : calculatedPool;
 
     // Update tournament
-    await supabase
+    // Same defect shape as D7, and money-facing: an unchecked write here let
+    // the function RETURN a prize pool that was never persisted, so the caller
+    // reported a number the lobby would never show.
+    //
+    // Reported, deliberately NOT thrown. Every caller reaches this line AFTER
+    // the buy-in, rebuy or add-on has already been charged server-side, so
+    // throwing would turn a transaction that really happened into a reported
+    // failure - the same class of lie in the opposite direction. The error is
+    // now visible instead of discarded, which is the fix that was missing.
+    const { error: poolError } = await supabase
       .from('tournaments')
       .update({
         prize_pool: finalPool,
       })
       .eq('id', tournamentId);
+    if (poolError) {
+      reportError(poolError, 'TournamentService.recalculatePrizePool', { tournamentId });
+    }
 
     console.debug(
       `[TournamentService] Prize pool recalculated for ${tournamentId.slice(0, 8)}: ${finalPool} (${entryCount} entries, ${rebuyTotal} rebuys, ${addonTotal} addons, ${guarantee} GTD)`

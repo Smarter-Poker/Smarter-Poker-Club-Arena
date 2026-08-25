@@ -210,7 +210,24 @@ describe('a restart mid-break does not resume play', () => {
   );
 
   it('re-pauses the rebuilt engines for the remaining break time', () => {
-    expect(resumeFn).toMatch(/tournament\.on_break && tournament\.break_ends_at/);
+    /**
+     * The gate is `tournament.on_break` ALONE (Dan 2026-08-25).
+     *
+     * This used to assert `on_break && break_ends_at`, and that conjunction was
+     * the bug: pauseForBreak deliberately writes break_ends_at as NULL, because
+     * at :55 only the last hand is announced and beginBreakCountdown fills the
+     * end time in once every table has parked - up to LAST_HAND_GRACE_MS later.
+     * A restart inside that window therefore skipped the whole recovery and the
+     * tournament dealt straight through its own break. Measured 2026-08-25:
+     * 5 tournaments stranded with on_break true and break_ends_at NULL.
+     *
+     * So a NULL end time must NOT be part of the gate. It is reconstructed from
+     * break_started_at instead, which is what the next two assertions pin.
+     */
+    expect(resumeFn).toMatch(/if \(tournament\.on_break\)/);
+    expect(resumeFn).not.toMatch(/tournament\.on_break && tournament\.break_ends_at/);
+    expect(resumeFn).toMatch(/tournament\.break_started_at/);
+    expect(resumeFn).toMatch(/LAST_HAND_GRACE_MS \+\s*TournamentManagerBase\.BREAK_DURATION_MS/);
     expect(resumeFn).toMatch(/remainingMs/);
     expect(resumeFn).toMatch(
       /engine\.pauseAfterHand\(remainingMs \+ TournamentManagerBase\.LAST_HAND_GRACE_MS\)/
@@ -224,7 +241,11 @@ describe('a restart mid-break does not resume play', () => {
   });
 
   it('clears a break that already expired while the engine was down', () => {
-    expect(resumeFn).toMatch(/on_break: false, break_ends_at: null/);
+    // The update moved into clearPersistedBreak() so the resume path and
+    // resumeFromBreak() cannot drift apart. Pin the CALL here, and the payload
+    // where it now lives.
+    expect(resumeFn).toMatch(/this\.clearPersistedBreak\(\)/);
+    expect(BASE).toMatch(/clearPersistedBreak[\s\S]{0,240}on_break: false, break_ends_at: null/);
   });
 });
 

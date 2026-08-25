@@ -109,9 +109,27 @@ describe('the blind clock survives a synchronized break', () => {
     // resume() arms the level timer, then discovers the tournament is on a
     // break. Without suspending, that timer ran for the whole break and
     // resumeFromBreak then granted a fresh full level on top.
-    const at = BASE.indexOf('if (tournament.on_break && tournament.break_ends_at)');
-    expect(at).toBeGreaterThan(-1);
-    expect(BASE.slice(at, at + 900)).toMatch(/this\.suspendLevelClock\(\)/);
+    /**
+     * UPDATED 2026-08-25. The anchor was the literal
+     * `if (tournament.on_break && tournament.break_ends_at)`, and that second
+     * condition was itself a defect: pauseForBreak writes break_ends_at as
+     * NULL on purpose (at :55 only the LAST HAND is announced; the end time is
+     * stamped up to LAST_HAND_GRACE_MS later, once every table has parked), so
+     * a restart inside that window skipped the whole recovery — engines were
+     * never re-paused, the level clock was never suspended, and resumeFromBreak
+     * could never clear on_break again. The block is entered on `on_break`
+     * ALONE now and reconstructs the end time when the row carries none.
+     */
+    expect(BASE).not.toMatch(/tournament\.on_break\s*&&\s*tournament\.break_ends_at/);
+    const at = BASE.indexOf('if (tournament.on_break)');
+    expect(at, 'resume() must react to on_break on its own').toBeGreaterThan(-1);
+    const block = BASE.slice(at, at + 1400);
+    expect(block).toMatch(/this\.suspendLevelClock\(\)/);
+    // The missing end time is reconstructed from break_started_at, not treated
+    // as "there is no break".
+    expect(block).toMatch(/break_started_at/);
+    expect(block).toMatch(/LAST_HAND_GRACE_MS/);
+    expect(block).toMatch(/BREAK_DURATION_MS/);
   });
 });
 

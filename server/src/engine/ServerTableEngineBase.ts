@@ -122,6 +122,12 @@ export abstract class ServerTableEngineBase {
   protected hub: TableStateHub | null = null;
   protected tableInfo: TableInfo | null = null;
   protected seatedPlayers: SeatedPlayer[] = [];
+  /** Tracks busted users who explicitly rejected a rebuy in the current hand (Dan 2026-08-24). */
+  protected rejectedRebuys = new Set<string>();
+
+  public rejectRebuy(userId: string): void {
+    this.rejectedRebuys.add(userId);
+  }
   protected dealerSeatIndex: number = 0;
   /**
    * A button seat drawn for the FIRST hand and consumed by it.

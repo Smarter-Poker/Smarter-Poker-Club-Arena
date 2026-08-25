@@ -526,15 +526,26 @@ const COL_COST: ColumnDef = {
    for a game you have not entered yet is exactly where they answer "is this
    the game I want": a 20,000 stack and a level-1 clock is a different
    proposition from a 20,000 stack at level 9. */
+/* Dan 2026-08-24: "ALWAYS KEEP BOTH STARTING STACK AND CURRENT LEVEL UP AT
+   ALL TIMES." current_level is only written once a tournament starts running,
+   so every card in registration showed one well and a gap. A game that has not
+   dealt a hand is on level 1 by definition — that is the level it will open
+   at, and it is exactly what a player deciding whether to register wants to
+   read. */
+function levelOf(t: LobbyTournamentRow): number {
+  return Math.max(1, Number(t.current_level) || 1);
+}
+
 function blindsForLevel(t: LobbyTournamentRow): string | null {
-  if (!t.blind_structure || !t.current_level) return null;
+  if (!t.blind_structure) return null;
   try {
     const levels = JSON.parse(t.blind_structure) as Array<{
       level?: number;
       smallBlind?: number;
       bigBlind?: number;
     }>;
-    const lv = levels.find((l) => l.level === t.current_level) || levels[t.current_level - 1];
+    const n = levelOf(t);
+    const lv = levels.find((l) => l.level === n) || levels[n - 1];
     if (!lv?.smallBlind || !lv?.bigBlind) return null;
     return `${lv.smallBlind.toLocaleString()}/${lv.bigBlind.toLocaleString()}`;
   } catch {
@@ -562,7 +573,7 @@ const COL_TSTATS: ColumnDef = {
         )}
         {blinds && (
           <span className="lt-tstat">
-            <span className="lt-tstat__k">Level {t.current_level}</span>
+            <span className="lt-tstat__k">Level {levelOf(t)}</span>
             <span className="lt-tstat__v">{blinds}</span>
           </span>
         )}

@@ -1099,6 +1099,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                     key: 'ALL',
                     value: { cards_id: realCardId },
                   });
+                  masterBus.emit('CARD_COLOR_CHANGED', { preset: preset.id });
                   toast.success('Card Color Applied');
 
                   if (user?.id) {

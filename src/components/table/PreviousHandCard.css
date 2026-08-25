@@ -1,57 +1,75 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
  * PREVIOUS HAND CARD — Bottom-Left HUD Widget
+ *
+ * Dan 2026-08-25 round 2 (item 6c): "match the previous-hand card to the same
+ * visual language so the two tiles read as a set." The set is defined in
+ * TableHUD.css (--sp-hud-tile-*) and the other member is the time-bank tile in
+ * TimebankCounter.css: flat, dark, one radius, one monochrome glyph, no border.
+ *
+ * This one is a WIDE tile rather than a square, because unlike the time bank it
+ * carries a number that has to be read at a glance (what the last hand cost or
+ * paid). Same height, same ground, same radius, same glyph weight — so the two
+ * read as one family even though one is a square and one is a lozenge.
  * ═══════════════════════════════════════════════════════════════════════════════ */
 
 .prev-hand-card {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(12px) saturate(1.2);
-  -webkit-backdrop-filter: blur(12px) saturate(1.2);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  padding: 8px 12px;
+  gap: 6px;
+  height: var(--sp-hud-tile-size, 36px);
+  padding: 0 8px;
+  /* Same three values as `.tbc-widget`. They come from TableHUD.css so there is
+     one place to change them; the fallbacks only matter if either widget is
+     ever rendered outside the HUD. */
+  background: var(--sp-hud-tile-bg, rgba(10, 12, 18, 0.72));
+  border: none;
+  border-radius: var(--sp-hud-tile-radius, 10px);
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  color: var(--sp-hud-tile-fg, rgba(255, 255, 255, 0.86));
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    transform 0.15s ease,
+    background 0.2s ease;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
   max-width: 200px;
 }
 
 .prev-hand-card:hover {
-  background: rgba(0, 0, 0, 0.7);
-  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(20, 24, 34, 0.85);
 }
 
 .prev-hand-card:active {
-  transform: scale(0.97);
+  transform: scale(0.96);
 }
 
-/* ── Card Icon ── */
+/* ── Card Icon — the two overlapping playing cards, monochrome outline ── */
 .prev-hand-card__icon {
-  color: var(--soft-white, #b0b3b8);
+  display: inline-flex;
+  color: inherit;
   flex-shrink: 0;
-  opacity: 0.7;
 }
 
 /* ── Info ── */
 .prev-hand-card__info {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 1px;
   min-width: 0;
+  line-height: 1;
 }
 
 .prev-hand-card__hand {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 500;
-  color: var(--soft-white, #b0b3b8);
-  opacity: 0.8;
+  color: inherit;
+  opacity: 0.6;
 }
 
 .prev-hand-card__result {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
@@ -60,8 +78,8 @@
 /* ── Hand Description ── */
 .prev-hand-card__desc {
   font-size: 9px;
-  color: var(--soft-white, #b0b3b8);
-  opacity: 0.6;
+  color: inherit;
+  opacity: 0.55;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -75,96 +93,48 @@
   gap: 4px;
 }
 
-/* ── Action Buttons (Replay / Share) ── */
-.prev-hand-card__actions {
-  display: flex;
-  gap: 4px;
-  animation: prev-hand-actions-in 0.2s ease;
-}
-
-@keyframes prev-hand-actions-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.prev-hand-card__action-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 5px 10px;
-  color: var(--soft-white, #b0b3b8);
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.prev-hand-card__action-btn:hover {
-  background: rgba(0, 0, 0, 0.7);
-  color: var(--off-white, #e4e6eb);
-}
-
-.prev-hand-card__action-btn:active {
-  transform: scale(0.95);
-}
-
-/* ── Responsive ── */
-@media (max-width: 480px) {
-  .prev-hand-card {
-    padding: 6px 10px;
-    gap: 6px;
-    border-radius: 8px;
-  }
-
-  .prev-hand-card__result {
-    font-size: 12px;
-  }
-
-  .prev-hand-card__desc {
-    display: none;
-  }
-}
-
 /* ── Dan 2026-08-21 (item 4): the tap-to-open-a-menu popover is gone. The card
    itself opens the hand breakdown; Share lives inline as its own small button
-   so it never needs a menu. ────────────────────────────────────────────────── */
+   so it never needs a menu. Flat like everything else on the tile — a bordered
+   sub-button inside a borderless tile is the ornament this redesign removes. */
 .prev-hand-card__share {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 22px;
   height: 22px;
-  margin-left: 4px;
+  margin-left: 2px;
   padding: 0;
   flex-shrink: 0;
+  border: none;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(0, 0, 0, 0.35);
-  color: var(--soft-white, #b0b3b8);
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
   cursor: pointer;
   transition:
     background 0.15s ease,
-    color 0.15s ease,
     transform 0.1s ease;
 }
 
 .prev-hand-card__share:hover {
-  background: rgba(0, 0, 0, 0.6);
-  color: var(--off-white, #e4e6eb);
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .prev-hand-card__share:active {
   transform: scale(0.92);
+}
+
+/* ── Responsive ── */
+@media (max-width: 480px) {
+  .prev-hand-card {
+    padding: 0 6px;
+    gap: 5px;
+  }
+
+  /* The hand description is the first thing to go on a phone: it is the one
+     part of this tile nobody needs mid-hand, and the stack it lives in is
+     already competing with the felt for the bottom-left corner. */
+  .prev-hand-card__desc {
+    display: none;
+  }
 }

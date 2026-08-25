@@ -3,13 +3,30 @@
  *  TIMEBANK COUNTER — Spec §5.7 Always-Visible Timebank Balance
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Bottom-left corner widget showing the player's remaining time-bank charges.
+ * Bottom-left HUD tile showing the player's remaining time-bank charges.
+ * Tapping it opens the time-bank store.
  *
- * Dan 2026-08-20 (redesign): the old pill was a generic clock glyph + count +
- * pink diamond, which read as a currency balance, not a shot-clock resource.
- * Now it is a golden ALARM CLOCK (bells + legs) with "20s" on its face — the
- * seconds one bank buys (Bible V8 §6.2 / TimeBankEngine secondsPerUse) — and
- * the number of banks remaining beside it. Matches the PokerBros reference.
+ * Dan 2026-08-20 (first redesign): a generic clock glyph plus a pink diamond
+ * read as a currency balance, so it became a golden alarm clock with "20s" on
+ * its face.
+ *
+ * Dan 2026-08-25 round 2 (item 6c) — THIS redesign, and it reverses the last
+ * one on purpose: "the button just needs to be simple like the attached
+ * image ... don't use this exact design, but something similar." The reference
+ * is a small, plain, dark rounded square holding one monochrome outline glyph:
+ * no gradient, no bells, no gold, no badge, no border. The alarm clock was four
+ * paths, two fills, a radial gradient and a drop shadow sitting on a phone
+ * screen next to a live poker hand.
+ *
+ * What it still has to do, and does:
+ *   - say how many banks remain  -> the numeral under the glyph, not a badge;
+ *   - open the store on tap      -> unchanged `onClick`;
+ *   - warn when nearly out       -> `low` tints the NUMERAL only. That is
+ *     information, not ornament: the glyph and the tile stay monochrome.
+ *
+ * The class name stays `.tbc-widget`. TablePage.css hides this element while
+ * the raise overlay is open (`body.ca-raising .tbc-widget`), and renaming it
+ * would silently put the tile back on top of the slider — the 2026-08-18 bug.
  *
  * Pure presentational: the parent passes `count` and `onClick` (optional).
  */
@@ -20,9 +37,14 @@ import './TimebankCounter.css';
 interface TimebankCounterProps {
   count: number;
   onClick?: () => void;
-  /** Optional: when true, widget renders in "low" state (pulsing warning). */
+  /** Optional: when true, widget renders in "low" state (warning tint). */
   low?: boolean;
-  /** Seconds one time bank adds to the clock. Engine default is 20. */
+  /**
+   * Seconds one time bank adds to the clock. Engine default is 20.
+   * No longer printed on the tile — the flat tile has room for one number and
+   * the useful one is how many banks are left. It is still in the label and the
+   * tooltip, so the answer is one hover or one screen-reader stop away.
+   */
   bankSeconds?: number;
 }
 
@@ -40,54 +62,25 @@ export const TimebankCounter: React.FC<TimebankCounterProps> = ({
       aria-label={`Time banks remaining: ${count}, ${bankSeconds} seconds each`}
       title={`${count} time bank${count === 1 ? '' : 's'} remaining (${bankSeconds}s each)`}
     >
-      {/* Golden alarm clock with the per-bank seconds on its face */}
-      <span className="tbc-alarm" aria-hidden="true">
-        <svg width="30" height="30" viewBox="0 0 32 32" fill="none">
-          {/* Bells */}
+      {/* One monochrome outline glyph: a clock face with two small winder stems,
+          enough to read as "shot clock" at 16px without any of the alarm
+          clock's fills. currentColor throughout, so the tile owns the colour. */}
+      <span className="tbc-glyph" aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="11.2" r="6.4" stroke="currentColor" strokeWidth="1.4" />
           <path
-            d="M6.5 5.5 L10.5 2.8 A1.4 1.4 0 0 1 12.3 4.9 L9 7.6 Z"
-            fill="var(--tbc-gold-dark, #b8860b)"
+            d="M10 7.8v3.4l2.3 1.5"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           />
           <path
-            d="M25.5 5.5 L21.5 2.8 A1.4 1.4 0 0 0 19.7 4.9 L23 7.6 Z"
-            fill="var(--tbc-gold-dark, #b8860b)"
-          />
-          {/* Legs */}
-          <path
-            d="M8.2 26.5 L6 29.3 M23.8 26.5 L26 29.3"
-            stroke="var(--tbc-gold-dark, #b8860b)"
-            strokeWidth="2"
+            d="M5.5 3.2 3.6 5M14.5 3.2 16.4 5"
+            stroke="currentColor"
+            strokeWidth="1.4"
             strokeLinecap="round"
           />
-          {/* Body */}
-          <circle cx="16" cy="17" r="11.2" fill="url(#tbcBody)" />
-          <circle
-            cx="16"
-            cy="17"
-            r="11.2"
-            stroke="var(--tbc-gold, #f5c542)"
-            strokeWidth="2"
-          />
-          {/* Face */}
-          <circle cx="16" cy="17" r="8.6" fill="rgba(10, 12, 18, 0.85)" />
-          <text
-            x="16"
-            y="20.4"
-            textAnchor="middle"
-            fontSize="8.5"
-            fontWeight="800"
-            fill="#ffffff"
-            fontFamily="inherit"
-          >
-            {bankSeconds}s
-          </text>
-          <defs>
-            <radialGradient id="tbcBody" cx="0.35" cy="0.3" r="0.9">
-              <stop offset="0%" stopColor="#ffe9a8" />
-              <stop offset="55%" stopColor="#f5c542" />
-              <stop offset="100%" stopColor="#b8860b" />
-            </radialGradient>
-          </defs>
         </svg>
       </span>
       <span className="tbc-count">{count}</span>

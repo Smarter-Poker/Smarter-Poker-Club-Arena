@@ -24,6 +24,28 @@
   position: relative;
 }
 
+/* PUBLISHED CONTRACT: how tall this bar is.
+
+   `.multi-table-page__table-slot` starts on this bar's bottom border, so
+   `.table-page--embedded` is shorter than the viewport by exactly this much.
+   TablePage.css needs the number to size the felt: it derives the scaler's
+   WIDTH from the height available, so over-stating that height makes
+   `max-height: 100%` clamp the box off its 605/1000 aspect - and every seat
+   percentage is measured against that aspect, so the ring leaves the painted
+   rail. That was live on 2026-08-25 in the installed app, at ratio 0.71 to
+   0.73 against a required 0.605.
+
+   It is on :root because `.table-container` is not a descendant of this bar
+   and cannot see a property declared on it.
+
+   The value is this rule's own SUM, not its min-height: 36px pill + 6px top
+   pad + 6px bottom pad + 1px border = 49, which is above the 48px floor. If a
+   pill height, a pad or the border moves, change this in the same commit and
+   re-do the sum. */
+:root {
+  --sp-tabbar-h: calc(49px + env(safe-area-inset-top, 0));
+}
+
 .table-tab-bar::after {
   content: '';
   position: absolute;
@@ -44,19 +66,22 @@
   align-items: center;
   gap: 6px;
   flex: 1;
-  /* Dan 2026-08-23: "the action bars at the top should be centred. They are
-     left justified at the moment."
+  /* Dan 2026-08-25, round 2: "THE ACTION TAB AND + BUTTON NEED TO BE LOCATED
+     AND START NEXT TO THE HAMBURGER MENU, NOT IN THE MIDDLE OF THE BAR."
 
-     `safe center` rather than plain `center`: this row scrolls
-     (overflow-x: auto), and an overflowing flex container centred the ordinary
-     way pushes its first item past the scroll origin, where it can never be
-     reached. The `safe` keyword centres only while everything fits and falls
-     back to start the moment it does not — which is exactly the behaviour
-     wanted here, since a player with four tables open needs to reach tab one.
-     The unprefixed declaration above it is the fallback for engines that do
-     not parse `safe`. */
-  justify-content: center;
-  justify-content: safe center;
+     This REVERSES the 2026-08-23 `safe center` (which read "the action bars at
+     the top should be centred"). Centring only looks centred when the strip is
+     full: with one table open the lone pill and the "+" floated in the middle
+     of the bar with a wide dead gap after the hamburger, which is the shape Dan
+     photographed. Packing to the start puts the first pill immediately right of
+     the hamburger and grows the strip rightward, so the empty space collects on
+     the RIGHT where it reads as room for more tables rather than as a hole.
+
+     It also retires the `safe` machinery outright. `safe center` existed only
+     because an overflowing centred flex row pushes its first item past the
+     scroll origin where it can never be reached; `flex-start` cannot strand an
+     item that way, so the two-declaration fallback has nothing left to guard. */
+  justify-content: flex-start;
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -74,6 +99,17 @@
   position: relative;
   display: flex;
   align-items: center;
+  /* Dan 2026-08-25, round 2: "ALL FONTS, CARDS OR ANYTHING DISPLAYING INSIDE
+     THE BOX NEEDS TO BE CENTERED, NOT LEFT JUSTIFIED."
+
+     The pill centres its own in-flow children, so whatever it is carrying —
+     the game code over its stakes line, the mini hole cards, a turn badge
+     beside either — sits on the pill's TRUE middle. Previously the label alone
+     carried `flex: 1` and centred itself inside whatever width was left after
+     the badges, which is a different midpoint every time a badge appears.
+     Pair this with `flex: 0 1 auto` on the label and on the mini-card row
+     below: an item that still grows would eat the free space this needs. */
+  justify-content: center;
   gap: 6px;
   min-width: 100px;
   max-width: 160px;
@@ -162,7 +198,21 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 .table-tab-bar__tab-name {
-  flex: 1;
+  /* `flex: 1` here is what stopped the label from being VERTICALLY centred
+     (Dan 2026-08-25, round 2: "Vertically centre it too").
+
+     The name used to sit in the pill's ROW, beside an in-flow close button, so
+     growing made sense. It now sits in `.table-tab-bar__tab-label`, which is a
+     COLUMN — so `flex: 1` grew it downwards instead, swallowing every pixel of
+     free height. Its parent's `justify-content: center` then had nothing left
+     to distribute, and the name's own text stayed block-top-aligned inside the
+     stretched box: code high, stakes line pinned to the floor.
+
+     `flex: 0 0 auto` gives it back its text height, so the name + sub pair is
+     centred as a unit. `max-width: 100%` keeps the ellipsis working, which is
+     what the shrink half of `flex: 1` was quietly providing. */
+  flex: 0 0 auto;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.2;
@@ -224,7 +274,11 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  flex: 1;
+  /* Was `flex: 1`. The pill centres its own children now, and a child that
+     still grows would absorb the free space the pill needs to do it — the card
+     row would fill the pill and re-centre itself inside whatever a turn badge
+     left over, which is the same off-centre midpoint the label had. */
+  flex: 0 1 auto;
   justify-content: center;
   min-width: 0;
 }
@@ -523,6 +577,17 @@
    min-width BACK UP to 70px, so at 375px — the exact width this was all sized
    for — it silently undid the 480px rules above it. One breakpoint, derived
    from the narrowest device, cannot disagree with itself.
+
+   ROUND 2 (Dan 2026-08-25) DID NOT SPEND ANY OF THIS. The strip now packs to
+   the start instead of centring, the pill centres its own children, and the
+   active pill's close-control reserve went from 16px on one side to 12px on
+   both. None of those touch a pill's min-width, max-width, border or the
+   strip's gap, so the worst case is the same as it was: four capped pills at
+   4 x 55.25 = 221, plus three 2px gaps = 227, inside the 231 available. The
+   only width the reserve change moves is the ACTIVE pill's, and it moves it in
+   both directions at once — +8px of padding against -4px of close-disc
+   footprint — while that pill's shrink-to-fit width stays under the same
+   55.25px cap. Four pills still fit at 375px with 4px to spare.
    ───────────────────────────────────────────────────────────────────────────── */
 
 @media (max-width: 480px) {
@@ -533,6 +598,12 @@
     gap: 4px;
     /* 34px pill + 4px padding top and bottom. */
     min-height: 42px;
+  }
+
+  /* The published contract at this breakpoint. 34px pill + 4px top pad + 4px
+     bottom pad + 1px border. See the base rule for why TablePage.css needs it. */
+  :root {
+    --sp-tabbar-h: calc(43px + env(safe-area-inset-top, 0));
   }
 
   .table-tab-bar__tabs {
@@ -572,17 +643,59 @@
     border-radius: 17px;
   }
 
-  /* A pill actually showing the close control reserves room for its label to
-     clear it; see the absolute-positioning note on __close below. 16px, so the
-     centred label's right edge lands 19px in from the pill's edge against the
-     X's left edge at 17px — 2px of daylight. A cards pill reserves nothing,
-     because the mini cards are centred and the X lands on the outer card's
-     edge, which reads as the stack being fanned. Only the active pill shows
-     the X on a touch device (there is no hover), so this costs exactly one
-     pill's worth of label width — and it is the one table whose pot is already
+  /* THE RESERVE IS SYMMETRIC NOW (Dan 2026-08-25, round 2: "Centre the content
+     about the pill's true middle, not about the middle of what is left after
+     the X").
+
+     It used to be `padding-right: 16px` alone. That does clear the floating X,
+     but a one-sided pad moves the pill's CONTENT box 8px left of the pill, and
+     a label centred in a content box that is itself off-centre is off-centre —
+     which is the leftward lean Dan photographed on the single "PLO5 / Pot 55"
+     pill.
+
+     Padding the same 13px on BOTH sides keeps the content box concentric with
+     the pill, so `justify-content: center` lands the label on the pill's true
+     middle, and still holds it off the X. Both numbers below are MEASURED in a
+     browser at 375px against this exact stylesheet, not estimated:
+
+       "PLO5" is the widest game code: 26.13px at 10px/800 Inter.
+       Close disc 12px wide at `right: 1px` = 13px of the pill's right end.
+       Pill = 26.13 + 26 (padding) + 2 (borders) = 54.13px, inside the
+       55.25px cap the 375px budget allows.
+       Centred, the code's midpoint lands 0.00px off the pill's own midpoint
+       and its right edge stops 0.44px short of the disc; the "Pot 55" line
+       under it stops 1.50px short. Vertically the pair sits 6.84px from the
+       pill's top and 6.86px from its bottom.
+
+     12px was tried first and measured at -1px — the code's last glyph touching
+     the disc. The extra pixel each side is the difference between "flush" and
+     "clear", and the pill has it to give.
+
+     13px, not the old one-sided 16: a symmetric reserve costs twice what a
+     one-sided one did, and the label had 34.25px before. At 13px it has
+     27.25px on a max-width pill, which still carries every game code whole.
+     The lines that do not fit — "DISCARD", "Pot 12,500" — ellipsised at
+     34.25px too, so the centring is bought from slack rather than from a
+     legible label.
+
+     THE MIN-WIDTH IS PART OF THE RESERVE, not decoration. Below ~330px the
+     pill's `max-width: calc((100vw - 154px) / 4)` falls under the 44px floor,
+     and a 44px pill minus a 26px symmetric reserve leaves 18px — measured at
+     320px, "PLO5" clipped to "PL". 55px is 54.13 rounded up, so the code
+     always has its own width; the strip is already scrolling at that viewport
+     (see THE 375px BUDGET), which is the documented fallback, so a wider
+     active pill there costs nothing that was not already spent. At 375px 55px
+     sits under the 55.25px cap, so the four-pill sum is untouched.
+
+     A cards pill still reserves nothing: the mini cards are centred and the X
+     lands on the outer card's edge, which reads as the stack being fanned.
+     Only the active pill shows the X on a touch device (there is no hover), so
+     this costs exactly one pill — and it is the one table whose pot is already
      printed across the felt in front of the player. */
   .table-tab-bar__tab--active:not(.table-tab-bar__tab--cards) {
-    padding-right: 16px;
+    min-width: 55px;
+    padding-left: 13px;
+    padding-right: 13px;
   }
 
   .table-tab-bar__tab-sub {
@@ -597,25 +710,34 @@
      6px gap, nearly half of a 55px pill, and the one thing a six-card preview
      could not afford. Floated over the pill's right edge it costs the layout
      nothing at all. The ::before is an invisible pad so the hit box is a
-     finger rather than a 14px circle; the pill's overflow:hidden trims ~2px
-     off its outer edge, leaving roughly 22x24 of live target. */
+     finger rather than a 12px circle; the pill's overflow:hidden trims ~2px
+     off its outer edge, leaving roughly 22x24 of live target.
+
+     12px at right:1px, down from 14px at right:3px (Dan 2026-08-25, round 2).
+     Its footprint is what the pill's now-SYMMETRIC label reserve has to clear
+     on BOTH sides, so every pixel shaved here is two pixels back for the
+     label: 13px of footprint against the old 17px is 8px of label width
+     recovered, which is most of what true centring cost. */
   .table-tab-bar__close {
     position: absolute;
     top: 50%;
-    right: 3px;
+    right: 1px;
     transform: translateY(-50%);
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     font-size: 0.5625rem;
     background: rgba(8, 10, 16, 0.85);
     color: rgba(255, 255, 255, 0.9);
     z-index: 3;
   }
 
+  /* -6px against a 12px disc = a 24x24 hit box, the same finger-sized target
+     the 14px disc had at -5px. The disc shrank; the thing you actually aim at
+     did not. */
   .table-tab-bar__close::before {
     content: '';
     position: absolute;
-    inset: -5px;
+    inset: -6px;
     border-radius: 50%;
   }
 
@@ -784,7 +906,11 @@
   align-items: center;
   justify-content: center;
   min-width: 0;
-  flex: 1;
+  /* Was `flex: 1`. See `.table-tab-bar__tab` — the pill does the centring now,
+     and a label that grows to fill the pill re-centres itself inside the space
+     a badge left behind rather than on the pill's own middle. `0 1 auto` keeps
+     the shrink, which is what lets the name ellipsise on a 44px pill. */
+  flex: 0 1 auto;
   line-height: 1.1;
   text-align: center;
 }
@@ -960,9 +1086,11 @@
 }
 
 @media (max-width: 480px) {
-  /* 10px. "PLO5" is the longest code and comes to ~26px at this weight, which
-     fits the 50px a 56px pill has inside its paddings even once the close
-     control has taken its 18px reserve on the active pill. */
+  /* 10px. "PLO5" is the longest code and measures 26.13px at this weight. That
+     fits the 47.25px a background pill has inside its 3px paddings and 1px
+     borders, and it fits the 27.25px an ACTIVE pill has left once the
+     symmetric 13px close-control reserve is taken — which is the tighter of
+     the two and therefore the one that sets this size. */
   .table-tab-bar__tab-label .table-tab-bar__tab-name {
     font-size: 0.625rem;
     letter-spacing: 0;

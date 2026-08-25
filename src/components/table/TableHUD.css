@@ -2,7 +2,55 @@
  * TABLE HUD — 4-Corner Overlay Layout
  * ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* ═══ THE BOTTOM-EDGE LINE, DEFINED ONCE (Dan 2026-08-25 round 2, item 6) ═══
+   Two sides of the screen have to rest on the same horizontal line: the
+   bottom-left HUD stack (`.table-hud__lower`, below) and the chat button
+   (`.chat-collapsed` in TableChat.css). Until today each side carried its own
+   copy of the expression and a note begging the next person to keep them
+   byte-identical. Four copies existed. That is not a rule, it is a wish — so
+   the expression is now a single custom property and both sides read it.
+
+   It is declared on `.table-page` rather than on `.table-hud` because chat is
+   NOT inside the HUD: `<TableChat>` is a sibling further down TablePage's tree
+   (TablePage.tsx ~13658). `.table-page` is the nearest common ancestor, and it
+   is also the element TablePage.tsx sets `--sp-action-h` on, so the input and
+   the derived value live together.
+
+   --sp-action-h is the action bar's MEASURED height, published by a
+   ResizeObserver on `.action-panel-wrapper`. Since 2026-08-25 that measurement
+   is the BORDER-BOX height, so it already contains the wrapper's
+   safe-area-inset-bottom padding — do NOT add env() on top of it here, which is
+   what the four old copies did and what made the two icons float a
+   home-indicator's worth too high on a notched phone. The FALLBACK still has to
+   carry the inset, because a browser with no ResizeObserver never gets the
+   measurement: it mirrors `.action-panel-wrapper`'s own min-height floor, which
+   is `var(--sp-bottom-row-h) + env(safe-area-inset-bottom)`.
+
+   The 8px is the visual breathing gap between the bottom chrome and the two
+   icons resting on it. */
+.table-page {
+  --sp-hud-line: calc(
+    var(--sp-action-h, calc(var(--sp-bottom-row-h, 52px) + env(safe-area-inset-bottom, 0px))) + 8px
+  );
+}
+
 .table-hud {
+  /* ─── HUD TILE LANGUAGE (Dan 2026-08-25 round 2, item 6c) ────────────────
+     "the button just needs to be simple like the attached image ... something
+     similar" — a small, flat, dark rounded square with one monochrome glyph,
+     no colour, no badge, no border.
+
+     The time-bank control and the previous-hand card are the two chips in the
+     bottom-left stack and Dan asked for them to "read as a set", so the three
+     values that make them a set are named here, once, and consumed by
+     TimebankCounter.css and PreviousHandCard.css. Declared on `.table-hud`
+     because those are the only two places they are ever rendered; both consume
+     them through var() fallbacks so neither component breaks if it is ever
+     mounted outside the HUD. */
+  --sp-hud-tile-bg: rgba(10, 12, 18, 0.72);
+  --sp-hud-tile-radius: 10px;
+  --sp-hud-tile-size: 36px;
+  --sp-hud-tile-fg: rgba(255, 255, 255, 0.86);
   position: fixed;
   inset: 0;
   pointer-events: none;
@@ -11,11 +59,11 @@
   flex-direction: column;
   justify-content: space-between;
   /* The bottom inset is deliberately 0 here (Dan 2026-08-25, item 6). It used
-     to be `env(safe-area-inset-bottom, 8px)`, and `.table-hud__lower` ALSO adds
-     `env(safe-area-inset-bottom)` inside its own reserve — so on a notched
-     phone the home-indicator strip was counted TWICE and the bottom-left stack
-     floated 34px higher than the chat button, which reserves it once. Counted
-     once, in the one place that owns the line: see .table-hud__lower. */
+     to be `env(safe-area-inset-bottom, 8px)` while the reserve below counted
+     the same strip again — so on a notched phone the home-indicator was counted
+     TWICE and the bottom-left stack floated 34px higher than the chat button.
+     The strip is now counted exactly once, inside the measured --sp-action-h
+     that --sp-hud-line is built from (see the top of this file). */
   padding: env(safe-area-inset-top, 8px) env(safe-area-inset-right, 8px) 0
     env(safe-area-inset-left, 8px);
 }
@@ -48,7 +96,12 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  padding: 6px 4px;
+  /* Deliberately NOT a `padding` shorthand: the bottom is owned by
+     --sp-hud-line below and a shorthand in this rule (or in the breakpoint
+     further down) silently resets it. */
+  padding-top: 6px;
+  padding-left: 4px;
+  padding-right: 4px;
   /* Dan 2026-08-22 item 3: the clock + previous-hand card sit LOW — resting
      just on top of the action panel, where the background meets the black
      action box.
@@ -63,22 +116,20 @@
      "The time bank button needs to be lower, same level as the chat button.
      The bottoms of both icons should be equal at the bottom."
 
-     This calc IS that line, and it is now the ONLY definition of it. The chat
-     button (TableChat.css `.chat-collapsed`) resolves its `bottom` from a
-     byte-identical expression, and the time-bank chip is the LAST item in this
-     row's bottom-left stack (`.tbc-widget { order: 1 }` in TimebankCounter.css),
-     so the two bottom edges are the same number by construction rather than by
-     two people agreeing on a pixel. They were not agreeing: chat sat on a
-     hardcoded 112px while this side read the measurement, and the safe-area
-     inset was counted twice on this side (see .table-hud above).
+     --sp-hud-line IS that line. It is defined once at the top of this file and
+     `.chat-collapsed` (TableChat.css) resolves its `bottom` from the same
+     property, so the two bottom edges are the same number by construction
+     rather than by two people agreeing on a pixel. They were not agreeing: chat
+     sat on a hardcoded 112px while this side read the measurement, and the
+     safe-area inset was counted twice on this side (see .table-hud above).
 
-     The fallback is 96px, not the old 112px: 96px is `.action-panel-wrapper`'s
-     own `min-height` floor in TablePage.css, so a browser without
-     ResizeObserver lands on the real collapsed-bar height instead of a number
-     nothing in the layout ever produced. Change it in both files or not at
-     all — a mismatched fallback is a drift that only shows up on the browsers
-     nobody tests on. */
-  padding-bottom: calc(var(--sp-action-h, 96px) + 8px + env(safe-area-inset-bottom, 0px));
+     Because this row is `align-items: flex-end`, the bottom-left corner's
+     bottom edge sits ON this line — whichever widget is last in the stack rests
+     on it. Dan 2026-08-25 round 2: "THE PREVIOUS HAND IS SUPPOSED TO BE ON THE
+     BOTTOM, WITH THE TIME BANK ON TOP", so the previous-hand card is the one on
+     the line and the time-bank tile sits above it. See TimebankCounter.css for
+     why the `order: 1` that inverted them is gone. */
+  padding-bottom: var(--sp-hud-line);
   gap: 8px;
 }
 
@@ -110,16 +161,16 @@
   }
 
   .table-hud__lower {
-    padding: 4px 2px;
-    /* Dan 2026-08-22 item 3: both widgets are stacked in one flex column now
-       (no more fixed-position overlap), so the whole stack can drop to just
-       above the action bar.
-       Measured, not hardcoded - see the base rule. A flat 112px here would put
-       the previous-hand card back under an opened raise slider on phones.
-       Byte-identical to the base rule and to `.chat-collapsed` — this is THE
-       BOTTOM-EDGE LINE, and a breakpoint that redefines it is a breakpoint on
-       which the time-bank chip and the chat button drift apart again. */
-    padding-bottom: calc(var(--sp-action-h, 96px) + 8px + env(safe-area-inset-bottom, 0px));
+    /* Longhand on purpose. This block used to restate THE BOTTOM-EDGE LINE
+       underneath a `padding` shorthand — a second copy of the expression whose
+       only job was to undo the shorthand that had just erased the first one.
+       Both are gone: the shorthand no longer touches the bottom, so the line is
+       inherited from the base rule and a breakpoint can no longer disagree with
+       it. That disagreement is exactly how the time-bank chip and the chat
+       button drifted apart on phones, which is where it was reported. */
+    padding-top: 4px;
+    padding-left: 2px;
+    padding-right: 2px;
   }
 }
 

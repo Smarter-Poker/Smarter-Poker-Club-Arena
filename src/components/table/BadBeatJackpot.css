@@ -538,13 +538,14 @@
 
    LANDSCAPE, not stacked, on a phone: two 8px lines plus a 5px bezel made a
    34px plaque, and a 34px plaque is not a seam, it is a second header. One row
-   is ~21px and reads as a nameplate hanging off the bar.
+   is 22px (declared, not emergent — see --sp-bbj-h below) and reads as a
+   nameplate against the bar.
 
    It cannot reach a seat or the board. The felt's scaler starts below
    `.table-header` (8px + inset) plus `.table-container`'s own top padding
    (48px at <=380px, 76px above that), so it begins 56px down at the very
    least; a top seat's plate is centred at 6-8.5% of the scaler and reaches at
-   most a few px above that edge, call it 50px. The plate ends at 21px. The
+   most a few px above that edge, call it 50px. The plate ends at 22px. The
    board sits near 40% of the scaler, far below that again.
 
    THE ONE THING THAT COULD BREAK THIS: `.table-container`'s top padding. It is
@@ -554,41 +555,113 @@
 
    The desktop plaque is untouched. */
 @media (max-width: 768px) {
+  /* ── PUBLISHED CONTRACT: the phone plate's total height ──────────────────
+     22px, borders included, and it does not move with the font size, the
+     jackpot's digit count or the viewport width — the plate is `height:
+     var(--sp-bbj-h)` below and centres whatever it is carrying inside that.
+
+     It is on :root rather than on .bbj-widget because the elements that have
+     to keep OFF the plate are not its descendants: `.table-container`'s top
+     reserve in TablePage.css is the one that matters, and a custom property
+     declared on the plate is invisible to it. Read this, do not re-measure the
+     plate, and do not hard-code 22 anywhere.
+
+     If a later pass changes this number, grep for --sp-bbj-h and for the
+     "~21px the BBJ nameplate" note in TablePage.css in the SAME commit. That
+     reserve is the only thing between this plate and a top seat. */
+  :root {
+    --sp-bbj-h: 22px;
+  }
+
   .bbj-widget {
     top: 0;
+    height: var(--sp-bbj-h);
     display: flex;
     flex-direction: row;
-    align-items: baseline;
+    /* `center`, not `baseline`. Baseline alignment made sense while the label
+       was 7px and the amount 12px; with the two now at the SAME size it just
+       reintroduces half-leading asymmetry into a fixed-height plate. */
+    align-items: center;
     justify-content: center;
-    gap: 5px;
-    /* No top bezel and square top corners: the plate hangs FROM the bar, and a
-       milled edge along the seam would read as a gap between the two. */
-    border-width: 0 2px 2px;
+    gap: 6px;
+
+    /* FULL BORDER — Dan 2026-08-25, round 2: "THE BBJ IS CUT OFF AT THE TOP...
+       Make the whole plate visible - full border, nothing sliced."
+
+       This REVERSES round one's `border-width: 0 2px 2px`, whose comment read
+       "no top bezel and square top corners: the plate hangs FROM the bar, and
+       a milled edge along the seam would read as a gap between the two."
+       Nothing was ever clipping this plate — see the containing-block note on
+       the base rule; `top: 0` is the top of `.table-page--embedded` and there
+       is no padding, transform, clip or overflow above it that could bite.
+       The top edge was simply not being drawn, and a plate with three sides
+       reads exactly like a plate whose fourth side has been cut off. Round one
+       traded a real edge for a theoretical gap; the gap never appeared and the
+       missing edge did.
+
+       Square top corners stay: with the bezel drawn, a straight seam reads as
+       a nameplate milled into the bar, where a rounded top would open two
+       triangular slivers of felt against the bar's straight edge — which is
+       the very gap round one was worried about, and the only way to actually
+       produce it. */
+    border-width: 2px;
     border-radius: 0 0 9px 9px;
-    padding: 2px 10px 3px;
+
+    /* No vertical padding: the fixed height plus `align-items: center` is what
+       positions the row, and a padding that also claimed height would make the
+       published number depend on the font. */
+    padding: 0 10px;
     /* Clears the stats icon parked at right:6px on phones (TableHUD.css
        .table-hud__corner--ur + MiniStatsCard.css .mini-stats-card--icon, 36px
        square): 375 - 110 = 265px of plate, centred, ends at x=320 against the
-       icon's left edge at x=333. */
+       icon's left edge at x=333. The widest thing that can be in here is a
+       seven-figure pool at the sizes below, ~232px, so the cap is headroom
+       rather than a squeeze. */
     max-width: calc(100% - 110px);
   }
 
-  /* The inner bezel follows the outer one, or it draws a machined line across
-     the seam the outer border just gave up. */
+  /* The inner bezel follows the outer one. It now has a top run again, which
+     is the second half of the "cut off" report: with no outer top border, this
+     1.5px nickel line was the plate's entire top edge and it sat 0.5px above
+     the lettering, reading as a blade through the tops of the glyphs. With
+     2px of outer bezel and the row centred in a 22px plate there is ~4px of
+     air above the text and the line reads as the frame it is. */
   .bbj-widget::before {
     border-radius: 0 0 7px 7px;
   }
 
+  /* ── ONE SIZE FOR BOTH (Dan 2026-08-25, round 2) ─────────────────────────
+     "BAD BEAT JACKPOT AND TOTAL SHOULD BE THE SAME FONT SIZES AS WELL."
+
+     The label was 0.4375rem (7px) against the amount's 0.75rem (12px). Levelled
+     UP to the amount's size rather than down to the label's: this is money on
+     display, and shrinking the number to meet the caption would have been the
+     wrong half to move.
+
+     Width at 12px, on the 375px phone the whole budget is taken from:
+       label   "BAD BEAT JACKPOT"  14 letters + 2 spaces at 700 weight,
+                                   letter-spacing 0.06em          ~129px
+       gap                                                           6px
+       amount  "73,555" in JetBrains Mono at 0.6em advance          ~45px
+       padding + borders                                             24px
+                                                                  = ~204px
+     against the 265px the cap allows. A seven-figure pool adds ~29px and still
+     clears it. */
   .bbj-widget__label {
-    font-size: 0.4375rem;
-    letter-spacing: 0.1em;
+    font-size: 0.75rem;
+    /* 0.06em, down from 0.1em. Tracking that read as deliberate on a 7px
+       caption is just width at 12px, and width is the only budget this row
+       has. */
+    letter-spacing: 0.06em;
     /* Sits beside the amount now, not above it. */
     margin-bottom: 0;
+    line-height: 1.1;
     white-space: nowrap;
   }
 
   .bbj-widget__amount {
     font-size: 0.75rem;
+    line-height: 1.1;
   }
 
   /* The hover lift raises the plate off the felt on desktop. Against the bar
@@ -596,5 +669,22 @@
      rather than moves. */
   .bbj-widget:hover {
     transform: translateX(-50%);
+  }
+}
+
+/* Below ~360px the plate's cap tightens to ~210px, which a seven-figure pool at
+   12px would overrun and the plate's own overflow:hidden would then clip — the
+   exact failure this pass exists to remove. One step down, applied to BOTH so
+   they stay equal, and the published height does not move: a 10px row is still
+   centred in the same 18px of content box. Measured at 320px: plate 199.02px
+   wide inside a 210px cap, no overflow, height still 22px.
+
+   A sibling of the 768px block rather than nested inside it, and placed AFTER
+   it so source order carries the override — the two rules have identical
+   specificity, so the later one has to be this one. */
+@media (max-width: 360px) {
+  .bbj-widget__label,
+  .bbj-widget__amount {
+    font-size: 0.625rem;
   }
 }

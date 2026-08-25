@@ -64,14 +64,41 @@ export const SEAT_POSITIONS_6MAX = [
   { x: 89.5, y: 66 }, // Seat 6 (lower-right, on rail side)
 ];
 
+/* ── Dan 2026-08-25 round 2, item 10 — THE SEAT UNDER THE TOP CAP SAT TOO LOW ──
+   "Villan 'Violet Wei' and villan Jaxaaron should both be raised up higher in
+   their positions on the table." Those two are the `left-high` / `right-high`
+   entries below, and they were at y 36.
+
+   The ring is meant to be evenly distributed, so this is arithmetic rather
+   than taste. Gaps are measured on the painted frame, where the width is 605
+   for every 1000 of height (the scaler's locked aspect), so one point of x is
+   6.05px and one point of y is 10px. Walking the left rail with y 36:
+
+       hero (50,100) -> (10.5,82.5)   297px
+       (10.5,82.5)   -> (10.5,58)     245px
+       (10.5,58)     -> (10.5,36)     220px   <- the crowded pair
+       (10.5,36)     -> (27,6)        316px   <- and the hole above them
+
+   That is the widest gap on the ring sitting directly above the narrowest one,
+   which is exactly what "too low" looks like. Solving for the two seats that
+   split the run from the bottom cap to the top cap into three EQUAL legs gives
+   y 56.3 and y 30.2. 58 is within 1.7 points of its answer, so it stays put and
+   only the crowded seat moves; 36 -> 30 turns the four gaps into
+
+       297 / 245 / 280 / 260
+
+   — max-to-min 1.14 where it was 1.44 — and lifts the seat 60px on the frame.
+   Still on the rail (x is untouched, and the felt window starts at x 18.8%),
+   still clear of the two thresholds that read this y: `.seat-wrapper--top` at
+   y < 20 and the chat bubble's flip at y < 22. */
 export const SEAT_POSITIONS_9MAX = [
   { x: 50, y: 100 }, // Seat 1 (Hero, bottom-centre; ring position only - the rail drop is CSS, see above)
   { x: 10.5, y: 82.5 }, // Seat 2 (lower-left, bottom cap)
   { x: 10.5, y: 58 }, // Seat 3 (left-low, on rail side)
-  { x: 10.5, y: 36 }, // Seat 4 (left-high, on rail side)
+  { x: 10.5, y: 30 }, // Seat 4 (left-high, on rail side; 36 -> 30, see the note above)
   { x: 27, y: 6 }, // Seat 5 (top-left, top cap - plate on the rail)
   { x: 73, y: 6 }, // Seat 6 (top-right, top cap - plate on the rail)
-  { x: 89.5, y: 36 }, // Seat 7 (right-high, on rail side)
+  { x: 89.5, y: 30 }, // Seat 7 (right-high, on rail side; 36 -> 30, see the note above)
   { x: 89.5, y: 58 }, // Seat 8 (right-low, on rail side)
   { x: 89.5, y: 82.5 }, // Seat 9 (lower-right, bottom cap)
 ];
@@ -130,45 +157,107 @@ export const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
     { x: 89.5, y: 33 }, // right-high
     { x: 89.5, y: 62 }, // right-low
   ],
+  /* 8-max carried the SAME crowding as 9-max (see SEAT_POSITIONS_9MAX): the
+     left/right-high pair sat at 28 with a 240px gap below them and a 331px hole
+     above them, up to the top-centre seat. The even-thirds solve for this run —
+     bottom cap (10.5,82.5) to top centre (50,5) — is 52.7 and 22.8; 52 is
+     already right, and 23 is used rather than 22.8 because y < 22 flips the chat
+     bubble below the plate and y < 20 claims the compact top-cap treatment, and
+     this seat is neither. Gaps become 305 / 290 / 299 where they were
+     305 / 240 / 331. 7-max is deliberately NOT touched: its seat under the top
+     cap sits 288px from the cap and 290px from its lower neighbour, which is
+     already even — 7-max's uneven gap is the 449px hero-to-first-seat run,
+     which raising these seats would only make worse. */
   8: [
     { x: 50, y: 100 }, // Hero (ring position; the rail drop is CSS - see the note above)
     { x: 10.5, y: 82.5 }, // lower-left bottom cap
     { x: 10.5, y: 52 }, // left-low
-    { x: 10.5, y: 28 }, // left-high
+    { x: 10.5, y: 23 }, // left-high (28 -> 23, see the note above)
     { x: 50, y: 5 }, // top-center, box on the rail
-    { x: 89.5, y: 28 }, // right-high
+    { x: 89.5, y: 23 }, // right-high (28 -> 23, see the note above)
     { x: 89.5, y: 52 }, // right-low
     { x: 89.5, y: 82.5 }, // lower-right bottom cap
   ],
   9: SEAT_POSITIONS_9MAX,
 };
 
-/**
- * Which side of a seat its hole cards hang off.
- *
- * Dan 2026-08-25, item 7: "The guy on the left, his cards should be on the
- * left." The top cap seats used to throw their face-down row to the RIGHT
- * unconditionally (`.seat-wrapper--top ... { left: calc(100% + 4px) }`), which
- * is correct for the top-RIGHT seat and wrong for the top-LEFT one: it threw
- * that player's cards inward, straight at the neighbour's, so a PLO5 table
- * showed five and five running together as one unbroken row of ten (item 12).
- *
- * Derived from the seat's measured x rather than from a seat INDEX because the
- * index means a different chair at every table size — index 4 is the top-left
- * diagonal at 9-max and the top CENTRE at 8-max — while "left of the middle of
- * the table" means the same thing on every ring from 2-max to 9-max. Dead
- * centre (the top-centre and hero slots, x exactly 50) resolves to 'right',
- * which is where those two have always hung their cards and where the only
- * open felt is.
- *
- * Pure and x-only so it can be applied to a percentage read off the ring or
- * to one measured from the DOM; SeatSlot does the latter, since a seat is
- * handed its number but never its position.
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   WHICH SIDE OF A SEAT ITS HOLE CARDS HANG OFF
+   ═══════════════════════════════════════════════════════════════════════════
+
+   There are TWO rules, not one, and confusing them is what this section is
+   named and commented to prevent. Both are derived from the seat's measured
+   position on the ring — never from a seat INDEX, because an index means a
+   different chair at every table size (index 4 is the top-left diagonal at
+   9-max and the top CENTRE at 8-max) while "left of the middle of the table"
+   means the same thing on every ring from 2-max to 9-max.
+
+   OUTBOARD — away from the middle of the table. TOP-CAP SEATS ONLY.
+     Dan 2026-08-25, item 7: "The guy on the left, his cards should be on the
+     left." A top-cap seat has no felt under it (only the banner), so its row
+     hangs off the SIDE of the table; sending both top seats' rows to the same
+     side is what made five and five read as one unbroken row of ten (item 12).
+     Outboard puts the two groups at opposite edges with the whole felt between
+     them.
+
+   INBOARD — toward the middle of the table. EVERY OTHER SEAT.
+     Dan 2026-08-25 round 2, item 7: "the villan in the position where
+     BarrelBlitz is should have their cards on the LEFT side of them. 'Aggro
+     Andy' position should have them to the RIGHT side of the avatar." Those
+     two are a RIGHT-rail seat and a BOTTOM-LEFT seat, so both requests are the
+     same rule: cards point at the felt. Outboard was tried on these seats
+     first and is what ran a right-rail PLO hand off the edge of the phone —
+     the felt is the only direction with room in it.
+
+   x exactly 50 (the top-centre and hero slots) has no side, so both rules
+   answer 'right': that is where those two have always hung their cards, and
+   where the hero's own row goes. NaN answers 'right' for the same reason —
+   see `seatWrapperPercent` in SeatSlot.tsx, which returns NaN when it cannot
+   measure and must degrade to the long-standing default rather than to a
+   coin flip.
+
+   Pure and position-only so the rules can be applied to a percentage read off
+   a ring above or to one measured from the DOM; SeatSlot does the latter,
+   since a seat is handed its number but never its position. */
 export type CardSide = 'left' | 'right';
 
+/**
+ * Above this share of the frame a seat is a TOP-CAP seat — the row of seats
+ * with the BBJ banner rather than felt above them.
+ *
+ * 20 is the same threshold TablePage applies when it tags a wrapper
+ * `.seat-wrapper--top`, and the two must agree: that class is what puts the
+ * card row beside the avatar in the first place, and the outboard rule only
+ * has anything to act on where it applies. Every ring's cap sits at y 5 or 6
+ * and the next seat down is at 23 or higher, so the threshold has 3 points of
+ * clearance on either side of it.
+ */
+export const TOP_CAP_Y_MAX = 20;
+
+/** True for the top row of seats — the only seats whose cards hang outboard. */
+export function isTopCapSeat(yPercent: number): boolean {
+  return Number.isFinite(yPercent) && yPercent < TOP_CAP_Y_MAX;
+}
+
+/** AWAY from the middle of the table. Top-cap seats only — see the note above. */
 export function outboardCardSide(xPercent: number): CardSide {
   return Number.isFinite(xPercent) && xPercent < 50 ? 'left' : 'right';
+}
+
+/** TOWARD the middle of the table. Side and bottom seats — see the note above. */
+export function inboardCardSide(xPercent: number): CardSide {
+  return Number.isFinite(xPercent) && xPercent > 50 ? 'left' : 'right';
+}
+
+/**
+ * THE rule: outboard at the top cap, inboard everywhere else.
+ *
+ * One entry point so no caller has to remember which band takes which rule —
+ * the mistake the two-named-functions layout above exists to make visible and
+ * this function exists to make unnecessary.
+ */
+export function seatCardSide(xPercent: number, yPercent: number): CardSide {
+  return isTopCapSeat(yPercent) ? outboardCardSide(xPercent) : inboardCardSide(xPercent);
 }
 
 /** Ring for a table size; clamps to [2, 9] so unknown sizes never crash. */

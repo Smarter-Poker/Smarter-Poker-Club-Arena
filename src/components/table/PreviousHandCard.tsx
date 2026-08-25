@@ -94,26 +94,30 @@ export function PreviousHandCard({
         aria-label={`Previous hand #${handNumber} - open hand history`}
         title="Open hand history"
       >
+        {/* Two overlapping playing cards, monochrome outline — the glyph Dan
+            pointed at for the HUD tile language (2026-08-25 round 2, item 6c).
+            The rear card used to carry a translucent black fill so it could sit
+            on top of the front one; the tile's own ground does that job now, so
+            the glyph is pure stroke and matches the time-bank clock's weight. */}
         <div className="prev-hand-card__icon">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <rect
-              x="1"
-              y="2"
-              width="10"
-              height="12"
+              x="1.4"
+              y="2.4"
+              width="8.6"
+              height="11.2"
               rx="1.5"
               stroke="currentColor"
-              strokeWidth="1.2"
+              strokeWidth="1.3"
             />
             <rect
-              x="5"
-              y="2"
-              width="10"
-              height="12"
+              x="5.6"
+              y="2.4"
+              width="8.6"
+              height="11.2"
               rx="1.5"
               stroke="currentColor"
-              strokeWidth="1.2"
-              fill="rgba(0,0,0,0.3)"
+              strokeWidth="1.3"
             />
           </svg>
         </div>

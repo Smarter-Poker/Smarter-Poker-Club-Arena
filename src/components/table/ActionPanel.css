@@ -7,6 +7,144 @@
 @import '../../styles/design-tokens.css';
 
 /* ═══════════════════════════════════════════════════════════════
+   HOW TALL THE BOTTOM CHROME IS — one number, three consumers
+   ═══════════════════════════════════════════════════════════════
+
+   Dan 2026-08-25 round 2, item 5: "THAT PADDING IS WAY TOO MUCH ON THE BOTTOM,
+   THE ACTION BAR ON THE BOTTOM MUST BE SMALLER."
+
+   Both bottom rows — this panel and `.pre-action-bar` — are
+   `position: fixed; bottom: 0`, so they are out of flow and their container,
+   `.action-panel-wrapper`, has no content to get its height from while either
+   of them is up. The wrapper therefore carries a min-height FLOOR, and that
+   floor is what `--sp-action-h` publishes to the rest of the page: the felt's
+   bottom reserve, the hero lift, the HUD stack and the chat button all size
+   themselves from it. A floor that does not match the row it stands in for is
+   a lie that every one of them repeats — and it did not match. The floor was
+   96px, a figure inherited from a three-button bar with 72px buttons, and it is
+   the strip of dead black Dan measured at roughly a fifth of the phone.
+
+   So the height is named ONCE here and the three consumers read it:
+     - `.action-panel` (this file) sizes its row to it;
+     - `.pre-action-bar` (PreActionBar.css) sizes its row to it;
+     - `.action-panel-wrapper` (TablePage.css) uses it as the min-height floor.
+
+   Declared on :root rather than on `.table-page` because the wrapper's floor
+   is a fallback path too: every consumer passes a literal to var() so a browser
+   that somehow loads TablePage.css without this file still lands on the right
+   number instead of on zero.
+
+   THE PHONE VALUE IS AN EXACT MEASUREMENT, NOT A GUESS. At <=640px:
+     1px  .action-panel border-top
+   + 5px  .action-panel padding-top
+   + 46px .action-btn height
+   = 52px, plus env(safe-area-inset-bottom) which the wrapper adds.
+   `.pre-action-bar` is built to the same three numbers. If you change a button
+   height or a row's padding, change this and re-do that sum — nothing else in
+   the codebase can catch the drift for you. */
+:root {
+  --sp-bottom-row-h: 96px;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --sp-bottom-row-h: 52px;
+  }
+}
+
+/* The floor itself. `.action-panel-wrapper` is declared in TablePage.css, which
+   is owned elsewhere; this rule is scoped `.table-page .action-panel-wrapper`
+   (0,2,0) so it wins on specificity rather than on which stylesheet the bundler
+   happened to emit last. TablePage.css still carries the superseded
+   `min-height: calc(96px + env(safe-area-inset-bottom))` and that declaration
+   should be deleted — it is now dead, and 96px is the wrong answer for a phone
+   whichever file says it.
+
+   The rest of that rule stays where it is. Only the height moved, and it moved
+   because the height is the one part of the wrapper that has to agree with two
+   rows this file owns. */
+.table-page .action-panel-wrapper {
+  min-height: calc(var(--sp-bottom-row-h, 96px) + env(safe-area-inset-bottom, 0px));
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   NOBODY IS SEATED — there is no action bar, only a line
+   ═══════════════════════════════════════════════════════════════
+
+   Dan 2026-08-25 round 2:
+
+     item 4 — "THE 'SPECTATING, TAP AN OPEN SEAT TO JOIN' SHOULD BE A SINGLE
+       LINE ON THE VERY BOTTOM OF THE TABLE, NOT IN THE MIDDLE."
+     item 5 — "[the action bar must] NOT APPEAR, OR BLOCKED OUT, UNTIL A USER
+       SITS DOWN."
+
+   One state, one fix. A spectator was being shown a full-height black band —
+   the wrapper's 96px floor, plus a 64px `.spectator-footer-bar` with 12px of
+   padding and its own backdrop — carrying one sentence of grey text floating in
+   the middle of it. Nothing in that band was interactive, and the felt above it
+   paid for every pixel.
+
+   Now the wrapper has no floor, no ground and no border in this state, and the
+   footer is a single small line resting on the very bottom edge. The wrapper
+   still supplies `padding-bottom: env(safe-area-inset-bottom)`, so the line
+   clears the home indicator, and the footer's own safe-area pad is dropped here
+   so the strip is not counted twice.
+
+   HOW --sp-action-h STAYS TRUE (the whole point of the change): the wrapper is
+   still measured by the ResizeObserver in TablePage.tsx, so it publishes what
+   the chrome now actually occupies — 22px plus the safe-area inset, against
+   52px plus the inset when seated. It cannot collapse to zero and strand the
+   `h > 0` guard in that observer, because the line's own text box is always
+   there, and the wrapper's safe-area pad is under it besides. The
+   felt, the HUD stack and the chat button all follow it down without knowing
+   anything about spectating.
+
+   KEYED ON [data-hero], NOT ON A NEW CLASS. TablePage.tsx already publishes
+   `data-hero={players.some(p => p?.isHero) ? 'true' : 'false'}` on the page
+   root, and that predicate is the exact one the footer's own branch chain uses
+   to decide between the three label-only states (spectating, seat reserved,
+   late registrant) and the two that have a button in them (Leave Seat, I'm
+   Back). Those two keep the full bar, which is right: they are seated states
+   and they are asking the player to press something. A second attribute
+   spelling the same thing is a second thing to keep in sync.
+
+   Specificity is 0,2,1 — above every `.spectator-footer-bar` rule in
+   TablePage.css including the ones inside its breakpoints, so this holds
+   wherever the bundler puts the two files. */
+.table-page[data-hero='false'] .action-panel-wrapper {
+  min-height: 0;
+  background: none;
+  border-top: none;
+}
+
+.table-page[data-hero='false'] .spectator-footer-bar {
+  /* 3px above and 4px below a 15px line box = 22px of chrome, which is as short
+     as a legible sentence gets. The wrapper's env() pad sits under it. */
+  padding: 3px 12px 4px;
+  min-height: 0;
+  background: none;
+  border-top: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.table-page[data-hero='false'] .spectator-footer-bar__label {
+  font-size: 0.75rem;
+  line-height: 1.25;
+  color: rgba(255, 255, 255, 0.62);
+  /* One line, always. The longest of the three strings is "Spectating, Tap An
+     Open Seat To Join" at 33 characters, which fits 375px at this size with
+     room to spare; the ellipsis is insurance for a future string, not a
+     wrapping strategy. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* There is no band behind the text any more, so it is reading against the
+     page background and whatever the felt's lower edge is doing. */
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+/* ═══════════════════════════════════════════════════════════════
    BASE PANEL
    ═══════════════════════════════════════════════════════════════ */
 
@@ -985,7 +1123,10 @@
 
 @media (max-width: 640px) {
   .action-panel {
-    padding: 8px 10px;
+    /* 5px top, not 8px. Together with the 1px border and the 46px button that
+       is exactly --sp-bottom-row-h (52px) — see the block at the top of this
+       file for the sum and for why it has to hold. */
+    padding: 5px 10px;
     /* Flush — see the base rule. The `8px +` that used to be here is precisely
        the strip of dead black Dan reported under the buttons. */
     padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -995,26 +1136,64 @@
     gap: 8px;
   }
 
-  .action-btn {
-    height: 56px;
-    border-radius: 12px;
+  /* ═══ SPECIFICITY, AND WHY THESE PHONE RULES DID NOTHING ═══
+     Dan 2026-08-25 round 2, item 6a: "FOLD CALL RAISE ACTION BUTTONS NEED TO BE
+     MUCH SMALLER AND LOWER DOWN."
+
+     They were not merely too big, they were the DESKTOP size. Every button rule
+     in this media query was written as `.action-btn` (0,1,0) while the base
+     rule is `.action-panel .action-btn` (0,2,0) — the compound scoping added on
+     2026-08-24 so an unrelated stylesheet could not repaint the bar, and pinned
+     since by tests/shipped-invariants.test.ts. Specificity beats source order,
+     so on every phone the buttons resolved to the base 72px and the labels to
+     the base 1.125rem, and the 56px / 0.9375rem written here had been dead for
+     as long as the scoping existed. That is 16px of button height and 3px of
+     type per row that nobody could see was being ignored.
+
+     Both breakpoints now use the same compound selector as the base rule. If
+     you add a phone override for a button, scope it the same way or it will
+     silently do nothing.
+
+     46px is the height. It is 26px shorter than what was actually rendering,
+     and still above the 44px minimum touch target, so "much smaller" does not
+     cost anyone a tap. */
+  .action-panel .action-btn {
+    height: 46px;
+    min-height: 46px;
+    border-radius: 10px;
   }
 
   /* Dan 2026-08-24: the buttons ballooned to 84px on a phone whenever it was
      the hero's turn (the --active desktop enlargement was never re-scoped for
-     mobile). Your-turn emphasis stays, at phone scale. */
+     mobile).
+     2026-08-25 round 2: on a phone your-turn emphasis is now colour and glow
+     ONLY — the row does not change height at all. Two reasons. The row is 46px
+     and a 46->62px jump is a sixth of the bar moving under the player's thumb
+     mid-hand. And --sp-bottom-row-h has to be ONE number: a bar that is a
+     different height on your turn makes the felt's bottom reserve breathe every
+     time the action passes, which is the reflow this whole item is about.
+     The lift, the saturation and the border glow on `.action-panel--active`
+     all still fire; only the size change is dropped. */
   .action-panel--active .action-btn {
-    height: 62px;
-    min-height: 56px;
+    height: 46px;
+    min-height: 46px;
   }
 
-  .action-btn__label {
-    font-size: 0.9375rem;
+  .action-panel .action-btn__label {
+    font-size: 0.875rem;
     letter-spacing: 0.6px;
   }
 
-  .action-btn__amount {
-    font-size: 0.8125rem;
+  /* Same story as the buttons: the base rule for this is compound, so an
+     `.action-panel--active .action-btn__label` at 1.25rem was landing on a
+     phone. In a 46px button that leaves no room for the call amount under it. */
+  .action-panel--active .action-btn__label {
+    font-size: 0.875rem;
+  }
+
+  .action-panel .action-btn__amount {
+    font-size: 0.75rem;
+    margin-top: 1px;
   }
 
   .raise-header {
@@ -1059,7 +1238,10 @@
 
 @media (max-width: 380px) {
   .action-panel {
-    padding: 8px 10px;
+    /* Vertical padding matches the <=640px rule exactly: the row's height is
+       --sp-bottom-row-h at EVERY phone width, or the wrapper's floor stops
+       being a measurement. Only the side gutters tighten here. */
+    padding: 5px 8px;
     /* Flush — see the base rule. */
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
@@ -1071,14 +1253,12 @@
     padding-top: 12px;
   }
 
-  .action-btn {
-    height: 64px;
-    border-radius: 10px;
-  }
-
-  .action-btn__label {
-    font-size: 1rem;
-  }
+  /* The `.action-btn { height: 64px }` and `.action-btn__label { font-size:
+     1rem }` that used to sit here are gone rather than rewritten. They were
+     unscoped, so like their <=640px twins they never applied (see the
+     specificity note in that block) — and now that the scoped rule above is
+     46px at every phone width, a second, LARGER answer at the narrowest width
+     would be backwards anyway. One button size for all phones. */
 
   /* Dan 2026-04-17: shrink +/- buttons + amount pill so 375px doesn't
      overflow. Previously the 44px adjusts + 120px pill + 32px gaps were

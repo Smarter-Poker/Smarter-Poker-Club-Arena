@@ -266,7 +266,15 @@ export default function WalletCashierModal({
 
   // ── Club + bank balance ───────────────────────────────────────────────────
   const loadClub = useCallback(async () => {
-    if (!clubId) return;
+    if (!clubId) {
+      /* Returning before setClubLoading(false) left `clubLoading` true
+         forever, which SUPPRESSES the "That Club Could Not Be Resolved" note
+         below and shows "..." where the balance belongs, permanently. */
+      setClubUuid(null);
+      setBank(null);
+      setClubLoading(false);
+      return;
+    }
     setClubLoading(true);
     setBank(null);
     // resolveClubUUID NEVER returns null - on a failed lookup it hands back
@@ -282,32 +290,53 @@ export default function WalletCashierModal({
       return;
     }
     setClubUuid(uuid);
-    const { data: club } = await supabase
+    const { data: club, error: clubReadError } = await supabase
       .from('clubs')
       .select('id, name, union_id, chip_treasury')
       .eq('id', uuid)
       .maybeSingle();
     if (!isMounted.current) return;
+    /* A READ THAT FAILED IS NOT A TREASURY OF ZERO. Every balance below used
+       to be `Number(undefined) || 0`, so an RLS refusal or a dropped
+       connection printed a confident 0.00 as the Club Bank - and `cap` became
+       0, so every send was refused with "The Wallet Only Holds 0 Chips". Left
+       null, the header renders "..." and the note says it could not be read. */
+    if (clubReadError) {
+      reportError(clubReadError, 'WalletCashierModal.loadClub');
+      setBank(null);
+      setClubLoading(false);
+      return;
+    }
     setClubUuid(uuid);
     setClubName((club?.name as string) || 'Club');
     setInUnion(club ? Boolean(club.union_id) : null);
 
     if (walletType === 'promo_wallet') {
-      const { data: agent } = await supabase
+      const { data: agent, error: agentReadError } = await supabase
         .from('agents')
         .select('promo_wallet_balance')
         .eq('club_id', uuid)
         .eq('user_id', user?.id)
         .maybeSingle();
-      setBank(Number(agent?.promo_wallet_balance) || 0);
+      if (agentReadError) {
+        reportError(agentReadError, 'WalletCashierModal.loadClub_promo_wallet');
+        setBank(null);
+      } else {
+        setBank(Number(agent?.promo_wallet_balance) || 0);
+      }
     } else if (walletType === 'agent_wallet') {
-      const { data: agent } = await supabase
+      const { data: agent, error: agentReadError } = await supabase
         .from('agents')
         .select('agent_wallet_balance')
         .eq('club_id', uuid)
         .eq('user_id', user?.id)
         .maybeSingle();
-      setBank(Number(agent?.agent_wallet_balance) || 0);
+      if (agentReadError) {
+        reportError(agentReadError, 'WalletCashierModal.loadClub_agent_wallet');
+        setBank(null);
+      } else {
+        setBank(Number(agent?.agent_wallet_balance) || 0);
+      }
     } else {
       setBank(Number(club?.chip_treasury) || 0);
     }
@@ -417,6 +446,13 @@ export default function WalletCashierModal({
     setConfirming(false);
     setLedger([]);
     setTypeFilter(null);
+    /* THE ROSTER BELONGS TO THE CLUB THAT WAS OPEN. It was not cleared here,
+       so reopening the cashier for a DIFFERENT club rendered the previous
+       club's members as selectable recipients for the whole window between
+       open and the new club id resolving. */
+    setMembers([]);
+    setMembersLoading(true);
+    setHolderHeld(null);
     opIdRef.current = newOpId();
     busyRef.current = false;
     loadClub();
@@ -468,13 +504,22 @@ export default function WalletCashierModal({
     let cancelled = false;
     setHolderHeld(null);
     (async () => {
-      const { data } = await supabase
+      const { data, error: holderError } = await supabase
         .from('agents')
         .select('agent_wallet_balance, promo_wallet_balance')
         .eq('club_id', clubUuid)
         .eq('user_id', recipient.user_id)
         .maybeSingle();
       if (cancelled || !isMounted.current) return;
+      /* Same rule as the bank balance above: an unread figure stays null (the
+         claim button is already gated on that) rather than becoming a
+         confident "Holds 0.00 In That Wallet", which silently disabled a claim
+         that was in fact available. */
+      if (holderError) {
+        reportError(holderError, 'WalletCashierModal.holderHeld');
+        setHolderHeld(null);
+        return;
+      }
       setHolderHeld(
         destination === 'promo_wallet'
           ? Number(data?.promo_wallet_balance) || 0
@@ -577,7 +622,12 @@ export default function WalletCashierModal({
   // "insufficient bank" while the bank is the thing being paid.
   const cap = tab === 'claim' ? holderHeld : bank;
   const overCap = cap !== null && amt > cap;
-  const canSend = Boolean(recipient) && amt > 0 && cap !== null && !overCap && !sending;
+  /* WHOLE CHIPS ONLY. `amt > 0` accepted 0.4, which the RPC took verbatim
+     while the success toast (which formats with fmtWhole) reported "Sent 0
+     Chips" - and 10.6 reported 11. The `min={1}` on the input never applied
+     because submission goes through onClick, not form validation. */
+  const amountIsWhole = Number.isFinite(amt) && Number.isInteger(amt) && amt >= 1;
+  const canSend = Boolean(recipient) && amountIsWhole && cap !== null && !overCap && !sending;
   const needsConfirm =
     tab === 'claim'
       ? claimNeedsConfirm(amt)

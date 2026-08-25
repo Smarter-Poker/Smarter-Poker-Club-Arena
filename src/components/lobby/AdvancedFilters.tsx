@@ -106,6 +106,21 @@ export function loadFilters(clubId: string): FilterStore {
             ? clampTo(value.seatMax, spec.seats.min, spec.seats.max, empty.seatMax)
             : empty.seatMax,
         };
+        /* CLAMPING EACH BOUND SEPARATELY CANNOT UNDO AN INVERSION. A stored
+           pair with min above max survives both clamps unchanged, and the
+           one-step gap on the thumbs then keeps re-applying the out-of-range
+           partner every drag - the range freezes, the tab empties, and Reset
+           is the only way back. An inverted pair is not repairable, so it is
+           discarded for the spec's own full range. */
+        const repaired = clean[type as FilterGameType]!;
+        if (repaired.rangeMin > repaired.rangeMax) {
+          repaired.rangeMin = empty.rangeMin;
+          repaired.rangeMax = empty.rangeMax;
+        }
+        if (repaired.seatMin > repaired.seatMax) {
+          repaired.seatMin = empty.seatMin;
+          repaired.seatMax = empty.seatMax;
+        }
       } catch (perTab) {
         reportError(perTab, 'AdvancedFilters.loadFilters.tab', { type });
       }
@@ -201,7 +216,13 @@ export default function AdvancedFilters({
   );
 
   /* One step for this spec, shared by both thumbs and both clamps. */
-  const rangeStep = spec ? (spec.range.min < 1 ? 0.01 : 1) : 1;
+  /* A step of 0.01 is right for the BLINDS slider (min 0.02) and wrong for
+     every buy-in slider, whose min is 0 - which also satisfies `< 1`. That
+     turned a 0-15,000 range into 1.5 million steps: one arrow key moved the
+     filter by a cent, and dragging produced 3847.23 under a header whose own
+     formatter says buy-ins carry no decimals. A min ABOVE zero and below one
+     is the only case that needs cents. */
+  const rangeStep = spec ? (spec.range.min > 0 && spec.range.min < 1 ? 0.01 : 1) : 1;
 
   const patch = useCallback(
     (next: Partial<GameFilterValue>) => {
@@ -389,7 +410,10 @@ export default function AdvancedFilters({
                     value={value.rangeMin}
                     onChange={(e) =>
                       patch({
-                        rangeMin: Math.min(Number(e.target.value), value.rangeMax - rangeStep),
+                        rangeMin: Math.max(
+                          spec.range.min,
+                          Math.min(Number(e.target.value), value.rangeMax - rangeStep)
+                        ),
                         selectedRanges: [],
                       })
                     }
@@ -403,7 +427,10 @@ export default function AdvancedFilters({
                     value={value.rangeMax}
                     onChange={(e) =>
                       patch({
-                        rangeMax: Math.max(Number(e.target.value), value.rangeMin + rangeStep),
+                        rangeMax: Math.min(
+                          spec.range.max,
+                          Math.max(Number(e.target.value), value.rangeMin + rangeStep)
+                        ),
                         selectedRanges: [],
                       })
                     }
@@ -458,7 +485,12 @@ export default function AdvancedFilters({
                       max={spec.seats.max}
                       value={value.seatMin}
                       onChange={(e) =>
-                        patch({ seatMin: Math.min(Number(e.target.value), value.seatMax - 1) })
+                        patch({
+                          seatMin: Math.max(
+                            spec.seats!.min,
+                            Math.min(Number(e.target.value), value.seatMax - 1)
+                          ),
+                        })
                       }
                     />
                     <input
@@ -468,7 +500,12 @@ export default function AdvancedFilters({
                       max={spec.seats.max}
                       value={value.seatMax}
                       onChange={(e) =>
-                        patch({ seatMax: Math.max(Number(e.target.value), value.seatMin + 1) })
+                        patch({
+                          seatMax: Math.min(
+                            spec.seats!.max,
+                            Math.max(Number(e.target.value), value.seatMin + 1)
+                          ),
+                        })
                       }
                     />
                   </div>

@@ -92,7 +92,10 @@ export async function searchClubs(query: string): Promise<Club[]> {
     .select(
       'id, club_id, name, slug, description, avatar_url, logo_url, banner_url, color_theme, member_count, online_count, table_count, chip_treasury, is_public, requires_approval, gps_restricted, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
     )
-    .ilike('name', `%${query}%`)
+    /* `%` and `_` are ilike WILDCARDS. Interpolated raw, a search for "100%"
+       matched every club and "a_b" matched "axb". The escaper is already in
+       this file and already used a hundred lines down. */
+    .ilike('name', `%${escapeIlikePattern(query)}%`)
     .eq('is_public', true)
     .order('member_count', { ascending: false })
     .limit(20);
@@ -340,7 +343,16 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
   // Harmless for pending joins — listeners simply re-fetch memberships.
   try {
     const { masterBus } = await import('../core/MasterBus');
-    masterBus.emit('CLUB_JOINED', { clubId, action: 'member_joined' });
+    /* THE RESOLVED UUID, LIKE EVERY OTHER EMIT.
+       This one sent the raw caller argument while leaveClub sends the resolved
+       id, and two consumers compare the value by identity: MasterBus registers
+       its realtime channel under `club:${clubId}` on JOIN and unsubscribes
+       `club:${clubId}` on LEAVE - join by club code then leave, and the key
+       never matches, so LEAVE_CLUB is never sent to the engine and the
+       listeners leak for the session. ClubHomePage compares it against the
+       club it is showing, so a CLUB_UPDATED carrying the other spelling never
+       refreshed the lobby. One spelling, everywhere. */
+    masterBus.emit('CLUB_JOINED', { clubId: resolvedId, action: 'member_joined' });
   } catch (e) {
     console.warn('[ClubsService] joinClub: bus emit failed (non-critical):', e);
   }
@@ -663,7 +675,10 @@ export async function getClubChallenges(clubId: string): Promise<ClubChallenge[]
     )
     .eq('club_id', resolvedId)
     .eq('status', 'active')
-    .order('ends_at', { ascending: true });
+    .order('ends_at', { ascending: true })
+    /* club_challenges grows without bound per club, and this ran on every
+       lobby load with no cap - the only query in this file without one. */
+    .limit(QUERY_LIMITS.LIST);
 
   if (error) {
     reportError(error, 'ClubsService.Get_challenges_failed');
@@ -773,8 +788,8 @@ export async function deleteClub(clubId: string): Promise<void> {
   // Emit bus events so all open lobby/carousel tabs refresh immediately
   try {
     const { masterBus } = await import('../core/MasterBus');
-    masterBus.emit('CLUB_LEFT', { clubId, action: 'club_deleted' });
-    masterBus.emit('CLUB_UPDATED', { clubId, action: 'club_deleted' });
+    masterBus.emit('CLUB_LEFT', { clubId: resolvedId, action: 'club_deleted' });
+    masterBus.emit('CLUB_UPDATED', { clubId: resolvedId, action: 'club_deleted' });
   } catch (e) {
     console.warn('[ClubsService] deleteClub: bus emit failed (non-critical):', e);
   }

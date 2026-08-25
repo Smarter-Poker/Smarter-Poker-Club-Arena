@@ -101,14 +101,15 @@ export function preloadCriticalChunks(): void {
   // Wait for browser idle before starting preload
   schedule(() => {
     // Stagger imports to avoid a network burst
-    if (preloadChunks) CRITICAL_CHUNKS.forEach((importFn, index) => {
-      setTimeout(() => {
-        importFn().catch(() => {
-          // Silently ignore — if a chunk fails to preload, the normal
-          // lazyWithRetry mechanism will handle it when the user navigates
-        });
-      }, index * 150); // 150ms stagger between each chunk
-    });
+    if (preloadChunks)
+      CRITICAL_CHUNKS.forEach((importFn, index) => {
+        setTimeout(() => {
+          importFn().catch(() => {
+            // Silently ignore — if a chunk fails to preload, the normal
+            // lazyWithRetry mechanism will handle it when the user navigates
+          });
+        }, index * 150); // 150ms stagger between each chunk
+      });
 
     // PERF PASS 2026-08-22: after the chunk preloads have been scheduled,
     // warm the player's card deck (~500KB of WebP) so the first hands dealt
@@ -179,17 +180,30 @@ const ROUTE_CHUNKS: Record<string, () => Promise<any>> = {
  * longest matching entry rather than the bare '/clubs/' one. Root ('/')
  * only matches exactly, never as a prefix.
  */
+/** Keys already warmed this session; a chunk only needs importing once. */
+const warmedKeys = new Set<string>();
+
 export function preloadRoute(path: string): void {
   if (!path) return;
   let bestKey: string | null = null;
   for (const key of Object.keys(ROUTE_CHUNKS)) {
-    if (key === '/' ? path === '/' : path.startsWith(key)) {
+    /* SEGMENT BOUNDARIES, not a bare prefix. '/profile' also matched
+       '/profiles-directory', and '/stats' matched '/statsomething'. */
+    const matches =
+      key === '/'
+        ? path === '/'
+        : path === key || path.startsWith(key.endsWith('/') ? key : `${key}/`);
+    if (matches) {
       if (bestKey === null || key.length > bestKey.length) bestKey = key;
     }
   }
   if (!bestKey) return;
+  // A hover that also focuses fired the same dynamic import twice.
+  if (warmedKeys.has(bestKey)) return;
+  warmedKeys.add(bestKey);
   ROUTE_CHUNKS[bestKey]().catch(() => {
     // Silently ignore preload failures — real navigation retries via lazyWithRetry
+    warmedKeys.delete(bestKey!);
   });
 }
 
@@ -200,13 +214,33 @@ export function preloadRoute(path: string): void {
  * keyboard focus. Spread FIRST so a component's own handlers win when it also
  * needs the event.
  */
-export function prefetchIntent(path: string): {
+type IntentProps = {
   onMouseEnter: () => void;
   onTouchStart: () => void;
   onFocus: () => void;
-} {
+};
+
+/* ONE HANDLER SET PER PATH, FOR THE LIFE OF THE TAB.
+   This used to allocate three new closures on every call, and it is spread
+   into every row of a list that runs to a hundred-plus entries - so every
+   render handed those rows three new prop identities and no amount of memo()
+   below could ever skip one. The functions depend on nothing but the path, so
+   they are cached by it. */
+const intentCache = new Map<string, IntentProps>();
+/** Bounded: table ids are unique, so an unbounded map would grow all session. */
+const INTENT_CACHE_MAX = 300;
+
+export function prefetchIntent(path: string): IntentProps {
+  const hit = intentCache.get(path);
+  if (hit) return hit;
   const fire = () => preloadRoute(path);
-  return { onMouseEnter: fire, onTouchStart: fire, onFocus: fire };
+  const props: IntentProps = { onMouseEnter: fire, onTouchStart: fire, onFocus: fire };
+  if (intentCache.size >= INTENT_CACHE_MAX) {
+    const oldest = intentCache.keys().next().value;
+    if (oldest !== undefined) intentCache.delete(oldest);
+  }
+  intentCache.set(path, props);
+  return props;
 }
 
 /**

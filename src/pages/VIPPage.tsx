@@ -352,7 +352,10 @@ export default function VIPPage() {
                 icon: '◆',
                 title: 'Rabbit Hunt',
                 description: 'See undealt cards',
-                value: 'Unlimited',
+                // Dan 2026-08-25: 100 a month, then 5 diamonds. This said
+                // "Unlimited" while the server charged from the 101st, which is
+                // a billing promise the product could not keep.
+                value: '100 / month',
               },
               {
                 id: 'timebank',

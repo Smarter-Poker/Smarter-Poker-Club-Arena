@@ -25,15 +25,16 @@
  */
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { isClubStaff } from '../types/clubRoles';
+import { isClubStaff, roleLabel, roleRank, AGENT_ROLES, type ClubRole } from '../types/clubRoles';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { resolveClubUUID } from '../utils/clubIdResolver';
+import { resolveClubUUID, isUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
 import { canSeeClubBank } from '../components/wallet/walletRows';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import styles from './CashierTradePage.module.css';
@@ -119,6 +120,13 @@ const fmt = (n: number) =>
  * Raw Postgres enums were rendered straight at the user: "peer_transfer",
  * "awaiting_payment". Title Case them, the way ROLE_LABEL does for roles.
  */
+/** crypto.randomUUID is undefined on http origins and Safari < 15.4. */
+function newSubmissionId(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function txLabel(value: string | null | undefined): string {
   return String(value || '')
     .split('_')
@@ -172,6 +180,8 @@ export default function CashierTradePage() {
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [invoicesError, setInvoicesError] = useState<string | null>(null);
+  /** Bumped by Retry; the invoice fetch lives inline in an effect. */
+  const [invoicesReload, setInvoicesReload] = useState(0);
   const [askOpen, setAskOpen] = useState(false);
   const [askAmount, setAskAmount] = useState('');
   const [askNote, setAskNote] = useState('');
@@ -186,7 +196,7 @@ export default function CashierTradePage() {
    * JSX bypasses that sanitiser.
    */
   const [transferFailures, setTransferFailures] = useState<
-    Array<{ name: string; message: string }>
+    Array<{ userId: string; name: string; message: string }>
   >([]);
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
@@ -204,6 +214,22 @@ export default function CashierTradePage() {
    * committed cannot be charged twice by the retry that follows a lost
    * response. Held across failures on purpose and cleared only on full
    * success - see runTransfers.
+   */
+  /**
+   * The idempotency nonce for the batch currently being submitted.
+   *
+   * ONE NONCE PER INTENT (Dan 2026-08-25). It used to be minted only when null
+   * and cleared only on a fully clean batch, so after ANY partial failure it
+   * survived into every later submission indefinitely - and the comment beside
+   * it claimed "change the amount or the selection and a fresh id is minted",
+   * which was simply not what the code did. Concretely: claim 100 from A and B,
+   * A commits, B fails, the id is kept; later you deliberately claim 100 from A
+   * again, the server matches the retained key, moves nothing, and reports
+   * success. Money you believed you took never moved.
+   *
+   * It is now cleared whenever the amount or the selection changes (see the
+   * effect below), so it is retained ONLY for a retry of the identical
+   * unchanged batch - which is exactly what it is for.
    */
   const submissionIdRef = useRef<string | null>(null);
   const isMounted = useRef(true);
@@ -225,7 +251,14 @@ export default function CashierTradePage() {
       // simply empty. A club we cannot identify is an error, not a filter.
       const uuid = await resolveClubUUID(clubParam);
       if (!live) return;
-      if (uuid) {
+      // isUUID, not truthiness (Dan 2026-08-25). resolveClubUUID is typed
+      // Promise<string> and RETURNS THE INPUT UNCHANGED when it cannot resolve,
+      // so `if (uuid)` was always true and this whole branch - and the "We
+      // Could Not Find That Club" state it drives - was unreachable. What
+      // actually happened on a bad slug was a club CODE going into a uuid
+      // column filter: 22P02, surfaced as a generic load failure.
+      // ClubMembersPage fixed exactly this; the Cashier was left behind.
+      if (isUUID(uuid)) {
         setClubUuid(uuid);
       } else {
         setClubUuid(null);
@@ -283,6 +316,26 @@ export default function CashierTradePage() {
   );
 
   // ── Load my role/balance + downline for the selected club ─────────────────
+  /**
+   * A head-only count, so no rows cross the wire. Runs on every club load and
+   * on every bus event that already reloads this page, and is superseded by
+   * requests.length the moment the tab is actually opened.
+   */
+  const loadPendingCount = useCallback(async () => {
+    if (!clubUuid) {
+      setPendingCount(0);
+      return;
+    }
+    const { count, error } = await supabase
+      .from('chip_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('club_id', clubUuid)
+      .in('status', ['pending']);
+    if (!isMounted.current) return;
+    // A failed count must not claim zero. Leave the previous value alone.
+    if (!error) setPendingCount(count ?? 0);
+  }, [clubUuid]);
+
   const loadClub = useCallback(async () => {
     // Bail-before-try left `loading` true forever, because the finally that
     // clears it is inside the try: a signed-out moment or an unresolvable club
@@ -315,7 +368,7 @@ export default function CashierTradePage() {
         {}) as Record<string, unknown>;
 
       const isStaff = isClubStaff(role);
-      const isAgent = role === 'agent' || role === 'super_agent' || role === 'sub_agent';
+      const isAgent = AGENT_ROLES.includes(role as ClubRole);
 
       let downlineIds: string[] | null = null;
       if (isAgent && !isStaff) {
@@ -488,10 +541,15 @@ export default function CashierTradePage() {
         const pid = (payload as { clubId?: string } | null)?.clubId;
         if (pid && clubUuid && pid !== clubUuid) return;
         loadClub();
+        // The badge's own comment promised this and it was never wired: the
+        // only caller was the mount effect, so an owner on the Trade tab saw
+        // the count frozen at whatever it was when the page opened - the exact
+        // scenario the badge exists for.
+        void loadPendingCount();
       })
     );
     return () => unsubs.forEach((u) => u());
-  }, [loadClub, clubUuid]);
+  }, [loadClub, clubUuid, loadPendingCount]);
 
   /**
    * Players have no Trade tab. This lived inside loadClub, which is recreated
@@ -518,6 +576,10 @@ export default function CashierTradePage() {
     setDownline([]);
     setSelected(new Set());
     setTransferFailures([]);
+    // Was NOT reset. The checkbox is disabled when mineCount is 0, so switching
+    // to a club where you have no assigned players left the filter stuck ON
+    // with the only control that clears it greyed out - reload was the way out.
+    setMineOnly(false);
   }, [clubUuid]);
 
   useEffect(() => {
@@ -583,25 +645,6 @@ export default function CashierTradePage() {
   /** Open chip requests in this club. Drives the tab badge. */
   const [pendingCount, setPendingCount] = useState(0);
 
-  /**
-   * A head-only count, so no rows cross the wire. Runs on every club load and
-   * on every bus event that already reloads this page, and is superseded by
-   * requests.length the moment the tab is actually opened.
-   */
-  const loadPendingCount = useCallback(async () => {
-    if (!clubUuid) {
-      setPendingCount(0);
-      return;
-    }
-    const { count, error } = await supabase
-      .from('chip_requests')
-      .select('id', { count: 'exact', head: true })
-      .eq('club_id', clubUuid)
-      .in('status', ['pending']);
-    if (!isMounted.current) return;
-    // A failed count must not claim zero. Leave the previous value alone.
-    if (!error) setPendingCount(count ?? 0);
-  }, [clubUuid]);
   const loadRequests = useCallback(async () => {
     if (!user?.id || !clubUuid) return;
     const seq = ++reqSeqRef.current;
@@ -773,7 +816,11 @@ export default function CashierTradePage() {
     return () => {
       live = false;
     };
-  }, [tab, clubUuid]);
+    // invoicesReload, so Retry has something to change. The button used to call
+    // setTab('leaderboard') from inside the leaderboard tab, which is a no-op:
+    // deps never changed, no refetch happened, and the error banner sat there
+    // with a button that did nothing.
+  }, [tab, clubUuid, invoicesReload]);
 
   // ── Derived list ───────────────────────────────────────────────────────────
   const mineCount = useMemo(() => downline.filter((r) => r.isMine).length, [downline]);
@@ -797,14 +844,12 @@ export default function CashierTradePage() {
         ? [...rows].sort((a, b) => b.chipBalance - a.chipBalance)
         : [...rows].sort((a, b) => a.name.localeCompare(b.name));
     if (groupByRole) {
-      const rank: Record<string, number> = {
-        super_agent: 0,
-        agent: 1,
-        sub_agent: 2,
-        admin: 3,
-        player: 4,
-      };
-      rows = [...rows].sort((a, b) => (rank[a.role] ?? 9) - (rank[b.role] ?? 9));
+      // ROLE_RANK from types/clubRoles, not a local map. The local one listed
+      // super_agent/agent/sub_agent/admin/player and OMITTED owner and
+      // co_owner, so both fell to the `?? 9` default and sorted BELOW every
+      // player - on the control called "Group By Role". That module exists
+      // because there were once three role types and no two agreed.
+      rows = [...rows].sort((a, b) => roleRank(b.role as ClubRole) - roleRank(a.role as ClubRole));
     }
     return rows;
   }, [downline, search, sortKey, groupByRole, mineOnly]);
@@ -844,6 +889,15 @@ export default function CashierTradePage() {
    * 40 collects 40 - and the receipt said "Claimed 500.00 Back". The page holds
    * every balance it needs to show the truth BEFORE the tap.
    */
+  /**
+   * A changed amount or a changed selection is a NEW intent, so the retained
+   * nonce must not carry into it. Retry the same batch unchanged and the id
+   * survives; touch either input and the next submission mints a fresh one.
+   */
+  useEffect(() => {
+    submissionIdRef.current = null;
+  }, [amount, selected, clubUuid]);
+
   /** Chips the selected players are holding right now. */
   const pickedHeld = useMemo(
     () => picked.reduce((sum, r) => sum + (Number(r.chipBalance) || 0), 0),
@@ -922,21 +976,19 @@ export default function CashierTradePage() {
      *
      * So the retry has to be recognisable as the SAME intent. This id is minted
      * once per submission and deliberately SURVIVES a failure - it is cleared
-     * only when the batch fully succeeds. Retry the failed batch and the server
-     * matches the key, replays the original outcome and moves nothing; change
-     * the amount or the selection and a fresh id is minted, because that is a
-     * genuinely new claim and must be allowed through.
+     * when the batch fully succeeds, AND whenever the amount or the selection
+     * changes (the effect beside submissionIdRef). Retry the failed batch
+     * unchanged and the server matches the key, replays the original outcome
+     * and moves nothing; change either input and a fresh id is minted, because
+     * that is a genuinely new intent and must be allowed through.
      */
     if (!submissionIdRef.current) {
-      submissionIdRef.current =
-        typeof crypto !== 'undefined' && 'randomUUID' in crypto
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      submissionIdRef.current = newSubmissionId();
     }
     const submissionId = submissionIdRef.current;
     let ok = 0;
     let skipped = 0;
-    const failed: Array<{ name: string; message: string }> = [];
+    const failed: Array<{ userId: string; name: string; message: string }> = [];
     try {
       for (const t of targets) {
         try {
@@ -950,6 +1002,13 @@ export default function CashierTradePage() {
               p_to_user_id: t.userId,
               p_amount: value,
               p_reason: `Cashier send out to ${t.name}`,
+              // Scoped exactly like the claim key below: club, submission,
+              // target, amount. Migration 20260825300000 gave this function the
+              // same replay guard Claim Back has had since 2026-08-24 - until
+              // then a send that committed and lost its response was charged
+              // again by the retry, which is the whole reason the submission id
+              // survives a failure.
+              p_idempotency_key: `send:${clubUuid}:${submissionId}:${t.userId}:${value}`,
             });
             if (error) throw error;
             const res = data as { success?: boolean; error?: string } | null;
@@ -962,6 +1021,10 @@ export default function CashierTradePage() {
               p_holder_id: t.userId,
               p_value: value,
               p_note: `Cashier ticket for ${t.name}`,
+              // A replay must not mint a second ticket, not just avoid a second
+              // debit - the ticket row is inside the same guarded block, so it
+              // rolls back with the money.
+              p_idempotency_key: `ticket:${clubUuid}:${submissionId}:${t.userId}:${value}`,
             });
             if (error) throw error;
             const res = data as { success?: boolean; error?: string } | null;
@@ -985,7 +1048,13 @@ export default function CashierTradePage() {
               // Per target AND per amount: retrying this batch replays, while
               // claiming a different amount from the same player is a new
               // intent and must go through. See submissionIdRef above.
-              p_idempotency_key: `claim:${submissionId}:${t.userId}:${claim}`,
+              // CLUB-SCOPED (Dan 2026-08-25). This was `claim:<submission>:<user>:<amount>`
+              // with no club in it, and the unique index is GLOBAL on
+              // chip_transactions - so a retained submission id claiming the
+              // same amount from the same player in a DIFFERENT club replayed
+              // the first club's outcome and moved nothing, while reporting
+              // success. Chips are per club; the key has to be too.
+              p_idempotency_key: `claim:${clubUuid}:${submissionId}:${t.userId}:${claim}`,
             });
             if (error) throw error;
             const res = data as { success?: boolean; error?: string } | null;
@@ -1000,7 +1069,15 @@ export default function CashierTradePage() {
           // dropped connection every per-target toast vanished and the summary
           // below had no branch for "nothing succeeded and nothing skipped".
           // The user was left not knowing whether ten transfers had happened.
-          failed.push({ name: t.name, message: (e as Error)?.message || 'Transfer Failed' });
+          // Keyed on userId, not name: `name` falls back to 'Player' for anyone
+          // with no display name, so two such recipients failing in one batch
+          // produced duplicate React keys and one row was dropped - from the
+          // list telling you which transfers did not happen.
+          failed.push({
+            userId: t.userId,
+            name: t.name,
+            message: (e as Error)?.message || 'Transfer Failed',
+          });
         }
       }
     } finally {
@@ -1333,7 +1410,7 @@ export default function CashierTradePage() {
                     <span className={styles.rowSub}>
                       {r.playerNumber ? `ID: ${r.playerNumber} · ` : ''}
                       <span style={{ textTransform: 'capitalize' }}>
-                        {r.role.replace('_', ' ')}
+                        {roleLabel(r.role as ClubRole)}
                         {r.isHorse ? ' (horse)' : ''}
                       </span>
                       {r.username ? ` · @${r.username}` : ''}
@@ -1452,7 +1529,7 @@ export default function CashierTradePage() {
               <button
                 type="button"
                 className={styles.retryBtn}
-                onClick={() => setTab('leaderboard')}
+                onClick={() => setInvoicesReload((n) => n + 1)}
               >
                 Retry
               </button>
@@ -1608,7 +1685,7 @@ export default function CashierTradePage() {
         }}
         clubId={clubUuid || clubParam || ''}
         role={myRole}
-        walletType={activeCashier || 'club_bank'}
+        walletType={activeCashier || DEFAULT_CASHIER_WALLET}
       />
 
       {/* Amount modal */}
@@ -1708,7 +1785,7 @@ export default function CashierTradePage() {
                   {transferFailures.length} Did Not Go Through
                 </div>
                 {transferFailures.map((f) => (
-                  <div className={styles.modalFailureRow} key={f.name}>
+                  <div className={styles.modalFailureRow} key={f.userId}>
                     <span>{f.name}</span>
                     <span>{f.message}</span>
                   </div>

@@ -52,8 +52,12 @@ describe('VIPService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('VIP_GOLD_LIMITS', () => {
-    it('should have unlimited rabbit hunts', () => {
-      expect(VIP_GOLD_LIMITS.rabbitHunts).toBe(Infinity);
+    it('gives VIP 100 free rabbit hunts a month, not unlimited', () => {
+      // Dan 2026-08-25, verbatim: "vip members get 100 rabbit hunts a month for
+      // free, and they cost 5 diamonds each after that." This asserted Infinity
+      // until that day, so the UI promised unlimited free hunts while the
+      // server's fn_consume_rabbit_hunt starts charging at the 101st.
+      expect(VIP_GOLD_LIMITS.rabbitHunts).toBe(100);
     });
 
     it('should enable showStackBB, offlineProtection, autoTimeBank', () => {

@@ -56,6 +56,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
 import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
@@ -73,6 +74,7 @@ import {
   emptyFilterValue,
   rowPassesFilter,
   isFilterActive,
+  variantKey,
   type FilterGameType,
 } from '../components/lobby/advancedFilterSpec';
 import { IconMembers, IconShareLink, IconSearch, IconSort } from '../components/icons/LobbyIcons';
@@ -86,6 +88,22 @@ import { preloadRoute } from '../utils/ChunkPreloader';
    art was thrown away by object-fit. shark-club-logo.jpg is the square
    emblem and fills the box as intended. */
 const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo.jpg`;
+
+/**
+ * The order the Omaha tab groups its variants in (Dan 2026-08-25). Four cards
+ * first because it is the game most players mean by "PLO", then five, six, and
+ * hi-lo last because it is a different game rather than a deeper one.
+ *
+ * A variant with no entry sorts after all of them rather than to the top: an
+ * unrecognised game should be visible at the end of the list, never presented
+ * as the headline.
+ */
+const VARIANT_GROUP_ORDER: Record<string, number> = {
+  plo4: 0,
+  plo5: 1,
+  plo6: 2,
+  plo8: 3,
+};
 
 // SWR cache helpers for instant club data display.
 //
@@ -1475,7 +1493,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold'
         );
       if (unionId) {
         // Union governance (2026-08-19): union clubs see the UNION's tables
@@ -1518,7 +1536,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       const clubTournamentQuery = supabase
         .from('tournaments')
         .select(
-          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier'
+          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool'
         )
         // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
         // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
@@ -1566,7 +1584,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               supabase
                 .from('tournaments')
                 .select(
-                  'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, union_id, variant, table_size, is_xmtt, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier'
+                  'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, union_id, variant, table_size, is_xmtt, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool'
                 )
                 // Union governance (2026-08-19): ALL union-owned tournaments
                 // (XMTT and union-stamped recurring games), not just XMTT.
@@ -1835,18 +1853,44 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     const cmpPlayers = (a: TableData, b: TableData) =>
       (b.current_players || 0) - (a.current_players || 0);
     const cmpName = (a: TableData, b: TableData) => (a.name || '').localeCompare(b.name || '');
+    /* Dan 2026-08-25: "GAMES NEED TO BE ORGANIZED BY TYPE ... SHOW ALL PLO 4
+       CARDS GAMES AND STAKES, THEN BELOW IT PLO5, THEN PLO6 THEN PLO8."
+
+       The tab was one undifferentiated list: a PLO6 5/10 sat between a PLO4
+       2/4 and a PLO4 10/25, so a player who only plays four-card had to read
+       every row to find their game. Variant leads every comparator now, and
+       the chosen sort orders the stakes WITHIN each variant — which is what
+       "and stakes" asks for. Keyed off the same variantKey the Omaha filter
+       chips use, so the group a table lands in and the chip that hides it can
+       never disagree.
+
+       Only Omaha is grouped: the other tabs are a single variant, where a
+       leading variant term is a comparator that always returns 0. */
+    const cmpVariant = (a: TableData, b: TableData) =>
+      gameType === 'OMAHA'
+        ? (VARIANT_GROUP_ORDER[variantKey(a.game_variant)] ?? 99) -
+          (VARIANT_GROUP_ORDER[variantKey(b.game_variant)] ?? 99)
+        : 0;
 
     switch (sortKey) {
       case 'stakes_high':
-        return rows.sort((a, b) => cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b));
+        return rows.sort(
+          (a, b) => cmpVariant(a, b) || cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b)
+        );
       case 'stakes_low':
-        return rows.sort((a, b) => cmpStakesLow(a, b) || cmpPlayers(a, b) || cmpName(a, b));
+        return rows.sort(
+          (a, b) => cmpVariant(a, b) || cmpStakesLow(a, b) || cmpPlayers(a, b) || cmpName(a, b)
+        );
       case 'players':
       case 'starting_soon':
-        return rows.sort((a, b) => cmpPlayers(a, b) || cmpStakes(a, b) || cmpName(a, b));
+        return rows.sort(
+          (a, b) => cmpVariant(a, b) || cmpPlayers(a, b) || cmpStakes(a, b) || cmpName(a, b)
+        );
       case 'recommended':
       default:
-        return rows.sort((a, b) => cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b));
+        return rows.sort(
+          (a, b) => cmpVariant(a, b) || cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b)
+        );
     }
   }, [tables, gameType, showsCash, sortKey, searchQuery, advFilters]);
 
@@ -2935,7 +2979,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         onClose={() => setActiveCashier(null)}
         clubId={resolvedClubId || clubId || ''}
         role={isOwner ? 'owner' : userRole}
-        walletType={activeCashier || 'club_bank'}
+        walletType={activeCashier || DEFAULT_CASHIER_WALLET}
       />
       <PlayerWalletModal
         isOpen={showPlayerWallet}

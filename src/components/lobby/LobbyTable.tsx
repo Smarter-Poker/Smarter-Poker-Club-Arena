@@ -19,8 +19,10 @@ import {
   levelSpeedLabel,
   mttPhaseText,
   mttTitleLine,
+  seatFirstJoinable,
   seatsTakenLabel,
   spinPayoutLabel,
+  spinPrizeLabel,
   stackDepthLabel,
 } from './lobbyEntries';
 import { prefetchIntent } from '../../utils/ChunkPreloader';
@@ -673,7 +675,15 @@ const COL_PAYOUT: ColumnDef = {
   render: (e) => {
     const label = spinPayoutLabel(e);
     if (!label) return null;
-    return <span className="lt-payout">{label}</span>;
+    /* Two lines: the ratio a player shops by, and the money it comes to at
+       THIS buy-in. See spinPrizeLabel for why the second line is safe. */
+    const prize = spinPrizeLabel(e);
+    return (
+      <span className="lt-payout">
+        <span className="lt-payout__x">{label}</span>
+        {prize && <span className="lt-payout__cash">{prize}</span>}
+      </span>
+    );
   },
 };
 
@@ -1037,29 +1047,45 @@ export default function LobbyTable({
     [category, clubId]
   );
 
+  /* Dan 2026-08-25: a Spin or Heads-Up with every seat gone "NEEDS TO BE
+     DROPPED TO THE BOTTOM OF THE RESULTS". This is applied AFTER whatever sort
+     the player chose and is deliberately not a column: no ordering of buy-in,
+     seats or status should ever float a game nobody can enter back up between
+     two they can. Array.prototype.sort is stable in every engine we ship to,
+     so the chosen order survives inside each partition. */
+  const sink = useCallback(
+    (rows: LobbyEntry[]) =>
+      rows.some((r) => !seatFirstJoinable(r))
+        ? [...rows].sort((a, b) => Number(!seatFirstJoinable(a)) - Number(!seatFirstJoinable(b)))
+        : rows,
+    []
+  );
+
   const sorted = useMemo(() => {
-    if (!sort) return entries;
+    if (!sort) return sink(entries);
     const col = columns.find((c) => c.key === sort.key);
-    if (!col?.sortValue) return entries;
+    if (!col?.sortValue) return sink(entries);
     const sv = col.sortValue;
     const dir = sort.dir === 'asc' ? 1 : -1;
-    return [...entries].sort((a, b) => {
-      const va = sv(a);
-      const vb = sv(b);
-      if (typeof va === 'number' && typeof vb === 'number') {
-        /* Rows with no value (cash games under a Starts sort carry Infinity)
+    return sink(
+      [...entries].sort((a, b) => {
+        const va = sv(a);
+        const vb = sv(b);
+        if (typeof va === 'number' && typeof vb === 'number') {
+          /* Rows with no value (cash games under a Starts sort carry Infinity)
            sort LAST in both directions - and two of them compare equal.
            The old (na - nb) * dir produced Infinity - Infinity = NaN, which
            is comparator poison: Array.sort's order becomes implementation-
            defined the moment a comparator returns NaN. */
-        const aBad = !Number.isFinite(va);
-        const bBad = !Number.isFinite(vb);
-        if (aBad || bBad) return aBad && bBad ? 0 : aBad ? 1 : -1;
-        return (va - vb) * dir;
-      }
-      return String(va).localeCompare(String(vb)) * dir;
-    });
-  }, [entries, sort, columns]);
+          const aBad = !Number.isFinite(va);
+          const bBad = !Number.isFinite(vb);
+          if (aBad || bBad) return aBad && bBad ? 0 : aBad ? 1 : -1;
+          return (va - vb) * dir;
+        }
+        return String(va).localeCompare(String(vb)) * dir;
+      })
+    );
+  }, [entries, sort, columns, sink]);
 
   const handleHeaderClick = (col: ColumnDef) => {
     if (!col.sortable) return;

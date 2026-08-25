@@ -14,22 +14,75 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   cashierTabs,
   cashierDestinations,
   canUseCashier,
   destinationBlurb,
   claimNeedsConfirm,
+  DEFAULT_CASHIER_WALLET,
+  type CashierWalletType,
 } from '../../src/components/wallet/cashierModes';
+import { CLUB_ROLES } from '../../src/types/clubRoles';
+
+/**
+ * ── THE CASHIER NEVER OPENS ON THE CLUB BANK (Dan 2026-08-25, binding) ──────
+ *
+ * "If they simply just click cashier, this must always default to Agent and
+ *  player wallets only... they need to click on the global bank to send from
+ *  the global bank."
+ *
+ * Two things have to hold, and only one of them is a function call. The other
+ * is that none of the four mount points reintroduces its own fallback: each
+ * page used to spell `activeCashier || 'club_bank'` out by hand, so the default
+ * lived in five places and a fifth page would have copied it.
+ */
+describe('the default wallet', () => {
+  it('is the agent wallet, and is not the club bank', () => {
+    expect(DEFAULT_CASHIER_WALLET).toBe('agent_wallet');
+    expect(DEFAULT_CASHIER_WALLET).not.toBe('club_bank');
+  });
+
+  it('is never the club bank for any role, because it does not depend on role', () => {
+    for (const role of CLUB_ROLES) {
+      const opened: CashierWalletType = DEFAULT_CASHIER_WALLET;
+      expect(opened).not.toBe('club_bank');
+      // And a role that may not stand at the club bank must still not be able
+      // to use it even if something hands it that wallet type explicitly.
+      if (!['owner', 'co_owner', 'admin', 'super_agent'].includes(role)) {
+        expect(canUseCashier('club_bank', role)).toBe(false);
+      }
+    }
+  });
+
+  it('no page hardcodes club_bank as the cashier fallback any more', () => {
+    const root = join(__dirname, '../../src/pages');
+    for (const page of [
+      'ClubHomePage.tsx',
+      'CashierPage.tsx',
+      'ClubFinancialsPage.tsx',
+      'CashierTradePage.tsx',
+    ]) {
+      const src = readFileSync(join(root, page), 'utf8');
+      expect(src).not.toContain("activeCashier || 'club_bank'");
+      expect(src).toContain('activeCashier || DEFAULT_CASHIER_WALLET');
+    }
+  });
+});
 
 describe('cashierTabs', () => {
   it('gives the club bank all three tabs, claim back included', () => {
     expect(cashierTabs('club_bank')).toEqual(['send', 'claim', 'ledger']);
   });
 
-  it('gives the promo and agent wallets a send tab only', () => {
+  it('gives the agent wallet a claim back tab, for the ten minute window', () => {
+    expect(cashierTabs('agent_wallet')).toEqual(['send', 'claim']);
+  });
+
+  it('gives the promo wallet a send tab only, because a promo has no inverse', () => {
     expect(cashierTabs('promo_wallet')).toEqual(['send']);
-    expect(cashierTabs('agent_wallet')).toEqual(['send']);
   });
 });
 
@@ -46,8 +99,14 @@ describe('cashierDestinations', () => {
     expect(cashierDestinations('promo_wallet')).toEqual(['player_wallet', 'agent_wallet']);
   });
 
-  it('agent wallet still sends to a player wallet only', () => {
-    expect(cashierDestinations('agent_wallet')).toEqual(['player_wallet']);
+  /**
+   * CHANGED 2026-08-25, in the commit that implemented it. The agent wallet
+   * could only reach a player wallet, which left a super agent with no way at
+   * all to fund the agents beneath them: the three tier hierarchy had exactly
+   * one funding route, and it was the club bank.
+   */
+  it('agent wallet funds a player, or a downline agents own float', () => {
+    expect(cashierDestinations('agent_wallet')).toEqual(['player_wallet', 'agent_wallet']);
   });
 });
 
@@ -97,6 +156,30 @@ describe('destinationBlurb', () => {
   it('claim blurbs describe pulling chips back into the club bank', () => {
     for (const d of ['agent_wallet', 'promo_wallet', 'player_wallet'] as const) {
       expect(destinationBlurb('club_bank', d, 'claim')).toContain('Back Into The Club Bank');
+    }
+  });
+
+  it('the agent claim blurb says the window and what happens after it', () => {
+    const blurb = destinationBlurb('agent_wallet', 'player_wallet', 'claim');
+    expect(blurb).toContain('Ten Minutes');
+    expect(blurb).toContain('Cash Out');
+  });
+
+  it('no blurb uses an em dash, and every word is capitalised', () => {
+    const wallets = ['club_bank', 'promo_wallet', 'agent_wallet'] as const;
+    const dests = ['agent_wallet', 'promo_wallet', 'player_wallet'] as const;
+    for (const w of wallets) {
+      for (const d of dests) {
+        for (const tab of ['send', 'claim'] as const) {
+          const blurb = destinationBlurb(w, d, tab);
+          expect(blurb).not.toMatch(/[–—]/);
+          for (const word of blurb.split(/\s+/).filter(Boolean)) {
+            if (/^[a-z]/.test(word)) {
+              throw new Error(`"${blurb}" has an uncapitalised word: ${word}`);
+            }
+          }
+        }
+      }
     }
   });
 });

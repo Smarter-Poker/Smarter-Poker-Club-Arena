@@ -35,8 +35,7 @@ import {
   spinRevealToDealMs,
 } from '../../src/config/spinSpec';
 
-const strip = (src: string) =>
-  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
 const MANAGER = strip(read('server/src/tournament/TournamentManagerBase.ts'));
@@ -164,7 +163,15 @@ describe('the button is drawn, not awarded to the low seat', () => {
 
   it('the FIRST hand honours the draw', () => {
     expect(DEALING).toMatch(/const drawnButton = this\.forcedFirstButtonSeat;/);
-    expect(DEALING).toMatch(/const dealerSeat = drawnIsSeated/);
+    // `const` became `let` on 2026-08-25 when the "the button must always move"
+    // guard landed below it (a single button-eligible player already holding the
+    // button used to keep it, making the same two players post both blinds twice
+    // running). The draw still wins outright — what matters here is that
+    // dealerSeat is seeded from drawnIsSeated...
+    expect(DEALING).toMatch(/(?:const|let) dealerSeat = drawnIsSeated/);
+    // ...and that the new guard cannot reach in and move a DRAWN button, which
+    // would silently undo the Spin's reveal.
+    expect(DEALING).toMatch(/!drawnIsSeated &&/);
   });
 
   it('it is consumed exactly once, so hand two rotates normally', () => {
@@ -177,7 +184,9 @@ describe('the button is drawn, not awarded to the low seat', () => {
   it('a drawn seat that emptied falls back to normal rotation', () => {
     // A player can leave between the draw and the deal; the button must not
     // strand itself on an empty seat.
-    expect(DEALING).toMatch(/const drawnIsSeated =[\s\S]{0,120}sortedSeats\.includes\(drawnButton\)/);
+    expect(DEALING).toMatch(
+      /const drawnIsSeated =[\s\S]{0,120}sortedSeats\.includes\(drawnButton\)/
+    );
     expect(DEALING).toMatch(/: prevButtonSeat > 0/);
   });
 

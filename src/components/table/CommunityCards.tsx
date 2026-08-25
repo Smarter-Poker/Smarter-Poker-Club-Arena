@@ -31,6 +31,12 @@ export interface CommunityCardsProps {
   stage: BoardStage;
   highlightedIndices?: number[];
   winningHandName?: string; // e.g. "Straight" — shown as overlay at showdown
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25 (spec section 14): descriptive secondary line
+   * rendered under the hand name — "Kings Full Of Nines" under "Full House".
+   * Engine-generated (describeHand), never composed here.
+   */
+  winningHandDescription?: string;
   deckStyle?: '4color' | '2color';
   /**
    * The player's chosen card-back design.
@@ -176,6 +182,7 @@ function CommunityCardsComponent({
   stage,
   highlightedIndices = [],
   winningHandName,
+  winningHandDescription,
   deckStyle,
   cardBack,
   playSounds = true,
@@ -397,7 +404,16 @@ function CommunityCardsComponent({
       )}
 
       {/* Winning Hand Name — premium-style "Straight" label below community cards */}
-      {winningHandName && <div className="community-cards__hand-name">{winningHandName}</div>}
+      {winningHandName && (
+        <div className="community-cards__hand-name">
+          {winningHandName}
+          {/* SHOWDOWN SYSTEM 2026-08-25 (spec section 14): the secondary
+              descriptive line — smaller, under the classification. */}
+          {winningHandDescription && (
+            <div className="community-cards__hand-description">{winningHandDescription}</div>
+          )}
+        </div>
+      )}
 
       {/* Gold Spark Burst on Showdown */}
       <ParticleSystem
@@ -417,6 +433,8 @@ export const CommunityCards = memo(CommunityCardsComponent, (prev, next) => {
   // Return true if props are equal (skip re-render)
   if (prev.stage !== next.stage) return false;
   if (prev.winningHandName !== next.winningHandName) return false;
+  // SHOWDOWN SYSTEM 2026-08-25: the secondary description line must re-render.
+  if (prev.winningHandDescription !== next.winningHandDescription) return false;
   if (prev.deckStyle !== next.deckStyle) return false;
   if (prev.playSounds !== next.playSounds) return false;
   // AUDIT-2 FIX 2026-08-20: cardBack was missing — it was added as a prop

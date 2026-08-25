@@ -705,17 +705,17 @@
 
 .community-cards__hand-name {
   position: absolute;
-  top: 50%;
+  top: 85%;
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 20;
   font-size: 2.5rem;
   font-weight: 900;
-  color: #fbbf24;
+  color: #e2e8f0;
   text-shadow:
     0 2px 4px rgba(0, 0, 0, 0.8),
-    0 0 16px rgba(251, 191, 36, 0.8),
-    0 0 30px rgba(251, 191, 36, 0.4);
+    0 0 16px rgba(14, 165, 233, 0.8),
+    0 0 30px rgba(14, 165, 233, 0.4);
   white-space: nowrap;
   letter-spacing: 0.05em;
   background: none;
@@ -735,14 +735,14 @@
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(251, 191, 36, 0.4) 20%,
-    rgba(255, 255, 255, 0.9) 50%,
-    rgba(251, 191, 36, 0.4) 80%,
+    rgba(14, 165, 233, 0.4) 20%,
+    rgba(226, 232, 240, 0.9) 50%,
+    rgba(14, 165, 233, 0.4) 80%,
     transparent 100%
   );
   box-shadow:
-    0 0 10px rgba(251, 191, 36, 0.8),
-    0 0 20px rgba(251, 191, 36, 0.4);
+    0 0 10px rgba(14, 165, 233, 0.8),
+    0 0 20px rgba(14, 165, 233, 0.4);
   transform: translateY(-50%);
   z-index: -1;
 }
@@ -758,9 +758,9 @@
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 215, 0, 0.15) 40%,
-    rgba(255, 255, 255, 0.12) 50%,
-    rgba(255, 215, 0, 0.15) 60%,
+    rgba(226, 232, 240, 0.15) 40%,
+    rgba(255, 255, 255, 0.2) 50%,
+    rgba(226, 232, 240, 0.15) 60%,
     transparent 100%
   );
   animation: ccHandNameShimmer 2.5s 0.5s ease-in-out infinite;
@@ -861,15 +861,6 @@
   .community-cards__center-suit {
     font-size: 1.25rem;
   }
-
-  .community-cards__hand-name {
-    font-size: 0.9rem;
-    padding: 2px 12px;
-    margin-top: 4px;
-    max-width: 200px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
 }
 
 @media (max-width: 380px) {
@@ -888,12 +879,6 @@
   }
   .community-cards__center-suit {
     font-size: 1.1rem;
-  }
-
-  .community-cards__hand-name {
-    font-size: 0.5rem;
-    padding: 2px 8px;
-    max-width: 180px;
   }
 
   .community-cards__stage-label {
@@ -950,11 +935,22 @@
 
   .community-cards__hand-name {
     opacity: 1;
-    transform: none;
     filter: none;
   }
 
   .community-cards__card::after {
     display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .community-cards__hand-name {
+    font-size: 1.8rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .community-cards__hand-name {
+    font-size: 1.5rem;
   }
 }

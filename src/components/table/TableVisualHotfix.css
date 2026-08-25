@@ -252,9 +252,8 @@
    CardImage.css's plain `background-size: cover` cannot win it back and the
    artwork would tile at natural size instead of filling the card. */
 .table-page .seat .card-image--back .card-back {
-  background:
-    var(--cb-image, none),
-    var(--cb-gradient, var(--card-back-gradient, linear-gradient(135deg, #35598f 0%, #1c3560 100%))) !important;
+  background-image: var(--cb-image, none) !important;
+  background-color: #35598f !important;
   background-size: cover !important;
   background-position: center center !important;
   background-repeat: no-repeat !important;
@@ -262,4 +261,17 @@
   box-shadow:
     inset 0 0 0 2.5px rgba(255, 255, 255, 0.18),
     0 1px 4px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Guaranteed fallback: if the card back image fails to render (Safari variable dropping, etc),
+   paint the entire outline box solid blue so they are never transparent outlines. */
+.table-page .seat__cards--opponent .seat__card--back {
+  background-color: #35598f !important;
+}
+
+/* Fix inline-block baseline shift clipping .card-image out of the overflow box */
+.table-page .seat__cards--opponent .seat__card--back {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }

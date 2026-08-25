@@ -1801,3 +1801,45 @@
     font-size: 0.95rem;
   }
 }
+
+/* ── QUICK-PREF CHIPS FIT THE PHONE (Dan 2026-08-24) ────────────────────────
+   "FAVORITES AND THE UP/DOWN ARROW ARE CUT OFF AND YOU NEED TO SLIDE TO SEE
+   THEM." The row is a horizontal scroller, which is the right structure — but
+   a scroller that always overflows is just a hidden control. Six 32px chips
+   at 14px of side padding plus a label and the sheet button measured past
+   390px; at these sizes the same set lands inside it, and the scroller stays
+   as the safety net for a club that declares more tiers than usual. */
+@media (max-width: 768px) {
+  .quickprefs {
+    padding: 0 8px 6px;
+  }
+
+  .quickprefs__row {
+    gap: 4px;
+  }
+
+  .quickprefs__label {
+    font-size: 0.6rem;
+    padding-right: 0;
+  }
+
+  .quickprefs__chip {
+    height: 27px;
+    padding: 0 8px;
+    border-radius: 14px;
+    font-size: 0.64rem;
+  }
+
+  .quickprefs__more {
+    width: 27px;
+    height: 27px;
+    border-radius: 14px;
+  }
+}
+
+@media (max-width: 380px) {
+  .quickprefs__chip {
+    padding: 0 6px;
+    font-size: 0.61rem;
+  }
+}

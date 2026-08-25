@@ -194,7 +194,42 @@ export function TournamentStartingTicker() {
       try {
         const nowIso = new Date().toISOString();
         const horizonIso = new Date(Date.now() + LEAD_MS).toISOString();
-        const { data, error } = await supabase
+
+        /* DB LOAD PASS 2026-08-24: the player's own registrations used to be
+           fetched AFTER the upcoming-events query, filtered by the ids it
+           returned — three round trips in strict series on every poll tick.
+           There is no real dependency between them: the upcoming events are
+           scoped by CLUB and the registrations are scoped by USER, so both can
+           be in flight at once and intersected here. A player's REGISTERED row
+           count is small and `user_id` is indexed, so dropping the id filter
+           costs nothing. `loadScope()` caches after the first tick, so the
+           steady state is now one round trip instead of three. */
+        const registrationsPromise = (async () => {
+          const auth = await import('../../lib/authUtils').then((m) => m.readLocalSession());
+          if (!auth?.userId) return new Set<string>();
+          const { data: regData } = await supabase
+            .from('tournament_players')
+            .select('tournament_id')
+            .eq('user_id', auth.userId)
+            // PRE-EXISTING DEAD PREDICATE, left as-is deliberately.
+            // tournament_players.status in production only ever holds
+            // 'eliminated' (73k), 'winner' (12k) and 'playing' (1k) - there is
+            // no 'REGISTERED', so this has always matched zero rows and the
+            // ticker's "you are registered" badge has never rendered. Changing
+            // the value is a product decision (does the badge mean registered,
+            // or seated and playing?) rather than a perf fix, so it is flagged
+            // for Dan rather than guessed at here.
+            .in('status', ['REGISTERED'])
+            // ORDER BY is required, not cosmetic: a bare LIMIT in Postgres
+            // returns ARBITRARY rows, so if the predicate above is ever
+            // corrected and a player exceeds 200 matches, the 200 kept would be
+            // random and the badge would be wrong. Newest registrations first.
+            .order('registered_at', { ascending: false })
+            .limit(200);
+          return new Set((regData || []).map((r: { tournament_id: string }) => r.tournament_id));
+        })();
+
+        const upcomingPromise = supabase
           .from('tournaments')
           .select(
             'id, name, start_time, club_id, buy_in_amount, current_players, status, tournament_type'
@@ -215,24 +250,12 @@ export function TournamentStartingTicker() {
           .order('start_time', { ascending: true })
           .limit(5);
 
-        if (error || cancelled || !data) return;
+        const [{ data, error }, myRegs] = await Promise.all([
+          upcomingPromise,
+          registrationsPromise,
+        ]);
 
-        const tournamentIds = data.map((t) => t.id);
-        let myRegs = new Set<string>();
-        if (tournamentIds.length > 0) {
-          const auth = await import('../../lib/authUtils').then((m) => m.readLocalSession());
-          if (auth?.userId) {
-            const { data: regData } = await supabase
-              .from('tournament_players')
-              .select('tournament_id')
-              .eq('user_id', auth.userId)
-              .in('tournament_id', tournamentIds)
-              .in('status', ['REGISTERED']);
-            myRegs = new Set(
-              (regData || []).map((r: { tournament_id: string }) => r.tournament_id)
-            );
-          }
-        }
+        if (error || cancelled || !data) return;
 
         setUpcoming(
           data.map((t: Record<string, unknown>) => ({
@@ -250,11 +273,41 @@ export function TournamentStartingTicker() {
       }
     };
 
-    fetchUpcoming();
-    const poll = setInterval(fetchUpcoming, POLL_MS);
+    /* DB LOAD PASS 2026-08-24: the poll used to run forever, including in
+       background tabs. Nobody can read a countdown they cannot see, so the
+       interval is suspended while the tab is hidden and the data is refreshed
+       the moment it comes back — which also means a returning player sees a
+       current countdown rather than one that drifted while they were away. */
+    let poll: ReturnType<typeof setInterval> | null = null;
+    const startPoll = () => {
+      if (poll !== null) return;
+      poll = setInterval(fetchUpcoming, POLL_MS);
+    };
+    const stopPoll = () => {
+      if (poll === null) return;
+      clearInterval(poll);
+      poll = null;
+    };
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        stopPoll();
+      } else {
+        void fetchUpcoming();
+        startPoll();
+      }
+    };
+
+    if (!document.hidden) {
+      void fetchUpcoming();
+      startPoll();
+    }
+    document.addEventListener('visibilitychange', onVisibility);
+
     return () => {
       cancelled = true;
-      clearInterval(poll);
+      stopPoll();
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [loadScope]);
 

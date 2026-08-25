@@ -14,7 +14,8 @@
  * tournament dealt without them until they happened to look.
  *
  * This watcher closes that hop. It polls the player's OWN tournament seats
- * (cheap: one indexed query on table_seats every 12s, only while signed in),
+ * (cheap: one indexed query on table_seats every 12s, only while signed
+ * in AND only while the tab is visible),
  * and the first time a seat appears at a table it has not already announced:
  *   • emits TABLE_SEATED, which MultiTablePage turns into an open table tab;
  *   • if the player is already at the 4-table cap, MultiTablePage answers with
@@ -35,6 +36,23 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { reportError } from '../../utils/errorReporter';
 import './TournamentAutoSeat.css';
 
+/**
+ * DB LOAD PASS 2026-08-24: was 12s. This component is mounted app-wide for
+ * every signed-in user, so that was five joined `table_seats` -> `tables`
+ * queries per minute per open tab, forever, whether or not the player has ever
+ * registered for a tournament. 45s is still well inside the window that
+ * matters — a tournament seat waits minutes, not seconds — and the interval is
+ * now torn down entirely while the tab is hidden rather than ticking and
+ * returning early.
+ */
+// 12s, NOT LONGER. Reverted from 45s on 2026-08-24: that change was made as a
+// database-load optimisation without weighing it against the binding guarantee
+// in this file's header. This poll is the ONLY detection path for auto-seating,
+// and the blinding-off alarm rides it too, so stretching it directly stretches
+// how long a player sits unseated in a tournament they paid for, and how late
+// they are told their chips are leaving. The visibility gate below is where the
+// load saving comes from instead: hidden tabs poll not at all, and check
+// immediately on return.
 const POLL_MS = 12_000;
 /** Seats older than this were not "just started" — do not yank the player. */
 const FRESH_MS = 10 * 60 * 1000;
@@ -222,14 +240,38 @@ export default function TournamentAutoSeat() {
 
   useEffect(() => {
     if (!user?.id) return undefined;
-    void check();
-    const id = setInterval(() => void check(), POLL_MS);
-    const onVis = () => {
-      if (document.visibilityState === 'visible') void check();
+
+    /* The interval is created only while the tab is visible and destroyed when
+       it is hidden. Previously it ran forever and `check()` returned early on a
+       hidden tab, which spared the query but still woke the tab on a timer.
+       Becoming visible again checks immediately, so nothing is missed. */
+    let id: ReturnType<typeof setInterval> | null = null;
+    const startPoll = () => {
+      if (id !== null) return;
+      id = setInterval(() => void check(), POLL_MS);
     };
+    const stopPoll = () => {
+      if (id === null) return;
+      clearInterval(id);
+      id = null;
+    };
+
+    const onVis = () => {
+      if (document.hidden) {
+        stopPoll();
+      } else {
+        void check();
+        startPoll();
+      }
+    };
+
+    if (!document.hidden) {
+      void check();
+      startPoll();
+    }
     document.addEventListener('visibilitychange', onVis);
     return () => {
-      clearInterval(id);
+      stopPoll();
       document.removeEventListener('visibilitychange', onVis);
     };
   }, [user?.id, check]);

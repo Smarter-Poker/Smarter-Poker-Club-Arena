@@ -761,6 +761,12 @@ export default function LobbyTable({
                 {columns.map((col) => (
                   <td
                     key={col.key}
+                    /* data-label carries the column's own heading down to the
+                       cell. On a phone the header row is gone, so the card
+                       layout prints it above the value — and it is always the
+                       right word, which a class name could not guarantee:
+                       Stakes and Buy-In share .lt-col-num. */
+                    data-label={col.label}
                     className={`${col.className || ''} ${col.hideOnMobile ? 'hide-on-mobile' : ''}`}
                   >
                     {col.render(entry, ctx)}

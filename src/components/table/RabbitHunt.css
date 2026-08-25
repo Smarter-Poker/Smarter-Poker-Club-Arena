@@ -160,15 +160,9 @@
   }
 }
 
-.rabbit-hunt__rank {
-  font-size: 1.25rem;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.rabbit-hunt__suit {
-  font-size: 1rem;
-}
+/* `.rabbit-hunt__rank` and `.rabbit-hunt__suit` removed 2026-08-25: the
+   component renders <CardImage> and has not emitted either class since. Their
+   responsive overrides went with them. */
 
 .rabbit-hunt__card--pending {
   background: linear-gradient(180deg, #2d333b 0%, #1c2128 100%);
@@ -191,13 +185,5 @@
   .rabbit-hunt__card {
     width: 40px;
     height: 56px;
-  }
-
-  .rabbit-hunt__rank {
-    font-size: 1rem;
-  }
-
-  .rabbit-hunt__suit {
-    font-size: 0.875rem;
   }
 }

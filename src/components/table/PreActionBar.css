@@ -4,11 +4,32 @@
  */
 
 .pre-action-bar {
+  /* FLUSH TO THE BOTTOM (Dan 2026-08-25, item 5): "the action bar on the bottom
+     needs to truly be attached to the bottom. We have too much wasted space at
+     the bottom."
+
+     THIS is the row in his screenshot — CHECK/FOLD, CHECK, CALL ANY sitting in
+     a black band with a large empty gap beneath it. The gap was never this
+     bar's: it was in flow inside `.action-panel-wrapper`, which is fixed at
+     bottom 0 but pads `8px + safe-area` below its content, so an in-flow child
+     physically could not reach the screen edge. Pinned here exactly the way
+     ActionPanel is pinned, on the same z-layer, so whichever of the two rows is
+     up sits on precisely the same line and neither ever floats.
+
+     env() alone under the pills — the home-indicator strip is not wasted space,
+     everything above it was. Restated in every breakpoint below, because a
+     shorthand `padding` in a media query puts the old gap straight back. */
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--z-action-panel, 100);
   display: flex;
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
   padding: 8px 16px;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   background: linear-gradient(180deg, rgba(20, 24, 32, 0.92) 0%, rgba(14, 17, 24, 0.96) 100%);
   backdrop-filter: blur(12px) saturate(1.2);
   -webkit-backdrop-filter: blur(12px) saturate(1.2);
@@ -392,6 +413,8 @@
 @media (max-width: 768px) {
   .pre-action-bar {
     padding: 8px 12px;
+    /* Flush — see the base rule. */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   .pre-action-buttons {
@@ -415,6 +438,8 @@
 @media (max-width: 480px) {
   .pre-action-bar {
     padding: 6px 10px;
+    /* Flush — see the base rule. */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   .pre-action-buttons {

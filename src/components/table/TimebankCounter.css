@@ -5,8 +5,30 @@
 
 .tbc-widget {
   /* Dan 2026-08-21: no longer a free-floating fixed pill — it lives in the
-     TableHUD bottom-left stack, directly above the previous-hand card. */
+     TableHUD bottom-left stack, with the previous-hand card. */
   position: static;
+  /* ═══ THE BOTTOM-EDGE LINE (Dan 2026-08-25, item 6) ═══
+     "The time bank button needs to be lower, same level as the chat button.
+     The bottoms of both icons should be equal at the bottom."
+
+     It is not anchored here and it must not be: the moment this chip carries
+     its own `bottom` it can disagree with the chat button, which is the bug.
+     The line is owned by `.table-hud__lower`'s padding-bottom in TableHUD.css
+     —- `calc(var(--sp-action-h) + 8px + env(safe-area-inset-bottom))` — and
+     `.chat-collapsed` in TableChat.css resolves its `bottom` from a
+     byte-identical copy of that expression. Both edges therefore move together
+     whenever the action bar changes height, which is exactly what closes this
+     for good.
+
+     All this chip has to do is BE the bottom of that stack. `order: 1` puts it
+     after the previous-hand card (default order 0) without touching the markup,
+     so its bottom edge IS the stack's bottom edge IS the line. It reverses the
+     visual order Dan set on 2026-08-21 ("the time bank icon should be on top
+     of it"); that is the necessary consequence of today's instruction, since
+     only the bottom-most item of a bottom-anchored column can sit on the line.
+     The previous-hand card, which appears only after a hand finishes, now
+     stacks above it. */
+  order: 1;
   display: inline-flex;
   align-items: center;
   gap: 5px;

@@ -104,9 +104,20 @@ const MiniCards = React.memo(function MiniCards({ cards }: { cards: string }) {
     .map((c) => c.trim())
     .filter((c) => c.length >= 2);
   if (parsed.length === 0) return null;
+  // Dan 2026-08-25: two size steps, not one. On a 375px phone a pill is ~55px
+  // wide, and PLO6's SIX cards have to live in that; sizing PLO4 and PLO6 the
+  // same meant either PLO6 clipped or PLO4 was needlessly tiny. `--wide` is
+  // the 3-4 card step, `--xwide` the 5-6 card one. Both classes are applied at
+  // 5+, so `--xwide` only has to override the two dimensions that differ.
+  const sizeClasses = [
+    parsed.length > 2 && 'table-tab-bar__mini-cards--wide',
+    parsed.length > 4 && 'table-tab-bar__mini-cards--xwide',
+  ]
+    .filter(Boolean)
+    .join(' ');
   return (
     <span
-      className={`table-tab-bar__mini-cards${parsed.length > 2 ? ' table-tab-bar__mini-cards--wide' : ''}`}
+      className={`table-tab-bar__mini-cards${sizeClasses ? ` ${sizeClasses}` : ''}`}
       aria-hidden="true"
     >
       {parsed.map((c, i) => {

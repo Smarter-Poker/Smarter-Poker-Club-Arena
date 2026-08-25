@@ -211,6 +211,7 @@ import GameServerAPI, {
   postBBToEnter as serverPostBBToEnter,
   requestRabbitHunt,
 } from '../services/GameServerAPI';
+import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
 import { retryAsync } from '../utils/retryAsync';
 //monteCarloEquity import removed — server-authoritative
 import './TablePage.css';
@@ -3406,14 +3407,7 @@ export default function TablePage({
   const [rabbitCardsAvailable, setRabbitCardsAvailable] = useState(0);
   const rabbitHandNumberRef = useRef<number | null>(null);
 
-  const handleRabbitReveal = useCallback(async (): Promise<{
-    success: boolean;
-    cards?: Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>;
-    error?: string;
-    source?: string;
-    diamondsSpent?: number;
-    vipRemaining?: number | null;
-  }> => {
+  const handleRabbitReveal = useCallback(async (): Promise<RabbitHuntRevealResult> => {
     if (!tableId) return { success: false, error: 'Table Not Ready' };
 
     const result = await requestRabbitHunt(tableId, rabbitHandNumberRef.current ?? undefined);
@@ -11627,7 +11621,18 @@ export default function TablePage({
           TABLE AREA
           ═══════════════════════════════════════════════════════════════════════ */}
       <div className="table-container">
-        <div className="table-scaler" ref={tableScalerRef}>
+        {/* --table-w: the table's MEASURED width, published to CSS.
+            Dan 2026-08-25 (item 8): the dealer button and the chips are sized
+            as a proportion of this in TableVisualHotfix.css, so one table size
+            gives one consistent set of proportions instead of a per-breakpoint
+            guess. scalerSize comes from the ResizeObserver already on this
+            element, so it is the real painted width - including in landscape,
+            where the table is height-driven and has no width to infer from. */}
+        <div
+          className="table-scaler"
+          ref={tableScalerRef}
+          style={{ '--table-w': `${scalerSize.w}px` } as React.CSSProperties}
+        >
           {/* Table Felt */}
           <div className="table-felt">
             {/* Dan 2026-08-17 — the painted table itself. object-fit: cover

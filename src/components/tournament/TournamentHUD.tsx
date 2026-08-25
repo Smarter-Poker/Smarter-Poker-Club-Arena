@@ -93,17 +93,43 @@ export function TournamentHUD({
      *  - Nothing stopped it. A COMPLETED or CANCELLED tournament has no next
      *    level and no clock, and was polled every 45s regardless.
      */
+    const POLL_MS = 45_000;
+    /** Where the poll retreats to after a sustained fault. See the catch. */
+    const BACKOFF_MS = 300_000;
     let failures = 0;
+    let backedOff = false;
     const refresh = async () => {
       try {
         const t = await tournamentService.getTournament(tournamentId);
         if (!mounted) return;
+        // Recovered: come back to the normal cadence rather than staying on
+        // the five-minute backoff for the rest of the tournament.
+        if (backedOff && resyncRef.current) {
+          clearInterval(resyncRef.current);
+          resyncRef.current = setInterval(() => void refresh(), POLL_MS);
+          backedOff = false;
+        }
         failures = 0;
         setTournament(t);
-        // Nothing left to track once the event is over: stop the poll rather
-        // than asking the same settled question every 45 seconds.
+        /* Nothing left to track once the event is OVER: stop the poll rather
+           than asking the same settled question every 45 seconds.
+           
+           2026-08-25, second audit: this was an ALLOW-LIST of live statuses
+           (RUNNING / REGISTERING / LATE_REG) and it stopped the poll on
+           anything else — including ANNOUNCED, which is a perfectly live state
+           a tournament sits in before registration opens. A HUD whose first
+           read returned ANNOUNCED stopped polling FOREVER (the effect only
+           re-runs on tournamentId, and nothing restarts the interval), so when
+           the event went RUNNING it was back to realtime-only: the exact single
+           point of failure this poll was added to remove. An empty or missing
+           status tripped it too.
+           
+           It is a DENY-LIST of terminal states now. Anything unrecognised keeps
+           polling, which is the safe direction: a needless read every 45s costs
+           nothing, a stopped clock costs the player the blind level. */
         const status = String((t as { status?: string } | null)?.status ?? '').toUpperCase();
-        if (t && status !== 'RUNNING' && status !== 'REGISTERING' && status !== 'LATE_REG') {
+        const TERMINAL = ['COMPLETED', 'CANCELLED', 'FINISHED', 'ABORTED'];
+        if (t && TERMINAL.includes(status)) {
           if (resyncRef.current) {
             clearInterval(resyncRef.current);
             resyncRef.current = null;
@@ -115,10 +141,21 @@ export function TournamentHUD({
         // First two only. After that the fault is established and repeating it
         // tells nobody anything new.
         if (failures <= 2) reportError(e, 'TournamentHUD.load', { tournamentId, failures });
-        // A wall we cannot get through is not worth hitting every 45s forever.
-        if (failures >= 5 && resyncRef.current) {
+        /* 2026-08-25, second audit: this used to STOP the poll after five
+           failures, permanently. Five consecutive failures is about three
+           minutes — i.e. a tab that was offline over a train tunnel — and
+           because PersistentTableLayer hides rather than unmounts, "permanently"
+           meant the rest of the session. The cure was worse than the noise it
+           was treating.
+           
+           It BACKS OFF instead: the interval widens to five minutes so a hard
+           fault is quiet, and the moment a read succeeds the normal cadence is
+           restored (see the success branch). A clock that is late is recoverable;
+           a clock that has given up is not. */
+        if (failures === 5 && resyncRef.current) {
           clearInterval(resyncRef.current);
-          resyncRef.current = null;
+          resyncRef.current = setInterval(() => void refresh(), BACKOFF_MS);
+          backedOff = true;
         }
       }
     };
@@ -143,7 +180,7 @@ export function TournamentHUD({
      * source of truth, and the worst case is a level that is late by under a
      * minute instead of stale forever.
      */
-    resyncRef.current = setInterval(() => void refresh(), 45_000);
+    resyncRef.current = setInterval(() => void refresh(), POLL_MS);
 
     const channel = masterBus.getOrCreateChannel(`tournament-hud-${tournamentId}`);
     channel

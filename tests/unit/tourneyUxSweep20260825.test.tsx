@@ -197,7 +197,13 @@ describe('Items 2 and 3 - exactly one, styled, buy-in confirmation', () => {
     // `.signup-row` must be a flex row with a real gap - two adjacent inline
     // spans in JSX have no whitespace between them, which is what printed
     // "Entry Fee:50".
-    const row = css.slice(css.indexOf('.signup-row {'));
+    /* 2026-08-25, second audit: this used to slice to END OF FILE, so
+       `.signup-actions { display:flex; gap:10px }` satisfied both assertions
+       and the test for Dan's literal complaint was tautological. Slice to the
+       END OF THE RULE. */
+    const start = css.indexOf('.signup-row {');
+    expect(start).toBeGreaterThan(-1);
+    const row = css.slice(start, css.indexOf('}', start));
     expect(row).toMatch(/display: flex;/);
     expect(row).toMatch(/gap: \d+px;/);
   });
@@ -388,7 +394,11 @@ describe('Item 9 - the level shown is the level being played', () => {
 
   it('the tournament HUD re-reads the row instead of trusting realtime alone', () => {
     const src = code(read(HUD));
-    expect(src).toMatch(/resyncRef\.current = setInterval\(\(\) => void refresh\(\), 45_000\)/);
+    /* Not pinned to the literal `45_000` any more — the interval is a named
+       constant now so the backoff path can reuse it, and a test that pins a
+       number rather than the behaviour breaks on a harmless rename. */
+    expect(src).toMatch(/const POLL_MS = 45_000;/);
+    expect(src).toMatch(/resyncRef\.current = setInterval\(\(\) => void refresh\(\), POLL_MS\)/);
     // and it must clear that interval on unmount.
     expect(src).toMatch(/if \(resyncRef\.current\) clearInterval\(resyncRef\.current\)/);
   });
@@ -557,13 +567,34 @@ describe('Audit - no path takes a buy-in without asking', () => {
        `club_id` matters more than cosmetics: without it the balance is read
        against whatever club is ambient, which can DISABLE Confirm for a player
        who is funded in the club that would actually be charged. */
+    /* 2026-08-25, second audit: this used to grep the WHOLE FILE for
+       `club_id:` / `start_time:`, which ClubHomePage satisfies three times over
+       without the register payload containing either. Slice to the actual
+       `registerMtt({ ... })` argument and assert the rows inside it. */
     for (const f of REGISTER_SURFACES) {
       const src = code(read(f));
-      expect(src, `${f} must pass club_id`).toMatch(/club_id:/);
-      expect(src, `${f} must pass start_time`).toMatch(/start_time:/);
+      const at = src.indexOf('registerMtt(');
+      expect(at, `${f} must call registerMtt`).toBeGreaterThan(-1);
+      // The payload object: from the call to the first `},` that closes it.
+      const payload = src.slice(at, at + 1400);
+      expect(payload, `${f} payload must carry club_id`).toMatch(/club_id:/);
+      expect(payload, `${f} payload must carry start_time`).toMatch(/start_time:/);
+      /* `status` is what the hook derives late-registration from. Every caller
+         used to compute it by hand and every one of them missed LATE_REG. */
+      expect(payload, `${f} payload must carry status`).toMatch(/status:/);
+      expect(payload, `${f} must not hand-roll the late-reg test - the hook owns it`).not.toMatch(
+        /is_late_registration:\s*String\(/
+      );
     }
     expect(code(read(REG_HOOK))).toMatch(/clubId: t\.club_id \?\? null/);
     expect(code(read(REG_HOOK))).toMatch(/club_id\?: string \| null/);
+    // One definition of "late", and it covers LATE_REG.
+    const hook = code(read(REG_HOOK));
+    expect(hook).toMatch(/export function isLateStatus/);
+    expect(hook).toMatch(/s === 'RUNNING' \|\| s === 'LATE_REG'/);
+    expect(hook).toMatch(
+      /isLateRegistration: t\.is_late_registration \?\? isLateStatus\(t\.status\)/
+    );
   });
 });
 
@@ -577,7 +608,7 @@ describe('Audit - the dialog cannot confirm a buy-in nobody was shown', () => {
        request #2 `true` — confirming a buy-in whose card never rendered. */
     expect(src).toMatch(/const settle = useCallback\(\(id: number, result: boolean\)/);
     expect(src).toMatch(/if \(settledRef\.current\.has\(id\)\) return;/);
-    expect(src).toMatch(/setQueue\(\(q\) => q\.filter\(\(r\) => r\.id !== id\)\)/);
+    expect(src).toMatch(/queueRef\.current = queueRef\.current\.filter\(\(r\) => r\.id !== id\)/);
     // and every control passes the id it was rendered for
     expect(src).toMatch(/settle\(id, true\)/);
     expect(src).toMatch(/settle\(id, false\)/);
@@ -612,12 +643,23 @@ describe('Audit - the dialog cannot confirm a buy-in nobody was shown', () => {
 
   it('reads the balance of the club that actually pays', () => {
     // R6.
-    expect(src).toMatch(/getPlayerBalance\(userId, \{ clubId \}\)/);
+    expect(src).toMatch(/readPlayerBalance\(userId, \{ clubId \}\)/);
   });
 
   it('an unreadable balance never blocks a buy-in', () => {
-    // Null renders "--" and leaves Confirm enabled; the server RPC is the gate.
+    /* R7, and this is the one the FIRST audit fix got wrong. It called
+       `getPlayerBalance`, which collapses every failure — RPC error, RLS
+       denial, an unresolvable club id — into the NUMBER 0. It never throws, so
+       the catch that was supposed to set `balance = null` was dead code, and a
+       funded player whose read failed saw "Insufficient Balance" with Confirm
+       disabled. Assert the property at BOTH ends: the gate treats null as
+       unknown, AND the reader it calls can actually produce a null. */
     expect(src).toMatch(/const short = balance !== null && balance < cost;/);
+    expect(src).not.toMatch(/getPlayerBalance\(/);
+    const wallet = code(read('src/services/WalletService.ts'));
+    expect(wallet).toMatch(/async readPlayerBalance\(/);
+    expect(wallet).toMatch(/balance: number \| null; source: 'rpc' \| 'wallet' \| 'failed'/);
+    expect(wallet).toMatch(/return \{ balance: null, source: 'failed' \}/);
   });
 
   it('does not tell a late registrant they cannot unregister near the start', () => {
@@ -635,19 +677,170 @@ describe('Audit - the dialog cannot confirm a buy-in nobody was shown', () => {
 describe('Audit - the tournament HUD stops when there is nothing left to ask', () => {
   const src = code(read(HUD));
 
-  it('stops polling once the event is over', () => {
-    expect(src).toMatch(/status !== 'RUNNING' && status !== 'REGISTERING'/);
-    expect(src).toMatch(/clearInterval\(resyncRef\.current\)/);
+  it('stops polling only on a TERMINAL status, never on a live one', () => {
+    /* The first version was an ALLOW-LIST of live statuses and stopped the
+       poll on anything else — including ANNOUNCED, a perfectly live state. A
+       HUD whose first read returned ANNOUNCED never polled again, which is the
+       single point of failure the poll exists to remove. Deny-list now, so an
+       unrecognised status keeps polling. */
+    expect(src).toMatch(/const TERMINAL = \[/);
+    expect(src).toMatch(/TERMINAL\.includes\(status\)/);
+    expect(src).not.toMatch(/status !== 'RUNNING' && status !== 'REGISTERING'/);
+    // The list must cover the ends, and must NOT contain a live status.
+    const m = src.match(/const TERMINAL = \[([^\]]*)\]/);
+    expect(m).toBeTruthy();
+    const list = m![1];
+    expect(list).toContain('COMPLETED');
+    expect(list).toContain('CANCELLED');
+    for (const live of ['RUNNING', 'REGISTERING', 'ANNOUNCED', 'LATE_REG']) {
+      expect(list, `${live} is a live status and must not stop the poll`).not.toContain(live);
+    }
   });
 
-  it('does not report the same failure every 45 seconds forever', () => {
+  it('backs the poll off on a sustained fault instead of giving up on it', () => {
+    /* It used to STOP after five failures, permanently — and because
+       PersistentTableLayer hides rather than unmounts, permanently meant the
+       session. Five failures is about three minutes offline. */
     expect(src).toMatch(/if \(failures <= 2\) reportError/);
-    expect(src).toMatch(/if \(failures >= 5 && resyncRef\.current\)/);
+    expect(src).toMatch(/const BACKOFF_MS = /);
+    expect(src).toMatch(/setInterval\(\(\) => void refresh\(\), BACKOFF_MS\)/);
+    // and it must come BACK to the normal cadence once a read succeeds
+    expect(src).toMatch(/backedOff && resyncRef\.current/);
+    expect(src).toMatch(/setInterval\(\(\) => void refresh\(\), POLL_MS\)/);
+    expect(src).not.toMatch(
+      /if \(failures >= 5 && resyncRef\.current\) \{\s*clearInterval\(resyncRef\.current\);\s*resyncRef\.current = null;/
+    );
   });
 
   it('does not tick once a second while hidden', () => {
     expect(src).toMatch(
       /if \(hidden \|\| !tournament \|\| tournament\.status !== 'RUNNING'\) return;/
     );
+  });
+});
+
+// ─── SECOND AUDIT (2026-08-25) ────────────────────────────────────────────────
+//
+// The first audit's FIXES were themselves audited. These pin what that found.
+
+describe('Second audit - the balance gate cannot lock out a funded player', () => {
+  it('WalletService can report that it did not manage to read', () => {
+    /* THE BUG: `getPlayerBalance` returns a `number`, so every failure — RPC
+       error, RLS denial, an unresolvable club id, a dropped connection —
+       becomes 0. The dialog gated on it and disabled Confirm with "Insufficient
+       Balance" for players who were funded. A read that never happened is not
+       a balance of zero. */
+    const wallet = code(read('src/services/WalletService.ts'));
+    expect(wallet).toMatch(/async readPlayerBalance\(/);
+    expect(wallet).toMatch(/source: 'failed'/);
+    // and it must NOT collapse a failed legacy read into 0
+    expect(wallet).toMatch(/if \(wErr\) \{[\s\S]{0,200}return \{ balance: null/);
+  });
+
+  it('a missing wallet row is still a genuine zero, not unknown', () => {
+    // Failing OPEN on a real zero would be its own bug.
+    const wallet = code(read('src/services/WalletService.ts'));
+    expect(wallet).toMatch(
+      /return \{ balance: Number\(w\?\.balance \?\? 0\) \|\| 0, source: 'wallet' \}/
+    );
+  });
+});
+
+describe('Second audit - a request cannot be lost between enqueue and unmount', () => {
+  const src = code(read(SIGNUP_TSX));
+
+  it('the queue ref is written synchronously, never during render', () => {
+    /* R8. `queueRef.current = queue` during render lagged the truth by a
+       commit, so a request enqueued in the same batch as an unmount was
+       invisible to the drain and its promise hung forever — bricking the
+       caller's Register button, which is exactly the failure R3 names. */
+    expect(src).not.toMatch(/queueRef\.current = queue;/);
+    expect(src).toMatch(/queueRef\.current = \[\.\.\.queueRef\.current, req\]/);
+  });
+});
+
+describe('Second audit - the focus trap and Escape behave', () => {
+  const src = code(read(SIGNUP_TSX));
+
+  it('traps Tab even when focus is on the card itself', () => {
+    /* With Confirm disabled the open-effect focuses the CARD, and
+       `card.contains(card)` is true — so the old test believed focus was
+       already on a control and trapped nothing. Shift+Tab walked out of a
+       dialog that takes money. */
+    expect(src).toMatch(/active !== cardRef\.current/);
+    expect(src).toMatch(/if \(!inside\) \{/);
+  });
+
+  it('does not swallow Escape for the rest of the app', () => {
+    // Capture-phase on window is the FIRST node in the path; stopping there
+    // blocked Escape for every deeper listener while the dialog was open.
+    const esc = src.slice(src.indexOf("if (e.key === 'Escape')"));
+    expect(esc.slice(0, 200)).not.toMatch(/stopPropagation/);
+  });
+});
+
+describe('Second audit - busting cannot strand a player at a dead seat', () => {
+  const src = code(read(TABLE_PAGE));
+
+  it('releasing with nothing to replay still gets the player out', () => {
+    /* THE BUG: `pendingExit` is only set by the elimination broadcast. On the
+       ordinary path this watcher exists for — hand settled, stack zero, no
+       broadcast — release did NOTHING: modal gone, hero still seated with no
+       chips, no result card, and `bustPromptFiredRef` still true so it could
+       never re-prompt. */
+    expect(src).toMatch(/exitIfBustedRef\.current\?\.\(\)/);
+    expect(src).toMatch(/const exitIfBustedRef = useRef/);
+  });
+
+  it('the fallback exit re-checks the stack, so a rebuy is never ejected', () => {
+    const impl = src.slice(src.indexOf('exitIfBustedRef.current = () => {'));
+    expect(impl.slice(0, 700)).toMatch(/if \(stack > 0\) return;/);
+  });
+
+  it('the backstop does not cancel a rebuy that is mid-flight', () => {
+    expect(src).toMatch(/if \(rebuyProcessingRef\.current\) \{/);
+  });
+});
+
+describe('Second audit - the featured table is never a stale one', () => {
+  it('an empty live-table set means no leader, not an unfiltered leader', () => {
+    /* The filter used to disable ITSELF when the live set was empty
+       (`activeTableIds.size === 0 || ...`) — which is the state on first render
+       before the tables query resolves, and when every table is closed. The
+       leader's stale table_id was returned before the live-only fallback was
+       ever reached. */
+    const src = code(read(DETAILS));
+    expect(src).not.toMatch(/activeTableIds\.size === 0 \|\| activeTableIds\.has/);
+    expect(src).toMatch(/\.filter\(\(e\) => activeTableIds\.has\(e\.table_id as string\)\)/);
+  });
+});
+
+describe('Second audit - a button labelled Watch actually watches', () => {
+  it('the lobby card carries the intent and the details page acts on it', () => {
+    const card = code(read('src/components/tournament/TournamentLobbyCard.tsx'));
+    expect(card).toMatch(/\?watch=1/);
+    const src = code(read(DETAILS));
+    expect(src).toMatch(/get\('watch'\) !== '1'/);
+    expect(src).toMatch(/watchIntentDoneRef/);
+    // once only, and only for a running event
+    expect(src).toMatch(/tournament\?\.status !== 'RUNNING'/);
+  });
+});
+
+describe('Second audit - dead code is gone', () => {
+  it('MiniStatsCard has no unreachable expanded panel', () => {
+    /* `expanded` was `showRealTimeResults || isExpanded`; nothing passes the
+       prop and TablePage always passes `onTap`, so the only writer of
+       `isExpanded` was unreachable and ~70 lines never rendered. */
+    const src = code(read('src/components/table/MiniStatsCard.tsx'));
+    expect(src).not.toMatch(/mini-stats-card--expanded/);
+    expect(src).not.toMatch(/showRealTimeResults/);
+    expect(src).not.toMatch(/setIsExpanded/);
+  });
+
+  it('a tournament buy-in tells the rest of the app the balance moved', () => {
+    // The old inline register path emitted this; routing every surface through
+    // the hook dropped it, so wallet displays kept the pre-buy-in figure.
+    expect(code(read(REG_HOOK))).toMatch(/masterBus\.emit\('BALANCE_UPDATED'/);
   });
 });

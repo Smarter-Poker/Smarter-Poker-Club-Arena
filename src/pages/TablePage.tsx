@@ -2452,8 +2452,35 @@ export default function TablePage({
     hold.pendingExit = null;
     if (pending) {
       goToLobbyWithResultRef.current?.(pending.position, pending.prize, pending.delayMs);
+      return;
     }
+    /* 2026-08-25, second audit: RELEASING WITH NOTHING TO REPLAY USED TO DO
+     * NOTHING AT ALL, and that stranded people.
+     *
+     * `pendingExit` is only set by the `player_eliminated` broadcast. The whole
+     * reason the stack watcher exists is the case where that broadcast never
+     * comes — the hand simply settled and hero's stack is zero. On that path
+     * the hold released and then... nothing: modal gone, hero still seated with
+     * no chips, no result card, no exit. And because `bustPromptFiredRef` was
+     * still true and the stack still zero, the watcher could never re-prompt
+     * either. The player sat at a dead table for the rest of the session.
+     *
+     * `exitIfBusted` is the fallback the manual decline path already had
+     * inline. It only fires when hero really is out of chips, so a release on
+     * a seat that has since been topped up (a successful rebuy) cannot eject
+     * anybody — that path also clears `pendingExit` first, and lands here with
+     * a positive stack. */
+    exitIfBustedRef.current?.();
   }, []);
+
+  /**
+   * Leave the table because hero has no chips left — the last-resort exit.
+   *
+   * A ref so `releaseBustHold` (declared above it, and deliberately dependency
+   * free) can call it without either one having to be re-created when table
+   * state changes.
+   */
+  const exitIfBustedRef = useRef<(() => void) | null>(null);
 
   /**
    * Claim the hold. Returns false when one is already running, so two watchers
@@ -4392,6 +4419,41 @@ export default function TablePage({
     showBuyInModal,
   ]);
 
+  /**
+   * `rebuyProcessing` readable from a timer's closure. The 120s backstop must
+   * not cancel a rebuy that is mid-flight — see its use below.
+   */
+  const rebuyProcessingRef = useRef(false);
+  rebuyProcessingRef.current = rebuyProcessing;
+
+  /**
+   * THE LAST-RESORT EXIT (2026-08-25, second audit).
+   *
+   * Called by `releaseBustHold` when the hold ends and there is no deferred
+   * elimination to replay — the ordinary "hand settled, stack is zero, no
+   * broadcast" path. Without this the player was simply left seated with no
+   * chips, no result card and no way for the watcher to re-prompt.
+   *
+   * Deliberately re-checks the stack rather than trusting the caller: a
+   * release that follows a SUCCESSFUL rebuy lands here too, and a player who
+   * has just paid to stay in must never be ejected by it.
+   */
+  useEffect(() => {
+    exitIfBustedRef.current = () => {
+      if (!tableStateRef.current.isTournament) return;
+      const seat = tableStateRef.current.heroSeat;
+      if (seat <= 0) return;
+      const stack = tableStateRef.current.players[seat - 1]?.stack ?? 0;
+      if (stack > 0) return;
+      heroSeatRef.current = 0;
+      setTableState((prev) => ({ ...prev, heroSeat: 0 }));
+      goToLobbyWithResultRef.current?.(0, 0, 1500);
+    };
+    return () => {
+      exitIfBustedRef.current = null;
+    };
+  }, []);
+
   // Tournament bust / rebuy & elimination watcher
   useEffect(() => {
     if (!tableId || !userId || tableState.heroSeat <= 0) return;
@@ -4468,6 +4530,18 @@ export default function TablePage({
             if (hold.deadline) clearTimeout(hold.deadline);
             hold.deadline = setTimeout(() => {
               bustHoldRef.current.deadline = null;
+              /* Not while a rebuy is actually in flight. `processRebuy` is a
+                 server round trip; if it outruns the backstop, cancelling here
+                 would reject a rebuy the player had already paid for. Give it
+                 another full window instead — the confirm handler releases the
+                 hold the moment it returns. */
+              if (rebuyProcessingRef.current) {
+                bustHoldRef.current.deadline = setTimeout(
+                  () => releaseBustHoldRef.current?.(),
+                  BUST_HOLD_MODAL_MS
+                );
+                return;
+              }
               // Unanswered for two minutes is a decline. Close the prompt and
               // tell the server, exactly as the Cancel button would.
               setShowRebuyModal(false);

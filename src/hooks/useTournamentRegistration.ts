@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useUserStore } from '../stores/useUserStore';
 import { tournamentService } from '../services/TournamentService';
 import { supabase } from '../lib/supabase';
+import { masterBus } from '../core/MasterBus';
 import { signUpDialog } from '../components/tournament/signUpDialog';
 import { useToast } from '../components/common/Toast';
 import { reportError } from '../utils/errorReporter';
@@ -17,6 +18,17 @@ import { reportError } from '../utils/errorReporter';
 const SEAT_LOOKUP_RETRIES = 3;
 const SEAT_LOOKUP_RETRY_MS = 1200;
 
+/**
+ * Has this tournament already started, i.e. is entering it a LATE registration?
+ *
+ * One definition, used by every register button, because five hand-rolled
+ * copies of `status === 'RUNNING'` all missed `LATE_REG` (2026-08-25 audit).
+ */
+export function isLateStatus(status?: string | null): boolean {
+  const s = String(status ?? '').toUpperCase();
+  return s === 'RUNNING' || s === 'LATE_REG' || s === 'LATE_REGISTRATION';
+}
+
 export interface RegisterTournamentParams {
   id: string;
   name: string;
@@ -30,7 +42,20 @@ export interface RegisterTournamentParams {
   is_pko?: boolean;
   is_mystery_bounty?: boolean;
   start_time?: string | null;
-  /** True when registering after the off, so the card says Late Register. */
+  /**
+   * The tournament's status, so the hook can work out for itself whether this
+   * is a late registration.
+   *
+   * 2026-08-25, second audit: every caller was computing
+   * `is_late_registration: status === 'RUNNING'` by hand, and every one of them
+   * missed `LATE_REG` — a real status in `TournamentStatus`. A LATE_REG entry
+   * therefore got the "Sign Up" heading and the note "Cannot Unregister Within
+   * 1 Minute Of The Start Time", which is false for an event that has already
+   * started. One caller (ClubHomePage) passed nothing at all. Deriving it here
+   * means no surface can get it wrong, and no new surface has to remember.
+   */
+  status?: string | null;
+  /** Explicit override. Leave unset and let `status` decide. */
   is_late_registration?: boolean;
   /**
    * Which club's chips pay for this seat.
@@ -108,7 +133,7 @@ export function useTournamentRegistration() {
         startTime: t.start_time ?? null,
         userId: currentUserId,
         clubId: t.club_id ?? null,
-        isLateRegistration: t.is_late_registration,
+        isLateRegistration: t.is_late_registration ?? isLateStatus(t.status),
       });
       if (!confirmed) {
         registeringRef.current = false;
@@ -119,6 +144,19 @@ export function useTournamentRegistration() {
       try {
         const registration = await tournamentService.registerPlayer(t.id, currentUserId, username);
         toast.success(`You Are Registered For ${t.name}`);
+
+        /* 2026-08-25, second audit: chips just left this player's wallet and
+           nothing said so. TournamentPage's old inline register path emitted
+           BALANCE_UPDATED; routing every surface through this hook dropped it,
+           so the wallet widget, the cashier and the lobby header all kept
+           showing the pre-buy-in figure until something else happened to
+           refresh them. Emitted HERE rather than in six onSuccess callbacks,
+           for the same reason the dialog lives here. */
+        masterBus.emit('BALANCE_UPDATED', {
+          source: 'tournament_buy_in',
+          userId: currentUserId,
+          tournamentId: t.id,
+        });
 
         if (onSuccess) {
           onSuccess();

@@ -258,8 +258,15 @@ export default function XMTTPage() {
         buy_in_amount: Number((t as any).buy_in ?? (t as any).buy_in_amount ?? 0),
         buy_in_fee: Number(t.buy_in_fee ?? 0),
         start_time: (t as any).start_time ?? null,
-        club_id: (t as any).club_id ?? clubId,
-        is_late_registration: String(t.status).toUpperCase() === 'RUNNING',
+        /* The player's OWN club, never the row's `club_id`: a union tournament
+           carries the union container in that column (see the note at the top
+           of loadTournaments), and handing a union id to the balance RPC reads
+           a wallet that does not exist. */
+        club_id: clubId,
+        bounty_amount: (t as any).is_bounty ? (t as any).bounty_amount || 0 : 0,
+        is_pko: !!(t as any).is_pko,
+        is_mystery_bounty: !!(t as any).is_mystery_bounty,
+        status: t.status,
       },
       () => {
         loadTournaments(clubId);

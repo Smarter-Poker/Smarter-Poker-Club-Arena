@@ -13,7 +13,7 @@
  * Transparent glass design to not obstruct the table.
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 import './MiniStatsCard.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -41,10 +41,6 @@ export interface MiniStatsCardProps {
   isSeated: boolean;
   /** Tap handler — opens full session stats modal */
   onTap?: () => void;
-  /** Observers watching the table */
-  observers?: MiniStatsObserver[];
-  /** Whether we are displaying real-time results (true overrides expanded logic) */
-  showRealTimeResults?: boolean;
   /** Whether the table is a tournament */
   isTournament?: boolean;
 }
@@ -61,14 +57,8 @@ export function MiniStatsCard({
   handsWon,
   isSeated,
   onTap,
-  observers = [],
-  // Dan 2026-04-17: stats panel was covering 40% of the table by default.
-  // Collapse by default — single-line P&L pill. Tap expands to full panel.
-  showRealTimeResults = false,
   isTournament = false,
 }: MiniStatsCardProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-
   // Don't show if not seated (unless in a tournament, where stats/lobby button is always visible)
   if (!isSeated && !isTournament) return null;
 
@@ -79,17 +69,8 @@ export function MiniStatsCard({
   /* `winRate` deleted 2026-08-25: computed on every render and read by
      nothing. `handsWon` is shown directly on the tournament bar instead. */
 
-  // Resolve effective expand state. `onTap` (if provided) opens the full
-  // SessionStats modal or tournament lobby; internal isExpanded toggle only matters when onTap
-  // is not wired. showRealTimeResults forces expanded display.
-  const expanded = showRealTimeResults || isExpanded;
-
   const handleClick = () => {
-    if (onTap) {
-      onTap();
-    } else {
-      setIsExpanded((prev) => !prev);
-    }
+    onTap?.();
   };
 
   /**
@@ -143,116 +124,56 @@ export function MiniStatsCard({
   // ─── Collapsed (default): icon-only stats button (Dan 2026-04-17). The
   // previous "P&L +$N" pill was text — Dan wanted an icon. Renders a compact
   // stats/chart SVG with a tiny status dot whose color signals P&L direction.
-  if (!expanded) {
-    const pnlDirection = pnl > 0 ? 'up' : pnl < 0 ? 'down' : 'flat';
-    return (
-      <button
-        type="button"
-        className="mini-stats-card mini-stats-card--icon"
-        onClick={handleClick}
-        aria-label={`Session stats, P&L ${pnlSign}${pnl.toLocaleString()}`}
-        title="Session Stats"
-        data-pnl-direction={pnlDirection}
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          {/* Bar-chart icon — 4 vertical bars ascending */}
-          <path d="M3 21h18" />
-          <rect x="5" y="13" width="3" height="6" rx="0.5" />
-          <rect x="10.5" y="9" width="3" height="10" rx="0.5" />
-          <rect x="16" y="5" width="3" height="14" rx="0.5" />
-        </svg>
-        <span
-          className="mini-stats-card__dot"
-          style={{ background: pnlColor }}
-          aria-hidden="true"
-        />
-      </button>
-    );
-  }
-
+  const pnlDirection = pnl > 0 ? 'up' : pnl < 0 ? 'down' : 'flat';
   return (
-    <div
-      className="mini-stats-card mini-stats-card--expanded"
+    <button
+      type="button"
+      className="mini-stats-card mini-stats-card--icon"
       onClick={handleClick}
-      role="button"
-      tabIndex={0}
-      aria-label="Session stats"
+      aria-label={`Session stats, P&L ${pnlSign}${pnl.toLocaleString()}`}
+      title="Session Stats"
+      data-pnl-direction={pnlDirection}
     >
-      {/* Real-Time Results View */}
-      <div className="mini-stats-card__details">
-        <div className="mini-stats-card__row">
-          <span className="mini-stats-card__label">Buy-In</span>
-          <span className="mini-stats-card__value">{totalBuyIn.toLocaleString()}</span>
-        </div>
-        <div className="mini-stats-card__row">
-          <span className="mini-stats-card__label">P&L</span>
-          <span className="mini-stats-card__value" style={{ color: pnlColor, fontWeight: 700 }}>
-            {pnlSign}
-            {pnl.toLocaleString()}
-          </span>
-        </div>
-        <div className="mini-stats-card__row">
-          <span className="mini-stats-card__label">Stack</span>
-          <span className="mini-stats-card__value">{currentStack.toLocaleString()}</span>
-        </div>
-        <div className="mini-stats-card__row">
-          <span className="mini-stats-card__label">VPIP</span>
-          <span className="mini-stats-card__value">{vpipPct}%</span>
-        </div>
-
-        {/* Observers / Who's watching */}
-        <div
-          className="mini-stats-card__observers"
-          style={{
-            marginTop: '6px',
-            paddingTop: '6px',
-            borderTop: '1px dashed rgba(255,255,255,0.1)',
-          }}
-        >
-          <span
-            className="mini-stats-card__label"
-            style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
-          >
-            <span className="mini-stats-card__observer-icon" style={{ color: '#22c55e' }}>
-              ◉
-            </span>
-            Who's Watching: {observers.length}
-          </span>
-        </div>
-        {observers.length > 0 ? (
-          <div className="mini-stats-card__observer-list">
-            {observers.slice(0, 5).map((obs) => (
-              <span key={obs.id} className="mini-stats-card__observer-name">
-                {obs.name}
-              </span>
-            ))}
-            {observers.length > 5 && (
-              <span className="mini-stats-card__observer-more">+{observers.length - 5} More</span>
-            )}
-          </div>
-        ) : (
-          <div className="mini-stats-card__observer-list" style={{ opacity: 0.5 }}>
-            <span
-              className="mini-stats-card__observer-name"
-              style={{ fontStyle: 'italic', background: 'transparent', padding: 0 }}
-            >
-              Nobody Yet
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        {/* Bar-chart icon — 4 vertical bars ascending */}
+        <path d="M3 21h18" />
+        <rect x="5" y="13" width="3" height="6" rx="0.5" />
+        <rect x="10.5" y="9" width="3" height="10" rx="0.5" />
+        <rect x="16" y="5" width="3" height="14" rx="0.5" />
+      </svg>
+      <span className="mini-stats-card__dot" style={{ background: pnlColor }} aria-hidden="true" />
+    </button>
   );
 }
+
+/**
+ * THE EXPANDED PANEL IS GONE (2026-08-25, second audit).
+ *
+ * ~70 lines rendered Buy-In / P&L / Stack / VPIP / Who's Watching inline on
+ * the felt, and NOTHING COULD EVER REACH THEM. `expanded` is
+ * `showRealTimeResults || isExpanded`; no caller in the app passes
+ * `showRealTimeResults`, and TablePage always passes `onTap`, so
+ * `setIsExpanded` (the only writer of `isExpanded`) is unreachable. The
+ * branch had been dead in production since the card was collapsed to an icon
+ * on 2026-04-17, along with the `observers` prop that fed it.
+ *
+ * Nothing is lost: tapping the icon opens the full SessionStats modal, which
+ * shows the same figures with room to read them. If an inline panel is ever
+ * wanted again it belongs in that modal's component, not as a second
+ * rendering of the same numbers behind a flag nobody sets.
+ *
+ * Unreachable by construction, which is why the icon branch above simply
+ * returns and there is no third branch here.
+ */
 
 export default MiniStatsCard;

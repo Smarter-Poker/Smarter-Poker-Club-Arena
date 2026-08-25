@@ -210,21 +210,68 @@ interface WalletData {
   scope: 'union' | 'club' | 'member' | null;
 }
 
+/**
+ * A cached panel is untrusted input. `localStorage` survives builds, users and
+ * tampering, and `readWalletCacheEntry` validates only the envelope, never the
+ * payload — so a legacy or edited entry could put a string where a balance
+ * belongs and be spread straight into state. Every numeric field goes through
+ * Number() and a finiteness check here, falling back to the zero-state, and a
+ * non-object payload is rejected outright (spreading a string yields
+ * `{0:'a',1:'b'}`, which is how a wallet ends up rendering nothing at all).
+ */
+function sanitiseCachedWalletData(raw: unknown): WalletData {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return INITIAL_WALLET_DATA;
+  const src = raw as Record<string, unknown>;
+  const out = { ...INITIAL_WALLET_DATA } as Record<string, unknown>;
+  for (const [key, fallback] of Object.entries(INITIAL_WALLET_DATA)) {
+    const v = src[key];
+    if (v === undefined) continue;
+    if (typeof fallback === 'number') {
+      const n = Number(v);
+      out[key] = Number.isFinite(n) ? n : fallback;
+    } else if (key === 'clubRakeTreasury') {
+      const n = Number(v);
+      out[key] = v === null ? null : Number.isFinite(n) ? n : null;
+    } else if (key === 'scope') {
+      out[key] = v === 'union' || v === 'club' || v === 'member' ? v : null;
+    } else if (key === 'nextCloseAt') {
+      out[key] = typeof v === 'string' ? v : null;
+    } else {
+      out[key] = fallback;
+    }
+  }
+  return out as unknown as WalletData;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ANIMATED COUNTER — preserves fractional precision (2 decimal places)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function useAnimatedCounter(target: number, duration = 400): number {
-  const [value, setValue] = useState(target);
+  /* A non-finite target used to be fatal and PERMANENT. `Math.abs(NaN) < 0.01`
+     is false, so the animation ran, committed NaN, and from then on every
+     later target computed `start = NaN` -> `diff = NaN` -> NaN again: the row
+     was stuck for the life of the component, and formatBalance printed the
+     wreckage as a tidy "0.00" on a money surface. One coercion at the door
+     ends the whole class. */
+  const safeTarget = Number.isFinite(target) ? target : 0;
+  const [value, setValue] = useState(safeTarget);
   const rafId = useRef<number | null>(null);
-  const currentValueRef = useRef(value);
-  currentValueRef.current = value;
+  /* Synced in an effect, never in the render body. Writing a ref while
+     rendering is a side effect: React 19 may start a render and throw it
+     away, leaving the ref holding a number that was never on screen, and the
+     next animation would then start from it and visibly jump. */
+  const currentValueRef = useRef(safeTarget);
+  useEffect(() => {
+    currentValueRef.current = value;
+  }, [value]);
 
   useEffect(() => {
     const start = currentValueRef.current;
-    const diff = target - start;
-    if (Math.abs(diff) < 0.01) {
-      setValue(target);
+    const diff = safeTarget - start;
+    if (!Number.isFinite(diff) || Math.abs(diff) < 0.01) {
+      setValue(safeTarget);
+      currentValueRef.current = safeTarget;
       return;
     }
 
@@ -235,14 +282,16 @@ function useAnimatedCounter(target: number, duration = 400): number {
       const eased = 1 - Math.pow(1 - progress, 3);
       // Preserve 2-decimal precision instead of Math.round (which loses cents)
       const interpolated = start + diff * eased;
-      setValue(Math.round(interpolated * 100) / 100);
+      const next = Math.round(interpolated * 100) / 100;
+      currentValueRef.current = next;
+      setValue(next);
       if (progress < 1) rafId.current = requestAnimationFrame(animate);
     };
     rafId.current = requestAnimationFrame(animate);
     return () => {
       if (rafId.current) cancelAnimationFrame(rafId.current);
     };
-  }, [target, duration]);
+  }, [safeTarget, duration]);
 
   return value;
 }
@@ -255,8 +304,12 @@ function formatBalance(num: number): string {
   // Math.abs() was applied here, so an agent wallet of -25,000 rendered
   // identically to +25,000 — the sign of a debt was invisible on a money
   // surface. Negatives are now shown as negatives.
-  const safe = Number.isFinite(num) ? num : 0;
-  return safe.toLocaleString('en-US', {
+  /* NaN and Infinity are NOT zero. Printing them as "0.00" is the one thing
+     this file argues against everywhere else - a wrong number on a money
+     surface is worse than none - so they render as unknown, the same mark
+     every unreadable figure already uses. */
+  if (!Number.isFinite(num)) return '-';
+  return num.toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -271,8 +324,8 @@ function formatBalance(num: number): string {
    ever arrive from a bad write, and rounding 0.6 up to 1 would invent a
    diamond the player does not own. */
 function formatDiamonds(num: number): string {
-  const safe = Number.isFinite(num) ? num : 0;
-  return Math.trunc(safe).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  if (!Number.isFinite(num)) return '-';
+  return Math.trunc(num).toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -366,12 +419,23 @@ export default function DynamicWallet({
   const boot = bootRef.current;
 
   const [data, setData] = useState<WalletData>(() =>
-    boot.entry ? { ...INITIAL_WALLET_DATA, ...boot.entry.data } : INITIAL_WALLET_DATA
+    boot.entry ? sanitiseCachedWalletData(boot.entry.data) : INITIAL_WALLET_DATA
   );
   const [loading, setLoading] = useState(() => !boot.entry);
   const [fetchError, setFetchError] = useState(false);
   const [isClubInUnion, setIsClubInUnion] = useState(() => boot.entry?.isClubInUnion ?? false);
   const isMounted = useIsMounted();
+  /* Realtime topics must be unique PER MOUNTED PANEL, not just per club.
+     RealtimeClient._leaveOpenTopic unsubscribes any already-joined channel
+     with the same topic on every subscribe, so two wallet surfaces in one
+     window - the club lobby's panel and a modal's, which the fetch dedupe
+     above exists precisely because they co-occur - silently killed each
+     other's listeners: the first panel's jackpot and agent balance froze,
+     and the survivor entered a reconnect loop re-killing the other. */
+  const instanceIdRef = useRef<string>('');
+  if (!instanceIdRef.current) {
+    instanceIdRef.current = Math.random().toString(36).slice(2, 10);
+  }
 
   // Resolved UUID — DynamicWallet now handles resolution internally.
   // Synchronous from the persisted map on first render whenever the mapping
@@ -478,7 +542,7 @@ export default function DynamicWallet({
     const hit = cacheKey ? readWalletCacheEntry<CachedPanel>(cacheKey) : null;
     const cached = hit?.data;
     if (cached && cached.data) {
-      setData({ ...INITIAL_WALLET_DATA, ...cached.data });
+      setData(sanitiseCachedWalletData(cached.data));
       setIsClubInUnion(cached.isClubInUnion);
       currentUnionIdRef.current = cached.unionId ?? null;
       setCurrentUnionId(cached.unionId ?? null);
@@ -565,13 +629,25 @@ export default function DynamicWallet({
    * pool belongs to the union) and a viewer who may see the Club Bank. The
    * union panel reads its own below.
    */
-  const spins = useSpinsWallet(clubId, variant !== 'union' && !isClubInUnion);
+  /* resolvedId, not the raw prop. Every other read here uses the resolved
+     UUID - that is what resolveClubUUID exists for - and the spins hook keys
+     its device cache on whatever it is handed, so a surface passing the slug
+     and one passing the UUID kept two divergent cached answers for one club.
+     Which OWNER the id resolves to is still the API's decision, untouched. */
+  const spins = useSpinsWallet(resolvedId ?? clubId, variant !== 'union' && !isClubInUnion);
   const animSpins = useAnimatedCounter(spins.balance);
   const animUnionRake = useAnimatedCounter(data.unionRake);
 
   // ── Fetch data — uses resolvedId (UUID) for all Supabase queries ───────────
   const fetchData = useCallback(async () => {
-    if (!userId || !resolvedId) return;
+    /* Returning while `loading` is still true left a permanent shimmer with
+       no error and no retry: signed out, or signed in but not yet hydrated,
+       the cache key is null so nothing paints, and this was the only path
+       that could have cleared it. */
+    if (!userId || !resolvedId) {
+      if (isMounted.current) setLoading(false);
+      return;
+    }
 
     // Increment version — any in-flight fetch with a lower version is stale
     const thisVersion = ++fetchVersionRef.current;
@@ -610,6 +686,20 @@ export default function DynamicWallet({
 
       // Discard stale response if a newer fetch has started
       if (thisVersion !== fetchVersionRef.current || !isMounted.current) return;
+
+      // A REJECTED READ IS NOT A BALANCE OF ZERO.
+      //
+      // supabase-js does not throw on a query or RPC error - it RESOLVES with
+      // `{ data: null, error }`. Nothing here looked at `error`, so an RLS
+      // denial, a renamed fn_club_money_panel, or a PGRST116 from
+      // .maybeSingle() all landed as `panel = {}`, every `num()` returned 0,
+      // and the panel then declared success: Club Bank 0.00, Bad Beat Jackpot
+      // 0.00, Diamonds 0, Player Wallet 0.00, no error badge. Raising here
+      // sends it to the catch below, which keeps the numbers already on
+      // screen and shows that they could not be refreshed.
+      const readError =
+        profileRes.error ?? memberRes.error ?? agentRes.error ?? panelRes.error ?? null;
+      if (readError) throw readError;
 
       // Defensive unwrap: a jsonb-returning RPC hands back the object, but a
       // TABLE-returning one hands back an array. Reading `.x` off the array
@@ -661,7 +751,12 @@ export default function DynamicWallet({
         scope: (panel.scope as WalletData['scope']) ?? null,
       };
       setData(nextData);
-      setIsClubInUnion(Boolean(panel.in_union));
+      /* Only when the RPC actually said so. `Boolean(undefined)` is false, so
+         a panel that answered with nothing used to declare a union club
+         STANDALONE - which adds the Rake Treasury and Spins Wallet rows it
+         does not own, and un-gates the Backup BBJ row holding the union's
+         reserve. Absent means unknown; unknown keeps the last known answer. */
+      if (panel.in_union !== undefined) setIsClubInUnion(Boolean(panel.in_union));
       setFetchError(false);
       setLoading(false);
 
@@ -800,8 +895,31 @@ export default function DynamicWallet({
       reconnectTimerRef.current = null;
     }
 
+    /* THE TEARDOWN LOOP. `removeChannel` -> `unsubscribe` -> the channel's own
+       close handler -> `subscribe`'s callback with status CLOSED, which the
+       club and union callbacks below treated as a failure and answered with
+       scheduleReconnect(). That bumped channelEpoch, which re-ran this
+       effect, which tore the channels down again: a full four-query refetch
+       and a complete channel rebuild every two seconds for as long as the
+       panel stayed mounted. The callbacks fire AFTER the cleanup has already
+       cleared the pending-timer guard, so only a per-run disposed flag can
+       tell "the server dropped us" from "we let go". */
+    let disposed = false;
+
+    /* And the backoff could never escalate: the main channel resubscribes
+       successfully on every epoch and its SUBSCRIBED handler zeroed the retry
+       count, so a club channel failing over and over stayed pinned at the
+       first 2s delay. The count is only cleared once EVERY channel this run
+       created reports healthy. */
+    const expectsUnionChannel = Boolean(currentUnionId) && variant === 'union';
+    const health = { main: false, club: false, union: !expectsUnionChannel };
+    const markHealthy = (which: 'main' | 'club' | 'union') => {
+      health[which] = true;
+      if (health.main && health.club && health.union) retryCountRef.current = 0;
+    };
+
     const channel = supabase
-      .channel(`dynamic-wallet-${resolvedId}-${userId}`)
+      .channel(`dynamic-wallet-${resolvedId}-${userId}-${instanceIdRef.current}`)
       // 2026-08-24: the `profiles` (id=eq.userId) and `club_members`
       // (user_id=eq.userId) listeners that used to sit here are gone.
       //
@@ -864,10 +982,8 @@ export default function DynamicWallet({
         }
       )
       .subscribe((status: string, err?: Error) => {
-        if (status === 'SUBSCRIBED') {
-          // Reset retry count on successful subscription
-          retryCountRef.current = 0;
-        }
+        if (disposed) return;
+        if (status === 'SUBSCRIBED') markHealthy('main');
         if (status === 'CHANNEL_ERROR') {
           if (err) reportError(err?.message || err, 'DynamicWallet._Realtime_channel_error');
           scheduleReconnect();
@@ -876,11 +992,18 @@ export default function DynamicWallet({
           console.warn('[DynamicWallet] Realtime channel timed out');
           scheduleReconnect();
         }
+        /* A close we did not ask for is a real disconnection - the main
+           channel used to ignore it entirely, so its jackpot and agent
+           listeners could die silently with nothing reconnecting them. */
+        if (status === 'CLOSED') {
+          console.warn('[DynamicWallet] main channel closed');
+          scheduleReconnect();
+        }
       });
 
     // ── Clubs RT channel: chip_treasury + union_id changes ──
     const clubChannel = supabase
-      .channel(`dynamic-wallet-club-${resolvedId}`)
+      .channel(`dynamic-wallet-club-${resolvedId}-${instanceIdRef.current}`)
       .on(
         'postgres_changes',
         {
@@ -898,14 +1021,21 @@ export default function DynamicWallet({
               clubBank: Number(p.new.chip_treasury) || 0,
             }));
           }
-          // If union_id changed (club joined or left a union), do a full refetch
-          // to update unionBank and isClubInUnion
-          if (p.old?.union_id !== p.new?.union_id) {
+          /* Compare against what we already know, not against `p.old`.
+             Postgres logical replication only fills old_record with the
+             replica-identity columns - the primary key, by default - so
+             `p.old.union_id` is ALWAYS undefined and this was permanently
+             true: every club-bank movement fired the full four-query refetch
+             that the payload apply two lines above exists to avoid. */
+          const nextUnionId = (p.new?.union_id as string | null) ?? null;
+          if (nextUnionId !== currentUnionIdRef.current) {
             fetchData();
           }
         }
       )
       .subscribe((status: string) => {
+        if (disposed) return;
+        if (status === 'SUBSCRIBED') markHealthy('club');
         // Was a bare .subscribe(): a failure here was silent, so Club Bank
         // froze on its last value with nothing reconnecting and nothing shown.
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
@@ -926,7 +1056,7 @@ export default function DynamicWallet({
     // deliberately zeroed.
     if (unionId && variant === 'union') {
       unionWalletChannel = supabase
-        .channel(`dynamic-wallet-union-${unionId}`)
+        .channel(`dynamic-wallet-union-${unionId}-${instanceIdRef.current}`)
         .on(
           'postgres_changes',
           {
@@ -957,6 +1087,8 @@ export default function DynamicWallet({
           }
         )
         .subscribe((status: string) => {
+          if (disposed) return;
+          if (status === 'SUBSCRIBED') markHealthy('union');
           // Same as the club channel: silent failure froze Union Bank, Rake
           // Treasury and Union Promo with no recovery path.
           if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
@@ -967,6 +1099,7 @@ export default function DynamicWallet({
     }
 
     return () => {
+      disposed = true;
       supabase.removeChannel(channel);
       supabase.removeChannel(clubChannel);
       if (unionWalletChannel) supabase.removeChannel(unionWalletChannel);
@@ -1123,6 +1256,7 @@ export default function DynamicWallet({
         }).map((k) => CLUB_ROW_BY_KEY[k]);
 
   // ── Keyboard handler for BBJ banner (accessibility) ─────────────────────────
+  const bbjClickable = Boolean(onOpenBBJ);
   const handleBbjKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -1139,7 +1273,7 @@ export default function DynamicWallet({
   // rare occasion it actually changed.
   if (loading || (effectiveVariant === 'club' && !roleReady && cachedRole === null)) {
     return (
-      <div className="dw dw--loading" aria-busy="true" aria-label="Loading wallet">
+      <div className="dw dw--loading" role="region" aria-busy="true" aria-label="Loading wallet">
         <div className="dw__shimmer dw__shimmer--bbj" />
         <div className="dw__rows">
           <div className="dw__shimmer dw__shimmer--row" />
@@ -1152,7 +1286,7 @@ export default function DynamicWallet({
   }
 
   return (
-    <div className={`dw dw--${effectiveVariant}`} aria-label="Wallet balances">
+    <div className={`dw dw--${effectiveVariant}`} role="region" aria-label="Wallet balances">
       {/* ── Error indicator — subtle, non-blocking ──────────────────────── */}
       {fetchError && (
         <button
@@ -1172,19 +1306,39 @@ export default function DynamicWallet({
       {showBBJ && (
         <div
           className="dw__bbj"
-          onClick={onOpenBBJ}
-          onKeyDown={handleBbjKeyDown}
-          role="button"
-          tabIndex={0}
-          aria-label={`Bad Beat Jackpot: ${animBBJ === 0 ? 'no pool' : formatBalance(animBBJ)}`}
+          /* Only a button when there is something to open. onOpenBBJ is
+             optional, and this was unconditionally focusable with
+             role="button" - offering keyboard and screen-reader users a
+             control that does nothing on every surface that omits it. */
+          onClick={bbjClickable ? onOpenBBJ : undefined}
+          onKeyDown={bbjClickable ? handleBbjKeyDown : undefined}
+          role={bbjClickable ? 'button' : undefined}
+          tabIndex={bbjClickable ? 0 : undefined}
+          /* The SETTLED pool, not the animating one. A jackpot counting up
+             from zero reads "no pool" on its first frame and then flips, so
+             the label announced something that was never true. */
+          aria-label={`Bad Beat Jackpot: ${data.bbjPool === 0 ? 'no pool' : formatBalance(data.bbjPool)}`}
         >
           <span className="dw__bbj-label">BAD BEAT JACKPOT</span>
-          <span className="dw__bbj-amount">{animBBJ === 0 ? '-' : formatBalance(animBBJ)}</span>
+          <span className="dw__bbj-amount">
+            {data.bbjPool === 0 ? '-' : formatBalance(animBBJ)}
+          </span>
         </div>
       )}
 
       {/* ── Wallet Rows ───────────────────────────────────────────────────── */}
-      <div className="dw__rows" aria-live="off">
+      {/* THE LIVE REGION. `aria-live` cannot go on the values themselves -
+          they animate at 60fps and would flood a screen reader - so it goes
+          on a hidden mirror that only ever renders SETTLED figures from
+          `data`. Before this the container carried aria-live="off" and a
+          blind player was never told their balance had changed at all. */}
+      <span className="dw__sr-live" aria-live="polite" aria-atomic="true">
+        {`Diamonds ${formatDiamonds(data.diamonds)}. Player Wallet ${formatBalance(
+          data.chipBalance
+        )}.`}
+      </span>
+
+      <div className="dw__rows">
         {/* Diamond Balance */}
         <div className="dw__row dw__row--diamond">
           <span className="dw__row-icon" aria-hidden="true">
@@ -1269,7 +1423,7 @@ export default function DynamicWallet({
               <span className="dw__row-hint">Reserve · Reseeds Main After A Hit</span>
             </span>
             <span className="dw__row-value">
-              {animBackupBBJ === 0 ? '-' : formatBalance(animBackupBBJ)}
+              {data.backupBBJ === 0 ? '-' : formatBalance(animBackupBBJ)}
             </span>
           </div>
         )}

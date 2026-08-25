@@ -137,14 +137,12 @@ describe('the pot', () => {
     expect(chipColors(container, POT_CHIP, '--pile-chip-color')).toEqual([byValue(1000000).color]);
   });
 
-  it('draws the live street bets as multiple chips', () => {
-    // 7 is 1 red 5 and 2 white 1s
+  it('does not draw live street bets under or in the pot until the street is over', () => {
+    // Dan 2026-08-24: "AND THE CHIPS FROM THE FUTURE ROUNDS SHOULD NOT APPEAR
+    // 'UNDER OR IN THE POT' UNTIL THE STREET IS OVER."
     const { container } = render(<PotDisplay mainPot={30} streetBets={7} />);
-    expect(chipColors(container, STREET_CHIP, '--pile-chip-color')).toEqual([
-      byValue(5).color,
-      byValue(1).color,
-      byValue(1).color,
-    ]);
+    expect(container.querySelectorAll('.pot-display__street')).toHaveLength(0);
+    expect(container.querySelectorAll(STREET_CHIP)).toHaveLength(0);
   });
 
   it('keeps the chips out of the POT pill itself', () => {

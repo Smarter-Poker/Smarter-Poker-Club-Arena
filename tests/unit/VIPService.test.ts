@@ -111,8 +111,14 @@ describe('VIPService', () => {
      * the client sends. See tests/cosmetic-ownership-integrity.test.ts for the
      * full pinned snapshot and the drift detector.
      */
-    it('rabbit_hunt costs 1 diamond per use, the price the server charges', () => {
-      expect(FEATURE_PRICING.rabbit_hunt.cost).toBe(1);
+    it('rabbit_hunt costs 5 diamonds per use, the price the server charges', () => {
+      // This asserted 1 for a few hours on 2026-08-25, when the client was
+      // reconciled DOWN to the feature_pricing row. Right instinct, wrong
+      // direction for this one feature: the row is only the authority on what
+      // IS charged, not on what the price is meant to be, and the 1 was a
+      // January seed that had never matched the product. Dan: "they cost 5
+      // diamonds each after that." The row is 5 now and so is this.
+      expect(FEATURE_PRICING.rabbit_hunt.cost).toBe(5);
       expect(FEATURE_PRICING.rabbit_hunt.usageType).toBe('per_use');
     });
 
@@ -136,7 +142,7 @@ describe('VIPService', () => {
   describe('getFeaturePricing', () => {
     it('should return pricing for rabbit_hunt', () => {
       const pricing = vipService.getFeaturePricing('rabbit_hunt');
-      expect(pricing.cost).toBe(1);
+      expect(pricing.cost).toBe(5);
       expect(pricing.description).toContain('cards');
     });
   });

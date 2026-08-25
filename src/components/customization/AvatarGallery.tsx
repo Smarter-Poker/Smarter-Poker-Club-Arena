@@ -33,6 +33,8 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useToast } from '../common/Toast';
+
 import { createPortal } from 'react-dom';
 import { avatarService, type Avatar } from '../../services/AvatarService';
 import { masterBus } from '../../core/MasterBus';
@@ -74,6 +76,7 @@ export function AvatarGallery({
   const [selectedAvatar, setSelectedAvatar] = useState<string>(currentAvatarUrl);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const toast = useToast();
   const [notice, setNotice] = useState<string | null>(null);
 
   // Keep the preview honest if the caller swaps the current avatar underneath us
@@ -131,10 +134,36 @@ export function AvatarGallery({
     return [];
   }, [activeTab, freeAvatars, vipAvatars, myAvatars]);
 
+  const saveAvatar = useCallback(
+    async (newUrl: string) => {
+      if (!userId || newUrl === currentAvatarUrl) {
+        return;
+      }
+      setSaving(true);
+      try {
+        const success = await avatarService.setUserAvatar(userId, newUrl);
+        if (!success) {
+          toast.error('Failed to update avatar.');
+        } else {
+          toast.success('Avatar updated!');
+          onAvatarChanged?.(newUrl);
+          masterBus.emit('USER_PROFILE_LOADED', {
+            avatarUrl: newUrl,
+            userId,
+          });
+          // We do not close the modal here to let them see it apply
+        }
+      } catch (err) {
+        toast.error('Failed to update avatar.');
+        reportError(err, 'AvatarGallery.Unexpected_update_error');
+      }
+      setSaving(false);
+    },
+    [userId, currentAvatarUrl, onAvatarChanged]
+  );
+
   const handleSelect = useCallback(
     (avatar: Avatar) => {
-      // VIP artwork is VIP artwork. Say so instead of letting the pick appear
-      // to take and then quietly not stick.
       if (avatar.category === 'vip' && !isVip) {
         haptic.light();
         setNotice('This avatar is part of the VIP collection. Upgrade to VIP to use it.');
@@ -143,48 +172,20 @@ export function AvatarGallery({
       haptic.light();
       setNotice(null);
       setSelectedAvatar(avatar.imageUrl);
+      saveAvatar(avatar.imageUrl);
     },
-    [isVip]
+    [isVip, saveAvatar]
   );
 
   const handleCreateVipAvatar = useCallback(() => {
     haptic.medium();
-    // The Hub owns AI avatar generation. It writes straight to the user's
-    // profile, so the gallery just reloads when the player comes back.
     avatarService.openAvatarSelector();
     setNotice('Finish your new avatar in the Hub window, then reopen this to pick it.');
   }, []);
 
-  const handleApply = useCallback(async () => {
-    if (!userId || selectedAvatar === currentAvatarUrl) {
-      onClose();
-      return;
-    }
-
-    setSaving(true);
-    setNotice(null);
-    haptic.medium();
-
-    try {
-      const success = await avatarService.setUserAvatar(userId, selectedAvatar);
-      if (!success) {
-        // Previously this failed silently and closed as though it had worked
-        setNotice('Could not save your avatar. Please try again.');
-        return;
-      }
-      onAvatarChanged?.(selectedAvatar);
-      masterBus.emit('USER_PROFILE_LOADED', {
-        avatarUrl: selectedAvatar,
-        userId,
-      });
-      onClose();
-    } catch (err) {
-      reportError(err, 'AvatarGallery.Failed_to_save_avatar');
-      setNotice('Could not save your avatar. Please try again.');
-    } finally {
-      setSaving(false);
-    }
-  }, [userId, selectedAvatar, currentAvatarUrl, onAvatarChanged, onClose]);
+  const handleApply = useCallback(() => {
+    onClose();
+  }, [onClose]);
 
   if (!isOpen) return null;
 

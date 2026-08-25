@@ -2665,12 +2665,33 @@ export class GameServer {
         //
         // Budgeted to 15 candidates a pass so a pathological backlog cannot
         // turn this sweep into its own outage; in steady state it is empty.
+        /**
+         * EVERY VARIANT, NOT THE TWO THE FIRST INCIDENT HAPPENED TO CONTAIN
+         * (2026-08-25).
+         *
+         * This sweep shipped filtered to `['sng', 'spin']` because the outage
+         * that prompted it was 92 seat-first games. "Started and never dealt"
+         * is a property of a tournament, not of its variant, and MTTs were
+         * left covered by no sweep at all - the comment above says so in its
+         * own words and the filter then contradicted it.
+         *
+         * Found live: `Monday Grind PLO6 Turbo` (18 paid players, 2 tables,
+         * 183 minutes, zero hands) and `Six-Card Late Night` (499 players,
+         * 56 tables, 548 live seats, zero hands). Both sat at a dead felt
+         * with buy-ins committed and nothing in the engine looking for them.
+         *
+         * The 15-minute cutoff holds for MTTs, measured rather than assumed:
+         * of 187 non-seat-first tournaments started in 48h, 127 dealt their
+         * first hand in under 5 minutes - INCLUDING a full 500-player field -
+         * and 153 of 187 within 15. The slow tail is not big fields waiting
+         * to seat (its average field is 31 against 42 for the sub-5m group);
+         * it is this same stall, recovering by luck on a later re-adoption.
+         */
         const neverDealtCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
         const { data: maybeNeverDealt } = await supabase
           .from('tournaments')
           .select('id, name, started_at')
           .eq('status', 'RUNNING')
-          .in('variant', ['sng', 'spin'])
           .lt('started_at', neverDealtCutoff);
         for (const t of (maybeNeverDealt || []).slice(0, 15)) {
           const { data: tRows, error: tErr } = await supabase
@@ -2700,6 +2721,28 @@ export class GameServer {
             .in('table_id', openTableIds)
             .is('left_at', null);
           if (seatErr || !liveSeats || liveSeats < 2) continue;
+
+          /**
+           * SEATING HAS TO BE FINISHED BEFORE "NEVER DEALT" MEANS "DEAD".
+           *
+           * A seat-first game seats everyone in one call, so it is settled the
+           * moment it has two seats. A large MTT does not: it adopts tables and
+           * fills them over several passes, and a game still mid-seating has
+           * dealt nothing for a legitimate reason. Requeueing that one is
+           * harmless but pointless churn, and at 56 tables it is not cheap.
+           *
+           * Every player still `playing` must hold a live seat. Only then is
+           * there nothing left to wait for and no hand is an answer rather
+           * than a delay. An unreadable count is UNKNOWN, never "settled" -
+           * same rule the sweeps above hold themselves to.
+           */
+          const { count: stillPlaying, error: playingCountErr } = await supabase
+            .from('tournament_players')
+            .select('id', { count: 'exact', head: true })
+            .eq('tournament_id', t.id)
+            .eq('status', 'playing');
+          if (playingCountErr || stillPlaying === null || stillPlaying === undefined) continue;
+          if (liveSeats < stillPlaying) continue;
 
           console.warn(
             `[GameServer] RUNNING ${t.name} (${t.id.slice(0, 8)}) has dealt nothing since ${t.started_at} - requeueing for a fresh start`

@@ -2720,50 +2720,12 @@
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   RABBIT HUNT SQUARE — mockup v3: small square button above the Fold button
-   ═══════════════════════════════════════════════════════════════════════════════ */
-.action-secondary-row {
-  display: flex;
-  justify-content: flex-start;
-  align-items: center;
-  gap: 10px;
-  padding: 0 2px 8px;
-}
-
-.rabbit-hunt-square {
-  width: 46px;
-  height: 46px;
-  border-radius: 12px;
-  padding: 0;
-  overflow: hidden;
-  background: #1b2430;
-  border: 1px solid #f2c14e;
-  box-shadow: 0 0 10px rgba(242, 193, 78, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition:
-    transform 0.15s ease,
-    box-shadow 0.2s ease;
-}
-
-.rabbit-hunt-square:hover {
-  box-shadow: 0 0 16px rgba(242, 193, 78, 0.7);
-}
-
-.rabbit-hunt-square:active {
-  transform: scale(0.94);
-}
-
-.rabbit-hunt-square img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 11px;
-}
+/* RABBIT HUNT SQUARE — removed 2026-08-25. `.action-secondary-row`,
+   `.rabbit-hunt-square` and its hover/active/img rules styled the small square
+   button that used to sit above Fold. That button called the reveal directly
+   and threw the cards away; it was deleted along with its twin in the control
+   strip, and no TSX in the repo has referenced any of these class names since.
+   The rabbit hunt renders through <RabbitHunt> in TableModalsLayer. */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    TABLE EGG — clip-path defs + gold rim overlay (Dan-approved v10 mockup)

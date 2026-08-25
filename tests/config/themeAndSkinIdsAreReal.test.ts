@@ -127,17 +127,27 @@ describe('a table skin you can pick is a skin that exists', () => {
     expect(new Set(hashes).size, 'two table skins are byte-identical').toBe(files.length);
   });
 
-  it('every skin id the Theme Settings picker offers is in the registry', () => {
+  it('the Theme Settings table tab is GENERATED, so it cannot offer a dead skin', () => {
     const registry = new Set(
       [...TABLE_ASSETS.matchAll(/^\s{2}'?([a-z0-9_-]+)'?:\s*skin/gm)].map((m) => m[1])
     );
     expect(registry.size, 'TABLE_SKINS registry parsed empty').toBeGreaterThan(0);
-    const tableTab = THEME_MODAL.match(/\n\s{2}table: \[([\s\S]*?)\n\s{2}\],/);
-    expect(tableTab, "the modal's table tab was not found").toBeTruthy();
-    const offered = [...tableTab![1].matchAll(/id: '([a-z0-9_-]+)'/g)].map((m) => m[1]);
-    expect(offered.length).toBeGreaterThan(0);
-    const dead = offered.filter((id) => !registry.has(id));
-    expect(dead, `table skins offered that resolve to nothing: ${dead.join(', ')}`).toEqual([]);
+
+    // 2026-08-25: this used to read a hand-maintained `table: [ … ]` array out
+    // of the modal and check each id against the registry. That array is gone —
+    // the tab is now derived from TABLE_FELT_CATALOG, which is itself built from
+    // the skin registry — so the old locator matched nothing and the test failed
+    // on a change that made the bug it guards against impossible.
+    //
+    // The invariant is now structural, so that is what gets pinned: a literal
+    // list here would be a regression, because a tile can only exist if a skin
+    // exists behind it. Re-introducing a hardcoded array must fail this.
+    expect(THEME_MODAL).toMatch(/^\s{2}table: TABLE_ASSETS,$/m);
+    expect(THEME_MODAL).toMatch(/const TABLE_ASSETS: ThemeAsset\[\] = TABLE_FELT_CATALOG\.map/);
+    expect(
+      THEME_MODAL,
+      'the table tab is a literal array again — it can drift from the skin registry'
+    ).not.toMatch(/\n\s{2}table: \[/);
   });
 });
 

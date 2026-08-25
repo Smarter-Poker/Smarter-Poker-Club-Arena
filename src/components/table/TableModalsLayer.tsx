@@ -29,6 +29,7 @@ import DiamondWalletModal from '../wallet/DiamondWalletModal';
 import CashierModal from './CashierModal';
 import BuyInModal from './BuyInModal';
 import RabbitHunt from './RabbitHunt';
+import type { RabbitHuntRevealResult } from './RabbitHunt';
 import LeaderboardPanel from './LeaderboardPanel';
 import LeaveTableConfirm from './LeaveTableConfirm';
 import { SessionHUD } from './SessionHUD';
@@ -273,13 +274,10 @@ export interface TableModalsLayerProps {
    * claimed five cards regardless of the street the hand actually ended on.
    */
   rabbitCardsAvailable: number;
-  onRabbitReveal: () => Promise<{
-    success: boolean;
-    cards?: Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>;
-    error?: string;
-    source?: string;
-    diamondsSpent?: number;
-  }>;
+  // One contract, declared once, in the component that consumes it. This shape
+  // was written out inline here AND in TablePage AND in RabbitHunt — three
+  // copies of the same object, which is three chances for them to drift.
+  onRabbitReveal: () => Promise<RabbitHuntRevealResult>;
 
   // Leaderboard
   showLeaderboard: boolean;

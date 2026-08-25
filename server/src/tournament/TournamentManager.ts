@@ -14,6 +14,7 @@ import { type BalancerTable, type MoveInstruction } from '../engine/TableBalance
 import { reportError } from '../services/errorReporter.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { TournamentManagerEliminations } from './TournamentManagerEliminations.js';
+import { clampSeatsForVariant } from '../config/tableSeating.js';
 
 export class TournamentManager extends TournamentManagerEliminations {
   protected async checkTableBalance(): Promise<void> {
@@ -472,11 +473,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       Math.floor(Number((tournament as { satellite_seats?: unknown })?.satellite_seats) || 0)
     );
     const seats =
-      ticketCost > 0
-        ? configuredSeats > 0
-          ? configuredSeats
-          : Math.floor(pool / ticketCost)
-        : 0;
+      ticketCost > 0 ? (configuredSeats > 0 ? configuredSeats : Math.floor(pool / ticketCost)) : 0;
     const awardCount = Math.min(seats, ranked.length);
     const remainder = Math.round((pool - awardCount * ticketCost) * 100) / 100;
 
@@ -554,15 +551,12 @@ export class TournamentManager extends TournamentManagerEliminations {
          * row is genuinely inserted, so a recovery re-drive seats nobody
          * twice and credits nothing twice.
          */
-        const { data: seatRes, error: seatErr } = await supabase.rpc(
-          'fn_award_satellite_seat',
-          {
-            p_satellite_id: this.tournamentId,
-            p_target_id: target.id,
-            p_user_id: w.user_id,
-            p_username: w.username || 'Player',
-          }
-        );
+        const { data: seatRes, error: seatErr } = await supabase.rpc('fn_award_satellite_seat', {
+          p_satellite_id: this.tournamentId,
+          p_target_id: target.id,
+          p_user_id: w.user_id,
+          p_username: w.username || 'Player',
+        });
         const seat = seatRes as { ok?: boolean; reason?: string } | null;
         // A refusal that is simply "they already hold this seat" is success.
         const regErr =
@@ -830,6 +824,13 @@ export class TournamentManager extends TournamentManagerEliminations {
       // table_size (2026-08-22 parity): same clamp as createTablesAndSeatPlayers.
       maxPerTable = Math.min(10, Math.max(2, Number(this.tournamentCache?.table_size) || 9));
     }
+    // Deck capacity wins over table_size - see the note in
+    // TournamentManagerBase.createTablesAndSeatPlayers. An expansion table has
+    // to be dealable for the same reason the original ones do.
+    maxPerTable = clampSeatsForVariant(
+      (this.tournamentCache?.game_type || '').toLowerCase(),
+      maxPerTable
+    );
 
     // Round 51 RE-RUN fix: ground currentTableCount in the DB, not the
     // in-memory map. The in-memory map is volatile across engine restarts

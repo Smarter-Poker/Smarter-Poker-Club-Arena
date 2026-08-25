@@ -13,7 +13,13 @@
   max-width: 1200px;
   margin: 0 auto;
   overflow-x: hidden;
-  padding-bottom: max(70px, env(safe-area-inset-bottom));
+  /* Dan 2026-08-25: was max(70px, env(safe-area-inset-bottom)). The bar is
+     74px PLUS the home-indicator inset (additive), and max() picks one or
+     the other - so this reserved 70px on every phone and hid the last row
+     of content under the footer, by 4px on a flat screen and ~38px on a
+     notched one. --bottom-nav-clearance is the token the bar itself is
+     pinned to. */
+  padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
 }
 
 /* Header */
@@ -581,7 +587,7 @@
 @media (max-width: 768px) {
   .page {
     padding: 12px;
-    padding-bottom: max(70px, env(safe-area-inset-bottom));
+    padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
   }
 
   .header h1 {

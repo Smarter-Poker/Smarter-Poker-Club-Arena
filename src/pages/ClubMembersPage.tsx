@@ -462,7 +462,7 @@ export default function ClubMembersPage() {
         )}
       </div>
 
-      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole as any} />}
+      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

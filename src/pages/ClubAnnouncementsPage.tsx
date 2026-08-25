@@ -429,7 +429,7 @@ export default function ClubAnnouncementsPage() {
         )}
       </div>
 
-      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
+      {clubId && <ClubBottomNav clubId={clubId} />}
 
       {/* Confirm Modal */}
       <ConfirmModal

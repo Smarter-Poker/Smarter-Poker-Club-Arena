@@ -1319,9 +1319,7 @@ export default function CashierTradePage() {
         </div>
       )}
 
-      {clubUuid && (
-        <ClubBottomNav clubId={clubUuid} userRole={myRole as any} clubName={currentClub?.name} />
-      )}
+      {clubUuid && <ClubBottomNav clubId={clubUuid} />}
     </div>
   );
 }

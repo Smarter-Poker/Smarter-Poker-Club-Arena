@@ -3137,7 +3137,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         </div>
       )}
 
-      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} clubName={club?.name} />}
+      {clubId && <ClubBottomNav clubId={clubId} />}
 
       {/* Confirm Modal for Table Deletion */}
       <ConfirmModal

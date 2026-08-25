@@ -611,9 +611,13 @@ export default function ClubDataPage() {
     );
   }
   if (!clubParam) {
+    /* Dan 2026-08-25: the footer stays on this state deliberately. Landing on
+       "No Club Selected" with no navigation is a dead end - the bar is the way
+       out, and it can resolve a club of its own even when the route gave none. */
     return (
       <div className={styles.page}>
         <div className={styles.state}>No Club Selected.</div>
+        <ClubBottomNav />
       </div>
     );
   }

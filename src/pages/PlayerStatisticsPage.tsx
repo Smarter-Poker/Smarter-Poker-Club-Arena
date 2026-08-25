@@ -324,7 +324,7 @@ export default function PlayerStatisticsPage() {
         </>
       )}
 
-      {clubId && <ClubBottomNav clubId={clubId} userRole={myRole} />}
+      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

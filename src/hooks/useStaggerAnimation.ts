@@ -25,8 +25,25 @@ interface StaggerAnimationOptions {
 
 const DEFAULT_TRANSITION = 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
 
+/**
+ * Does this device ask for reduced motion?
+ *
+ * Read once per mount rather than subscribed to: a stagger is a one-shot
+ * entrance, so a mid-animation preference change has nothing left to affect.
+ * Guarded because jsdom (and any non-browser render) has no matchMedia, and a
+ * throw here would take down every screen that staggers anything.
+ */
+function prefersReducedMotion(): boolean {
+  try {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+  } catch {
+    return false;
+  }
+}
+
 export function useStaggerAnimation(itemCount: number, options: StaggerAnimationOptions = {}) {
   const { staggerMs = 50, transition = DEFAULT_TRANSITION, offsetY = '8px' } = options;
+  const reduced = useRef<boolean>(prefersReducedMotion());
   const [visible, setVisible] = useState<Set<number>>(new Set());
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -34,6 +51,16 @@ export function useStaggerAnimation(itemCount: number, options: StaggerAnimation
     // Clear previous timers
     timers.current.forEach(clearTimeout);
     timers.current = [];
+
+    // REDUCED MOTION: show everything at once, with no transition. Staggering
+    // in from translateY is exactly the kind of motion the setting turns off,
+    // and an item that starts at opacity:0 must never depend on an animation
+    // it is not allowed to run.
+    if (reduced.current) {
+      setVisible(new Set(Array.from({ length: itemCount }, (_, i) => i)));
+      return;
+    }
+
     setVisible(new Set());
 
     // Stagger-reveal each item
@@ -55,7 +82,7 @@ export function useStaggerAnimation(itemCount: number, options: StaggerAnimation
   const style = (index: number): React.CSSProperties => ({
     opacity: visible.has(index) ? 1 : 0,
     transform: visible.has(index) ? 'translateY(0)' : `translateY(${offsetY})`,
-    transition,
+    transition: reduced.current ? 'none' : transition,
   });
 
   return { isVisible, style };

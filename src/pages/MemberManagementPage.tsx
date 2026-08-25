@@ -246,7 +246,7 @@ export default function MemberManagementPage() {
       <div className="member-mgmt-page">
         <PageHeader onBack={() => navigate(-1)} />
         <PageSkeleton variant="settings" />
-        {clubId && <ClubBottomNav clubId={clubId} userRole={myRole} />}
+        {clubId && <ClubBottomNav clubId={clubId} />}
       </div>
     );
   }
@@ -264,7 +264,7 @@ export default function MemberManagementPage() {
             This Player Is Not A Member Of This Club, Or You Do Not Have Permission To View Them.
           </p>
         </div>
-        {clubId && <ClubBottomNav clubId={clubId} userRole={myRole} />}
+        {clubId && <ClubBottomNav clubId={clubId} />}
       </div>
     );
   }
@@ -495,7 +495,7 @@ export default function MemberManagementPage() {
         </button>
       </nav>
 
-      {clubId && <ClubBottomNav clubId={clubId} userRole={myRole} />}
+      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

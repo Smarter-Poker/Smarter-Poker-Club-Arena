@@ -266,6 +266,14 @@
   }
 }
 
+/* Dan 2026-08-25: the bar now renders on the player stats page, which has a
+   print dossier. A position:fixed bar prints on every page of that PDF. */
+@media print {
+  .bottomNav {
+    display: none;
+  }
+}
+
 /* Safe area for devices with home indicators */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .bottomNav {

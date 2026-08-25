@@ -39,6 +39,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { fmt } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import styles from './MarketplacePage.module.css';
+import ClubBottomNav from '../components/club/ClubBottomNav';
 import {
   EMPTY_ENTITLEMENTS,
   EMPTY_WALLET,
@@ -596,6 +597,11 @@ export default function MarketplacePage() {
           </div>
         )}
       </div>
+      {/* Dan 2026-08-25: the footer belongs on every page the footer can
+          reach. /marketplace is a top-level route, so clubId comes from the
+          page's own resolution when it has one and from LAST_CLUB otherwise.
+          The Market tab hides itself while you are here. */}
+      <ClubBottomNav clubId={clubId || undefined} />
     </div>
   );
 }

@@ -2750,3 +2750,39 @@
     display: none;
   }
 }
+
+/* ── THE FOUR SIDE TILES ARE ONE SIZE, PINNED (Dan 2026-08-24, twice) ───────
+   Measured on the deployed build: all four already reported 64x103 at the
+   same y, and the four artworks are the same 480x715 canvas with the same
+   3px frame inset — so nothing in the DOM or the art explained a difference.
+   Rather than keep measuring, the geometry is now declared outright: equal
+   flex basis, one shared aspect, centre-aligned, no max-width anywhere in the
+   chain (.cashierTileWrap carried a 160px cap of its own). If these ever
+   differ again it is a rendering bug, not a layout one. */
+@media (max-width: 768px) {
+  .bottomRow > :nth-child(1),
+  .bottomRow > :nth-child(2),
+  .bottomRow > :nth-child(4),
+  .bottomRow > :nth-child(5) {
+    flex: 1 1 0;
+    max-width: none;
+    align-self: center;
+  }
+
+  .cashierTileWrap {
+    max-width: none;
+    align-items: center;
+  }
+
+  .cashierTileWrap .tileCard {
+    align-self: center;
+    max-width: none;
+  }
+
+  .bottomRow > :nth-child(1) .tileImageWrapper,
+  .bottomRow > :nth-child(2) .tileImageWrapper,
+  .bottomRow > :nth-child(4) .tileImageWrapper,
+  .bottomRow > :nth-child(5) .tileImageWrapper {
+    aspect-ratio: 2 / 3;
+  }
+}

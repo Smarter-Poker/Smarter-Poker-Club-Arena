@@ -8981,40 +8981,64 @@ export default function TablePage({
    * Memoised on the cards and the variant, so it runs when the board changes
    * rather than on every timer tick.
    */
+  const [cachedHandStrength, setCachedHandStrength] = useState<string | null>(null);
+
   const heroHandStrength = useMemo<string | null>(() => {
     const hero = tableState.players[tableState.heroSeat - 1];
-    if (!hero || !hero.isHero) return null;
-    if (hero.status === 'folded') return null;
+    if (!hero || !hero.isHero || hero.status === 'folded') {
+      return null;
+    }
     const hole = (hero.holeCards || []).filter((c): c is Card => !!c);
     if (hole.length < 2) return null;
+
+    // If the hand is over, preserve the last known hand strength so it doesn't drop to "King High" as cards clear.
+    if (!tableState.isHandInProgress) return cachedHandStrength;
+
     const board = (tableState.communityCards || []).filter((c): c is Card => !!c);
 
+    let strength: string | null = null;
     if (board.length === 0) {
       const ranks = hole.map((c) => String(c.rank).toUpperCase());
       const counts = new Map<string, number>();
       for (const r of ranks) counts.set(r, (counts.get(r) || 0) + 1);
-      let best: { rank: string; n: number } | null = null;
+      let best = null;
       for (const [rank, n] of counts) {
         if (!best || n > best.n || (n === best.n && RANK_ORDER(rank) > RANK_ORDER(best.rank))) {
           best = { rank, n };
         }
       }
-      if (!best) return null;
-      if (best.n >= 4) return 'Four of a Kind';
-      if (best.n === 3) return 'Three of a Kind';
-      if (best.n === 2) return 'Pair';
-      const high = ranks.reduce((a, b) => (RANK_ORDER(b) > RANK_ORDER(a) ? b : a));
-      return `${RANK_WORD(high)} High`;
+      if (best) {
+        if (best.n >= 4) strength = 'Four of a Kind';
+        else if (best.n === 3) strength = 'Three of a Kind';
+        else if (best.n === 2) strength = 'Pair';
+        else {
+          const high = ranks.reduce((a, b) => (RANK_ORDER(b) > RANK_ORDER(a) ? b : a));
+          strength = `${RANK_WORD(high)} High`;
+        }
+      }
+    } else {
+      try {
+        const best = bestFive(hole, board, tableState.gameType);
+        strength = best?.name ?? null;
+      } catch {
+        strength = null;
+      }
     }
+    return strength;
+  }, [
+    tableState.players,
+    tableState.heroSeat,
+    tableState.communityCards,
+    tableState.gameType,
+    tableState.isHandInProgress,
+    cachedHandStrength,
+  ]);
 
-    try {
-      const best = bestFive(hole, board, tableState.gameType);
-      return best?.name ?? null;
-    } catch {
-      // A malformed card must never take the table down over a label.
-      return null;
+  useEffect(() => {
+    if (tableState.isHandInProgress) {
+      setCachedHandStrength(heroHandStrength);
     }
-  }, [tableState.players, tableState.heroSeat, tableState.communityCards, tableState.gameType]);
+  }, [heroHandStrength, tableState.isHandInProgress]);
 
   // Handle seat click (sit down at empty seat)
   const handleSeatClick = (seatNumber: number) => {

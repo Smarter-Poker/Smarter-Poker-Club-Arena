@@ -315,17 +315,6 @@ function PotDisplayComponent({
       {/* ── CHIP PILE ── */}
       {showChipAnimation && displayPot > 0 && <PotChipPile amount={displayPot} size="pot" />}
 
-      {/* Current street's bets — thin pill below the pot; folds into the pot
-          total when the street completes and the chips sweep in. */}
-      {streetBets > 0 && (
-        <div className="pot-display__street" aria-hidden="true">
-          <PotChipPile amount={streetBets} size="street" />
-          <span className="pot-display__street-amount">
-            <AnimatedNumber value={streetBets} duration={250} format={fmt} />
-          </span>
-        </div>
-      )}
-
       {/* Side Pots */}
       {sidePots.length > 0 && (
         <div className="pot-display__side-pots">

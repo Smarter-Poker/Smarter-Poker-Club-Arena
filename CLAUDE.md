@@ -109,13 +109,13 @@ merges it. You do not open the PR yourself and you do not push to main directly.
 
 WHY, because the old path caused three separate incidents in one day:
 
-  - it pushed with `--force-with-lease` on every failure path, which REWOUND
-    main and dropped four commits already built, synced and serving in
-    production;
-  - it pushed with `--no-verify`, so the pre-push hook - nine house rules, and
-    since #149 the test suite - never ran from the one command every agent is
-    told to use, and red tests reached main four times;
-  - it rebased main automatically on conflict, which section 12 forbids.
+- it pushed with `--force-with-lease` on every failure path, which REWOUND
+  main and dropped four commits already built, synced and serving in
+  production;
+- it pushed with `--no-verify`, so the pre-push hook - nine house rules, and
+  since #149 the test suite - never ran from the one command every agent is
+  told to use, and red tests reached main four times;
+- it rebased main automatically on conflict, which section 12 forbids.
 
 A pull request cannot do any of those. The branch push still runs the hook, so
 a failing test stops you at your own machine rather than stopping everyone.
@@ -226,7 +226,6 @@ Do NOT audit 10 items and then ask "what should I fix?" -- fix them as you go.
    deploy, until a human notices. On 2026-08-21 that happened four times in one
    day, and every one was a test pushed alongside the feature it was meant to
    guard:
-
    - a test importing a component that had been deleted the day before;
    - a test reading `src/services/soundService.ts` when the file is
      `SoundService.ts` (macOS resolved it, Linux CI did not);
@@ -380,6 +379,44 @@ ask Dan for a manual handoff again:
   claim deployed until a DB-visible behavioral change confirms it.
 - After deploy, mirror the exact pushed content back to Dan's working tree
   with device_commit_files so his next host-side `git pull` is clean.
+
+---
+
+## 11.5 NEVER SPEND REAL CHIPS TO TEST A RULE (added 2026-08-25, binding)
+
+On 2026-08-25 an agent verified a new `atomic_table_buyin` guard by CALLING IT
+against production. Two buy-ins succeeded (8.00 and 40.00), the probe's cleanup
+then deleted the seat rows directly rather than leaving through
+`fn_leave_seat_and_refund` — which is the only path that refunds — and 48 chips
+left a member wallet and landed nowhere. They were returned to the club
+treasury by migration `20260825_return_agent_probe_chips_to_treasury_v2`.
+
+Nothing on the platform caught it. `reconcile_ledger_nightly` compares
+`chip_ledger` movement against stored balances, and `atomic_table_buyin` writes
+`club_members.chip_balance` directly, so the drift was invisible to the one
+check that exists.
+
+THE RULE:
+
+1. **A function that moves money is probed inside a transaction you ROLL BACK.**
+   Not carefully, not on a test table — rolled back. `scripts/dev/probe-rpc.sql`
+   is the pattern; copy it.
+
+2. **What you want from the probe is the error message** — did the guard fire,
+   and for the right reason. `GET STACKED DIAGNOSTICS` gives you that, and it
+   survives a rollback. The side effects are the part nobody wants.
+
+3. **Never DELETE a `table_seats` row to clean up.** Leaving a seat refunds
+   through `fn_leave_seat_and_refund`; deleting one skips it and destroys the
+   chips. If a probe created a seat, the rollback removes it.
+
+4. **Helper functions go in `pg_temp`, never `public`.** The same incident left
+   three `zz_probe*` functions in the public schema that needed a second
+   migration to drop.
+
+5. If you cannot probe a money path without committing, **do not probe it** —
+   assert the logic in a unit test and say plainly in the PR that the live path
+   was reasoned about rather than executed.
 
 ---
 

@@ -43,6 +43,7 @@ import { SWR_CACHE_PREFIXES } from './staleCacheReaper';
 import { clearMembershipsWarmCache } from '../services/ClubsService';
 import { WALLET_CACHE_PREFIX, clearWalletMemoryCache } from '../lib/walletCache';
 import { CLUB_UUID_MAP_KEY, clearClubUUIDCache } from './clubIdResolver';
+import { STATS_CACHE_PREFIX, clearStatsRangeMemo } from '../lib/statsCache';
 
 /** Written by ClubHomePage; imported there so writer and purger cannot drift. */
 export const CLUB_HOME_CACHE_PREFIX = 'club_home_cache_';
@@ -92,6 +93,7 @@ const USER_SCOPED_PREFIXES: string[] = [
   'ca_saved_start_time_', // per-club session timer
   'dismissed_announcements_', // per-club dismissals
   'referral_', // per-club referral attribution
+  STATS_CACHE_PREFIX, // PlayerStatsPage SWR payload: lifetime profit, sessions, hands
 ];
 
 /**
@@ -157,6 +159,10 @@ export function clearUserCaches(): void {
        Purging only the persisted copy left the previous account's clubs in
        memory, and the next persistMap() wrote them straight back. */
     clearClubUUIDCache();
+    // The Stats page's in-memory per-range payloads. Same reason as the three
+    // above: purging only the persisted copy left the previous account's data
+    // resident in the tab.
+    clearStatsRangeMemo();
   } catch {
     /* never let a cache purge break sign-out */
   }

@@ -145,6 +145,15 @@
      inset, which the bar adds to its own padding on iOS. Reserving the bar
      alone is why content still hid behind it on notched devices. */
   --bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
+  /* WHERE THE TOP OF THE DRAWN BAR ACTUALLY IS (Dan 2026-08-25).
+     --bottom-nav-clearance is what a page must RESERVE, and it is deliberately
+     generous. It is the wrong number to stack a second fixed bar on, because
+     below 768px .bottomNav sets `padding-bottom: 0` and therefore occupies
+     exactly --bottom-nav-height - not height + inset. Anything anchored at the
+     clearance floats 34px above the nav on a notched iPhone, and page content
+     scrolls through the gap. That is what happened to the Cashier's action
+     footer. Anchor stacked bars on THIS. */
+  --bottom-nav-stack-base: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   --sidebar-width: 280px;
 
   /* ─────────────── FUTURISTIC METAL UI ─────────────── */
@@ -857,4 +866,14 @@ html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Mirrors ClubBottomNav.module.css's own `@media (max-width: 768px)` rule,
+   where the bar drops its safe-area padding and is exactly
+   --bottom-nav-height tall. Kept in lockstep with it: if that rule changes,
+   this one must change with it or stacked bars drift again. */
+@media (max-width: 768px) {
+  :root {
+    --bottom-nav-stack-base: var(--bottom-nav-height);
+  }
 }

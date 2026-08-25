@@ -213,16 +213,6 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   LOADING STATE
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.loading-state {
-  display: flex;
-  justify-content: center;
-  padding: 3rem;
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
    DANGER ZONE — Red Glow
    ───────────────────────────────────────────────────────────────────────────── */
 
@@ -457,11 +447,6 @@
   }
 }
 
-.hidden {
-  opacity: 0;
-  transform: translateY(8px);
-}
-
 .fadeInUp {
   animation: fadeInUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
@@ -569,7 +554,14 @@
   cursor: not-allowed;
 }
 
-@media (max-width: 420px) {
+/* 520px, not 420 (Dan 2026-08-25). Between 421px and ~480px the field list
+   came back, the four children totalled ~505px against a ~400-455px max-width,
+   and the bar wrapped to TWO rows - about 91px tall. .conflict-bar sits at
+   clearance + 74px, so it budgeted 74 for a bar that needed 91 and the two
+   banners overlapped. 430px is an iPhone 14/15 Pro Max. The comment that used
+   to say "single row from 480px up" described a media query that did not
+   exist. */
+@media (max-width: 520px) {
   /* Field list is the first thing to go when space is tight — the count and
      the two actions matter more than the names of the changed fields. */
   .unsaved-bar__fields {
@@ -626,7 +618,10 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 .conflict-bar {
   position: fixed;
-  bottom: calc(var(--bottom-nav-clearance, 74px) + 74px);
+  /* 8px (the unsaved bar's own offset) + its single-row height (44px button +
+     19.2px padding + 2px border, ~66px) + 8px of air. Derived rather than
+     guessed, because the two bars stack. */
+  bottom: calc(var(--bottom-nav-clearance, 74px) + 82px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 1001;
@@ -699,4 +694,92 @@
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RULES THAT WERE MISSING ENTIRELY (Dan 2026-08-25)
+   ---------------------------------------------------------------------------
+   audit-section, export-section, export-item, export-info, export-label,
+   export-desc, setting-description and delete-modal were all referenced by
+   ClubSettingsPage.tsx and defined NOWHERE in this file. Two of them
+   (setting-description, delete-modal) happened to exist in SettingsPage.css
+   and TableConfigPage.css - different pages' stylesheets - so whether they
+   applied depended on whether the user had visited another page first. A
+   cross-chunk CSS leak is worse than a missing rule, because it works in
+   testing and fails for a first-time visitor.
+
+   export-label and export-desc are spans, so with no rule they were
+   display: inline and "Export Club Stats" ran into its own description on
+   one line. check-css-modules does not cover plain .css files, which is why
+   none of this was caught.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.audit-section,
+.export-section {
+  margin-top: 1.5rem;
+}
+
+.export-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.875rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.export-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.export-label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #e8eaf0;
+}
+
+.export-desc {
+  display: block;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: #8fa0b0;
+}
+
+/* Was inherited from SettingsPage.css, a different page. */
+.setting-description {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #8fa0b0;
+}
+
+/* Was inherited from TableConfigPage.css, a different page. */
+.delete-modal {
+  max-width: 440px;
+  width: calc(100vw - 32px);
+}
+
+/* Small inline action inside a panel (the delete-impact "Check Again" retry).
+   It was `btn-link`, which matches no rule in the entire src tree, so it
+   rendered as a UA-default grey system button inside a dark glass modal. */
+.settings-inline-link {
+  min-height: 44px;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ddd;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-inline-link:focus-visible {
+  outline: 2px solid #00d4ff;
+  outline-offset: 2px;
 }

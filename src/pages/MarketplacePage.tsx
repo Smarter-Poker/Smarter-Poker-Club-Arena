@@ -551,19 +551,42 @@ export default function MarketplacePage() {
       </header>
 
       {/* Tabs */}
-      <nav className={styles.tabNav} role="tablist" aria-label="Marketplace sections">
+      <nav
+        className={styles.tabNav}
+        role="tablist"
+        aria-label="Marketplace Sections"
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+          e.preventDefault();
+          const keys = TABS.filter((t) => !t.adminOnly || isAdmin).map((t) => t.key);
+          const i = keys.indexOf(tab);
+          if (i < 0) return;
+          const next =
+            e.key === 'ArrowRight'
+              ? keys[(i + 1) % keys.length]
+              : keys[(i - 1 + keys.length) % keys.length];
+          switchTab(next);
+        }}
+      >
         {TABS.filter((t) => !t.adminOnly || isAdmin).map((t) => (
           <button
             key={t.key}
             role="tab"
+            id={`market-tab-${t.key}`}
+            aria-controls="market-panel"
             aria-selected={tab === t.key}
+            /* The badge carried its own aria-label INSIDE the button, so the
+               button's computed name came out as "Store 5 Store". A count
+               belongs in the button's name, not as a second labelled node. */
+            aria-label={t.badge ? `${t.label}, ${t.badge.toLocaleString()} Items` : undefined}
+            tabIndex={tab === t.key ? 0 : -1}
             className={`${styles.tab} ${tab === t.key ? styles.tabActive : ''}`}
             onClick={() => switchTab(t.key)}
           >
             {t.label}
             {t.badge ? (
-              <span className={styles.tabBadge} aria-label={`${t.badge} ${t.label}`}>
-                {t.badge}
+              <span className={styles.tabBadge} aria-hidden="true">
+                {t.badge.toLocaleString()}
               </span>
             ) : null}
           </button>
@@ -588,7 +611,15 @@ export default function MarketplacePage() {
         </div>
       )}
 
-      <div className={styles.section}>
+      {/* The tabs declared role="tab" with nothing to control: a screen reader
+          announced "tab 3 of 5" and then landed in unlabelled content. */}
+      <div
+        className={styles.section}
+        role="tabpanel"
+        id="market-panel"
+        aria-labelledby={`market-tab-${tab}`}
+        tabIndex={-1}
+      >
         {tab === 'store' && clubId && (
           <StoreTab
             clubId={clubId}

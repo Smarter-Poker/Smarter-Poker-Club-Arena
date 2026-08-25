@@ -39,6 +39,7 @@ import {
   tournamentEntry,
   classifyTournament,
   type LobbyEntry,
+  type LobbyTableRow,
   type LobbyTournamentRow,
 } from '../components/lobby/lobbyEntries';
 import { tournamentService } from '../services/TournamentService';
@@ -2359,6 +2360,28 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     [openTournamentLobby]
   );
 
+  /**
+   * ── THE ROW MEMO WAS NEVER FIRING (2026-08-25) ──────────────────────────
+   *
+   * LobbyRow is memoised, and the comment above it says memoising "only pays
+   * if the PROPS are stable, which is why `ctx` is now a useMemo in
+   * ClubHomePage". It was a useMemo, and it still changed on every realtime
+   * tick — because it depended on `filteredTournaments`, and on
+   * `handleJoinTable`, which depended on `tables`. Both get a new array
+   * identity whenever any seat count moves, so a single seat changing on one
+   * table repainted all 111 rows: exactly the defect the memo was added to
+   * stop.
+   *
+   * These two refs hold the moving lists so the callbacks that read them can
+   * have empty-ish dependency arrays. A ref is right here and a state is not:
+   * nothing renders from these, they are only read inside an event handler
+   * that fires long after the render that set them.
+   */
+  const tablesRef = useRef<TableData[]>(tables);
+  useEffect(() => {
+    tablesRef.current = tables;
+  }, [tables]);
+
   const handleJoinTable = useCallback(
     (tableId: string) => {
       haptic.medium();
@@ -2366,7 +2389,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       // Execute navigate in the next tick to ensure the panel unmounts safely
       // without interrupting React Router transition internals
       setTimeout(() => {
-        const entry = tables.find((t) => t.id === tableId);
+        const entry = tablesRef.current.find((t) => t.id === tableId);
         navigate(`/table/${tableId}`, {
           state: {
             initialTableState: entry
@@ -2384,7 +2407,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         });
       }, 0);
     },
-    [navigate, tables]
+    [navigate]
   );
 
   const handleRegister = useCallback(
@@ -2447,14 +2470,73 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   );
 
   // ── LOBBY V2 view models — the SAME filtered/sorted rows, normalized ──
+  /**
+   * The other half of the memo fix. Even with a stable `ctx`, LobbyRow's
+   * primary prop is `entry`, and this memo rebuilt every LobbyEntry object
+   * from scratch whenever the source arrays changed identity — which is every
+   * realtime tick, whether or not any row's CONTENT moved. A new object is a
+   * new prop, so every row re-rendered anyway.
+   *
+   * The cache returns the SAME entry object when the underlying row is
+   * byte-identical to the one it was built from. JSON.stringify over ~250
+   * small rows costs well under a millisecond; re-rendering 250 rows of a
+   * dozen cells each costs a great deal more. Keyed by id, and rebuilt from
+   * the current lists each pass so a departed row cannot leak.
+   */
+  /**
+   * How many players are waiting at each FULL table, so the card can say
+   * "Waitlist 3" instead of a flat "Full". One `in` query for the whole board,
+   * refreshed when the list of full tables changes rather than on every tick —
+   * a badge is not worth a request per row per second.
+   */
+  const [waitlistCounts, setWaitlistCounts] = useState<Map<string, number>>(new Map());
+  const fullTableKey = useMemo(
+    () =>
+      tables
+        .filter((t) => (t.max_players || 0) > 0 && (t.current_players || 0) >= (t.max_players || 0))
+        .map((t) => t.id)
+        .sort()
+        .join(','),
+    [tables]
+  );
+  useEffect(() => {
+    const ids = fullTableKey ? fullTableKey.split(',') : [];
+    if (!ids.length) {
+      setWaitlistCounts((prev) => (prev.size === 0 ? prev : new Map()));
+      return;
+    }
+    let cancelled = false;
+    void waitlistService.countsFor(ids).then((counts) => {
+      if (!cancelled) setWaitlistCounts(counts);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [fullTableKey]);
+
+  const entryCacheRef = useRef<Map<string, { sig: string; entry: LobbyEntry }>>(new Map());
+
   const lobbyEntries = useMemo<LobbyEntry[]>(() => {
+    const prev = entryCacheRef.current;
+    const next = new Map<string, { sig: string; entry: LobbyEntry }>();
+    const stable = <R extends { id: string }>(row: R, build: (r: R) => LobbyEntry): LobbyEntry => {
+      /* The waitlist count is not on the row, so it has to be part of the
+         signature or a card would keep a stale "Waitlist 2" after the third
+         player joined. */
+      const sig = `${JSON.stringify(row)}|${waitlistCounts.get(row.id) ?? 0}`;
+      const hit = prev.get(row.id);
+      const entry = hit && hit.sig === sig ? hit.entry : build(row);
+      next.set(row.id, { sig, entry });
+      return entry;
+    };
+
     const tourns = filteredTournaments.map((t) =>
-      tournamentEntry(
-        t as unknown as LobbyTournamentRow,
-        classifyTournament(t as unknown as LobbyTournamentRow)
-      )
+      stable(t as unknown as LobbyTournamentRow, (r) => tournamentEntry(r, classifyTournament(r)))
     );
-    let cash = filteredTables.map(cashEntry);
+    let cash = filteredTables.map((t) =>
+      stable(t as unknown as LobbyTableRow, (r) => cashEntry(r, waitlistCounts.get(r.id) ?? 0))
+    );
+    entryCacheRef.current = next;
     if (favoritesOnly) cash = cash.filter((e) => favoriteTableIds.has(e.id));
 
     /* ── WHAT "ALL" MEANS (Dan, 2026-08-25) ────────────────────────────────
@@ -2500,7 +2582,14 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     // Tournaments first, cash after — same order the card grid used, so the
     // page-level sort control keeps meaning what it meant.
     return [...tourns, ...cash];
-  }, [filteredTournaments, filteredTables, favoritesOnly, favoriteTableIds, gameType]);
+  }, [
+    filteredTournaments,
+    filteredTables,
+    favoritesOnly,
+    favoriteTableIds,
+    gameType,
+    waitlistCounts,
+  ]);
 
   const selectedEntry = useMemo(
     () => (selectedId ? lobbyEntries.find((e) => e.id === selectedId) || null : null),
@@ -2534,6 +2623,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
      render of the page - which makes memoising the rows below it pointless,
      because every row's props change every time regardless of whether
      anything it displays did. The lobby runs to a hundred-plus rows. */
+  const filteredTournamentsRef = useRef<TournamentData[]>(filteredTournaments);
+  useEffect(() => {
+    filteredTournamentsRef.current = filteredTournaments;
+  }, [filteredTournaments]);
+
   const lobbyCtx = useMemo<LobbyRowContext>(
     () => ({
       waitlistedIds: waitlistedTableIds,
@@ -2547,11 +2641,18 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                is invented at the card level, so there is one registration
                path and one join path in this page, not three. */
       onRegister: (e) => {
-        const row = filteredTournaments.find((t) => t.id === e.id);
+        /* From a ref, so `filteredTournaments` is not a dependency of this
+           memo — see tablesRef above for why that mattered. */
+        const row = filteredTournamentsRef.current.find((t) => t.id === e.id);
         if (row) handleRegister(row);
         else openEntry(e);
       },
       onJoinTable: (e) => handleJoinTable(e.id),
+      /* A full table's primary action is the waitlist, not a join that cannot
+         succeed. The page already owns this flow for the panel; the card runs
+         the same one rather than inventing a second. */
+      onWaitlistToggle: (tableId: string, joining: boolean) =>
+        handleWaitlistToggle(tableId, joining),
       /* Dan 2026-08-24: "VIEW TABLE SHOULD OPEN THE GAME AND LET YOU
                WATCH AS A SPECTATOR — IT CURRENTLY BRINGS YOU TO THE JOIN
                PAGE." It did, because it opened the pre-commit panel. The
@@ -2572,7 +2673,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       favoriteTableIds,
       currentUserId,
       handleToggleFavorite,
-      filteredTournaments,
       handleRegister,
       handleJoinTable,
       openEntry,

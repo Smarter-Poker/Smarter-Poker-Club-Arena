@@ -74,7 +74,18 @@ function baseWidthOf(cls: string): string | null {
  *  that is `display: none` there is not in the fixed layout at all, so it
  *  neither needs a width nor can starve anything that has one. */
 function hiddenOnDesktop(): string[] {
-  const block = /@media \(min-width:\s*641px\)\s*\{([\s\S]*?)\n\}/.exec(CSS);
+  /* Match the block by the breakpoint the DESKTOP table starts at, and take
+     only up to the first line-start `}`.
+
+     This used to look for `min-width: 641px` and broke on 2026-08-25 when the
+     card layout was extended to 900px: the card block gained a NESTED
+     `@media (min-width: 641px)` for the two-up tablet grid, which matched
+     first, and because a nested block closes on an INDENTED brace the capture
+     ran to the end of the whole card block and swallowed every column class in
+     it. A guard that silently starts exempting everything is worse than no
+     guard, so this anchors on the one number that means "the table is a table
+     again". */
+  const block = /@media \(min-width:\s*901px\)\s*\{([\s\S]*?)\n\}/.exec(CSS);
   if (!block) return [];
   return [...block[1].matchAll(/\.(lt-col-[a-z]+)/g)].map((m) => m[1]);
 }

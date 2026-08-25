@@ -594,6 +594,13 @@ abbr.lt-variant[title] {
   .lt-col-format {
     display: none;
   }
+  /* ...but not on the two seat-first boards. Blind speed is HOW a Spin or a
+     Heads-Up plays, and both boards are narrow enough to keep it at any
+     desktop width. The comment above is about the eight-column boards. */
+  .lobby-table--spin .lt-col-leveltime,
+  .lobby-table--sng .lt-col-leveltime {
+    display: table-cell;
+  }
   /* Starting Stack and Current Level joined a `table-layout: fixed` table
      without joining its narrowing ladder, so their 216px was carried whole
      into every breakpoint down to the card. The ALL set went from 710px to
@@ -660,12 +667,25 @@ abbr.lt-variant[title] {
   .lt-col-payout {
     display: none;
   }
+  /* ...except on the Spin board, which is five columns wide and has the room.
+     A Spin with its Max Payout hidden is a row that will not say the one thing
+     that distinguishes it from every other Spin. */
+  .lobby-table--spin .lt-col-payout {
+    display: table-cell;
+  }
 }
 @media (max-width: 1220px) {
   /* Both figures are still on the game panel and on the phone card. */
   .lt-col-tstack,
   .lt-col-tlevel {
     display: none;
+  }
+  /* The Spin and Heads-Up boards keep the starting stack: neither has a
+     Current Level column to spend the space on, and a seat-first game is
+     chosen on its stack and its blind speed. */
+  .lobby-table--spin .lt-col-tstack,
+  .lobby-table--sng .lt-col-tstack {
+    display: table-cell;
   }
 }
 @media (max-width: 1023px) {
@@ -691,6 +711,14 @@ abbr.lt-variant[title] {
   }
   .lt-col-num {
     width: 92px;
+  }
+  /* Same exception one band down. These two boards are narrow by
+     construction, so the tablet-landscape shedding written for the eight-column
+     ALL board does not apply to them. */
+  .lobby-table--spin .lt-col-payout,
+  .lobby-table--spin .lt-col-tstack,
+  .lobby-table--sng .lt-col-tstack {
+    display: table-cell;
   }
 }
 /* ── TABLET / LARGE PHONE (<=768px) ───────────────────────────────────────
@@ -746,8 +774,24 @@ abbr.lt-variant[title] {
    favourite star go, the seat meter keeps its numbers and drops its bar, and
    the status cell keeps its text badge. Never a card, never a sideways
    scroll. */
-@media (max-width: 640px) {
+@media (max-width: 900px) {
   /* ═══════════════════════════════════════════════════════════════════════
+     PHONE AND TABLET LAYOUT
+
+     WHY 900 AND NOT 640 (2026-08-25): the card block used to stop at 640px,
+     which left a 641-1023px band running the stripped TABLE — and that band
+     was strictly worse than the phone. Every column the wide breakpoints shed
+     on the way down (Payout, Starting Stack, Level Time, Rules, Variant) is
+     re-shown by this block as a labelled well, so a Spin at 375px states its
+     100x, its stack and its level clock while the same Spin on an iPad stated
+     none of them. The action button was gone there too, so the only way to
+     enter a game on a tablet was to open the panel.
+
+     A tablet is a touch device with MORE room than a phone, so it gets the
+     card, two to a row (see the grid at min-width 641px below). 900 is the
+     ceiling because a 1024px iPad landscape has the width for the real table
+     and reads better as one.
+     ───────────────────────────────────────────────────────────────────────
      PHONE LAYOUT — the row stops being a table row (Dan 2026-08-24)
      ───────────────────────────────────────────────────────────────────────
      Shedding columns was not enough and could not have been: measured live
@@ -790,6 +834,19 @@ abbr.lt-variant[title] {
     flex-direction: column;
     gap: 8px;
     padding: 2px 0 4px;
+  }
+
+  /* A tablet has room for two cards side by side, and a single 900px-wide
+     card looks like a mistake. `align-items: start` matters: a grid row
+     stretches its items by default, which would drag a short cash card down
+     to match a tall MTT card beside it. */
+  @media (min-width: 641px) {
+    .lobby-table tbody {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: start;
+      gap: 10px;
+    }
   }
 
   /* ── THE GAME CARD ──────────────────────────────────────────────────────
@@ -1532,10 +1589,13 @@ abbr.lt-variant[title] {
   animation-delay: 0.3s;
 }
 
-/* The action buttons are a phone-card affordance. On the desktop board the
-   game-lobby panel is one click away and already carries every commit action,
-   so a ninth column would only make the dense table denser. */
-@media (min-width: 641px) {
+/* The action buttons are a CARD affordance, so this hides them from 901px up,
+   where the layout goes back to being a real table. It said 641px until
+   2026-08-25, which is what left tablets with no way to enter a game from the
+   lobby at all. On the desktop board the game-lobby panel is one click away
+   and already carries every commit action, so a ninth column would only make
+   the dense table denser. */
+@media (min-width: 901px) {
   .lobby-table .lt-col-actions {
     display: none;
   }

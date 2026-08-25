@@ -394,6 +394,53 @@ function SpinTopTierBadge() {
   );
 }
 
+/**
+ * NEW / VIP / FEATURED, from the three flags the table creation page has been
+ * writing since it was built and that no reader ever consumed. They ride in
+ * the title, beside the game name, because that is where a player looks first
+ * and because all three are claims about the GAME rather than about its state
+ * (which is what the status pill is for).
+ *
+ * Order is fixed and not data-driven: FEATURED is the host's choice and reads
+ * first, VIP is a door, NEW is the smallest claim of the three.
+ */
+function LobbyFlagChips({ entry }: { entry: LobbyEntry }) {
+  if (!entry.featured && !entry.vipOnly && !entry.isNew && !entry.clubLabel) return null;
+  return (
+    <span className="lt-flags">
+      {/* Only ever set on a union board, for a game belonging to another club,
+          and only when that club has not switched `hide_club_name` on. On a
+          single-club board this is null and nothing renders. */}
+      {entry.clubLabel && (
+        <span className="lt-flag lt-flag--club" title={`Hosted by ${entry.clubLabel}`}>
+          {entry.clubLabel}
+        </span>
+      )}
+      {entry.featured && (
+        <span
+          className="lt-flag lt-flag--featured"
+          title="Pinned to the top of the board by the host"
+        >
+          FEATURED
+        </span>
+      )}
+      {entry.vipOnly && (
+        <span
+          className="lt-flag lt-flag--vip"
+          title="VIP members only. A seat here needs VIP membership"
+        >
+          VIP
+        </span>
+      )}
+      {entry.isNew && (
+        <span className="lt-flag lt-flag--new" title="Recently opened">
+          NEW
+        </span>
+      )}
+    </span>
+  );
+}
+
 const COL_NAME: ColumnDef = {
   key: 'name',
   label: 'Game',
@@ -413,6 +460,7 @@ const COL_NAME: ColumnDef = {
             {mttTitleLine(e)}
           </span>
           <MttTitleMeta entry={e} />
+          <LobbyFlagChips entry={e} />
           <PlayerStateChip entry={e} ctx={ctx} />
         </span>
       );
@@ -430,6 +478,7 @@ const COL_NAME: ColumnDef = {
             {headline}
           </span>
           {subtitle && <span className="lt-name__table">{subtitle}</span>}
+          <LobbyFlagChips entry={e} />
           <PlayerStateChip entry={e} ctx={ctx} />
         </span>
       );
@@ -442,6 +491,7 @@ const COL_NAME: ColumnDef = {
           {e.name}
         </span>
         {e.kind === 'spin' && ctx.spinTopTierLive && <SpinTopTierBadge />}
+        <LobbyFlagChips entry={e} />
         <PlayerStateChip entry={e} ctx={ctx} />
       </span>
     );
@@ -1156,10 +1206,28 @@ export default function LobbyTable({
        sort was there for), and evaluates the predicate exactly once per row.
        The identical array reference is returned when nothing needs to sink, so
        the memo below still sees no change. */
+    const pinned: LobbyEntry[] = [];
     const open: LobbyEntry[] = [];
     const gone: LobbyEntry[] = [];
-    for (const r of rows) (seatFirstJoinable(r) ? open : gone).push(r);
-    return gone.length === 0 ? rows : open.concat(gone);
+    for (const r of rows) {
+      /* FEATURED floats and a dead seat-first game sinks, in one pass.
+
+         A featured game nobody can enter does NOT float. The host meant "look
+         at this game", not "look at this result", and a full table pinned above
+         forty joinable ones is worse than not pinning it at all. seatFirstJoinable
+         alone is not that test - it returns true for every cash row by design,
+         so the status has to be checked here too. */
+      const enterable =
+        seatFirstJoinable(r) &&
+        r.status !== 'full' &&
+        r.status !== 'closed' &&
+        r.status !== 'completed';
+      if (!seatFirstJoinable(r)) gone.push(r);
+      else if (r.featured && enterable) pinned.push(r);
+      else open.push(r);
+    }
+    if (pinned.length === 0 && gone.length === 0) return rows;
+    return pinned.concat(open, gone);
   }, []);
 
   const sorted = useMemo(() => {

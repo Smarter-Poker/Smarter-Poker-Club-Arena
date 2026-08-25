@@ -1499,6 +1499,57 @@ abbr.lt-variant[title] {
   }
 }
 
+/* ── Lobby flag chips: FEATURED / VIP / NEW ────────────────────────────────
+   Three flags the creation page has always written and nothing ever read
+   (2026-08-25). They sit inline in the title so they read as facts about the
+   game rather than as a second status. Deliberately smaller and quieter than
+   the status pill: a badge that shouts competes with the one piece of state
+   the player actually has to act on. */
+.lt-flags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.lt-flag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.lt-flag--featured {
+  border-color: rgba(255, 199, 44, 0.5);
+  background: rgba(255, 199, 44, 0.13);
+  color: var(--gold, #ffc72c);
+}
+.lt-flag--vip {
+  border-color: rgba(186, 128, 255, 0.5);
+  background: rgba(186, 128, 255, 0.14);
+  color: #d3b4ff;
+}
+.lt-flag--club {
+  border-color: rgba(120, 150, 220, 0.42);
+  background: rgba(120, 150, 220, 0.12);
+  color: var(--text-secondary, #c8ccd4);
+  letter-spacing: 0.02em;
+  /* A club name is arbitrary text, unlike the three fixed words beside it, so
+     it is the one chip that has to be allowed to run out of room gracefully. */
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lt-flag--new {
+  border-color: rgba(0, 210, 106, 0.5);
+  background: rgba(0, 210, 106, 0.13);
+  color: var(--success-green, #00d26a);
+}
+
 /* ── Spin top-tier badge ──────────────────────────────────────────────────
    Shown on a Spin row only while the Reserve Pool can actually pay the top
    multiplier (see SpinTopTierBadge in LobbyTable.tsx). Gold, because it is

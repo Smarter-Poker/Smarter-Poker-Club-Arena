@@ -173,21 +173,41 @@ export async function syncTournamentChips(tableId: string, tournamentId: string)
 
   if (!seats || seats.length === 0) return;
 
-  await Promise.allSettled(
-    seats.map(async (seat) => {
-      // Math.floor — tournament_players.chips is INTEGER. Previous version
-      // computed 2-decimal cents (e.g. 80511.97) which Postgres rejected at
-      // PostgREST cast time, flooding postgres logs with thousands of
-      // "invalid input syntax for type integer" errors per minute.
-      // Verified in Smarter-Poker-World-Hub/.agent/POSTGRES_INTEGER_CAST_FLOOD.md
-      const exact = Math.floor(seat.stack);
-      await supabase
-        .from('tournament_players')
-        .update({ chips: exact })
-        .eq('tournament_id', tournamentId)
-        .eq('user_id', seat.user_id);
-    })
-  );
+  // ONE bulk statement, not one UPDATE per seat.
+  //
+  // This function was the last surviving caller of the N+1 that
+  // TournamentManagerEliminations.ts:30-63 already replaced with
+  // fn_sync_tournament_chips. Measured on production 2026-08-25 it was still
+  // issuing 27,206 single-row PostgREST UPDATEs - a 9-handed table cost nine
+  // separate round trips every settlement - and tournament_players is in the
+  // supabase_realtime publication, so every one of those also paid a logical
+  // decode plus an RLS evaluation per subscriber. tournament_players was 48%
+  // of all writes to published tables while realtime decoding was the single
+  // largest consumer of database time.
+  //
+  // The RPC additionally skips rows whose chip count is already correct
+  // (migration 20260825_perf_sync_tournament_chips_skip_noop_writes), which a
+  // per-row UPDATE could never do, and scopes the write to status='playing' so
+  // an already-eliminated player's final stack cannot be overwritten.
+  const chipUpdates = seats.map((seat) => ({
+    user_id: seat.user_id,
+    // Guard against corrupted stack values (NaN, negative, undefined), matching
+    // the guard in TournamentManagerEliminations.
+    // Math.floor — tournament_players.chips is INTEGER. An earlier version
+    // computed 2-decimal cents (e.g. 80511.97) which Postgres rejected at
+    // PostgREST cast time, flooding postgres logs with thousands of
+    // "invalid input syntax for type integer" errors per minute.
+    // Verified in Smarter-Poker-World-Hub/.agent/POSTGRES_INTEGER_CAST_FLOOD.md
+    chips: Math.floor(
+      typeof seat.stack === 'number' && !isNaN(seat.stack) && seat.stack >= 0 ? seat.stack : 0
+    ),
+  }));
+
+  const { error } = await supabase.rpc('fn_sync_tournament_chips', {
+    p_tournament_id: tournamentId,
+    p_updates: chipUpdates,
+  });
+  if (error) reportError(error, 'supabase.syncTournamentChips');
 }
 
 /**

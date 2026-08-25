@@ -265,7 +265,7 @@ export function SessionSummaryHost() {
       { label: 'Win Rate', value: `${winRate}%` },
     ];
     if (payload.totalBuyIn != null && payload.totalBuyIn > 0) {
-      out.push({ label: 'Total Buy In', value: formatChips(payload.totalBuyIn) });
+      out.push({ label: "Buy In's", value: formatChips(payload.totalBuyIn) });
     }
     if (payload.totalRebuys > 0) {
       out.push({ label: 'Rebuys', value: String(payload.totalRebuys) });

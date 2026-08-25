@@ -94,10 +94,24 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
   const [t, setT] = useState<TournamentRow | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
+  /**
+   * A FAILED QUERY IS NOT AN EMPTY TOURNAMENT (2026-08-25).
+   *
+   * This panel destructured only `data` from both queries. supabase-js does not
+   * throw on a query error, it RETURNS one, so the try/catch never saw it: a
+   * dropped connection, an RLS refusal or a bad column name all arrived here as
+   * `data: null`, `setRows([])` ran, `loading` flipped false, and the panel
+   * rendered "No Players Seated Yet." over a running tournament with the
+   * masthead reading 0 entries and a prize pool of nothing.
+   *
+   * "We asked and the answer is none" and "we could not ask" now have separate
+   * states, and the second one says so instead of impersonating the first.
+   */
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [{ data: tRow }, { data: pRows }] = await Promise.all([
+      const [tRes, pRes] = await Promise.all([
         supabase
           .from('tournaments')
           .select(
@@ -113,10 +127,21 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
           .eq('tournament_id', tournamentId)
           .limit(500),
       ]);
-      if (tRow) setT(tRow as TournamentRow);
-      setRows((pRows as Row[]) ?? []);
+
+      if (tRes.error || pRes.error) {
+        reportError(tRes.error ?? pRes.error, 'TournamentInfoPanel.load');
+        // Keep whatever was already on screen. A refresh tick that fails must
+        // not blank a panel that was correct a moment ago.
+        setFailed(true);
+        return;
+      }
+
+      setFailed(false);
+      if (tRes.data) setT(tRes.data as TournamentRow);
+      setRows((pRes.data as Row[]) ?? []);
     } catch (err) {
       reportError(err, 'TournamentInfoPanel.load');
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -199,10 +224,17 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
     return [...byTable.entries()].sort((a, b) => b[1] - a[1]);
   }, [rows]);
 
+  /**
+   * Until the tournament row is actually in hand, every derived number here is
+   * a zero we invented. `money(0)` and "0 / 0" read as facts about a real
+   * tournament, so they print as "-" instead until there is something to print.
+   */
+  const known = t !== null;
+
   const stat = (label: string, value: string) => (
     <div className="tip__stat">
       <span className="tip__statLabel">{label}</span>
-      <span className="tip__statValue">{value}</span>
+      <span className="tip__statValue">{known ? value : '-'}</span>
     </div>
   );
 
@@ -266,7 +298,14 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
         </nav>
 
         <div className="tip__body">
-          {loading && rows.length === 0 && <div className="tip__empty">Loading...</div>}
+          {loading && rows.length === 0 && !failed && <div className="tip__empty">Loading...</div>}
+
+          {/* We could not ask. Never dressed up as "the answer is none". */}
+          {failed && (
+            <div className="tip__error" role="status">
+              Could Not Load Tournament Details. Retrying.
+            </div>
+          )}
 
           {tab === 'ranking' && (
             <table className="tip__table">
@@ -290,7 +329,7 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
                     {t?.is_bounty && <td className="tip__num">{num(r.bounties_collected)}</td>}
                   </tr>
                 ))}
-                {!loading && stats.ranked.length === 0 && (
+                {!loading && !failed && stats.ranked.length === 0 && (
                   <tr>
                     <td colSpan={4} className="tip__empty">
                       No Players Seated Yet.
@@ -323,7 +362,7 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
                     </tr>
                   );
                 })}
-                {payouts.length === 0 && (
+                {!failed && payouts.length === 0 && (
                   <tr>
                     <td colSpan={3} className="tip__empty">
                       Payouts Are Set When Registration Closes.
@@ -349,7 +388,7 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
                     <td className="tip__num">{n}</td>
                   </tr>
                 ))}
-                {tables.length === 0 && (
+                {!failed && tables.length === 0 && (
                   <tr>
                     <td colSpan={2} className="tip__empty">
                       Tables Are Built When The Tournament Starts.
@@ -391,7 +430,7 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
                     </tr>
                   );
                 })}
-                {blinds.length === 0 && (
+                {!failed && blinds.length === 0 && (
                   <tr>
                     <td colSpan={4} className="tip__empty">
                       No Blind Structure Recorded.

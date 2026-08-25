@@ -769,6 +769,119 @@ export function startsOnBoughtSeats(variant: string, maxPlayers: number): boolea
 }
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE ROSTER-FULL DEADLOCK — fill a seat-first game FROM ITS OWN ROSTER FIRST
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * A seat-first game holds TWO counts that are allowed to disagree, and exactly
+ * one pair of values wedges it shut forever:
+ *
+ *     tournament_players rows  =  max_players   (the roster is FULL)
+ *     live table_seats rows    <  max_players   (the game is NOT)
+ *
+ * In that state the start gate is waiting on SEATS, and every attempt to add
+ * a seat goes through fn_seat_horse_in_seat_first_game -> (new entrant) ->
+ * fn_register_horse_for_tournament -> INSERT tournament_players, where the
+ * trigger fn_enforce_tournament_capacity RAISES:
+ *
+ *     23514: tournament_full: 10 Chip Spin PLO4 already has 3 of 3 entrants
+ *
+ * Neither side can move. Measured on production 2026-08-25 08:0xZ:
+ *
+ *     33 open seat-first games
+ *      7 with a full roster and short seats  <- permanently deadlocked
+ *      7 of those 7 past their start time
+ *     16 unseated registrants sitting inside those 7 games
+ *   1995 minutes stuck, worst case (33 hours)
+ *
+ * The 16 are the way out. A horse ALREADY on the roster takes the
+ * `v_already` branch of fn_seat_horse_in_seat_first_game: it skips
+ * registration entirely, so it never touches the trigger that is refusing
+ * everybody else. It is also the horse that already PAID for that seat.
+ *
+ * So a seat-first fill draws from home before it draws from the fleet. The
+ * free pool is still used for the remainder — a game whose roster is genuinely
+ * short needs new entrants and there the registration path works fine. Order,
+ * not exclusion.
+ *
+ * Pure so the ordering is pinned without a database, which is the half that
+ * regressed: the old code called pickFreeHorses and nothing else, so a game's
+ * own paid-up registrants were the one group of horses it could never seat.
+ */
+export function seatFirstFillOrder(
+  shortfall: number,
+  ownUnseatedRegistrants: Array<string | null | undefined>,
+  freePoolCandidates: Array<string | null | undefined>
+): string[] {
+  const want = Math.max(0, Math.floor(Number(shortfall) || 0));
+  if (want === 0) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const list of [ownUnseatedRegistrants, freePoolCandidates]) {
+    for (const raw of list ?? []) {
+      if (out.length >= want) return out;
+      const id = typeof raw === 'string' ? raw.trim() : '';
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
+}
+
+/**
+ * How long a seat-first game may sit REGISTERING with every seat SOLD before
+ * that counts as a stall rather than as the normal gap between the last buy-in
+ * and the start.
+ *
+ * The discovery loop runs every 5s and a healthy game flips within one or two
+ * passes, so three minutes is ~36 chances to start normally. It is short
+ * enough that a player notices a stuck game roughly when the watchdog does,
+ * and long enough that a slow start is never treated as a failure.
+ */
+export const SEAT_FIRST_START_STALL_MS = 3 * 60 * 1000;
+
+/**
+ * "Every seat is bought and the game still has not started."
+ *
+ * The gap the 2026-08-24 audit recorded as P2-7: the played-but-REGISTERING
+ * sweep proves a game dealt by finding an eliminated/winner/finished row, and
+ * a game that NEVER DEALT cannot produce one. An 85-minute fully-paid heads-up
+ * sat invisible to every watchdog on the platform for exactly that reason.
+ *
+ * Pure, and deliberately conservative:
+ *  - short of a full house it is never a stall (that is a game still filling);
+ *  - a game we have not seen full yet (fullSinceMs null) is never a stall, so
+ *    an engine restart re-arms the clock instead of force-starting a board.
+ */
+export function seatFirstStartStalled(opts: {
+  paidSeats: number;
+  maxPlayers: number;
+  /** When this game was FIRST observed with every seat sold, or null. */
+  fullSinceMs: number | null | undefined;
+  now: number;
+  stallMs?: number;
+}): boolean {
+  const seats = Number(opts.maxPlayers) || 0;
+  const paid = Number(opts.paidSeats) || 0;
+  if (seats <= 0 || paid < seats) return false;
+
+  // Number(null) is 0, which is a finite instant in 1970 and would read as
+  // "stalled since forever" on the very first pass. Reject the absent clock
+  // before it is ever coerced.
+  if (opts.fullSinceMs === null || opts.fullSinceMs === undefined) return false;
+  const since = Number(opts.fullSinceMs);
+  if (!Number.isFinite(since)) return false;
+
+  const now = Number(opts.now);
+  if (!Number.isFinite(now)) return false;
+
+  const raw = Number(opts.stallMs);
+  const stallMs = Number.isFinite(raw) && raw >= 0 ? raw : SEAT_FIRST_START_STALL_MS;
+  return now - since >= stallMs;
+}
+
+/**
  * How many entrants to ask topUpWithHorses for RIGHT NOW, or 0 for nothing to
  * do. The whole decision lives here so it is testable without a database.
  */
@@ -2260,10 +2373,21 @@ export class TournamentRecurringService {
       const candidates = await this.pickFreeHorses(opening);
       let seated = 0;
       for (const horse of candidates) {
-        const { data: res } = await supabase.rpc('fn_seat_horse_in_seat_first_game', {
-          p_tournament_id: tournament.id,
-          p_user_id: horse,
-        });
+        const { data: res, error: seatRpcErr } = await supabase.rpc(
+          'fn_seat_horse_in_seat_first_game',
+          { p_tournament_id: tournament.id, p_user_id: horse }
+        );
+        // The capacity and four-table triggers RAISE rather than returning
+        // {ok:false}, so a discarded `error` here is a silent refusal.
+        if (seatRpcErr) {
+          reportError(
+            new Error(
+              `[TournamentRecurring] opening seat refused for ${tournament.name}: ${seatRpcErr.message}`
+            ),
+            'TournamentRecurring.opening_seat_rpc_failed'
+          );
+          continue;
+        }
         if ((res as { ok?: boolean } | null)?.ok === true) seated++;
       }
       if (seated < opening) {
@@ -2411,9 +2535,19 @@ export class TournamentRecurringService {
    * the horse has a seat at its table and the seat side already counts it.
    * Counting both would put every tournament regular at an instant 2.
    */
-  private async horseLoadMap(): Promise<Map<string, number>> {
+  /**
+   * Returns null when the load CANNOT BE READ, never an empty map.
+   *
+   * An unreadable read used to fall through `?? []` into a map with nothing in
+   * it, and an empty load map says "every horse in the fleet is idle". Both
+   * callers then hand out horses that are already at four tables, the
+   * four-table trigger refuses each one with 23514, and the pass fills nobody
+   * - while the logs stay silent because the refusal is discarded too. Unknown
+   * is UNKNOWN: the caller declines this pass and tries again in five seconds.
+   */
+  private async horseLoadMap(): Promise<Map<string, number> | null> {
     // One live seat = one game. Cash and tournament tables alike.
-    const { data: seatRows } = await supabase
+    const { data: seatRows, error: seatErr } = await supabase
       .from('table_seats')
       .select('user_id')
       .is('left_at', null)
@@ -2421,18 +2555,32 @@ export class TournamentRecurringService {
       // already at four tables - so this ceiling sits far above any plausible
       // live count, not just above today's.
       .limit(20000);
+    if (seatErr) {
+      reportError(
+        new Error(`[TournamentRecurring] horse seat-load read failed: ${seatErr.message}`),
+        'TournamentRecurring.horse_load_seats_failed'
+      );
+      return null;
+    }
 
     // A registration is a game only until the tournament STARTS. Once it is
     // RUNNING the horse holds a seat at its table and the seat query above
     // has already counted it; counting both would put every tournament
     // regular at an instant 2. That is why RUNNING is absent from this list
     // and must stay absent.
-    const { data: regRows } = await supabase
+    const { data: regRows, error: regErr } = await supabase
       .from('tournament_players')
       .select('user_id, tournaments!inner(status)')
       .in('status', ['registered', 'playing'])
       .in('tournaments.status', ['ANNOUNCED', 'REGISTERING'])
       .limit(20000);
+    if (regErr) {
+      reportError(
+        new Error(`[TournamentRecurring] horse registration-load read failed: ${regErr.message}`),
+        'TournamentRecurring.horse_load_registrations_failed'
+      );
+      return null;
+    }
 
     return buildHorseLoadMap(
       (seatRows ?? []).map((r) => (r as { user_id?: string }).user_id),
@@ -2451,6 +2599,10 @@ export class TournamentRecurringService {
       // Dan 2026-08-23: a horse is unavailable at FOUR concurrent games, not
       // at one. See horseLoadMap for what that replaced and what it keeps.
       const load = await this.horseLoadMap();
+      // Unknown load, not zero load. horseLoadMap has already reported why.
+      // Picking against an empty map means picking horses that are at four
+      // tables, which the trigger refuses one by one.
+      if (!load) return [];
       const busy = new Set(
         [...load.entries()]
           .filter(([id]) => TournamentRecurringService.atCapacity(load, id))
@@ -2479,11 +2631,20 @@ export class TournamentRecurringService {
        *    turns a near-certain collision into an unlikely one, which is the
        *    difference between systematic and occasional.
        */
-      const { data: horses } = await supabase
+      const { data: horses, error: horsesErr } = await supabase
         .from('profiles')
         .select('id')
         .eq('is_horse', true)
         .limit(count + busy.size + 50);
+      if (horsesErr) {
+        // The fleet read failing used to read as "the fleet is empty", which
+        // is indistinguishable in the logs from a genuinely exhausted pool.
+        reportError(
+          new Error(`[TournamentRecurring] horse fleet read failed: ${horsesErr.message}`),
+          'TournamentRecurring.horse_fleet_read_failed'
+        );
+        return [];
+      }
 
       const candidates = (horses ?? [])
         .map((h) => (h as { id: string }).id)
@@ -2535,6 +2696,100 @@ export class TournamentRecurringService {
       }
       return candidates.slice(0, count);
     } catch {
+      return [];
+    }
+  }
+
+  /**
+   * The horses this game already has on its roster who are NOT holding a seat
+   * on its table — the only entrants a roster-full seat-first game can still
+   * admit. See seatFirstFillOrder for the deadlock and the production numbers.
+   *
+   * Every read here fails CLOSED, returning an empty list rather than a
+   * guessed one: the caller then falls back to the free pool exactly as it did
+   * before, which is the old behaviour and never worse than it.
+   *
+   * Horses only. A human on the roster who has not taken their seat is a human
+   * who has not decided yet, and seating them from the engine would spend
+   * their money for them.
+   */
+  private async unseatedRegistrantHorses(
+    tournamentId: string,
+    primaryTableId: string | null
+  ): Promise<string[]> {
+    // No table means there is no seat to give anybody; the RPC would answer
+    // 'no_table' for each one. Repair is fn_repair_seat_first_games' job.
+    if (!primaryTableId) return [];
+    try {
+      const { data: roster, error: rosterErr } = await supabase
+        .from('tournament_players')
+        .select('user_id')
+        .eq('tournament_id', tournamentId)
+        .in('status', ['registered', 'playing'])
+        .limit(1000);
+      if (rosterErr) {
+        reportError(
+          new Error(
+            `[TournamentRecurring] roster read failed for ${tournamentId.slice(0, 8)}: ${rosterErr.message}`
+          ),
+          'TournamentRecurring.seat_first_roster_read_failed'
+        );
+        return [];
+      }
+      const rosterIds = [
+        ...new Set(
+          (roster ?? [])
+            .map((r) => String((r as { user_id?: string }).user_id ?? ''))
+            .filter((id) => id.length > 0)
+        ),
+      ];
+      if (rosterIds.length === 0) return [];
+
+      const { data: seatRows, error: seatErr } = await supabase
+        .from('table_seats')
+        .select('user_id')
+        .eq('table_id', primaryTableId)
+        .is('left_at', null)
+        .limit(1000);
+      if (seatErr) {
+        // Unreadable seats is UNKNOWN, never "nobody is seated" — that reading
+        // would re-seat a player who is already sitting there.
+        reportError(
+          new Error(
+            `[TournamentRecurring] seat read failed for table ${primaryTableId.slice(0, 8)}: ${seatErr.message}`
+          ),
+          'TournamentRecurring.seat_first_table_seat_read_failed'
+        );
+        return [];
+      }
+      const seated = new Set(
+        (seatRows ?? [])
+          .map((s) => String((s as { user_id?: string }).user_id ?? ''))
+          .filter((id) => id.length > 0)
+      );
+
+      const unseated = rosterIds.filter((id) => !seated.has(id));
+      if (unseated.length === 0) return [];
+
+      const { data: horseRows, error: horseErr } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('is_horse', true)
+        .in('id', unseated);
+      if (horseErr) {
+        reportError(
+          new Error(
+            `[TournamentRecurring] roster horse lookup failed for ${tournamentId.slice(0, 8)}: ${horseErr.message}`
+          ),
+          'TournamentRecurring.seat_first_roster_horse_lookup_failed'
+        );
+        return [];
+      }
+      return (horseRows ?? [])
+        .map((h) => String((h as { id?: string }).id ?? ''))
+        .filter((id) => id.length > 0);
+    } catch (err) {
+      reportError(err, 'TournamentRecurring.unseatedRegistrantHorses_threw');
       return [];
     }
   }
@@ -2763,11 +3018,31 @@ export class TournamentRecurringService {
        * never begin. It also kept advertising three open seats, so the next
        * human to sit became a fourth entrant in a three-handed game.
        */
-      const { data: tRow } = await supabase
+      /**
+       * A MISSING ROW MUST NOT DECIDE THE FORMAT.
+       *
+       * This read discarded its error and then fell through `?? 0` into
+       * isSeatFirstFormat('', 0) - and 0 <= 2, so an unreadable tournament
+       * read as SEAT-FIRST. A 500-seat MTT would then be sent down the
+       * seat-seating path instead of registerHorses, seat nobody (its table
+       * is not a seat-first table), and never be topped up at all. The one
+       * value we cannot guess is the one that chooses between the two halves
+       * of this function.
+       */
+      const { data: tRow, error: tErr } = await supabase
         .from('tournaments')
         .select('variant, max_players')
         .eq('id', tournamentId)
         .maybeSingle();
+      if (tErr || !tRow) {
+        reportError(
+          new Error(
+            `[TournamentRecurring] top-up cannot read tournament ${tournamentId.slice(0, 8)}: ${tErr?.message ?? 'no row'}`
+          ),
+          'TournamentRecurring.topup_tournament_read_failed'
+        );
+        return 0;
+      }
       const seatFirst = isSeatFirstFormat(
         String((tRow as { variant?: string } | null)?.variant ?? ''),
         Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
@@ -2792,6 +3067,7 @@ export class TournamentRecurringService {
        * split the counter itself uses.
        */
       let liveCount = 0;
+      let primaryTableId: string | null = null;
       if (seatFirst) {
         const { data: primaryId, error: primErr } = await supabase.rpc(
           'fn_tournament_primary_table',
@@ -2799,10 +3075,11 @@ export class TournamentRecurringService {
         );
         if (primErr) return 0;
         if (primaryId) {
+          primaryTableId = String(primaryId);
           const { count: seatCount, error: seatErr } = await supabase
             .from('table_seats')
             .select('table_id', { count: 'exact', head: true })
-            .eq('table_id', String(primaryId))
+            .eq('table_id', primaryTableId)
             .is('left_at', null);
           if (seatErr) return 0;
           liveCount = seatCount || 0;
@@ -2836,17 +3113,49 @@ export class TournamentRecurringService {
 
       let added = 0;
       if (seatFirst) {
-        const candidates = await this.pickFreeHorses(shortfall);
+        /**
+         * HOME FIRST, THEN THE FLEET. See seatFirstFillOrder for the measured
+         * deadlock this breaks: a full roster against short seats cannot admit
+         * a single new entrant, because fn_enforce_tournament_capacity RAISES
+         * 23514 on the INSERT, and the game's own paid-up registrants were the
+         * one group the old code could never pick.
+         */
+        const own = await this.unseatedRegistrantHorses(tournamentId, primaryTableId);
+        const poolWanted = Math.max(0, shortfall - own.length);
+        const pool = poolWanted > 0 ? await this.pickFreeHorses(poolWanted) : [];
+        const candidates = seatFirstFillOrder(shortfall, own, pool);
+
         for (const horse of candidates) {
-          const { data: res } = await supabase.rpc('fn_seat_horse_in_seat_first_game', {
-            p_tournament_id: tournamentId,
-            p_user_id: horse,
-          });
-          if ((res as { ok?: boolean } | null)?.ok === true) added++;
+          const { data: res, error: seatRpcErr } = await supabase.rpc(
+            'fn_seat_horse_in_seat_first_game',
+            { p_tournament_id: tournamentId, p_user_id: horse }
+          );
           // 2026-08-24 audit: do NOT break on one refusal. A single horse
           // rejected — the four-table hard limit (23514), a race on the seat,
           // an already_registered anomaly — used to halt the whole fill even
           // when free horses remained in the candidate list.
+          //
+          // 2026-08-25: and do not DISCARD the refusal either. The capacity
+          // trigger does not return {ok:false}, it RAISES, so the one signal
+          // that would have named this deadlock arrived in `error` and was
+          // thrown away for a day and a half.
+          if (seatRpcErr) {
+            reportError(
+              new Error(
+                `[TournamentRecurring] seat-first fill refused for ${tournamentId.slice(0, 8)}: ${seatRpcErr.message}`
+              ),
+              'TournamentRecurring.seat_first_seat_rpc_failed'
+            );
+            continue;
+          }
+          if ((res as { ok?: boolean } | null)?.ok === true) added++;
+        }
+
+        if (added === 0 && candidates.length > 0) {
+          console.warn(
+            `[TournamentRecurring] seat-first fill added nobody to ${tournamentId.slice(0, 8)} ` +
+              `from ${own.length} own registrant(s) + ${pool.length} free horse(s) — shortfall ${shortfall}`
+          );
         }
       } else {
         added = await this.registerHorses(tournamentId, shortfall);
@@ -2926,6 +3235,9 @@ export class TournamentRecurringService {
       // made 554 of 584 horses invisible to every tournament while they dealt
       // cash. See horseLoadMap.
       const load = await this.horseLoadMap();
+      // Unknown load, not zero load — see horseLoadMap. Registering against an
+      // empty map double-books horses that are already at four tables.
+      if (!load) return 0;
       const busyIds = new Set(
         [...load.keys()].filter((id) => TournamentRecurringService.atCapacity(load, id))
       );

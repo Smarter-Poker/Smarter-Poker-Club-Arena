@@ -210,21 +210,21 @@ describe('a restart mid-break does not resume play', () => {
   );
 
   it('re-pauses the rebuilt engines for the remaining break time', () => {
-    /**
-     * The gate is `tournament.on_break` ALONE (Dan 2026-08-25).
-     *
-     * This used to assert `on_break && break_ends_at`, and that conjunction was
-     * the bug: pauseForBreak deliberately writes break_ends_at as NULL, because
-     * at :55 only the last hand is announced and beginBreakCountdown fills the
-     * end time in once every table has parked - up to LAST_HAND_GRACE_MS later.
-     * A restart inside that window therefore skipped the whole recovery and the
-     * tournament dealt straight through its own break. Measured 2026-08-25:
-     * 5 tournaments stranded with on_break true and break_ends_at NULL.
-     *
-     * So a NULL end time must NOT be part of the gate. It is reconstructed from
-     * break_started_at instead, which is what the next two assertions pin.
-     */
-    expect(resumeFn).toMatch(/if \(tournament\.on_break\)/);
+    /* SUPERSEDED BY #801, AND LEFT RED ON main. This asserted the gate
+       `tournament.on_break && tournament.break_ends_at`, which #801 removed on
+       purpose: pauseForBreak writes break_ends_at as NULL at :55 and
+       beginBreakCountdown fills it in up to two minutes later, so a restart
+       inside that window matched the old gate's second half as false and
+       skipped the whole recovery - the tournament dealt straight through the
+       remainder of its own break. (Seven live rows were found stranded with
+       on_break true and no break.) The rule now is that on_break ALONE opens
+       the block and a missing end time is RECONSTRUCTED from break_started_at,
+       which is what this pins. House rule 8: the test that pins replaced
+       behaviour is updated in the commit that replaces it. */
+    expect(resumeFn).toMatch(/if \(tournament\.on_break\) \{/);
+    /* And the conjunction may not come back. A positive assertion alone would
+       still pass if someone re-added `&& tournament.break_ends_at` on a later
+       line, which is exactly the shape of the original defect. */
     expect(resumeFn).not.toMatch(/tournament\.on_break && tournament\.break_ends_at/);
     expect(resumeFn).toMatch(/tournament\.break_started_at/);
     expect(resumeFn).toMatch(/LAST_HAND_GRACE_MS \+\s*TournamentManagerBase\.BREAK_DURATION_MS/);
@@ -241,11 +241,15 @@ describe('a restart mid-break does not resume play', () => {
   });
 
   it('clears a break that already expired while the engine was down', () => {
-    // The update moved into clearPersistedBreak() so the resume path and
-    // resumeFromBreak() cannot drift apart. Pin the CALL here, and the payload
-    // where it now lives.
-    expect(resumeFn).toMatch(/this\.clearPersistedBreak\(\)/);
-    expect(BASE).toMatch(/clearPersistedBreak[\s\S]{0,240}on_break: false, break_ends_at: null/);
+    /* The UPDATE moved into clearPersistedBreak() in #801, so it is no longer
+       inside the sliced resume() body. Both halves are pinned: resume() must
+       call it, and it must be the write that clears both columns. */
+    expect(resumeFn).toMatch(/await this\.clearPersistedBreak\(\);/);
+    const clearFn = BASE.slice(
+      BASE.indexOf('protected async clearPersistedBreak'),
+      BASE.indexOf('protected async clearPersistedBreak') + 600
+    );
+    expect(clearFn).toMatch(/on_break: false, break_ends_at: null/);
   });
 });
 

@@ -211,15 +211,25 @@ export function TournamentStartingTicker() {
             .from('tournament_players')
             .select('tournament_id')
             .eq('user_id', auth.userId)
-            // PRE-EXISTING DEAD PREDICATE, left as-is deliberately.
-            // tournament_players.status in production only ever holds
-            // 'eliminated' (73k), 'winner' (12k) and 'playing' (1k) - there is
-            // no 'REGISTERED', so this has always matched zero rows and the
-            // ticker's "you are registered" badge has never rendered. Changing
-            // the value is a product decision (does the badge mean registered,
-            // or seated and playing?) rather than a perf fix, so it is flagged
-            // for Dan rather than guessed at here.
-            .in('status', ['REGISTERED'])
+            // DEAD PREDICATE, FIXED 2026-08-25. This asked for 'REGISTERED' in
+            // capitals. The column is written by TournamentService in LOWER
+            // case ('registered' on entry, flipped to 'playing' at start), so
+            // the filter matched zero rows and the ticker's "you are
+            // registered" badge could never render for anybody.
+            //
+            // Verified against production before changing it, not guessed:
+            //   eliminated 80,928 | winner 15,238 | playing 1,314 |
+            //   registered 20
+            // The earlier note here read that same distribution as "there is no
+            // REGISTERED" and concluded the badge needed a product decision.
+            // There is one, it is lower case, and the pending rows are simply
+            // rare because the engine promotes them to 'playing' at start.
+            //
+            // Both live values are kept: this list is only ever intersected
+            // with pre-start MTTs (status ANNOUNCED or REGISTERING below), so
+            // 'playing' cannot leak a running event into the bar, and keeping
+            // it means a re-entry row mid-flip still reads as entered.
+            .in('status', ['registered', 'playing'])
             // ORDER BY is required, not cosmetic: a bare LIMIT in Postgres
             // returns ARBITRARY rows, so if the predicate above is ever
             // corrected and a player exceeds 200 matches, the 200 kept would be
@@ -255,7 +265,15 @@ export function TournamentStartingTicker() {
           registrationsPromise,
         ]);
 
-        if (error || cancelled || !data) return;
+        if (error) {
+          // Reported, not swallowed. The bar correctly renders NOTHING on a
+          // failed poll (it never claims "no tournaments"), but a silent
+          // return also meant a permanently broken query looked identical to a
+          // quiet schedule.
+          reportError(error, 'TournamentStartingTicker.fetchUpcoming');
+          return;
+        }
+        if (cancelled || !data) return;
 
         setUpcoming(
           data.map((t: Record<string, unknown>) => ({
@@ -394,7 +412,10 @@ export function TournamentStartingTicker() {
       formatPopupText(
         `${formatGameTitle(t.name)} starts in ${countdown(t.startsAt - now)}` +
           (t.buyIn > 0 ? ` · buy-in ${t.buyIn.toLocaleString()}` : ' · freeroll') +
-          ` · ${t.registered} registered`
+          // "entered", not "registered": this is tournaments.current_players,
+          // a registration COUNTER that is incremented on entry and never
+          // decremented, so it is an entry total and not a live head count.
+          ` · ${t.registered.toLocaleString()} entered`
       )
     )
     .join('        •        ');

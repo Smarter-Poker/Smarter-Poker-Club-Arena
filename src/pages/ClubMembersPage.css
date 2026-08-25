@@ -29,6 +29,9 @@
 
 .club-members-page {
   --ca-cyan: var(--info-cyan, #00d4ff);
+  /* These two were declared and then shadowed by hard-coded literals in
+     .summary-stat--online / --agents and .members-export, so "a palette change
+     is one edit" was not true of them. Now actually used. Dan 2026-08-25. */
   --ca-blue: var(--club-blue, #4169e1);
   --ca-royal: #1877f2;
   --ca-gold: var(--vip-gold, #ffc93c);
@@ -101,8 +104,12 @@
 
 /* Online: club blue, replacing the emerald card. */
 .summary-stat--online {
-  border-color: rgba(65, 105, 225, 0.45);
-  background: linear-gradient(145deg, rgba(65, 105, 225, 0.16) 0%, rgba(65, 105, 225, 0.05) 100%);
+  border-color: color-mix(in srgb, var(--ca-blue) 45%, transparent);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--ca-blue) 16%, transparent) 0%,
+    color-mix(in srgb, var(--ca-blue) 5%, transparent) 100%
+  );
   box-shadow:
     0 0 12px rgba(65, 105, 225, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -115,8 +122,12 @@
 
 /* Agents: smarter.poker royal blue, replacing the violet card. */
 .summary-stat--agents {
-  border-color: rgba(24, 119, 242, 0.45);
-  background: linear-gradient(145deg, rgba(24, 119, 242, 0.16) 0%, rgba(24, 119, 242, 0.05) 100%);
+  border-color: color-mix(in srgb, var(--ca-royal) 45%, transparent);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--ca-royal) 16%, transparent) 0%,
+    color-mix(in srgb, var(--ca-royal) 5%, transparent) 100%
+  );
   box-shadow:
     0 0 12px rgba(24, 119, 242, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);

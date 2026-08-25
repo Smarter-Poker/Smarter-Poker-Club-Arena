@@ -237,6 +237,11 @@ export default function ClubSettingsPage() {
     });
     loadingRef.current = false;
     originalSettings.current = null;
+    // Was not reset: navigating from a club whose role read failed to a club
+    // you OWN skips the lookup entirely (ownerMatch short-circuits it), so the
+    // "We Could Not Confirm Your Role" notice stayed on screen for a club where
+    // the role is known for certain.
+    setRoleLoadFailed(false);
   }, [clubId]);
 
   // Release the pending-logo blob URL when the page goes away. The per-club
@@ -325,6 +330,27 @@ export default function ClubSettingsPage() {
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [hasUnsavedChanges, isOwner]);
+
+  /**
+   * Escape closes the delete modal, and focus returns to the button that
+   * opened it.
+   *
+   * This was written once and lost in a merge, which is why `deleteTriggerRef`
+   * existed with nothing reading it and the modal carried `role="dialog"
+   * aria-modal="true"` with nothing enforcing either. On the control that
+   * permanently destroys a club, dismissal was overlay-click only.
+   */
+  useEffect(() => {
+    if (!showDeleteModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isDeleting) setShowDeleteModal(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      deleteTriggerRef.current?.focus();
+    };
+  }, [showDeleteModal, isDeleting]);
 
   /**
    * Ctrl+S. Through a REF (Dan 2026-08-25).
@@ -1000,7 +1026,7 @@ export default function ClubSettingsPage() {
               Agent, Or Sub-Agent To Help Run The Club.
             </p>
             <button
-              className="btn btn--primary"
+              className="btn btn-primary"
               onClick={() => navigate(`/clubs/${clubId}/members`)}
               style={{ padding: '0 24px', height: '40px' }}
             >
@@ -1525,7 +1551,7 @@ export default function ClubSettingsPage() {
                 Could Not Check What This Would Delete. Deletion Is Disabled Until That Check
                 Succeeds.
                 {impactError ? ` ${impactError}` : ''}{' '}
-                <button type="button" className="btn-link" onClick={loadDeleteImpact}>
+                <button type="button" className="settings-inline-link" onClick={loadDeleteImpact}>
                   Check Again
                 </button>
               </p>

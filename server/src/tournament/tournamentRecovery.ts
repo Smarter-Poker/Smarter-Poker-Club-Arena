@@ -50,11 +50,23 @@ export async function refundAndCloseCancelledTournament(
   refundReason: string
 ): Promise<void> {
   try {
-    const { data: fullT } = await supabase
+    const { data: fullT, error: fullTErr } = await supabase
       .from('tournaments')
       .select('buy_in_amount, buy_in_fee, club_id, name')
       .eq('id', tournamentId)
       .maybeSingle();
+    // PAYOUT-INTEGRITY 2026-08-25: club_id comes from this row and it is what
+    // gates the fee reversal below. A discarded error read as "no club_id", so
+    // a transient failure here silently kept every entry fee on a CANCELLED
+    // event instead of reversing it, with nothing logged to say so.
+    if (fullTErr) {
+      reportError(
+        new Error(
+          `[GameServer] Cancel refund: tournament row unreadable for ${tournamentId.slice(0, 8)}: ${fullTErr.message}`
+        ),
+        'GameServer.cancel_refund_tournament_unreadable'
+      );
+    }
     // AUDIT 2026-08-19 (rake/BBJ pass 2): refunds are EVIDENCE-BASED. The old
     // rule "horses paid nothing" became false the day
     // fn_register_horse_for_tournament started charging horses real chips --
@@ -66,11 +78,36 @@ export async function refundAndCloseCancelledTournament(
     // reversed in the rake ledger so a cancelled event's fees net to zero.
 
     // Open rows = not yet eliminated/paid. Only these are refund candidates.
-    const { data: openRows } = await supabase
+    const { data: openRows, error: openRowsErr } = await supabase
       .from('tournament_players')
       .select('id, user_id, prize')
       .eq('tournament_id', tournamentId)
       .in('status', ['playing', 'registered']);
+
+    /**
+     * PAYOUT-INTEGRITY 2026-08-25: A FAILED QUERY MUST NEVER READ AS "NOBODY
+     * IS LEFT" — the same rule the elimination sweep already enforces on its
+     * counts, applied here, where the consequence is worse.
+     *
+     * The error was discarded and `openRows ?? []` turned an unreadable list
+     * into an empty one. The refund loop then found nothing to refund, and the
+     * code below went on to mark EVERY 'playing'/'registered' row 'eliminated'
+     * and close the tables. Net effect of one timeout on a cancelled event:
+     * every entrant's buy-in, rebuys and add-ons destroyed, every row closed
+     * so the next run finds no candidates either, and not a line in the log.
+     *
+     * An unreadable list is UNKNOWN. Leave the rows open and leave the tables
+     * alone; this helper is idempotent and every caller re-runs it.
+     */
+    if (openRowsErr) {
+      reportError(
+        new Error(
+          `[GameServer] Cancel refund ABORTED for ${tournamentId.slice(0, 8)}: open-registration list unreadable (${openRowsErr.message}) — refunding nobody and closing nothing this pass`
+        ),
+        'GameServer.cancel_refund_open_rows_unreadable'
+      );
+      return;
+    }
 
     for (const row of openRows ?? []) {
       if (Number(row.prize || 0) > 0) continue; // already paid a prize -- no refund on top
@@ -139,17 +176,30 @@ export async function refundAndCloseCancelledTournament(
       // minus prior reversals -- reversal rows carry the same metadata user_id,
       // so summing every row nets correctly).
       if (fullT?.club_id) {
-        const { data: feeRows } = await supabase
+        const { data: feeRows, error: feeErr } = await supabase
           .from('rake_records')
           .select('rake_amount')
           .eq('tournament_id', tournamentId)
           .eq('is_tournament', true)
           .contains('metadata', { user_id: row.user_id });
+        // PAYOUT-INTEGRITY 2026-08-25: `feeRows ?? []` sums to 0 on a failed
+        // read, which reads as "this player paid no fee" and skips the
+        // reversal for good — the player is already refunded by then, so
+        // nothing ever revisits it. Report and skip rather than pretend zero.
+        if (feeErr) {
+          reportError(
+            new Error(
+              `[GameServer] Cancel refund: fee-ledger read failed for ${row.user_id.slice(0, 8)} (${tournamentId.slice(0, 8)}): ${feeErr.message} — fee NOT reversed`
+            ),
+            'GameServer.cancel_refund_fee_read_failed'
+          );
+          continue;
+        }
         const feePaid =
           Math.round((feeRows ?? []).reduce((s, r) => s + Number(r.rake_amount || 0), 0) * 100) /
           100;
         if (feePaid > 0) {
-          await supabase.from('rake_records').insert({
+          const { error: revErr } = await supabase.from('rake_records').insert({
             hand_id: null,
             // AUDIT 2026-08-15: table_id has an FK to tables -- a tournament id
             // here violated it; the tournament is carried by tournament_id.
@@ -164,23 +214,54 @@ export async function refundAndCloseCancelledTournament(
             source: 'GameServer.cancel_refund',
             metadata: { kind: 'tournament_fee_refund', user_id: row.user_id },
           });
+          // LEDGER-INTEGRITY 2026-08-25: the reversal row IS the reversal. A
+          // discarded error left the fee booked as club/union revenue on a
+          // cancelled event with no trace, and the weekly rakeback basis sums
+          // exactly these rows.
+          if (revErr) {
+            reportError(
+              new Error(
+                `[GameServer] Cancel refund: fee reversal INSERT failed for ${row.user_id.slice(0, 8)} (${tournamentId.slice(0, 8)}): ${revErr.message} — ${feePaid} still booked as rake`
+              ),
+              'GameServer.cancel_refund_fee_reversal_failed'
+            );
+          }
         }
       }
     }
 
     // Close the player rows so nothing is stranded in 'playing'/'registered'
-    await supabase
+    // PAYOUT-INTEGRITY 2026-08-25: results checked. This UPDATE is what the
+    // whole helper exists to guarantee (sweep 3 left 64 rows stranded in an
+    // hour); a silent failure here is indistinguishable from it never running.
+    const { error: closeRowsErr } = await supabase
       .from('tournament_players')
       .update({ status: 'eliminated', eliminated_at: new Date().toISOString() })
       .eq('tournament_id', tournamentId)
       .in('status', ['playing', 'registered']);
+    if (closeRowsErr) {
+      reportError(
+        new Error(
+          `[GameServer] Cancel refund: could not close player rows for ${tournamentId.slice(0, 8)}: ${closeRowsErr.message} — registrations left stranded`
+        ),
+        'GameServer.cancel_refund_close_rows_failed'
+      );
+    }
 
     // Close the tournament's tables
-    await supabase
+    const { error: closeTablesErr } = await supabase
       .from('tables')
       .update({ status: 'closed', current_players: 0 })
       .eq('tournament_id', tournamentId)
       .neq('status', 'closed');
+    if (closeTablesErr) {
+      reportError(
+        new Error(
+          `[GameServer] Cancel refund: could not close tables for ${tournamentId.slice(0, 8)}: ${closeTablesErr.message}`
+        ),
+        'GameServer.cancel_refund_close_tables_failed'
+      );
+    }
   } catch (err) {
     reportError(err, 'GameServer.refundAndCloseCancelledTournament');
   }
@@ -201,7 +282,19 @@ export async function recoverStuckCompletingTournaments(
       .select('id, name, prize_pool, payout_structure, variant, tournament_type, spin_multiplier')
       .eq('status', 'COMPLETING');
     if (onlyTournamentId) q = q.eq('id', onlyTournamentId);
-    const { data: stuck } = await q;
+    const { data: stuck, error: stuckErr } = await q;
+    // PAYOUT-INTEGRITY 2026-08-25: an unreadable list is not an empty one. The
+    // discarded error made a failed scan indistinguishable from "nothing is
+    // stuck", which is the one thing this watchdog exists to detect.
+    if (stuckErr) {
+      reportError(
+        new Error(
+          `[GameServer] recoverStuckCompleting (${reason}): COMPLETING scan failed: ${stuckErr.message} — recovered nothing this pass`
+        ),
+        'GameServer.recoverStuckCompleting_scan_failed'
+      );
+      return;
+    }
     for (const t of stuck ?? []) {
       try {
         // Parse + normalize payout structure
@@ -217,10 +310,35 @@ export async function recoverStuckCompletingTournaments(
         const prizeFor = (place: number): number =>
           computePlacePrize(Number(t.prize_pool || 0), payouts, place);
 
-        const { data: players } = await supabase
+        const { data: players, error: playersErr } = await supabase
           .from('tournament_players')
           .select('id, user_id, status, position, prize, chips')
           .eq('tournament_id', t.id);
+
+        /**
+         * PAYOUT-INTEGRITY 2026-08-25: THE WORST INSTANCE OF "A FAILED QUERY
+         * READ AS NOBODY IS LEFT" IN THIS ESTATE.
+         *
+         * The error was discarded and `players ?? []` turned an unreadable
+         * field into an empty one. `alive` was then empty, so step 2 paid
+         * NOBODY and step 3 topped up nobody — and step 4 went right on to
+         * flip COMPLETING -> COMPLETED. That is terminal: this watchdog only
+         * ever looks at COMPLETING, so the tournament it just silently
+         * emptied can never be rescued again, by it or by anything else. One
+         * timeout permanently destroys the winner's prize and every unpaid
+         * ITM place, on the exact code path written to stop that happening
+         * (see this function's docblock: a COMPLETED bounty MTT that paid $40
+         * of a $100 pool is what it was written for).
+         *
+         * Throw so the per-tournament catch reports it and the tournament
+         * stays COMPLETING for the next pass. Every step below is idempotent,
+         * so retrying costs nothing.
+         */
+        if (playersErr) {
+          throw new Error(
+            `player field unreadable for ${t.id.slice(0, 8)} "${t.name}": ${playersErr.message} — refusing to complete a tournament we cannot pay`
+          );
+        }
         const rows = players ?? [];
 
         const credit = async (
@@ -255,6 +373,44 @@ export async function recoverStuckCompletingTournaments(
         const alive = rows
           .filter((r) => r.status === 'playing' || r.status === 'registered')
           .sort((a, b) => Number(b.chips || 0) - Number(a.chips || 0));
+
+        /**
+         * PAYOUT-INTEGRITY 2026-08-25: places must be DISTINCT here too.
+         *
+         * The survivors are handed places 1..alive.length unconditionally,
+         * with no regard for what the already-eliminated rows hold. A row that
+         * busted while the field was small can be sitting on one of those same
+         * places, and then two different users hold it. The wallet key is
+         * `tourney:{id}:prize:{user}:{place}` — it dedupes a repeated USER, not
+         * a repeated PLACE — so both are paid in full and the pool pays out
+         * over 100%. It is the identical shape as the `Math.max(2, ...)` clamp
+         * that cost 11 tournaments 12 extra payments in the bust sweep.
+         *
+         * A collision means we genuinely do not know who is owed which place,
+         * and guessing moves money. Report and leave the tournament COMPLETING
+         * for the reconciler or a human; every caller re-runs this watchdog.
+         */
+        const claimed = new Map<number, string>();
+        for (const r of rows) {
+          const pos = Number(r.position);
+          if (r.status === 'eliminated' && Number.isFinite(pos) && pos > 0) {
+            claimed.set(pos, r.user_id);
+          }
+        }
+        const collisions = alive
+          .map((_, i) => i + 1)
+          .filter((place) => claimed.has(place))
+          .map((place) => `${place} (held by ${String(claimed.get(place)).slice(0, 8)})`);
+        if (collisions.length > 0) {
+          reportError(
+            new Error(
+              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" — ${alive.length} survivor(s) would be given place(s) already held by eliminated players: ${collisions.join(', ')}. Paying nobody; left COMPLETING for review.`
+            ),
+            'GameServer.recoverStuckCompleting_position_collision'
+          );
+          continue;
+        }
+
         for (let i = 0; i < alive.length; i++) {
           const place = i + 1;
           const prize = prizeFor(place);
@@ -264,7 +420,14 @@ export async function recoverStuckCompletingTournaments(
             `Tournament prize (recovery): position ${place} — ${t.name || 'tournament'}`,
             `tourney:${t.id}:prize:${alive[i].user_id}:${place}`
           );
-          await supabase
+          // PAYOUT-INTEGRITY 2026-08-25: the credit is only half of it. When
+          // this UPDATE was discarded, a paid survivor kept status='playing'
+          // and prize=0, so the very next pass ranked them as ALIVE again and
+          // could hand them a different place (the credit dedupes on the key,
+          // the POSITION does not) — and step 3 read their prize as 0 forever.
+          // Throwing leaves the tournament COMPLETING; the credit above is
+          // idempotent, so the retry re-runs it for free.
+          const { error: stampErr } = await supabase
             .from('tournament_players')
             .update({
               status: place === 1 ? 'winner' : 'eliminated',
@@ -273,6 +436,11 @@ export async function recoverStuckCompletingTournaments(
               eliminated_at: place === 1 ? null : new Date().toISOString(),
             })
             .eq('id', alive[i].id);
+          if (stampErr) {
+            throw new Error(
+              `paid place ${place} to ${alive[i].user_id.slice(0, 8)} but could not record it: ${stampErr.message}`
+            );
+          }
         }
 
         // 3. Top up already-eliminated ITM players recorded with a zero prize
@@ -288,21 +456,47 @@ export async function recoverStuckCompletingTournaments(
               `Tournament prize top-up (recovery): position ${r.position} — ${t.name || 'tournament'}`,
               `tourney:${t.id}:prize:${r.user_id}:${r.position}`
             );
-            await supabase.from('tournament_players').update({ prize: owed }).eq('id', r.id);
+            // Same rule as the survivor stamp above: a top-up that is paid but
+            // not recorded leaves prize < owed, so every later pass recomputes
+            // the same shortfall and re-attempts it forever.
+            const { error: topUpErr } = await supabase
+              .from('tournament_players')
+              .update({ prize: owed })
+              .eq('id', r.id);
+            if (topUpErr) {
+              throw new Error(
+                `topped up place ${r.position} for ${r.user_id.slice(0, 8)} but could not record it: ${topUpErr.message}`
+              );
+            }
           }
         }
 
         // 4. Complete (CAS-guarded)
-        await supabase
+        // PAYOUT-INTEGRITY 2026-08-25: the completion is the claim that
+        // everything above landed. A discarded error printed "Recovered ..."
+        // over a tournament still sitting in COMPLETING, so the log said the
+        // watchdog had done its job on every single pass while it had not.
+        const { error: completeErr } = await supabase
           .from('tournaments')
           .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
           .eq('id', t.id)
           .eq('status', 'COMPLETING');
-        await supabase
+        if (completeErr) {
+          throw new Error(`could not mark COMPLETED: ${completeErr.message}`);
+        }
+        const { error: closeErr } = await supabase
           .from('tables')
           .update({ status: 'closed' })
           .eq('tournament_id', t.id)
           .neq('status', 'closed');
+        if (closeErr) {
+          reportError(
+            new Error(
+              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} paid and COMPLETED but tables not closed: ${closeErr.message}`
+            ),
+            'GameServer.recoverStuckCompleting_close_tables_failed'
+          );
+        }
         console.log(
           `[GameServer] Recovered stuck COMPLETING tournament ${t.id.slice(0, 8)} "${t.name}" (${reason}): paid ${alive.length} remaining player(s)`
         );

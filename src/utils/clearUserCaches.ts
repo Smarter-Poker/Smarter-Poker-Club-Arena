@@ -42,7 +42,7 @@ import { STORAGE_KEYS } from '../lib/storage';
 import { SWR_CACHE_PREFIXES } from './staleCacheReaper';
 import { clearMembershipsWarmCache } from '../services/ClubsService';
 import { WALLET_CACHE_PREFIX, clearWalletMemoryCache } from '../lib/walletCache';
-import { CLUB_UUID_MAP_KEY } from './clubIdResolver';
+import { CLUB_UUID_MAP_KEY, clearClubUUIDCache } from './clubIdResolver';
 
 /** Written by ClubHomePage; imported there so writer and purger cannot drift. */
 export const CLUB_HOME_CACHE_PREFIX = 'club_home_cache_';
@@ -153,6 +153,10 @@ export function clearUserCaches(): void {
   // with the account.
   try {
     clearWalletMemoryCache();
+    /* The slug -> UUID map lives in a module Map as well as in localStorage.
+       Purging only the persisted copy left the previous account's clubs in
+       memory, and the next persistMap() wrote them straight back. */
+    clearClubUUIDCache();
   } catch {
     /* never let a cache purge break sign-out */
   }

@@ -254,11 +254,6 @@
   font-weight: 600;
 }
 
-.section-icon {
-  font-size: 0.85rem;
-  opacity: 0.9;
-}
-
 /* Stats Grid */
 .stats-grid {
   display: flex;

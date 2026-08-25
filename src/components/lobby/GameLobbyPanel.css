@@ -295,6 +295,21 @@
     width: 100%;
     border-left: none;
   }
+
+  /* Dan 2026-08-24, from an iPhone: "there is no padding at the top, so you
+     can't even X off the page." The sheet is position:fixed and fills the
+     viewport, which under viewport-fit=cover means its first row — the title
+     and the close button — renders under the status bar and the notch. The
+     header pays the inset back, so the X is always reachable. */
+  .glp__head {
+    padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  }
+}
+
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .glp__head {
+    padding-top: calc(12px + max(env(safe-area-inset-top, 0px), 24px));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

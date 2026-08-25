@@ -816,6 +816,97 @@ abbr.lt-variant[title] {
      panel shows all four the moment a card is opened, and they are what push
      the card past two lines. Type and variant are NOT in this list any more
      — see the chip styling below. */
+  /* ── THE RIGHT-HAND COLUMN OF A TOURNAMENT CARD ─────────────────────────
+     Dan 2026-08-24: "MTTs just need to clean up the layout — utilise the
+     right side of the card. That is where you can add bounty, PKO, mystery
+     bounty badges, rebuys, add-ons, starting stack."
+
+     The left of the card answers "which game"; the right now answers "what
+     kind of tournament", and the two read as columns rather than one long
+     wrap. The medallions were already computed for every tournament and were
+     only ever shown on the desktop table. */
+  .lobby-table tr[data-kind='mtt'],
+  .lobby-table tr[data-kind='sng'],
+  .lobby-table tr[data-kind='spin'] {
+    padding-right: 10px;
+  }
+
+  .lobby-table td.lt-col-rules {
+    display: block;
+    flex: 0 0 auto;
+    margin-left: auto;
+    text-align: right;
+  }
+
+  .lt-rules {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+
+  .lt-rule {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 5px;
+    font-size: 0.5625rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-decoration: none;
+    color: #ffd98a;
+    background: linear-gradient(180deg, rgba(120, 92, 20, 0.5), rgba(70, 52, 10, 0.5));
+    border: 1px solid rgba(240, 200, 110, 0.35);
+  }
+
+  .lobby-table td.lt-col-tstats {
+    display: block;
+    flex: 1 1 100%;
+  }
+
+  .lt-tstats {
+    display: flex;
+    gap: 8px;
+  }
+
+  .lt-tstat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1 1 0;
+    padding: 3px 7px 4px;
+    border-radius: 7px;
+    background: rgba(0, 0, 0, 0.32);
+    box-shadow:
+      inset 0 1px 2px rgba(0, 0, 0, 0.6),
+      0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+  .lt-tstat__k {
+    font-size: 0.5625rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-tertiary, #7d8698);
+  }
+  .lt-tstat__v {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: #eef2f8;
+  }
+
+  /* Dan: "you can remove the Late Reg pill in the right corner." On a
+     tournament card the badge was saying what the headline already says in
+     more detail — "Late Reg 3:40 Left" — so it was a duplicate that also cost
+     the title 104px of its line. Cash cards keep theirs: Full / Running is
+     not written anywhere else on those. */
+  .lobby-table tr[data-kind='mtt'] td.lt-col-status,
+  .lobby-table tr[data-kind='sng'] td.lt-col-status {
+    display: none;
+  }
+  .lobby-table tr[data-kind='mtt'] td.lt-col-name,
+  .lobby-table tr[data-kind='sng'] td.lt-col-name {
+    padding-right: 0;
+  }
+
   /* Rules, speed and the favourite star stay off the card — the panel shows
      them the moment a card is opened, and they are what push it past its
      lines. Starting Time is NOT one of them any more: Dan 2026-08-24, "it
@@ -823,8 +914,14 @@ abbr.lt-variant[title] {
      long until late reg is over." That is the single most time-critical fact
      on a tournament card, so it gets a well of its own beside the buy-in. */
   .lobby-table td.lt-col-fav,
-  .lobby-table td.lt-col-rules,
   .lobby-table td.lt-col-speed {
+    display: none;
+  }
+
+  /* Cash cards keep their rule medallions off: a cash table's rules (RIT,
+     bomb pots, straddle) are a settings list, not an identity, and the panel
+     shows all of them. Only tournaments earn the right-hand badge column. */
+  .lobby-table tr[data-kind='cash'] td.lt-col-rules {
     display: none;
   }
 

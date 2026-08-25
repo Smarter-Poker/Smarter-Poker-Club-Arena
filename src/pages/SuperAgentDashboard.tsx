@@ -104,13 +104,11 @@ export default function SuperAgentDashboard() {
               event: '*',
               schema: 'public',
               table: 'chip_transactions',
-              // PERF 2026-08-24: this listener had NO filter while its sibling
-              // above (club_members) was correctly scoped to the club - so
-              // EVERY chip movement anywhere on the platform woke this client
-              // and ran a full loadDashboardData(). chip_transactions is one of
-              // the highest-write tables there is; on a busy evening that is a
-              // continuous refetch loop per open dashboard, for rows the page
-              // then discards. Scoped to the same club as its sibling.
+              // DB LOAD PASS 2026-08-24: this had no filter, so every chip
+              // movement anywhere on the platform was decoded and delivered to
+              // every open super-agent dashboard, which then reloaded a view
+              // that only ever shows THIS club. chip_transactions carries
+              // club_id — scope to it, and do not widen it again.
               filter: `club_id=eq.${resolvedId}`,
             },
             () => loadDashboardData()

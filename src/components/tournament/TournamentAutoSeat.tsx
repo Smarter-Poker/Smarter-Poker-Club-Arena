@@ -35,7 +35,16 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { reportError } from '../../utils/errorReporter';
 import './TournamentAutoSeat.css';
 
-const POLL_MS = 12_000;
+/**
+ * DB LOAD PASS 2026-08-24: was 12s. This component is mounted app-wide for
+ * every signed-in user, so that was five joined `table_seats` -> `tables`
+ * queries per minute per open tab, forever, whether or not the player has ever
+ * registered for a tournament. 45s is still well inside the window that
+ * matters — a tournament seat waits minutes, not seconds — and the interval is
+ * now torn down entirely while the tab is hidden rather than ticking and
+ * returning early.
+ */
+const POLL_MS = 45_000;
 /** Seats older than this were not "just started" — do not yank the player. */
 const FRESH_MS = 10 * 60 * 1000;
 const SEEN_KEY = 'ca_tourney_autoseat_seen';
@@ -222,14 +231,38 @@ export default function TournamentAutoSeat() {
 
   useEffect(() => {
     if (!user?.id) return undefined;
-    void check();
-    const id = setInterval(() => void check(), POLL_MS);
-    const onVis = () => {
-      if (document.visibilityState === 'visible') void check();
+
+    /* The interval is created only while the tab is visible and destroyed when
+       it is hidden. Previously it ran forever and `check()` returned early on a
+       hidden tab, which spared the query but still woke the tab on a timer.
+       Becoming visible again checks immediately, so nothing is missed. */
+    let id: ReturnType<typeof setInterval> | null = null;
+    const startPoll = () => {
+      if (id !== null) return;
+      id = setInterval(() => void check(), POLL_MS);
     };
+    const stopPoll = () => {
+      if (id === null) return;
+      clearInterval(id);
+      id = null;
+    };
+
+    const onVis = () => {
+      if (document.hidden) {
+        stopPoll();
+      } else {
+        void check();
+        startPoll();
+      }
+    };
+
+    if (!document.hidden) {
+      void check();
+      startPoll();
+    }
     document.addEventListener('visibilitychange', onVis);
     return () => {
-      clearInterval(id);
+      stopPoll();
       document.removeEventListener('visibilitychange', onVis);
     };
   }, [user?.id, check]);

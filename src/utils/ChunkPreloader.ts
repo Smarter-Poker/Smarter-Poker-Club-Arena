@@ -36,19 +36,42 @@ const CRITICAL_CHUNKS: Array<() => Promise<any>> = [
   () => import('../pages/CashierPage'),
   () => import('../pages/NotificationsPage'),
   () => import('../pages/NavigateToMessenger'),
-  // PERF PASS 3 (2026-08-22): TablePage is the single heaviest chunk
-  // (~413KB JS + ~383KB CSS) and the most common heavy destination — every
-  // player who sits down needs it. Warming it last (after the light pages)
-  // makes the first table entry instant instead of paying ~150KB gzipped at
-  // the moment the player taps a table.
-  () => import('../pages/TablePage'),
-  // MultiTablePage is the live table surface PersistentTableLayer actually
-  // mounts — small itself, but warming it completes the instant-seat path.
-  () => import('../pages/MultiTablePage'),
-  // PlayerStatsPage intentionally NOT preloaded: it pulls the ~314KB recharts
-  // chart bundle, which most users never open. It lazy-loads on navigation
-  // instead (route intent), saving that bandwidth on mobile.
+  // PERF PASS 2026-08-24 (boot cost): TablePage (~438KB JS + ~389KB CSS) and
+  // MultiTablePage were preloaded here. Together they were the bulk of a
+  // ~1.7MB speculative download paid by EVERY boot, including by the many
+  // sessions that never open a table at all. They are still warmed the moment
+  // the player shows intent: ROUTE_CHUNKS['/table/'] below is fired by
+  // prefetchIntent() on hover / touchstart / focus of any table row, which
+  // lands ~100ms before the tap and is enough to hide the fetch.
+  // Do NOT put them back in this list.
+  //
+  // PlayerStatsPage intentionally NOT preloaded either: it pulls the ~314KB
+  // recharts chart bundle, which most users never open. It lazy-loads on
+  // navigation instead (route intent), saving that bandwidth on mobile.
 ];
+
+/**
+ * Should we speculatively download anything at all?
+ *
+ * Preloading is a bet that bandwidth is cheap. On a metered or slow connection
+ * that bet is simply wrong: the user pays for chunks they may never navigate
+ * to, and those fetches compete with the requests the current page actually
+ * needs. `navigator.connection` is not implemented everywhere (Safari, Firefox),
+ * so an absent API is treated as "proceed" — this guard only suppresses
+ * preloading when the browser explicitly tells us the connection is poor or
+ * metered.
+ */
+function shouldPreload(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const connection = (navigator as any).connection;
+  if (!connection) return true; // API unavailable — assume a normal connection
+  if (connection.saveData === true) return false; // Data Saver is an explicit "no"
+  const effectiveType = connection.effectiveType;
+  // Only '4g' (which is what Chrome reports for wifi and ethernet too) is fast
+  // enough to justify speculative downloads. 'slow-2g' / '2g' / '3g' are not.
+  if (typeof effectiveType === 'string' && effectiveType !== '4g') return false;
+  return true;
+}
 
 /**
  * Preload critical chunks during idle time.
@@ -57,6 +80,11 @@ const CRITICAL_CHUNKS: Array<() => Promise<any>> = [
 export function preloadCriticalChunks(): void {
   if (preloaded) return;
   preloaded = true;
+
+  // Data Saver on, or a connection the browser rates below 4g: do nothing at
+  // all. Every chunk here is still reachable through lazyWithRetry on real
+  // navigation, so skipping costs latency on one navigation and saves ~1MB.
+  if (!shouldPreload()) return;
 
   const schedule =
     typeof requestIdleCallback === 'function'

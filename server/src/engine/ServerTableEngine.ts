@@ -319,8 +319,26 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       stage: state.stage ?? 'preflop',
       // Bible V8 §5.1: Winner IDs for client-side winner highlighting + sound
       winner_ids: this.currentHandWinnerIds.length > 0 ? this.currentHandWinnerIds : [],
-      // Bible V8 §2.7: Winner amounts for pot distribution display
-      winners: this.currentHandWinners.length > 0 ? this.currentHandWinners : [],
+      // Bible V8 §2.7: Winner amounts for pot distribution display.
+      //
+      // AUDIT FIX 2026-08-25: the raw currentHandWinners entries key the user
+      // as `userId`, but the documented client contract (EnginePublishedState
+      // in mapEngineSnapshot.ts) reads `user_id` — so every mapped winner had
+      // userId undefined and seat 0, and everything keyed off it (the per-seat
+      // "+N" net float, the muck loser-mask second source, the spec-21 stack
+      // hold) silently never matched a real player. Emit the snake_case key
+      // the client reads, keep `userId` for any internal consumer, and stop
+      // shipping the evaluated hand's full card list in every snapshot — the
+      // clients that need the winning cards get them from pot_win.
+      winners:
+        this.currentHandWinners.length > 0
+          ? this.currentHandWinners.map((w) => ({
+              user_id: w.userId,
+              userId: w.userId,
+              amount: w.amount,
+              pot_index: w.potIndex ?? 0,
+            }))
+          : [],
       // Bible V8 §2.4: Required betting state fields
       min_raise: state.minRaise ?? 0,
       last_raise: state.lastRaise ?? 0,

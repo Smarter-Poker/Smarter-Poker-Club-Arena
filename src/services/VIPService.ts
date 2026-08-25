@@ -70,25 +70,47 @@ export const VIP_GOLD_LIMITS = {
 // ═══════════════════════════════════════════════════════════════════════════════
 // DIAMOND PRICING (For non-VIP / VIP top-up)
 // ═══════════════════════════════════════════════════════════════════════════════
+//
+// THE SERVER IS THE PRICE. THIS TABLE IS A CACHE OF IT.
+//
+// `fn_purchase_feature(p_user_id, p_feature, p_cost)` IGNORES the cost the
+// client passes and charges `feature_pricing.diamond_cost` instead. So every
+// number printed from this table is a CLAIM about a charge decided elsewhere,
+// and on 2026-08-25 four of the ten were false against production:
+//
+//   rabbit_hunt         advertised 5, charged 1
+//   show_stack_bb       advertised 0 and labelled "(FREE)", charged 5
+//   offline_protection  advertised 0 and labelled "1 free per session", charged 10
+//   tag_pack            advertised per_use, actually written `permanent`
+//
+// Two of those told a player a feature was FREE and then debited them. The
+// values below now match `feature_pricing` exactly, and `loadFeaturePricing()`
+// re-reads that table at runtime so the next drift corrects itself and is
+// reported instead of sitting silently on the screen.
+//
+// `auto_time_bank` had no row in `feature_pricing` at all while the table
+// settings screen printed "5 D" for it — a price for something the RPC would
+// refuse with "unknown feature". Migration 20260825_feature_pricing_integrity
+// adds it at the advertised 5/per_use, so the printed price became true rather
+// than the product being quietly withdrawn.
 
-export const FEATURE_PRICING: Record<
-  VIPFeature,
-  {
-    cost: number;
-    usageType: 'per_use' | 'per_session' | 'permanent';
-    description: string;
-  }
-> = {
-  rabbit_hunt: { cost: 5, usageType: 'per_use', description: 'See what cards would have come' },
+export interface FeaturePrice {
+  cost: number;
+  usageType: 'per_use' | 'per_session' | 'permanent';
+  description: string;
+}
+
+export const FEATURE_PRICING: Record<VIPFeature, FeaturePrice> = {
+  rabbit_hunt: { cost: 1, usageType: 'per_use', description: 'See what cards would have come' },
   show_stack_bb: {
-    cost: 0,
+    cost: 5,
     usageType: 'per_session',
-    description: 'Display stack in big blinds (FREE)',
+    description: 'Display stack in big blinds for the session',
   },
   offline_protection: {
-    cost: 0,
+    cost: 10,
     usageType: 'per_session',
-    description: '1 free per session, VIP unlimited',
+    description: 'Protects your stack while disconnected, for the session',
   },
   auto_time_bank: {
     cost: 5,
@@ -100,8 +122,105 @@ export const FEATURE_PRICING: Record<
   theme_unlock: { cost: 25, usageType: 'permanent', description: 'Unlock table theme' },
   club_creation: { cost: 100, usageType: 'permanent', description: 'Create club' },
   emoji_pack: { cost: 1, usageType: 'permanent', description: 'Unlock 50 emojis' },
-  tag_pack: { cost: 1, usageType: 'per_use', description: 'Player tag' },
+  tag_pack: { cost: 1, usageType: 'permanent', description: 'Player tag' },
 };
+
+/**
+ * Features the server has confirmed it will actually sell, once
+ * `loadFeaturePricing()` has run. Empty means "not checked yet", which is NOT
+ * the same as "nothing is for sale" — see `isPurchasable`.
+ */
+const serverPriced = new Set<string>();
+let pricingLoadedAt = 0;
+/** Matches the marketplace catalog TTL so one tab cannot hold a stale price. */
+const PRICING_TTL_MS = 300_000;
+
+/**
+ * True unless the server has told us this feature has no price row.
+ *
+ * Fails OPEN before the first successful load, because refusing to show a
+ * price everywhere just because a fetch has not returned yet is a worse lie
+ * than showing the cached one. Fails CLOSED once we know the server's list.
+ */
+export function isPurchasable(feature: string): boolean {
+  return serverPriced.size === 0 || serverPriced.has(feature);
+}
+
+type PricingRow = { feature: string; diamond_cost: number; usage_type: string };
+
+const isUsageType = (v: unknown): v is FeaturePrice['usageType'] =>
+  v === 'per_use' || v === 'per_session' || v === 'permanent';
+
+/**
+ * Re-read `feature_pricing` and patch FEATURE_PRICING in place so every
+ * consumer that already holds the object starts telling the truth.
+ *
+ * `feature_pricing` is world-readable (RLS policy `feature_pricing_public_select`,
+ * roles anon + authenticated, USING true), so this needs no privileged route.
+ *
+ * Drift is REPORTED, not swallowed: a price that silently disagreed with the
+ * charge is exactly the defect this function exists to end, and a self-healing
+ * cache that heals in silence hides how long the storefront was lying.
+ */
+export async function loadFeaturePricing(force = false): Promise<Record<VIPFeature, FeaturePrice>> {
+  if (!force && pricingLoadedAt && Date.now() - pricingLoadedAt < PRICING_TTL_MS) {
+    return FEATURE_PRICING;
+  }
+  try {
+    const { data, error } = await supabase
+      .from('feature_pricing')
+      .select('feature, diamond_cost, usage_type');
+    if (error) throw error;
+    const rows = (data || []) as PricingRow[];
+    // A successful request that returned nothing is not evidence that nothing
+    // is for sale. Keep the cached table rather than blanking the storefront.
+    if (rows.length === 0) return FEATURE_PRICING;
+
+    serverPriced.clear();
+    const drift: string[] = [];
+    for (const row of rows) {
+      const key = String(row.feature);
+      serverPriced.add(key);
+      const local = (FEATURE_PRICING as Record<string, FeaturePrice | undefined>)[key];
+      if (!local) continue; // server sells more than this union knows (card backs)
+      const cost = Number(row.diamond_cost);
+      if (Number.isFinite(cost) && cost !== local.cost) {
+        drift.push(`${key}: displayed ${local.cost}, server charges ${cost}`);
+        local.cost = cost;
+      }
+      if (isUsageType(row.usage_type) && row.usage_type !== local.usageType) {
+        drift.push(`${key}: displayed ${local.usageType}, server uses ${row.usage_type}`);
+        local.usageType = row.usage_type;
+      }
+    }
+    for (const key of Object.keys(FEATURE_PRICING)) {
+      if (!serverPriced.has(key)) {
+        drift.push(
+          `${key}: advertised at ${FEATURE_PRICING[key as VIPFeature].cost}, not for sale`
+        );
+      }
+    }
+    pricingLoadedAt = Date.now();
+    if (drift.length > 0) {
+      reportError(
+        new Error(`feature pricing drift: ${drift.join('; ')}`),
+        'VIPService.loadFeaturePricing'
+      );
+    }
+    return FEATURE_PRICING;
+  } catch (err) {
+    // The cached table stays in force. It is correct as of the last audit, so
+    // it is the best available answer when the read fails.
+    reportError(err, 'VIPService.loadFeaturePricing_failed');
+    return FEATURE_PRICING;
+  }
+}
+
+/** Test seam: forget what the server said so the next load re-reads it. */
+export function __resetFeaturePricingCache(): void {
+  serverPriced.clear();
+  pricingLoadedAt = 0;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE CLASS
@@ -229,12 +348,18 @@ class VIPServiceClass {
     userId: string,
     feature: VIPFeature,
     quantity: number = 1
-  ): Promise<{ success: boolean; charged: number; error?: string }> {
-    // Round 19: prod sig (p_user_id, p_feature, p_cost integer DEFAULT 0).
-    // Caller used to pass p_quantity which silently 404'd. Quantity isn't a
-    // real concept at the RPC layer (user_features is unique on user+feature),
-    // so just drop it and rely on p_cost defaulting to 0 (admin-comped) for now.
-    // Future: look up cost from a vip_features pricing table and pass p_cost.
+  ): Promise<{ success: boolean; charged: number; error?: string; alreadyOwned?: boolean }> {
+    // Prod sig: (p_user_id, p_feature, p_cost integer DEFAULT 0). p_cost is
+    // deliberately NOT sent — the function ignores it and prices the purchase
+    // from `feature_pricing`, which is the only safe design: a client that can
+    // name its own price can buy a 300-diamond card back for nothing.
+    //
+    // REFUSALS ARRIVE AS DATA, NOT AS `error`. fn_purchase_feature answers
+    // "authentication required", "unknown feature", "already_owned" and
+    // "Insufficient diamonds" with `{ success: false, error }` and a 200, so a
+    // caller that inspects only `error` reports a green purchase with no debit
+    // and no feature. Both are checked below, and the order matters: `error`
+    // first (transport/permission), then the payload.
     const { data, error } = await supabase.rpc('fn_purchase_feature', {
       p_user_id: userId,
       p_feature: feature,
@@ -246,10 +371,19 @@ class VIPServiceClass {
     }
 
     if (!data || !data.success) {
-      return { success: false, charged: 0, error: data?.error || 'Purchase failed' };
+      // `already_owned` is a REFUSAL, not a failure: the player has the thing
+      // and was not charged again. Callers surface it differently so nobody is
+      // told a purchase broke when it was correctly declined.
+      const reason = String(data?.error || '');
+      return {
+        success: false,
+        charged: 0,
+        error: reason || 'Purchase failed',
+        alreadyOwned: reason === 'already_owned' || !!data?.already_owned,
+      };
     }
 
-    return { success: true, charged: data.cost || 0 };
+    return { success: true, charged: Number(data.cost) || 0 };
   }
 
   /**

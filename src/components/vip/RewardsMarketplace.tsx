@@ -1,10 +1,34 @@
 /**
  * RewardsMarketplace — Spend VIP points on exclusive rewards
  * Categorized rewards with filtering, sorting, and redemption
+ *
+ * ── 2026-08-25, cosmetics purchase/ownership audit ──────────────────────────
+ * This component was a storefront with no shop behind it. `handleRedeem` did:
+ *
+ *     await new Promise((resolve) => setTimeout(resolve, 800));  // fake work
+ *     if (onRedeem) { onRedeem(reward); }                        // NOT awaited
+ *     toast.success(`Successfully redeemed ${reward.name}!`);    // always
+ *
+ * so the member was told the redemption succeeded before the parent's RPC had
+ * even resolved, and again when it had REFUSED - VIPPage's own error toast
+ * ("Not enough VIP points") landed next to a success toast for the same click.
+ *
+ * The twelve rewards were also hardcoded HERE, while the redemption RPC took
+ * the price FROM THE CLIENT, so a 5,000-point pass could be bought for one
+ * point; and redemption granted nothing at all, so 2,000 points spent on a
+ * table theme bought a ledger line and no theme.
+ *
+ * Now: `vip_reward_catalog` prices every reward server-side and
+ * fn_redeem_vip_points grants the cosmetic into theme_unlocks / avatar_unlocks
+ * (migration 20260825_vip_reward_catalog). The list below survives only as the
+ * offline fallback, and the outcome toast belongs to whoever actually performed
+ * the redemption.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../common/Toast';
+import { supabase } from '../../lib/supabase';
+import { reportError } from '../../utils/errorReporter';
 import './RewardsMarketplace.css';
 
 export interface Reward {
@@ -19,7 +43,14 @@ export interface Reward {
   featured?: boolean;
 }
 
-const REWARDS: Reward[] = [
+/**
+ * OFFLINE FALLBACK ONLY. `vip_reward_catalog` is the price. These values match
+ * the seed in migration 20260825_vip_reward_catalog, so a failed catalog read
+ * shows the right numbers rather than nothing — but the server re-decides the
+ * charge from the reward id either way, so a stale entry here can misinform a
+ * member and can never mischarge one.
+ */
+const FALLBACK_REWARDS: Reward[] = [
   {
     id: 'tournament-elite',
     name: 'Elite Tournament Pass',
@@ -127,7 +158,22 @@ type CategoryFilter = 'all' | 'tournament' | 'avatar' | 'theme' | 'bonus' | 'mer
 
 interface RewardsMarketplaceProps {
   currentPoints: number;
-  onRedeem?: (reward: Reward) => void;
+  /**
+   * Performs the redemption and OWNS THE OUTCOME MESSAGE. It must resolve only
+   * once the server has answered; this component awaits it and says nothing
+   * about success on its own.
+   */
+  onRedeem?: (reward: Reward) => void | Promise<void>;
+}
+
+interface CatalogRow {
+  id: string;
+  name: string;
+  description: string;
+  category: Reward['category'];
+  points_cost: number;
+  stock: number | null;
+  featured: boolean;
 }
 
 export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
@@ -138,6 +184,47 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
   const [activeCategory, setActiveCategory] = useState<CategoryFilter>('all');
   const [sortBy, setSortBy] = useState<SortOption>('popular');
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
+  // A ref, not the state flag: state is invisible to a second handler firing in
+  // the same tick, and this one spends points.
+  const inFlightRef = useRef(false);
+  const [rewards, setRewards] = useState<Reward[] | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+
+  const loadCatalog = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('vip_reward_catalog')
+      .select('id, name, description, category, points_cost, stock, featured')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true });
+    if (error) {
+      // A failed read is not an empty catalog. Show the bundled list and say
+      // it is the bundled list, rather than "No Rewards In This Category Yet".
+      reportError(error, 'RewardsMarketplace.loadCatalog');
+      setRewards(FALLBACK_REWARDS);
+      setLoadFailed(true);
+      return;
+    }
+    const iconById = new Map(FALLBACK_REWARDS.map((r) => [r.id, r.icon]));
+    setRewards(
+      ((data || []) as CatalogRow[]).map((row) => ({
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        category: row.category,
+        pointsCost: Number(row.points_cost),
+        icon: iconById.get(row.id) || '◆',
+        stock: row.stock ?? undefined,
+        featured: row.featured,
+      }))
+    );
+    setLoadFailed(false);
+  }, []);
+
+  useEffect(() => {
+    loadCatalog();
+  }, [loadCatalog]);
+
+  const REWARDS = rewards ?? FALLBACK_REWARDS;
 
   const filteredRewards = useMemo(() => {
     let filtered = REWARDS;
@@ -164,7 +251,7 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
     });
 
     return sorted;
-  }, [activeCategory, sortBy]);
+  }, [REWARDS, activeCategory, sortBy]);
 
   const featuredReward = REWARDS.find((r) => r.featured);
   const categories = [
@@ -193,22 +280,34 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
   ];
 
   const handleRedeem = async (reward: Reward) => {
+    if (inFlightRef.current) return;
     if (currentPoints < reward.pointsCost) {
       toast.error(
-        `You need ${reward.pointsCost - currentPoints} more points to redeem this reward.`
+        `You Need ${(reward.pointsCost - currentPoints).toLocaleString()} More Points To Redeem This Reward.`
       );
       return;
     }
+    if (!onRedeem) {
+      // Nothing can perform the redemption, so nothing may claim it happened.
+      toast.error('Redeeming Is Not Available Right Now.');
+      return;
+    }
 
+    inFlightRef.current = true;
     setRedeemingId(reward.id);
     try {
-      // Simulate redemption delay
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      if (onRedeem) {
-        onRedeem(reward);
-      }
-      toast.success(`Successfully redeemed ${reward.name}!`);
+      // AWAITED, and NO SUCCESS TOAST HERE. The handler talks to the server and
+      // reports what the server said; a second, unconditional "Successfully
+      // redeemed" from this component is how a refusal got announced as a sale.
+      await onRedeem(reward);
+      // The server may have decremented stock or granted the cosmetic, so the
+      // catalog this component is showing is now stale.
+      await loadCatalog();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Redemption Failed');
+      reportError(err, 'RewardsMarketplace.handleRedeem');
     } finally {
+      inFlightRef.current = false;
       setRedeemingId(null);
     }
   };
@@ -315,7 +414,9 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
                 <div className="reward-footer">
                   <div className="reward-meta">
                     <span className="points-cost">{reward.pointsCost.toLocaleString()} Pts</span>
-                    {reward.stock && <span className="stock-badge">{reward.stock} Left</span>}
+                    {reward.stock ? (
+                      <span className="stock-badge">{reward.stock.toLocaleString()} Left</span>
+                    ) : null}
                   </div>
 
                   <button
@@ -338,10 +439,19 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
               )}
             </div>
           ))
+        ) : rewards === null ? (
+          <div className="no-rewards">
+            <span className="no-rewards-icon">◈</span>
+            <p>Loading Rewards...</p>
+          </div>
         ) : (
           <div className="no-rewards">
             <span className="no-rewards-icon">◈</span>
-            <p>No Rewards In This Category Yet</p>
+            {/* A read that failed is a different statement from a category
+                that is empty, and this told the member the second one. */}
+            <p>
+              {loadFailed ? 'Could Not Load Rewards Right Now' : 'No Rewards In This Category Yet'}
+            </p>
           </div>
         )}
       </div>

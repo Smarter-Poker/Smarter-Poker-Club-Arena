@@ -44,6 +44,21 @@ export interface DiamondTransaction {
 // DIAMOND PACKAGES — Available for purchase
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * NOT THE STOREFRONT'S PRICE LIST, AND NOT A ROUTE'S EITHER (Dan 2026-08-25).
+ *
+ * The packages a member can actually buy come from
+ * `/api/club-arena/store-catalog`, which mirrors VALID_DIAMOND_PACKAGES in the
+ * World Hub's create-checkout-session route (micro/small/medium/... at $1-$500).
+ * The ids and prices below — starter/popular/value/premium/elite/whale at
+ * $0.99-$49.99 — match NO route: nothing sells a "Diamond Vault". They were
+ * nevertheless rendered by DiamondTopUpModal until the 2026-08-25 audit, on
+ * buttons that labelled the dollar figure as diamonds.
+ *
+ * They survive only because `purchaseDiamonds` below still takes a package id.
+ * NOTHING IN THE UI CALLS IT. Do not render these to a member: use
+ * `loadStoreCatalog()` from pages/marketplace/marketplaceShared.
+ */
 export const DIAMOND_PACKAGES: DiamondPackage[] = [
   { id: 'starter', name: 'Starter', diamonds: 100, bonusDiamonds: 0, priceUSD: 0.99 },
   {
@@ -243,10 +258,24 @@ export const DiamondService = {
       });
     }
 
-    return {
-      success: data?.success ?? true,
-      newBalance: data?.new_balance,
-    };
+    /**
+     * `data?.success ?? true` (Dan 2026-08-25 audit). A `null` payload with no
+     * PostgREST error — which is exactly what a refusal returning nothing looks
+     * like — resolved to SUCCESS with `newBalance: undefined`. The top-up modal
+     * then toasted "20000 diamonds added" and set the displayed balance to 0.
+     * Nothing was credited and nothing went red.
+     *
+     * A credit is only a credit when the RPC says so AND names the resulting
+     * balance. Anything else is a refusal.
+     */
+    if (!data?.success || data?.new_balance === undefined) {
+      return {
+        success: false,
+        error: (data as { error?: string } | null)?.error || 'Diamond credit was not confirmed',
+      };
+    }
+
+    return { success: true, newBalance: data.new_balance };
   },
 
   /**

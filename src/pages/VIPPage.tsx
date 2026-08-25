@@ -258,22 +258,40 @@ export default function VIPPage() {
         <RewardsMarketplace
           currentPoints={vipPoints.current}
           onRedeem={async (reward: Reward) => {
-            // Real spend: deduct points server-side (validates balance, records the
-            // ledger entry). Only update the UI on success.
+            // Real spend AND a real grant. `p_reward_id` is what makes this
+            // honest: without it the RPC charged whatever `p_cost` the browser
+            // sent (so a 5,000-point pass cost one point) and granted nothing
+            // at all. With it, vip_reward_catalog prices the reward and the
+            // cosmetic lands in theme_unlocks / avatar_unlocks. p_cost is still
+            // sent for the audit trail; the server ignores it for catalog
+            // rewards. Migration 20260825_vip_reward_catalog.
             const { data, error } = await supabase.rpc('fn_redeem_vip_points', {
               p_cost: reward.pointsCost,
               p_reason: `Reward: ${reward.name}`,
+              p_reward_id: reward.id,
             });
+            // Refusals come back as `{ success: false, error }` with NO
+            // postgres error, so both halves must be checked.
             if (error || !data?.success) {
               toast.error(
                 data?.error === 'insufficient_points'
-                  ? 'Not enough VIP points for this reward.'
-                  : 'Redemption failed. Please try again.'
+                  ? 'Not Enough VIP Points For This Reward.'
+                  : data?.error === 'already_owned'
+                    ? 'You Already Own This Reward.'
+                    : data?.error === 'sold_out'
+                      ? 'That Reward Is Sold Out.'
+                      : 'Redemption Failed. Please Try Again.'
               );
               return;
             }
             setVipPoints((prev) => ({ ...prev, current: Number(data.balance ?? prev.current) }));
-            toast.success(`Redeemed: ${reward.name}`);
+            // Say what actually happened: a cosmetic is yours now, a physical
+            // or tournament reward still needs somebody to fulfil it.
+            toast.success(
+              data.status === 'granted'
+                ? `Unlocked: ${reward.name}`
+                : `Claimed: ${reward.name}. Your Club Will Fulfil This.`
+            );
           }}
         />
       )}

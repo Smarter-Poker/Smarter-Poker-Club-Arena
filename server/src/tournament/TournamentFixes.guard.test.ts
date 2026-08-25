@@ -408,3 +408,44 @@ describe('the database agrees with the engine about which table is the game', ()
     expect(OCCUPIED_MIGRATION).toContain('empty_dupes_closed');
   });
 });
+
+describe('a tournament that started and never dealt is rescued whatever its variant', () => {
+  /**
+   * The started-but-never-dealt sweep shipped filtered to ['sng', 'spin'] —
+   * the two variants the outage that prompted it happened to contain — while
+   * its own comment said "no existing sweep covers this state". MTTs were
+   * therefore covered by nothing. Found live 2026-08-25: an 18-player PLO6
+   * Turbo 183 minutes into a RUNNING status with zero hands, and a 499-player
+   * freezeout holding 56 tables and 548 live seats, also with zero hands.
+   * Buy-ins committed, players seated, nothing looking for either of them.
+   */
+  it('does not filter the never-dealt sweep down to seat-first variants', () => {
+    expect(code(GAMESERVER)).not.toContain("in('variant', ['sng', 'spin'])");
+  });
+
+  it('still finds the sweep by the CAS requeue that defines it', () => {
+    // Anchored on the DB effect, not on phrasing: RUNNING -> REGISTERING under
+    // a compare-and-set is the whole mechanism. If this disappears the sweep
+    // has been removed, whatever the surrounding prose says.
+    const src = code(GAMESERVER);
+    expect(src).toContain("const neverDealtCutoff");
+    expect(src).toContain("update({ status: 'REGISTERING' })");
+  });
+
+  it('requeues only once every playing player holds a live seat', () => {
+    // A large MTT seats over several passes. Without this, a game still
+    // mid-seating reads identically to a dead one and gets bounced back
+    // through the start gate for no reason.
+    const src = code(GAMESERVER);
+    expect(src).toContain('const { count: stillPlaying');
+    expect(src).toContain('if (liveSeats < stillPlaying) continue;');
+  });
+
+  it('treats a playing-count it could not read as UNKNOWN, not as settled', () => {
+    // Same rule the finish check holds: an unreadable count must never be
+    // allowed to mean zero, or a failed query silently requeues a live game.
+    expect(code(GAMESERVER)).toContain(
+      'if (playingCountErr || stillPlaying === null || stillPlaying === undefined) continue;'
+    );
+  });
+});

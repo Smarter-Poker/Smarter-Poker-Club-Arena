@@ -493,11 +493,28 @@ export function tournamentMedallions(t: LobbyTournamentRow): RuleMedallion[] {
 // ─── Status derivation ─────────────────────────────────────────────────────
 const STARTING_SOON_MS = 60 * 60 * 1000;
 
-export function cashStatus(t: LobbyTableRow): { key: LobbyStatusKey; label: string } {
+/**
+ * ── THE WAITLIST WAS HALF-BUILT (Dan 2026-08-25) ──────────────────────────
+ *
+ * `'waitlist'` has been in LobbyStatusKey since the lobby was written, with a
+ * badge colour and a row rail in the stylesheet, and NOTHING EVER RETURNED
+ * IT. Meanwhile WaitlistService is complete, the game panel offers Join and
+ * Leave Waitlist, and the page already tracks `waitlistedTableIds` — so a
+ * player could join a waitlist for a full table and the card would keep
+ * saying, flatly, "Full".
+ *
+ * A full table with people waiting is a different proposition from a full
+ * table nobody wants, and the number is the whole reason to join or not. It
+ * is passed in rather than read off the row because it lives in its own
+ * table: the lobby query fetches the counts once, for every table, in one
+ * round trip (see waitlistCountsFor).
+ */
+export function cashStatus(t: LobbyTableRow, waiting = 0): { key: LobbyStatusKey; label: string } {
   const isFull = t.max_players > 0 && t.current_players >= t.max_players;
   const status = String(t.status || '').toLowerCase();
   if (status === 'closed' || status === 'deleted') return { key: 'closed', label: 'Closed' };
   if (status === 'paused') return { key: 'closed', label: 'Paused' };
+  if (isFull && waiting > 0) return { key: 'waitlist', label: `Waitlist ${waiting}` };
   if (isFull) return { key: 'full', label: 'Full' };
   if ((t.current_players || 0) > 0) return { key: 'running', label: 'Running' };
   return { key: 'open', label: 'Open' };
@@ -594,9 +611,9 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
    question the lobby actually asks. */
 
 // ─── Adapters ──────────────────────────────────────────────────────────────
-export function cashEntry(t: LobbyTableRow): LobbyEntry {
+export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
   const v = variantDisplay(t.game_variant);
-  const st = cashStatus(t);
+  const st = cashStatus(t, waiting);
   /* Dan 2026-08-25: the lobby used to print tables.max_buy_in raw, which on 42
      of 46 live tables is 200bb — a ceiling the table's own BuyInModal will not
      sell. cashBuyInRange reports what a player can actually bring. */

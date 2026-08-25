@@ -45,7 +45,13 @@ export async function loadTable(tableId: string) {
 export async function loadSeatedPlayers(tableId: string) {
   const { data: seats, error } = await supabase
     .from('table_seats')
-    .select('user_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining')
+    // is_sitting_out added 2026-08-25 for restart fidelity. The engine WRITES
+    // this column on every sit-out and sit-back and never read it back, so an
+    // engine restart between hands dealt cards to players who had sat out —
+    // while the column, and therefore every client, still said they were out.
+    .select(
+      'user_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining, is_sitting_out'
+    )
     .eq('table_id', tableId)
     .is('left_at', null)
     .order('seat_number', { ascending: true });
@@ -115,6 +121,7 @@ export async function loadSeatedPlayers(tableId: string) {
         horse_profile: profile.horse_profile ?? undefined,
         time_bank_remaining: seat.time_bank_remaining || 0,
         time_bank_uses_remaining: seat.time_bank_uses_remaining || 0,
+        is_sitting_out: seat.is_sitting_out === true,
         avatar_url: profile.avatar_url || '',
       };
     });
@@ -132,31 +139,68 @@ export async function syncStacks(
     time_bank_remaining?: number;
   }[]
 ): Promise<void> {
-  const results = await Promise.allSettled(
-    players.map((player) => {
-      // FIX-231d: Round to 2 decimal places to prevent float-point drift (e.g. 5799.700000000001)
-      const updatePayload: any = { stack: Math.round(player.stack * 100) / 100 };
-      if (player.time_bank_uses_remaining !== undefined) {
-        updatePayload.time_bank_uses_remaining = player.time_bank_uses_remaining;
+  // Dan 2026-08-25, BINDING: "ALL CHIPS ON ALL TABLES MUST STAY EXACTLY THE
+  // SAME" across an engine restart. This function is the ONLY place a hand's
+  // result reaches durable storage, and it had two ways to lose chips silently.
+  //
+  // 1. IT COULD NOT SEE MOST FAILURES. `Promise.allSettled` only reports
+  //    `rejected`, and the supabase client does not REJECT on a database
+  //    error — it RESOLVES with `{ error }`. So an RLS refusal, a constraint
+  //    violation or a stale-seat mismatch counted as a success, and the
+  //    "n/m stack syncs failed" alarm could only ever fire on a network throw.
+  // 2. THERE WAS NO RETRY. One write per player, best effort. If the winner's
+  //    landed and a loser's did not, the table gained chips; the reverse
+  //    destroyed them. A restart straight after made the in-memory truth —
+  //    the only correct copy — unrecoverable.
+  //
+  // Each seat is now retried independently, and a seat that still will not
+  // write is reported by user id rather than as a count.
+  const writeSeat = async (player: (typeof players)[number]): Promise<string | null> => {
+    // FIX-231d: Round to 2 decimal places to prevent float-point drift (e.g. 5799.700000000001)
+    const updatePayload: Record<string, unknown> = {
+      stack: Math.round(player.stack * 100) / 100,
+    };
+    if (player.time_bank_uses_remaining !== undefined) {
+      updatePayload.time_bank_uses_remaining = player.time_bank_uses_remaining;
+    }
+    if (player.time_bank_remaining !== undefined) {
+      updatePayload.time_bank_remaining = player.time_bank_remaining;
+    }
+
+    let lastError = '';
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const { error } = await supabase
+          .from('table_seats')
+          .update(updatePayload)
+          .eq('table_id', tableId)
+          .eq('user_id', player.user_id)
+          .is('left_at', null);
+        if (!error) return null;
+        lastError = error.message ?? String(error);
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
       }
-      if (player.time_bank_remaining !== undefined) {
-        updatePayload.time_bank_remaining = player.time_bank_remaining;
-      }
-      return supabase
-        .from('table_seats')
-        .update(updatePayload)
-        .eq('table_id', tableId)
-        .eq('user_id', player.user_id)
-        .is('left_at', null);
-    })
+      // Short, bounded backoff. Settlement is already past the point where the
+      // hand can be undone, so this must finish rather than run forever.
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 150 * attempt));
+    }
+    return `${player.user_id}: ${lastError}`;
+  };
+
+  const failures = (await Promise.all(players.map(writeSeat))).filter(
+    (f): f is string => f !== null
   );
-  const failures = results.filter((r) => r.status === 'rejected');
+
   if (failures.length > 0) {
+    // Chips are now provably wrong for these seats, and the correct value only
+    // exists in a process that may be about to exit. Name the seats.
     reportError(
       new Error(
-        `[DB] ${failures.length}/${players.length} stack syncs failed for table ${tableId}`
+        `[DB] ${failures.length}/${players.length} stack syncs failed for table ${tableId} ` +
+          `after 3 attempts each — ${failures.join('; ')}`
       ),
-      'DB.failureslengthplayerslength_st'
+      'DB.sync_stacks_failed'
     );
   }
 }

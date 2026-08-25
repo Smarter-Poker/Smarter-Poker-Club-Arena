@@ -18,6 +18,7 @@ import type {
   BettingState,
   RakeConfig,
   Winner,
+  PerPotAward,
 } from '../types.js';
 
 import { secureShuffle } from './CryptoRandom.js';
@@ -493,7 +494,13 @@ export function evaluateOmahaLowHand(
   return bestLow;
 }
 
-function compareLowHands(a: number[], b: number[]): number {
+/**
+ * SHOWDOWN POLISH 2026-08-25 (hygiene): exported so HandController's muck
+ * rules compare lows with the SAME comparator that awards the low half —
+ * the duplicated local copy was a drift risk between "who may muck" and
+ * "who gets paid". Lower is better; lexicographic on sorted-desc rank arrays.
+ */
+export function compareLowHands(a: number[], b: number[]): number {
   for (let i = 0; i < 5; i++) {
     if (a[i] !== b[i]) return a[i] - b[i];
   }
@@ -880,13 +887,31 @@ export function determineWinners(
   communityCards: Card[],
   pots: Pot[],
   gameVariant: string = 'nlh',
-  dealerSeat: number = 0
+  dealerSeat: number = 0,
+  /**
+   * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): optional collector for the
+   * UNMERGED per-pot(-half) award breakdown. The returned Winner[] stays
+   * merged per user — that is the settlement contract and every consumer of
+   * money depends on it — but the merge erases which pot each share came
+   * from, which is exactly what the award-sequence presentation and the
+   * HIGH/LOW winner labels need. Callers that pass an array get one entry
+   * per (pot, half, winner): potIndex, low flag, the exact share of THAT
+   * pot, and the evaluated hand that won it. Presentation-only data; the
+   * amounts are pre-rake shares.
+   */
+  perPotOut?: PerPotAward[]
 ): Winner[] {
   const winners: Winner[] = [];
   const activePlayers = players.filter((p) => !p.is_folded);
 
   if (activePlayers.length === 1) {
     const totalPot = pots.reduce((sum, p) => sum + p.amount, 0);
+    perPotOut?.push({
+      userId: activePlayers[0].user_id,
+      potIndex: 0,
+      low: false,
+      amount: totalPot,
+    });
     return [{ userId: activePlayers[0].user_id, amount: totalPot, potIndex: 0 }];
   }
 
@@ -939,7 +964,7 @@ export function determineWinners(
     );
     // Bible V8 §2.7: Pass potIndex so Winner objects know which pot they won from
     // FIX 226: Pass dealerSeat so odd chip goes clockwise from dealer (not seat 0)
-    distributePot(winners, hiWinners, hiPotAmount, 'High', potIdx, dealerSeat);
+    distributePot(winners, hiWinners, hiPotAmount, 'High', potIdx, dealerSeat, perPotOut);
 
     // Low half
     if (loPotAmount > 0) {
@@ -948,7 +973,7 @@ export function determineWinners(
       const loWinners = qualifyingLowPlayers.filter(
         (ph) => JSON.stringify(ph.lowHand!.kickers) === JSON.stringify(bestLoKickers)
       );
-      distributePot(winners, loWinners, loPotAmount, 'Low', potIdx, dealerSeat);
+      distributePot(winners, loWinners, loPotAmount, 'Low', potIdx, dealerSeat, perPotOut);
     }
   }
 
@@ -964,9 +989,10 @@ function distributePot(
   globalWinners: Winner[],
   roundWinners: { player: SeatPlayer; hand: EvaluatedHand; lowHand?: EvaluatedHand | null }[],
   amount: number,
-  _type: 'High' | 'Low',
+  half: 'High' | 'Low',
   potIndex: number = 0,
-  dealerSeat: number = 0
+  dealerSeat: number = 0,
+  perPotOut?: PerPotAward[]
 ): void {
   // FIX 179: Math.round prevents IEEE 754 truncation (e.g. 0.51*100 = 50.999... → 51)
   const totalCents = Math.round(amount * 100);
@@ -996,6 +1022,16 @@ function distributePot(
   sortedWinners.forEach((pw, i) => {
     const existing = globalWinners.find((w) => w.userId === pw.player.user_id);
     const winAmt = (shareCents + (i < remainderCents ? 1 : 0)) / 100;
+    // SHOWDOWN POLISH 2026-08-25: the unmerged per-pot(-half) record. For the
+    // low half the winning "hand" is the qualifying low, whose name is its
+    // own description ("Low: 8-6-4-3-2").
+    perPotOut?.push({
+      userId: pw.player.user_id,
+      potIndex,
+      low: half === 'Low',
+      amount: winAmt,
+      hand: half === 'Low' ? (pw.lowHand ?? undefined) : pw.hand,
+    });
     if (existing) {
       existing.amount += winAmt;
     } else {

@@ -133,7 +133,10 @@ describe('follow-up: pots are AWARDED as a sequence (spec 16/19)', () => {
 describe('follow-up: the stack rises only when the pot arrives (spec 21)', () => {
   it('winner seats hold stack minus the pending share until release', () => {
     expect(TABLE_PAGE).toMatch(/stackHoldReleased/);
-    expect(TABLE_PAGE).toMatch(/stack: Math\.max\(0, displayPlayer\.stack - pendingWin\.amount\)/);
+    // SHOWDOWN POLISH 2026-08-25: the hold arithmetic moved to the pure,
+    // unit-tested pendingStackHold (lib/showdownPresentation).
+    expect(TABLE_PAGE).toMatch(/pendingStackHold\(/);
+    expect(TABLE_PAGE).toMatch(/stack: Math\.max\(0, displayPlayer\.stack - held\)/);
   });
 
   it('the hold is released by the POT_WIN timer and re-armed at HAND_STARTED', () => {
@@ -218,5 +221,106 @@ describe('audit: engine muck rules cover the cases the review found', () => {
     expect(CONTROLLER).toMatch(/bestShownLo2/);
     expect(CONTROLLER).toMatch(/lowByUser2/);
     expect(CONTROLLER).toMatch(/evaluateOmahaLowHand\(r\.cards, this\.state\.communityCards2\)/);
+  });
+});
+
+/**
+ * SHOWDOWN POLISH 2026-08-25 — wire pins for the full enhancement batch:
+ * per-pot awards, RIT parity, hi-lo labels, invariant guard, persistence,
+ * event ordering, and observability.
+ */
+describe('polish: per-pot awards ride the wire end to end (spec 16/19/33)', () => {
+  const CONTROLLER = strip(read('server/src/engine/HandController.ts'));
+  const POKER = strip(read('server/src/engine/PokerEngine.ts'));
+
+  it('the engine collects an UNMERGED per-pot breakdown alongside the merged winners', () => {
+    expect(POKER).toMatch(/perPotOut\?: PerPotAward\[\]/);
+    expect(CONTROLLER).toMatch(/pendingPerPotAwards/);
+    expect(CONTROLLER).toMatch(/perPotAwards: scaledPerPot/);
+  });
+
+  it('pot_win carries ordered pot_awards groups and the client sequences from them', () => {
+    expect(EVENTS).toMatch(/pot_awards: this\.buildPotAwardGroups\(\)/);
+    expect(TABLE_PAGE).toMatch(/buildAwardGroups\(/);
+    expect(TABLE_PAGE).toMatch(/boardLabelFromAwards\(/);
+  });
+
+  it('the hi-lo LOW WINNER line renders above the board', () => {
+    expect(TABLE_PAGE).toMatch(/lowWinnerLabel/);
+    expect(BOARD).toMatch(/community-cards__low-winner/);
+    expect(BOARD_CSS).toMatch(/\.community-cards__low-winner/);
+  });
+});
+
+describe('polish: RIT hands get the same showdown presentation', () => {
+  const RUNOUT = strip(read('server/src/engine/ServerTableEngineRunout.ts'));
+
+  it('the RIT path emits the showdown event with reveal metadata', () => {
+    const at = RUNOUT.indexOf('dealAndResolveRIT');
+    expect(at).toBeGreaterThan(-1);
+    const body = RUNOUT.slice(at);
+    expect(body).toMatch(/type: 'showdown'/);
+    expect(body).toMatch(/reveal_order/);
+    expect(body).toMatch(/describeHand\(/);
+  });
+});
+
+describe('polish: the mucked-winner invariant is guarded per hand', () => {
+  const SETTLE = strip(read('server/src/engine/ServerTableEngineSettlement.ts'));
+
+  it('a paid-but-hidden winner raises a critical financial alert', () => {
+    expect(SETTLE).toMatch(/mucked_winner_invariant/);
+    expect(SETTLE).toMatch(/paidButHidden/);
+  });
+
+  it('the reveal record is persisted to hand_history.showdown', () => {
+    expect(SETTLE).toMatch(/showdownReveal/);
+    const HH = strip(read('server/src/services/supabase/handHistory.ts'));
+    expect(HH).toMatch(/showdown: params\.showdownReveal/);
+  });
+
+  it('muck-rate metrics exist and are incremented at showdown', () => {
+    const METRICS = strip(read('server/src/observability/engineInstruments.ts'));
+    expect(METRICS).toMatch(/poker_showdown_hands_total/);
+    expect(METRICS).toMatch(/poker_mucked_hands_total/);
+    expect(EVENTS).toMatch(/showdownHandsTotal\.inc/);
+    expect(EVENTS).toMatch(/muckedHandsTotal\.inc/);
+  });
+});
+
+describe('polish: deterministic event ordering + consumed reveal event', () => {
+  it('hub EVENTs carry a per-table seq', () => {
+    const HUB = strip(read('server/src/transport/TableStateHub.ts'));
+    expect(HUB).toMatch(/eventSeqs/);
+    expect(HUB).toMatch(/type: 'EVENT', tableId, seq, payload/);
+  });
+
+  it('a state frame requeues behind pending events (the reveal race fix)', () => {
+    const ESC = strip(read('src/services/EngineStateClient.ts'));
+    expect(ESC).toMatch(/pendingEvents/);
+    const requeues = ESC.match(/setTimeout\(\(\) => this\.handleMessage\(msg\), 0\);/g) || [];
+    expect(requeues.length).toBe(2); // SNAPSHOT and DELTA
+  });
+
+  it('showdown_cards_revealed is consumed as reveal reconciliation', () => {
+    expect(TABLE_PAGE).toMatch(/case 'SHOWDOWN_CARDS_REVEALED'/);
+    expect(TABLE_PAGE).toMatch(/mucked_players/);
+  });
+});
+
+describe('polish: rank-aware cue and replay reveal record', () => {
+  it('quads-or-better at reveal gets the big-win fanfare, muck-safe', () => {
+    const at = TABLE_PAGE.indexOf("case 'SHOWDOWN'");
+    const body = TABLE_PAGE.slice(at, at + 4000);
+    expect(body).toMatch(/hand_ranking \?\? 0\) >= 8/);
+    expect(body).toMatch(/playBigWin\(\)/);
+  });
+
+  it('replays surface the persisted reveal record — order, muck, description', () => {
+    const HHS = strip(read('src/services/HandHistoryService.ts'));
+    expect(HHS).toMatch(/showdown_reveal/);
+    const REPLAY = strip(read('src/components/replay/HandReplay.tsx'));
+    expect(REPLAY).toMatch(/showdown_reveal/);
+    expect(REPLAY).toMatch(/player-hand-ranking--mucked/);
   });
 });

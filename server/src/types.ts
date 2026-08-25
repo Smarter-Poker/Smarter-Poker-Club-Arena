@@ -215,6 +215,12 @@ export interface SeatedPlayer {
   horse_profile?: string | Record<string, unknown>;
   time_bank_remaining?: number;
   time_bank_uses_remaining?: number;
+  /**
+   * Persisted sit-out flag from `table_seats`. Restart fidelity, 2026-08-25:
+   * the engine writes this column and, until now, never read it — so a restart
+   * between hands dealt cards to a player who had sat out.
+   */
+  is_sitting_out?: boolean;
   /** Bible V8 §2.3: Player avatar for broadcast */
   avatar_url?: string;
   /** Bible V8 §4.2: Player returning from sit-out must post dead blind */
@@ -385,6 +391,13 @@ export type HandEvent =
        * with a straight". Only present on double-board hands.
        */
       winnersByBoard?: Array<{ board: 1 | 2; userId: string; amount: number; handName?: string }>;
+      /**
+       * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the unmerged per-pot(-half)
+       * award breakdown — see PerPotAward. Amounts are pre-rake shares; the
+       * engine layer scales them proportionally for display before emitting
+       * pot_win's pot_awards groups.
+       */
+      perPotAwards?: PerPotAward[];
     }
   | { type: 'UNCALLED_BET_RETURNED'; seat: number; userId: string; amount: number }
   /**
@@ -502,6 +515,24 @@ export interface Winner {
   /** Bible V8 §2.7: Which pot (0 = main, 1+ = side pots) this win came from */
   potIndex?: number;
   hand?: EvaluatedHand;
+}
+
+/**
+ * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): one UNMERGED award record per
+ * (pot, hi/lo half, winner). Winner[] merges a player's shares across pots —
+ * the settlement contract — but the presentation layer needs to know which
+ * pot each share came from to sequence "main pot… then side pot 1…" and to
+ * label HIGH vs LOW winners on hi-lo boards. Amounts are exact pre-rake
+ * shares of the named pot(-half); board is set on double-board hands.
+ * Presentation data only — never used to move money.
+ */
+export interface PerPotAward {
+  userId: string;
+  potIndex: number;
+  low: boolean;
+  amount: number;
+  hand?: EvaluatedHand;
+  board?: 1 | 2;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

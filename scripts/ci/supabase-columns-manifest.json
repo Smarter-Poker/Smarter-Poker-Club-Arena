@@ -4767,7 +4767,8 @@
       "button_seat",
       "has_human",
       "community_cards2",
-      "pots"
+      "pots",
+      "showdown"
     ],
     "hand_players": [
       "id",
@@ -9479,7 +9480,8 @@
       "mystery_bounty_stage",
       "mystery_bounty_activated_at",
       "mystery_bounty_activated_players",
-      "mystery_bounty_pool_cents"
+      "mystery_bounty_pool_cents",
+      "allow_rabbit_hunt"
     ],
     "tours_due_for_refresh": [
       "tour_code",
@@ -11412,17 +11414,6 @@
       "feature",
       "month",
       "usage_count",
-      "updated_at"
-    ],
-    "vip_monthly_usage": [
-      "id",
-      "user_id",
-      "month",
-      "hands_played",
-      "tournaments_entered",
-      "rake_contributed",
-      "vip_points_earned",
-      "created_at",
       "updated_at"
     ],
     "vip_points": [

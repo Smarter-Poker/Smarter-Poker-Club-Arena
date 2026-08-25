@@ -63,6 +63,7 @@ interface Harness {
   actSeat: (seat: number, action: string, amount?: number) => boolean;
   setHole: (seatNum: number, cards: Card[]) => void;
   setBoard: (cards: Card[]) => void;
+  setBoard2: (cards: Card[]) => void;
   showdown: () => ShowdownResult[];
   winners: () => Array<{ userId: string; amount: number; potIndex?: number }>;
 }
@@ -86,6 +87,10 @@ function harness(config: HandConfig, players: SeatPlayer[], dealerSeat: number):
     setBoard: (cards: Card[]) => {
       st().communityCards.length = 0;
       st().communityCards.push(...cards);
+    },
+    setBoard2: (cards: Card[]) => {
+      st().communityCards2.length = 0;
+      st().communityCards2.push(...cards);
     },
     showdown: () => {
       const ev = events.find((e) => e.type === 'SHOWDOWN') as
@@ -374,6 +379,158 @@ describe('MULTIWAY ordering, muck, side pots (spec sections 3, 5, 10, 11)', () =
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────
+describe('DOUBLE-BOARD HI-LO muck rules (audit fix: board-2 low half)', () => {
+  it('a hand winning ONLY board-2 low is auto-tabled and paid; a true loser mucks', () => {
+    // plo8 double-board bomb pot, 3-handed, dealer seat 1. Bomb pots ante
+    // and deal straight to the flop; postflop order is 2, 3, 1.
+    //   Seat 2 (shows first when the river checks through): board-1 broadway,
+    //          board-2 nut flush, no qualifying low.
+    //   Seat 3 (THE FIX): loses both boards high, but holds board-2 nut low
+    //          (5-4-3-2-A). Pre-fix it was ruled muckable and then PAID.
+    //   Seat 1: beaten everywhere, worse low - may muck.
+    const h = harness(
+      mkConfig({ gameVariant: 'plo8', bombPot: { anteMultiplier: 1, doubleBoard: true } }),
+      mkPlayers([200, 200, 200]),
+      1
+    );
+    h.hc.start();
+    expect(h.st().stage).toBe('flop'); // bomb pot skips preflop betting
+    for (const street of ['flop', 'turn'] as const) {
+      expect(h.st().stage).toBe(street);
+      h.actSeat(2, 'check');
+      h.actSeat(3, 'check');
+      h.actSeat(1, 'check');
+    }
+    h.setBoard([
+      c('9', 'clubs'),
+      c('T', 'spades'),
+      c('J', 'clubs'),
+      c('Q', 'diamonds'),
+      c('K', 'diamonds'),
+    ]);
+    h.setBoard2([
+      c('A', 'hearts'),
+      c('2', 'hearts'),
+      c('3', 'hearts'),
+      c('K', 'hearts'),
+      c('Q', 'clubs'),
+    ]);
+    h.setHole(2, [c('A', 'spades'), c('K', 'clubs'), c('J', 'hearts'), c('T', 'hearts')]);
+    h.setHole(3, [c('4', 'diamonds'), c('5', 'diamonds'), c('9', 'hearts'), c('8', 'spades')]);
+    h.setHole(1, [c('2', 'clubs'), c('2', 'diamonds'), c('6', 'spades'), c('7', 'clubs')]);
+    h.actSeat(2, 'check');
+    h.actSeat(3, 'check');
+    h.actSeat(1, 'check'); // river checks through -> showdown
+
+    const results = h.showdown();
+    expect(results.map((r) => r.seat)).toEqual([2, 3, 1]);
+    const bySeat = new Map(results.map((r) => [r.seat, r]));
+    expect(bySeat.get(2)!.mucked).toBe(false); // wins both highs
+    // THE FIX: seat 3 wins nothing but board-2's low quarter - it must be
+    // auto-tabled, never mucked, and it must be paid.
+    expect(bySeat.get(3)!.mucked).toBe(false);
+    expect(bySeat.get(1)!.mucked).toBe(true); // wins nothing anywhere
+
+    const wins = h.winners();
+    const w3 = wins.find((w) => w.userId === 'u3');
+    expect(w3).toBeTruthy();
+    expect(w3!.amount).toBeGreaterThan(0);
+    expect(wins.some((w) => w.userId === 'u1')).toBe(false); // mucked hand never paid
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+describe('PER-POT AWARD BREAKDOWN (spec 16/19/33)', () => {
+  it('WINNERS carries unmerged per-pot awards: same user, separate pots, exact shares', () => {
+    // A (short, all-in preflop) wins the MAIN pot; B wins the side pot; the
+    // merged winners[] keeps one entry per user, but perPotAwards must name
+    // each pot separately with that pot's own share.
+    const h = harness(mkConfig(), mkPlayers([200, 20, 200]), 1);
+    h.hc.start();
+    h.actSeat(1, 'call');
+    h.actSeat(2, 'all_in');
+    h.actSeat(3, 'call');
+    h.actSeat(1, 'call');
+    for (const street of ['flop', 'turn'] as const) {
+      expect(h.st().stage).toBe(street);
+      h.actSeat(3, 'check');
+      h.actSeat(1, 'check');
+    }
+    h.actSeat(3, 'bet', 10);
+    h.setBoard(DRY_BOARD);
+    h.setHole(2, [c('A', 'spades'), c('A', 'diamonds')]); // A: aces - main pot
+    h.setHole(3, [c('K', 'hearts'), c('J', 'diamonds')]); // B: kings - side pot
+    h.setHole(1, [c('Q', 'hearts'), c('J', 'clubs')]); // C: queens - nothing
+    h.actSeat(1, 'call');
+
+    const ev = h.events.find((e) => e.type === 'WINNERS') as any;
+    const perPot = (ev?.perPotAwards ?? []) as Array<{
+      userId: string;
+      potIndex: number;
+      low: boolean;
+      amount: number;
+    }>;
+    expect(perPot.length).toBeGreaterThanOrEqual(2);
+    const mainAward = perPot.find((a) => a.potIndex === 0);
+    const sideAward = perPot.find((a) => a.potIndex === 1);
+    expect(mainAward?.userId).toBe('u2');
+    expect(sideAward?.userId).toBe('u3');
+    expect(mainAward!.amount).toBeGreaterThan(0);
+    expect(sideAward!.amount).toBeGreaterThan(0);
+    // Each award names ONE pot's share; a user's awards sum (within rounding
+    // cents) to their merged winners[] amount.
+    const wins = h.winners();
+    for (const uid of ['u2', 'u3']) {
+      const merged = wins.find((w) => w.userId === uid)?.amount ?? 0;
+      const summed = perPot.filter((a) => a.userId === uid).reduce((sum, a) => sum + a.amount, 0);
+      expect(Math.abs(summed - merged)).toBeLessThanOrEqual(0.02);
+    }
+  });
+
+  it('hi-lo split: the low half is its own award with low=true and the self-describing name', () => {
+    const h = harness(mkConfig({ gameVariant: 'plo8' }), mkPlayers([200, 200]), 1);
+    h.hc.start();
+    h.actSeat(1, 'call');
+    h.actSeat(2, 'check');
+    for (const street of ['flop', 'turn'] as const) {
+      expect(h.st().stage).toBe(street);
+      h.actSeat(2, 'check');
+      h.actSeat(1, 'check');
+    }
+    h.setBoard([
+      c('A', 'hearts'),
+      c('2', 'hearts'),
+      c('3', 'hearts'),
+      c('K', 'spades'),
+      c('9', 'diamonds'),
+    ]);
+    // Seat 1: ace-high flush (hi — beats seat 2's wheel straight). Seat 2:
+    // nut low 5-4-3-2-A, whose straight loses the high half to the flush.
+    h.setHole(1, [c('Q', 'hearts'), c('J', 'hearts'), c('T', 'spades'), c('9', 'spades')]);
+    h.setHole(2, [c('4', 'spades'), c('5', 'clubs'), c('Q', 'diamonds'), c('T', 'clubs')]);
+    h.actSeat(2, 'check');
+    h.actSeat(1, 'check');
+
+    const ev = h.events.find((e) => e.type === 'WINNERS') as any;
+    const perPot = (ev?.perPotAwards ?? []) as Array<{
+      userId: string;
+      potIndex: number;
+      low: boolean;
+      amount: number;
+      hand?: { name?: string };
+    }>;
+    const hi = perPot.find((a) => !a.low);
+    const lo = perPot.find((a) => a.low);
+    expect(hi?.userId).toBe('u1');
+    expect(lo?.userId).toBe('u2');
+    expect(lo?.hand?.name ?? '').toMatch(/^Low: /);
+    // Both hands must be shown - a lo-only winner can never be mucked.
+    const results = h.showdown();
+    for (const r of results) expect(r.mucked).toBe(false);
+  });
+});
+
 describe('HAND DESCRIPTIONS (spec section 14) — engine-generated, never hard-coded', () => {
   const evalCards = (hole: Card[], board: Card[]) => evaluateHand(hole, board);
 

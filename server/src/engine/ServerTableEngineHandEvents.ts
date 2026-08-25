@@ -8,6 +8,7 @@
  * declarations for the hooks each layer calls on the layer below.
  */
 
+import * as EngineMetrics from '../observability/engineInstruments.js';
 import { HandController } from './HandController.js';
 import type { Street as ShadowStreet } from './eventlog/events.js';
 import { logHandHistory } from '../services/supabase.js';
@@ -17,6 +18,83 @@ import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { ServerTableEngineSettlement } from './ServerTableEngineSettlement.js';
 
 export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettlement {
+  /**
+   * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): fold the unmerged per-pot
+   * awards into ORDERED display groups for pot_win — board 1 before board 2,
+   * main pot before side pots, the high half before the low half. Each group
+   * carries its winners with the exact post-rake share of that pot(-half),
+   * plus the hand identity that won it (for a low, the qualifying low's own
+   * self-describing name). Presentation data only; a failure here must never
+   * break the payout event, so the whole build is fenced.
+   */
+  protected buildPotAwardGroups(): Array<{
+    pot_index: number;
+    board: 1 | 2;
+    low: boolean;
+    winners: Array<{
+      user_id: string;
+      amount: number;
+      hand_name: string;
+      hand_description: string;
+      hole_card_indices: number[];
+    }>;
+  }> {
+    try {
+      const awards = this.currentHandPerPotAwards;
+      if (!awards || awards.length === 0) return [];
+      const keyOf = (a: (typeof awards)[number]) =>
+        `${a.board ?? 1}|${a.potIndex}|${a.low ? 1 : 0}`;
+      const groups = new Map<string, typeof awards>();
+      for (const a of awards) {
+        const k = keyOf(a);
+        const g = groups.get(k);
+        if (g) g.push(a);
+        else groups.set(k, [a]);
+      }
+      const orderedKeys = [...groups.keys()].sort((x, y) => {
+        const [bx, px, lx] = x.split('|').map(Number);
+        const [by, py, ly] = y.split('|').map(Number);
+        if (bx !== by) return bx - by;
+        if (px !== py) return px - py;
+        return lx - ly;
+      });
+      return orderedKeys.map((k) => {
+        const g = groups.get(k)!;
+        const [board, potIndex, low] = k.split('|').map(Number);
+        return {
+          pot_index: potIndex,
+          board: (board === 2 ? 2 : 1) as 1 | 2,
+          low: low === 1,
+          winners: g.map((a) => {
+            const sd = this.currentHandShowdownResults.find((r) => r.userId === a.userId);
+            const holeIndices: number[] = [];
+            try {
+              const cards = a.hand?.cards;
+              if (sd && Array.isArray(cards)) {
+                const used = new Set(cards.map((c) => `${c?.rank}${c?.suit}`));
+                (sd.holeCards ?? []).forEach((c, i) => {
+                  if (used.has(`${c?.rank}${c?.suit}`)) holeIndices.push(i);
+                });
+              }
+            } catch {
+              /* decoration only */
+            }
+            return {
+              user_id: a.userId,
+              amount: a.amount,
+              // A low hand's name IS its description ("Low: 8-6-4-3-2").
+              hand_name: a.hand?.name ?? '',
+              hand_description: a.low ? (a.hand?.name ?? '') : (sd?.handDescription ?? ''),
+              hole_card_indices: holeIndices,
+            };
+          }),
+        };
+      });
+    } catch {
+      // Never let the display breakdown break pot_win.
+      return [];
+    }
+  }
   protected async handleHandEvent(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
     switch (event.type) {
       case 'HAND_START':
@@ -494,6 +572,19 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           mucked: r.mucked === true,
           handDescription: r.handDescription ?? '',
         }));
+        // SHOWDOWN POLISH 2026-08-25: muck-rate observability. If a future
+        // change silently kills mucking, this pair flatlines against each
+        // other — no DB sampling needed to notice. Metrics must never affect
+        // gameplay, hence the fence.
+        try {
+          EngineMetrics.showdownHandsTotal.inc(1, { table_id: this.tableId });
+          const muckedCount = this.currentHandShowdownResults.filter((r) => r.mucked).length;
+          if (muckedCount > 0) {
+            EngineMetrics.muckedHandsTotal.inc(muckedCount, { table_id: this.tableId });
+          }
+        } catch {
+          /* metrics must never affect gameplay */
+        }
         // 2026-04-16 fix: Emit discrete showdown event so the client can
         // trigger showdown sound + card reveal animations (Bible V8 §4.6).
         // Previously only broadcastCurrentState was called, which sends a
@@ -595,6 +686,12 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // the merged winners so pot_win can tell the client which board each
         // winner took and with what hand.
         this.currentHandWinnersByBoard = (event as any).winnersByBoard ?? [];
+        // SHOWDOWN POLISH 2026-08-25: the unmerged per-pot(-half) breakdown.
+        // Gated on hasWinners for the same reason the winner state is (the
+        // empty WINNERS emit on the RIT path must not wipe pre-set state).
+        if (hasWinners) {
+          this.currentHandPerPotAwards = (event as any).perPotAwards ?? [];
+        }
         if (hasWinners) {
           this.currentHandWinnerIds = (event.winners || []).map(
             (w: any) => w.userId || w.user_id || ''
@@ -856,6 +953,16 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
               amount: w.amount,
               hand_name: w.handName,
             })),
+            // SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the UNMERGED award
+            // groups, one per (board, pot, hi/lo half), in award order — main
+            // pot's high half first, its low half second, then each side pot,
+            // then board 2. Each group carries its own winners with the EXACT
+            // share of that pot(-half), post-rake-scaled — so the client can
+            // finally play "A takes the main… C takes the side" as separate
+            // beats even when one player appears in several groups, and can
+            // label HIGH vs LOW winners on hi-lo boards. The flat winners[]
+            // above stays authoritative for totals.
+            pot_awards: this.buildPotAwardGroups(),
           });
 
           // Phase X5 (2026-04-29) — Bible V8 §1.16 pot_distributed companion

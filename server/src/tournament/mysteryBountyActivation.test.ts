@@ -38,12 +38,44 @@ const base: MysteryBountyActivationInputs = {
 };
 
 describe('mystery bounty activation predicate', () => {
-  // TEST 13 — the happy path, and the chest count that comes out of it.
-  it('opens at the money, with one chest per surviving player', () => {
+  /* TEST 13 — the happy path, and the chest count that comes out of it.
+
+     CORRECTED 2026-08-25. This asserted 27 chests for 27 survivors, which is
+     the shape the first build shipped and is NOT what the spec says. Section
+     8, verbatim: "Number Of Mystery Bounty Draws = Players Remaining At
+     Mystery Bounty Activation - 1 ... Do not generate an unused bounty for the
+     eventual winner." One chest per ELIMINATION still to happen, not one per
+     player standing. */
+  it('opens at the money, with one chest per elimination still to come', () => {
     const d = shouldActivateMysteryBounty(base);
     expect(d.activate).toBe(true);
     expect(d.reason).toBeNull();
-    expect(d.drawCount).toBe(27);
+    expect(d.drawCount).toBe(26);
+  });
+
+  // Dan's worked example, section 8: 150 remaining generates 149 draws.
+  it("matches the spec's own worked example: 150 remaining, 149 draws", () => {
+    const d = shouldActivateMysteryBounty({
+      ...base,
+      playersRemaining: 150,
+      totalEntries: 1000,
+      paidPlaces: 150,
+    });
+    expect(d.activate).toBe(true);
+    expect(d.drawCount).toBe(149);
+  });
+
+  // With N-1 chests there is nothing left to generate once the champion is the
+  // only player standing, and a heads-up field asks for exactly one chest.
+  it('refuses a field of one, and funds a heads-up field with a single chest', () => {
+    expect(shouldActivateMysteryBounty({ ...base, playersRemaining: 1 }).reason).toBe('no_players');
+    const heads = shouldActivateMysteryBounty({
+      ...base,
+      playersRemaining: 2,
+      paidPlaces: 2,
+    });
+    expect(heads.activate).toBe(true);
+    expect(heads.drawCount).toBe(1);
   });
 
   // TEST 14 — (a). The single most expensive mistake available here: a pool

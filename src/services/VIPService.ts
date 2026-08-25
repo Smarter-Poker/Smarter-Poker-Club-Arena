@@ -83,10 +83,21 @@ export const VIP_GOLD_LIMITS = {
 // number printed from this table is a CLAIM about a charge decided elsewhere,
 // and on 2026-08-25 four of the ten were false against production:
 //
-//   rabbit_hunt         advertised 5, charged 1
+//   rabbit_hunt         advertised 5, charged 1   <- see below, resolved the
+//                                                     OTHER way on 2026-08-25
 //   show_stack_bb       advertised 0 and labelled "(FREE)", charged 5
 //   offline_protection  advertised 0 and labelled "1 free per session", charged 10
 //   tag_pack            advertised per_use, actually written `permanent`
+//
+// RABBIT HUNT WAS RECONCILED DOWNWARDS AND SHOULD NOT HAVE BEEN. Matching the
+// client to `feature_pricing` is the right instinct and was right for the other
+// three, but the DB is only the authority on what IS charged, not on what the
+// price is SUPPOSED to be. Dan, 2026-08-25: "vip members get 100 rabbit hunts a
+// month for free, and they COST 5 DIAMONDS EACH after that." The 1 in the row
+// was a January seed that had never matched the product, and it went unnoticed
+// because until that day nothing read the row and nothing charged for a hunt at
+// all. The row is 5 now (20260825_rabbit_hunt_costs_five_diamonds) and this
+// constant follows it back up.
 //
 // Two of those told a player a feature was FREE and then debited them. The
 // values below now match `feature_pricing` exactly, and `loadFeaturePricing()`
@@ -106,7 +117,7 @@ export interface FeaturePrice {
 }
 
 export const FEATURE_PRICING: Record<VIPFeature, FeaturePrice> = {
-  rabbit_hunt: { cost: 1, usageType: 'per_use', description: 'See what cards would have come' },
+  rabbit_hunt: { cost: 5, usageType: 'per_use', description: 'See the cards that would have come' },
   show_stack_bb: {
     cost: 5,
     usageType: 'per_session',

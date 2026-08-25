@@ -59,7 +59,10 @@ const PRODUCTION_PRICES: Record<string, { cost: number; usageType: string }> = {
   club_creation: { cost: 100, usageType: 'permanent' },
   emoji_pack: { cost: 1, usageType: 'permanent' },
   offline_protection: { cost: 10, usageType: 'per_session' },
-  rabbit_hunt: { cost: 1, usageType: 'per_use' },
+  // 5 since 20260825_rabbit_hunt_costs_five_diamonds. The row had said 1 since a
+  // January seed; nothing read it, so nothing caught that it never matched the
+  // stated price of the product.
+  rabbit_hunt: { cost: 5, usageType: 'per_use' },
   show_stack_bb: { cost: 5, usageType: 'per_session' },
   tag_pack: { cost: 1, usageType: 'permanent' },
   theme_unlock: { cost: 25, usageType: 'permanent' },
@@ -173,7 +176,7 @@ describe('loadFeaturePricing', () => {
   it('treats an empty result as "could not tell", not "nothing is for sale"', async () => {
     pricingTable({ data: [], error: null });
     await loadFeaturePricing(true);
-    expect(FEATURE_PRICING.rabbit_hunt.cost).toBe(1);
+    expect(FEATURE_PRICING.rabbit_hunt.cost).toBe(5);
     expect(isPurchasable('rabbit_hunt')).toBe(true);
     // And it must not shout that the entire catalogue was withdrawn. Without
     // the early return the loop reports all ten features as "not for sale" and

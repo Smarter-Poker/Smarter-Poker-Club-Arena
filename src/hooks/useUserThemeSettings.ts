@@ -157,7 +157,14 @@ export function useUserThemeSettings(
       if (!THEME_FIELDS.some((f) => f in selection)) return;
       // A change saved against "ALL" applies everywhere; a per-game-type
       // change only applies to that type.
-      if (savedFor && savedFor !== 'ALL' && savedFor !== gameType) return;
+      if (
+        savedFor &&
+        savedFor !== 'ALL' &&
+        savedFor !== gameType &&
+        getThemeGameType(savedFor) !== gameType
+      ) {
+        return;
+      }
       setTheme((prev) => ({ ...prev, ...selection }));
     });
 

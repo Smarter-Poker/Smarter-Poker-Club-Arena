@@ -630,8 +630,9 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
       setLocalDiamonds((prev: number) => Math.max(0, prev - price));
       setOwnedCardBacks((prev: string[]) => [...prev, id]);
       toast.success('Card back purchased!');
+      onCardBackChanged?.(id);
     },
-    [userId, toast]
+    [userId, toast, onCardBackChanged]
   );
 
   // The rake the engine will actually take at this table (table override ->

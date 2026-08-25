@@ -248,8 +248,8 @@ export function SettingsPanel({
                 on — TablePage no longer reads it to decide whether to ask. */}
 
             <SettingToggle
-              label="Auto-post blinds"
-              description="Automatically post blinds when in position"
+              label="Auto-Post Blinds"
+              description="Automatically Post Blinds When In Position"
               checked={settings.autoPostBlinds}
               onChange={() => handleToggle('autoPostBlinds')}
             />
@@ -259,8 +259,8 @@ export function SettingsPanel({
                 switched back on. Do not reintroduce. */}
 
             <SettingToggle
-              label="Sit out next hand"
-              description="Automatically sit out after this hand"
+              label="Sit Out Next Hand"
+              description="Automatically Sit Out After This Hand"
               checked={settings.sitOutNextHand}
               onChange={() => handleToggle('sitOutNextHand')}
             />
@@ -280,14 +280,14 @@ export function SettingsPanel({
             {/* FIX 199: Hand strength toggle REMOVED — not allowed for live online gameplay */}
 
             <SettingToggle
-              label="Show pot odds"
-              description="Display pot odds for decisions"
+              label="Show Pot Odds"
+              description="Display Pot Odds For Decisions"
               checked={settings.showPotOdds}
               onChange={() => handleToggle('showPotOdds')}
             />
 
             <SettingToggle
-              label="Four-color deck"
+              label="Four-Color Deck"
               description="Hearts (Red), Diamonds (Blue), Clubs (Green), Spades (Black)"
               checked={settings.fourColorDeck}
               onChange={() => handleToggle('fourColorDeck')}
@@ -299,8 +299,8 @@ export function SettingsPanel({
                 created a duplicate toggle with competing state sources. */}
 
             <SettingToggle
-              label="Bet size presets"
-              description="Show quick bet size buttons"
+              label="Bet Size Presets"
+              description="Show Quick Bet Size Buttons"
               checked={settings.showBetSizePresets}
               onChange={() => handleToggle('showBetSizePresets')}
             />
@@ -352,8 +352,8 @@ export function SettingsPanel({
             <h3 className="settings-section__title">Sound</h3>
 
             <SettingToggle
-              label="Sound effects"
-              description="Play sounds for actions and events"
+              label="Sound Effects"
+              description="Play Sounds For Actions And Events"
               checked={settings.soundEnabled}
               onChange={() => handleToggle('soundEnabled')}
             />
@@ -376,8 +376,8 @@ export function SettingsPanel({
             </div>
 
             <SettingToggle
-              label="Haptic feedback"
-              description="Vibrate on actions, wins, and alerts"
+              label="Haptic Feedback"
+              description="Vibrate On Actions, Wins, And Alerts"
               checked={settings.hapticEnabled}
               onChange={() => handleToggle('hapticEnabled')}
             />

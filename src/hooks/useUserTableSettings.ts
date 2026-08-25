@@ -137,50 +137,50 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
   {
     key: 'show_avatars',
     label: 'Show Avatars',
-    description: 'Display player avatar images at seats',
+    description: 'Display Player Avatar Images At Seats',
   },
   {
     key: 'show_badges',
     label: 'Show Badges',
-    description: 'Display VIP/achievement badges at seats',
+    description: 'Display VIP/Achievement Badges At Seats',
   },
   {
     key: 'cards_pre_sort',
     label: 'Cards Pre-Sort',
-    description: 'Auto-sort hole cards by rank (high to low)',
+    description: 'Auto-Sort Hole Cards By Rank (High To Low)',
   },
   {
     key: 'gestures_enabled',
     label: 'Gestures',
-    description: 'Enable swipe/drag gesture controls for actions',
+    description: 'Enable Swipe/Drag Gesture Controls For Actions',
   },
   {
     key: 'card_slide',
     label: 'Card Slide',
-    description: 'Enable card peek/slide reveal animation',
+    description: 'Enable Card Peek/Slide Reveal Animation',
   },
   {
     key: 'card_squeeze',
     label: 'Card Squeeze',
-    description: 'Deal your cards face down - drag up to squeeze them open like a live game',
+    description: 'Deal Your Cards Face Down - Drag Up To Squeeze Them Open Like A Live Game',
   },
   {
     key: 'show_stack_in_bb',
-    label: 'Show Stack in Big Blinds',
-    description: 'Display chip stacks as BB count instead of chip value',
+    label: 'Show Stack In Big Blinds',
+    description: 'Display Chip Stacks As BB Count Instead Of Chip Value',
   },
   {
     key: 'auto_time_bank',
     label: 'Auto Time Bank',
-    description: 'Auto-activate time bank when primary timer expires',
+    description: 'Auto-Activate Time Bank When Primary Timer Expires',
   },
   {
     key: 'enhanced_view',
     label: 'Enhanced View',
-    description: 'Enable enhanced visual effects and animations',
+    description: 'Enable Enhanced Visual Effects And Animations',
   },
-  { key: 'text_message', label: 'Text Message', description: 'Enable text chat at table' },
-  { key: 'emoji_enabled', label: 'Emoji', description: 'Enable emoji reactions/throwables' },
+  { key: 'text_message', label: 'Text Message', description: 'Enable Text Chat At Table' },
+  { key: 'emoji_enabled', label: 'Emoji', description: 'Enable Emoji Reactions/Throwables' },
   // Dan 2026-08-18: "remove the skip animations toggle, animations are not
   // optional." This definition list is what renders the switches, so dropping
   // the entry removes the control everywhere it appeared. The column and the
@@ -193,28 +193,28 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
   {
     key: 'use_alias',
     label: 'Use Club Alias',
-    description: 'Display your club alias instead of your smarter.poker name at the table',
+    description: 'Display Your Club Alias Instead Of Your Smarter.Poker Name At The Table',
   },
   {
     key: 'multi_auto_switch',
     label: 'Multi-Table Auto-Switch',
-    description: 'Jump to a table automatically when its turn clock is nearly out',
+    description: 'Jump To A Table Automatically When Its Turn Clock Is Nearly Out',
   },
   {
     key: 'multi_action_queue',
     label: 'Multi-Table Action Queue',
-    description: 'After you act, advance to the next table already waiting on you',
+    description: 'After You Act, Advance To The Next Table Already Waiting On You',
   },
   {
     key: 'multi_desktop_alerts',
     label: 'Desktop Turn Alerts',
-    description: 'Browser notification when a table needs you and this tab is in the background',
+    description: 'Browser Notification When A Table Needs You And This Tab Is In The Background',
   },
   {
     key: 'multi_shared_socket',
     label: 'Shared Connection',
     description:
-      'All tables share one game connection - instant table joins, fewer reconnects, better battery',
+      'All Tables Share One Game Connection - Instant Table Joins, Fewer Reconnects, Better Battery',
   },
 ];
 

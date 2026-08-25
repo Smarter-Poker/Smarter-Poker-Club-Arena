@@ -69,51 +69,69 @@ export interface GameFilterSpec {
   features: FeatureOption[];
 }
 
-/** Cash-game feature grid. Keys match tables.settings flags. */
+/**
+ * Cash-game feature grid.
+ *
+ * ── EVERY KEY HERE MUST BE A COLUMN THE LOBBY QUERY SELECTS ────────────────
+ * 2026-08-25: fourteen of these twenty chips could never match anything. The
+ * matcher reads `settings[k] ?? row[k]`, `settings` is `{}` on all 46 live
+ * tables, and `row` is exactly the column list in ClubHomePage — so a chip
+ * naming a key outside that list evaluated false for every row. Ticking it as
+ * MUST-HAVE emptied the tab with the filter dot lit; ticking it as HIDE was a
+ * silent no-op.
+ *
+ * That is the same defect this file has already recorded removing twice: the
+ * FLH chip and the "OMAHA High" chip, both deleted for exactly this reason.
+ * The rule is now explicit rather than folklore, and a test asserts it.
+ *
+ * The removed chips are not lost work — they are features the engine does not
+ * enforce (Kill Pot, CallTime, VPIP, NIT Game, PC Emulator) or columns the
+ * lobby does not fetch. They come back with the feature, together.
+ */
 const CASH_FEATURES: FeatureOption[] = [
-  { key: 'double_board', label: 'Double Board', match: ['double_board', 'doubleBoard'] },
-  { key: 'triple_board', label: 'Triple Board', match: ['triple_board', 'tripleBoard'] },
-  { key: 'jackpot', label: 'Jackpot', match: ['bbj_enabled', 'jackpot_enabled'] },
-  { key: 'kill_pot', label: 'Kill Pot', match: ['kill_pot', 'killPot'] },
-  { key: 'call_time', label: 'CallTime', match: ['call_time_enabled', 'callTime'] },
-  { key: 'anonymous', label: 'Anonymous', match: ['anonymous', 'anonymous_tables'] },
   { key: 'ante', label: 'Ante', match: ['ante', 'ante_enabled'] },
-  { key: 'vpip', label: 'VPIP', match: ['vpip_required', 'vpip'] },
-  { key: 'straddle', label: 'Straddle', match: ['straddle_enabled', 'straddle'] },
-  { key: 'insurance', label: 'Insurance', match: ['insurance_enabled', 'allInInsurance'] },
-  { key: 'rit_multi', label: 'Run It Multi-Times', match: ['run_it_multi', 'runItMulti'] },
-  { key: 'rit_choice', label: "Run It Player's Choice", match: ['run_it_twice', 'runItTwice'] },
+  { key: 'straddle', label: 'Straddle', match: ['straddle_enabled'] },
+  { key: 'auto_straddle', label: 'Auto Straddle', match: ['auto_utg_straddle'] },
+  { key: 'insurance', label: 'Insurance', match: ['insurance_enabled'] },
   {
-    key: 'rit_mandatory',
-    label: 'Mandatory Run It',
-    match: ['mandatory_run_it', 'mandatoryRunIt'],
+    key: 'rit_choice',
+    label: 'Run It Twice',
+    match: ['run_it_twice', 'run_it_twice_enabled', 'allow_run_it_twice'],
   },
-  { key: 'vip', label: 'VIP', match: ['vip_only', 'vipOnly'] },
-  { key: 'pineapple', label: 'Pineapple', match: ['pineapple'] },
-  { key: 'bomb_pot', label: 'BombPot', match: ['bomb_pot_enabled', 'bombPot'] },
-  { key: 'seven_deuce', label: 'Seven-Deuce', match: ['seven_deuce', 'sevenDeuce'] },
-  { key: 'nit_game', label: 'NIT Game', match: ['nit_game', 'nitGame'] },
-  { key: 'cap', label: 'CAP', match: ['cap_enabled', 'cap'] },
-  { key: 'pc_emulator', label: 'PC Emulator Restriction', match: ['block_emulator', 'pcRestrict'] },
+  { key: 'bomb_pot', label: 'BombPot', match: ['bomb_pot_enabled'] },
+  /* seven_deuce_enabled is the column; the old key was `seven_deuce`, off by a
+     suffix, so the chip never matched the table it names. */
+  { key: 'seven_deuce', label: 'Seven-Deuce', match: ['seven_deuce_enabled'] },
+  { key: 'time_bank', label: 'Time Bank', match: ['time_bank_enabled'] },
+  { key: 'all_in_or_fold', label: 'All-in or Fold', match: ['all_in_or_fold'] },
 ];
 
 /**
- * Omaha drops Pineapple (a Hold'em-family variant) and Seven-Deuce (a
- * two-card-hand prop) exactly as the reference screen does, and reorders the
- * tail. Same keys, so a preference saved on one tab still means the same thing.
+ * Omaha drops Seven-Deuce, and now for a reason the engine agrees with rather
+ * than a reference screen: ServerTableEngineSettlement gates the bounty to
+ * Hold'em ("meaningless in PLO; short-deck has no deuces"), so the chip could
+ * only ever match zero Omaha rows. Same keys as the cash grid, so a preference
+ * saved on one tab still means the same thing on another.
  */
 const OMAHA_FEATURES: FeatureOption[] = CASH_FEATURES.filter(
-  (f) => !['pineapple', 'seven_deuce'].includes(f.key)
+  (f) => !['seven_deuce'].includes(f.key)
 );
 
-/** MTT has five, all tournament-level. */
-const MTT_FEATURES: FeatureOption[] = [
-  { key: 'all_in_or_fold', label: 'All-in or Fold', match: ['all_in_or_fold'] },
-  { key: 'private_mtt', label: 'Private MTT', match: ['is_private'] },
-  { key: 'bounty', label: 'Bounty', match: ['is_bounty', 'is_pko', 'is_mystery_bounty'] },
-  { key: 'vip', label: 'VIP', match: ['vip_only'] },
-  { key: 'pc_emulator', label: 'PC Emulator Restriction', match: ['block_emulator'] },
-];
+/**
+ * MTT features.
+ *
+ * All FIVE of the old entries were inert: the tournament path passes
+ * `settings: {}` explicitly and none of `all_in_or_fold`, `is_private`,
+ * `is_bounty`, `is_pko`, `is_mystery_bounty`, `vip_only` or `block_emulator`
+ * is in the tournament select list. Selecting any of them emptied the MTT tab.
+ *
+ * The grid is empty rather than wrong. A tournament's traits are already
+ * visible as medallions on its card (PKO, MYSTERY BOUNTY, REBUY, GUARANTEED,
+ * LATE REG) and those are computed from columns the query really does fetch;
+ * turning them into filters means fetching the columns first, which is a
+ * change to the query and not to this table.
+ */
+const MTT_FEATURES: FeatureOption[] = [];
 
 /** Blind tiers, matching BBJRulesPanel's published ladder. */
 const BLIND_RANGE: RangeSpec = {
@@ -151,6 +169,10 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
   HOLDEM: {
     games: [
       { key: 'nlh', label: 'NLH' },
+      /* Pineapple is a Hold'em-family variant and cashKind routes it here, so
+         without a chip of its own every Pineapple table vanished the moment a
+         player ticked NLH. Five of them run in production. */
+      { key: 'pineapple', label: 'Pineapple' },
       // 2026-08-23: the FLH chip used to live here and could never match a
       // single row. ClubHomePage.cashKind() routes every fixed-limit variant to
       // the LIMIT tab, so an FLH table is by construction absent from the
@@ -424,16 +446,31 @@ export function rowPassesFilter(
   // ── Games chips ─────────────────────────────────────────────────────────
   if (v.games.length > 0) {
     const key = variantKey(r.variant);
-    // An UNRECOGNISED variant passes. The alternative is hiding a real table
-    // because this function has not learnt its name yet, which is the same
-    // "absence of evidence" trap the feature matcher above avoids.
+    /**
+     * An unrecognised variant passes — only an EMPTY key qualifies, because
+     * variantKey returns its input unchanged when it recognises nothing.
+     *
+     * That is the correct narrowing rule and it is deliberately unchanged.
+     * The real defect it exposed on 2026-08-25 was elsewhere: `pineapple` IS
+     * recognised, cashKind routes Pineapple tables to the HOLDEM tab, and
+     * HOLDEM offered no chip for it — so ticking "NLH" made five real
+     * production tables disappear. The fix is a chip, not a looser matcher;
+     * loosening this would stop every chip from narrowing anything.
+     */
     if (key && !v.games.includes(key)) return false;
   }
 
   // ── Format chips (SN only: satellite vs regular) ─────────────────────────
   if (v.format.length > 0) {
     const name = String(r.name ?? '').toLowerCase();
-    const isSat = name.includes('sat') || r.row.is_satellite === true;
+    /* `includes('sat')` matched Saturday, Satchel and anything else with those
+       three letters, so "Regular SNG" hid real games. Word-boundary match on
+       the actual word, plus the column when the query ever fetches it. */
+    /* `includes('sat')` matched Saturday, Satchel and anything else carrying
+       those three letters, so "Regular SNG" hid real games. A WORD match keeps
+       "Sat To Main" and "Satellite" and rejects "Saturday", because there is no
+       word boundary after the "Sat" in Saturday. */
+    const isSat = /\bsat(ellite)?\b/i.test(name) || r.row.is_satellite === true;
     const wantsSat = v.format.includes('sats');
     const wantsReg = v.format.includes('regular');
     // Both selected is the same as neither: no opinion.

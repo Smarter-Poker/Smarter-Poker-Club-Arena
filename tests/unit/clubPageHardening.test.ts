@@ -235,8 +235,15 @@ describe('the MTT variant chips can all match something', () => {
   });
 
   it('every chip key is reachable from some real variant string', () => {
+    /* Counted on production 2026-08-25 — the live cash board is nlh 16,
+       plo4 7, plo5 6, PINEAPPLE 5, plo8 5, short_deck 4, plo6 3. Pineapple was
+       missing from this set AND from the HOLDEM chips, which is how ticking
+       "NLH" made five real tables disappear: cashKind routes Pineapple to the
+       Hold'em tab, variantKey returns 'pineapple' for it, and a games list
+       that does not name it drops it. */
     const reachable = new Set([
       'nlh',
+      'pineapple',
       'plo4',
       'plo5',
       'plo6',

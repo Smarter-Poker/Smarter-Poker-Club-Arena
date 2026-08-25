@@ -122,15 +122,33 @@ describe('lateRegEndMs — when does the door actually close', () => {
     expect(lateRegEndMs(t)).toBe(NOW + 8 * 60000);
   });
 
-  it('level window ticks from the blind structure', () => {
-    // In level 2 of 4/4/3-minute levels, late reg through level 3:
-    // rest of level 2 (4 min from its start) + level 3 (3 min).
+  /**
+   * RE-PINNED 2026-08-25: `current_level` is a 0-BASED INDEX.
+   *
+   * This case used to read it as a 1-based display number, which made
+   * lateRegEndMs disagree with isInLateRegistration — the sibling function
+   * that decides whether the door is open at all, and which documents the
+   * convention explicitly: "current_level is a 0-BASED index into
+   * blind_structure ... the cutoff is index N. Matches
+   * TournamentManagerBase.isLateRegClosed: currentLevel >= cap."
+   *
+   * Confirmed against production the same day: a tournament with
+   * `current_level = 8` indexes to a blind_structure element whose own `level`
+   * field reads 9.
+   *
+   * So `current_level: 2` with `late_reg_levels: 3` is the LAST late-reg
+   * level (indices 0, 1, 2), and what remains is the rest of that level
+   * alone. The old expectation added a whole further level that registration
+   * would never see, so the card counted down past the moment the RPC began
+   * refusing entries.
+   */
+  it('level window ticks from the blind structure, in 0-based indices', () => {
     const t = tournamentRow({
       status: 'RUNNING',
       started_at: iso(-5 * 60000),
       late_reg_mins: 0,
       late_reg_levels: 3,
-      current_level: 2,
+      current_level: 2, // index 2 = the third level, and the last one open
       level_started_at: iso(-60000),
       blind_structure: JSON.stringify([
         { level: 1, durationMinutes: 4 },
@@ -138,7 +156,8 @@ describe('lateRegEndMs — when does the door actually close', () => {
         { level: 3, durationMinutes: 3 },
       ]),
     });
-    expect(lateRegEndMs(t)).toBe(NOW - 60000 + (4 + 3) * 60000);
+    // Only the remainder of index 2 (level 3, three minutes) is left.
+    expect(lateRegEndMs(t)).toBe(NOW - 60000 + 3 * 60000);
   });
 
   it('with both windows the LATER close wins — the countdown never lies short', () => {
@@ -147,7 +166,7 @@ describe('lateRegEndMs — when does the door actually close', () => {
       started_at: iso(-9 * 60000),
       late_reg_mins: 10,
       late_reg_levels: 2,
-      current_level: 1,
+      current_level: 1, // index 1 = the second level, the last one open
       level_started_at: iso(0),
       blind_structure: JSON.stringify([
         { level: 1, durationMinutes: 4 },
@@ -155,7 +174,8 @@ describe('lateRegEndMs — when does the door actually close', () => {
       ]),
     });
     const end = lateRegEndMs(t);
-    expect(end).toBe(NOW + 8 * 60000); // levels keep it open longer
+    // The remainder of index 1 — level 2, four minutes — starting now.
+    expect(end).toBe(NOW + 4 * 60000); // levels keep it open longer
     expect(end!).toBeGreaterThan(NOW + 60000); // the minutes-only close
   });
 
@@ -218,7 +238,8 @@ describe('mttPhaseText — the live phrase on line 2', () => {
       { status: 'running' },
       {
         status: 'RUNNING',
-        current_level: 2,
+        // index 1 = level 2, whose row the structure below carries
+        current_level: 1,
         level_started_at: iso(-4 * 60000),
         blind_structure: JSON.stringify([
           { level: 1, smallBlind: 25, bigBlind: 50, durationMinutes: 10 },

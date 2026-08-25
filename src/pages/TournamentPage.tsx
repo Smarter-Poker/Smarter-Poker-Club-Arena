@@ -35,6 +35,13 @@ import { TournamentClock } from '../components/tournament/TournamentClock';
 import TournamentStandings from '../components/tournament/TournamentStandings';
 import { reportError } from '../utils/errorReporter';
 import { spinMultiplierLabel } from '../utils/spinReveal';
+import { useMysteryBounty } from '../hooks/useMysteryBounty';
+import MysteryBountyPanel from '../components/tournament/MysteryBountyPanel';
+import {
+  activationStatusLine,
+  formatCents,
+  topBountyCents,
+} from '../services/MysteryBountyService';
 // WHOLE-NUMBER TOURNAMENT MONEY (Dan 2026-08-20). Every buy-in / fee / prize
 // figure on this page renders through these, never as a raw column value.
 import { digitsOnly, formatBuyIn, money, splitBuyIn, totalBuyIn } from '../utils/buyIn';
@@ -122,6 +129,14 @@ export default function TournamentPage() {
   const [isProcessingRebuy, setIsProcessingRebuy] = useState(false);
   const selectedTournamentRef = useRef<Tournament | null>(null);
   const [visibleTournaments, setVisibleTournaments] = useState<Set<string>>(new Set());
+
+  /**
+   * MYSTERY BOUNTY (sections 10, 31 to 36, 68, 73) for whichever event is open
+   * in the detail pane. Enabled only for a mystery event, so browsing the lobby
+   * costs nothing for every other format.
+   */
+  const selectedIsMystery = Boolean((selectedTournament as any)?.is_mystery_bounty);
+  const mysteryBounty = useMysteryBounty(selectedTournament?.id ?? null, selectedIsMystery);
   /**
    * Mirror of `visibleTournaments` for the stagger effect below to read without
    * taking a dependency on it — depending on the state it also SETS is how that
@@ -1241,27 +1256,30 @@ export default function TournamentPage() {
                   </div>
                 )}
 
-                {/* Mystery Bounty Info */}
-                {selectedTournament.is_mystery_bounty && (
-                  <div className="stat">
-                    <span className="stat-label">Mystery Bounty Range</span>
-                    {/* MYSTERY RANGE 2026-08-21: currency, not multipliers. The
-                        old "1x - 100x" fallback was invented outright — the
-                        draw table's ceiling is 13x the head. When the range is
-                        not set we say so rather than making one up. */}
-                    <span className="stat-value">
-                      {selectedTournament.mystery_bounty_min &&
-                      selectedTournament.mystery_bounty_max
-                        ? `${Number(selectedTournament.mystery_bounty_min).toLocaleString(
-                            undefined,
-                            { minimumFractionDigits: 2, maximumFractionDigits: 2 }
-                          )} - ${Number(selectedTournament.mystery_bounty_max).toLocaleString(
-                            undefined,
-                            { minimumFractionDigits: 2, maximumFractionDigits: 2 }
-                          )} Per Knockout`
-                        : 'Revealed At Knockout'}
-                    </span>
-                  </div>
+                {/* MYSTERY BOUNTY (sections 10 and 73).
+                    This used to print `mystery_bounty_min` / `mystery_bounty_max`,
+                    a per-head range drawn at REGISTRATION time. The engine no
+                    longer reads either column: the draw happens once, when the
+                    mystery phase opens, and produces an inventory of real
+                    chests. What is advertised now is the biggest chest that
+                    exists, from fn_mystery_bounty_inventory. */}
+                {selectedIsMystery && (
+                  <>
+                    <div className="stat">
+                      <span className="stat-label">Top Mystery Bounty</span>
+                      <span className="stat-value">
+                        {topBountyCents(mysteryBounty.inventory) > 0
+                          ? formatCents(topBountyCents(mysteryBounty.inventory))
+                          : 'Drawn When The Mystery Phase Opens'}
+                      </span>
+                    </div>
+                    <div className="stat">
+                      <span className="stat-label">Mystery Status</span>
+                      <span className="stat-value">
+                        {activationStatusLine(mysteryBounty.inventory)}
+                      </span>
+                    </div>
+                  </>
                 )}
 
                 {/* Spin Info */}
@@ -1374,6 +1392,19 @@ export default function TournamentPage() {
                   </tbody>
                 </table>
               </div>
+
+              {/* MYSTERY BOUNTY (sections 31 to 36, 41). The same three sections
+                  the tournament details page shows, on the other lobby surface,
+                  fed by the same page-level hook. */}
+              {selectedIsMystery && (
+                <MysteryBountyPanel
+                  tournamentId={selectedTournament.id}
+                  isMysteryBounty
+                  data={mysteryBounty}
+                  currentUserId={currentUser.id === 'guest' ? null : currentUser.id}
+                  isCompleted={selectedTournament.status === 'COMPLETED'}
+                />
+              )}
 
               {/* Payout Structure */}
               <div className="payout-structure">

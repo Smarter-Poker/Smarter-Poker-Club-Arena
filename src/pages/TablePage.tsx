@@ -299,6 +299,7 @@ import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
 import { getAnimationSpeed } from '../utils/animationSpeed';
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
 import { TableModalsLayer } from '../components/table/TableModalsLayer';
+import { MysteryBountyService, playerTotalsFromAwards } from '../services/MysteryBountyService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TOURNAMENT RESULT — what the Session Complete popup shows instead of chips
@@ -355,8 +356,11 @@ async function fetchTournamentResult(
         /* variant + tournament_type: the two columns isSpinTournament reads.
            Either one may carry it, which is why the helper checks both and
            nothing here re-derives it. Without them the ranking card branded
-           EVERY finished event a Spin. */
-        .select('name, current_players, variant, tournament_type')
+           EVERY finished event a Spin.
+
+           is_mystery_bounty gates the second read below, so an ordinary
+           freezeout makes no extra RPC calls on the way out of the table. */
+        .select('name, current_players, variant, tournament_type, is_mystery_bounty')
         .eq('id', tournamentId)
         .maybeSingle(),
       supabase
@@ -365,6 +369,24 @@ async function fetchTournamentResult(
         .eq('tournament_id', tournamentId),
     ]);
 
+    /* MYSTERY BOUNTY (sections 43, 44). The chest half of what this player won,
+       from the RPCs - `tournament_bounty_awards` has RLS on with no select
+       policy, so reading the table directly returns nothing and no error. */
+    let mystery: { bounties: number; cents: number; largestCents: number } | null = null;
+    if ((tourney as { is_mystery_bounty?: boolean } | null)?.is_mystery_bounty) {
+      const [board, awards] = await Promise.all([
+        MysteryBountyService.getLeaderboard(tournamentId),
+        MysteryBountyService.getAllAwards(tournamentId),
+      ]);
+      const boardRow = board.find((r) => r.userId === userId);
+      const fromAwards = playerTotalsFromAwards(awards.rows).get(userId);
+      const bounties = boardRow?.bountiesWon ?? fromAwards?.bountiesWon ?? 0;
+      const cents = boardRow?.earningsCents ?? fromAwards?.earningsCents ?? 0;
+      if (bounties > 0 || cents > 0) {
+        mystery = { bounties, cents, largestCents: fromAwards?.largestCents ?? 0 };
+      }
+    }
+
     return {
       name: tourney?.name || undefined,
       finishPlace: entry?.position ?? null,
@@ -372,6 +394,9 @@ async function fetchTournamentResult(
       prize: Number(entry?.prize) || 0,
       bountyWinnings: Number(entry?.bounty_winnings) || 0,
       knockouts: Number(entry?.bounties_collected) || 0,
+      mysteryBounties: mystery?.bounties,
+      mysteryBountyCents: mystery?.cents,
+      largestMysteryBountyCents: mystery?.largestCents,
       rebuys: Number(entry?.rebuys) || 0,
       // add_on is a count on some rows and a boolean on older ones; both mean
       // "how many add-ons", so coerce rather than trusting the column type.

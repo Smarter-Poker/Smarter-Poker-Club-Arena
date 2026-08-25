@@ -307,6 +307,29 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Payout split (Dan section 44) ──
+   Directly under the total, so the two halves of it are read as parts of the
+   number above rather than as two more badges. Only rendered when there IS a
+   bounty half. */
+.trc2__payout-split {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  margin: 6px 12px 0;
+  font-size: 0.72rem;
+  color: #9fb6da;
+}
+.trc2__payout-part strong {
+  color: #eaf1ff;
+  font-variant-numeric: tabular-nums;
+}
+.trc2__payout-plus {
+  color: #00d4ff;
+  font-weight: 800;
+}
+
 .trc2__extras {
   display: flex;
   flex-wrap: wrap;

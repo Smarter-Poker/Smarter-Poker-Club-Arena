@@ -528,31 +528,60 @@ abbr.lt-variant[title] {
       0 2px 0 rgba(0, 0, 0, 0.55),
       0 6px 16px rgba(0, 0, 0, 0.55),
       inset 0 1px 0 rgba(255, 255, 255, 0.07);
-    overflow: hidden;
+    /* Dan 2026-08-24: "IF YOU NEED TO MAKE THE BOXES LARGER TO FIT EVERYTHING,
+       DO IT — DO NOT CUT ANYTHING OFF." The card used to clip, because the
+       status rail was an ::after that needed the radius to shape its ends.
+       The rail is a border-left now, which needs no clipping, so the card is
+       free to grow to whatever its content is. */
+    overflow: visible;
+    border-left-width: 3px;
+    border-left-style: solid;
+    border-left-color: rgba(120, 150, 220, 0.4);
   }
 
-  /* The status rail. ::after rather than a border so the card's own radius
-     clips it into a soft capsule at both ends. */
-  .lobby-table tr::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 3px;
-    background: rgba(120, 150, 220, 0.35);
+  /* ── ONE ORDER, EVERY TAB ───────────────────────────────────────────────
+     THE REASON THE MTT CARDS CAME OUT SCRAMBLED. Each tab declares its own
+     column order — the MTT set opens with Starting Time, the ALL set opens
+     with the name — and a wrapping flex row just follows the DOM. So the same
+     card read differently depending on which tab you were on, with the title
+     stranded in the middle. Explicit order pins the card's shape to the CARD,
+     not to whichever column list produced it. */
+  .lobby-table td {
+    order: 3;
   }
-  .lobby-table tr:has(.lt-status--running)::after,
-  .lobby-table tr:has(.lt-status--late_reg)::after {
-    background: linear-gradient(180deg, #4dd2ff, #1e7fd6);
-    box-shadow: 0 0 10px rgba(77, 210, 255, 0.5);
+  .lobby-table td.lt-col-name {
+    order: 1;
   }
-  .lobby-table tr:has(.lt-status--registering)::after {
-    background: linear-gradient(180deg, #7aa5ff, #3f63c8);
+  .lobby-table td.lt-col-kind,
+  .lobby-table td.lt-col-variant {
+    order: 2;
   }
-  .lobby-table tr:has(.lt-status--full)::after,
-  .lobby-table tr:has(.lt-status--waitlist)::after {
-    background: linear-gradient(180deg, #ff7a6b, #c0392b);
+  .lobby-table td.lt-col-num,
+  .lobby-table td.lt-col-players,
+  .lobby-table td.lt-col-starts {
+    order: 3;
+  }
+  .lobby-table td.lt-col-tstats {
+    order: 4;
+  }
+  .lobby-table td.lt-col-rules {
+    order: 5;
+  }
+  .lobby-table td.lt-col-actions {
+    order: 6;
+  }
+
+  .lobby-table tr.lt-row--running,
+  .lobby-table tr.lt-row--late_reg {
+    border-left-color: #4dd2ff;
+  }
+  .lobby-table tr.lt-row--registering,
+  .lobby-table tr.lt-row--starting_soon {
+    border-left-color: #6f9bff;
+  }
+  .lobby-table tr.lt-row--full,
+  .lobby-table tr.lt-row--waitlist {
+    border-left-color: #ff7a6b;
   }
 
   /* Pressing a card pushes it into the page instead of just tinting it. */
@@ -833,29 +862,36 @@ abbr.lt-variant[title] {
 
   .lobby-table td.lt-col-rules {
     display: block;
-    flex: 0 0 auto;
-    margin-left: auto;
-    text-align: right;
+    flex: 1 1 100%;
+    text-align: left;
   }
 
   .lt-rules {
     display: flex;
     flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 4px;
+    justify-content: flex-start;
+    gap: 5px;
+    /* The medallion list is allowed to run to as many lines as it needs. It
+       used to be capped to one line of a right-aligned cell, which is what cut
+       the second row of badges in half. */
+    max-height: none;
+    overflow: visible;
   }
 
+  /* Dan 2026-08-24: "NO YELLOWS OR BROWNS ARE ALLOWED — SMARTER.POKER COLOUR
+     SCHEME ONLY." The medallions inherited a casino-gold treatment from the
+     desktop table. Club Arena blue, same as every other chip on the card. */
   .lt-rule {
     display: inline-block;
-    padding: 2px 6px;
-    border-radius: 5px;
-    font-size: 0.5625rem;
+    padding: 3px 7px;
+    border-radius: 6px;
+    font-size: 0.5875rem;
     font-weight: 800;
     letter-spacing: 0.06em;
     text-decoration: none;
-    color: #ffd98a;
-    background: linear-gradient(180deg, rgba(120, 92, 20, 0.5), rgba(70, 52, 10, 0.5));
-    border: 1px solid rgba(240, 200, 110, 0.35);
+    color: #bfe4ff;
+    background: linear-gradient(180deg, rgba(46, 92, 150, 0.45), rgba(20, 44, 80, 0.55));
+    border: 1px solid rgba(90, 160, 230, 0.4);
   }
 
   .lobby-table td.lt-col-tstats {
@@ -881,6 +917,7 @@ abbr.lt-variant[title] {
       0 1px 0 rgba(255, 255, 255, 0.04);
   }
   .lt-tstat__k {
+    white-space: nowrap;
     font-size: 0.5625rem;
     font-weight: 700;
     letter-spacing: 0.09em;
@@ -888,7 +925,8 @@ abbr.lt-variant[title] {
     color: var(--text-tertiary, #7d8698);
   }
   .lt-tstat__v {
-    font-size: 0.8125rem;
+    /* "IT DOESN'T NEED TO BE THAT BIG." */
+    font-size: 0.75rem;
     font-weight: 700;
     color: #eef2f8;
   }

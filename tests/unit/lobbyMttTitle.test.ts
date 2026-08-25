@@ -178,10 +178,20 @@ describe('lateRegEndMs — when does the door actually close', () => {
 describe('mttPhaseText — the live phrase on line 2', () => {
   it('counts down to a future start', () => {
     const e = entry({ startTime: iso(30 * 1000) });
-    expect(mttPhaseText(e, NOW)).toBe('Starting In 0:30...');
+    expect(mttPhaseText(e, NOW)).toBe('Starts In 0:30');
   });
-  it('an overdue start is Starting Soon, not a negative clock', () => {
+  /* RE-PINNED 2026-08-24. Dan: "keep the clock running at all times, don't
+     switch back and forth from a clock to a phrase." An overdue start used to
+     drop the clock entirely, so a card that had been counting down flipped to
+     "Starting Soon" at the exact moment the number mattered most. Zero is a
+     legitimate reading of a clock; a missing clock is not. A start time we
+     cannot parse at all is still the one case with nothing to count. */
+  it('an overdue start holds the clock at zero rather than dropping it', () => {
     const e = entry({ startTime: iso(-30 * 1000) });
+    expect(mttPhaseText(e, NOW)).toBe('Starts In 0:00');
+  });
+  it('only an unparseable start time gives up the clock', () => {
+    const e = entry({ startTime: null });
     expect(mttPhaseText(e, NOW)).toBe('Starting Soon');
   });
   it('late reg counts down its remaining time', () => {
@@ -191,19 +201,38 @@ describe('mttPhaseText — the live phrase on line 2', () => {
     );
     expect(mttPhaseText(e, NOW)).toBe('Late Reg 5:00 Left');
   });
-  it('an expired window says Closing, an unknowable one says Open', () => {
+  it('an expired window holds at zero, an unknowable one says Open', () => {
     const closing = entry(
       { status: 'late_reg' },
       { status: 'RUNNING', started_at: iso(-11 * 60000), late_reg_mins: 10 }
     );
-    expect(mttPhaseText(closing, NOW)).toBe('Late Reg Closing');
+    expect(mttPhaseText(closing, NOW)).toBe('Late Reg 0:00 Left');
     const open = entry(
       { status: 'late_reg' },
       { status: 'RUNNING', late_reg_mins: 0, late_reg_levels: 0 }
     );
     expect(mttPhaseText(open, NOW)).toBe('Late Reg Open');
   });
+  it('a running tournament counts its level down when the structure says how', () => {
+    const e = entry(
+      { status: 'running' },
+      {
+        status: 'RUNNING',
+        current_level: 2,
+        level_started_at: iso(-4 * 60000),
+        blind_structure: JSON.stringify([
+          { level: 1, smallBlind: 25, bigBlind: 50, durationMinutes: 10 },
+          { level: 2, smallBlind: 50, bigBlind: 100, durationMinutes: 10 },
+        ]),
+      }
+    );
+    expect(mttPhaseText(e, NOW)).toBe('Level Ends In 6:00');
+  });
+
   it('running and terminal states', () => {
+    /* A running tournament with no blind structure to read has no level clock
+       to show, so the word stands. With one, it counts the level down — see
+       the case below. */
     expect(mttPhaseText(entry({ status: 'running' }), NOW)).toBe('Running');
     expect(mttPhaseText(entry({ status: 'completed', statusLabel: 'Completed' }), NOW)).toBe(
       'Completed'

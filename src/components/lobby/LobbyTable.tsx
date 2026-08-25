@@ -381,13 +381,25 @@ const COL_VARIANT: ColumnDef = {
     </abbr>
   ),
 };
+/* Dan 2026-08-24: "THERE ARE NO LIMITATIONS ON THE AMOUNT OF PLAYERS THAT CAN
+   REGISTER — IT SHOULDN'T DEFAULT TO /500." max_players is a column every
+   tournament row carries whether or not the format uses it, and printing it as
+   a denominator turned a field with no meaning into a cap the player could
+   read off the card. A tournament now shows what is true: how many have
+   registered. Cash keeps its meter, where the denominator is a real seat
+   count. */
+function TournamentEnrolled({ entry }: { entry: LobbyEntry }) {
+  return <span className="lt-seats__num">{entry.players.toLocaleString()}</span>;
+}
+
 const COL_PLAYERS: ColumnDef = {
   key: 'players',
   label: 'Players',
+  labelFor: (e) => (e.kind === 'cash' ? 'Players' : 'Registered'),
   className: 'lt-col-players',
   sortable: true,
   sortValue: (e) => e.players,
-  render: (e) => <SeatsMeter entry={e} />,
+  render: (e) => (e.kind === 'cash' ? <SeatsMeter entry={e} /> : <TournamentEnrolled entry={e} />),
 };
 const COL_BUYIN: ColumnDef = {
   key: 'buyin',
@@ -544,7 +556,7 @@ const COL_TSTATS: ColumnDef = {
       <span className="lt-tstats">
         {stack && (
           <span className="lt-tstat">
-            <span className="lt-tstat__k">Stack</span>
+            <span className="lt-tstat__k">Starting Stack</span>
             <span className="lt-tstat__v">{stack}</span>
           </span>
         )}

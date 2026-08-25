@@ -16,6 +16,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 
 import styles from './GlobalHeader.module.css';
 import { generateDefaultAvatar, getAvatarWithFallback } from '../../utils/avatarGenerator';
+import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 const BASE = MEDIA_BASE;
@@ -41,7 +42,8 @@ export default function GlobalHeader() {
   const { loadBalances, loadDiamonds } = useWalletStore();
   const { user: authUser } = useAuthUser();
 
-  const { avatarUrl, notificationCount, unreadMessages, loadOnce } = useHeaderDataStore();
+  const { avatarUrl, equippedFrame, equippedAura, notificationCount, unreadMessages, loadOnce } =
+    useHeaderDataStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [isNavigatingAway, setIsNavigatingAway] = useState(false);
 
@@ -312,6 +314,11 @@ export default function GlobalHeader() {
                 decoding="async"
                 onError={() => setAvatarFailed(true)}
               />
+              {/* Equipped frame + aura. `.profileOrb` is the 40px circle and
+                  owns the radius, so the overlay inherits it. The button around
+                  it is `overflow: visible`, which is why the frame's outer glow
+                  survives here and is clipped on the felt. */}
+              <AvatarCosmetics frame={equippedFrame} aura={equippedAura} />
             </div>
           </button>
 

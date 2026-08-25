@@ -83,7 +83,7 @@ export async function loadSeatedPlayers(tableId: string) {
        Highest-leverage avatar read in the app - it feeds every seat at every
        table. If it regresses, the felt shows photographs again. */
     .select(
-      'id, display_name, username, is_horse, horse_profile, avatar_url:arena_avatar_url, use_real_name'
+      'id, display_name, username, is_horse, horse_profile, avatar_url:arena_avatar_url, use_real_name, equipped_frame, equipped_aura'
     )
     .in('id', userIds);
   if (profileErr) {
@@ -123,6 +123,13 @@ export async function loadSeatedPlayers(tableId: string) {
         time_bank_uses_remaining: seat.time_bank_uses_remaining || 0,
         is_sitting_out: seat.is_sitting_out === true,
         avatar_url: profile.avatar_url || '',
+        /* Cosmetics ride the avatar's pipeline rather than getting one of their
+           own: same query, same snapshot field group, same client mapper. They
+           are re-read here once per hand alongside the avatar, so a player who
+           equips a frame mid-session is wearing it on everyone's felt by the
+           next deal even if their realtime subscription dropped. */
+        equipped_frame: profile.equipped_frame || '',
+        equipped_aura: profile.equipped_aura || '',
       };
     });
 }

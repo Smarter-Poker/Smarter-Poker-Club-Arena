@@ -38,6 +38,10 @@ export interface EnginePublicPlayer {
   time_bank_uses_remaining?: number;
   position?: string;
   avatar_url?: string;
+  /** Equipped avatar frame token, e.g. `frame-gold`. '' or absent means none. */
+  equipped_frame?: string;
+  /** Equipped avatar aura token, e.g. `aura-fire`. '' or absent means none. */
+  equipped_aura?: string;
   is_horse?: boolean;
   hand_name?: string;
   /**
@@ -134,6 +138,10 @@ export interface MappedTableStatePatch {
     id: string;
     name: string;
     avatar?: string;
+    /** Equipped avatar frame token. Drawn over `avatar` by AvatarCosmetics. */
+    frame?: string;
+    /** Equipped avatar aura token. Drawn under `avatar` by AvatarCosmetics. */
+    aura?: string;
     stack: number;
     status: 'active' | 'folded' | 'all_in' | 'sitting_out' | 'away' | 'disconnected';
     holeCards?: Array<{ rank: string; suit: string }>;
@@ -274,6 +282,11 @@ export function mapEngineSnapshot(
       id: p.user_id,
       name: p.username ?? '',
       avatar: p.avatar_url,
+      /* Normalised to undefined, never ''. The seat merge in TablePage treats
+         a falsy cosmetic as "none equipped" and an empty string would round-trip
+         through the realtime merge as a value worth preserving. */
+      frame: p.equipped_frame || undefined,
+      aura: p.equipped_aura || undefined,
       stack: p.stack,
       status: STATUS_FROM_PLAYER(p),
       holeCards: p.cards && p.cards.length > 0 ? p.cards : undefined,

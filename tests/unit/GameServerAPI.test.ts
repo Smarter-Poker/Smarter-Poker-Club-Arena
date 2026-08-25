@@ -147,6 +147,7 @@ describe('GameServerAPI', () => {
           'getAvailableActions',
           'getServerStatus',
           'getTableState',
+          'notifyServerRejectRebuy',
           'previewInsurance',
           'removeChips',
           'respondToInsurance',

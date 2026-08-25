@@ -13046,7 +13046,12 @@ export default function TablePage({
             setRebuyProcessing(false);
           }
         }}
-        onCloseRebuyModal={() => setShowRebuyModal(false)}
+        onCloseRebuyModal={() => {
+          setShowRebuyModal(false);
+          if (tableId && userId) {
+            GameServerAPI.notifyServerRejectRebuy(tableId).catch(console.error);
+          }
+        }}
         // Tournament Break
         tournamentBreak={tournamentBreak}
         // Announcement

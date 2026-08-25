@@ -101,7 +101,6 @@ import TimebankCounter from '../components/table/TimebankCounter';
 // Dan 2026-08-21, item 3: buy more time banks with diamonds (1/10/25/100/500).
 import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
-import RabbitHunt from '../components/table/RabbitHunt';
 import HandNotation from '../components/table/HandNotation';
 import { soundService, haptic } from '../services/SoundService';
 import { ConfettiCanvas } from '../components/table/ConfettiCanvas';
@@ -161,6 +160,7 @@ import TournamentBreakScreen from '../components/table/TournamentBreakScreen';
 import TournamentAnnouncementOverlay from '../components/table/TournamentAnnouncementOverlay';
 import KnockoutAnimation, { type KnockoutData } from '../components/tournament/KnockoutAnimation';
 import MysteryBountyChest, {
+  formatBountyTierLabel,
   type MysteryChestData,
 } from '../components/tournament/MysteryBountyChest';
 import { useAnimationQueue } from '../hooks/useAnimationQueue';
@@ -210,7 +210,9 @@ import GameServerAPI, {
   showHand as serverShowHand,
   toggleStraddle as serverToggleStraddle,
   postBBToEnter as serverPostBBToEnter,
+  requestRabbitHunt,
 } from '../services/GameServerAPI';
+import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
 import { retryAsync } from '../utils/retryAsync';
 //monteCarloEquity import removed — server-authoritative
 import './TablePage.css';
@@ -992,8 +994,82 @@ export default function TablePage({
   const knockoutQueue = useAnimationQueue<KnockoutData>();
   const chestQueue = useAnimationQueue<MysteryChestData>();
   const knockout = knockoutQueue.current;
-  const mysteryChest = chestQueue.current;
   const [chestRemoteOpened, setChestRemoteOpened] = useState(false);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  TWO-PHASE MYSTERY BOUNTY REVEAL (Dan sections 19, 21-26, 51-57)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The chest now arrives BEFORE its contents. `mystery_bounty_pending`
+   * carries the award, the queue position and who may tap it — and no amount,
+   * because the surest way to keep a number out of a broadcast is for the
+   * server that builds the broadcast never to have seen it.
+   *
+   * The amount reaches this page by two independent routes, and both must
+   * land in the same place:
+   *
+   *   THE TAP. The designated revealer's client calls
+   *   `fn_mystery_bounty_reveal(awardId, myUserId, false)` itself and gets the
+   *   number straight back. That is the drama — they see it before the table
+   *   does. `revealMysteryBounty` below.
+   *
+   *   THE BROADCAST. The engine calls the same function at the deadline with
+   *   `p_auto = true`, pays, and broadcasts `mystery_bounty_revealed` to the
+   *   whole table. Idempotent and identical, so the private reveal and the
+   *   public one can never disagree.
+   *
+   * This map is where either of them lands. It is keyed by award id, so a
+   * duplicate broadcast (section 80/33) writes the same values over the same
+   * key rather than queueing a second chest, and a reconnect that replays a
+   * reveal cannot double-anything.
+   */
+  const [chestReveals, setChestReveals] = useState<
+    Record<
+      string,
+      {
+        amount: number;
+        tier?: string;
+        tierLabel?: string;
+        isJackpot?: boolean;
+        recipients?: { userId: string; name: string; amount: number }[];
+      }
+    >
+  >({});
+  /**
+   * Award ids this page has already put on screen.
+   *
+   * A ref rather than state because the decision is made synchronously inside
+   * a broadcast handler: pending and revealed for the same award can land in
+   * the same tick, and reading a state value there would see the pre-pending
+   * snapshot and enqueue the chest twice.
+   */
+  const chestSeenRef = useRef<Set<string>>(new Set());
+
+  /**
+   * The chest on screen, with whatever is known about it right now.
+   *
+   * Merged at render rather than mutated into the queue: `useAnimationQueue`
+   * hands out the object it was given, and rewriting queue entries in place
+   * would make "what is showing" depend on when the reveal happened to arrive.
+   * MysteryBountyChest is keyed on the award id precisely so this merge can
+   * produce a new object every render without restarting its animation.
+   */
+  const queuedChest = chestQueue.current;
+  const mysteryChest = useMemo<MysteryChestData | null>(() => {
+    if (!queuedChest) return null;
+    const revealed = queuedChest.awardId ? chestReveals[queuedChest.awardId] : undefined;
+    if (!revealed) return queuedChest;
+    return {
+      ...queuedChest,
+      amount: revealed.amount,
+      amountPending: false,
+      tier: revealed.tier ?? queuedChest.tier,
+      tierLabel: revealed.tierLabel ?? queuedChest.tierLabel,
+      isJackpot: revealed.isJackpot ?? queuedChest.isJackpot,
+      recipients: revealed.recipients ?? queuedChest.recipients,
+    };
+  }, [queuedChest, chestReveals]);
   // The Spin multiplier draw. Server-decided, shown once per tournament.
   const [spinDraw, setSpinDraw] = useState<SpinWheelData | null>(null);
   /**
@@ -1056,6 +1132,161 @@ export default function TablePage({
       // It must never stop the winner from seeing their prize.
       reportError(err, 'TablePage.broadcastChestOpen');
     }
+  }, [tableId]);
+
+  /**
+   * THE TAP (Dan sections 19, 51-54).
+   *
+   * The designated revealer's own client opens the chest — from the browser,
+   * against `fn_mystery_bounty_reveal`, which returns the amount immediately.
+   * That is the entire reason there is a tap: the player who made the knockout
+   * sees the number before the table does.
+   *
+   * WHAT IT CANNOT DO:
+   *   - it cannot re-roll. The chest was drawn and its value fixed at reserve
+   *     time, inside `fn_mystery_bounty_reserve`. This call only uncovers it;
+   *     calling it twice returns the identical payload.
+   *   - it cannot pay. Money moves in `fn_mystery_bounty_pay`, which only the
+   *     engine calls, once, after its own idempotent reveal.
+   *   - it cannot fire twice. MysteryBountyChest requests exactly one reveal
+   *     per award, from the tap and the auto-open alike, and the award id key
+   *     below means a second answer overwrites rather than accumulates.
+   *
+   * If it fails, nothing is lost: the engine reveals the same award on its own
+   * deadline and broadcasts the result to everyone including this client. The
+   * tapper simply loses their head start.
+   */
+  const revealMysteryBounty = useCallback(
+    async (awardId: string) => {
+      if (!awardId || !userId || userId === 'guest') return;
+      try {
+        const { data, error } = await supabase.rpc('fn_mystery_bounty_reveal', {
+          p_award_id: awardId,
+          p_actor_user_id: userId,
+          p_auto: false,
+        });
+        const res = (data ?? {}) as {
+          ok?: boolean;
+          amount_cents?: number;
+          tier?: string;
+          is_jackpot?: boolean;
+          recipients?: Array<{ user_id: string; amount_cents: number }>;
+        };
+        if (error || !res.ok || typeof res.amount_cents !== 'number') return;
+        setChestReveals((prev) => ({
+          ...prev,
+          [awardId]: {
+            amount: Math.round(res.amount_cents! / 100),
+            tier: res.tier,
+            tierLabel: formatBountyTierLabel(res.tier),
+            isJackpot: !!res.is_jackpot,
+            // The private reveal knows the ids and the shares but not the
+            // names; the table broadcast that follows carries both and
+            // overwrites this entry. Until then the split is shown by share.
+            recipients:
+              (res.recipients ?? []).length > 1
+                ? res.recipients!.map((r) => ({
+                    userId: r.user_id,
+                    name: r.user_id === userId ? 'You' : 'Player',
+                    amount: Math.round(r.amount_cents / 100),
+                  }))
+                : undefined,
+          },
+        }));
+      } catch (err) {
+        reportError(err, 'TablePage.revealMysteryBounty');
+      }
+    },
+    [userId]
+  );
+
+  /**
+   * RECONNECT / LATE ARRIVAL (Dan section 57).
+   *
+   * "Reconnect during pending, waiting or reveal restores the CURRENT state
+   * from the server — never re-rolls, never re-pays, never restarts the hand."
+   *
+   * Realtime broadcasts are fire-and-forget: a player who refreshed, tabbed
+   * away, dropped signal in a lift, or simply opened the table two seconds
+   * after the knockout has already missed `mystery_bounty_pending` and it will
+   * never be sent again. Their table is stopped — the engine's reveal gate is
+   * closed until the queue empties — and they are looking at a felt where
+   * nothing happens for seventeen seconds with no explanation.
+   *
+   * `fn_mystery_bounty_table_state` is the one read that answers it, and it
+   * withholds `amount_cents` for as long as the award is still `reserved`, so
+   * restoring the state cannot leak what is in an unopened chest (section 19).
+   * The three bounty tables have RLS on with NO select policy for exactly that
+   * reason; this RPC is the only way in and it is SECURITY DEFINER.
+   *
+   * Nothing here can pay or re-roll: it is a SELECT wrapped in a function.
+   */
+  const restoreMysteryBountyState = useCallback(() => {
+    if (!tableId) return () => {};
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data, error } = await supabase.rpc('fn_mystery_bounty_table_state', {
+          p_table_id: tableId,
+        });
+        if (cancelled || error) return;
+        const open = ((data as { open?: any[] } | null)?.open ?? []) as any[];
+        for (const a of open) {
+          const awardKey = String(a?.award_id || '');
+          if (!awardKey || chestSeenRef.current.has(awardKey)) continue;
+          chestSeenRef.current.add(awardKey);
+          const cents = typeof a?.amount_cents === 'number' ? a.amount_cents : null;
+          const recipients: Array<{ userId: string; name: string; amount: number }> = Array.isArray(
+            a?.recipients
+          )
+            ? a.recipients.map((r: any) => ({
+                userId: String(r?.user_id ?? ''),
+                name: String(r?.username ?? 'Player'),
+                amount: typeof r?.amount_cents === 'number' ? Math.round(r.amount_cents / 100) : 0,
+              }))
+            : [];
+          if (cents !== null) {
+            // Already revealed before this client arrived. Seed the amount so
+            // the chest opens onto the real figure rather than asking for it
+            // again — which would be harmless (the RPC is idempotent) but is
+            // a round trip for something we have already been told.
+            setChestReveals((prev) => ({
+              ...prev,
+              [awardKey]: {
+                amount: Math.round(cents / 100),
+                tier: a?.tier ?? undefined,
+                tierLabel: formatBountyTierLabel(a?.tier),
+                isJackpot: !!a?.is_jackpot,
+                recipients: recipients.length > 1 ? recipients : undefined,
+              },
+            }));
+          }
+          chestQueue.enqueue({
+            awardId: awardKey,
+            knockerUserId: String(a?.designated_revealer || ''),
+            knockerName: String(a?.designated_revealer_name || 'Player'),
+            eliminatedName: String(a?.eliminated?.username || 'Player'),
+            amount: cents !== null ? Math.round(cents / 100) : 0,
+            amountPending: cents === null,
+            tier: a?.tier ?? undefined,
+            tierLabel: formatBountyTierLabel(a?.tier),
+            isJackpot: !!a?.is_jackpot,
+            queueIndex: 1,
+            queueTotal: open.length,
+            recipients: recipients.length > 1 ? recipients : undefined,
+          });
+        }
+      } catch (err) {
+        // A restore that fails leaves the table exactly as it is today: the
+        // engine still reveals, pays and broadcasts on its own deadline, and
+        // this client picks the sequence up from there.
+        reportError(err, 'TablePage.restoreMysteryBountyState');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableId]);
 
   // Listen for that tap. Every client subscribes, including the winner's —
@@ -1223,6 +1454,16 @@ export default function TablePage({
       isBountyTournament: false,
     };
   });
+
+  /**
+   * Run the section-57 restore once this table is known to be a tournament
+   * table. Gated on `tournamentId` rather than fired at mount so a cash table
+   * — which can never hold a mystery bounty award — makes no call at all.
+   */
+  useEffect(() => {
+    if (!tableState.tournamentId) return;
+    return restoreMysteryBountyState();
+  }, [tableState.tournamentId, restoreMysteryBountyState]);
 
   // REST fetch for initial seats while WS connects (3-5s speedup)
   useEffect(() => {
@@ -3484,38 +3725,58 @@ export default function TablePage({
     };
   }, [tableId]);
 
-  // Rabbit Hunt state
+  // ── RABBIT HUNT (Dan 2026-08-25) ────────────────────────────────────────
+  // The client no longer holds the cards, because it never should have. The
+  // engine used to broadcast all five remaining cards to every socket at the
+  // table the instant a hand ended; this page cached them in a ref and the
+  // RabbitHunt component decided for itself whether to bill. The cards were on
+  // every opponent's machine before anyone clicked, and free to anyone reading
+  // the websocket.
+  //
+  // What arrives now is an availability signal — how many cards a reveal would
+  // show, and nothing else. The cards come back in the response to
+  // POST /rabbit-hunt, which charges first (VIP monthly pool, then a purchased
+  // pack, then five diamonds) and answers only the caller that paid.
   const [isRabbitAvailable, setIsRabbitAvailable] = useState(false);
-  const [currentBoard, setCurrentBoard] = useState<
-    Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>
-  >([]);
-  /** Server-provided remaining deck cards for authentic rabbit hunt reveal */
-  const serverRabbitCardsRef = useRef<Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>>([]);
+  const [rabbitCardsAvailable, setRabbitCardsAvailable] = useState(0);
+  const rabbitHandNumberRef = useRef<number | null>(null);
 
-  // Handle rabbit hunt reveal — uses real server-dealt deck cards
-  const handleRabbitReveal = async (): Promise<
-    Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>
-  > => {
-    const cardsNeeded = 5 - currentBoard.length;
-    if (cardsNeeded <= 0) return [];
+  const handleRabbitReveal = useCallback(async (): Promise<RabbitHuntRevealResult> => {
+    if (!tableId) return { success: false, error: 'Table Not Ready' };
 
-    // Use server-provided cards (authentic from the actual deck)
-    if (serverRabbitCardsRef.current.length > 0) {
-      const cards = serverRabbitCardsRef.current.slice(0, cardsNeeded);
-      // Clear after reveal (one-time use)
-      serverRabbitCardsRef.current = [];
-      setIsRabbitAvailable(false);
-      return cards;
+    const result = await requestRabbitHunt(tableId, rabbitHandNumberRef.current ?? undefined);
+    if (!result.success || !result.cards?.length) {
+      // Leave the offer up: a refusal for "Not Enough Diamonds" should not also
+      // remove the button, or topping up cannot be followed by a retry.
+      return { success: false, error: result.error };
     }
 
-    // P2-2 FIX: Do NOT fabricate random cards when the server didn't provide
-    // them (edge case: stale state, reconnection). On a real-money platform
-    // inventing a card outcome misrepresents the deck, so short-circuit the
-    // reveal instead — surface "unavailable" and return no cards.
-    toast.error('Rabbit Hunt unavailable - no card data from server.');
-    setIsRabbitAvailable(false);
-    return [];
-  };
+    // Server card format (hearts/diamonds/clubs/spades) → client shorthand.
+    const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
+      hearts: 'h',
+      diamonds: 'd',
+      clubs: 'c',
+      spades: 's',
+      h: 'h',
+      d: 'd',
+      c: 'c',
+      s: 's',
+    };
+    return {
+      success: true,
+      cards: result.cards.map((c) => ({
+        rank: String(c.rank),
+        suit: suitMap[String(c.suit)] || 'h',
+      })),
+      source: result.source,
+      diamondsSpent: result.diamonds_spent,
+      // The server counts the VIP monthly pool down on every reveal and has
+      // always returned it. It used to be dropped here, one line from the UI,
+      // which is why the button could say FREE on the 101st hunt and then
+      // silently charge five diamonds.
+      vipRemaining: result.vip_remaining,
+    };
+  }, [tableId]);
 
   // Leaderboard state
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -5058,26 +5319,17 @@ export default function TablePage({
         return;
       }
 
-      // Rabbit Hunt: Server sends remaining deck cards after hand completes
+      // Rabbit Hunt: an AVAILABILITY SIGNAL. It carries no cards — see the
+      // handleRabbitReveal comment above for why it used to and no longer does.
       if (eventType === 'rabbit_hunt_available') {
-        const rabbitCards = (handState.rabbit_cards as any[]) || [];
-        if (rabbitCards.length > 0 && heroFoldedInCurrentHandRef.current) {
-          // Convert server card format (hearts/diamonds/clubs/spades) to client shorthand (h/d/c/s)
-          const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
-            hearts: 'h',
-            diamonds: 'd',
-            clubs: 'c',
-            spades: 's',
-            h: 'h',
-            d: 'd',
-            c: 'c',
-            s: 's',
-          };
-          const converted = rabbitCards.map((c: any) => ({
-            rank: String(c.rank),
-            suit: suitMap[c.suit] || 'h',
-          }));
-          serverRabbitCardsRef.current = converted;
+        const available = Number(handState.cards_available ?? 0);
+        // Dan 2026-08-25: the offer goes to everyone who was in the hand, not
+        // only to players who folded. Gating on heroFolded meant the player who
+        // won the pot when everyone else folded — the one person most likely to
+        // wonder what was coming — was never offered a rabbit hunt at all.
+        if (available > 0) {
+          rabbitHandNumberRef.current = Number(handState.hand_number ?? 0) || null;
+          setRabbitCardsAvailable(available);
           setIsRabbitAvailable(true);
         }
         return;
@@ -6294,6 +6546,51 @@ export default function TablePage({
                     `[TablePage] Rebuy: ${rebuyData.userId.slice(0, 8)} +${rebuyData.chips} chips`
                   );
                 }
+              } else if (data?.type === 'mystery_bounty_pending') {
+                // ── THE CHEST ARRIVES, THE AMOUNT DOES NOT (Dan section 19) ──
+                //
+                // A knockout has been scored and a chest reserved for it. The
+                // engine has already stopped this table (sections 21-26): no
+                // button move, no next hand, no blinds, no action timers until
+                // the queue empties. All this page has to do is put the chest
+                // on screen and let the designated revealer tap it.
+                //
+                // There is deliberately NO AMOUNT in this payload. The number
+                // arrives from `fn_mystery_bounty_reveal` — either because the
+                // revealer tapped, or because the engine's deadline fired.
+                const p = data.payload || {};
+                // Same table scoping as the reveal: this rides the tournament
+                // channel, so a knockout on table 3 must not open a chest here.
+                if (p.tableId && p.tableId !== tableId) return;
+                const awardKey = String(p.awardId || '');
+                if (!awardKey || chestSeenRef.current.has(awardKey)) return;
+                chestSeenRef.current.add(awardKey);
+                chestQueue.enqueue({
+                  awardId: awardKey,
+                  // SECTIONS 52/53: exactly one player may tap. Everyone else
+                  // at the table, and every spectator, watches. On a split the
+                  // server has already picked which claimant that is.
+                  knockerUserId: String(p.designatedRevealer || ''),
+                  knockerName: String(p.designatedRevealerName || 'Player'),
+                  eliminatedName: String(p.eliminatedName || 'Player'),
+                  amount: 0,
+                  amountPending: true,
+                  queueIndex: Number(p.queueIndex) || 1,
+                  queueTotal: Number(p.queueTotal) || 1,
+                });
+                setChestRemoteOpened(false);
+              } else if (data?.type === 'mystery_bounty_complete') {
+                // SECTION 63: reveal, animation done, UI clears, button moves,
+                // next hand. The queue at this table is empty, so nothing more
+                // is coming and the reveal cache can be dropped.
+                //
+                // The overlay is NOT force-closed here: the last chest's own
+                // dismissal timer owns that, and cutting it short would be the
+                // "rushed animation" Dan's standing rule forbids. This only
+                // stops the page holding award ids nobody will ask about again.
+                const c = data.payload || {};
+                if (c.tableId && c.tableId !== tableId) return;
+                setChestReveals({});
               } else if (
                 data?.type === 'bounty_collected' ||
                 data?.type === 'mystery_bounty_revealed'
@@ -6327,16 +6624,66 @@ export default function TablePage({
                   if (b.tableId && b.tableId !== tableId) {
                     return;
                   }
-                  chestQueue.enqueue({
-                    knockerUserId: b.knockerUserId || '',
-                    knockerName: b.knockerName || 'Player',
-                    eliminatedName: b.eliminatedName || 'Player',
-                    amount: Number(b.amount) || 0,
-                    tierLabel: b.tierLabel,
-                    isJackpot: !!b.isJackpot,
-                    avgBounty: Number(b.avgBounty) || undefined,
-                  });
-                  setChestRemoteOpened(false);
+                  // TWO-PHASE REVEAL. The amount now arrives in CENTS on
+                  // `amountCents`; `amount` is the pre-2026-08-25 field and is
+                  // kept as the fallback so an older engine build still shows a
+                  // figure rather than zero.
+                  const revealedAmount =
+                    typeof b.amountCents === 'number'
+                      ? Math.round(b.amountCents / 100)
+                      : Number(b.amount) || 0;
+                  const revealedRecipients: Array<{
+                    userId: string;
+                    name: string;
+                    amount: number;
+                  }> = Array.isArray(b.recipients)
+                    ? b.recipients.map((r: any) => ({
+                        userId: String(r.userId ?? r.user_id ?? ''),
+                        name: String(r.name ?? r.username ?? 'Player'),
+                        amount:
+                          typeof r.amountCents === 'number'
+                            ? Math.round(r.amountCents / 100)
+                            : Number(r.amount) || 0,
+                      }))
+                    : [];
+                  if (b.awardId) {
+                    // Keyed by award: a duplicate broadcast (section 80/33)
+                    // overwrites the same entry instead of queueing a second
+                    // chest or crediting anything twice.
+                    setChestReveals((prev) => ({
+                      ...prev,
+                      [String(b.awardId)]: {
+                        amount: revealedAmount,
+                        tier: b.tier,
+                        tierLabel: b.tierLabel || formatBountyTierLabel(b.tier),
+                        isJackpot: !!b.isJackpot,
+                        recipients: revealedRecipients.length > 1 ? revealedRecipients : undefined,
+                      },
+                    }));
+                  }
+                  // Enqueue only if the pending broadcast never reached us —
+                  // a client that joined between the reserve and the reveal,
+                  // or an engine build old enough not to send one. The normal
+                  // path already has this chest on screen.
+                  const awardKey = b.awardId ? String(b.awardId) : '';
+                  if (!awardKey || !chestSeenRef.current.has(awardKey)) {
+                    if (awardKey) chestSeenRef.current.add(awardKey);
+                    chestQueue.enqueue({
+                      awardId: awardKey || undefined,
+                      knockerUserId: b.knockerUserId || '',
+                      knockerName: b.knockerName || 'Player',
+                      eliminatedName: b.eliminatedName || 'Player',
+                      amount: revealedAmount,
+                      tier: b.tier,
+                      tierLabel: b.tierLabel || formatBountyTierLabel(b.tier),
+                      isJackpot: !!b.isJackpot,
+                      avgBounty: Number(b.avgBounty) || undefined,
+                      queueIndex: Number(b.queueIndex) || undefined,
+                      queueTotal: Number(b.queueTotal) || undefined,
+                      recipients: revealedRecipients.length > 1 ? revealedRecipients : undefined,
+                    });
+                    setChestRemoteOpened(false);
+                  }
                 } else {
                   knockoutQueue.enqueue({
                     knockerName: b.knockerName || 'Player',
@@ -8624,11 +8971,27 @@ export default function TablePage({
          * engine is ready to deal and never a beat before. Changing an
          * animation length in that file moves both sides together.
          */
-        const holdMs =
-          handCompletionHoldMs({
-            wentToShowdown: handShowdownRef.current.wentToShowdown,
-            showdownHands: handShowdownRef.current.hands,
-          }) * getAnimationSpeed();
+        const holdBaseMs = handCompletionHoldMs({
+          wentToShowdown: handShowdownRef.current.wentToShowdown,
+          showdownHands: handShowdownRef.current.hands,
+          // bbjHit was the one input the client did not pass, and it is the one
+          // that matters most: the spec returns BBJ_CELEBRATION_MS (9000) for it.
+          // Without it the client held ~7.9s against the server's 9s, so the
+          // board, pot and winner were wiped roughly a second into the Bad Beat
+          // Jackpot celebration that the spec says is never rushed.
+          bbjHit: !!bbjHitDataRef.current,
+        });
+        // The player's animation-speed preference scales this, but only within
+        // bounds. The SERVER holds `holdBaseMs` flat, so scaling below 1x used to
+        // clear the winner name before the pot-win float it is describing had
+        // finished — at 0.25x, a 6.5s showdown hold became 1.6s. And scaling to
+        // 3x left ~12s of stale board on screen if a HAND_STARTED event is ever
+        // dropped, where the old hardcoded 3000ms risked about one second.
+        // Never shorter than the engine's own hold, never more than double it.
+        const holdMs = Math.min(
+          holdBaseMs * 2,
+          Math.max(holdBaseMs, holdBaseMs * getAnimationSpeed())
+        );
         // CA-22: track so unmount can cancel — prevents setTableState on dead page
         if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
         handCompleteTimerRef.current = window.setTimeout(() => {
@@ -9434,8 +9797,8 @@ export default function TablePage({
       heroFoldedInCurrentHandRef.current = false; // Reset for new hand
       // Rabbit Hunt: Reset for new hand
       setIsRabbitAvailable(false);
-      serverRabbitCardsRef.current = [];
-      setCurrentBoard([]);
+      setRabbitCardsAvailable(0);
+      rabbitHandNumberRef.current = null;
       // NOTE: the deal animation is triggered by the discrete HAND_STARTED
       // handler (single source). AUDIT FIX 2026-07-19: the redundant bump that
       // used to live here was removed — now that handNumber advances via the
@@ -11304,6 +11667,11 @@ export default function TablePage({
         viewerUserId={userId}
         remoteOpened={chestRemoteOpened}
         onBroadcastOpen={broadcastChestOpen}
+        /* THE TAP (section 19). Fired once per chest, by the designated
+           revealer's client only, from the tap and the auto-open alike. */
+        onRequestReveal={
+          mysteryChest?.awardId ? () => void revealMysteryBounty(mysteryChest.awardId!) : undefined
+        }
         queuedBehind={chestQueue.pending}
         onDone={() => {
           chestQueue.complete();
@@ -11745,7 +12113,18 @@ export default function TablePage({
           TABLE AREA
           ═══════════════════════════════════════════════════════════════════════ */}
       <div className="table-container">
-        <div className="table-scaler" ref={tableScalerRef}>
+        {/* --table-w: the table's MEASURED width, published to CSS.
+            Dan 2026-08-25 (item 8): the dealer button and the chips are sized
+            as a proportion of this in TableVisualHotfix.css, so one table size
+            gives one consistent set of proportions instead of a per-breakpoint
+            guess. scalerSize comes from the ResizeObserver already on this
+            element, so it is the real painted width - including in landscape,
+            where the table is height-driven and has no width to infer from. */}
+        <div
+          className="table-scaler"
+          ref={tableScalerRef}
+          style={{ '--table-w': `${scalerSize.w}px` } as React.CSSProperties}
+        >
           {/* Table Felt */}
           <div className="table-felt">
             {/* Dan 2026-08-17 — the painted table itself. object-fit: cover
@@ -12235,11 +12614,17 @@ export default function TablePage({
             // still in the hand.
             const someoneActing = tableState.currentPlayerSeat > 0;
             const isActingSeat = someoneActing && seatNumber === tableState.currentPlayerSeat;
-            // Dan: hero is NEVER faded while holding a live hand, even when the
-            // action is elsewhere. A folded hero dims like anyone else.
-            const heroHasLiveHand =
-              !!player?.isHero && player.status !== 'folded' && player.status !== 'sitting_out';
-            const seatDimmed = someoneActing && !isActingSeat && !heroHasLiveHand;
+            // Dan 2026-08-25: NOBODY holding a live hand is ever faded — hero and
+            // villain alike. Fading is reserved for players who are out: folded,
+            // sitting out, or away. The spotlight dim used to apply to every seat
+            // that was not the actor, which greyed live villains for ~83% of a
+            // 6-max hand and made them read as folded.
+            const hasLiveHand =
+              !!player &&
+              player.status !== 'folded' &&
+              player.status !== 'sitting_out' &&
+              player.status !== 'away';
+            const seatDimmed = someoneActing && !isActingSeat && !hasLiveHand;
 
             // FIX: Apply use_alias and table_alias from settings directly to the hero's rendered name
             let derivedHeroName = player?.name;
@@ -12866,19 +13251,13 @@ export default function TablePage({
                 </div>
               )}
 
-            {/* Rabbit Hunt — shows AFTER hand completes, not during */}
-            {!tableState.isHandInProgress && isRabbitAvailable && (
-              <div className="control-strip control-strip--transparent">
-                <button
-                  className="control-strip__btn"
-                  title="Rabbit Hunt - reveal remaining cards"
-                  onClick={handleRabbitReveal}
-                >
-                  <span className="control-strip__icon">R</span>
-                  <span className="control-strip__label">Rabbit Hunt</span>
-                </button>
-              </div>
-            )}
+            {/* Rabbit Hunt lives in TableModalsLayer, which renders the
+                <RabbitHunt> component that actually SHOWS the cards.
+                A second button used to sit here calling handleRabbitReveal
+                directly and throwing the result away — it spent the reveal (and,
+                now, the player's diamonds) and displayed nothing. Removed
+                2026-08-25; the twin of it was removed from the ActionPanel on
+                2026-08-15 for exactly the same reason. There is one button. */}
 
             {/* ─── ACTION PANEL — Premium 3-button layout ─── */}
             {/* QuickActionsBar REMOVED — Auto-Rebuy is a hamburger menu setting,
@@ -13104,22 +13483,23 @@ export default function TablePage({
         !tableState.isTournament &&
         Array.isArray(tableState.waitingForBBUserIds) &&
         tableState.waitingForBBUserIds.includes(userId) && (
-          <button
-            type="button"
-            className="post-bb-overlay-button"
-            onClick={async () => {
-              const result = await serverPostBBToEnter(tableId);
-              if (!result.success) {
-                toast?.error(result.error || 'Could not post BB');
-              } else {
-                toast?.success('Will be dealt in next hand');
-              }
-            }}
-            aria-label="Post the big blind to enter the next hand"
-          >
-            <span className="post-bb-overlay-button__title">Post BB To Enter</span>
-            <span className="post-bb-overlay-button__sub">Skip The Wait, Pay The BB Now</span>
-          </button>
+          /* Dan 2026-08-25: this is a NOTICE now, not a button.
+             It used to read "Post BB To Enter — Skip The Wait, Pay The BB Now",
+             which was fair when a new player faced a long wait for the big
+             blind to rotate to them. Entry is free now and the wait is at most
+             one hand, so the only players still waiting are the two the engine
+             deliberately holds out for a hand: the seat the small blind is
+             about to reach, and the seat the button is about to reach. For
+             those, the offer was no longer a shortcut — it was a way to pay a
+             live big blind to be dealt into the small blind, which the house
+             rule forbids outright. The engine now refuses that call; there is
+             no reason to keep asking the player to make it. */
+          <div className="post-bb-overlay-button post-bb-overlay-button--notice">
+            <span className="post-bb-overlay-button__title">Seat Reserved</span>
+            <span className="post-bb-overlay-button__sub">
+              You'll Be Dealt In Free Once The Button Passes
+            </span>
+          </div>
         )}
 
       {/* ═══════════════════════════════════════════════════════════════════════
@@ -13493,17 +13873,25 @@ export default function TablePage({
       />
       <TableModalsLayer
         currentCardBack={activeCardBack}
-        onCardBackChanged={(id) => {
+        /* 2026-08-25: this used to end `.then(() => {})`, which discards the
+           PostgREST error object. A card back the player had just paid for
+           could fail to save and the store would still report success, because
+           nothing on this path could tell it otherwise. The handler is async
+           now and THROWS on failure, so CardBackSelector reverts its tick and
+           says what happened instead of congratulating the player. */
+        onCardBackChanged={async (id) => {
           masterBus.emit('UI_THEME_CHANGED', { key: 'ALL', value: { cards_id: id } });
           masterBus.emit('SETTINGS_CHANGED', { setting: 'cardBack', value: id });
-          if (userId) {
-            supabase
-              .from('user_theme_settings')
-              .upsert(
-                { user_id: userId, game_type: 'ALL', cards_id: id },
-                { onConflict: 'user_id,game_type' }
-              )
-              .then(() => {});
+          if (!userId) return;
+          const { error } = await supabase
+            .from('user_theme_settings')
+            .upsert(
+              { user_id: userId, game_type: 'ALL', cards_id: id },
+              { onConflict: 'user_id,game_type' }
+            );
+          if (error) {
+            reportError(error, 'TablePage.cardBackSaveFailed');
+            throw error;
           }
         }}
         tableId={tableId}
@@ -13782,7 +14170,7 @@ export default function TablePage({
         }}
         // Rabbit Hunt
         isRabbitAvailable={isRabbitAvailable}
-        currentBoard={currentBoard}
+        rabbitCardsAvailable={rabbitCardsAvailable}
         onRabbitReveal={handleRabbitReveal}
         // Leaderboard
         showLeaderboard={showLeaderboard}

@@ -54,3 +54,36 @@ export function mysteryChestHoldMs(): number {
     CHEST_SETTLE_MS
   );
 }
+
+/**
+ * Time from the REVEAL broadcast until the overlay has cleared and the table
+ * may move again — Dan section 63: "reveal, animation done, UI clears, button
+ * moves, next hand", in that order.
+ *
+ * The engine reveals at MYSTERY_BOUNTY_REVEAL_DELAY_MS (landing + auto-open),
+ * so this is the remainder of the sequence. It is the gap the reveal gate must
+ * stay closed for AFTER the amount goes out, and it is also the gap between
+ * one chest finishing and the next one in the queue landing (section 25).
+ * ~7.1s at 1x.
+ */
+export function mysteryChestPostRevealMs(): number {
+  return CHEST_OPENING_MS + CHEST_EXPLOSION_MS + CHEST_REVEALED_MS + CHEST_SETTLE_MS;
+}
+
+/**
+ * How long the engine waits after the FIRST knockout of a hand before it puts
+ * the first chest on screen.
+ *
+ * Sections 25 and 64: three knockouts in one hand read "MYSTERY BOUNTY 1 OF 3",
+ * "2 OF 3", "3 OF 3". Getting the "of 3" right means knowing how many there
+ * are, and the elimination sweep discovers them one at a time — it awaits a
+ * seat lookup, a hand lookup and a reserve RPC per player. Presenting the first
+ * one the instant it is reserved would label it "1 OF 1" and then contradict
+ * itself twice.
+ *
+ * So the queue coalesces for slightly under a second. The table is ALREADY
+ * held by then (the gate opens at reserve, not at presentation), so this is
+ * not dead time the players can see — it is the difference between a counter
+ * that is right and one that lies.
+ */
+export const MYSTERY_BOUNTY_QUEUE_COALESCE_MS = 900;

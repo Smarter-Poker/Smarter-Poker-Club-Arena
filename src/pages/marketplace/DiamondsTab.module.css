@@ -1,0 +1,368 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   DIAMOND STORE — Cinematic sci-fi redesign (2026-08-25)
+   Mobile-first: single column on ≤ 480 px, 2-col grid at 481 px+
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Root ─────────────────────────────────────────────────────────────────── */
+.root {
+  width: 100%;
+  min-height: 100vh;
+  background: #000;
+  padding: 0 0 40px;
+  font-family:
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    sans-serif;
+  color: #e8f4ff;
+  overflow-x: hidden;
+}
+
+/* ── Title ────────────────────────────────────────────────────────────────── */
+.titleRow {
+  text-align: center;
+  padding: 28px 16px 12px;
+  background: linear-gradient(180deg, #0a0f1e 0%, #050a14 100%);
+  border-bottom: 1px solid rgba(0, 120, 255, 0.25);
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(2rem, 7vw, 3.2rem);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+
+  /* Chrome-steel gradient matching the reference image */
+  background: linear-gradient(
+    180deg,
+    #ffffff 0%,
+    #c8dff8 20%,
+    #90b8e8 50%,
+    #5888c4 75%,
+    #2a5090 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+
+  /* Subtle emboss shadow */
+  filter: drop-shadow(0 2px 8px rgba(0, 100, 255, 0.5));
+}
+
+/* ── Navigation tab bar ───────────────────────────────────────────────────── */
+.navBar {
+  display: flex;
+  gap: 6px;
+  padding: 14px 12px;
+  background: #08111e;
+  border-bottom: 1px solid rgba(0, 80, 200, 0.3);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.navBar::-webkit-scrollbar {
+  display: none;
+}
+
+.navTab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: linear-gradient(135deg, #0d1a2e 0%, #08101c 100%);
+  border: 1px solid rgba(0, 100, 220, 0.4);
+  border-radius: 6px;
+  color: #90c0f8;
+  text-decoration: none;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background 0.18s,
+    border-color 0.18s,
+    color 0.18s;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.navTab:hover,
+.navTab:focus-visible {
+  background: linear-gradient(135deg, #122040 0%, #0c1830 100%);
+  border-color: rgba(0, 160, 255, 0.7);
+  color: #c0deff;
+  outline: none;
+}
+
+.navIcon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.navLabel {
+  font-size: 0.78rem;
+}
+
+/* ── Promo banner ─────────────────────────────────────────────────────────── */
+.promoBanner {
+  margin: 16px 12px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #0a1a30 0%, #071020 100%);
+  border: 1px solid rgba(0, 120, 255, 0.35);
+  border-radius: 10px;
+  text-align: center;
+  box-shadow:
+    0 0 20px rgba(0, 80, 200, 0.15),
+    inset 0 0 20px rgba(0, 40, 120, 0.1);
+}
+
+.promoBody {
+  margin: 0 0 8px;
+  font-size: clamp(0.82rem, 2.5vw, 0.9rem);
+  color: #a8ccf0;
+  line-height: 1.5;
+}
+
+.promoBonus {
+  margin: 0;
+  font-size: clamp(1rem, 3.5vw, 1.2rem);
+  font-weight: 800;
+  color: #60b8ff;
+  letter-spacing: 0.02em;
+  text-shadow: 0 0 10px rgba(0, 160, 255, 0.6);
+}
+
+/* ── Balance display ──────────────────────────────────────────────────────── */
+.balance {
+  text-align: center;
+  margin: 0 12px 14px;
+  font-size: 0.85rem;
+  color: #78a8d8;
+}
+
+.balance strong {
+  color: #60b8ff;
+}
+
+/* ── Package grid ─────────────────────────────────────────────────────────── */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 0 12px;
+}
+
+@media (max-width: 360px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Package card ─────────────────────────────────────────────────────────── */
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  background: linear-gradient(145deg, #0d1e36 0%, #071320 100%);
+  border: 1px solid rgba(0, 100, 220, 0.45);
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  font-family: inherit;
+  transition:
+    transform 0.18s,
+    border-color 0.18s,
+    box-shadow 0.18s;
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  width: 100%;
+}
+
+.card:hover:not(:disabled),
+.card:focus-visible:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(0, 160, 255, 0.7);
+  box-shadow:
+    0 6px 24px rgba(0, 100, 255, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  outline: none;
+}
+
+.card:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.cardPopular {
+  border-color: rgba(0, 180, 255, 0.65);
+  box-shadow:
+    0 4px 20px rgba(0, 120, 255, 0.3),
+    inset 0 0 20px rgba(0, 60, 160, 0.15);
+}
+
+.cardDisabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+/* ── Badges ───────────────────────────────────────────────────────────────── */
+.popularBadge,
+.bonusBadge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 3px 7px;
+  border-radius: 4px;
+  z-index: 1;
+  text-transform: uppercase;
+}
+
+.popularBadge {
+  background: linear-gradient(135deg, #0060d0, #003fa0);
+  color: #a0d0ff;
+  border: 1px solid rgba(0, 140, 255, 0.5);
+}
+
+.bonusBadge {
+  background: linear-gradient(135deg, #004080, #002860);
+  color: #70c0ff;
+  border: 1px solid rgba(0, 120, 255, 0.4);
+}
+
+/* ── Card inner (gem + info) ──────────────────────────────────────────────── */
+.cardInner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 12px 10px;
+}
+
+.gemWrap {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Subtle glow behind the gem */
+  filter: drop-shadow(0 0 10px rgba(30, 130, 255, 0.7));
+}
+
+.gem {
+  display: block;
+}
+
+.pkgInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.pkgLabel {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #7090b8;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.pkgAmount {
+  font-size: clamp(1.3rem, 4.5vw, 1.7rem);
+  font-weight: 900;
+  color: #d8eeff;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+
+.pkgSub {
+  font-size: 0.72rem;
+  color: #6090b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── CTA row ──────────────────────────────────────────────────────────────── */
+.ctaRow {
+  padding: 0 8px 10px;
+}
+
+.ctaBtn {
+  display: block;
+  width: 100%;
+  padding: 8px 0;
+  background: linear-gradient(135deg, #0f2a4a 0%, #091d36 100%);
+  border: 1px solid rgba(0, 100, 200, 0.5);
+  border-radius: 6px;
+  color: #90c8f8;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.04em;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.card:hover:not(:disabled) .ctaBtn,
+.card:focus-visible:not(:disabled) .ctaBtn {
+  background: linear-gradient(135deg, #183d68 0%, #102a50 100%);
+  border-color: rgba(0, 160, 255, 0.65);
+  color: #c0e4ff;
+}
+
+/* ── Footer note ──────────────────────────────────────────────────────────── */
+.footNote {
+  margin: 20px 12px 0;
+  text-align: center;
+  font-size: 0.72rem;
+  color: #3a5878;
+  line-height: 1.5;
+}
+
+/* ── Larger screens: widen the layout ────────────────────────────────────── */
+@media (min-width: 640px) {
+  .root {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  .titleRow {
+    padding: 36px 24px 16px;
+  }
+
+  .navBar {
+    gap: 10px;
+    padding: 16px 20px;
+  }
+
+  .navTab {
+    font-size: 0.85rem;
+    padding: 10px 18px;
+  }
+
+  .promoBanner {
+    margin: 20px 20px;
+    padding: 20px 28px;
+  }
+
+  .grid {
+    gap: 14px;
+    padding: 0 20px;
+  }
+
+  .cardInner {
+    padding: 18px 16px 12px;
+    gap: 14px;
+  }
+
+  .ctaRow {
+    padding: 0 12px 12px;
+  }
+}

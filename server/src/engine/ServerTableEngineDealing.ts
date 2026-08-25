@@ -160,6 +160,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             this.waitingForBB.delete(id);
           }
         }
+        // Same pruning for button eligibility: a player who has left and comes
+        // back is a new joiner again and re-earns the button by playing a hand.
+        // This also keeps the set bounded by the table rather than by the
+        // lifetime of the process.
+        for (const id of this.dealtInUserIds) {
+          if (!currentIds.has(id)) this.dealtInUserIds.delete(id);
+        }
 
         // Bible V8 §6.3: Check for stale heartbeats before each hand
         this.disconnectEngine.checkStaleHeartbeats(this.tableId);
@@ -264,6 +271,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // Dan 2026-08-21, BINDING: "CASH GAME PLAYERS CAN NEVER BE DEALT
           // INTO THE SMALL BLIND. THEY MUST WAIT FOR THE BUTTON TO PASS."
           const sbSeatIndex = this.isTournamentTable() ? -1 : this.getSBSeatIndex();
+          // Dan 2026-08-25, BINDING: "NEW PLAYERS NEVER GET THE BUTTON WHEN
+          // SITTING DOWN... even if they take the seat of a person who would
+          // have been the button they must wait one hand before being dealt
+          // in." Same hold-out mechanism as the SB rule: stay in waitingForBB
+          // for exactly one hand, which excludes them from activePlayers, so
+          // the rotation below lands on the next seat instead.
+          const buttonSeatIndex = this.isTournamentTable() ? -1 : this.getButtonSeatIndex();
           for (const userId of Array.from(this.waitingForBB)) {
             const seatedWaiter = this.seatedPlayers.find((s2) => s2.user_id === userId);
             if (seatedWaiter && sbSeatIndex > 0 && seatedWaiter.seat_number === sbSeatIndex) {
@@ -272,10 +286,35 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               );
               continue;
             }
+            if (
+              seatedWaiter &&
+              buttonSeatIndex > 0 &&
+              seatedWaiter.seat_number === buttonSeatIndex
+            ) {
+              console.log(
+                `[ServerTableEngine:${this.tableId}] holding ${userId} out one hand — took the seat the button is about to reach`
+              );
+              continue;
+            }
+            // Dan 2026-08-25, BINDING: "YOU DON'T HAVE TO POST WHEN YOU FIRST
+            // COME TO A TABLE. You only have to post if you are in the BB. If
+            // a player is coming in behind the button those hands should be
+            // DEALT TO THEM FOR FREE without posting. They only need to post
+            // if they were sitting out and missed blinds."
+            //
+            // So a new joiner is simply released — no postingBBToEnter, no
+            // charge. The three positions that are not free are all still
+            // handled, and none of them are a "post":
+            //   - the BB seat  → released above by the natural-BB check, and
+            //                    posts the big blind because it IS their blind
+            //   - the SB seat  → held out one hand (never dealt into the SB)
+            //   - the button   → held out one hand (rule immediately above)
+            // A player returning from sit-out never reaches this loop: they go
+            // into returningFromSitout at sitOut() and owe the dead SB + live
+            // BB, which is the "missed blinds" case Dan carved out.
             this.waitingForBB.delete(userId);
-            this.postingBBToEnter.add(userId);
             console.log(
-              `[ServerTableEngine:${this.tableId}] auto post-BB entry for ${userId} — dealt in next hand as promised`
+              `[ServerTableEngine:${this.tableId}] free entry for ${userId} — coming in behind the button, no post owed`
             );
           }
         }
@@ -364,8 +403,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           );
         }
 
-        if (activePlayers.length < 2) {
-          // Bible V8 §3.1: Table FSM — running → waiting (not enough players)
+        if (activePlayers.length < this.minPlayersToDeal()) {
+          // Bible V8 §3.1: Table FSM — running → waiting (not enough players).
+          // "Enough" is the host's AutoStart figure now, not a hard-coded 2 —
+          // see minPlayersToDeal on the base class, which the watchdog reads
+          // too so the two cannot disagree
           if (this.tableFSM.state === 'running') {
             this.tableFSM.transition('waiting');
           }
@@ -380,6 +422,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         if (this.dealHoldUntilMs > Date.now()) {
           this.setLoopPhase('spin_reveal_hold');
           await this.sleep(Math.min(this.dealHoldUntilMs - Date.now(), 1000));
+          continue;
+        }
+
+        // MYSTERY BOUNTY REVEAL GATE (Dan sections 21-26, 61-65). The table
+        // waits for the chest, and for EVERY chest behind it — the button may
+        // not move until the queue is empty (sections 25 and 64). This sits
+        // immediately before dealHand(), which is the single place the button
+        // advances and the blinds are posted, so closing the gate here is what
+        // makes "no button move, no next hand, no blinds, no action timers"
+        // one condition rather than four.
+        //
+        // Deliberately a COUNT and not a deadline; see beginBountyReveal().
+        // Entries expire on their own, so a settle path that dies mid-reveal
+        // costs an animation, never a wedged table.
+        if (this.hasOpenBountyReveal()) {
+          this.setLoopPhase('mystery_bounty_hold');
+          await this.sleep(250);
           continue;
         }
 
@@ -654,6 +713,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandWinnersByBoard = [];
     this.currentHandActions = [];
     this.currentHandWinners = [];
+    // Dan section 29: a stale pot breakdown would attribute THIS hand's
+    // knockout to the previous hand's side pots, so it is cleared with the
+    // winners it belongs to and never independently of them.
+    this.currentHandPots = [];
     this.currentHandContributions.clear(); // Bible V8 §4.18: Reset equal-share rakeback tracking (FIX 144)
     this.currentHandInsuranceSettlements = []; // Bible V8 §4.19: Reset insurance settlements
     this.currentHandShowdownResults = []; // BBJ: Reset showdown results for new hand
@@ -761,18 +824,54 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // seat, or lands twice.
     const sortedSeats = players.map((p) => p.seat_number).sort((a, b) => a - b);
     const prevButtonSeat = this.lastButtonSeat;
+    // Dan 2026-08-25, BINDING: "NEW PLAYERS NEVER GET THE BUTTON WHEN SITTING
+    // DOWN. It skips over them and moves to the correct person." The wait-for-BB
+    // gate above already holds a joiner out when it can SEE the button coming,
+    // but the roster can change between that prediction and this rotation (a
+    // player busts, leaves, or is evicted mid-iteration), so the guarantee is
+    // enforced here, where the button is actually chosen. buttonEligible falls
+    // back to the whole roster when nobody has played yet, so a table dealing
+    // its first ever hand still gets a button.
+    const buttonRoster = this.buttonEligible(players);
+    const buttonSeats = buttonRoster.map((p) => p.seat_number).sort((a, b) => a - b);
     // A DRAWN first button (Spins) wins over the default, once, and only if
     // that seat is still occupied. Everything after hand one rotates normally.
     const drawnButton = this.forcedFirstButtonSeat;
     this.forcedFirstButtonSeat = null;
     const drawnIsSeated = drawnButton !== null && sortedSeats.includes(drawnButton);
-    const dealerSeat = drawnIsSeated
+    let dealerSeat = drawnIsSeated
       ? (drawnButton as number)
       : prevButtonSeat > 0
-        ? this.getNextSeat(prevButtonSeat, players)
-        : sortedSeats[0];
+        ? this.getNextSeat(prevButtonSeat, buttonRoster)
+        : buttonSeats[0];
+    // THE BUTTON MUST ALWAYS MOVE. getNextSeat over a ONE-seat roster returns
+    // that same seat from both of its branches, so when exactly one player is
+    // button-eligible and already holds the button, the button stands still and
+    // the same two players post the small and big blind twice running. That is
+    // reachable any time several players arrive at once around one incumbent.
+    //
+    // Heads-up is deliberately excluded: with two players the button IS the
+    // small blind, so parking it on the veteran is what makes the newcomer the
+    // big blind and gets them dealt in free. Forcing it across would put them in
+    // the small blind, which the hold-out then refuses, leaving one active
+    // player and no hand — a table that never deals again.
+    if (
+      !drawnIsSeated &&
+      prevButtonSeat > 0 &&
+      dealerSeat === prevButtonSeat &&
+      players.length > 2
+    ) {
+      dealerSeat = this.getNextSeat(prevButtonSeat, players);
+    }
     this.currentHandDealerSeat = dealerSeat;
     this.lastButtonSeat = dealerSeat;
+    // Everyone dealt into THIS hand is a veteran from the NEXT one onward, so
+    // the button reaches them on the following orbit. Recorded after the button
+    // is chosen, never before, or a first-time player would qualify to receive
+    // the very button this line exists to keep away from them.
+    for (const p of players) {
+      this.dealtInUserIds.add(p.user_id);
+    }
     // Keep the legacy index roughly in sync for any remaining reads (defensive).
     this.dealerSeatIndex = Math.max(0, sortedSeats.indexOf(dealerSeat)) + 1;
 
@@ -919,7 +1018,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const config: HandConfig = {
       tableId: this.tableId,
       handNumber,
-      gameVariant: this.tableInfo.game_variant as GameVariant,
+      gameVariant: this.dealtGameVariant() as GameVariant,
       smallBlind: this.tableInfo.small_blind,
       bigBlind: this.tableInfo.big_blind,
       // FIX-219: Bible V8 §4.3 — Respect ante_enabled toggle; if disabled, zero out ante

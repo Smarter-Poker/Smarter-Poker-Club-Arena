@@ -10,8 +10,14 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: env(safe-area-inset-top, 8px) env(safe-area-inset-right, 8px)
-    env(safe-area-inset-bottom, 8px) env(safe-area-inset-left, 8px);
+  /* The bottom inset is deliberately 0 here (Dan 2026-08-25, item 6). It used
+     to be `env(safe-area-inset-bottom, 8px)`, and `.table-hud__lower` ALSO adds
+     `env(safe-area-inset-bottom)` inside its own reserve — so on a notched
+     phone the home-indicator strip was counted TWICE and the bottom-left stack
+     floated 34px higher than the chat button, which reserves it once. Counted
+     once, in the one place that owns the line: see .table-hud__lower. */
+  padding: env(safe-area-inset-top, 8px) env(safe-area-inset-right, 8px) 0
+    env(safe-area-inset-left, 8px);
 }
 
 /* Allow child interactive elements to receive clicks */
@@ -51,8 +57,28 @@
      feature. Open the raise slider and the panel is taller than that, so the
      previous-hand card was covered by it. Reported as the buttons being
      missing; they were never removed. --sp-action-h is the panel's real
-     measured height, published by TablePage. */
-  padding-bottom: calc(var(--sp-action-h, 112px) + 8px + env(safe-area-inset-bottom, 0px));
+     measured height, published by TablePage.
+
+     ═══ THE BOTTOM-EDGE LINE (Dan 2026-08-25, item 6) ═══
+     "The time bank button needs to be lower, same level as the chat button.
+     The bottoms of both icons should be equal at the bottom."
+
+     This calc IS that line, and it is now the ONLY definition of it. The chat
+     button (TableChat.css `.chat-collapsed`) resolves its `bottom` from a
+     byte-identical expression, and the time-bank chip is the LAST item in this
+     row's bottom-left stack (`.tbc-widget { order: 1 }` in TimebankCounter.css),
+     so the two bottom edges are the same number by construction rather than by
+     two people agreeing on a pixel. They were not agreeing: chat sat on a
+     hardcoded 112px while this side read the measurement, and the safe-area
+     inset was counted twice on this side (see .table-hud above).
+
+     The fallback is 96px, not the old 112px: 96px is `.action-panel-wrapper`'s
+     own `min-height` floor in TablePage.css, so a browser without
+     ResizeObserver lands on the real collapsed-bar height instead of a number
+     nothing in the layout ever produced. Change it in both files or not at
+     all — a mismatched fallback is a drift that only shows up on the browsers
+     nobody tests on. */
+  padding-bottom: calc(var(--sp-action-h, 96px) + 8px + env(safe-area-inset-bottom, 0px));
   gap: 8px;
 }
 
@@ -116,8 +142,11 @@
        (no more fixed-position overlap), so the whole stack can drop to just
        above the action bar.
        Measured, not hardcoded - see the base rule. A flat 112px here would put
-       the previous-hand card back under an opened raise slider on phones. */
-    padding-bottom: calc(var(--sp-action-h, 112px) + 8px + env(safe-area-inset-bottom, 0px));
+       the previous-hand card back under an opened raise slider on phones.
+       Byte-identical to the base rule and to `.chat-collapsed` — this is THE
+       BOTTOM-EDGE LINE, and a breakpoint that redefines it is a breakpoint on
+       which the time-bank chip and the chat button drift apart again. */
+    padding-bottom: calc(var(--sp-action-h, 96px) + 8px + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -129,8 +158,13 @@
   .table-hud__corner--ur {
     position: fixed;
     /* Dan 2026-08-24: "STATS BUTTON NEEDS TO BE IN THE UPPER RIGHT CORNER."
-       Tight under the tab bar, hugging the right edge. */
-    top: calc(env(safe-area-inset-top, 0px) + 56px);
+       Tight under the tab bar, hugging the right edge.
+       2026-08-25: 42px of tab bar plus 12px, so the icon clears the BBJ
+       nameplate that hangs off the bar's bottom edge. Was 56px, measured
+       against a 44px tab bar; the bar is 42px now, so the old number left the
+       icon 2px high of where it belongs. Derived, not nudged: if the tab bar
+       changes height again, this is 42 + 12 and both numbers are named. */
+    top: calc(env(safe-area-inset-top, 0px) + 54px);
     right: 6px;
   }
 }

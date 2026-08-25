@@ -52,8 +52,12 @@ describe('VIPService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('VIP_GOLD_LIMITS', () => {
-    it('should have unlimited rabbit hunts', () => {
-      expect(VIP_GOLD_LIMITS.rabbitHunts).toBe(Infinity);
+    it('gives VIP 100 free rabbit hunts a month, not unlimited', () => {
+      // Dan 2026-08-25, verbatim: "vip members get 100 rabbit hunts a month for
+      // free, and they cost 5 diamonds each after that." This asserted Infinity
+      // until that day, so the UI promised unlimited free hunts while the
+      // server's fn_consume_rabbit_hunt starts charging at the 101st.
+      expect(VIP_GOLD_LIMITS.rabbitHunts).toBe(100);
     });
 
     it('should enable showStackBB, offlineProtection, autoTimeBank', () => {
@@ -99,13 +103,29 @@ describe('VIPService', () => {
       }
     });
 
-    it('rabbit_hunt should cost 5 diamonds per use', () => {
-      expect(FEATURE_PRICING.rabbit_hunt.cost).toBe(5);
+    /**
+     * CORRECTED 2026-08-25. These three cases pinned prices that production
+     * had never charged, which is why the storefront was able to advertise
+     * them for so long. `feature_pricing` in kuklfnapbkmacvwxktbh is the only
+     * price that exists — fn_purchase_feature reads it and ignores whatever
+     * the client sends. See tests/cosmetic-ownership-integrity.test.ts for the
+     * full pinned snapshot and the drift detector.
+     */
+    it('rabbit_hunt costs 1 diamond per use, the price the server charges', () => {
+      expect(FEATURE_PRICING.rabbit_hunt.cost).toBe(1);
       expect(FEATURE_PRICING.rabbit_hunt.usageType).toBe('per_use');
     });
 
-    it('show_stack_bb should be free', () => {
-      expect(FEATURE_PRICING.show_stack_bb.cost).toBe(0);
+    it('show_stack_bb is NOT free — it costs 5 diamonds for the session', () => {
+      // It read `cost: 0` with the description "(FREE)" while the server
+      // debited 5. A member was told free and then charged.
+      expect(FEATURE_PRICING.show_stack_bb.cost).toBe(5);
+      expect(FEATURE_PRICING.show_stack_bb.description.toLowerCase()).not.toContain('free');
+    });
+
+    it('offline_protection is NOT free — it costs 10 diamonds for the session', () => {
+      expect(FEATURE_PRICING.offline_protection.cost).toBe(10);
+      expect(FEATURE_PRICING.offline_protection.description.toLowerCase()).not.toContain('free');
     });
   });
 
@@ -116,7 +136,7 @@ describe('VIPService', () => {
   describe('getFeaturePricing', () => {
     it('should return pricing for rabbit_hunt', () => {
       const pricing = vipService.getFeaturePricing('rabbit_hunt');
-      expect(pricing.cost).toBe(5);
+      expect(pricing.cost).toBe(1);
       expect(pricing.description).toContain('cards');
     });
   });

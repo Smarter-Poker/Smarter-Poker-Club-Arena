@@ -40,8 +40,20 @@ describe('Tournament Table Engine Seating & Dealing Rules', () => {
 
   it('does not add tournament players to waitingForBB on registerWaitForBB', () => {
     const code = tsCode(read(SEATING_SRC));
-    expect(code).toMatch(
-      /this\.tableInfo\?\.wait_for_big_blind\s*&&\s*!this\.isTournamentTable\(\)/
+    // The tournament exclusion is what this test is about, and it is intact.
+    // The `wait_for_big_blind &&` half was dropped on 2026-08-25: that set no
+    // longer gates a WAIT (cash entry is free and released on the next loop
+    // tick), it only gates the two positional hold-outs — and one of those
+    // enforces "CASH GAME PLAYERS CAN NEVER BE DEALT INTO THE SMALL BLIND."
+    // Leaving the gate in meant a host who turned the setting off skipped
+    // registration, skipped the hold-out, and had brand-new players dealt
+    // straight into the small blind. A table setting must not be able to switch
+    // off a house rule.
+    const at = code.indexOf('public registerWaitForBB');
+    expect(at).toBeGreaterThan(-1);
+    const body = code.slice(at, at + 300);
+    expect(body).toMatch(
+      /if \(!this\.isTournamentTable\(\)\)\s*\{\s*this\.waitingForBB\.add\(userId\)/
     );
   });
 

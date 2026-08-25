@@ -29,10 +29,8 @@ import { resolve } from 'node:path';
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import ActionPanel from '../../src/components/table/ActionPanel';
-import {
-  CHIP_RAIL_BOTTOM_EXTRA_PX,
-  CHIP_RAIL_INSET_PX,
-} from '../../src/components/table/tableGeometry';
+import * as geometry from '../../src/components/table/tableGeometry';
+import { betChipOffsetPx, NOMINAL_SCALER } from '../../src/components/table/tableGeometry';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 /** Strip comments so a rule quoted in prose cannot satisfy a source assertion. */
@@ -390,12 +388,42 @@ describe('Item 10 - busting holds action so the rebuy can be offered', () => {
 // ─── 11. THE HERO'S CHIPS ─────────────────────────────────────────────────────
 
 describe("Item 11 - the hero's chips sit closer to the rail", () => {
-  it('the hero-only extra is a fraction of the common rail, not most of it', () => {
-    // Strictly positive: at 0 the chips land on the oversized hero avatar,
-    // which is the 2026-08-23 complaint this constant was created for.
-    expect(CHIP_RAIL_BOTTOM_EXTRA_PX).toBeGreaterThan(0);
-    // And no longer the ~46px that put them out on the felt.
-    expect(CHIP_RAIL_BOTTOM_EXTRA_PX).toBeLessThanOrEqual(20);
-    expect(CHIP_RAIL_BOTTOM_EXTRA_PX).toBeLessThan(CHIP_RAIL_INSET_PX / 2);
+  /**
+   * This branch originally cut CHIP_RAIL_BOTTOM_EXTRA_PX from 46 to 16. While
+   * it was open, main landed a full rewrite of tableGeometry (2026-08-25,
+   * "mobile pass items 11 and 13") that DELETES the hero-only extra outright
+   * and puts every seat on one common rail, clamped inside the felt. That is a
+   * stronger answer to the same complaint, so the merge kept main's file and
+   * this spec was rewritten to assert the OUTCOME Dan asked for rather than the
+   * constant that used to produce it — an outcome assertion survives the next
+   * rewrite too.
+   *
+   * The old distance at NOMINAL_SCALER was (64 + 46) * 1.82 = 200px, which is
+   * the picture in Dan's screenshot: chips out on the felt, nowhere near him.
+   */
+  const dist = (p: { x: number; y: number }) => Math.hypot(p.x, p.y);
+  const HERO = { x: 50, y: 100 };
+
+  it('no hero-only distance term survives anywhere in the module', () => {
+    expect(geometry).not.toHaveProperty('CHIP_RAIL_BOTTOM_EXTRA_PX');
+    expect(code(read('src/components/table/tableGeometry.ts'))).not.toMatch(
+      /isHeroRailSeat|BOTTOM_EXTRA/
+    );
+  });
+
+  it("the hero's chips are pulled well back from where they were", () => {
+    const heroDist = dist(betChipOffsetPx(HERO, NOMINAL_SCALER, false));
+    expect(heroDist).toBeGreaterThan(0);
+    // Comfortably inside the 200px that produced the complaint, with headroom
+    // so an honest re-tune does not trip it.
+    expect(heroDist).toBeLessThanOrEqual(150);
+  });
+
+  it('the hero is not the outlier: every seat walks the same rail', () => {
+    const heroDist = dist(betChipOffsetPx(HERO, NOMINAL_SCALER, false));
+    const topDist = dist(betChipOffsetPx({ x: 50, y: 0 }, NOMINAL_SCALER, false));
+    // The two seats opposite each other, both outside the painted felt by the
+    // same amount, must be treated identically to within rounding.
+    expect(Math.abs(heroDist - topDist)).toBeLessThanOrEqual(20);
   });
 });

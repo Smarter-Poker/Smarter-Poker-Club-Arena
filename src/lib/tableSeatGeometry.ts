@@ -17,22 +17,60 @@
  */
 import type { SeatPlayer } from '../components/table/SeatSlot';
 
+/* ── Dan 2026-08-25, mobile pass item 4 — WHERE THE HERO SITS ────────────────
+   "The Hero position needs to be moved down. They should be on the rail, not
+   on the table."
+
+   The hero's y is STILL 100 and must stay 100: that is the scaler's bottom
+   edge, measured against the painted skin, and every other rail number is
+   measured from the same frame. What actually put the hero on the felt was a
+   CSS lift bolted on top of it — `.seat-wrapper--hero { --hero-lift: 78px }`
+   in TablePage.css, added 2026-08-23 so the stack would stop being cut off by
+   the fixed action bar. 78px is most of a seat: it carried the whole hero
+   block up off the rail and onto the playing surface.
+
+   So the fix is a CSS offset, not a new number here — see
+   `.seat-wrapper.seat-wrapper--hero` in SeatSlot.css, which retires the lift
+   by re-declaring `--hero-lift` as 0 at a specificity neither that rule nor
+   its two short-viewport reductions can reach. Retiring the variable rather
+   than adding a counter-offset means the hero lands on the ring's own measured
+   position at every viewport height, with nothing left to keep in step.
+
+   ── item 7 — WHERE THE TOP SEATS SIT ────────────────────────────────────────
+   "The top two players need to be moved up more. Their action boxes should be
+   on the rail, not on the table."
+
+   The felt window (.table-surface) starts at y 8.9% of the scaler and the rail
+   band is centred near 8.5%, so a box whose TOP edge is below 8.9% is floating
+   on the playing surface. With the avatar drawn ABOVE the nameplate the box
+   sits a whole avatar below the seat centre, which is why the top cap has to
+   be this high to get the plate onto the rail at all:
+
+     top cap diagonals  8.5 -> 6     (9-max seats 5/6, 7-max, 5-max, 3-max)
+     top centre         6   -> 5     (2/4/6/8-max)
+
+   That is the highest either can go while the bust art — drawn rising from the
+   character's feet, so it overhangs the avatar slot upward — stays inside the
+   table canvas. The remaining headroom was bought by dropping the top row's
+   bust scale from 1.15 to 1.05 (see `.seat-wrapper--top` in SeatSlot.css);
+   without that, 5 puts the art's crown above y 0 and into the banner.
+   tests/e2e/top-rail-seat.spec.ts measures exactly this and is the guard. */
 export const SEAT_POSITIONS_6MAX = [
-  { x: 50, y: 100 }, // Seat 1 (Hero, bottom-center; Dan 2026-08-22: avatar centre ON the scaler's bottom edge so it barely overlaps the table)
+  { x: 50, y: 100 }, // Seat 1 (Hero, bottom-centre; ring position only - the rail drop is CSS, see above)
   { x: 10.5, y: 66 }, // Seat 2 (lower-left, on rail side)
   { x: 10.5, y: 33 }, // Seat 3 (upper-left, on rail side)
-  { x: 50, y: 6 }, // Seat 4 (top-center; box rests ON the rail band - compact seat)
+  { x: 50, y: 5 }, // Seat 4 (top-center; box rests ON the rail band - compact seat)
   { x: 89.5, y: 33 }, // Seat 5 (upper-right, on rail side)
   { x: 89.5, y: 66 }, // Seat 6 (lower-right, on rail side)
 ];
 
 export const SEAT_POSITIONS_9MAX = [
-  { x: 50, y: 100 }, // Seat 1 (Hero, bottom-center; Dan 2026-08-22: avatar centre ON the scaler's bottom edge so it barely overlaps the table)
+  { x: 50, y: 100 }, // Seat 1 (Hero, bottom-centre; ring position only - the rail drop is CSS, see above)
   { x: 10.5, y: 82.5 }, // Seat 2 (lower-left, bottom cap)
   { x: 10.5, y: 58 }, // Seat 3 (left-low, on rail side)
   { x: 10.5, y: 36 }, // Seat 4 (left-high, on rail side)
-  { x: 27, y: 8.5 }, // Seat 5 (top-left, top cap)
-  { x: 73, y: 8.5 }, // Seat 6 (top-right, top cap)
+  { x: 27, y: 6 }, // Seat 5 (top-left, top cap - plate on the rail)
+  { x: 73, y: 6 }, // Seat 6 (top-right, top cap - plate on the rail)
   { x: 89.5, y: 36 }, // Seat 7 (right-high, on rail side)
   { x: 89.5, y: 58 }, // Seat 8 (right-low, on rail side)
   { x: 89.5, y: 82.5 }, // Seat 9 (lower-right, bottom cap)
@@ -54,52 +92,84 @@ export const SEAT_POSITIONS_9MAX = [
    audit to reason from an 8-max PLO6 table that cannot exist. The caps now
    live in src/config/tableSeating.ts and are enforced in TableService. The
    rings below still cover 2..9 because other variants legitimately use them
-   and because 10,130 pre-existing rows still carry the old seat counts. */
+   and because 10,130 pre-existing rows still carry the old seat counts.
+
+   2026-08-25: the top cap moved up with the named rings above (diagonals
+   8.5 -> 6, top centre 6 -> 5). Every size shares those two numbers on
+   purpose — the cap is one measured band, not a per-size taste call. */
 export const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
   2: [
-    { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
-    { x: 50, y: 6 }, // Villain, top-center (heads-up), box on the rail
+    { x: 50, y: 100 }, // Hero (ring position; the rail drop is CSS - see the note above)
+    { x: 50, y: 5 }, // Villain, top-center (heads-up), box on the rail
   ],
   3: [
-    { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
-    { x: 20.5, y: 8.5 }, // upper-left diagonal, on rail cap circle
-    { x: 79.5, y: 8.5 }, // upper-right diagonal
+    { x: 50, y: 100 }, // Hero (ring position; the rail drop is CSS - see the note above)
+    { x: 20.5, y: 6 }, // upper-left diagonal, on rail cap circle
+    { x: 79.5, y: 6 }, // upper-right diagonal
   ],
   4: [
-    { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
+    { x: 50, y: 100 }, // Hero (ring position; the rail drop is CSS - see the note above)
     { x: 10.5, y: 45 }, // left-middle
-    { x: 50, y: 6 }, // top-center, box on the rail
+    { x: 50, y: 5 }, // top-center, box on the rail
     { x: 89.5, y: 45 }, // right-middle
   ],
   5: [
-    { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
+    { x: 50, y: 100 }, // Hero (ring position; the rail drop is CSS - see the note above)
     { x: 10.5, y: 55 }, // left-low
-    { x: 20.5, y: 8.5 }, // upper-left diagonal
-    { x: 79.5, y: 8.5 }, // upper-right diagonal
+    { x: 20.5, y: 6 }, // upper-left diagonal
+    { x: 79.5, y: 6 }, // upper-right diagonal
     { x: 89.5, y: 55 }, // right-low
   ],
   6: SEAT_POSITIONS_6MAX,
   7: [
-    { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
+    { x: 50, y: 100 }, // Hero (ring position; the rail drop is CSS - see the note above)
     { x: 10.5, y: 62 }, // left-low
     { x: 10.5, y: 33 }, // left-high
-    { x: 27, y: 8.5 }, // top-left diagonal
-    { x: 73, y: 8.5 }, // top-right diagonal
+    { x: 27, y: 6 }, // top-left diagonal
+    { x: 73, y: 6 }, // top-right diagonal
     { x: 89.5, y: 33 }, // right-high
     { x: 89.5, y: 62 }, // right-low
   ],
   8: [
-    { x: 50, y: 100 }, // Hero (Dan 2026-08-22: barely overlapping the rail)
+    { x: 50, y: 100 }, // Hero (ring position; the rail drop is CSS - see the note above)
     { x: 10.5, y: 82.5 }, // lower-left bottom cap
     { x: 10.5, y: 52 }, // left-low
     { x: 10.5, y: 28 }, // left-high
-    { x: 50, y: 6 }, // top-center, box on the rail
+    { x: 50, y: 5 }, // top-center, box on the rail
     { x: 89.5, y: 28 }, // right-high
     { x: 89.5, y: 52 }, // right-low
     { x: 89.5, y: 82.5 }, // lower-right bottom cap
   ],
   9: SEAT_POSITIONS_9MAX,
 };
+
+/**
+ * Which side of a seat its hole cards hang off.
+ *
+ * Dan 2026-08-25, item 7: "The guy on the left, his cards should be on the
+ * left." The top cap seats used to throw their face-down row to the RIGHT
+ * unconditionally (`.seat-wrapper--top ... { left: calc(100% + 4px) }`), which
+ * is correct for the top-RIGHT seat and wrong for the top-LEFT one: it threw
+ * that player's cards inward, straight at the neighbour's, so a PLO5 table
+ * showed five and five running together as one unbroken row of ten (item 12).
+ *
+ * Derived from the seat's measured x rather than from a seat INDEX because the
+ * index means a different chair at every table size — index 4 is the top-left
+ * diagonal at 9-max and the top CENTRE at 8-max — while "left of the middle of
+ * the table" means the same thing on every ring from 2-max to 9-max. Dead
+ * centre (the top-centre and hero slots, x exactly 50) resolves to 'right',
+ * which is where those two have always hung their cards and where the only
+ * open felt is.
+ *
+ * Pure and x-only so it can be applied to a percentage read off the ring or
+ * to one measured from the DOM; SeatSlot does the latter, since a seat is
+ * handed its number but never its position.
+ */
+export type CardSide = 'left' | 'right';
+
+export function outboardCardSide(xPercent: number): CardSide {
+  return Number.isFinite(xPercent) && xPercent < 50 ? 'left' : 'right';
+}
 
 /** Ring for a table size; clamps to [2, 9] so unknown sizes never crash. */
 export function seatLayoutFor(maxPlayers: number): Array<{ x: number; y: number }> {

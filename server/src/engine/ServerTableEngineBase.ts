@@ -163,6 +163,13 @@ export abstract class ServerTableEngineBase {
   // (or opt to post the BB immediately via POST /post-bb).
   protected knownPlayerIds: Set<string> = new Set();
 
+  // Dan 2026-08-25, BINDING: "NEW PLAYERS NEVER GET THE BUTTON WHEN SITTING
+  // DOWN — it skips over them and moves to the correct person." Every userId
+  // that has actually been dealt at least one hand at this table. A player who
+  // is not in here has never played, so the button rotation passes over them;
+  // they pick it up on the following orbit like everyone else.
+  protected dealtInUserIds: Set<string> = new Set();
+
   // Guard for the dealing loop's first iteration. On the first pass — whether
   // this is a cold start or a crash-recovery resume — every currently-seated
   // player is treated as an initial/existing player and is NOT flagged as
@@ -208,6 +215,75 @@ export abstract class ServerTableEngineBase {
 
   public holdDealingUntil(atMs: number): void {
     if (atMs > this.dealHoldUntilMs) this.dealHoldUntilMs = atMs;
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  MYSTERY BOUNTY REVEAL GATE (Dan sections 21-26, 61-65)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * "When an award is reserved, the affected table enters a reveal state.
+   * During it: no dealer button move, no next hand, no blinds or antes
+   * posted, no player action timers. Only the reveal timeout runs."
+   *
+   * WHY THIS IS NOT `holdDealingUntil()`. The hold is a DEADLINE — a wall
+   * clock the loop compares itself against. That is right for the spin
+   * wheel, which is one fixed-length animation. It is wrong here, because
+   * section 25/64 is a COUNT, not a duration: the button may not move until
+   * the QUEUE IS EMPTY, and three knockouts in one hand are three reveals
+   * one after another. Timer arithmetic that tried to express "however long
+   * three chests take" would be wrong the first time a reveal ran slow, and
+   * a table that deals underneath a live chest has moved the button during
+   * a reveal — the exact thing sections 25 and 64 forbid.
+   *
+   * So this is a SET of open awards, and dealing resumes when it empties.
+   *
+   * EVERY ENTRY STILL CARRIES A DEADLINE, because a set that only empties on
+   * a call is a set that a crashed settle path leaves full forever, and a
+   * wedged table is worse than a missed animation. `hasOpenBountyReveal()`
+   * prunes expired entries on every read, so the gate is self-healing: the
+   * worst case is that the table resumes on its own a few seconds after the
+   * reveal should have ended.
+   *
+   * ONLY THIS TABLE STOPS (sections 22 and 61). This state lives on one
+   * engine instance. The tournament clock, the blind-level clock and every
+   * other table run from the TournamentManager and never consult it.
+   *
+   * ACTION TIMERS: there is nothing to cancel. The gate is checked in the
+   * dealing loop BEFORE `dealHand()`, so no hand exists while it is closed
+   * and therefore no player is on the clock. A knockout detected while the
+   * next hand is already in progress holds from the next hand boundary —
+   * which is also section 23's end-of-hand order (settle, THEN reveal).
+   */
+  private bountyRevealHolds: Map<string, number> = new Map();
+
+  /** Open a reveal gate. `deadlineMs` is an absolute epoch-ms failsafe. */
+  public beginBountyReveal(awardId: string, deadlineMs: number): void {
+    const id = String(awardId ?? '').trim();
+    if (!id) return;
+    const prev = this.bountyRevealHolds.get(id) ?? 0;
+    // Monotonic, like holdDealingUntil: a second reserve of the same award
+    // (an idempotent re-sweep) may extend the gate but never shorten it.
+    this.bountyRevealHolds.set(id, Math.max(prev, deadlineMs));
+  }
+
+  /** Close one award's gate. Safe to call for an award that never opened. */
+  public endBountyReveal(awardId: string): void {
+    this.bountyRevealHolds.delete(String(awardId ?? '').trim());
+  }
+
+  /** How many reveals are still holding this table. Prunes expired entries. */
+  public openBountyRevealCount(): number {
+    const now = Date.now();
+    for (const [id, deadline] of this.bountyRevealHolds) {
+      if (deadline <= now) this.bountyRevealHolds.delete(id);
+    }
+    return this.bountyRevealHolds.size;
+  }
+
+  /** True while this table must not deal, post blinds, or move the button. */
+  public hasOpenBountyReveal(): boolean {
+    return this.openBountyRevealCount() > 0;
   }
   protected maintenanceLock: boolean = false;
 
@@ -357,12 +433,57 @@ export abstract class ServerTableEngineBase {
      */
     hand?: { name: string; ranking: number; cards?: Array<{ rank?: string; suit?: string }> };
   }[] = [];
+  /**
+   * POT-LEVEL SETTLEMENT (Dan section 29, 2026-08-25).
+   *
+   * The pots as `calculatePots()` returned them at the moment the hand was
+   * scored — before distribution, so `eligible` still names everyone who had
+   * a claim on each pot. Persisted to `hand_history.pots`.
+   *
+   * It is captured rather than recomputed because after settlement the answer
+   * is gone: `HandController.getPots()` recalculates from the live players,
+   * and by then the winners' stacks have already moved. This is the only
+   * moment the true breakdown exists.
+   *
+   * Read back by `attributeKnockout()` to credit a knockout to the winner(s)
+   * of the pot that held the busted player's LAST chips rather than to
+   * whoever won the most money in the hand. Without it, a short stack busting
+   * against a large side pot paid its bounty to the side-pot winner.
+   */
+  protected currentHandPots: { index: number; amount: number; eligible: string[] }[] = [];
   protected currentHandContributions: Map<string, number> = new Map(); // userId → totalInvested
   protected currentHandInsuranceSettlements: InsuranceSettlement[] = [];
   protected currentHandBBJHit: BBJDetectionResult | null = null;
   protected currentHandBBJPayoutConfig: ServerRakeConfigResult | null = null;
   /** Remaining deck cards at hand completion — used for Rabbit Hunt reveal */
   protected currentHandRabbitCards: import('../types.js').Card[] = [];
+  /**
+   * Rabbit hunt offers, keyed by hand number. Dan 2026-08-25.
+   *
+   * These cards are NEVER broadcast. They are held server-side and released to
+   * one authenticated player at a time by revealRabbitHunt(), after
+   * fn_consume_rabbit_hunt has actually taken payment.
+   *
+   * Keyed by hand rather than kept in a single field because a player has a few
+   * seconds to click and the next hand may already be dealing by the time they
+   * do — a single field is wiped at the next deal and the purchase would return
+   * either nothing or, worse, the NEXT hand's undealt cards. Trimmed to the
+   * last two hands at capture, so it stays bounded on a table running for days.
+   *
+   * `eligible` is who was dealt into that hand: a spectator cannot buy a look
+   * at a hand they were never part of, and `revealed` makes a paid reveal
+   * repeatable for the buyer without charging them twice.
+   */
+  protected rabbitHuntOffers: Map<
+    number,
+    {
+      cards: import('../types.js').Card[];
+      boardLength: number;
+      eligible: Set<string>;
+      revealed: Set<string>;
+      offeredAt: number;
+    }
+  > = new Map();
   /**
    * RIT VERIFIER FIX 2026-08-21: number of boards dealt by Run It Twice this
    * hand (0 = normal hand). Every RIT-resolved hand tripped the state
@@ -797,6 +918,55 @@ export abstract class ServerTableEngineBase {
   /**
    * Start the dealing pipeline
    */
+
+  /**
+   * HOW MANY SEATS BEFORE A HAND IS DEALT (Dan 2026-08-25).
+   *
+   * `auto_start_players` has been a slider on the creation screen since
+   * February and was read by nothing: the dealing loop, the start-up wait and
+   * the stall watchdog each hard-coded 2. A host could set AutoStart to 5, and
+   * the table dealt three-handed anyway.
+   *
+   * It lives here, on the base, because THREE call sites have to agree about
+   * it. They already had to agree about the old constant — the watchdog's own
+   * comment says "mirror dealingLoop's predicate exactly, so the watchdog's
+   * idea of 'this table should be dealing' cannot disagree with the loop's" —
+   * and a table whose loop waits for 5 while the watchdog wants 2 is a table
+   * the watchdog kills and rebuilds every ninety seconds.
+   *
+   * Clamped at 2 because the column carries no CHECK constraint and a hand of
+   * one is not a hand. A tournament table ignores the setting entirely: its
+   * field size is decided by the tournament, not by a cash-table slider.
+   */
+  /**
+   * ── THE VARIANT THIS TABLE ACTUALLY DEALS (Dan 2026-08-25) ──────────────
+   *
+   * Pineapple is a fully built variant: three hole cards, its own discard
+   * street, its own timer, `pineapple_discard` wired through BettingStructure
+   * and HandController. The toggle on the creation screen was simply never
+   * connected to it — `pineapple_holdem` is a boolean column with no reader,
+   * sitting beside a `game_variant` the engine reads for everything.
+   *
+   * So this is mapping, not building. A Hold'em table with the switch on is
+   * dealt as pineapple; every other variant is left exactly as it is, because
+   * "Pineapple PLO" is not a game and a stray flag must not silently turn a
+   * PLO table into one.
+   */
+  protected dealtGameVariant(): string {
+    const variant = String(this.tableInfo?.game_variant || 'nlh').toLowerCase();
+    if (variant === 'pineapple') return 'pineapple';
+    const wantsPineapple = (this.tableInfo as { pineapple_holdem?: boolean } | null)
+      ?.pineapple_holdem;
+    if (wantsPineapple === true && (variant === 'nlh' || variant === 'nlhe')) return 'pineapple';
+    return variant;
+  }
+
+  protected minPlayersToDeal(): number {
+    if (this.isTournamentTable()) return 2;
+    const configured = Number(this.tableInfo?.auto_start_players);
+    return Number.isFinite(configured) && configured > 2 ? Math.floor(configured) : 2;
+  }
+
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
@@ -913,8 +1083,25 @@ export abstract class ServerTableEngineBase {
 
       // Bible V8 §4.20 + FIX 98: Configure Run It Twice engine
       // Chooser gets 5s, responders get 10s — per Dan's rules
+      /**
+       * Dan 2026-08-25: run_it_mode reaches the engine at last. Read
+       * DEFENSIVELY and additively — see RITConfig.mode. The column is the
+       * string 'none' on all 46 live tables while run-it-twice is genuinely on
+       * via the three boolean columns, so a mode that gated `enabled` would
+       * have switched the feature off across the whole platform. It can only
+       * ever REMOVE the question, never the feature.
+       */
+      const ritMode = String(this.tableInfo.run_it_mode || '').toLowerCase();
       this.runItTwiceEngine.configure(this.tableId, {
         enabled: ritEffective,
+        mode:
+          ritMode === 'mandatory_three'
+            ? 'mandatory_three'
+            : ritMode === 'mandatory_twice'
+              ? 'mandatory_twice'
+              : ritMode === 'player_choice'
+                ? 'player_choice'
+                : 'none',
         autoDeclineTimeout: 10,
         maxRuns: 3, // Support up to 3 boards (Dan's rules: player can choose 1/2/3)
         chooserTimeout: 5,
@@ -989,7 +1176,7 @@ export abstract class ServerTableEngineBase {
       // Bible V8 §3.1: Table FSM — empty → waiting (engine started, waiting for players)
       this.tableFSM.transition('waiting');
 
-      // Wait for minimum 2 players
+      // Wait for the host's AutoStart figure (2 unless they raised it)
       this.setLoopPhase('start_wait_for_players');
       while (this.running) {
         try {
@@ -1014,9 +1201,9 @@ export abstract class ServerTableEngineBase {
         } catch {
           /* idle publish must never stall the wait loop */
         }
-        if (this.seatedPlayers.length >= 2) break;
+        if (this.seatedPlayers.length >= this.minPlayersToDeal()) break;
         console.log(
-          `[ServerTableEngine:${this.tableId}] Waiting for players... (${this.seatedPlayers.length}/2)`
+          `[ServerTableEngine:${this.tableId}] Waiting for players... (${this.seatedPlayers.length}/${this.minPlayersToDeal()})`
         );
         await this.sleep(5000);
       }
@@ -1614,6 +1801,24 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
+   * Are there no cards in the air at this table right now?
+   *
+   * The mystery bounty phase may only open BETWEEN hands (Dan's sections 1-3):
+   * a player who committed his stack while a knockout was worth a flat bounty
+   * must not find, when the hand is scored, that it was worth a chest. That is
+   * the information changing under a decision already made.
+   *
+   * `handController === null` is the whole test. It is also briefly true during
+   * setup, before the first hand — which is harmless here and deliberately not
+   * excluded: seeding a chest inventory before any hand has been dealt is the
+   * safest moment there is, whereas `isDrained()` (which does exclude it) would
+   * report a running table as busy forever and the phase would never open.
+   */
+  isBetweenHands(): boolean {
+    return this.handController === null;
+  }
+
+  /**
    * True while this table is stopped ON PURPOSE (hand-for-hand pause, or the
    * table FSM parked in 'paused'). The watchdog and the /health stall
    * detector must treat this as healthy: before this existed, a hand-for-hand
@@ -1872,10 +2077,62 @@ export abstract class ServerTableEngineBase {
         (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
     );
     if (roster.length < 2) return -1;
-    const sortedSeats = roster.map((p) => p.seat_number).sort((a, b) => a - b);
-    const nextButton =
-      this.lastButtonSeat > 0 ? this.getNextSeat(this.lastButtonSeat, roster) : sortedSeats[0];
+    const nextButton = this.predictButtonSeat(roster);
     return roster.length === 2 ? nextButton : this.getNextSeat(nextButton, roster);
+  }
+
+  /**
+   * Dan 2026-08-25, BINDING: "NEW PLAYERS NEVER GET THE BUTTON WHEN SITTING
+   * DOWN. It skips over them and moves to the correct person."
+   *
+   * The subset of a roster that may hold the button on the next hand: players
+   * who have already been dealt at least one hand here. Returns the roster
+   * UNCHANGED when nobody has played yet — a table dealing its very first hand
+   * has none but new players and somebody has to take the button — so this can
+   * never empty the rotation or make the caller spin.
+   */
+  protected buttonEligible(roster: SeatedPlayer[]): SeatedPlayer[] {
+    // CASH ONLY. Dan's rule is about sitting down at a cash game. In a
+    // tournament nobody "sits down": the seating sweep places late registrants
+    // and TableBalancer moves players between tables deliberately, positioning
+    // them relative to the big blind so the rotation stays honest. Filtering
+    // those players out of the button rotation would silently override that
+    // placement, and a table that has just been balanced into is mostly players
+    // this set has never seen.
+    if (this.isTournamentTable()) return roster;
+    const veterans = roster.filter((p) => this.dealtInUserIds.has(p.user_id));
+    return veterans.length > 0 ? veterans : roster;
+  }
+
+  /**
+   * Where the button lands on the hand about to be dealt. ONE definition,
+   * shared by the SB/BB predictors, the wait-for-BB gate and the rotation
+   * itself — if these were separate walks they could disagree about who is on
+   * the button, which is exactly the class of bug the shared sbSeat/bbSeat
+   * computation in the dealing loop was introduced to kill.
+   */
+  protected predictButtonSeat(roster: SeatedPlayer[]): number {
+    const eligible = this.buttonEligible(roster);
+    const sortedSeats = eligible.map((p) => p.seat_number).sort((a, b) => a - b);
+    if (sortedSeats.length === 0) return -1;
+    return this.lastButtonSeat > 0
+      ? this.getNextSeat(this.lastButtonSeat, eligible)
+      : sortedSeats[0];
+  }
+
+  /**
+   * The button seat for the next hand, over the same roster the blinds use.
+   * Used by the dealing loop to hold a brand-new joiner out for one hand when
+   * they have sat down in the seat the button is about to reach.
+   */
+  protected getButtonSeatIndex(): number {
+    const roster = this.seatedPlayers.filter(
+      (p) =>
+        p.stack > 0 &&
+        (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
+    );
+    if (roster.length < 2) return -1;
+    return this.predictButtonSeat(roster);
   }
 
   protected getBBSeatIndex(): number {
@@ -1890,9 +2147,7 @@ export abstract class ServerTableEngineBase {
         (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
     );
     if (roster.length < 2) return -1;
-    const sortedSeats = roster.map((p) => p.seat_number).sort((a, b) => a - b);
-    const nextButton =
-      this.lastButtonSeat > 0 ? this.getNextSeat(this.lastButtonSeat, roster) : sortedSeats[0];
+    const nextButton = this.predictButtonSeat(roster);
     const sbSeat = roster.length === 2 ? nextButton : this.getNextSeat(nextButton, roster);
     return this.getNextSeat(sbSeat, roster);
   }
@@ -2121,7 +2376,7 @@ export abstract class ServerTableEngineBase {
     const config: HandConfig = {
       tableId: this.tableId,
       handNumber: this.handCount,
-      gameVariant: this.tableInfo.game_variant as GameVariant,
+      gameVariant: this.dealtGameVariant() as GameVariant,
       smallBlind: this.tableInfo.small_blind,
       bigBlind: this.tableInfo.big_blind,
       ante: this.tableInfo.ante,

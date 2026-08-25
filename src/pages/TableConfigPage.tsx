@@ -40,6 +40,17 @@ import WeeklyScheduleEditor, {
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 type GameMode = 'regular' | 'sng' | 'mtt';
+/**
+ * The variants a 7-2 bounty can actually pay out on.
+ *
+ * ServerTableEngineSettlement gates the bounty to Hold'em and says why:
+ * "meaningless in PLO; short-deck has no deuces". Holding four cards, a 7 and
+ * a 2 is nearly every hand, and a bounty that always fires is not a bounty.
+ * The engine rule is right; offering the switch on a table that can never
+ * honour it is what was wrong.
+ */
+const SEVEN_DEUCE_VARIANTS = new Set(['nlh', 'nlhe', 'flh', 'limit_holdem', 'pineapple']);
+
 type RunItMode = 'none' | 'player_choice' | 'mandatory_twice' | 'mandatory_three';
 type BlindStructure = 'slow' | 'standard' | 'turbo' | 'hyper_turbo';
 type PayoutStructure = 'payout1' | 'payout2' | 'payout3' | 'winner_take_all';
@@ -836,15 +847,34 @@ export default function TableConfigPage() {
     bomb_pot_double_board: config.bombPotEnabled && config.doubleBoard,
     double_board: config.doubleBoard,
     triple_board: config.tripleBoard,
-    // 2026-08-24: the "Pineapple Hold'em — 3 hole cards, discard 1" toggle that
-    // set this is GONE. Nothing in server/src has ever read the column, so the
-    // control promised a different game and delivered ordinary Hold'em; zero
-    // rows in production ever had it true, so nothing depended on it. Crazy
-    // Pineapple already works properly as its own variant card on the
-    // create-table screen, which deals three and runs a real discard street.
-    // The field stays only to keep writing the column a defined value.
+    /**
+     * 2026-08-25: THE COLUMN HAS A READER NOW.
+     *
+     * The note that stood here said nothing in server/src had ever read this,
+     * and that the control "promised a different game and delivered ordinary
+     * Hold'em". Both were true. The fix was never to delete the switch: the
+     * pineapple VARIANT is fully built — three hole cards, a real discard
+     * street, its own timer — and only the mapping was missing.
+     * ServerTableEngineBase.dealtGameVariant now deals a Hold'em table with
+     * this flag as pineapple, and refuses to apply it to anything else,
+     * because "Pineapple PLO" is not a game.
+     */
     pineapple_holdem: config.pineappleHoldem,
-    seven_deuce_enabled: config.sevenDeuceEnabled,
+    /**
+     * NLH ONLY, and that is the engine's rule, not an oversight.
+     * ServerTableEngineSettlement: "meaningless in PLO; short-deck has no
+     * deuces" — holding four cards, a 7 and a 2 is nearly every hand, and a
+     * bounty that always fires is not a bounty.
+     *
+     * So the SWITCH is what was wrong: the creation screen offered it on PLO
+     * and short-deck tables where it could never pay out once, and said
+     * nothing. It is not offered there now (see the toggle below), and the
+     * column is forced false so a variant change cannot leave a stale true
+     * behind on a table that will never honour it.
+     */
+    seven_deuce_enabled: SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase())
+      ? config.sevenDeuceEnabled
+      : false,
     // 7-2 bounty size in big blinds each other dealt-in player pays a post-flop
     // 7-2 winner. Only meaningful when the toggle is on; default 2 BB.
     seven_deuce_amount: config.sevenDeuceEnabled ? config.sevenDeuceAmountBB : 2,
@@ -860,6 +890,21 @@ export default function TableConfigPage() {
     min_buy_in_bb: config.minBuyInBB,
     max_buy_in_bb: config.maxBuyInBB,
     ante_bb: config.anteBB,
+    /**
+     * THE ANTE SLIDER WAS DEAD ON EVERY TABLE THIS PAGE CREATED.
+     *
+     * `ante_bb` is not in the engine's select list (server/src/services/
+     * supabase/tables.ts) — the engine reads `ante` and `ante_enabled`, and
+     * this page wrote neither. So a host could drag Ante to 2 BB, save, sit
+     * down, and no ante was ever posted. The only path that worked was the
+     * older CreateTableModal, which happens to map to the right columns.
+     *
+     * `ante_bb` is kept because it is the authored unit (big blinds, which
+     * survives a blind change); `ante` is the chip figure the engine actually
+     * posts, derived here so the two cannot drift.
+     */
+    ante_enabled: Number(config.anteBB) > 0,
+    ante: Number(config.anteBB) > 0 ? Number(config.anteBB) * Number(config.bigBlind || 0) : 0,
     career_percent_min: config.careerPercentMin,
     maintain_percent_min: config.maintainPercentMin,
     maintain_hands: config.maintainHands,
@@ -1262,23 +1307,26 @@ export default function TableConfigPage() {
               value={config.tripleBoard}
               onChange={(v) => updateConfig('tripleBoard', v)}
             />
-            <Toggle
-              label="Seven-Deuce"
-              value={config.sevenDeuceEnabled}
-              onChange={(v) => updateConfig('sevenDeuceEnabled', v)}
-              tooltip="Winner holding any 7-2 collects a bounty from each other player (post-flop only)"
-            />
-            {config.sevenDeuceEnabled && (
-              <Slider
-                label="7-2 Bounty"
-                value={config.sevenDeuceAmountBB}
-                onChange={(v) => updateConfig('sevenDeuceAmountBB', v)}
-                min={0.5}
-                max={10}
-                step={0.5}
-                suffix=" Big Blind"
+            {SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase()) && (
+              <Toggle
+                label="Seven-Deuce"
+                value={config.sevenDeuceEnabled}
+                onChange={(v) => updateConfig('sevenDeuceEnabled', v)}
+                tooltip="Winner holding any 7-2 collects a bounty from each other player (post-flop only)"
               />
             )}
+            {SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase()) &&
+              config.sevenDeuceEnabled && (
+                <Slider
+                  label="7-2 Bounty"
+                  value={config.sevenDeuceAmountBB}
+                  onChange={(v) => updateConfig('sevenDeuceAmountBB', v)}
+                  min={0.5}
+                  max={10}
+                  step={0.5}
+                  suffix=" Big Blind"
+                />
+              )}
             <Toggle
               label="NIT Game"
               value={config.nitGame}

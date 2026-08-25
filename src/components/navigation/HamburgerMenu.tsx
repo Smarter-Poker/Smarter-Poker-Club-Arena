@@ -27,6 +27,7 @@ import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
 import { AvatarGallery } from '../customization/AvatarGallery';
+import { isCardBackUnlocked } from '../table/CardImage';
 
 interface HamburgerMenuProps {
   isOpen: boolean;
@@ -62,13 +63,18 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [useRealName, setUseRealName] = useState(false);
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
   const [isVIP, setIsVIP] = useState(false);
+  /** Paid card backs this player has actually bought (feature_purchases). */
+  const [ownedCardBacks, setOwnedCardBacks] = useState<string[]>([]);
   const { diamonds: diamondBalance } = useWalletStore();
   const [selectedCardColor, setSelectedCardColor] = useState(() => {
     try {
-      return localStorage.getItem(STORAGE_KEYS.CARD_COLOR) || 'default';
+      // 'default' was never one of the ids this menu offers, so a player who
+      // had not picked before saw NO tile highlighted at all - the same defect
+      // FIX-D7 fixed for the dealer button. classic_blue is the app default.
+      return localStorage.getItem(STORAGE_KEYS.CARD_COLOR) || 'classic_blue';
     } catch (err) {
       reportError(err, 'HamburgerMenu.Error');
-      return 'default';
+      return 'classic_blue';
     }
   });
 
@@ -251,6 +257,23 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           } catch {
             /* private mode */
           }
+        });
+
+      // Card backs bought with diamonds. Needed because this menu decides
+      // whether a paid design is selectable — see the gate on the swatches.
+      supabase
+        .from('feature_purchases')
+        .select('feature')
+        .eq('user_id', user.id)
+        .like('feature', 'card_back_%')
+        .then(({ data, error }) => {
+          if (error) {
+            reportError(error, 'HamburgerMenu.Owned_card_backs_load_failed');
+            return;
+          }
+          setOwnedCardBacks(
+            (data || []).map((r: { feature: string }) => r.feature.replace('card_back_', ''))
+          );
         });
     }
   }, [user?.id]);
@@ -1156,6 +1179,19 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             },
           ].map((preset) => {
             const isSelected = selectedCardColor === preset.id;
+            /**
+             * vipOnly WAS DECLARED ON EVERY PRESET AND READ BY NOTHING.
+             *
+             * 2026-08-25. Seven of these ten designs are paid: the diamond
+             * store charges 75 to 300 for them and Theme Settings padlocks them
+             * behind VIP. This menu handed every one of them to every player
+             * for free, in one tap, with no lock and no check. Same rule here
+             * as everywhere else now: free, or VIP, or bought.
+             */
+            const locked = !isCardBackUnlocked(preset.id, {
+              isVip: isVIP,
+              owned: ownedCardBacks,
+            });
             return (
               <div
                 key={preset.id}
@@ -1164,30 +1200,48 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                   flexDirection: 'column',
                   alignItems: 'center',
                   gap: 4,
-                  cursor: 'pointer',
+                  cursor: locked ? 'not-allowed' : 'pointer',
+                  opacity: locked ? 0.5 : 1,
                 }}
                 onClick={async () => {
+                  if (locked) {
+                    toast.info('That Card Back Is A Premium Design. Unlock It In The Shop.');
+                    return;
+                  }
                   setSelectedCardColor(preset.id);
-                  const presetMap: Record<string, string> = {
-                    default: 'blue',
-                    emerald: 'black',
-                    crimson: 'red',
-                    royal: 'blue',
-                    gold: 'gold',
-                    midnight: 'navy',
-                    obsidian: 'black',
-                    neon: 'white',
-                  };
-                  const realCardId = presetMap[preset.id] || 'black';
+                  /**
+                   * THE TRANSLATION TABLE OUTLIVED THE IDS IT TRANSLATED.
+                   *
+                   * 2026-08-25. The list above was corrected two days ago from
+                   * the invented ids (default / emerald / crimson / midnight /
+                   * obsidian) to the REAL designs — and this map, which existed
+                   * only to translate those invented ids, was left in place. It
+                   * has no entry for any of the new ids, so `|| 'black'` caught
+                   * them, and 'black' aliases to classic_blue:
+                   *
+                   *   classic_red  -> classic_blue      dragon  -> classic_blue
+                   *   royal        -> classic_blue      galaxy  -> classic_blue
+                   *   holographic  -> classic_blue      diamond -> classic_blue
+                   *   carbon       -> classic_blue      neon    -> royal
+                   *
+                   * Eight of the ten tiles saved a design other than the one
+                   * they showed. The fix made the menu offer real designs and
+                   * left it saving the wrong one, which is worse than before,
+                   * because it now looks right in the picker.
+                   *
+                   * These ids ARE the canonical ids. Nothing needs translating.
+                   */
+                  const realCardId = preset.id;
 
                   masterBus.emit('UI_THEME_CHANGED', {
                     key: 'ALL',
                     value: { cards_id: realCardId },
                   });
                   masterBus.emit('CARD_COLOR_CHANGED', { preset: preset.id });
-                  toast.success('Card Color Applied');
 
-                  if (user?.id) {
+                  if (!user?.id) {
+                    toast.success('Card Back Applied');
+                  } else {
                     try {
                       const { data: currentSettings } = await supabase
                         .from('user_theme_settings')
@@ -1196,7 +1250,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                         .eq('game_type', 'ALL')
                         .maybeSingle();
 
-                      await supabase.from('user_theme_settings').upsert(
+                      const { error } = await supabase.from('user_theme_settings').upsert(
                         {
                           user_id: user.id,
                           game_type: 'ALL',
@@ -1205,15 +1259,27 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                         },
                         { onConflict: 'user_id,game_type' }
                       );
+                      // The success toast used to fire BEFORE this write and
+                      // the error was only ever sent to reportError, so a
+                      // failed save congratulated the player and then quietly
+                      // reverted the next time they opened a table.
+                      if (error) {
+                        reportError(error, 'HamburgerMenu.Card_color_save_failed');
+                        toast.error('Could Not Save That Card Back. Please Try Again.');
+                      } else {
+                        toast.success('Card Back Applied');
+                      }
                     } catch (err) {
                       reportError(err, 'HamburgerMenu.Card_color_save_failed');
+                      toast.error('Could Not Save That Card Back. Please Try Again.');
                     }
                   }
                 }}
               >
                 <div
-                  title={preset.name}
+                  title={locked ? `${preset.name} (Premium)` : preset.name}
                   style={{
+                    position: 'relative',
                     width: 36,
                     height: 36,
                     borderRadius: '50%',
@@ -1225,8 +1291,29 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                       ? '0 0 8px rgba(0, 212, 255, 0.4)'
                       : '0 2px 4px rgba(0,0,0,0.3)',
                     transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
-                />
+                >
+                  {/* Text, not an emoji padlock. Without it the tile looked
+                      free and simply refused to work when tapped. */}
+                  {locked && (
+                    <span
+                      style={{
+                        fontSize: 8,
+                        fontWeight: 800,
+                        letterSpacing: '0.04em',
+                        color: '#0b0b0b',
+                        background: 'linear-gradient(135deg, #ffd700, #d4a017)',
+                        borderRadius: 5,
+                        padding: '1px 3px',
+                      }}
+                    >
+                      VIP
+                    </span>
+                  )}
+                </div>
                 <span
                   style={{
                     fontSize: 9,

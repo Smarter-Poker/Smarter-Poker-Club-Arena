@@ -621,7 +621,21 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * The player cannot play until the BB position rotates to their seat.
    */
   public registerWaitForBB(userId: string): void {
-    if (this.tableInfo?.wait_for_big_blind && !this.isTournamentTable()) {
+    // Dan 2026-08-25: every cash new-joiner is registered now, whatever
+    // `wait_for_big_blind` says.
+    //
+    // The flag used to mean "make this player wait for the big blind before
+    // they can play", and turning it off skipped this set entirely. Since entry
+    // became free, this set no longer gates a WAIT — a joiner is released on the
+    // very next loop tick at no cost. All it still gates are the two positional
+    // hold-outs, and one of those enforces a BINDING rule: "CASH GAME PLAYERS
+    // CAN NEVER BE DEALT INTO THE SMALL BLIND."
+    //
+    // With the old gate, a host who set wait_for_big_blind = false skipped
+    // registration, which skipped the hold-out check, which dealt a brand-new
+    // player straight into the small blind on their first hand. A table setting
+    // must not be able to switch off a house rule, so the rule wins.
+    if (!this.isTournamentTable()) {
       this.waitingForBB.add(userId);
     }
   }
@@ -635,6 +649,23 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   public postBBToEnter(userId: string): { success: boolean; error?: string } {
     if (!this.waitingForBB.has(userId)) {
       return { success: false, error: 'Player is not waiting for BB' };
+    }
+    // Dan 2026-08-25: this endpoint may NOT buy its way past the small-blind
+    // rule. Since entry became free, the only reason a player is still waiting
+    // is one of the two positional hold-outs — so this call, which used to be a
+    // fair way to skip a long natural-BB wait, had become the one way to pay a
+    // live big blind for the privilege of being dealt into the small blind,
+    // which "CASH GAME PLAYERS CAN NEVER BE DEALT INTO THE SMALL BLIND"
+    // forbids outright. The wait it is offering to skip is now one hand, free.
+    const seat = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (seat && !this.isTournamentTable()) {
+      const sbSeatIndex = this.getSBSeatIndex();
+      if (sbSeatIndex > 0 && seat.seat_number === sbSeatIndex) {
+        return {
+          success: false,
+          error: 'You Will Be Dealt In Free Next Hand, The Button Has To Pass Your Seat First',
+        };
+      }
     }
     this.waitingForBB.delete(userId);
     // AUDIT FIX 2026-07-19: post ONLY a live BB to enter (no dead SB). Route

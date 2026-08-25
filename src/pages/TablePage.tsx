@@ -11268,7 +11268,7 @@ export default function TablePage({
           <DealerButton
             dealerVisualIndex={dealerVisualIndex}
             seatPositions={seatPositions}
-            isVisible={tableState.isHandInProgress && dealerVisualIndex >= 0}
+            isVisible={dealerVisualIndex >= 0}
             playSounds={ambientSoundsAllowed}
           />
 
@@ -11524,7 +11524,7 @@ export default function TablePage({
                    no layout has both, so nothing looks mismatched. */
                 className={`seat-wrapper${seatDimmed ? ' seat-wrapper--dim' : ''}${
                   isActingSeat ? ' seat-wrapper--spot' : ''
-                }${pos.y < 20 && pos.x === 50 ? ' seat-wrapper--top' : ''}${
+                }${pos.y < 20 ? ' seat-wrapper--top' : ''}${
                   /* Dan 2026-08-23: "you can never see the hero's stack, it's
                      always cut off by the footer." Hero sits at y:100 in every
                      ring in tableSeatGeometry.ts - avatar CENTRE on the
@@ -11577,8 +11577,8 @@ export default function TablePage({
                        (the dealer), muck TOWARD it. */
                     '--deal-from-x': `${Math.round((dx * scalerSize.w) / 100)}px`,
                     '--deal-from-y': `${Math.round((dy * scalerSize.h) / 100)}px`,
-                    '--fold-to-x': `${Math.round((dx * scalerSize.w * 0.55) / 100)}px`,
-                    '--fold-to-y': `${Math.round((dy * scalerSize.h * 0.55) / 100)}px`,
+                    '--fold-to-x': `${Math.round((dx * scalerSize.w * 0.8) / 100)}px`,
+                    '--fold-to-y': `${Math.round((dy * scalerSize.h * 0.8) / 100)}px`,
                   } as React.CSSProperties
                 }
               >

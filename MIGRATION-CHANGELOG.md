@@ -7,6 +7,142 @@
 
 ---
 
+## Cowork session 2026-08-25 (part 3) — THE CLUB PAGE, LINE BY LINE
+
+Dan: "go through it all line by line, check for any bugs, stubs, gaps, errors,
+regressions or wiring issues... then find any and all ways to improve, enhance
+and upgrade this page and functionality to the max."
+
+Scope: everything behind `/hub/club-arena/clubs/:slug` read in full —
+ClubHomePage.tsx (3,210 lines), LobbyTable.tsx/.css, GameLobbyPanel.tsx,
+DynamicWallet.tsx/.css, lobbyEntries.ts. Thirty defects found and fixed in
+PR #791; two left open as product decisions (below).
+
+### The three that could put a wrong number on a money surface
+
+1. **A rejected read rendered as a balance of zero.** DynamicWallet awaited
+   four Supabase reads and inspected `error` on none of them. supabase-js
+   RESOLVES with `{ data: null, error }` rather than throwing, so an RLS
+   denial, a renamed `fn_club_money_panel`, or a PGRST116 from `.maybeSingle()`
+   produced `panel = {}`, every `num()` returned 0, and the component then
+   called `setFetchError(false)` — Club Bank 0.00, Diamonds 0, Player Wallet
+   0.00, presented as fact with no error badge. The four errors are now
+   coalesced and thrown, which routes to the existing catch: the last known
+   numbers stay on screen and the retry appears.
+
+2. **`Boolean(panel.in_union)` turned "no answer" into "standalone."** That
+   adds the Rake Treasury and Spins Wallet rows a union club does not own, and
+   un-gates the Backup BBJ row — which holds the UNION's reserve, because
+   `backupBBJ` was never given the `unionScoped` gate the other union figures
+   have. Now only written when the RPC actually answered.
+
+3. **A NaN target froze the animated counter permanently.** `Math.abs(NaN) <
+0.01` is false, so the animation ran, committed NaN, and every later target
+   computed `start = NaN`. `formatBalance` then masked the wreckage as
+   "0.00". Cached payloads are sanitised field by field before reaching state,
+   the counter coerces at the door, and formatBalance renders a non-finite
+   number as "-" rather than as zero.
+
+### The realtime teardown loop
+
+`removeChannel()` → `unsubscribe()` → the channel's close handler → the
+`subscribe` callback with status `CLOSED`. The club and union callbacks treated
+CLOSED as a failure and called `scheduleReconnect()`, which bumped
+`channelEpoch`, which re-ran the effect, which called `removeChannel()`. Four
+queries and a full channel rebuild **every two seconds for as long as the panel
+was mounted** — and the backoff could never escalate past the first 2s delay,
+because the main channel resubscribed successfully each epoch and its
+SUBSCRIBED handler zeroed the retry count.
+
+The callbacks fire after the cleanup has already cleared the pending-timer
+guard, so only a per-run `disposed` flag can tell "the server dropped us" from
+"we let go". Added, plus per-channel health so the count clears only when every
+channel this run created reports SUBSCRIBED.
+
+Two more in the same file: channel topics carried no per-instance
+discriminator, and `RealtimeClient._leaveOpenTopic` unsubscribes any
+already-joined channel with a matching topic — so two wallet surfaces in one
+window silently killed each other's listeners. And
+`p.old.union_id !== p.new.union_id` is ALWAYS true, because logical replication
+only fills `old_record` with the replica identity (the primary key), so every
+club-bank movement fired the refetch the payload-apply beside it exists to
+avoid.
+
+### Stale closures on the club page
+
+The bus listeners, the realtime `club_members` handler and the 90-second
+fallback all had `[]` deps and froze render 0's `loadClubData`, which closes
+over that render's `clubId`. After `/clubs/a → /clubs/b` (React Router reuses
+the component) any of them refetched club A and painted it over club B. Fixed
+with a latest-value ref kept current by a no-dep effect.
+
+Beside it: the club-switch reset cleared role, level and jackpot but left
+`club`, `tables` and `tournaments` — so entering an uncached club showed the
+PREVIOUS club's name, member count and tables, as live joinable rows, for the
+whole fetch. The `get_club_home` fast path had no cross-load token
+(`lobbyPainted` is a local of one invocation and cannot arbitrate between two
+loads). `loadMyGameStates` had no cancellation, no club scope and no row limit.
+
+### The search box that was never rendered
+
+Every part of this feature existed and was wired — `searchQuery` filters both
+`filteredTables` and `filteredTournaments`, `narrowing.searching` drives the
+empty state's copy, `clearAllNarrowing` clears it, the stylesheet has carried
+`.lobby-top__searchbox` since 2026-08-21 — but nothing on the page could SET
+it. `searchQuery` was permanently `''`, the filters were no-ops, the "Your
+Search And" branch was unreachable, and `IconSearch` was an unused import. The
+input is now on the page.
+
+### Lobby table
+
+The Starting Stack and Current Level columns shipped earlier the same day
+joined a `table-layout: fixed` table without joining its narrowing ladder:
+216px carried whole into every breakpoint, which is ~200px of sideways scroll
+in the 641–768px band — the exact failure the phone pass exists to prevent.
+They narrow at 1100 and hide at 900 (the card and the game panel both still
+carry the figures). Their `sortValue` used `-1` for cash rows, and the
+comparator parks NON-FINITE values last, so ascending floated every empty cell
+to the top; `Infinity` now.
+
+`blind_structure` had grown THREE parsers in one folder, each reading only the
+spelling it was written against — `BlindLevel` declares `small_blind` and
+`smallBlind`, `duration_minutes` and `durationMinutes`. All 22,175 stored rows
+are camelCase today, so the first canonical row would have gone blank in some
+readers and not others, silently, because a `catch` that returns null looks
+exactly like a tournament with no structure. One parser now:
+`src/components/lobby/tournamentFigures.ts`.
+
+Dead and conflicting CSS: `.lt-status` declared three times in one media query
+(each later one keeping what the earlier had not set, producing a half-applied
+badge nobody designed), `.lt-name__clockpart` twice with opposite values, a
+768px block sitting AFTER the 640px card block and silently overriding both
+phone font sizes and the card's zero padding, plus `.lt-badge`,
+`.lt-rule--more` and a `thead th` rule inside the block that hides `thead`.
+
+### Left open — product decisions, not defects
+
+1. **The ALL tab does not show all.** It keeps only HOLDEM/OMAHA/LIMIT cash
+   (dropping MIXED), only registering/late-reg MTTs (dropping running games and
+   all Spin/SNG), and caps each section at 10. `countsCapped` suggests the cap
+   is deliberate; the MIXED exclusion contradicts a comment 2,000 lines above
+   that says MIXED surfaces under All.
+2. **The Filters button renders on ALL, where its filters cannot apply.**
+   `AdvancedFilters` retargets `initialType: 'ALL'` to `'HOLDEM'`, while the
+   filter functions set `advType = null` on ALL — so the sheet configures
+   something the list will not read. The comment beside the button says it is
+   "Hidden on ALL"; it is not. Hiding it would also remove access to sort from
+   that tab, which is why this needs a decision rather than a guess.
+
+### Gates
+
+`npx tsc --noEmit` clean. `npx vitest run tests/` — 341 files, 4,240 passed, 5
+skipped. eslint 0 errors. Three source-reading tests pinned shapes this work
+changed (`spinsWalletOwnership`, `clubHomeFastPath`, `clubHomeWaterfall`) and
+were updated in the same commit, each rewritten to assert the INTENT rather
+than the literal text.
+
+---
+
 ## Cowork session 2026-08-25 (part 2) — ANON COULD READ EVERY MEMBER'S WALLET
 
 ### The finding that mattered more than any of the CPU work
@@ -32,7 +168,7 @@ SECURITY DEFINER they bypass RLS by design.
 
 The first `REVOKE EXECUTE ... FROM anon` **silently did nothing** for 7 of the
 12 functions. Postgres grants EXECUTE to PUBLIC on every new function, so
-`anon` mostly held the privilege *through PUBLIC*, not through a grant of its
+`anon` mostly held the privilege _through PUBLIC_, not through a grant of its
 own — `has_function_privilege('anon', ...)` stayed `true` after the revoke.
 The correct removal is `REVOKE FROM PUBLIC` and then an explicit grant back.
 Anyone doing this again must verify with `has_function_privilege`, not assume
@@ -61,8 +197,8 @@ read clubs, tables, tournaments, unions and union_clubs with no policy errors.
 
 ### sp_prune_hand_history: a comment that lied
 
-Its own comment says *"Only cast what IS a uuid. A malformed id yields NULL...
-the same fail-safe as an unknown account."* The code used `length(...) = 36`,
+Its own comment says _"Only cast what IS a uuid. A malformed id yields NULL...
+the same fail-safe as an unknown account."_ The code used `length(...) = 36`,
 which a 36-character non-UUID passes before throwing 22P02 on the cast. Rather
 than failing safe, one bad id would abort the whole prune batch and stop
 retention silently. Regex guard added behind the length pre-filter. Verified:
@@ -76,6 +212,7 @@ Recorded so the next agent does not "fix" them and break production.
 
 **Realtime is 26-29% of database time and there is no safe cut.** All three
 heavy WAL producers are genuinely subscribed:
+
 - `table_hole_cards` (90k ins + 88k del / 35 min) is the SECURE HOLE-CARD
   DELIVERY PATH — `TablePage.tsx:4079` subscribes to it and the engine
   comments confirm it. Removing it from the publication breaks dealing.
@@ -86,8 +223,8 @@ heavy WAL producers are genuinely subscribed:
   `union_id=eq.X` server-side and reads `club_id` from `payload.old` on
   DELETE. With DEFAULT identity `payload.old` carries only the PK and union
   tournament updates silently stop working.
-The ~90 published tables with zero writes cost nothing — trimming the
-publication is not the win it looks like.
+  The ~90 published tables with zero writes cost nothing — trimming the
+  publication is not the win it looks like.
 
 **No hand_history index is droppable.** Over ~1h45m of production traffic
 `idx_hand_history_players_gin` took 3 scans and
@@ -115,10 +252,10 @@ table — 2.5% of all database time, and it is why club roster pages feel slow.
 
 Measured directly on the same query and club:
 
-| | time | rows |
-|---|---|---|
-| as `postgres`, RLS bypassed | **4.19 ms** | 584 |
-| as `authenticated`, RLS enforced | **130.87 ms** | 0 |
+|                                  | time          | rows |
+| -------------------------------- | ------------- | ---- |
+| as `postgres`, RLS bypassed      | **4.19 ms**   | 584  |
+| as `authenticated`, RLS enforced | **130.87 ms** | 0    |
 
 **31x**, and the 130 ms case is the CHEAPEST path (`auth.uid()` null, zero rows
 returned). Cause: four separate permissive SELECT policies, three of which call

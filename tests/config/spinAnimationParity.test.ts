@@ -47,6 +47,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { resolveThemeBucket } from '../../src/hooks/useUserThemeSettings';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -79,7 +80,19 @@ describe('1. a Spin resolves its own theme, not the MTT default', () => {
   it('refuses to resolve a theme for a tournament whose format is unknown', () => {
     // Without this the hook answers MTT for one render and the felt changes
     // under the player when the real format arrives.
-    expect(themeHook).toMatch(/if \(isTournament && !tournamentType\) return;/);
+    //
+    // 2026-08-25: this used to grep the hook's source for the literal line
+    // `if (isTournament && !tournamentType) return;`. The guard moved into an
+    // exported function during the theme-persistence audit, unchanged in
+    // behaviour, and a text match cannot tell those two things apart. Asserting
+    // the behaviour instead: a tournament with no format resolves NO bucket,
+    // and one with a format resolves the right one.
+    expect(resolveThemeBucket(undefined, true, undefined)).toBeNull();
+    expect(resolveThemeBucket(undefined, true, '')).toBeNull();
+    expect(resolveThemeBucket(undefined, true, 'spin')).toBe('SNG');
+    expect(resolveThemeBucket(undefined, true, 'mtt')).toBe('MTT');
+    // A cash table has nothing to wait for and must resolve immediately.
+    expect(resolveThemeBucket('nlh', false, undefined)).toBe('NLH');
   });
 });
 

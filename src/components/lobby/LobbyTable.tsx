@@ -78,12 +78,25 @@ export interface LobbyRowContext {
   seatedIds: Set<string>;
   registeredIds: Set<string>;
   favoriteIds: Set<string>;
+  /* Dan 2026-08-24: every card carries its own action. These are optional so
+     any other surface can keep rendering the table read-only — a card with no
+     handler simply shows no button rather than a dead one. */
+  onRegister?: (e: LobbyEntry) => void;
+  onJoinTable?: (e: LobbyEntry) => void;
+  onViewTable?: (e: LobbyEntry) => void;
   onToggleFavorite?: (tableId: string, next: boolean) => void;
 }
 
 interface ColumnDef {
   key: string;
   label: string;
+  /* Dan 2026-08-24: "FOR TOURNAMENTS IT SHOULD SAY BUY-IN, NOT STAKES." The
+     ALL tab's cost column renders a stake for a cash game and a buy-in for a
+     tournament out of the same cell, so one static heading is wrong for half
+     the rows. On a phone the header row is gone and this label is printed on
+     the card itself, which makes the mismatch visible rather than merely
+     imprecise. */
+  labelFor?: (e: LobbyEntry) => string;
   className?: string;
   hideOnMobile?: boolean;
   sortable?: boolean;
@@ -473,12 +486,92 @@ const COL_COST: ColumnDef = {
   key: 'cost',
   /* Dan 2026-08-24: the ALL tab's cost column is titled just "Stakes". */
   label: 'Stakes',
+  labelFor: (e) => (e.kind === 'cash' ? 'Stakes' : 'Buy-In'),
   className: 'lt-col-num',
   sortable: true,
   sortValue: (e) => (e.kind === 'cash' ? e.stakesValue : e.buyInValue),
   render: (e) => (
     <span className="lt-mono">{e.kind === 'cash' ? e.stakesLabel : e.buyInLabel}</span>
   ),
+};
+
+/* ── THE ACTION CELL ────────────────────────────────────────────────────────
+   Dan 2026-08-24: "EVERY CARD SHOULD HAVE A REGISTER BUTTON. CASH GAMES
+   SHOULD HAVE VIEW TABLE AND JOIN TABLE. SPINS AND HEADS UP SHOULD HAVE SIT
+   DOWN."
+
+   What each button DOES is deliberately the existing platform flow, not a new
+   one: Register calls the same registration the panel calls, Join Table the
+   same navigation, View Table opens the game lobby panel. A lobby card is the
+   worst possible place to invent a second way to spend money.
+
+   A heads-up table is a cash game with two seats, so it is detected from the
+   capacity rather than from a category the entry does not carry. */
+const COL_ACTIONS: ColumnDef = {
+  key: 'actions',
+  label: '',
+  className: 'lt-col-actions',
+  render: (e, ctx) => {
+    const stop = (fn?: (x: LobbyEntry) => void) => (ev: React.MouseEvent) => {
+      ev.stopPropagation();
+      fn?.(e);
+    };
+
+    if (e.kind === 'cash') {
+      const seated = ctx.seatedIds.has(e.id);
+      const headsUp = e.capacity === 2;
+      return (
+        <span className="lt-actions">
+          {ctx.onViewTable && (
+            <button type="button" className="lt-act lt-act--ghost" onClick={stop(ctx.onViewTable)}>
+              View Table
+            </button>
+          )}
+          {ctx.onJoinTable && (
+            <button
+              type="button"
+              className="lt-act lt-act--primary"
+              onClick={stop(ctx.onJoinTable)}
+            >
+              {seated ? 'Return To Table' : headsUp ? 'Sit Down' : 'Join Table'}
+            </button>
+          )}
+        </span>
+      );
+    }
+
+    if (e.kind === 'spin' || e.kind === 'sng') {
+      return (
+        <span className="lt-actions">
+          {ctx.onRegister && (
+            <button type="button" className="lt-act lt-act--primary" onClick={stop(ctx.onRegister)}>
+              Sit Down
+            </button>
+          )}
+        </span>
+      );
+    }
+
+    const registered = ctx.registeredIds.has(e.id);
+    return (
+      <span className="lt-actions">
+        {ctx.onViewTable && (
+          <button type="button" className="lt-act lt-act--ghost" onClick={stop(ctx.onViewTable)}>
+            Details
+          </button>
+        )}
+        {ctx.onRegister && (
+          <button
+            type="button"
+            className={`lt-act ${registered ? 'lt-act--done' : 'lt-act--primary'}`}
+            onClick={stop(registered ? ctx.onViewTable : ctx.onRegister)}
+          >
+            {registered ? 'Registered' : 'Register'}
+          </button>
+        )}
+      </span>
+    );
+  },
 };
 
 export function columnsFor(category: LobbyCategory): ColumnDef[] {
@@ -496,6 +589,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_BUYIN,
         COL_RULES,
         COL_STATUS,
+        COL_ACTIONS,
       ];
     case 'MTT':
       return [
@@ -507,6 +601,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_SPEED,
         { ...COL_PLAYERS, label: 'Enrolled', hideOnMobile: true },
         COL_STATUS,
+        COL_ACTIONS,
       ];
     case 'SPIN':
       /* Dan 2026-08-23: "SPEED SHOULDN'T CHANGE, ONLY THE STARTING STACK.
@@ -514,9 +609,9 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
          structure, so a Speed column is a whole column of the same word — and
          a sortable one at that, inviting a sort that can never reorder
          anything. What actually varies is the buy-in, which is already here. */
-      return [COL_NAME, COL_VARIANT, COL_BUYIN, COL_PLAYERS, COL_STATUS];
+      return [COL_NAME, COL_VARIANT, COL_BUYIN, COL_PLAYERS, COL_STATUS, COL_ACTIONS];
     case 'SNG':
-      return [COL_NAME, COL_VARIANT, COL_BUYIN, COL_PLAYERS, COL_STATUS];
+      return [COL_NAME, COL_VARIANT, COL_BUYIN, COL_PLAYERS, COL_STATUS, COL_ACTIONS];
     case 'ALL':
     default:
       return [
@@ -529,6 +624,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_STARTS,
         COL_RULES,
         COL_STATUS,
+        COL_ACTIONS,
       ];
   }
 }
@@ -766,7 +862,7 @@ export default function LobbyTable({
                        layout prints it above the value — and it is always the
                        right word, which a class name could not guarantee:
                        Stakes and Buy-In share .lt-col-num. */
-                    data-label={col.label}
+                    data-label={col.labelFor ? col.labelFor(entry) : col.label}
                     className={`${col.className || ''} ${col.hideOnMobile ? 'hide-on-mobile' : ''}`}
                   >
                     {col.render(entry, ctx)}

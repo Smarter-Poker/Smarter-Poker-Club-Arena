@@ -863,7 +863,7 @@ export default function MysteryBountyChest({
             {data.recipients && data.recipients.length > 1 ? (
               <div className="mbc__split">
                 <div className="mbc__split-head">
-                  Split {data.recipients.length} Ways — Shared Knockout
+                  Split {data.recipients.length} Ways - Shared Knockout
                 </div>
                 {data.recipients.map((r) => (
                   <div className="mbc__split-row" key={r.userId}>

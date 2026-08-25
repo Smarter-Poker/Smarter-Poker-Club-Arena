@@ -75,6 +75,7 @@ test('every control answers to a thumb at 375px', async ({ page }) => {
       ({ REACH }) => {
         const root = document.querySelector('#main-content') || document.body;
         const out: Array<{ sel: string; text: string; boxH: number; reachablePx: number }> = [];
+        const unmeasured: string[] = [];
         let n = 0;
 
         for (const el of root.querySelectorAll('button, a[href], [role="button"]')) {
@@ -98,9 +99,37 @@ test('every control answers to a thumb at 375px', async ({ page }) => {
           if (b.bottom <= 0 || b.top >= window.innerHeight) continue;
           if (b.right <= 0 || b.left >= window.innerWidth) continue;
 
-          n += 1;
           const cx = b.left + b.width / 2;
           const cy = b.top + b.height / 2;
+
+          /* A control has to be far enough inside the viewport for the whole
+             44px band to be probed, or the measurement is meaningless: this
+             walks outward from the centre and `document.elementFromPoint`
+             returns null for any y outside the viewport, which reads exactly
+             like a control buried under an overlay.
+
+             That is not a hypothetical. On 2026-08-25 the live audit reported
+             `hand-history: button.replay-btn box 44px, reachable 0px` - a
+             button that already carries `min-height: 44px` and is perfectly
+             hittable. Measured on production: its box was at y=798 in an
+             812px viewport, so its centre sat at y=820, off the bottom edge,
+             and the very first probe came back null. It was the last row of a
+             scrolling list; scroll down and it is a 44px target like any
+             other.
+
+             So say so instead of accusing it. A control the sweep could not
+             measure is recorded and excluded - never counted as a pass, and
+             never reported as a miss. */
+          if (cy - REACH < 1 || cy + REACH > window.innerHeight - 1) {
+            unmeasured.push(
+              el.tagName.toLowerCase() +
+                (el.className ? '.' + String(el.className).split(' ')[0].slice(0, 26) : '') +
+                ' (centre off-screen, not probed)'
+            );
+            continue;
+          }
+
+          n += 1;
 
           /* Walk outward from the centre and find how far the control still
              wins the hit test. Stop at the first point it loses. */
@@ -125,12 +154,13 @@ test('every control answers to a thumb at 375px', async ({ page }) => {
             });
           }
         }
-        return { out, n };
+        return { out, n, unmeasured };
       },
       { REACH }
     );
 
     checked += found.n;
+    for (const u of found.unmeasured) skipped.push(`${route}: ${u}`);
     for (const f of found.out) misses.push({ route, ...f });
   }
 

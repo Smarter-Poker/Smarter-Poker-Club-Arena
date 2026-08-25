@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   tournamentService,
   BLIND_STRUCTURES,
@@ -17,6 +17,10 @@ import WeeklyScheduleEditor, {
   validateWeeklySchedule,
   type WeeklyScheduleValue,
 } from '../tournament/WeeklyScheduleEditor';
+import { BlindStructureBuilder } from '../tournament/BlindStructureBuilder';
+import PayoutStructureEditor from '../tournament/PayoutStructureEditor';
+import type { BlindLevel } from '../../config/blindStructures';
+import type { PayoutEntry, PayoutTemplate } from '../../services/PayoutEngine';
 
 interface Props {
   clubId: string;
@@ -47,16 +51,10 @@ export default function CreateTournamentModal({
   onSuccess,
 }: Props) {
   const toast = useToast();
-  const [visibleSections, setVisibleSections] = useState<boolean[]>([]);
-
-  useEffect(() => {
-    setVisibleSections([]);
-    [0, 1, 2, 3, 4, 5].forEach((i) => {
-      setTimeout(() => {
-        setVisibleSections((prev) => [...prev, true]);
-      }, i * 90);
-    });
-  }, []);
+  /* A `visibleSections` state and six uncleaned setTimeouts used to sit here,
+     driving a stagger nothing read - the value was never referenced anywhere
+     in this file. Closing the modal inside 540ms still fired them, setting
+     state on an unmounted component. */
 
   // Apply the caller's preferred starting format ONCE, through the same
   // handler a manual selection uses so its per-format defaults apply too.
@@ -79,7 +77,14 @@ export default function CreateTournamentModal({
   const [buyIn, setBuyIn] = useState('10');
   const [startingChips, setStartingChips] = useState('1500');
   const [maxPlayers, setMaxPlayers] = useState('50');
-  const [blindSpeed, setBlindSpeed] = useState<'turbo' | 'regular' | 'deepStack'>('turbo');
+  const [blindSpeed, setBlindSpeed] = useState<'turbo' | 'regular' | 'deepStack' | 'custom'>(
+    'turbo'
+  );
+  /* Only read when blindSpeed === 'custom'. Seeded from the Regular preset by
+     the builder itself, so it is never empty when it is used. */
+  const [customBlinds, setCustomBlinds] = useState<BlindLevel[]>([]);
+  const [customPayoutsOn, setCustomPayoutsOn] = useState(false);
+  const [customPayouts, setCustomPayouts] = useState<PayoutEntry[]>([]);
   const [guaranteedPrize, setGuaranteedPrize] = useState('0');
 
   // ── Satellite target (the tournament winners earn a seat into) ──
@@ -101,6 +106,16 @@ export default function CreateTournamentModal({
   const isRebuy = format === 'mtt_rebuy';
   const isReentry = format === 'mtt_reentry';
   const [rebuyCost, setRebuyCost] = useState('');
+  /** Flips synchronously, so a second submit cannot slip past an await. */
+  const submittingRef = useRef(false);
+  /** False once unmounted: onSuccess() closes this modal from inside submit. */
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
   const [rebuyChips, setRebuyChips] = useState('');
   // rebuyLevels is derived from lateRegLevels (always the same cutoff)
   // Auto-enable add-on for rebuy/reentry formats
@@ -174,7 +189,46 @@ export default function CreateTournamentModal({
     return PAYOUT_STRUCTURES.mtt50;
   }, [maxPlayers, format]);
 
+  /* What actually gets sent. A custom ladder or a custom payout table is only
+     consulted when its own control is on, so turning the control off restores
+     the preset rather than leaving a half-edited structure behind. */
+  const effectiveBlinds = useMemo(
+    () => (blindSpeed === 'custom' ? customBlinds : BLIND_STRUCTURES[blindSpeed]),
+    [blindSpeed, customBlinds]
+  );
+  const effectivePayouts = useMemo(
+    () =>
+      customPayoutsOn
+        ? customPayouts.map((pp) => ({ place: pp.place, percentage: pp.percentage }))
+        : payoutStructure,
+    [customPayoutsOn, customPayouts, payoutStructure]
+  );
+
+  /* TournamentService rejects a payout table that does not total 100%, and a
+     rejection AFTER the operator has clicked Create reads as a failure they
+     cannot see the cause of. Same rule, checked here, so the button is simply
+     disabled with the reason printed beside it. */
+  const payoutsTotal = useMemo(
+    () => effectivePayouts.reduce((sum, pp) => sum + (Number(pp.percentage) || 0), 0),
+    [effectivePayouts]
+  );
+  const payoutsValid = Math.abs(payoutsTotal - 100) < 0.5;
+  const blindsValid = Array.isArray(effectiveBlinds) && effectiveBlinds.length > 0;
+
   const isSngOrSpin = format === 'sng' || format === 'spin';
+
+  /* The payout editor prices places against a pool that does not exist yet.
+     For an SNG or a Spin the field size is exact - the game starts when the
+     last seat sells - so the amounts are real. An MTT has no cap, so the
+     projection is stated at an assumed field rather than implied as fact. */
+  const projectedField = isSngOrSpin ? parseInt(maxPlayers) || 0 : 50;
+  const projectedPrizePool = split.prize * projectedField;
+
+  /* Open the editor on the SAME shape the preset would have used. Without
+     this it opened on Top 15%, which for a 6 max sit-and-go silently turned
+     65/35 into winner-take-all the instant the box was ticked. */
+  const payoutSeedTemplate: PayoutTemplate =
+    format === 'sng' ? (projectedField <= 6 ? 'sng6' : 'sng9') : 'top15';
   const isSatellite = format === 'satellite';
   const isXmtt = format === 'xmtt';
 
@@ -256,13 +310,35 @@ export default function CreateTournamentModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    /* A REF, BEFORE ANYTHING IS AWAITED. `isSubmitting` is state and does not
+       change until React re-renders, so two submits in the same tick - a
+       double tap, or Enter held down - both got through and created two
+       tournaments, and createTournament carries no idempotency key. */
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setIsSubmitting(true);
+
+    /* A SCHEDULED start in the past creates a tournament that can never begin.
+       coreValid only checks the two date strings are non-empty, so an owner
+       picking yesterday got no feedback at all. A minute of slack, for a form
+       filled in while the clock moves. */
+    if (startTimeMode === 'scheduled') {
+      const startsAt = new Date(`${scheduledDate}T${scheduledTime}`).getTime();
+      if (!Number.isFinite(startsAt) || startsAt < Date.now() - 60_000) {
+        toast.error('Pick A Start Time In The Future');
+        submittingRef.current = false;
+        setIsSubmitting(false);
+        return;
+      }
+    }
 
     try {
       // ── Satellite validation: without a target it silently becomes a cash
       // payout, defeating the point (winners should earn seats). ──
       if (isSatellite && !satelliteTargetId) {
-        toast.error('Pick the target tournament this satellite awards seats into.');
+        toast.error('Pick The Target Tournament This Satellite Awards Seats Into');
+        submittingRef.current = false;
+        submittingRef.current = false;
         setIsSubmitting(false);
         return;
       }
@@ -291,6 +367,7 @@ export default function CreateTournamentModal({
         if (!mustBePositive && (value === '' || Number(value) === 0)) continue;
         if (!isWholeBuyIn(value)) {
           toast.error(`${label} must be a whole number of chips, with no decimals.`);
+          submittingRef.current = false;
           setIsSubmitting(false);
           return;
         }
@@ -307,6 +384,7 @@ export default function CreateTournamentModal({
         const ba = Math.round(Number(bountyAmount));
         if (!ba || ba <= 0) {
           toast.error('Bounty amount is required for bounty tournaments');
+          submittingRef.current = false;
           setIsSubmitting(false);
           return;
         }
@@ -318,6 +396,7 @@ export default function CreateTournamentModal({
           toast.error(
             `Bounty ${money(ba)} plus the ${money(parsedRake)} fee exceeds the ${money(parsedBuyIn)} buy-in. Lower the bounty or raise the buy-in.`
           );
+          submittingRef.current = false;
           setIsSubmitting(false);
           return;
         }
@@ -326,11 +405,13 @@ export default function CreateTournamentModal({
           const max = Math.round(Number(mysteryBountyMax));
           if (!min || min <= 0 || !max || max <= 0) {
             toast.error('Mystery bounty min and max multipliers are required');
+            submittingRef.current = false;
             setIsSubmitting(false);
             return;
           }
           if (max <= min) {
             toast.error('Mystery bounty max multiplier must be greater than min');
+            submittingRef.current = false;
             setIsSubmitting(false);
             return;
           }
@@ -360,6 +441,7 @@ export default function CreateTournamentModal({
       const restartMinutes = restartEvery.trim() === '' ? null : Math.round(Number(restartEvery));
       if (restartMinutes !== null && (restartMinutes < 5 || restartMinutes > 1440)) {
         toast.error('Restart interval must be between 5 and 1440 minutes.');
+        submittingRef.current = false;
         setIsSubmitting(false);
         return;
       }
@@ -367,6 +449,7 @@ export default function CreateTournamentModal({
         const problem = validateWeeklySchedule(schedule);
         if (problem) {
           toast.error(problem);
+          submittingRef.current = false;
           setIsSubmitting(false);
           return;
         }
@@ -377,7 +460,8 @@ export default function CreateTournamentModal({
         if (!Number.isFinite(n)) return dflt;
         return Math.min(hi, Math.max(lo, n));
       };
-      const maxRebuysNum = maxRebuysStr.trim() === '' ? undefined : Math.round(Number(maxRebuysStr));
+      const maxRebuysNum =
+        maxRebuysStr.trim() === '' ? undefined : Math.round(Number(maxRebuysStr));
 
       const tournamentConfig: import('../../services/TournamentService').TournamentConfig = {
         name,
@@ -388,8 +472,8 @@ export default function CreateTournamentModal({
         startingStack: parseInt(startingChips),
         maxPlayers: isSngOrSpin ? parseInt(maxPlayers) : 0, // 0 = unlimited for MTT/Bounty/PKO/Mystery/Satellite
         minPlayers: 3,
-        blindStructure: BLIND_STRUCTURES[blindSpeed],
-        payoutStructure,
+        blindStructure: effectiveBlinds,
+        payoutStructure: effectivePayouts,
         lateRegistrationLevels: parseInt(lateRegLevels) || 0,
         startTime,
         isRebuy,
@@ -533,9 +617,7 @@ export default function CreateTournamentModal({
           name,
           daysOfWeek: schedule.daysOfWeek,
           startTimesUtc:
-            schedule.mode === 'times'
-              ? schedule.startTimesUtc.filter((t) => t.trim() !== '')
-              : [],
+            schedule.mode === 'times' ? schedule.startTimesUtc.filter((t) => t.trim() !== '') : [],
           intervalMinutes: schedule.mode === 'interval' ? schedule.intervalMinutes : null,
           active: true,
           config: rpcConfig,
@@ -552,7 +634,10 @@ export default function CreateTournamentModal({
       reportError(error, 'CreateTournamentModal.Failed_to_create_tournament');
       toast.error(error?.message || 'Failed to create tournament');
     } finally {
-      setIsSubmitting(false);
+      submittingRef.current = false;
+      /* onSuccess() unmounts this modal, so a bare setState here wrote to a
+         torn-down component on the happy path. */
+      if (isMountedRef.current) setIsSubmitting(false);
     }
   };
 
@@ -594,6 +679,23 @@ export default function CreateTournamentModal({
     return true;
   })();
 
+  /* "Anything typed" is the right bar for a destructive backdrop click: the
+     defaults alone are not worth protecting, a name or a buy-in is. */
+  const formIsDirty = Boolean(name.trim()) || Boolean(buyIn.trim());
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSubmitting) onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose, isSubmitting]);
+
   const coreValid = (() => {
     if (!name.trim()) return false;
     // Whole numbers only — no decimal buy-ins on any tournament or SNG.
@@ -608,10 +710,25 @@ export default function CreateTournamentModal({
     return true;
   })();
 
-  const canSubmit = coreValid && bountyValid && !isSubmitting;
+  const canSubmit = coreValid && bountyValid && payoutsValid && blindsValid && !isSubmitting;
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
+    /* THE BACKDROP DOES NOT DISCARD A CONFIGURED TOURNAMENT.
+       `onClick={onClose}` threw away a fully filled form on a mis-tap, with no
+       confirmation, and it was live while a create was in flight. Escape and
+       the body-scroll lock were missing too - every other modal in this folder
+       has both. */
+    <div
+      className={styles.modalOverlay}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Create Game"
+      onClick={() => {
+        if (isSubmitting) return;
+        if (formIsDirty) return;
+        onClose();
+      }}
+    >
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
           <h2>{unionId ? 'Create Union Tournament (XMTT)' : 'Create Tournament'}</h2>
@@ -751,10 +868,24 @@ export default function CreateTournamentModal({
                   <option value="turbo">Turbo (3M)</option>
                   <option value="regular">Regular (8M)</option>
                   <option value="deepStack">Deep Stack (15M)</option>
+                  <option value="custom">Custom Structure</option>
                 </select>
               </div>
             </div>
           </div>
+
+          {blindSpeed === 'custom' && (
+            <div className={styles.formGroup}>
+              <span className={styles.sectionLabel}>Blind Structure</span>
+              <span className={styles.helperText}>
+                Levels Are Sent Exactly As Shown, Breaks Included.
+              </span>
+              <BlindStructureBuilder
+                onChange={setCustomBlinds}
+                startingChips={parseInt(startingChips) || 10000}
+              />
+            </div>
+          )}
 
           <div className={styles.row}>
             <div className={styles.col}>
@@ -1183,7 +1314,9 @@ export default function CreateTournamentModal({
                           type="number"
                           className={styles.input}
                           value={rebuyChips}
-                          onChange={(e) => setRebuyChips(e.target.value)}
+                          /* digitsOnly, like every other chip field. A raw value let
+                             parseInt('-500') through into the config. */
+                          onChange={(e) => setRebuyChips(digitsOnly(e.target.value))}
                           placeholder={startingChips}
                         />
                         <span className={styles.helperText}>Blank = Starting Stack</span>
@@ -1225,7 +1358,7 @@ export default function CreateTournamentModal({
                         type="number"
                         className={styles.input}
                         value={addOnChips}
-                        onChange={(e) => setAddOnChips(e.target.value)}
+                        onChange={(e) => setAddOnChips(digitsOnly(e.target.value))}
                         placeholder={startingChips}
                       />
                       <span className={styles.helperText}>Blank = Starting Stack</span>
@@ -1494,36 +1627,85 @@ export default function CreateTournamentModal({
                   Tournament Schedule (Recurring)
                 </label>
                 <span className={styles.helperText}>
-                  Repeats This Tournament Weekly. Spawned Instances Use Exactly This
-                  Configuration.
+                  Repeats This Tournament Weekly. Spawned Instances Use Exactly This Configuration.
                 </span>
               </div>
               {scheduleEnabled && <WeeklyScheduleEditor value={schedule} onChange={setSchedule} />}
             </div>
           )}
 
-          {/* ── Payout Info ── */}
+          {/* ── Payout Info ──
+              Spin prizes are drawn from the wheel, not from a places table -
+              the structure is always 100% to first - so the editor is not
+              offered there. Everywhere else the preset stays the default and
+              the editor is opt-in. */}
           <div className={styles.payoutPreview}>
             <span className={styles.sectionLabel}>
-              Payout Structure ({payoutStructure.length} Places Paid)
+              Payout Structure ({effectivePayouts.length} Places Paid)
             </span>
-            <div className={styles.payoutList}>
-              {payoutStructure.map((p, i) => (
-                <span key={i} className={styles.payoutItem}>
-                  {p.place}
-                  {p.place === 1 ? 'st' : p.place === 2 ? 'nd' : p.place === 3 ? 'rd' : 'th'}:{' '}
-                  {p.percentage}%
+            {format !== 'spin' && (
+              <label className={styles.toggleLabel}>
+                <input
+                  type="checkbox"
+                  className={styles.checkbox}
+                  checked={customPayoutsOn}
+                  onChange={(e) => {
+                    setCustomPayoutsOn(e.target.checked);
+                    if (!e.target.checked) setCustomPayouts([]);
+                  }}
+                />
+                Customize Payouts
+              </label>
+            )}
+
+            {customPayoutsOn && format !== 'spin' ? (
+              <>
+                <span className={styles.helperText}>
+                  {isSngOrSpin
+                    ? `Amounts Shown For A Full ${projectedField.toLocaleString()} Seat Field.`
+                    : `Amounts Are A Projection At ${projectedField.toLocaleString()} Entries. The Real Prize Pool Depends On The Final Field.`}
                 </span>
-              ))}
-            </div>
+                <PayoutStructureEditor
+                  key={payoutSeedTemplate}
+                  playerCount={projectedField}
+                  prizePool={projectedPrizePool}
+                  initialTemplate={payoutSeedTemplate}
+                  onChange={setCustomPayouts}
+                />
+              </>
+            ) : (
+              <div className={styles.payoutList}>
+                {effectivePayouts.map((p, i) => (
+                  <span key={i} className={styles.payoutItem}>
+                    {p.place}
+                    {p.place === 1
+                      ? 'st'
+                      : p.place === 2
+                        ? 'nd'
+                        : p.place === 3
+                          ? 'rd'
+                          : 'th'}: {p.percentage}%
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* ── Validation Summary ── */}
           {!canSubmit && !isSubmitting && (
             <div style={{ color: '#ef4444', fontSize: '0.75rem', padding: '4px 0' }}>
               {!name.trim() && <p>Tournament Name Is Required</p>}
+              {!blindsValid && <p>Blind Structure Must Have At Least One Level</p>}
+              {!payoutsValid && (
+                <p>
+                  Payouts Must Total 100 Percent. They Currently Total {payoutsTotal.toFixed(1)}
+                </p>
+              )}
               {!isWholeBuyIn(buyIn) && <p>Buy-In Must Be A Whole Number Of Chips Greater Than 0</p>}
-              {parseInt(startingChips) <= 0 && <p>Starting Chips Must Be Greater Than 0</p>}
+              {/* `NaN <= 0` is FALSE, so clearing the field disabled Create with
+                  no explanation at all - the one field most likely to be
+                  blank. */}
+              {!(parseInt(startingChips) > 0) && <p>Starting Chips Must Be Greater Than 0</p>}
               {startTimeMode === 'scheduled' && (!scheduledDate || !scheduledTime) && (
                 <p>Scheduled Date And Time Are Required</p>
               )}

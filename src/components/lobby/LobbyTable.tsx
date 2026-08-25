@@ -11,11 +11,12 @@
  * (stakesValue / buyInValue / startValue), never the formatted strings.
  */
 
-import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
+import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import type { LobbyEntry, LobbyStatusKey, LobbyTournamentRow } from './lobbyEntries';
 import { tournamentBlinds, tournamentLevel } from './tournamentFigures';
 import { mttPhaseText, mttTitleLine } from './lobbyEntries';
 import { prefetchIntent } from '../../utils/ChunkPreloader';
+import { useSpinTierAvailability } from '../../hooks/useSpinTierAvailability';
 import './LobbyTable.css';
 
 type SortDir = 'asc' | 'desc';
@@ -86,6 +87,11 @@ export interface LobbyRowContext {
   onJoinTable?: (e: LobbyEntry) => void;
   onViewTable?: (e: LobbyEntry) => void;
   onToggleFavorite?: (tableId: string, next: boolean) => void;
+  /* True only when the Reserve Pool can actually pay the top Spin multiplier
+     at this club right now. Undefined means "not known yet", which renders as
+     no badge - an absent boast rather than a wrong one. Filled in by
+     LobbyTable itself from `v_spin_tier_availability`; callers do not pass it. */
+  spinTopTierLive?: boolean;
 }
 
 interface ColumnDef {
@@ -304,13 +310,38 @@ const COL_FAV: ColumnDef = {
   className: 'lt-col-fav',
   render: (e, ctx) => <FavCell entry={e} ctx={ctx} />,
 };
+/**
+ * "The top multiplier is live right now."
+ *
+ * A Spin's headline prize is the top tier on the wheel, and that tier is NOT
+ * eligible to be drawn unless the Reserve Pool can already pay it - the draw
+ * gates on it server-side (`eligibleSpinTiers` in config/spinSpec), so a
+ * player looking at a Spin row has no way to tell whether the number that
+ * sells the game is actually reachable in the next hand or locked away.
+ *
+ * `v_spin_tier_availability` answers exactly that one question with the same
+ * arithmetic the draw uses (balance >= highest_stake * 100 * 1.5), which is
+ * the whole reason the badge is allowed to make a claim at all. Unknown
+ * renders as nothing: an absent boast, never a wrong one.
+ */
+const SPIN_TOP_MULTIPLIER = 100;
+
+function SpinTopTierBadge() {
+  const label = `${SPIN_TOP_MULTIPLIER.toLocaleString()}x Live`;
+  return (
+    <span className="lt-spintop" title="The Top Multiplier Is Currently Payable On This Club">
+      {label}
+    </span>
+  );
+}
+
 const COL_NAME: ColumnDef = {
   key: 'name',
   label: 'Game',
   className: 'lt-col-name',
   sortable: true,
   sortValue: (e) => (e.name || '').toLowerCase(),
-  render: (e) =>
+  render: (e, ctx) =>
     e.kind === 'mtt' ? (
       /* Dan 2026-08-23: MTT titles are two lines — name + variation on top,
          guarantee / start clock / live countdown (or late-reg time left)
@@ -327,6 +358,7 @@ const COL_NAME: ColumnDef = {
       <span className="lt-name" title={e.name}>
         {e.live && <i className="lt-live" aria-hidden="true" title="Live" />}
         {e.name}
+        {e.kind === 'spin' && ctx.spinTopTierLive && <SpinTopTierBadge />}
       </span>
     ),
 };
@@ -635,6 +667,75 @@ const COL_ACTIONS: ColumnDef = {
   },
 };
 
+/* ── ONE ROW, MEMOISED ──────────────────────────────────────────────────────
+   The lobby renders up to 111 rows and re-renders on every realtime tick, every
+   filter keystroke and every seat change. Inline in the parent, each row rebuilt
+   its own click handlers and re-ran `col.render` for every cell on every one of
+   those - so a single seat count changing on one table repainted the whole
+   board.
+
+   Memoising only pays if the PROPS are stable, which is why two other things
+   had to change with it: `ctx` is now a useMemo in ClubHomePage (it was an
+   object literal in the JSX, new on every render), and `prefetchIntent` caches
+   its handler set per path (it allocated three closures per call). Without
+   either of those this wrapper would skip nothing.
+
+   `onSelect` / `onActivate` are taken as-is and called with the entry, so no
+   per-row closure is created here either. */
+const LobbyRow = memo(function LobbyRow({
+  entry,
+  columns,
+  ctx,
+  selected,
+  onSelect,
+  onActivate,
+}: {
+  entry: LobbyEntry;
+  columns: ColumnDef[];
+  ctx: LobbyRowContext;
+  selected: boolean;
+  onSelect: (e: LobbyEntry) => void;
+  onActivate: (e: LobbyEntry) => void;
+}) {
+  return (
+    <tr
+      data-id={entry.id}
+      className={`lt-row lt-row--${entry.status}${selected ? ' is-selected' : ''}`}
+      data-kind={entry.kind}
+      role="row"
+      aria-selected={selected}
+      // Hover / touch / keyboard-focus on a lobby row is the earliest honest
+      // signal that this table is where the player is going, so start pulling
+      // the TablePage chunk now. TablePage is the single heaviest chunk in the
+      // app; fetching it while the player is still reading the row means the
+      // click resolves from the module cache instead of stalling on the
+      // network.
+      //
+      // Spread FIRST so the row's own onClick/onDoubleClick below win, and
+      // idempotent - repeat hovers over the same row are a no-op (see
+      // ChunkPreloader.preloadRoute).
+      {...prefetchIntent(`/table/${entry.id}`)}
+      onClick={() => onSelect(entry)}
+      onDoubleClick={() => onActivate(entry)}
+    >
+      {columns.map((col) => (
+        <td
+          key={col.key}
+          role="gridcell"
+          /* data-label carries the column's own heading down to the cell. On a
+             phone the header row is gone, so the card layout prints it above
+             the value — and it is always the right word, which a class name
+             could not guarantee: Stakes and Buy-In share .lt-col-num. */
+          data-label={col.labelFor ? col.labelFor(entry) : col.label}
+          className={`${col.className || ''} ${col.hideOnMobile ? 'hide-on-mobile' : ''}`}
+        >
+          {col.render(entry, ctx)}
+        </td>
+      ))}
+    </tr>
+  );
+});
+
 export function columnsFor(category: LobbyCategory): ColumnDef[] {
   switch (category) {
     case 'HOLDEM':
@@ -720,6 +821,16 @@ export default function LobbyTable({
   clubId,
 }: LobbyTableProps) {
   const columns = useMemo(() => columnsFor(category), [category]);
+
+  /* One fetch per lobby, shared by every Spin row (the hook is module-cached
+     with a 60s TTL). `clubId` here is the resolved club UUID; when the page
+     has only the slug the lookup simply misses and no row is badged. */
+  const spinTiers = useSpinTierAvailability(clubId);
+  const rowCtx = useMemo<LobbyRowContext>(
+    () => ({ ...ctx, spinTopTierLive: spinTiers?.can_draw_100x === true }),
+    [ctx, spinTiers]
+  );
+
   const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(
     () => readSort(clubId, category) ?? defaultSortFor(category)
   );
@@ -921,48 +1032,17 @@ export default function LobbyTable({
                 ))}
               </tr>
             ))}
-          {sorted.map((entry) => {
-            const selected = entry.id === selectedId;
-            return (
-              <tr
-                key={entry.id}
-                data-id={entry.id}
-                className={`lt-row lt-row--${entry.status}${selected ? ' is-selected' : ''}`}
-                data-kind={entry.kind}
-                role="row"
-                aria-selected={selected}
-                // Hover / touch / keyboard-focus on a lobby row is the earliest
-                // honest signal that this table is where the player is going, so
-                // start pulling the TablePage chunk now. TablePage is the single
-                // heaviest chunk in the app; fetching it while the player is
-                // still reading the row means the click resolves from the module
-                // cache instead of stalling on the network.
-                //
-                // Spread FIRST so the row's own onClick/onDoubleClick below win,
-                // and idempotent - repeat hovers over the same row are a no-op
-                // (see ChunkPreloader.preloadRoute).
-                {...prefetchIntent(`/table/${entry.id}`)}
-                onClick={() => onSelect(entry)}
-                onDoubleClick={() => onActivate(entry)}
-              >
-                {columns.map((col) => (
-                  <td
-                    key={col.key}
-                    role="gridcell"
-                    /* data-label carries the column's own heading down to the
-                       cell. On a phone the header row is gone, so the card
-                       layout prints it above the value — and it is always the
-                       right word, which a class name could not guarantee:
-                       Stakes and Buy-In share .lt-col-num. */
-                    data-label={col.labelFor ? col.labelFor(entry) : col.label}
-                    className={`${col.className || ''} ${col.hideOnMobile ? 'hide-on-mobile' : ''}`}
-                  >
-                    {col.render(entry, ctx)}
-                  </td>
-                ))}
-              </tr>
-            );
-          })}
+          {sorted.map((entry) => (
+            <LobbyRow
+              key={entry.id}
+              entry={entry}
+              columns={columns}
+              ctx={rowCtx}
+              selected={entry.id === selectedId}
+              onSelect={onSelect}
+              onActivate={onActivate}
+            />
+          ))}
         </tbody>
       </table>
     </div>

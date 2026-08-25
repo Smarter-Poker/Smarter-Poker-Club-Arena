@@ -393,7 +393,15 @@ export default function VIPPage() {
       {/* Diamond Balance */}
       <section className="vip-section">
         <div className="diamond-balance">
-          <span className="diamond-icon"></span>
+          {/* The glyph is IN THE MARKUP, the way Shell.tsx does it. It used to
+              come from a `.diamond-icon::before { content: '◆' }` declared in
+              ClubHomePage.css - a page-scoped stylesheet that is loaded
+              globally, so this element rendered blank on any session that had
+              not visited a club lobby, and blank permanently once that leaked
+              rule was removed. */}
+          <span className="diamond-icon" aria-hidden="true">
+            ◆
+          </span>
           <span className="diamond-count">{diamonds.toLocaleString()}</span>
           <span className="diamond-label">Diamonds</span>
           <button className="diamond-buy-btn" onClick={() => setShowTopUpModal(true)}>

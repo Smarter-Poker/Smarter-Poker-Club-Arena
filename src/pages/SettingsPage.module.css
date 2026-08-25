@@ -677,6 +677,17 @@
   .dangerButton,
   .colorOption {
     position: relative;
+    /* 2026-08-25: `position: relative` alone was not enough and the Reset
+       button failed the live audit at 32px of reach against the 40px the
+       spec requires. `.section` is `position: static`, so nothing here
+       looked like it could paint over the hit area - but it carries a
+       `transform`, and a transform makes an element a stacking context and
+       a containing block whether or not it is positioned. The section
+       therefore paints as if it were positioned at z-index 0, and it comes
+       later in the document, so it won every hit test in the ~5px the
+       44px ::after reaches past the header. Measured on production at
+       375px: 32px of reach before, 40px after this line. */
+    z-index: 1;
   }
 
   .resetButton::after,

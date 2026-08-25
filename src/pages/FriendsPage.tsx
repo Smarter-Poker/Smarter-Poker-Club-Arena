@@ -519,6 +519,13 @@ export default function FriendsPage() {
             />
             {filteredFriends.length > 0 && (
               <button
+                /* This button has no class of its own — it is styled inline —
+                   so the 2026-08-23 touch-target pass could not reach it and
+                   the live audit measured it at 24px of thumb reach against
+                   the 40px minimum. `.tap-target` is the opt-in club-engine.css
+                   documents for exactly this case: it paints nothing and only
+                   adds the invisible 44px ::after. */
+                className="tap-target"
                 style={{
                   background: 'rgba(65,105,225,0.15)',
                   color: '#4169E1',

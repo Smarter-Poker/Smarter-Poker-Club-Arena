@@ -139,6 +139,20 @@ describe('horse load — unreadable is UNKNOWN, never idle', () => {
     expect(body.match(/return null;/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
   });
 
+  it('an unreadable tournament row never gets to pick the format', () => {
+    // isSeatFirstFormat('', 0) is TRUE, because 0 <= 2. A discarded error here
+    // sent a 500-seat MTT down the seat-seating path, where it seats nobody
+    // and is never topped up.
+    const body = topUpBody();
+    expect(body).toMatch(/error:\s*tErr/);
+    expect(body).toContain('if (tErr || !tRow)');
+    expect(body).toContain('TournamentRecurring.topup_tournament_read_failed');
+    // The CALL, not the mention of it in the comment above the guard.
+    expect(body.indexOf('if (tErr || !tRow)')).toBeLessThan(
+      body.indexOf('const seatFirst = isSeatFirstFormat(')
+    );
+  });
+
   it('both callers decline the pass instead of treating the fleet as idle', () => {
     // An empty load map says every horse is free, so both callers hand out
     // horses that are at four tables and the trigger refuses each one.

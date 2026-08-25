@@ -33,25 +33,29 @@
  *   live heads          tournament_players.current_bounty (9,011 rows > 0)
  *   claimed heads       tournament_bounties.bounty_amount (6,790 rows)
  *
- * ── THE MYSTERY LADDER IS REAL, AND IT IS NOT WHERE YOU WOULD LOOK ──────────
+ * ── THE MYSTERY LADDER LIVES IN MysteryBountyPanel, NOT IN THIS FILE ────────
  *
- * There IS a chest-inventory schema in production: tournament_bounty_chests
- * (seq, tier, amount_cents, status) with fn_mystery_bounty_inventory() to read
- * it. It holds ZERO ROWS and NOTHING in either repo calls those RPCs. Reading
- * it would render an empty tab on every live event, so this file does not.
+ * CORRECTED 2026-08-25. An earlier draft of this file built its own "top
+ * prizes" ladder by grouping tournament_players.current_bounty, and printed
+ * the advertised mystery_bounty_min / mystery_bounty_max range above it. That
+ * was right for the world it was written against, in which every head was drawn
+ * AT REGISTRATION and the chest inventory
+ * (tournament_bounty_chests + fn_mystery_bounty_inventory) held zero rows with
+ * nothing calling it.
  *
- * The ladder that actually exists is the draw taken at registration and stored
- * on the player's head. supabase/migrations/20260821_mystery_bounty_true_-
- * advertised_range.sql records the table:
+ * The chest inventory shipped the same day. The draw now happens ONCE, when the
+ * mystery phase opens, and produces a real tiered ladder;
+ * `services/MysteryBountyService` reads it, `hooks/useMysteryBounty` keeps it
+ * live, and `components/tournament/MysteryBountyPanel` renders it with the
+ * awards feed and the leaderboard beside it. The engine does not read
+ * mystery_bounty_min / mystery_bounty_max at all any more, so advertising them
+ * would quote a player a number nothing will ever pay.
  *
- *     60% x0.5    25% x1    10% x2    4% x3    1% x13
- *
- * against tournaments.bounty_amount, which is exactly what production shows -
- * a base of 10 yields heads of 130 / 30 / 20 / 10 / 5. So the prizes still in
- * the pool are the non-zero current_bounty values (fn_collect_bounty zeroes a
- * head the moment it is claimed) and the prizes already pulled are the
- * tournament_bounties rows. The top prizes are the largest distinct values
- * across both. Nothing here is invented: every figure is a column.
+ * So this tab keeps what the panel does NOT carry - the funded pool, what has
+ * been claimed out of it, and what is still available, which is exactly what
+ * Dan asked Rewards for - and renders the panel underneath for the ladder
+ * itself. One fetch feeds both, because the page passes the hook result in
+ * through `mysteryBounty` on the tab contract.
  *
  * ── ONE QUERY, AND ONLY WHEN IT IS NEEDED ──────────────────────────────────
  *
@@ -67,6 +71,7 @@ import { supabase } from '../../../lib/supabase';
 import { reportError } from '../../../utils/errorReporter';
 import type { TournamentTabProps, TournamentEntry } from './types';
 import { chips, ordinal } from './types';
+import MysteryBountyPanel from '../MysteryBountyPanel';
 import '../../../styles/tournament-lobby-3d.css';
 import './RewardsTab.css';
 
@@ -198,13 +203,6 @@ function pct(n: number): string {
    BOUNTY POOL
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/** One rung of the mystery ladder: a distinct prize value and its fate. */
-interface LadderRung {
-  amount: number;
-  available: number;
-  claimed: number;
-}
-
 interface BountyLedger {
   /** Heads still sitting on live players, i.e. prizes nobody has pulled. */
   liveHeads: number[];
@@ -236,8 +234,6 @@ interface RewardColumns {
   bounty_amount?: number | null;
   bounty_pool?: number | null;
   bounty_pool_paid?: number | null;
-  mystery_bounty_min?: number | null;
-  mystery_bounty_max?: number | null;
   status?: string | null;
   current_players?: number | null;
 }
@@ -247,7 +243,12 @@ function isStillIn(e: TournamentEntry): boolean {
   return e.status === 'registered' || e.status === 'playing';
 }
 
-export default function RewardsTab({ tournament, entries, currentUserId }: TournamentTabProps) {
+export default function RewardsTab({
+  tournament,
+  entries,
+  currentUserId,
+  mysteryBounty,
+}: TournamentTabProps) {
   const t = (tournament || {}) as unknown as RewardColumns;
   const tournamentId = tournament?.id;
 
@@ -403,23 +404,16 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
     const available = Math.max(0, total - claimed);
     const drained = total > 0 ? Math.min(100, Math.max(0, (available / total) * 100)) : 0;
 
-    /* The top rungs, largest first, across prizes pulled AND prizes still in.
-       A value that appears in both is partly claimed and partly still out
-       there, which is exactly what a player wants to know. */
-    const rungs = new Map<number, LadderRung>();
-    for (const v of ledger.liveHeads) {
-      if (v <= 0) continue;
-      const r = rungs.get(v) || { amount: v, available: 0, claimed: 0 };
-      r.available += 1;
-      rungs.set(v, r);
-    }
-    for (const v of ledger.claimedHeads) {
-      if (v <= 0) continue;
-      const r = rungs.get(v) || { amount: v, available: 0, claimed: 0 };
-      r.claimed += 1;
-      rungs.set(v, r);
-    }
-    const ladder = [...rungs.values()].sort((a, b) => b.amount - a.amount).slice(0, 3);
+    /* A "top rungs" ladder, derived by grouping `current_bounty` values, used
+       to be built here. It is gone, and so is the advertised
+       `mystery_bounty_min` / `mystery_bounty_max` range that sat above it: both
+       described the pre-2026-08-25 world in which every head was drawn at
+       REGISTRATION. The chest inventory shipped that day, the draw now happens
+       once when the mystery phase opens, and `MysteryBountyPanel` renders the
+       real ladder off `fn_mystery_bounty_inventory` - tiers, what is left, who
+       pulled what. Two ladders on one tab, disagreeing, is worse than either.
+       This memo keeps the FUNDED POOL figures, which the panel does not carry
+       and which are what Dan asked this tab for. */
 
     return {
       perKnockout,
@@ -427,7 +421,6 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
       claimed,
       available,
       drained,
-      ladder,
       knockoutsPaid: ledger.claimedHeads.length,
     };
   }, [isBountyEvent, t.bounty_amount, t.bounty_pool, t.bounty_pool_paid, ledger]);
@@ -659,59 +652,34 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
               )}
 
               {isMystery && (
-                <>
-                  <p className="rw-rule">
-                    Every Head Is Drawn At Registration And Stays Sealed Until It Is Won. The Range
-                    Runs From {chips(num(t.mystery_bounty_min))} To{' '}
-                    {chips(num(t.mystery_bounty_max))}.
-                  </p>
-
-                  <div className="rw-top">
-                    <div className="tl-section-head">
-                      <span className="tl-section-title">Top Prizes</span>
-                      <span className="tl-section-note">Largest First</span>
-                    </div>
-
-                    {bounty.ladder.length === 0 ? (
-                      <div className="tl-empty">
-                        The Prizes Are Sealed Until The Field Registers
-                      </div>
-                    ) : (
-                      <ul className="tl-list rw-top__list">
-                        {bounty.ladder.map((rung, i) => {
-                          const open = rung.available > 0;
-                          return (
-                            <li
-                              key={rung.amount}
-                              className={`tl-row rw-toprow ${open ? 'rw-toprow--open' : 'rw-toprow--gone'}`}
-                            >
-                              <span className="tl-rank tl-rank--podium rw-toprank">
-                                {ordinal(i + 1)}
-                              </span>
-                              <span className="rw-toprow__mid">
-                                <span className="tl-name rw-topamount">{chips(rung.amount)}</span>
-                                <span className="tl-sub">
-                                  {open
-                                    ? `${chips(rung.available)} Still Sealed`
-                                    : 'Every One Of These Has Been Pulled'}
-                                </span>
-                              </span>
-                              <span
-                                className={`tl-badge ${open ? 'tl-badge--good' : 'tl-badge--mute'} rw-topstate`}
-                              >
-                                {open ? 'Still Available' : 'Claimed'}
-                              </span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
-                </>
+                <p className="rw-rule">
+                  Every Chest Is Sealed Until It Is Pulled. The Full Ladder, And Who Has Pulled
+                  What, Is Below.
+                </p>
               )}
             </>
           )}
         </section>
+      )}
+
+      {/* ── THE MYSTERY LADDER ────────────────────────────────────────────
+          Dan 2026-08-25 asked Rewards for "the total bounty pool and whats
+          left or 'still available' in the mystery bounty pool". The pool
+          figures are the section above; the ladder is this panel.
+
+          It is `MysteryBountyPanel`, fed by the page's single
+          `useMysteryBounty` fetch (`mysteryBounty` in the tab contract), so
+          the top chest the Detail tab advertises and the ladder here read the
+          same three RPC calls and cannot disagree. It renders null for any
+          event that is not a mystery bounty. */}
+      {isMystery && mysteryBounty && tournamentId && (
+        <MysteryBountyPanel
+          tournamentId={tournamentId}
+          isMysteryBounty
+          data={mysteryBounty}
+          currentUserId={currentUserId ?? null}
+          isCompleted={String(t.status || '').toUpperCase() === 'COMPLETED'}
+        />
       )}
     </div>
   );

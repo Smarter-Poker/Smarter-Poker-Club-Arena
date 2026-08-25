@@ -10,13 +10,45 @@
  * NO BROWN, NO YELLOW, NO GOLD. 3D depth and glassmorphism.
  */
 
+/* -------------------------------------------------------------------------
+   THE SHELL - a fixed-height flex column that never scrolls.
+
+   [header] [tabs] [title] [content] [footer]
+
+   Only `.details-content` grows, and it carries `min-height: 0` because a
+   flex child's default `min-height: auto` refuses to shrink below its own
+   content: without it the column silently grows past its box and the page
+   scrolls anyway, which is exactly the bug this layout exists to kill.
+
+   WHY THE HEIGHT IS A MEASURED VARIABLE AND NOT `100dvh`
+
+   AppLayout renders GlobalHeader above this route, sometimes a
+   ClubAnnouncementBanner under it, and an offline banner under that; the
+   `main` element then adds its own padding. A `100dvh` shell beneath all of
+   that is taller than the viewport by exactly the amount of chrome above it:
+   the page scrolls and the footer lands below the fold, which is the failure
+   this rewrite exists to end.
+
+   Subtracting a constant is not an option either. `--header-height` is
+   declared THREE times across the token files with TWO different values
+   (44px and 56px), and the real header grows when its content wraps. So the
+   page measures the space it actually has (see `--details-h` in
+   TournamentDetails.tsx) and this is only the fallback for the first paint.
+   The same measurement is what makes the MultiTablePage embed correct, where
+   the container is a tab panel rather than the viewport.
+
+   `padding-bottom: var(--bottom-nav-clearance)` used to sit here and reserved
+   room for a bottom nav this page does not render. That reservation, plus the
+   matching `bottom` offset on the fixed footer, was the dead 74px gap under
+   the Share / Late Register row.
+   ------------------------------------------------------------------------- */
 .tournament-details {
-  min-height: 100vh;
-  min-height: 100dvh;
+  height: var(--details-h, 100dvh);
+  max-height: 100dvh;
+  overflow: hidden;
   background: linear-gradient(180deg, #131b28 0%, #0d1120 50%, #131b28 100%);
   display: flex;
   flex-direction: column;
-  padding-bottom: var(--bottom-nav-clearance, 74px);
   color: #e8eaf0;
 }
 
@@ -29,6 +61,7 @@
 
 /* ── 3D Header ── */
 .details-header {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -63,12 +96,9 @@
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
-.header-spacer {
-  width: 40px;
-}
-
 /* ── 3D Tabs ── */
 .details-tabs {
+  flex: 0 0 auto;
   display: flex;
   padding: 12px 16px;
   gap: 8px;
@@ -122,26 +152,45 @@
 }
 
 /* ── Tournament Title & Details ── */
+/* -------------------------------------------------------------------------
+   TITLE STRIP - name, short id, share, price, blurb. Everything else that
+   used to print here (FREEZEOUT / REBUY / ADD-ON, the bounty line, MULTI-DAY,
+   XMTT, SPIN, the parity tag row, EARLY BIRD) is drawn as badges by
+   DetailOverviewTab. Printing both said the same thing twice.
+   ------------------------------------------------------------------------- */
+.details-title {
+  flex: 0 0 auto;
+  padding: 10px 16px 8px;
+}
+
 .tournament-title {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px;
+  gap: 10px;
 }
 
 .tournament-title h2 {
   flex: 1;
+  min-width: 0;
+  margin: 0;
   font-size: 16px;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #e8eaf0;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 .tournament-id {
+  flex: 0 0 auto;
   font-size: 12px;
   color: #6b7686;
 }
 
 .qr-btn {
+  flex: 0 0 auto;
+  color: #6fdcff;
   background: linear-gradient(180deg, #223046 0%, #1a2436 100%);
   border: 1px solid #223046;
   padding: 8px;
@@ -162,59 +211,28 @@
 }
 
 .tournament-desc {
-  padding: 12px 16px;
-  background: linear-gradient(180deg, rgba(26, 36, 54, 0.4) 0%, rgba(19, 27, 40, 0.6) 100%);
-  margin: 0 16px;
-  border-radius: 12px;
-  border: 1px solid rgba(111, 220, 255, 0.1);
-  box-shadow: inset 0 2px 16px rgba(0, 0, 0, 0.2);
+  margin-top: 6px;
 }
 
 .tournament-desc p {
-  font-size: 13px;
-  color: #8892a4;
   margin: 0;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #8892a4;
 }
 
-/* ── 3D Countdown Section ── */
-.countdown-section {
-  text-align: center;
-  padding: 32px 16px;
-  background: linear-gradient(180deg, #1a2436 0%, #131b28 100%);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  margin: 16px;
-  border-radius: 20px;
-  border: 1px solid rgba(111, 220, 255, 0.15);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.4),
-    0 12px 24px rgba(0, 0, 0, 0.4);
-  position: relative;
-  overflow: hidden;
+.tournament-buyin {
+  color: #6fdcff;
+  font-weight: 700;
+  letter-spacing: 0.3px;
 }
 
-.countdown-section::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(111, 220, 255, 0.5), transparent);
-}
-
-.countdown-display {
-  font-family: 'Segment7', monospace;
-  font-size: 4rem;
-  font-weight: bold;
-  color: #e8eaf0;
-  text-shadow:
-    0 0 20px rgba(111, 220, 255, 0.3),
-    0 0 40px rgba(10, 93, 194, 0.3),
-    0 4px 4px rgba(0, 0, 0, 0.8);
-  letter-spacing: 4px;
+/* The owner's own words. Quieter than the price, and italic so nobody reads
+   a description as a rule of the event. */
+.tournament-blurb {
+  margin-top: 4px !important;
+  font-style: italic;
+  color: #6b7686 !important;
 }
 
 .start-time {
@@ -281,45 +299,6 @@
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
-/* ── Game Info Section ── */
-.game-info-section {
-  padding: 16px;
-  margin: 0 16px;
-  background: linear-gradient(180deg, rgba(26, 36, 54, 0.5) 0%, rgba(19, 27, 40, 0.7) 100%);
-  border-radius: 16px;
-  border: 1px solid #223046;
-  box-shadow:
-    inset 0 2px 16px rgba(0, 0, 0, 0.2),
-    0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  /* Dan 2026-08-25: "there needs to be a space after every : ... change that
-     for all areas of this." `space-between` alone leaves NO gap the moment a
-     row is narrow enough for the label and value to meet — which `.info-row.half`
-     (50% width) does routinely — and the label/value spans are adjacent in the
-     JSX with no whitespace between them. A minimum gap makes the space a
-     layout guarantee instead of a function of how long the value happens to be. */
-  gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(136, 146, 164, 0.1);
-  transition: background 0.2s;
-}
-
-.info-row:hover {
-  background: rgba(111, 220, 255, 0.05);
-  border-radius: 4px;
-  padding: 10px 8px;
-  margin: 0 -8px;
-}
-
-.info-row:last-child {
-  border-bottom: none;
-}
-
 .info-row.half {
   width: calc(50% - 1px);
   display: inline-flex;
@@ -367,114 +346,12 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
-/* ── 3D TOURNAMENT RESULTS SUMMARY (NO YELLOW/BROWN) ── */
-.results-summary {
-  padding: 24px;
-  margin: 0 16px 16px;
-  background: linear-gradient(180deg, #1a2436 0%, #131b28 100%);
-  border-radius: 20px;
-  border: 1px solid #00b4e6;
-  box-shadow:
-    0 12px 32px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 0 20px rgba(0, 180, 230, 0.15);
-  position: relative;
-  overflow: hidden;
-}
-
-.results-summary::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #6fdcff, transparent);
-}
-
-.results-summary h3 {
-  color: #6fdcff;
-  font-size: 18px;
-  font-weight: 700;
-  margin: 0 0 20px;
-  text-align: center;
-  text-shadow: 0 0 12px rgba(0, 180, 230, 0.6);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-
 .results-podium {
   display: flex;
   justify-content: center;
   gap: 16px;
   margin-bottom: 24px;
   align-items: flex-end;
-}
-
-.podium-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 16px;
-  border-radius: 16px;
-  background: linear-gradient(180deg, #223046 0%, #1a2436 100%);
-  min-width: 90px;
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  box-shadow:
-    0 8px 16px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
-.podium-card:hover {
-  transform: translateY(-8px) scale(1.05);
-  box-shadow:
-    0 12px 24px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
-.podium-card.place-1 {
-  background: linear-gradient(180deg, rgba(0, 180, 230, 0.3) 0%, rgba(10, 93, 194, 0.2) 100%);
-  border: 1px solid #6fdcff;
-  box-shadow:
-    0 12px 24px rgba(0, 0, 0, 0.5),
-    0 0 20px rgba(111, 220, 255, 0.3),
-    inset 0 2px 4px rgba(255, 255, 255, 0.2);
-  padding: 24px 16px;
-  z-index: 2;
-}
-
-.podium-card.place-2 {
-  background: linear-gradient(180deg, rgba(24, 119, 242, 0.2) 0%, rgba(10, 93, 194, 0.1) 100%);
-  border: 1px solid #1877f2;
-  box-shadow:
-    0 8px 16px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  padding: 20px 16px;
-}
-
-.podium-card.place-3 {
-  background: linear-gradient(180deg, rgba(34, 48, 70, 0.5) 0%, rgba(26, 36, 54, 0.5) 100%);
-  border: 1px solid #223046;
-  box-shadow:
-    0 8px 16px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
-.podium-medal {
-  font-size: 28px;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
-  color: #e8eaf0;
-}
-.podium-card.place-1 .podium-medal {
-  color: #6fdcff;
-  text-shadow: 0 0 12px rgba(111, 220, 255, 0.8);
-}
-.podium-card.place-2 .podium-medal {
-  color: #1877f2;
-}
-.podium-card.place-3 .podium-medal {
-  color: #8892a4;
 }
 
 .podium-name {
@@ -484,45 +361,7 @@
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
   text-align: center;
 }
-.podium-prize {
-  color: #6fdcff;
-  font-size: 12px;
-  font-weight: 600;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-}
 
-.results-full-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.result-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  border-radius: 12px;
-  background: linear-gradient(90deg, #131b28 0%, #1a2436 100%);
-  border: 1px solid #223046;
-  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-}
-
-.result-row:hover {
-  background: linear-gradient(90deg, #1a2436 0%, #223046 100%);
-  border-color: #1877f2;
-  transform: translateX(4px);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
-}
-
-.result-position {
-  color: #6fdcff;
-  font-size: 14px;
-  font-weight: 700;
-  width: 40px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-}
 .result-name {
   color: #e8eaf0;
   font-size: 14px;
@@ -530,80 +369,10 @@
   font-weight: 500;
 }
 
-/* ── Blinds Table ── */
-.blinds-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0 4px;
-  margin-top: 16px;
-}
-
-.blinds-header {
-  display: grid;
-  grid-template-columns: 50px 1fr 80px 80px;
-  padding: 12px 16px;
-  color: #6fdcff;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.blinds-row {
-  display: grid;
-  grid-template-columns: 50px 1fr 80px 80px;
-  padding: 12px 16px;
-  background: linear-gradient(90deg, #131b28 0%, #1a2436 100%);
-  border-radius: 8px;
-  border: 1px solid #223046;
-  align-items: center;
-  transition: transform 0.2s;
-}
-.blinds-row:hover {
-  transform: scale(1.01);
-  border-color: #1877f2;
-}
-
-/* Current Blind Level Highlight */
-.blinds-row.current-level {
-  background: linear-gradient(90deg, rgba(24, 119, 242, 0.2) 0%, rgba(10, 93, 194, 0.1) 100%);
-  border: 1px solid #00b4e6;
-  box-shadow:
-    0 0 16px rgba(0, 180, 230, 0.2),
-    inset 0 0 12px rgba(24, 119, 242, 0.2);
-  transform: scale(1.02);
-}
-
 .blinds-row.current-level .level-num {
   color: #6fdcff;
   font-weight: 700;
   text-shadow: 0 0 8px rgba(111, 220, 255, 0.5);
-}
-
-/* ── Entry List ── */
-.entry-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 0 16px;
-}
-
-.entry-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: linear-gradient(90deg, #131b28 0%, #1a2436 100%);
-  border-radius: 12px;
-  border: 1px solid #223046;
-  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-}
-
-.entry-row:hover {
-  background: linear-gradient(90deg, #1a2436 0%, #223046 100%);
-  border-color: #1877f2;
-  transform: translateX(4px);
 }
 
 .entry-avatar {
@@ -622,22 +391,6 @@
   font-weight: 600;
   color: #e8eaf0;
   font-size: 14px;
-}
-
-.entry-status {
-  font-size: 11px;
-  color: #6fdcff;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-top: 4px;
-}
-
-/* ── Tables Grid ── */
-.tables-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-  padding: 0 16px;
 }
 
 .table-card {
@@ -660,45 +413,79 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
-.table-num {
-  font-weight: 700;
-  color: #6fdcff;
-  margin-bottom: 8px;
-  font-size: 16px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+/* -------------------------------------------------------------------------
+   THE CONTENT AREA - the only band that grows, and the only one that scrolls.
+
+   `min-height: 0` is load-bearing: a flex child defaults to `min-height:
+   auto`, which refuses to shrink below its content, so without it the column
+   grows past the shell and the whole page scrolls again.
+
+   The tab itself is the scroller (`> *`), not this container, so a tab that
+   wants two independently scrolling regions can still have them.
+   ------------------------------------------------------------------------- */
+.details-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
 }
 
-.table-players {
-  font-size: 13px;
-  color: #8892a4;
+.details-content > * {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(111, 220, 255, 0.3) transparent;
 }
 
-.table-status {
-  font-size: 12px;
-  color: #1877f2;
-  margin-top: 8px;
-  font-weight: 600;
-  text-transform: uppercase;
+.details-content > *::-webkit-scrollbar {
+  width: 6px;
 }
 
-/* ── Details Footer (Buttons) ── */
+.details-content > *::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(111, 220, 255, 0.3);
+}
+
+.details-content > *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* -------------------------------------------------------------------------
+   FOOTER - Dan 2026-08-25: "the Share and Late Register buttons must be
+   attached to the bottom as a footer, that's locked ... but actually attach
+   it to the bottom, there is a gap below it."
+
+   It was `position: fixed; bottom: var(--bottom-nav-clearance, 74px)`, which
+   reserved room for a bottom nav this page does not render - a dead 74px gap
+   under the buttons, and a matching `padding-bottom` on the shell so content
+   would clear a bar that was not there. As the last flex child of a
+   fixed-height column there is no offset left to be wrong, nothing to keep in
+   sync, and the 480px stacked-button breakpoint needs no special handling.
+
+   The safe-area inset moves here, onto the element that actually touches the
+   bottom of the screen.
+   ------------------------------------------------------------------------- */
 .details-footer {
-  position: fixed;
-  bottom: var(--bottom-nav-clearance, 74px);
-  left: 0;
-  right: 0;
-  padding: 16px;
+  flex: 0 0 auto;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
   background: linear-gradient(180deg, rgba(13, 17, 32, 0.8) 0%, rgba(10, 14, 26, 0.95) 100%);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-top: 1px solid rgba(111, 220, 255, 0.15);
   display: flex;
+  align-items: stretch;
   gap: 12px;
   box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
-  z-index: 100;
 }
 
-.details-footer button {
+.details-footer button,
+.details-footer .btn-enter-table {
   flex: 1;
   padding: 14px 20px;
   border-radius: 12px;
@@ -712,7 +499,8 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
-.details-footer button:hover {
+.details-footer button:hover,
+.details-footer .btn-enter-table:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
 }
@@ -721,18 +509,10 @@
   transform: translateY(1px);
 }
 
-/* A row in Entries that leads somewhere says so on hover (Dan 2026-08-25).
-   Only the rows that actually carry a live table id get `role="button"`, so
-   this cannot advertise a link that does nothing. */
-.entry-row[role='button']:hover {
-  background: rgba(111, 220, 255, 0.07);
-}
-
-.entry-row[role='button']:focus-visible {
-  outline: 2px solid #6fdcff;
-  outline-offset: -2px;
-  border-radius: 8px;
-}
+/* The Entries hover/focus affordance that used to live here moved with the
+   block it styled. EntriesTab renders a watchable row as `.et-row--watch` on
+   `.tl-row--interactive`, and the shared `tl-` layer carries the hover lift
+   and the focus ring for every interactive row in the lobby. */
 
 /* WATCH — Dan 2026-08-25. Sits beside whatever else the running footer says,
    never instead of it, so a spectator, a player waiting on a seat and a busted
@@ -778,22 +558,56 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
-.details-footer .btn-secondary {
+/* These two were `.btn-secondary` and `.btn-danger`, which this footer has
+   never rendered - it emits `btn-share` and `btn-unregister`, so both blocks
+   painted nothing at all and Share fell back to the bare button base. Same
+   paint, selectors that match the markup. */
+.details-footer .btn-share {
   background: linear-gradient(180deg, #223046 0%, #1a2436 100%);
   color: #e8eaf0;
   border: 1px solid #223046;
 }
-.details-footer .btn-secondary:hover {
+
+.details-footer .btn-share:hover {
   border-color: #6fdcff;
+  color: #ffffff;
 }
 
-.details-footer .btn-danger {
+.details-footer .btn-unregister {
   background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);
   color: white;
   border: 1px solid #ffb4b4;
   box-shadow:
     0 4px 16px rgba(239, 68, 68, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.details-footer button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ENTER TABLE is a router <Link>, so it needs the anchor half of the button
+   shape spelled out. It was painted #10b981 with inline styles - a green that
+   is in no house palette. House action gradient, house accent border. */
+.details-footer .btn-enter-table {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  background: linear-gradient(180deg, #00b4e6 0%, #0a5dc2 100%);
+  color: #ffffff;
+  border: 1px solid #6fdcff;
+  box-shadow:
+    0 4px 16px rgba(0, 180, 230, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.details-footer .btn-enter-table:hover {
+  color: #ffffff;
+  background: linear-gradient(180deg, #6fdcff 0%, #00b4e6 100%);
 }
 
 /* ── Late Registration Button ── */
@@ -822,53 +636,51 @@
     min-height: 44px;
     touch-action: manipulation;
   }
-  .details-header .back-btn,
   .qr-btn {
     min-width: 44px;
     min-height: 44px;
     touch-action: manipulation;
   }
-  .quick-stats {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-  }
   .details-footer {
-    padding: 12px;
+    padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px));
   }
 }
 
+/* Stacked footer buttons. As a flex CHILD there is nothing else to adjust
+   here: the fixed version had to keep its `bottom` offset and the shell's
+   `padding-bottom` in step with this breakpoint, and they drifted. */
 @media (max-width: 480px) {
-  .countdown-display {
-    font-size: 2.8rem;
-    letter-spacing: 2px;
-  }
-  .quick-stats {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-  }
-  .blinds-header,
-  .blinds-row {
-    grid-template-columns: 40px 1fr 60px 60px;
-    font-size: 11px;
-    padding: 10px 12px;
-  }
   .details-footer {
     flex-direction: column;
     gap: 8px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
   }
-  .details-footer button {
+  .details-footer button,
+  .details-footer .btn-enter-table {
     padding: 12px;
     font-size: 13px;
+  }
+  .details-footer .btn-watch {
+    min-width: 0;
+  }
+  .tournament-title h2 {
+    font-size: 15px;
   }
 }
 
 @media (max-width: 380px) {
-  .quick-stats {
-    grid-template-columns: 1fr 1fr;
+  .details-tabs {
+    padding: 8px 12px;
+    gap: 6px;
   }
-  .blinds-header,
-  .blinds-row {
-    grid-template-columns: 32px 1fr 50px 50px;
-    font-size: 10px;
+  .details-tabs .tab {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  .details-title {
+    padding: 8px 12px 6px;
+  }
+  .details-content {
+    padding: 0 8px 8px;
   }
 }

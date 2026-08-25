@@ -463,7 +463,7 @@ describe('a tournament that started and never dealt is rescued whatever its vari
     // a compare-and-set is the whole mechanism. If this disappears the sweep
     // has been removed, whatever the surrounding prose says.
     const src = code(GAMESERVER);
-    expect(src).toContain("const neverDealtCutoff");
+    expect(src).toContain('const neverDealtCutoff');
     expect(src).toContain("update({ status: 'REGISTERING' })");
   });
 

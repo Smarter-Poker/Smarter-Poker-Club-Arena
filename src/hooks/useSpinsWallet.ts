@@ -27,7 +27,7 @@
  * must not try to be clever about which id to send.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { spinActivationApi, type SpinOwnerState } from '../services/SpinActivationService';
 import { useUserStore } from '../stores/useUserStore';
 import {
@@ -64,6 +64,8 @@ export function useSpinsWallet(ownerKey: string | null | undefined, enabled = tr
   const [state, setState] = useState<SpinOwnerState | null>(null);
   const [loading, setLoading] = useState(false);
   const [nonce, setNonce] = useState(0);
+  /** The nonce this hook has already fetched for. */
+  const fetchedNonceRef = useRef(0);
   const userId = useUserStore((s: any) => s.user?.id) as string | undefined;
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
@@ -71,6 +73,12 @@ export function useSpinsWallet(ownerKey: string | null | undefined, enabled = tr
   useEffect(() => {
     if (!enabled || !ownerKey) {
       setState(null);
+      /* AND CLEAR loading. Without this a request in flight when the club
+         joined a union - the exact transition this hook exists for - left the
+         consumer on a spinner forever: the cleanup below set `cancelled`, so
+         the `finally` skipped setLoading(false), and this early return never
+         reached it either. */
+      setLoading(false);
       return;
     }
     let cancelled = false;
@@ -92,9 +100,14 @@ export function useSpinsWallet(ownerKey: string | null | undefined, enabled = tr
     const hit = raw !== null && typeof raw === 'object' && 's' in raw;
     if (hit) {
       setState(raw.s);
-      // FRESH WINDOW: seconds-old answer, nothing to re-ask on a page hop.
-      // An explicit reload() bumps `nonce`, which always fetches.
-      if (nonce === 0 && entry && Date.now() - entry.at < FRESH_WINDOW_MS) {
+      /* FRESH WINDOW: seconds-old answer, nothing to re-ask on a page hop.
+         An explicit reload() bumps `nonce`, which always fetches.
+         Compared against the nonce ALREADY FETCHED, not against 0: `nonce`
+         never returns to 0, so after the first reload() this window was shut
+         for the life of the hook and every later ownerKey or userId change
+         re-fetched against a two-second-old entry. */
+      if (nonce === fetchedNonceRef.current && entry && Date.now() - entry.at < FRESH_WINDOW_MS) {
+        setLoading(false);
         return;
       }
     } else {
@@ -105,7 +118,11 @@ export function useSpinsWallet(ownerKey: string | null | undefined, enabled = tr
       try {
         // Deduped: DynamicWallet and a dashboard tile asking for the same
         // owner in the same window share one request.
-        const res = await dedupedFetch(cacheKey ?? `spins_anon_${ownerKey}`, () =>
+        /* The nonce is part of the DEDUPE key but not the CACHE key. Without
+           it, a reload() raised while the first request was still in flight
+           was handed that same in-flight promise and resolved with the
+           pre-top-up balance - a refresh that silently refreshed nothing. */
+        const res = await dedupedFetch(`${cacheKey ?? `spins_anon_${ownerKey}`}_${nonce}`, () =>
           spinActivationApi.getState(ownerKey)
         );
         if (!cancelled) {
@@ -120,7 +137,10 @@ export function useSpinsWallet(ownerKey: string | null | undefined, enabled = tr
         // back to null when nothing cached painted above.
         if (!cancelled && !hit) setState(null);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          fetchedNonceRef.current = nonce;
+          setLoading(false);
+        }
       }
     })();
     return () => {

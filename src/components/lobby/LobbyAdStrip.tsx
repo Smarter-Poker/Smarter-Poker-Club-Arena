@@ -184,11 +184,53 @@ export default function LobbyAdStrip({
   const ad = ads[Math.min(index, ads.length - 1)];
   const text = ad.title ? (ad.body ? `${ad.title} - ${ad.body}` : ad.title) : ad.body;
 
+  /* Not a tablist: there are no tabpanels, no aria-controls and no roving
+     tabindex, so a screen reader announced "tab 1 of 6" for controls whose
+     arrow keys did nothing. They pick which announcement is showing, which is
+     what aria-current says. (Title Case, per the popup rule - it is read
+     aloud.) */
+  const dots =
+    ads.length > 1 ? (
+      <div className="lobby-ads__dots" role="group" aria-label="Announcements">
+        {ads.map((a, i) => (
+          <button
+            key={a.id}
+            type="button"
+            aria-current={i === index ? 'true' : undefined}
+            aria-label={`Announcement ${i + 1} Of ${ads.length}`}
+            className={`lobby-ads__dot ${i === index ? 'is-active' : ''}`}
+            onClick={() => setIndex(i)}
+          />
+        ))}
+      </div>
+    ) : null;
+
+  /* A button only when there is something to open. `onOpen` is optional, and
+     without it the strip was still focusable, still showed a pointer cursor
+     and a focus ring, and did nothing when clicked. */
+  const stripClass = `lobby-ads__strip lobby-ads__strip--${ad.source.toLowerCase()}`;
+  if (!onOpen) {
+    return (
+      <div className="lobby-ads">
+        <div className={`${stripClass} lobby-ads__strip--static`}>
+          <span className="lobby-ads__icon" aria-hidden="true">
+            <IconMegaphone />
+          </span>
+          <span className="lobby-ads__tag">{ad.source}</span>
+          <span key={ad.id} className="lobby-ads__text">
+            {text}
+          </span>
+        </div>
+        {dots}
+      </div>
+    );
+  }
+
   return (
     <div className="lobby-ads">
       <button
         type="button"
-        className={`lobby-ads__strip lobby-ads__strip--${ad.source.toLowerCase()}`}
+        className={stripClass}
         onClick={onOpen}
         // Not aria-live: this rotates on a timer, and announcing every 7s
         // interrupts a screen-reader user mid-task. The strip is reachable and
@@ -204,21 +246,7 @@ export default function LobbyAdStrip({
         </span>
       </button>
 
-      {ads.length > 1 && (
-        <div className="lobby-ads__dots" role="tablist" aria-label="Announcements">
-          {ads.map((a, i) => (
-            <button
-              key={a.id}
-              type="button"
-              role="tab"
-              aria-selected={i === index}
-              aria-label={`Announcement ${i + 1} of ${ads.length}`}
-              className={`lobby-ads__dot ${i === index ? 'is-active' : ''}`}
-              onClick={() => setIndex(i)}
-            />
-          ))}
-        </div>
-      )}
+      {dots}
     </div>
   );
 }

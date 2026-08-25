@@ -12,6 +12,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { reportError } from './errorReporter';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -110,6 +111,18 @@ export function resolveClubUUIDSync(clubIdParam: string): string | null {
  *   // Returns the UUID like 'abc123-...'
  *   supabase.from('tables').select('*').eq('club_id', uuid);
  */
+/**
+ * Drop the in-memory map. `clearUserCaches` removes the persisted copy on
+ * sign-out, but this module kept its Map and its `persistedLoaded` flag, so
+ * the first write after the NEXT sign-in serialised the previous account's
+ * visited clubs straight back to localStorage and undid the purge.
+ * walletCache exports `clearWalletMemoryCache` for exactly this reason.
+ */
+export function clearClubUUIDCache(): void {
+  uuidCache.clear();
+  persistedLoaded = false;
+}
+
 export async function resolveClubUUID(clubIdParam: string): Promise<string> {
   // Already a UUID — return as-is
   if (isUUID(clubIdParam)) return clubIdParam;
@@ -121,11 +134,20 @@ export async function resolveClubUUID(clubIdParam: string): Promise<string> {
   const filter = resolveClubIdFilter(clubIdParam);
 
   // Query clubs table to get the UUID
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('clubs')
     .select('id')
     .eq(filter.column, filter.value)
     .maybeSingle();
+
+  /* A FAILED READ IS NOT "NO SUCH CLUB". The error used to be dropped, so an
+     RLS refusal, a PostgREST 400 or a dropped connection was indistinguishable
+     from a club that does not exist - and the fallback below then handed a
+     6-digit integer string to callers that feed it into `.eq('club_id', uuid)`,
+     producing Postgres 22P02 "invalid input syntax for type uuid" on every
+     downstream query, a long way from the cause. Reporting it does not change
+     the return contract, but it makes the real failure findable. */
+  if (error) reportError(error, 'clubIdResolver.resolveClubUUID', { clubIdParam });
 
   if (data?.id) {
     uuidCache.set(clubIdParam, data.id);

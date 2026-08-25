@@ -753,8 +753,7 @@ export class TournamentManager extends TournamentManagerEliminations {
          * Everything else is now reported and the sweep moves to the next
          * player rather than abandoning the pass.
          */
-        const quietRace = (msg?: string) =>
-          /duplicate|unique|23505|already/i.test(msg || '');
+        const quietRace = (msg?: string) => /duplicate|unique|23505|already/i.test(msg || '');
         if (reuseErr) {
           if (!quietRace(reuseErr.message)) {
             reportError(

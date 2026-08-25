@@ -210,7 +210,20 @@ describe('a restart mid-break does not resume play', () => {
   );
 
   it('re-pauses the rebuilt engines for the remaining break time', () => {
-    expect(resumeFn).toMatch(/tournament\.on_break && tournament\.break_ends_at/);
+    /* SUPERSEDED BY #801, AND LEFT RED ON main. This asserted the gate
+       `tournament.on_break && tournament.break_ends_at`, which #801 removed on
+       purpose: pauseForBreak writes break_ends_at as NULL at :55 and
+       beginBreakCountdown fills it in up to two minutes later, so a restart
+       inside that window matched the old gate's second half as false and
+       skipped the whole recovery - the tournament dealt straight through the
+       remainder of its own break. (Seven live rows were found stranded with
+       on_break true and no break.) The rule now is that on_break ALONE opens
+       the block and a missing end time is RECONSTRUCTED from break_started_at,
+       which is what this pins. House rule 8: the test that pins replaced
+       behaviour is updated in the commit that replaces it. */
+    expect(resumeFn).toMatch(/if \(tournament\.on_break\) \{/);
+    expect(resumeFn).toMatch(/tournament\.break_started_at/);
+    expect(resumeFn).toMatch(/LAST_HAND_GRACE_MS \+\s*TournamentManagerBase\.BREAK_DURATION_MS/);
     expect(resumeFn).toMatch(/remainingMs/);
     expect(resumeFn).toMatch(
       /engine\.pauseAfterHand\(remainingMs \+ TournamentManagerBase\.LAST_HAND_GRACE_MS\)/
@@ -224,7 +237,15 @@ describe('a restart mid-break does not resume play', () => {
   });
 
   it('clears a break that already expired while the engine was down', () => {
-    expect(resumeFn).toMatch(/on_break: false, break_ends_at: null/);
+    /* The UPDATE moved into clearPersistedBreak() in #801, so it is no longer
+       inside the sliced resume() body. Both halves are pinned: resume() must
+       call it, and it must be the write that clears both columns. */
+    expect(resumeFn).toMatch(/await this\.clearPersistedBreak\(\);/);
+    const clearFn = BASE.slice(
+      BASE.indexOf('protected async clearPersistedBreak'),
+      BASE.indexOf('protected async clearPersistedBreak') + 600
+    );
+    expect(clearFn).toMatch(/on_break: false, break_ends_at: null/);
   });
 });
 

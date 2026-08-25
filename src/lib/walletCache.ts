@@ -110,7 +110,20 @@ export function readWalletCache<T>(key: string, ttlMs: number = DEFAULT_TTL_MS):
  * self-healing ClubHomePage's instant-paint cache uses.
  */
 export function writeWalletCache<T>(key: string, data: T): void {
-  const envelope: CacheEnvelope<T> = { at: Date.now(), data };
+  persistEnvelope(key, { at: Date.now(), data });
+}
+
+/**
+ * Persist an envelope EXACTLY AS GIVEN, keeping its original `at`.
+ *
+ * The debounced flush used to call writeWalletCache, which stamps a fresh
+ * `at` — so a value written at T reached localStorage dated up to 800ms
+ * later, and `flushWalletCacheWrites` on pagehide could re-date it by
+ * arbitrarily more. Every freshness test downstream (the wallet panel's
+ * FRESH_WINDOW, useSpinsWallet's, the TTL) then believed the data was newer
+ * than it was, and skipped the refetch that would have corrected it.
+ */
+function persistEnvelope<T>(key: string, envelope: CacheEnvelope<T>): void {
   memory.set(key, envelope);
   const value = JSON.stringify(envelope);
   try {
@@ -157,7 +170,7 @@ export function writeWalletCacheDebounced<T>(
     setTimeout(() => {
       pendingFlush.delete(key);
       const env = memory.get(key);
-      if (env) writeWalletCache(key, env.data as T);
+      if (env) persistEnvelope(key, env);
     }, flushMs)
   );
 }
@@ -167,7 +180,7 @@ export function flushWalletCacheWrites(): void {
   for (const [key, timer] of pendingFlush) {
     clearTimeout(timer);
     const env = memory.get(key);
-    if (env) writeWalletCache(key, env.data);
+    if (env) persistEnvelope(key, env);
   }
   pendingFlush.clear();
 }

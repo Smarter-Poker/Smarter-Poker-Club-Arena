@@ -33,7 +33,6 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import PageSkeleton from '../components/common/PageSkeleton';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { fmt } from '../utils/format';
@@ -434,6 +433,23 @@ export default function MarketplacePage() {
     }
   };
 
+  /**
+   * "3d" / "6h" / "Today" until the VIP pass lapses. Empty for lifetime, for a
+   * missing date, and for anything already expired - the pill should never
+   * announce a negative remainder.
+   */
+  const vipRemaining = useMemo(() => {
+    if (!wallet.isVip || !wallet.vipExpiresAt || wallet.vipTier === 'lifetime') return '';
+    const t = new Date(wallet.vipExpiresAt).getTime();
+    if (!Number.isFinite(t)) return '';
+    const ms = t - Date.now();
+    if (ms <= 0) return '';
+    const hours = Math.floor(ms / 3_600_000);
+    if (hours < 1) return '<1h';
+    if (hours < 48) return `${hours}h`;
+    return `${Math.floor(hours / 24)}d`;
+  }, [wallet.isVip, wallet.vipExpiresAt, wallet.vipTier]);
+
   /* ═══ Render ═══ */
   // FAILSAFE: ensure skeleton does not display indefinitely.
   useEffect(() => {
@@ -460,12 +476,25 @@ export default function MarketplacePage() {
     return () => clearTimeout(timer);
   }, [loading, mountedRef, clubId, user]);
 
-  if (loading && items.length === 0 && !shopError) {
-    return <PageSkeleton variant="dashboard" />;
-  }
+  /* THE CHROME STAYS UP (Dan 2026-08-25).
+     This returned <PageSkeleton variant="dashboard" /> for the WHOLE page -
+     header, wallet pill, tab bar and bottom nav included. Two consequences: a
+     player tapping Market from the footer saw an unrecognisable page for the
+     first second and could not tell they had arrived; and on a club switch the
+     tabs vanished and reappeared, throwing someone reading the Diamonds tab
+     back to a skeleton for a load that has nothing to do with Diamonds -
+     Diamonds and Membership do not read `items` at all. The Store's own
+     "Loading The Shop..." state is the correct, scoped fallback. */
 
   const TABS: { key: TabKey; label: string; badge?: number; adminOnly?: boolean }[] = [
-    { key: 'store', label: 'Store', badge: items.length },
+    // undefined, not 0, while the shop is still loading: a badge reading "0"
+    // states the shop is empty, which is the claim this page must not make
+    // before it knows.
+    {
+      key: 'store',
+      label: 'Store',
+      badge: loading && items.length === 0 ? undefined : items.length,
+    },
     { key: 'diamonds', label: 'Diamonds' },
     { key: 'membership', label: 'Membership' },
     { key: 'my_items', label: 'My Items', badge: ownedCount || undefined },
@@ -492,7 +521,23 @@ export default function MarketplacePage() {
                   ? `${fmt(balance)} Diamonds`
                   : 'Diamonds Unavailable'}
             </span>
-            {wallet.isVip && <span className={styles.vipPill}>VIP</span>}
+            {/* vipExpiresAt is fetched by loadWalletInfo and rendered ONLY inside
+                the Membership tab, so someone who bought a 24-hour pass had no
+                idea when it lapses unless they opened a tab they have no reason
+                to open. `title` alone is useless on touch, so the short form is
+                visible and the full date stays in the title. Dan 2026-08-25. */}
+            {wallet.isVip && (
+              <span
+                className={styles.vipPill}
+                title={
+                  wallet.vipExpiresAt
+                    ? `Expires ${new Date(wallet.vipExpiresAt).toLocaleString()}`
+                    : undefined
+                }
+              >
+                VIP{vipRemaining ? ` \u00b7 ${vipRemaining}` : ''}
+              </span>
+            )}
           </div>
         </div>
         <div className={styles.headerActions}>

@@ -946,6 +946,17 @@ export default function PlayerStatsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetUserId, category, handMode, handsReload]);
 
+  /**
+   * Keep the selected pill visible. The strip scrolls now (see the CSS), and
+   * both the swipe gesture and the Arrow keys can move `category` to a tab that
+   * is off-screen - so the user would have no idea which view they were on.
+   */
+  useEffect(() => {
+    document
+      .getElementById(`stats-tab-${category}`)
+      ?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'auto' });
+  }, [category]);
+
   useVisibilityRefresh(loadAllData);
 
   // SWR: show cached stats instantly on mount
@@ -1046,6 +1057,28 @@ export default function PlayerStatsPage() {
     [full]
   );
 
+  /** Text alternatives for the three charts, from the same memos they plot. */
+  const profitChartSummary = useMemo(() => {
+    if (dailySeries.length === 0) return 'No cash results in this range.';
+    const last = dailySeries[dailySeries.length - 1];
+    const best = dailySeries.reduce((a, b) => (b.profit > a.profit ? b : a));
+    const worst = dailySeries.reduce((a, b) => (b.profit < a.profit ? b : a));
+    return `Cumulative cash profit across ${dailySeries.length.toLocaleString()} days, ${dailySeries[0].date} to ${last.date}, ending at ${last.cumulative.toLocaleString()}. Best day ${best.date} at ${best.profit.toLocaleString()}. Worst day ${worst.date} at ${worst.profit.toLocaleString()}.`;
+  }, [dailySeries]);
+
+  const dailyChartSummary = useMemo(() => {
+    if (dailySeries.length === 0) return 'No daily results in this range.';
+    const up = dailySeries.filter((d) => d.profit > 0).length;
+    return `Daily cash result for ${dailySeries.length.toLocaleString()} days. ${up.toLocaleString()} winning days, ${(dailySeries.length - up).toLocaleString()} losing or break-even.`;
+  }, [dailySeries]);
+
+  const positionChartSummary = useMemo(() => {
+    if (positionPie.length === 0) return 'No positional data in this range.';
+    return `Hands won by position: ${positionPie
+      .map((p) => `${p.name} ${p.value.toLocaleString()}`)
+      .join(', ')}.`;
+  }, [positionPie]);
+
   // AdvancedStatsSummary expects a player_stats-like object (fractions)
   const advancedInitialData = useMemo(
     () => ({
@@ -1123,19 +1156,33 @@ export default function PlayerStatsPage() {
 
   const exportSessionsCSV = () => {
     try {
+      // buy_in, cash_out and ended are on every SessionRow and were dropped.
+      // They are the figures anyone reconciling a bankroll in a spreadsheet
+      // actually needs - profit alone cannot tell you what you sat down with.
+      // Appended, not inserted, so an existing import template still works.
+      // The range is recorded too: a file exported under "7 Days" was
+      // indistinguishable from a lifetime export once it left the browser.
       exportToCSV(
         sessionRows.map((s) => ({
           date: new Date(s.date).toLocaleString(),
+          ended: s.ended ? new Date(s.ended).toLocaleString() : '',
           duration_minutes: s.duration_minutes,
           hands: s.hands_played,
+          buy_in: s.buy_in,
+          cash_out: s.cash_out,
           profit: s.profit_loss,
+          analysis_window: RANGES.find((r) => r.key === rangeKey)?.label ?? 'All Time',
         })),
-        'player_session_history.csv',
+        `player_session_history_${rangeKey}.csv`,
         [
-          { key: 'date', label: 'Date' },
+          { key: 'date', label: 'Started' },
+          { key: 'ended', label: 'Ended' },
           { key: 'duration_minutes', label: 'Duration (min)' },
           { key: 'hands', label: 'Hands' },
+          { key: 'buy_in', label: 'Buy In' },
+          { key: 'cash_out', label: 'Cash Out' },
           { key: 'profit', label: 'Profit' },
+          { key: 'analysis_window', label: 'Analysis Window' },
         ]
       );
     } catch (e) {
@@ -1303,6 +1350,15 @@ export default function PlayerStatsPage() {
       )}
       {/* Small samples: bb/100 swings wildly over a few hundred hands, and a
           confident-looking number invites the wrong conclusion. */}
+      {/* indexed_complete is parsed by normalizeFull and was read nowhere. A
+          player whose backfill is incomplete saw a confident lifetime figure
+          that would change tomorrow, on a page whose whole design rule is
+          "never present a truncated figure as a lifetime total". */}
+      {hasData && !lifetime.indexed_complete && (
+        <div className="stats-notice">
+          Older Hands Are Still Being Indexed. These Totals Will Grow.
+        </div>
+      )}
       {hasData && overall.cash_hands > 0 && overall.cash_hands < 1000 && (
         <div className="stats-notice">
           {overall.cash_hands.toLocaleString()} Cash Hands Is A Small Sample - Win Rate Is Not Yet
@@ -1848,6 +1904,12 @@ export default function PlayerStatsPage() {
                         (the RPC's daily CTE filters is_cash), which the title
                         never said either. */}
                       <h3>{`Cash Profit Over Time (${RANGES.find((r) => r.key === rangeKey)?.label ?? 'All Time'})`}</h3>
+                      {/* Three recharts SVGs carried no role, no aria-label and
+                          no adjacent summary, so the entire Charts section was
+                          empty to a screen reader - a whole workflow (reading
+                          your own results) closed off. Every number below is
+                          already in dailySeries. Dan 2026-08-25. */}
+                      <p className="sr-only">{profitChartSummary}</p>
                     </div>
                     <div className="chart-container">
                       <ResponsiveContainer width="100%" height={250}>
@@ -1887,6 +1949,7 @@ export default function PlayerStatsPage() {
                   <div className="chart-card">
                     <div className="chart-card-header">
                       <h3>Daily Results</h3>
+                      <p className="sr-only">{dailyChartSummary}</p>
                     </div>
                     <div className="chart-container">
                       <ResponsiveContainer width="100%" height={200}>
@@ -1921,6 +1984,7 @@ export default function PlayerStatsPage() {
                     <div className="chart-card">
                       <div className="chart-card-header">
                         <h3>Hands Won By Position</h3>
+                        <p className="sr-only">{positionChartSummary}</p>
                       </div>
                       <div className="chart-container pie-chart">
                         <ResponsiveContainer width="100%" height={250}>

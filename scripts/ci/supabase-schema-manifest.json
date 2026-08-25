@@ -1293,6 +1293,7 @@
     "fn_club_leaderboard_period",
     "fn_club_leaderboard_period_v2",
     "fn_club_level_for_members",
+    "fn_club_member_counts",
     "fn_club_member_daily_profit_exact",
     "fn_club_members_no_agent_cycle",
     "fn_club_members_role_guard",

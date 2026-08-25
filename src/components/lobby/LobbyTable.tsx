@@ -911,11 +911,16 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_ACTIONS,
       ];
     case 'MTT':
+      /* Dan 2026-08-25: "THAT SHOULD BE THE FIRST LINE DISPLAYED." The title
+         led no board here - it sat fourth, behind Starting Time, Game Type and
+         Buy-In, which are all facts ABOUT a tournament and answer nothing until
+         you know which tournament they describe. It leads now, and on every
+         other tab the name already sits first behind the favourite star. */
       return [
+        COL_TNAME,
         COL_STARTS,
         { ...COL_VARIANT, label: 'Game Type' },
         COL_BUYIN,
-        COL_TNAME,
         COL_GTD,
         /* COL_SPEED read `speedLabel`, which for an MTT is the word "Standard"
            unless the creator typed Turbo into the name. COL_FORMAT measures

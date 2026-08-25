@@ -27,6 +27,7 @@ const TABLE_THEME_SELECTOR = read('src/components/table/ThemeSelector.tsx');
 const CUSTOMIZATION_SELECTOR = read('src/components/customization/ThemeSelector.tsx');
 const TABLE_ASSETS = read('src/assets/tableAssets.ts');
 const THEME_MODAL = read('src/components/table/ThemeSettingsModal.tsx');
+const TABLE_THEME_LIB = read('src/lib/tableTheme.ts');
 
 /** Every id with a real `[data-theme='<id>']` rule in the shipped stylesheets. */
 function idsWithThemeTokens(): Set<string> {
@@ -127,14 +128,37 @@ describe('a table skin you can pick is a skin that exists', () => {
     expect(new Set(hashes).size, 'two table skins are byte-identical').toBe(files.length);
   });
 
+  /* The modal's table tab stopped being a typed-out array on 2026-08-25 - it is
+     generated from TABLE_FELT_CATALOG now, which is itself generated from
+     TABLE_SKIN_IDS, which is exactly the fix this test was written to demand.
+     The scraper still looked for `table: [ ... ]` and matched nothing, so the
+     test went red on main against code that had made the defect impossible.
+     It reads the new shape and checks the same property, at both hops. */
   it('every skin id the Theme Settings picker offers is in the registry', () => {
     const registry = new Set(
       [...TABLE_ASSETS.matchAll(/^\s{2}'?([a-z0-9_-]+)'?:\s*skin/gm)].map((m) => m[1])
     );
     expect(registry.size, 'TABLE_SKINS registry parsed empty').toBeGreaterThan(0);
-    const tableTab = THEME_MODAL.match(/\n\s{2}table: \[([\s\S]*?)\n\s{2}\],/);
+
+    // Hop 1: the tab is derived, not typed. A hand-written list here is how the
+    // two pickers drifted apart in the first place.
+    const tableTab = THEME_MODAL.match(/\n {2}table: ([A-Za-z_]+),/);
     expect(tableTab, "the modal's table tab was not found").toBeTruthy();
-    const offered = [...tableTab![1].matchAll(/id: '([a-z0-9_-]+)'/g)].map((m) => m[1]);
+    expect(tableTab![1]).toBe('TABLE_ASSETS');
+    expect(THEME_MODAL, 'the table tab is no longer generated from the catalogue').toMatch(
+      /const TABLE_ASSETS: ThemeAsset\[\] = TABLE_FELT_CATALOG\.map/
+    );
+
+    // Hop 2: the catalogue is built from the registry's own id list...
+    expect(TABLE_THEME_LIB, 'TABLE_FELT_CATALOG is no longer derived from TABLE_SKIN_IDS').toMatch(
+      /export const TABLE_FELT_CATALOG[\s\S]{0,400}TABLE_SKIN_IDS/
+    );
+
+    // ...and every id on that list resolves to a real skin, which is the thing
+    // a player would otherwise discover by picking a tile that paints nothing.
+    const idBlock = /export const TABLE_SKIN_IDS: string\[\] = \[([\s\S]*?)\];/.exec(TABLE_ASSETS);
+    expect(idBlock, 'TABLE_SKIN_IDS not found').toBeTruthy();
+    const offered = [...idBlock![1].matchAll(/'([a-z0-9_-]+)'/g)].map((m) => m[1]);
     expect(offered.length).toBeGreaterThan(0);
     const dead = offered.filter((id) => !registry.has(id));
     expect(dead, `table skins offered that resolve to nothing: ${dead.join(', ')}`).toEqual([]);

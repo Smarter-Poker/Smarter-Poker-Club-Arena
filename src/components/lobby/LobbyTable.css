@@ -124,8 +124,19 @@
 .lt-col-fav {
   width: 34px;
 }
+/* Dan 2026-08-25: "TOURNAMENT TITLES HAVE BEEN REMOVED FROM THE ALL TAB AND
+   FROM THE MTT TAB." Nothing removed them. This table is `table-layout: fixed`,
+   which hands every column that STATES a width exactly that width and gives
+   what is LEFT to the ones that say `auto`. Name was the only auto column in
+   the file, and the wells added earlier the same day pushed the stated widths
+   past the table's own width - so what was left to give it was zero, and the
+   one cell carrying the game's identity was the only cell that could lose,
+   precisely because it was the only one asking for the remainder. It states a
+   width now, like every other column, so a new column can never again be paid
+   for out of the title. min-width stays at 140 for the phone card, where the
+   cell is a flex item and 232px would push a 320px screen sideways. */
 .lt-col-name {
-  width: auto;
+  width: 232px;
   min-width: 140px;
 }
 .lt-col-variant {
@@ -562,7 +573,13 @@ abbr.lt-variant[title] {
 }
 
 /* ── Responsive: trim secondary columns before ever going back to cards ── */
-@media (max-width: 1100px) {
+/* 1100 was measured against a column set that did not yet include the title's
+   232px, and against one that had never had to fit Starting Stack, Current
+   Level, Blind Levels and Format at once. The full ALL set measures 1586px, so
+   between 1100 and 1586 the board was scrolling sideways and the first thing
+   scrolled off was the leftmost column. The ladder now begins where the board
+   genuinely stops fitting. */
+@media (max-width: 1600px) {
   .lt-col-rules {
     width: 120px;
   }
@@ -585,6 +602,19 @@ abbr.lt-variant[title] {
   }
   .lt-col-tlevel {
     width: 92px;
+  }
+}
+/* A 1024-1360 laptop - the width Dan's screenshots were taken at - still
+   measured 1302px after the rung above. Starting Stack, Current Level and Max
+   Payout are the next three by the same priority the whole ladder uses: detail
+   about a game, not the identity of one. Both boards measure ~1010px here, so
+   the title is on screen without a sideways scroll rather than merely first in
+   a row that scrolls. The game panel and the phone card still carry all three. */
+@media (max-width: 1360px) {
+  .lt-col-tstack,
+  .lt-col-tlevel,
+  .lt-col-payout {
+    display: none;
   }
 }
 @media (max-width: 900px) {

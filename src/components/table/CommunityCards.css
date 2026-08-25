@@ -724,6 +724,21 @@
   margin: 0;
 }
 
+/* SHOWDOWN SYSTEM 2026-08-25 (spec section 14): the descriptive secondary
+   line — "Kings Full Of Nines" — rendered smaller, directly under the
+   primary classification. Inherits position from its parent label. */
+.community-cards__hand-description {
+  font-size: 0.42em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(226, 232, 240, 0.85);
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.8),
+    0 0 10px rgba(14, 165, 233, 0.5);
+  text-align: center;
+  margin-top: 0.1em;
+}
+
 /* Bright horizontal flare behind the text */
 .community-cards__hand-name::before {
   content: '';

@@ -64,7 +64,15 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
         is_all_in: p.is_all_in,
         position: p.position,
         // Bible V8 §6.15: Only show cards if table allows AND it's showdown
-        cards: showCards && state.stage === 'showdown' ? p.cards : [],
+        // SHOWDOWN SYSTEM 2026-08-25: mucked hands stay private from
+        // observers too — same gate as the player-facing surfaces.
+        cards:
+          showCards &&
+          state.stage === 'showdown' &&
+          !p.is_folded &&
+          !this.isMuckedAtShowdown(p.user_id)
+            ? p.cards
+            : [],
       })),
       is_observer: true,
       admin_paused: this.adminPauseLock,
@@ -166,7 +174,11 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
           let showCards = false;
           if (p.user_id === requestingUserId) {
             showCards = true;
-          } else if (state.stage === 'showdown' && !p.is_folded) {
+          } else if (
+            state.stage === 'showdown' &&
+            !p.is_folded &&
+            !this.isMuckedAtShowdown(p.user_id)
+          ) {
             // ── Dan 2026-08-18: the THIRD reveal gate, found on re-audit ──
             //
             // broadcastCurrentState was changed to turn every showdown hand
@@ -178,6 +190,10 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             //
             // Same guard, same safety: `!p.is_folded` above means a folded
             // hand is still never exposed.
+            //
+            // SHOWDOWN SYSTEM 2026-08-25: the muck gate applies on resync
+            // too, or a reconnecting client would see cards the rest of the
+            // table was never shown.
             showCards = true;
           }
           return {
@@ -191,6 +207,9 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             is_folded: p.is_folded ?? false,
             is_all_in: p.is_all_in ?? false,
             is_sitting_out: p.is_sitting_out ?? false,
+            // SHOWDOWN SYSTEM 2026-08-25: resync parity with the broadcast.
+            is_mucked:
+              state.stage === 'showdown' && !p.is_folded && this.isMuckedAtShowdown(p.user_id),
             is_disconnected: !this.disconnectEngine.isConnected(this.tableId, p.user_id),
             time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
             time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
@@ -347,7 +366,17 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
           // (runoutRevealActive) — betting is complete, hands are tabled, and
           // the paced runout is unwatchable with the cards still face down.
           // The `!p.is_folded` guard stays: a fold is never exposed.
-          const showCards = (state.stage === 'showdown' || this.runoutRevealActive) && !p.is_folded;
+          //
+          // SHOWDOWN SYSTEM 2026-08-25 (Dan spec section 4): a hand the
+          // engine ruled muckable stays face-down in the public snapshot too
+          // — this is the path that actually puts cards on the felt, so
+          // without this gate the muck was decoration. Voluntary shows
+          // override (isMuckedAtShowdown returns false for them). All-in
+          // showdowns never produce mucked=true, so runout reveals are
+          // untouched.
+          const muckedHere = this.isMuckedAtShowdown(p.user_id);
+          const showCards =
+            (state.stage === 'showdown' || this.runoutRevealActive) && !p.is_folded && !muckedHere;
 
           // ── Dan 2026-08-18: per-card voluntary reveal ──
           //
@@ -398,6 +427,10 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             // never published it; frontend had no way to know the player was
             // waiting and no way to call POST /post-bb to skip the wait.
             is_waiting_for_bb: this.waitingForBB.has(p.user_id),
+            // SHOWDOWN SYSTEM 2026-08-25: engine-decided muck flag. The seat
+            // renders a MUCKED label instead of cards; the hole cards and the
+            // hand identity are withheld from every public surface.
+            is_mucked: state.stage === 'showdown' && !p.is_folded && muckedHere,
             // Bible V8 §5.1 + §2.7: Hand name at showdown for winner label display
             hand_name: showCards
               ? (this.currentHandShowdownResults.find((r) => r.userId === p.user_id)?.handName ??

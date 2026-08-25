@@ -14,7 +14,15 @@
 import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import type { LobbyEntry, LobbyStatusKey, LobbyTournamentRow } from './lobbyEntries';
 import { tournamentBlinds, tournamentLevel } from './tournamentFigures';
-import { mttPhaseText, mttTitleLine } from './lobbyEntries';
+import {
+  cashTitleLines,
+  levelSpeedLabel,
+  mttPhaseText,
+  mttTitleLine,
+  seatsTakenLabel,
+  spinPayoutLabel,
+  stackDepthLabel,
+} from './lobbyEntries';
 import { prefetchIntent } from '../../utils/ChunkPreloader';
 import { useSpinTierAvailability } from '../../hooks/useSpinTierAvailability';
 import './LobbyTable.css';
@@ -119,7 +127,10 @@ interface ColumnDef {
    could never be built - along with its .lt-rule--more stylesheet rule. */
 function RulesCell({ entry }: { entry: LobbyEntry }) {
   const shown = entry.rules;
-  if (shown.length === 0) return <span className="lt-dim">-</span>;
+  /* Nothing, not a dash. A phone card drops a cell that renders empty
+     (`td:empty`), so a Spin with no traits loses the well instead of showing a
+     heading called RULES with a hyphen under it. */
+  if (shown.length === 0) return null;
   return (
     <span className="lt-rules">
       {shown.map((r) => (
@@ -131,30 +142,11 @@ function RulesCell({ entry }: { entry: LobbyEntry }) {
   );
 }
 
-function LiveCountdown({ time }: { time: string | number | Date }) {
-  const [mins, setMins] = useState(() =>
-    Math.max(0, Math.floor((new Date(time).getTime() - Date.now()) / 60000))
-  );
-
-  useEffect(() => {
-    const t = new Date(time).getTime();
-    if (isNaN(t)) return;
-    const update = () => {
-      setMins(Math.max(0, Math.floor((t - Date.now()) / 60000)));
-    };
-    update();
-    const interval = setInterval(update, 10000); // Check every 10s to ensure it updates close to the minute mark
-    return () => clearInterval(interval);
-  }, [time]);
-
-  if (isNaN(mins) || mins <= 0 || mins > 60) return null;
-  /* No inline style. An inline declaration outranks any class rule, so the
-     phone card's own .lt-countdown sizing (set for the Starting Time well)
-     never applied, and the stylesheet had grown an !important trying to win
-     a fight it could not - three rules for one property. The class carries
-     all of it now. */
-  return <span className="lt-countdown">Starts In {mins} Min...</span>;
-}
+/* LiveCountdown lived here and is deleted (2026-08-25). It rendered a coarse
+   whole-minutes countdown into the status cell of any non-MTT tournament — in
+   practice only Spins and Heads-Ups, which do not start on a clock at all.
+   Every clock in the lobby now comes from mttPhaseText through the shared
+   one-second tick below, so no two countdowns can disagree again. */
 
 /**
  * ONE interval for every countdown in the table (Dan 2026-08-24: 30+ MTT
@@ -234,18 +226,66 @@ export function LobbyStatusBadge({ status, label }: { status: LobbyStatusKey; la
   return <span className={`lt-status lt-status--${status}`}>{label}</span>;
 }
 
-function PlayerStateChip({ entry, ctx }: { entry: LobbyEntry; ctx: LobbyRowContext }) {
+/**
+ * ── "I AM ALREADY IN THIS GAME" ────────────────────────────────────────────
+ * Dan 2026-08-25: "if a player is already at a table it should say that on the
+ * lobby card, or it should be outlined or something — needs to show a player
+ * is already at that table, spin, mtt or heads up table."
+ *
+ * It was computed, and then thrown away on exactly the cards where it matters
+ * most: this chip lived inside the status cell, and the phone layout hides the
+ * status cell outright on every MTT and Heads-Up card. So a player scrolling a
+ * lobby on a phone could not tell a tournament they had already entered from
+ * one they had not. It renders in the TITLE now — the one cell no breakpoint
+ * ever hides — and `playerStateOf` also drives the row's own outline so the
+ * card reads at a glance without being parsed.
+ */
+export type PlayerState = 'seated' | 'waitlisted' | 'registered' | null;
+
+export function playerStateOf(entry: LobbyEntry, ctx: LobbyRowContext): PlayerState {
   if (entry.kind === 'cash') {
-    if (ctx.seatedIds.has(entry.id)) return <span className="lt-mine">Seated</span>;
-    if (ctx.waitlistedIds.has(entry.id))
-      return <span className="lt-mine lt-mine--wait">Waitlisted</span>;
+    if (ctx.seatedIds.has(entry.id)) return 'seated';
+    if (ctx.waitlistedIds.has(entry.id)) return 'waitlisted';
     return null;
   }
-  if (ctx.registeredIds.has(entry.id)) return <span className="lt-mine">Registered</span>;
+  /* A Spin or Heads-Up seat is bought, not registered for, so a player who
+     holds one is SEATED — but the id lands in whichever set the page fills,
+     and both are true of the same game. Check both rather than pick one. */
+  if (ctx.seatedIds.has(entry.id)) return 'seated';
+  if (ctx.registeredIds.has(entry.id)) return 'registered';
+  if (ctx.waitlistedIds.has(entry.id)) return 'waitlisted';
   return null;
 }
 
+const PLAYER_STATE_LABEL: Record<Exclude<PlayerState, null>, string> = {
+  seated: 'You Are Seated',
+  waitlisted: 'You Are Waitlisted',
+  registered: 'You Are Registered',
+};
+
+function PlayerStateChip({ entry, ctx }: { entry: LobbyEntry; ctx: LobbyRowContext }) {
+  const state = playerStateOf(entry, ctx);
+  if (!state) return null;
+  return (
+    <span className={`lt-mine lt-mine--${state}`}>
+      <i className="lt-mine__dot" aria-hidden="true" />
+      {PLAYER_STATE_LABEL[state]}
+    </span>
+  );
+}
+
 function StartsCell({ entry }: { entry: LobbyEntry }) {
+  /* A cash table has no starting time and never will — it is running now.
+     "When Full" was being printed under a Starting Time heading on every cash
+     card, which is a well of noise on the densest screen in the app. */
+  if (entry.kind === 'cash') return null;
+  /* A Spin and a Heads-Up start when the last seat is bought. The recycler
+     still stamps a start_time on the row and it is always in the past, so
+     printing it announced a clock time that means nothing — the same column
+     that produced "Starting Soon" on a sold-out Spin before tournamentStatus
+     was taught about seat-first games. */
+  if (entry.kind === 'spin' || entry.kind === 'sng')
+    return <span className="lt-dim">When Full</span>;
   if (!entry.startTime) return <span className="lt-dim">When Full</span>;
   const d = new Date(entry.startTime);
   if (!Number.isFinite(d.getTime())) return <span className="lt-dim">-</span>;
@@ -341,26 +381,52 @@ const COL_NAME: ColumnDef = {
   className: 'lt-col-name',
   sortable: true,
   sortValue: (e) => (e.name || '').toLowerCase(),
-  render: (e, ctx) =>
-    e.kind === 'mtt' ? (
+  render: (e, ctx) => {
+    if (e.kind === 'mtt') {
       /* Dan 2026-08-23: MTT titles are two lines — name + variation on top,
          guarantee / start clock / live countdown (or late-reg time left)
          underneath. The guarantee lives in the title now, not only in its
          own column. */
-      <span className="lt-name lt-name--mtt" title={mttTitleLine(e)}>
+      return (
+        <span className="lt-name lt-name--mtt" title={mttTitleLine(e)}>
+          <span className="lt-name__line1">
+            {e.live && <i className="lt-live" aria-hidden="true" title="Live" />}
+            {mttTitleLine(e)}
+          </span>
+          <MttTitleMeta entry={e} />
+          <PlayerStateChip entry={e} ctx={ctx} />
+        </span>
+      );
+    }
+
+    if (e.kind === 'cash') {
+      /* Dan 2026-08-25: line 1 is the game type and the stakes, line 2 is the
+         table's own name — and line 2 must not be cut off by the chips beside
+         it. Both lines come from cashTitleLines so the split is one rule. */
+      const { headline, subtitle } = cashTitleLines(e);
+      return (
+        <span className="lt-name lt-name--cash" title={e.name}>
+          <span className="lt-name__line1">
+            {e.live && <i className="lt-live" aria-hidden="true" title="Live" />}
+            {headline}
+          </span>
+          {subtitle && <span className="lt-name__table">{subtitle}</span>}
+          <PlayerStateChip entry={e} ctx={ctx} />
+        </span>
+      );
+    }
+
+    return (
+      <span className="lt-name lt-name--seatfirst" title={e.name}>
         <span className="lt-name__line1">
           {e.live && <i className="lt-live" aria-hidden="true" title="Live" />}
-          {mttTitleLine(e)}
+          {e.name}
         </span>
-        <MttTitleMeta entry={e} />
-      </span>
-    ) : (
-      <span className="lt-name" title={e.name}>
-        {e.live && <i className="lt-live" aria-hidden="true" title="Live" />}
-        {e.name}
         {e.kind === 'spin' && ctx.spinTopTierLive && <SpinTopTierBadge />}
+        <PlayerStateChip entry={e} ctx={ctx} />
       </span>
-    ),
+    );
+  },
 };
 const COL_TNAME: ColumnDef = { ...COL_NAME, label: 'Tournament Name' };
 const COL_STAKES: ColumnDef = {
@@ -390,8 +456,12 @@ const COL_VARIANT: ColumnDef = {
    read off the card. A tournament now shows what is true: how many have
    registered. Cash keeps its meter, where the denominator is a real seat
    count. */
+/* ...and a Spin or a Heads-Up is the exception to the exception: it seats 3 or
+   2, it STARTS when it fills, and Dan 2026-08-25 asked for the fraction by
+   name — "0/3, 1/3, 2/3, 3/3" and "0/2, 1/2, 2/2". There the denominator is
+   the whole point, so seatsTakenLabel prints it. */
 function TournamentEnrolled({ entry }: { entry: LobbyEntry }) {
-  return <span className="lt-seats__num">{entry.players.toLocaleString()}</span>;
+  return <span className="lt-seats__num">{seatsTakenLabel(entry)}</span>;
 }
 
 const COL_PLAYERS: ColumnDef = {
@@ -438,14 +508,11 @@ const COL_STARTS: ColumnDef = {
   sortValue: (e) => e.startValue,
   render: (e) => <StartsCell entry={e} />,
 };
-const COL_SPEED: ColumnDef = {
-  key: 'speed',
-  label: 'Speed',
-  className: 'lt-col-speed',
-  sortable: true,
-  sortValue: (e) => e.speedLabel || '',
-  render: (e) => (e.speedLabel ? <span>{e.speedLabel}</span> : <span className="lt-dim">-</span>),
-};
+/* COL_SPEED is gone (2026-08-25). It printed `speedLabel`, which is the word
+   "Standard" for every MTT whose creator did not type Turbo into the name, and
+   "When Full" for every Spin and Heads-Up — a sortable column of one word.
+   COL_FORMAT and COL_LEVELTIME answer the same question from the row's real
+   starting stack and blind structure, on every tab. */
 /** Joinable-first lobby order - not the alphabet ('closed' before 'open'
     told the player the dead games mattered most). */
 const STATUS_RANK: Record<LobbyStatusKey, number> = {
@@ -465,16 +532,17 @@ const COL_STATUS: ColumnDef = {
   className: 'lt-col-status',
   sortable: true,
   sortValue: (e) => STATUS_RANK[e.status] ?? 9,
-  render: (e, ctx) => (
+  /* The "you are in this game" chip used to live here and is now rendered in
+     the title cell — the phone layout hides this whole cell on tournament
+     cards, which is precisely where the chip mattered. See PlayerStateChip. */
+  render: (e) => (
     <span className="lt-statuscell">
-      {/* MTTs carry a live seconds countdown in their two-line title now;
-          repeating a coarser minutes one here would just disagree with it. */}
-      {e.kind !== 'cash' &&
-        e.kind !== 'mtt' &&
-        ['registering', 'starting_soon'].includes(e.status) &&
-        e.startTime && <LiveCountdown time={e.startTime} />}
+      {/* No countdown here any more, on any kind. An MTT carries a live
+          seconds clock in its own two-line title; a Spin and a Heads-Up start
+          on their last bought seat rather than at a time, so "Starts In 29
+          Min..." beside a badge reading Filling was two different answers to
+          the same question; and a cash game is running now. */}
       <LobbyStatusBadge status={e.status} label={e.statusLabel} />
-      <PlayerStateChip entry={e} ctx={ctx} />
     </span>
   ),
 };
@@ -588,6 +656,50 @@ const COL_TLEVEL: ColumnDef = {
   },
 };
 
+/* ── SPIN AND HEADS-UP WELLS (Dan 2026-08-25) ───────────────────────────────
+   Every one of these was already true of the row and had never been asked for.
+   They are ordinary columns, so the desktop board gets a heading and the phone
+   card gets the same heading printed above the value from data-label — the two
+   layouts cannot say different things about the same fact. */
+const COL_PAYOUT: ColumnDef = {
+  key: 'payout',
+  label: 'Max Payout',
+  className: 'lt-col-payout',
+  /* NOT sortable, and the column is never given the raw number to sort by.
+     Sorting a board by a multiplier that has not been revealed yet would leak
+     the draw through the ORDER of the rows — the one thing utils/spinReveal
+     exists to prevent. Every unrevealed Spin prints the same ceiling anyway,
+     so a sort here could only ever order them by a secret. */
+  render: (e) => {
+    const label = spinPayoutLabel(e);
+    if (!label) return null;
+    return <span className="lt-payout">{label}</span>;
+  },
+};
+
+const COL_LEVELTIME: ColumnDef = {
+  key: 'leveltime',
+  label: 'Blind Levels',
+  className: 'lt-col-leveltime',
+  render: (e) => {
+    if (e.kind === 'cash') return null;
+    const label = levelSpeedLabel(e.raw as LobbyTournamentRow);
+    return label ? <span>{label}</span> : null;
+  },
+};
+
+const COL_FORMAT: ColumnDef = {
+  key: 'format',
+  label: 'Format',
+  className: 'lt-col-format',
+  sortable: true,
+  sortValue: (e) => stackDepthLabel(e) || '',
+  render: (e) => {
+    const label = stackDepthLabel(e);
+    return label ? <span className="lt-format">{label}</span> : null;
+  },
+};
+
 const COL_ACTIONS: ColumnDef = {
   key: 'actions',
   label: '',
@@ -622,6 +734,34 @@ const COL_ACTIONS: ColumnDef = {
     }
 
     if (e.kind === 'spin' || e.kind === 'sng') {
+      /* Dan 2026-08-25: "once a spin is running, it must show the status as
+         running, where users can click and watch." A seat-first game with no
+         seat left cannot be sat down at, so Sit Down there is a button that
+         can only ever fail — the same reasoning that gave running MTTs a
+         Watch button. A player who already holds a seat gets taken back to it. */
+      const mine = playerStateOf(e, ctx) !== null;
+      const noSeatLeft =
+        e.status === 'running' ||
+        e.status === 'completed' ||
+        e.status === 'full' ||
+        (e.capacity > 0 && e.players >= e.capacity);
+
+      if (mine || noSeatLeft) {
+        return (
+          <span className="lt-actions">
+            {ctx.onViewTable && (
+              <button
+                type="button"
+                className={`lt-act ${mine ? 'lt-act--done' : 'lt-act--primary'}`}
+                onClick={stop(ctx.onViewTable)}
+              >
+                {mine ? 'Return To Game' : 'Watch'}
+              </button>
+            )}
+          </span>
+        );
+      }
+
       return (
         <span className="lt-actions">
           {ctx.onRegister && (
@@ -697,11 +837,18 @@ const LobbyRow = memo(function LobbyRow({
   onSelect: (e: LobbyEntry) => void;
   onActivate: (e: LobbyEntry) => void;
 }) {
+  /* The outline half of Dan's 2026-08-25 request. The chip in the title names
+     the state; this makes the card findable in a scroll of thirty without
+     reading any of them. It is derived here rather than passed in so the
+     memoised row recomputes it exactly when `ctx` changes, which is the same
+     moment the chip above it changes. */
+  const mine = playerStateOf(entry, ctx);
   return (
     <tr
       data-id={entry.id}
-      className={`lt-row lt-row--${entry.status}${selected ? ' is-selected' : ''}`}
+      className={`lt-row lt-row--${entry.status}${selected ? ' is-selected' : ''}${mine ? ' is-mine' : ''}`}
       data-kind={entry.kind}
+      data-mine={mine || undefined}
       role="row"
       aria-selected={selected}
       // Hover / touch / keyboard-focus on a lobby row is the earliest honest
@@ -760,11 +907,18 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_BUYIN,
         COL_TNAME,
         COL_GTD,
-        COL_SPEED,
+        /* COL_SPEED read `speedLabel`, which for an MTT is the word "Standard"
+           unless the creator typed Turbo into the name. COL_FORMAT measures
+           the same question off the starting stack and the level-1 big blind,
+           and COL_LEVELTIME says how long a level actually runs — so the MTT
+           card now answers speed the same way the Spin and Heads-Up cards do,
+           out of the same two helpers. */
         { ...COL_PLAYERS, label: 'Enrolled', hideOnMobile: true },
         COL_STATUS,
         COL_TSTACK,
         COL_TLEVEL,
+        COL_LEVELTIME,
+        COL_FORMAT,
         COL_RULES,
         COL_ACTIONS,
       ];
@@ -773,24 +927,62 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
          BLIND LEVELS WILL ALWAYS BE THE SAME." Every Spin runs the one blind
          structure, so a Speed column is a whole column of the same word — and
          a sortable one at that, inviting a sort that can never reorder
-         anything. What actually varies is the buy-in, which is already here. */
-      return [COL_NAME, COL_VARIANT, COL_BUYIN, COL_PLAYERS, COL_STATUS, COL_ACTIONS];
+         anything. What actually varies is the buy-in, which is already here.
+
+         Dan 2026-08-25 added the four facts that DO distinguish one Spin from
+         another and had never been printed: what it can pay, how deep it
+         starts, how fast the clock runs, and how many of the three seats are
+         gone. The level clock is still identical across the ladder — it is
+         here because a player who has never opened a Spin has no way to know
+         that, not because it varies. */
+      return [
+        COL_NAME,
+        COL_VARIANT,
+        COL_BUYIN,
+        COL_PAYOUT,
+        COL_PLAYERS,
+        COL_TSTACK,
+        COL_LEVELTIME,
+        COL_FORMAT,
+        COL_STATUS,
+        COL_ACTIONS,
+      ];
     case 'SNG':
-      return [COL_NAME, COL_VARIANT, COL_BUYIN, COL_PLAYERS, COL_STATUS, COL_ACTIONS];
+      return [
+        COL_NAME,
+        COL_VARIANT,
+        COL_BUYIN,
+        COL_PLAYERS,
+        COL_TSTACK,
+        COL_LEVELTIME,
+        COL_FORMAT,
+        COL_STATUS,
+        COL_ACTIONS,
+      ];
     case 'ALL':
     default:
+      /* Dan 2026-08-25: "it looks like we have two different cards, one for
+         'all field' and one for 'MTT' field ... optimize this one and use it
+         for both fields." A card is only one card if it answers the same
+         questions wherever it appears, so the ALL tab now carries every well
+         the dedicated tabs carry. A cell with nothing to say renders empty and
+         the phone layout drops it (`td:empty`), so a cash row does not grow a
+         hollow Max Payout well — the SHAPE is shared, not the emptiness. */
       return [
         COL_FAV,
         COL_NAME,
         COL_KIND,
         COL_VARIANT,
         COL_COST,
+        COL_PAYOUT,
         COL_PLAYERS,
         COL_STARTS,
         COL_RULES,
         COL_STATUS,
         COL_TSTACK,
         COL_TLEVEL,
+        COL_LEVELTIME,
+        COL_FORMAT,
         COL_ACTIONS,
       ];
   }

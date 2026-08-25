@@ -27,14 +27,11 @@
  * needed. The hub page already detects embedding and hides its own header
  * and bottom nav (pages/hub/notifications.js, `isInIframe`), so what
  * renders here is the list alone, inside Club Arena's chrome.
- *
- * NOTE: NotificationsPage.css is now orphaned — nothing imports it. It is
- * left on disk rather than deleted so this change carries no risk beyond
- * the render path; remove it in a follow-up sweep.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import './NotificationsPage.css';
 
 /** Same-origin hub route. `embed=ca` tells it a Club Arena SPA is its parent. */
 const EMBED_URL = '/hub/notifications?embed=ca';
@@ -80,39 +77,11 @@ export default function NotificationsPage() {
   }, [navigate]);
 
   return (
-    <div
-      style={{
-        position: 'relative',
-        width: '100%',
-        // Fill everything under the Club Arena header. dvh so the iOS
-        // address bar collapsing does not leave a dead strip at the bottom.
-        height: 'calc(100dvh - 56px)',
-        background: '#F0F2F5',
-        overflow: 'hidden',
-      }}
-    >
+    <div className="ca-notif-embed">
       {!loaded && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: '#F0F2F5',
-          }}
-        >
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              border: '3px solid rgba(24, 119, 242, 0.2)',
-              borderTopColor: '#1877F2',
-              borderRadius: '50%',
-              animation: 'ca-notif-spin 0.8s linear infinite',
-            }}
-          />
-          <style>{'@keyframes ca-notif-spin { to { transform: rotate(360deg); } }'}</style>
+        <div className="ca-notif-embed__loader" role="status" aria-live="polite">
+          <div className="ca-notif-embed__spinner" />
+          <span className="sr-only">Loading Notifications</span>
         </div>
       )}
 
@@ -121,7 +90,7 @@ export default function NotificationsPage() {
         src={EMBED_URL}
         title="Notifications"
         onLoad={() => setLoaded(true)}
-        style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+        className="ca-notif-embed__frame"
       />
     </div>
   );

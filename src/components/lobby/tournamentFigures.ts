@@ -44,7 +44,27 @@ export function blindLevelAt(levels: BlindLevel[], level: number): BlindLevel | 
  * it is what a player deciding whether to register wants to read.
  */
 export function tournamentLevel(t: { current_level?: number | null }): number {
-  return Math.max(1, Number(t.current_level) || 1);
+  /**
+   * ── current_level IS 0-BASED. THIS ADDS THE ONE. ────────────────────────
+   *
+   * Verified against production 2026-08-25: a tournament with
+   * `current_level = 8` indexes to a blind_structure element whose own
+   * `level` field reads 9. Three other files in this repo already say so and
+   * were fixed for it — tournamentFilters ("a 0-BASED index into
+   * blind_structure"), TournamentInfoPanel ("blind_structure[current_level]
+   * .level === current_level + 1"), TablePage ("const currentLevel = levelIdx
+   * + 1; // display number").
+   *
+   * This function did not, so the lobby was permanently ONE LEVEL BEHIND from
+   * the first level-up: it printed "Level 8" on a game that was on 9, and
+   * blindLevelAt(levels, 8) then handed back level 8's blinds — the previous
+   * level's. Both numbers on the card were wrong, and they were wrong
+   * consistently enough to look right.
+   *
+   * The clamp survives so a registering row (0 or null) still reads Level 1,
+   * which is the level it will open at.
+   */
+  return Math.max(1, (Number(t.current_level) || 0) + 1);
 }
 
 /** "100/200" for the current level, or null when the structure cannot say. */

@@ -44,6 +44,8 @@ export interface CashBuyInSource {
 export interface CashBuyInRange {
   min: number;
   max: number;
+  /** The row carries no blinds and no buy-in columns: nothing can be said. */
+  unknown?: boolean;
 }
 
 const positive = (v: unknown): number => {
@@ -59,8 +61,16 @@ export function cashBuyInRange(row: CashBuyInSource): CashBuyInRange {
   const rowMin = positive(row.min_buy_in) || bandMin;
   const rowMax = positive(row.max_buy_in) || bandMax;
 
-  // No blinds on the row means no band to intersect with; report the row.
-  if (bb <= 0) return { min: rowMin, max: Math.max(rowMin, rowMax) };
+  /**
+   * No blinds AND no columns means the row cannot say. Returning 0/0 printed
+   * the literal "0" on the card and "0 Min / 0 Max" in the panel — a claim
+   * about money that is not merely unknown but wrong. NaN was fixed here
+   * earlier; zero is the same bug wearing a number.
+   */
+  if (bb <= 0) {
+    if (rowMin <= 0 && rowMax <= 0) return { min: 0, max: 0, unknown: true };
+    return { min: rowMin, max: Math.max(rowMin, rowMax) };
+  }
 
   const min = Math.max(rowMin, bandMin);
   const max = Math.min(rowMax, bandMax);
@@ -74,7 +84,9 @@ export function cashBuyInRange(row: CashBuyInSource): CashBuyInRange {
 
 /** "1,000 - 2,500", or a single figure when the range has collapsed. */
 export function cashBuyInLabel(row: CashBuyInSource): string {
-  const { min, max } = cashBuyInRange(row);
+  const { min, max, unknown } = cashBuyInRange(row);
+  /* A dash, not a zero. "0" is a statement that the table is free. */
+  if (unknown) return '-';
   if (max <= min) return min.toLocaleString();
   return `${min.toLocaleString()} - ${max.toLocaleString()}`;
 }

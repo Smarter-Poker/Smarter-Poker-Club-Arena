@@ -15,7 +15,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import CasinoPlaque, { PlaqueSeats } from './CasinoPlaque';
 import type { LobbyEntry, LobbyTableRow, LobbyTournamentRow } from './lobbyEntries';
-import { tournamentBlinds, tournamentLevel } from './tournamentFigures';
+import { parseBlindStructure, tournamentBlinds, tournamentLevel } from './tournamentFigures';
 import { parseTableSettings } from './lobbyEntries';
 import { cashBuyInRange } from '../../lib/cashBuyIn';
 import { tournamentService } from '../../services/TournamentService';
@@ -335,6 +335,27 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   const panelLevel = tRaw ? tournamentLevel(tRaw) : 0;
   const panelBlinds = tRaw ? tournamentBlinds(tRaw) : null;
 
+  /**
+   * ── THE STRUCTURE TAB WAS CRASHING THE PANEL ────────────────────────────
+   *
+   * `tournaments.blind_structure` is a TEXT column holding a JSON array, and
+   * TournamentService.getTournament returns the raw row without parsing — but
+   * the `Tournament` type declares the field as `BlindLevel[]`, so TypeScript
+   * had nothing to say about it. At runtime it is a STRING: `.length` is the
+   * character count, which is truthy, and `.map` is not a function. Opening
+   * Structure on any MTT threw and took the whole panel down.
+   *
+   * Every other consumer already guards — TournamentInfoPanel with asArray,
+   * TablePage and the lobby table through parseBlindStructure. This was the
+   * last one that did not. Array input is passed through so a caller that
+   * ever does parse for us keeps working.
+   */
+  const panelBlindLevels = useMemo<BlindLevel[]>(() => {
+    const raw = tournament?.blind_structure as unknown;
+    if (Array.isArray(raw)) return raw as BlindLevel[];
+    return (parseBlindStructure(typeof raw === 'string' ? raw : null) as BlindLevel[] | null) ?? [];
+  }, [tournament?.blind_structure]);
+
   const cashRaw = isCash ? (entry.raw as LobbyTableRow) : null;
   /* One helper, so the panel and the card behind it cannot quote different
      buy-ins for the same table — see src/lib/cashBuyIn.ts for why the raw
@@ -474,15 +495,24 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   <div>
                     <dt>Players</dt>
                     <dd className="glp__mono">
-                      {entry.players} / {entry.capacity}
+                      {/* `|| '-'` to match the tournament row below: a table
+                          with no seat count rendered "3 / 0", which reads as a
+                          zero-seat table rather than an unknown one. */}
+                      {entry.players} / {entry.capacity || '-'}
                     </dd>
                   </div>
-                  {settings?.ante_enabled === true && (
+                  {/* COLUMNS, not the settings blob. `settings` is {} on every
+                      live cash table, so this branch never fired while the CARD
+                      showed an ANTE medallion read off the column — the row and
+                      the panel you open by clicking it disagreed about the same
+                      table. Falls back to the blob for a table created through
+                      the older modal, which does write it. */}
+                  {(cashRaw?.ante_enabled === true || settings?.ante_enabled === true) && (
                     <div>
                       <dt>Ante</dt>
                       <dd className="glp__mono">
-                        {Number(settings.ante_amount) > 0
-                          ? Number(settings.ante_amount).toLocaleString()
+                        {Number(cashRaw?.ante ?? settings?.ante_amount) > 0
+                          ? Number(cashRaw?.ante ?? settings?.ante_amount).toLocaleString()
                           : 'On'}
                       </dd>
                     </div>
@@ -623,7 +653,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                     <div>
                       <dt>Starts</dt>
                       <dd>
-                        {entry.startTime
+                        {entry.startTime && Number.isFinite(new Date(entry.startTime).getTime())
                           ? new Date(entry.startTime).toLocaleString('en-US', {
                               month: 'short',
                               day: 'numeric',
@@ -687,7 +717,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
               {entry.kind === 'mtt' && tab === 'structure' && (
                 <section className="glp__section">
                   <h3 className="glp__h">Blind Structure</h3>
-                  {tournament?.blind_structure?.length ? (
+                  {panelBlindLevels.length ? (
                     <div className="glp__tablewrap">
                       <table className="glp__table">
                         <thead>
@@ -700,7 +730,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                           </tr>
                         </thead>
                         <tbody>
-                          {tournament.blind_structure.map((l, i) =>
+                          {panelBlindLevels.map((l, i) =>
                             l.isBreak ? (
                               <tr key={i} className="glp__break">
                                 <td colSpan={5}>Break</td>
@@ -748,7 +778,11 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                                 {Number(tournament.prize_pool) > 0 && (
                                   <td>
                                     {Math.floor(
-                                      (Number(tournament.prize_pool) * p.percentage) / 100
+                                      ((Number(tournament.prize_pool) || 0) *
+                                        (Number.isFinite(Number(p.percentage))
+                                          ? Number(p.percentage)
+                                          : 0)) /
+                                        100
                                     ).toLocaleString()}
                                   </td>
                                 )}

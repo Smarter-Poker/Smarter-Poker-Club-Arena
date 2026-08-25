@@ -17,7 +17,12 @@
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import { isInLateRegistration } from '../../utils/tournamentFilters';
 import { stakesLabel as stakesLabelFor } from '../../lib/bettingStructure';
-import { blindLevelMinutes, parseBlindStructure, tournamentLevel } from './tournamentFigures';
+import {
+  blindLevelAt,
+  blindLevelMinutes,
+  parseBlindStructure,
+  tournamentLevel,
+} from './tournamentFigures';
 import { cashBuyInLabel, cashBuyInRange } from '../../lib/cashBuyIn';
 import { spinMultiplierLabel } from '../../utils/spinReveal';
 import { SPIN_TIERS } from '../../config/spinSpec';
@@ -163,6 +168,22 @@ const TOURNEY_VARIANT_KEYS: Record<string, string> = {
   PLO: 'plo4',
 };
 
+/**
+ * A chip total, printed to the cent only when it HAS cents.
+ *
+ * Tournament prices are whole by construction (splitBuyIn keeps the total
+ * whole and takes the fee out of it), but a buy-in plus a fractional fee can
+ * land on 1.10, and rounding that to "1" understates what the player pays.
+ */
+export function formatChipTotal(n: number): string {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return '0';
+  const rounded = Math.round(v * 100) / 100;
+  return Number.isInteger(rounded)
+    ? rounded.toLocaleString('en-US')
+    : rounded.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 export function variantDisplay(variant?: string): { short: string; long: string } {
   const key = (variant || '').toLowerCase();
   return (
@@ -251,9 +272,8 @@ export interface CashFeatureSource {
 const col = (v: unknown): boolean | undefined =>
   v === true ? true : v === false ? false : undefined;
 
-export function cashRuleMedallions(row: CashFeatureSource, name: string): RuleMedallion[] {
+export function cashRuleMedallions(row: CashFeatureSource): RuleMedallion[] {
   const s = parseTableSettings(row.settings);
-  const n = (name || '').toLowerCase();
   const rules: RuleMedallion[] = [];
 
   /* ServerTableEngineBase: `(run_it_twice ?? true) && (allow_run_it_twice ??
@@ -506,7 +526,27 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
       return { key: 'late_reg', label: 'Late Reg' };
     return { key: 'running', label: 'Running' };
   }
-  if (status === 'REGISTERING' || status === 'ANNOUNCED') {
+  /**
+   * The lobby query fetches `.in('status', ['REGISTERING','RUNNING','LATE_REG',
+   * 'STARTING_SOON'])`, and two of those four had no branch here — they fell
+   * all the way to the default and came back "Registering". For a Spin or a
+   * Heads-Up that was worse than a wrong badge: the whole seat-first block
+   * below was skipped, so a LATE_REG seat-first game never said Filling or
+   * Running and never sank to the bottom of the board.
+   *
+   * LATE_REG is late registration by name, and a seat-first game does not have
+   * one — it falls through to the seat logic, which is the right answer for it.
+   */
+  if (status === 'LATE_REG' || status === 'LATE_REGISTRATION') {
+    if (classifyTournament(t) === 'mtt') return { key: 'late_reg', label: 'Late Reg' };
+  }
+  if (
+    status === 'REGISTERING' ||
+    status === 'ANNOUNCED' ||
+    status === 'LATE_REG' ||
+    status === 'LATE_REGISTRATION' ||
+    status === 'STARTING_SOON'
+  ) {
     /**
      * SEAT-FIRST GAMES DO NOT HAVE A START TIME (Dan 2026-08-23: "THE STATUS
      * IS BROKEN SAYS 'STARTING SOON' EVEN FOR GAMES THAT ARE FULL").
@@ -549,11 +589,9 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
   return { key: 'registering', label: 'Registering' };
 }
 
-/** Can the player still enter this tournament (register or late register)? */
-export function tournamentJoinable(t: LobbyTournamentRow): boolean {
-  const st = tournamentStatus(t);
-  return st.key === 'registering' || st.key === 'starting_soon' || st.key === 'late_reg';
-}
+/* tournamentJoinable was here and is deleted: an exported predicate with no
+   caller anywhere in src/ or tests/. seatFirstJoinable covers the only
+   question the lobby actually asks. */
 
 // ─── Adapters ──────────────────────────────────────────────────────────────
 export function cashEntry(t: LobbyTableRow): LobbyEntry {
@@ -590,7 +628,7 @@ export function cashEntry(t: LobbyTableRow): LobbyEntry {
     status: st.key,
     statusLabel: st.label,
     live: (t.current_players || 0) > 0,
-    rules: cashRuleMedallions(t, t.name),
+    rules: cashRuleMedallions(t),
     raw: t,
   };
 }
@@ -608,7 +646,15 @@ export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 's
     variantLabel: v.long,
     stakesLabel: null,
     stakesValue: total,
-    buyInLabel: total <= 0 ? 'FREE' : Math.round(total).toLocaleString(),
+    /**
+     * NOT Math.round (2026-08-25). Fees became fractional the same day — a
+     * 1-chip game is 0.90 + 0.10, so `total` is 1.10 and rounding printed "1"
+     * on a card whose player is charged 1.10. The panel behind the card uses
+     * formatBuyIn and showed the real figure, so the two surfaces quoted
+     * different prices for the same seat. A whole total still prints whole,
+     * because that is what it is.
+     */
+    buyInLabel: total <= 0 ? 'FREE' : formatChipTotal(total),
     buyInValue: total,
     guaranteeLabel:
       (Number(t.guaranteed_prize) || 0) > 0
@@ -674,15 +720,28 @@ export function lateRegEndMs(t: LobbyTournamentRow): number | null {
   if (lateLevels > 0) {
     const structure = parseBlindStructure(t.blind_structure);
     if (structure) {
-      const cur = tournamentLevel(t);
+      /**
+       * INDEXES, NOT DISPLAY NUMBERS (2026-08-25).
+       *
+       * `late_reg_levels` counts 0-BASED indices: isInLateRegistration keeps
+       * the door open while `current_level < late_reg_levels`, and
+       * TournamentManagerBase closes it on `currentLevel >= cap`. This block
+       * compared that cap against tournamentLevel(), the 1-based DISPLAY
+       * number, so on the final late-reg level it added the remainder of the
+       * current level PLUS an entire extra level that registration would
+       * never see. The card counted down past the moment the RPC began
+       * refusing entries, and Register was dead for the difference.
+       */
+      const curIdx = Math.max(0, Number(t.current_level) || 0);
       const levelBegun = new Date(t.level_started_at || t.started_at || '').getTime();
-      if (Number.isFinite(levelBegun) && cur <= lateLevels) {
-        // Rest of the current level, then every configured level through the
-        // last late-reg level. A level with no configured duration adds 0 —
+      if (Number.isFinite(levelBegun) && curIdx < lateLevels) {
+        // Rest of the level now running, then every remaining level up to but
+        // NOT including the cap. A level with no configured duration adds 0 —
         // the estimate degrades toward "sooner", never invents time.
-        let end = levelBegun + blindLevelMinutes(structure, cur) * 60000;
-        for (let lvl = cur + 1; lvl <= lateLevels; lvl++)
-          end += blindLevelMinutes(structure, lvl) * 60000;
+        // blindLevelMinutes takes a 1-based level, hence the +1 on each index.
+        let end = levelBegun + blindLevelMinutes(structure, curIdx + 1) * 60000;
+        for (let idx = curIdx + 1; idx < lateLevels; idx++)
+          end += blindLevelMinutes(structure, idx + 1) * 60000;
         candidates.push(end);
       }
     }
@@ -809,6 +868,24 @@ export function levelSpeedLabel(t: LobbyTournamentRow): string | null {
  * fast", "1000 chips … deep stack"). A Spin at 300 chips into 10/20 is 15bb
  * and plays like a turbo; the same 3-minute levels at 5,000 chips do not.
  */
+/**
+ * How many big blinds the starting stack is worth at level 1, or 0 when the
+ * row cannot say. Exported so the Format column can SORT on the depth instead
+ * of on the word — 'Deepstack' < 'Hyper' < 'Standard' < 'Turbo' is the
+ * alphabet, not a speed, and an empty string floated every cash row to the top
+ * of the ALL tab (the same defect COL_TSTACK uses Infinity to avoid).
+ */
+export function stackDepthBB(entry: LobbyEntry): number {
+  if (entry.kind === 'cash') return 0;
+  const t = entry.raw as LobbyTournamentRow;
+  const chips = Number(t.starting_chips) || 0;
+  if (chips <= 0) return 0;
+  const structure = parseBlindStructure(t.blind_structure);
+  const first = structure ? blindLevelAt(structure, 1) : undefined;
+  const firstBig = Number(first?.big_blind ?? first?.bigBlind ?? 0) || 0;
+  return firstBig > 0 ? chips / firstBig : 0;
+}
+
 export function stackDepthLabel(entry: LobbyEntry): string | null {
   if (entry.kind === 'cash') return null;
   const t = entry.raw as LobbyTournamentRow;
@@ -818,7 +895,11 @@ export function stackDepthLabel(entry: LobbyEntry): string | null {
   const chips = Number(t.starting_chips) || 0;
   if (chips <= 0) return null;
   const structure = parseBlindStructure(t.blind_structure);
-  const first = structure?.[0];
+  /* Through blindLevelAt, like every other reader in this folder. Reading
+     `structure[0]` raw agrees with it only while the array happens to be
+     index-ordered, and tournamentFigures exists precisely so there is one
+     convention rather than two. */
+  const first = structure ? blindLevelAt(structure, 1) : undefined;
   const firstBig = Number(first?.big_blind ?? first?.bigBlind ?? 0) || 0;
   if (firstBig <= 0) return null;
 
@@ -857,13 +938,30 @@ export function seatsTakenLabel(entry: LobbyEntry): string {
    a table named "PLO6 1/2" kept its whole name as the SUBTITLE, so the card
    printed "PLO6 1/2" twice, once per line. The class now covers every variant
    the platform deals. */
+/**
+ * `6\+\b` could never match: `+` and the space after it are both non-word
+ * characters, so there is no word boundary between them and the alternative
+ * always failed. A short-deck table called "6+ 1/2 Deep" then failed
+ * STAKES_HEAD too (it starts with "6" but the next character is "+", not "/"),
+ * so the entire name came back as the subtitle and the card printed it twice —
+ * the exact duplication the plo6 fix was for.
+ *
+ * `(?!\w)` instead of `\b` asserts "not followed by a word character", which
+ * is true after a `+` and true at end-of-string, and behaves identically to
+ * `\b` for every alphabetic alternative.
+ */
 const VARIANT_HEAD =
-  /^\s*(nlhe?|plo[4568]?|flh|flo8?|limit[_\s-]?(?:holdem|omaha)|pineapple|short[\s_-]?deck|6\+)\b/i;
+  /^\s*(nlhe?|no[\s-]?limit[\s-]?hold(?:'|’)?em|plo[4568]?|pot[\s-]?limit[\s-]?omaha|flh|flo8?|limit[_\s-]?(?:holdem|omaha)|pineapple|short[\s_-]?deck|6\+)(?!\w)/i;
 const STAKES_HEAD = /^\s*\$?\d+(?:\.\d+)?\s*\/\s*\$?\d+(?:\.\d+)?/;
 
 export function cashTitleLines(entry: LobbyEntry): { headline: string; subtitle: string | null } {
   const headline = [entry.gameLabel, entry.stakesLabel].filter(Boolean).join(' ').trim();
+  /* Strip in BOTH orders. A host may type "NLH 1/2 Late Night" or
+     "1/2 NLH Late Night", and stripping only variant-then-stakes left the
+     variant in the subtitle for the second one, so the card said NLH twice. */
   const rest = String(entry.name || '')
+    .replace(VARIANT_HEAD, '')
+    .replace(STAKES_HEAD, '')
     .replace(VARIANT_HEAD, '')
     .replace(STAKES_HEAD, '')
     /* Separators written as escapes, not literals: the en and em dash are here
@@ -892,6 +990,17 @@ export function cashTitleLines(entry: LobbyEntry): { headline: string; subtitle:
 export function mttPhaseText(entry: LobbyEntry, now: number): string | null {
   if (entry.status === 'registering' || entry.status === 'starting_soon') {
     const startMs = entry.startTime ? new Date(entry.startTime).getTime() : NaN;
+    /**
+     * ZERO IS A LEGITIMATE READING; A MISSING CLOCK IS NOT.
+     *
+     * An audit on 2026-08-25 flagged the frozen "Starts In 0:00" on an overdue
+     * MTT as a defect and I changed it to a phrase. That was wrong, and the
+     * suite caught it: this behaviour was RE-PINNED on 2026-08-24 in Dan's own
+     * words — "keep the clock running at all times, don't switch back and
+     * forth from a clock to a phrase". A card that has been counting down must
+     * not flip to prose at the exact moment the number matters most. Only a
+     * start time that cannot be parsed at all has nothing to count.
+     */
     if (Number.isFinite(startMs)) return `Starts In ${formatClock(Math.max(0, startMs - now))}`;
     return 'Starting Soon';
   }
@@ -923,10 +1032,17 @@ export function classifyTournament(t: LobbyTournamentRow): 'mtt' | 'spin' | 'sng
   if (v === 'spin') return 'spin';
   if (v === 'sng') return 'sng';
   // Present and not a spin means NOT A SPIN, whatever the name says.
-  if (v) return (t.max_players || 0) <= 10 ? 'sng' : 'mtt';
+  /* A MISSING cap is not a small field. Dan 2026-08-24: "THERE ARE NO
+     LIMITATIONS ON THE AMOUNT OF PLAYERS THAT CAN REGISTER", so an unlimited
+     MTT carries max_players null — and `(null || 0) <= 10` called every one of
+     them a Heads-Up: wrong tab, seat-first status text, "12/-" for the field,
+     and Sit Down instead of Register. A cap only means something when it is a
+     real number. */
+  if (v) return t.max_players != null && t.max_players > 0 && t.max_players <= 10 ? 'sng' : 'mtt';
 
   const n = (t.name || '').toLowerCase();
   if (n.includes('spin')) return 'spin';
-  if (n.includes('sng') || (t.max_players || 0) <= 10) return 'sng';
+  if (n.includes('sng') || (t.max_players != null && t.max_players > 0 && t.max_players <= 10))
+    return 'sng';
   return 'mtt';
 }

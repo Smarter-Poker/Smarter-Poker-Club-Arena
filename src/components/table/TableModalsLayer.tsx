@@ -265,8 +265,19 @@ export interface TableModalsLayerProps {
 
   // Rabbit Hunt
   isRabbitAvailable: boolean;
-  currentBoard: Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>;
-  onRabbitReveal: () => Promise<Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>>;
+  /**
+   * Cards a reveal will show, as counted by the SERVER. Replaces the old
+   * `currentBoard` prop, which was only ever passed [] — so every reveal
+   * claimed five cards regardless of the street the hand actually ended on.
+   */
+  rabbitCardsAvailable: number;
+  onRabbitReveal: () => Promise<{
+    success: boolean;
+    cards?: Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>;
+    error?: string;
+    source?: string;
+    diamondsSpent?: number;
+  }>;
 
   // Leaderboard
   showLeaderboard: boolean;
@@ -514,7 +525,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     onConfirmBuyIn,
     // Rabbit Hunt
     isRabbitAvailable,
-    currentBoard,
+    rabbitCardsAvailable,
     onRabbitReveal,
     // Leaderboard
     showLeaderboard,
@@ -1048,8 +1059,8 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
       {!isHandInProgress && isRabbitAvailable && (
         <RabbitHunt
           isAvailable={isRabbitAvailable}
+          cardsAvailable={rabbitCardsAvailable}
           onReveal={onRabbitReveal}
-          currentBoard={currentBoard}
         />
       )}
 

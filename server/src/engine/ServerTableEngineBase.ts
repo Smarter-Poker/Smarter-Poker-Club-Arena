@@ -371,6 +371,33 @@ export abstract class ServerTableEngineBase {
   /** Remaining deck cards at hand completion — used for Rabbit Hunt reveal */
   protected currentHandRabbitCards: import('../types.js').Card[] = [];
   /**
+   * Rabbit hunt offers, keyed by hand number. Dan 2026-08-25.
+   *
+   * These cards are NEVER broadcast. They are held server-side and released to
+   * one authenticated player at a time by revealRabbitHunt(), after
+   * fn_consume_rabbit_hunt has actually taken payment.
+   *
+   * Keyed by hand rather than kept in a single field because a player has a few
+   * seconds to click and the next hand may already be dealing by the time they
+   * do — a single field is wiped at the next deal and the purchase would return
+   * either nothing or, worse, the NEXT hand's undealt cards. Trimmed to the
+   * last two hands at capture, so it stays bounded on a table running for days.
+   *
+   * `eligible` is who was dealt into that hand: a spectator cannot buy a look
+   * at a hand they were never part of, and `revealed` makes a paid reveal
+   * repeatable for the buyer without charging them twice.
+   */
+  protected rabbitHuntOffers: Map<
+    number,
+    {
+      cards: import('../types.js').Card[];
+      boardLength: number;
+      eligible: Set<string>;
+      revealed: Set<string>;
+      offeredAt: number;
+    }
+  > = new Map();
+  /**
    * RIT VERIFIER FIX 2026-08-21: number of boards dealt by Run It Twice this
    * hand (0 = normal hand). Every RIT-resolved hand tripped the state
    * verifier's COMMUNITY_CARD_COUNT warning at showdown — the multi-board

@@ -210,6 +210,7 @@ import GameServerAPI, {
   showHand as serverShowHand,
   toggleStraddle as serverToggleStraddle,
   postBBToEnter as serverPostBBToEnter,
+  requestRabbitHunt,
 } from '../services/GameServerAPI';
 import { retryAsync } from '../utils/retryAsync';
 //monteCarloEquity import removed — server-authoritative
@@ -3345,37 +3346,58 @@ export default function TablePage({
     };
   }, [tableId]);
 
-  // Rabbit Hunt state
+  // ── RABBIT HUNT (Dan 2026-08-25) ────────────────────────────────────────
+  // The client no longer holds the cards, because it never should have. The
+  // engine used to broadcast all five remaining cards to every socket at the
+  // table the instant a hand ended; this page cached them in a ref and the
+  // RabbitHunt component decided for itself whether to bill. The cards were on
+  // every opponent's machine before anyone clicked, and free to anyone reading
+  // the websocket.
+  //
+  // What arrives now is an availability signal — how many cards a reveal would
+  // show, and nothing else. The cards come back in the response to
+  // POST /rabbit-hunt, which charges first (VIP monthly pool, then a purchased
+  // pack, then five diamonds) and answers only the caller that paid.
   const [isRabbitAvailable, setIsRabbitAvailable] = useState(false);
-  const [currentBoard, setCurrentBoard] = useState<
-    Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>
-  >([]);
-  /** Server-provided remaining deck cards for authentic rabbit hunt reveal */
-  const serverRabbitCardsRef = useRef<Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>>([]);
+  const [rabbitCardsAvailable, setRabbitCardsAvailable] = useState(0);
+  const rabbitHandNumberRef = useRef<number | null>(null);
 
-  // Handle rabbit hunt reveal — uses real server-dealt deck cards
-  const handleRabbitReveal = async (): Promise<
-    Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>
-  > => {
-    const cardsNeeded = 5 - currentBoard.length;
-    if (cardsNeeded <= 0) return [];
+  const handleRabbitReveal = async (): Promise<{
+    success: boolean;
+    cards?: Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>;
+    error?: string;
+    source?: string;
+    diamondsSpent?: number;
+  }> => {
+    if (!tableId) return { success: false, error: 'Table Not Ready' };
 
-    // Use server-provided cards (authentic from the actual deck)
-    if (serverRabbitCardsRef.current.length > 0) {
-      const cards = serverRabbitCardsRef.current.slice(0, cardsNeeded);
-      // Clear after reveal (one-time use)
-      serverRabbitCardsRef.current = [];
-      setIsRabbitAvailable(false);
-      return cards;
+    const result = await requestRabbitHunt(tableId, rabbitHandNumberRef.current ?? undefined);
+    if (!result.success || !result.cards?.length) {
+      // Leave the offer up: a refusal for "Not Enough Diamonds" should not also
+      // remove the button, or topping up cannot be followed by a retry.
+      return { success: false, error: result.error };
     }
 
-    // P2-2 FIX: Do NOT fabricate random cards when the server didn't provide
-    // them (edge case: stale state, reconnection). On a real-money platform
-    // inventing a card outcome misrepresents the deck, so short-circuit the
-    // reveal instead — surface "unavailable" and return no cards.
-    toast.error('Rabbit Hunt unavailable - no card data from server.');
-    setIsRabbitAvailable(false);
-    return [];
+    // Server card format (hearts/diamonds/clubs/spades) → client shorthand.
+    const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
+      hearts: 'h',
+      diamonds: 'd',
+      clubs: 'c',
+      spades: 's',
+      h: 'h',
+      d: 'd',
+      c: 'c',
+      s: 's',
+    };
+    return {
+      success: true,
+      cards: result.cards.map((c) => ({
+        rank: String(c.rank),
+        suit: suitMap[String(c.suit)] || 'h',
+      })),
+      source: result.source,
+      diamondsSpent: result.diamonds_spent,
+    };
   };
 
   // Leaderboard state
@@ -4893,26 +4915,17 @@ export default function TablePage({
         return;
       }
 
-      // Rabbit Hunt: Server sends remaining deck cards after hand completes
+      // Rabbit Hunt: an AVAILABILITY SIGNAL. It carries no cards — see the
+      // handleRabbitReveal comment above for why it used to and no longer does.
       if (eventType === 'rabbit_hunt_available') {
-        const rabbitCards = (handState.rabbit_cards as any[]) || [];
-        if (rabbitCards.length > 0 && heroFoldedInCurrentHandRef.current) {
-          // Convert server card format (hearts/diamonds/clubs/spades) to client shorthand (h/d/c/s)
-          const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
-            hearts: 'h',
-            diamonds: 'd',
-            clubs: 'c',
-            spades: 's',
-            h: 'h',
-            d: 'd',
-            c: 'c',
-            s: 's',
-          };
-          const converted = rabbitCards.map((c: any) => ({
-            rank: String(c.rank),
-            suit: suitMap[c.suit] || 'h',
-          }));
-          serverRabbitCardsRef.current = converted;
+        const available = Number(handState.cards_available ?? 0);
+        // Dan 2026-08-25: the offer goes to everyone who was in the hand, not
+        // only to players who folded. Gating on heroFolded meant the player who
+        // won the pot when everyone else folded — the one person most likely to
+        // wonder what was coming — was never offered a rabbit hunt at all.
+        if (available > 0) {
+          rabbitHandNumberRef.current = Number(handState.hand_number ?? 0) || null;
+          setRabbitCardsAvailable(available);
           setIsRabbitAvailable(true);
         }
         return;
@@ -9116,8 +9129,8 @@ export default function TablePage({
       heroFoldedInCurrentHandRef.current = false; // Reset for new hand
       // Rabbit Hunt: Reset for new hand
       setIsRabbitAvailable(false);
-      serverRabbitCardsRef.current = [];
-      setCurrentBoard([]);
+      setRabbitCardsAvailable(0);
+      rabbitHandNumberRef.current = null;
       // NOTE: the deal animation is triggered by the discrete HAND_STARTED
       // handler (single source). AUDIT FIX 2026-07-19: the redundant bump that
       // used to live here was removed — now that handNumber advances via the
@@ -12497,19 +12510,13 @@ export default function TablePage({
                 </div>
               )}
 
-            {/* Rabbit Hunt — shows AFTER hand completes, not during */}
-            {!tableState.isHandInProgress && isRabbitAvailable && (
-              <div className="control-strip control-strip--transparent">
-                <button
-                  className="control-strip__btn"
-                  title="Rabbit Hunt - reveal remaining cards"
-                  onClick={handleRabbitReveal}
-                >
-                  <span className="control-strip__icon">R</span>
-                  <span className="control-strip__label">Rabbit Hunt</span>
-                </button>
-              </div>
-            )}
+            {/* Rabbit Hunt lives in TableModalsLayer, which renders the
+                <RabbitHunt> component that actually SHOWS the cards.
+                A second button used to sit here calling handleRabbitReveal
+                directly and throwing the result away — it spent the reveal (and,
+                now, the player's diamonds) and displayed nothing. Removed
+                2026-08-25; the twin of it was removed from the ActionPanel on
+                2026-08-15 for exactly the same reason. There is one button. */}
 
             {/* ─── ACTION PANEL — Premium 3-button layout ─── */}
             {/* QuickActionsBar REMOVED — Auto-Rebuy is a hamburger menu setting,
@@ -13408,7 +13415,7 @@ export default function TablePage({
         }}
         // Rabbit Hunt
         isRabbitAvailable={isRabbitAvailable}
-        currentBoard={currentBoard}
+        rabbitCardsAvailable={rabbitCardsAvailable}
         onRabbitReveal={handleRabbitReveal}
         // Leaderboard
         showLeaderboard={showLeaderboard}

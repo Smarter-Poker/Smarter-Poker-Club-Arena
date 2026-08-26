@@ -10,6 +10,7 @@
 
 import { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { supabase } from '../services/supabase.js';
+import { planSatelliteAwards } from './satelliteAwardPlan.js';
 import { type BalancerTable, type MoveInstruction } from '../engine/TableBalancer.js';
 import { reportError } from '../services/errorReporter.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
@@ -501,14 +502,29 @@ export class TournamentManager extends TournamentManagerEliminations {
     // target (ticketCost 0) seats stay 0 so the whole pool falls through to
     // the cash path below — advertised seats into a vanished target would
     // otherwise pay nothing at all.
-    const configuredSeats = Math.max(
-      0,
-      Math.floor(Number((tournament as { satellite_seats?: unknown })?.satellite_seats) || 0)
-    );
-    const seats =
-      ticketCost > 0 ? (configuredSeats > 0 ? configuredSeats : Math.floor(pool / ticketCost)) : 0;
-    const awardCount = Math.min(seats, ranked.length);
-    const remainder = Math.round((pool - awardCount * ticketCost) * 100) / 100;
+    /* THE ARITHMETIC LIVES IN satelliteAwardPlan.ts (2026-08-26).
+       Same numbers, same order, now reachable without a database. This method
+       needs four Supabase round trips and a running tournament to enter, which
+       is why the decisions that hand out real chips had no test coverage at
+       all while carrying three separate fixed money bugs. It is a function
+       now, pinned by satelliteAwardPlan.test.ts. */
+    const plan = planSatelliteAwards({
+      pool,
+      ticketCost,
+      configuredSeats: Number((tournament as { satellite_seats?: unknown })?.satellite_seats ?? 0),
+      finisherCount: ranked.length,
+    });
+    const awardCount = plan.awardCount;
+    const remainder = plan.remainder;
+
+    /* A GUARANTEE THAT THE FIELD DID NOT FUND IS THE HOUSE PAYING, and that
+       should be visible rather than inferred from a ledger later. This is the
+       exposure a `satelliteSeats` promise deliberately accepts. */
+    if (plan.overlay > 0) {
+      console.log(
+        `[Satellite:${this.tournamentId.slice(0, 8)}] guarantee overlay ${plan.overlay} chips: ${awardCount} seat(s) at ${ticketCost} against a ${pool} pool`
+      );
+    }
 
     // A3 FIX (2026-07-28): satellite cash payouts are re-driveable. Errors are
     // swallowed by the caller, which leaves the tournament stuck in COMPLETING;

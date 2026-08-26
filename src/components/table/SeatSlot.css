@@ -1290,16 +1290,50 @@
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
 
-/* SHOWDOWN REVEAL — same anchor, grown and laid flat so the ranks read.
-   The cluster's base size is deliberately tiny, so the reveal scales 1.6x,
-   widens the slide to a readable 0.55 step, flattens the splay to a third
-   (--vh-rot-scale) and lifts ABOVE the nameplate (z 14 clears the plate's 3
-   and the badges' 5-6) for the duration. Back to normal next hand. */
+/* ═══ SHOWDOWN REVEAL — FLAT, SEPARATED, AND NEVER BEHIND THE BANNER ═══════
+   Dan 2026-08-26 (mobile pass, items 1 and 6):
+     "when all cards are shown down they need to be shown down, FLAT and not
+      overlapped"
+     "when the player on the top showed down their hand it was hidden behind
+      the BBJ. Player at the top should reveal their hand BELOW them."
+
+   Three things change at showdown, and only at showdown:
+
+   FLAT      --vh-rot-scale: 0 kills the splay outright. It was 0.33, which
+             still left every card visibly tilted — fine for a face-down
+             cluster that only has to say "this player has a hand", wrong for
+             the one moment the ranks have to be read.
+   SEPARATED --vh-step-f: 1.12 is a full card width plus a 12% gap, so no
+             card covers any part of another. It was 0.55, i.e. each card
+             still hid nearly half of its neighbour.
+   IN FRONT  z 14 clears the plate (3) and the badges (5-6).
+
+   The container also stops being width-constrained by the resting fan: at
+   1.12 step the row is genuinely (n x 1.12) card widths wide, which is what
+   --vh-fan-w already computes. */
 .seat__cards--opponent.seat__cards--revealed {
   --vh-reveal: 1.6;
-  --vh-step-f: 0.55;
-  --vh-rot-scale: 0.33;
+  --vh-step-f: 1.12;
+  --vh-rot-scale: 0;
   z-index: 14;
+}
+
+/* THE TOP ROW REVEALS DOWNWARD.
+   A top-cap seat sits under the Bad Beat Jackpot banner with no felt above
+   it, so a reveal anchored beside/above the avatar is drawn straight into
+   the banner — which is exactly the screenshot. These seats drop their
+   revealed hand BELOW the nameplate instead, onto the felt, where there is
+   nothing to collide with. Centred on the pod rather than mirrored, because
+   a centred row under a top seat cannot reach either neighbour.
+
+   Scoped to `.seat-wrapper--top .seat` (0-3-0 with the class pair below) so
+   it beats the generic left/right anchors without touching any other seat. */
+.seat-wrapper--top .seat .seat__cards--opponent.seat__cards--revealed {
+  top: auto;
+  bottom: calc(-1 * var(--vh-card-h) - 6px);
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
 }
 
 /* The reveal GROWS instead of snapping: the size/position deltas between the
@@ -3344,6 +3378,16 @@
 .seat--cards-left .seat__cards--opponent .seat__card {
   left: auto;
   right: calc(var(--vh-i, 0) * var(--vh-step));
+}
+
+/* The top row's REVEALED hand is centred under the pod (see the reveal rule
+   further up), so it must lay its cards left-to-right regardless of which
+   half of the table the seat sits on — a mirrored row would run out of the
+   centred container. 0-4-0, so it wins over the `.seat--cards-left` pair
+   above without disturbing the face-down cluster, which keeps its mirroring. */
+.seat-wrapper--top .seat .seat__cards--revealed .seat__card {
+  left: calc(var(--vh-i, 0) * var(--vh-step));
+  right: auto;
 }
 
 /* ───────────────────────────────────────────────────────────────────────────

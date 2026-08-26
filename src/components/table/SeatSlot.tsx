@@ -1444,7 +1444,7 @@ export const SeatSlot = memo(
             }
           >
             <img
-              src="/images/icons/empty-button.png"
+              src={`${import.meta.env.BASE_URL}images/icons/empty-button.png`}
               alt={isHeroReservedSeat ? 'Your reserved seat' : 'Empty seat'}
               className="seat__empty-img"
               draggable={false}
@@ -1471,7 +1471,7 @@ export const SeatSlot = memo(
         >
           {/* 2026-08-26: replaced +/SIT text stack with the SIT coin image. */}
           <img
-            src="/images/icons/sit-button.png"
+            src={`${import.meta.env.BASE_URL}images/icons/sit-button.png`}
             alt="Sit down"
             className="seat__empty-img seat__empty-img--sit"
             draggable={false}

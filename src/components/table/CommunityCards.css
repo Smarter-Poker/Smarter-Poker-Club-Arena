@@ -281,6 +281,63 @@
 
 /* ccFlopDeal removed 2026-08-19 - superseded by ccFlopLand + ccFlopFanOpen. */
 
+/* =================================================================================
+   RABBIT HUNT REVEAL -- POKERBROS PARITY 2026-08-26
+   =================================================================================
+
+   Timed against the reference recording (RABBIT HUNT.MOV, 30fps):
+
+     frame 0      all undealt slots show card BACKS in a hard cut -- full size,
+                  no entrance animation, no stagger. (h_066: nothing -> five
+                  backs between two adjacent frames.)
+     0 - 120ms    backs hold face down (h_066-h_069, ~4 frames).
+     120 - 290ms  ALL cards flip together, an edge-on horizontal turn
+                  (h_069 backs narrowing -> h_071-072 edge-on slivers ->
+                  h_073-074 faces widening).
+     290 - 360ms  faces overshoot slightly larger and settle (h_074-h_076).
+
+   No per-index delay anywhere: the reference flips the whole board in the
+   same video frame. The revealed board then simply stays until the next hand
+   clears it. */
+
+.community-cards__card--rabbit {
+  /* The 3D turn needs depth; the base card clips it flat. */
+  overflow: visible;
+  will-change: transform;
+}
+
+/* Resting state is FACE UP (rotateY(180)) so that if the animation never runs
+   -- reduced motion, animations off -- the paid reveal is simply correct
+   rather than five card backs forever. `both` is load-bearing: it holds the
+   0% frame (face DOWN) through the 120ms delay, so the back is what paints
+   first instead of a face that blinks out and re-animates. */
+.community-cards__rabbit-flip {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transform: rotateY(180deg);
+  will-change: transform;
+  animation: ccRabbitFlip calc(0.24s * var(--animation-speed, 1)) var(--cc-ease-smooth) both;
+  animation-delay: calc(0.12s * var(--animation-speed, 1));
+}
+
+@keyframes ccRabbitFlip {
+  0% {
+    transform: rotateY(0deg) scale(1);
+  }
+  /* Rotation completes first... */
+  71% {
+    transform: rotateY(180deg) scale(1);
+  }
+  /* ...then the settle pop the reference shows as the faces land. */
+  83% {
+    transform: rotateY(180deg) scale(1.06);
+  }
+  100% {
+    transform: rotateY(180deg) scale(1);
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    SLOW ALL-IN REVEAL — POKERBROS PARITY 2026-08-26
 
@@ -592,31 +649,12 @@
   opacity: 0.9;
 }
 
-/* =================================================================================
-   PLACEHOLDER CARD -- Empty card slot
+/* PLACEHOLDER CARD — DELETED 2026-08-26.
+   Dan: "remove the ghost place holders for the turn and river that appear
+   after the flop." The markup went with it (see CommunityCards.tsx), so these
+   rules described nothing. A stylesheet carrying rules for elements that no
+   longer exist is how the next reader concludes a feature is still there.
    ================================================================================= */
-
-.community-cards__placeholder {
-  width: var(--cc-card-w);
-  height: var(--cc-card-h);
-  border-radius: var(--cc-card-radius);
-  overflow: hidden;
-  opacity: 0.4;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.community-cards__placeholder .card-image {
-  width: 100% !important;
-  height: 100% !important;
-}
-
-.community-cards__placeholder .card-back {
-  width: 100%;
-  height: 100%;
-  border-radius: var(--cc-card-radius);
-}
 
 /* =================================================================================
    SEPARATORS -- Visual grouping between flop/turn/river
@@ -941,6 +979,7 @@
 @media (prefers-reduced-motion: reduce) {
   .community-cards__card--flop-deal,
   .community-cards__flip,
+  .community-cards__rabbit-flip,
   .community-cards__card--dealing,
   .community-cards__card--turn,
   .community-cards__card--river,

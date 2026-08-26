@@ -59,6 +59,9 @@ export function LiveHandReplayer2D({ handData, currentStep, totalSteps }: LiveHa
       pot: 0,
       playerStates: new Map(playerStates),
       actionDesc: 'Preflop Dealt',
+      lastActionPlayerId: null,
+      lastActionType: null,
+      lastActionAmount: null,
     });
 
     // Process actions
@@ -85,6 +88,9 @@ export function LiveHandReplayer2D({ handData, currentStep, totalSteps }: LiveHa
           pot: currentPot,
           playerStates: new Map(playerStates),
           actionDesc: `${currentStreet.toUpperCase()} Dealt`,
+          lastActionPlayerId: null,
+          lastActionType: null,
+          lastActionAmount: null,
         });
       }
 
@@ -106,6 +112,9 @@ export function LiveHandReplayer2D({ handData, currentStep, totalSteps }: LiveHa
         pot: currentPot,
         playerStates: new Map(playerStates),
         actionDesc: desc,
+        lastActionPlayerId: a.player_id,
+        lastActionType: a.action,
+        lastActionAmount: a.amount,
       });
 
       actionIdx++;
@@ -122,6 +131,9 @@ export function LiveHandReplayer2D({ handData, currentStep, totalSteps }: LiveHa
       pot: currentPot,
       playerStates: new Map(playerStates),
       actionDesc: 'Showdown',
+      lastActionPlayerId: null,
+      lastActionType: null,
+      lastActionAmount: null,
     });
 
     return { timeline: tl, seatPositions: positions };
@@ -172,10 +184,25 @@ export function LiveHandReplayer2D({ handData, currentStep, totalSteps }: LiveHa
                 style={{ left: `${pos.seatX}%`, top: `${pos.seatY}%` }}
               >
                 <div className="replayer-avatar">
-                  <div className="replayer-avatar-bg" />
+                  {p.avatar_url ? (
+                    <img src={p.avatar_url} alt="" className="replayer-avatar-img" />
+                  ) : (
+                    <div className="replayer-avatar-bg" />
+                  )}
                   {/* Position Badge */}
                   <div className="replayer-pos-badge">{p.position}</div>
+                  {/* Dealer Button */}
+                  {p.position === 'BTN' && <div className="replayer-dealer-btn">D</div>}
                 </div>
+
+                {/* Action Bubble */}
+                {currentState.lastActionPlayerId === p.user_id && currentState.lastActionType && (
+                  <div className="replayer-action-bubble">
+                    {currentState.lastActionType.toUpperCase()}{' '}
+                    {currentState.lastActionAmount ? currentState.lastActionAmount : ''}
+                  </div>
+                )}
+
                 <div className="replayer-seat-info">
                   <div className="replayer-seat-name">{p.username}</div>
                   <div className="replayer-seat-stack">

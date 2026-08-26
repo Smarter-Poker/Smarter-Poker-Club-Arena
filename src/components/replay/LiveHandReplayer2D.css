@@ -169,3 +169,149 @@
   font-weight: 500;
   border-top: 1px solid #374151;
 }
+
+.replayer-avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.replayer-dealer-btn {
+  position: absolute;
+  top: -4px;
+  right: -8px;
+  width: 14px;
+  height: 14px;
+  background: white;
+  border: 1px solid #333;
+  color: black;
+  border-radius: 50%;
+  font-size: 8px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  z-index: 20;
+}
+
+.replayer-action-bubble {
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: white;
+  color: black;
+  font-size: 8px;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  z-index: 30;
+  animation: popIn 0.2s ease-out;
+}
+.replayer-action-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 4px 4px 0;
+  border-style: solid;
+  border-color: white transparent transparent transparent;
+}
+
+@keyframes popIn {
+  0% {
+    transform: translate(-50%, 10px) scale(0.5);
+    opacity: 0;
+  }
+  100% {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+.replayer-table-scale-wrapper {
+  /* Use container queries or just flex to keep it centered */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.replayer-table-felt {
+  /* Improve scaling by using aspect ratio */
+  position: relative;
+  width: 600px;
+  height: 300px;
+  transform: scale(0.6);
+  transform-origin: center center;
+}
+@media (max-width: 500px) {
+  .replayer-table-felt {
+    transform: scale(0.45);
+  }
+}
+@media (max-width: 380px) {
+  .replayer-table-felt {
+    transform: scale(0.35);
+  }
+}
+
+/* Adjust sizes since we doubled the table base dimensions to look crisp */
+.replayer-card {
+  width: 30px;
+  height: 42px;
+  border-radius: 4px;
+}
+.replayer-seat {
+  width: 60px;
+  height: 60px;
+}
+.replayer-avatar {
+  width: 44px;
+  height: 44px;
+  border-width: 3px;
+}
+.replayer-pos-badge {
+  font-size: 9px;
+  padding: 2px 4px;
+  bottom: -6px;
+  right: -12px;
+}
+.replayer-seat-name {
+  font-size: 10px;
+  padding: 1px 4px;
+}
+.replayer-seat-stack {
+  font-size: 11px;
+}
+.replayer-bet {
+  font-size: 10px;
+  padding: 2px 6px;
+}
+.replayer-bet-chip {
+  width: 10px;
+  height: 10px;
+}
+.replayer-dealer-btn {
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  top: -6px;
+  right: -12px;
+}
+.replayer-action-bubble {
+  font-size: 11px;
+  padding: 4px 8px;
+  top: -30px;
+}
+.replayer-pot-pill {
+  font-size: 11px;
+  padding: 4px 8px;
+}

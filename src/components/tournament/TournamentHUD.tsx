@@ -272,6 +272,12 @@ export function TournamentHUD({
 
   return (
     <div
+      /* Named so the HUD layer can scale THIS BAR on small screens without
+         scaling its neighbour. The column used to carry the transform, which
+         also shrank the 44px stats icon beside it to ~33px — a transformed hit
+         area follows the transform — putting the one control Dan asked to be
+         reachable on the table screen under the minimum touch target. */
+      className="tournament-hud-bar"
       style={{
         display: 'inline-flex',
         alignItems: 'stretch',

@@ -15189,7 +15189,34 @@ export default function TablePage({
                   : 1
             );
           }
-          if (settingsUpdate.showStackInBB !== undefined) toggleV8Setting('show_stack_in_bb');
+          /**
+           * SET IT, DO NOT TOGGLE IT (fixed 2026-08-26).
+           *
+           * Dan 2026-08-25 (binding): "tournaments and cash games should ALWAYS
+           * be defaulted to actual totals unless the user changes the setting to
+           * BB." The control that promises to restore defaults was doing the
+           * opposite.
+           *
+           * `SettingsPanel`'s per-row toggle emits ONLY the key that changed
+           * (`{ [key]: !settings[key] }`), so a blind `toggleV8Setting` happened
+           * to be right there. Its Reset button emits the WHOLE
+           * `DEFAULT_TABLE_SETTINGS` object, in which `showStackInBB` is present
+           * and `false`. `!== undefined` is true for `false`, so Reset toggled:
+           * a player sitting on the correct chips default who tapped "Reset To
+           * Defaults" got big blinds turned ON across every seat, the pot and
+           * the raise panel, and it was persisted.
+           *
+           * Every sibling line in this handler passes the VALUE
+           * (`updateSetting('showPotOdds', settingsUpdate.showPotOdds)`); this
+           * was the only one that inverted instead. Compare against the current
+           * value so an idempotent update stays idempotent.
+           */
+          if (
+            settingsUpdate.showStackInBB !== undefined &&
+            settingsUpdate.showStackInBB !== v8Settings.show_stack_in_bb
+          ) {
+            toggleV8Setting('show_stack_in_bb');
+          }
           if (settingsUpdate.sitOutNextHand !== undefined) {
             const wanted = settingsUpdate.sitOutNextHand;
             setSitOutNextHand(wanted);

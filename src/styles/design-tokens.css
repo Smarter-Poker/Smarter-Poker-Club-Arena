@@ -147,14 +147,26 @@
   --stack-danger: #f97316; /* 10-19 BB — orange */
   --stack-critical: #ef4444; /* <10 BB — red */
 
-  /* ─── Timer Colors (PokerBros-style arc) ─── */
+  /* ─── Timer Colors — DEAD, AND DELIBERATELY DEFUSED (2026-08-26) ───
+     Nothing consumes any of these: `var(--timer-…)` appears nowhere in src/.
+     The action arc is driven by `spTimerColorShift` in SeatSlot.css, which is a
+     constant neon blue by Dan's instruction (2026-08-25, item 6): "it should
+     just show the existing frame of the chip box frame, with the neon blue
+     running out, NOT the red behind it."
+
+     They are left in place rather than deleted because other agents ship into
+     this file concurrently and a vanished token is a merge conflict waiting to
+     happen — but the two red ones now RESOLVE TO THE NEON BLUE. A dead token
+     holding #ef4444 next to a rule that says "no red on the timer" is a loaded
+     gun: the next person to reach for a plausible-looking name reintroduces the
+     exact thing that was reported. Reaching for them now is harmless. */
   --timer-color: #ffd700;
   --timer-glow: rgba(255, 215, 0, 0.6);
   --timer-safe: #22c55e;
   --timer-caution: #eab308;
   --timer-warning: #f97316;
-  --timer-urgent: #ef4444;
-  --timer-urgent-glow: rgba(239, 68, 68, 0.6);
+  --timer-urgent: #00e5ff;
+  --timer-urgent-glow: rgba(0, 229, 255, 0.6);
 
   /* ─── Table Layout (from UI Overhaul spec) ─── */
   --header-height: 44px;

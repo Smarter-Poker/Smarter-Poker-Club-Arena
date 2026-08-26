@@ -3942,6 +3942,7 @@ export default function TablePage({
   // pack, then five diamonds) and answers only the caller that paid.
   const [isRabbitAvailable, setIsRabbitAvailable] = useState(false);
   const [rabbitCardsAvailable, setRabbitCardsAvailable] = useState(0);
+  const [rabbitRevealedCards, setRabbitRevealedCards] = useState<Card[]>([]);
   /** Live diamond price from feature_pricing, sent with the offer. */
   const [rabbitDiamondCost, setRabbitDiamondCost] = useState<number | null>(null);
   const rabbitHandNumberRef = useRef<number | null>(null);
@@ -3969,12 +3970,14 @@ export default function TablePage({
       c: 'c',
       s: 's',
     };
+    const parsedCards = result.cards.map((c) => ({
+      rank: String(c.rank) as any,
+      suit: suitMap[String(c.suit)] || 'h',
+    }));
+    setRabbitRevealedCards(parsedCards);
     return {
       success: true,
-      cards: result.cards.map((c) => ({
-        rank: String(c.rank),
-        suit: suitMap[String(c.suit)] || 'h',
-      })),
+      cards: parsedCards,
       source: result.source,
       diamondsSpent: result.diamonds_spent,
       // The server counts the VIP monthly pool down on every reveal and has
@@ -6351,6 +6354,12 @@ export default function TablePage({
                        the engine just decided, whereas the row may not have
                        been written yet when we read it. */
                     finishPlace: position || full?.finishPlace || null,
+                    winningCards:
+                      position === 1
+                        ? (tableStateRef.current.players[
+                            tableStateRef.current.heroSeat - 1
+                          ]?.holeCards?.filter((c) => c !== null) as Card[])
+                        : undefined,
                     prize: prize || full?.prize || 0,
                   },
                 });
@@ -10285,6 +10294,7 @@ export default function TablePage({
       // Rabbit Hunt: Reset for new hand
       setIsRabbitAvailable(false);
       setRabbitCardsAvailable(0);
+      setRabbitRevealedCards([]);
       rabbitHandNumberRef.current = null;
       // The previous hand's expiry timer must die with the offer it belonged to,
       // or it fires mid-next-hand and clears an offer that is not its own.
@@ -12824,7 +12834,7 @@ export default function TablePage({
                           </span>
                         </div>
                         <CommunityCards
-                          cards={board.cards}
+                          cards={[...board.cards, ...rabbitRevealedCards]}
                           stage="river"
                           highlightedIndices={board.highlightedIndices}
                           winningHandName={board.winnerHandName}
@@ -12837,7 +12847,7 @@ export default function TablePage({
                   ) : (
                     <>
                       <CommunityCards
-                        cards={tableState.communityCards}
+                        cards={[...tableState.communityCards, ...rabbitRevealedCards]}
                         stage={
                           bombPotHoldFlop && tableState.boardStage === 'flop'
                             ? 'preflop'
@@ -12868,7 +12878,7 @@ export default function TablePage({
                       {tableState.communityCards2.length > 0 && (
                         <div className="community-area__board2">
                           <CommunityCards
-                            cards={tableState.communityCards2}
+                            cards={[...tableState.communityCards2, ...rabbitRevealedCards]}
                             stage={
                               bombPotHoldFlop && tableState.boardStage === 'flop'
                                 ? 'preflop'

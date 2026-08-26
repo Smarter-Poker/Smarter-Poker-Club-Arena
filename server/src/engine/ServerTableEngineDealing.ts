@@ -20,6 +20,7 @@ import {
   autoRebuyHorse,
   markSeatAsLeft,
   atomicCashout,
+  processLeavePending,
 } from '../services/supabase.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
@@ -196,98 +197,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // removed). The counter and clock live per (table, player), so this
         // never reaches across a player's other seats — "A PLAYER CAN SIT OUT
         // ON ONE TABLE BUT STILL PLAY TABLES ON SCREEN 2, 3 AND 4".
-        if (!this.isTournamentTable()) {
-          const seatedIds = this.seatedPlayers.map((p) => p.user_id);
-          const sitOutEvictable = this.disconnectEngine.tickSitOutsAndCollectEvictions(
-            this.tableId,
-            seatedIds
-          );
-          // ── Dan 2026-08-23, BINDING: away-blind cap ──
-          // "IF A PLAYER IS AWAY FROM THE CASH GAME TABLE, ONCE THEY LOSE ONE
-          //  BB AND ONE SB THEY MUST BE AUTO REMOVED. YOU CAN'T KEEP BLINDING
-          //  OUT A PLAYER WHO HAS DISCONNECTED."
-          // The blinds were recorded against them in dealHand; this is where
-          // the bill comes due — between hands, before the next deal can take
-          // a third blind. Cash only: a tournament sit-out is blinded off by
-          // design and must never be stood up.
-          const blindEvictable = this.disconnectEngine.collectAwayBlindEvictions(
-            this.tableId,
-            seatedIds
-          );
-          // ── Dan 2026-08-25, table-creation parity: NIT GAME ──
-          // "VPIP NEEDS TO BE BUILT OUT ... FULLY BUILT OUT AND IMPLEMENTED
-          //  FOR ALL CASH GAMES." `nit_game` and its three numbers were
-          // columns the creation page wrote and nothing read; the toggle's own
-          // tooltip promises a "Penalty for tight play" and there was none.
-          //
-          // The rule is a query (fn_nit_evictions) rather than engine state,
-          // because ca_hand_facts already stores VPIP per player per hand from
-          // the same derivation the player's own HUD shows. A second counter
-          // here would be a second answer, and the two would part company the
-          // first time this process restarted mid-session.
-          //
-          // GATED ON THE COLUMN so the round trip never happens on a table
-          // without the rule - which is every table today. A failure returns
-          // an empty list: a stats query that cannot answer must not throw
-          // anyone out of a hand they were entitled to play.
-          const nitEvictable: string[] = [];
-          if (this.tableInfo?.nit_game === true) {
-            const nits = await collectNitEvictions(this.tableId);
-            for (const n of nits) {
-              console.log(
-                `[ServerTableEngine:${this.tableId}] nit game: ${n.userId} is at ` +
-                  `${n.vpip}% VPIP over ${n.hands} hands, table requires ${n.required}%`
-              );
-              nitEvictable.push(n.userId);
-            }
-          }
-
-          const blindEvictSet = new Set(blindEvictable);
-          const nitEvictSet = new Set(nitEvictable);
-          const evictable = Array.from(
-            new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable])
-          );
-          for (const userId of evictable) {
-            const seated = this.seatedPlayers.find((p) => p.user_id === userId);
-            if (!seated) continue;
-            const awayBlindEvict = blindEvictSet.has(userId);
-            const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
-            console.log(
-              awayBlindEvict
-                ? `[ServerTableEngine:${this.tableId}] evicting ${userId} — away, already charged one SB and one BB`
-                : nitEvict
-                  ? `[ServerTableEngine:${this.tableId}] evicting ${userId} — below this nit game's VPIP floor`
-                  : `[ServerTableEngine:${this.tableId}] evicting ${userId} — sat out past the 2-orbit / 5-minute limit`
-            );
-            this.hub?.emitEvent(this.tableId, {
-              type: 'seat_left',
-              table_id: this.tableId,
-              seat: seated.seat_number,
-              user_id: userId,
-              mid_hand: false,
-              reason: awayBlindEvict
-                ? 'away_blind_cap'
-                : nitEvict
-                  ? 'nit_game_vpip'
-                  : 'sit_out_timeout',
-              timestamp: Date.now(),
-            });
-            atomicCashout(userId, this.tableId, seated.seat_number)
-              .then(() => {
-                this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-                this.timeBankEngine.removePlayer(this.tableId, userId);
-                this.straddleEngine.removePlayer(this.tableId, userId);
-                this.preActionEngine.removePlayer(this.tableId, userId);
-              })
-              .catch((err) => {
-                reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_evict_cashout');
-                markSeatAsLeft(this.tableId, userId, seated.seat_number);
-              });
-          }
-          if (evictable.length > 0) {
-            this.seatedPlayers = this.seatedPlayers.filter((p) => !evictable.includes(p.user_id));
-          }
-        }
+        // Extracted to evictExpiredSitOuts (ServerTableEngineBase) so the
+        // start-up wait loop can run the same rule. It used to live only here,
+        // and the dealing loop is not running in exactly the case Dan reported:
+        // a table below the minimum to deal parks in the wait loop, so the last
+        // player at the table could sit out and hold the seat forever.
+        //
+        // countOrbit false here: this tick happens once per loop iteration,
+        // which is a hand only when one is actually dealt. The real orbit is
+        // counted at the deal itself, below.
+        await this.evictExpiredSitOuts({ countOrbit: false });
 
         // Bible V8 §6.17: Admin pause/maintenance lock — skip dealing
         if (this.adminPauseLock || this.maintenanceLock) {
@@ -406,6 +325,38 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             'pending_addons',
             ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
             this.processPendingAddOns(this.seatedPlayers)
+          );
+          // LEAVE_PENDING SAFETY NET (Dan 2026-08-25: "leave table is like the
+          // reset button"). processLeavePending's only other caller is
+          // settlement step 6, so a seat flagged during a hand that never
+          // COMPLETES — the table dropped below the minimum to deal, or the
+          // hand died on the safety timeout, which skips settlement entirely —
+          // stayed flagged forever. The player was gone from their screen,
+          // still holding the seat, chips still on the table, and nothing in
+          // the idle loop looked at it. This sweeps it on every tick, alongside
+          // the add-on sweep that exists for exactly the same class of orphan.
+          await this.withStepBudget(
+            'leave_pending',
+            ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+            (async () => {
+              const cashedOutIds = await processLeavePending(
+                this.tableId,
+                this.tableInfo?.club_id || ''
+              );
+              // Same per-player teardown settlement does, or every leaver
+              // strands an FSM entry, a time bank and a pre-action behind them.
+              for (const leftUserId of cashedOutIds) {
+                this.disconnectEngine.unregisterPlayer(this.tableId, leftUserId);
+                this.timeBankEngine.removePlayer(this.tableId, leftUserId);
+                this.straddleEngine.removePlayer(this.tableId, leftUserId);
+                this.preActionEngine.removePlayer(this.tableId, leftUserId);
+              }
+              if (cashedOutIds.length > 0) {
+                this.seatedPlayers = this.seatedPlayers.filter(
+                  (sp) => !cashedOutIds.includes(sp.user_id)
+                );
+              }
+            })()
           );
         }
 
@@ -937,6 +888,20 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // the very button this line exists to keep away from them.
     for (const p of players) {
       this.dealtInUserIds.add(p.user_id);
+    }
+    // AN ORBIT IS A HAND, NOT A LOOP ITERATION. The sit-out counter used to be
+    // bumped by the dealing loop's own tick, which fires once per hand while
+    // dealing and once per 3-second idle tick while not — so "removed after the
+    // button passes them twice" silently became "after about nine seconds" on a
+    // quiet table. It is counted HERE, at the deal, which is the only place an
+    // orbit actually advances. The five-minute half is evaluated on every tick
+    // regardless, so a table that stops dealing still evicts on the clock.
+    if (!this.isTournamentTable()) {
+      this.disconnectEngine.tickSitOutsAndCollectEvictions(
+        this.tableId,
+        this.seatedPlayers.map((p) => p.user_id),
+        { countOrbit: true }
+      );
     }
     // Keep the legacy index roughly in sync for any remaining reads (defensive).
     this.dealerSeatIndex = Math.max(0, sortedSeats.indexOf(dealerSeat)) + 1;

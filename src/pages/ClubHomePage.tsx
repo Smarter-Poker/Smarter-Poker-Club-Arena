@@ -73,6 +73,14 @@ import { readLocalSession } from '../lib/authUtils';
 import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
 import { matchesVariant } from '../utils/tournamentFilters';
+import { isWithinLobbyWindow, lobbyQueryHorizonIso } from '../utils/tournamentScheduleWindow';
+import {
+  loadViewPrefs,
+  saveViewPrefs,
+  sortForTab,
+  EMPTY_VIEW_PREFS,
+  type LobbyViewPrefs,
+} from '../components/lobby/lobbyViewPrefs';
 import { useUserStore } from '../stores/useUserStore';
 import LobbyAdStrip from '../components/lobby/LobbyAdStrip';
 import AdvancedFilters, {
@@ -576,6 +584,23 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      paint of the lobby rather than flashing an unfiltered list first. */
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [advFilters, setAdvFilters] = useState<FilterStore>({});
+  /* THE TAB, THE SORT AND THE FAVORITES CHIP ARE PREFERENCES TOO
+     (Dan 2026-08-26: "they should auto save until changed"). The saved
+     Advanced Filters beside this have persisted since 2026-08-20; these three
+     never did, which is why the lobby read as "nothing was remembered" even
+     while the filters underneath were intact. See lobbyViewPrefs.ts. */
+  const [viewPrefs, setViewPrefs] = useState<LobbyViewPrefs>(EMPTY_VIEW_PREFS);
+  /* WHICH CLUB THE PREFS IN STATE BELONG TO. Not a hydration marker: an
+     OWNERSHIP marker, because `viewPrefs` and `resolvedClubId` update on
+     different ticks and the gap between them is a cross-club leak (see the
+     persistence effect). */
+  const viewPrefsOwner = useRef<string | null>(null);
+  /* Has the player changed anything since the prefs in state were loaded.
+     resolvedClubId arrives after first paint, so without this a tab tapped
+     during those few hundred milliseconds would be silently undone by the
+     restore that follows it. Reset on a club switch: a choice made in one club
+     is not a choice in the next one. */
+  const viewPrefsTouched = useRef(false);
   // LOBBY V2: show only starred cash tables. Declared here (not with the rest
   // of the V2 state) because `narrowing` and `clearAllNarrowing` read it.
   const [favoritesOnly, setFavoritesOnly] = useState(false);
@@ -1052,27 +1077,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId]);
 
-  // ── WebSocket Fallback Polling ──
-  // When the MasterBus heartbeat drops, the table counts freeze. If we're
-  // disconnected, we fall back to a 5-second HTTP polling loop to keep the
-  // lobby alive until the WebSocket recovers.
-  useEffect(() => {
-    if (wsConnected || !clubId) return;
-
-    console.warn('[ClubHomePage] WebSocket dropped. Switching to 5s fallback polling...');
-    const interval = setInterval(() => {
-      // Don't pay for HTTP polls if the app is in the background
-      if (document.visibilityState === 'visible') {
-        // We use a local isMounted check because this is a polling loop,
-        // but we'll just ignore the unmount issue since the interval cleans up.
-         
-        void loadClubData(() => true);
-      }
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [wsConnected, clubId]);
-
   // ── Realtime subscription: club member count updates ──
   // Synchronous when the club-code -> UUID mapping is already persisted on
   // the device (clubIdResolver) — the wallet and every realtime filter that
@@ -1206,6 +1210,112 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     }
     setAdvFilters(loadFilters(resolvedClubId));
   }, [resolvedClubId]);
+
+  /* The same rule for the tab / sort / Favorites triple, keyed the same way.
+     `viewPrefsTouched` is the guard described where the ref is declared: if
+     the player has already picked a tab in this visit, their pick wins over
+     whatever the last visit left behind. */
+  useEffect(() => {
+    if (!resolvedClubId) return;
+    if (viewPrefsOwner.current === resolvedClubId) return;
+
+    /* A SWITCH IS NOT A FIRST LOAD. Going from club A to club B must clear
+       "the player already chose" -- that choice was about A. Leaving it set
+       would (a) suppress B's own saved view and (b) leave A's values in state
+       looking like B's, which is what the persistence effect below would then
+       write into B's key. On a FIRST load there is no previous club, so the
+       flag survives and a tab tapped before resolution still wins. */
+    const switchingClubs = viewPrefsOwner.current !== null;
+    viewPrefsOwner.current = resolvedClubId;
+    if (switchingClubs) viewPrefsTouched.current = false;
+
+    const saved = loadViewPrefs(resolvedClubId);
+    setViewPrefs(saved);
+    if (viewPrefsTouched.current) return;
+
+    const tab = saved.tab ?? 'ALL';
+    setGameType(tab);
+    setSortKey(sortForTab(saved, tab));
+    setFavoritesOnly(saved.favoritesOnly);
+  }, [resolvedClubId]);
+
+  /**
+   * Record a preference and write it through in the same breath.
+   *
+   * ONE DOOR. Every control that changes the tab, the sort or the Favorites
+   * chip goes through here, so there is no path that updates the screen and
+   * forgets to persist — which is exactly how the column sort in LobbyTable
+   * stayed saved while the sort control above it did not.
+   */
+  const updateViewPrefs = useCallback((patch: Partial<LobbyViewPrefs>) => {
+    viewPrefsTouched.current = true;
+    /* PURE UPDATER. The write used to happen INSIDE this callback, which is a
+       side effect in a place React is explicitly allowed to run twice (it does
+       exactly that under StrictMode, and reserves the right to in any
+       concurrent render). Persisting from an effect keyed on the value means
+       the write happens once per settled state, not once per attempted one. */
+    setViewPrefs((prev) => ({
+      ...prev,
+      ...patch,
+      sortByTab: { ...prev.sortByTab, ...(patch.sortByTab ?? {}) },
+    }));
+  }, []);
+
+  /**
+   * One writer, watching the value.
+   *
+   * THE ORDERING HAZARD THIS GUARDS. `resolvedClubId` and `viewPrefs` change
+   * on different ticks. When the player moves from club A to club B, this
+   * effect runs in the SAME commit as the hydration above -- and at that
+   * moment `resolvedClubId` is already B while `viewPrefs` still holds A's
+   * values, because `setViewPrefs` has not landed yet. Writing there would put
+   * club A's tab, sort and Favorites into club B's storage key: exactly the
+   * cross-club leak `lobbyViewPrefs` is keyed per club to prevent, reintroduced
+   * one layer up.
+   *
+   * Two conditions close it. `viewPrefsOwner` proves the prefs in hand belong
+   * to the club being written to, and `viewPrefsTouched` (cleared on a switch)
+   * proves the player actually changed something rather than this being a
+   * hydration echoing back what it just read.
+   */
+  useEffect(() => {
+    if (!resolvedClubId) return;
+    if (viewPrefsOwner.current !== resolvedClubId) return;
+    if (!viewPrefsTouched.current) return;
+    saveViewPrefs(resolvedClubId, viewPrefs);
+  }, [resolvedClubId, viewPrefs]);
+
+  /** Pick a tab: remember it, and restore that tab's own last sort. */
+  const selectGameType = useCallback(
+    (tab: GameType) => {
+      setGameType(tab);
+      /* The tab buttons used to force a default sort here unconditionally,
+         which meant a player's Sort By choice could not survive a single tab
+         change. sortForTab keeps those defaults for a tab never sorted by
+         hand and honours the choice everywhere else. */
+      setSortKey(sortForTab(viewPrefs, tab));
+      updateViewPrefs({ tab });
+    },
+    [viewPrefs, updateViewPrefs]
+  );
+
+  /** Pick a sort: it belongs to the tab it was chosen on. */
+  const selectSortKey = useCallback(
+    (key: SortKey) => {
+      setSortKey(key);
+      updateViewPrefs({ sortByTab: { [gameType]: key } });
+    },
+    [gameType, updateViewPrefs]
+  );
+
+  /** Toggle Favorites: remembered like everything else on this bar. */
+  const selectFavoritesOnly = useCallback(
+    (on: boolean) => {
+      setFavoritesOnly(on);
+      updateViewPrefs({ favoritesOnly: on });
+    },
+    [updateViewPrefs]
+  );
 
   const handleMemberUpdate = useCallback(() => {
     loadClubDataRef.current();
@@ -1919,11 +2029,22 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         // runs its own query rather than the service. Same rule as the
         // service now: a lobby lists what can be ENTERED.
         .in('status', ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTING_SOON'])
+        /* THE BOARD IS A WINDOW, AND THE CAP IS NOT A WINDOW (Dan 2026-08-26).
+           This query had no time bound at all, so the only thing deciding what
+           reached the lobby was `.limit(200)` ordered by start_time ASCENDING
+           -- and a RUNNING event's start_time is in the PAST, so it sorts
+           FIRST. With 93 running spins on this club the cap was already eating
+           into the future card, and publishing 48 hours of MTTs instead of 24
+           would have made that the normal state: the fix for "not enough
+           events" would have quietly deleted the ones furthest out. Bounding
+           the query by the longest window the rules allow (6 days) means the
+           cap now only ever trims things nothing was going to show anyway. */
+        .lte('start_time', lobbyQueryHorizonIso())
         .order('start_time', { ascending: true })
         /* The tables query has been capped since P1-1; these two were not
            capped at all. An unbounded list query is the shape that pulled
            tens of thousands of rows into this page once already. */
-        .limit(QUERY_LIMITS.LIST);
+        .limit(QUERY_LIMITS.MODERATE);
       // THE SAME rule, THE SAME shape as the cash-table query above.
       //
       // This used to be two queries: one for the club's own private games and
@@ -2297,8 +2418,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
    */
   const clearAllNarrowing = useCallback(() => {
     haptic.selection();
-    setFavoritesOnly(false);
-    setGameType('ALL');
+    /* CLEARING IS A CHOICE TOO, so it persists like every other one. Clearing
+       through the in-memory setters alone would have put the board back to
+       ALL and then restored the old tab and Favorites state on the next
+       visit, which reads as the button not having worked. */
+    selectFavoritesOnly(false);
+    selectGameType('ALL');
     if (narrowing.fSpec) {
       const next: FilterStore = {
         ...advFilters,
@@ -2307,7 +2432,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       setAdvFilters(next);
       if (resolvedClubId) saveFilters(resolvedClubId, next);
     }
-  }, [narrowing.fSpec, advFilters, gameType, resolvedClubId]);
+  }, [narrowing.fSpec, advFilters, gameType, resolvedClubId, selectFavoritesOnly, selectGameType]);
 
   const filteredTournaments = useMemo(() => {
     if (!showsTournaments) return [];
@@ -2363,8 +2488,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       ].includes(status);
     };
 
+    const windowNow = Date.now();
+
     const rows = tournaments.filter((t) => {
       if (!isListable(t)) return false;
+      /* 48 HOURS OF CARD, 6 DAYS FOR THE BIG ONES (Dan 2026-08-26). See
+         src/utils/tournamentScheduleWindow.ts for the rule and why the server
+         spawner had to move first. Anything already under way passes for free
+         -- its start time is in the past. */
+      if (!isWithinLobbyWindow(t, windowNow)) return false;
       if (!matchesVariant(t, variant)) return false;
 
       if (advSpec && advValue) {
@@ -2503,7 +2635,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           const pos = await waitlistService.getPosition(tableId);
           toast.success(
             pos && pos.position > 0
-              ? `Added To The Waitlist. You Are Number ${pos.position} In Line (~${pos.position * 5}m Wait).`
+              ? `Added To The Waitlist. You Are Number ${pos.position} In Line.`
               : 'Added To The Waitlist.'
           );
         } else {
@@ -2814,24 +2946,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     async (t: LobbyTournamentRow) => {
       if (!currentUserId || actionBusy) return;
       setActionBusy(true);
-
-      // Optimistic update
-      setRegisteredTournamentIds((prev) => {
-        const s = new Set(prev);
-        s.delete(t.id);
-        return s;
-      });
-
       try {
         await tournamentService.unregisterPlayer(t.id, currentUserId);
-        toast.success('You Are No Longer Registered');
-      } catch (e) {
-        // Rollback
         setRegisteredTournamentIds((prev) => {
           const s = new Set(prev);
-          s.add(t.id);
+          s.delete(t.id);
           return s;
         });
+        toast.success('You Are No Longer Registered');
+      } catch (e) {
         reportError(e, 'ClubHomePage.handleUnregister', { tournamentId: t.id });
         toast.error(e instanceof Error ? e.message : 'Could Not Unregister, Please Try Again');
       } finally {
@@ -3634,12 +3757,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               className={`game-bar__type ${gameType === tab.key ? 'is-active' : ''}`}
               onClick={() => {
                 haptic.selection();
-                setGameType(tab.key);
-                if (tab.key === 'MTT') {
-                  setSortKey('starting_soon');
-                } else if (tab.key === 'HOLDEM' || tab.key === 'OMAHA') {
-                  setSortKey('recommended');
-                }
+                selectGameType(tab.key);
               }}
             >
               {tab.label}
@@ -3733,7 +3851,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     aria-pressed={favoritesOnly}
                     onClick={() => {
                       haptic.selection();
-                      setFavoritesOnly((v) => !v);
+                      selectFavoritesOnly(!favoritesOnly);
                     }}
                   >
                     Favorites
@@ -3810,7 +3928,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           onClose={() => setFiltersOpen(false)}
           onApply={setAdvFilters}
           sortKey={sortKey}
-          onSortChange={setSortKey}
+          onSortChange={selectSortKey}
           sortOptions={SORT_OPTIONS}
           sortOnly={gameType === 'ALL'}
         />

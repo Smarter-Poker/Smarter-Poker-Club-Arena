@@ -81,11 +81,30 @@ export default function LeaveTableConfirm({
   if (!isOpen) return null;
 
   return (
-    <div className="leave-confirm-overlay" onClick={leaving ? undefined : onCancel}>
+    /* Dan 2026-08-25: "LEAVE TABLE FROM THE HAMBURGER MENU DOESN'T WORK AT ALL."
+       It worked. Nobody could see it.
+
+       These two class names were `leave-confirm-overlay` and `leave-confirm`,
+       and LeaveTableConfirm.css defines neither — it only has the BEM pair
+       `__backdrop` and `__dialog`, which every CHILD element here already uses.
+       The only `.leave-confirm-overlay` rule in the repo lives in
+       QuickLeaveButton.css, a component nothing imports, so that stylesheet is
+       not even in the bundle.
+
+       With no rule matching, the overlay lost `position: fixed`, `inset: 0` and
+       its z-index, and the dialog lost its background and sizing. It rendered as
+       a plain static flex child appended after `.table-page` — which is
+       `position: fixed; inset: 0; overflow: hidden` — so it was clipped out of
+       existence. State flipped, React rendered, and nothing appeared. Every
+       entry point that routes through this confirm (the tab-bar hamburger, the
+       in-table HUD hamburger, the header back arrow, and Leave while sitting
+       out) looked like a dead button. The paths that DID work — the tab X and
+       long-press — are exactly the ones that skip this dialog. */
+    <div className="leave-confirm__backdrop" onClick={leaving ? undefined : onCancel}>
       <div
         ref={dialogRef}
         tabIndex={-1}
-        className="leave-confirm"
+        className="leave-confirm__dialog"
         onClick={(e) => e.stopPropagation()}
         role="alertdialog"
         aria-labelledby="leave-confirm-title"

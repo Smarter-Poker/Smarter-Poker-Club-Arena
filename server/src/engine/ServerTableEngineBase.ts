@@ -51,6 +51,8 @@ import {
   saveHandSnapshotExtras,
   getActiveHandSnapshotFull,
   supabase,
+  atomicCashout,
+  markSeatAsLeft,
 } from '../services/supabase.js';
 import { deadlineScheduler } from './DeadlineScheduler.js';
 import type {
@@ -1226,6 +1228,15 @@ export abstract class ServerTableEngineBase {
           continue;
         }
         this.restoreSitOutsFromSeats();
+        // THE CASE DAN REPORTED. This loop is where a table below the minimum
+        // to deal waits — possibly forever — and the sit-out rule used to live
+        // only in the dealing loop, which is never reached from here. So the
+        // last player at a table could sit out and hold the seat indefinitely,
+        // with the five-minute clock never once being asked the time.
+        // countOrbit false: nothing is being dealt, so no orbit has passed.
+        await this.evictExpiredSitOuts({ countOrbit: false }).catch((err) =>
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_sitout_evict')
+        );
         // IDLE BROADCAST (2026-08-22): publish the waiting-state snapshot so
         // a client joining an idle table gets a real SNAPSHOT (seats, stacks,
         // 'waiting' stage) instead of an eternal spinner. The hub drops
@@ -2541,6 +2552,79 @@ export abstract class ServerTableEngineBase {
           `continuing from #${this.handCount}.`
       );
     }
+  }
+
+  /**
+   * EVICT SEATS THAT HAVE OUTSTAYED THE SIT-OUT RULE.
+   *
+   * Dan 2026-08-25: "IF YOU ARE SITTING OUT IT NEVER KICKS YOU OFF THE TABLE.
+   * YOU CAN LITERALLY HOLD THAT SEAT FOREVER. IT SHOULD BE 2 ORBITS OR 5
+   * MINUTES, WHICHEVER IS FIRST AND YOU GET AUTO BOOTED."
+   *
+   * The rule was implemented and lived in ONE place: the dealing loop. And the
+   * dealing loop is not running in precisely the situation the player is
+   * describing — `start()` parks in a wait-for-players loop until the table has
+   * enough seats to deal, and only then launches it. A table with one seated
+   * player (which GameServer deliberately keeps an engine alive for), or one
+   * that fell below AutoStart, never reaches the sweep at all. The last person
+   * at the table sits out and holds the seat indefinitely, and the five-minute
+   * clock never runs because nothing ever asks it the time.
+   *
+   * Extracted here so both the wait loop and the dealing loop can call it.
+   * `countOrbit` is true only when a hand is actually being dealt — an idle tick
+   * is not an orbit.
+   *
+   * Cash tables only: a tournament sit-out is blinded off by design and must
+   * never be stood up.
+   */
+  protected async evictExpiredSitOuts(opts: { countOrbit: boolean }): Promise<void> {
+    if (this.isTournamentTable()) return;
+    const seatedIds = this.seatedPlayers.map((p) => p.user_id);
+    if (seatedIds.length === 0) return;
+
+    const sitOutEvictable = this.disconnectEngine.tickSitOutsAndCollectEvictions(
+      this.tableId,
+      seatedIds,
+      { countOrbit: opts.countOrbit }
+    );
+    // Dan 2026-08-23, BINDING: away-blind cap. "IF A PLAYER IS AWAY FROM THE
+    // CASH GAME TABLE, ONCE THEY LOSE ONE BB AND ONE SB THEY MUST BE AUTO
+    // REMOVED." Collected together so one pass removes the seat once.
+    const blindEvictable = this.disconnectEngine.collectAwayBlindEvictions(this.tableId, seatedIds);
+    const blindEvictSet = new Set(blindEvictable);
+    const evictable = Array.from(new Set([...sitOutEvictable, ...blindEvictable]));
+    if (evictable.length === 0) return;
+
+    for (const userId of evictable) {
+      const seated = this.seatedPlayers.find((p) => p.user_id === userId);
+      if (!seated) continue;
+      const awayBlindEvict = blindEvictSet.has(userId);
+      console.log(
+        awayBlindEvict
+          ? `[ServerTableEngine:${this.tableId}] evicting ${userId} — away, already charged one SB and one BB`
+          : `[ServerTableEngine:${this.tableId}] evicting ${userId} — sat out past the 2-orbit / 5-minute limit`
+      );
+      this.hub?.emitEvent(this.tableId, {
+        type: 'seat_left',
+        table_id: this.tableId,
+        seat: seated.seat_number,
+        user_id: userId,
+        mid_hand: false,
+        reason: awayBlindEvict ? 'away_blind_cap' : 'sit_out_timeout',
+        timestamp: Date.now(),
+      });
+      try {
+        await atomicCashout(userId, this.tableId, seated.seat_number);
+        this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+        this.timeBankEngine.removePlayer(this.tableId, userId);
+        this.straddleEngine.removePlayer(this.tableId, userId);
+        this.preActionEngine.removePlayer(this.tableId, userId);
+      } catch (err) {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_evict_cashout');
+        await markSeatAsLeft(this.tableId, userId, seated.seat_number).catch(() => {});
+      }
+    }
+    this.seatedPlayers = this.seatedPlayers.filter((p) => !evictable.includes(p.user_id));
   }
 
   /**

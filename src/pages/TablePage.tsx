@@ -34,6 +34,7 @@ import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOve
  * TournamentWinnerOverlay, useTableModals, retryAsync, resolveClubUUID,
  * handPersistenceService, and the unused types ChatMessage, Throwable,
  * ThrowEvent, HandHistoryAction, HandHistoryStreet.
+import { ButtonImagePreloader } from '../components/table/ButtonImagePreloader';
  *
  * Almost all of the components above are still imported and rendered by
  * TableModalsLayer or another owner, so nothing lost its stylesheet.
@@ -13224,6 +13225,7 @@ export default function TablePage({
       }}
     >
       <style>{`
+      <ButtonImagePreloader />
                 @keyframes boardSlideIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
                 @keyframes boardFade { from { opacity: 0.7; } to { opacity: 1; } }
                 .community-area { animation: boardFade 0.4s ease-out; }

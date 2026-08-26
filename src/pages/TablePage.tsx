@@ -132,6 +132,7 @@ import TableChat from '../components/table/TableChat';
 import { ChatBubble, bubbleForSeat, useSeatChatBubbles } from '../components/table/ChatBubble';
 import { holeCardCountFor } from '../lib/holeCardCount';
 import { shouldAnnounceBbjHit } from '../lib/bbjHitOnce';
+import { applyTableAppearance } from '../lib/applyTableAppearance';
 import BBJHitNotification from '../components/bbj/BBJHitNotification';
 import { type InsuranceOffer } from '../components/table/InsuranceModal';
 import { ThrowAnimationContainer } from '../components/table/ThrowAnimation';
@@ -6099,6 +6100,39 @@ export default function TablePage({
     if (event.setting === 'useRealName') {
       setUseRealName(event.value);
     }
+  });
+
+  /**
+   * THE HERO'S NEW AVATAR APPEARS ON THE FELT IMMEDIATELY.
+   *
+   * Dan 2026-08-26: "if a user changes their avatar... it needs to change,
+   * save and update in real time on the felt."
+   *
+   * It did not. `AvatarGallery` writes `profiles.avatar_url` and emits
+   * `USER_PROFILE_LOADED`, and THREE surfaces listened — the global header,
+   * the hamburger menu and the funnel tracker. The table was not one of them,
+   * and the table does not subscribe to `profiles` over realtime either. So
+   * the player picked a new avatar, watched their header change, looked back
+   * at their own seat and saw the old picture, for the rest of the session.
+   *
+   * Patching the seat directly rather than re-fetching: the event carries the
+   * new URL, the seat is already in state, and a refetch would race the
+   * engine snapshot that owns every other field on that player. Scoped to the
+   * hero's own id so one player's change can never repaint another's seat —
+   * an opponent's avatar arrives with the snapshot, from the server.
+   */
+  useMasterBusSubscription('USER_PROFILE_LOADED', (payload: any) => {
+    const newUrl = payload?.avatarUrl;
+    const who = payload?.userId;
+    if (!newUrl || !who || who !== userId) return;
+    setTableState((prev) => {
+      const hit = prev.players.some((p) => p && p.id === who && p.avatar !== newUrl);
+      if (!hit) return prev; // nothing to repaint — do not churn nine seats
+      return {
+        ...prev,
+        players: prev.players.map((p) => (p && p.id === who ? { ...p, avatar: newUrl } : p)),
+      };
+    });
   });
 
   // Fetch Hero profile just once if needed
@@ -14345,6 +14379,12 @@ export default function TablePage({
                         isFixedLimit={isFixedLimit}
                         showPotOdds={userSettings.showPotOdds}
                         confirmAllIn={userSettings.confirmAllIn}
+                        /* 2026-08-26: never passed, so ActionPanel always used
+                           its `= true` default and the "Bet Size Presets"
+                           toggle in the settings panel was decorative — it
+                           flipped, persisted nothing anyone read, and snapped
+                           back on reopen. */
+                        showBetSizePresets={userSettings.showBetSizePresets}
                       />
                     </>
                   );
@@ -14831,18 +14871,18 @@ export default function TablePage({
            now and THROWS on failure, so CardBackSelector reverts its tick and
            says what happened instead of congratulating the player. */
         onCardBackChanged={async (id) => {
-          masterBus.emit('UI_THEME_CHANGED', { key: 'ALL', value: { cards_id: id } });
-          masterBus.emit('SETTINGS_CHANGED', { setting: 'cardBack', value: id });
-          if (!userId) return;
-          const { error } = await supabase
-            .from('user_theme_settings')
-            .upsert(
-              { user_id: userId, game_type: 'ALL', cards_id: id },
-              { onConflict: 'user_id,game_type' }
-            );
-          if (error) {
-            reportError(error, 'TablePage.cardBackSaveFailed');
-            throw error;
+          /* 2026-08-26: routed through the one canonical writer so this
+             surface, the hamburger tiles and /settings cannot drift apart
+             again. It still THROWS on failure, which is what makes
+             CardBackSelector revert its tick instead of congratulating the
+             player on a save that did not happen. */
+          const result = await applyTableAppearance(
+            { cards_id: id },
+            { userId, previous: { cards_id: activeCardBack } }
+          );
+          if (!result.ok && userId) {
+            reportError(result.error, 'TablePage.cardBackSaveFailed');
+            throw result.error;
           }
         }}
         tableId={tableId}
@@ -14986,6 +15026,16 @@ export default function TablePage({
         showBuyInModal={showBuyInModal}
         selectedSeat={selectedSeat}
         heroAvatarUrl={heroAvatarUrl}
+        /* The gallery already emits USER_PROFILE_LOADED, which the felt now
+           listens to (see the subscription above) — this is the direct path
+           for the panel's own avatar row, so it updates without waiting on
+           the bus round trip. */
+        onAvatarChanged={(url) => {
+          setTableState((prev) => ({
+            ...prev,
+            players: prev.players.map((p) => (p && p.id === userId ? { ...p, avatar: url } : p)),
+          }));
+        }}
         onCloseBuyInModal={() => {
           // Releasing the modal must release the optimistic seat too, or the
           // player is locked out of every seat at the table by their own
@@ -15228,13 +15278,27 @@ export default function TablePage({
             updateSetting('fourColorDeck', settingsUpdate.fourColorDeck);
           if (settingsUpdate.confirmAllIn !== undefined)
             updateSetting('confirmAllIn', settingsUpdate.confirmAllIn);
+          if (settingsUpdate.showBetSizePresets !== undefined)
+            updateSetting('showBetSizePresets', settingsUpdate.showBetSizePresets);
           if (settingsUpdate.animationSpeed !== undefined) {
+            /* INVERTED UNTIL 2026-08-26. `--animation-speed` is a DURATION
+               MULTIPLIER — bigger is slower — as utils/animationSpeed.ts and
+               every `calc(<time> * var(--animation-speed))` in the stylesheets
+               make plain, and as /settings has always mapped it
+               (settingsBridge: slow -> 1.5, fast -> 0.5).
+
+               This surface mapped it backwards, so choosing "Slow" at the
+               table HALVED every duration and choosing "Fast" doubled it. The
+               read-back in TableModalsLayer was inverted to match, which is
+               why it looked self-consistent here and disagreed with /settings:
+               set Slow at the table, open /settings, and it read "Fast". Both
+               ends now use the one meaning. */
             updateSetting(
               'animationSpeed',
               settingsUpdate.animationSpeed === 'slow'
-                ? 0.5
+                ? 1.5
                 : settingsUpdate.animationSpeed === 'fast'
-                  ? 1.5
+                  ? 0.5
                   : 1
             );
           }

@@ -40,10 +40,6 @@ export type { PlayerCardProps, HoleCardsProps, Card } from './PlayerCard';
 export { RealTimeResults } from './RealTimeResults';
 export type { RealTimeResultsProps, TableInfo, SessionStats, Observer } from './RealTimeResults';
 
-// Chip Stack (Betting Chips)
-export { ChipStack } from './ChipStack';
-export type { ChipStackProps } from './ChipStack';
-
 // Premium Card (3D Cards with deck themes)
 export { default as PremiumCard, CardPlaceholder, DECK_THEMES } from './PremiumCard';
 export type { DeckTheme, PremiumCardType } from './PremiumCard';

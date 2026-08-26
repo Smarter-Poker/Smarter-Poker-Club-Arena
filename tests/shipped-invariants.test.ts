@@ -53,10 +53,22 @@ const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
   ],
 
   // Cashier — two screens that both got the downline wrong, opposite ways.
+  //
+  // 2026-08-25: re-anchored from ca_club_my_downline, for the same reason the
+  // trade grid was, plus a worse one. `ca_club_my_downline` RETURNS TABLE
+  // (agent_id, path, depth, username, ...) - one row per downline AGENT. This
+  // page cast it to `{ scoped, user_ids }` and read two fields it has never
+  // had, so the recipient filter collapsed to the viewer's own id and every
+  // super agent, agent and sub agent found exactly one recipient on the Send
+  // tab: themselves, which fn_agent_wallet_send refuses as a self-send.
+  //
+  // The sentinel also PASSED throughout, because the string survived in a
+  // comment. A capability sentinel that a comment can satisfy is not a
+  // sentinel; this one now names the call the send actually refuses on.
   [
     'src/pages/CashierPage.tsx',
-    'ca_club_my_downline',
-    'a super agent sees their downline, not the whole club',
+    "supabase.rpc('fn_club_cashier_members'",
+    'a super agent sees their downline, not the whole club and not just themselves',
   ],
   // 2026-08-25: re-anchored from ca_club_my_downline to fn_club_cashier_members.
   // The CAPABILITY pinned here is "the trade grid offers only the downline", and
@@ -115,6 +127,33 @@ const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
     'src/services/LeaderboardService.ts',
     "rpc('fn_club_tournament_stats',",
     'the club tournament leaderboard is aggregated in the database, not from a capped page of rows',
+  ],
+  // 2026-08-26: club_chat RLS was requiring status='active' while production
+  // holds 1480 'approved' and only 20 'active' — club chat was silent for
+  // 98.7% of members. The migration widens both INSERT and SELECT to
+  // ANY(['active','approved']). Guard: the migration must exist on disk so it
+  // cannot be silently deleted. Checked via MUST_NOT_EXIST below.
+  // 2026-08-26: /avatars/default-player.png does not exist in either repo.
+  // SpectatorOverlay and SettingsPanel both referenced it. Now both use
+  // resolveAvatarDisplay from avatarUtils, which falls back to DiceBear.
+  // This pin catches anyone re-introducing the broken path.
+  [
+    'src/components/table/SpectatorOverlay.tsx',
+    'resolveAvatarDisplay',
+    'SpectatorOverlay must not reference the non-existent /avatars/default-player.png',
+  ],
+  [
+    'src/components/table/SettingsPanel.tsx',
+    'resolveAvatarDisplay',
+    'SettingsPanel must not reference the non-existent /avatars/default-player.png',
+  ],
+  // 2026-08-26: PremiumCard.css declared a global .card-back { rotateY(180deg) }
+  // which collided with CardReveal.css and CommunityCards.css. Scoped to
+  // .premium-card .card-back so only cards inside a PremiumCard container flip.
+  [
+    'src/components/table/PremiumCard.css',
+    '.premium-card .card-back',
+    'PremiumCard card-back rule must be scoped to avoid colliding with CardReveal and CommunityCards',
   ],
 ];
 

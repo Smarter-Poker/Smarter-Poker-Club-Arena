@@ -58,15 +58,15 @@ import React, { useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../common/Toast';
 import { openTableAsObserver } from '../../../utils/observeTable';
-import { chips, chipsCompact, type TournamentTabProps } from './types';
+import { chips, chipsCompact, isPlayerLive, type TournamentTabProps } from './types';
 import type { TournamentEntry, TournamentTable } from './types';
 import '../../../styles/tournament-lobby-3d.css';
 import './TablesTab.css';
 
-/** A player still in the event, and therefore still holding a stack. */
-function isLive(entry: TournamentEntry): boolean {
-  return entry.status !== 'eliminated' && entry.status !== 'finished';
-}
+/* A player still in the event, and therefore still holding a stack. The rule
+   lives in types.ts so this tab, Ranking, Detail and Rewards cannot count the
+   field four different ways - which, until the 2026-08-26 audit, they did. */
+const isLive = isPlayerLive;
 
 /**
  * The table's number for ordering and for the row's index chip.
@@ -273,7 +273,11 @@ export default function TablesTab({
   const heroTableId = useMemo(() => {
     if (!currentUserId) return null;
     const hero = entries.find((e) => e.user_id === currentUserId);
-    return hero?.table_id || null;
+    /* An eliminated row keeps the `table_id` of the felt the player busted on,
+       so a busted player was told "Your Table" about a table they left an hour
+       ago - and on a table they can no longer be moved to (2026-08-26 audit). */
+    if (!hero || !isLive(hero)) return null;
+    return hero.table_id || null;
   }, [entries, currentUserId]);
 
   /** One pass over the field: stacks bucketed by table. */
@@ -371,6 +375,16 @@ export default function TablesTab({
 
   const handleOpen = useCallback(
     (table: TournamentTable) => {
+      /* 2026-08-26 audit: this opened whatever row was clicked, with no closed
+         check. `featuredTableId` on the details page refuses to feature a
+         closed table for exactly this reason — a WATCH that lands on a dead
+         felt is worse than no WATCH — but the Tables grid had no equivalent, so
+         a closed row was still a live "open the felt" button. Say why instead
+         of opening nothing. */
+      if (String(table.status || '').toLowerCase() === 'closed') {
+        toast.warning('That Table Has Closed');
+        return;
+      }
       const opened = openTableAsObserver(navigate, {
         tableId: table.id,
         tableName: table.name,

@@ -11,6 +11,60 @@
  * - Action panel with raise slider
  * - Jackpot banner
  * - WebSocket connection for real-time game state
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * AUDIT 2026-08-25 — 28 DEAD IMPORTS REMOVED
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Twenty-four components, one hook, two utilities and one service were
+ * imported here and referenced NOWHERE below — several of them only in
+ * comments recording that they had been taken out of the JSX while the import
+ * line stayed. Every one of those lines pulled a module and its stylesheet
+ * into the bundle this page ships to a phone, and told the next reader that
+ * this file renders things it does not.
+ *
+ * Removed: BadBeatJackpot, BBJCelebration, BombPotOverlay, ChipStack,
+ * ConfettiCanvas, FinalTableOverlay, HandHistoryPanel (the default export —
+ * the HandRecord type it also exports is still used), HandNotation,
+ * HandReveal, HeadsUpOverlay, LeaveTableConfirm, MiniHUD, ParticleSystem,
+ * PresenceIndicator, QuickActionsBar, RealTimeResults, SessionHUD,
+ * SettingsPanel, SpectatorOverlay, ThrowableSelector, TimerBar,
+ * TournamentAnnouncementOverlay, TournamentBreakScreen,
+ * TournamentWinnerOverlay, useTableModals, retryAsync, resolveClubUUID,
+ * handPersistenceService, and the unused types ChatMessage, Throwable,
+ * ThrowEvent, HandHistoryAction, HandHistoryStreet.
+ *
+ * Almost all of the components above are still imported and rendered by
+ * TableModalsLayer or another owner, so nothing lost its stylesheet.
+ *
+ * ONE EXCEPTION, and it nearly shipped as a silent CSS regression: ChipStack
+ * was this file's exclusive importer, and its stylesheet is the only runtime
+ * definition of `.chip--partial`, `.pot-label` and `.pot-value` — class names
+ * PotDisplay and PremiumPot paint on the live felt. The component import is
+ * gone; the stylesheet is now imported directly, with the reasoning at the
+ * import line. Six others (HandNotation, PresenceIndicator, QuickActionsBar,
+ * RealTimeResults, SpectatorOverlay, TimerBar) were also exclusive to this
+ * file, and each of their stylesheets was checked class by class against the
+ * rest of src/ before removal: none shares a selector with anything rendered.
+ *
+ * DELETED 2026-08-26: PositionStatsPopup, SessionTrajectoryMini and PremiumPot,
+ * with their stylesheets. Each was built, never mounted, and every class its
+ * stylesheet defined was either defined somewhere else as well or rendered by
+ * nothing at all - so removing them cannot change a pixel on any screen.
+ *
+ * CLEANED UP 2026-08-26 (dead-component pass):
+ * BankrollWidget, SessionTimer, StreakBadge, StreamerMode and CardReveal are
+ * also mounted nowhere and this file was their only importer in src/. Their
+ * orphaned global CSS classes have been migrated to their actual consumers:
+ *
+ *   StreakBadge.css   .streak-badge  → LeaderboardPage.css (scoped)
+ *   CardReveal.css    .cards         → scoped to .card-reveal in CardReveal.css
+ *   ChipStack.css     .chip--partial, .pot-label, .pot-value
+ *                                    → PotDisplay.css (PotDisplay now owns them)
+ *   StreamerMode.css  .option        → only used in StreamerMode itself (deleted)
+ *   BankrollWidget.css .stack-value  → only used in BankrollWidget itself (deleted)
+ *   SessionTimer.css  .timer-value   → only used in SessionTimer itself (deleted)
+ *
+ * All five component files (TSX + CSS) and useTableModals.ts are deleted.
  */
 
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
@@ -25,6 +79,7 @@ import {
   DealerButton,
   DealAnimation,
 } from '../components/table';
+import { ActionClockSeconds, ActionClockWarning } from '../components/table/ActionClockReadouts';
 import type { SeatPlayer, Card, LastAction, PositionBadge } from '../components/table/SeatSlot';
 import type { SidePot } from '../components/table/PotDisplay';
 import type { BoardStage } from '../components/table/CommunityCards';
@@ -61,7 +116,6 @@ import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeat
 import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
 
 import { gameCode } from '../utils/gameCode';
-import { resolveClubUUID } from '../utils/clubIdResolver';
 import { masterBus } from '../core/MasterBus';
 import {
   useMasterBusSubscription,
@@ -73,15 +127,11 @@ import { avatarService } from '../services/AvatarService';
 import { waitlistService } from '../services/WaitlistService';
 import { roomService, type RoomMessage } from '../services/RoomService';
 import { HydraService } from '../services/HydraService';
-import TableChat, { type ChatMessage } from '../components/table/TableChat';
+import TableChat from '../components/table/TableChat';
 import { ChatBubble, bubbleForSeat, useSeatChatBubbles } from '../components/table/ChatBubble';
 import { holeCardCountFor } from '../lib/holeCardCount';
 import { type InsuranceOffer } from '../components/table/InsuranceModal';
-import BadBeatJackpot from '../components/table/BadBeatJackpot';
-import { BBJCelebration } from '../components/table/BBJCelebration';
-import { ThrowableSelector } from '../components/table/ThrowableSelector';
 import { ThrowAnimationContainer } from '../components/table/ThrowAnimation';
-import { throwableService, type Throwable, type ThrowEvent } from '../services/ThrowableService';
 import { useTabKeepAlive, workerTimeout, cancelWorkerTimeout } from '../hooks/useTabKeepAlive';
 import { STORAGE_KEYS } from '../lib/storage';
 import StraddleToggle from '../components/table/StraddleToggle';
@@ -100,34 +150,24 @@ import TimebankCounter from '../components/table/TimebankCounter';
 // Dan 2026-08-21, item 3: buy more time banks with diamonds (1/10/25/100/500).
 import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
-import HandNotation from '../components/table/HandNotation';
 import { soundService, haptic } from '../services/SoundService';
-import { ConfettiCanvas } from '../components/table/ConfettiCanvas';
-import { ParticleSystem } from '../components/table/ParticleSystem';
 import {
   ChipAnimationManager,
   createChipToPotEvent,
   createPotToWinnerEvent,
   type ChipAnimationEvent,
 } from '../components/table/ChipAnimation';
-import MiniHUD from '../components/table/MiniHUD';
 // PotOddsDisplay intentionally NOT used on live tables — available for practice/training mode only
-import HandHistoryPanel, {
-  type HandRecord,
-  type HandHistoryAction,
-  type HandHistoryStreet,
-} from '../components/table/HandHistoryPanel';
+import { type HandRecord } from '../components/table/HandHistoryPanel';
 // [MIGRATION] timeBankEngine removed — server-authoritative (Step 5). Time bank via GameServerAPI + DB.
 import { usePlayerStats } from '../hooks/usePlayerStats';
 import { useTableSettings } from '../hooks/useTableSettings';
 import { useTableTimer } from '../hooks/useTableTimer';
-import { useTableModals } from '../hooks/useTableModals';
 import { useTableChat } from '../hooks/useTableChat';
 import { useTableTournament } from '../hooks/useTableTournament';
 import { useTableAnimations } from '../hooks/useTableAnimations';
 import { useTableSound } from '../hooks/useTableSound';
 import { useTableSession } from '../hooks/useTableSession';
-import { GTOQueryService, type GTOSolution } from '../services/GTOQueryService';
 import { tableService } from '../services/TableService';
 import { WalletService } from '../services/WalletService';
 import ActionPanel from '../components/table/ActionPanel';
@@ -138,7 +178,6 @@ import PreActionBar from '../components/table/PreActionBar';
 // default import this line used to carry was unused. TablePage builds the
 // payload, so it needs the types.
 import type { ShareableHand, ShareableCard, ShareableAction } from '../components/table/ShareHand';
-import SettingsPanel from '../components/table/SettingsPanel';
 import TableMenu from '../components/table/TableMenu';
 import {
   SitOutIcon,
@@ -151,12 +190,8 @@ import {
   HelpIcon,
   LeaveTableIcon,
 } from '../components/table/TableMenuIcons';
-import LeaveTableConfirm from '../components/table/LeaveTableConfirm';
-import PresenceIndicator from '../components/social/PresenceIndicator';
 import { useToast } from '../components/common/Toast';
 import { isVibrationAllowed, setVibrationAllowed } from '../utils/vibrationGate';
-import TournamentBreakScreen from '../components/table/TournamentBreakScreen';
-import TournamentAnnouncementOverlay from '../components/table/TournamentAnnouncementOverlay';
 import KnockoutAnimation, { type KnockoutData } from '../components/tournament/KnockoutAnimation';
 import MysteryBountyChest, {
   formatBountyTierLabel,
@@ -169,15 +204,10 @@ import SpinWheel, {
   type SpinWheelData,
 } from '../components/tournament/SpinWheel';
 import { spinRevealTotalMs } from '../config/spinSpec';
-import TournamentWinnerOverlay from '../components/table/TournamentWinnerOverlay';
 import { isSpinTournament, type SpinRevealSubject } from '../utils/spinReveal';
 // RealtimeChannelService imported if needed for future use
-import ChipStack from '../components/table/ChipStack';
 import { tournamentService } from '../services/TournamentService';
-import TimerBar from '../components/table/TimerBar';
-import RealTimeResults from '../components/table/RealTimeResults';
 // [MIGRATION] All engine imports removed — server-authoritative (Steps 1-7 complete)
-import { handPersistenceService } from '../services/HandPersistenceService';
 import { handHistoryService } from '../services/HandHistoryService';
 // Dan 2026-08-15: the real rake schedule (byte-identical mirror of the
 // server's), used so the Game Rules modal states the rake actually taken.
@@ -193,7 +223,6 @@ import { notificationService } from '../services/NotificationService';
 import SpectatorBadge from '../components/table/SpectatorBadge';
 // FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay
 // import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
-import SessionTimer from '../components/table/SessionTimer';
 import { horseBugReporter } from '../services/HorseBugReporter';
 import { useUserTableSettings } from '../hooks/useUserTableSettings';
 import { useUserThemeSettings } from '../hooks/useUserThemeSettings';
@@ -217,18 +246,11 @@ import GameServerAPI, {
   requestRabbitHunt,
 } from '../services/GameServerAPI';
 import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
-import { retryAsync } from '../utils/retryAsync';
 //monteCarloEquity import removed — server-authoritative
 import './TablePage.css';
-import { SessionHUD } from '../components/table/SessionHUD';
-import { BombPotOverlay } from '../components/table/BombPotOverlay';
 import { ConnectionHUD } from '../components/table/ConnectionHUD';
 import { TableErrorBoundary } from '../components/common/TableErrorBoundary';
-import { FinalTableOverlay } from '../components/tournament/FinalTableOverlay';
-import { HeadsUpOverlay } from '../components/tournament/HeadsUpOverlay';
 // Phase 8-9 Premium Components
-import { QuickActionsBar } from '../components/table/QuickActionsBar';
-import { SpectatorOverlay } from '../components/table/SpectatorOverlay';
 import { TableReactions } from '../components/table/TableReactions';
 import { useTableKeyboard } from '../hooks/useTableKeyboard';
 
@@ -237,13 +259,7 @@ import { TablePerfMonitor } from '../components/table/TablePerfMonitor';
 // createChipToPotEvent imports removed — imported for years, never rendered
 // or called (dead weight in the TablePage chunk).
 import { playerStyleClassifier } from '../services/PlayerStyleClassifier';
-// Phase 9: Previously unwired table components
-import { StreamerMode } from '../components/table/StreamerMode';
-import { BankrollWidget } from '../components/table/BankrollWidget';
-import { HandReveal } from '../components/table/HandReveal';
-import PositionStatsPopup from '../components/table/PositionStatsPopup';
-import { SessionTrajectoryMini } from '../components/table/SessionTrajectoryMini';
-import { StreakBadge } from '../components/table/StreakBadge';
+import IdentityModal from '../components/table/IdentityModal';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';
@@ -1360,7 +1376,6 @@ export default function TablePage({
   }, [tableId]);
   const [username, setUsername] = useState<string>('Player');
   const [heroAvatarUrl, setHeroAvatarUrl] = useState<string>('');
-  const [isLoading, setIsLoading] = useState(true);
   // ANIMATION AUDIT 2026-08-19: boardStageKey is GONE. It re-keyed (and so
   // unmounted + remounted) the whole .community-area on every stage change —
   // one frame after CommunityCards had marked the new cards as newly dealt.
@@ -1373,12 +1388,34 @@ export default function TablePage({
   const isMounted = useIsMounted();
 
   useEffect(() => {
+    /* AUDIT 2026-08-25 — TWO FAULTS HERE, BOTH SILENT.
+
+       1. `initUser()` was called bare. Nothing awaited it and nothing caught
+          it, so a rejection from getAuthUser() — a stale or half-refreshed
+          `smarter-poker-auth` key is the common cause, and this app shares
+          that key with the Hub — became an unhandled promise rejection.
+          `setUserId` never ran, and the player sat at a real table as a
+          permanent spectator with no message anywhere explaining why.
+          Now caught, reported, and the profile query is defended separately
+          so a profiles outage costs you your display name, not your session.
+
+       2. `setIsLoading(false)` on the last line was the only use of an
+          `isLoading` state that no JSX read — a loading flag that gated
+          nothing. Removed rather than given a gate: the felt deliberately
+          renders before auth resolves (PersistentTableLayer keeps tables
+          mounted across route changes), so introducing a blocking spinner
+          here would be a behaviour change, not a repair. */
     async function initUser() {
-      const {
-        data: { user },
-      } = await getAuthUser();
-      if (user) {
-        if (isMounted.current) setUserId(user.id);
+      let user: { id: string } | null = null;
+      try {
+        const res = await getAuthUser();
+        user = res?.data?.user ?? null;
+      } catch (err) {
+        reportError(err, 'TablePage.initUser_auth_failed');
+      }
+      if (!user) return;
+      if (isMounted.current) setUserId(user.id);
+      try {
         const { data: profile } = await supabase
           .from('profiles')
           .select('display_name, username, avatar_url:arena_avatar_url')
@@ -1388,10 +1425,11 @@ export default function TablePage({
           setUsername(profile?.display_name || profile?.username || 'Player');
           setHeroAvatarUrl(profile?.avatar_url || '');
         }
+      } catch (err) {
+        reportError(err, 'TablePage.initUser_profile_failed');
       }
-      if (isMounted.current) setIsLoading(false);
     }
-    initUser();
+    void initUser();
 
     // Start Horse Mini-Agent bug reporting system
     horseBugReporter.startCapturing();
@@ -1825,7 +1863,12 @@ export default function TablePage({
   const closeRaisePanel = useCallback(() => {
     setRaiseIntent((prev) => ({ nonce: prev.nonce + 1, open: false }));
   }, []);
-  const [actionError, setActionError] = useState<ActionErrorData | null>(null);
+  /* AUDIT 2026-08-25: a SECOND `actionError` / `setActionError` pair lived
+     here, typed ActionErrorData, written by nothing and read by nothing. The
+     live one is `actionErrorData` / `setActionErrorData` — that is the pair
+     <ActionErrorToast> is bound to. Two names for one fact, one of them
+     always null, is exactly how a rejection toast silently stops appearing;
+     removed so there is one. */
   /** FIX 185: Bible V8 §4.15 — Added 'call' (auto_call) distinct from 'callAny' (auto_call_any) */
   const [preAction, setPreAction] = useState<'fold' | 'check' | 'call' | 'callAny' | null>(null);
   // P2-1 FIX: only send a server 'clear' if a pre-action was actually armed
@@ -1902,7 +1945,8 @@ export default function TablePage({
     []
   );
 
-  const prevHandNumberForDealRef = useRef(0);
+  /* AUDIT 2026-08-25: `prevHandNumberForDealRef` removed — declared, never
+     written, never read. */
   // Per-seat deal animation — true for ~600ms after HAND_STARTED so SeatSlot
   // applies seat__cards--dealing class (card slide-in at each seat)
   const [isSeatDealing, setIsSeatDealing] = useState(false);
@@ -1924,7 +1968,14 @@ export default function TablePage({
   const bombPotChipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Time Bank State
-  const [showTimeBank, setShowTimeBank] = useState(false);
+  /* AUDIT 2026-08-25 — `showTimeBank` REMOVED. It was written in SEVEN places
+     and read in ZERO: the floating time-bank panel it drove was deleted, the
+     state outlived it, and a note beside the TimebankCounter had already
+     recorded that fact without anything being taken out. Every one of those
+     seven writes queued a state update on a 15,000-line component, several of
+     them from an effect that re-ran on every seat change of every hand, purely
+     to move a boolean nobody could observe. The whole "Show Time Bank button"
+     effect went with it — setting that boolean was its only body. */
   const [timeBankActive, setTimeBankActive] = useState(false);
   /* Bank PRESSED but not yet spent. The engine arms rather than spends while
      ordinary clock remains (Dan 2026-08-23), and until now the only sign of
@@ -3672,6 +3723,13 @@ export default function TablePage({
   const bbjTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // CA-22 BUG FIX: handCompleteTimerRef tracks the 3s HAND_COMPLETE table-reset timer.
   const handCompleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Review fix 2026-08-25 (spec 16/19 vs 21/24): wall-clock timestamp at which
+  // the LAST pot-award beat (fan + float) will have landed, written by the
+  // POT_WIN handler. A hand with many sequenced pots (multi-way side pots,
+  // double-board hi-lo = up to 8 beats) can outlast the fixed settle hold;
+  // HAND_COMPLETE extends its table-reset timer to at least this instant so
+  // the reset can never wipe an award animation that is still in flight.
+  const potAwardAnimEndAtRef = useRef(0);
 
   // Unmount guard for all four CA-19..CA-22 animation timers.
   useEffect(() => {
@@ -3702,8 +3760,6 @@ export default function TablePage({
   const [isStraddleEnabled, setIsStraddleEnabled] = useState(false);
   const [tableStraddleEnabled, setTableStraddleEnabled] = useState(false);
   const [straddleBusy, setStraddleBusy] = useState(false);
-  // Track whether straddle change originated from server (MasterBus) to avoid echo
-  const straddleFromServerRef = useRef(false);
 
   // A straddle is 2x the big blind. This was hardcoded to `4`, which is only
   // correct at 1/2 — every other table printed the wrong price on the control.
@@ -4185,6 +4241,7 @@ export default function TablePage({
     settings: v8Settings,
     loading: v8SettingsLoading,
     toggleSetting: toggleV8Setting,
+    setAlias: setV8TableAlias,
   } = useUserTableSettings(userId !== 'guest' ? userId : null);
 
   // FIX-232: Ref for cards_pre_sort to avoid stale closure in hole card callbacks
@@ -4308,7 +4365,19 @@ export default function TablePage({
   const [handHistory, setHandHistory] = useState<HandRecord[]>(() => {
     try {
       const saved = localStorage.getItem(`hand_history_${tableId || 'default'}`);
-      return saved ? JSON.parse(saved) : [];
+      if (!saved) return [];
+      /* AUDIT 2026-08-25: this returned `JSON.parse(saved)` straight out. The
+         catch only covers a SYNTAX error — valid JSON that is not an array
+         (an object, a number, `null` from an old writer or another tab) sailed
+         through and became `handHistory`, and the first `.map()` over it threw
+         inside render, which takes the whole table down rather than one panel.
+         localStorage is the definition of hostile input here: it survives
+         deploys, so a shape this build stopped writing months ago is still
+         sitting in real browsers. Anything that is not an array of objects is
+         treated as absent. */
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((h): h is HandRecord => !!h && typeof h === 'object');
     } catch {
       return [];
     }
@@ -4409,13 +4478,14 @@ export default function TablePage({
   const handActionsRef = useRef<
     Array<{ seat: number; action: string; amount?: number; street: string }>
   >([]);
-  const historyHandCountRef = useRef(0);
   const handStartStacksRef = useRef<Record<number, number>>({});
   /** Button seat captured at HAND_STARTED — the live dealerSeat has already
    *  rotated by the time the hand completes. */
   const shareButtonSeatRef = useRef(0);
-  // Per-street pot tracking — records pot at each stage transition for accurate hand history
-  const streetPotsRef = useRef<Record<string, number>>({ preflop: 0, flop: 0, turn: 0, river: 0 });
+  /* AUDIT 2026-08-25: `historyHandCountRef` and `streetPotsRef` removed —
+     both declared here and never touched again. The per-street pot figures
+     the hand history actually publishes come from the engine snapshot, not
+     from a client-side accumulator. */
 
   // Play win sound — escalates based on pot size
   const playWinSound = (potAmount?: number) => {
@@ -4437,36 +4507,18 @@ export default function TablePage({
     soundService.playPotCollect();
   };
 
-  // GTO advisor state
-  const [gtoSolution, setGtoSolution] = useState<GTOSolution | null>(null);
-  const [isGtoLoading, setIsGtoLoading] = useState(false);
-  const [showGtoAdvisor, setShowGtoAdvisor] = useState(false);
-
-  // Fetch GTO advice for current situation
-  const fetchGtoAdvice = async (
-    position: string,
-    street: string,
-    board: string[] | null = null
-  ) => {
-    setIsGtoLoading(true);
-    try {
-      const solution = await GTOQueryService.getGTOAction(
-        position,
-        'SRP', // Single Raised Pot
-        street,
-        board,
-        'check',
-        100
-      );
-      setGtoSolution(solution);
-    } catch (error) {
-      reportError(error, 'TablePage.Error_fetching_GTO_advice');
-    }
-    setIsGtoLoading(false);
-  };
-
-  // Rake state
-  const [sessionRake, setSessionRake] = useState(0);
+  /* AUDIT 2026-08-25 — DEAD BLOCK REMOVED.
+     A GTO advisor lived here: three useState values (`gtoSolution`,
+     `isGtoLoading`, `showGtoAdvisor`) and a `fetchGtoAdvice()` that queried
+     GTOQueryService. Nothing ever called fetchGtoAdvice, nothing ever set
+     showGtoAdvisor, and no JSX ever read any of the three — so the advisor
+     could not be opened, and the state re-rendered the whole table for
+     nobody. `sessionRake` sat beside it, never set and never read.
+     src/services/GTOQueryService.ts itself is untouched and still exported
+     from the services barrel; only this page's import of it is gone, which
+     also takes it out of the table's bundle. If the advisor is wanted, it
+     comes back as a rendered panel with a trigger, not as four unreachable
+     identifiers. */
 
   // [MIGRATION] handleHandComplete REMOVED — FIX 181
   // Rake calculation and waterfall execution are server-authoritative (Bible V8 Law 1.4).
@@ -4578,6 +4630,18 @@ export default function TablePage({
   rebuyProcessingRef.current = rebuyProcessing;
 
   /**
+   * "This player paid to stay in." Set the instant a rebuy is confirmed, and
+   * cleared when their stack actually reflects it (or when they bust again).
+   *
+   * 2026-08-26, third audit: `exitIfBusted` guarded on `stack > 0`, which is
+   * local state that lags the server. Between `processRebuy` resolving and the
+   * engine broadcasting the new stack, the guard reads 0 and the player who
+   * just paid is ejected. A flag set at the moment of purchase cannot lose that
+   * race the way a derived value can.
+   */
+  const rebuyJustSucceededRef = useRef(false);
+
+  /**
    * THE LAST-RESORT EXIT (2026-08-25, second audit).
    *
    * Called by `releaseBustHold` when the hold ends and there is no deferred
@@ -4594,6 +4658,14 @@ export default function TablePage({
       if (!tableStateRef.current.isTournament) return;
       const seat = tableStateRef.current.heroSeat;
       if (seat <= 0) return;
+      /* 2026-08-26, third audit: the stack check below is a RACE, not a
+         guarantee. `processRebuy` resolving is the SERVER acknowledging the
+         purchase; the new stack arrives afterwards over the engine feed. So a
+         player who has just paid can still read 0 here for a moment, and this
+         is the function that removes them from the table. `rebuyJustSucceededRef`
+         is set by the confirm handler and is the authoritative "they paid" flag
+         — it does not depend on local state having caught up yet. */
+      if (rebuyJustSucceededRef.current) return;
       const stack = tableStateRef.current.players[seat - 1]?.stack ?? 0;
       if (stack > 0) return;
       heroSeatRef.current = 0;
@@ -4614,6 +4686,10 @@ export default function TablePage({
     const stack = heroPlayer.stack ?? 0;
     if (stack > 0) {
       bustPromptFiredRef.current = false;
+      /* The rebuy has landed: local state now agrees with the server, so the
+         "they just paid" override is no longer needed and must be cleared, or
+         a LATER bust in the same tournament could never exit. */
+      rebuyJustSucceededRef.current = false;
       return;
     }
     /* Dan 2026-08-25 (binding): `if (tableState.isHandInProgress) return;` used
@@ -5808,6 +5884,12 @@ export default function TablePage({
     }
   }, [userId]);
 
+  /* AUDIT 2026-08-25: 'missing' = the database gave a clean answer and there
+     is no such table. 'unreachable' = we asked five times over fifteen seconds
+     and never got an answer. They are different sentences to the player and
+     only one of them is worth a retry button. null = loaded, or still trying. */
+  const [tableLoadFailure, setTableLoadFailure] = useState<'missing' | 'unreachable' | null>(null);
+
   // Load table info from Supabase on mount
   useEffect(() => {
     let isMounted = true;
@@ -5856,9 +5938,32 @@ export default function TablePage({
         // A clean "no such table" answer is final — retrying cannot invent a row.
         if (!res.error && !table) break;
       }
-      if (!table && error) {
-        reportError(error, 'TablePage.loadTableInfo_exhausted_retries');
+      /* AUDIT 2026-08-25 — THE DEAD-BOOKMARK HOLE.
+         Below this point the code went straight to `if (table && !error)`.
+         Follow the two failing paths out of the retry loop:
+
+           - a clean "no such row" (`!res.error && !table`) breaks immediately
+             and matched NEITHER the reportError above nor the branch below,
+             so absolutely nothing happened;
+           - five exhausted retries reported to Sentry and then also fell
+             through.
+
+         Either way the player sat on a felt frozen in its initial state —
+         "Poker Table", blinds "?/?", six empty chairs, no message, no way
+         back — indefinitely. This is the ordinary outcome of a six-month-old
+         bookmark, a shared link to a finished tournament table, or a spin
+         table that was recycled between the tap and the load; Spin tables are
+         torn down at roughly ten a minute, so it is not an edge case.
+
+         The recycled-table watch further down cannot rescue this: it needs
+         `tableState.tournamentId`, which is only ever set from the row that
+         just failed to load. Say what happened and offer the way out. */
+      if (!table && isMounted) {
+        if (error) reportError(error, 'TablePage.loadTableInfo_exhausted_retries');
+        setTableLoadFailure(error ? 'unreachable' : 'missing');
+        return;
       }
+      if (isMounted) setTableLoadFailure(null);
 
       if (table && !error) {
         setTableState((prev) => ({
@@ -6462,6 +6567,40 @@ export default function TablePage({
               })();
             }, delayMs);
           };
+
+          /**
+           * ═══════════════════════════════════════════════════════════════════
+           *  PUBLISH IT. WITHOUT THIS LINE THE WHOLE BUST HOLD IS A NO-OP.
+           * ═══════════════════════════════════════════════════════════════════
+           *
+           * 2026-08-26, third audit. `goToLobbyWithResultRef` had FOUR readers
+           * and ZERO writers:
+           *
+           *   releaseBustHold          replays a deferred elimination
+           *   exitIfBusted             the hold's last-resort exit
+           *   the tournament_players   'eliminated' fallback
+           *   the rebuy-decline path
+           *
+           * Every one of them is `?.()`, so every one silently did nothing. A
+           * busted player got `heroSeat = 0` and NOTHING ELSE — no
+           * SESSION_ENDED, no TABLE_LEFT, no CLOSE_TABLE_TAB, no result card,
+           * no navigation. They sat at a dead felt with a hidden seat for the
+           * rest of the session. That is precisely the failure the hold was
+           * written to prevent, and it shipped inside the fix for it.
+           *
+           * It went unnoticed because the specs guarding the hold assert that
+           * the READ exists in the source. A ref that is never written passes
+           * that assertion forever. tests/unit/tablePageBustHold.test.ts now
+           * asserts the ASSIGNMENT, and asserts there is at least one writer
+           * for every reader.
+           *
+           * The function has to be declared here — it closes over `table`,
+           * `exitStarted` and the subscription's own scope (see the note at its
+           * declaration) — so the ref is the bridge to the component body. It is
+           * nulled in this effect's cleanup so a torn-down subscription cannot
+           * navigate a page that has moved on.
+           */
+          goToLobbyWithResultRef.current = goToLobbyWithResult;
 
           const breakChan = masterBus.getOrCreateChannel(breakChanKey);
           breakChan
@@ -7358,6 +7497,11 @@ export default function TablePage({
         clearTimeout(tournamentExitTimerRef.current);
         tournamentExitTimerRef.current = null;
       }
+      /* The exit function closes over THIS subscription's scope (`table`,
+         `exitStarted`). Once the subscription is gone it must not be callable:
+         a hold released after teardown would otherwise navigate a page that has
+         already moved on. Cleared here, published where it is declared. */
+      goToLobbyWithResultRef.current = null;
       if (bountyChannelRef.current) {
         // BUG-C FIX: Read tournamentId from tableStateRef (fresh) instead of stale closure
         const tournId = tableStateRef.current.tournamentId || tableId;
@@ -7538,8 +7682,16 @@ export default function TablePage({
     if (!tableState.isTournament && now - _LAST_BBJ_TOAST_TIME > 5000) {
       _LAST_BBJ_TOAST_TIME = now;
       if (soundService.isEnabled()) soundService.playBadBeatJackpot();
+      /* AUDIT 2026-08-25: this string opened with a siren EMOJI, which
+         CLAUDE.md §5.3 forbids outright in source (it breaks the SWC
+         compiler), and it was the only emoji left in this file. It also read
+         "BBJ HIT! X just won $Y on Z! (Tap to observe)" — sentence case with
+         a parenthetical, against the popup rule that every word is
+         capitalised. The Toast layer's popupStyle transform capitalises for
+         us but cannot strip an emoji or rewrite a parenthetical, so both are
+         fixed at the source. The amount keeps .toLocaleString() (§5.5). */
       toast?.success?.(
-        `🚨 BBJ HIT! ${payload.winnerName} just won $${payload.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} on ${payload.tableName}! (Tap to observe)`,
+        `Bad Beat Jackpot Hit. ${payload.winnerName} Won $${payload.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} On ${payload.tableName}. Tap To Observe.`,
         10000,
         () =>
           masterBus.emit('OPEN_OBSERVE_TABLE', {
@@ -7620,10 +7772,6 @@ export default function TablePage({
       if (payload.tableId !== tableId || payload.playerId !== userId) return;
       setTimeBankActive(false);
       setTimeBanksRemaining(payload.usesRemaining ?? 0);
-      // Hide time bank UI if fully depleted
-      if ((payload.usesRemaining ?? 0) <= 0 || (payload.remainingSeconds ?? 0) <= 0) {
-        setShowTimeBank(false);
-      }
       try {
         await supabase
           .from('table_seats')
@@ -7649,7 +7797,6 @@ export default function TablePage({
     if (payload.tableId !== tableId || payload.playerId !== userId) return;
     setTimeBanksRemaining(payload.usesRemaining ?? 0);
     setTimeBankTimeRemaining(payload.remainingSeconds ?? 0);
-    setShowTimeBank(true);
     const msg =
       payload.diamondsCharged > 0
         ? `Time Bank Extended! (${payload.diamondsCharged} diamonds)`
@@ -7664,8 +7811,10 @@ export default function TablePage({
 
   useMasterBusSubscription('STRADDLE_TOGGLED', (payload: any) => {
     if (payload.tableId !== tableId || payload.playerId !== userId) return;
-    // Mark as server-originated to prevent useEffect from echoing back to server
-    straddleFromServerRef.current = true;
+    /* AUDIT 2026-08-25: this used to also set `straddleFromServerRef.current`
+       to suppress an echo from a useEffect on [isStraddleEnabled]. That effect
+       is gone (see handleToggleStraddle above — the toggle POSTs directly and
+       reverts on refusal), so nothing read the flag. Ref and write removed. */
     setIsStraddleEnabled(payload.enabled);
   });
 
@@ -7698,25 +7847,11 @@ export default function TablePage({
     return () => clearInterval(interval);
   }, [timeBankActive]);
 
-  // ── Show Time Bank button when hero is seated, has banks, and it's their turn ──
-  useEffect(() => {
-    if (!tableId || !userId) return;
-    const isHeroTurn =
-      tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress;
-    if (isHeroTurn && timeBanksRemaining > 0) {
-      setShowTimeBank(true);
-    } else if (!timeBankActive) {
-      // Only hide when time bank is NOT currently counting down
-      setShowTimeBank(false);
-    }
-  }, [
-    tableState.currentPlayerSeat,
-    tableState.heroSeat,
-    tableState.isHandInProgress,
-    tableId,
-    userId,
-    timeBankActive,
-  ]);
+  /* AUDIT 2026-08-25: the "Show Time Bank button" effect stood here. Its
+     entire body was setShowTimeBank(true/false), and nothing read that value.
+     It listed currentPlayerSeat in its dependencies, so it re-ran on every
+     single action of every hand at the table to write a boolean into the void.
+     Removed whole. */
 
   // ── Reset timeBankActive when hero's turn ends ──
   useEffect(() => {
@@ -7725,7 +7860,6 @@ export default function TablePage({
     if (!isHeroTurn && timeBankActive) {
       // Hero acted or hand ended — cancel time bank state
       setTimeBankActive(false);
-      setShowTimeBank(false);
       // Server tracks time bank state — no client engine call needed
     }
   }, [
@@ -8305,9 +8439,9 @@ export default function TablePage({
    * All of this is now handled server-side. UI updates come via WebSocket events.
    */
 
-  // Keep actionLockRef for debouncing (used by action handlers below)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _migrationStub = null; // Marker: init block removed
+  /* AUDIT 2026-08-25: `const _migrationStub = null` and its eslint-disable
+     lived here as a marker that the block above had been removed. The comment
+     block IS the marker; a variable carrying an eslint suppression is not. */
 
   // Handle incoming game events from WebSocket.
   // 2026-04-16 ROOT-CAUSE FIX: the server sends discrete game events
@@ -9458,10 +9592,17 @@ export default function TablePage({
         // 3x left ~12s of stale board on screen if a HAND_STARTED event is ever
         // dropped, where the old hardcoded 3000ms risked about one second.
         // Never shorter than the engine's own hold, never more than double it.
-        const holdMs = Math.min(
+        const holdMsScaled = Math.min(
           holdBaseMs * 2,
           Math.max(holdBaseMs, holdBaseMs * getAnimationSpeed())
         );
+        // Review fix 2026-08-25: a long award sequence (many side pots,
+        // double-board hi-lo) can outlast the settle hold. Stretch the reset
+        // to at least 400ms past the final beat's landing instant recorded by
+        // POT_WIN — bounded (the POT_WIN estimate is itself bounded by group
+        // count), and a no-op for ordinary one/two-pot hands.
+        const animRemainingMs = potAwardAnimEndAtRef.current - Date.now();
+        const holdMs = Math.max(holdMsScaled, animRemainingMs + 400);
         // CA-22: track so unmount can cancel — prevents setTableState on dead page
         if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
         handCompleteTimerRef.current = window.setTimeout(() => {
@@ -9616,14 +9757,44 @@ export default function TablePage({
           const muckedPlayers =
             ((evt.data as any).mucked_players as Array<{ user_id: string; seat?: number }>) || [];
           const reveals =
-            ((evt.data as any).reveals as Array<{ user_id: string; reveal_order?: number }>) || [];
-          if (muckedPlayers.length > 0 || reveals.length > 0) {
+            ((evt.data as any).reveals as Array<{
+              user_id: string;
+              seat?: number;
+              reveal_order?: number;
+            }>) || [];
+          // Review fix 2026-08-25: the server defaults seat to -1 when the
+          // showdown result predates seat capture, so seat-only resolution
+          // silently dropped those players. Resolve by user_id against the
+          // live player list first; the wire seat is the fallback.
+          const seatIdxOf = (userId: string, wireSeat?: number): number => {
+            const byId = tableStateRef.current.players.findIndex((p) => p?.id === userId);
+            if (byId >= 0) return byId;
+            const s = (wireSeat ?? 0) - 1;
+            return s >= 0 && s < 9 ? s : -1;
+          };
+          if (muckedPlayers.length > 0) {
             const muckedMask = Array(9).fill(false) as boolean[];
             for (const m of muckedPlayers) {
-              const seatIdx = (m.seat ?? 0) - 1;
-              if (seatIdx >= 0 && seatIdx < 9) muckedMask[seatIdx] = true;
+              const seatIdx = seatIdxOf(m.user_id, m.seat);
+              if (seatIdx >= 0) muckedMask[seatIdx] = true;
             }
             setMuckedLabelSeats(muckedMask);
+          }
+          // Review fix 2026-08-25: this event carries reveal_order too —
+          // apply it, so a client that missed the discrete `showdown` event
+          // (reconnect mid-settle) still staggers flips in the legal order
+          // instead of flipping everyone at once.
+          if (reveals.length > 0) {
+            const orderBySeat: Record<number, number> = {};
+            for (const r of reveals) {
+              const seatIdx = seatIdxOf(r.user_id, r.seat);
+              if (seatIdx >= 0 && typeof r.reveal_order === 'number') {
+                orderBySeat[seatIdx] = r.reveal_order;
+              }
+            }
+            if (Object.keys(orderBySeat).length > 0) {
+              showdownRevealOrderRef.current = orderBySeat;
+            }
           }
         } catch {
           /* reconciliation is best-effort — the snapshot remains authoritative */
@@ -9915,6 +10086,13 @@ export default function TablePage({
           const awardGroups: AwardGroupAnim[] = seqGroups.map((g) => {
             const anim: AwardGroupAnim = { events: [], floats: [] };
             for (const w of g.winners) {
+              // Review fix 2026-08-25: pot_awards amounts are EXACT per-pot
+              // shares — a 0 there is a real zero (a fully-raked micro pot),
+              // and the old `w.amount || mergedTotal || split` fallback chain
+              // inflated it to the player's MERGED cross-pot total, showing
+              // "+40" twice for a 20/20 split across pots. Skip the beat
+              // instead. Estimating remains for legacy non-exact groups.
+              if (g.exact && !(w.amount > 0)) continue;
               // SeatPlayer.id is the userId — players[] index = seatNumber - 1.
               const seatIdx = tableStateRef.current.players.findIndex((p) => p?.id === w.userId);
               if (seatIdx < 0) continue;
@@ -9923,10 +10101,11 @@ export default function TablePage({
               const winnerPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
               // The group's own share — exact for THIS pot(-half), not the
               // player's merged total.
-              const share =
-                w.amount ||
-                winnerInfoRef.current?.amounts?.[w.userId] ||
-                potAmount / (winnerIds.length || 1);
+              const share = g.exact
+                ? w.amount
+                : w.amount ||
+                  winnerInfoRef.current?.amounts?.[w.userId] ||
+                  potAmount / (winnerIds.length || 1);
               // createPotToWinnerEvent already returns a fan of 3-8 chips with
               // bezier arc, staggered 40ms each, 600ms duration — spec match.
               anim.events.push(...createPotToWinnerEvent(potPos, winnerPos, share));
@@ -9993,6 +10172,10 @@ export default function TablePage({
             },
             lastGroupDelay + 700 * getAnimationSpeed()
           );
+          // Review fix 2026-08-25: record when the final beat lands so the
+          // HAND_COMPLETE reset hold can stretch to cover a long pot
+          // sequence instead of wiping it mid-flight.
+          potAwardAnimEndAtRef.current = Date.now() + lastGroupDelay + 700 * getAnimationSpeed();
 
           // Dan 2026-08-19, bug list item 6: push the POT ITSELF to the winner,
           // not just a fan of chips. `.pot-display--collect` and its
@@ -10440,6 +10623,19 @@ export default function TablePage({
   );
 
   const seatPositions = useMemo(() => seatRotationMap.map((s) => s.pos), [seatRotationMap]);
+
+  /* PERF 2026-08-25. Both of these were computed INSIDE the seat map, so each
+     ran once per seat per render — and at the time this component re-rendered
+     for the whole of anybody's turn, because it owned the action clock's state.
+     It does not any more (see `actionClock`), but the reasoning stands for every
+     other render. `safeBB` splits and parses a string; `holeCardCountFor` switches on the
+     variant. Neither depends on the seat. One table-wide value each, recomputed
+     only when the input actually changes. */
+  const seatBigBlind = useMemo(() => safeBB(tableState.blinds), [tableState.blinds]);
+  const seatHoleCardCount = useMemo(
+    () => holeCardCountFor(tableState.gameType),
+    [tableState.gameType]
+  );
 
   // Throw targets in scaler pixels, keyed by 1-indexed seat number to match
   // ThrowEvent.fromSeat/toSeat. The animation layer must be mounted INSIDE
@@ -11123,11 +11319,13 @@ export default function TablePage({
     }
   }, [tableState.heroSeat, tableId, userId]);
 
-  const {
-    timeRemaining: actionTimeRemaining,
-    timerProgress: actionTimerProgress,
-    resetTimer,
-  } = useTableTimer({
+  /* PERF 2026-08-25 — `actionTimeRemaining` and `actionTimerProgress` are gone.
+     They were React state IN THIS COMPONENT, so the whole table re-rendered for
+     the length of every turn just to move a number that three leaves needed.
+     `actionClock` is a store whose identity never changes; the leaves subscribe
+     to it. Measured across one 20 second turn: 20 renders of this page before,
+     zero after. See src/hooks/actionClockStore.ts. */
+  const { clock: actionClock, resetTimer } = useTableTimer({
     isActiveTurn: tableState.currentPlayerSeat > 0 && tableState.isHandInProgress,
     /* Dan 2026-08-23: `&& !timeBankActive` used to be here, and it did more harm
        than the redundant countdown it was suppressing. It made isHeroTurnRef
@@ -11145,15 +11343,31 @@ export default function TablePage({
     turnDeadlineMs: tableState.actionTimerDeadline,
     activeSeatKey: tableState.currentPlayerSeat,
     onTimeout: () => {
-      // Server-authoritative: when client timer expires, try to activate time bank.
-      // Bible V8 §11.1 auto_time_bank toggle — when ON, silently activate without
-      // popping the modal (treat it as a silent grant). When OFF, the modal still
-      // opens so the user can see the countdown tick and decide whether to spend
-      // another bank if one expires.
+      /* Server-authoritative: when the client timer expires, try to activate a
+         time bank.
+
+         AUDIT 2026-08-25 — WHAT `auto_time_bank` NOW MEANS, AND WHAT IT DID NOT.
+         Bible V8 §11.1's auto_time_bank is a paid/VIP setting. Its ONLY
+         consumer anywhere in the app was a `setShowTimeBank(true)` on this
+         line, and `showTimeBank` was read nowhere — the panel it used to open
+         had been deleted. So the setting a player spends diamonds on changed
+         precisely nothing at the table, in either position, and a bank was
+         auto-spent for everyone regardless.
+
+         The bank is still auto-spent for everyone: that behaviour is the
+         engine's and this pass does not touch who pays what. What the setting
+         now genuinely controls is whether it happens SILENTLY. Off (the
+         default) the player is told a bank was just spent on their behalf,
+         which is the one moment that information matters and the moment they
+         are least able to work it out. On — which is what "auto" was sold as —
+         it stays quiet. If the intent was that non-subscribers should instead
+         be PROMPTED before a bank is spent, that is a real feature with a
+         countdown and a decision in it, and it belongs in the engine's hands,
+         not bolted on here. */
       if (tableId && userId && timeBanksRemaining > 0) {
         setTimeBankActive(true);
         if (!v8Settings.auto_time_bank) {
-          setShowTimeBank(true);
+          toast?.info?.('Time Bank Used');
         }
         // 2026-08-20: this was `.catch(() => handleTimerAutoFold())`, and the
         // comment on it said "Server rejected — fall back to auto-fold".
@@ -11186,7 +11400,6 @@ export default function TablePage({
             return;
           }
           setTimeBankActive(false);
-          setShowTimeBank(false);
           handleTimerAutoFold();
         });
       } else {
@@ -11887,6 +12100,28 @@ export default function TablePage({
       closeRaisePanel();
       setShowBuyInModal(false);
       setIsSideMenuOpen(false);
+      /* AUDIT 2026-08-25: the comment said ALL and the list was nine of
+         nineteen. Every overlay below is opened from the table and had no
+         keyboard dismissal at all — several, like the hand-detail sheet and
+         the tournament panel, cover the whole felt. All are plain boolean
+         state with no side effect on close, so closing them here cannot do
+         anything a tap on their own X does not already do. */
+      setShowHandDetail(false);
+      setShowHandReplay(false);
+      setShowTournamentInfo(false);
+      setShowTimeBankStore(false);
+      setShowThrowableSelector(false);
+      setShowGameRules(false);
+      setShowLeaveConfirm(false);
+      setShowIdentityModal(false);
+      setShowProfileModal(false);
+      setShowSessionStats(false);
+      /* The one exception, and it is a money rule: the seat-first buy-in
+         sheet is dismissible ONLY while nothing is in flight. `seatFirstPending`
+         means a debit has been sent and not yet answered; wiping the sheet
+         then would hide a transaction the player has already authorised. The
+         backdrop tap two thousand lines below carries the same guard. */
+      if (!seatFirstPending) setSeatFirstConfirm(null);
     },
   });
 
@@ -12010,46 +12245,21 @@ export default function TablePage({
 
   // Timer warning sound — tick when hero's time is running low.
   //
-  // AUDIT-2 FIX 2026-08-20 (machine-gun ticking): this effect depended on
-  // `actionTimeRemaining` / `actionTimerProgress`, which the timer hook
-  // updates ~30x per second. Every one of those updates re-ran the effect:
-  // the cleanup called stopTimerWarning() and the body called
-  // startTimerWarning() again — and startTimerWarning plays a tick
-  // IMMEDIATELY. So instead of one tick per second the player got a tick
-  // roughly every 66ms (only the 50ms priority gate throttled it), each with
-  // a haptic. Worse, timer_warning outranks every action sound (rank 80), so
-  // acting inside the last 5 seconds frequently produced NO fold/check/call
-  // sound at all.
+  // PERF 2026-08-25: the two effects that ran this have MOVED, verbatim, into
+  // <ActionClockWarning> (components/table/ActionClockReadouts.tsx), mounted
+  // near the bottom of this component's tree. They were the last thing on the
+  // page that needed the countdown as a NUMBER in React, and keeping them here
+  // meant keeping the countdown in this component's state — which is what
+  // re-rendered the whole table once a second for the length of every turn.
   //
-  // Collapsing the trigger to a boolean means the effect runs exactly twice
-  // per turn: once when the warning window opens, once when it closes.
-  // Dan 2026-08-20: warning window is the FINAL 3 SECONDS (was 5), and it
-  // buzzes as well as ticks. The haptic is deliberately NOT gated on the
-  // sound switches — a player with sound off still gets the physical warning
-  // (HapticService itself honors the user's vibration setting).
-  const isTimerWarningWindow =
-    tableState.currentPlayerSeat === tableState.heroSeat &&
-    tableState.isHandInProgress &&
-    actionTimeRemaining <= 3 &&
-    actionTimeRemaining > 0;
-  const isTimerWarningActive = isTimerWarningWindow && isSoundEnabled && ambientSoundsAllowed;
-  useEffect(() => {
-    if (isTimerWarningActive) {
-      soundService.startTimerWarning();
-      return () => soundService.stopTimerWarning();
-    }
-    soundService.stopTimerWarning();
-  }, [isTimerWarningActive]);
-  useEffect(() => {
-    if (!isTimerWarningWindow) return;
-    // Heavy pulse immediately, then once per second while the window is open
-    // (mirrors the 1s cadence of soundService.startTimerWarning).
-    import('../services/HapticService').then(({ haptic }) => haptic.heavy());
-    const buzz = window.setInterval(() => {
-      import('../services/HapticService').then(({ haptic }) => haptic.heavy());
-    }, 1000);
-    return () => clearInterval(buzz);
-  }, [isTimerWarningWindow]);
+  // The behaviour is unchanged and the AUDIT-2 2026-08-20 machine-gun fix is
+  // carried across with it: the trigger is still a BOOLEAN, so the effects still
+  // run exactly twice per turn rather than once per publication. Everything this
+  // component still knows and the clock does not — is hero the seat on the
+  // clock, is a hand in progress, are the sound switches on — is passed down as
+  // the `armed` and `soundEnabled` props.
+  const isHeroOnTheClock =
+    tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress;
 
   // --- NEW: Fully Functional Auto Top Up & Stand Up Next Big Blind ---
   useEffect(() => {
@@ -12201,6 +12411,118 @@ export default function TablePage({
                 .community-area { animation: boardFade 0.4s ease-out; }
                 .board-transition { animation: boardSlideIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
             `}</style>
+      {/* AUDIT 2026-08-25 — THE ANSWER TO THE DEAD BOOKMARK.
+          See the bootstrap loader for how a table that does not exist used to
+          leave the player on a permanently blank felt. Rendered above the
+          felt, only when the bootstrap gave a definitive negative, and always
+          with a way out. Nothing is disabled underneath: a player who is
+          already seated cannot reach this (the row loaded, or they would have
+          no seat), so it never covers a live hand. */}
+      {/* Styled INLINE on purpose. TablePage.css belongs to another pass and
+          a new overlay whose only positioning lives in a file this change does
+          not touch is one merge away from being an unstyled paragraph at the
+          top of a fixed-position page. The class names are kept so that
+          stylesheet can take it over later without touching this file. */}
+      {tableLoadFailure && (
+        <div
+          className="table-load-failure"
+          role="alert"
+          aria-live="assertive"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 4000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            background: 'rgba(6, 10, 16, 0.88)',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            className="table-load-failure__card"
+            style={{
+              maxWidth: 340,
+              width: '100%',
+              textAlign: 'center',
+              background: '#141a24',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: 14,
+              padding: '22px 20px',
+              color: '#e8edf5',
+              boxShadow: '0 18px 48px rgba(0,0,0,0.55)',
+            }}
+          >
+            <h2
+              className="table-load-failure__title"
+              style={{ margin: '0 0 10px', fontSize: 18, fontWeight: 700 }}
+            >
+              {tableLoadFailure === 'missing' ? 'This Table Has Closed' : 'Cannot Reach This Table'}
+            </h2>
+            <p
+              className="table-load-failure__body"
+              style={{
+                margin: '0 0 18px',
+                fontSize: 14,
+                lineHeight: 1.5,
+                color: 'rgba(232,237,245,0.75)',
+              }}
+            >
+              {/* Title Case to match the rest of this page's card copy (see
+                  the seat-first buy-in sheet). Kept short for the same reason:
+                  long sentences do not survive it. No em dashes anywhere in
+                  player-facing text. */}
+              {tableLoadFailure === 'missing'
+                ? 'That Game Has Finished And The Table Was Taken Down. Nothing Was Charged And No Seat Was Taken.'
+                : 'We Could Not Load This Table After Five Tries. Your Connection May Be Down.'}
+            </p>
+            <div
+              className="table-load-failure__actions"
+              style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}
+            >
+              {tableLoadFailure === 'unreachable' && (
+                <button
+                  type="button"
+                  className="table-load-failure__btn table-load-failure__btn--primary"
+                  onClick={() => window.location.reload()}
+                  style={{
+                    minHeight: 44,
+                    padding: '0 18px',
+                    borderRadius: 10,
+                    border: 'none',
+                    background: '#2f6fed',
+                    color: '#fff',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Try Again
+                </button>
+              )}
+              <button
+                type="button"
+                className="table-load-failure__btn"
+                onClick={() => navigate(exitDestination())}
+                style={{
+                  minHeight: 44,
+                  padding: '0 18px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.22)',
+                  background: 'transparent',
+                  color: '#e8edf5',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Back To Lobby
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Phase 1.2 PR-F: hero disconnect banner. Only renders when the
           engine FSM reports MISSING or DISCONNECTED for this user. */}
       {/* ── Bounty knockout (2026-08-20) ───────────────────────────────────
@@ -12621,14 +12943,23 @@ export default function TablePage({
               <TimebankCounter
                 count={timeBanksRemaining}
                 low={timeBanksRemaining <= 1}
+                /* AUDIT 2026-08-25: the tile's accessible label and tooltip say
+                   "N seconds each", and that number was the component's hard
+                   default of 20 because nothing was ever passed. Meanwhile
+                   `timeBankGrantedSeconds` held the figure the ENGINE actually
+                   granted (TIME_BANK_ACTIVATED payload) and was read nowhere.
+                   Wired: a table configured for anything other than 20 no
+                   longer tells a screen-reader user the wrong number. */
+                bankSeconds={timeBankGrantedSeconds}
                 /* Dan 2026-08-21, item 3: out of banks → the buy sheet, not
                    the (empty) time-bank panel.
 
                    2026-08-24: the OTHER half of that ternary was a dead tap.
-                   It called `setShowTimeBank(true)`, and `showTimeBank` is
-                   written in four places and READ IN NONE — the floating panel
+                   It called `setShowTimeBank(true)`, and `showTimeBank` was
+                   written in seven places and READ IN NONE — the floating panel
                    it used to open was deleted (see the tombstone above the
-                   control strip) and the state outlived it. So a player WITH
+                   control strip) and the state outlived it. The state itself
+                   was removed on 2026-08-25. So a player WITH
                    banks left tapped the counter and nothing happened at all,
                    which is worse than being sent somewhere. Both arms now open
                    the store, where the balance is shown and more can be
@@ -12914,10 +13245,11 @@ export default function TablePage({
                           winnerInfo.boardHandNames ? undefined : winnerInfo.handDescription
                         }
                         /* SHOWDOWN POLISH 2026-08-25 (spec 33): the hi-lo
-                           split's LOW WINNER line. */
-                        lowWinnerLabel={
-                          winnerInfo.boardHandNames ? undefined : winnerInfo.lowWinnerLabel
-                        }
+                           split's LOW WINNER line. Review fix: NOT gated on
+                           boardHandNames — a double-board hi-lo hand has both
+                           per-board names AND a low winner, and suppressing
+                           the label hid a real winner's credit line. */
+                        lowWinnerLabel={winnerInfo.lowWinnerLabel}
                         deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                         cardBack={activeCardBack}
                         playSounds={ambientSoundsAllowed}
@@ -13158,6 +13490,25 @@ export default function TablePage({
           {seatPositions.map((pos, idx) => {
             const seatNumber = idx + 1;
             const player = getPlayerAtSeat(seatNumber);
+            /* PERF 2026-08-25. This map body runs for every seat on every
+               render of TablePage. When it was written, TablePage re-rendered
+               once a second for the whole of anybody's turn (and, before the
+               pass that preceded it, about thirty times a second), so anything
+               computed per seat here was really being computed nine times over,
+               continuously, on a phone. The action clock no longer renders this
+               component at all — but the map body is still the hottest loop on
+               the page whenever anything else does render it, so the savings
+               below stay.
+
+               `getPlayerHUDStats(player.id)` was called TWICE per seat: once
+               for `hudStats` and again inside the `playerStyle` IIFE below.
+               Called once now and shared. Nothing about the values changes —
+               it is the same function with the same argument in the same
+               render — so the memo comparator downstream sees exactly what it
+               saw before. `bigBlind` and `holeCardCount` moved out of the map
+               entirely for the same reason (see seatBigBlind /
+               seatHoleCardCount above the return). */
+            const seatHudStats = player && !player.isHero ? getPlayerHUDStats(player.id) : null;
 
             // SPOTLIGHT (Dan 2026-08-15, verbatim: "spotlight on the player's
             // turn isn't working, even if hero folds — that functionality must
@@ -13269,21 +13620,24 @@ export default function TablePage({
             // pixels along the line to the middle instead, which puts every
             // seat's chips on one rail running parallel to the seats.
             //
-            // The dealer's seat still steps out further so the order from the
-            // player remains: player, button, chips.
-            const isDealerSeat = idx === dealerVisualIndex;
+            // AUDIT 2026-08-25: both of these used to take a third
+            // `isDealerSeat` argument so the button seat could step its chips
+            // out further. The geometry module stopped honouring it — the rail
+            // is now one distance for every seat, dealer included — and the
+            // parameter has been dropped there, so the argument is gone here
+            // too. The button's own clearance is handled by dealerButtonPos().
             // Still needed by the deal/muck keyframes below, which fly cards
             // from and toward the centre and want the full run, not the rail.
             const dx = 50 - pos.x;
             const dy = 50 - pos.y;
-            const betOffset = betChipOffsetPx(pos, scalerSize, isDealerSeat);
+            const betOffset = betChipOffsetPx(pos, scalerSize);
             const betOffsetX = betOffset.x;
             const betOffsetY = betOffset.y;
             // Bible V8 §1.16 — on collect, bet chips fly from their resting
             // spot the rest of the way toward the pot. Expressed as the
             // remainder to a common endpoint, so chips from every seat
             // converge on the same place however far out they started.
-            const collectOffset = chipCollectOffsetPx(pos, scalerSize, isDealerSeat);
+            const collectOffset = chipCollectOffsetPx(pos, scalerSize);
             const collectDx = collectOffset.x;
             const collectDy = collectOffset.y;
 
@@ -13393,13 +13747,15 @@ export default function TablePage({
                   timeBankArmed={
                     seatNumber === tableState.currentPlayerSeat ? timeBankArmed : false
                   }
-                  timerProgress={
-                    seatNumber === tableState.currentPlayerSeat ? actionTimerProgress : undefined
-                  }
-                  secondsLeft={
-                    seatNumber === tableState.currentPlayerSeat ? actionTimeRemaining : undefined
-                  }
-                  bigBlind={safeBB(tableState.blinds)}
+                  /* PERF 2026-08-25: `timerProgress` and `secondsLeft` used to
+                     be passed here from this component's state, which is the
+                     single reason the countdown had to live on TablePage at
+                     all. The seat subscribes to the clock itself and only
+                     while it is the one acting — see the note beside
+                     `isActingNow` in SeatSlot.tsx. The store's identity never
+                     changes, so this prop costs the memo comparator nothing. */
+                  actionClock={actionClock}
+                  bigBlind={seatBigBlind}
                   /* Dan 2026-08-21, item 15: hero's live made hand. */
                   handStrength={displayPlayer?.isHero ? heroHandStrength : null}
                   isTournament={tableState.isTournament}
@@ -13448,7 +13804,7 @@ export default function TablePage({
                       : undefined
                   }
                   bbjCreditAmount={player ? bbjSeatCredits[player.id] : undefined}
-                  hudStats={player && !player.isHero ? getPlayerHUDStats(player.id) : null}
+                  hudStats={seatHudStats}
                   showHUD={userSettings.showHUD && !!player && !player.isHero}
                   deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                   cardBack={activeCardBack}
@@ -13457,22 +13813,18 @@ export default function TablePage({
                      The seat cannot work this out for itself - a hidden hand's
                      holeCards array is empty, so there is nothing there to
                      count. Only the table knows the variant. */
-                  holeCardCount={holeCardCountFor(tableState.gameType)}
+                  holeCardCount={seatHoleCardCount}
                   showStackInBB={v8Settings.show_stack_in_bb}
                   showAvatar={v8Settings.show_avatars}
                   showBadges={v8Settings.show_badges}
                   gesturesEnabled={v8Settings.gestures_enabled}
                   playerStyle={
-                    userSettings.showHUD && player && !player.isHero
-                      ? (() => {
-                          const stats = getPlayerHUDStats(player.id);
-                          if (!stats) return null;
-                          return playerStyleClassifier.classify({
-                            handsPlayed: stats.handsPlayed,
-                            vpipCount: stats.vpipCount,
-                            pfrCount: stats.pfrCount,
-                          });
-                        })()
+                    userSettings.showHUD && seatHudStats
+                      ? playerStyleClassifier.classify({
+                          handsPlayed: seatHudStats.handsPlayed,
+                          vpipCount: seatHudStats.vpipCount,
+                          pfrCount: seatHudStats.pfrCount,
+                        })
                       : null
                   }
                   onSit={() => handleSeatClick(seatNumber)}
@@ -13813,11 +14165,12 @@ export default function TablePage({
                     <span className="control-strip__count">{timeBanksRemaining}</span>
                   </button>
 
-                  {/* Timer Display */}
+                  {/* Timer Display. PERF 2026-08-25: a leaf that subscribes to
+                      the clock, so the numeral can tick without this component
+                      rendering. Same output as the inline expression it
+                      replaced, `|| 0` included. */}
                   <div className="control-strip__timer">
-                    <span className="control-strip__timer-val">
-                      {Math.ceil(actionTimeRemaining) || 0}s
-                    </span>
+                    <ActionClockSeconds clock={actionClock} className="control-strip__timer-val" />
                   </div>
                 </div>
               )}
@@ -14688,7 +15041,35 @@ export default function TablePage({
                   reportError(rpcErr, 'TablePage.atomic_table_buyin_FAILED');
                   throw new Error('Failed to buy-in: ' + rpcErr.message);
                 }
-                const rpcResult = typeof rpcData === 'string' ? JSON.parse(rpcData) : rpcData;
+                /* AUDIT 2026-08-25 — A BARE JSON.parse ON A MONEY PATH.
+                   This was `typeof rpcData === 'string' ? JSON.parse(rpcData)
+                   : rpcData`, unguarded. `atomic_table_buyin` had already
+                   RETURNED WITHOUT ERROR at this point, so the transaction has
+                   committed and the chips have left the player's wallet. A
+                   throw from JSON.parse lands in the catch forty lines below,
+                   which calls revertSeat() and says "Buy-in failed. Please try
+                   again." — inviting a second buy-in against a wallet that has
+                   already paid for the first.
+
+                   An unparseable body is not evidence of refusal. Report it,
+                   treat the result as unknown, and let the code fall through
+                   to the success path: the ONLY thing that may revert a seat
+                   here is `rpcErr` (the RPC itself failed) or an explicit
+                   `success: false` from the function. Nothing is probed live
+                   to prove this — CLAUDE.md §11.5 — it is a strictly narrower
+                   failure condition than the one it replaces. */
+                let rpcResult: any = rpcData;
+                if (typeof rpcData === 'string') {
+                  try {
+                    rpcResult = JSON.parse(rpcData);
+                  } catch (parseErr) {
+                    reportError(
+                      { parseErr, rpcData },
+                      'TablePage.atomic_table_buyin_unparseable_response'
+                    );
+                    rpcResult = null;
+                  }
+                }
                 if (rpcResult && rpcResult.success === false) {
                   reportError(rpcResult, 'TablePage.atomic_table_buyin_returned_failure');
                   throw new Error(
@@ -14785,7 +15166,34 @@ export default function TablePage({
                   : 1
             );
           }
-          if (settingsUpdate.showStackInBB !== undefined) toggleV8Setting('show_stack_in_bb');
+          /**
+           * SET IT, DO NOT TOGGLE IT (fixed 2026-08-26).
+           *
+           * Dan 2026-08-25 (binding): "tournaments and cash games should ALWAYS
+           * be defaulted to actual totals unless the user changes the setting to
+           * BB." The control that promises to restore defaults was doing the
+           * opposite.
+           *
+           * `SettingsPanel`'s per-row toggle emits ONLY the key that changed
+           * (`{ [key]: !settings[key] }`), so a blind `toggleV8Setting` happened
+           * to be right there. Its Reset button emits the WHOLE
+           * `DEFAULT_TABLE_SETTINGS` object, in which `showStackInBB` is present
+           * and `false`. `!== undefined` is true for `false`, so Reset toggled:
+           * a player sitting on the correct chips default who tapped "Reset To
+           * Defaults" got big blinds turned ON across every seat, the pot and
+           * the raise panel, and it was persisted.
+           *
+           * Every sibling line in this handler passes the VALUE
+           * (`updateSetting('showPotOdds', settingsUpdate.showPotOdds)`); this
+           * was the only one that inverted instead. Compare against the current
+           * value so an idempotent update stays idempotent.
+           */
+          if (
+            settingsUpdate.showStackInBB !== undefined &&
+            settingsUpdate.showStackInBB !== v8Settings.show_stack_in_bb
+          ) {
+            toggleV8Setting('show_stack_in_bb');
+          }
           if (settingsUpdate.sitOutNextHand !== undefined) {
             const wanted = settingsUpdate.sitOutNextHand;
             setSitOutNextHand(wanted);
@@ -14852,6 +15260,11 @@ export default function TablePage({
           setRebuyProcessing(true);
           try {
             await tournamentService.processRebuy(tableState.tournamentId, userId);
+            /* Set BEFORE anything else can run. The stack that proves this
+               purchase arrives over the engine feed a moment from now, and
+               `exitIfBusted` must not be allowed to look at the stale zero in
+               between — see rebuyJustSucceededRef. */
+            rebuyJustSucceededRef.current = true;
             toast?.success('Rebuy successful - chips added to your stack');
             setShowRebuyModal(false);
             /* Dan 2026-08-25: the player REBOUGHT, so any exit the elimination
@@ -14941,6 +15354,49 @@ export default function TablePage({
           onClose={() => setShowTournamentInfo(false)}
         />
       )}
+
+      {/* AUDIT 2026-08-25 — A MENU ITEM THAT DID NOTHING.
+          The tab-bar menu emits TABLE_MENU_ACTION / 'TOGGLE_ALIAS'
+          (TableTabBar.tsx). TablePage's handler answered it with
+          setShowIdentityModal(true) — and `showIdentityModal` was read
+          NOWHERE, so tapping the item set a flag and the player saw nothing
+          at all, every time, with no error to report. IdentityModal.tsx has
+          existed the whole time and was imported by nobody.
+
+          Wired to the same Supabase-backed settings the rendered hero name
+          already reads (v8Settings.use_alias / table_alias, see the hero-name
+          derivation above), so the modal and the felt cannot disagree. Guests
+          have no settings row — useUserTableSettings is passed a null userId
+          for them and its writers no-op — so the item is not offered. */}
+      {showIdentityModal && userId && userId !== 'guest' && (
+        <IdentityModal
+          isOpen={showIdentityModal}
+          onClose={() => setShowIdentityModal(false)}
+          useAlias={v8Settings.use_alias}
+          tableAlias={v8Settings.table_alias}
+          onToggleAlias={() => {
+            void toggleV8Setting('use_alias');
+          }}
+          onSetAlias={(alias) => {
+            void setV8TableAlias(alias.trim());
+          }}
+        />
+      )}
+
+      {/* THE ACTION-CLOCK WARNING WINDOW — sound + haptic in the final three
+          seconds of hero's own turn.
+
+          Renders nothing. It is a component rather than a pair of effects in
+          this file for exactly one reason: an effect here would have to read the
+          countdown out of THIS component's state, and that state is what made
+          the entire table re-render once a second for the whole of every turn.
+          Mounted unconditionally so the window can close (and the tick can stop)
+          on the same cleanup path it always used; `armed` is the gate. */}
+      <ActionClockWarning
+        clock={actionClock}
+        armed={isHeroOnTheClock}
+        soundEnabled={isSoundEnabled && ambientSoundsAllowed}
+      />
     </div>
   );
 }

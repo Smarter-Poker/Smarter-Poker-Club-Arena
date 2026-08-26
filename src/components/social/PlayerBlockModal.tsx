@@ -50,7 +50,7 @@ export default function PlayerBlockModal({
               type="text"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Why are you blocking this player?"
+              placeholder="Why Are You Blocking This Player?"
               maxLength={200}
             />
           </div>

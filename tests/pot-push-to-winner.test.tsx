@@ -103,6 +103,44 @@ describe('bet-to-pot chip fan (same labelling rule)', () => {
   });
 });
 
+/**
+ * AUDIT 2026-08-25 — every flight id has to be unique, across fans.
+ *
+ * Both builders used to key on `Date.now()` plus the index WITHIN one fan, and
+ * both callers build several fans inside a single tick: TablePage pushes one
+ * fan per blind posted (so this collided on every hand that was dealt) and one
+ * fan per winner of a split pot. Two flights sharing an id is not cosmetic -
+ * `ChipAnimationManager` renders the list with `key={anim.id}`, and TablePage
+ * reaps a landed flight with `prev.filter((a) => a.id !== id)`, so the first
+ * chip to arrive deleted the other seat's chip out of the air.
+ *
+ * Asserted across fans built in the same millisecond, which is the case that
+ * was broken; a single fan's ids were always distinct.
+ */
+describe('chip flights never share an id', () => {
+  it('two fans built in the same tick are all distinct', () => {
+    const sb = createChipToPotEvent({ x: 10, y: 400 }, { x: 200, y: 200 }, 1);
+    const bb = createChipToPotEvent({ x: 40, y: 400 }, { x: 200, y: 200 }, 2);
+    const ids = [...sb, ...bb].map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('a split pot does not collide two winners flights', () => {
+    const a = createPotToWinnerEvent({ x: 0, y: 0 }, { x: 10, y: 10 }, 500);
+    const b = createPotToWinnerEvent({ x: 0, y: 0 }, { x: 90, y: 10 }, 500);
+    const ids = [...a, ...b].map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('and a pot fan never collides with a bet fan', () => {
+    const ids = [
+      ...createChipToPotEvent({ x: 0, y: 0 }, { x: 1, y: 1 }, 25),
+      ...createPotToWinnerEvent({ x: 0, y: 0 }, { x: 1, y: 1 }, 25),
+    ].map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
 describe('a new hand must not inherit a pot mid-push', () => {
   it('collectTo=null renders a normal, fully visible pot', () => {
     const { container } = render(<PotDisplay mainPot={250} collectTo={null} />);

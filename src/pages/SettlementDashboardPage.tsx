@@ -323,11 +323,7 @@ export default function SettlementDashboardPage() {
     );
     const unsub4 = masterBus.subscribeDebounced('SETTLEMENT_PAYOUT_FAILED', () => loadData(), 500);
     const unsub5 = masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadData(), 2000);
-    const unsub6 = masterBus.subscribeDebounced(
-      'TRANSACTION_LOGGED' as any,
-      () => loadData(),
-      2000
-    );
+    const unsub6 = masterBus.subscribeDebounced('TRANSACTION_LOGGED', () => loadData(), 2000);
     return () => {
       unsub1();
       unsub2();

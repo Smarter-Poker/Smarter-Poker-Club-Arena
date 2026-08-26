@@ -163,6 +163,23 @@ export function SitOutModal({
         >
           I'm Back
         </button>
+
+        {/* Dan 2026-08-25: "if you are SITTING OUT but click LEAVE TABLE, it
+            doesn't leave the table... LEAVE TABLE IS LIKE THE RESET BUTTON."
+            This modal has ALWAYS taken an onLeaveTable prop and built a
+            handleLeave for it — TableModalsLayer passes onConfirmLeaveTable in
+            — and then rendered only "I'm Back". The handler was dead code, so
+            the one screen a sitting-out player is looking at offered them no way
+            out at all. */}
+        <button
+          className="sitout-modal__leave-btn"
+          onClick={() => {
+            haptic.light();
+            handleLeave();
+          }}
+        >
+          Leave Table
+        </button>
       </div>
     </div>
   );

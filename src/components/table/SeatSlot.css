@@ -194,21 +194,14 @@
   margin-bottom: -6px; /* overlap into info box */
 }
 
-/* Circular Timer Arc — scales with avatar-wrap at all breakpoints */
-.seat__circular-timer {
-  position: absolute;
-  inset: -4px;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-}
-
-.seat__circular-timer .circular-timer {
-  width: 100% !important;
-  height: 100% !important;
-}
+/* AUDIT 2026-08-25: `.seat__circular-timer` (an absolutely-positioned box for
+   an SVG countdown arc over the avatar) was deleted here. SeatSlot.tsx renders
+   no such element and never has in this file's history — the countdown is the
+   conic `@property` animation on `.seat__info`, driven by --sp-timer-duration.
+   Two rules that could never match is the harmless half; the harmful half was
+   that two comments in this stylesheet pointed at it as the LIVE answer to
+   "whose turn is it", so the next person to want a ring was being sent to an
+   element that does not exist. Both comments are corrected below. */
 
 .seat__avatar {
   width: var(--seat-avatar-size, 56px);
@@ -220,8 +213,8 @@
        1  (nothing — the conic ring + mask that used to sit here were deleted
            2026-08-20; see the note in STATE VARIANTS)
        2  this element, the photo/art itself
-       3  `.seat__circular-timer` (the SVG countdown arc) and
-          `.seat__status-dot`, both of which must draw ON TOP of the photo.
+       3  `.seat__status-dot` and `.seat__position-badge`, both of which must
+          draw ON TOP of the photo.
      Originally added 2026-07-28 to lift the photo above the countdown mask,
      which was painting the acting player's avatar as a solid black disc. The
      mask is gone but the value still matters: `position: relative` with
@@ -976,10 +969,14 @@
    `will-change: background` layer promotion on the acting seat, recalculated
    each timer tick.
 
-   Whose turn it is is carried by `.seat__circular-timer` (the SVG arc, z-index
-   3) and the neon border on `.seat__info`. If a ring is ever wanted again it
-   goes on `.seat__circular-timer`, NOT on a wrap pseudo-element — rule 8 is a
-   deliberate, twice-relitigated decision. */
+   Whose turn it is is carried by the conic countdown on `.seat__info` — the
+   `@property` animation driven by --sp-timer-duration / --sp-timer-delay, which
+   SeatSlot.tsx computes from the engine's own deadline. AUDIT 2026-08-25: this
+   paragraph used to name `.seat__circular-timer` as the live carrier and as the
+   place a future ring should go. No element with that class has ever been
+   rendered — the rules for it were deleted in the same pass. If a ring is
+   wanted again it goes on a NEW element inside `.seat__avatar-wrap`, not on a
+   wrap pseudo-element: rule 8 is a deliberate, twice-relitigated decision. */
 
 /* Dan 2026-08-15: "HERO avatar should always be 33% bigger than the villains."
    Redeclaring the token on .seat--hero cascades to BOTH .seat__avatar-wrap and
@@ -1216,25 +1213,31 @@
   opacity: 0.55;
 }
 
-.seat--sitout .seat__avatar {
-  filter: grayscale(0.8) brightness(0.6);
+/* Dan approved 2026-08-26: grayscale avatar + AWAY pill for sitting-out seats.
+   Previously drafted under `.seat--sitout` (wrong class, never fired). Now
+   scoped to `.seat--sitting_out` which is what SeatSlot actually emits. */
+
+.seat--away .seat__avatar,
+.seat--sitting_out .seat__avatar {
+  filter: grayscale(60%);
 }
 
-.seat--sitout .seat__info::after {
+.seat--away .seat__info::after,
+.seat--sitting_out .seat__info::after {
   content: 'AWAY';
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  font-size: 0.5625rem;
+  background: rgba(0, 0, 0, 0.75);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.55rem;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.7);
-  text-transform: uppercase;
   letter-spacing: 0.08em;
-  background: rgba(0, 0, 0, 0.7);
-  padding: 2px 8px;
+  padding: 2px 6px;
   border-radius: 4px;
-  z-index: 5;
+  pointer-events: none;
+  z-index: 1;
 }
 
 /* ─── ALL IN ──────────────────────────────────────────────────────────── */
@@ -2555,54 +2558,23 @@
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   ALL-IN MODE — Dimmed overlay on non-all-in players
-   ═══════════════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   AUDIT 2026-08-25 — AN ALL-IN "MODE" THAT NOTHING EVER ENTERED
+   ═══════════════════════════════════════════════════════════════════════════
+   Four rules and a keyframe were deleted here: `.seat--allin-mode` (dim every
+   other seat), `.seat--allin-active` (+ its info-box glow), `.seat__equity`
+   (a badge over the avatar) and `seatEquityFadeIn`.
 
-.seat--allin-mode {
-  filter: brightness(0.5) saturate(0.7);
-  transition: filter 0.4s ease;
-}
+   None of the three class names is produced anywhere in the app — not by
+   SeatSlot.tsx, not by TablePage.tsx, not by any other component. The all-in
+   states that DO exist are `.seat--all_in` (from `seat--${player.status}`) and
+   the `.seat__allin-badge` element, both of which are further up this file and
+   are untouched. Live all-in equity is rendered by `EquityDisplay`, which is
+   its own component with its own stylesheet and does not use `.seat__equity`.
 
-.seat--allin-active {
-  filter: brightness(1.1) saturate(1.2);
-  z-index: 10;
-}
-
-.seat--allin-active .seat__info {
-  box-shadow:
-    0 0 20px rgba(139, 92, 246, 0.5),
-    0 0 40px rgba(139, 92, 246, 0.2);
-  border-color: rgba(139, 92, 246, 0.6);
-}
-
-/* All-in equity badge */
-.seat__equity {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  padding: 2px 6px;
-  background: rgba(0, 0, 0, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  font-size: 0.6875rem;
-  font-weight: 800;
-  color: #ffffff;
-  font-family: 'JetBrains Mono', 'SF Mono', monospace;
-  z-index: 5;
-  animation: seatEquityFadeIn 0.3s ease-out;
-}
-
-@keyframes seatEquityFadeIn {
-  from {
-    opacity: 0;
-    transform: scale(0.8);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
+   Kept as a note rather than as code because a stylesheet full of selectors
+   for markup that does not exist is how the previous reader concluded the
+   table already had an all-in spotlight. It does not. */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    RESPONSIVE
@@ -3502,6 +3474,51 @@
   /* 6px is the hero card's radius; the villain base is 4px, sized for a 22px
      back. A card drawn at the hero's size gets the hero's corner. */
   border-radius: 6px;
+}
+
+/* ── AUDIT 2026-08-25: the SIZE has to survive the reveal, or item 10 stops
+      being true at the one moment it matters ──────────────────────────────
+
+   The `:not(.seat__cards--revealed)` above is correct for the OVERLAP and the
+   backing plate: those exist so six face-down backs fit beside a villain, and
+   a revealed hand lies flat and ungrouped by design (Dan 2026-08-23). But the
+   SIZE was swept into the same selector, and there is a rule 2,000 lines up
+   that catches what falls out of it:
+
+     .seat__cards--revealed .seat__card { width: 36px; height: 50px }
+
+   So a hold'em villain drew hero-sized cards face DOWN and then SHRANK to
+   36x50 the instant they were turned over - "exactly as the hero has theirs"
+   until the only moment a player actually reads them, and 36px on a 375px
+   phone is where a rank starts to guess at you. Nothing chose that; it is
+   where the two selectors happened to leave it.
+
+   Same footprint as the face-down row that already ships on these seats, so
+   nothing about the anchoring or the felt clearance changes. Only two-card
+   games: six 44px cards do not fit beside a villain, which is why the compact
+   treatment exists at all.
+
+   0-4-0, so it beats `.seat__cards--revealed .seat__card` (0-2-0) wherever it
+   applies without touching the PLO rows. */
+.seat__cards--opponent.seat__cards--twocard.seat__cards--revealed .seat__card {
+  width: var(--sp-card2-w, 44px);
+  height: var(--sp-card2-h, 62px);
+  border-radius: 6px;
+}
+
+/* The top cap is the exception, and it is pinned rather than left to fall out
+   of the cascade. Those seats have the banner above them and their row hangs
+   OUTBOARD, off the side of the table - which is the one place a wider row has
+   nowhere to go. They keep exactly the size they render at today; this rule
+   exists so that stays true rather than being an accident of specificity.
+   0-6-0. */
+.seat-wrapper--top
+  .seat
+  .seat__cards--opponent.seat__cards--twocard.seat__cards--revealed
+  .seat__card {
+  width: 36px;
+  height: 50px;
+  border-radius: 5px;
 }
 
 /* ───────────────────────────────────────────────────────────────────────────

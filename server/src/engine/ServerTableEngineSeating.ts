@@ -474,10 +474,33 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       timestamp: Date.now(),
     });
 
-    if (this.handController !== null) {
+    // Dan 2026-08-25, BINDING: "LEAVE TABLE SHOULD ALWAYS OVERRIDE ANYTHING
+    // ELSE... LEAVE TABLE IS LIKE THE RESET BUTTON, CLEARS EVERYTHING FROM THAT
+    // TABLE." And: "if you are SITTING OUT but click LEAVE TABLE, it doesn't
+    // leave the table, it silently fails."
+    //
+    // THE BUG WAS THIS BRANCH. It asked "is a hand running AT THIS TABLE", not
+    // "is THIS PLAYER in that hand". A sitting-out player is excluded from the
+    // deal, so they took the mid-hand path anyway: the auto-fold was skipped
+    // (there is no enginePlayer for them), and the seat was merely flagged
+    // leave_pending. That flag is only ever processed by processLeavePending at
+    // SETTLEMENT — so if no hand completed afterwards (the table dropped below
+    // the minimum to deal, or the hand died on the safety timeout, which skips
+    // settlement) the row was never touched again. The player was gone from the
+    // UI, still in the seat, chips still on the table. It could sit like that
+    // forever, and nothing swept it.
+    //
+    // Deferral is now reserved for the only case that needs it: a player with
+    // live chips in the pot of a hand still being played. Everyone else —
+    // sitting out, already folded, all-in and settled, or simply not dealt in —
+    // leaves immediately.
+    const handState = this.handController?.getState();
+    const playerInLiveHand = handState?.players.find((p) => p.user_id === userId && !p.is_folded);
+
+    if (this.handController !== null && playerInLiveHand) {
       // Mid-hand: fold the player immediately if it's their turn or they're still in
-      const state = this.handController.getState();
-      const enginePlayer = state.players.find((p) => p.user_id === userId);
+      const state = handState!;
+      const enginePlayer = playerInLiveHand;
 
       if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in) {
         // FIX 2026-08-22: performAction RETURNS FALSE when it isn't the

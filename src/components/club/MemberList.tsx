@@ -112,7 +112,7 @@ function MemberListInner({
         <input
           type="text"
           className="member-list__search"
-          placeholder="Search members..."
+          placeholder="Search Members..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />

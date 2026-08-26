@@ -15,7 +15,7 @@
  */
 
 import { formatGameTitle } from '../../utils/formatGameTitle';
-import { isInLateRegistration } from '../../utils/tournamentFilters';
+import { isInLateRegistration, STARTING_SOON_WINDOW_MINUTES } from '../../utils/tournamentFilters';
 import { stakesLabel as stakesLabelFor } from '../../lib/bettingStructure';
 import {
   blindLevelAt,
@@ -251,6 +251,12 @@ const TOURNEY_VARIANT_KEYS: Record<string, string> = {
   PLO6: 'plo6',
   PLO8: 'plo8',
   PINEAPPLE: 'pineapple',
+  /* `tournaments.game_type` still ships OFC_PINEAPPLE across the live census
+     (advancedFilterSpec records it), because migration
+     20260823_retire_ofc_pineapple_variant.sql retired the variant on
+     public.tables ONLY. Without a key here variantDisplay fell through to its
+     fallback and the Game Type column printed the raw enum: "OFC_PINEAPPLE". */
+  OFC_PINEAPPLE: 'pineapple',
   SHORT_DECK: 'short_deck',
   PLO: 'plo4',
 };
@@ -630,21 +636,34 @@ export function tournamentMedallions(t: LobbyTournamentRow): RuleMedallion[] {
   const rules: RuleMedallion[] = [];
   const type = detectTourneyType(t.name);
   const l = (t.name || '').toLowerCase();
+  /* THE COLUMNS OUTRANK THE NAME (2026-08-26). is_pko, is_bounty and
+     is_mystery_bounty are selected and were declared on the row type, and this
+     function read none of them - it substring-matched the title instead. A PKO
+     called "Sunday Special" therefore carried a FREEZEOUT medallion, which is
+     the opposite of the truth, and with the Rules column gone from the board
+     the game panel is the only place that says so at all. The name convention
+     stays as a fallback for a tournament whose flags were never set. */
+  const isPko = t.is_pko === true || type === 'pko';
+  const isMystery = t.is_mystery_bounty === true || type === 'mystery';
+  const isBounty = t.is_bounty === true || Number(t.bounty_amount) > 0 || type === 'ko';
 
   if (type === 'freeroll') rules.push({ key: 'freeroll', label: 'FREEROLL', tip: 'Free entry' });
-  if (type === 'pko')
+  /* One medallion for the bounty family, most specific first: a PKO is a
+     bounty event and a mystery bounty is a bounty event, so pushing all three
+     would say the same thing three times on one card. */
+  if (isPko)
     rules.push({
       key: 'pko',
       label: 'PKO',
       tip: 'Progressive knockout: half of each bounty grows your own',
     });
-  if (type === 'mystery')
+  else if (isMystery)
     rules.push({
       key: 'mystery',
       label: 'MYSTERY BOUNTY',
       tip: 'Knockouts award a mystery bounty draw',
     });
-  if (type === 'ko')
+  else if (isBounty)
     rules.push({ key: 'bounty', label: 'BOUNTY', tip: 'A bounty is paid for every knockout' });
   if (type === 'satellite')
     rules.push({ key: 'satellite', label: 'SATELLITE', tip: 'Wins seats into a larger event' });
@@ -659,7 +678,15 @@ export function tournamentMedallions(t: LobbyTournamentRow): RuleMedallion[] {
     rules.push({ key: 'reentry', label: 'RE-ENTRY', tip: 'Eliminated players may re-enter' });
   if (rebuy) rules.push({ key: 'rebuy', label: 'REBUY', tip: 'Rebuys are available' });
   if (addon) rules.push({ key: 'addon', label: 'ADD-ON', tip: 'An add-on is available' });
-  if (!reentry && !rebuy && type === 'freezeout' && !l.includes('spin'))
+  if (
+    !reentry &&
+    !rebuy &&
+    !isPko &&
+    !isMystery &&
+    !isBounty &&
+    type === 'freezeout' &&
+    !l.includes('spin')
+  )
     rules.push({ key: 'freezeout', label: 'FREEZEOUT', tip: 'One entry, no rebuys' });
 
   const speed = tournamentSpeed(t.name);
@@ -694,7 +721,9 @@ export function tournamentMedallions(t: LobbyTournamentRow): RuleMedallion[] {
 }
 
 // ─── Status derivation ─────────────────────────────────────────────────────
-const STARTING_SOON_MS = 60 * 60 * 1000;
+// One window, one constant: the badge and the "Starting Soon" filter chip
+// read the same minutes so they cannot drift apart.
+const STARTING_SOON_MS = STARTING_SOON_WINDOW_MINUTES * 60 * 1000;
 
 /**
  * ── THE WAITLIST WAS HALF-BUILT (Dan 2026-08-25) ──────────────────────────
@@ -834,7 +863,14 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
     // "1 / 2" and the table called itself "FLH 2/4". Same helper as the create
     // screen, so the two cannot drift again. No-limit and pot-limit rows are
     // unchanged — stakesLabelFor returns the blinds for them.
-    stakesLabel: stakesLabelFor(t.small_blind || 0, t.big_blind || 0, t.game_variant),
+    // `|| 0` turns a null blind into a CLAIM: stakesLabelFor has no unknown
+    // branch, so it printed "0/0" and CasinoPlaque rendered "Blinds 0/0". The
+    // field is `string | null` precisely so a row that cannot say its stakes
+    // says nothing, which is what cashBuyInLabel already does one line down.
+    stakesLabel:
+      Number(t.big_blind) > 0
+        ? stakesLabelFor(Number(t.small_blind) || 0, Number(t.big_blind), t.game_variant)
+        : null,
     stakesValue: Number(t.big_blind) || 0,
     buyInLabel: cashBuyInLabel(t),
     buyInValue: minBuy,
@@ -957,7 +993,12 @@ export function lateRegEndMs(t: LobbyTournamentRow): number | null {
        * refusing entries, and Register was dead for the difference.
        */
       const curIdx = Math.max(0, Number(t.current_level) || 0);
-      const levelBegun = new Date(t.level_started_at || t.started_at || '').getTime();
+      /* `|| t.started_at` measured the CURRENT level's remaining time from
+         the tournament's start - hours in the past on level 5 - so the levels
+         candidate returned a moment already gone and the card froze on
+         "Late Reg 0:00 Left" beside a working Register button. levelRemainingMs
+         already refuses to guess without level_started_at; this now agrees. */
+      const levelBegun = new Date(t.level_started_at || '').getTime();
       if (Number.isFinite(levelBegun) && curIdx < lateLevels) {
         // Rest of the level now running, then every remaining level up to but
         // NOT including the cap. A level with no configured duration adds 0 —
@@ -1142,7 +1183,7 @@ export function stackDepthLabel(entry: LobbyEntry): string | null {
  */
 export function seatsTakenLabel(entry: LobbyEntry): string {
   if (entry.kind === 'spin' || entry.kind === 'sng')
-    return `${entry.players}/${entry.capacity || '-'}`;
+    return `${entry.players.toLocaleString()}/${entry.capacity || '-'}`;
   return entry.players.toLocaleString();
 }
 
@@ -1246,6 +1287,9 @@ export function mttPhaseText(entry: LobbyEntry, now: number): string | null {
     creator left it out of the name text. */
 export function mttTitleLine(entry: LobbyEntry): string {
   const name = entry.name || '';
+  // formatGameTitle returns '' for a nameless tournament, which used to render
+  // as a leading space and a parenthesised label: " (NLH)".
+  if (!name) return entry.gameLabel;
   return name.toUpperCase().includes(entry.gameLabel.toUpperCase())
     ? name
     : `${name} (${entry.gameLabel})`;

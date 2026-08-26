@@ -109,9 +109,6 @@
 .lobby-table td.lt-col-name {
   text-align: left;
 }
-.lt-name {
-  justify-content: flex-start;
-}
 .lt-row:hover {
   background: rgba(65, 105, 225, 0.07);
   box-shadow: inset 2px 0 0 rgba(65, 105, 225, 0.35);
@@ -693,18 +690,13 @@ abbr.lt-variant[title] {
    `.lt-badge` went with it: no element in this table has ever carried that
    class. `.lt-countdown`'s `!important` went too - it was there to win a
    fight with an inline style that no longer exists. */
-@media (max-width: 768px) {
-  .lobby-table {
-    font-size: 0.65rem;
-  }
-  .lobby-table th,
-  .lobby-table td {
-    padding: 6px 4px;
-  }
-  .hide-on-mobile {
-    display: none !important;
-  }
-}
+/* The 768px block that stood here is deleted (2026-08-26). Since #869 raised
+   the card ceiling to 900px, every viewport it covered is also <=900px, where
+   the card layout redeclares each of its selectors LATER at equal specificity:
+   `.lobby-table { font-size: 0.75rem }` beat its 0.65rem, `.lobby-table td
+   { padding: 0 }` beat its padding, and `thead { display: none }` made the th
+   half moot. `.hide-on-mobile` went with the flag nothing sets any more. Not
+   one declaration in it could apply. */
 
 /* ── PHONE (Dan's binding rule 6: 375px first) ─────────────────────────────
    The lobby must FIT, not scroll sideways. min-width: 520px used to force a
@@ -1080,7 +1072,6 @@ abbr.lt-variant[title] {
   .lobby-table td.lt-col-starts .lt-dim,
   .lobby-table td.lt-col-players .lt-seats__num,
   .lobby-table td.lt-col-payout .lt-payout__x,
-  .lobby-table td.lt-col-leveltime,
   .lobby-table td.lt-col-format .lt-format {
     font-size: 0.8125rem;
     font-weight: 700;
@@ -1097,8 +1088,14 @@ abbr.lt-variant[title] {
     font-weight: 700;
     color: #eef2f8;
   }
+  /* Blind Levels is a bare string in its cell, so it is styled here rather
+     than through a child like its neighbours. It was in the group above AND
+     overridden here, which rendered it a size smaller than every well beside
+     it - one declaration now, matching the group. */
   .lobby-table td.lt-col-leveltime {
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: #eef2f8;
   }
 
   .lt-name__line1 {
@@ -1420,24 +1417,6 @@ abbr.lt-variant[title] {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .lt-live,
-  .lt-skel {
-    animation: none;
-  }
-  /* The staggered row entrance is the largest motion on this screen - up to
-     111 rows sliding and fading in - and it was declared after this block, so
-     the reduce preference did not reach it. Nor did it reach the action
-     buttons' transform transitions. */
-  .lobby-table tbody tr {
-    animation: none;
-  }
-  .lt-act,
-  .lobby-table tr {
-    transition: none;
-  }
-}
-
 @keyframes rowFadeIn {
   from {
     opacity: 0;
@@ -1569,4 +1548,24 @@ abbr.lt-variant[title] {
   letter-spacing: 0.04em;
   line-height: 1.5;
   white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lt-live,
+  .lt-skel {
+    animation: none;
+  }
+  /* The staggered row entrance is the largest motion on this screen - up to
+     111 rows sliding and fading in. Moving this block was not enough on its
+     own: `.lobby-table tbody tr` here and `.lobby-table tbody tr` below are
+     the SAME specificity (0,1,2) and a media query adds none, so whichever is
+     written last wins. This block now sits after the animation AND after the
+     nth-child delays, which is what actually silences it. */
+  .lobby-table tbody tr {
+    animation: none;
+  }
+  .lt-act,
+  .lobby-table tr {
+    transition: none;
+  }
 }

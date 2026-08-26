@@ -47,6 +47,10 @@ export type BusEventType =
   | 'OPEN_OBSERVE_TABLE'
   | 'TABLE_CAP_BLOCKED'
   | 'BALANCE_UPDATED'
+  // Had a payload in BusPayloadMap but was missing from this union, so five
+  // subscribe sites carried `as any` to compile - which switches OFF payload
+  // checking on a ledger event, the one place a wrong shape is money.
+  | 'TRANSACTION_LOGGED'
   | 'VIP_POINTS_UPDATED'
   | 'WALLET_REFRESHED'
   | 'REALTIME_CONNECTED'
@@ -56,6 +60,7 @@ export type BusEventType =
   | 'NOTIFICATION_READ'
   | 'WAITLIST_POSITION_CHANGED'
   | 'WAITLIST_PROMOTED'
+  | 'WAITLIST_CHANGED'
   | 'SESSION_SUMMARY_DISMISSED'
   | 'ACHIEVEMENT_UNLOCKED'
   | 'MISSION_PROGRESS'
@@ -371,6 +376,7 @@ export interface BusPayloadMap {
   NOTIFICATION_READ: { notifId: string | null; allRead: boolean };
   WAITLIST_POSITION_CHANGED: { tableId: string; position: number; tableName: string };
   WAITLIST_PROMOTED: { tableId: string; userId: string; tableName: string };
+  WAITLIST_CHANGED: void;
   SESSION_SUMMARY_DISMISSED: { tableId: string };
   ACHIEVEMENT_UNLOCKED: {
     userId: string;

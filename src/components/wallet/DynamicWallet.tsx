@@ -156,6 +156,13 @@ interface DynamicWalletProps {
 interface WalletData {
   diamonds: number;
   bbjPool: number;
+  /**
+   * The id of the pool row `bbjPool` was read from. The realtime filter binds
+   * to THIS row rather than re-deriving the scope from club_id / union_id -
+   * see the bbj_pools subscription below for why re-deriving it was wrong on
+   * two separate paths.
+   */
+  bbjPoolId: string | null;
   chipBalance: number;
   clubBank: number;
   agentBalance: number;
@@ -358,6 +365,7 @@ function formatDiamonds(num: number): string {
 const INITIAL_WALLET_DATA: WalletData = {
   diamonds: 0,
   bbjPool: 0,
+  bbjPoolId: null,
   chipBalance: 0,
   clubBank: 0,
   agentBalance: 0,
@@ -638,6 +646,11 @@ export default function DynamicWallet({
   const effectiveVariant: WalletVariant = variant;
   const viewerRole: ClubRole = normaliseRole(role);
 
+  // The pool row the jackpot on screen came from. Read by the realtime effect
+  // below so the subscription binds to that exact row rather than re-deriving
+  // the scope, which is wrong for a non-member of a union club.
+  const bbjPoolId = data.bbjPoolId;
+
   // Animated values
   const animDiamonds = useAnimatedCounter(data.diamonds);
   const animBBJ = useAnimatedCounter(data.bbjPool);
@@ -790,6 +803,7 @@ export default function DynamicWallet({
         chipBalance: Number(memberRes.data?.chip_balance) || 0,
         promoBalance: Number(agentRes.data?.promo_wallet_balance) || 0,
         bbjPool: num(bbj.main),
+        bbjPoolId: (bbj.pool_id as string | null) ?? null,
         backupBBJ: num(bbj.backup),
         agentBalance: Number(agentRes.data?.agent_wallet_balance) || 0,
         clubBank: num(panel.club_treasury),
@@ -1018,12 +1032,27 @@ export default function DynamicWallet({
           event: 'UPDATE',
           schema: 'public',
           table: 'bbj_pools',
-          // Must watch the pool the widget actually READS. Filtering by
-          // club_id for a union club subscribes to that club's own retired
-          // pool row — a row that will never change again — so the jackpot
-          // would freeze on screen. currentUnionIdRef is set by fetchData and
-          // this effect re-runs when isClubInUnion flips.
-          filter: currentUnionId ? `union_id=eq.${currentUnionId}` : `club_id=eq.${resolvedId}`,
+          // WATCH THE ROW WE READ, BY ITS ID.
+          //
+          // "The pool the widget actually READS" was the right idea and the
+          // wrong implementation: it re-derived the scope from currentUnionId
+          // instead of using the id fn_club_money_panel already hands back,
+          // and that derivation is wrong on a path nobody had walked. A
+          // NON-MEMBER standing in a union club's lobby gets `not_a_member`,
+          // which carries the jackpot (so the banner is correct at mount) but
+          // no `union_id` - so this filter fell through to
+          // `club_id=eq.<club>`, i.e. that club's RETIRED pool row, which will
+          // never emit again. The number was right and frozen, which is worse
+          // than either being right or being absent.
+          //
+          // `bbj.pool_id` is the row the balance on screen came from, on every
+          // path, for every viewer. Bind to it. The club_id fallback only
+          // applies before the first fetch resolves.
+          filter: bbjPoolId
+            ? `id=eq.${bbjPoolId}`
+            : currentUnionId
+              ? `union_id=eq.${currentUnionId}`
+              : `club_id=eq.${resolvedId}`,
         },
         (p) => {
           if (isMounted.current) {
@@ -1177,7 +1206,10 @@ export default function DynamicWallet({
       if (unionWalletChannel) supabase.removeChannel(unionWalletChannel);
     };
     // currentUnionId (state, not the ref) so a union->union club switch rebinds.
-  }, [userId, resolvedId, currentUnionId, channelEpoch, variant]);
+    // bbjPoolId too: the jackpot filter binds to that row by id, so the first
+    // fetch resolving it has to rebind the channel or the subscription stays on
+    // the pre-fetch club_id fallback for the life of the mount.
+  }, [userId, resolvedId, currentUnionId, bbjPoolId, channelEpoch, variant]);
 
   // ── Role-specific row config ───────────────────────────────────────────────
   // Union figures come from union_wallets, which RLS restricts to union
@@ -1494,13 +1526,23 @@ export default function DynamicWallet({
         ))}
 
         {/* Backup BBJ.
-            Union panel: always (it is a union-level reserve).
-            Club panel: ONLY for a standalone club, where the reserve genuinely
-            belongs to that club. A club inside a union is served the UNION's
-            backup figure by fn_club_money_panel, so rendering it here would
-            put union money back on a club screen through the side door —
-            the same leak as Union Bank, one row further down. */}
-        {!isClubInUnion && data.backupBBJ > 0 && (
+            CLUB PANEL ONLY, and only for a STANDALONE club, where the reserve
+            genuinely belongs to that club. A club inside a union is served the
+            UNION's backup figure by fn_club_money_panel, so rendering it here
+            would put union money back on a club screen through the side door —
+            the same leak as Union Bank, one row further down.
+
+            2026-08-25: `effectiveVariant === 'club'` added. The comment above
+            this block used to claim "Union panel: always", but UNION_ROWS
+            ALREADY carries a `union_backup_bbj` row driven by the very same
+            `animBackupBBJ`. So a union panel pointed at a standalone club
+            (in_union false, which is also the reset value after every club
+            switch and the value a REFUSED panel leaves in place) rendered
+            "BBJ Backup Wallet" and "Backup BBJ" one above the other, same
+            figure, twice. Two live copies of one number on a money surface is
+            the duplication the BBJ banner's own showBBJ opt-out exists to
+            prevent. The union panel keeps its row; this one is the club's. */}
+        {effectiveVariant === 'club' && !isClubInUnion && data.backupBBJ > 0 && (
           <div className="dw__row dw__row--backup-bbj">
             <span className="dw__row-icon" aria-hidden="true">
               <WalletIcon name="reserve" />

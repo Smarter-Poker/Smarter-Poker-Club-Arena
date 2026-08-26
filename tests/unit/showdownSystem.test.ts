@@ -295,11 +295,21 @@ describe('polish: deterministic event ordering + consumed reveal event', () => {
     expect(HUB).toMatch(/type: 'EVENT', tableId, seq, payload/);
   });
 
-  it('a state frame requeues behind pending events (the reveal race fix)', () => {
+  it('inbound frames drain through ONE ordered FIFO (the reveal race fix, review revision)', () => {
+    // Review revision 2026-08-25: the original requeue design re-inserted a
+    // state frame at the BACK of the queue, so an event arriving after it
+    // could still leapfrog. Now every frame joins one inbox in arrival order
+    // (state frames keep a fast path only when nothing is queued), the drain
+    // dispatches at most one EVENT per macrotask, the hub's event seq is
+    // consumed for de-duplication, and connect/disconnect clear the queue.
+    // Behavior is pinned end-to-end in tests/engine-event-ordering.test.ts;
+    // this pins the structure so a refactor cannot quietly drop a leg.
     const ESC = strip(read('src/services/EngineStateClient.ts'));
-    expect(ESC).toMatch(/pendingEvents/);
-    const requeues = ESC.match(/setTimeout\(\(\) => this\.handleMessage\(msg\), 0\);/g) || [];
-    expect(requeues.length).toBe(2); // SNAPSHOT and DELTA
+    expect(ESC).toMatch(/private inbox: ServerMessage\[\]/);
+    expect(ESC).toMatch(/drainInbox/);
+    expect(ESC).toMatch(/lastEventSeq/);
+    expect(ESC).toMatch(/resetInbox/);
+    expect(ESC).not.toMatch(/pendingEvents/);
   });
 
   it('showdown_cards_revealed is consumed as reveal reconciliation', () => {

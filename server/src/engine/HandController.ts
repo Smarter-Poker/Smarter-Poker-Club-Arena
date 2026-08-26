@@ -1554,19 +1554,127 @@ export class HandController {
         pots,
         this.config.gameVariant,
         this.state.dealerSeat,
-        perPot
+        perPot,
+        // A pot whose eligibility snapshot matched nobody is still awarded -
+        // to the contenders - but we want to know it happened, because a bad
+        // snapshot means a side pot was built from state that has since moved.
+        (info) =>
+          reportError(
+            new Error(
+              `[HandController] pot ${info.potIndex} eligibility snapshot matched no contender ` +
+                `(${info.snapshotEligible} listed, ${info.contenders} in the hand, ${info.potAmount} chips) - ` +
+                `awarded to the contenders instead`
+            ),
+            'HandController.pot_eligibility_snapshot_stale'
+          )
       );
       this.pendingPerPotAwards = perPot;
     }
 
-    // Bible V8 §1.9 — No-winners guard: if determineWinners returns empty
-    // (edge case: all eligible players gone), award pot to last active player
-    if (winners.length === 0 && activePlayers.length > 0) {
-      console.warn(
-        `[HandController] No winners found — awarding pot to last active player ${activePlayers[0].user_id}`
+    /**
+     * A HAND ALWAYS HAS A WINNER (Dan 2026-08-26, binding).
+     *
+     * Verbatim: "a hand must ALWAYS have a winner, no matter what, that can
+     * never happen, you must trigger a RE-CHECK or re-verification because it
+     * is impossible for there to not be a winner ever."
+     *
+     * This used to read: award the pot to `activePlayers[0]`. That is not a
+     * fallback, it is a coin toss dressed as one - the first entry of an array
+     * has no relationship to who held the best hand, and the pot is real money.
+     *
+     * Empty winners never means "nobody won". It means the EVALUATION failed,
+     * and the answer to a failed evaluation is to evaluate again, properly.
+     * determineWinners no longer drops a pot on a stale eligibility snapshot,
+     * so reaching here at all is close to impossible - but "close to" is not a
+     * thing to settle a pot on.
+     *
+     * The re-check, in order, and every step decides on MERIT:
+     *
+     *   1. Re-run the evaluation against one pot holding the whole amount with
+     *      every contender eligible. This is the same showdown with the
+     *      snapshot removed from the question, and it is what recovers a stale
+     *      or mis-shaped eligibility list.
+     *   2. If exactly one contender remains, that player wins uncontested.
+     *      This is a legitimate outcome, not a guess.
+     *   3. If the evaluator still cannot separate them, split the pot equally
+     *      among the contenders. Nobody is favoured by list position, and the
+     *      money stays with the people who were still in the hand.
+     *
+     * Every branch past step 1 is a critical alarm, because reaching them means
+     * the evaluator failed on a real hand and somebody has to look at it.
+     */
+    if (winners.length === 0) {
+      const contenders = this.state.players.filter(
+        (p) => !p.is_folded && Array.isArray(p.cards) && p.cards.length > 0
       );
       const totalPot = pots.reduce((sum, p) => sum + p.amount, 0);
-      winners = [{ userId: activePlayers[0].user_id, amount: totalPot }];
+
+      reportError(
+        new Error(
+          `[HandController] determineWinners returned no winners for a ${totalPot} chip pot ` +
+            `with ${contenders.length} contender(s) - re-verifying`
+        ),
+        'HandController.no_winners_recheck'
+      );
+
+      // 1. Re-evaluate with the eligibility question removed.
+      if (contenders.length > 0 && totalPot > 0) {
+        winners = determineWinners(
+          this.state.players,
+          this.state.communityCards,
+          [
+            {
+              amount: totalPot,
+              eligiblePlayers: contenders.map((p) => p.user_id),
+            } as (typeof pots)[number],
+          ],
+          this.config.gameVariant,
+          this.state.dealerSeat
+        );
+      }
+
+      // 2. One contender left is a winner, not a guess.
+      if (winners.length === 0 && contenders.length === 1) {
+        winners = [{ userId: contenders[0].user_id, amount: totalPot }];
+        reportError(
+          new Error(
+            `[HandController] re-check settled a ${totalPot} chip pot on the single remaining contender`
+          ),
+          'HandController.no_winners_single_contender'
+        );
+      }
+
+      // 3. Still nothing: split among the contenders. Never by list position.
+      if (winners.length === 0 && contenders.length > 0) {
+        const cents = Math.round(totalPot * 100);
+        const share = Math.floor(cents / contenders.length);
+        const remainder = cents - share * contenders.length;
+        winners = contenders.map((p, i) => ({
+          userId: p.user_id,
+          // The odd cents go to the earliest seats, the same rule the split-pot
+          // path uses, so the total is exact and the choice is not arbitrary.
+          amount: (share + (i < remainder ? 1 : 0)) / 100,
+        }));
+        reportError(
+          new Error(
+            `[HandController] EVALUATOR FAILED on a real showdown - split a ${totalPot} chip pot ` +
+              `equally among ${contenders.length} contenders. This needs a human.`
+          ),
+          'HandController.no_winners_evaluator_failed'
+        );
+      }
+
+      // 4. No contenders at all and money on the table is a state we must not
+      //    settle silently. Leaving winners empty lets the caller's own
+      //    conservation checks refuse the hand rather than invent a recipient.
+      if (winners.length === 0 && totalPot > 0) {
+        reportError(
+          new Error(
+            `[HandController] ${totalPot} chips with NO contender in the hand - refusing to invent a winner`
+          ),
+          'HandController.no_winners_no_contenders'
+        );
+      }
     }
 
     const playerCount = this.state.players.filter((p) => !p.is_sitting_out).length;
@@ -1649,16 +1757,47 @@ export class HandController {
     // but += on binary floats is where cross-hand drift was born.
     this.snapChips();
 
-    // SHOWDOWN POLISH 2026-08-25: scale the per-pot display shares by the
-    // same global rake ratio the merged winners were scaled by, so each
-    // pot's fan carries a post-rake number and a user's per-pot shares sum
-    // (to within a rounding cent) to the amount actually credited. Display
-    // only — the credited money above came exclusively from adjustedWinners.
+    // SHOWDOWN POLISH 2026-08-25 (review fix): scale the per-pot display
+    // shares by the same global rake ratio the merged winners were scaled
+    // by, then REPAIR each user's rounding pennies against the amount they
+    // were actually credited — independent Math.round per entry could drift
+    // a user's displayed shares cents away from their real credit, and the
+    // "+N" floats are the numbers players read (this repo's own history —
+    // the hand-254 one-cent chop — treats displayed penny drift as a bug).
+    // The repair walks a user's entries largest-first, adjusting the last
+    // one so the sum matches the credit EXACTLY. Display only — credited
+    // money came exclusively from adjustedWinners above.
+    //
+    // Each entry also carries its own engine-generated hand description —
+    // board-2 groups previously inherited the BOARD-1 description from the
+    // showdown results, pairing e.g. a board-2 "Flush" name with a board-1
+    // "Two Pair" description.
     const rakeRatio = totalWinnerAmount > 0 ? totalWinnings / totalWinnerAmount : 1;
     const scaledPerPot = this.pendingPerPotAwards.map((a) => ({
       ...a,
       amount: Math.round(a.amount * rakeRatio * 100) / 100,
+      handDescription: a.low ? (a.hand?.name ?? '') : a.hand ? describeHand(a.hand) : '',
     }));
+    const creditByUser = new Map(
+      adjustedWinners.map((w) => [w.userId, Math.round(w.amount * 100)])
+    );
+    const entriesByUser = new Map<string, typeof scaledPerPot>();
+    for (const a of scaledPerPot) {
+      const g = entriesByUser.get(a.userId);
+      if (g) g.push(a);
+      else entriesByUser.set(a.userId, [a]);
+    }
+    for (const [userId, entries] of entriesByUser) {
+      const credit = creditByUser.get(userId);
+      if (credit === undefined) continue;
+      const summed = entries.reduce((s, e) => s + Math.round(e.amount * 100), 0);
+      const diff = credit - summed;
+      if (diff !== 0 && entries.length > 0) {
+        // Put the penny difference on the user's largest entry, floored at 0.
+        const target = entries.reduce((m, e) => (e.amount > m.amount ? e : m), entries[0]);
+        target.amount = Math.max(0, (Math.round(target.amount * 100) + diff) / 100);
+      }
+    }
 
     this.emit({
       type: 'WINNERS',

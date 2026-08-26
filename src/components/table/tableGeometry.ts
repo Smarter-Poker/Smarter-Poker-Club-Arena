@@ -146,11 +146,21 @@ export const NOMINAL_SCALER: Size = { w: 605, h: 1000 };
  *     board's left edge    49.9 - 0.34 * 73.2  =  25.0% of the scaler
  *     innermost seat       x = 10.5% (every ring puts its side seats there)
  *     room in between      14.5% of the scaler's width
- *     less half a chip     -2.0%   (a chip is ~4% of the table - see
+ *     less half a chip     -1.8%   (a chip is 3.6% of the table - see
  *                                   TableVisualHotfix.css, --cp-chip-size)
- *     less clear air       -1.0%
+ *     less clear air       -0.2%
  *     ------------------------------------------------------------------
- *     rail                 11.5% of the table's width
+ *     rail                 12.5% of the table's width
+ *
+ * CORRECTED 2026-08-25 (audit): this derivation used to end at 11.5 while the
+ * constant below read 12.5, because the chip was quoted at "~4% of the table"
+ * from an older token. It is 3.6% now, and half of it is 1.8, not 2.0. The
+ * number that was WRONG was the prose - and prose that disagrees with the
+ * constant beside it is worse than no prose, because the next person to move
+ * this rail will "restore" it to the derivation and shorten every seat's walk
+ * by a fifth. tests/table-geometry-chips.test.ts measures the outcome the
+ * derivation is aiming at ("no seat's chips land on the cards") rather than
+ * taking either number's word for it.
  *
  * A side seat sitting at the board's own height walks straight at the cards, so
  * it is the seat this arithmetic is about; every other seat approaches at an
@@ -187,11 +197,17 @@ export const CHIP_COLLECT_FRACTION = 0.9;
  * out from a player is player, button, chips, and the button is the marker that
  * stands nearer the player.
  *
- * 0.78 is the largest fraction that still clears a seat's own avatar on a phone
- * (a villain avatar is 52px at 375px against a rail of 11.5% x 347px = 40px, so
- * the button at 31px from the seat centre stands just off the artwork) while
- * leaving the two markers far enough apart for MARKER_MIN_GAP_WIDTH_PCT to be
- * satisfied by the rotation alone on every unclamped seat.
+ * 0.85 clears a seat's own avatar on the smallest table the app renders: a
+ * villain avatar is 52px at 375px (--seat-avatar-base in SeatSlot.css) so its
+ * radius is 26px, while the rail is 12.5% x 347px = 43px and the button stands
+ * 0.85 of that - 37px - from the seat centre. The puck is therefore off the
+ * artwork with 11px to spare, and the two markers are still far enough apart
+ * for MARKER_MIN_GAP_WIDTH_PCT to be satisfied by the rotation alone on every
+ * unclamped seat (see BUTTON_ANGLE_DEG for that arithmetic).
+ *
+ * The prose here used to describe 0.78 against an 11.5 rail while the constant
+ * read 0.85 - see the correction on CHIP_RAIL_WIDTH_PCT. Both numbers moved and
+ * only one of them was written down.
  */
 export const BUTTON_RAIL_RATIO = 0.85;
 
@@ -206,8 +222,8 @@ export const BUTTON_RAIL_RATIO = 0.85;
  * standing in the chips before.
  *
  * At 36 degrees the two markers are
- *   rail * sqrt(1 + 0.78^2 - 2 * 0.78 * cos 36) = 0.598 * rail
- * apart before anything else happens, which is 6.9% of the table's width -
+ *   rail * sqrt(1 + 0.85^2 - 2 * 0.85 * cos 36) = 0.589 * rail
+ * apart before anything else happens, which is 7.4% of the table's width -
  * comfortably past the 6% minimum, with no per-seat term involved.
  */
 export const BUTTON_ANGLE_DEG = 36;
@@ -643,13 +659,19 @@ export function markerGapWidthPct(a: Pos, b: Pos, size: Size = NOMINAL_SCALER): 
  * Kept as a named export because it is the number a person wants when a bet
  * looks wrong, and because it is the thing the tests measure.
  *
- * `_isDealer` is accepted and IGNORED. It used to add CHIP_RAIL_DEALER_EXTRA_PX
- * so the button holder's chips could clear their own puck; the puck now moves
- * instead (see `dealerButtonPosition`), because giving one seat a longer rail is
- * the exact thing item 13 forbids. The parameter survives only so the existing
- * call in TablePage.tsx keeps compiling - drop it there and then here.
+ * ── THE `isDealer` ARGUMENT IS GONE (audit 2026-08-25) ──────────────────────
+ * These three functions used to take a third `_isDealer` parameter that the
+ * body ignored. It once added CHIP_RAIL_DEALER_EXTRA_PX so the button holder's
+ * chips could clear their own puck; the puck moves instead now (see
+ * `dealerButtonPosition`), because giving one seat a longer rail is the exact
+ * thing item 13 forbids. The parameter was left behind so the call sites kept
+ * compiling, which made every signature say "the dealer gets different chips"
+ * when nothing had said that for weeks - and a test was passing `true` and
+ * `false` to prove they were the same, which is a test of a parameter that
+ * should not exist. The call sites in TablePage.tsx already pass two
+ * arguments; the parameter is now dropped here to match.
  */
-export function chipRailInset(size: Size, _isDealer?: boolean): number {
+export function chipRailInset(size: Size): number {
   return (CHIP_RAIL_WIDTH_PCT / 100) * size.w;
 }
 
@@ -657,9 +679,9 @@ export function chipRailInset(size: Size, _isDealer?: boolean): number {
  * Pixel offset from a seat to its resting bet chips.
  *
  * Pixels because the caller positions with translate(). See `chipRestPosition`
- * for the rule; `_isDealer` is accepted and ignored, see `chipRailInset`.
+ * for the rule.
  */
-export function betChipOffsetPx(seat: Pos, size: Size, _isDealer?: boolean): Pos {
+export function betChipOffsetPx(seat: Pos, size: Size): Pos {
   const p = chipRestPosition(seat, size);
   return {
     x: Math.round(((p.x - seat.x) * size.w) / 100),
@@ -674,7 +696,7 @@ export function betChipOffsetPx(seat: Pos, size: Size, _isDealer?: boolean): Pos
  * by this again. Expressed as the remainder to a common endpoint so every seat's
  * chips converge on the same place regardless of where they started.
  */
-export function chipCollectOffsetPx(seat: Pos, size: Size, _isDealer?: boolean): Pos {
+export function chipCollectOffsetPx(seat: Pos, size: Size): Pos {
   const c = feltCenter();
   const dxPx = ((c.x - seat.x) * size.w) / 100;
   const dyPx = ((c.y - seat.y) * size.h) / 100;

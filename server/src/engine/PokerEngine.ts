@@ -882,6 +882,14 @@ export function calculateRake(
 // WINNER DETERMINATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/** Reports a pot whose eligibility snapshot matched none of the contenders. */
+export type EligibilityFallback = (info: {
+  potIndex: number;
+  potAmount: number;
+  snapshotEligible: number;
+  contenders: number;
+}) => void;
+
 export function determineWinners(
   players: SeatPlayer[],
   communityCards: Card[],
@@ -899,7 +907,13 @@ export function determineWinners(
    * pot, and the evaluated hand that won it. Presentation-only data; the
    * amounts are pre-rake shares.
    */
-  perPotOut?: PerPotAward[]
+  perPotOut?: PerPotAward[],
+  /**
+   * Told when a pot's eligibility snapshot matched nobody and the contenders
+   * still in the hand were used instead. The award still happens; this exists
+   * so a bad snapshot is visible rather than silent.
+   */
+  onEligibilityFallback?: EligibilityFallback
 ): Winner[] {
   const winners: Winner[] = [];
   const activePlayers = players.filter((p) => !p.is_folded);
@@ -937,8 +951,42 @@ export function determineWinners(
 
   for (let potIdx = 0; potIdx < pots.length; potIdx++) {
     const pot = pots[potIdx];
-    const eligible = playerHands.filter((ph) => pot.eligiblePlayers.includes(ph.player.user_id));
-    if (eligible.length === 0) continue;
+    let eligible = playerHands.filter((ph) => pot.eligiblePlayers.includes(ph.player.user_id));
+
+    /**
+     * A POT IS NEVER SKIPPED (Dan 2026-08-26, binding: "a hand must ALWAYS
+     * have a winner ... it is impossible for there to not be a winner").
+     *
+     * This was `if (eligible.length === 0) continue;`. A `continue` here does
+     * not skip a calculation - it DROPS A POT. Those chips are awarded to
+     * nobody and leave the hand. When every pot took that branch the function
+     * returned an empty array, and HandController then handed the whole pot to
+     * `activePlayers[0]`: the first entry of a list, which has nothing to do
+     * with who won.
+     *
+     * `eligiblePlayers` is a snapshot taken when the pot was built, and it can
+     * fail to intersect the contenders for reasons that say nothing about the
+     * hand - a side pot built from a player who has since folded, a stale
+     * rebuild after a reconnect, an id stored in a different shape. In every
+     * one of those the money is real and somebody at this table still holds
+     * the best hand for it.
+     *
+     * So an empty intersection is a BAD SNAPSHOT, not an empty pot: fall back
+     * to every contender still in the hand - the widest defensible
+     * eligibility - and evaluate normally. The pot goes to the best hand among
+     * people actually still playing, which is the only answer that is ever
+     * correct.
+     */
+    if (eligible.length === 0) {
+      if (playerHands.length === 0) continue; // nobody is in the hand at all
+      onEligibilityFallback?.({
+        potIndex: potIdx,
+        potAmount: pot.amount,
+        snapshotEligible: pot.eligiblePlayers.length,
+        contenders: playerHands.length,
+      });
+      eligible = playerHands.slice();
+    }
 
     let hiPotAmount = pot.amount;
     let loPotAmount = 0;

@@ -197,7 +197,7 @@ export default function RegistrationApprovalsPanel({
           <input
             type="search"
             className="regApprovalsSearch"
-            placeholder="Search members to approve"
+            placeholder="Search Members To Approve"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             aria-label="Search members"

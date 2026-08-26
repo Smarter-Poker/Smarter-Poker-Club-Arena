@@ -239,6 +239,12 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
       { key: 'plo6', label: 'OMAHA 6c' },
       { key: 'short_deck', label: '6+' },
       { key: 'plo8', label: 'OMAHA Hi/Lo' },
+      /* Pineapple has a chip because the census below lists OFC_PINEAPPLE and
+         variantKey now maps it (lobbyEntries.TOURNEY_VARIANT_KEYS). A
+         producible variant with no chip is deleted by the games filter the
+         moment a player ticks any other chip - the same shape as the FLH and
+         'OMAHA High' defects recorded here, in the opposite direction. */
+      { key: 'pineapple', label: 'Pineapple' },
       /* 'OMAHA High' removed 2026-08-25. `variantKey` can only ever return
          `plo_high` for an input that is literally that string, and no variant
          in the database is: game_type across 23,116 tournaments is NLH, PLO4,
@@ -427,6 +433,12 @@ export function variantKey(raw: string | null | undefined): string {
   if (v.includes('plo4') || v === 'plo') return 'plo4';
   if (v.includes('short') || v === '6+') return 'short_deck';
   if (v.includes('flh') || v.includes('limit holdem') || v.includes('limit_holdem')) return 'flh';
+  /* `ofc_pineapple` is what tournaments.game_type actually stores, and it
+     passed through unchanged - a non-empty key matching no chip, which the
+     rule below then filtered the row out on. Both spellings normalise to the
+     one key the HOLDEM and MTT chips already use. Kept above the holdem tests
+     so a future "pineapple holdem" spelling cannot be swallowed by them. */
+  if (v.includes('pineapple')) return 'pineapple';
 
   if (v.includes('nlh') || v.includes('holdem') || v.includes("hold'em")) return 'nlh';
   return v;
@@ -494,7 +506,16 @@ export function rowPassesFilter(
       });
       if (!matchesPreset) return false;
     } else {
-      if (price < v.rangeMin || price > v.rangeMax) return false;
+      /* RULE 1 OF THE SEAT BLOCK BELOW, WHICH THIS BRANCH NEVER GOT. A range
+         sitting at its default is not a filter. isFilterActive() says the same
+         (it compares both ends against the spec), so without this guard the
+         two functions disagreed - the chip read "no filters" while this line
+         quietly deleted rows. It bites hardest on a table whose big_blind is
+         null or 0: callers pass `Number(table.big_blind) || 0`, and 0 is below
+         BLIND_RANGE.min (0.02), so an untouched slider hid every one of them
+         and the empty state offered nothing to clear. */
+      const atDefault = v.rangeMin === spec.range.min && v.rangeMax === spec.range.max;
+      if (!atDefault && (price < v.rangeMin || price > v.rangeMax)) return false;
     }
   }
 

@@ -461,6 +461,7 @@ export function useTableChat(
     pendingTimersRef.current.add(timer);
   }, []);
 
+
   const handleSendChatMessage = useCallback(
     async (message: string) => {
       if (!tableId || !userId) return;

@@ -760,12 +760,9 @@
   margin-top: 8px;
 }
 
-/* ═══ Loading Text ═══ */
-.loadingText {
-  padding: 8px;
-  color: #6b7280;
-  font-size: 13px;
-}
+/* .loadingText removed 2026-08-25: every loading state on this page is a
+   skeleton (.loadingSkeleton / .recipientSkeleton / .txSkeletonRow), so this
+   rule matched nothing. */
 
 /* ═══ Spinner ═══ */
 .spinner {

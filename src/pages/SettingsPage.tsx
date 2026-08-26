@@ -931,7 +931,7 @@ export default function SettingsPage() {
             <p>A Confirmation Email Will Be Sent To Your New Address.</p>
             <input
               type="email"
-              placeholder="New email address"
+              placeholder="New Email Address"
               value={newEmail}
               onChange={(e) => setNewEmail(e.target.value)}
               className={styles.input}
@@ -963,14 +963,14 @@ export default function SettingsPage() {
             <p>Password Must Be At Least 8 Characters.</p>
             <input
               type="password"
-              placeholder="New password"
+              placeholder="New Password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               className={styles.input}
             />
             <input
               type="password"
-              placeholder="Confirm new password"
+              placeholder="Confirm New Password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               className={styles.input}
@@ -1031,7 +1031,7 @@ export default function SettingsPage() {
 
             <input
               type="text"
-              placeholder="Enter 6-digit code"
+              placeholder="Enter 6-digit Code"
               value={verificationCode}
               onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
               className={styles.input}

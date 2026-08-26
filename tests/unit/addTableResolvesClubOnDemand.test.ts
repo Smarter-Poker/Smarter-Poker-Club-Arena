@@ -103,6 +103,33 @@ describe('the add-table button does not lose a race with its own lookup', () => 
     expect(HANDLER).toMatch(/\.limit\(QUICK_JOIN_CANDIDATE_LIMIT\)/);
   });
 
+  it('the active row is fetched directly rather than assumed present', () => {
+    /* Everything in the sheet is measured against the ACTIVE table's row.
+       Without its game_variant every candidate falls to the 'other' tier and
+       the same-game ranking switches itself off silently. The 200-row fetch
+       holds it in any ordinary club, but a union hub with more than 200 open
+       tables is the shape this platform actually has. */
+    expect(HANDLER).toMatch(/if \(activeTableId && !activeRow\)/);
+    expect(HANDLER).toMatch(/\.eq\('id', activeTableId\)/);
+    // The rare-miss lookup must not be able to hang the sheet.
+    const miss = HANDLER.slice(HANDLER.indexOf('if (activeTableId && !activeRow)'));
+    expect(miss.slice(0, 400)).toMatch(/withTimeout/);
+  });
+
+  it('the stakes label is the lobby formatter, not string interpolation', () => {
+    /* The same table must not read "0.5/1" here and "0.50/1" in the lobby, and
+       a fixed-limit table's stakes are its BET SIZES, not its blinds. The
+       string also travels onto the new tab as ?stakes=, so a wrong label here
+       became a wrong label on the table itself. */
+    expect(HANDLER).toMatch(/stakesLabel\(/);
+    expect(HANDLER).not.toMatch(/`\$\{t\.smallBlind\}\/\$\{t\.bigBlind\}`/);
+    expect(SRC).toMatch(/import \{ stakesLabel \} from '\.\.\/lib\/bettingStructure'/);
+  });
+
+  it('the current stake is read variant-aware when it falls back to the label', () => {
+    expect(HANDLER).toMatch(/bigBlindFromStakesLabel\(activeStakes, activeVariant\)/);
+  });
+
   it('a missing seat cap is not read as a full table', () => {
     // `current_players < (max_players || 0)` evaluates 0 < 0 for any row with
     // no recorded capacity, so a data gap presented as "no seats".

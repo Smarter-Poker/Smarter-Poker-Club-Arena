@@ -75,6 +75,48 @@ describe('the published window is one rule', () => {
   });
 });
 
+describe('spawnAheadMinutes RAISES the floor and never lowers it', () => {
+  /**
+   * THE BUG THAT ALMOST SHIPPED GREEN. Every one of the 60 active schedules on
+   * this platform carries `spawnAheadMinutes: 1440`, written when 24 hours was
+   * the house window. The first version of spawnAheadMsFor let an explicit
+   * override win outright -- so moving TIMED_WINDOW_AHEAD_MS to 48 hours would
+   * have changed the board for exactly zero schedules, while every test, every
+   * typecheck and every CI gate went green.
+   *
+   * Verified against production on 2026-08-26:
+   *   ahead_minutes=1440, schedules=60, max_buyin=109
+   */
+  it('the real production value (1440) cannot hold the board at 24 hours', () => {
+    expect(spawnAheadMsFor({ buyIn: 10, spawnAheadMinutes: 1440 })).toBe(LOBBY_WINDOW_MS);
+    expect(spawnAheadMsFor({ buyIn: 10, spawnAheadMinutes: 1440 })).toBeGreaterThan(24 * HOUR);
+  });
+
+  it('an override LARGER than the floor still wins (the Major opens a week early)', () => {
+    expect(spawnAheadMsFor({ buyIn: 10, spawnAheadMinutes: 10080 })).toBe(10080 * 60_000);
+  });
+
+  it('no override, at any price, can publish less than the house window', () => {
+    for (const mins of [30, 60, 720, 1440, 2879]) {
+      for (const buyIn of [0, 50, 500]) {
+        expect(spawnAheadMsFor({ buyIn, spawnAheadMinutes: mins })).toBeGreaterThanOrEqual(
+          scheduleWindowMsFor(buyIn)
+        );
+      }
+    }
+  });
+
+  it('an out-of-range override is ignored, not clamped', () => {
+    expect(spawnAheadMsFor({ buyIn: 10, spawnAheadMinutes: 1 })).toBe(LOBBY_WINDOW_MS);
+    expect(spawnAheadMsFor({ buyIn: 10, spawnAheadMinutes: 99999 })).toBe(LOBBY_WINDOW_MS);
+    expect(spawnAheadMsFor({ buyIn: 10, spawnAheadMinutes: 'soon' })).toBe(LOBBY_WINDOW_MS);
+  });
+
+  it('a big event keeps its 6 days even under a 24 hour override', () => {
+    expect(spawnAheadMsFor({ buyIn: 500, spawnAheadMinutes: 1440 })).toBe(LOBBY_FEATURE_WINDOW_MS);
+  });
+});
+
 describe('scheduleWindowMsFor', () => {
   it('is strictly greater than 200, so a flat 200 is a 48 hour event', () => {
     expect(scheduleWindowMsFor(200)).toBe(LOBBY_WINDOW_MS);

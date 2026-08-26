@@ -27,6 +27,7 @@ import { formatGameTitle } from '../utils/formatGameTitle';
 import { useToast } from '../components/common/Toast';
 import { supabase } from '../lib/supabase';
 import { gameCode, gameCodeFromName } from '../utils/gameCode';
+import { stakesLabel } from '../lib/bettingStructure';
 import { swipeTargetIndex } from '../utils/swipeTarget';
 import { soundService, haptic } from '../services/SoundService';
 import { setSitOut, submitAction } from '../services/GameServerAPI';
@@ -1534,14 +1535,41 @@ export default function MultiTablePage() {
          the open tab. TableInstance carries only a stakes label, so the variant -
          the thing that decides whether another game is "similar" - is not on it.
          Guessing it from the label is how a PLO player got offered Hold'em. */
-      const activeRow = activeTableId ? all.find((r) => r.id === activeTableId) : undefined;
+      type CandidateRow = (typeof all)[number];
+      let activeRow: CandidateRow | undefined = activeTableId
+        ? all.find((r) => r.id === activeTableId)
+        : undefined;
+
+      /* THE ACTIVE ROW IS LOAD-BEARING, SO ASK FOR IT DIRECTLY IF IT IS MISSING.
+         Everything below measures candidates AGAINST this row: without its
+         `game_variant` every table falls into the 'other' tier and the entire
+         same-game / same-stakes ranking silently switches itself off. The
+         200-row fetch above will contain it in any ordinary club, but a union
+         hub running more than 200 open tables is exactly the shape this
+         platform has, and "usually present" is not a basis for a ranking.
+         One indexed lookup by primary key, on the rare miss only, and a failure
+         here still degrades to the label parse rather than breaking the sheet. */
+      if (activeTableId && !activeRow) {
+        const one = await withTimeout(
+          supabase
+            .from('tables')
+            .select(
+              'id, name, game_variant, game_type, small_blind, big_blind, max_players, current_players, status'
+            )
+            .eq('id', activeTableId)
+            .maybeSingle()
+        ).catch(() => null);
+        if (one?.data) activeRow = one.data as CandidateRow;
+      }
+
+      const activeVariant = (activeRow?.game_variant as string | undefined) ?? null;
       const currentTable = {
         id: activeTableId,
-        variant: (activeRow?.game_variant as string | undefined) ?? null,
+        variant: activeVariant,
         bigBlind:
           activeRow?.big_blind != null
             ? Number(activeRow.big_blind)
-            : bigBlindFromStakesLabel(activeStakes),
+            : bigBlindFromStakesLabel(activeStakes, activeVariant),
       };
 
       /* A MISSING SEAT CAP IS NOT A FULL TABLE. This read
@@ -1582,7 +1610,22 @@ export default function MultiTablePage() {
         return {
           id: t.id,
           name: t.name,
-          stakes: t.smallBlind != null && t.bigBlind != null ? `${t.smallBlind}/${t.bigBlind}` : '',
+          /* THE SAME TABLE MUST NOT READ TWO WAYS. This interpolated the raw
+             columns, so a table the lobby lists as "0.50/1" appeared here as
+             "0.5/1", and a FIXED LIMIT table -- whose stakes ARE its bet sizes,
+             not its blinds -- was labelled with its blinds and so read as half
+             the game it is. `stakesLabel` is the formatter the lobby already
+             uses (lobbyEntries.ts:19); this is now the same call. The string
+             also travels onto the new tab as `?stakes=`, so a wrong label here
+             became a wrong label on the table itself. */
+          stakes:
+            t.smallBlind != null && t.bigBlind != null
+              ? stakesLabel(
+                  Number(t.smallBlind),
+                  Number(t.bigBlind),
+                  (r?.game_variant as string | undefined) ?? null
+                )
+              : '',
           players: Number(t.players) || 0,
           max: Number(t.maxPlayers) || 0,
           code: gameCode({

@@ -108,18 +108,40 @@ export const FEATURE_BUYIN_THRESHOLD = 200;
 export const FEATURE_WINDOW_AHEAD_MS = 6 * 24 * 60 * 60 * 1000;
 
 /**
- * The look-ahead for one schedule: an explicit `spawnAheadMinutes` always
- * wins (flagships open registration a week early so their satellites can
- * resolve them), otherwise the buy-in decides.
+ * The look-ahead for one schedule.
+ *
+ * `spawnAheadMinutes` RAISES THE FLOOR. IT DOES NOT LOWER IT.
+ *
+ * THIS IS THE WHOLE FIX, AND THE FIRST VERSION OF IT WAS DEAD CODE. The
+ * override used to win outright, on the reasoning that a flagship sets it to a
+ * week so its satellites can resolve the target all week. That reasoning is
+ * sound in ONE direction only, and the data says so plainly: every one of the
+ * 60 active schedules on this platform carries `spawnAheadMinutes: 1440`,
+ * written when 24 hours WAS the house window. An override that wins outright
+ * therefore means all 60 schedules keep publishing 24 hours of card no matter
+ * what TIMED_WINDOW_AHEAD_MS says -- the constant would have moved to 48, CI
+ * would have gone green, the PR would have merged, and Dan's board would have
+ * looked exactly as empty as it did before.
+ *
+ * The house window is a FLOOR: "it should be displaying all events that are
+ * scheduled over the next 48 hours" is not a default to be opted out of. A
+ * schedule may ask for MORE (the Sunday Major's 10080 still wins, because it
+ * is larger). It may not ask for less.
+ *
+ * An out-of-range or unreadable override is ignored entirely rather than
+ * clamped, which is the same fail-closed choice the rest of this file makes.
  */
 export function spawnAheadMsFor(cfg: Record<string, unknown>): number {
+  const byRule =
+    wholeChips(cfg.buyIn) > FEATURE_BUYIN_THRESHOLD
+      ? FEATURE_WINDOW_AHEAD_MS
+      : TIMED_WINDOW_AHEAD_MS;
+
   const explicit = Number(cfg.spawnAheadMinutes);
   if (Number.isFinite(explicit) && explicit >= 30 && explicit <= 10_080) {
-    return Math.round(explicit) * 60_000;
+    return Math.max(byRule, Math.round(explicit) * 60_000);
   }
-  return wholeChips(cfg.buyIn) > FEATURE_BUYIN_THRESHOLD
-    ? FEATURE_WINDOW_AHEAD_MS
-    : TIMED_WINDOW_AHEAD_MS;
+  return byRule;
 }
 /**
  * Horses are seeded at SPAWN only when the start is this close.

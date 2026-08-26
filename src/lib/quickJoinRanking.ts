@@ -36,6 +36,7 @@
  */
 
 import { gameCode } from '../utils/gameCode';
+import { isFixedLimitVariant } from './bettingStructure';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -147,19 +148,28 @@ export function isSameVariant(a?: string | null, b?: string | null): boolean {
 }
 
 /**
- * Recover the big blind from a "sb/bb" label such as "0.05/0.10" or "1/2".
+ * Recover the big blind from a stakes label such as "0.05/0.10" or "1/2".
  *
  * The multi-table tab stores stakes as that STRING and nothing numeric, so when
- * the current table's own database row is not in the candidate set (it can fall
- * outside the 30-row fetch, or be a tournament) this is the only handle on the
- * stake level. Returns null rather than 0 for anything unparseable, so callers
- * cannot mistake "unknown" for "free".
+ * the current table's own database row cannot be found this is the last handle
+ * on the stake level. Returns null rather than 0 for anything unparseable, so
+ * callers cannot mistake "unknown" for "free".
+ *
+ * FIXED LIMIT PUTS THE BIG BLIND FIRST. `stakesLabel` renders a limit game as
+ * its BET SIZES -- `${bigBlind}/${bigBlind * 2}` -- because that is what a
+ * limit player reads. So on a 2/4 limit table the big blind is 2, the FIRST
+ * number, while on a 1/2 no-limit table it is 2, the SECOND. Reading index 1
+ * unconditionally doubled every limit table's stake and put it a rung or two
+ * up its own ladder, which mis-tiers every Quick Join row for that player.
  */
-export function bigBlindFromStakesLabel(label?: string | null): number | null {
+export function bigBlindFromStakesLabel(
+  label?: string | null,
+  variant?: string | null
+): number | null {
   if (!label) return null;
   const parts = String(label).split('/');
   if (parts.length < 2) return null;
-  const bb = Number(parts[1].trim());
+  const bb = Number(parts[isFixedLimitVariant(variant) ? 0 : 1].trim());
   return Number.isFinite(bb) && bb > 0 ? bb : null;
 }
 

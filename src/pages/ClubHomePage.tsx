@@ -1233,21 +1233,27 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
    * forgets to persist — which is exactly how the column sort in LobbyTable
    * stayed saved while the sort control above it did not.
    */
-  const updateViewPrefs = useCallback(
-    (patch: Partial<LobbyViewPrefs>) => {
-      viewPrefsTouched.current = true;
-      setViewPrefs((prev) => {
-        const next: LobbyViewPrefs = {
-          ...prev,
-          ...patch,
-          sortByTab: { ...prev.sortByTab, ...(patch.sortByTab ?? {}) },
-        };
-        if (resolvedClubId) saveViewPrefs(resolvedClubId, next);
-        return next;
-      });
-    },
-    [resolvedClubId]
-  );
+  const updateViewPrefs = useCallback((patch: Partial<LobbyViewPrefs>) => {
+    viewPrefsTouched.current = true;
+    /* PURE UPDATER. The write used to happen INSIDE this callback, which is a
+       side effect in a place React is explicitly allowed to run twice (it does
+       exactly that under StrictMode, and reserves the right to in any
+       concurrent render). Persisting from an effect keyed on the value means
+       the write happens once per settled state, not once per attempted one. */
+    setViewPrefs((prev) => ({
+      ...prev,
+      ...patch,
+      sortByTab: { ...prev.sortByTab, ...(patch.sortByTab ?? {}) },
+    }));
+  }, []);
+
+  /* One writer, watching the value. `viewPrefsTouched` keeps a hydration from
+     immediately writing back what it just read -- harmless, but it would put a
+     storage write on every club visit for no reason. */
+  useEffect(() => {
+    if (!resolvedClubId || !viewPrefsTouched.current) return;
+    saveViewPrefs(resolvedClubId, viewPrefs);
+  }, [resolvedClubId, viewPrefs]);
 
   /** Pick a tab: remember it, and restore that tab's own last sort. */
   const selectGameType = useCallback(

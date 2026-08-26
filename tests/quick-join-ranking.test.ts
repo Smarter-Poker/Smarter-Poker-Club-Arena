@@ -127,6 +127,21 @@ describe('the stakes ladder', () => {
     expect(stakeLadderFor(rows, 'plo', 0.5)).toEqual([0.5]);
   });
 
+  it('reads a FIXED LIMIT label off the front, where its big blind lives', () => {
+    /* stakesLabel renders a limit game as its BET SIZES, `bb/bb*2`, because
+       that is what a limit player reads. So "2/4" fixed limit has a big blind
+       of 2 -- the FIRST number -- while "1/2" no-limit has a big blind of 2,
+       the SECOND. Reading index 1 unconditionally doubled every limit table's
+       stake and pushed it up its own ladder, mis-tiering the whole sheet. */
+    expect(bigBlindFromStakesLabel('2/4', 'flh')).toBe(2);
+    expect(bigBlindFromStakesLabel('2/4', 'nlh')).toBe(4);
+    expect(bigBlindFromStakesLabel('10/20', 'flo8')).toBe(10);
+    // An unknown or absent variant keeps the no-limit reading, which is the
+    // overwhelming majority of tables and the previous behaviour.
+    expect(bigBlindFromStakesLabel('1/2')).toBe(2);
+    expect(bigBlindFromStakesLabel('1/2', null)).toBe(2);
+  });
+
   it('reads the big blind out of a stakes label whatever its precision', () => {
     // The multi-table tab stores stakes only as this string, and this is the
     // parse that replaces the old label-equality compare.

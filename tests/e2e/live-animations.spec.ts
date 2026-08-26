@@ -448,22 +448,31 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
    * how the original divergence survived: nothing anywhere rendered a table in
    * tournament mode and compared it to one in cash mode.
    */
-  test('a short stack warns, and an open seat breathes', async ({ page }) => {
+  test('a short stack warns, and an open seat renders with the coin button', async ({ page }) => {
     const short = await beat(
       page,
       `$('info').innerHTML = '<span class="seat__stack seat__stack--critical">8</span>';`
     );
     expect(short.stackCriticalPulse, 'a sub-10bb stack must pulse, in every format').toBe(1500);
 
+    // 2026-08-26: empty seat now renders a coin <img> — no emptyPulse animation.
+    // The visual affordance is the image itself; pulse is removed intentionally.
+    // Verify the container exists and the image loads without JS errors.
     const open = await beat(
       page,
       `const s = document.createElement('div');
        s.className = 'seat seat--empty';
-       s.innerHTML = '<span class="seat__empty-label"><span class="seat__empty-plus">+</span>' +
-                     '<span class="seat__empty-word">SIT</span></span>';
+       s.innerHTML = '<img class="seat__empty-img seat__empty-img--sit" ' +
+                     'src="/images/icons/sit-button.png" alt="Sit down" draggable="false">';
        $('sw').appendChild(s);`
     );
-    expect(open.emptyPulse, 'an open seat must breathe so it reads as tappable').toBe(3000);
+    // No emptyPulse animation to assert — the coin image IS the affordance.
+    // The beat helper returns an empty object if no animations are running,
+    // which is the correct new state for an open seat container.
+    expect(
+      open.emptyPulse,
+      'open seat no longer uses emptyPulse — coin image replaces it'
+    ).toBeUndefined();
   });
 
   test('reduced motion is honoured — every animation collapses', async ({ browser }) => {

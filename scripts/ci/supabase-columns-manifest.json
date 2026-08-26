@@ -11777,6 +11777,21 @@
       "resolved",
       "surface",
       "video_id"
+    ],
+    "horse_daily_nets": [
+      "day",
+      "format",
+      "game_variant",
+      "hands",
+      "horse_user_id",
+      "net_bb",
+      "updated_at"
+    ],
+    "horse_brain_telemetry": [
+      "day",
+      "feature",
+      "fires",
+      "updated_at"
     ]
   }
 }

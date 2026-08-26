@@ -251,6 +251,38 @@ describe('settlement — chop shapes (Dan: chopped pot voids insurance)', () => 
     expect(s.premium).toBeGreaterThan(0);
   });
 
+  it('a timed-out offer is a FINAL decline (POKERBROS PARITY 2026-08-26)', () => {
+    // Dan: "IF A PLAYER DECLINES, THEY DON'T GET OFFERED AGAIN." A timeout is
+    // a decline, so the expiry callback must mark declinedForHand.
+    const fired: Array<() => void> = [];
+    const capturingScheduler = {
+      start() {},
+      schedule(entry: { callback: () => void }) {
+        fired.push(entry.callback);
+      },
+      cancel() {},
+    } as unknown as DeadlineScheduler;
+    const eng = new InsuranceEngine(undefined, capturingScheduler);
+    eng.configure('t1', { enabled: true, houseMargin: 1.2, maxInsurablePercent: 100 });
+    eng.createOffers(
+      't1',
+      't1:1',
+      LEADER,
+      [
+        { playerId: LEADER, holeCards: leaderCards, atRisk: 100 },
+        { playerId: OPP, holeCards: oppCards, atRisk: 100 },
+      ],
+      board,
+      300,
+      'nlh'
+    );
+    expect(fired).toHaveLength(1);
+    fired[0](); // the offer window expires
+    const offers = eng.getOffers('t1');
+    expect(offers[0].status).toBe('declined');
+    expect(offers[0].declinedForHand).toBe(true);
+  });
+
   it('leader among MULTIPLE winners (e.g. side-pot split) => VOID, never double-paid', () => {
     // Pinned conservative semantics: if the insured leader is among the
     // winners of ANY pot in a multi-winner hand, the contract voids —

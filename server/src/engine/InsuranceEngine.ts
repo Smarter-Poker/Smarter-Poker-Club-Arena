@@ -251,7 +251,10 @@ export class InsuranceEngine {
       deadlineMs: Date.now() + config.offerTimeoutSeconds * 1000,
       callback: () => {
         if (offer.status === 'offered') {
-          this.decline(tableId, leader.playerId);
+          // POKERBROS PARITY 2026-08-26 (Dan): a decline is FINAL for the hand.
+          // "IF A PLAYER DECLINES, THEY DON'T GET OFFERED AGAIN." A timeout is
+          // a decline, so it is final too - the player had their window.
+          this.decline(tableId, leader.playerId, true);
         }
       },
     });
@@ -327,10 +330,13 @@ export class InsuranceEngine {
 
   /**
    * Decline insurance.
-   * @param forHand — If true, player declines for the ENTIRE hand (won't be re-offered on later streets).
-   *                  If false (default), player declines this street only — may be re-offered if equity shifts.
+   *
+   * POKERBROS PARITY 2026-08-26 (Dan): "IF A PLAYER DECLINES, THEY DON'T GET
+   * OFFERED AGAIN." Every decline — button, timeout, or safety fallback — is
+   * FINAL for the hand, so the default is now `true` and no caller passes
+   * anything else. The parameter survives only so tests can pin the flag.
    */
-  decline(tableId: string, playerId: string, forHand: boolean = false): void {
+  decline(tableId: string, playerId: string, forHand: boolean = true): void {
     const offers = this.activeOffers.get(tableId);
     if (!offers) return;
 
@@ -466,26 +472,6 @@ export class InsuranceEngine {
     const offers = this.activeOffers.get(tableId);
     if (!offers || offers.length === 0) return true;
     return offers.every((o) => o.status !== 'offered');
-  }
-
-  /**
-   * Check if any player is still eligible for insurance offers on future streets.
-   * Returns false if ALL players have declined for the entire hand — meaning
-   * per-street pause is void and remaining streets should run out instantly.
-   *
-   * Per Dan's rule: "THIS IS VOID IF THE PLAYER DECLINES INSURANCE FOR HAND OPTION.
-   * IT WILL RUN OUT NORMAL, UNLESS THAT PLAYER IS NOT 'BEHIND' —
-   * INSURANCE WILL BE OFFERED TO THE PLAYER THAT IS 'AHEAD' IF ANY STREETS ARE STILL PENDING."
-   *
-   * So we check: is there at least one player who hasn't declined for the entire hand?
-   * If yes → per-street pause continues (that player can be offered next street).
-   * If no → all have declined for hand → instant runout.
-   */
-  anyEligibleForInsurance(tableId: string): boolean {
-    const offers = this.activeOffers.get(tableId);
-    if (!offers || offers.length === 0) return false;
-    // At least one player must NOT have declinedForHand
-    return offers.some((o) => !o.declinedForHand);
   }
 
   getOffers(tableId: string): InsuranceOffer[] {

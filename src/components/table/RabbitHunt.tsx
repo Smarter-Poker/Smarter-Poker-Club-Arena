@@ -35,14 +35,10 @@ import { CardImage } from '../table/CardImage';
 import type { Card as CardImageCard } from '../table/CardImage';
 import './RabbitHunt.css';
 import { reportError } from '../../utils/errorReporter';
-/* Dan: "use the actual rabbit hunt dynamic image". The artwork has been in the
-   repo the whole time and nothing referenced it — the button drew a `◆` text
-   glyph. Imported through Vite rather than referenced from public/ on purpose:
-   an imported asset is emitted into dist/assets/, and sync-club-arena.sh copies
-   assets/ wholesale while it deliberately PRESERVES (never updates)
-   public/hub/club-arena/images/, so a file dropped there would never reach
-   production. */
-import rabbitHuntIcon from '../../assets/rabbit-hunt.png';
+/* Dan: "use the actual rabbit hunt dynamic image". Updated to the custom
+   rabbit/crosshair icon provided by the user. Imported through Vite so it
+   emits to dist/assets/ and reaches production via the automated build. */
+import rabbitHuntIcon from '../../assets/icons/icon-rabbit.jpg';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES

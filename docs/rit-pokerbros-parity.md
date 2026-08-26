@@ -152,6 +152,34 @@ Known deliberate divergences (documented, not accidental):
 - Banner/panel wording follows the house popup law (Title Case, no em
   dashes) rather than the reference's literal strings.
 
+## 2c. Round 3 — the RUN IT 3X recording (turn all-in, spectator view)
+
+A fourth recording (Crazy Pineapple, HU turn all-in run three times, captured
+from a FOLDED player's seat) added three behaviors:
+
+- **Per-player accept banners.** Spectators and folded players — who never
+  see the consent panel — watch the question resolve on the felt: the
+  waiting strip, then "<name> has accepted running multi-times." for a few
+  seconds per accept, then back to waiting while the offer still hangs. The
+  final accept's named banner rides straight into the runout (no collective
+  banner on top of it). Implemented via `rit_response_update` → named felt
+  banner with revert-to-waiting; the collective `rit_all_accepted` banner is
+  suppressed when a named one fired within the last 2s.
+- **Compact layout for partial re-deals.** Runs 2+ never redraw the shared
+  prefix — the reference deals each re-dealt river into the river slot and
+  parks the previous ones offset. Ours: extra-run rows hide the shared-prefix
+  slots (layout width kept), so each run's re-dealt cards sit exactly under
+  their street positions. Preflop all-ins keep full rows (matches video 3).
+- **The winner phase is INTERLEAVED per run** — run 1's ribbon + highlights
+  land, run 1's pot ships, THEN run 2's ribbon, ship, then run 3 (measured
+  ~2.5-3.2s per run). Implemented as one `RIT_RESULT_RUN_MS` (2600ms) window
+  per run: `ritRevealedRuns` gates each board's ribbon/label on its own
+  turn, and POT_WIN aligns each run's award groups to that run's ribbon
+  time (`ritRunRibbonAtRef`) — a ribbon-beat after the ribbon, pots within
+  a run staggered as before. The engine hold formula changed to match:
+  `reveal + runs × RIT_RESULT_RUN_MS + push` (the per-run windows ARE the
+  showdown read on a multi-board hand).
+
 ## 3. Explicitly out of scope
 
 - No PokerBros assets, artwork or text is copied; visual layout is our own.

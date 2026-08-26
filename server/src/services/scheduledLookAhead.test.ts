@@ -6,10 +6,12 @@
  * minutes before it started. The look-ahead became a day.
  *
  * ROUND TWO. A day was still not the board Dan wanted: "IT SHOULD BE
- * DISPLAYING ALL EVENTS THAT ARE SCHEDULED OVER THE NEXT 48 HOURS. ANY
- * TOURNAMENT WITH A BUY IN OF MORE THEN 200 THAT IS ON THE SCHEDULE CAN BE
- * SHOWN 6 DAYS OUT." The look-ahead is now 48 hours, and 6 days above a 200
- * buy-in — see spawnAheadMsFor. The client half of the same rule lives in
+ * DISPLAYING ALL EVENTS THAT ARE SCHEDULED OVER THE NEXT 48 HOURS."
+ *
+ * ROUND THREE. "USE 72H/6 DAY FOR $200 BUY IN OR MORE." The look-ahead is now
+ * 72 hours, and 6 days from a 200 buy-in UPWARD — inclusive, because the
+ * Sunday Deep Stack is priced at exactly 200 and a strict `>` would have
+ * excluded the one event the long window exists for. See spawnAheadMsFor. The client half of the same rule lives in
  * src/utils/tournamentScheduleWindow.ts and tests/unit/scheduleWindowParity
  * fails if the two drift.
  *
@@ -27,27 +29,31 @@ import { MTT_PRESTART_RAMP_MS } from './TournamentRecurringService.js';
 const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
 
 describe('the card is published a day ahead', () => {
-  it('two full days of look-ahead, not one and not half an hour', () => {
-    expect(TIMED_WINDOW_AHEAD_MS).toBe(48 * 60 * 60 * 1000);
+  it('three full days of look-ahead, not one and not half an hour', () => {
+    // 30 min -> 24h -> 48h -> 72h, each step because the board still looked
+    // thinner than the schedule actually was. 72 is also what the tournament
+    // lobby already used, so the two boards finally agree.
+    expect(TIMED_WINDOW_AHEAD_MS).toBe(72 * 60 * 60 * 1000);
   });
 
   it('an 18:00 daily event is on the board the previous evening', () => {
     // 20:00 the night before: the old 30-minute window saw nothing at all.
-    // At 48 hours a DAILY event is due twice — tomorrow's and the day
-    // after's — and the earliest of them is still tomorrow evening's.
+    // At 72 hours a DAILY event is due three times, and the earliest of them
+    // is still tomorrow evening's.
     const now = new Date('2026-08-22T20:00:00Z');
     const due = timedSpawnsDue(
       { id: 'sched-daily-big', days_of_week: EVERY_DAY, start_times_utc: ['18:00'] },
       now
     );
-    expect(due).toHaveLength(2);
+    expect(due).toHaveLength(3);
     expect(due[0].startTime.toISOString()).toBe('2026-08-23T18:00:00.000Z');
     expect(due[1].startTime.toISOString()).toBe('2026-08-24T18:00:00.000Z');
+    expect(due[2].startTime.toISOString()).toBe('2026-08-25T18:00:00.000Z');
   });
 
   it('every daily schedule contributes an instance, so the board fills', () => {
-    // Two editions each now, which is the whole point of the change: the
-    // board carries tomorrow AND the day after rather than tomorrow alone.
+    // Three editions each now, which is the whole point of the change: the
+    // board carries the next three days rather than tomorrow alone.
     const now = new Date('2026-08-23T03:00:00Z');
     const times = ['12:00', '13:00', '14:00', '16:00', '17:00', '18:00', '20:00', '22:00'];
     const total = times.reduce(
@@ -56,7 +62,7 @@ describe('the card is published a day ahead', () => {
         timedSpawnsDue({ id: `s-${t}`, days_of_week: EVERY_DAY, start_times_utc: [t] }, now).length,
       0
     );
-    expect(total).toBe(times.length * 2);
+    expect(total).toBe(times.length * 3);
   });
 
   it('still dedupes: the same instance keys identically from any clock', () => {
@@ -73,8 +79,8 @@ describe('the card is published a day ahead', () => {
   });
 
   it('a weekly event appears inside the window but not a week out', () => {
-    // 2026-08-23 is a Sunday. From Saturday evening it is inside 48 hours;
-    // from the Wednesday before it is not.
+    // 2026-08-23 is a Sunday. From Saturday evening it is inside 72 hours;
+    // from the Wednesday before (4 days) it is not.
     const sunOnly = { id: 'sun', days_of_week: [0], start_times_utc: ['17:00'] };
     expect(timedSpawnsDue(sunOnly, new Date('2026-08-22T20:00:00Z'))).toHaveLength(1);
     expect(timedSpawnsDue(sunOnly, new Date('2026-08-19T20:00:00Z'))).toHaveLength(0);

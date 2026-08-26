@@ -40,6 +40,7 @@ import { startHorseSelfTuner } from './services/HorseSelfTuner.js';
 import { sweepIncompleteHorses } from './services/HorseOnboarding.js';
 import { startHorseLeague } from './benchmark/HorseLeague.js';
 import { startHorseDailyAudit } from './services/HorseDailyAudit.js';
+import { startBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
 import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -287,6 +288,9 @@ httpServer.listen(PORT, () => {
   // Daily audit (Dan 2026-08-26): findings over yesterday's 20bb reviews +
   // league results, written to horse_daily_audit for the /horses admin panel.
   startHorseDailyAudit();
+  // Proof of receipt (Dan 2026-08-26): live layer-fire counters, flushed to
+  // horse_brain_telemetry every minute for the daily audit + admin panel.
+  startBrainTelemetryFlush();
   // V7 (2026-07-24): humanlike session rhythms — horses stand up after real
   // sessions via the SAME hand-boundary-safe leaveTable() path humans use;
   // the fleet manager reseeds fresh horses within its 30s cycle.

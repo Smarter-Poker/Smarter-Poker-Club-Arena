@@ -26,7 +26,6 @@ import {
 } from './services/TournamentRecurringService.js';
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
-import { AutoRebuyService } from './services/AutoRebuyService.js';
 import { DealRateVerifier } from './services/DealRateVerifier.js';
 import {
   renewLeadership,
@@ -190,7 +189,6 @@ export class GameServer {
   // hardcoded recurring blocks, acting only on rows written into the database.
   private scheduledTournaments = new ScheduledTournamentService();
   private lifecycle = new HorseLifecycleManager();
-  private autoRebuy = new AutoRebuyService();
 
   /**
    * Liveness the engine cannot fake — see services/DealRateVerifier.ts.
@@ -388,7 +386,6 @@ export class GameServer {
       this.lifecycle.start();
 
       // Step 5: Start server-side auto-rebuy wallet funder
-      this.autoRebuy.start();
 
       // Step 5a: the only liveness check that does not ask this process
       // whether it is alive. See services/DealRateVerifier.ts.
@@ -478,7 +475,6 @@ export class GameServer {
     this.tournamentRecurring.stop();
     this.scheduledTournaments.stop();
     this.lifecycle.stop();
-    this.autoRebuy.stop();
     this.dealRateVerifier.stop();
     this.rakebackSettler.stop();
     if (this.breakTimer) {

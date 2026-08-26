@@ -281,6 +281,34 @@
 
 /* ccFlopDeal removed 2026-08-19 - superseded by ccFlopLand + ccFlopFanOpen. */
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   SLOW ALL-IN REVEAL — POKERBROS PARITY 2026-08-26
+
+   During an all-in runout the turn and river do what the reference flow does:
+   the card slides in FACE DOWN, sits there for a readable beat (the table is
+   already paused between streets by the server), then turns over. Reuses the
+   flop's two-surface .community-cards__flip markup; only the timing here is
+   different.
+
+     0.00s  card lands face down (ccFlopLand, 0.3s)
+     0.75s  hold complete, flip begins (ccFlopFanOpen, 0.5s)
+     1.25s  face up
+
+   The component holds its newly-dealt window for 1.8s in this mode so the
+   flip markup is never torn out mid-turn.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.community-cards__card--slow-reveal {
+  animation: ccFlopLand calc(0.3s * var(--animation-speed, 1)) var(--cc-ease-spring) backwards;
+  overflow: visible;
+  will-change: transform, opacity;
+}
+.community-cards__card--slow-reveal .community-cards__flip {
+  animation: ccFlopFanOpen calc(0.5s * var(--animation-speed, 1)) var(--cc-ease-smooth) both;
+  /* Fixed delay - the per-card fan stagger (--card-index) is a flop concept;
+     a turn or river is a single card holding for its own beat. */
+  animation-delay: calc(0.75s * var(--animation-speed, 1));
+}
+
 /* ---- 3D Flip Deal (primary flop animation) ---- */
 .community-cards__card--dealing {
   animation: ccCardFlip3D calc(var(--cc-deal-duration) * var(--animation-speed, 1))
@@ -928,6 +956,8 @@
   .community-cards__card--dealing,
   .community-cards__card--turn,
   .community-cards__card--river,
+  .community-cards__card--slow-reveal,
+  .community-cards__card--slow-reveal .community-cards__flip,
   .community-cards__card--highlighted,
   .community-cards__card--highlight-pop,
   .community-cards__highlight-glow,
@@ -945,7 +975,8 @@
   .community-cards__card--flop-deal,
   .community-cards__card--dealing,
   .community-cards__card--turn,
-  .community-cards__card--river {
+  .community-cards__card--river,
+  .community-cards__card--slow-reveal {
     opacity: 1;
     transform: none;
     filter: none;

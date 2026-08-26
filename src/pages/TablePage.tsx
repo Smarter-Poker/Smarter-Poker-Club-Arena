@@ -1568,20 +1568,48 @@ export default function TablePage({
         if (!p) return null;
         const sp = p as unknown as SeatPlayer;
         if (sp.isHero && (!sp.holeCards || sp.holeCards.length === 0)) {
-          /* Dan 2026-08-25 round 2, item 9: "when the hero doesn't have a hand,
-             they should never be covered by anything ever."
-             The muck view above is only for the hand the hero folded OUT OF.
-             Without this test the substitution has NO HAND BOUNDARY at all - the
-             only condition was "engine says empty and we had some" - so once the
-             hero had been dealt in even once, holeCards was non-empty forever:
-             through the fold, through showdown, through the gap before the next
-             deal, and on through a sit-out. The hero's card row therefore
-             rendered in every state where the hero holds no hand, which is
-             exactly what was covering them. */
-          const stillInThisHand = sp.status === 'folded' || sp.status === 'all_in';
+          /* ═══ THE HERO NEVER LOSES SIGHT OF THEIR OWN HAND ═══════════════
+             Dan 2026-08-26, verbatim: "I just sat down at a table, was dealt
+             in, saw my cards for a split second, they disappeared and didn't
+             come back... hero can NEVER EVER EVER lose access to seeing their
+             hole cards."
+
+             THE BUG THIS REPLACES. The guard used to be
+
+                 const stillInThisHand = sp.status === 'folded' || sp.status === 'all_in';
+
+             i.e. the hero's previously-delivered cards were restored ONLY when
+             the hero had folded or was all-in. A hero who is simply PLAYING
+             has status 'active', so the restore was skipped and `sp` was
+             returned with holeCards undefined — and the engine scrubs the
+             hero's own cards out of every non-showdown snapshot on purpose
+             (mapEngineSnapshot: `p.cards?.length ? p.cards : undefined`), so
+             this ran on EVERY snapshot and EVERY delta. The first engine frame
+             after the deal wiped the hand the player was looking at. That is
+             the split second.
+
+             The rule is the one the GAME_START merge already states thirty
+             lines of comment above: a snapshot carrying no hero cards means
+             "NO NEWS", never "you have none". The hero's cards are
+             authoritative from `table_hole_cards`, not from the public
+             broadcast that deliberately omits them.
+
+             So the phase gate is gone, and the hand BOUNDARY — which is the
+             thing item 9 actually needed — is enforced where it belongs: on
+             the hand number. Cards are only allowed to persist within the hand
+             they were dealt for. A new hand clears them (HAND_STARTED already
+             does this explicitly), and a stale holding can never outlive its
+             hand, so the hero is never "covered by" a hand they do not hold. */
           const prevHero = prev.players[i];
+          /* `?? 0` on both: an unknown hand number must read as "cannot
+             tell", which the `<= 0` arms then treat as "keep the cards". The
+             hero seeing a stale hand for one frame is recoverable; the hero
+             seeing NOTHING is the bug being fixed. */
+          const nextHand = mapped.handNumber ?? 0;
+          const prevHand = prev.handNumber ?? 0;
+          const sameHand = nextHand <= 0 || prevHand <= 0 || nextHand === prevHand;
           if (
-            stillInThisHand &&
+            sameHand &&
             prevHero &&
             prevHero.isHero &&
             prevHero.holeCards &&
@@ -5614,7 +5642,30 @@ export default function TablePage({
       fetchExistingHand();
       retryTimer = setTimeout(fetchExistingHand, 2000);
       pollTimer = setInterval(() => {
-        if (heroCardsRecoveredRef.current || ++pollAttempts > MAX_POLL_ATTEMPTS) {
+        /* ── THE WATCH DOES NOT STAND DOWN WHILE THE HERO IS BLIND ──────────
+           Dan 2026-08-26: "they disappeared and DIDN'T COME BACK."
+
+           This used to stop the moment `heroCardsRecoveredRef` went true —
+           one successful re-apply and the poll cleared itself, re-armed only
+           by the next HAND_STARTED. Paired with the snapshot wipe fixed
+           above, that is exactly how a flicker became permanent: cards land,
+           a delta wipes them, the poll restores them once and switches
+           itself off, the next delta wipes them again, and nothing is left
+           watching for the rest of the hand.
+
+           "Recovered" is now re-checked against what is ACTUALLY on screen.
+           If the hero is seated in a live hand and holding nothing, the poll
+           keeps going regardless of what it managed earlier — the flag can
+           only retire the poll while the cards are genuinely present. */
+        const heroNow = tableStateRef.current.players.find((pl) => pl?.isHero);
+        const heroIsBlind =
+          !!heroNow &&
+          heroNow.status !== 'sitting_out' &&
+          heroNow.status !== 'away' &&
+          !(heroNow.holeCards && heroNow.holeCards.length > 0);
+        if (heroIsBlind) heroCardsRecoveredRef.current = false;
+
+        if ((heroCardsRecoveredRef.current && !heroIsBlind) || ++pollAttempts > MAX_POLL_ATTEMPTS) {
           if (pollTimer) clearInterval(pollTimer);
           pollTimer = null;
           return;

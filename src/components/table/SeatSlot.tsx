@@ -1595,7 +1595,25 @@ export const SeatSlot = memo(
      * still in the hand until the engine folds them, and erasing their cards
      * would be erasing a live holding.
      */
-    const heroIsOutOfPlay = player.status === 'sitting_out' || player.status === 'away';
+    /* ── HOLDING CARDS BEATS EVERY OTHER SIGNAL ────────────────────────────
+       Dan 2026-08-26: "hero can NEVER EVER EVER lose access to seeing their
+       hole cards."
+
+       This suppression exists so a STALE holding cannot be drawn over a hero
+       who has no hand — which is a real problem and stays solved, because the
+       merge upstream now expires the holding at the hand boundary. But as a
+       standalone status test it was also capable of hiding a hand the hero
+       genuinely HOLDS: a resync can re-stamp the hero 'sitting_out' from a
+       stale ref, and a frame where the engine roster omits the hero's seat
+       substitutes a placeholder with that status. Either one blanked a live
+       hand for as long as it lasted.
+
+       Cards present is now the stronger signal. If the hero is holding
+       something, it is drawn, whatever the status line says; the suppression
+       only applies when there is nothing to show anyway. */
+    const heroHoldsCards = !!player.holeCards && player.holeCards.length > 0;
+    const heroIsOutOfPlay =
+      !heroHoldsCards && (player.status === 'sitting_out' || player.status === 'away');
 
     // 2026-04-15 Bible V8 §6.1 — pure-CSS ring countdown. Set animation
     // duration + a negative animation-delay so the ring animates from the

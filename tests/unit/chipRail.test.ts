@@ -27,6 +27,7 @@ import {
   chipCollectOffsetPx,
   chipRadiusWidthPct,
   chipRailInset,
+  MARKER_INSET_PX,
   chipRestPosition,
   chipStepWidthPct,
   clampIntoFelt,
@@ -691,11 +692,19 @@ describe('the dealer button and the printing on the felt', () => {
         expect(chipRestPosition(seat, table), `${table.w} seat ${seat.x},${seat.y}`).toEqual(
           before
         );
-        // and the walk is still the common rail for a seat with the room
+        /* …and the walk is still the common rail for a seat with the room.
+           Since MARKER_INSET_PX (2026-08-26) "the common rail" is one of two
+           values: the full rail, or the rail minus the inset for a seat level
+           with the community board, which cannot take the extra 3px without
+           putting chips on the cards. `{x:10.5,y:55}` in this list is exactly
+           such a seat. Which of the two a seat gets is decided by the board,
+           never by whose seat it is — that is the property being pinned. */
         if (feltRadialFraction(before, table) < 0.999) {
+          const shortfall = chipRailInset(table) - dist(betChipOffsetPx(seat, table));
           expect(
-            Math.abs(dist(betChipOffsetPx(seat, table)) - chipRailInset(table))
-          ).toBeLessThanOrEqual(1);
+            shortfall >= -1 && shortfall <= MARKER_INSET_PX + 1,
+            `${table.w} seat ${seat.x},${seat.y} is on neither rail`
+          ).toBe(true);
         }
       }
     }

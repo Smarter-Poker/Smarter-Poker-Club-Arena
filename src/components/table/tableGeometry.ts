@@ -198,6 +198,33 @@ export const NOMINAL_SCALER: Size = { w: 605, h: 1000 };
 export const CHIP_RAIL_WIDTH_PCT = 12.5;
 
 /**
+ * An extra step further onto the felt, for BOTH markers.
+ *
+ * Dan 2026-08-26: "move all chip placements and button 3 pixels farther into
+ * the table (more towards the middle of the table and farther away from the
+ * rail)."
+ *
+ * Expressed in PIXELS, deliberately, and converted against the live table
+ * size at the point of use. Every other distance in this module is a
+ * percentage of the table's width because it describes a relationship to
+ * something painted on the table, which scales with it. This one does not:
+ * it is a nudge measured by eye on a phone, so three pixels has to stay three
+ * pixels at every breakpoint rather than becoming one on a phone and six on a
+ * desktop.
+ *
+ * It is added to the rail as a FLOOR, before the board ceiling in
+ * `chipStepWidthPct` — so it moves the markers inward exactly as asked, and
+ * still cannot push a seat's chips onto the community cards, which remains
+ * the one constraint that outranks everything else here.
+ */
+export const MARKER_INSET_PX = 3;
+
+/** MARKER_INSET_PX as a percentage of this table's width. */
+export function markerInsetWidthPct(size: Size): number {
+  return size.w > 0 ? (MARKER_INSET_PX / size.w) * 100 : 0;
+}
+
+/**
  * Where a chip finishes when it is collected, as a fraction of seat-to-centre.
  *
  * The chips are going to the pot and the pot is in the middle, so every seat
@@ -1004,6 +1031,34 @@ export function chipRestPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod?: S
  * because the tests measure it directly rather than inferring it from a
  * position that two projections have already touched.
  */
+/**
+ * Would this seat's chips, walked `stepWidthPct`, sit clear of the community
+ * cards?
+ *
+ * Deliberately mirrors the rectangle and the margins in
+ * tests/table-geometry-chips.test.ts rather than reusing `rayEntryDistanceSq`:
+ * that ray test uses a tighter chip margin, so it can pass while the board
+ * check the suite actually enforces fails. Two definitions of "on the board"
+ * is how a nudge lands chips on the flop. Keep these in step.
+ */
+function chipsClearOfBoard(seat: Pos, stepWidthPct: number, size: Size): boolean {
+  const c = feltCenter();
+  const s = sq(seat, size);
+  const t = sq(c, size);
+  const dx = t.x - s.x;
+  const dy = t.y - s.y;
+  const len = Math.hypot(dx, dy);
+  if (!Number.isFinite(len) || len < 1e-6) return true;
+  const p = unsq({ x: s.x + (dx / len) * stepWidthPct, y: s.y + (dy / len) * stepWidthPct }, size);
+  const boardHalfW = 0.34 * FELT_WINDOW.width;
+  const cardW = (0.68 * FELT_WINDOW.width) / 5;
+  const boardHalfH = ((cardW * 92) / 64 / 2) * (1000 / 605);
+  const chipHalf = 2;
+  const onX = Math.abs(p.x - c.x) < boardHalfW + chipHalf;
+  const onY = Math.abs(p.y - c.y) < boardHalfH + chipHalf * (1000 / 605);
+  return !(onX && onY);
+}
+
 export function chipStepWidthPct(seat: Pos, size: Size = NOMINAL_SCALER, pod?: Size): number {
   const c = feltCenter();
   const s = sq(seat, size);
@@ -1024,7 +1079,25 @@ export function chipStepWidthPct(seat: Pos, size: Size = NOMINAL_SCALER, pod?: S
     chipRadiusWidthPct(size) + BOARD_CHIP_GAP_WIDTH_PCT
   );
   const ceiling = Math.max(CHIP_RAIL_WIDTH_PCT, board);
-  return Math.min(wanted, ceiling, len * 0.8);
+  const base = Math.min(wanted, ceiling, len * 0.8);
+
+  /* ── Dan 2026-08-26's 3px, added LAST and withdrawn if the board objects ──
+     `base` is exactly what this function returned before the inset existed,
+     so the inset only ever ADDS to a known-good distance — and
+     `chipsClearOfBoard` re-checks the RESULTING point against the same board
+     rectangle (and the same generous chip margin) that
+     tests/table-geometry-chips.test.ts uses, so a seat that would be pushed
+     onto the community cards silently keeps its old position instead.
+
+     Tried and rejected: folding the inset into `wanted`, and into `ceiling`.
+     Both raised the board limit by the same 3px and put a board-level seat's
+     chips on the flop at 375px. The module's own ray guard uses a tighter
+     margin than the test does, so agreeing with the test is the only way this
+     is actually safe. Chips never cross the cards; that outranks the nudge. */
+  const inset = markerInsetWidthPct(size);
+  if (inset <= 0) return base;
+  const nudged = Math.min(base + inset, len * 0.8);
+  return chipsClearOfBoard(seat, nudged, size) ? nudged : base;
 }
 
 /**
@@ -1096,6 +1169,22 @@ export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod
   // increases the daylight between the two markers. So the puck stays put and
   // the chips walk past it, which is also the reading order Dan asked for:
   // player, button, chips.
+  /* ── THE BUTTON DOES NOT TAKE THE 3px, AND THIS IS THE SECOND TIME ───────
+     Dan 2026-08-26 asked for "all chip placements AND button" to move 3px
+     further in. The chips do (see `chipStepWidthPct`). The button was tried
+     and measured, and it fails the ownership rule: on a 9-max 375px table the
+     bottom-cap puck ends up 74.3px from its own chair and 77.8px from the
+     chair above it — a button that reads as belonging to the wrong player,
+     which is worse than a button 3px nearer the rail. That is the same
+     failure the pod-clearance pass hit when it tried to scale the button with
+     the lengthened rail, recorded in the note just above.
+
+     The button is not left where it was, though: it is walked off the felt
+     edge with its own daylight margin in step 2 below, and step 3 walks it
+     further for marker separation, so for almost every seat the projection —
+     not this step — is what decides its final position. The overlap Dan
+     actually reported (the puck sitting on the printed date) was fixed at
+     source by the masthead keep-out, not by moving the puck inward. */
   const step = Math.min(CHIP_RAIL_WIDTH_PCT * BUTTON_RAIL_RATIO, len * 0.8);
   const walked = unsq({ x: s.x + rx * step, y: s.y + ry * step }, size);
   const placed = clampIntoFelt(walked, size, BUTTON_FELT_MARGIN_WIDTH_PCT);
@@ -1191,7 +1280,12 @@ export function markerGapWidthPct(a: Pos, b: Pos, size: Size = NOMINAL_SCALER): 
  * is a type error, which is the other half.
  */
 export function chipRailInset(size: Size): number {
-  return (CHIP_RAIL_WIDTH_PCT / 100) * size.w;
+  /* Includes MARKER_INSET_PX (Dan 2026-08-26, "3 pixels farther into the
+     table"). This function IS the definition of "the common rail" for every
+     caller and for the tests that pin one-rail-for-every-seat, so the inset
+     has to live here too — otherwise the rule and the measurement of the rule
+     disagree by exactly three pixels and the tests fail on correct code. */
+  return (CHIP_RAIL_WIDTH_PCT / 100) * size.w + MARKER_INSET_PX;
 }
 
 /**

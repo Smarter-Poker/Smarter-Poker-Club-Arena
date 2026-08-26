@@ -26,7 +26,7 @@
  *   add-on             tournament_players.add_on         (BOOLEAN, not a count)
  *                      001_club_arena_schema.sql:432
  *   avatar             profiles.arena_avatar_url         (aliased avatar_url,
- *                      the house convention — see LiveChipCounts.tsx:71)
+ *                      the house convention everywhere)
  *
  * REBUYS, the honest version: migration 007 defines a `tournament_rebuys`
  * ledger with a type of 'rebuy' | 'addon', which would give a real per-player
@@ -143,7 +143,7 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
         for (const row of (data ?? []) as unknown as Array<Record<string, unknown>>) {
           /* PostgREST returns an embedded row as an object, but as an array
              when it cannot prove the relationship is to-one. Handle both —
-             this exact shape bit LiveChipCounts.tsx (see its line 88). */
+             this exact shape caused bugs in the past. */
           const embedded = row.profile;
           const profile = (Array.isArray(embedded) ? embedded[0] : embedded) as
             | { player_number?: string | null; avatar_url?: string | null }

@@ -203,16 +203,10 @@ describe('TournamentTimerService', () => {
   // WHAT REACHES `tournaments.current_level`
   // ---------------------------------------------------------------------------
   //
-  // The defect: `const newLevel = levelState.levelIndex + 1; // 1-indexed for
-  // display`, written straight into the column by handleLevelChange. The
-  // column is a 0-BASED ARRAY INDEX - the engine persists its own
-  // `blindStructure[this.currentLevel]` index into it, and
-  // process_tournament_rebuy compares that column against the rebuy cap.
-  //
-  // Worse than a one-off: the reader feeds this loop its own previous output,
-  // so it read N, wrote N+1, read N+1, wrote N+2 - once per second.
+  // The client no longer writes to `tournaments.current_level`.
+  // It is authoritative to the Hetzner engine.
 
-  describe('current_level is written 0-based', () => {
+  describe('current_level is not written by the client', () => {
     const runningTournament = {
       id: 't-write',
       status: 'RUNNING',
@@ -228,7 +222,6 @@ describe('TournamentTimerService', () => {
         timeRemainingSeconds: 600,
       });
       tournamentTimerService.startTimer('t-write');
-      // startTimer fires an immediate tick; let its promise chain settle.
       await vi.advanceTimersByTimeAsync(0);
       await vi.advanceTimersByTimeAsync(0);
     };
@@ -238,25 +231,9 @@ describe('TournamentTimerService', () => {
         .filter((w) => w.table === 'tournaments' && 'current_level' in w.payload)
         .map((w) => w.payload.current_level);
 
-    it('writes the index unchanged, never index + 1', async () => {
+    it('does not write the level index to the database', async () => {
       await tickOnce(3);
-      expect(levelsWritten()).toContain(3);
-      expect(levelsWritten()).not.toContain(4);
-    });
-
-    it('writes 0 for the opening level rather than skipping it', async () => {
-      await tickOnce(0);
-      expect(levelsWritten()).toEqual([0]);
-    });
-
-    it('does not advance the level on a second tick at the same level', async () => {
-      // The compounding failure: with the +1 in place, every tick wrote a
-      // number one higher than the one it had just read, forever.
-      await tickOnce(5);
-      await vi.advanceTimersByTimeAsync(1000);
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(levelsWritten()).toEqual([5]);
-      expect(tournamentTimerService.getTimerState('t-write')!.currentLevel).toBe(5);
+      expect(levelsWritten()).toEqual([]);
     });
   });
 

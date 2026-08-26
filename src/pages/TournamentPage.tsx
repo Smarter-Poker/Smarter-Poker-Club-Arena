@@ -861,24 +861,10 @@ export default function TournamentPage() {
             break;
 
           case 'mystery_bounty_revealed':
-            // TOURNEY-AUDIT 2026-07-24 (sweep 4): relay the server reveal so
-            // the overlay can show it — previously nothing emitted this.
-            // 2026-08-20: feed the chest directly as well. QUEUED, because a
-            // multi-way all-in busts more than one player and the engine
-            // broadcasts once per elimination; a single state slot would drop
-            // all but the last.
-            if (data?.playerName && data?.amount) {
-              masterBus.emit('MYSTERY_BOUNTY_REVEALED', data);
-              lobbyChestQueue.enqueue({
-                knockerUserId: data.knockerUserId || '',
-                knockerName: data.knockerName || 'Player',
-                eliminatedName: data.eliminatedName || data.playerName || 'Player',
-                amount: Number(data.amount) || 0,
-                tierLabel: data.tierLabel,
-                isJackpot: !!data.isJackpot,
-                avgBounty: Number(data.avgBounty) || undefined,
-              });
-            }
+            // Relay the server reveal so the overlay celebration toast can show it.
+            // Note: The lobby chest animation was removed because the table
+            // already plays one, and the gate here was dead anyway.
+            masterBus.emit('MYSTERY_BOUNTY_REVEALED', data);
             break;
 
           case 'ADDON_PERIOD_START':

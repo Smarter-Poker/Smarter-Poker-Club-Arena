@@ -87,8 +87,8 @@ export const TIMED_WINDOW_PAST_MS = 5 * 60 * 1000;
  * raises the floor now. The Sunday Major's week still wins because a week is
  * LONGER, which was always the only case that mattered.)
  *
- * NOW 48 HOURS (Dan 2026-08-26: "IT SHOULD BE DISPLAYING ALL EVENTS THAT ARE
- * SCHEDULED OVER THE NEXT 48 HOURS"). The lobby cannot list a row that does
+ * NOW 72 HOURS (Dan 2026-08-26: "USE 72H/6 DAY FOR $200 BUY IN
+ * OR MORE", revising the 48 hours he first asked for). The lobby cannot list a row that does
  * not exist, so every client-side attempt to widen the board was capped by
  * THIS constant -- with 60 active schedules the board carried one day of card
  * and looked, correctly, like a room with almost nothing on tomorrow.
@@ -98,7 +98,7 @@ export const TIMED_WINDOW_PAST_MS = 5 * 60 * 1000;
  * drift. They are duplicated rather than imported because `server/` compiles
  * standalone -- the same arrangement RakeConfig has.
  */
-export const TIMED_WINDOW_AHEAD_MS = 48 * 60 * 60 * 1000;
+export const TIMED_WINDOW_AHEAD_MS = 72 * 60 * 60 * 1000;
 
 /**
  * Total buy-in ABOVE which a schedule publishes on the long window instead.
@@ -110,6 +110,9 @@ export const TIMED_WINDOW_AHEAD_MS = 48 * 60 * 60 * 1000;
  * the lobby adds back together.
  */
 export const FEATURE_BUYIN_THRESHOLD = 200;
+/* INCLUSIVE since 2026-08-26 ("$200 BUY IN OR MORE"). The first pass used a
+   strict `>`, which put a flat 200 event — the Sunday Deep Stack's exact
+   price — on the short window. */
 export const FEATURE_WINDOW_AHEAD_MS = 6 * 24 * 60 * 60 * 1000;
 
 /**
@@ -138,7 +141,7 @@ export const FEATURE_WINDOW_AHEAD_MS = 6 * 24 * 60 * 60 * 1000;
  */
 export function spawnAheadMsFor(cfg: Record<string, unknown>): number {
   const byRule =
-    wholeChips(cfg.buyIn) > FEATURE_BUYIN_THRESHOLD
+    wholeChips(cfg.buyIn) >= FEATURE_BUYIN_THRESHOLD
       ? FEATURE_WINDOW_AHEAD_MS
       : TIMED_WINDOW_AHEAD_MS;
 

@@ -51,10 +51,13 @@ const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
 describe('the published window is one rule', () => {
-  it('is 48 hours, and 6 days above a 200 buy-in', () => {
-    expect(LOBBY_WINDOW_HOURS).toBe(48);
+  it('is 72 hours, and 6 days from a 200 buy-in upward', () => {
+    // Dan 2026-08-26, second pass: "USE 72H/6 DAY FOR $200 BUY IN OR MORE".
+    // 72 is not a new number - it is what TournamentLobbyPage already used, so
+    // this is the club board and the tournament board finally agreeing.
+    expect(LOBBY_WINDOW_HOURS).toBe(72);
     expect(LOBBY_FEATURE_WINDOW_DAYS).toBe(6);
-    expect(LOBBY_WINDOW_MS).toBe(48 * HOUR);
+    expect(LOBBY_WINDOW_MS).toBe(72 * HOUR);
     expect(LOBBY_FEATURE_WINDOW_MS).toBe(6 * DAY);
     expect(FEATURE_BUYIN_THRESHOLD).toBe(200);
   });
@@ -97,7 +100,7 @@ describe('spawnAheadMinutes RAISES the floor and never lowers it', () => {
   });
 
   it('no override, at any price, can publish less than the house window', () => {
-    for (const mins of [30, 60, 720, 1440, 2879]) {
+    for (const mins of [30, 60, 720, 1440, 2879, 4319]) {
       for (const buyIn of [0, 50, 500]) {
         expect(spawnAheadMsFor({ buyIn, spawnAheadMinutes: mins })).toBeGreaterThanOrEqual(
           scheduleWindowMsFor(buyIn)
@@ -118,9 +121,15 @@ describe('spawnAheadMinutes RAISES the floor and never lowers it', () => {
 });
 
 describe('scheduleWindowMsFor', () => {
-  it('is strictly greater than 200, so a flat 200 is a 48 hour event', () => {
-    expect(scheduleWindowMsFor(200)).toBe(LOBBY_WINDOW_MS);
-    expect(scheduleWindowMsFor(200.01)).toBe(LOBBY_FEATURE_WINDOW_MS);
+  it('INCLUDES 200, because the Sunday Deep Stack is priced at exactly 200', () => {
+    /* This assertion used to say the opposite. The first pass read "more then
+       200" literally and implemented `> 200`, which put a flat 200 event on
+       the SHORT window -- and the flagship added in the same batch costs
+       exactly 200, so the rule would have excluded the one event it was
+       written for. "OR MORE" settles it. */
+    expect(scheduleWindowMsFor(200)).toBe(LOBBY_FEATURE_WINDOW_MS);
+    expect(scheduleWindowMsFor(199)).toBe(LOBBY_WINDOW_MS);
+    expect(scheduleWindowMsFor(201)).toBe(LOBBY_FEATURE_WINDOW_MS);
     expect(scheduleWindowMsFor(0)).toBe(LOBBY_WINDOW_MS);
   });
 });
@@ -129,10 +138,22 @@ describe('isWithinLobbyWindow', () => {
   const now = Date.parse('2026-08-26T12:00:00Z');
   const at = (ms: number) => new Date(now + ms).toISOString();
 
-  it('lists a cheap event inside 48 hours and drops it beyond', () => {
+  it('lists a cheap event inside 72 hours and drops it beyond', () => {
     const cheap = { buy_in_amount: 9, buy_in_fee: 1 }; // total 10
-    expect(isWithinLobbyWindow({ ...cheap, start_time: at(47 * HOUR) }, now)).toBe(true);
-    expect(isWithinLobbyWindow({ ...cheap, start_time: at(49 * HOUR) }, now)).toBe(false);
+    expect(isWithinLobbyWindow({ ...cheap, start_time: at(71 * HOUR) }, now)).toBe(true);
+    expect(isWithinLobbyWindow({ ...cheap, start_time: at(73 * HOUR) }, now)).toBe(false);
+  });
+
+  it('THE SUNDAY DEEP STACK: a flat 200 gets the long window, not the short one', () => {
+    // 180 prize + 20 fee is the real split buyInFor(200) produces, and it is
+    // the exact shape that a `> 200` rule would have demoted.
+    const deepStack = { buy_in_amount: 180, buy_in_fee: 20 };
+    expect(isWithinLobbyWindow({ ...deepStack, start_time: at(5 * DAY) }, now)).toBe(true);
+    expect(isWithinLobbyWindow({ ...deepStack, start_time: at(7 * DAY) }, now)).toBe(false);
+    // Its cheapest satellite is a 72-hour event.
+    const sat = { buy_in_amount: 5, buy_in_fee: 0 };
+    expect(isWithinLobbyWindow({ ...sat, start_time: at(71 * HOUR) }, now)).toBe(true);
+    expect(isWithinLobbyWindow({ ...sat, start_time: at(73 * HOUR) }, now)).toBe(false);
   });
 
   it('lists a big event for 6 days', () => {

@@ -15,6 +15,7 @@
 
 import React from 'react';
 import './MiniStatsCard.css';
+import statsIcon from '../../assets/icons/icon-stats.jpg';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -112,24 +113,13 @@ export function MiniStatsCard({
         aria-label="Tournament lobby. Standings, payouts and the clock."
         title="Tournament Lobby"
       >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+        <img
+          src={statsIcon}
+          className="mini-stats-card__icon-img"
+          alt=""
           aria-hidden="true"
-        >
-          {/* Trophy — the lobby, not a session readout */}
-          <path d="M8 21h8" />
-          <path d="M12 17v4" />
-          <path d="M7 4h10v5a5 5 0 0 1-10 0V4z" />
-          <path d="M7 6H5a2 2 0 0 0 0 4h2" />
-          <path d="M17 6h2a2 2 0 0 1 0 4h-2" />
-        </svg>
+          draggable={false}
+        />
       </button>
     );
   }
@@ -178,23 +168,13 @@ export function MiniStatsCard({
       title="Session Stats"
       data-pnl-direction={pnlDirection}
     >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+      <img
+        src={statsIcon}
+        className="mini-stats-card__icon-img"
+        alt=""
         aria-hidden="true"
-      >
-        {/* Bar-chart icon — 4 vertical bars ascending */}
-        <path d="M3 21h18" />
-        <rect x="5" y="13" width="3" height="6" rx="0.5" />
-        <rect x="10.5" y="9" width="3" height="10" rx="0.5" />
-        <rect x="16" y="5" width="3" height="14" rx="0.5" />
-      </svg>
+        draggable={false}
+      />
       <span className="mini-stats-card__dot" style={{ background: pnlColor }} aria-hidden="true" />
     </button>
   );

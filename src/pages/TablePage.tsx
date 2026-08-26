@@ -103,6 +103,8 @@ import { normalizeCardBack } from '../components/table/CardImage';
  */
 
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
+import addScreenIcon from '../assets/icons/icon-addscreen.png';
+import timebankIconPage from '../assets/icons/icon-timebank.jpg';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { parseBlindStructure } from '../utils/parseBlindStructure';
@@ -13220,15 +13222,12 @@ export default function TablePage({
                 title="Open the lobby in a new tab"
                 aria-label="Open the lobby in a new tab"
               >
-                <svg width="20" height="20" viewBox="0 0 18 18" fill="none">
-                  <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.5" />
-                  <path
-                    d="M9 6v6M6 9h6"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
+                <img
+                  src={addScreenIcon}
+                  className="add-chips-icon-btn__img"
+                  alt=""
+                  draggable={false}
+                />
               </button>
             </div>
           )
@@ -14540,13 +14539,20 @@ export default function TablePage({
                 <div className="control-strip control-strip--transparent">
                   {/* Time Bank */}
                   <button
-                    className="control-strip__btn"
+                    className="control-strip__btn control-strip__btn--icon-img"
                     title="Time Bank"
                     onClick={handleActivateTimeBank}
                     disabled={timeBanksRemaining <= 0 || timeBankActive}
                   >
-                    <span className="control-strip__icon">◷</span>
-                    <span className="control-strip__count">{timeBanksRemaining}</span>
+                    <span className="control-strip__icon-wrap" aria-hidden="true">
+                      <img
+                        src={timebankIconPage}
+                        className="control-strip__timebank-img"
+                        alt=""
+                        draggable={false}
+                      />
+                      <span className="control-strip__count-overlay">{timeBanksRemaining}</span>
+                    </span>
                   </button>
 
                   {/* Timer Display. PERF 2026-08-25: a leaf that subscribes to

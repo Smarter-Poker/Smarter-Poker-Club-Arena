@@ -245,7 +245,7 @@ export default function PlayerInviteModal({
             <div className={styles.searchBar}>
               <input
                 type="text"
-                placeholder="Search by username..."
+                placeholder="Search By Username..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
@@ -295,7 +295,7 @@ export default function PlayerInviteModal({
               <label>Email (Optional)</label>
               <input
                 type="email"
-                placeholder="player@email.com"
+                placeholder="Player@email.com"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
               />

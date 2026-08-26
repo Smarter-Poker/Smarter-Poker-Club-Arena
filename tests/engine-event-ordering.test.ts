@@ -8,9 +8,14 @@
  * so whenever both frames landed in one tick the snapshot overtook the event
  * and the sequenced reveal silently degraded to a simultaneous flip.
  *
- * The fix: a state frame arriving while events are pending requeues itself
- * behind them. These tests pin BOTH guarantees: server emit order end to end,
- * and one dispatch per event.
+ * The fix (review revision 2026-08-25): ONE unified inbound FIFO. Every frame
+ * that arrives while anything is queued joins the queue; a state frame with an
+ * empty queue keeps the zero-latency synchronous fast path. The drain applies
+ * contiguous state frames synchronously and dispatches at most one EVENT per
+ * macrotask (the Task-56 one-render-per-event guarantee), and the hub's
+ * per-table event `seq` is consumed for same-connection de-duplication. These
+ * tests pin all of it: arrival order = observation order in BOTH directions,
+ * one dispatch per event, dedupe, and a reconnect clearing the queue.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -124,5 +129,60 @@ describe('EngineStateClient — server emit order is client observation order', 
     // No flush needed — synchronous apply is the fast path.
     expect(observed).toEqual(['snapshot:9']);
     c.disconnect();
+  });
+
+  it('a snapshot arriving BEFORE an event is observed before it (fast path does not reorder)', async () => {
+    const { c, observed } = await connectedClient();
+    live()._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 13, state: { hand_number: 10 } });
+    live()._frame({ type: 'EVENT', tableId: TABLE, seq: 1, payload: { type: 'showdown' } });
+    await flush();
+    await flush();
+    expect(observed).toEqual(['snapshot:10', 'event:showdown']);
+    c.disconnect();
+  });
+
+  it('interleaved E1/S1/E2 arrival order is preserved exactly', async () => {
+    const { c, observed } = await connectedClient();
+    live()._frame({ type: 'EVENT', tableId: TABLE, seq: 1, payload: { type: 'showdown' } });
+    live()._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 14, state: { hand_number: 11 } });
+    live()._frame({ type: 'EVENT', tableId: TABLE, seq: 2, payload: { type: 'pot_win' } });
+    await flush();
+    await flush();
+    await flush();
+    expect(observed).toEqual(['event:showdown', 'snapshot:11', 'event:pot_win']);
+    c.disconnect();
+  });
+
+  it('a duplicated event seq is dispatched once (hub seq de-duplication)', async () => {
+    const { c, observed } = await connectedClient();
+    live()._frame({ type: 'EVENT', tableId: TABLE, seq: 5, payload: { type: 'showdown' } });
+    live()._frame({ type: 'EVENT', tableId: TABLE, seq: 5, payload: { type: 'showdown' } });
+    live()._frame({ type: 'EVENT', tableId: TABLE, seq: 6, payload: { type: 'pot_win' } });
+    await flush();
+    await flush();
+    await flush();
+    expect(observed).toEqual(['event:showdown', 'event:pot_win']);
+    c.disconnect();
+  });
+
+  it('legacy events without seq are never de-duplicated', async () => {
+    const { c, observed } = await connectedClient();
+    live()._frame({ type: 'EVENT', tableId: TABLE, payload: { type: 'player_action' } });
+    live()._frame({ type: 'EVENT', tableId: TABLE, payload: { type: 'player_action' } });
+    await flush();
+    await flush();
+    expect(observed).toEqual(['event:player_action', 'event:player_action']);
+    c.disconnect();
+  });
+
+  it('disconnect clears the queue — a queued event never fires after teardown', async () => {
+    const { c, observed } = await connectedClient();
+    live()._frame({ type: 'EVENT', tableId: TABLE, seq: 1, payload: { type: 'showdown' } });
+    live()._frame({ type: 'EVENT', tableId: TABLE, seq: 2, payload: { type: 'pot_win' } });
+    await flush(); // first event dispatches…
+    c.disconnect(); // …then the client tears down with one still queued
+    await flush();
+    await flush();
+    expect(observed).toEqual(['event:showdown']);
   });
 });

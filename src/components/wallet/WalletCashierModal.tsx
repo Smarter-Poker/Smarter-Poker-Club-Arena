@@ -98,6 +98,9 @@ import {
   canUseCashier,
   destinationBlurb,
   claimNeedsConfirm,
+  coercesToAgentWallet,
+  cashierRefusesSelfSend,
+  secondsLeftFromServer,
   DEFAULT_CASHIER_WALLET,
   type CashierTab,
   type CashierDestination,
@@ -275,8 +278,25 @@ export default function WalletCashierModal({
   const [reversible, setReversible] = useState<ReversibleSend[]>([]);
   const [reversibleLoading, setReversibleLoading] = useState(false);
   const [claimingId, setClaimingId] = useState<string | null>(null);
-  /** Ticks once a second so each countdown on that list stays honest. */
-  const [nowTick, setNowTick] = useState(() => Date.now());
+  /**
+   * THE COUNTDOWN IS THE SERVER'S, NOT THE PHONE'S (Dan 2026-08-25).
+   *
+   * `seconds_left` is computed by fn_agent_wallet_reversible and was fetched
+   * and then never read: the countdown subtracted `Date.now()` from
+   * `reversible_until`, which is the browser wall clock the comment above the
+   * interface promises it is not. A phone ten minutes fast showed every row as
+   * expired and offered no claim at all; a phone ten minutes slow offered a
+   * claim on every row and each tap collected a server refusal.
+   *
+   * So the deadline is anchored ONCE, at the moment the list lands, and only
+   * LOCALLY MEASURED ELAPSED TIME is subtracted from it. performance.now() is
+   * monotonic - it is unaffected by a wrong clock, by an NTP correction, and by
+   * daylight saving - so what is on screen is the database's ten minutes,
+   * counted down by a stopwatch rather than by a calendar.
+   */
+  const [reversibleAnchor, setReversibleAnchor] = useState<number | null>(null);
+  /** Ticks once a second so each countdown on that list re-renders. */
+  const [, setNowTick] = useState(0);
 
   const [ledger, setLedger] = useState<LedgerRow[]>([]);
   const [ledgerTotal, setLedgerTotal] = useState(0);
@@ -313,14 +333,28 @@ export default function WalletCashierModal({
      coerces it too - fn_agent_wallet_send derives the destination from the
      recipient's role and ignores what the client asked for - because a
      dropdown is a suggestion and anything holding a session can call the RPC
-     directly. This is the half that stops the mistake being OFFERED. */
+     directly. This is the half that stops the mistake being OFFERED.
+
+     SCOPED TO THE AGENT WALLET'S SEND TAB, and only there (2026-08-25 fix).
+     The narrowing used to apply to EVERY cashier and BOTH tabs, which broke
+     three things the law never touched:
+       - the Club Bank could no longer fund an agent's PROMO wallet, because
+         picking an agent collapsed the segmented control to Agent Wallet -
+         and fn_club_bank_send happily accepts promo_wallet;
+       - the Club Bank could no longer send a plain player-wallet credit to
+         someone who happens to be an agent;
+       - the Club Bank's Claim Back could only ever pull from an agent's float,
+         never from their promo wallet or their player balance, even though
+         fn_club_bank_claim_back takes all three.
+     "Agent to agent" is fn_agent_wallet_send. It is not the club bank. */
   const recipientHoldsFloat = recipient ? canHoldAgentWallet(recipient.role) : false;
+  const coerceToAgentWallet = coercesToAgentWallet(walletType, tab, recipientHoldsFloat);
   const destinations = useMemo(() => {
     const all = cashierDestinations(walletType);
-    if (!recipientHoldsFloat) return all;
+    if (!coerceToAgentWallet) return all;
     const only = all.filter((d) => d === 'agent_wallet');
     return only.length > 0 ? only : all;
-  }, [walletType, recipientHoldsFloat]);
+  }, [walletType, coerceToAgentWallet]);
   /** The agent wallet's Claim Back tab is a different shape from the bank's. */
   const agentClaimTab = walletType === 'agent_wallet' && tab === 'claim';
 
@@ -330,8 +364,8 @@ export default function WalletCashierModal({
      the button would be describing a transfer that is not the one about to
      happen. */
   useEffect(() => {
-    if (recipientHoldsFloat && destination !== 'agent_wallet') setDestination('agent_wallet');
-  }, [recipientHoldsFloat, destination]);
+    if (coerceToAgentWallet && destination !== 'agent_wallet') setDestination('agent_wallet');
+  }, [coerceToAgentWallet, destination]);
 
   // ── Club + bank balance ───────────────────────────────────────────────────
   const loadClub = useCallback(async () => {
@@ -478,8 +512,11 @@ export default function WalletCashierModal({
       if (error) {
         reportError(error, 'WalletCashierModal.loadReversible');
         setReversible([]);
+        setReversibleAnchor(null);
       } else {
         setReversible(((data || []) as ReversibleSend[]).map((r) => ({ ...r })));
+        // Anchor the server's countdown against a monotonic local stopwatch.
+        setReversibleAnchor(performance.now());
       }
       setReversibleLoading(false);
     },
@@ -487,8 +524,19 @@ export default function WalletCashierModal({
   );
 
   // ── The ledger. Every single chip movement, newest first. ─────────────────
+  /**
+   * Only the NEWEST ledger request may paint. Changing the type filter twice
+   * quickly, or tapping Load More while a filter change is still in flight,
+   * fired two overlapping reads whose responses could land in either order -
+   * and the loser then appended a differently-filtered page onto the winner's
+   * list, which is exactly how a ledger comes to show rows that contradict its
+   * own filter chip. isMounted is an unmount guard; it cannot see this.
+   */
+  const ledgerSeqRef = useRef(0);
   const loadLedger = useCallback(
     async (uuid: string, offset: number, types: string | null) => {
+      const seq = ++ledgerSeqRef.current;
+      const current = () => isMounted.current && seq === ledgerSeqRef.current;
       setLedgerLoading(true);
       setLedgerError(null);
       try {
@@ -507,7 +555,7 @@ export default function WalletCashierModal({
           totals?: LedgerTotals;
           rows?: LedgerRow[];
         } | null;
-        if (!isMounted.current) return;
+        if (!current()) return;
         if (!res?.authorized) {
           setLedgerError(res?.error || 'The Club Bank Ledger Is Not Available To You');
           setLedger([]);
@@ -519,9 +567,9 @@ export default function WalletCashierModal({
         setLedger((prev) => (offset === 0 ? res.rows || [] : [...prev, ...(res.rows || [])]));
       } catch (e) {
         reportError(e, 'WalletCashierModal.loadLedger');
-        if (isMounted.current) setLedgerError('Could Not Load The Ledger');
+        if (current()) setLedgerError('Could Not Load The Ledger');
       } finally {
-        if (isMounted.current) setLedgerLoading(false);
+        if (current()) setLedgerLoading(false);
       }
     },
     [isMounted]
@@ -591,9 +639,25 @@ export default function WalletCashierModal({
     if (!isOpen || !clubUuid || !allowed || walletType !== 'agent_wallet' || tab !== 'claim')
       return;
     loadReversible(clubUuid);
-    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    const t = setInterval(() => setNowTick((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, [isOpen, clubUuid, allowed, walletType, tab, loadReversible]);
+
+  /**
+   * The rows still inside their window, recomputed on every tick. Filtering
+   * here rather than returning null from the map is what lets the empty state
+   * appear when the LAST row expires with the tab open: `reversible.length` was
+   * still non-zero, so "Nothing To Claim Back" never rendered and the user was
+   * left looking at a blank panel with no explanation.
+   */
+  const secondsLeftFor = useCallback(
+    (row: ReversibleSend): number =>
+      reversibleAnchor === null
+        ? 0
+        : secondsLeftFromServer(row.seconds_left, performance.now() - reversibleAnchor),
+    [reversibleAnchor]
+  );
+  const stillClaimable = reversible.filter((r) => secondsLeftFor(r) > 0);
 
   // ── Claim Back: what does the chosen wallet actually hold? ────────────────
   // The player wallet figure already rides on the member row; the agent and
@@ -686,12 +750,29 @@ export default function WalletCashierModal({
 
   const { recentIds, addRecipient } = useRecentRecipients(user?.id, clubUuid, walletType);
 
+  /**
+   * NEVER OFFER A RECIPIENT THE SERVER WILL REFUSE.
+   *
+   * fn_agent_wallet_send and fn_promo_wallet_send both refuse
+   * `p_to_user_id = auth.uid()` outright ("You Cannot Send Chips To Yourself"),
+   * and fn_club_cashier_members returns the caller in its own list for a staff
+   * viewer (scope 'all'). So the roster rendered the viewer with a "(You)" tag,
+   * let them pick it, and the send failed on tap with no way to understand why.
+   *
+   * The CLUB BANK is deliberately exempt: fn_club_bank_send has no self guard
+   * because an owner funding their OWN agent float out of the treasury is the
+   * normal way an owner gets a float at all. Removing themselves from that list
+   * would break the funding route the whole hierarchy hangs off.
+   */
+  const excludeSelf = cashierRefusesSelfSend(walletType);
+
   const eligible = useMemo(() => {
     const needsAgent = AGENT_ONLY.includes(destination);
     const q = search.trim().toLowerCase();
 
-    const destinationMembers = members.filter((m) =>
-      needsAgent ? canHoldAgentWallet(m.role) : true
+    const destinationMembers = members.filter(
+      (m) =>
+        (needsAgent ? canHoldAgentWallet(m.role) : true) && !(excludeSelf && m.user_id === user?.id)
     );
 
     if (q.length < 2) {
@@ -713,15 +794,19 @@ export default function WalletCashierModal({
       .filter((m) => fuzzyMatch(q, m.name) || (m.username && fuzzyMatch(q, m.username)))
       .sort((a, b) => roleRank(b.role) - roleRank(a.role) || a.name.localeCompare(b.name))
       .slice(0, 60);
-  }, [members, destination, search, user?.id, recentIds]);
+  }, [members, destination, search, user?.id, recentIds, excludeSelf]);
 
-  // Changing destination can strand a recipient who cannot hold the new wallet.
+  // Changing destination can strand a recipient who cannot hold the new wallet,
+  // and a viewer who picked themselves on a cashier that then narrows to one the
+  // server refuses self-sends on would keep a selection nothing on screen shows.
   useEffect(() => {
     if (!recipient) return;
     if (AGENT_ONLY.includes(destination) && !canHoldAgentWallet(recipient.role)) {
       setRecipient(null);
+      return;
     }
-  }, [destination, recipient]);
+    if (excludeSelf && recipient.user_id === user?.id) setRecipient(null);
+  }, [destination, recipient, excludeSelf, user?.id]);
 
   const amt = Number(amount) || 0;
   // A send is capped by the wallet being SPENT (the bank, or the caller's own
@@ -984,11 +1069,28 @@ export default function WalletCashierModal({
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
-    toast?.success?.(`Exported ${rows.length} Ledger Entries`);
+    /* REVOKE AFTER THE DOWNLOAD HAS STARTED, not in the same tick. Safari and
+       Firefox read the blob asynchronously once the click is dispatched, so a
+       synchronous revoke cancelled the save and the Export button did nothing
+       at all on those browsers. One second is long enough for the fetch to be
+       issued and short enough that the blob is not held. */
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast?.success?.(`Exported ${rows.length.toLocaleString('en-US')} Ledger Entries`);
   };
 
   if (!isOpen) return null;
+
+  /**
+   * Every dismissal path guards on the SAME condition. Escape already checked
+   * busyRef, and the overlay checked `sending` - but the X in the corner
+   * checked nothing at all, so the one control a thumb reaches first could
+   * close the cashier in the middle of a claim back or a ledger reversal. And
+   * `sending` alone was too narrow: it is false for both of those.
+   */
+  const inFlight = sending || claimingId !== null || reversingId !== null;
+  const closeIfIdle = () => {
+    if (!inFlight) onClose();
+  };
 
   const cashierTitle =
     walletType === 'promo_wallet'
@@ -1031,8 +1133,8 @@ export default function WalletCashierModal({
         className="cbc-overlay"
         role="dialog"
         aria-modal="true"
-        aria-label="Club Bank Cashier"
-        onClick={() => !sending && onClose()}
+        aria-label={`${cashierTitle} Cashier`}
+        onClick={closeIfIdle}
       >
         <div className="cbc-panel" onClick={(e) => e.stopPropagation()}>
           {/* ── Header ───────────────────────────────────────────────────── */}
@@ -1040,7 +1142,7 @@ export default function WalletCashierModal({
             <div>
               <div className="cbc-title">{cashierTitle}</div>
             </div>
-            <button className="cbc-x" onClick={onClose} aria-label="Close">
+            <button className="cbc-x" onClick={closeIfIdle} disabled={inFlight} aria-label="Close">
               &times;
             </button>
           </div>
@@ -1097,17 +1199,13 @@ export default function WalletCashierModal({
                   {destinationBlurb(walletType, destination, 'claim')}
                 </div>
                 {reversibleLoading && <div className="cbc-empty">Reading Your Recent Sends...</div>}
-                {!reversibleLoading && reversible.length === 0 && (
+                {!reversibleLoading && stillClaimable.length === 0 && (
                   <div className="cbc-empty">
                     Nothing To Claim Back. Only Sends Made In The Last Ten Minutes Can Be Undone.
                   </div>
                 )}
-                {reversible.map((row) => {
-                  const left = Math.max(
-                    0,
-                    Math.ceil((new Date(row.reversible_until).getTime() - nowTick) / 1000)
-                  );
-                  if (left <= 0) return null;
+                {stillClaimable.map((row) => {
+                  const left = secondsLeftFor(row);
                   return (
                     <div key={row.transaction_id} className="cbc-tx">
                       <div className="cbc-tx-top">
@@ -1120,6 +1218,17 @@ export default function WalletCashierModal({
                           {Math.floor(left / 60)}m {left % 60}s Left
                         </span>
                       </div>
+                      {/* `claimed_back` was fetched and never shown, so a send
+                          already partly reversed elsewhere displayed only its
+                          remainder with no hint that the original was larger -
+                          which reads as the wrong amount having been sent. */}
+                      {Number(row.claimed_back) > 0 && (
+                        <div className="cbc-tx-foot">
+                          <span>
+                            Sent {fmt(row.amount)}, {fmt(row.claimed_back)} Already Claimed Back
+                          </span>
+                        </div>
+                      )}
                       <button
                         className="cbc-undo"
                         disabled={claimingId !== null}
@@ -1133,7 +1242,9 @@ export default function WalletCashierModal({
                   );
                 })}
                 <div className="cbc-actions">
-                  <button onClick={onClose}>Close</button>
+                  <button disabled={inFlight} onClick={closeIfIdle}>
+                    Close
+                  </button>
                 </div>
               </>
             ) : tab === 'send' || tab === 'claim' ? (
@@ -1219,12 +1330,20 @@ export default function WalletCashierModal({
                     id="cbc-amount"
                     className="cbc-input"
                     type="number"
-                    inputMode="decimal"
+                    /* Whole chips only (see amountIsWhole), so the keypad that
+                       comes up is the numeric one rather than the decimal one
+                       offering a point the field will then reject. */
+                    inputMode="numeric"
                     min={1}
+                    step={1}
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    placeholder=""
-                    aria-label=""
+                    placeholder="Whole Chips"
+                    /* aria-label was the EMPTY STRING, which is worse than
+                       absent: it overrides the visible <label> and announces an
+                       unnamed spin button to a screen reader on the one field
+                       that decides how much money moves. */
+                    aria-label={tab === 'claim' ? 'Chips To Claim Back' : 'Chips To Send'}
                   />
 
                   {tab === 'claim' && recipient && (
@@ -1234,11 +1353,17 @@ export default function WalletCashierModal({
                         : `${recipient.name} Holds ${fmt(holderHeld)} In That Wallet.`}
                     </div>
                   )}
-                  {amt > 0 && !overCap && (
+                  {/* A BALANCE WE COULD NOT READ CANNOT PROJECT AN AFTER
+                      FIGURE. `bank ?? 0` turned an unread treasury into a
+                      confident "The Wallet Would Hold -500.00 Afterwards" -
+                      directly beneath a header already showing "..." for the
+                      same number. The send is refused anyway (canSend requires
+                      cap !== null); the sentence just has to stop lying. */}
+                  {amt > 0 && !overCap && bank !== null && (
                     <div className="cbc-blurb">
                       {tab === 'claim'
-                        ? `Claiming ${fmt(amt)}. The Club Bank Would Hold ${fmt((bank ?? 0) + amt)} Afterwards.`
-                        : `Sending ${fmt(amt)}. The Wallet Would Hold ${fmt((bank ?? 0) - amt)} Afterwards.`}
+                        ? `Claiming ${fmt(amt)}. The Club Bank Would Hold ${fmt(bank + amt)} Afterwards.`
+                        : `Sending ${fmt(amt)}. The Wallet Would Hold ${fmt(bank - amt)} Afterwards.`}
                     </div>
                   )}
                   {overCap && (
@@ -1276,8 +1401,8 @@ export default function WalletCashierModal({
 
                 <div className="cbc-actions">
                   <button
-                    disabled={sending}
-                    onClick={() => (confirming ? setConfirming(false) : onClose())}
+                    disabled={inFlight}
+                    onClick={() => (confirming ? setConfirming(false) : closeIfIdle())}
                   >
                     {confirming ? 'Go Back' : 'Cancel'}
                   </button>

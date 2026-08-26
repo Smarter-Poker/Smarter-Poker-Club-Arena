@@ -12,6 +12,7 @@
 
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
+import { supabase } from '../lib/supabase';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -20,7 +21,13 @@ import { reportError } from '../utils/errorReporter';
 export interface QueuedMutation {
   id: string;
   operationId: string; // Dedup key
-  action: 'ADD_CHIPS' | 'WITHDRAW_CHIPS' | 'CREDIT_COMMISSION' | 'CREDIT_RAKEBACK';
+  action:
+    | 'ADD_CHIPS'
+    | 'WITHDRAW_CHIPS'
+    | 'CREDIT_COMMISSION'
+    | 'CREDIT_RAKEBACK'
+    | 'TABLE_BUYIN'
+    | 'TABLE_REBUY';
   payload: Record<string, unknown>;
   createdAt: number;
   retries: number;
@@ -224,6 +231,42 @@ export const OfflineQueueService = {
    * instead of being replayed by a future change.
    */
   async executeMutation(mutation: QueuedMutation): Promise<boolean> {
+    // ── TTL GUARD (5 MINUTES) ──
+    // Replaying a buy-in from days ago is incredibly dangerous. We strictly drop
+    // mutations older than 5 minutes.
+    const MAX_AGE_MS = 5 * 60 * 1000;
+    const ageMs = Date.now() - mutation.createdAt;
+    if (ageMs > MAX_AGE_MS) {
+      reportError(
+        new Error(`[OfflineQueue] Mutation expired (TTL 5m) and was dropped: ${mutation.action}`),
+        'OfflineQueueService.MUTATION_EXPIRED',
+        { action: mutation.action, ageMs }
+      );
+      // Return true so it gets removed from the queue immediately without retrying
+      return true;
+    }
+
+    const action = mutation.action as string;
+    if (action === 'TABLE_BUYIN' || action === 'TABLE_REBUY') {
+      try {
+        const payload = mutation.payload as any;
+        const rpcName =
+          mutation.action === 'TABLE_BUYIN' ? 'atomic_table_buyin' : 'atomic_table_rebuy';
+        // The idempotency key prevents double execution
+        const { error } = await supabase.rpc(rpcName, payload);
+        if (error) {
+          reportError(error, `OfflineQueueService.${mutation.action}_REPLAY_FAILED`, { payload });
+          return false;
+        }
+        return true;
+      } catch (err: unknown) {
+        reportError(err, `OfflineQueueService.${mutation.action}_REPLAY_ERROR`, {
+          payload: mutation.payload,
+        });
+        return false;
+      }
+    }
+
     reportError(
       new Error(`[OfflineQueue] Refusing to replay money mutation: ${mutation.action}`),
       'OfflineQueueService.MONEY_REPLAY_REFUSED',

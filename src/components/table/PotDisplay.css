@@ -1171,3 +1171,44 @@
     opacity: 0;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FELT CLASSES — Migrated from ChipStack.css (dead component cleanup 2026-08-26).
+   `.chip--partial`, `.pot-label`, and `.pot-value` were the only runtime
+   definitions of these names; they painted on the live felt but lived in a
+   file whose only importer (TablePage.tsx) was a dead-component import kept
+   solely to hold the CSS in the bundle. Now PotDisplay owns them directly.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* A sub-1 residue no chip on Dan's ladder can represent (a 0.5 small blind).
+   Dashed and translucent so it is never read as a white 1 chip, which would
+   claim twice its value. See src/lib/chipDenominations.ts. */
+.chip--partial {
+  opacity: 0.75;
+  border-style: dashed;
+}
+
+.pot-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.pot-value {
+  font-family: 'JetBrains Mono', 'Georgia', serif;
+  font-size: 24px;
+  font-weight: 700;
+  color: #ffd700;
+  text-shadow:
+    0 0 20px rgba(255, 215, 0, 0.6),
+    0 0 40px rgba(255, 215, 0, 0.2),
+    0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 480px) {
+  .pot-value {
+    font-size: 18px;
+  }
+}

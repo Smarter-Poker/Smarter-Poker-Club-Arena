@@ -201,7 +201,7 @@ export default function CreditRequestWidget({
             onChange={(e) => setRequestAmount(e.target.value)}
           />
           <textarea
-            placeholder="Reason (optional)"
+            placeholder="Reason (Optional)"
             value={requestReason}
             onChange={(e) => setRequestReason(e.target.value)}
           />

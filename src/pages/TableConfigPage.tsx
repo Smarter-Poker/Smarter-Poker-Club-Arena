@@ -1263,7 +1263,7 @@ export default function TableConfigPage() {
       <div className="config-name">
         <input
           type="text"
-          placeholder="Enter table name here..."
+          placeholder="Enter Table Name Here..."
           value={config.name}
           onChange={(e) => updateConfig('name', e.target.value)}
         />
@@ -1626,7 +1626,7 @@ export default function TableConfigPage() {
               <textarea
                 className="config-textarea-input"
                 maxLength={200}
-                placeholder="Optional line shown on the tournament page..."
+                placeholder="Optional Line Shown On The Tournament Page..."
                 value={config.shortDescription}
                 onChange={(e) => updateConfig('shortDescription', e.target.value)}
               />
@@ -1986,20 +1986,31 @@ export default function TableConfigPage() {
                 />
               </>
             )}
-            <Toggle
-              label="Multi-Day MTT"
-              value={config.multiDayMtt}
-              onChange={(v) => updateConfig('multiDayMtt', v)}
-            />
-            {config.multiDayMtt && (
-              <NumberField
-                label="Total Days"
-                value={config.totalDays}
-                onChange={(v) => updateConfig('totalDays', v)}
-                min={2}
-                max={7}
-              />
-            )}
+            {/* MULTI-DAY MTT: A TOGGLE THAT LIED, REPLACED BY THE TRUTH.
+                2026-08-26. This was a working switch over a feature that does
+                not exist. Ticking it set `is_multi_day` and `total_days`,
+                painted a "Multi-Day" tag on the lobby card and a badge in the
+                details tab, and changed nothing about how the event ran: there
+                is no day end, no Day 2 resume, no flight merge, and nothing
+                anywhere writes `flight_end_chips_snapshot`. The tournament
+                played down to one winner in a single session and paid the
+                whole prize pool, with the lobby promising otherwise.
+                `trg_tournaments_refuse_unbuilt_multi_day` now refuses the flag
+                at the database for every caller, so a control here could only
+                produce an error. Restore the Toggle and the Total Days field
+                in the commit that implements Day 2. */}
+            <div className="config-toggle">
+              <span className="toggle-label">
+                Multi-Day MTT
+                <span
+                  className="tooltip-icon"
+                  title="Day 2 resume and flight merging are not built. Setting this would badge the event Multi-Day while it played down to one winner in a single session, so it is refused rather than promised."
+                >
+                  ?
+                </span>
+              </span>
+              <span className="toggle-status off">NOT AVAILABLE YET</span>
+            </div>
             {/* Player Number Range */}
             <div className="config-slider">
               <div className="slider-header">

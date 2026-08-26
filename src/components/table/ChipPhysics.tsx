@@ -79,10 +79,41 @@ export function ChipPhysics({
 }: ChipPhysicsProps) {
   const [isVisible, setIsVisible] = useState(animate === 'none');
 
-  const stacks = useMemo(
-    () => visualChipStacks(amount, compact ? COMPACT_LAYOUT : FULL_LAYOUT),
-    [amount, compact]
-  );
+  /**
+   * The discs to draw, bottom-first.
+   *
+   * AUDIT 2026-08-25, two things. The flattening used to happen inline on every
+   * render while only the breakdown it reads was memoised, so a seat re-rendered
+   * for any reason at all rebuilt the whole disc list; and each entry carried a
+   * `groupIdx` that NOTHING read. That field was left over from the row-of-
+   * columns layout: `--group-idx` still exists in ChipPhysics.css (it staggers
+   * `.cp-stack`'s animation) but Dan 2026-08-24 replaced the row with a single
+   * offset tower, so there is exactly one `.cp-stack` and it is hard-coded to
+   * group 0 below. Carrying a per-chip group index that can only ever be
+   * discarded invites the next reader to stagger by it and get nothing.
+   */
+  const chips = useMemo(() => {
+    const stacks = visualChipStacks(amount, compact ? COMPACT_LAYOUT : FULL_LAYOUT);
+    const flat: {
+      denom: ChipStackVisual['denom'];
+      partial: boolean;
+      isTopInDenom: boolean;
+      truncated: boolean;
+      count: number;
+    }[] = [];
+    stacks.forEach((stack) => {
+      for (let i = 0; i < stack.drawn; i++) {
+        flat.push({
+          denom: stack.denom,
+          partial: stack.partial,
+          isTopInDenom: i === stack.drawn - 1,
+          truncated: stack.truncated,
+          count: stack.count,
+        });
+      }
+    });
+    return flat;
+  }, [amount, compact]);
 
   useEffect(() => {
     if (animate !== 'none') {
@@ -93,36 +124,13 @@ export function ChipPhysics({
 
   if (amount <= 0) return null;
 
-  // Flatten the stacks to render multiple chips in one column, highest denom on bottom
-  const flattenedChips: {
-    denom: any;
-    partial: boolean;
-    isTopInDenom: boolean;
-    truncated: boolean;
-    count: number;
-    groupIdx: number;
-  }[] = [];
-
-  stacks.forEach((stack, groupIdx) => {
-    for (let i = 0; i < stack.drawn; i++) {
-      flattenedChips.push({
-        denom: stack.denom,
-        partial: stack.partial,
-        isTopInDenom: i === stack.drawn - 1,
-        truncated: stack.truncated,
-        count: stack.count,
-        groupIdx,
-      });
-    }
-  });
-
   return (
     <div
       className={`chip-physics${compact ? ' cp--compact' : ''} ${isVisible ? 'cp--visible' : ''} cp--${animate} ${className}`}
     >
       <div className="cp-stacks">
         <div className="cp-stack" style={{ '--group-idx': 0 } as React.CSSProperties}>
-          {flattenedChips.map((chip, chipIdx) => (
+          {chips.map((chip, chipIdx) => (
             <div
               key={`${chip.denom.value}-${chipIdx}`}
               className={`cp-chip${chip.partial ? ' cp-chip--partial' : ''}`}
@@ -132,7 +140,7 @@ export function ChipPhysics({
                   '--chip-accent': chip.denom.accent,
                   '--chip-ink': chip.denom.ink,
                   '--chip-idx': chipIdx,
-                  '--total-chips': flattenedChips.length,
+                  '--total-chips': chips.length,
                   transform: `translateX(${Math.sin(chipIdx * 23.45) * 1.5}px)`,
                 } as React.CSSProperties
               }

@@ -203,62 +203,45 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   INFO POPOVER
+   INFO POPOVER — DELETED (audit 2026-08-25)
+   ═══════════════════════════════════════════════════════════════════════════════
+
+   `.bbj-info` was a `position: absolute; top: 100%` CHILD of `.bbj-widget`, and
+   the 2026-08-18 sheen pass gave `.bbj-widget` `overflow: hidden` (it has to:
+   the gold sheen sweeps from left:-60% to left:130% and would otherwise streak
+   across the felt and the tab bar). A `top: 100%` child of a clipped box starts
+   exactly at the clip edge, so from that pass onward the popover rendered every
+   time it was asked to and was 100% invisible. Nobody reported it in a week,
+   which is its own measurement of how much it was worth.
+
+   Three ways out were considered:
+
+     1. Drop `overflow: hidden`  — the sheen then paints outside the plate.
+        `clip-path` on the plate clips descendants too, so it is the same bug
+        with a different property name.
+     2. Re-parent the plate into a non-clipping wrapper — that means moving
+        `top`/`left`/`transform`/`max-width` and BOTH media-query blocks (the
+        published `--sp-bbj-h` height contract, the 360px step) onto a new
+        element, on a layout Dan has iterated five times this week and which
+        `.table-container`'s top reserve in TablePage.css is measured against.
+        A large regression risk to restore a DESKTOP-HOVER-ONLY tooltip.
+     3. Delete it. Every fact it carried — the per-variant qualifying rule, the
+        hole-card requirement, this table's stakes-tiered payout slice and the
+        50/25/25 split — is in BBJInfoModal, which the plate opens on tap, on
+        Enter and on Space, on every device rather than only where there is a
+        mouse. The modal shows all of it with room to read, plus the last five
+        hits and a per-hand drilldown.
+
+   (3), and the hover glance is preserved as the plate's native `title`
+   attribute (see `hoverSummary` in BadBeatJackpot.tsx). A browser tooltip is
+   painted outside the document, so no ancestor's overflow, transform, filter or
+   contain can ever clip it — which is the failure this note exists to close.
+
+   `@keyframes bbjFadeIn` went with it: `.bbj-info` was its only user.
+   NOTE: `.bbj-info` also appears in BadBeatJackpotPage.css (~line 337) with no
+   markup behind it there either. That file belongs to the jackpot PAGE, not to
+   this component, so it is reported rather than edited here.
    ═══════════════════════════════════════════════════════════════════════════════ */
-
-.bbj-info {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 8px;
-  width: 200px;
-  padding: 12px;
-  background: rgba(20, 10, 30, 0.95);
-  border: 1px solid rgba(213, 218, 226, 0.2);
-  border-radius: 8px;
-  box-shadow:
-    0 0 30px rgba(0, 0, 0, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  pointer-events: none;
-  /* Let clicks pass through if just hovering */
-  animation: bbjFadeIn 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  backdrop-filter: blur(12px) saturate(1.3);
-  -webkit-backdrop-filter: blur(12px) saturate(1.3);
-}
-
-.bbj-info__title {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: #d5dae2;
-  margin: 0 0 6px 0;
-  text-transform: uppercase;
-}
-
-.bbj-info__rule {
-  font-size: 0.8125rem;
-  color: #e4e6eb;
-  margin: 0 0 4px 0;
-  font-weight: 600;
-}
-
-.bbj-info__sub {
-  font-size: 0.6875rem;
-  color: #8b949e;
-  margin: 0;
-  font-style: italic;
-}
-
-@keyframes bbjFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-5px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    HIT ANIMATION OVERLAY
@@ -424,15 +407,10 @@
   background: #ff00ff;
 }
 
-/* Stakes-tiered payout preview line (2026-08-18) */
-.bbj-info__payout {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid rgba(213, 218, 226, 0.25);
-  font-size: 11px;
-  color: #d5dae2;
-  line-height: 1.4;
-}
+/* `.bbj-info__payout` (the stakes-tiered payout preview line, 2026-08-18) was
+   deleted with the rest of the popover — see the INFO POPOVER note above. The
+   figure it printed now lives in BBJInfoModal's Basic tab and in the plate's
+   `title`. */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    VISUAL PASS 2026-08-18
@@ -444,10 +422,22 @@
      3. real focus styling, since it is keyboard-reachable now.
    ═══════════════════════════════════════════════════════════════════════ */
 
+/* REQUIRED by the sheen below, and the reason `.bbj-info` was deleted rather
+   than repaired: the sheen strip travels from left:-60% to left:130%, so
+   without this clip it sweeps across the felt and the tab bar. Anything that
+   must escape the plate (a tooltip, a popover) therefore CANNOT be a child of
+   it — use the native `title`, or a portal. */
 .bbj-widget {
   overflow: hidden;
 }
 
+/* This RE-DECLARES `.bbj-widget::after`, which the base rule above uses for the
+   static specular sheen ("the single strongest 3D cue"). The later declaration
+   wins for top/left/width/height/background/animation, so the static highlight
+   has not rendered since 2026-08-18 — the moving gold sheen replaced it. Kept
+   as-is: the plate reads correctly with the animated sheen, and there is no
+   free third pseudo-element to restore the static one to (::before is the inner
+   nickel bezel). Recorded so the base rule's comment is not read as truth. */
 .bbj-widget::after {
   content: '';
   position: absolute;

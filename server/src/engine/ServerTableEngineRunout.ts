@@ -22,6 +22,7 @@ import {
   determineWinners,
   describeHand,
 } from './PokerEngine.js';
+import { isOmahaVariant } from './VariantRules.js';
 import type { SeatPlayer, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineTurns } from './ServerTableEngineTurns.js';
@@ -449,7 +450,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       if (ritEnabled && allInPlayers.length >= 2 && board.length < 5) {
         // Determine the chooser: player with the BEST ACTUAL HAND right now
         const variant = this.tableInfo?.game_variant || 'nlh';
-        const isOmaha = variant.startsWith('plo');
+        // Review fix 2026-08-25: isOmahaVariant, not startsWith('plo') —
+        // flo8 (fixed-limit Omaha 8) is an Omaha variant that the prefix
+        // check silently evaluated as a hold'em hand.
+        const isOmaha = isOmahaVariant(variant);
         const evaluator = isOmaha ? evaluateOmahaHand : evaluateHand;
 
         // CHOOSER FIX 2026-08-18: on a PREFLOP all-in the board is empty (the
@@ -976,6 +980,77 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // would double-count if the two ever drift.
     this.handController.creditRunoutWinnings(totalDistribution);
 
+    // ── Showdown reveal (review fix 2026-08-25: emitted BEFORE rit_result) ──
+    // The client's presentation order is reveal-then-boards-then-pots; when
+    // rit_result arrived first the board labels rendered against still-hidden
+    // hands for one beat. Evaluator + reveal metadata are built here so the
+    // discrete showdown event precedes every result event, matching the
+    // single-run path (SHOWDOWN before WINNERS).
+    const isOmaha = isOmahaVariant(variant);
+    const isShortDeck = variant === 'short_deck';
+    const boardEvaluator = isOmaha
+      ? evaluateOmahaHand
+      : (h: import('../types.js').Card[], c: import('../types.js').Card[]) =>
+          evaluateHand(h, c, isShortDeck);
+    const firstBoard = boards[0];
+    // SHOWDOWN POLISH 2026-08-25 (RIT parity): a run-it-twice hand is an
+    // all-in showdown, so it gets the SAME reveal metadata as every other
+    // showdown. Review fix: honor spec 2 here too — if a street aggressor
+    // exists (the all-in came from a bet/raise), THEY show first and the
+    // reveal proceeds clockwise from them; otherwise clockwise from the seat
+    // left of the button, exactly like getFirstShowdownSeat's checked-river
+    // rule. Mucked is always false (all-in hands are force-exposed).
+    const ritAggressorSeat =
+      typeof state.lastAggressorSeat === 'number' ? state.lastAggressorSeat : -1;
+    const ritAnchorSeat = ritAggressorSeat >= 0 ? ritAggressorSeat : (dealerSeat ?? 0);
+    const maxRitSeat = Math.max(...allInPlayers.map((p) => p.seat), ritAnchorSeat) + 1;
+    const ritClockwise = (seat: number) => {
+      const d = (seat - ritAnchorSeat + maxRitSeat * 10) % maxRitSeat;
+      // Aggressor anchor: distance 0 (the aggressor) sorts FIRST. Button
+      // anchor: distance 0 (the button) sorts LAST, so the seat to its left
+      // leads — the standard checked-down order.
+      return d === 0 && ritAggressorSeat < 0 ? maxRitSeat : d;
+    };
+    const ritOrdered = allInPlayers
+      .filter((p) => p.cards && p.cards.length > 0)
+      .sort((a, b) => ritClockwise(a.seat) - ritClockwise(b.seat));
+    this.currentHandShowdownResults = ritOrdered.map((p, i) => {
+      const hand = boardEvaluator(p.cards, firstBoard);
+      return {
+        userId: p.user_id,
+        handRanking: hand.ranking ?? 0,
+        handName: hand.name ?? '',
+        kickers: hand.kickers ?? [],
+        holeCards: p.cards.map((c) => ({ rank: c.rank, suit: c.suit })),
+        seat: p.seat,
+        revealOrder: i,
+        mucked: false,
+        handDescription: describeHand(hand),
+      };
+    });
+    // Review fix 2026-08-25: RIT hands are showdowns — count them in the
+    // showdown metrics like every single-run showdown (muck total untouched:
+    // nothing can muck an all-in reveal).
+    try {
+      EngineMetrics.showdownHandsTotal.inc();
+    } catch {
+      /* metrics must never break settlement */
+    }
+    this.hub?.emitEvent(this.tableId, {
+      type: 'showdown',
+      table_id: this.tableId,
+      hand_number: this.handCount,
+      results: this.currentHandShowdownResults.map((r) => ({
+        user_id: r.userId,
+        seat: r.seat ?? -1,
+        reveal_order: r.revealOrder ?? 0,
+        mucked: false,
+        hand_name: r.handName,
+        hand_ranking: r.handRanking,
+        hand_description: r.handDescription ?? '',
+      })),
+    });
+
     // Broadcast RIT results
     this.hub?.emitEvent(this.tableId, {
       type: 'rit_result',
@@ -992,12 +1067,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
 
     // Resolve in RIT engine (for event emission and cleanup)
     // Use first eligible winner per board for the engine's simpler tracking.
-    const isOmaha = variant.startsWith('plo');
-    const isShortDeck = variant === 'short_deck';
-    const boardEvaluator = isOmaha
-      ? evaluateOmahaHand
-      : (h: import('../types.js').Card[], c: import('../types.js').Card[]) =>
-          evaluateHand(h, c, isShortDeck);
+    // (boardEvaluator defined above, before the showdown emit.)
     const boardWinners = boards.map((board) => {
       let best: import('../types.js').EvaluatedHand | null = null;
       let winnerId = '';
@@ -1027,54 +1097,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // RIT never emitted SHOWDOWN/WINNERS, so these stayed empty and the BBJ block
     // was skipped entirely — a qualifying bad beat on a run-it-twice hand could
     // never win the jackpot even though the fee was still taken.
-    const firstBoard = boards[0];
-    // SHOWDOWN POLISH 2026-08-25 (RIT parity): a run-it-twice hand is an
-    // all-in showdown, so it gets the SAME reveal metadata as every other
-    // showdown — seat, reveal order (clockwise from the seat left of the
-    // button; an all-in hand has no final-street aggressor by definition
-    // here, since RIT only ever follows an all-in with cards to come),
-    // mucked always false (all-in hands are force-exposed), and the
-    // engine-generated hand description for board 1.
-    const ritDealerSeat = this.handController.getState().dealerSeat ?? 0;
-    const maxRitSeat = Math.max(...allInPlayers.map((p) => p.seat), ritDealerSeat) + 1;
-    const ritClockwise = (seat: number) => {
-      const d = (seat - ritDealerSeat + maxRitSeat * 10) % maxRitSeat;
-      return d === 0 ? maxRitSeat : d;
-    };
-    const ritOrdered = allInPlayers
-      .filter((p) => p.cards && p.cards.length > 0)
-      .sort((a, b) => ritClockwise(a.seat) - ritClockwise(b.seat));
-    this.currentHandShowdownResults = ritOrdered.map((p, i) => {
-      const hand = boardEvaluator(p.cards, firstBoard);
-      return {
-        userId: p.user_id,
-        handRanking: hand.ranking ?? 0,
-        handName: hand.name ?? '',
-        kickers: hand.kickers ?? [],
-        holeCards: p.cards.map((c) => ({ rank: c.rank, suit: c.suit })),
-        seat: p.seat,
-        revealOrder: i,
-        mucked: false,
-        handDescription: describeHand(hand),
-      };
-    });
-    // Emit the discrete showdown event so RIT hands get the sequenced flip,
-    // the MUCKED-free reveal, and the description line like every other
-    // showdown. Board-by-board results still ride rit_result below.
-    this.hub?.emitEvent(this.tableId, {
-      type: 'showdown',
-      table_id: this.tableId,
-      hand_number: this.handCount,
-      results: this.currentHandShowdownResults.map((r) => ({
-        user_id: r.userId,
-        seat: r.seat ?? -1,
-        reveal_order: r.revealOrder ?? 0,
-        mucked: false,
-        hand_name: r.handName,
-        hand_ranking: r.handRanking,
-        hand_description: r.handDescription ?? '',
-      })),
-    });
+    // (Showdown reveal metadata was built and emitted above, before
+    // rit_result — review fix 2026-08-25. The BBJ block still reads
+    // this.currentHandShowdownResults for board 0.)
     this.currentHandWinnerIds = boardWinners[0] ? [boardWinners[0]] : [];
     // E1 FIX 2026-08-18 (Master Gap Ledger): `currentHandWinners` was never
     // pre-set on the RIT path, so finalizeRunout(true)'s empty WINNERS event
@@ -1156,7 +1181,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // off the main event loop. Degrades to a synchronous compute only if the pool
     // is unavailable.
     const isShortDeck = this.tableInfo?.game_variant === 'short_deck';
-    const isOmaha = (this.tableInfo?.game_variant || '').startsWith('plo');
+    const isOmaha = isOmahaVariant(this.tableInfo?.game_variant || '');
     const valid = allInPlayers.filter((p) => (p.cards || []).length >= 2);
     const equities: Array<{ userId: string; username: string; equity: number; seat: number }> = [];
     // ── ADDITIVE observability (#5): time the all-in equity computation ──
@@ -1291,7 +1316,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     //   insurance is offered to THEM (if they haven't declined for hand)
     // ═══════════════════════════════════════════════════════════════════════
     const variant = this.tableInfo?.game_variant || 'nlh';
-    const isOmaha = variant.startsWith('plo');
+    const isOmaha = isOmahaVariant(variant);
     const handEvaluator = isOmaha ? evaluateOmahaHand : evaluateHand;
 
     // Evaluate all hands on current board

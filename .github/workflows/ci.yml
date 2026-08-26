@@ -109,6 +109,29 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 1: TypeScript compilation check (fast — ~40s)
   # ─────────────────────────────────────────────────────────────────────────────
+
+  stub_gate:
+    if: github.event_name == 'pull_request'
+    name: Stub Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.3.1
+
+      - name: No bare stubs — TODO and FIXME must have issue references
+        run: |
+          # Finds TODO or FIXME that do NOT have a (#1234) issue reference.
+          found=$(grep -rn --include="*.ts" --include="*.tsx" \
+            -E '\b(TODO|FIXME)\b' \
+            src/ server/src/ 2>/dev/null | grep -v -E '\b(TODO|FIXME)\(#[0-9]+\)' || true)
+          
+          if [ -n "$found" ]; then
+            echo "::error::Bare stub markers found! Use TODO(#1234) with an issue reference, or resolve the stub."
+            echo "$found"
+            exit 1
+          fi
+          echo "No bare TODO or FIXME markers found."
+
   typecheck:
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
@@ -210,6 +233,8 @@ jobs:
       - name: Monitoring Invariant — every alert rule is loaded, mounted, and routed
         run: node scripts/ci/check-monitoring-drift.mjs
 
+
+
       - name: Report Typecheck Time
         if: always()
         run: |
@@ -218,6 +243,7 @@ jobs:
           echo "## ⏱️ Typecheck Duration: ${ELAPSED}s" >> $GITHUB_STEP_SUMMARY
 
       # ── Commit Message Lint ──────────────────────────────────────────────
+
       - name: Commit Message Lint
         if: github.event_name == 'push'
         continue-on-error: true

@@ -121,6 +121,71 @@
   text-align: left;
 }
 
+/* A hero who is behind the chip lead states the gap in the refusal tint, so
+   the figure reads as a deficit at a glance rather than as another stat. */
+.rk-hero__behind {
+  color: var(--tl-danger-soft);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   DISTANCE TO THE MONEY
+   One strip, three states. It is the first thing a player in a running event
+   wants and the last thing they should have to hunt for, so it sits directly
+   under the field summary and above everything personal.
+   ───────────────────────────────────────────────────────────────────────── */
+.rk-money {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-radius: var(--tl-radius-sm);
+  background: linear-gradient(180deg, rgba(34, 48, 70, 0.7) 0%, rgba(19, 27, 40, 0.9) 100%);
+  border: 1px solid var(--tl-hairline-soft);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 3px 10px rgba(0, 0, 0, 0.34);
+}
+
+.rk-money__label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--tl-text-hint);
+}
+
+.rk-money__value {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--tl-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Everybody left is paid. That is good news and it says so. */
+.rk-money--in {
+  border-color: rgba(34, 197, 94, 0.4);
+  background: linear-gradient(180deg, rgba(34, 197, 94, 0.14) 0%, rgba(19, 27, 40, 0.9) 100%);
+}
+.rk-money--in .rk-money__value {
+  color: var(--tl-good);
+}
+
+/* The bubble. The one moment on this screen that earns the refusal colour. */
+.rk-money--bubble {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.16) 0%, rgba(19, 27, 40, 0.92) 100%);
+}
+.rk-money--bubble .rk-money__label,
+.rk-money--bubble .rk-money__value {
+  color: var(--tl-danger-soft);
+}
+
+.rk-money--away .rk-money__value {
+  color: var(--tl-accent);
+}
+
 /* ─────────────────────────────────────────────────────────────────────────
    DOWNLINE LEGEND — drawn only when the viewer actually has players in
    ───────────────────────────────────────────────────────────────────────── */
@@ -129,7 +194,7 @@
   align-items: center;
   gap: 8px;
   padding: 7px 11px;
-  border-radius: var(--tl-radius-pill);
+  border-radius: var(--tl-radius);
   font-size: 11px;
   font-weight: 700;
   color: var(--tl-text);
@@ -143,10 +208,66 @@
 .rk-legend__swatch {
   flex: 0 0 3px;
   width: 3px;
-  height: 14px;
+  height: 28px;
   border-radius: 3px;
   background: var(--tl-accent-strong);
   box-shadow: 0 0 10px rgba(0, 180, 230, 0.8);
+}
+
+.rk-legend__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.rk-legend__line {
+  line-height: 1.25;
+}
+
+.rk-legend__sub {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--tl-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The agent's own filter. 44px so a thumb finds it; `aria-pressed` carries the
+   state to a screen reader, and the label changes so a sighted reader is never
+   guessing which way the toggle is currently pointing. */
+.rk-filter {
+  flex: 0 0 auto;
+  appearance: none;
+  font: inherit;
+  cursor: pointer;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: var(--tl-radius-pill);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  touch-action: manipulation;
+  color: var(--tl-accent);
+  background: linear-gradient(180deg, rgba(13, 17, 32, 0.7) 0%, rgba(10, 14, 26, 0.9) 100%);
+  border: 1px solid rgba(111, 220, 255, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.rk-filter--on {
+  color: #ffffff;
+  background: linear-gradient(180deg, #1877f2 0%, #0a5dc2 100%);
+  border-color: rgba(111, 220, 255, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.4);
+}
+
+.rk-filter:focus-visible {
+  outline: 2px solid var(--tl-accent);
+  outline-offset: 2px;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -231,6 +352,74 @@
 .rk-bb {
   color: var(--tl-text-dim);
   font-variant-numeric: tabular-nums;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   A STACK THAT JUST MOVED
+   The shared `.tl-pulse` animates `background-color`, and every `.tl-row` in
+   this lobby paints an almost-opaque gradient OVER its background colour - so
+   the one signal that says "this is live" was very nearly invisible
+   (2026-08-26 audit). Nothing covers the border or the cast shadow, so the
+   flash is carried there instead, and it carries a DIRECTION: cyan for a pot
+   won, refusal red for chips lost.
+   ───────────────────────────────────────────────────────────────────────── */
+@keyframes rkMovedUp {
+  0% {
+    border-color: rgba(111, 220, 255, 0.95);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      0 0 20px rgba(111, 220, 255, 0.6);
+  }
+  100% {
+    border-color: rgba(255, 255, 255, 0.05);
+    box-shadow:
+      var(--tl-bevel),
+      0 3px 10px rgba(0, 0, 0, 0.34);
+  }
+}
+
+@keyframes rkMovedDown {
+  0% {
+    border-color: rgba(239, 68, 68, 0.95);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      0 0 20px rgba(239, 68, 68, 0.55);
+  }
+  100% {
+    border-color: rgba(255, 255, 255, 0.05);
+    box-shadow:
+      var(--tl-bevel),
+      0 3px 10px rgba(0, 0, 0, 0.34);
+  }
+}
+
+.rk-row--moved.rk-row--up {
+  animation: rkMovedUp 0.9s ease-out;
+}
+
+.rk-row--moved.rk-row--down {
+  animation: rkMovedDown 0.9s ease-out;
+}
+
+/* The signed movement, in place of the BB line for the second it is shown. */
+.rk-delta {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+}
+.rk-delta--up {
+  color: var(--tl-accent);
+}
+.rk-delta--down {
+  color: var(--tl-danger-soft);
+}
+
+/* A keyboard reader must be able to see where they are in a list of hundreds.
+   The shared row sets `outline: none` on focus and leans on a border tint,
+   which is not enough on a row that is already tinted by hero or downline. */
+.rk-row.tl-row--interactive:focus-visible {
+  outline: 2px solid var(--tl-accent);
+  outline-offset: -2px;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -383,6 +572,19 @@
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
+  /* The flash still HAPPENS - a player who asked for less motion still needs
+     to see that a number moved - it just holds its lit state and disappears
+     rather than fading, so nothing on screen animates. */
+  .rk-row--moved.rk-row--up,
+  .rk-row--moved.rk-row--down {
+    animation: none;
+  }
+  .rk-row--moved.rk-row--up {
+    border-color: rgba(111, 220, 255, 0.95);
+  }
+  .rk-row--moved.rk-row--down {
+    border-color: rgba(239, 68, 68, 0.95);
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -391,6 +593,22 @@
 @media (max-width: 480px) {
   .rk-row {
     grid-template-columns: 22px 30px minmax(0, 1fr) auto;
+  }
+  /* A 13-character club name, a six-figure stack and a toggle do not share a
+     375px line. The legend keeps its rail and text on one row and drops the
+     toggle onto its own full-width line rather than squeezing either. */
+  .rk-legend {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .rk-filter {
+    width: 100%;
+  }
+  .rk-money {
+    padding: 7px 10px;
+  }
+  .rk-money__value {
+    font-size: 13px;
   }
   .rk-rank {
     min-width: 22px;

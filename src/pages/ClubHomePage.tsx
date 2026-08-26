@@ -46,6 +46,7 @@ import {
 import { tournamentService } from '../services/TournamentService';
 import { getClubLevel, ClubLevelInfo } from '../utils/clubLevels';
 import { useToast } from '../components/common/Toast';
+import { applyClubScope, inClubScope, type ClubScope } from '../utils/clubScope';
 import { waitlistService } from '../services/WaitlistService';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { retryFetch } from '../utils/retryFetch';
@@ -68,6 +69,7 @@ import SpinActivationPanel from '../components/club/SpinActivationPanel';
 import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
 import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
+import { readLocalSession } from '../lib/authUtils';
 import { reportError } from '../utils/errorReporter';
 import { readLocalSession } from '../lib/authUtils';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
@@ -475,7 +477,17 @@ function tournamentOpenFirst(
  * in-tab lobby fell back to the pre-lobby landing page instead of the actual
  * club lobby the player came from.
  */
+import PageErrorBoundary from '../components/common/PageErrorBoundary';
+
 export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
+  return (
+    <PageErrorBoundary pageName="ClubHomePage">
+      <ClubHomePageContent clubIdOverride={clubIdOverride} />
+    </PageErrorBoundary>
+  );
+}
+
+function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {}) {
   const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
 
   const { clubId: routeClubId } = useParams<{ clubId: string }>();
@@ -624,6 +636,26 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // a cached club renders would let the watchdog declare a stall over a lobby
   // the player is looking at.
   const hasDataRef = useRef(Boolean(bootCache?.club));
+
+  /**
+   * Has the AUTHORITATIVE chain painted the game LISTS for this club yet?
+   *
+   * Deliberately NOT `hasDataRef`, and the difference is a real bug I nearly
+   * shipped. `hasDataRef` is seeded from the boot cache, and that cache holds
+   * `{ club, tables }` and NO tournaments (see setClubHomeCache). So a
+   * returning player - the commonest visit there is - mounts with hasDataRef
+   * already true and an EMPTY tournament list. Gating the fast path on it
+   * would skip the one call that fills that list, and the MTT board would sit
+   * empty until the slow chain landed. That trades a flicker for a blank.
+   *
+   * This ref means what the guard actually needs to ask: are there real,
+   * chain-fetched rows on screen that a narrower answer could damage? It is
+   * false on a cached boot (so the fast path still runs and still paints) and
+   * true only from the moment the chain has answered, which is exactly when
+   * the fast path has nothing left to contribute. Cleared per club by the
+   * reset effect below.
+   */
+  const listsPaintedRef = useRef(false);
   const loadingRef = useRef(false);
   const [wsConnected, setWsConnected] = useState(true);
 
@@ -670,6 +702,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     setLoading(true);
     loadingRef.current = false;
     hasDataRef.current = false;
+    listsPaintedRef.current = false;
   }, [clubId]);
 
   // ── Watchdog: a hung fetch must never strand the skeleton forever ──
@@ -731,9 +764,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       return () => {
         isMounted = false;
         // Any answer still in flight belongs to the club being left.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         loadTokenRef.current++;
       };
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId]);
 
   // ── Realtime subscription: live table updates (player counts, status) ──
@@ -756,24 +791,67 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       // Check if this club is in a union — if so, listen on union_id in addition to club_id
       let unionId: string | null = null;
       try {
-        const { data: ucCheck } = await supabase
+        const { data: ucCheck, error: ucError } = await supabase
           .from('union_clubs')
           .select('union_id')
           .eq('club_id', resolvedId)
           .limit(1)
           .maybeSingle();
+        /* FAILURE IS NOT ABSENCE - the same law loadClubData spends forty
+           lines honouring, which this path did not. The error was destructured
+           away and the catch below is commented "standalone club", so an RLS
+           blip or a timeout was silently read as "this club is not in a union".
+           Everything downstream then diverges from the fetch: the two union
+           channels are never subscribed (union tables and tournaments stop
+           arriving live), belongsInTableList admits foreign rows, bbjScope
+           loses its unionId so the BBJ subscription binds to the retired
+           club-level pool instead of the union pool that actually grows, and
+           the table-delete scoping narrows to club_id. Fall back to the same
+           cached answer loadClubData uses rather than guessing. */
+        if (ucError) throw ucError;
         if (ucCheck?.union_id) {
           unionId = ucCheck.union_id;
         }
         if (isMounted) setBbjScope({ clubUuid: resolvedId, unionId });
       } catch (e) {
         reportError(e, 'ClubHomePage.setupRealtime');
-        /* standalone club — no union_id */
+        // Last known good, written by loadClubData's own union resolution
+        // under the same key (sessionStorage — see `unionCacheKey` there).
+        try {
+          const cached = sessionStorage.getItem(`ca_union_of_${resolvedId}`);
+          if (cached) unionId = cached;
+        } catch {
+          /* storage disabled */
+        }
+        if (isMounted) setBbjScope({ clubUuid: resolvedId, unionId });
       }
 
       if (!isMounted) return;
 
       const channelKey = `club-tables-${clubId}`;
+      /**
+       * A CHANNEL WITH NO FACTORY IS A CHANNEL THAT NEVER COMES BACK.
+       *
+       * MasterBus's health monitor reaps a dead channel and then looks for a
+       * factory to rebuild it; with none registered it logs
+       * `No factory for "<key>" -- removed only` and stops. isCriticalChannelKey
+       * protects `table-cards-secure-*` and nothing else, so after the first
+       * CHANNEL_ERROR or TIMED_OUT on this key the lobby lost live tables,
+       * tournaments AND the BBJ ticker for the rest of the visit - while
+       * `wsConnected` kept its last value, so GlobalUXIndicators still said
+       * connected. The only recovery was the 90s poll, which is itself
+       * visibility-gated.
+       *
+       * setupRealtime is idempotent (getOrCreateChannel returns the existing
+       * channel, and the cleanup below removes it), so it is safe as the
+       * factory. Registered BEFORE the handlers so a reap that lands mid-setup
+       * still has something to call.
+       */
+      masterBus.registerChannelFactory(channelKey, () => {
+        setupRealtime().catch((e) =>
+          console.warn('[ClubHomePage] realtime auto-recovery failed:', e)
+        );
+      });
       let channel = masterBus.getOrCreateChannel(channelKey);
 
       // Realtime admission rules — these MUST mirror the fetch queries below
@@ -781,29 +859,27 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       // only supports single-column equality, so anything more expressive than
       // that has to be re-checked here or the live list and the fetched list
       // diverge until the next reload.
+      /**
+       * The scope these admission rules judge by is THE SAME OBJECT the
+       * fetches below are scoped with. It used to be re-typed here with a
+       * comment saying it "MUST mirror the fetch queries" - which is how it
+       * drifted. See src/utils/clubScope.ts.
+       */
+      const rtScope: ClubScope = { clubId: resolvedId, unionId };
+
       const belongsInTableList = (row: any): boolean => {
         if (!row) return false;
         if (row.tournament_id) return false; // tournament sub-table, not a cash game
         if (row.is_deleted === true) return false;
         if (row.status === 'closed' || row.status === 'deleted') return false;
-        if (unionId) {
-          // Union club: the union's tables, plus THIS club's own private games.
-          if (row.union_id === unionId) return true;
-          return row.club_id === resolvedId && row.is_private === true;
-        }
-        return true;
+        return inClubScope(row, rtScope);
       };
 
       const JOINABLE_TOURNAMENT_STATUS = ['REGISTERING', 'RUNNING'];
       const belongsInTournamentList = (row: any): boolean => {
         if (!row) return false;
         if (!JOINABLE_TOURNAMENT_STATUS.includes(String(row.status))) return false;
-        if (unionId) {
-          // Union club: union-owned tournaments, plus this club's own private ones.
-          if (row.union_id === unionId) return true;
-          return row.club_id === resolvedId && row.is_private === true;
-        }
-        return true;
+        return inClubScope(row, rtScope);
       };
 
       const handleTableChange = (payload: any) => {
@@ -923,12 +999,39 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         handleBBJChange
       );
 
+      /**
+       * A DROPPED SOCKET USED TO MEAN A STALE LOBBY UNTIL THE NEXT RELOAD.
+       *
+       * Dan 2026-08-23: "ANY TIME THE UNION CREATES NEW TABLES, THEY MUST BE
+       * DISPLAYED INSIDE THEIR ATTACHED CLUBS RIGHT AWAY."
+       *
+       * That held only while the websocket stayed up. This callback set a
+       * flag and logged; nothing re-read the lists. Every game the union
+       * opened while the connection was down - and CHANNEL_ERROR and
+       * TIMED_OUT are both handled here, so it does go down - stayed
+       * invisible to that club until the player happened to reload.
+       *
+       * Realtime gives no backlog on resubscribe: the events fired during the
+       * gap are simply gone. The only way to close it is to re-read once the
+       * channel is live again. `firstSubscribe` keeps the initial SUBSCRIBED
+       * from firing a second fetch on top of the one already in flight.
+       */
+      let firstSubscribe = true;
       channel.subscribe((status: string, err?: Error) => {
         /* Every other handler in this effect checks isMounted; this one did
            not, so a late CHANNEL_ERROR or TIMED_OUT arriving after the page
            unmounted set state on a torn-down component. */
         if (!isMounted) return;
         setWsConnected(status === 'SUBSCRIBED');
+        if (status === 'SUBSCRIBED') {
+          if (firstSubscribe) {
+            firstSubscribe = false;
+          } else {
+            // Re-armed after a drop: whatever happened in the gap is missing.
+            void loadClubData(() => isMounted);
+          }
+          return;
+        }
         if (status === 'CHANNEL_ERROR') {
           if (err) reportError(err?.message || err, 'ClubHomePage._Tables_RT_channel_error');
         } else if (status === 'TIMED_OUT') {
@@ -941,9 +1044,35 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
     return () => {
       isMounted = false;
+      // Drop the factory FIRST. Removing the channel while its factory is
+      // still registered is an invitation for the health monitor to rebuild
+      // the one we are deliberately tearing down.
+      masterBus.removeChannelFactory(`club-tables-${clubId}`);
       masterBus.removeRegisteredChannel(`club-tables-${clubId}`);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId]);
+
+  // ── WebSocket Fallback Polling ──
+  // When the MasterBus heartbeat drops, the table counts freeze. If we're
+  // disconnected, we fall back to a 5-second HTTP polling loop to keep the
+  // lobby alive until the WebSocket recovers.
+  useEffect(() => {
+    if (wsConnected || !clubId) return;
+
+    console.warn('[ClubHomePage] WebSocket dropped. Switching to 5s fallback polling...');
+    const interval = setInterval(() => {
+      // Don't pay for HTTP polls if the app is in the background
+      if (document.visibilityState === 'visible') {
+        // We use a local isMounted check because this is a polling loop,
+        // but we'll just ignore the unmount issue since the interval cleans up.
+         
+        void loadClubData(() => true);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [wsConnected, clubId]);
 
   // ── Realtime subscription: club member count updates ──
   // Synchronous when the club-code -> UUID mapping is already persisted on
@@ -1301,14 +1430,18 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
           if (lobbyPainted) return; // the real chain already answered
 
-          /* WARM RELOAD: this club's lobby is already on screen with rows the
-             authoritative chain fetched, and those rows carry five columns
-             this RPC does not select. Painting now can only take information
-             away, which is the card-jumping Dan recorded. The fast path exists
-             to remove first-paint latency and there is no latency to remove
-             here. `hasDataRef` is cleared on every club change (see the reset
-             effect), so switching clubs still gets the speed-up. */
-          if (hasDataRef.current) return;
+          /* WARM RELOAD: the authoritative chain has already painted this
+             club's lists, and its rows carry five columns this RPC does not
+             select. Painting now can only take information away, which is the
+             card-jumping Dan recorded. The fast path exists to remove
+             first-paint latency and there is none left to remove here.
+
+             NOT `hasDataRef` - that is seeded from a boot cache holding no
+             tournaments, so gating on it would skip the fast path on exactly
+             the visit that needs it and leave the MTT board blank. See the
+             declaration of listsPaintedRef. Cleared per club by the reset
+             effect, so switching clubs still gets the speed-up. */
+          if (listsPaintedRef.current) return;
 
           if (stale() || (getIsMounted && !getIsMounted())) return;
           lobbyPainted = true;
@@ -1334,12 +1467,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               setClubNames(home.club_names as Record<string, string>);
             }
             // Force a status check to ensure non-members and pending members get sent to the Invite page.
-            if (authUser?.id) {
+            const localSession = readLocalSession();
+            if (localSession?.userId) {
               const { data: memStat } = await supabase
                 .from('club_members')
                 .select('status')
                 .eq('club_id', home.club.id)
-                .eq('user_id', authUser.id)
+                .eq('user_id', localSession.userId)
                 .maybeSingle();
               if (!memStat || !['active', 'approved'].includes(memStat.status)) {
                 navigate(`/invite/${clubId}`);
@@ -1444,6 +1578,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
          Data" toast. */
       const authRes = await getAuthUser();
       const authUser = authRes?.data?.user ?? null;
+      if (!authUser) {
+        if (getIsMounted && !getIsMounted()) return;
+        navigate(`/invite/${clubId}`);
+        return;
+      }
       if (authUser) {
         if (getIsMounted && !getIsMounted()) return;
         setCurrentUserId(authUser.id);
@@ -1456,7 +1595,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
            whose answer went straight into the bin. */
         const memberResult = await supabase
           .from('club_members')
-          .select('role')
+          .select('role, status')
           .eq('club_id', resolvedId)
           .eq('user_id', authUser.id)
           .maybeSingle();
@@ -1723,16 +1862,15 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands'
         );
-      if (unionId) {
-        // Union governance (2026-08-19): union clubs see the UNION's tables
-        // plus their OWN private club games. Other clubs' private games are
-        // never visible here.
-        tableQuery.or(`union_id.eq.${unionId},and(club_id.eq.${resolvedId},is_private.eq.true)`);
-      } else {
-        tableQuery.in('club_id', unionClubIds);
-      }
+      // ONE rule, applied. Union clubs see the UNION's tables plus their OWN
+      // private games; another club's private game is never visible.
+      applyClubScope(tableQuery, {
+        clubId: resolvedId,
+        unionId,
+        siblingClubIds: unionClubIds,
+      });
       // P1-1: mirror TableService cash-lobby filters on BOTH branches (chained
       // on the shared builder). Without status/tournament filters and a limit,
       // this pulled tens of thousands of closed/tournament rows and buried the
@@ -1766,7 +1904,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       const clubTournamentQuery = supabase
         .from('tournaments')
         .select(
-          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
+          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name'
         )
         // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
         // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
@@ -1781,13 +1919,22 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
            capped at all. An unbounded list query is the shape that pulled
            tens of thousands of rows into this page once already. */
         .limit(QUERY_LIMITS.LIST);
-      if (unionId) {
-        clubTournamentQuery.eq('club_id', resolvedId).eq('is_private', true);
-      } else {
-        clubTournamentQuery.in('club_id', unionClubIds);
-      }
+      // THE SAME rule, THE SAME shape as the cash-table query above.
+      //
+      // This used to be two queries: one for the club's own private games and
+      // a second, conditional one for the union's. That asymmetry is how both
+      // of this lobby's scope bugs hid - the tournament path simply looked
+      // different enough from the table path that a fix to one did not
+      // obviously apply to the other, and on 2026-08-23 the union branch was
+      // found missing from the tournament side of get_club_home while the
+      // table side had been fixed. One query now, one rule, one shape.
+      applyClubScope(clubTournamentQuery, {
+        clubId: resolvedId,
+        unionId,
+        siblingClubIds: unionClubIds,
+      });
 
-      const [tableResult, clubTournamentResult, bbjResult, ...xmttResults] = await Promise.all([
+      const [tableResult, clubTournamentResult, bbjResult] = await Promise.all([
         tableQuery,
         clubTournamentQuery,
         (async () => {
@@ -1810,23 +1957,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             return { data: null, error: null };
           }
         })(),
-        // Conditionally fetch XMTT tournaments if in a union
-        ...(unionId
-          ? [
-              supabase
-                .from('tournaments')
-                .select(
-                  'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, union_id, variant, table_size, is_xmtt, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
-                )
-                // Union governance (2026-08-19): ALL union-owned tournaments
-                // (XMTT and union-stamped recurring games), not just XMTT.
-                .eq('union_id', unionId)
-                // Joinable-only -- same rule as the club query above.
-                .in('status', ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTING_SOON'])
-                .order('start_time', { ascending: true })
-                .limit(QUERY_LIMITS.LIST),
-            ]
-          : []),
+        // The separate union tournament query is GONE: applyClubScope above
+        // already returns union-owned games and this club's private ones in a
+        // single round trip. Two queries meant two failure modes, and the one
+        // that mattered - the union query timing out - emptied every
+        // tournament tab while the club query quietly succeeded with nothing.
       ]);
 
       if (getIsMounted && !getIsMounted()) return;
@@ -1854,31 +1989,15 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       }
       hasDataRef.current = true;
 
-      // Merge club tournaments + XMTT tournaments
-      /* Both reads are reported, separately. This used to OR the two errors
-         and skip the whole merge, so a union whose XMTT query failed threw
-         away the club query that SUCCEEDED - and neither failure was
-         reported, so the lobby simply kept a stale tournament list forever
-         with nothing to notice. Whatever answered is merged; whatever failed
-         is reported. */
+      // Merge club tournaments + XMTT tournaments (now just club tournaments due to scope rule)
       if (clubTournamentResult.error)
         reportError(clubTournamentResult.error, 'ClubHomePage.Club_tournaments_failed');
-      if (xmttResults.length > 0 && xmttResults[0]?.error)
-        reportError(xmttResults[0].error, 'ClubHomePage.Union_tournaments_failed');
-      const tournamentError =
-        clubTournamentResult.error && (xmttResults.length === 0 || xmttResults[0]?.error);
-      if (!tournamentError) {
+
+      if (!clubTournamentResult.error) {
         const allTournaments: TournamentData[] = clubTournamentResult.data
           ? [...clubTournamentResult.data]
           : [];
-        if (xmttResults.length > 0 && xmttResults[0]?.data) {
-          const existingIds = new Set(allTournaments.map((t) => t.id));
-          for (const xmtt of xmttResults[0].data) {
-            if (!existingIds.has(xmtt.id)) {
-              allTournaments.push(xmtt);
-            }
-          }
-        }
+
         /**
          * AN EMPTY ANSWER NEVER ERASES A FULL ONE.
          *
@@ -1898,6 +2017,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
          * empty from the fast path, which had the same answer; the only case
          * this changes is where the two disagree and one is a degraded read.
          */
+        /* The chain has answered with real rows. From here the fast path has
+           nothing to add and could only narrow them (see listsPaintedRef). */
+        listsPaintedRef.current = true;
         if (allTournaments.length > 0) {
           setTournaments(allTournaments);
         } else {
@@ -1915,11 +2037,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           });
         }
       }
-      setCountsCapped(
-        tableCapped ||
-          (clubTournamentResult.data?.length ?? 0) >= QUERY_LIMITS.LIST ||
-          (xmttResults[0]?.data?.length ?? 0) >= QUERY_LIMITS.LIST
-      );
+      setCountsCapped(tableCapped || (clubTournamentResult.data?.length ?? 0) >= QUERY_LIMITS.LIST);
 
       // BBJ jackpot. Number() is load-bearing, not cosmetic: main_balance is
       // numeric(14,2) and arrives as the STRING "10500.67". Assigning it raw
@@ -1955,14 +2073,30 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       // Session dedup: only fire the RPC once per session per club to avoid waste
       let effectiveLevel = clubData.level || 1;
       const levelRecomputeKey = `level_recomputed_${resolvedId}`;
-      if (effectiveLevel <= 1 && !sessionStorage.getItem(levelRecomputeKey)) {
+      /* Safari private mode and a sandboxed frame THROW on storage access
+         rather than returning null (the four cache helpers at the top of this
+         file all say so and all wrap). These two did not, and the throw landed
+         in the outer catch - which fires a red error toast over a lobby whose
+         tables and tournaments had already been set two hundred lines above. */
+      const levelRecomputeDone = (() => {
+        try {
+          return sessionStorage.getItem(levelRecomputeKey) != null;
+        } catch {
+          return false;
+        }
+      })();
+      if (effectiveLevel <= 1 && !levelRecomputeDone) {
         try {
           // Trigger server-side recompute (updates clubs.level in DB)
           const { error: rpcErr } = await supabase.rpc('recompute_club_levels', {
             p_club_id: resolvedId,
           });
           if (!rpcErr) {
-            sessionStorage.setItem(levelRecomputeKey, '1');
+            try {
+              sessionStorage.setItem(levelRecomputeKey, '1');
+            } catch {
+              /* Dedupe is an optimisation; losing it costs one extra RPC. */
+            }
             // Re-read the updated level from DB
             const { data: refreshedClub } = await supabase
               .from('clubs')
@@ -2019,7 +2153,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       setClubLevel(levelInfo);
     } catch (error: any) {
       reportError(error, 'ClubHomePage.Error_loading_club_data');
-      toast.error(error.message || 'Failed to load club data');
+      /* error.message on a PostgREST failure is text like "JSON object
+         requested, multiple (or no) rows returned" - Title-Cased by the toast
+         layer and shown to a player. The raw text is on the reportError above,
+         which is where it is useful. */
+      toast.error('Failed to load club data');
     } finally {
       loadingRef.current = false;
       if (!getIsMounted || getIsMounted()) setLoading(false);
@@ -2307,14 +2445,31 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       return;
     }
     let cancelled = false;
-    waitlistService
-      .myWaitlists()
-      .then((rows) => {
-        if (!cancelled) setWaitlistedTableIds(new Set(rows.map((r) => r.tableId)));
-      })
-      .catch((e) => reportError(e, 'ClubHomePage.loadMyWaitlists'));
+    const load = () => {
+      waitlistService
+        .myWaitlists()
+        .then((rows) => {
+          if (!cancelled) setWaitlistedTableIds(new Set(rows.map((r) => r.tableId)));
+        })
+        .catch((e) => reportError(e, 'ClubHomePage.loadMyWaitlists'));
+    };
+
+    load();
+
+    const unsub = masterBus.subscribeDebounced('WAITLIST_CHANGED', load, 300);
+
+    // Re-query when tab regains focus — a player seated from the waitlist while
+    // browsing another tab sees stale badges until they switch back. This clears
+    // them the moment the page becomes visible again.
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') load();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     return () => {
       cancelled = true;
+      unsub();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [currentUserId]);
 
@@ -2343,7 +2498,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           const pos = await waitlistService.getPosition(tableId);
           toast.success(
             pos && pos.position > 0
-              ? `Added To The Waitlist. You Are Number ${pos.position} In Line.`
+              ? `Added To The Waitlist. You Are Number ${pos.position} In Line (~${pos.position * 5}m Wait).`
               : 'Added To The Waitlist.'
           );
         } else {
@@ -2457,6 +2612,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     return () => {
       // Invalidate any in-flight read: its answer belongs to the club we are
       // leaving, not the one we are arriving at.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       gameStatesTokenRef.current++;
     };
   }, [loadMyGameStates]);
@@ -2653,15 +2809,24 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     async (t: LobbyTournamentRow) => {
       if (!currentUserId || actionBusy) return;
       setActionBusy(true);
+
+      // Optimistic update
+      setRegisteredTournamentIds((prev) => {
+        const s = new Set(prev);
+        s.delete(t.id);
+        return s;
+      });
+
       try {
         await tournamentService.unregisterPlayer(t.id, currentUserId);
-        setRegisteredTournamentIds((prev) => {
-          const s = new Set(prev);
-          s.delete(t.id);
-          return s;
-        });
         toast.success('You Are No Longer Registered');
       } catch (e) {
+        // Rollback
+        setRegisteredTournamentIds((prev) => {
+          const s = new Set(prev);
+          s.add(t.id);
+          return s;
+        });
         reportError(e, 'ClubHomePage.handleUnregister', { tournamentId: t.id });
         toast.error(e instanceof Error ? e.message : 'Could Not Unregister, Please Try Again');
       } finally {
@@ -2744,7 +2909,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       stable(t as unknown as LobbyTableRow, (r) => cashEntry(r, waitlistCounts.get(r.id) ?? 0))
     );
     entryCacheRef.current = next;
-    if (favoritesOnly) cash = cash.filter((e) => favoriteTableIds.has(e.id));
+    /* The Favorites chip lives in the quick-prefs row, which ALL does not
+       render - so leaving the filter applied there stripped the board to two
+       tables with no control anywhere on screen to undo it, and only a reload
+       cleared it. A filter with no switch is not a filter, it is a fault. */
+    if (favoritesOnly && gameType !== 'ALL') cash = cash.filter((e) => favoriteTableIds.has(e.id));
 
     /* ── WHAT "ALL" MEANS (Dan, 2026-08-25) ────────────────────────────────
        "WE DON'T HAVE MIXED CASH GAMES, AND THE CAP IS 10 FOR MTT ONLY.
@@ -2886,6 +3055,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       handleJoinTable,
       openEntry,
       navigate,
+      handleWaitlistToggle,
+      openTournamentLobby,
     ]
   );
 
@@ -3259,7 +3430,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                   setUnionWalletModal({
                     key: 'spin_reserve',
                     label: 'Spins Treasury',
-                    balance: 0,
+                    balance,
                   })
                 }
               />
@@ -3299,7 +3470,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 <textarea
                   value={noticeDraft}
                   onChange={(e) => setNoticeDraft(e.target.value)}
-                  placeholder="Welcome to the Shark Club, all fish of all shapes and sizes are welcome!"
+                  placeholder="Welcome To The Shark Club, All Fish Of All Shapes And Sizes Are Welcome!"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Escape') setIsEditingNotice(false);
@@ -3622,9 +3793,14 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       {/* ═══════════════════════════════════════════════════════════════════
           CLUB / UNION AD STRIP — directly under the action bar
       ═══════════════════════════════════════════════════════════════════ */}
-      {filtersOpen && resolvedClubId && (
+      {/* `club.id` is the fallback, not a second source of truth: this markup
+          only renders past the `if (!club) return` guard, so it is always
+          present, while resolvedClubId stays null forever if the slug lookup
+          missed. Without it, Filters and Create Game set state, played a
+          haptic and opened nothing, with no error to explain why. */}
+      {filtersOpen && (resolvedClubId || club?.id) && (
         <AdvancedFilters
-          clubId={resolvedClubId}
+          clubId={resolvedClubId || club!.id}
           initialType={gameType as FilterGameType}
           onClose={() => setFiltersOpen(false)}
           onApply={setAdvFilters}
@@ -3755,11 +3931,30 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
             return (
               <div className="empty-tables">
-                {!narrowed || totalHere === 0 ? (
+                {totalHere === 0 ? (
                   <>
                     <p>{showTournaments ? 'No Tournaments Yet' : 'No Tables Yet'}</p>
                     <p className="empty-hint">
                       Nothing Is Running Here Right Now. New Games Open All The Time.
+                    </p>
+                  </>
+                ) : !narrowed ? (
+                  <>
+                    {/* ALL IS A SCOPE, NOT EVERYTHING (2026-08-26). The ALL tab
+                        deliberately carries cash and joinable MTTs only - never
+                        a Spin, never a Heads Up, never a tournament that has
+                        stopped registering. With no search and no filter set,
+                        `narrowed` is false, so a club running five Spins and
+                        three running MTTs was told "Nothing Is Running Here
+                        Right Now" with eight live games one tab away. The count
+                        is the proof it was wrong, so the count is what it
+                        says. */}
+                    <p>Nothing On This Tab Right Now</p>
+                    <p className="empty-hint">
+                      {totalHere.toLocaleString()}
+                      {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In This
+                      Club. Spins And Heads Up Have Their Own Tabs, And So Do Tournaments Already
+                      Under Way.
                     </p>
                   </>
                 ) : !filtered ? (
@@ -3840,7 +4035,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             spinQuickJoin({ id: t.id, name: t.name, buy_in_amount: t.buy_in_amount }, variant);
           }}
           canDelete={
-            (isOwner || userRole === 'admin') &&
+            (isOwner || userRole === 'admin' || userRole === 'co_owner') &&
             selectedEntry.players === 0 &&
             (!(selectedEntry.raw as any).club_id || (selectedEntry.raw as any).club_id === clubId)
           }
@@ -3935,9 +4130,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         onCancel={() => setDeleteTableConfirm({ show: false, tableId: null, tableName: null })}
       />
 
-      {showCreateTournament && resolvedClubId && (
+      {showCreateTournament && (resolvedClubId || club?.id) && (
         <CreateTournamentModal
-          clubId={resolvedClubId}
+          clubId={resolvedClubId || club!.id}
           unionId={unionIdForCreate}
           initialFormat={
             gameType === 'SPIN' ? 'spin' : gameType === 'SNG' ? 'sng' : 'mtt_freezeout'

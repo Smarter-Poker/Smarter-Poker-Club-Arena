@@ -308,7 +308,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
         </div>
         <input
           type="text"
-          placeholder="Search logs..."
+          placeholder="Search Logs..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="search-input"

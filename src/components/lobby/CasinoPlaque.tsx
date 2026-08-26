@@ -86,7 +86,16 @@ export default function CasinoPlaque({ entry, children }: CasinoPlaqueProps) {
 export function PlaqueSeats({ players, capacity }: { players: number; capacity: number }) {
   const cap = Math.max(0, Math.min(capacity || 0, 12));
   return (
-    <div className="cplaque__seats" aria-label={`${players} of ${capacity} seats filled`}>
+    /* The visible text prints "-" for an unknown capacity; the label used to
+       interpolate the raw 0 and announce "12 of 0 seats filled". */
+    <div
+      className="cplaque__seats"
+      aria-label={
+        capacity > 0
+          ? `${players} of ${capacity} seats filled`
+          : `${players} seated, capacity unknown`
+      }
+    >
       <span className="cplaque__seats-num">
         {players} / {capacity || '-'} Seats
       </span>

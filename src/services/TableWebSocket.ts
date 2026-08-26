@@ -198,7 +198,34 @@ export class TableWebSocket {
           this.handlePresenceSync();
         })
         .on('presence', { event: 'join' }, ({ newPresences }) => {})
-        .on('presence', { event: 'leave' }, ({ leftPresences }) => {});
+        .on('presence', { event: 'leave' }, ({ leftPresences }) => {})
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'table_chat',
+            filter: `table_id=eq.${this.tableId}`,
+          },
+          (payload) => {
+            import('../core/MasterBus')
+              .then(({ masterBus }) => {
+                masterBus.emit('TABLE_CHAT_INSERT', { tableId: this.tableId, newRow: payload.new });
+              })
+              .catch(() => {});
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'profiles' },
+          (payload) => {
+            import('../core/MasterBus')
+              .then(({ masterBus }) => {
+                masterBus.emit('TABLE_PROFILES_UPDATE', { newRow: payload.new });
+              })
+              .catch(() => {});
+          }
+        );
 
       // Subscribe to channel - returns the channel, callback receives status
       await new Promise<void>((resolve, reject) => {

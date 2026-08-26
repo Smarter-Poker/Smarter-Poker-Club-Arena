@@ -31,6 +31,27 @@ export interface CardImageProps {
   isHighlighted?: boolean;
   isFolded?: boolean;
   className?: string;
+  /**
+   * Whether the browser may defer this card's face.
+   *
+   * Defaults to `lazy`, which is right for the long lists this component also
+   * serves (BBJ history, hand replays, the card-back store) - dozens of faces
+   * below the fold.
+   *
+   * It is wrong for the two rows that decide a hand. AUDIT 2026-08-25: the
+   * felt's cards were lazy too, and lazy has a real cost exactly where it hurts
+   * most. A `loading="lazy"` image inside a `display: none` subtree is not
+   * fetched at all, and MultiTablePage keeps up to four tables mounted with the
+   * inactive ones display:none - so switching tabs showed a beat of empty card
+   * boxes while the faces were fetched and decoded. At showdown the same
+   * heuristic delays the one frame the player is actually reading. The felt now
+   * passes `eager` for the hero's hand, a revealed villain hand and the
+   * community board; every other caller keeps the lazy default.
+   *
+   * Cheap to do: the whole WebP deck is ~8KB a card and shared by every table,
+   * so the second table pays nothing.
+   */
+  loading?: 'lazy' | 'eager';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -156,6 +177,7 @@ export function CardImage({
   isHighlighted = false,
   isFolded = false,
   className = '',
+  loading = 'lazy',
 }: CardImageProps) {
   // ── Dan 2026-08-18: make the four-colour deck setting actually apply ──
   //
@@ -185,7 +207,12 @@ export function CardImage({
     setFallbackStep(0);
   }, [imagePath]);
   const imgError = fallbackStep >= 2;
-  const effectivePath = fallbackStep === 1 ? imagePath.replace(/\.webp$/, '.png') : imagePath;
+  // AUDIT 2026-08-25: this read `fallbackStep === 1 ? png : webp`, so at step 2
+  // - the give-up state - the src flipped BACK to the .webp that had already
+  // 404'd. The <img> is still mounted (hidden with display:none so the box keeps
+  // its size), so the browser re-requested a URL known to be dead every time the
+  // fallback rendered. Once we have moved past the WebP it never comes back.
+  const effectivePath = fallbackStep >= 1 ? imagePath.replace(/\.webp$/, '.png') : imagePath;
 
   const classes = [
     'card-image',
@@ -200,7 +227,7 @@ export function CardImage({
   return (
     <div className={classes}>
       <img
-        loading="lazy"
+        loading={loading}
         decoding="async"
         src={effectivePath}
         alt={`${card.rank} of ${SUIT_MAP[card.suit] || card.suit}`}

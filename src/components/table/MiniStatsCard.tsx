@@ -20,11 +20,9 @@ import './MiniStatsCard.css';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export interface MiniStatsObserver {
-  id: string;
-  name: string;
-  avatar?: string;
-}
+/* `MiniStatsObserver` deleted 2026-08-26: it typed the `observers` prop, and
+   that prop went with the unreachable expanded panel. Exported from the barrel
+   and imported by nothing. */
 
 export interface MiniStatsCardProps {
   /** Current hero stack */
@@ -92,18 +90,64 @@ export function MiniStatsCard({
    * The tap target is unchanged: it still opens the tournament lobby / info
    * panel, which is where standings, payouts and the clock live in full.
    */
+  /**
+   * A SPECTATOR HAS NO STATS, SO DO NOT PRINT FOUR ZEROES (fixed 2026-08-26).
+   *
+   * `currentStack` is `players[heroSeat - 1]?.stack || 0`, and an observer's
+   * `heroSeat` is 0 — so the tournament bar rendered
+   * `Stack 0 · Hands 0 · VPIP 0% · Won 0` to anyone WATCHING a tournament.
+   * That reads as a broken HUD, not as "you are not in this one", and watching
+   * a running event is a first-class route now (Dan 2026-08-25, item 1).
+   *
+   * The reason the tournament branch ignores `isSeated` at all is that this
+   * control is also the way into the tournament lobby, which an observer very
+   * much does want. So keep the button, drop the figures.
+   */
+  if (isTournament && !isSeated) {
+    return (
+      <button
+        type="button"
+        className="mini-stats-card mini-stats-card--icon"
+        onClick={handleClick}
+        aria-label="Tournament lobby. Standings, payouts and the clock."
+        title="Tournament Lobby"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          {/* Trophy — the lobby, not a session readout */}
+          <path d="M8 21h8" />
+          <path d="M12 17v4" />
+          <path d="M7 4h10v5a5 5 0 0 1-10 0V4z" />
+          <path d="M7 6H5a2 2 0 0 0 0 4h2" />
+          <path d="M17 6h2a2 2 0 0 1 0 4h-2" />
+        </svg>
+      </button>
+    );
+  }
+
   if (isTournament) {
     return (
       <button
         type="button"
         className="mini-stats-card mini-stats-card--tournament-stats"
         onClick={handleClick}
-        aria-label={`Tournament stats. Stack ${currentStack.toLocaleString()}, ${handsPlayed} hands played. Opens tournament lobby.`}
+        aria-label={`Tournament stats. Stack ${currentStack.toLocaleString('en-US')}, ${handsPlayed} hands played. Opens tournament lobby.`}
         title="Tournament Stats & Lobby"
       >
         <span className="mini-stats-card__tstat">
           <span className="mini-stats-card__tstat-label">Stack</span>
-          <span className="mini-stats-card__tstat-value">{currentStack.toLocaleString()}</span>
+          <span className="mini-stats-card__tstat-value">
+            {currentStack.toLocaleString('en-US')}
+          </span>
         </span>
         <span className="mini-stats-card__tstat">
           <span className="mini-stats-card__tstat-label">Hands</span>

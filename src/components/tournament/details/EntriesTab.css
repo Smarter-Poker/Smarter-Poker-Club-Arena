@@ -163,10 +163,37 @@
 
 .et-row--watch {
   width: 100%;
-  border: none;
+  /* NOT `border: none`. That is what it said, and it made a watchable row two
+     pixels shorter than the plain rows beside it and stripped the bevel edge
+     off it, so the list looked ragged at 375px wherever a seated player sat
+     next to a busted one. The shared `.tl-row` border is inherited instead
+     (2026-08-26 audit). */
   font: inherit;
   color: inherit;
   text-align: left;
   cursor: pointer;
   touch-action: manipulation;
+}
+
+/* A keyboard reader must be able to see which entry they are on. */
+.et-row--watch:focus-visible {
+  outline: 2px solid var(--tl-accent);
+  outline-offset: -2px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   THE DEGRADED NOTICE
+   A failed query says so. It never masquerades as a field of zeros.
+   ───────────────────────────────────────────────────────────────────────── */
+.et-degraded {
+  margin: 0 0 10px;
+  padding: 7px 10px;
+  border-radius: var(--tl-radius-sm);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--tl-danger-soft);
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.12) 0%, rgba(19, 27, 40, 0.7) 100%);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }

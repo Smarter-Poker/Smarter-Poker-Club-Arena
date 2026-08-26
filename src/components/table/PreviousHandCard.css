@@ -28,6 +28,24 @@
   transition: all 0.15s ease-out;
 }
 
+/* 36px painted, 44px touched — the twin of the rule in TimebankCounter.css,
+   and the same asymmetry for the same reason: 4px sideways (nothing to collide
+   with at the screen edge), 3px vertically so the 8px gap to the time-bank tile
+   above keeps a 2px dead zone between two controls that do different things.
+   The `relative` is on the WRAPPER, not on this element, so the pseudo needs
+   its own containing block here or it would size itself against the wrapper. */
+@media (max-width: 1023px) {
+  .prev-hand-card {
+    position: relative;
+  }
+
+  .prev-hand-card::after {
+    content: '';
+    position: absolute;
+    inset: -3px -4px;
+  }
+}
+
 .prev-hand-card:hover {
   background: var(--sp-hud-tile-bg-hover, rgba(16, 20, 28, 0.85));
   color: #fff;

@@ -142,3 +142,78 @@ export function destinationBlurb(
 export function claimNeedsConfirm(amount: number): boolean {
   return amount > 0;
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  AGENT TO AGENT ALWAYS CREDITS THE AGENT WALLET — and nothing wider
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan 2026-08-25, binding: "AGENT TO AGENT SEND OR CLAIM BACK ALWAYS CREDIT TO
+ * AGENT WALLETS."
+ *
+ * fn_agent_wallet_send derives the destination from the recipient's role and
+ * ignores what the client asked for, so this is only the half that stops the
+ * mistake being OFFERED. It lives here rather than inline in the modal because
+ * the version that lived inline applied to EVERY cashier and BOTH tabs, and
+ * that quietly broke three things the law does not touch:
+ *
+ *   - the Club Bank could no longer fund an agent's PROMO wallet;
+ *   - the Club Bank could no longer credit a player-wallet balance to someone
+ *     who happens to hold a float;
+ *   - the Club Bank's Claim Back could only pull from an agent's float, never
+ *     from their promo wallet or their playing balance, though
+ *     fn_club_bank_claim_back accepts all three.
+ *
+ * "Agent to agent" is fn_agent_wallet_send. It is not fn_club_bank_send and it
+ * is not fn_promo_wallet_send, both of which take an explicit destination the
+ * server honours. So: the AGENT wallet, on its SEND tab, to a recipient who
+ * holds a float. `recipientHoldsFloat` is canHoldAgentWallet(role) — passed in
+ * rather than re-derived, so the caller and this rule cannot disagree.
+ */
+export function coercesToAgentWallet(
+  walletType: CashierWalletType,
+  tab: CashierTab,
+  recipientHoldsFloat: boolean
+): boolean {
+  return walletType === 'agent_wallet' && tab === 'send' && recipientHoldsFloat;
+}
+
+/**
+ * Which cashiers will have a self-send refused by the server.
+ *
+ * fn_agent_wallet_send and fn_promo_wallet_send both refuse
+ * `p_to_user_id = auth.uid()` outright. fn_club_bank_send deliberately does
+ * NOT: an owner funding their own agent float out of the treasury is how an
+ * owner gets a float at all, and removing themselves from that list would cut
+ * the funding route the whole hierarchy hangs off.
+ *
+ * fn_club_cashier_members returns the caller in its own result for a staff
+ * viewer (scope 'all' is every active member), so without this the roster
+ * offered the viewer their own name and the send failed on tap.
+ */
+export function cashierRefusesSelfSend(walletType: CashierWalletType): boolean {
+  return walletType !== 'club_bank';
+}
+
+/**
+ * THE TEN MINUTE COUNTDOWN IS THE SERVER'S, NOT THE PHONE'S.
+ *
+ * `fn_agent_wallet_reversible` returns `seconds_left` alongside
+ * `reversible_until`, and both cashier surfaces ignored it: each subtracted
+ * `Date.now()` from `reversible_until`, which is the browser wall clock.
+ * A device ten minutes fast showed "nothing is claimable" with live sends on
+ * the list; ten minutes slow offered every expired row and each tap collected a
+ * refusal from fn_agent_wallet_claim_back.
+ *
+ * So the deadline is anchored ONCE at fetch time and only locally measured
+ * elapsed time is taken off it. Callers pass elapsed milliseconds measured with
+ * performance.now(), which is monotonic — unaffected by a wrong clock, an NTP
+ * correction or a daylight saving jump. The database still has the final word
+ * on every claim; this only decides what to OFFER.
+ */
+export function secondsLeftFromServer(serverSecondsLeft: unknown, elapsedMs: number): number {
+  const start = Number(serverSecondsLeft);
+  if (!Number.isFinite(start) || start <= 0) return 0;
+  const elapsed = Math.floor(Math.max(0, elapsedMs) / 1000);
+  return Math.max(0, start - elapsed);
+}

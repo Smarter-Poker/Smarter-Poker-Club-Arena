@@ -65,9 +65,10 @@ export interface UseTableChatReturn {
   setIsChatMuted: React.Dispatch<React.SetStateAction<boolean>>;
   handleSendChatMessage: (message: string) => void;
   /**
-   * True when the host has switched chat off for this table. The RLS policy
-   * refuses the insert either way (Dan 2026-08-25) — this is so the composer
-   * can say so instead of swallowing the message.
+   * True when this player may not post here: the host switched chat off, the
+   * parent tournament has chat off, or this player is muted at this table.
+   * The RLS policy refuses the insert either way - this is so the composer can
+   * say so instead of swallowing the message.
    */
   isChatBanned: boolean;
   // Reaction parsing
@@ -105,19 +106,38 @@ export function useTableChat(
      is enforced in the table_chat INSERT policy, because the send is a direct
      PostgREST call from the browser and there is no server hop to gate; this
      read exists purely so the UI can hide the composer rather than accept a
-     message and drop it. */
+     message and drop it.
+
+     2026-08-26: this used to read `tables.ban_chat` directly, which is one of
+     THREE ways a player can be silenced and the only one it could see. It now
+     asks `fn_table_chat_is_silenced`, the same SECURITY DEFINER function the
+     RLS policy calls, so the composer and the policy can never disagree:
+
+       - the table's own ban_chat switch;
+       - the parent TOURNAMENT's ban_chat, which reached nothing before today
+         (3 live tables sat under ban_chat tournaments with the flag unset on
+         the table row, and every one of them chatted);
+       - this player's own unexpired `table_chat_mutes` row, which was
+         enforced nowhere at all.
+
+     The last two cannot be read directly from the browser by the player they
+     apply to: `table_chat_mutes` is admin-read-only, so a muted player sees
+     zero rows and would conclude they are not muted. */
   useEffect(() => {
     if (!tableId) return;
     let cancelled = false;
     void (async () => {
       try {
-        const { data } = await supabase
-          .from('tables')
-          .select('ban_chat')
-          .eq('id', tableId)
-          .maybeSingle();
+        const { data, error } = await supabase.rpc('fn_table_chat_is_silenced', {
+          p_table_id: tableId,
+        });
         if (cancelled) return;
-        const banned = data?.ban_chat === true;
+        /* An unreadable answer is UNKNOWN, not "not banned" - but the composer
+           is a courtesy and the policy is the enforcement, so unknown leaves
+           chat enabled rather than silencing a table nobody muted. A refused
+           send is then caught below and the player is told. */
+        if (error) return;
+        const banned = data === true;
         isChatBannedRef.current = banned;
         setIsChatBanned(banned);
       } catch {
@@ -187,81 +207,65 @@ export function useTableChat(
     };
     loadMessages();
 
-    // The persistent chat websocket listener
-    const channel = supabase
-      .channel(`table_chat_hook:${tableId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'table_chat',
-          filter: `table_id=eq.${tableId}`,
-        },
-        (payload) => {
-          const m = payload.new as any;
-          if (!isMounted) return;
+    // The persistent chat listener multiplexed off the master table channel
+    const unsub = masterBus.subscribe('TABLE_CHAT_INSERT', (event) => {
+      const payload = event.payload;
+      if (payload.tableId !== tableId) return;
 
-          setChatMessages((prev) => {
-            // Deduplicate: remove the optimistic local clone, and append the real Supabase record
-            let removedOne = false;
-            const filtered = prev.filter((msg) => {
-              if (
-                !removedOne &&
-                msg.id.startsWith('msg_') &&
-                msg.playerId === m.user_id &&
-                msg.content === m.message
-              ) {
-                removedOne = true;
-                return false;
-              }
-              return true;
-            });
+      const m = payload.newRow as any;
+      if (!isMounted) return;
 
-            const pName = playersRef.current.find((p) => p && p.id === m.user_id)?.name || 'Player';
-            const newMsg: ChatMessage = {
-              id: m.id,
-              type: (m.message_type === 'dealer'
-                ? 'DEALER'
-                : m.message_type === 'system'
-                  ? 'SYSTEM'
-                  : 'PLAYER') as 'DEALER' | 'SYSTEM' | 'PLAYER',
-              playerId: m.user_id,
-              playerName: pName,
-              content: m.message,
-              timestamp: new Date(m.created_at),
-            };
-            // Track unread if chat is collapsed
-            if (isChatCollapsedRef.current && m.user_id !== userId) {
-              setUnreadCount((c) => c + 1);
-            }
-            // Warm notification ping for incoming messages from other players
-            // (skip our own echoes, system/dealer injections, and reaction/throw encodings)
-            const isRealPlayerMsg =
-              m.user_id !== userId &&
-              m.message_type !== 'system' &&
-              m.message_type !== 'dealer' &&
-              !REACTION_MSG_REGEX.test(m.message || '') &&
-              !THROW_MSG_REGEX.test(m.message || '');
-            if (isRealPlayerMsg && !isChatMutedRef.current) {
-              soundService.playChatMessage();
-            }
-            return [...filtered.slice(-49), newMsg];
-          });
+      setChatMessages((prev) => {
+        // Deduplicate: remove the optimistic local clone, and append the real Supabase record
+        let removedOne = false;
+        const filtered = prev.filter((msg) => {
+          if (
+            !removedOne &&
+            msg.id.startsWith('msg_') &&
+            msg.playerId === m.user_id &&
+            msg.content === m.message
+          ) {
+            removedOne = true;
+            return false;
+          }
+          return true;
+        });
+
+        const pName = playersRef.current.find((p) => p && p.id === m.user_id)?.name || 'Player';
+        const newMsg: ChatMessage = {
+          id: m.id,
+          type: (m.message_type === 'dealer'
+            ? 'DEALER'
+            : m.message_type === 'system'
+              ? 'SYSTEM'
+              : 'PLAYER') as 'DEALER' | 'SYSTEM' | 'PLAYER',
+          playerId: m.user_id,
+          playerName: pName,
+          content: m.message,
+          timestamp: new Date(m.created_at),
+        };
+        // Track unread if chat is collapsed
+        if (isChatCollapsedRef.current && m.user_id !== userId) {
+          setUnreadCount((c) => c + 1);
         }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.debug('[useTableChat] Realtime channel error:', err?.message || err);
+        // Warm notification ping for incoming messages from other players
+        // (skip our own echoes, system/dealer injections, and reaction/throw encodings)
+        const isRealPlayerMsg =
+          m.user_id !== userId &&
+          m.message_type !== 'system' &&
+          m.message_type !== 'dealer' &&
+          !REACTION_MSG_REGEX.test(m.message || '') &&
+          !THROW_MSG_REGEX.test(m.message || '');
+        if (isRealPlayerMsg && !isChatMutedRef.current) {
+          soundService.playChatMessage();
         }
-        if (status === 'TIMED_OUT') {
-          console.debug('[useTableChat] Realtime channel timed out');
-        }
+        return [...filtered.slice(-49), newMsg];
       });
+    });
 
     return () => {
       isMounted = false;
-      supabase.removeChannel(channel);
+      unsub();
       pendingTimersRef.current.forEach(clearTimeout);
       pendingTimersRef.current.clear();
     };
@@ -506,6 +510,15 @@ export function useTableChat(
         if (error) {
           reportError(error, 'useTableChat.Failed_to_send_chat');
           markFailed(tempId);
+          /* 42501 is the RLS refusal. A player muted or banned AFTER the
+             composer read its answer would otherwise sit there watching every
+             message fail with no reason given, so adopt the policy's verdict
+             and close the box. The mount read cannot catch this case: a mute
+             arrives mid-session and there is no realtime feed for one. */
+          if ((error as { code?: string }).code === '42501') {
+            isChatBannedRef.current = true;
+            setIsChatBanned(true);
+          }
         }
       } catch (err) {
         reportError(err, 'useTableChat.Failed_to_send_chat');

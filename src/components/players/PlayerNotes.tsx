@@ -177,7 +177,7 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
       <div className="notes-search">
         <input
           type="text"
-          placeholder="Search notes..."
+          placeholder="Search Notes..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
@@ -256,7 +256,7 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
           <textarea
             value={editingNote}
             onChange={(e) => setEditingNote(e.target.value)}
-            placeholder="Write your notes about this player..."
+            placeholder="Write Your Notes About This Player..."
             maxLength={500}
           />
 

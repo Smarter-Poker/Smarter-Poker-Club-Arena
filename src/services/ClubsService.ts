@@ -12,6 +12,7 @@ import { buildClubSlug, escapeIlikePattern } from '../utils/clubSlug';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
+import { cashoutService } from './CashoutService';
 
 // Module-level circuit breaker — resets after 5 min cooldown
 const _membershipBreaker = (() => {
@@ -303,36 +304,42 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
     throw new Error(error?.message || 'Failed to join club');
   }
 
+  if (data && typeof data === 'object' && 'error' in data) {
+    reportError(new Error(data.error), 'ClubsService.Join_club_failed_RPC');
+    throw new Error(data.error);
+  }
+
   const membership = data as ClubMember;
 
-  // ── Redeem a referral code stored by the Join modal (fire-and-forget) ──
-  // The join flow's "Join with Referral" prompt saves the code under
-  // `referral_<clubUuid>`. Nothing ever redeemed it (audit 2026-08-19), so
-  // the prompt was a stub. Redeem through the canonical platform RPC —
-  // it validates the code, rejects self-referrals, and dedupes server-side.
-  // Never allowed to affect the join result.
-  // Pending joins do NOT redeem: the request can still be rejected, and
-  // crediting a referrer for a membership that never existed is unrecoverable.
-  // The code stays in localStorage so a later successful join redeems it.
+  // ── Auto-assign Agent Downline if Referral Code matches a player ──
   try {
-    if (typeof window !== 'undefined' && membership?.status !== 'pending') {
+    if (typeof window !== 'undefined') {
       const referralKey = `referral_${resolvedId}`;
       const altKey = `referral_${clubId}`;
       const storedCode =
         window.localStorage.getItem(referralKey) || window.localStorage.getItem(altKey);
+
       if (storedCode) {
-        // Single-shot: clear first so a failing code is never retried forever
-        window.localStorage.removeItem(referralKey);
-        window.localStorage.removeItem(altKey);
-        const { referralService } = await import('./ReferralService');
-        referralService
-          .redeemCode(user.user.id, storedCode)
-          .then((res) => {
-            if (!res.success) {
-              console.warn('[ClubsService] joinClub: referral redemption rejected:', res.error);
-            }
-          })
-          .catch((e) => reportError(e, 'ClubsService.joinClub_referral_redeem'));
+        const { AgentService } = await import('./AgentService');
+        // If it's a number (or UUID) it might be an agent referral link.
+        // We link them to the agent IMMEDIATELY, even if they are 'pending' approval,
+        // so when they are approved they are already in the downline.
+        const res = await AgentService.linkPlayerByReferral(user.user.id, storedCode, resolvedId);
+
+        if (res.success) {
+          // Linked successfully! Clear the code.
+          window.localStorage.removeItem(referralKey);
+          window.localStorage.removeItem(altKey);
+        } else if (membership?.status !== 'pending') {
+          // If they weren't an agent, maybe it was a global platform referral code (6 letters)?
+          window.localStorage.removeItem(referralKey);
+          window.localStorage.removeItem(altKey);
+
+          const { referralService } = await import('./ReferralService');
+          referralService
+            .redeemCode(user.user.id, storedCode)
+            .catch((e) => reportError(e, 'ClubsService.joinClub_referral_redeem'));
+        }
       }
     }
   } catch (e) {
@@ -352,7 +359,19 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
        listeners leak for the session. ClubHomePage compares it against the
        club it is showing, so a CLUB_UPDATED carrying the other spelling never
        refreshed the lobby. One spelling, everywhere. */
-    masterBus.emit('CLUB_JOINED', { clubId: resolvedId, action: 'member_joined' });
+    // We need the club name for the push notification to display something friendly instead of a UUID
+    let cName = '';
+    try {
+      const { data: cData } = await supabase
+        .from('clubs')
+        .select('name')
+        .eq('id', resolvedId)
+        .maybeSingle();
+      if (cData?.name) cName = cData.name;
+    } catch (e) {
+      /* ignore */
+    }
+    masterBus.emit('CLUB_JOINED', { clubId: resolvedId, clubName: cName, action: 'member_joined' });
   } catch (e) {
     console.warn('[ClubsService] joinClub: bus emit failed (non-critical):', e);
   }
@@ -403,16 +422,50 @@ export async function leaveClub(clubId: string): Promise<void> {
     );
   }
 
-  // 3. Cancel any pending cashout requests
-  try {
-    await supabase
-      .from('cashout_requests')
-      .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
-      .eq('club_id', resolvedId)
-      .eq('player_id', userId)
-      .eq('status', 'pending');
-  } catch (e: unknown) {
-    console.warn('[ClubsService] leaveClub: cashout cancel failed (non-critical):', e);
+  /* 3. Cancel any pending cashout requests.
+   *
+   * This used to be a direct `.update({ status: 'cancelled' })` on
+   * cashout_requests. On 2026-08-25 the migration
+   * `20260825_role_scoped_cashier_agent_wallet_and_cashout_escrow` dropped the
+   * `cashout_update` policy that had made that write possible, because it also
+   * let a player set status to 'approved' on their own request. Every write now
+   * goes through a SECURITY DEFINER function. This caller was not updated with
+   * it, so the statement survived as a NO-OP: RLS with no UPDATE policy does not
+   * raise, it matches zero rows, and PostgREST answers 200. The try/catch could
+   * never fire, and `leaveClub` reported success either way.
+   *
+   * What that cost, when a leaver had a pending cashout: the request stayed
+   * 'pending', the chip_escrow row stayed unreleased, so the escrowed chips were
+   * never added back to chip_balance and therefore were NOT included in the
+   * treasury return at step 4 either. Then step 6 deleted the membership. The
+   * chips existed only as an orphan escrow row belonging to a non-member.
+   *
+   * fn_cashout_release is the one path that actually returns them: it credits
+   * club_members.chip_balance, marks the escrow released and writes the ledger
+   * row, in one transaction. It must run BEFORE step 4 so the returned chips are
+   * part of the balance that goes back to the treasury.
+   *
+   * A failure here is NOT non-critical and is no longer swallowed. If the chips
+   * cannot be brought back out of escrow, leaving would strand them, so we stop
+   * and say so rather than completing a departure that loses money. */
+  const { data: pendingCashouts, error: pendingErr } = await supabase
+    .from('cashout_requests')
+    .select('id')
+    .eq('club_id', resolvedId)
+    .eq('player_id', userId)
+    .eq('status', 'pending');
+
+  if (pendingErr) {
+    reportError(pendingErr, 'ClubsService.leaveClub.pendingCashouts', { clubId: resolvedId });
+    throw new Error(
+      'Could not check whether you have a cash out waiting, so leaving was stopped. Try again.'
+    );
+  }
+
+  for (const row of pendingCashouts ?? []) {
+    // Throws on refusal. cancelCashout reads the RPC's {success,error} envelope,
+    // so a refusal arrives as an Error and not as a silent success.
+    await cashoutService.cancelCashout(row.id, userId);
   }
 
   // 4. If agent, clear downline references (before removing membership)
@@ -420,9 +473,9 @@ export async function leaveClub(clubId: string): Promise<void> {
     try {
       await supabase
         .from('club_members')
-        .update({ parent_agent_id: null })
+        .update({ agent_id: null })
         .eq('club_id', resolvedId)
-        .eq('parent_agent_id', userId);
+        .eq('agent_id', userId);
     } catch (e: unknown) {
       console.warn('[ClubsService] leaveClub: agent hierarchy cleanup failed (non-critical):', e);
     }
@@ -557,7 +610,7 @@ async function _getUserMembershipsUncached(
     .from('club_members')
     .select(
       `
-      club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
+      club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
       club:clubs(id, club_id, name, slug, description, avatar_url, logo_url, card_image_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, requires_approval, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next)
     `
     )
@@ -620,7 +673,7 @@ export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
   const { data, error } = await supabase
     .from('club_members')
     .select(
-      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
+      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
     )
     .eq('club_id', resolvedId)
     // was .order('reputation_xp'), a column that is 0 on all 1,499 rows in
@@ -703,7 +756,7 @@ export async function getClubLeaderboard(
   const { data, error } = await supabase
     .from('club_members')
     .select(
-      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
+      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
     )
     .eq('club_id', resolvedId)
     // same as above: reputation_xp was always 0, so "top 50" was 50 arbitrary

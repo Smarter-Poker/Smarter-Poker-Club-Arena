@@ -67,7 +67,7 @@ import { TABS, normaliseTabId } from '../../components/tournament/details/types'
 import { blindLevelMinutes } from '../../components/lobby/tournamentFigures';
 import { reportError } from '../../utils/errorReporter';
 import { formatBuyIn } from '../../utils/buyIn';
-import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
+import { useTournamentRegistration, isLateStatus } from '../../hooks/useTournamentRegistration';
 import { useMysteryBounty } from '../../hooks/useMysteryBounty';
 import { openTableAsObserver } from '../../utils/observeTable';
 
@@ -105,6 +105,8 @@ export default function TournamentDetails({
    * anything to start.
    */
   const [activeTab, setActiveTab] = useState<TabId>(() => normaliseTabId(searchParams.get('tab')));
+  /** One element per tab, so the roving-focus arrow keys can move focus. */
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [entries, setEntries] = useState<TournamentEntry[]>([]);
   const [isRegistered, setIsRegistered] = useState(false);
   /** Fires the auto-open-my-table navigation exactly once per tournament. */
@@ -195,6 +197,15 @@ export default function TournamentDetails({
 
   useEffect(() => {
     let isMounted = true;
+    /* One auto-seat per TOURNAMENT, which is what the ref's comment promises —
+       it was one per MOUNT (2026-08-26). React Router reuses this component
+       across /tournaments/:tournamentId -> a different id without unmounting,
+       and MultiTablePage embeds it with a changing `tournamentIdOverride`, so a
+       player auto-seated in event A and then browsing to event B was never
+       taken to their seat in B: exactly the "registered, but left on the
+       details screen while their table blinds them off" failure the block
+       exists to prevent. */
+    autoOpenedTableRef.current = false;
     if (tournamentId) {
       loadTournament(() => isMounted);
     }
@@ -204,29 +215,65 @@ export default function TournamentDetails({
     };
   }, [tournamentId, user?.id]);
 
-  // ── Late-reg level-based status. Drives the footer's Late Register button. ──
+  /**
+   * ── Late-reg countdown. Drives the footer's Late Register button. ──
+   *
+   * LEVELS AND MINUTES ARE DIFFERENT UNITS (fixed 2026-08-26).
+   *
+   * This read `late_reg_levels || late_reg_mins` into one variable called
+   * `lateRegLevels` and then subtracted `current_level` from it. For a
+   * minutes-configured event (no `late_reg_levels`, `late_reg_mins: 30`) the
+   * footer therefore announced **"Late Register (30 levels remaining)"** — a
+   * sentence that is simply false — and because `current_level` will never
+   * climb to 30, the button never retired: it kept offering late registration
+   * long after the server had closed the window, and the buy-in it offered
+   * would be rejected.
+   *
+   * The rest of the codebase keeps these apart. DetailOverviewTab renders them
+   * separately (`Lv ${levels}` vs `${mins}m`), the engine's level cutoff reads
+   * only `late_reg_levels ?? rebuy_levels ?? 0`, and the server's minutes
+   * window is an interval measured from the start:
+   * `make_interval(mins => v_t.late_reg_mins)`. Mirror that here.
+   */
   useEffect(() => {
     if (lateRegTimerRef.current) clearInterval(lateRegTimerRef.current);
     const t = tournament as unknown as {
       late_reg_levels?: number;
       late_reg_mins?: number;
       current_level?: number;
+      started_at?: string | null;
     } | null;
-    const lateRegLevels = t?.late_reg_levels || t?.late_reg_mins || 0;
-    if (tournament?.status !== 'RUNNING' || !lateRegLevels) return;
+    const lateRegLevels = Number(t?.late_reg_levels) || 0;
+    const lateRegMins = Number(t?.late_reg_mins) || 0;
+    if (!isLateStatus(tournament?.status) || (!lateRegLevels && !lateRegMins)) return;
+
+    const stop = () => {
+      setLateRegCountdown('');
+      if (lateRegTimerRef.current) clearInterval(lateRegTimerRef.current);
+    };
 
     const tick = () => {
-      const currentLevel = t?.current_level || 0;
-      if (currentLevel >= lateRegLevels) {
-        setLateRegCountdown('');
-        if (lateRegTimerRef.current) clearInterval(lateRegTimerRef.current);
+      if (!lateRegLevels) {
+        // Minutes window, measured from started_at — the same span the server
+        // closes on.
+        const startedMs = Date.parse(String(t?.started_at ?? ''));
+        if (!Number.isFinite(startedMs)) return setLateRegCountdown('');
+        const minsLeft = Math.ceil((startedMs + lateRegMins * 60_000 - Date.now()) / 60_000);
+        if (minsLeft <= 0) return stop();
+        setLateRegCountdown(`${minsLeft} min${minsLeft !== 1 ? 's' : ''} remaining`);
         return;
       }
+      /* `current_level` is a 0-BASED INDEX; so is the level cutoff the engine
+         compares it against (`current_level >= late_reg_levels`), so these two
+         are in the same unit and subtract cleanly. Do not "helpfully" add one
+         to either — see tests/unit/currentLevelIsAnIndex.test.ts. */
+      const currentLevel = Math.max(0, Number(t?.current_level) || 0);
+      if (currentLevel >= lateRegLevels) return stop();
       const levelsRemaining = lateRegLevels - currentLevel;
       setLateRegCountdown(`${levelsRemaining} level${levelsRemaining !== 1 ? 's' : ''} remaining`);
     };
     tick();
-    // Check every 10 seconds for level updates
+    // Every 10 seconds: fast enough for a level flip, cheap enough to ignore.
     lateRegTimerRef.current = setInterval(tick, 10000);
     return () => {
       if (lateRegTimerRef.current) clearInterval(lateRegTimerRef.current);
@@ -235,6 +282,8 @@ export default function TournamentDetails({
     tournament?.status,
     (tournament as unknown as { current_level?: number } | null)?.current_level,
     (tournament as unknown as { late_reg_levels?: number } | null)?.late_reg_levels,
+    (tournament as unknown as { late_reg_mins?: number } | null)?.late_reg_mins,
+    (tournament as unknown as { started_at?: string | null } | null)?.started_at,
   ]);
 
   /**
@@ -317,29 +366,48 @@ export default function TournamentDetails({
               rebuys?: number | null;
               add_on?: boolean | null;
             };
-            setEntries((prev) => [
-              ...prev,
-              {
-                id: newPlayer.id,
-                user_id: newPlayer.user_id,
-                username: newPlayer.username || 'Player',
-                avatar_url: null,
-                player_code: null,
-                // BUG FIX: do NOT read tournament.starting_chips here - this
-                // handler is in a closure that captured `tournament` at the time
-                // the effect ran (tournamentId dep), which may be null if the
-                // subscription was set up before loadTournament completed.
-                // Use newPlayer.chips if present; the next loadTournament() call
-                // (triggered by TOURNAMENT_UPDATED) will hydrate the full entry.
-                chips: newPlayer.chips || 0,
-                position: newPlayer.position || undefined,
-                status: newPlayer.status as TournamentEntry['status'],
-                table_id: newPlayer.table_id || null,
-                created_at: newPlayer.registered_at ?? null,
-                rebuys: Number(newPlayer.rebuys) || 0,
-                add_ons: newPlayer.add_on ? 1 : 0,
-              },
-            ]);
+            setEntries((prev) => {
+              /**
+               * DE-DUP (added 2026-08-26).
+               *
+               * The register path reloads entries at +50ms and again on
+               * TOURNAMENT_UPDATED (500ms debounce), and this Postgres INSERT
+               * commonly lands AFTER one of those has already put the row in
+               * state. Appending unconditionally put the same `id` in twice,
+               * and downstream that is not merely cosmetic:
+               *   - EntriesTab and RankingTab both key on `entry.id`, so React
+               *     logs "two children with the same key";
+               *   - EntriesTab derives `reentryIds` by spotting a second row
+               *     for one player, so the duplicate drew an **RE** badge on
+               *     somebody who had entered exactly once;
+               *   - the Entries count and the unique-players stat read high
+               *     until the next full load.
+               */
+              if (prev.some((e) => e.id === newPlayer.id)) return prev;
+              return [
+                ...prev,
+                {
+                  id: newPlayer.id,
+                  user_id: newPlayer.user_id,
+                  username: newPlayer.username || 'Player',
+                  avatar_url: null,
+                  player_code: null,
+                  // BUG FIX: do NOT read tournament.starting_chips here - this
+                  // handler is in a closure that captured `tournament` when the
+                  // effect ran (tournamentId dep), which may be null if the
+                  // subscription was set up before loadTournament completed.
+                  // Use newPlayer.chips if present; the next loadTournament()
+                  // call (triggered by TOURNAMENT_UPDATED) hydrates the rest.
+                  chips: newPlayer.chips || 0,
+                  position: newPlayer.position || undefined,
+                  status: newPlayer.status as TournamentEntry['status'],
+                  table_id: newPlayer.table_id || null,
+                  created_at: newPlayer.registered_at ?? null,
+                  rebuys: Number(newPlayer.rebuys) || 0,
+                  add_ons: newPlayer.add_on ? 1 : 0,
+                },
+              ];
+            });
           } else if (payload.eventType === 'UPDATE' && payload.new) {
             // Player status, chips, rebuy or add-on updated. A rebuy IS an
             // UPDATE on this row, so carrying the two counters here is what
@@ -395,21 +463,39 @@ export default function TournamentDetails({
         },
         (payload) => {
           if (payload.eventType === 'INSERT' && payload.new) {
-            const t = payload.new as TournamentTable & { name?: string | null };
-            setTables((prev) => [
-              ...prev,
-              {
-                id: t.id,
-                name: t.name || `Table ${prev.length + 1}`,
-                status: t.status,
-                max_players: t.max_players,
-                current_players: t.current_players || 0,
-                small_blind: t.small_blind,
-                big_blind: t.big_blind,
-              },
-            ]);
+            const t = payload.new as TournamentTable & {
+              name?: string | null;
+              is_deleted?: boolean | null;
+            };
+            if (t.is_deleted === true) return;
+            setTables((prev) => {
+              // The load path may already carry this row — `loadTournament`
+              // runs again on TOURNAMENT_UPDATED — and appending blind would
+              // duplicate the React key the Tables list renders on.
+              if (prev.some((tbl) => tbl.id === t.id)) return prev;
+              return [
+                ...prev,
+                {
+                  id: t.id,
+                  name: t.name || `Table ${prev.length + 1}`,
+                  status: t.status,
+                  max_players: t.max_players,
+                  current_players: t.current_players || 0,
+                  small_blind: t.small_blind,
+                  big_blind: t.big_blind,
+                },
+              ];
+            });
           } else if (payload.eventType === 'UPDATE' && payload.new) {
-            const t = payload.new as TournamentTable;
+            const t = payload.new as TournamentTable & { is_deleted?: boolean | null };
+            /* A soft delete arrives as an ordinary UPDATE — the row stays in
+               `tables` — so merging it would keep a dead felt in the list and
+               eligible to be featured. Drop it the way a hard DELETE is
+               dropped. */
+            if (t.is_deleted === true) {
+              setTables((prev) => prev.filter((tbl) => tbl.id !== t.id));
+              return;
+            }
             setTables((prev) =>
               prev.map((tbl) =>
                 tbl.id === t.id
@@ -530,13 +616,24 @@ export default function TournamentDetails({
     { debounce: 500 }
   );
 
-  // Re-check registration status when user hydrates after tournament loaded
+  /**
+   * Registration status, recomputed whenever the entry list moves.
+   *
+   * The `entries.length > 0` guard is gone (2026-08-26). It meant this could
+   * only ever set the flag TRUE: when the player's row was removed — an
+   * unregistration made from another device, or the realtime DELETE branch
+   * firing — `entries` emptied and `isRegistered` kept its stale `true`. The
+   * footer then offered **Unregister** for an entry that no longer existed,
+   * and pressing it called `fn_unregister_from_tournament` and surfaced an
+   * error toast for a state the player had not caused.
+   *
+   * `tournament` was also missing from the dependency list, so the flag never
+   * re-evaluated when the event itself finished loading.
+   */
   useEffect(() => {
-    if (user && tournament && entries.length > 0) {
-      const registered = entries.some((e) => e.user_id === user.id);
-      setIsRegistered(registered);
-    }
-  }, [user, entries]);
+    if (!user || !tournament) return;
+    setIsRegistered(entries.some((e) => e.user_id === user.id));
+  }, [user, tournament, entries]);
 
   const loadTournament = async (getIsMounted?: () => boolean) => {
     if (!tournamentId) return;
@@ -578,7 +675,7 @@ export default function TournamentDetails({
             playersData.map((e: Record<string, unknown>): TournamentEntry => {
               // PostgREST returns an embedded row as an object, but types it as
               // an array in some shapes. Accept both rather than guess - this
-              // exact shape bit LiveChipCounts (see its line 88).
+              // exact shape caused bugs in the past.
               const rawProfile = e.profile as
                 | { player_number?: string | null; avatar_url?: string | null }
                 | { player_number?: string | null; avatar_url?: string | null }[]
@@ -622,11 +719,35 @@ export default function TournamentDetails({
 
         // Fetch tournament tables
         if (data.status === 'RUNNING') {
-          const { data: tablesData } = await supabase
+          const { data: tablesData, error: tablesErr } = await supabase
             .from('tables')
             .select('id, name, status, max_players, current_players, small_blind, big_blind')
-            .eq('tournament_id', data.id);
-          if (!getIsMounted || getIsMounted()) {
+            .eq('tournament_id', data.id)
+            /**
+             * SOFT-DELETED TABLES ARE NOT WATCHABLE (added 2026-08-26).
+             *
+             * This query feeds BOTH `featuredTableId` and TablesTab, so a
+             * deleted row could win the busiest-table sort and the WATCH button
+             * — and the `?watch=1` intent — would open a felt that no longer
+             * exists. `featuredTableId`'s `status !== 'closed'` guard does not
+             * exclude it: a soft-deleted table very often still reads
+             * `status = 'running'`. TournamentPage was fixed for exactly this
+             * on 2026-08-25; the details page, which is where Dan's WATCH
+             * button actually lives, was not.
+             *
+             * `.not(..., 'is', true)` rather than `.eq(..., false)` because the
+             * column is NULLABLE — verified against production, where the split
+             * is 81,352 false / 43 true / 0 null but the schema still permits
+             * null, and `.eq(false)` would silently drop any row that acquires
+             * one.
+             */
+            .not('is_deleted', 'is', true);
+          // A failed read used to be indistinguishable from "no tables": the
+          // error was destructured away, `tablesData` came back null, and the
+          // page showed an empty Tables tab and no WATCH button as though the
+          // event had no felt. Keep whatever we already had instead.
+          if (tablesErr) reportError(tablesErr, 'TournamentDetails.Tables_load_failed');
+          if (!tablesErr && (!getIsMounted || getIsMounted())) {
             setTables((tablesData || []) as TournamentTable[]);
           }
         }
@@ -680,7 +801,13 @@ export default function TournamentDetails({
         // The hook derives late-registration from status, so LATE_REG is not
         // missed the way five hand-rolled `=== 'RUNNING'` copies missed it.
         status: tournament.status,
-        is_late_registration: isLate,
+        /* `undefined`, not `false`. The hook does
+           `t.is_late_registration ?? isLateStatus(t.status)`, and `false ?? x`
+           is `false` — so passing the boolean from a pre-start Register button
+           OVERRODE the derivation and told a LATE_REG entrant "Cannot Unregister
+           Within 1 Minute Of The Start Time", which is the untrue copy that
+           derivation exists to prevent. Only ever force it to TRUE. */
+        is_late_registration: isLate || undefined,
       },
       () => {
         setIsRegistered(true);
@@ -778,25 +905,53 @@ export default function TournamentDetails({
   );
 
   /**
+   * IS THIS EVENT LIVE ENOUGH TO WATCH?
+   *
+   * 2026-08-26, third audit: every watch surface gated on `=== 'RUNNING'`, so
+   * during LATE_REG — an event that is dealing, with players at tables — the
+   * WATCH button vanished, the `?watch=1` intent silently did nothing, and the
+   * Entries and Ranking rows went inert. That is the same blind spot
+   * `isLateStatus` was written to fix on the registration side, reproduced on
+   * the watching side. A tournament is watchable whenever it has started;
+   * `isLateStatus` already means exactly that. */
+  const isWatchable = isLateStatus(tournament?.status);
+
+  /**
    * `?watch=1` — a Watch button somewhere else asked us to open the featured
    * table as soon as we know which one it is.
    *
    * 2026-08-25, second audit. A surface that only holds a tournament id cannot
    * resolve the featured table without a query of its own, so it passes the
    * INTENT instead and this page, which already computes `featuredTableId` from
-   * data it keeps live, acts on it. Fires at most once (`watchIntentDoneRef`)
-   * so a re-render, a realtime tick or the player navigating back cannot
-   * re-open the table on top of them.
+   * data it keeps live, acts on it.
+   *
+   * 2026-08-26, third audit — TWO defects, both in the four lines below.
+   *
+   *  - `watchIntentDoneRef` is COMPONENT-scoped, and acting on the intent
+   *    navigates away, which UNMOUNTS this page. Pressing Back remounts it at
+   *    the same `?watch=1` url with a fresh ref, so the intent fired again and
+   *    dragged the player straight back onto the felt they had just left. The
+   *    docstring claimed Back was covered; it was not. The url is now rewritten
+   *    with `replace`, so the intent is CONSUMED — Back returns to the lobby,
+   *    and even a forced remount finds no `watch` param to act on.
+   *  - it required `status === 'RUNNING'`, so a LATE_REG event — dealing, with
+   *    players seated — ignored the intent entirely. See `isWatchable`.
    */
   const watchIntentDoneRef = useRef(false);
   useEffect(() => {
     if (watchIntentDoneRef.current) return;
-    if (new URLSearchParams(location.search).get('watch') !== '1') return;
-    if (tournament?.status !== 'RUNNING') return;
+    const params = new URLSearchParams(location.search);
+    if (params.get('watch') !== '1') return;
+    if (!isWatchable) return;
     if (!featuredTableId) return; // still resolving; try again when it lands
     watchIntentDoneRef.current = true;
+    // Consume the intent BEFORE acting on it, so the history entry we leave
+    // behind can never re-trigger it.
+    params.delete('watch');
+    const qs = params.toString();
+    navigate({ search: qs ? `?${qs}` : '' }, { replace: true });
     watchTable(featuredTableId);
-  }, [featuredTableId, tournament?.status, location.search, watchTable]);
+  }, [featuredTableId, isWatchable, location.search, watchTable, navigate]);
 
   const handleUnregister = async () => {
     if (isProcessing || !tournament) return;
@@ -880,8 +1035,6 @@ export default function TournamentDetails({
     });
   }, [tournament?.blind_structure]);
 
-  const isRunning = tournament?.status === 'RUNNING';
-
   /**
    * The tab contract, built once. Every tab takes exactly this and nothing
    * else, so switching tabs is a render, not a refetch.
@@ -901,7 +1054,10 @@ export default function TournamentDetails({
             blindLevels,
             currentUserId: user?.id,
             isRegistered,
-            onWatchPlayer: isRunning ? watchTable : undefined,
+            /* `isWatchable`, not `isRunning`: during LATE_REG the event is
+               dealing and every one of these rows points at a live table, but
+               the old gate made them inert (2026-08-26 audit). */
+            onWatchPlayer: isWatchable ? watchTable : undefined,
             mysteryBounty: isMysteryBountyEvent ? mysteryBounty : null,
             onOpenTab: setActiveTab,
           }
@@ -913,7 +1069,13 @@ export default function TournamentDetails({
       blindLevels,
       user?.id,
       isRegistered,
-      isRunning,
+      /* `isWatchable`, not `isRunning`: the BODY reads isWatchable (LATE_REG
+         counts as watchable, RUNNING alone does not cover it), so listing the
+         other one here is a stale-closure waiting to happen. Not currently
+         exploitable only because the `tournament` object identity changes on
+         any status transition and re-runs this anyway - which is luck, not a
+         guarantee. Depend on what you read. */
+      isWatchable,
       watchTable,
       isMysteryBountyEvent,
       mysteryBounty,
@@ -954,15 +1116,39 @@ export default function TournamentDetails({
         </div>
 
         {/* Tabs */}
+        {/* A tablist is a ROVING focus widget, not seven tab stops. Declaring
+            role="tablist" without implementing that is worse than plain
+            buttons: a screen reader announces "tab, 3 of 7" and then the arrow
+            keys the announcement just promised do nothing. So: exactly one tab
+            is tabbable, Left/Right move (wrapping), Home/End jump, and each
+            tab owns the panel by id. */}
         <div className="details-tabs" role="tablist" aria-label="Tournament sections">
-          {TABS.map((tab) => (
+          {TABS.map((tab, i) => (
             <button
               key={tab.id}
+              id={`tl-tab-${tab.id}`}
               type="button"
               role="tab"
               aria-selected={activeTab === tab.id}
+              aria-controls="tl-tabpanel"
+              tabIndex={activeTab === tab.id ? 0 : -1}
+              ref={(el) => {
+                tabRefs.current[i] = el;
+              }}
               className={`tab ${activeTab === tab.id ? 'active' : ''}`}
               onClick={() => setActiveTab(tab.id)}
+              onKeyDown={(e) => {
+                const last = TABS.length - 1;
+                let next = -1;
+                if (e.key === 'ArrowRight') next = i === last ? 0 : i + 1;
+                else if (e.key === 'ArrowLeft') next = i === 0 ? last : i - 1;
+                else if (e.key === 'Home') next = 0;
+                else if (e.key === 'End') next = last;
+                if (next === -1) return;
+                e.preventDefault();
+                setActiveTab(TABS[next].id);
+                tabRefs.current[next]?.focus();
+              }}
             >
               {tab.label}
             </button>
@@ -1004,7 +1190,16 @@ export default function TournamentDetails({
         {/* The only part of the shell that grows. Each tab scrolls inside
             itself via the shared `.tl-scroll`, so the page keeps exactly one
             scrollbar and the footer never moves. */}
-        <div className="details-content" role="tabpanel">
+        <div
+          className="details-content"
+          role="tabpanel"
+          id="tl-tabpanel"
+          /* Named by whichever tab is selected, so the panel announces what it
+             is instead of "tab panel". Focusable at -1 so the arrow-key move
+             above has somewhere to send focus next. */
+          aria-labelledby={`tl-tab-${activeTab}`}
+          tabIndex={-1}
+        >
           {activeTab === 'detail' && <DetailOverviewTab {...tabProps} />}
           {activeTab === 'blinds' && <BlindsTab {...tabProps} />}
           {activeTab === 'ranking' && <RankingTab {...tabProps} />}
@@ -1026,7 +1221,10 @@ export default function TournamentDetails({
           {(() => {
             const myEntry = entries.find((e) => e.user_id === user?.id);
 
-            if (tournament.status === 'RUNNING') {
+            /* `isWatchable` covers LATE_REG as well as RUNNING. A late-reg
+               event has players at tables — refusing to show WATCH for it was
+               the same blind spot the registration side already fixed. */
+            if (isWatchable) {
               if (myEntry?.status === 'playing' && myEntry.table_id) {
                 return (
                   <Link to={`/table/${myEntry.table_id}`} className="btn btn-enter-table">

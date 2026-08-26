@@ -2,12 +2,11 @@
  * 📨 INVITE PAGE — Club Invitation
  */
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { MembershipService } from '../services/MembershipService';
 import { ClubsService } from '../services/ClubsService';
 import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';
@@ -18,6 +17,8 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { reportError } from '../utils/errorReporter';
+import { MEDIA_BASE } from '../utils/mediaBase';
+import { SHARK_CLUB_ID } from '../lib/constants';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 const inviteStepAnimationStyle = {
@@ -28,11 +29,13 @@ const inviteStepAnimationStyle = {
 
 interface ClubInfo {
   id: string;
+  club_id?: string | number;
   slug?: string;
   name: string;
   description?: string;
   member_count: number;
   avatar_url?: string;
+  logo_url?: string;
   is_public: boolean;
 }
 
@@ -43,7 +46,6 @@ export default function InvitePage() {
   const inviteCode = searchParams.get('code');
   const refCode = searchParams.get('ref');
   const { user } = useAuthUser();
-  useVisibilityRefresh(() => loadClubInfo());
 
   const [club, setClub] = useState<ClubInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -56,6 +58,85 @@ export default function InvitePage() {
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const qrCanvasRef = useRef<HTMLCanvasElement>(null);
   const toast = useToast();
+
+  const loadClubInfo = useCallback(
+    async (getIsMounted?: () => boolean) => {
+      if (!getIsMounted || getIsMounted()) {
+        setLoading(true);
+        setError(null);
+      }
+      try {
+        let clubQuery = supabase
+          .from('clubs')
+          .select(
+            'id, club_id, slug, name, description, member_count, avatar_url, logo_url, is_public'
+          );
+
+        if (inviteCode) {
+          clubQuery = clubQuery.eq('invite_code', inviteCode);
+        } else if (clubId) {
+          const { column, value } = resolveClubIdFilter(clubId);
+          clubQuery = clubQuery.eq(column, value);
+        } else {
+          if (!getIsMounted || getIsMounted()) {
+            setError('Invalid invitation link');
+            setLoading(false);
+          }
+          return;
+        }
+
+        const { data: clubData, error: clubError } = await clubQuery.maybeSingle();
+
+        if (getIsMounted && !getIsMounted()) return;
+        if (clubError || !clubData) {
+          setError('Club not found or invitation expired');
+          setLoading(false);
+          return;
+        }
+
+        setClub({
+          id: clubData.id,
+          club_id: clubData.club_id,
+          name: clubData.name,
+          description: clubData.description,
+          member_count: clubData.member_count || 0,
+          avatar_url: clubData.avatar_url,
+          logo_url: clubData.logo_url,
+          is_public: clubData.is_public,
+        });
+
+        if (user?.id) {
+          const { data: membership } = await supabase
+            .from('club_members')
+            .select('user_id, status')
+            .eq('club_id', clubData.id)
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (getIsMounted && !getIsMounted()) return;
+          // A 'pending' row is a queued approval request, NOT full membership —
+          // show the "awaiting approval" state instead of "you're a member".
+          if (membership?.status === 'pending') {
+            setPendingApproval(true);
+            setAlreadyMember(false);
+          } else {
+            setPendingApproval(false);
+            setAlreadyMember(!!membership);
+          }
+        }
+      } catch (err) {
+        reportError(err, 'InvitePage.Failed_to_load_club');
+        if (!getIsMounted || getIsMounted()) {
+          toast.error('Failed to load club information');
+          setError('Failed to load club information');
+        }
+      }
+      if (!getIsMounted || getIsMounted()) setLoading(false);
+    },
+    [clubId, inviteCode, user?.id, toast]
+  );
+
+  useVisibilityRefresh(() => loadClubInfo());
 
   useEffect(() => {
     let isMounted = true;
@@ -76,77 +157,7 @@ export default function InvitePage() {
       unsubJoined();
       unsubUpdated();
     };
-  }, [clubId, inviteCode]);
-
-  const loadClubInfo = async (getIsMounted?: () => boolean) => {
-    if (!getIsMounted || getIsMounted()) {
-      setLoading(true);
-      setError(null);
-    }
-    try {
-      let clubQuery = supabase
-        .from('clubs')
-        .select('id, slug, name, description, member_count, avatar_url, is_public');
-
-      if (inviteCode) {
-        clubQuery = clubQuery.eq('invite_code', inviteCode);
-      } else if (clubId) {
-        const { column, value } = resolveClubIdFilter(clubId);
-        clubQuery = clubQuery.eq(column, value);
-      } else {
-        if (!getIsMounted || getIsMounted()) {
-          setError('Invalid invitation link');
-          setLoading(false);
-        }
-        return;
-      }
-
-      const { data: clubData, error: clubError } = await clubQuery.maybeSingle();
-
-      if (getIsMounted && !getIsMounted()) return;
-      if (clubError || !clubData) {
-        setError('Club not found or invitation expired');
-        setLoading(false);
-        return;
-      }
-
-      setClub({
-        id: clubData.id,
-        name: clubData.name,
-        description: clubData.description,
-        member_count: clubData.member_count || 0,
-        avatar_url: clubData.avatar_url,
-        is_public: clubData.is_public,
-      });
-
-      if (user?.id) {
-        const { data: membership } = await supabase
-          .from('club_members')
-          .select('user_id, status')
-          .eq('club_id', clubData.id)
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (getIsMounted && !getIsMounted()) return;
-        // A 'pending' row is a queued approval request, NOT full membership —
-        // show the "awaiting approval" state instead of "you're a member".
-        if (membership?.status === 'pending') {
-          setPendingApproval(true);
-          setAlreadyMember(false);
-        } else {
-          setPendingApproval(false);
-          setAlreadyMember(!!membership);
-        }
-      }
-    } catch (err) {
-      reportError(err, 'InvitePage.Failed_to_load_club');
-      if (!getIsMounted || getIsMounted()) {
-        toast.error('Failed to load club information');
-        setError('Failed to load club information');
-      }
-    }
-    if (!getIsMounted || getIsMounted()) setLoading(false);
-  };
+  }, [loadClubInfo]);
 
   // Store referral code if present
   useEffect(() => {
@@ -158,7 +169,7 @@ export default function InvitePage() {
   // Generate invite URL and simple QR code when club loads
   useEffect(() => {
     if (club?.id) {
-      const baseUrl = `${window.location.origin}/hub/club-arena/invite/${club.id}`;
+      const baseUrl = `${window.location.origin}/hub/club-arena/invite/${club.slug || club.id}`;
       if (user?.id) {
         supabase
           .from('profiles')
@@ -181,30 +192,59 @@ export default function InvitePage() {
           const size = 160;
           canvas.width = size;
           canvas.height = size;
-          ctx.fillStyle = '#fff';
+          ctx.fillStyle = '#0a0a14';
           ctx.fillRect(0, 0, size, size);
+
+          // Draw subtle grid lines
+          ctx.strokeStyle = 'rgba(0, 212, 255, 0.1)';
+          ctx.lineWidth = 1;
+          for (let i = 0; i < size; i += 8) {
+            ctx.beginPath();
+            ctx.moveTo(i, 0);
+            ctx.lineTo(i, size);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, i);
+            ctx.lineTo(size, i);
+            ctx.stroke();
+          }
+
           // Generate deterministic pattern from club ID
-          ctx.fillStyle = '#000';
-          const cellSize = 4;
+          ctx.fillStyle = '#00d4ff';
+          const cellSize = 8;
           const grid = size / cellSize;
           const seed = club.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+
+          // Outer finder patterns
+          ctx.fillRect(8, 8, 24, 24);
+          ctx.clearRect(12, 12, 16, 16);
+          ctx.fillRect(16, 16, 8, 8);
+
+          ctx.fillRect(size - 32, 8, 24, 24);
+          ctx.clearRect(size - 28, 12, 16, 16);
+          ctx.fillRect(size - 24, 16, 8, 8);
+
+          ctx.fillRect(8, size - 32, 24, 24);
+          ctx.clearRect(12, size - 28, 16, 16);
+          ctx.fillRect(16, size - 24, 8, 8);
+
           for (let x = 0; x < grid; x++) {
             for (let y = 0; y < grid; y++) {
               const hash = ((x * 31 + y * 17 + seed) * 7919) % 100;
-              if (
-                hash < 40 ||
-                (x < 7 && y < 7) ||
-                (x > grid - 8 && y < 7) ||
-                (x < 7 && y > grid - 8)
-              ) {
-                ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+              // Skip finder pattern areas
+              if ((x < 5 && y < 5) || (x > grid - 6 && y < 5) || (x < 5 && y > grid - 6)) continue;
+
+              if (hash < 45) {
+                ctx.globalAlpha = hash % 3 === 0 ? 0.6 : 1; // Subtle opacity variance
+                ctx.fillRect(x * cellSize, y * cellSize, cellSize - 1, cellSize - 1);
+                ctx.globalAlpha = 1;
               }
             }
           }
         }
       }
     }
-  }, [club?.id]);
+  }, [club?.id, club?.slug, refCode, user?.id, alreadyMember]);
 
   const handleCopyLink = async () => {
     try {
@@ -293,8 +333,14 @@ export default function InvitePage() {
     <div className="invite-page">
       <div className="invite-card" style={inviteStepAnimationStyle}>
         <div className="club-avatar">
-          {club.avatar_url ? (
-            <img src={sizedStorageUrl(club.avatar_url, 96)} alt={club.name} loading="lazy" />
+          {club.logo_url || club.avatar_url ? (
+            <img
+              src={sizedStorageUrl(club.logo_url || club.avatar_url || '', 96)}
+              alt={club.name}
+              loading="lazy"
+            />
+          ) : club.name?.toUpperCase().includes('SHARK') ? (
+            <img src={`${MEDIA_BASE}images/shark-club-logo.jpg`} alt={club.name} loading="lazy" />
           ) : (
             <span>{club.name[0]?.toUpperCase()}</span>
           )}
@@ -311,7 +357,11 @@ export default function InvitePage() {
           </div>
         </div>
 
-        <p className="invite-message">You've Been Invited To Join This Poker Club!</p>
+        <p className="invite-message">
+          YOU'VE BEEN INVITED...
+          <br />
+          TO JOIN THIS POKER CLUB
+        </p>
 
         {pendingApproval ? (
           <div className="already-member">
@@ -336,57 +386,28 @@ export default function InvitePage() {
             </div>
 
             {/* Shareable Invite Section */}
-            <div
-              style={{
-                marginTop: 20,
-                padding: 16,
-                background: 'rgba(0,212,255,0.06)',
-                border: '1px solid rgba(0,212,255,0.2)',
-                borderRadius: 12,
-              }}
-            >
-              <h3 style={{ color: '#00d4ff', fontSize: '0.9rem', margin: '0 0 12px' }}>
-                Share Invite
-              </h3>
+            <div className="share-invite-panel">
+              <h3 className="share-invite-title">Share Invite</h3>
               <canvas
                 ref={qrCanvasRef}
+                onClick={handleCopyLink}
                 style={{
                   display: 'block',
                   margin: '0 auto 12px',
                   width: 120,
                   height: 120,
                   borderRadius: 8,
+                  cursor: 'pointer',
+                  border: '1px solid rgba(0, 212, 255, 0.3)',
+                  boxShadow: '0 0 15px rgba(0, 212, 255, 0.15)',
                 }}
+                title="Click to copy invite link"
               />
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input
-                  readOnly
-                  value={inviteUrl}
-                  style={{
-                    flex: 1,
-                    padding: '8px 10px',
-                    borderRadius: 8,
-                    background: 'rgba(0,0,0,0.3)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    color: '#ccc',
-                    fontSize: '0.7rem',
-                  }}
-                />
+              <div className="share-link-row">
+                <input readOnly value={inviteUrl} className="share-link-input" />
                 <button
                   onClick={handleCopyLink}
-                  style={{
-                    padding: '8px 14px',
-                    borderRadius: 8,
-                    background: copied ? '#22c55e' : '#00d4ff',
-                    border: 'none',
-                    color: '#fff',
-                    fontWeight: 700,
-                    fontSize: '0.75rem',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    transition: 'all 0.3s ease',
-                    transform: copied ? 'scale(1.05)' : 'scale(1)',
-                  }}
+                  className={`share-copy-btn ${copied ? 'copied' : ''}`}
                 >
                   {copied ? 'Copied!' : 'Copy'}
                 </button>
@@ -395,7 +416,7 @@ export default function InvitePage() {
           </>
         ) : (
           <button className="btn btn-primary join-btn" onClick={handleJoin} disabled={joining}>
-            {joining ? 'Joining...' : 'Accept Invitation'}
+            {joining ? 'Joining...' : 'Join Club'}
           </button>
         )}
       </div>

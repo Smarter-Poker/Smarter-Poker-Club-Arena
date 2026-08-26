@@ -35,6 +35,7 @@ import './MultiTablePage.css';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { resolveLobbyClubId } from '../utils/clubQuickLink';
 import { useUserStore } from '../stores/useUserStore';
+import { TableErrorBoundary } from '../components/common/TableErrorBoundary';
 
 // Lazy-load TablePage for code splitting
 const TablePage = lazyWithRetry(() => import('./TablePage'));
@@ -330,6 +331,32 @@ export default function MultiTablePage() {
   useEffect(() => {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
+
+  /**
+   * Every `setActiveIndex` in this file was paired with a bare
+   * `setTimeout(() => setIsTransitioning(false), 320)` — four of them, none
+   * cleared. On an unmount (or a route teardown) inside that window each one
+   * calls setState on a dead component; and because the container is mounted
+   * for the whole session, a rapid sequence of switches also leaves several of
+   * them racing to clear a flag that a later switch has just re-set, which is
+   * what makes a fast tab-switch stutter. Tracked here, cleared on unmount.
+   */
+  const pendingTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const trackedTimeout = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      pendingTimersRef.current.delete(id);
+      fn();
+    }, ms);
+    pendingTimersRef.current.add(id);
+    return id;
+  }, []);
+  useEffect(() => {
+    const timers = pendingTimersRef.current;
+    return () => {
+      timers.forEach(clearTimeout);
+      timers.clear();
+    };
+  }, []);
 
   // Tab entrance animation — only used for multi-table mode with tab bar
   useEffect(() => {
@@ -933,13 +960,13 @@ export default function MultiTablePage() {
           if (idx !== -1 && tablesRef.current[idx].isMyTurn) {
             setIsTransitioning(true);
             setActiveIndex(idx);
-            setTimeout(() => setIsTransitioning(false), 320);
+            trackedTimeout(() => setIsTransitioning(false), 320);
           }
         }, 400);
       }
     }
     prevActiveTurnRef.current = { id: activeId, turn: activeTurn };
-  }, [tables, activeIndex, hidden, userSettings.multi_action_queue]);
+  }, [tables, activeIndex, hidden, userSettings.multi_action_queue, trackedTimeout]);
   useEffect(
     () => () => {
       if (queueSwitchTimerRef.current) clearTimeout(queueSwitchTimerRef.current);
@@ -962,8 +989,8 @@ export default function MultiTablePage() {
   }, [userSettings.multi_desktop_alerts]);
   useEffect(() => {
     const iconLink = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    const originalTitle = document.title;
-    const originalIcon = iconLink?.href ?? null;
+    let originalTitle = document.title;
+    let originalIcon = iconLink?.href ?? null;
     const BADGE_ICON =
       'data:image/svg+xml,' +
       encodeURIComponent(
@@ -972,12 +999,35 @@ export default function MultiTablePage() {
           '<circle cx="78" cy="24" r="20" fill="#ef4444"/></svg>'
       );
 
+    /**
+     * AUDIT 2026-08-25 — THIS OWNED THE PAGE TITLE FOR THE WHOLE SESSION.
+     *
+     * The `else` branch ran once a second and assigned
+     * `document.title = originalTitle` unconditionally, where `originalTitle`
+     * is whatever the title happened to be when this component mounted. This
+     * container is mounted ONCE at the app root by PersistentTableLayer and
+     * never unmounts, so from that moment on every other page's title (and the
+     * favicon) was overwritten every second, everywhere in the app. Any route
+     * or component that sets a title was silently reverted within 1000ms.
+     *
+     * The restore now only happens when THIS effect is the one that changed
+     * them, which is what "restore" was supposed to mean.
+     */
+    let badged = false;
+
     const apply = () => {
       const live = tablesRef.current.filter((t) => !isLobbyTab(t));
       const urgent = live
         .filter((t) => t.isMyTurn)
         .sort((a, b) => (a.turnDeadlineMs ?? Infinity) - (b.turnDeadlineMs ?? Infinity))[0];
       if (document.visibilityState === 'hidden' && urgent) {
+        // Remember what the page was called just before WE renamed it, so the
+        // restore hands back the CURRENT title rather than a mount-time one.
+        if (!badged) {
+          originalTitle = document.title;
+          originalIcon = iconLink?.href ?? originalIcon;
+          badged = true;
+        }
         document.title = `YOUR TURN - ${urgent.name}`;
         if (iconLink) iconLink.href = BADGE_ICON;
         if (
@@ -1001,7 +1051,8 @@ export default function MultiTablePage() {
             /* notification construction can throw on some platforms */
           }
         }
-      } else {
+      } else if (badged) {
+        badged = false;
         document.title = originalTitle;
         if (iconLink && originalIcon) iconLink.href = originalIcon;
       }
@@ -1012,8 +1063,10 @@ export default function MultiTablePage() {
     return () => {
       clearInterval(iv);
       document.removeEventListener('visibilitychange', apply);
-      document.title = originalTitle;
-      if (iconLink && originalIcon) iconLink.href = originalIcon;
+      if (badged) {
+        document.title = originalTitle;
+        if (iconLink && originalIcon) iconLink.href = originalIcon;
+      }
     };
   }, []);
 
@@ -1198,10 +1251,10 @@ export default function MultiTablePage() {
       if (idx !== -1 && idx !== activeIndex) {
         setIsTransitioning(true);
         setActiveIndex(idx);
-        setTimeout(() => setIsTransitioning(false), 320);
+        trackedTimeout(() => setIsTransitioning(false), 320);
       }
     },
-    [tables, activeIndex]
+    [tables, activeIndex, trackedTimeout]
   );
 
   // ─── Batch 3: quick-join sheet on "+" ─────────────────────────────────
@@ -1235,6 +1288,26 @@ export default function MultiTablePage() {
     () => setQuickJoin((q) => (q.open ? { ...q, open: false } : q)),
     []
   );
+
+  /**
+   * Escape closes the two sheets this page owns. Both already had a backdrop,
+   * so they were dismissible by tap and by nothing else — and the keyboard
+   * handler further down deliberately swallows 1-9 and Tab while the container
+   * is visible, so a keyboard user with the quick-join sheet open had no key
+   * that closed it and every number key switched the table behind it instead.
+   * Registered in capture so it runs before the table-switching handler.
+   */
+  useEffect(() => {
+    if (!quickJoin.open && !showSessionAgg) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      closeQuickJoin();
+      setShowSessionAgg(false);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [quickJoin.open, showSessionAgg, closeQuickJoin]);
 
   /**
    * How long "Finding Games…" is allowed to sit there before we give up and
@@ -1574,6 +1647,41 @@ export default function MultiTablePage() {
     [updateTableInfo]
   );
 
+  /**
+   * ─── PRUNE THE PER-TABLE CACHES WHEN A TAB CLOSES (audit 2026-08-25) ──────
+   *
+   * `urgentAlertedRef` and `prevTurnMapRef` are already pruned on every change
+   * (their effects do it inline). Four more maps keyed by table id were not,
+   * and this container never unmounts, so they only ever grew: every table the
+   * player opened and closed in the session left a closure, a timestamp, a
+   * deadline and a club id behind for the rest of that session.
+   *
+   * Small individually. The one that matters is `tableInfoCbRef`, because it
+   * retains a callback closing over `updateTableInfo` for a table that is gone,
+   * and `notifiedDeadlineRef`, which is consulted on a 1s interval forever.
+   */
+  useEffect(() => {
+    const liveIds = new Set(tables.map((t) => t.id));
+    for (const id of tableInfoCbRef.current.keys()) {
+      if (!liveIds.has(id)) tableInfoCbRef.current.delete(id);
+    }
+    for (const id of notifiedDeadlineRef.current.keys()) {
+      if (!liveIds.has(id)) notifiedDeadlineRef.current.delete(id);
+    }
+    for (const id of tileActionLockRef.current.keys()) {
+      if (!liveIds.has(id)) tileActionLockRef.current.delete(id);
+    }
+    for (const id of clubLookupCacheRef.current.keys()) {
+      if (!liveIds.has(id)) clubLookupCacheRef.current.delete(id);
+    }
+    // Batch 3 mute list: a muted table that is closed and later reopened came
+    // back silently muted with no marker anyone had set in this session.
+    setMutedIds((prev) => {
+      const next = prev.filter((id) => liveIds.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [tables]);
+
   // ─── In-tab lobby rendering (Dan 2026-08-19) ─────────────────────────
   // The lobby tab shows the club's real lobby. Its cash-game cards are
   // <Link to="/table/:id"> — safe, the route effect above converts this tab
@@ -1675,6 +1783,39 @@ export default function MultiTablePage() {
     );
   };
 
+  /**
+   * ─── ONE BAD TABLE MUST NOT TAKE THE OTHER THREE (audit 2026-08-25) ───────
+   *
+   * Every TablePage instance rendered here was inside a <Suspense> and inside
+   * NOTHING ELSE. The only error boundary anywhere above them is the single one
+   * in PersistentTableLayer, which wraps this WHOLE container — so one render
+   * throw in one table unmounted all four at once, closing four live engine
+   * sockets and replacing the screen with a generic error page, mid-hand.
+   *
+   * A boundary per slot contains it: the table that threw shows this card, and
+   * the tables beside it keep dealing. Reload is a full page reload on purpose
+   * — the crashed subtree's state is exactly what is not trustworthy, and the
+   * server-truth rebuild (table_seats WHERE left_at IS NULL) restores every
+   * seat as a tab on the way back in. The seat itself is never at risk: it
+   * lives on the server, and this component crashing does not vacate it.
+   */
+  const tableCrashFallback = (name: string) => (
+    <div className="multi-table-page__crashed" role="alert">
+      <span className="multi-table-page__crashed-title">This Table Could Not Be Displayed</span>
+      <span className="multi-table-page__crashed-body">
+        Your Seat And Your Chips Are Safe On The Server. Your Other Tables Are Still Running.
+      </span>
+      <span className="multi-table-page__crashed-name">{formatGameTitle(name)}</span>
+      <button
+        type="button"
+        className="multi-table-page__crashed-btn"
+        onClick={() => window.location.reload()}
+      >
+        Reload
+      </button>
+    </div>
+  );
+
   const renderLobbyTab = (table: TableInstance) =>
     table.lobbyTournamentId ? (
       // Drilling into a tournament from the in-tab lobby strands the player
@@ -1702,6 +1843,21 @@ export default function MultiTablePage() {
   // ─── Auto-switch on urgent timer ─────────────────────────────────────
   // 2026-08-15 fix: this compared against a hardcoded timeRemaining of 15,
   // so it could never fire. Now derived from the real server deadline.
+  /**
+   * AUDIT 2026-08-25 — TWO URGENT TABLES USED TO PING-PONG ONCE A SECOND.
+   *
+   * This effect re-runs on every tick of the 1s clock. With table A and table B
+   * BOTH inside their final 5 seconds, the sequence was: tick -> A is not
+   * active, switch to A; tick -> B is not active, switch to B; tick -> A again.
+   * A 320ms transition fired on every one of them, and the player could not
+   * read, let alone act on, either table — during the exact five seconds when
+   * acting is the only thing that matters.
+   *
+   * One yank per DEADLINE, per table, keyed the same way the urgency alarm
+   * above is keyed. A genuinely new decision on the other table still pulls
+   * focus, because a new decision carries a new deadline.
+   */
+  const autoSwitchedRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     // Dan 2026-08-19: only auto-switch the active TAB while the player is
     // actually on /table/*. When they browse elsewhere the global dock
@@ -1712,24 +1868,78 @@ export default function MultiTablePage() {
     if (!userSettings.multi_auto_switch) return;
     const urgentTable = tables.find((t, idx) => {
       if (idx === activeIndex) return false;
+      if (isLobbyTab(t)) return false;
       const left = secondsLeft(t);
-      return left !== undefined && left < 5;
+      if (left === undefined || left >= 5) return false;
+      return autoSwitchedRef.current.get(t.id) !== t.turnDeadlineMs;
     });
     if (urgentTable) {
       const idx = tables.findIndex((t) => t.id === urgentTable.id);
       if (idx !== -1) {
+        autoSwitchedRef.current.set(urgentTable.id, urgentTable.turnDeadlineMs ?? 0);
         setIsTransitioning(true);
         setActiveIndex(idx);
-        setTimeout(() => setIsTransitioning(false), 320);
+        trackedTimeout(() => setIsTransitioning(false), 320);
       }
     }
+    const liveIds = new Set(tables.map((t) => t.id));
+    for (const id of autoSwitchedRef.current.keys()) {
+      if (!liveIds.has(id)) autoSwitchedRef.current.delete(id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tables, activeIndex, secondsLeft, hidden, userSettings.multi_auto_switch]);
+
+  /**
+   * KEEP `activeIndex` INSIDE THE ARRAY (audit 2026-08-25).
+   *
+   * Six places move `activeIndex` and five places shorten `tables`, each with
+   * its own index arithmetic; two of them landing in the same commit phase can
+   * leave the index past the end. When that happens `tables[activeIndex]` is
+   * undefined, `activeTableId` is '', NO slot matches `idx === activeIndex`, so
+   * every slot takes the `display: none` branch — a completely black screen
+   * with a working tab bar above it and no error anywhere. Nothing else in the
+   * file would ever recover from it, because nothing else reads the pair
+   * together. One clamp, after the fact, costs nothing and makes that state
+   * unreachable.
+   */
+  useEffect(() => {
+    if (tables.length === 0) return;
+    if (activeIndex > tables.length - 1 || activeIndex < 0) {
+      setActiveIndex(Math.max(0, Math.min(activeIndex, tables.length - 1)));
+    }
+  }, [tables.length, activeIndex]);
+
+  /**
+   * Tile view is only reachable at 2+ tables (the toggle is gated on it), but
+   * `isTileView` was never reset when the count fell back to one. The flag then
+   * sat true and invisible — no toggle rendered to turn it off — and opening a
+   * second table later snapped straight into a grid the player had not asked
+   * for.
+   */
+  useEffect(() => {
+    if (tables.length <= 1 && isTileView) setIsTileView(false);
+  }, [tables.length, isTileView]);
+
+  /**
+   * The aggregated-session popover is gated on `sessionAgg &&`, so when the
+   * aggregate goes away (down to one table, or off /table/*) the popover
+   * vanished while `showSessionAgg` stayed true — and it reappeared unbidden
+   * the moment a second table was opened again.
+   */
+  useEffect(() => {
+    if (!sessionAgg && showSessionAgg) setShowSessionAgg(false);
+  }, [sessionAgg, showSessionAgg]);
 
   // ─── Keyboard shortcuts for table switching ───────────────────────────
   useEffect(() => {
     // Dan 2026-08-19: the container is now ALWAYS mounted; while hidden on
     // another route these shortcuts must not hijack Tab/1-4 from that page.
     if (hidden) return;
+    /* Audit 2026-08-25: these shortcuts also fired THROUGH the page's own
+       modal sheets. With Quick Join open, pressing 2 switched the table behind
+       it and Tab cycled tabs the player could not see — a dialog whose backdrop
+       stops the mouse and not the keyboard. */
+    if (quickJoin.open || showSessionAgg) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       // P1-5 FIX: never hijack keystrokes while the user is typing in an input,
       // textarea, select, or contenteditable (table chat, raise amount, modals),
@@ -1788,7 +1998,7 @@ export default function MultiTablePage() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [tables.length, hidden, handleReorder]);
+  }, [tables.length, hidden, handleReorder, quickJoin.open, showSessionAgg]);
 
   // ─── Swipe Gesture Handling ──────────────────────────────────────────
   const handleTouchStart = useCallback(
@@ -1855,12 +2065,12 @@ export default function MultiTablePage() {
     if (newIndex !== activeIndex) {
       setIsTransitioning(true);
       setActiveIndex(newIndex);
-      setTimeout(() => setIsTransitioning(false), 320);
+      trackedTimeout(() => setIsTransitioning(false), 320);
     }
 
     setSwipeOffset(0);
     touchStartRef.current = null;
-  }, [swipeOffset, activeIndex, tables.length]);
+  }, [swipeOffset, activeIndex, tables.length, trackedTimeout]);
 
   // ─── Handle route-based table ID changes ─────────────────────────────
   // Dan 2026-08-19: the cash-game cards in the in-tab lobby are plain
@@ -2229,14 +2439,19 @@ export default function MultiTablePage() {
                   {isLobbyTab(table) ? (
                     renderLobbyTab(table)
                   ) : (
-                    <TablePage
-                      key={table.id}
-                      embeddedTableId={table.id}
-                      onTableInfoUpdate={getTableInfoCb(table.id)}
-                      isMultiTable={true}
-                      isActive={idx === activeIndex && !hidden}
-                      muted={mutedIds.includes(table.id)}
-                    />
+                    <TableErrorBoundary
+                      componentName={`TablePage(tile ${table.id})`}
+                      fallback={tableCrashFallback(table.name)}
+                    >
+                      <TablePage
+                        key={table.id}
+                        embeddedTableId={table.id}
+                        onTableInfoUpdate={getTableInfoCb(table.id)}
+                        isMultiTable={true}
+                        isActive={idx === activeIndex && !hidden}
+                        muted={mutedIds.includes(table.id)}
+                      />
+                    </TableErrorBoundary>
                   )}
                 </Suspense>
                 {/* Batch 4: per-tile action strip - acts without focusing. */}
@@ -2401,6 +2616,10 @@ export default function MultiTablePage() {
                     {isLobbyTab(table) ? (
                       renderLobbyTab(table)
                     ) : (
+                      <TableErrorBoundary
+                        componentName={`TablePage(${table.id})`}
+                        fallback={tableCrashFallback(table.name)}
+                      >
                       <TablePage
                         key={table.id}
                         embeddedTableId={table.id}
@@ -2413,6 +2632,7 @@ export default function MultiTablePage() {
                         isMultiTable={tables.length > 1 || hidden}
                         isActive={idx === activeIndex && !hidden}
                       />
+                      </TableErrorBoundary>
                     )}
                   </Suspense>
                 </div>

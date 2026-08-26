@@ -40,7 +40,8 @@ import { supabase } from '../lib/supabase';
 import { readLocalSession } from '../lib/authUtils';
 import { reportError, reportWarning } from '../utils/errorReporter';
 
-export type WaitlistStatus = 'waiting' | 'notified' | 'seated' | 'cancelled' | 'expired';
+// DB constraint: 'waiting'|'notified'|'seated'|'left'|'cleared'|'expired'. 'cancelled' is NOT valid.
+export type WaitlistStatus = 'waiting' | 'notified' | 'seated' | 'left' | 'cleared' | 'expired';
 
 export interface WaitlistEntry {
   id: string;
@@ -227,7 +228,7 @@ export const WaitlistService = {
     }
     const { data, error } = await supabase
       .from('table_waitlist')
-      .update({ status: 'cancelled' })
+      .update({ status: 'left' })
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .in('status', ACTIVE_STATES)
@@ -441,9 +442,9 @@ export const WaitlistService = {
     if (!tableId) return false;
     const uid = userId ?? (await currentUserId());
     if (!uid) return false;
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('table_waitlist')
-      .update({ status: 'cancelled' })
+      .update({ status: 'left' })
       .eq('table_id', tableId)
       .eq('user_id', uid)
       .in('status', ACTIVE_STATES)
@@ -452,7 +453,9 @@ export const WaitlistService = {
       reportError(error, 'WaitlistService.leave', { tableId, userId: uid });
       return false;
     }
-    return (data?.length ?? 0) > 0;
+    // If data is empty, they were already off the active waitlist (seated, deleted, or cancelled).
+    // The goal is achieved, so return true.
+    return true;
   },
 };
 

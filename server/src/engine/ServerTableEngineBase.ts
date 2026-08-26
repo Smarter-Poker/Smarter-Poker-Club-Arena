@@ -422,6 +422,8 @@ export abstract class ServerTableEngineBase {
     amount: number;
     hand?: { name?: string; ranking?: number; cards?: Array<{ rank?: string; suit?: string }> };
     board?: 1 | 2;
+    /** Review fix 2026-08-25: this entry's own engine-generated description. */
+    handDescription?: string;
   }> = [];
   // Round 38: track wall-clock start so logHandHistory can write started_at +
   // ended_at (was missing — every completed hand_history row had null

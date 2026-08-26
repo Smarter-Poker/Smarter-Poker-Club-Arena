@@ -287,6 +287,16 @@ class TableService {
       throw new Error(gameCreationDeniedMessage(access));
     }
 
+    let effectiveUnionId = access.unionId;
+    if (access.allowed && !effectiveUnionId && !privateOnly) {
+      const { data: cData } = await supabase
+        .from('clubs')
+        .select('is_union')
+        .eq('id', resolvedClubId)
+        .maybeSingle();
+      if (cData?.is_union) effectiveUnionId = resolvedClubId;
+    }
+
     const { data, error } = await supabase
       .from('tables')
       .insert({
@@ -294,7 +304,7 @@ class TableService {
         // Stamp the owning union so a game built for a member club also shows
         // in the union's own views. NULL for a standalone club and for
         // private club games.
-        union_id: privateOnly ? null : access.unionId,
+        union_id: privateOnly ? null : effectiveUnionId,
         is_private: privateOnly,
         name,
         game_type: 'cash',

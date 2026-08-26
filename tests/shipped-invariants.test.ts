@@ -128,6 +128,33 @@ const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
     "rpc('fn_club_tournament_stats',",
     'the club tournament leaderboard is aggregated in the database, not from a capped page of rows',
   ],
+  // 2026-08-26: club_chat RLS was requiring status='active' while production
+  // holds 1480 'approved' and only 20 'active' — club chat was silent for
+  // 98.7% of members. The migration widens both INSERT and SELECT to
+  // ANY(['active','approved']). Guard: the migration must exist on disk so it
+  // cannot be silently deleted. Checked via MUST_NOT_EXIST below.
+  // 2026-08-26: /avatars/default-player.png does not exist in either repo.
+  // SpectatorOverlay and SettingsPanel both referenced it. Now both use
+  // resolveAvatarDisplay from avatarUtils, which falls back to DiceBear.
+  // This pin catches anyone re-introducing the broken path.
+  [
+    'src/components/table/SpectatorOverlay.tsx',
+    'resolveAvatarDisplay',
+    'SpectatorOverlay must not reference the non-existent /avatars/default-player.png',
+  ],
+  [
+    'src/components/table/SettingsPanel.tsx',
+    'resolveAvatarDisplay',
+    'SettingsPanel must not reference the non-existent /avatars/default-player.png',
+  ],
+  // 2026-08-26: PremiumCard.css declared a global .card-back { rotateY(180deg) }
+  // which collided with CardReveal.css and CommunityCards.css. Scoped to
+  // .premium-card .card-back so only cards inside a PremiumCard container flip.
+  [
+    'src/components/table/PremiumCard.css',
+    '.premium-card .card-back',
+    'PremiumCard card-back rule must be scoped to avoid colliding with CardReveal and CommunityCards',
+  ],
 ];
 
 /** Things that were removed on purpose and must not come back. */

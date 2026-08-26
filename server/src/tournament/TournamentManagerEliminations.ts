@@ -253,7 +253,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             .select('*', { count: 'exact', head: true })
             .eq('tournament_id', this.tournamentId)
             .eq('status', 'playing');
-          if (!liveErr && typeof liveCount === 'number' && liveCount > 0 && busted.length >= liveCount) {
+          if (
+            !liveErr &&
+            typeof liveCount === 'number' &&
+            liveCount > 0 &&
+            busted.length >= liveCount
+          ) {
             reportError(
               new Error(
                 `[Tournament:${this.tournamentId.slice(0, 8)}] all ${liveCount} live player(s) read 0 chips — uncredited stacks, not a bust. Eliminating nobody this sweep.`

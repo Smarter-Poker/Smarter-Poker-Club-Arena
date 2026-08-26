@@ -65,9 +65,10 @@ export interface UseTableChatReturn {
   setIsChatMuted: React.Dispatch<React.SetStateAction<boolean>>;
   handleSendChatMessage: (message: string) => void;
   /**
-   * True when the host has switched chat off for this table. The RLS policy
-   * refuses the insert either way (Dan 2026-08-25) — this is so the composer
-   * can say so instead of swallowing the message.
+   * True when this player may not post here: the host switched chat off, the
+   * parent tournament has chat off, or this player is muted at this table.
+   * The RLS policy refuses the insert either way - this is so the composer can
+   * say so instead of swallowing the message.
    */
   isChatBanned: boolean;
   // Reaction parsing
@@ -105,19 +106,38 @@ export function useTableChat(
      is enforced in the table_chat INSERT policy, because the send is a direct
      PostgREST call from the browser and there is no server hop to gate; this
      read exists purely so the UI can hide the composer rather than accept a
-     message and drop it. */
+     message and drop it.
+
+     2026-08-26: this used to read `tables.ban_chat` directly, which is one of
+     THREE ways a player can be silenced and the only one it could see. It now
+     asks `fn_table_chat_is_silenced`, the same SECURITY DEFINER function the
+     RLS policy calls, so the composer and the policy can never disagree:
+
+       - the table's own ban_chat switch;
+       - the parent TOURNAMENT's ban_chat, which reached nothing before today
+         (3 live tables sat under ban_chat tournaments with the flag unset on
+         the table row, and every one of them chatted);
+       - this player's own unexpired `table_chat_mutes` row, which was
+         enforced nowhere at all.
+
+     The last two cannot be read directly from the browser by the player they
+     apply to: `table_chat_mutes` is admin-read-only, so a muted player sees
+     zero rows and would conclude they are not muted. */
   useEffect(() => {
     if (!tableId) return;
     let cancelled = false;
     void (async () => {
       try {
-        const { data } = await supabase
-          .from('tables')
-          .select('ban_chat')
-          .eq('id', tableId)
-          .maybeSingle();
+        const { data, error } = await supabase.rpc('fn_table_chat_is_silenced', {
+          p_table_id: tableId,
+        });
         if (cancelled) return;
-        const banned = data?.ban_chat === true;
+        /* An unreadable answer is UNKNOWN, not "not banned" - but the composer
+           is a courtesy and the policy is the enforcement, so unknown leaves
+           chat enabled rather than silencing a table nobody muted. A refused
+           send is then caught below and the player is told. */
+        if (error) return;
+        const banned = data === true;
         isChatBannedRef.current = banned;
         setIsChatBanned(banned);
       } catch {
@@ -461,7 +481,6 @@ export function useTableChat(
     pendingTimersRef.current.add(timer);
   }, []);
 
-
   const handleSendChatMessage = useCallback(
     async (message: string) => {
       if (!tableId || !userId) return;
@@ -507,6 +526,15 @@ export function useTableChat(
         if (error) {
           reportError(error, 'useTableChat.Failed_to_send_chat');
           markFailed(tempId);
+          /* 42501 is the RLS refusal. A player muted or banned AFTER the
+             composer read its answer would otherwise sit there watching every
+             message fail with no reason given, so adopt the policy's verdict
+             and close the box. The mount read cannot catch this case: a mute
+             arrives mid-session and there is no realtime feed for one. */
+          if ((error as { code?: string }).code === '42501') {
+            isChatBannedRef.current = true;
+            setIsChatBanned(true);
+          }
         }
       } catch (err) {
         reportError(err, 'useTableChat.Failed_to_send_chat');

@@ -24,12 +24,8 @@ import { resolve } from 'path';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
-const COMPACT = read(
-  'supabase/migrations/20260826020000_hand_history_compact_the_empty_pages.sql'
-);
-const RESUME = read(
-  'supabase/migrations/20260826021000_compaction_resumes_where_it_stopped.sql'
-);
+const COMPACT = read('supabase/migrations/20260826020000_hand_history_compact_the_empty_pages.sql');
+const RESUME = read('supabase/migrations/20260826021000_compaction_resumes_where_it_stopped.sql');
 
 describe('The compactor cannot lose a hand', () => {
   it('only ever UPDATEs hand_history, never DELETEs from it', () => {

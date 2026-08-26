@@ -2002,10 +2002,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           });
         }
       }
-      setCountsCapped(
-        tableCapped ||
-          (clubTournamentResult.data?.length ?? 0) >= QUERY_LIMITS.LIST
-      );
+      setCountsCapped(tableCapped || (clubTournamentResult.data?.length ?? 0) >= QUERY_LIMITS.LIST);
 
       // BBJ jackpot. Number() is load-bearing, not cosmetic: main_balance is
       // numeric(14,2) and arrives as the STRING "10500.67". Assigning it raw

@@ -53,7 +53,10 @@ export const TABLE_ALIAS_MAX = 20;
  */
 export function normalizeAlias(raw: string): string {
   // eslint-disable-next-line no-control-regex
-  return raw.replace(/[\u0000-\u001F\u007F]/g, '').replace(/\s+/g, ' ').trim();
+  return raw
+    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 interface IdentityModalProps {

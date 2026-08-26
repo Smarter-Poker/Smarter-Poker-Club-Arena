@@ -2103,17 +2103,41 @@ class HorseOrchestrator {
         console.debug(`[Orchestrator] Added ${missing.length} horses to club ${clubId}`);
       }
 
-      // Update member counts on both clubs (exclude horses from visible count)
+      /* Update member counts on both clubs.
+       *
+       * THIS WRITES A SHARED COLUMN, SO IT MUST NOT WRITE A PRIVATE VIEW.
+       * It used a direct `club_members` count, which is RLS-filtered: it returns
+       * how many rows THE VISITING USER may enumerate, not how many members the
+       * club has. This module is imported by UnionDetailPage, a browser page, so
+       * it runs with whatever visibility that visitor happens to have.
+       *
+       * The blast radius is why this matters more than a display bug. It is the
+       * ONLY client-side writer of clubs.member_count, there is NO trigger on
+       * club_members maintaining that column, and the value it writes then feeds:
+       *   - ClubsService.getLiveMemberCount (source B),
+       *   - ClubHomePage's fallback when the live count is unavailable,
+       *   - and the union total, via trg_union_totals_follow_club_counts.
+       * So one visit by a non-member would have overwritten the shared number for
+       * everyone and cascaded it upward. The counts were correct only because the
+       * last person to trigger this could see every row.
+       *
+       * fn_get_club_member_count is SECURITY DEFINER with a pinned search_path,
+       * so what gets stored is the club's number regardless of who triggered it.
+       */
       for (const clubId of clubIds) {
         // NOTE: No FK between club_members and profiles — count all members directly.
         // Horse filtering requires a separate profiles query (future enhancement).
-        const { count } = await supabase
-          .from('club_members')
-          .select('user_id', { count: 'exact', head: true })
-          .eq('club_id', await resolveClubUUID(clubId));
+        const resolvedForCount = await resolveClubUUID(clubId);
+        const { data: trueCount, error: countErr } = await supabase.rpc(
+          'fn_get_club_member_count',
+          { p_club_id: resolvedForCount }
+        );
 
-        if (count !== null) {
-          await supabase.from('clubs').update({ member_count: count }).eq('id', clubId);
+        // Only write a number we actually got. A dropped request must leave the
+        // stored count alone rather than zeroing a shared column.
+        const next = trueCount == null ? null : Number(trueCount);
+        if (!countErr && next != null && Number.isFinite(next)) {
+          await supabase.from('clubs').update({ member_count: next }).eq('id', clubId);
         }
       }
 

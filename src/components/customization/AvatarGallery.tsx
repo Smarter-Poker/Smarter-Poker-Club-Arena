@@ -43,13 +43,26 @@ import './AvatarGallery.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { reportError } from '../../utils/errorReporter';
 import { AvatarCustomizer } from './AvatarCustomizer';
+import AvatarCosmetics from '../avatars/AvatarCosmetics';
+import type { AvatarCosmetic, CosmeticKind } from '../../cosmetics/avatarCosmetics';
+import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/** 'upload' was a fourth tab until 2026-08-21. Photos are gone. */
-type GalleryTab = 'free' | 'vip' | 'custom';
+/**
+ * 'upload' was a fourth tab until 2026-08-21. Photos are gone.
+ *
+ * 'style' arrived 2026-08-25 and is the first UI anywhere in Club Arena that
+ * reads or writes `equipped_frame` / `equipped_aura`. It lives here rather than
+ * on a page of its own because a frame is only meaningful against the avatar it
+ * frames, and this modal is already the one surface that shows current-versus-
+ * pending side by side. It is also already mounted in three places
+ * (HamburgerMenu, TableMenu, SettingsPanel), so the feature reaches the felt and
+ * the lobby without three new entry points.
+ */
+type GalleryTab = 'free' | 'vip' | 'custom' | 'style';
 
 export interface AvatarGalleryProps {
   isOpen: boolean;
@@ -85,6 +98,17 @@ export function AvatarGallery({
   const [customFailed, setCustomFailed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [showQuickAvatar, setShowQuickAvatar] = useState(false);
+
+  // ── Style tab: frames + auras ───────────────────────────────────────────
+  const [cosmetics, setCosmetics] = useState<(AvatarCosmetic & { isOwned: boolean })[]>([]);
+  /* Same distinction the avatar library makes. `false` means ownership is
+     UNKNOWN, not "owns nothing" — the tab says so and refuses to equip, rather
+     than drawing a purchase the player made as a lock they never bought. */
+  const [cosmeticsOk, setCosmeticsOk] = useState(true);
+  const [cosmeticsLoading, setCosmeticsLoading] = useState(false);
+  const [equippedFrame, setEquippedFrame] = useState<string | null>(null);
+  const [equippedAura, setEquippedAura] = useState<string | null>(null);
+  const [savingCosmetic, setSavingCosmetic] = useState(false);
 
   // Keep the preview honest if the caller swaps the current avatar underneath us
   useEffect(() => {
@@ -133,6 +157,107 @@ export function AvatarGallery({
       cancelled = true;
     };
   }, [isOpen, userId, reloadKey]);
+
+  /* Loaded on its own effect rather than folded into the library fetch above:
+     the library is a 100-entry catalog behind a Hub API call and this is two
+     small queries against Supabase. Chaining them would make the Style tab wait
+     on a request it does not use, and a Hub outage would blank a tab that has
+     nothing to do with the Hub. */
+  useEffect(() => {
+    if (!isOpen || !userId) return undefined;
+    let cancelled = false;
+
+    setCosmeticsLoading(true);
+    Promise.all([avatarService.getCosmeticCatalog(userId), avatarService.getCosmetics(userId)])
+      .then(([catalog, equipped]) => {
+        if (cancelled) return;
+        setCosmetics(catalog.cosmetics);
+        setCosmeticsOk(catalog.ok && equipped.ok);
+        setEquippedFrame(equipped.frame);
+        setEquippedAura(equipped.aura);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        reportError(e, 'AvatarGallery.loadCosmetics');
+        setCosmeticsOk(false);
+      })
+      .finally(() => {
+        if (!cancelled) setCosmeticsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, userId, reloadKey]);
+
+  const frames = useMemo(() => cosmetics.filter((c) => c.kind === 'frame'), [cosmetics]);
+  const auras = useMemo(() => cosmetics.filter((c) => c.kind === 'aura'), [cosmetics]);
+
+  /**
+   * Equip or clear one cosmetic.
+   *
+   * OPTIMISTIC, THEN RECONCILED. The tile highlights on tap and the preview
+   * updates immediately, because the write is a round trip and a frame that
+   * appears half a second after the tap reads as a tile that did not take. If
+   * the write is refused, the previous value is put back — the player must never
+   * be left looking at a frame they do not have.
+   */
+  const equipCosmetic = useCallback(
+    async (kind: CosmeticKind, id: string | null) => {
+      if (!userId) {
+        toast.error('Sign In To Change Your Style');
+        return;
+      }
+      if (!cosmeticsOk) {
+        toast.error('Could Not Check What You Own. Please Try Again.');
+        return;
+      }
+
+      const prevFrame = equippedFrame;
+      const prevAura = equippedAura;
+      const nextFrame = kind === 'frame' ? id : equippedFrame;
+      const nextAura = kind === 'aura' ? id : equippedAura;
+
+      if (nextFrame === prevFrame && nextAura === prevAura) {
+        toast.success(kind === 'frame' ? 'Frame Already Applied' : 'Aura Already Applied');
+        return;
+      }
+
+      haptic.light();
+      setNotice(null);
+      setSavingCosmetic(true);
+      setEquippedFrame(nextFrame);
+      setEquippedAura(nextAura);
+      /* Push to the header store straight away so the orb and the hamburger
+         change in the same frame as the tile. The profiles realtime handler in
+         that store will deliver the same values a moment later and its
+         self-echo guard drops the duplicate. */
+      useHeaderDataStore.getState().setCosmetics(nextFrame, nextAura);
+
+      const result = await avatarService.setCosmetics(userId, nextFrame, nextAura);
+
+      if (!result.ok) {
+        setEquippedFrame(prevFrame);
+        setEquippedAura(prevAura);
+        useHeaderDataStore.getState().setCosmetics(prevFrame, prevAura);
+        if (result.reason === 'not-owned') {
+          toast.error('You Have Not Unlocked That Yet');
+          setNotice('Frames and auras are a VIP benefit, or can be granted in your club shop.');
+        } else if (result.reason === 'unknown-cosmetic') {
+          toast.error('That Style Is No Longer Available');
+        } else {
+          toast.error('Could Not Update Your Style. Please Try Again.');
+        }
+      } else if (id === null) {
+        toast.success(kind === 'frame' ? 'Frame Removed' : 'Aura Removed');
+      } else {
+        toast.success(kind === 'frame' ? 'Frame Equipped' : 'Aura Equipped');
+      }
+
+      setSavingCosmetic(false);
+    },
+    [userId, cosmeticsOk, equippedFrame, equippedAura, toast]
+  );
 
   const freeAvatars = useMemo(() => avatars.filter((a) => a.category === 'free'), [avatars]);
   /* Dan 2026-08-20: 'vip' used to be folded into "Mine", which was correct
@@ -264,6 +389,11 @@ export function AvatarGallery({
                 (e.target as HTMLImageElement).src = generateDefaultAvatar();
               }}
             />
+            {/* The equipped frame/aura is drawn on BOTH previews, not just the
+                pending one: a player changing only their frame leaves the two
+                images identical otherwise, and the whole point of this row is
+                showing the difference. */}
+            <AvatarCosmetics frame={equippedFrame} aura={equippedAura} />
             <span className="ag-preview__label">Current</span>
           </div>
           <div className="ag-preview__arrow" aria-hidden="true">
@@ -279,6 +409,7 @@ export function AvatarGallery({
                 (e.target as HTMLImageElement).src = generateDefaultAvatar();
               }}
             />
+            <AvatarCosmetics frame={equippedFrame} aura={equippedAura} />
             <span className="ag-preview__label">{unchanged ? 'Unchanged' : 'New'}</span>
           </div>
         </div>
@@ -339,6 +470,12 @@ export function AvatarGallery({
           >
             Mine ({myAvatars.length})
           </button>
+          <button
+            className={`ag-tab ${activeTab === 'style' ? 'ag-tab--active' : ''}`}
+            onClick={() => setActiveTab('style')}
+          >
+            Style
+          </button>
         </div>
 
         {notice && (
@@ -354,7 +491,118 @@ export function AvatarGallery({
             else at the write point, so this is the affordance going away rather
             than the rule itself. */}
         <div className="ag-content">
-          {loading ? (
+          {activeTab === 'style' ? (
+            cosmeticsLoading ? (
+              <div className="ag-empty">Loading Styles...</div>
+            ) : !cosmeticsOk ? (
+              /* Ownership is UNKNOWN. Not rendered as "you own nothing" — that
+                 is the empty-success-state defect, and here it would tell a
+                 paying member their VIP frames were never real. */
+              <div className="ag-empty ag-empty--error" role="alert">
+                <p className="ag-empty__msg">Your Frames And Auras Could Not Be Loaded.</p>
+                <button
+                  className="ag-retry"
+                  onClick={() => {
+                    haptic.light();
+                    setReloadKey((k) => k + 1);
+                  }}
+                >
+                  Try Again
+                </button>
+              </div>
+            ) : (
+              <div className="ag-style">
+                {(
+                  [
+                    {
+                      kind: 'frame' as CosmeticKind,
+                      label: 'Frames',
+                      items: frames,
+                      equipped: equippedFrame,
+                    },
+                    {
+                      kind: 'aura' as CosmeticKind,
+                      label: 'Auras',
+                      items: auras,
+                      equipped: equippedAura,
+                    },
+                  ] as const
+                ).map((group) => (
+                  <section className="ag-style__group" key={group.kind}>
+                    <h4 className="ag-style__heading">{group.label}</h4>
+                    <div className="ag-style__row">
+                      {/* "None" is a real choice and gets a real tile. Without
+                          it the only way to take a frame off would be to guess
+                          that tapping the equipped one toggles it. */}
+                      <button
+                        type="button"
+                        className={`ag-style__tile ${group.equipped === null ? 'ag-style__tile--selected' : ''}`}
+                        disabled={savingCosmetic}
+                        onClick={() => equipCosmetic(group.kind, null)}
+                        aria-pressed={group.equipped === null}
+                      >
+                        <span
+                          className="ag-style__swatch ag-style__swatch--none"
+                          aria-hidden="true"
+                        >
+                          &#8709;
+                        </span>
+                        <span className="ag-style__name">None</span>
+                      </button>
+
+                      {group.items.map((cosmetic) => {
+                        const isSelected = group.equipped === cosmetic.id;
+                        const isLocked = !cosmetic.isOwned;
+                        return (
+                          <button
+                            type="button"
+                            key={cosmetic.id}
+                            className={[
+                              'ag-style__tile',
+                              isSelected ? 'ag-style__tile--selected' : '',
+                              isLocked ? 'ag-style__tile--locked' : '',
+                            ]
+                              .filter(Boolean)
+                              .join(' ')}
+                            disabled={savingCosmetic}
+                            aria-pressed={isSelected}
+                            title={isLocked ? `${cosmetic.label} (VIP)` : cosmetic.label}
+                            onClick={() => {
+                              /* Locked tiles still respond. A tile that does
+                                 nothing on tap is indistinguishable from a dead
+                                 one, which is the note already written against
+                                 the avatar grid above. Say why instead. */
+                              if (isLocked) {
+                                haptic.light();
+                                setNotice(
+                                  'Frames and auras are a VIP benefit, or can be granted in your club shop.'
+                                );
+                                return;
+                              }
+                              equipCosmetic(group.kind, cosmetic.id);
+                            }}
+                          >
+                            {/* The swatch IS the cosmetic, drawn on a neutral
+                                disc. There is no artwork file to show: these
+                                are CSS, so the preview is the real thing at
+                                tile size rather than a picture of it. */}
+                            <span className="ag-style__swatch" aria-hidden="true">
+                              <AvatarCosmetics
+                                frame={group.kind === 'frame' ? cosmetic.id : null}
+                                aura={group.kind === 'aura' ? cosmetic.id : null}
+                              />
+                            </span>
+                            {isLocked && <span className="ag-style__lock">VIP</span>}
+                            <span className="ag-style__name">{cosmetic.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )
+          ) : loading ? (
             <div className="ag-empty">Loading Avatars...</div>
           ) : filteredAvatars.length === 0 && tabFailed ? (
             /* A source that did not answer is NOT an empty source. This branch
@@ -434,13 +682,28 @@ export function AvatarGallery({
 
         {/* Apply */}
         <div className="ag-footer">
-          <button
-            className={`ag-apply ${saving ? 'ag-apply--saving' : ''} ${unchanged ? 'ag-apply--disabled' : ''}`}
-            onClick={handleApply}
-            disabled={saving || unchanged}
-          >
-            {saving ? 'Saving...' : 'Apply Avatar'}
-          </button>
+          {/* On the Style tab this button is a way OUT, not a commit: frames
+              and auras apply the moment they are tapped, so gating it on
+              `unchanged` (which only tracks the avatar) would leave a player
+              who came here purely to change their frame staring at a disabled
+              button with no way to close but the X. */}
+          {activeTab === 'style' ? (
+            <button
+              className={`ag-apply ${savingCosmetic ? 'ag-apply--saving' : ''}`}
+              onClick={handleApply}
+              disabled={savingCosmetic}
+            >
+              {savingCosmetic ? 'Saving...' : 'Done'}
+            </button>
+          ) : (
+            <button
+              className={`ag-apply ${saving ? 'ag-apply--saving' : ''} ${unchanged ? 'ag-apply--disabled' : ''}`}
+              onClick={handleApply}
+              disabled={saving || unchanged}
+            >
+              {saving ? 'Saving...' : 'Apply Avatar'}
+            </button>
+          )}
         </div>
       </div>
     </div>

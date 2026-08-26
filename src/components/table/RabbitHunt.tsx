@@ -268,34 +268,7 @@ export function RabbitHunt({
         </button>
       )}
 
-      {revealedCards.length > 0 && (
-        <div className="rabbit-hunt__reveal">
-          <span className="rabbit-hunt__reveal-label">Rabbit Shows:</span>
-          <div className="rabbit-hunt__cards">
-            {revealedCards.map((card, idx) => (
-              <div
-                key={idx}
-                className="rabbit-hunt__card"
-                style={{
-                  animationDelay: `${idx * 0.1}s`,
-                }}
-              >
-                <CardImage card={toCardImage(card)} size="sm" />
-              </div>
-            ))}
-            {Array(pendingCount)
-              .fill(null)
-              .map((_, idx) => (
-                <div
-                  key={`pending-${idx}`}
-                  className="rabbit-hunt__card rabbit-hunt__card--pending"
-                >
-                  <span className="rabbit-hunt__pending-icon">?</span>
-                </div>
-              ))}
-          </div>
-        </div>
-      )}
+      {/* Cards are now rendered natively on the CommunityCards board */}
     </div>
   );
 }

@@ -58,6 +58,13 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import UnionWalletModal, { type UnionWalletKey } from '../components/union/UnionWalletModal';
+import UnionTreasuryDetailModal, {
+  type TreasuryDetailMode,
+} from '../components/union/UnionTreasuryDetailModal';
+import Modal from '../components/common/Modal';
+import { RakeReports } from '../components/admin/RakeReports';
+import SpinActivationPanel from '../components/club/SpinActivationPanel';
 import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
 import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
@@ -79,7 +86,7 @@ import {
   variantKey,
   type FilterGameType,
 } from '../components/lobby/advancedFilterSpec';
-import { IconMembers, IconShareLink, IconSearch, IconSort } from '../components/icons/LobbyIcons';
+import { IconMembers, IconShareLink, IconSort } from '../components/icons/LobbyIcons';
 import { CLUB_HOME_CACHE_PREFIX } from '../utils/clearUserCaches';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { preloadRoute } from '../utils/ChunkPreloader';
@@ -120,7 +127,27 @@ const VARIANT_GROUP_ORDER: Record<string, number> = {
 // staleCacheReaper only sweeps sessionStorage: reads ignore anything older
 // than the TTL, and a quota failure drops every club-home entry and retries
 // once, so the cache can never wedge itself full.
-const CLUB_HOME_CACHE_VER = 'v2';
+/* v3 (2026-08-26): the cached payload is the whole club object, and the club
+   object carries member_count. Every entry written before the member-count fix
+   holds an RLS-FILTERED count - 0 for someone who had not joined the club, 593
+   for a union admin who should have seen 1,172 - and the TTL below is SEVEN
+   DAYS, so those wrong numbers would have kept painting on mount for a week
+   after the fix shipped.
+
+   It self-corrects once the RPC answers, which is not good enough: if that
+   request drops mid-flight the guard at the await site sees `data == null`,
+   declines to overwrite, and the stale wrong number stays on screen for the
+   whole visit. A fix that needs the network to succeed in order to stop showing
+   a wrong number is not a fix.
+
+   Bumping the version changes the key, so every pre-fix entry becomes
+   unreachable exactly once, for every user, with no migration pass and no
+   cleanup code. The v2 entries expire on their own TTL and are never read.
+
+   The unversioned sessionStorage read below is deliberately left alone: it
+   serves the v2 transition from 2026-08-22, it is tab-scoped rather than
+   persistent, and it dies when the tab closes. */
+const CLUB_HOME_CACHE_VER = 'v3';
 const CLUB_HOME_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function getClubHomeCache(clubId: string) {
@@ -255,6 +282,94 @@ const ALL_TAB_MTT_CAP = 10;
 
 const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'LIMIT', 'MIXED'];
 const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A NARROWER ROW MAY NEVER ERASE A WIDER ONE
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan 2026-08-25, with a screen recording: "whatever is causing the MTT cards
+ * to MOVE AND CHANGE needs to stop, I don't want them moving and adjusting
+ * once they are set."
+ *
+ * THE BUG, root-caused rather than papered over. `get_club_home` is the
+ * one-round-trip fast path that paints the lobby five round trips early, and
+ * it deliberately selects FEWER columns than the authoritative chain. Verified
+ * against production (`pg_get_functiondef`), its tournament rows carry no
+ *
+ *     blind_structure, level_started_at, spin_multiplier, is_bounty, prize_pool
+ *
+ * Those five are exactly what an MTT card renders: the blinds sub-line under
+ * Current Level, the Blind Levels chip, the Format chip (Turbo / Deepstack,
+ * derived from level duration), the late-registration countdown, and the Spin
+ * and bounty badges.
+ *
+ * `lobbyPainted` was believed to make the fast path harmless - the comment at
+ * its declaration still says it "guarantees the fast path can only ever paint
+ * BEFORE the authoritative data, never over it". That is true within ONE load.
+ * It is a local of that invocation, so every RELOAD - the 90s timer, a
+ * visibilitychange, TOURNAMENT_UPDATED, WAITLIST_PROMOTED - starts a fresh one
+ * at false while full-fidelity rows are already on screen. The fast path then
+ * wins its race against the new chain and REPLACES them with the narrow rows.
+ *
+ * On screen: every card loses its blinds line, its Blind Levels chip and its
+ * Format chip, the late-reg countdown collapses to 0:00, the card shrinks by
+ * roughly 40px, and everything below it jumps up. ~200-400ms later the chain
+ * lands and it all grows back. That is the whole of the reported glitch, and it
+ * repeats on every reload for as long as the lobby is open.
+ *
+ * THE FIX. Merge by id and never delete a key. A fast row may only ADD fields
+ * or update ones it actually carries; a field it does not carry keeps the value
+ * already on screen. `undefined` is treated as absent, so a column the RPC
+ * omits cannot blank a column the chain fetched.
+ *
+ * Why merge rather than just skipping the fast path on a warm reload (which is
+ * also done, at the call site): merging is the property that must hold. Any
+ * future partial source - a slimmer RPC, a realtime patch, a cached snapshot -
+ * gets the same protection without having to remember this incident.
+ *
+ * Ordering follows the fast rows, because that is the freshly sorted answer;
+ * rows only the previous list knew about are kept and appended rather than
+ * vanishing, so a row the RPC's own limit clipped does not blink out.
+ */
+export function mergeFastRows<T extends { id?: string | number }>(
+  previous: readonly T[],
+  incoming: readonly T[]
+): T[] {
+  if (!Array.isArray(incoming) || incoming.length === 0) return previous as T[];
+  if (!Array.isArray(previous) || previous.length === 0) return incoming as T[];
+
+  const before = new Map<string, T>();
+  for (const row of previous) {
+    if (row && row.id != null) before.set(String(row.id), row);
+  }
+
+  const seen = new Set<string>();
+  const merged = incoming.map((row) => {
+    if (!row || row.id == null) return row;
+    const key = String(row.id);
+    seen.add(key);
+    const old = before.get(key);
+    if (!old) return row;
+
+    // Overlay only the keys this row actually carries. `undefined` means the
+    // source never selected the column - not that the value became empty.
+    const next: Record<string, unknown> = { ...(old as Record<string, unknown>) };
+    for (const [k, v] of Object.entries(row as Record<string, unknown>)) {
+      if (v !== undefined) next[k] = v;
+    }
+    return next as T;
+  });
+
+  // A row the incoming answer did not mention is not proof it is gone - the
+  // fast path applies its own limit. Keep it rather than blinking it out; the
+  // authoritative chain, and the DELETE branch of the realtime handler, are
+  // what remove a row.
+  for (const row of previous) {
+    if (row && row.id != null && !seen.has(String(row.id))) merged.push(row);
+  }
+  return merged;
+}
 
 /**
  * Dan 2026-08-20: "remove Mixed games from the action bar."
@@ -423,6 +538,14 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [activeCashier, setActiveCashier] = useState<
     'club_bank' | 'promo_wallet' | 'agent_wallet' | null
   >(null);
+  const [unionWalletModal, setUnionWalletModal] = useState<{
+    key: UnionWalletKey;
+    label: string;
+    balance: number;
+  } | null>(null);
+  const [unionTreasuryModal, setUnionTreasuryModal] = useState<TreasuryDetailMode | null>(null);
+  const [standaloneRakeModal, setStandaloneRakeModal] = useState(false);
+  const [standaloneSpinsModal, setStandaloneSpinsModal] = useState(false);
   // Dan 2026-08-24: "PLAYER WALLET NEEDS TO BE FULLY CLICKABLE AND OPEN TO SEE
   // ALL TRANSACTIONS AND OTHER AVAILABLE DATA WHEN CLICKED." The row opens the
   // member's own statement - a read-only view, so it is not an activeCashier.
@@ -441,10 +564,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
      paint of the lobby rather than flashing an unfiltered list first. */
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [advFilters, setAdvFilters] = useState<FilterStore>({});
-  // Dan 2026-08-21: the header search icon was wired to `setSortOpen(false)` —
-  // a literal no-op. It now toggles a real search box that filters both the
-  // cash tables and the tournament cards by name.
-  const [searchQuery, setSearchQuery] = useState('');
   // LOBBY V2: show only starred cash tables. Declared here (not with the rest
   // of the V2 state) because `narrowing` and `clearAllNarrowing` read it.
   const [favoritesOnly, setFavoritesOnly] = useState(false);
@@ -1128,8 +1247,21 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       // It runs ALONGSIDE the existing chain rather than replacing it: the
       // chain below still fills in diamonds, club level, XMTT tournaments and
       // the rest, and remains authoritative. This just gets the tables on
-      // screen five round trips earlier. `lobbyPainted` guarantees the fast
-      // path can only ever paint BEFORE the authoritative data, never over it.
+      // screen five round trips earlier.
+      //
+      // `lobbyPainted` arbitrates the fast path against the chain WITHIN one
+      // load. It is a local of this invocation, so it says NOTHING about a
+      // reload: the 90s timer, a visibilitychange and every bus event start a
+      // fresh one at false while full rows are already on screen. That is what
+      // let the narrow RPC rows repaint over good ones and made the cards jump
+      // (see mergeFastRows). Two independent guards now, because either alone
+      // would leave a hole:
+      //   1. `lobbyAlreadyHasRows` - the fast path has no job on a warm reload.
+      //      Its entire purpose is first paint; running it later can only
+      //      downgrade what is already correct.
+      //   2. mergeFastRows at the call site - a narrower row can never erase a
+      //      wider one even if it does paint, which covers first paint racing a
+      //      realtime patch, and any future partial source.
       let lobbyPainted = false;
       /* A per-load token. `lobbyPainted` is a local of THIS invocation, so it
          can arbitrate between the fast path and the chain WITHIN one load but
@@ -1140,7 +1272,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       const loadToken = ++loadTokenRef.current;
       const stale = () => loadToken !== loadTokenRef.current;
       Promise.resolve(supabase.rpc('get_club_home', { p_club_key: clubId }))
-        .then(({ data: home, error: homeErr }) => {
+        .then(async ({ data: home, error: homeErr }) => {
           if (homeErr || !home || home.found !== true) return;
           if (stale() || (getIsMounted && !getIsMounted())) return;
 
@@ -1167,6 +1299,16 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           }
 
           if (lobbyPainted) return; // the real chain already answered
+
+          /* WARM RELOAD: this club's lobby is already on screen with rows the
+             authoritative chain fetched, and those rows carry five columns
+             this RPC does not select. Painting now can only take information
+             away, which is the card-jumping Dan recorded. The fast path exists
+             to remove first-paint latency and there is no latency to remove
+             here. `hasDataRef` is cleared on every club change (see the reset
+             effect), so switching clubs still gets the speed-up. */
+          if (hasDataRef.current) return;
+
           if (stale() || (getIsMounted && !getIsMounted())) return;
           lobbyPainted = true;
           try {
@@ -1177,8 +1319,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 member_count: home.member_count ?? home.club.member_count,
               }));
             }
-            if (Array.isArray(home.tables)) setTables(home.tables);
-            if (Array.isArray(home.tournaments)) setTournaments(home.tournaments);
+            if (Array.isArray(home.tables)) setTables((prev) => mergeFastRows(prev, home.tables));
+            if (Array.isArray(home.tournaments))
+              setTournaments((prev) => mergeFastRows(prev, home.tournaments));
             if (home.union_id) {
               setIsInUnion(true);
               setUnionIdForCreate(home.union_id);
@@ -1189,6 +1332,23 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             if (home.club_names && typeof home.club_names === 'object') {
               setClubNames(home.club_names as Record<string, string>);
             }
+            // Force a status check to ensure non-members and pending members get sent to the Invite page.
+            if (authUser?.id) {
+              const { data: memStat } = await supabase
+                .from('club_members')
+                .select('status')
+                .eq('club_id', home.club.id)
+                .eq('user_id', authUser.id)
+                .maybeSingle();
+              if (!memStat || !['active', 'approved'].includes(memStat.status)) {
+                navigate(`/invite/${clubId}`);
+                return;
+              }
+            } else {
+              navigate(`/invite/${clubId}`);
+              return;
+            }
+
             if (home.membership) {
               setUserRole((home.membership.role as ClubRole) || 'player');
             }
@@ -1299,6 +1459,15 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           .eq('club_id', resolvedId)
           .eq('user_id', authUser.id)
           .maybeSingle();
+
+        if (
+          !memberResult.data ||
+          !['active', 'approved'].includes((memberResult.data as any).status)
+        ) {
+          if (getIsMounted && !getIsMounted()) return;
+          navigate(`/invite/${clubId}`);
+          return;
+        }
 
         if (memberResult.data) {
           if (getIsMounted && !getIsMounted()) return;
@@ -1553,7 +1722,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id'
         );
       if (unionId) {
         // Union governance (2026-08-19): union clubs see the UNION's tables
@@ -1627,11 +1796,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             // but is stale. Fetch by union_id when in a union, else club_id.
             const q = supabase.from('bbj_pools').select('id, main_balance');
             if (unionId) {
-              const allIds = [resolvedId, ...(unionClubIds || [])];
-              const filter = `union_id.eq.${unionId},club_id.in.(${allIds.join(',')})`;
-              return await q.or(filter);
+              return await q.eq('union_id', unionId).eq('status', 'active').limit(1).maybeSingle();
             } else {
-              return await q.eq('club_id', resolvedId).limit(1).maybeSingle();
+              return await q
+                .eq('club_id', resolvedId)
+                .eq('status', 'active')
+                .limit(1)
+                .maybeSingle();
             }
           } catch (e) {
             reportError(e, 'ClubHomePage.async');
@@ -1863,7 +2034,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const filteredTables = useMemo(() => {
     if (!showsCash) return [];
 
-    const q = searchQuery.trim().toLowerCase();
     /* Advanced Filters apply to the tab they were saved on. On ALL there is no
        single tab to read, so they do not apply - ALL means "show me
        everything", and quietly narrowing it would make the tab a lie. */
@@ -1872,7 +2042,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     const advValue = advType ? advFilters[advType] : undefined;
 
     const rows = tables.filter((table) => {
-      if (q && !(table.name || '').toLowerCase().includes(q)) return false;
       if (gameType !== 'ALL' && cashKind(table) !== gameType) return false;
 
       if (advSpec && advValue) {
@@ -1952,7 +2121,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           (a, b) => cmpVariant(a, b) || cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b)
         );
     }
-  }, [tables, gameType, showsCash, sortKey, searchQuery, advFilters]);
+  }, [tables, gameType, showsCash, sortKey, advFilters]);
 
   /**
    * Is the lobby showing less than everything, and why.
@@ -1966,15 +2135,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
     const fVal = advFilters[gameType as FilterGameType];
     const filtered = Boolean(fSpec && fVal && isFilterActive(fSpec, fVal));
-    const searching = searchQuery.trim().length > 0;
     return {
       fSpec,
       filtered,
-      searching,
       tabbed: gameType !== 'ALL',
-      any: filtered || searching || gameType !== 'ALL' || favoritesOnly,
+      any: filtered || gameType !== 'ALL' || favoritesOnly,
     };
-  }, [gameType, advFilters, searchQuery, favoritesOnly]);
+  }, [gameType, advFilters, favoritesOnly]);
 
   /**
    * Clear EVERY narrowing at once.
@@ -1986,7 +2153,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
    */
   const clearAllNarrowing = useCallback(() => {
     haptic.selection();
-    setSearchQuery('');
     setFavoritesOnly(false);
     setGameType('ALL');
     if (narrowing.fSpec) {
@@ -2003,7 +2169,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     if (!showsTournaments) return [];
 
     const variant: TournVariant = TOURN_VARIANT_FOR[gameType] ?? 'ALL';
-    const q = searchQuery.trim().toLowerCase();
     const advType = gameType === 'ALL' ? null : (gameType as FilterGameType);
     const advSpec = advType && advType !== 'ALL' ? FILTER_SPECS[advType] : undefined;
     const advValue = advType ? advFilters[advType] : undefined;
@@ -2056,7 +2221,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
     const rows = tournaments.filter((t) => {
       if (!isListable(t)) return false;
-      if (q && !((t.name as string) || '').toLowerCase().includes(q)) return false;
       if (!matchesVariant(t, variant)) return false;
 
       if (advSpec && advValue) {
@@ -2125,7 +2289,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             cmpNameTourn(a, b)
         );
     }
-  }, [tournaments, gameType, showsTournaments, sortKey, searchQuery, advFilters]);
+  }, [tournaments, gameType, showsTournaments, sortKey, advFilters]);
 
   /**
    * Tables this player already holds an active place in the queue for.
@@ -2965,7 +3129,27 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                     title="Share"
                     onClick={async () => {
                       haptic.medium();
-                      const shareUrl = `${window.location.origin}/clubs/${club.slug || clubId}`;
+                      let refQuery = '';
+                      try {
+                        const {
+                          data: { user },
+                        } = await supabase.auth.getUser();
+                        if (user) {
+                          const { data: prof } = await supabase
+                            .from('profiles')
+                            .select('player_number')
+                            .eq('id', user.id)
+                            .single();
+                          if (prof?.player_number) {
+                            refQuery = `?ref=${prof.player_number}`;
+                          } else {
+                            refQuery = `?ref=${user.id}`;
+                          }
+                        }
+                      } catch (e) {
+                        // ignore
+                      }
+                      const shareUrl = `${window.location.origin}/hub/club-arena/invite/${club.id}${refQuery}`;
                       try {
                         if (navigator.share) {
                           await navigator.share({
@@ -3037,13 +3221,35 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 // INSIDE that cashier - there is no mint button out here any
                 // more, and no mint at all once the club is in a union.
                 onOpenPlayerWallet={() => setShowPlayerWallet(true)}
-                onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
+                onOpenPromoWallet={() => {
+                  setUnionWalletModal({
+                    key: 'promo',
+                    label: 'Promo Wallet',
+                    balance: 0,
+                  });
+                }}
                 onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
                 onOpenClubBank={() => setActiveCashier('club_bank')}
                 onOpenBBJ={() => {
                   haptic.medium();
                   setShowBBJInfo(true);
                 }}
+                onOpenUnionRake={() => setUnionTreasuryModal('rake')}
+                onOpenUnionBackupBBJ={() => setUnionTreasuryModal('backup')}
+                onOpenUnionPromo={(balance) => {
+                  setUnionWalletModal({ key: 'promo', label: 'Promo Wallet', balance });
+                }}
+                onOpenUnionSpins={(balance) => {
+                  setUnionWalletModal({ key: 'spin_reserve', label: 'Spins Treasury', balance });
+                }}
+                onOpenClubRake={() => setUnionTreasuryModal('rake')}
+                onOpenClubSpins={(balance) =>
+                  setUnionWalletModal({
+                    key: 'spin_reserve',
+                    label: 'Spins Treasury',
+                    balance: 0,
+                  })
+                }
               />
             </div>
           )}
@@ -3130,47 +3336,21 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           </div>
         )}
 
-        {/* ── SEARCH ──────────────────────────────────────────────────────
-            THE BOX THAT WAS NEVER RENDERED. Every piece of this feature was
-            already built and wired - `searchQuery` filters both the cash
-            tables (filteredTables) and the tournament cards
-            (filteredTournaments), `narrowing.searching` drives the empty
-            state's copy, and `clearAllNarrowing` clears it - but nothing on
-            the page could ever SET it. `searchQuery` was permanently '', so
-            the filters were no-ops, the "Your Search And" branch of the empty
-            state was unreachable, and the IconSearch import was unused. The
-            markup below is the one the stylesheet has been carrying since
-            2026-08-21 (.lobby-top__searchbox / .lobby-top__searchclear).
+        {/* ── NO SEARCH BOX ────────────────────────────────────────────────
+            Dan 2026-08-25 asked for the search-by-name field to be removed
+            completely: nobody is ever typing the name of a game.
 
-            type="search" and enterKeyHint="search" so a phone offers the
-            right keyboard and its own clear affordance; the explicit Clear
-            button stays for the browsers that do not draw one. */}
-        <div className="lobby-top__searchbox">
-          <span aria-hidden="true">
-            <IconSearch />
-          </span>
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') setSearchQuery('');
-            }}
-            placeholder="Search Games By Name"
-            aria-label="Search Games By Name"
-            enterKeyHint="search"
-          />
-          {searchQuery.length > 0 && (
-            <button
-              type="button"
-              className="lobby-top__searchclear"
-              onClick={() => setSearchQuery('')}
-              aria-label="Clear Search"
-            >
-              Clear
-            </button>
-          )}
-        </div>
+            Removed rather than hidden. The state, the two filter passes that
+            read it, the now-unreachable branch of the empty state, the icon
+            import and the stylesheet rules all went with it. A hidden input
+            still costs a filter pass over both lists on every render, and a
+            dead code path is the thing that gets accidentally revived. Players
+            find a game by tab, by the advanced filters and by sort, none of
+            which need a name.
+
+            tests/unit/lobbyCardsDoNotFlicker.test.ts asserts the literal UI
+            strings are absent from this file, so quoting them here - even in a
+            comment - would defeat the check. */}
       </header>
 
       <WalletCashierModal
@@ -3180,6 +3360,66 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         role={isOwner ? 'owner' : userRole}
         walletType={activeCashier || DEFAULT_CASHIER_WALLET}
       />
+      {unionWalletModal && (
+        <UnionWalletModal
+          isOpen={true}
+          onClose={() => setUnionWalletModal(null)}
+          unionId={unionIdForCreate || resolvedClubId || clubId || ''}
+          walletKey={unionWalletModal.key}
+          walletLabel={unionWalletModal.label}
+          balance={unionWalletModal.balance}
+        />
+      )}
+      {unionTreasuryModal && (
+        <UnionTreasuryDetailModal
+          isOpen={true}
+          onClose={() => setUnionTreasuryModal(null)}
+          unionId={unionIdForCreate || resolvedClubId || clubId || ''}
+          mode={unionTreasuryModal}
+          onSendFrom={
+            unionTreasuryModal === 'backup'
+              ? undefined
+              : () => {
+                  const isRake = unionTreasuryModal === 'rake';
+                  setUnionTreasuryModal(null);
+                  setUnionWalletModal({
+                    key: isRake ? 'rake' : 'bbj',
+                    label: isRake ? 'Rake Treasury' : 'BBJ Pool',
+                    // The wallet modal fetches the true balance anyway, so 0 is fine
+                    balance: 0,
+                  });
+                }
+          }
+        />
+      )}
+      {standaloneRakeModal && (
+        <Modal
+          isOpen={true}
+          onClose={() => setStandaloneRakeModal(false)}
+          title="Rake Treasury"
+          size="large"
+          showCloseButton
+          className="club-home-treasury-modal"
+        >
+          <div style={{ height: '70vh', overflowY: 'auto', padding: '0 12px 24px' }}>
+            <RakeReports clubId={resolvedClubId || clubId || ''} />
+          </div>
+        </Modal>
+      )}
+      {standaloneSpinsModal && (
+        <Modal
+          isOpen={true}
+          onClose={() => setStandaloneSpinsModal(false)}
+          title="Spins Wallet"
+          size="medium"
+          showCloseButton
+          className="club-home-treasury-modal"
+        >
+          <div style={{ padding: '0 12px 24px' }}>
+            <SpinActivationPanel clubId={resolvedClubId || clubId || ''} />
+          </div>
+        </Modal>
+      )}
       <PlayerWalletModal
         isOpen={showPlayerWallet}
         onClose={() => setShowPlayerWallet(false)}
@@ -3498,7 +3738,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           (() => {
             // Same three causes the result count reads, from the same place.
             const totalHere = totalGameCount;
-            const { searching, filtered } = narrowing;
+            const { filtered } = narrowing;
             const narrowed = narrowing.any;
 
             return (
@@ -3510,7 +3750,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                       Nothing Is Running Here Right Now. New Games Open All The Time.
                     </p>
                   </>
-                ) : !filtered && !searching ? (
+                ) : !filtered ? (
                   <>
                     {/* Tab (or Favorites) is the ONLY narrowing: blaming
                         "filters" here sent players hunting for filters they
@@ -3533,8 +3773,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                     <p className="empty-hint">
                       {totalHere.toLocaleString()}
                       {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In This
-                      Club, But {searching ? 'Your Search And ' : ''}
-                      The Filters On This Tab Hide {totalHere === 1 ? 'It' : 'Them All'}.
+                      Club, But The Filters On This Tab Hide {totalHere === 1 ? 'It' : 'Them All'}.
                     </p>
                     <div className="empty-actions">
                       <button className="empty-action" onClick={clearAllNarrowing}>
@@ -3588,7 +3827,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             setPanelOpen(false);
             spinQuickJoin({ id: t.id, name: t.name, buy_in_amount: t.buy_in_amount }, variant);
           }}
-          canDelete={isOwner || userRole === 'admin'}
+          canDelete={
+            (isOwner || userRole === 'admin') &&
+            selectedEntry.players === 0 &&
+            (!(selectedEntry.raw as any).club_id || (selectedEntry.raw as any).club_id === clubId)
+          }
           onDeleteTable={(id) => {
             setPanelOpen(false);
             setDeleteTableConfirm({ show: true, tableId: id, tableName: selectedEntry.name });

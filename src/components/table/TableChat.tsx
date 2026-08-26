@@ -53,6 +53,16 @@ function ChatBubbleIcon() {
 
 export type ChatMessageType = 'PLAYER' | 'SYSTEM' | 'DEALER' | 'EMOJI';
 
+/**
+ * How long the compose box refuses a second send.
+ *
+ * Must stay >= `RATE_LIMIT_MS` in `useTableChat`. That one is the real limit
+ * (it guards the database write); this one exists so the refusal happens while
+ * the player's text is still in the box. If this drops below it, messages
+ * silently disappear again.
+ */
+export const SEND_COOLDOWN_MS = 1000;
+
 export interface ChatMessage {
   id: string;
   type: ChatMessageType;
@@ -62,6 +72,19 @@ export interface ChatMessage {
   content: string;
   timestamp: Date;
   isHighlighted?: boolean;
+  /**
+   * The insert into `table_chat` was refused.
+   *
+   * Before 2026-08-25 a failed send was handled by filtering the optimistic
+   * message out of the list. The player typed a line, watched it appear, and
+   * watched it disappear with no explanation and nothing in the UI to say why.
+   * That is a failed write rendered as an empty success state, which is exactly
+   * what the house rules forbid one layer up in the query code.
+   *
+   * `club_chat` already had the right treatment for this and table chat did not;
+   * this is that treatment.
+   */
+  isFailed?: boolean;
 }
 
 export interface TableChatProps {
@@ -131,7 +154,7 @@ function MessageRow({ message, isOwnMessage, isNew = false }: MessageRowProps) {
 
   return (
     <div
-      className={`chat-message ${isOwnMessage ? 'chat-message--own' : ''} ${message.isHighlighted ? 'chat-message--highlighted' : ''} ${isNew ? 'chat-message--slide-in' : ''}`}
+      className={`chat-message ${isOwnMessage ? 'chat-message--own' : ''} ${message.isHighlighted ? 'chat-message--highlighted' : ''} ${isNew ? 'chat-message--slide-in' : ''} ${message.isFailed ? 'chat-message--failed' : ''}`}
     >
       {!isOwnMessage && (
         <div className="chat-message__avatar">
@@ -153,6 +176,14 @@ function MessageRow({ message, isOwnMessage, isNew = false }: MessageRowProps) {
       <div className="chat-message__bubble">
         {!isOwnMessage && <span className="chat-message__name">{message.playerName}</span>}
         <span className="chat-message__content">{message.content}</span>
+        {/* The one thing the player needs to know, in the place they are already
+            looking. `role="status"` because it is an outcome, not decoration:
+            the whole point is that a failed send is no longer silent. */}
+        {message.isFailed && (
+          <span className="chat-message__failed" role="status">
+            Not Sent
+          </span>
+        )}
         <span className="chat-message__time">{formatTime(message.timestamp)}</span>
       </div>
     </div>
@@ -239,10 +270,18 @@ export function TableChat({
   // Handle send
   const handleSend = useCallback(() => {
     const now = Date.now();
-    if (now - lastSentRef.current < 300) return; // 300ms cooldown
-    lastSentRef.current = now;
+    /* SEND_COOLDOWN_MS, not the 300 this was.
+       There are TWO rate limiters on this path and they disagreed. This one
+       cleared the input at 300ms; `useTableChat.handleSendChatMessage` then
+       refused anything inside 1000ms and returned in silence. So a player
+       typing two quick messages had the second one taken out of the box and
+       thrown away, with no message, no toast and no way to get the text back.
+       Matching the hook's window means the refusal happens HERE, before the
+       input is cleared, so the text stays where the player can send it again. */
+    if (now - lastSentRef.current < SEND_COOLDOWN_MS) return;
 
     if (inputValue.trim() && !isDisabled) {
+      lastSentRef.current = now;
       onSendMessage(inputValue.trim());
       setInputValue('');
     }

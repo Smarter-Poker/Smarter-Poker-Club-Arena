@@ -22,8 +22,8 @@
    status dot signals P&L direction (green up / red down). Shrunk to 32px
    per Dan's feedback — the 38px version was too dominant in the top-right. */
 .mini-stats-card--icon {
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   min-width: 0;
   max-width: none;
   padding: 0;
@@ -265,12 +265,12 @@
   .mini-stats-card:not(.mini-stats-card--icon) {
     padding: 6px 10px;
     min-width: 100px;
-    border-radius: 10px;
+    border-radius: 12px;
   }
 
   .mini-stats-card--icon {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
   }
 
   .mini-stats-card__compact {

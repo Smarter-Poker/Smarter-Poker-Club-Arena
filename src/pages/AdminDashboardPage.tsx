@@ -1902,13 +1902,19 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
         // P2-1: union games carry the union container as club_id
         const gamesScope = await clubGamesOrFilter(uuid);
         // Generate recommendations based on club state
-        const [{ data: members }, { data: tables }, { data: annCount }] = await Promise.all([
+        /* `count: 'exact'` removed from both queries 2026-08-26. Neither count was
+           ever destructured - only `data` is - and the code below works off
+           `mems.length` and `anns.length`. An exact count is not free: PostgREST
+           runs a SECOND full scan of the same predicate to produce it, and on
+           club_members that scan goes through four RLS policies. It was paying
+           twice for a number nothing read. */
+        const [{ data: members }, { data: tables }, { data: anns }] = await Promise.all([
           supabase
             .from('club_members')
-            .select('user_id, is_active, role, last_active_at', { count: 'exact' })
+            .select('user_id, is_active, role, last_active_at')
             .eq('club_id', uuid),
           supabase.from('tables').select('id, current_players, status').or(gamesScope),
-          supabase.from('club_announcements').select('id', { count: 'exact' }).eq('club_id', uuid),
+          supabase.from('club_announcements').select('id').eq('club_id', uuid),
         ]);
         const mems = members || [];
         const tbls = tables || [];
@@ -1942,7 +1948,10 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
         }
 
         // Check announcements
-        if ((annCount as any) === 0 || !(annCount as any)?.length) {
+        /* Was `annCount === 0 || !annCount?.length`. The first clause was dead:
+           the variable holds `data`, which is an array or null, never the number
+           0. The length check is the one that was doing the work. */
+        if (!anns || anns.length === 0) {
           recommendations.push({
             icon: '◉',
             severity: 'info',

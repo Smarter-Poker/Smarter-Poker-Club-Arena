@@ -48,6 +48,8 @@
  * language for that, so when this block is present the summary renders a
  * different modal entirely rather than filling chip tiles with zeroes.
  */
+import type { Card } from '../components/table/CardImage';
+
 export interface TournamentResult {
   /** Tournament name for the header, e.g. "Early Bird Freeroll". */
   name?: string;
@@ -98,6 +100,8 @@ export interface TournamentResult {
    * loss, an MTT wearing one is a lie.
    */
   isSpin?: boolean;
+  /** The hole cards the hero held when they won the tournament. */
+  winningCards?: Card[];
 }
 
 export interface SessionSummaryPayload {

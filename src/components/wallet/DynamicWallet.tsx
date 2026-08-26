@@ -145,6 +145,12 @@ interface DynamicWalletProps {
   onOpenAgentWallet?: () => void;
   onOpenPlayerWallet?: () => void;
   onOpenBBJ?: () => void;
+  onOpenUnionRake?: (balance: number) => void;
+  onOpenUnionBackupBBJ?: (balance: number) => void;
+  onOpenUnionPromo?: (balance: number) => void;
+  onOpenUnionSpins?: (balance: number) => void;
+  onOpenClubRake?: (balance: number) => void;
+  onOpenClubSpins?: (balance: number) => void;
 }
 
 interface WalletData {
@@ -399,6 +405,12 @@ export default function DynamicWallet({
   onOpenAgentWallet,
   onOpenPlayerWallet,
   onOpenBBJ,
+  onOpenUnionRake,
+  onOpenUnionBackupBBJ,
+  onOpenUnionPromo,
+  onOpenUnionSpins,
+  onOpenClubRake,
+  onOpenClubSpins,
 }: DynamicWalletProps) {
   // ── SYNCHRONOUS BOOT (Dan 2026-08-24: "the wallet should always be loaded
   // and displayed... it should just stay in some sort of persistent state") ──
@@ -1241,6 +1253,7 @@ export default function DynamicWallet({
       value: animSpins,
       known: spins.state !== null,
       hint: 'Funds This Club’s Spin Multipliers',
+      onOpen: () => onOpenClubSpins?.(spins.balance || 0),
     },
     rake_treasury: {
       key: 'rake_treasury',
@@ -1251,6 +1264,16 @@ export default function DynamicWallet({
       // account is not applicable or not readable — "-" beats a made-up zero.
       known: data.clubRakeTreasury !== null,
       hint: 'This Club Keeps Its Own Rake',
+      onOpen: () => onOpenClubRake?.(data.clubRakeTreasury || 0),
+    },
+    backup_bbj: {
+      key: 'backup_bbj',
+      label: 'BBJ Backup Wallet',
+      icon: 'reserve',
+      value: animBackupBBJ,
+      known: data.backupBBJ !== null,
+      hint: 'Next Jackpot Seed',
+      onOpen: () => onOpenUnionBackupBBJ?.(data.backupBBJ || 0),
     },
   };
 
@@ -1264,6 +1287,7 @@ export default function DynamicWallet({
       hint: unionFiguresKnown
         ? `Held In Trust · ${formatBalance(data.projectedClubsShare)} To Clubs ${closeDay}`
         : 'Union Admins Only',
+      onOpen: () => onOpenUnionRake?.(data.unionRake || 0),
     },
     {
       key: 'union_backup_bbj',
@@ -1272,6 +1296,7 @@ export default function DynamicWallet({
       value: animBackupBBJ,
       known: unionFiguresKnown,
       hint: 'Next Jackpot Seed',
+      onOpen: () => onOpenUnionBackupBBJ?.(data.backupBBJ || 0),
     },
     {
       key: 'union_promo',
@@ -1283,6 +1308,7 @@ export default function DynamicWallet({
       // to this wallet every ~5 minutes, so it steps rather than streams.
       // Saying so stops it reading as "not being funded".
       hint: unionFiguresKnown ? '25% BBJ Slice · Swept Every 5 Min' : undefined,
+      onOpen: () => onOpenUnionPromo?.(data.unionPromo || 0),
     },
     {
       key: 'union_spins',
@@ -1297,6 +1323,7 @@ export default function DynamicWallet({
       hint: unionFiguresKnown
         ? `${formatBalance(data.unionSpinDeployed)} Deployed · ${formatBalance(data.unionSpinIdle)} Idle`
         : undefined,
+      onOpen: () => onOpenUnionSpins?.(data.unionSpinIdle || 0),
     },
   ];
 

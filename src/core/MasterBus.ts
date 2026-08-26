@@ -92,6 +92,7 @@ export type BusEventType =
   | 'COMMISSION_PAID'
   | 'SETTLEMENT_COMPLETED'
   | 'FINANCIAL_ALERT'
+  | 'BBJ_HIT_GLOBAL'
   // Tournament lifecycle events
   | 'PLAYER_ELIMINATED'
   | 'TABLE_MERGED'
@@ -442,6 +443,14 @@ export interface BusPayloadMap {
     message: string;
     context: Record<string, unknown>;
     timestamp: string;
+  };
+  BBJ_HIT_GLOBAL: {
+    tableId: string;
+    tableName: string;
+    gameVariant: string;
+    bigBlind: number;
+    winnerName: string;
+    amount: number;
   };
   // Tournament lifecycle events
   PLAYER_ELIMINATED: {

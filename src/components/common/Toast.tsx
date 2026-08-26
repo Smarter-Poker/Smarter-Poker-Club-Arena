@@ -42,6 +42,7 @@ export interface Toast {
   type: ToastType;
   message: string;
   duration?: number;
+  onClick?: () => void;
 }
 
 export interface ToastContextValue {
@@ -53,12 +54,12 @@ export interface ToastContextValue {
    * array never re-fires an effect when toasts come and go.
    */
   getToasts: () => Toast[];
-  showToast: (message: string, type?: ToastType, duration?: number) => void;
-  success: (message: string, duration?: number) => void;
-  error: (message: string, duration?: number) => void;
-  warning: (message: string, duration?: number) => void;
-  info: (message: string, duration?: number) => void;
-  clock: (message: string, duration?: number) => void;
+  showToast: (message: string, type?: ToastType, duration?: number, onClick?: () => void) => void;
+  success: (message: string, duration?: number, onClick?: () => void) => void;
+  error: (message: string, duration?: number, onClick?: () => void) => void;
+  warning: (message: string, duration?: number, onClick?: () => void) => void;
+  info: (message: string, duration?: number, onClick?: () => void) => void;
+  clock: (message: string, duration?: number, onClick?: () => void) => void;
   removeToast: (id: string) => void;
 }
 
@@ -112,7 +113,17 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
   };
 
   return (
-    <div className={`toast toast--${toast.type} ${isExiting ? 'toast--exiting' : ''}`}>
+    <div
+      className={`toast toast--${toast.type} ${isExiting ? 'toast--exiting' : ''}${toast.onClick ? ' toast--clickable' : ''}`}
+      onClick={(e) => {
+        if (toast.onClick) {
+          toast.onClick();
+          setIsExiting(true);
+          setTimeout(onRemove, 300);
+        }
+      }}
+      style={{ cursor: toast.onClick ? 'pointer' : 'default' }}
+    >
       <span className="toast__icon">{icons[toast.type]}</span>
       <span className="toast__message">{toast.message}</span>
       <button
@@ -180,21 +191,22 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const showToast = useCallback((message: string, type: ToastType = 'info', duration = 4000) => {
-    // Dan's house rule (2026-08-20), enforced at the ONLY door every toast
-    // walks through: Title Case every word, no em dashes. See popupStyle.ts —
-    // a rule in the render path cannot drift, a rule in a doc does.
-    //
-    // SAME DOOR, SECOND LOCK (Dan, 2026-08-20): "stop allowing server error
-    // messages to appear for users." Hundreds of call sites do
-    // `toast.error(e?.message || '...')`. Sanitising HERE makes every one of
-    // them safe without editing any of them, and no caller can opt out by
-    // passing `e.message` straight through. See utils/safeErrorMessage.ts.
-    let text = message;
-    if (type === 'error') {
-      const original = typeof message === 'string' ? message : String(message ?? '');
+  const showToast = useCallback(
+    (message: string, type: ToastType = 'info', duration = 4000, onClick?: () => void) => {
+      // Dan's house rule (2026-08-20), enforced at the ONLY door every toast
+      // walks through: Title Case every word, no em dashes. See popupStyle.ts —
+      // a rule in the render path cannot drift, a rule in a doc does.
+      //
+      // SAME DOOR, SECOND LOCK (Dan, 2026-08-20): "stop allowing server error
+      // messages to appear for users." Hundreds of call sites do
+      // `toast.error(e?.message || '...')`. Sanitising HERE makes every one of
+      // them safe without editing any of them, and no caller can opt out by
+      // passing `e.message` straight through. See utils/safeErrorMessage.ts.
+      let text = message;
+      if (type === 'error') {
+        const original = typeof message === 'string' ? message : String(message ?? '');
 
-      /* SILENCE THE INFRASTRUCTURE (Dan, 2026-08-21, with two screenshots).
+        /* SILENCE THE INFRASTRUCTURE (Dan, 2026-08-21, with two screenshots).
          "The Table Is Busy" and "Connection Problem" are the retry loop
          talking to itself: the client has already retried, and will retry
          again, so the message is stale before it is read and asks the player
@@ -202,80 +214,87 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
          reported, so this is quieter for the player and no quieter for us.
          The disconnection notice Dan wants kept is DisconnectToast, driven by
          the engine's own FSM, and does not come through this door. */
-      if (!shouldSurfaceError(original)) {
-        const now = Date.now();
-        const key = 'silent:' + extractRawErrorText(original);
-        const lastSeen = reportedRef.current.get(key);
-        if (lastSeen === undefined || now - lastSeen > 30_000) {
-          reportedRef.current.set(key, now);
-          reportError(new Error(original), 'Toast.error.suppressed', { shownToPlayer: false });
-        }
-        return;
-      }
-
-      text = safeErrorMessage(original);
-      if (wasSanitized(original, text)) {
-        // The player is spared the detail; Sentry is not. Diagnostics survive.
-        const now = Date.now();
-        const lastSeen = reportedRef.current.get(original);
-        if (lastSeen === undefined || now - lastSeen > 30_000) {
-          reportedRef.current.set(original, now);
-          if (reportedRef.current.size > 50) {
-            for (const [k, t] of reportedRef.current) {
-              if (now - t > 30_000) reportedRef.current.delete(k);
-            }
+        if (!shouldSurfaceError(original)) {
+          const now = Date.now();
+          const key = 'silent:' + extractRawErrorText(original);
+          const lastSeen = reportedRef.current.get(key);
+          if (lastSeen === undefined || now - lastSeen > 30_000) {
+            reportedRef.current.set(key, now);
+            reportError(new Error(original), 'Toast.error.suppressed', { shownToPlayer: false });
           }
-          reportError(new Error(original), 'Toast.error.sanitized', { shownToPlayer: text });
+          return;
+        }
+
+        text = safeErrorMessage(original);
+        if (wasSanitized(original, text)) {
+          // The player is spared the detail; Sentry is not. Diagnostics survive.
+          const now = Date.now();
+          const lastSeen = reportedRef.current.get(original);
+          if (lastSeen === undefined || now - lastSeen > 30_000) {
+            reportedRef.current.set(original, now);
+            if (reportedRef.current.size > 50) {
+              for (const [k, t] of reportedRef.current) {
+                if (now - t > 30_000) reportedRef.current.delete(k);
+              }
+            }
+            reportError(new Error(original), 'Toast.error.sanitized', { shownToPlayer: text });
+          }
         }
       }
-    }
-    const styled = formatPopupText(text);
+      const styled = formatPopupText(text);
 
-    /* COOLDOWN. See lastShownRef: the on-screen dedupe below cannot stop a
+      /* COOLDOWN. See lastShownRef: the on-screen dedupe below cannot stop a
        message that returns after its predecessor expired, which is how one
        error reads as an endless stream of them. */
-    const cooldownKey = type + ':' + styled;
-    const nowMs = Date.now();
-    const shownAt = lastShownRef.current.get(cooldownKey);
-    if (shownAt !== undefined && nowMs - shownAt < TOAST_COOLDOWN_MS) return;
-    lastShownRef.current.set(cooldownKey, nowMs);
-    if (lastShownRef.current.size > 100) {
-      for (const [k, t] of lastShownRef.current) {
-        if (nowMs - t > TOAST_COOLDOWN_MS) lastShownRef.current.delete(k);
+      const cooldownKey = type + ':' + styled;
+      const nowMs = Date.now();
+      const shownAt = lastShownRef.current.get(cooldownKey);
+      if (shownAt !== undefined && nowMs - shownAt < TOAST_COOLDOWN_MS) return;
+      lastShownRef.current.set(cooldownKey, nowMs);
+      if (lastShownRef.current.size > 100) {
+        for (const [k, t] of lastShownRef.current) {
+          if (nowMs - t > TOAST_COOLDOWN_MS) lastShownRef.current.delete(k);
+        }
       }
-    }
 
-    const id = `toast-${++toastIdRef.current}`;
-    setToasts((prev) => {
-      // DEDUPE (Dan, same session: "connection lost pop ups need to stop").
-      // An identical message already on screen does not stack a twin — the
-      // heartbeat loop and its friends retry on intervals, and a column of
-      // five matching warnings reads as five separate emergencies.
-      if (prev.some((t) => t.message === styled && t.type === type)) return prev;
-      const next = [...prev, { id, type, message: styled, duration }];
-      // Cap at 5 visible toasts — dismiss oldest if overflow
-      return next.length > 5 ? next.slice(-5) : next;
-    });
-  }, []);
+      const id = `toast-${++toastIdRef.current}`;
+      setToasts((prev) => {
+        // DEDUPE (Dan, same session: "connection lost pop ups need to stop").
+        // An identical message already on screen does not stack a twin — the
+        // heartbeat loop and its friends retry on intervals, and a column of
+        // five matching warnings reads as five separate emergencies.
+        if (prev.some((t) => t.message === styled && t.type === type)) return prev;
+        const next = [...prev, { id, type, message: styled, duration, onClick }];
+        // Cap at 5 visible toasts — dismiss oldest if overflow
+        return next.length > 5 ? next.slice(-5) : next;
+      });
+    },
+    []
+  );
 
   const success = useCallback(
-    (message: string, duration?: number) => showToast(message, 'success', duration),
+    (message: string, duration?: number, onClick?: () => void) =>
+      showToast(message, 'success', duration, onClick),
     [showToast]
   );
   const error = useCallback(
-    (message: string, duration?: number) => showToast(message, 'error', duration),
+    (message: string, duration?: number, onClick?: () => void) =>
+      showToast(message, 'error', duration, onClick),
     [showToast]
   );
   const warning = useCallback(
-    (message: string, duration?: number) => showToast(message, 'warning', duration),
+    (message: string, duration?: number, onClick?: () => void) =>
+      showToast(message, 'warning', duration, onClick),
     [showToast]
   );
   const info = useCallback(
-    (message: string, duration?: number) => showToast(message, 'info', duration),
+    (message: string, duration?: number, onClick?: () => void) =>
+      showToast(message, 'info', duration, onClick),
     [showToast]
   );
   const clock = useCallback(
-    (message: string, duration?: number) => showToast(message, 'clock', duration),
+    (message: string, duration?: number, onClick?: () => void) =>
+      showToast(message, 'clock', duration, onClick),
     [showToast]
   );
 

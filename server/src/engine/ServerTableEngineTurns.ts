@@ -919,8 +919,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             auto_activated: false,
           },
         })
-        .catch(() => {});
-    } catch (e) {}
+        .catch((err) => reportError(err, 'ServerTableEngine.time_bank_broadcast_failed'));
+    } catch (err) {
+      // A cosmetic broadcast must never break the turn it decorates — but it
+      // must not vanish either. This was the one bare `catch (e) {}` left in
+      // the engine: an unused binding, no comment, no report, swallowing every
+      // synchronous throw from the legacy Realtime path.
+      reportError(err, 'ServerTableEngine.time_bank_broadcast_threw');
+    }
 
     // FIX 125 + 2026-04-14 spam fix: warn ONLY at the last 1 remaining (or 0
     // = just used last one). Previous <=5 condition spammed on 4-max tables.

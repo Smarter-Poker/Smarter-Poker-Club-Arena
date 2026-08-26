@@ -556,16 +556,27 @@ export default function MarketplacePage() {
         role="tablist"
         aria-label="Marketplace Sections"
         onKeyDown={(e) => {
-          if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+          /* Same fix as the Stats tablist: selection was moving, focus was not.
+             Each tab is `tabIndex={tab === t.key ? 0 : -1}`, so the previously
+             selected button dropped out of the tab order with focus still on it.
+             Note the key list is the ADMIN-FILTERED one, so End lands on the last
+             tab this particular user can actually see. */
+          const KEYS = ['ArrowRight', 'ArrowLeft', 'Home', 'End'];
+          if (!KEYS.includes(e.key)) return;
           e.preventDefault();
           const keys = TABS.filter((t) => !t.adminOnly || isAdmin).map((t) => t.key);
           const i = keys.indexOf(tab);
           if (i < 0) return;
           const next =
-            e.key === 'ArrowRight'
-              ? keys[(i + 1) % keys.length]
-              : keys[(i - 1 + keys.length) % keys.length];
+            e.key === 'Home'
+              ? keys[0]
+              : e.key === 'End'
+                ? keys[keys.length - 1]
+                : e.key === 'ArrowRight'
+                  ? keys[(i + 1) % keys.length]
+                  : keys[(i - 1 + keys.length) % keys.length];
           switchTab(next);
+          document.getElementById(`market-tab-${next}`)?.focus();
         }}
       >
         {TABS.filter((t) => !t.adminOnly || isAdmin).map((t) => (

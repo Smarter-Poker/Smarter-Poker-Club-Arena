@@ -65,6 +65,15 @@ export interface LeagueMatchup {
    *  exists because the Omaha discipline layer cannot be measured by an NLH
    *  deal at all. */
   variant?: string;
+  /** V16: seats at the table (default 6). 2 = heads-up. */
+  seats?: number;
+  /** V16: starting stack in big blinds (default 100). 40 exercises the
+   *  short-stack push/fold and reshove tiers the 100bb card never touches. */
+  stackBB?: number;
+  /** V16: duplicate pairs for this matchup (default PAIRS_PER_MATCHUP).
+   *  Newer exploratory matchups run fewer pairs so the whole card still
+   *  fits the wall-clock budget; stderr scales as 1/sqrt(pairs). */
+  pairs?: number;
   a: HorseDecideOpts;
   b: HorseDecideOpts;
   /** V12.3: RETIRED as an opt-in — EVERY matchup is now sandboxed. It was
@@ -77,10 +86,11 @@ export interface LeagueMatchup {
   mind?: 'sandbox';
 }
 
-const SEATS = 6;
+const DEFAULT_SEATS = 6;
 const BB = 2;
 const SB = 1;
-const START_STACK = 200; // 100bb
+// START_STACK is per-matchup now (stackBB * BB); 100bb was the only depth
+// the league ever measured before V16.
 // V12.3: raised from 24. A six-way preflop raise war can legitimately exceed
 // 24 actions, and hitting the cap now folds the debtors (see runStreet)
 // rather than silently forgiving their unpaid bets.
@@ -124,8 +134,14 @@ export function playHand(
   /** V15: game variant to deal (default 'nlh'). Omaha variants deal the full
    *  hole count, enforce pot-limit sizing in validation, and score showdowns
    *  with the Omaha evaluator. */
-  gameVariant: string = 'nlh'
+  gameVariant: string = 'nlh',
+  /** V16: seats at the table (default 6; 2 = heads-up). */
+  numSeats: number = 6,
+  /** V16: starting stack in big blinds (default 100). */
+  stackBB: number = 100
 ): number[] {
+  const SEATS = numSeats;
+  const START_STACK = stackBB * BB;
   const vi = variantInfo(gameVariant);
   const holeCount = vi.holeCount;
   seedFastRandom(handSeed);
@@ -475,6 +491,7 @@ export async function runMatchup(
   pairs: number,
   runSeed: number
 ): Promise<LeagueResult> {
+  const SEATS = matchup.seats ?? DEFAULT_SEATS;
   const t0 = Date.now();
   const counters = { illegal: 0, truncated: 0 };
   const perPairDiff: number[] = [];
@@ -505,8 +522,26 @@ export async function runMatchup(
     const evenIsA = (s: number) => (s % 2 === 0 ? matchup.a : matchup.b);
     const evenIsB = (s: number) => (s % 2 === 0 ? matchup.b : matchup.a);
 
-    const net1 = playHand(handSeed, dealerSeat, evenIsA, counters, sb1, matchup.variant ?? 'nlh');
-    const net2 = playHand(handSeed, dealerSeat, evenIsB, counters, sb2, matchup.variant ?? 'nlh');
+    const net1 = playHand(
+      handSeed,
+      dealerSeat,
+      evenIsA,
+      counters,
+      sb1,
+      matchup.variant ?? 'nlh',
+      SEATS,
+      matchup.stackBB ?? 100
+    );
+    const net2 = playHand(
+      handSeed,
+      dealerSeat,
+      evenIsB,
+      counters,
+      sb2,
+      matchup.variant ?? 'nlh',
+      SEATS,
+      matchup.stackBB ?? 100
+    );
 
     let aNet = 0;
     for (let s = 0; s < SEATS; s++) {
@@ -560,6 +595,14 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // V15 Omaha nut discipline, measured where it lives: a plo6 deal. The
   // other matchups deal NLH, where v15 changes nothing by construction.
   { name: 'plo6_v15_discipline', variant: 'plo6', a: {}, b: { v15: false } },
+  // ── V16 (2026-08-26): measure the variants and depths the fleet actually
+  // plays. Exploratory pairs counts keep the whole card inside the budget;
+  // stderr ~4.6 bb/100 at 6000 pairs — enough to catch layer-scale edges. ──
+  { name: 'plo4_v15_discipline', variant: 'plo4', pairs: 6000, a: {}, b: { v15: false } },
+  { name: 'plo8_hilo_layer', variant: 'plo8', pairs: 6000, a: {}, b: { v8HiLo: false } },
+  { name: 'shortdeck_v8_layer', variant: 'short_deck', pairs: 6000, a: {}, b: { v8: false } },
+  { name: 'nlh_40bb_preflop', stackBB: 40, pairs: 6000, a: {}, b: { v7Preflop: false } },
+  { name: 'hu_mind_layer', seats: 2, pairs: 6000, a: {}, b: { mind: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
   { name: 'mind_layer', a: {}, b: { mind: false } },
@@ -748,7 +791,7 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
         );
         break;
       }
-      const r = await runMatchup(m, PAIRS_PER_MATCHUP, runSeed ^ hash32(m.name));
+      const r = await runMatchup(m, m.pairs ?? PAIRS_PER_MATCHUP, runSeed ^ hash32(m.name));
       results.push(r);
       try {
         const { error } = await supabase.from('horse_league_results').upsert(

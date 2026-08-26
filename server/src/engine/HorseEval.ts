@@ -807,6 +807,133 @@ function placeBandCombo(
   return false;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// V16 OMAHA RESERVOIR BAND SAMPLING (2026-08-26)
+// ═══════════════════════════════════════════════════════════════════════════════
+// The V13 exact-combo fix reached only NLH: an Omaha combo space cannot be
+// enumerated, so Omaha bands kept REJECTION sampling — and its fallback keeps
+// the CLOSEST MISS at full weight. For a tight band nearly every uniform draw
+// scores far BELOW it, so the fallback hand is systematically weaker than the
+// read and hero's equity is overstated in exactly the pots where reads matter
+// most (PLO 3-bet and 4-bet pots) — the same bias family measured at +17
+// equity points in NLH before V13.
+//
+// The space cannot be enumerated, but it does not need to be: a large SORTED
+// EMPIRICAL RESERVOIR of random combos approximates the score distribution to
+// sampling error. A band is then a contiguous slice found by binary search,
+// exactly like the NLH combo table, and the closest-miss fallback becomes the
+// rare case (dealt-card collisions only) instead of the common one. Built
+// lazily per (holeCount, hiLo) with a PRIVATE deterministic RNG so building
+// never disturbs the live fastRandom stream mid-decision.
+
+type OmahaReservoir = { scores: Float64Array; combos: Card[][] };
+const omahaReservoirs = new Map<string, OmahaReservoir>();
+const OMAHA_RESERVOIR_SIZE = 16384;
+
+function buildOmahaReservoir(holeCount: number, isHiLo: boolean): OmahaReservoir {
+  let s = (0x9e3779b9 ^ (holeCount * 2654435761) ^ (isHiLo ? 0x85ebca6b : 0)) >>> 0 || 1;
+  const rnd = (): number => {
+    s ^= s << 13;
+    s ^= s >>> 17;
+    s ^= s << 5;
+    s >>>= 0;
+    return s / 0x100000000;
+  };
+  const deck = FULL_DECK.slice();
+  const entries: Array<{ score: number; cards: Card[] }> = [];
+  for (let i = 0; i < OMAHA_RESERVOIR_SIZE; i++) {
+    for (let j = 0; j < holeCount; j++) {
+      const k = j + Math.floor(rnd() * (deck.length - j));
+      const t = deck[j];
+      deck[j] = deck[k];
+      deck[k] = t;
+    }
+    // References into FULL_DECK, deliberately: simulateEquity's deck is a
+    // filter of FULL_DECK, so identity comparison works for the swap-in.
+    const cards = deck.slice(0, holeCount);
+    entries.push({ score: omahaPreflopScore(cards, isHiLo), cards });
+  }
+  entries.sort((x, y) => x.score - y.score);
+  const scores = new Float64Array(entries.length);
+  const combos: Card[][] = new Array(entries.length);
+  for (let i = 0; i < entries.length; i++) {
+    scores[i] = entries[i].score;
+    combos[i] = entries[i].cards;
+  }
+  return { scores, combos };
+}
+
+/**
+ * Exported for the ground-truth test.
+ *
+ * BAND SEMANTICS — the discovery that made this fix bigger than a sampler
+ * swap: HorseMind's bands are PERCENTILE-INTENT ("this line means a top-15%
+ * hand"), and the NLH combo table delivers that because holdemPreflopScore
+ * is percentile-style. omahaPreflopScore is NOT — its distribution is
+ * compressed (median 0.24, p99 0.59), so matching band VALUES against Omaha
+ * SCORES selects almost nothing: a [0.85, 1.0] "3-bettor" read is beyond
+ * p99.9, the rejection sampler never once found an in-band hand, and every
+ * "read" degraded to closest-miss noise. The reservoir therefore maps bands
+ * through its own empirical CDF: band [0.85, 1.0] = the top 15% of sorted
+ * combos BY INDEX. That is what the read meant all along.
+ */
+export function placeOmahaBandCombo(
+  deck: Card[],
+  windowStart: number,
+  n: number,
+  band: [number, number],
+  holeCount: number,
+  isHiLo: boolean
+): boolean {
+  const key = `${holeCount}${isHiLo ? 'h' : ''}`;
+  let rv = omahaReservoirs.get(key);
+  if (!rv) {
+    rv = buildOmahaReservoir(holeCount, isHiLo);
+    omahaReservoirs.set(key, rv);
+  }
+  const size = rv.combos.length;
+  // Percentile (CDF-index) mapping, clamped to a legal slice.
+  const lo = Math.max(0, Math.min(size - 1, Math.floor(clamp01(band[0]) * size)));
+  const hi = Math.max(lo + 1, Math.min(size, Math.ceil(clamp01(band[1]) * size)));
+  if (band[0] > 1 || band[1] < 0 || band[1] <= band[0]) return false;
+  const span = hi - lo;
+
+  cardAvail.fill(0);
+  for (let i = windowStart; i < n; i++) cardAvail[cardId(deck[i])] = 1;
+
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const idx = lo + Math.floor(fastRandom() * span);
+    const combo = rv.combos[idx];
+    let ok = true;
+    for (const c of combo) {
+      if (!cardAvail[cardId(c)]) {
+        ok = false;
+        break;
+      }
+    }
+    if (!ok) continue;
+    // Swap by CARD ID, not object identity — the deck's card objects are not
+    // guaranteed to be the reservoir's references, and an identity mismatch
+    // here would silently leave the uniform window in place while reporting
+    // success (the exact shape of silent failure this codebase hunts).
+    for (let k = 0; k < combo.length; k++) {
+      const wantId = cardId(combo[k]);
+      const slot = windowStart + k;
+      if (cardId(deck[slot]) === wantId) continue;
+      for (let j = slot + 1; j < n; j++) {
+        if (cardId(deck[j]) === wantId) {
+          const t = deck[slot];
+          deck[slot] = deck[j];
+          deck[j] = t;
+          break;
+        }
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
 export function simulateEquity(
   holeCards: Card[],
   boardCards: Card[],
@@ -948,6 +1075,14 @@ export function simulateEquity(
           // uniform draw already in the window stands — the same fail-safe
           // the old code had, but now it is the rare case rather than the
           // majority one.
+        } else if (
+          vi.isOmaha &&
+          placeOmahaBandCombo(deck, windowStart, n, band, oppHole, vi.isHiLo)
+        ) {
+          // V16: sampled exactly from the reservoir slice — no rejection, no
+          // closest-miss fallback. Collisions with dealt cards fall through
+          // to the legacy path below.
+          for (let i = 0; i < oppHole; i++) oppCards[i] = deck[windowStart + i];
         } else {
           const narrow = band[1] - band[0] < 0.45;
           const tries = vi.isOmaha ? (narrow ? 6 : 4) : narrow ? 14 : 6;

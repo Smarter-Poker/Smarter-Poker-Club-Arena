@@ -210,6 +210,34 @@ jobs:
       - name: Monitoring Invariant — every alert rule is loaded, mounted, and routed
         run: node scripts/ci/check-monitoring-drift.mjs
 
+      # STUB GATE (2026-08-26). The playbook (RULE 1 Part C) forbids TODO,
+      # FIXME, and 'not implemented' stubs from being committed, but the only
+      # enforcement was the agent interrogation pass — no automated check.
+      # A non-compliant agent or a direct push could land stubs silently.
+      # This step fails the build if any are found so the enforcement is
+      # machine-verified rather than honor-system.
+      #
+      # Scope: src/ and server/src/ only. supabase/migrations/, scripts/,
+      # tests/, and docs are intentionally excluded — migration comments, test
+      # fixture descriptions, and CI script headers may contain these words in
+      # a non-stub context (e.g. "TODO(author): revisit" in a SQL comment
+      # documenting a known Postgres limitation is documentation, not a stub).
+      #
+      # Pattern is case-sensitive. 'todo' (lowercase) in a variable name or
+      # comment about a "to-do list" feature is not a stub. 'TODO' (uppercase)
+      # is a stub by convention across the entire codebase.
+      - name: No stubs — TODO and FIXME are banned from src/ and server/src/
+        run: |
+          found=$(grep -rn --include="*.ts" --include="*.tsx" \
+            -E '\bTODO\b|\bFIXME\b' \
+            src/ server/src/ 2>/dev/null || true)
+          if [ -n "$found" ]; then
+            echo "::error::Stub markers found — resolve before merging:"
+            echo "$found"
+            exit 1
+          fi
+          echo "No TODO or FIXME markers found in src/ or server/src/"
+
       - name: Report Typecheck Time
         if: always()
         run: |
@@ -218,6 +246,7 @@ jobs:
           echo "## ⏱️ Typecheck Duration: ${ELAPSED}s" >> $GITHUB_STEP_SUMMARY
 
       # ── Commit Message Lint ──────────────────────────────────────────────
+
       - name: Commit Message Lint
         if: github.event_name == 'push'
         continue-on-error: true

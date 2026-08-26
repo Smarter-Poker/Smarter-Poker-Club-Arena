@@ -244,7 +244,7 @@ export default function InvitePage() {
         }
       }
     }
-  }, [club?.id, club?.slug, refCode, user?.id]);
+  }, [club?.id, club?.slug, refCode, user?.id, alreadyMember]);
 
   const handleCopyLink = async () => {
     try {

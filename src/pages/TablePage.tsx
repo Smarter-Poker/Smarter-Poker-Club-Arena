@@ -3832,6 +3832,8 @@ export default function TablePage({
       // the page — a street reveal firing into an unmounted table is a leak.
       for (const t of ritRevealTimersRef.current) clearTimeout(t);
       if (ritResultTimerRef.current) clearTimeout(ritResultTimerRef.current);
+      if (ritPanelOpenTimerRef.current) clearTimeout(ritPanelOpenTimerRef.current);
+      if (ritFeltBannerTimerRef.current) clearTimeout(ritFeltBannerTimerRef.current);
     };
   }, []);
 

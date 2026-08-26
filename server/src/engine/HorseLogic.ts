@@ -65,6 +65,8 @@ import { HorseMind } from './HorseMind.js';
 // vs blind, squeezes, stack depth, reshoves, ICM. See HorsePreflop.ts.
 import { decidePreflopV7, type PreflopPosition } from './HorsePreflop.js';
 import { reportError } from '../services/errorReporter.js';
+// V16 ICM: real Malmuth-Harville pressure from the live stack distribution.
+import { bubbleFactor, premiumFromBubbleFactor } from './IcmModel.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
 // HorseEval.ts (extracted verbatim; zero behavior change).
 import {
@@ -505,6 +507,9 @@ export interface HorseGameStateV2 extends HorseGameState {
     spotsPaid?: number;
     avgStackChips?: number;
     bountyFactor?: number;
+    /** V16 ICM: live stacks (chips, desc) + payout percentages by place. */
+    stacks?: number[];
+    payoutPct?: number[];
   };
   /** V12: table format. Spins are winner-take-all chip-EV (no ICM), HU SNGs
    *  play heads-up ranges, MTTs get the full survival model. */
@@ -534,12 +539,54 @@ function isTournamentMode(gs: HorseGameStateV2): boolean {
  * drops — hardest around the bubble, gone again deep in the money with a big
  * stack. Returns an additive threshold premium (0 for cash games).
  */
-function icmRisk(gs: HorseGameStateV2, stackBB: number): number {
+function icmRisk(gs: HorseGameStateV2, stackBB: number, useV16Icm: boolean = true): number {
   // icmRisk v2 (V12, 2026-08-22): real bubble model from TournamentBrainContext.
   const explicit = gs.tournament;
   if (!isTournamentMode(gs)) return 0;
   // Spins are winner-take-all — pure chip EV, zero survival premium.
   if (gs.format === 'spin' && (explicit?.spotsPaid ?? 1) <= 1) return 0;
+
+  // ═══ V16 REAL ICM (2026-08-26) ═══
+  // When the context carries the live stack distribution and the payout
+  // curve, pressure comes from Malmuth-Harville instead of a flat guess: a
+  // bubble factor computed for HERO'S actual stack against the field, with
+  // covering awareness built in (the risk is capped by the largest stack
+  // that can actually take hero's chips — a table captain's premium shrinks
+  // because busting is arithmetically impossible for him). Missing data
+  // degrades to the legacy heuristic below, unchanged.
+  if (
+    useV16Icm &&
+    explicit &&
+    Array.isArray(explicit.stacks) &&
+    explicit.stacks.length >= 2 &&
+    Array.isArray(explicit.payoutPct) &&
+    explicit.payoutPct.length >= 1 &&
+    gs.bigBlind > 0
+  ) {
+    try {
+      const heroChips = stackBB * gs.bigBlind;
+      const stacks = explicit.stacks.slice();
+      // Substitute hero's LIVE stack for its closest field entry (the
+      // context snapshot may lag the current hand by up to its TTL).
+      let closest = 0;
+      for (let i = 1; i < stacks.length; i++) {
+        if (Math.abs(stacks[i] - heroChips) < Math.abs(stacks[closest] - heroChips)) closest = i;
+      }
+      stacks[closest] = heroChips;
+      let maxOther = 0;
+      for (let i = 0; i < stacks.length; i++) {
+        if (i !== closest && stacks[i] > maxOther) maxOther = stacks[i];
+      }
+      const riskChips = Math.max(1, Math.min(heroChips, maxOther));
+      const bf = bubbleFactor(stacks, explicit.payoutPct, closest, riskChips);
+      let premium = premiumFromBubbleFactor(bf);
+      // PKO: bounty share still trims pressure — covered all-ins pay.
+      if ((explicit.bountyFactor ?? 0) >= 0.2) premium = Math.max(0, premium - 0.02);
+      return premium;
+    } catch {
+      /* fall through to the legacy heuristic */
+    }
+  }
 
   let risk = stackBB < 40 ? 0.04 : 0.02;
   if (explicit) {
@@ -636,6 +683,25 @@ export interface HorseDecideOpts {
   v12?: boolean;
   /** ablation hook (benchmarks only) — defaults to the v12 master flag */
   v12Ranges?: boolean;
+  /** disable the V16 real-ICM layer (2026-08-26): Malmuth-Harville bubble
+   *  factor from the live stack distribution + payout curve, replacing the
+   *  flat premium whenever the tournament context supplies both (default:
+   *  enabled; degrades to the legacy heuristic without the data) */
+  v16Icm?: boolean;
+  /** disable the V16 heads-up postflop overlay (default: enabled) */
+  v16Hu?: boolean;
+  /** ENABLE the V16 bet-ratio rescale of the five thresholds still written
+   *  in bet/(pot+bet) semantics (default: DISABLED — a strategy change that
+   *  ships measured: the v16_ratio_rescale league matchup decides it) */
+  v16Ratio?: boolean;
+  /** disable the V16 blocker/unblocker river-bluff grading (default: on) */
+  v16Blockers?: boolean;
+  /** disable V16 size-conditioned strength sampling: a 20bb+ bet samples its
+   *  maker toward two-pair-plus, not just any board contact (default: on) */
+  v16SizeCond?: boolean;
+  /** disable V16 PLO 3-bet polarity: AAxx 3-bets below the generic bar,
+   *  speculative rundowns without AA flat at the margin (default: on) */
+  v16PloPolar?: boolean;
   /** disable the V16 deep-read wiring (2026-08-26): fold-to-c-bet scaled
    *  c-bets, fold-to-3-bet scaled bluff 3-bets, and big-river-bet sizing
    *  tells in the call-down (default: enabled; reads ride the mind layer, so
@@ -942,7 +1008,7 @@ export class HorseLogic {
       sizingMultiplier: params.sizingMultiplier,
       isOmaha: vi.isOmaha,
       isPotLimit: vi.isPotLimit,
-      riskAdd: icmRisk(gs, stackBB),
+      riskAdd: icmRisk(gs, stackBB, opts.v16Icm !== false),
       // NLH only: widening the iso range vs limpers is an NLH edge; PLO limped
       // pots play multiway/postflop where a wide iso bloats pots out of line.
       isoWiden: (opts.v10Iso ?? opts.v10) !== false && !vi.isOmaha ? 0.06 : 0,
@@ -957,6 +1023,12 @@ export class HorseLogic {
         opts.v12 !== false ? (gs.format ?? (isTournamentMode(gs) ? 'mtt' : 'cash')) : undefined,
       targeted,
       raiserFoldTo3Bet: raiserF3b,
+      // V16 PLO POLARITY: AAxx is the premium the generic percentile cannot
+      // see past double-counted side cards; rundowns without it flat more.
+      omahaAA:
+        (opts.v16PloPolar ?? true) !== false && vi.isOmaha
+          ? player.cards.filter((hc) => hc.rank === 'A').length >= 2
+          : undefined,
       v13: opts.v13 !== false,
       rand: fastRandom,
     });
@@ -1186,7 +1258,7 @@ export class HorseLogic {
     // Range reads from each live opponent's preflop line this hand, exploit
     // profile from their accumulated tendencies, board texture, blockers.
     let bands: Array<[number, number] | null> | undefined;
-    let oppReads: Array<{ aggrW: number; checked: number } | null> | undefined;
+    let oppReads: Array<{ aggrW: number; checked: number; bigBet?: boolean } | null> | undefined;
     let exploit = { bluffMod: 1, callDownMod: 1, valueThinMod: 1 };
     let wetness = 0.35;
     let blocker = false;
@@ -1202,6 +1274,7 @@ export class HorseLogic {
         if ((opts.v12Ranges ?? opts.v12) !== false && useHR) {
           oppReads = [];
         }
+        void 0;
         bands = HorseMind.bandsForOpponents(
           player.seat,
           gs.players,
@@ -1211,6 +1284,11 @@ export class HorseLogic {
           gs.communityCards,
           oppReads
         );
+        // V16 SIZE-CONDITIONED SAMPLING is a sampler behavior — disable by
+        // stripping the flag the mind attached, so HorseEval needs no opts.
+        if ((opts.v16SizeCond ?? true) === false && oppReads) {
+          for (const r of oppReads) if (r) r.bigBet = false;
+        }
         exploit = HorseMind.tableExploit(player.seat, gs.players, useCounterAdapt);
         const tex = HorseMind.texture(gs.communityCards);
         wetness = tex.wetness;
@@ -1256,13 +1334,25 @@ export class HorseLogic {
     // V8: Omaha equities cluster much closer than NLH equities, so each extra
     // opponent tightens HARDER in PLO — thresholds tuned on NLH gaps overplay
     // Omaha hands multiway.
-    const risk = useV7 ? icmRisk(gs, gs.bigBlind > 0 ? stack / gs.bigBlind : 100) : 0;
+    const risk = useV7
+      ? icmRisk(gs, gs.bigBlind > 0 ? stack / gs.bigBlind : 100, opts.v16Icm !== false)
+      : 0;
     // V15: equities cluster tighter still with 5 and 6 hole cards, so the
     // per-opponent multiway tightening scales with hole count.
     const useV15 = opts.v15 !== false;
     const omahaMwStep =
       useV8 && vi.isOmaha ? 0.045 + (useV15 ? Math.max(0, vi.holeCount - 4) * 0.005 : 0) : 0.03;
     let mw = (oppCount - 1) * (useV8 && vi.isOmaha ? omahaMwStep : 0.03) + risk;
+    // ═══ V16 HEADS-UP OVERLAY (2026-08-26) ═══
+    // HU postflop was 6-max minus the multiway penalty. Real HU play is
+    // wider: value thresholds drop, thin calls get easier, bluffs go up —
+    // ranges are so wide that medium hands ARE value and folding medium
+    // equity to single bets bleeds. Small nudges, league-measured by the
+    // hu_v16_overlay matchup.
+    const huOn =
+      (opts.v16Hu ?? true) !== false &&
+      gs.players.filter((p) => !p.is_folded && !p.is_sitting_out).length === 2;
+    if (huOn) mw = Math.max(-0.02, mw - 0.015);
 
     // V8 O8 SCOOP/QUARTER AWARENESS — the defining skill of hi-lo poker.
     // A hand that frequently SCOOPS both halves bets and raises harder; a
@@ -1416,8 +1506,9 @@ export class HorseLogic {
     // V4: position scales bluffing — pressure comes cheaper in position.
     // V7: ICM survival pressure trims bluff volume in tournaments.
     const posMod = useIQ ? (ip ? 1.15 : 0.85) : 1.0;
-    const bluffScale =
+    let bluffScale =
       exploit.bluffMod * blockerMod * posMod * Math.max(0.5, 1 - 2 * risk) * (quartered ? 0.6 : 1);
+    if (huOn) bluffScale *= 1.12;
 
     // V8 Omaha draw quality — computed LAZILY (enumeration cost) and only
     // inside the semi-bluff bands. Nut draws fight; dominated flush draws
@@ -1425,7 +1516,8 @@ export class HorseLogic {
     let drawInfoCache: OmahaDrawInfo | null = null;
     const omahaDrawMod = (): number => {
       if (!useDraws || !drawsLive) return 1;
-      if (!drawInfoCache) drawInfoCache = omahaDrawQuality(player.cards, gs.communityCards);
+      if (!drawInfoCache)
+        drawInfoCache = omahaDrawQuality(player.cards, gs.communityCards, vi.isHiLo);
       const d = drawInfoCache;
       if (d.nutty) return 1.15;
       if (d.dominatedFlushDraw && d.straightOuts < 6) return 0.35;
@@ -1688,7 +1780,23 @@ export class HorseLogic {
       }
       // Pure bluff — mostly heads-up, rarer on the river, blocker-preferred.
       // V4: a fresh scare card WE block is the best bluff trigger in poker.
-      const scareBluffBoost = useIQ && scare.any && blocker ? 1.5 : 1.0;
+      // V16 UNBLOCKER: on a river where the front-door flush MISSED (board
+      // stuck at exactly two of a suit), a hero holding NONE of that suit
+      // does not block the missed draws that make up the fold-out range —
+      // the mathematically best bluff candidate. Modest boost, graded on top
+      // of the existing nut-blocker logic.
+      let unblock16 = 1.0;
+      if ((opts.v16Blockers ?? true) !== false && isRiver && gs.communityCards.length >= 5) {
+        const suitN16 = new Map<string, number>();
+        for (const bc of gs.communityCards) suitN16.set(bc.suit, (suitN16.get(bc.suit) || 0) + 1);
+        for (const [suit16, n16] of suitN16) {
+          if (n16 === 2 && !player.cards.some((hc) => hc.suit === suit16)) {
+            unblock16 = 1.15;
+            break;
+          }
+        }
+      }
+      const scareBluffBoost = (useIQ && scare.any && blocker ? 1.5 : 1.0) * unblock16;
       if (
         equity < 0.3 &&
         oppCount === 1 &&
@@ -1889,6 +1997,8 @@ export class HorseLogic {
 
     // V8 NLH: OOP check-raise bluff on a fresh scare card WE block — the
     // strongest bluff-raise trigger in holdem. Heads-up, modest bet only.
+    // V16 RATIO (flagged OFF, league-measured): the 0.6 gate reads as
+    // bet/(pot+bet) intent — on the bet/pot scale the equivalent is 1.5.
     if (
       useNlhX &&
       !ip &&
@@ -1897,7 +2007,7 @@ export class HorseLogic {
       equity >= 0.2 &&
       equity < 0.42 &&
       oppCount === 1 &&
-      betRatio <= 0.6 &&
+      betRatio <= (opts.v16Ratio === true ? 1.5 : 0.6) &&
       fastRandom() < params.bluffFreq * params.aggression * 0.25 * Math.min(1.2, bluffScale)
     ) {
       // V13: same as above — a check-raise bluff is the start of a story.
@@ -1993,10 +2103,11 @@ export class HorseLogic {
     // often against aggressive opposition, less against passives. V4: when
     // the river completed the draws and we hold no blocker, catch less.
     const catchScale = dangered ? 0.12 : 0.25;
+    // V16 RATIO (flagged OFF): 0.4 as bet/(pot+bet) = 0.667 as bet/pot.
     if (
       isRiver &&
       oppCount === 1 &&
-      betRatio <= 0.4 &&
+      betRatio <= (opts.v16Ratio === true ? 0.667 : 0.4) &&
       eq15 >= potOdds - 0.04 &&
       fastRandom() < catchScale * exploit.callDownMod
     ) {

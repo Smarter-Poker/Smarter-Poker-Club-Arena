@@ -1000,10 +1000,10 @@
   padding: 0 2px;
   white-space: nowrap;
   height: 44px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(21, 135, 248, 0.22) 0%, rgba(0, 58, 158, 0.22) 100%);
+  border: 1px solid rgba(21, 135, 248, 0.35);
   border-radius: 10px;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.95);
   font-size: 0.8125rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -1019,20 +1019,20 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, transparent 50%);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, transparent 50%);
   pointer-events: none;
 }
 
 .raise-preset:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: linear-gradient(180deg, rgba(21, 135, 248, 0.45) 0%, rgba(0, 58, 158, 0.45) 100%);
+  border-color: rgba(21, 135, 248, 0.65);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 12px rgba(21, 135, 248, 0.3);
 }
 
 .raise-preset:active:not(:disabled) {
   transform: scale(0.95) translateY(0);
-  background: rgba(255, 255, 255, 0.16);
+  background: linear-gradient(180deg, rgba(21, 135, 248, 0.55) 0%, rgba(0, 58, 158, 0.55) 100%);
 }
 
 .raise-preset:disabled {
@@ -1041,8 +1041,7 @@
 }
 
 .raise-preset--allin {
-  /* Dan: "CHANGE THE PURPLE ALL IN TO RED". Purple belonged to no part of the
-     Smarter.Poker palette; red is what every other all-in affordance uses. */
+  /* All-In keeps a red tint so it visually reads as the most dangerous action */
   background: linear-gradient(180deg, rgba(239, 68, 68, 0.28) 0%, rgba(185, 28, 28, 0.28) 100%);
   border-color: rgba(239, 68, 68, 0.5);
   color: #fca5a5;

@@ -18,6 +18,8 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { reportError } from '../utils/errorReporter';
+import { MEDIA_BASE } from '../utils/mediaBase';
+import { SHARK_CLUB_ID } from '../lib/constants';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 const inviteStepAnimationStyle = {
@@ -28,6 +30,7 @@ const inviteStepAnimationStyle = {
 
 interface ClubInfo {
   id: string;
+  club_id?: string | number;
   slug?: string;
   name: string;
   description?: string;
@@ -87,7 +90,9 @@ export default function InvitePage() {
     try {
       let clubQuery = supabase
         .from('clubs')
-        .select('id, slug, name, description, member_count, avatar_url, logo_url, is_public');
+        .select(
+          'id, club_id, slug, name, description, member_count, avatar_url, logo_url, is_public'
+        );
 
       if (inviteCode) {
         clubQuery = clubQuery.eq('invite_code', inviteCode);
@@ -300,6 +305,8 @@ export default function InvitePage() {
               alt={club.name}
               loading="lazy"
             />
+          ) : Number(club.club_id) === SHARK_CLUB_ID ? (
+            <img src={`${MEDIA_BASE}images/shark-club-logo.jpg`} alt={club.name} loading="lazy" />
           ) : (
             <span>{club.name[0]?.toUpperCase()}</span>
           )}

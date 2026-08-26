@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { readLocalSession } from '../../lib/authUtils';
+import { resolveClubUUID } from '../../utils/clubIdResolver';
 import PageSkeleton from '../common/PageSkeleton';
 
 export default function ClubMemberGuard({ children }: { children: ReactNode }) {
@@ -26,10 +27,12 @@ export default function ClubMemberGuard({ children }: { children: ReactNode }) {
           return;
         }
 
+        const resolvedId = await resolveClubUUID(clubId);
+
         const { data: memStat } = await supabase
           .from('club_members')
           .select('status')
-          .eq('club_id', clubId)
+          .eq('club_id', resolvedId)
           .eq('user_id', localSession.userId)
           .maybeSingle();
 

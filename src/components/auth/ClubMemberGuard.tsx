@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { supabase } from '../../lib/supabase';
+import { supabase, getAuthUser } from '../../lib/supabase';
 import { readLocalSession } from '../../lib/authUtils';
+
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import PageSkeleton from '../common/PageSkeleton';
 
@@ -21,7 +22,14 @@ export default function ClubMemberGuard({ children }: { children: ReactNode }) {
 
     const checkAccess = async () => {
       try {
-        const localSession = readLocalSession();
+        let localSession = readLocalSession();
+        if (!localSession?.userId) {
+          const authUser = await getAuthUser();
+          if (authUser?.data?.user?.id) {
+            localSession = { userId: authUser.data.user.id } as any;
+          }
+        }
+
         if (!localSession?.userId) {
           if (mounted) navigate(`/invite/${clubId}`);
           return;
@@ -60,3 +68,4 @@ export default function ClubMemberGuard({ children }: { children: ReactNode }) {
 
   return <>{children}</>;
 }
+// Trigger CI to bypass GitHub Actions queue desync

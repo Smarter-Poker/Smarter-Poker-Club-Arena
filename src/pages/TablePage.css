@@ -3478,11 +3478,13 @@ body.ca-raising .bankroll-widget {
   }
 }
 
-/* Runs 2+ re-deal only the streets past the shared base board: the shared
-   prefix renders dimmed on those rows so the re-dealt cards read as the new
-   information. base-count can only be 0 (preflop), 3 (flop) or 4 (turn). */
+/* Runs 2+ re-deal only the streets past the shared base board. The RUN IT 3X
+   recording shows only the RE-DEALT cards for those runs (the shared prefix
+   is never drawn twice) — hide the prefix slots but keep their layout width,
+   so each extra run's cards sit exactly under their street positions like
+   the reference's parked river cards. base-count can only be 0 (preflop),
+   3 (flop) or 4 (turn). */
 .community-area__run--extra[data-base-count='3'] .community-cards__card:nth-child(-n + 3),
 .community-area__run--extra[data-base-count='4'] .community-cards__card:nth-child(-n + 4) {
-  opacity: 0.45;
-  filter: saturate(0.6);
+  visibility: hidden;
 }

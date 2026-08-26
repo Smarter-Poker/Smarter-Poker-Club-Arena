@@ -244,6 +244,7 @@
 
 /* ── Stats Row ─────────────────────────────────────────────────────────────── */
 .club-card-stats-row {
+  box-sizing: border-box;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;

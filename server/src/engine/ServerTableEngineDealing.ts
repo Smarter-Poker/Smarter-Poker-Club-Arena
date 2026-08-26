@@ -28,6 +28,7 @@ import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
 import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { handCompletionHoldMs, boardClearMs } from '../config/handCompletionSpec.js';
+import { collectNitEvictions } from '../services/supabase/nitGame.js';
 
 export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -213,16 +214,50 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             this.tableId,
             seatedIds
           );
+          // ── Dan 2026-08-25, table-creation parity: NIT GAME ──
+          // "VPIP NEEDS TO BE BUILT OUT ... FULLY BUILT OUT AND IMPLEMENTED
+          //  FOR ALL CASH GAMES." `nit_game` and its three numbers were
+          // columns the creation page wrote and nothing read; the toggle's own
+          // tooltip promises a "Penalty for tight play" and there was none.
+          //
+          // The rule is a query (fn_nit_evictions) rather than engine state,
+          // because ca_hand_facts already stores VPIP per player per hand from
+          // the same derivation the player's own HUD shows. A second counter
+          // here would be a second answer, and the two would part company the
+          // first time this process restarted mid-session.
+          //
+          // GATED ON THE COLUMN so the round trip never happens on a table
+          // without the rule - which is every table today. A failure returns
+          // an empty list: a stats query that cannot answer must not throw
+          // anyone out of a hand they were entitled to play.
+          const nitEvictable: string[] = [];
+          if (this.tableInfo?.nit_game === true) {
+            const nits = await collectNitEvictions(this.tableId);
+            for (const n of nits) {
+              console.log(
+                `[ServerTableEngine:${this.tableId}] nit game: ${n.userId} is at ` +
+                  `${n.vpip}% VPIP over ${n.hands} hands, table requires ${n.required}%`
+              );
+              nitEvictable.push(n.userId);
+            }
+          }
+
           const blindEvictSet = new Set(blindEvictable);
-          const evictable = Array.from(new Set([...sitOutEvictable, ...blindEvictable]));
+          const nitEvictSet = new Set(nitEvictable);
+          const evictable = Array.from(
+            new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable])
+          );
           for (const userId of evictable) {
             const seated = this.seatedPlayers.find((p) => p.user_id === userId);
             if (!seated) continue;
             const awayBlindEvict = blindEvictSet.has(userId);
+            const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
             console.log(
               awayBlindEvict
                 ? `[ServerTableEngine:${this.tableId}] evicting ${userId} — away, already charged one SB and one BB`
-                : `[ServerTableEngine:${this.tableId}] evicting ${userId} — sat out past the 2-orbit / 5-minute limit`
+                : nitEvict
+                  ? `[ServerTableEngine:${this.tableId}] evicting ${userId} — below this nit game's VPIP floor`
+                  : `[ServerTableEngine:${this.tableId}] evicting ${userId} — sat out past the 2-orbit / 5-minute limit`
             );
             this.hub?.emitEvent(this.tableId, {
               type: 'seat_left',
@@ -230,7 +265,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               seat: seated.seat_number,
               user_id: userId,
               mid_hand: false,
-              reason: awayBlindEvict ? 'away_blind_cap' : 'sit_out_timeout',
+              reason: awayBlindEvict
+                ? 'away_blind_cap'
+                : nitEvict
+                  ? 'nit_game_vpip'
+                  : 'sit_out_timeout',
               timestamp: Date.now(),
             });
             atomicCashout(userId, this.tableId, seated.seat_number)

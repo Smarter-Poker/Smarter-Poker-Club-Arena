@@ -207,6 +207,22 @@ export interface TableInfo {
   cap_bb?: number | null;
   /** Deal a Hold'em table as Pineapple. See dealtGameVariant. */
   pineapple_holdem?: boolean;
+  /**
+   * NIT GAME. The master switch for the three VPIP numbers below; with it off
+   * they do nothing. The rules themselves live in SQL (fn_nit_check /
+   * fn_nit_evictions) because the VPIP they measure is already stored per hand
+   * in ca_hand_facts -- computing it a second time here is how two answers to
+   * the same question appear. These four are carried so the engine can skip
+   * the round trip entirely on the tables that have the rule switched off,
+   * which is all of them today.
+   */
+  nit_game?: boolean;
+  /** Minimum VPIP at THIS table, checked between hands. 0 disables. */
+  maintain_percent_min?: number | null;
+  /** Hands at this table before the maintain rule may judge. */
+  maintain_hands?: number | null;
+  /** Minimum LIFETIME VPIP, checked at the door by atomic_table_buyin. */
+  career_percent_min?: number | null;
 }
 
 export interface SeatedPlayer {

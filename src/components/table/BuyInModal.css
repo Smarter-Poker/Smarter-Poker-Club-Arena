@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-.buy-in-modal-overlay {
+.buy-in-modal__overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -18,10 +18,10 @@
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   padding: 16px;
-  animation: fadeIn 0.2s ease-out;
+  animation: buyInFadeIn 0.2s ease-out;
 }
 
-@keyframes fadeIn {
+@keyframes buyInFadeIn {
   from {
     opacity: 0;
     backdrop-filter: blur(0px);
@@ -45,7 +45,7 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
     0 12px 32px rgba(0, 0, 0, 0.4),
     0 0 20px rgba(111, 220, 255, 0.12);
-  animation: slideUp 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  animation: buyInSlideUp 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   position: relative;
   overflow: hidden;
 }
@@ -61,7 +61,7 @@
   pointer-events: none;
 }
 
-@keyframes slideUp {
+@keyframes buyInSlideUp {
   from {
     opacity: 0;
     transform: translateY(20px) scale(0.95);
@@ -82,6 +82,16 @@
   justify-content: center;
   margin-bottom: 24px;
   position: relative;
+}
+
+.buy-in-modal__countdown {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #ef4444;
 }
 
 .buy-in-modal__title {
@@ -117,25 +127,38 @@
   transform: rotate(90deg);
 }
 
+.buy-in-modal__restriction-notice {
+  background: rgba(255, 165, 0, 0.15);
+  border: 1px solid rgba(255, 165, 0, 0.4);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 0 0 12px 0;
+  font-size: 12px;
+  color: #ffaa33;
+  text-align: center;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    AMOUNT DISPLAY
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.buy-in-modal__amount {
+.buy-in-modal__amount-display {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 24px;
 }
 
-.buy-in-modal__amount-label {
+.buy-in-modal__min-label,
+.buy-in-modal__max-label {
   font-size: 0.875rem;
   color: #8b949e;
   font-weight: 600;
   width: 48px;
+  text-align: center;
 }
 
-.buy-in-modal__amount-box {
+.buy-in-modal__current-amount {
   flex: 1;
   margin: 0 12px;
   height: 64px;
@@ -144,14 +167,14 @@
   border-radius: 12px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   padding: 0 16px;
   box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
   position: relative;
   overflow: hidden;
 }
 
-.buy-in-modal__amount-box::after {
+.buy-in-modal__current-amount::after {
   content: '';
   position: absolute;
   top: 0;
@@ -160,11 +183,11 @@
   height: 100%;
   background: linear-gradient(90deg, transparent, rgba(111, 220, 255, 0.08), transparent);
   transform: translateX(-100%);
-  animation: shimmer 2s infinite;
+  animation: buyInShimmer 2s infinite;
   pointer-events: none;
 }
 
-@keyframes shimmer {
+@keyframes buyInShimmer {
   100% {
     transform: translateX(100%);
   }
@@ -177,11 +200,11 @@
   margin: 0;
 }
 
-.buy-in-modal__currency {
+.buy-in-modal__chip-icon {
   font-size: 1.25rem;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.5);
-  margin-left: 4px;
+  margin-left: 8px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -277,7 +300,7 @@
    QUICK BUTTONS
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.buy-in-modal__quick-btns {
+.buy-in-modal__quick-amounts {
   display: flex;
   gap: 8px;
   margin-bottom: 24px;

@@ -1637,11 +1637,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             // but is stale. Fetch by union_id when in a union, else club_id.
             const q = supabase.from('bbj_pools').select('id, main_balance');
             if (unionId) {
-              const allIds = [resolvedId, ...(unionClubIds || [])];
-              const filter = `union_id.eq.${unionId},club_id.in.(${allIds.join(',')})`;
-              return await q.or(filter);
+              return await q.eq('union_id', unionId).eq('status', 'active').limit(1).maybeSingle();
             } else {
-              return await q.eq('club_id', resolvedId).limit(1).maybeSingle();
+              return await q
+                .eq('club_id', resolvedId)
+                .eq('status', 'active')
+                .limit(1)
+                .maybeSingle();
             }
           } catch (e) {
             reportError(e, 'ClubHomePage.async');

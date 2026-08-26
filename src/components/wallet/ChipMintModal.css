@@ -37,6 +37,12 @@
 
 .cmm-panel {
   width: min(380px, 94vw);
+  /* The panel had no height bound at all: in landscape on a 375px phone the
+     destination notice plus the quick row pushed Mint Chips below the fold with
+     nothing to scroll. */
+  max-height: 92vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   border-radius: 16px;
   background: linear-gradient(165deg, #223046 0%, #1a2436 42%, #0d1120 100%);
   border: 1px solid rgba(0, 180, 230, 0.3);
@@ -105,9 +111,12 @@
   gap: 8px;
 }
 
+/* 44px minimum on every tappable control (2026-08-25). These were 28px. */
 .cmm-quick button {
   flex: 1;
-  padding: 7px 0;
+  min-width: 0;
+  min-height: 44px;
+  padding: 7px 4px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.15);
   background: rgba(255, 255, 255, 0.05);
@@ -160,8 +169,10 @@
 }
 
 .cmm-actions button {
+  min-height: 44px;
   padding: 10px 18px;
   border-radius: 999px;
+  font-size: 0.85rem;
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: none;
   color: #e8eaf0;

@@ -120,23 +120,24 @@ export const WalletService = {
     }));
   },
 
-  /**
-   * Get specific wallet balance
-   */
-  async getWalletBalance(userId: string, walletType: WalletType): Promise<WalletBalance> {
-    const balances = await this.getBalances(userId);
-    const wallet = balances.find((b) => b.walletType === walletType);
-    if (!wallet) throw new Error(`Wallet ${walletType} not found for user ${userId}`);
-    return wallet;
-  },
-
-  /**
-   * Get total available chips across all wallets
-   */
-  async getTotalAvailable(userId: string): Promise<number> {
-    const balances = await this.getBalances(userId);
-    return balances.reduce((sum, w) => sum + w.availableBalance, 0);
-  },
+  // AUDIT 2026-08-25: `getWalletBalance` and `getTotalAvailable` are deleted.
+  //
+  // Neither had a single call site anywhere in src/ or tests/, and both were
+  // actively wrong in ways that would have bitten whoever used them next:
+  //
+  //   getWalletBalance THREW ("Wallet PLAYER not found for user X") when the
+  //   row simply did not exist. A user who has never been provisioned has no
+  //   row and a balance of zero; raising for that turns an ordinary state into
+  //   an error on a display path. `readPlayerBalance` below is the correct
+  //   shape - it distinguishes "zero" from "could not find out".
+  //
+  //   getTotalAvailable ADDED THE THREE WALLET TYPES TOGETHER and returned one
+  //   number. BUSINESS is commissions and settlements, PLAYER is what buys into
+  //   a game, PROMO is bonus chips with their own rules. They are three
+  //   accounts; a single figure spanning them cannot be spent, cannot be
+  //   reconciled, and is exactly the conflation this pass exists to remove
+  //   (see the hero label on PlayerWalletPage for the same fix, made visible).
+  //   Anyone who needs a total should say what it is a total OF.
 
   // ─────────────────────────────────────────────────────────────────────────────
   // CHIP MINTING
@@ -342,7 +343,27 @@ export const WalletService = {
   },
 
   /**
-   * Transfer chips to another user
+   * Transfer chips to another user.
+   *
+   * ── CANNOT SUCCEED FROM THE BROWSER (verified 2026-08-25) ─────────────────
+   * `wallet_user_transfer` is granted EXECUTE to `postgres` and `service_role`
+   * only — `authenticated` is not on its ACL — so every call from a signed-in
+   * user returns 42501 and this method throws. It has two LIVE call sites in
+   * AgentDashboardPage (the agent's "send chips" and "take credit back"
+   * controls), which means both of those buttons have been failing for as long
+   * as the grant has looked like this.
+   *
+   * NOT PAPERED OVER HERE. The fix is a grant plus an auth check inside the
+   * function (an agent may move chips to their own downline and nobody else),
+   * or a service-role API route the way minting goes through
+   * /api/club-arena/mint-chips. Both are server-side and out of scope for a
+   * display audit; making the client "work" by widening the grant without the
+   * auth check would let any signed-in user move any other user's chips.
+   *
+   * `retryAsync` is left in place deliberately: it only retries THROWN
+   * transient errors and supabase-js RESOLVES with `{ error }`, so a 42501 is
+   * returned once and not amplified. (Checked, because the identical wrapper
+   * around log_wallet_transaction was amplifying — that one threw.)
    */
   async transferToUser(
     fromUserId: string,
@@ -402,7 +423,14 @@ export const WalletService = {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Distribute promo chips to a player
+   * Distribute promo chips to a player.
+   *
+   * ── SAME GRANT PROBLEM AS transferToUser (verified 2026-08-25) ────────────
+   * `distribute_promo_chips` is granted EXECUTE to `postgres` and
+   * `service_role` only, so this returns 42501 from any browser. Live call
+   * sites: AgentDashboardPage's promo control and PlayerSessionsPage's win-back
+   * button. `bulkDistributePromo` below loops over this one, so a bulk
+   * leaderboard payout reports every single row as failed.
    */
   async distributePromo(agentId: string, playerId: string, amount: number): Promise<boolean> {
     if (amount <= 0) throw new Error('Amount must be positive');
@@ -455,6 +483,19 @@ export const WalletService = {
    * Lock chips for table buy-in
    * Deducts from Player Wallet (wallets table) using atomic RPC
    * Chip flow: Union → Club Bank → Agent Wallet → Player Wallet → Table Buy-in
+   *
+   * ── DORMANT, AND WOULD FAIL IF IT WERE NOT (verified 2026-08-25) ──────────
+   * The note below already says `atomic_deduct_wallet_and_log` is service-role
+   * only; the ACL confirms it (postgres + service_role, no `authenticated`), so
+   * the "RPC returns false if insufficient balance" path is unreachable from a
+   * browser — the call returns 42501 first and this throws "Buy-in failed:
+   * permission denied for function atomic_deduct_wallet_and_log".
+   *
+   * Nothing reaches it today: the only caller is `useWalletStore.buyIn`, and
+   * that store method has no UI call site left. Real buy-ins go through
+   * `atomic_table_buyin` on the engine, which is the correct owner. Left in
+   * place with the reason written down rather than deleted, because deleting it
+   * would also mean editing useWalletStore, which is outside this pass.
    */
   async lockForBuyIn(userId: string, tableId: string, amount: number): Promise<boolean> {
     // VALIDATION: Prevent negative/zero/non-integer amounts before RPC call
@@ -656,43 +697,19 @@ export const WalletService = {
   // SETTLEMENT OPERATIONS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Credit commission to agent's business wallet
-   */
-  async creditCommission(agentId: string, amount: number, periodId: string): Promise<boolean> {
-    const { error } = await retryAsync(
-      () =>
-        supabase.rpc('credit_agent_commission', {
-          p_agent_id: agentId,
-          p_amount: amount,
-          p_description: `Commission for period ${periodId}`,
-        }),
-      3
-    );
-
-    if (error) throw error;
-    masterBus.emit('BALANCE_UPDATED', { source: 'commission', userId: agentId, amount });
-    return true;
-  },
-
-  /**
-   * Process rakeback to player's wallet
-   */
-  async creditRakeback(playerId: string, amount: number, periodId: string): Promise<boolean> {
-    const { error } = await retryAsync(
-      () =>
-        supabase.rpc('credit_player_rakeback', {
-          p_user_id: playerId,
-          p_amount: amount,
-          p_description: `Rakeback payout for period ${periodId}`,
-        }),
-      3
-    );
-
-    if (error) throw error;
-    masterBus.emit('BALANCE_UPDATED', { source: 'rakeback', userId: playerId, amount });
-    return true;
-  },
+  // AUDIT 2026-08-25: `creditCommission` and `creditRakeback` are deleted.
+  //
+  // They are the last two client-side wallet-CREDIT wrappers, and AUDIT M17 at
+  // the top of this file already states the position: "the client no longer
+  // initiates a wallet credit at all". These two were simply missed.
+  //
+  // Neither had a call site. Neither could have worked if it had one:
+  // `credit_agent_commission` and `credit_player_rakeback` are both granted
+  // EXECUTE to `postgres` and `service_role` only, so a browser call returns
+  // 42501 - which is the control working, exactly as the logTransaction note
+  // below explains. Settlement and rakeback are paid server-side by the
+  // process that computes them, inside the same transaction, with an
+  // idempotency key derived from the period rather than minted by a browser.
 
   // NOTE: dealer tipping was REMOVED ENTIRELY on 2026-08-20, by product
   // decision — Smarter Poker does not have dealers to tip and will not be
@@ -717,42 +734,12 @@ export const WalletService = {
   // DIRECT WALLET READS (routed from bypassing queries)
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Get a specific wallet for a user (raw balance fields)
-   */
-  async getWallet(
-    userId: string,
-    walletType: WalletType
-  ): Promise<{ balance: number; locked_balance: number } | null> {
-    const { data, error } = await supabase
-      .from('wallets')
-      .select('balance, locked_balance')
-      .eq('user_id', userId)
-      .eq('wallet_type', walletType)
-      .maybeSingle();
-    if (error) {
-      reportError(error, 'WalletService.getWallet', { userId, walletType });
-      return null;
-    }
-    return data;
-  },
-
-  /**
-   * Get all wallets for a user
-   */
-  async getWallets(
-    userId: string
-  ): Promise<Array<{ wallet_type: string; balance: number; locked_balance: number }>> {
-    const { data, error } = await supabase
-      .from('wallets')
-      .select('wallet_type, balance, locked_balance')
-      .eq('user_id', userId);
-    if (error) {
-      reportError(error, 'WalletService.getWallets', { userId });
-      return [];
-    }
-    return data || [];
-  },
+  // AUDIT 2026-08-25: `getWallet` and `getWallets` are deleted. Zero call
+  // sites, and both collapsed a FAILED READ into an empty result - `getWallet`
+  // returned null for both "no row" and "query refused", `getWallets` returned
+  // [] for both. That is the ambiguity readPlayerBalance below was written to
+  // escape, duplicated twice over. `getBalances` remains for the one caller
+  // that needs the full set (useWalletStore).
 
   /**
    * Get player wallet balance (shorthand for the most common query)
@@ -804,10 +791,10 @@ export const WalletService = {
     } catch {
       /* fall through to the legacy wallet read */
     }
-    /* The legacy read distinguishes its own failure too: `getWallet` returns
-       null both for "no row" and for "query failed", so a missing PLAYER
-       wallet and a refused one look identical. Read it here rather than
-       through getWallet so the two can be told apart. */
+    /* The legacy read distinguishes its own failure. A helper that returns
+       null for both "no row" and "query failed" makes a missing PLAYER wallet
+       and a refused one look identical, which is why the two helpers that did
+       that were removed above and this read is done inline. */
     const { data: w, error: wErr } = await supabase
       .from('wallets')
       .select('balance')

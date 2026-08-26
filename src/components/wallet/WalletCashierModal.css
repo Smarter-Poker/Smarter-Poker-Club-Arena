@@ -67,42 +67,36 @@
   background-clip: text;
 }
 
-.cbc-sub {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-  font-size: 0.78rem;
-  color: #8892a4;
-}
+/* .cbc-sub and .cbc-role were removed on 2026-08-25: the header stopped
+   rendering a subtitle and a role pill some time ago and the two rules sat
+   here matching nothing. Dead CSS on a money surface is worse than dead CSS
+   elsewhere - it is the next reader's evidence that a control they cannot find
+   still exists. */
 
-.cbc-role {
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: #6fdcff;
-  background: rgba(0, 180, 230, 0.12);
-  border: 1px solid rgba(0, 180, 230, 0.3);
-}
-
+/* 44px, not 30. The close button is the control a thumb reaches for first and
+   it sat at 30x30 - under every touch-target guideline, on a modal whose whole
+   job is moving money. Same correction applied to every tappable rule below. */
 .cbc-x {
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.04);
   color: #8892a4;
-  font-size: 1.2rem;
+  font-size: 1.35rem;
   line-height: 1;
   cursor: pointer;
 }
 
-.cbc-x:hover {
+.cbc-x:hover:not(:disabled) {
   color: #e8eaf0;
   border-color: rgba(0, 180, 230, 0.4);
+}
+
+.cbc-x:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* ── The balance this cashier spends ─────────────────────────────────────── */
@@ -133,6 +127,7 @@
 
 .cbc-mint {
   margin: 10px 18px 0;
+  min-height: 44px;
   padding: 10px 14px;
   border-radius: 10px;
   border: 1px solid rgba(24, 119, 242, 0.45);
@@ -174,7 +169,8 @@
 
 .cbc-tab {
   flex: 1;
-  padding: 9px 0;
+  min-height: 44px;
+  padding: 9px 4px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.04);
@@ -239,6 +235,8 @@
 
 .cbc-seg button {
   flex: 1;
+  min-width: 0;
+  min-height: 44px;
   padding: 9px 4px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -276,6 +274,7 @@
   align-items: center;
   gap: 8px;
   width: 100%;
+  min-height: 44px;
   padding: 9px 10px;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -314,38 +313,9 @@
   color: #8892a4;
 }
 
-/* ── Quick amounts ───────────────────────────────────────────────────────── */
-.cbc-quick {
-  display: flex;
-  gap: 6px;
-}
-
-.cbc-quick button {
-  flex: 1;
-  padding: 7px 0;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
-  color: #e8eaf0;
-  font-size: 0.7rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.cbc-quick button:hover:not(:disabled) {
-  border-color: rgba(0, 180, 230, 0.5);
-}
-
-.cbc-quick button:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.cbc-max {
-  background: rgba(0, 180, 230, 0.14) !important;
-  border-color: rgba(0, 180, 230, 0.45) !important;
-  color: #6fdcff !important;
-}
+/* .cbc-quick and .cbc-max removed on 2026-08-25: this cashier has never
+   rendered a quick-amount row (that lives in ChipMintModal, which has its own
+   .cmm-quick), so both rules matched nothing. */
 
 .cbc-warn {
   font-size: 0.72rem;
@@ -360,6 +330,7 @@
 }
 
 .cbc-actions button {
+  min-height: 44px;
   padding: 10px 18px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -452,7 +423,8 @@
 
 .cbc-export {
   flex-shrink: 0;
-  padding: 6px 12px;
+  min-height: 44px;
+  padding: 6px 14px;
   border-radius: 999px;
   border: 1px solid rgba(0, 180, 230, 0.35);
   background: rgba(0, 180, 230, 0.08);
@@ -477,7 +449,8 @@
 }
 
 .cbc-chip {
-  padding: 5px 10px;
+  min-height: 44px;
+  padding: 5px 12px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.04);
@@ -564,15 +537,20 @@
   color: #ffb4b4;
 }
 
+/* The Claim Back button IS the ten minute mistake eraser. It was 22px tall and
+   left-aligned in the corner of a row - the smallest target on the screen for
+   the most time-critical action on it. Full width, 44px, in the thumb zone. */
 .cbc-undo {
-  margin-top: 4px;
-  align-self: flex-start;
-  padding: 5px 11px;
+  margin-top: 6px;
+  align-self: stretch;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 14px;
   border-radius: 999px;
   border: 1px solid rgba(239, 68, 68, 0.35);
   background: rgba(239, 68, 68, 0.08);
   color: #ffb4b4;
-  font-size: 0.64rem;
+  font-size: 0.78rem;
   font-weight: 700;
   cursor: pointer;
 }
@@ -588,6 +566,7 @@
 }
 
 .cbc-more {
+  min-height: 44px;
   padding: 10px 0;
   border-radius: 999px;
   border: 1px solid rgba(0, 180, 230, 0.35);
@@ -651,8 +630,22 @@
     font-size: 0.66rem;
   }
 
-  .cbc-quick button {
-    font-size: 0.64rem;
+  /* At 375px three destination labels ("Agent Wallet" / "Promo Wallet" /
+     "Player Wallet") in one row are ~104px each. They wrapped mid-word and the
+     row grew unpredictably; letting the label break on the space keeps every
+     button the same height and inside the panel. */
+  .cbc-seg {
+    flex-wrap: wrap;
+  }
+
+  .cbc-seg button {
+    flex: 1 1 30%;
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  .cbc-totals strong {
+    font-size: 0.74rem;
   }
 }
 

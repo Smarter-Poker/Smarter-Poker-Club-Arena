@@ -29,15 +29,9 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.back {
-  background: none;
-  border: none;
-  color: #6fdcff;
-  font-size: 1.5rem;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 4px;
-}
+/* .back removed 2026-08-25: the header has never rendered a back chevron (the
+   club switcher and ClubBottomNav are the navigation here), so the rule and its
+   entry in the touch-target list below both matched nothing. */
 
 .title {
   font-size: 1.05rem;
@@ -718,7 +712,10 @@
   .sortBtn,
   .retryBtn,
   .footerBtn,
-  .back {
+  .classicLink,
+  .selClear,
+  .entityBtn,
+  .pickerRow {
     min-height: 44px;
     touch-action: manipulation;
   }

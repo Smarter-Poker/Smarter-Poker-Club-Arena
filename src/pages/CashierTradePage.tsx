@@ -66,7 +66,7 @@ import { reportError } from '../utils/errorReporter';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
-import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
+import { DEFAULT_CASHIER_WALLET, secondsLeftFromServer } from '../components/wallet/cashierModes';
 import { canSeeClubBank, canHoldAgentWallet } from '../components/wallet/walletRows';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import styles from './CashierTradePage.module.css';
@@ -172,10 +172,6 @@ const fmt = (n: number) =>
 // ─── Component ───────────────────────────────────────────────────────────────
 
 /**
- * Raw Postgres enums were rendered straight at the user: "peer_transfer",
- * "awaiting_payment". Title Case them, the way ROLE_LABEL does for roles.
- */
-/**
  * crypto.randomUUID is undefined on http origins and in Safari < 15.4.
  *
  * THE FALLBACK MUST STILL BE A UUID (2026-08-25). It used to be
@@ -197,6 +193,10 @@ function newOpId(): string {
   });
 }
 
+/**
+ * Raw Postgres enums were rendered straight at the user: "peer_transfer",
+ * "awaiting_payment". Title Case them, the way ROLE_LABEL does for roles.
+ */
 function txLabel(value: string | null | undefined): string {
   return String(value || '')
     .split('_')
@@ -278,8 +278,25 @@ export default function CashierTradePage() {
   const [reversibleLoading, setReversibleLoading] = useState(false);
   const [reversibleError, setReversibleError] = useState<string | null>(null);
   const [claimingId, setClaimingId] = useState<string | null>(null);
-  /** Ticks once a second so each countdown in that list stays honest. */
-  const [nowTick, setNowTick] = useState(() => Date.now());
+  /**
+   * THE COUNTDOWN IS THE SERVER'S, NOT THE PHONE'S (Dan 2026-08-25).
+   *
+   * `seconds_left` comes off fn_agent_wallet_reversible and was fetched and
+   * never read - the countdown here (and the stillClaimable filter beneath it)
+   * subtracted `Date.now()` from `reversible_until`, which is the browser wall
+   * clock the comment above ReversibleSend promises it is not. A device ten
+   * minutes fast showed "Nothing Is Still Inside Its Ten Minute Window" with
+   * claimable sends sitting right there; ten minutes slow offered every expired
+   * row and each tap collected a refusal from fn_agent_wallet_claim_back.
+   *
+   * The deadline is anchored ONCE, when the list lands, and only locally
+   * measured elapsed time is subtracted from it. performance.now() is
+   * monotonic, so a wrong clock, an NTP correction or a DST jump cannot move
+   * it. The database still has the final word on every claim.
+   */
+  const [reversibleAnchor, setReversibleAnchor] = useState<number | null>(null);
+  /** Ticks once a second so each countdown in that list re-renders. */
+  const [nowTick, setNowTick] = useState(0);
   /**
    * Per-target failures from the last batch, rendered IN the modal. The toast
    * layer sanitises money errors (it strips the player's name off an
@@ -528,24 +545,40 @@ export default function CashierTradePage() {
         for (const pr of profs || []) if (pr.is_horse) horses.add(pr.id as string);
       }
 
-      const rows: DownlineRow[] = dl.map((r) => {
-        const uid = String(r.user_id);
-        const depth = Number(r.depth) || 0;
-        return {
-          userId: uid,
-          name: (r.name as string) || 'Player',
-          username: (r.username as string) || '',
-          avatarUrl: (r.avatar_url as string) || null,
-          role: (r.role as string) || 'player',
-          chipBalance: Number(r.chip_balance) || 0,
-          isHorse: horses.has(uid),
-          depth,
-          // depth 1 is a DIRECT assignee. Deeper rows belong to an agent
-          // beneath this one, and are still transactable - just not "mine".
-          isMine: depth === 1,
-          playerNumber: (r.player_number as string) || null,
-        };
-      });
+      /**
+       * NEVER LIST YOURSELF AS A TARGET (2026-08-25).
+       *
+       * fn_club_cashier_members returns the caller in its own result for a
+       * staff viewer (scope 'all' has no self exclusion - it is every active
+       * member of the club). fn_agent_wallet_send then refuses
+       * `p_to_user_id = auth.uid()` outright, so an owner could tick their own
+       * row, hit Send Out, and collect "You Cannot Send Chips To Yourself" for
+       * a target the grid had offered them. Worse in a batch: one silent
+       * failure row among twenty successes.
+       *
+       * An agent never saw this because the downline walk starts at their
+       * CHILDREN, so their own row was never in the list to begin with.
+       */
+      const rows: DownlineRow[] = dl
+        .filter((r) => String(r.user_id) !== user.id)
+        .map((r) => {
+          const uid = String(r.user_id);
+          const depth = Number(r.depth) || 0;
+          return {
+            userId: uid,
+            name: (r.name as string) || 'Player',
+            username: (r.username as string) || '',
+            avatarUrl: (r.avatar_url as string) || null,
+            role: (r.role as string) || 'player',
+            chipBalance: Number(r.chip_balance) || 0,
+            isHorse: horses.has(uid),
+            depth,
+            // depth 1 is a DIRECT assignee. Deeper rows belong to an agent
+            // beneath this one, and are still transactable - just not "mine".
+            isMine: depth === 1,
+            playerNumber: (r.player_number as string) || null,
+          };
+        });
 
       if (!isMounted.current || stale()) return;
       setMyRole(role);
@@ -1203,9 +1236,12 @@ export default function CashierTradePage() {
       // "Nothing Is Claimable" is a different statement from "we could not read
       // it", and on a screen about taking money back the difference matters.
       setReversible([]);
+      setReversibleAnchor(null);
       setReversibleError('Could Not Read Your Recent Sends.');
     } else {
       setReversible(((data || []) as ReversibleSend[]).map((r) => ({ ...r })));
+      // Anchor the server's countdown against a monotonic local stopwatch.
+      setReversibleAnchor(performance.now());
     }
     setReversibleLoading(false);
   }, [clubUuid]);
@@ -1253,9 +1289,21 @@ export default function CashierTradePage() {
   useEffect(() => {
     if (!claimOpen || !clubUuid) return;
     void loadReversible();
-    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    const t = setInterval(() => setNowTick((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, [claimOpen, clubUuid, loadReversible]);
+
+  /**
+   * Seconds left on one row, from the DATABASE's figure minus locally measured
+   * elapsed time. See the reversibleAnchor note above for why not the clock.
+   */
+  const secondsLeftFor = useCallback(
+    (row: ReversibleSend): number =>
+      reversibleAnchor === null
+        ? 0
+        : secondsLeftFromServer(row.seconds_left, performance.now() - reversibleAnchor),
+    [reversibleAnchor]
+  );
 
   /**
    * Rows whose window has run out WHILE THE MODAL IS OPEN. The server would
@@ -1263,8 +1311,9 @@ export default function CashierTradePage() {
    * place rather than leaving a control that fails on tap.
    */
   const stillClaimable = useMemo(
-    () => reversible.filter((r) => new Date(r.reversible_until).getTime() > nowTick),
-    [reversible, nowTick]
+    () => reversible.filter((r) => secondsLeftFor(r) > 0),
+    // nowTick is a dependency on purpose: it is what re-runs this every second.
+    [reversible, secondsLeftFor, nowTick]
   );
 
   /**
@@ -1766,7 +1815,16 @@ export default function CashierTradePage() {
 
       {/* Ask-for-chips modal */}
       {askOpen && (
-        <div className={styles.modalOverlay} onClick={() => setAskOpen(false)}>
+        /* Guarded on `asking`, like the other two overlays. Escape already
+           refused to close mid-request; a backdrop tap did not, so the request
+           carried on invisibly and its toast arrived over a closed modal. */
+        <div
+          className={styles.modalOverlay}
+          onClick={() => {
+            if (asking) return;
+            setAskOpen(false);
+          }}
+        >
           <div
             className={styles.modal}
             role="dialog"
@@ -1986,15 +2044,15 @@ export default function CashierTradePage() {
             {stillClaimable.length > 0 && (
               <div className={styles.claimList}>
                 {stillClaimable.map((row) => {
-                  // The countdown is the DATABASE's deadline, re-read against
-                  // the local tick only so the number moves. The decision is
-                  // never the phone's: fn_agent_wallet_claim_back re-checks
-                  // reversible_until and refuses a late claim outright.
-                  const left = Math.max(
-                    0,
-                    Math.ceil((new Date(row.reversible_until).getTime() - nowTick) / 1000)
-                  );
+                  // The countdown is the DATABASE's own seconds_left, counted
+                  // down by a monotonic stopwatch rather than by the phone's
+                  // clock. The decision is never the phone's either:
+                  // fn_agent_wallet_claim_back re-checks reversible_until and
+                  // refuses a late claim outright.
+                  const left = secondsLeftFor(row);
                   const mm = Math.floor(left / 60);
+                  // padStart on a CLOCK, not on an amount - "9:05 Left", not
+                  // "9:5". Chip figures on this page all go through fmt().
                   const ss = String(left % 60).padStart(2, '0');
                   return (
                     <div className={styles.claimRow} key={row.transaction_id}>

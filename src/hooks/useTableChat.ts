@@ -207,81 +207,65 @@ export function useTableChat(
     };
     loadMessages();
 
-    // The persistent chat websocket listener
-    const channel = supabase
-      .channel(`table_chat_hook:${tableId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'table_chat',
-          filter: `table_id=eq.${tableId}`,
-        },
-        (payload) => {
-          const m = payload.new as any;
-          if (!isMounted) return;
+    // The persistent chat listener multiplexed off the master table channel
+    const unsub = masterBus.subscribe('TABLE_CHAT_INSERT', (event) => {
+      const payload = event.payload;
+      if (payload.tableId !== tableId) return;
 
-          setChatMessages((prev) => {
-            // Deduplicate: remove the optimistic local clone, and append the real Supabase record
-            let removedOne = false;
-            const filtered = prev.filter((msg) => {
-              if (
-                !removedOne &&
-                msg.id.startsWith('msg_') &&
-                msg.playerId === m.user_id &&
-                msg.content === m.message
-              ) {
-                removedOne = true;
-                return false;
-              }
-              return true;
-            });
+      const m = payload.newRow as any;
+      if (!isMounted) return;
 
-            const pName = playersRef.current.find((p) => p && p.id === m.user_id)?.name || 'Player';
-            const newMsg: ChatMessage = {
-              id: m.id,
-              type: (m.message_type === 'dealer'
-                ? 'DEALER'
-                : m.message_type === 'system'
-                  ? 'SYSTEM'
-                  : 'PLAYER') as 'DEALER' | 'SYSTEM' | 'PLAYER',
-              playerId: m.user_id,
-              playerName: pName,
-              content: m.message,
-              timestamp: new Date(m.created_at),
-            };
-            // Track unread if chat is collapsed
-            if (isChatCollapsedRef.current && m.user_id !== userId) {
-              setUnreadCount((c) => c + 1);
-            }
-            // Warm notification ping for incoming messages from other players
-            // (skip our own echoes, system/dealer injections, and reaction/throw encodings)
-            const isRealPlayerMsg =
-              m.user_id !== userId &&
-              m.message_type !== 'system' &&
-              m.message_type !== 'dealer' &&
-              !REACTION_MSG_REGEX.test(m.message || '') &&
-              !THROW_MSG_REGEX.test(m.message || '');
-            if (isRealPlayerMsg && !isChatMutedRef.current) {
-              soundService.playChatMessage();
-            }
-            return [...filtered.slice(-49), newMsg];
-          });
+      setChatMessages((prev) => {
+        // Deduplicate: remove the optimistic local clone, and append the real Supabase record
+        let removedOne = false;
+        const filtered = prev.filter((msg) => {
+          if (
+            !removedOne &&
+            msg.id.startsWith('msg_') &&
+            msg.playerId === m.user_id &&
+            msg.content === m.message
+          ) {
+            removedOne = true;
+            return false;
+          }
+          return true;
+        });
+
+        const pName = playersRef.current.find((p) => p && p.id === m.user_id)?.name || 'Player';
+        const newMsg: ChatMessage = {
+          id: m.id,
+          type: (m.message_type === 'dealer'
+            ? 'DEALER'
+            : m.message_type === 'system'
+              ? 'SYSTEM'
+              : 'PLAYER') as 'DEALER' | 'SYSTEM' | 'PLAYER',
+          playerId: m.user_id,
+          playerName: pName,
+          content: m.message,
+          timestamp: new Date(m.created_at),
+        };
+        // Track unread if chat is collapsed
+        if (isChatCollapsedRef.current && m.user_id !== userId) {
+          setUnreadCount((c) => c + 1);
         }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.debug('[useTableChat] Realtime channel error:', err?.message || err);
+        // Warm notification ping for incoming messages from other players
+        // (skip our own echoes, system/dealer injections, and reaction/throw encodings)
+        const isRealPlayerMsg =
+          m.user_id !== userId &&
+          m.message_type !== 'system' &&
+          m.message_type !== 'dealer' &&
+          !REACTION_MSG_REGEX.test(m.message || '') &&
+          !THROW_MSG_REGEX.test(m.message || '');
+        if (isRealPlayerMsg && !isChatMutedRef.current) {
+          soundService.playChatMessage();
         }
-        if (status === 'TIMED_OUT') {
-          console.debug('[useTableChat] Realtime channel timed out');
-        }
+        return [...filtered.slice(-49), newMsg];
       });
+    });
 
     return () => {
       isMounted = false;
-      supabase.removeChannel(channel);
+      unsub();
       pendingTimersRef.current.forEach(clearTimeout);
       pendingTimersRef.current.clear();
     };

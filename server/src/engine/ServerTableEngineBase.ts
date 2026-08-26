@@ -1162,13 +1162,17 @@ export abstract class ServerTableEngineBase {
         (((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
           (this.tableInfo.run_it_twice_enabled ?? false));
       const insuranceEnabled = this.tableInfo.insurance_enabled ?? false;
-      const ritEffective = ritEnabled && !insuranceEnabled; // Insurance takes priority
-
-      if (ritEnabled && insuranceEnabled) {
-        console.warn(
-          `[ServerTableEngine:${this.tableId}] MUTUAL EXCLUSION: Both RIT and Insurance enabled — disabling RIT. These features cannot coexist.`
-        );
-      }
+      // SEQUENCING 2026-08-26 (Dan's leader-seat recording): FIX 92 used to
+      // force-disable RIT here whenever insurance was on ("insurance takes
+      // priority"). The reference table runs BOTH: the run-it-multi-times
+      // question comes FIRST, and insurance engages only when the hand
+      // resolves to a single run ("THE INSURANCE PART PICKED UP ON THE TURN.
+      // AFTER THE RUN IT TWICE WAS DECLINED"). Per-HAND exclusivity still
+      // holds - a hand that deals extra boards never carries an insurance
+      // contract, and an insured hand always runs exactly once - it is now
+      // enforced by the runout dispatch (handleAllInRunout), not by turning
+      // the feature off.
+      const ritEffective = ritEnabled;
 
       // Bible V8 §4.20 + FIX 98: Configure Run It Twice engine
       // Chooser gets 5s, responders get 10s — per Dan's rules

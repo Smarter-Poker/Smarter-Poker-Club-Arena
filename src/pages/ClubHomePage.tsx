@@ -756,24 +756,67 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       // Check if this club is in a union — if so, listen on union_id in addition to club_id
       let unionId: string | null = null;
       try {
-        const { data: ucCheck } = await supabase
+        const { data: ucCheck, error: ucError } = await supabase
           .from('union_clubs')
           .select('union_id')
           .eq('club_id', resolvedId)
           .limit(1)
           .maybeSingle();
+        /* FAILURE IS NOT ABSENCE - the same law loadClubData spends forty
+           lines honouring, which this path did not. The error was destructured
+           away and the catch below is commented "standalone club", so an RLS
+           blip or a timeout was silently read as "this club is not in a union".
+           Everything downstream then diverges from the fetch: the two union
+           channels are never subscribed (union tables and tournaments stop
+           arriving live), belongsInTableList admits foreign rows, bbjScope
+           loses its unionId so the BBJ subscription binds to the retired
+           club-level pool instead of the union pool that actually grows, and
+           the table-delete scoping narrows to club_id. Fall back to the same
+           cached answer loadClubData uses rather than guessing. */
+        if (ucError) throw ucError;
         if (ucCheck?.union_id) {
           unionId = ucCheck.union_id;
         }
         if (isMounted) setBbjScope({ clubUuid: resolvedId, unionId });
       } catch (e) {
         reportError(e, 'ClubHomePage.setupRealtime');
-        /* standalone club — no union_id */
+        // Last known good, written by loadClubData's own union resolution
+        // under the same key (sessionStorage — see `unionCacheKey` there).
+        try {
+          const cached = sessionStorage.getItem(`ca_union_of_${resolvedId}`);
+          if (cached) unionId = cached;
+        } catch {
+          /* storage disabled */
+        }
+        if (isMounted) setBbjScope({ clubUuid: resolvedId, unionId });
       }
 
       if (!isMounted) return;
 
       const channelKey = `club-tables-${clubId}`;
+      /**
+       * A CHANNEL WITH NO FACTORY IS A CHANNEL THAT NEVER COMES BACK.
+       *
+       * MasterBus's health monitor reaps a dead channel and then looks for a
+       * factory to rebuild it; with none registered it logs
+       * `No factory for "<key>" -- removed only` and stops. isCriticalChannelKey
+       * protects `table-cards-secure-*` and nothing else, so after the first
+       * CHANNEL_ERROR or TIMED_OUT on this key the lobby lost live tables,
+       * tournaments AND the BBJ ticker for the rest of the visit - while
+       * `wsConnected` kept its last value, so GlobalUXIndicators still said
+       * connected. The only recovery was the 90s poll, which is itself
+       * visibility-gated.
+       *
+       * setupRealtime is idempotent (getOrCreateChannel returns the existing
+       * channel, and the cleanup below removes it), so it is safe as the
+       * factory. Registered BEFORE the handlers so a reap that lands mid-setup
+       * still has something to call.
+       */
+      masterBus.registerChannelFactory(channelKey, () => {
+        setupRealtime().catch((e) =>
+          console.warn('[ClubHomePage] realtime auto-recovery failed:', e)
+        );
+      });
       let channel = masterBus.getOrCreateChannel(channelKey);
 
       // Realtime admission rules — these MUST mirror the fetch queries below
@@ -941,6 +984,10 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
     return () => {
       isMounted = false;
+      // Drop the factory FIRST. Removing the channel while its factory is
+      // still registered is an invitation for the health monitor to rebuild
+      // the one we are deliberately tearing down.
+      masterBus.removeChannelFactory(`club-tables-${clubId}`);
       masterBus.removeRegisteredChannel(`club-tables-${clubId}`);
     };
   }, [clubId]);

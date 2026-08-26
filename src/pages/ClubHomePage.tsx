@@ -62,6 +62,9 @@ import UnionWalletModal, { type UnionWalletKey } from '../components/union/Union
 import UnionTreasuryDetailModal, {
   type TreasuryDetailMode,
 } from '../components/union/UnionTreasuryDetailModal';
+import Modal from '../components/common/Modal';
+import { RakeReports } from '../components/admin/RakeReports';
+import SpinActivationPanel from '../components/club/SpinActivationPanel';
 import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
 import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
@@ -433,6 +436,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     balance: number;
   } | null>(null);
   const [unionTreasuryModal, setUnionTreasuryModal] = useState<TreasuryDetailMode | null>(null);
+  const [standaloneRakeModal, setStandaloneRakeModal] = useState(false);
+  const [standaloneSpinsModal, setStandaloneSpinsModal] = useState(false);
   // Dan 2026-08-24: "PLAYER WALLET NEEDS TO BE FULLY CLICKABLE AND OPEN TO SEE
   // ALL TRANSACTIONS AND OTHER AVAILABLE DATA WHEN CLICKED." The row opens the
   // member's own statement - a read-only view, so it is not an activeCashier.
@@ -3066,11 +3071,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                     setUnionWalletModal({ key: 'spin_reserve', label: 'Spins Treasury', balance });
                   }
                 }}
-                onOpenClubRake={() => setUnionTreasuryModal('rake')}
-                onOpenClubSpins={(balance) => {
-                  // Fallback for standalone club spins
-                  setUnionWalletModal({ key: 'spin_reserve', label: 'Spins Wallet', balance });
-                }}
+                onOpenClubRake={() => setStandaloneRakeModal(true)}
+                onOpenClubSpins={() => setStandaloneSpinsModal(true)}
               />
             </div>
           )}
@@ -3211,7 +3213,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         <UnionWalletModal
           isOpen={true}
           onClose={() => setUnionWalletModal(null)}
-          unionId={resolvedClubId || clubId || ''}
+          unionId={unionIdForCreate || resolvedClubId || clubId || ''}
           walletKey={unionWalletModal.key}
           walletLabel={unionWalletModal.label}
           balance={unionWalletModal.balance}
@@ -3221,7 +3223,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         <UnionTreasuryDetailModal
           isOpen={true}
           onClose={() => setUnionTreasuryModal(null)}
-          unionId={resolvedClubId || clubId || ''}
+          unionId={unionIdForCreate || resolvedClubId || clubId || ''}
           mode={unionTreasuryModal}
           onSendFrom={
             unionTreasuryModal === 'backup'
@@ -3238,6 +3240,34 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 }
           }
         />
+      )}
+      {standaloneRakeModal && (
+        <Modal
+          isOpen={true}
+          onClose={() => setStandaloneRakeModal(false)}
+          title="Rake Treasury"
+          size="large"
+          showCloseButton
+          className="club-home-treasury-modal"
+        >
+          <div style={{ height: '70vh', overflowY: 'auto', padding: '0 12px 24px' }}>
+            <RakeReports clubId={resolvedClubId || clubId || ''} />
+          </div>
+        </Modal>
+      )}
+      {standaloneSpinsModal && (
+        <Modal
+          isOpen={true}
+          onClose={() => setStandaloneSpinsModal(false)}
+          title="Spins Wallet"
+          size="medium"
+          showCloseButton
+          className="club-home-treasury-modal"
+        >
+          <div style={{ padding: '0 12px 24px' }}>
+            <SpinActivationPanel clubId={resolvedClubId || clubId || ''} />
+          </div>
+        </Modal>
       )}
       <PlayerWalletModal
         isOpen={showPlayerWallet}

@@ -1132,6 +1132,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           bbjAmount: this.currentHandBBJFee,
           communityCards: this.currentHandCommunityCards,
           communityCards2: this.currentHandCommunityCards2,
+          // COMPLETENESS PASS 2026-08-26: RIT boards 2..N, first-class. The
+          // rit_board_N pseudo-actions in `actions` stay for old readers.
+          ritBoards: this.currentHandRitExtraBoards,
           startedAt: this.currentHandStartedAt || Date.now(),
           endedAt: Date.now(),
           winners: this.currentHandWinners,

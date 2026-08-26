@@ -539,6 +539,14 @@ export abstract class ServerTableEngineBase {
    * street-by-street reveal to finish. Reset with currentHandRitBoards.
    */
   protected currentHandRitBaseBoardCount = 0;
+  /**
+   * COMPLETENESS PASS 2026-08-26: boards 2..N of a run-it-twice hand, engine
+   * card strings ('Ahearts'), in run order. Persisted first-class to
+   * hand_history.rit_boards at settlement — the changelog's long-standing
+   * "persist the extra board(s)" item. The `rit_board_N:` pseudo-actions
+   * remain for older readers; this column is the canonical record now.
+   */
+  protected currentHandRitExtraBoards: string[][] = [];
   protected currentHandShowdownResults: Array<{
     userId: string;
     handRanking: number;

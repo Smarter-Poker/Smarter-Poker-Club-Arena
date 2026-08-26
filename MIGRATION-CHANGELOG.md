@@ -15289,3 +15289,25 @@ three times, captured from a folded player's seat). Three behaviors adopted:
   ritRunRibbonAtRef). Engine hold formula now
   reveal + runs x RIT_RESULT_RUN_MS + push — spec mirrors updated
   byte-identical, handCompletionLaw pins updated in the same commit.
+
+### Round 4 — completeness pass: RIT boards persisted first-class, replay fixed
+
+- **hand_history.rit_boards** (migration 20260826_hand_history_rit_boards,
+  APPLIED to production via Supabase MCP, verified in list_migrations):
+  boards 2..N in run order, JSONB, NULL on single-run hands. Writer:
+  logHandHistory via new engine field currentHandRitExtraBoards. Reader:
+  HandHistoryService.mapHandHistoryRow, column-first with a pseudo-action
+  fallback for pre-column rows. This closes the 2026-08-21 open item ("RIT
+  boards are never persisted ... NEXT STEP: persist the extra board(s)").
+- rit_board_N pseudo-actions are now FILTERED from the mapped action list
+  (they leaked into every replay's action feed as a bogus system entry).
+- HandReplay renders every RIT board as a labeled RUN row from the river
+  step onward. Fixed along the way: replay board cards rendered as
+  Ace-of-Spades placeholders for ALL hand_history rows, because rows store
+  engine card strings ('8spades') and the converter only handled objects.
+- Dead code: RunItTwiceBoard removed (zero call sites, 2-player-only).
+  Correction to the round-1 audit: the uppercase RIT\_\* masterBus cases DO
+  fire (evt.type is uppercased before the switch) — kept.
+- New pins: server handHistory.test (rit_boards written / NULL when
+  single-run), tests/unit/ritBoardsPersistence.test.ts (column-first,
+  fallback order, action filtering, empty on single-run).

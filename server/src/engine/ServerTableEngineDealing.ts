@@ -750,6 +750,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // `finally` is what bounds this set, on every path including a throw.
     this.currentHandRitBoards = 0; // RIT VERIFIER FIX 2026-08-21: new hand, no boards
     this.currentHandRitBaseBoardCount = 0;
+    this.currentHandRitExtraBoards = [];
     this.timeBankActivatedThisTurn = false; // Bible V8 §6.2: Reset time bank flag for new hand
     this.showHandPlayers = null; // Reset voluntary show-hand set for new hand
     // Dan 2026-08-18: per-card reveal picks are per-hand intent too. If this

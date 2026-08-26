@@ -974,6 +974,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // hand's community cards and append each extra runout to the action log,
     // so the full multi-board hand is reconstructable from the record.
     this.currentHandCommunityCards = boards[0].map((c) => `${c.rank}${c.suit}`);
+    // COMPLETENESS PASS 2026-08-26: boards 2..N go to hand_history.rit_boards
+    // first-class at settlement; the pseudo-actions below stay for replayers
+    // of the 5M rows that predate the column.
+    this.currentHandRitExtraBoards = boards.slice(1).map((b) => b.map((c) => `${c.rank}${c.suit}`));
     for (let b = 1; b < boards.length; b++) {
       this.currentHandActions.push({
         seat: 0,

@@ -1130,110 +1130,112 @@ export default function ActionPanel({
       }`}
     >
       {raiseOverlay}
-      <div className="action-row">
-        {/* FOLD — Always Red, Left */}
-        <button
-          className="action-btn action-btn--fold"
-          onClick={() => {
-            haptic.light(); // FIX 183: Bible V8 §5.4 — fold = light haptic (was medium)
-            onAction('fold');
-          }}
-          disabled={!canFold}
-          title={isDesktop ? 'Fold (F or Q)' : undefined}
-          aria-label="Fold"
-        >
-          <span className="action-btn__label">Fold</span>
-          {isDesktop && <span className="action-btn__shortcut">F</span>}
-        </button>
-
-        {/* CHECK or CALL — Green, Center */}
-        {canCheck ? (
+      {!isRaiseMode && (
+        <div className="action-row">
+          {/* FOLD — Always Red, Left */}
           <button
-            className="action-btn action-btn--check"
+            className="action-btn action-btn--fold"
             onClick={() => {
-              haptic.light(); // FIX 183: Bible V8 §5.4 — check = light haptic (was medium)
-              onAction('check');
+              haptic.light(); // FIX 183: Bible V8 §5.4 — fold = light haptic (was medium)
+              onAction('fold');
             }}
-            title={isDesktop ? 'Check/Call (C or W)' : undefined}
-            aria-label="Check"
+            disabled={!canFold}
+            title={isDesktop ? 'Fold (F or Q)' : undefined}
+            aria-label="Fold"
           >
-            <span className="action-btn__label">Check</span>
-            {isDesktop && <span className="action-btn__shortcut">C</span>}
+            <span className="action-btn__label">Fold</span>
+            {isDesktop && <span className="action-btn__shortcut">F</span>}
           </button>
-        ) : canCall ? (
-          <button
-            className="action-btn action-btn--call"
-            onClick={() => {
-              haptic.light(); // FIX 183: Bible V8 §5.4 — call = light haptic (was medium)
-              onAction('call');
-            }}
-            title={isDesktop ? 'Check/Call (C or W)' : undefined}
-            aria-label={`Call ${formatChips(callAmount)}`}
-          >
-            <span className="action-btn__label">Call</span>
-            <span className="action-btn__amount">{formatChips(callAmount)}</span>
-            {showPotOdds && pot > 0 && callAmount > 0 && (
-              <span
-                className="action-btn__odds"
-                style={{ fontSize: '11px', opacity: 0.7, marginTop: '2px' }}
-              >
-                {Math.round((callAmount / (pot + callAmount)) * 100)}%
-              </span>
-            )}
-            {isDesktop && <span className="action-btn__shortcut">C</span>}
-          </button>
-        ) : (
-          <button className="action-btn action-btn--check" disabled>
-            <span className="action-btn__label">-</span>
-          </button>
-        )}
 
-        {/* RAISE — Amber/Orange, Right */}
-        {canAllIn && !canRaise ? (
-          <button
-            className="action-btn action-btn--allin"
-            onClick={handleAllIn}
-            title={isDesktop ? 'Raise/Bet (R or E)' : undefined}
-            aria-label="All in"
-          >
-            <span className="action-btn__label">All In</span>
-            {/* 2026-08-20: this printed `maxRaise`. In POT-LIMIT maxRaise is
+          {/* CHECK or CALL — Green, Center */}
+          {canCheck ? (
+            <button
+              className="action-btn action-btn--check"
+              onClick={() => {
+                haptic.light(); // FIX 183: Bible V8 §5.4 — check = light haptic (was medium)
+                onAction('check');
+              }}
+              title={isDesktop ? 'Check/Call (C or W)' : undefined}
+              aria-label="Check"
+            >
+              <span className="action-btn__label">Check</span>
+              {isDesktop && <span className="action-btn__shortcut">C</span>}
+            </button>
+          ) : canCall ? (
+            <button
+              className="action-btn action-btn--call"
+              onClick={() => {
+                haptic.light(); // FIX 183: Bible V8 §5.4 — call = light haptic (was medium)
+                onAction('call');
+              }}
+              title={isDesktop ? 'Check/Call (C or W)' : undefined}
+              aria-label={`Call ${formatChips(callAmount)}`}
+            >
+              <span className="action-btn__label">Call</span>
+              <span className="action-btn__amount">{formatChips(callAmount)}</span>
+              {showPotOdds && pot > 0 && callAmount > 0 && (
+                <span
+                  className="action-btn__odds"
+                  style={{ fontSize: '11px', opacity: 0.7, marginTop: '2px' }}
+                >
+                  {Math.round((callAmount / (pot + callAmount)) * 100)}%
+                </span>
+              )}
+              {isDesktop && <span className="action-btn__shortcut">C</span>}
+            </button>
+          ) : (
+            <button className="action-btn action-btn--check" disabled>
+              <span className="action-btn__label">-</span>
+            </button>
+          )}
+
+          {/* RAISE — Amber/Orange, Right */}
+          {canAllIn && !canRaise ? (
+            <button
+              className="action-btn action-btn--allin"
+              onClick={handleAllIn}
+              title={isDesktop ? 'Raise/Bet (R or E)' : undefined}
+              aria-label="All in"
+            >
+              <span className="action-btn__label">All In</span>
+              {/* 2026-08-20: this printed `maxRaise`. In POT-LIMIT maxRaise is
                 the POT CAP, not the stack — so in PLO the button read
                 "All In 47" and the tap shoved 300. handleAllIn was fixed to
                 dispatch allInThreshold in August with the note that "sending
                 an amount that contradicts the action is a trap"; the LABEL
                 kept the trap, and the label is the part the player reads. */}
-            <span className="action-btn__amount">{formatChips(allInThreshold)}</span>
-            {isDesktop && <span className="action-btn__shortcut">R</span>}
-          </button>
-        ) : (
-          <button
-            className={`action-btn action-btn--raise${isRaiseMode ? ' action-btn--on' : ''}`}
-            onClick={handleRaiseClick}
-            disabled={!canRaise}
-            title={isDesktop ? 'Raise/Bet (R or E)' : undefined}
-            /* The button survives the overlay opening now (Dan 2026-08-25,
+              <span className="action-btn__amount">{formatChips(allInThreshold)}</span>
+              {isDesktop && <span className="action-btn__shortcut">R</span>}
+            </button>
+          ) : (
+            <button
+              className={`action-btn action-btn--raise${isRaiseMode ? ' action-btn--on' : ''}`}
+              onClick={handleRaiseClick}
+              disabled={!canRaise}
+              title={isDesktop ? 'Raise/Bet (R or E)' : undefined}
+              /* The button survives the overlay opening now (Dan 2026-08-25,
                item 5), so it is a disclosure control rather than a one-way
                door: say which way the next tap goes. */
-            aria-expanded={isRaiseMode}
-            aria-label={`${isRaiseMode ? 'Close' : 'Open'} ${wagerVerb.toLowerCase()} panel`}
-          >
-            {/* Per PokerBros spec §5.1: the Raise button itself shows ONLY
+              aria-expanded={isRaiseMode}
+              aria-label={`${isRaiseMode ? 'Close' : 'Open'} ${wagerVerb.toLowerCase()} panel`}
+            >
+              {/* Per PokerBros spec §5.1: the Raise button itself shows ONLY
                 the word "Raise" (or "Bet" when no current bet). The actual
                 sizing — including 2X/3X/4X preflop presets and 33/50/75/POT
                 postflop presets — lives in the bet-sizing panel that opens
                 when this button is tapped. We removed the prior "{N} BB"
                 sub-label which the user explicitly flagged as wrong. */}
-            <span className="action-btn__label">{wagerVerb}</span>
-            {/* 2026-08-23: in fixed limit the amount is NOT a choice the player
+              <span className="action-btn__label">{wagerVerb}</span>
+              {/* 2026-08-23: in fixed limit the amount is NOT a choice the player
                 is about to make in a sizing panel — it is the only legal wager
                 on this street. Hiding it (correct for no-limit, per the spec
                 note above) would mean tapping blind, so print it. */}
-            {isFixedLimit && <span className="action-btn__amount">{formatChips(minRaise)}</span>}
-            {isDesktop && <span className="action-btn__shortcut">R</span>}
-          </button>
-        )}
-      </div>
+              {isFixedLimit && <span className="action-btn__amount">{formatChips(minRaise)}</span>}
+              {isDesktop && <span className="action-btn__shortcut">R</span>}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

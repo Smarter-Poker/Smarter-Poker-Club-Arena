@@ -164,7 +164,7 @@ export const NOMINAL_SCALER: Size = { w: 605, h: 1000 };
  * constrains. On a hypothetical landscape table the two differ; no breakpoint
  * produces one.
  */
-export const CHIP_RAIL_WIDTH_PCT = 11.5;
+export const CHIP_RAIL_WIDTH_PCT = 12.5;
 
 /**
  * Where a chip finishes when it is collected, as a fraction of seat-to-centre.

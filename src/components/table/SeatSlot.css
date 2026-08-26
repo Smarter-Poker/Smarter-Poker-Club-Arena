@@ -1003,7 +1003,28 @@
   --seat-avatar-size: calc(var(--seat-avatar-base, 84px) * var(--seat-avatar-hero-ratio, 1.3333));
   /* Must clear the wider avatar. 96/84 = 128/112 = 8/7, so deriving keeps the
      name box in the same proportion to the art at every breakpoint. */
-  width: calc(var(--seat-avatar-size) * 8 / 7);
+  width: calc(var(--seat-avatar-size) * 8 / 7) !important;
+}
+
+@media (max-width: 640px) {
+  .seat.seat--hero {
+    --seat-avatar-size: calc(66px * var(--seat-avatar-hero-ratio, 1.3333)) !important;
+    width: calc(66px * var(--seat-avatar-hero-ratio, 1.3333) * 8 / 7) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .seat.seat--hero {
+    --seat-avatar-size: calc(58px * var(--seat-avatar-hero-ratio, 1.3333)) !important;
+    width: calc(58px * var(--seat-avatar-hero-ratio, 1.3333) * 8 / 7) !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .seat.seat--hero {
+    --seat-avatar-size: calc(52px * var(--seat-avatar-hero-ratio, 1.3333)) !important;
+    width: calc(52px * var(--seat-avatar-hero-ratio, 1.3333) * 8 / 7) !important;
+  }
 }
 
 .seat--hero .seat__avatar {

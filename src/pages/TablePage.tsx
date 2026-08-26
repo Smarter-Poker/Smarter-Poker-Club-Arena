@@ -878,6 +878,10 @@ function buildSpinDrawFromRow(row: SpinDrawRow | null | undefined): SpinWheelDat
   };
 }
 
+// Module-level guards to prevent multiple TablePage instances from cascading BBJ_HIT_GLOBAL
+const _LAST_BBJ_HIT_COUNT: Record<string, number> = {};
+let _LAST_BBJ_TOAST_TIME = 0;
+
 export default function TablePage({
   embeddedTableId,
   onTableInfoUpdate,
@@ -3870,7 +3874,12 @@ export default function TablePage({
               const prevHitCount = (payload.old as any)?.hit_count || 0;
               const nextHitCount = (payload.new as any)?.hit_count || 0;
 
-              if (nextHitCount > prevHitCount && isMounted.current) {
+              if (
+                nextHitCount > prevHitCount &&
+                nextHitCount > (_LAST_BBJ_HIT_COUNT[pool.pool_id] || 0) &&
+                isMounted.current
+              ) {
+                _LAST_BBJ_HIT_COUNT[pool.pool_id] = nextHitCount;
                 try {
                   const { data } = await supabase.rpc('fn_bbj_recent_hits', {
                     p_pool_id: pool.pool_id,
@@ -7466,7 +7475,9 @@ export default function TablePage({
 
   useMasterBusSubscription('BBJ_HIT_GLOBAL', (payload: any) => {
     // Show an in-game pop-up on all cash game tables when BBJ is hit globally.
-    if (!tableState.isTournament) {
+    const now = Date.now();
+    if (!tableState.isTournament && now - _LAST_BBJ_TOAST_TIME > 5000) {
+      _LAST_BBJ_TOAST_TIME = now;
       toast?.success?.(
         `🚨 BBJ HIT on ${payload.tableName} (${payload.gameVariant.toUpperCase()} / ${payload.bigBlind})! ${payload.winnerName} won $${payload.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}!`,
         10000

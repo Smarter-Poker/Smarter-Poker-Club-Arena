@@ -2982,7 +2982,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                     title="Share"
                     onClick={async () => {
                       haptic.medium();
-                      const shareUrl = `${window.location.origin}/clubs/${club.slug || clubId}`;
+                      const shareUrl = `${window.location.origin}/hub/club-arena/clubs/${club.slug || clubId}`;
                       try {
                         if (navigator.share) {
                           await navigator.share({

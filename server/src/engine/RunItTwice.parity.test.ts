@@ -184,6 +184,20 @@ describe('per-run pot awards — the split-pot ship sequence', () => {
     const potsSeen = [...new Set(awards.map((a) => a.potIndex))].sort();
     expect(potsSeen.length, 'side pots must keep their own award groups').toBeGreaterThanOrEqual(2);
 
+    // EXACTNESS PASS 2026-08-26: every player's display shares sum EXACTLY
+    // to their credited total, to the cent — the "+N" floats ride these
+    // shares and the pot counter decrements by them, so a drifted cent
+    // shows a player numbers that do not add up to what their stack rose.
+    const credits = e.currentHandWinners as Array<{ userId: string; amount: number }>;
+    for (const w of credits) {
+      const displayCents = awards
+        .filter((a) => a.userId === w.userId)
+        .reduce((s, a) => s + Math.round(a.amount * 100), 0);
+      expect(displayCents, `display shares for ${w.userId} must equal their credit`).toBe(
+        Math.round(w.amount * 100)
+      );
+    }
+
     // Display shares reconcile with the credited totals (both post-rake).
     const displayTotal = awards.reduce((s, a) => s + a.amount, 0);
     const credited = [...(e.currentHandWinners as Array<{ amount: number }>)].reduce(

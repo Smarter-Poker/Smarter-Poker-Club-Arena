@@ -1102,6 +1102,38 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       board: a.board,
       handDescription: a.hand ? describeHand(a.hand) : undefined,
     }));
+    // EXACTNESS PASS 2026-08-26: per-player penny repair. Each display share
+    // above was rounded independently, so a player's shares could sum a cent
+    // or two away from their CREDITED total (scaleWinnerCentsForRake). The
+    // "+N" floats ride these shares and the pot counter decrements by them —
+    // a drifted cent shows a player floats that do not add up to what their
+    // stack actually rose, and leaves the pot pill parked at 0.01. Repair:
+    // fold each player's drift into their single largest share, so every
+    // player's display shares sum EXACTLY to their credited total (and the
+    // grand total therefore matches the net pot to the cent).
+    {
+      const shareCentsByPlayer = new Map<string, number>();
+      for (const a of this.currentHandPerPotAwards) {
+        shareCentsByPlayer.set(
+          a.userId,
+          (shareCentsByPlayer.get(a.userId) ?? 0) + Math.round(a.amount * 100)
+        );
+      }
+      for (const [pid, credited] of totalDistribution) {
+        const creditedCents = Math.round(credited * 100);
+        const displayCents = shareCentsByPlayer.get(pid) ?? 0;
+        const driftCents = creditedCents - displayCents;
+        if (driftCents === 0) continue;
+        let largest: (typeof this.currentHandPerPotAwards)[number] | null = null;
+        for (const a of this.currentHandPerPotAwards) {
+          if (a.userId !== pid) continue;
+          if (!largest || a.amount > largest.amount) largest = a;
+        }
+        if (largest) {
+          largest.amount = Math.max(0, (Math.round(largest.amount * 100) + driftCents) / 100);
+        }
+      }
+    }
     // Per-run winner labels (who took each run, with what, for how much) —
     // the run headers on the felt read these off pot_win's winners_by_board.
     {

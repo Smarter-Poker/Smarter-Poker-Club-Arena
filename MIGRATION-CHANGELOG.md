@@ -15311,3 +15311,21 @@ three times, captured from a folded player's seat). Three behaviors adopted:
 - New pins: server handHistory.test (rit_boards written / NULL when
   single-run), tests/unit/ritBoardsPersistence.test.ts (column-first,
   fallback order, action filtering, empty on single-run).
+
+### Round 5 — exactness pass (display pennies, mandatory-mode wiring)
+
+- Wiring audit result: the event pipeline is sound — EngineStateClient
+  already gives every EVENT its own macrotask with order preserved (the
+  Task-56 fix), so showdown / rit_result / pot_win bursts cannot coalesce.
+- Per-player PENNY REPAIR on the RIT display awards: each (run, pot, winner)
+  share was rounded independently, so a player's "+N" floats could sum a
+  cent away from what their stack actually rose, and the decrementing pot
+  counter could park at 0.01. Each player's drift now folds into their
+  largest share — display sums equal credited totals to the cent, pinned
+  per-player in RunItTwice.parity.test.ts.
+- run_it_mode is finally reachable from table CREATION: TableSettings type +
+  TableService column mapping + a mode selector in CreateTableModal
+  (Players Choose / Mandatory Twice / Mandatory 3 Times). Previously only
+  TableConfigPage could set it, so a table created from the modal could
+  never be mandatory — the exact dead-wiring shape FIX-D1 fixed for the
+  other creation settings.

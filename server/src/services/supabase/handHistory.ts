@@ -13,6 +13,7 @@ import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
 import { writeHandFacts } from './handFacts.js';
 import { recordHorseHandReviews } from '../HorseHandReview.js';
+import { HorseMind } from '../../engine/HorseMind.js';
 
 /**
  * Log hand history — every hand documented for audit and replay.
@@ -234,6 +235,21 @@ export async function logHandHistory(params: {
       actions: params.actions,
       roster: params.roster,
     });
+    // V16 DEEP READS 2026-08-26: the completed hand feeds the fold-to-c-bet,
+    // fold-to-3-bet and big-bet sizing-tell counters — reads the per-decision
+    // stream can never compute because it never sees the whole hand or the
+    // showdown. Best-effort by contract; never throws into settlement.
+    try {
+      HorseMind.observeHandComplete(
+        `${params.tableId}:${params.handNumber}`,
+        params.actions,
+        params.bigBlind,
+        params.showdownReveal ?? null
+      );
+    } catch {
+      /* observation must never endanger settlement */
+    }
+
     // HORSE HAND REVIEW 2026-08-26 (Dan): every horse that won or lost 20bb+
     // in this hand gets a review row with leak tags — same exact in-memory
     // inputs as the fact write above, same fire-and-forget contract.

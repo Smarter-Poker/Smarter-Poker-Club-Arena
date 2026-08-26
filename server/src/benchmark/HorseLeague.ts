@@ -621,6 +621,7 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       // drifts out of this list the same way.
       v12: false,
       v15: false,
+      v16Reads: false,
       mind: false,
       streetIQ: false,
       handReading: false,

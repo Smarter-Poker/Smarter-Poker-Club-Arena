@@ -41,6 +41,9 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
   const isMounted = useIsMounted();
   const [searchType, setSearchType] = useState<'username' | 'email' | 'id'>('username');
   const [searched, setSearched] = useState(false);
+  // Distinguishes "the search ran and found nobody" from "the search did not
+  // run". Those were the same screen until 2026-08-26.
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -56,6 +59,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
 
     setLoading(true);
     setSearched(true);
+    setSearchError(null);
     try {
       // Real Supabase search
       let profileQuery = supabase
@@ -73,20 +77,41 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
         )
         .limit(20);
 
-      // Apply search filter based on type
+      // Apply search filter based on type.
+      //
+      // `%` and `_` are ILIKE wildcards and used to pass straight through, so a
+      // username containing an underscore over-matched. Escaped here the same
+      // way FindPlayerModal's escapeSearchQuery does it.
+      const likeSafe = query.trim().replace(/([\\%_])/g, '\\$1');
+
       if (searchType === 'username') {
-        profileQuery = profileQuery.ilike('username', `%${query}%`);
+        profileQuery = profileQuery.ilike('username', `%${likeSafe}%`);
       } else if (searchType === 'email') {
-        profileQuery = profileQuery.ilike('email', `%${query}%`);
+        profileQuery = profileQuery.ilike('email', `%${likeSafe}%`);
       } else if (searchType === 'id') {
-        profileQuery = profileQuery.eq('id', query);
+        // profiles.id is a uuid. Anything that is not one made Postgres raise
+        // 22P02 invalid input syntax, which the handler below turned into an
+        // empty result set - so a hard database error and a genuine miss looked
+        // exactly the same to the user. Answer the question we can answer.
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          query.trim()
+        );
+        if (!isUuid) {
+          setResults([]);
+          setSearchError('That Is Not A Valid Player ID. Search By Username Or Email Instead.');
+          return;
+        }
+        profileQuery = profileQuery.eq('id', query.trim());
       }
 
       const { data: profiles, error } = await profileQuery;
 
       if (error) {
+        // Say that the search FAILED. Reporting a failure as "no players found"
+        // sends someone looking for a player who may well exist.
         reportError(error, 'PlayerSearch.Search_error');
         setResults([]);
+        setSearchError('The Search Could Not Run. Please Try Again.');
         return;
       }
 
@@ -210,6 +235,11 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
           <div className="empty-state">
             <span>◷</span>
             <p>Searching...</p>
+          </div>
+        ) : searchError ? (
+          <div className="empty-state">
+            <span>!</span>
+            <p>{searchError}</p>
           </div>
         ) : results.length === 0 ? (
           <div className="empty-state">

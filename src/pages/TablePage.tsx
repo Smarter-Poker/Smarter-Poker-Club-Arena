@@ -3092,6 +3092,55 @@ export default function TablePage({
   const [ritChosenRuns, setRitChosenRuns] = useState<2 | 3>(2);
   const [ritMaxRuns, setRitMaxRuns] = useState<2 | 3>(2);
   const [ritPlayerCount, setRitPlayerCount] = useState(2);
+  // ── POKERBROS PARITY 2026-08-26: consent-panel state ──
+  // The panel opens for EVERY all-in participant at rit_offer (responders
+  // used to wait blind until the chooser decided), renders one row per
+  // participant with a live checkmark per accept, and runs ONE shared
+  // countdown against the engine's deadline (deadline_ts on the wire).
+  const [ritAllPlayerIds, setRitAllPlayerIds] = useState<string[]>([]);
+  const [ritAcceptedIds, setRitAcceptedIds] = useState<string[]>([]);
+  const [ritChooserId, setRitChooserId] = useState<string | null>(null);
+  const [ritPotAmount, setRitPotAmount] = useState<number | null>(null);
+  const [ritTotalSeconds, setRitTotalSeconds] = useState(25);
+  const [ritHeroAccepted, setRitHeroAccepted] = useState(false);
+  const [ritChooserHasDecided, setRitChooserHasDecided] = useState(false);
+  const ritDeadlineRef = useRef(0);
+  // Reveal timeline: how many cards of each RIT board are face up right now.
+  // rit_result arrives with the full boards; the reference client deals them
+  // street by street (flop → pause → turn → pause → river, board by board),
+  // so the counts advance on a timer chain and the pot ship waits for it.
+  const [ritRevealCounts, setRitRevealCounts] = useState<number[] | null>(null);
+  const [ritRevealDone, setRitRevealDone] = useState(false);
+  const ritRevealTimersRef = useRef<number[]>([]);
+  const ritTimelineEndsAtRef = useRef(0);
+  const clearRitRevealTimers = useCallback(() => {
+    for (const t of ritRevealTimersRef.current) window.clearTimeout(t);
+    ritRevealTimersRef.current = [];
+  }, []);
+  /** Reset every piece of consent-panel + reveal state (hand boundary). */
+  const resetRitPanelState = useCallback(() => {
+    setRitAllPlayerIds([]);
+    setRitAcceptedIds([]);
+    setRitChooserId(null);
+    setRitPotAmount(null);
+    setRitHeroAccepted(false);
+    setRitChooserHasDecided(false);
+    setRitRevealCounts(null);
+    setRitRevealDone(false);
+    ritDeadlineRef.current = 0;
+    ritTimelineEndsAtRef.current = 0;
+  }, []);
+  // One shared countdown, ticking against the engine's wall-clock deadline.
+  useEffect(() => {
+    if (!showRIT) return;
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((ritDeadlineRef.current - Date.now()) / 1000));
+      setRitTimer(left);
+    };
+    tick();
+    const iv = window.setInterval(tick, 1000);
+    return () => window.clearInterval(iv);
+  }, [showRIT]);
 
   // Winner state — tracks winning players, hand names, amounts for highlighting + hand history
   const [winnerInfo, setWinnerInfo] = useState<{
@@ -3193,17 +3242,27 @@ export default function TablePage({
         }
       }
 
+      // POKERBROS PARITY 2026-08-26: the reveal timeline gates presentation.
+      // While the boards are still dealing, each run shows only the cards the
+      // timeline has turned so far (undealt slots render face down) and NO
+      // winner labels or highlights; the ribbons, names and share amounts
+      // arrive together once the last river has landed.
+      const visibleCount = ritRevealCounts?.[bi] ?? 5;
+      const revealed = ritRevealDone || ritRevealCounts === null;
+
       return {
         boardIndex: bi,
         cards,
-        winnerNames,
-        winnerHandName,
-        highlightedIndices,
+        visibleCount: Math.min(5, Math.max(0, visibleCount)),
+        winnerNames: revealed ? winnerNames : [],
+        winnerHandName: revealed ? winnerHandName : undefined,
+        highlightedIndices: revealed ? highlightedIndices : [],
         sharePct,
         shareAmount: boardPot,
+        revealed,
       };
     });
-  }, [ritResult, tableState.players, tableState.gameType]);
+  }, [ritResult, tableState.players, tableState.gameType, ritRevealCounts, ritRevealDone]);
 
   // ─── Multi-table info reporting ─────────────────────────────────────
   // When embedded in MultiTablePage, report table name/pot/turn status
@@ -3519,7 +3578,15 @@ export default function TablePage({
   // FIX 96: Run It Twice handlers — Bible V8 §4.20 + Dan's rules
   // 2-phase flow: Chooser picks runs (1/2/3), others accept/decline
   const handleRITChooserDecide = async (runs: 1 | 2 | 3) => {
-    setShowRIT(false);
+    // POKERBROS PARITY 2026-08-26: choosing 2/3 keeps the panel OPEN in the
+    // waiting state (checks tick as responders agree; rit_all_accepted or
+    // rit_single_run closes it for everyone). Choosing 1 ends the question.
+    if (runs === 1) {
+      setShowRIT(false);
+    } else {
+      setRitChosenRuns(runs === 3 ? 3 : 2);
+      setRitChooserHasDecided(true);
+    }
     if (tableId) {
       const result = await respondToRIT(tableId, { runs });
       if (!result.success) {
@@ -3529,7 +3596,10 @@ export default function TablePage({
   };
 
   const handleRITAccept = async () => {
-    setShowRIT(false);
+    // Panel stays open showing "Waiting For Other Players…" with live checks;
+    // rit_all_accepted / rit_single_run close it for everyone together.
+    setRitHeroAccepted(true);
+    if (userId) setRitAcceptedIds((prev) => [...new Set([...prev, userId])]);
     if (tableId) {
       const result = await respondToRIT(tableId, { response: 'accept' });
       if (!result.success) {
@@ -3539,6 +3609,8 @@ export default function TablePage({
   };
 
   const handleRITDecline = async () => {
+    // A decline is final and instant — the server's rit_single_run broadcast
+    // closes the panel on every other client in the same moment.
     setShowRIT(false);
     if (tableId) {
       const result = await respondToRIT(tableId, { response: 'decline' });
@@ -3720,6 +3792,10 @@ export default function TablePage({
       if (potPushDelayTimerRef.current) clearTimeout(potPushDelayTimerRef.current);
       for (const t of potAwardStaggerTimersRef.current) clearTimeout(t);
       if (stackHoldReleaseTimerRef.current) clearTimeout(stackHoldReleaseTimerRef.current);
+      // POKERBROS PARITY 2026-08-26: the RIT reveal timeline must die with
+      // the page — a street reveal firing into an unmounted table is a leak.
+      for (const t of ritRevealTimersRef.current) clearTimeout(t);
+      if (ritResultTimerRef.current) clearTimeout(ritResultTimerRef.current);
     };
   }, []);
 
@@ -4173,6 +4249,36 @@ export default function TablePage({
   const [allInEquities, setAllInEquities] = useState<
     Array<{ userId: string; username: string; equity: number; seat: number }>
   >([]);
+
+  // POKERBROS PARITY 2026-08-26: consent-panel rows — one per all-in player,
+  // requester first, with hole cards (face up during the runout pause),
+  // equity when broadcast, and the live accepted check.
+  const ritPanelPlayers = useMemo(() => {
+    if (ritAllPlayerIds.length === 0) return [];
+    const ordered = [...ritAllPlayerIds].sort((a, b) => {
+      if (a === ritChooserId) return -1;
+      if (b === ritChooserId) return 1;
+      return 0;
+    });
+    return ordered.map((pid) => {
+      const p = tableState.players.find((pp) => pp?.id === pid);
+      const eq = allInEquities.find((e) => e.userId === pid);
+      return {
+        id: pid,
+        name: p?.name || eq?.username || 'Player',
+        cards: (p?.holeCards ?? []).filter((c): c is Card => c != null),
+        equityPct: eq ? eq.equity : undefined,
+        accepted: ritAcceptedIds.includes(pid),
+      };
+    });
+  }, [ritAllPlayerIds, ritAcceptedIds, ritChooserId, tableState.players, allInEquities]);
+
+  // The community cards on the felt at the moment of the all-in — the panel's
+  // board preview renders these plus face-down slots for the undealt streets.
+  const ritPanelBoardCards = useMemo(
+    () => tableState.communityCards.filter((c): c is Card => c != null),
+    [tableState.communityCards]
+  );
 
   // COMPETITOR-PARITY 2026-08-19: table-level ALL IN banner. The per-seat
   // badge existed but the RUNOUT itself had no table-wide moment. Fires once
@@ -5391,47 +5497,102 @@ export default function TablePage({
         return; // Don't process as regular state
       }
 
-      // FIX 96: RIT offer — show prompt to chooser or wait for chooser's decision
+      // FIX 96 → POKERBROS PARITY 2026-08-26: the consent panel opens for
+      // EVERY all-in participant the moment the offer exists — the chooser
+      // with Run Once / Twice / 3 Times, responders with Decline/Accept from
+      // the start (the engine's consent-race fix records an early accept).
+      // One shared countdown, pinned to the engine's deadline_ts.
       if (eventType === 'rit_offer') {
         const chooserId = handState.chooserPlayerId as string;
-        const allPlayerIds = handState.allPlayerIds as string[];
+        const allPlayerIds = (handState.allPlayerIds as string[]) || [];
         const maxRuns = (handState.maxRuns as number) || 2;
+        const timeoutSeconds = Number(handState.timeoutSeconds) || 25;
+        const deadlineTs = Number(handState.deadline_ts) || Date.now() + timeoutSeconds * 1000;
 
         // Only show to all-in players involved in the RIT offer
         if (!userId || !allPlayerIds?.includes(userId)) return;
 
-        if (userId === chooserId) {
-          // This user is the CHOOSER (best hand) — show 1/2/3 options, 5 second timer
-          setRitIsChooser(true);
-          setRitMaxRuns((maxRuns === 3 ? 3 : 2) as 2 | 3);
-          setRitPlayerCount(allPlayerIds.length);
-          setRitTimer(5); // Chooser gets 5 seconds per Dan's rules
-          setShowRIT(true);
-          setDecisionDeadline({ kind: 'rit', at: Date.now() + 5000 });
-        }
-        // Non-choosers wait for rit_chooser_decided event
+        setRitAllPlayerIds(allPlayerIds);
+        setRitAcceptedIds([chooserId]);
+        setRitChooserId(chooserId);
+        setRitChooserHasDecided(false);
+        setRitHeroAccepted(false);
+        setRitPotAmount(typeof handState.pot === 'number' ? handState.pot : null);
+        setRitTotalSeconds(timeoutSeconds);
+        ritDeadlineRef.current = deadlineTs;
+        setRitIsChooser(userId === chooserId);
+        setRitMaxRuns((maxRuns === 3 ? 3 : 2) as 2 | 3);
+        setRitPlayerCount(allPlayerIds.length);
+        setRitOpponent(
+          tableStateRef.current?.players?.find((pp) => pp?.id === chooserId)?.name || 'Player'
+        );
+        setRitTimer(Math.max(0, Math.ceil((deadlineTs - Date.now()) / 1000)));
+        setShowRIT(true);
+        setDecisionDeadline({ kind: 'rit', at: deadlineTs });
         return;
       }
 
-      // FIX 96: Chooser decided — show accept/decline to other players
+      // FIX 96: Chooser decided — responders' panel flips from "is choosing"
+      // to "<name> Requests To Run It N Times"; the chooser's own panel stays
+      // open in the waiting state, checks ticking as responses land.
       if (eventType === 'rit_chooser_decided') {
         const chooserId = handState.chooserPlayerId as string;
         const chosenRuns = handState.chosenRuns as number;
         const waitingFor = handState.waitingFor as string[];
+        const acceptedIds = (handState.accepted_ids as string[]) || [chooserId];
+        const deadlineTs = Number(handState.deadline_ts) || 0;
 
-        if (!userId || userId === chooserId) return;
-        if (!waitingFor?.includes(userId)) return;
+        if (!userId) return;
+        if (userId !== chooserId && !waitingFor?.includes(userId) && !acceptedIds.includes(userId))
+          return;
 
-        setRitIsChooser(false);
         setRitChosenRuns((chosenRuns === 3 ? 3 : 2) as 2 | 3);
+        setRitChooserHasDecided(true);
+        setRitAcceptedIds((prev) => [...new Set([...prev, ...acceptedIds])]);
+        if (deadlineTs > 0) ritDeadlineRef.current = deadlineTs;
         // 2026-08-18: resolve to a display name HERE - this string renders
         // verbatim in the responder prompt, and passing the raw chooserId
         // showed players a UUID instead of who is asking to run it twice.
         setRitOpponent(
           tableStateRef.current?.players?.find((pp) => pp?.id === chooserId)?.name || 'Player'
         );
-        setRitTimer(10); // Others get 10 seconds
         setShowRIT(true);
+        return;
+      }
+
+      // POKERBROS PARITY 2026-08-26: a player accepted — tick their check.
+      if (eventType === 'rit_response_update') {
+        const acceptedIds = (handState.accepted_ids as string[]) || [];
+        if (acceptedIds.length > 0) {
+          setRitAcceptedIds((prev) => [...new Set([...prev, ...acceptedIds])]);
+        }
+        return;
+      }
+
+      // POKERBROS PARITY 2026-08-26: unanimous consent — the panel closes for
+      // everyone at once and the accept banner rides over the felt while the
+      // first board starts dealing (toast layer enforces the popup style).
+      if (eventType === 'rit_all_accepted') {
+        setShowRIT(false);
+        setRitHeroAccepted(false);
+        const runs = (handState.runs as number) || 2;
+        toast.info(
+          runs === 3
+            ? 'Players Have Accepted Running It 3 Times.'
+            : 'Players Have Accepted Running It Twice.',
+          4000
+        );
+        return;
+      }
+
+      // POKERBROS PARITY 2026-08-26: the host compelled the runs — no panel,
+      // just the announcement.
+      if (eventType === 'rit_mandatory') {
+        const runs = (handState.runs as number) || 2;
+        toast.info(
+          runs === 3 ? 'Mandatory Run It 3 Times This Hand.' : 'Mandatory Run It Twice This Hand.',
+          4000
+        );
         return;
       }
 
@@ -5450,7 +5611,11 @@ export default function TablePage({
        * All three are legitimate poker. Say which one happened.
        */
       if (eventType === 'rit_single_run') {
+        // Any decline (or the chooser picking one board, or a timeout) kills
+        // the panel INSTANTLY for everyone — reference behavior — and the
+        // banner below names who ended it. The hand then runs once, paced.
         setShowRIT(false);
+        resetRitPanelState();
         const reason = handState.reason as string;
         const who = handState.player_id as string | null;
         const name = who
@@ -5489,8 +5654,58 @@ export default function TablePage({
             communityCards: normalizeCards(boards[0]) as Card[],
             boardStage: 'river',
           }));
+
+          // ── POKERBROS PARITY 2026-08-26: the reveal timeline ──
+          // The engine settles synchronously and hands us finished boards;
+          // the reference deals them out street by street, one board at a
+          // time. Stage the reveal: every board starts at the shared base
+          // count, then flop → turn → river land per board with the paced-
+          // runout cadence. Winner ribbons + highlights + the pot ship all
+          // wait for ritRevealDone / ritTimelineEndsAtRef.
+          clearRitRevealTimers();
+          const baseCount = Math.min(
+            5,
+            Math.max(0, Number(handState.base_board_count as number) || 0)
+          );
+          const speed = getAnimationSpeed();
+          const STREET_MS = 1400 * speed; // matches server allInStreetPauseMs
+          const RUN_GAP_MS = 1500 * speed; // beat between boards
+          const RIBBON_MS = 900 * speed; // last river → winner ribbons
+          const counts = boards.map(() => baseCount);
+          setRitRevealCounts([...counts]);
+          setRitRevealDone(false);
+          // Streets still to deal from the base board: 3-card flop counts as
+          // one street beat, then turn, then river — same as the live deal.
+          const streetStops = [3, 4, 5].filter((n) => n > baseCount);
+          let at = 600 * speed; // small settle after the panel closes
+          for (let bi = 0; bi < boards.length; bi++) {
+            for (const stop of streetStops) {
+              const t = window.setTimeout(() => {
+                setRitRevealCounts((prev) => {
+                  if (!prev) return prev;
+                  const next = [...prev];
+                  next[bi] = Math.max(next[bi] ?? baseCount, stop);
+                  return next;
+                });
+              }, at);
+              ritRevealTimersRef.current.push(t);
+              at += STREET_MS;
+            }
+            at += RUN_GAP_MS;
+          }
+          // No streets to deal (defensive: river all-in) → reveal instantly.
+          if (streetStops.length === 0) at = 0;
+          const doneAt = at + RIBBON_MS;
+          const tDone = window.setTimeout(() => {
+            setRitRevealCounts(boards.map(() => 5));
+            setRitRevealDone(true);
+          }, doneAt);
+          ritRevealTimersRef.current.push(tDone);
+          ritTimelineEndsAtRef.current = Date.now() + doneAt;
+
           if (ritResultTimerRef.current) clearTimeout(ritResultTimerRef.current);
-          ritResultTimerRef.current = setTimeout(() => setRitResult(null), 12_000);
+          // The overlay clear must outlive the reveal: timeline + read time.
+          ritResultTimerRef.current = setTimeout(() => setRitResult(null), doneAt + 12_000);
         }
         return;
       }
@@ -8764,6 +8979,11 @@ export default function TablePage({
           clearTimeout(ritResultTimerRef.current);
           ritResultTimerRef.current = null;
         }
+        // POKERBROS PARITY 2026-08-26: no consent-panel or reveal-timeline
+        // artifact may leak into the next hand.
+        setShowRIT(false);
+        clearRitRevealTimers();
+        resetRitPanelState();
         // AUDIT-2 FIX 2026-08-20: the ALL IN banner timer was NOT cancelled at
         // the hand boundary — a hand starting inside the 1.8s window left
         // "ALL IN" splashed over the fresh deal.
@@ -9489,6 +9709,8 @@ export default function TablePage({
             boardHandNames: null,
           });
           setRitResult(null);
+          clearRitRevealTimers();
+          resetRitPanelState();
           setWinnerParticle((prev) => ({ ...prev, active: false }));
           setMuckingSeats(Array(9).fill(false));
           // SHOWDOWN SYSTEM 2026-08-25 cleanup (spec section 39): no showdown
@@ -9905,6 +10127,17 @@ export default function TablePage({
             tableStateRef.current.boardStage === 'showdown'
           ) {
             shipDelayMs += 1500 * getAnimationSpeed();
+          }
+          // POKERBROS PARITY 2026-08-26: on a run-it-twice hand the engine
+          // settles synchronously, so pot_win arrives while the boards are
+          // still DEALING on the reveal timeline. The reference ships nothing
+          // until the last river has landed and the winner ribbons have had a
+          // beat — hold every award group until then. The groups themselves
+          // are already ordered run 1 → run N, main pot → side pots, so the
+          // ships then play board by board, one pot at a time.
+          const ritHoldMs = ritTimelineEndsAtRef.current - Date.now();
+          if (ritHoldMs > 0) {
+            shipDelayMs = Math.max(shipDelayMs, ritHoldMs + 600 * getAnimationSpeed());
           }
           // Pot center in screen px (mirrors the constant 50,45 used by
           // chip-to-pot animations elsewhere).
@@ -12976,16 +13209,36 @@ export default function TablePage({
                                 : `${board.winnerNames[0]}${board.winnerHandName ? ` • ${board.winnerHandName}` : ''}`}
                             </span>
                           )}
-                          <span className="community-area__run-equity">
-                            {board.sharePct}%
-                            {board.shareAmount > 0
-                              ? ` ($${board.shareAmount.toLocaleString()})`
-                              : ''}
-                          </span>
+                          {/* Share %/$ only once the reveal has finished — the
+                              reference shows nothing on a board still dealing. */}
+                          {board.revealed && (
+                            <span className="community-area__run-equity">
+                              {board.sharePct}%
+                              {board.shareAmount > 0
+                                ? ` ($${board.shareAmount.toLocaleString()})`
+                                : ''}
+                            </span>
+                          )}
                         </div>
+                        {/* POKERBROS PARITY 2026-08-26: each run deals street
+                            by street on the reveal timeline — the cards and
+                            stage below advance flop → turn → river per run,
+                            so CommunityCards plays its own deal animation for
+                            every street exactly like a live board. */}
                         <CommunityCards
-                          cards={[...board.cards, ...rabbitRevealedCards]}
-                          stage="river"
+                          cards={[
+                            ...board.cards.slice(0, board.visibleCount),
+                            ...(board.revealed ? rabbitRevealedCards : []),
+                          ]}
+                          stage={
+                            board.visibleCount >= 5
+                              ? 'river'
+                              : board.visibleCount === 4
+                                ? 'turn'
+                                : board.visibleCount >= 3
+                                  ? 'flop'
+                                  : 'preflop'
+                          }
                           highlightedIndices={board.highlightedIndices}
                           winningHandName={board.winnerHandName}
                           deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
@@ -14667,6 +14920,12 @@ export default function TablePage({
         ritChosenRuns={ritChosenRuns}
         ritMaxRuns={ritMaxRuns}
         ritPlayerCount={ritPlayerCount}
+        ritBoardCards={ritPanelBoardCards}
+        ritPotAmount={ritPotAmount}
+        ritPanelPlayers={ritPanelPlayers}
+        ritTotalSeconds={ritTotalSeconds}
+        ritHeroAccepted={ritHeroAccepted}
+        ritChooserHasDecided={ritChooserHasDecided}
         onRITChooserDecide={handleRITChooserDecide}
         onRITAccept={handleRITAccept}
         onRITDecline={handleRITDecline}

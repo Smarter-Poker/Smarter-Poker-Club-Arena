@@ -110,6 +110,33 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   protected lastHandStartAtMs = 0;
 
   /**
+   * POKERBROS PARITY 2026-08-26: the wall-clock deadline of the live RIT
+   * offer — ONE shared countdown for the chooser and every responder,
+   * matching the engine's DeadlineScheduler expiry. Carried on rit_offer and
+   * rit_chooser_decided as deadline_ts so every client renders the same clock.
+   */
+  protected ritOfferDeadlineTs = 0;
+
+  /**
+   * Announce unanimous consent (reference behavior: the panel closes for
+   * everyone and a "players have accepted running multi-times" banner shows
+   * while the first board starts dealing).
+   */
+  protected emitRitAllAccepted(allPlayerIds: string[], runs: number): void {
+    try {
+      this.hub?.emitEvent(this.tableId, {
+        type: 'rit_all_accepted',
+        table_id: this.tableId,
+        hand_number: this.handCount,
+        allPlayerIds,
+        runs,
+      });
+    } catch {
+      /* broadcast failure is non-fatal */
+    }
+  }
+
+  /**
    * ANIMATION AUDIT 2026-08-19: true from the moment an all-in runout begins
    * until the hand completes. While set, broadcastCurrentState reveals every
    * non-folded player's hole cards (ServerTableEngine.ts) — standard poker:
@@ -164,20 +191,54 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         return { success: true, status: 'declined_by_chooser' };
       }
       // Broadcast chooser's decision to all clients so others can accept/decline
+      // POKERBROS PARITY 2026-08-26: carry the shared offer deadline so every
+      // client's countdown agrees with the engine's auto-decline clock, plus
+      // who has already agreed (the chooser, implicitly) for the live
+      // checkmark rows in the Risk Management panel.
       this.hub?.emitEvent(this.tableId, {
         type: 'rit_chooser_decided',
         table_id: this.tableId,
         chooserPlayerId: userId,
         chosenRuns: runs,
-        waitingFor: state.allPlayerIds.filter((pid) => pid !== userId),
+        waitingFor: state.allPlayerIds.filter((pid) => !state.acceptedBy.has(pid)),
+        accepted_ids: [...state.acceptedBy],
+        deadline_ts: this.ritOfferDeadlineTs,
+        timeoutSeconds: Math.max(1, Math.ceil((this.ritOfferDeadlineTs - Date.now()) / 1000) || 1),
       });
+      // The chooser may be the LAST consent needed (responders can accept
+      // before the chooser picks — the consent-race fix records them). When
+      // chooserDecides completed the acceptance, announce it exactly like the
+      // final responder accept would have.
+      const stateAfter = this.runItTwiceEngine.getState(this.tableId);
+      if (stateAfter?.status === 'accepted') {
+        this.emitRitAllAccepted(stateAfter.allPlayerIds, stateAfter.chosenRuns);
+      }
       return { success: true, status: 'waiting_for_others' };
     }
 
     // Phase 2: Other players accept or decline
     if (response === 'accept') {
       const allAccepted = this.runItTwiceEngine.accept(this.tableId, userId);
+      // POKERBROS PARITY 2026-08-26: every accept is broadcast the moment it
+      // lands, so all clients tick the player's green check LIVE (reference
+      // behavior: checks appear one by one as players agree). Reads the state
+      // AFTER accept() so acceptedBy includes this player.
+      const stateNow = this.runItTwiceEngine.getState(this.tableId);
+      if (stateNow) {
+        this.hub?.emitEvent(this.tableId, {
+          type: 'rit_response_update',
+          table_id: this.tableId,
+          hand_number: this.handCount,
+          player_id: userId,
+          accepted_ids: [...stateNow.acceptedBy],
+          waiting_for: stateNow.allPlayerIds.filter((pid) => !stateNow.acceptedBy.has(pid)),
+        });
+      }
       if (allAccepted) {
+        this.emitRitAllAccepted(
+          stateNow?.allPlayerIds ?? state.allPlayerIds,
+          stateNow?.chosenRuns ?? state.chosenRuns
+        );
         return { success: true, status: 'accepted' };
       }
       return { success: true, status: 'waiting_for_others' };
@@ -561,7 +622,13 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           pot
         );
 
-        // Broadcast RIT offer to ALL clients
+        // Broadcast RIT offer to ALL clients.
+        // POKERBROS PARITY 2026-08-26: timeoutSeconds comes from the engine
+        // config (25s reference countdown) instead of a hardcoded 10 that
+        // disagreed with the engine's own expiry, and deadline_ts pins the
+        // exact wall-clock moment so every client's countdown matches.
+        const ritTimeoutSeconds = this.runItTwiceEngine.offerTimeoutSeconds(this.tableId);
+        this.ritOfferDeadlineTs = Date.now() + ritTimeoutSeconds * 1000;
         this.hub?.emitEvent(this.tableId, {
           type: 'rit_offer',
           table_id: this.tableId,
@@ -570,7 +637,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           allPlayerIds,
           pot,
           maxRuns: this.runItTwiceEngine.getChosenRuns(this.tableId),
-          timeoutSeconds: 10,
+          timeoutSeconds: ritTimeoutSeconds,
+          deadline_ts: this.ritOfferDeadlineTs,
         });
 
         // HORSE RIT RESPONSES 2026-08-18: horses never answered rit_offer,
@@ -797,10 +865,16 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       }
     }, 250);
 
-    // FIX 98: Safety timeout: 18 seconds (5s chooser + 10s responders + 3s buffer)
-    const safetyTimeout = setTimeout(() => {
-      finish();
-    }, 18_000);
+    // FIX 98 → POKERBROS PARITY 2026-08-26: the offer window is one shared
+    // 25-second countdown (engine autoDeclineTimeout). Safety = window + 5s
+    // buffer; the DeadlineScheduler's auto-decline resolves the poll well
+    // before this fires in any healthy process.
+    const safetyTimeout = setTimeout(
+      () => {
+        finish();
+      },
+      this.runItTwiceEngine.offerTimeoutSeconds(this.tableId) * 1000 + 5_000
+    );
   }
 
   /** The hand this seat has already been told ran once, so a decline
@@ -933,13 +1007,48 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // MULTIWAY DISPLAY 2026-08-18: exact winner set per board (side pots and
     // splits included), so the client can label each run with who took it.
     const perBoardWinners: string[][] = [];
+    // POKERBROS PARITY 2026-08-26: keep the UNMERGED (run, pot, winner)
+    // records too. These feed pot_win's pot_awards groups with the RUN as the
+    // board axis, so the client ships each board's pots individually — chips
+    // fan per pot per board, split pots fan to every winner of that share
+    // with their own "+N" float, exactly like the single-board sequence.
+    const perBoardPotAwards: Array<{
+      board: number;
+      userId: string;
+      potIndex: number;
+      low: boolean;
+      amount: number;
+      hand?: import('../types.js').EvaluatedHand;
+    }> = [];
     for (let boardIdx = 0; boardIdx < runs; boardIdx++) {
       const board = boards[boardIdx];
       // determineWinners handles hi-lo split, short-deck, ties/odd-chip.
-      const boardWinnersFull = determineWinners(state.players, board, pots, variant, dealerSeat);
+      // The RETURNED winners are merged per user (the settlement contract);
+      // perPotOut is the UNMERGED (pot, hi/lo half, winner) breakdown — the
+      // only source that still knows which pot each share came from, which
+      // the per-board ship sequence needs.
+      const perPotOut: import('../types.js').PerPotAward[] = [];
+      const boardWinnersFull = determineWinners(
+        state.players,
+        board,
+        pots,
+        variant,
+        dealerSeat,
+        perPotOut
+      );
       perBoardWinners.push([...new Set(boardWinnersFull.map((w) => w.userId))]);
       for (const w of boardWinnersFull) {
         rawDistribution.set(w.userId, (rawDistribution.get(w.userId) || 0) + w.amount / runs);
+      }
+      for (const a of perPotOut) {
+        perBoardPotAwards.push({
+          board: boardIdx + 1,
+          userId: a.userId,
+          potIndex: a.potIndex,
+          low: a.low,
+          amount: a.amount / runs,
+          hand: a.hand,
+        });
       }
     }
 
@@ -965,6 +1074,47 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     rawEntries.forEach(([pid], i) => {
       totalDistribution.set(pid, scaledCents[i] / 100);
     });
+
+    // POKERBROS PARITY 2026-08-26: publish the unmerged per-(run, pot)
+    // breakdown through the SAME presentation state the single-board path
+    // uses, so pot_win carries pot_awards groups ordered run 1 → run N,
+    // main pot → side pots, and the client's sequenced ship animation plays
+    // each board's pots as separate beats (splits fan to every winner).
+    // Amounts here are DISPLAY shares scaled to the post-rake pot; the flat
+    // winners[] built below from totalDistribution stays authoritative.
+    const rakeScale = totalPot > 0 ? netPot / totalPot : 1;
+    this.currentHandPerPotAwards = perBoardPotAwards.map((a) => ({
+      userId: a.userId,
+      potIndex: a.potIndex,
+      low: a.low,
+      amount: Math.round(a.amount * rakeScale * 100) / 100,
+      hand: a.hand,
+      board: a.board,
+      handDescription: a.hand ? describeHand(a.hand) : undefined,
+    }));
+    // Per-run winner labels (who took each run, with what, for how much) —
+    // the run headers on the felt read these off pot_win's winners_by_board.
+    {
+      const byRunWinner = new Map<
+        string,
+        { board: number; userId: string; amount: number; handName?: string }
+      >();
+      for (const a of this.currentHandPerPotAwards) {
+        const key = `${a.board ?? 1}|${a.userId}`;
+        const existing = byRunWinner.get(key);
+        if (existing) {
+          existing.amount += a.amount;
+        } else {
+          byRunWinner.set(key, {
+            board: a.board ?? 1,
+            userId: a.userId,
+            amount: a.amount,
+            handName: a.hand?.name,
+          });
+        }
+      }
+      this.currentHandWinnersByBoard = [...byRunWinner.values()].sort((x, y) => x.board - y.board);
+    }
 
     // Apply distributions to player stacks
     //
@@ -1063,6 +1213,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       // client's per-board "won by" labels.
       per_board_winners: perBoardWinners,
       pots: pots.map((p) => ({ amount: p.amount, eligiblePlayers: p.eligiblePlayers })),
+      // POKERBROS PARITY 2026-08-26: how many community cards were already on
+      // the felt when the all-in locked. The client reveals boards street by
+      // street from this point (a turn all-in re-deals only rivers; a preflop
+      // all-in re-deals whole boards), at the paced-runout cadence.
+      base_board_count: existingBoard.length,
     });
 
     // Resolve in RIT engine (for event emission and cleanup)

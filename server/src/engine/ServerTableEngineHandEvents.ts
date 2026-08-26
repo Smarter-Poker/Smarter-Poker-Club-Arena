@@ -29,7 +29,8 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
    */
   protected buildPotAwardGroups(): Array<{
     pot_index: number;
-    board: 1 | 2;
+    /** 1|2 on double-board bomb pots; RUN index 1..3 on run-it-twice hands. */
+    board: number;
     low: boolean;
     winners: Array<{
       user_id: string;
@@ -63,7 +64,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         const [board, potIndex, low] = k.split('|').map(Number);
         return {
           pot_index: potIndex,
-          board: (board === 2 ? 2 : 1) as 1 | 2,
+          board: board >= 1 ? board : 1,
           low: low === 1,
           winners: g.map((a) => {
             const sd = this.currentHandShowdownResults.find((r) => r.userId === a.userId);
@@ -692,7 +693,13 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // Round 2 (double board): capture the per-board breakdown alongside
         // the merged winners so pot_win can tell the client which board each
         // winner took and with what hand.
-        this.currentHandWinnersByBoard = (event as any).winnersByBoard ?? [];
+        // POKERBROS PARITY 2026-08-26: gated on hasWinners like the rest of
+        // the winner state — the RIT path pre-sets a per-RUN breakdown before
+        // finalizeRunout(true)'s empty WINNERS emit, and the unconditional
+        // `?? []` here wiped it a tick before pot_win read it.
+        if (hasWinners || (event as any).winnersByBoard) {
+          this.currentHandWinnersByBoard = (event as any).winnersByBoard ?? [];
+        }
         // SHOWDOWN POLISH 2026-08-25: the unmerged per-pot(-half) breakdown.
         // Gated on hasWinners for the same reason the winner state is (the
         // empty WINNERS emit on the RIT path must not wipe pre-set state).

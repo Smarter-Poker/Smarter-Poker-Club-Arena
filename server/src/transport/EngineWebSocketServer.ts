@@ -860,7 +860,6 @@ export class EngineWebSocketServer {
       if (!this.connections.has(conn.ws) || conn.subs.get(tableId) !== 'pending') return;
       this.logConnectionAudit(conn.userId, tableId, conn.clientIp);
       const ws = conn.ws;
-      const self = this;
       const subscriber: HubSubscriber = {
         id: `${conn.id}:${tableId}`,
         get readyState() {

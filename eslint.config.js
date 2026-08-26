@@ -57,4 +57,10 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ['server/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': 'off',
+    },
+  },
 )

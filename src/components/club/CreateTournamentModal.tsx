@@ -98,7 +98,6 @@ export default function CreateTournamentModal({
   const [genSatBuyIn, setGenSatBuyIn] = useState('');
   const [genSatSeats, setGenSatSeats] = useState('1');
 
-
   // ── Start Time ──
   const [startTimeMode, setStartTimeMode] = useState<'now' | 'scheduled' | 'schedule_only'>('now');
   const [scheduledDate, setScheduledDate] = useState('');
@@ -614,13 +613,13 @@ export default function CreateTournamentModal({
 
       if (!scheduleEnabled || startTimeMode !== 'schedule_only') {
         const mainTournament = await tournamentService.createTournament(clubId, tournamentConfig);
-        
+
         // Auto Satellite Generation
         if (!isSatellite && generateSatellites) {
           const satCount = Math.max(1, parseInt(genSatCount) || 1);
           const satBuyIn = parseInt(genSatBuyIn) || Math.max(1, Math.round(parsedBuyIn * 0.1));
           const satSeats = Math.max(1, parseInt(genSatSeats) || 1);
-          
+
           for (let i = 0; i < satCount; i++) {
             await tournamentService.createTournament(clubId, {
               ...tournamentConfig,
@@ -1521,8 +1520,14 @@ export default function CreateTournamentModal({
           {!isSatellite && (
             <div className={styles.row}>
               <div className={styles.col} style={{ flex: '1 1 100%' }}>
-                <div className={styles.formGroup} style={{ borderTop: '1px solid #334155', paddingTop: '16px', marginTop: '8px' }}>
-                  <label className={styles.checkboxLabel} style={{ fontWeight: 700, color: '#60a5fa' }}>
+                <div
+                  className={styles.formGroup}
+                  style={{ borderTop: '1px solid #334155', paddingTop: '16px', marginTop: '8px' }}
+                >
+                  <label
+                    className={styles.checkboxLabel}
+                    style={{ fontWeight: 700, color: '#60a5fa' }}
+                  >
                     <input
                       type="checkbox"
                       checked={generateSatellites}
@@ -1532,9 +1537,11 @@ export default function CreateTournamentModal({
                     Generate Satellites To This Event?
                   </label>
                   {generateSatellites && (
-                    <div style={{ marginTop: '16px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                    <div
+                      style={{ marginTop: '16px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}
+                    >
                       <div className={styles.formGroup} style={{ flex: 1, minWidth: '120px' }}>
-                        <label>Satellites to Create</label>
+                        <label>Satellites To Create</label>
                         <input
                           type="number"
                           className={styles.input}
@@ -1569,7 +1576,9 @@ export default function CreateTournamentModal({
                   )}
                   {generateSatellites && (
                     <span className={styles.helperText} style={{ marginTop: 8, display: 'block' }}>
-                      Satellites will be created automatically using the same format/rules as this event, but linked as feeders. You can edit their start times in the lobby later.
+                      Satellites Will Be Created Automatically Using The Same Format/Rules As This
+                      Event, But Linked As Feeders. You Can Edit Their Start Times In The Lobby
+                      Later.
                     </span>
                   )}
                 </div>
@@ -1578,7 +1587,10 @@ export default function CreateTournamentModal({
           )}
 
           {/* ── Advanced Options (PokerBros parity, 2026-08-22) ── */}
-          <div className={styles.sectionDivider} style={{ borderTop: '1px solid #334155', paddingTop: '16px', marginTop: '8px' }}>
+          <div
+            className={styles.sectionDivider}
+            style={{ borderTop: '1px solid #334155', paddingTop: '16px', marginTop: '8px' }}
+          >
             <button
               type="button"
               className={styles.select}

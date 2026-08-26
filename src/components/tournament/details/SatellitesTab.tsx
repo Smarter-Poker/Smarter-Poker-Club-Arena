@@ -11,7 +11,7 @@ export default function SatellitesTab({ tournament }: TournamentTabProps) {
 
   useEffect(() => {
     let mounted = true;
-    
+
     async function fetchSatellites() {
       if (!tournament?.id) return;
       try {
@@ -23,9 +23,9 @@ export default function SatellitesTab({ tournament }: TournamentTabProps) {
           .eq('satellite_target_id', tournament.id)
           .in('status', ['ANNOUNCED', 'REGISTERING', 'LATE_REG', 'RUNNING'])
           .order('start_time', { ascending: true });
-          
+
         if (fetchErr) throw fetchErr;
-        
+
         if (mounted) {
           setSatellites(data || []);
         }
@@ -36,9 +36,9 @@ export default function SatellitesTab({ tournament }: TournamentTabProps) {
         if (mounted) setLoading(false);
       }
     }
-    
+
     void fetchSatellites();
-    
+
     return () => {
       mounted = false;
     };
@@ -46,15 +46,21 @@ export default function SatellitesTab({ tournament }: TournamentTabProps) {
 
   if (loading) {
     return (
-      <div className="tab-pane-content" style={{ padding: 16, textAlign: 'center', color: 'rgba(255,255,255,0.5)' }}>
-        Loading satellites...
+      <div
+        className="tab-pane-content"
+        style={{ padding: 16, textAlign: 'center', color: 'rgba(255,255,255,0.5)' }}
+      >
+        Loading Satellites...
       </div>
     );
   }
-  
+
   if (error) {
     return (
-      <div className="tab-pane-content" style={{ padding: 16, textAlign: 'center', color: '#ef4444' }}>
+      <div
+        className="tab-pane-content"
+        style={{ padding: 16, textAlign: 'center', color: '#ef4444' }}
+      >
         {error}
       </div>
     );
@@ -62,8 +68,11 @@ export default function SatellitesTab({ tournament }: TournamentTabProps) {
 
   if (satellites.length === 0) {
     return (
-      <div className="tab-pane-content" style={{ padding: 16, textAlign: 'center', color: 'rgba(255,255,255,0.5)' }}>
-        No upcoming satellites running for this event.
+      <div
+        className="tab-pane-content"
+        style={{ padding: 16, textAlign: 'center', color: 'rgba(255,255,255,0.5)' }}
+      >
+        No Upcoming Satellites Running For This Event.
       </div>
     );
   }

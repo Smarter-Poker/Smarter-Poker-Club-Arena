@@ -1456,7 +1456,7 @@ export default function ClubDetailPage() {
                       <h4>{table.name}</h4>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <StatusBadge status={table.status} />
-                        {isClubStaff(userRole) && (
+                        {isClubStaff(userRole) && table.currentPlayers === 0 && (
                           <button
                             className={styles.deleteTableBtn}
                             onClick={(e) => {

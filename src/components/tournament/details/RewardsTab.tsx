@@ -66,11 +66,18 @@
  * one that says the pool has not been funded yet.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { reportError } from '../../../utils/errorReporter';
-import type { TournamentTabProps, TournamentEntry } from './types';
-import { chips, ordinal } from './types';
+import type { TournamentTabProps, PayoutPlace } from './types';
+import {
+  chips,
+  effectivePrizePool,
+  isPlayerLive,
+  ordinal,
+  parsePayoutStructure,
+  placePrize,
+} from './types';
 import MysteryBountyPanel from '../MysteryBountyPanel';
 import '../../../styles/tournament-lobby-3d.css';
 import './RewardsTab.css';
@@ -78,12 +85,6 @@ import './RewardsTab.css';
 /* ═══════════════════════════════════════════════════════════════════════════
    PAYOUT STRUCTURE
    ═══════════════════════════════════════════════════════════════════════════ */
-
-/** One paid finishing position. */
-interface PayoutPlace {
-  place: number;
-  percentage: number;
-}
 
 /**
  * A run of consecutive places paying the same percentage: 1st, 2nd, 3rd, then
@@ -103,64 +104,10 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/**
- * Parse `payout_structure`, which is a TEXT column holding JSON and has been
- * written by four different generations of code. Accepts a per-place row
- * ({ place | position, percentage }) and the range shapes some builders emit
- * ({ from, to } or place: "4-6"), and returns one entry per PLACE so banding
- * below has a single shape to work from.
- *
- * Returns null - not an empty array - when the column is unusable, so the
- * caller can tell "no structure published" from "a structure that pays nobody".
- */
-function parsePayoutStructure(raw: unknown): PayoutPlace[] | null {
-  let value: unknown = raw;
-  if (typeof value === 'string') {
-    if (!value.trim()) return null;
-    try {
-      value = JSON.parse(value);
-    } catch {
-      return null;
-    }
-  }
-  if (!Array.isArray(value) || value.length === 0) return null;
-
-  const places: PayoutPlace[] = [];
-  for (const row of value as Record<string, unknown>[]) {
-    if (!row || typeof row !== 'object') continue;
-    const percentage = num(row.percentage ?? row.percent ?? row.pct);
-    if (percentage <= 0) continue;
-
-    // Range shapes first, because a range row also carries a `place`.
-    const from = num(row.from ?? row.fromPlace ?? row.start);
-    const to = num(row.to ?? row.toPlace ?? row.end);
-    if (from >= 1 && to >= from && to - from < 5000) {
-      for (let p = from; p <= to; p++) places.push({ place: p, percentage });
-      continue;
-    }
-
-    const rawPlace = row.place ?? row.position ?? row.rank;
-    if (typeof rawPlace === 'string' && rawPlace.includes('-')) {
-      const [a, b] = rawPlace.split('-').map((s) => num(s.trim()));
-      if (a >= 1 && b >= a && b - a < 5000) {
-        for (let p = a; p <= b; p++) places.push({ place: p, percentage });
-        continue;
-      }
-    }
-
-    const place = num(rawPlace);
-    if (place >= 1) places.push({ place, percentage });
-  }
-
-  if (places.length === 0) return null;
-
-  // De-duplicate on place (last write wins) and order the field.
-  const byPlace = new Map<number, number>();
-  for (const p of places) byPlace.set(p.place, p.percentage);
-  return [...byPlace.entries()]
-    .map(([place, percentage]) => ({ place, percentage }))
-    .sort((a, b) => a.place - b.place);
-}
+/* The parser that used to live here now lives in `types.ts` and is shared with
+   Detail (podium prizes, the hand-for-hand bubble count) and Ranking (distance
+   to the money). Three copies of it disagreed about how many places a range row
+   pays; see the note above `parsePayoutStructure` in types.ts. */
 
 /** Collapse consecutive places paying the same percentage into one band. */
 function toBands(places: PayoutPlace[]): PayoutBand[] {
@@ -181,17 +128,6 @@ function bandLabel(band: PayoutBand): string {
   return band.fromPlace === band.toPlace
     ? ordinal(band.fromPlace)
     : `${band.fromPlace}-${band.toPlace}`;
-}
-
-/**
- * What one place is paid.
- *
- * The same arithmetic as TournamentService.calculatePayout (multiply, truncate,
- * divide) so the lobby and the money agree to the cent. A rounding difference
- * here reads to a player as the site quietly shaving their prize.
- */
-function placePrize(pool: number, percentage: number): number {
-  return Math.trunc(pool * percentage) / 100;
 }
 
 /** Percentages print without a trailing ".0" but keep a real decimal. */
@@ -238,10 +174,12 @@ interface RewardColumns {
   current_players?: number | null;
 }
 
-/** Still holding chips, by the lobby's own definition of "in". */
-function isStillIn(e: TournamentEntry): boolean {
-  return e.status === 'registered' || e.status === 'playing';
-}
+/* Still holding chips, by the lobby's ONE definition of "in". This tab used to
+   define it as `registered | playing`, which excludes a winner, while Ranking
+   counted anyone not out - so the money bubble here could be measured against a
+   different field size than the "To The Money" line Ranking prints
+   (2026-08-26 audit). */
+const isStillIn = isPlayerLive;
 
 export default function RewardsTab({
   tournament,
@@ -323,8 +261,9 @@ export default function RewardsTab({
   const hasGuarantee = guarantee > 0;
   /* The advertised pool is whichever is larger. The DB pool is authoritative
      for what was actually collected; the guarantee is what the club promised,
-     and the difference is the overlay the club funds itself. */
-  const effectivePool = hasGuarantee ? Math.max(dbPool, guarantee) : dbPool;
+     and the difference is the overlay the club funds itself. Shared with
+     Detail's podium via `effectivePrizePool` so the two cannot disagree. */
+  const effectivePool = effectivePrizePool(t.prize_pool, t.guaranteed_prize);
   const overlay = hasGuarantee ? Math.max(0, guarantee - dbPool) : 0;
   const guaranteeMet = hasGuarantee && overlay <= 0;
 
@@ -402,7 +341,9 @@ export default function RewardsTab({
     const total = fundedPool > 0 ? fundedPool : claimedTotal + liveTotal;
     const claimed = fundedPool > 0 ? fundedPaid : claimedTotal;
     const available = Math.max(0, total - claimed);
-    const drained = total > 0 ? Math.min(100, Math.max(0, (available / total) * 100)) : 0;
+    /* What is LEFT, as a percentage, so the meter empties as heads are pulled.
+       It was called `drained`, which is the opposite of what it measures. */
+    const remainingPct = total > 0 ? Math.min(100, Math.max(0, (available / total) * 100)) : 0;
 
     /* A "top rungs" ladder, derived by grouping `current_bounty` values, used
        to be built here. It is gone, and so is the advertised
@@ -420,7 +361,7 @@ export default function RewardsTab({
       total,
       claimed,
       available,
-      drained,
+      remainingPct,
       knockoutsPaid: ledger.claimedHeads.length,
     };
   }, [isBountyEvent, t.bounty_amount, t.bounty_pool, t.bounty_pool_paid, ledger]);
@@ -633,7 +574,7 @@ export default function RewardsTab({
                   </span>
                 </div>
                 <div className="tl-meter">
-                  <div className="tl-meter__fill" style={{ width: `${bounty.drained}%` }} />
+                  <div className="tl-meter__fill" style={{ width: `${bounty.remainingPct}%` }} />
                 </div>
               </div>
 

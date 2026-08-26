@@ -50,7 +50,7 @@
  * `.order('registered_at')`. Degraded, never blank.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { reportError } from '../../../utils/errorReporter';
 import type { TournamentTabProps, TournamentEntry } from './types';
@@ -98,13 +98,27 @@ function publicId(entry: TournamentEntry, detail?: EntryDetail): string | null {
 
 export default function EntriesTab({ tournament, entries, onWatchPlayer }: TournamentTabProps) {
   const [details, setDetails] = useState<Record<string, EntryDetail>>({});
+  /**
+   * Whether the one detail query has landed.
+   *
+   * This exists because of a named house bug: a query that FAILED must never be
+   * drawn as a field that is empty. Rebuys and add-ons live only in that query,
+   * so on a rebuy event whose query was refused, the totals below are genuinely
+   * unknown - and a tile reading "0" says, wrongly and confidently, that nobody
+   * rebought. `unknown` prints a dash and a line saying why (2026-08-26 audit).
+   */
+  const [detailState, setDetailState] = useState<'loading' | 'ready' | 'unknown'>('loading');
 
   const tournamentId = tournament?.id;
 
   /* One query. Whole field. Cancelled on unmount, tolerant of an empty result. */
   useEffect(() => {
-    if (!tournamentId) return;
+    if (!tournamentId) {
+      setDetailState('unknown');
+      return;
+    }
     let cancelled = false;
+    setDetailState('loading');
 
     (async () => {
       try {
@@ -121,6 +135,7 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
           /* The list still renders from props, in the page's registered_at
              order. A missing player number is worth less than a blank tab. */
           reportError(error, 'EntriesTab.Failed_to_load_entry_detail');
+          setDetailState('unknown');
           return;
         }
 
@@ -144,8 +159,11 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
           };
         }
         setDetails(next);
+        setDetailState('ready');
       } catch (e) {
-        if (!cancelled) reportError(e, 'EntriesTab.Failed_to_load_entry_detail');
+        if (cancelled) return;
+        reportError(e, 'EntriesTab.Failed_to_load_entry_detail');
+        setDetailState('unknown');
       }
     })();
 
@@ -227,6 +245,11 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
   const showAddOns = rules.add_on_available === true || totals.addOns > 0;
   const showUnique = rules.is_reentry === true || totals.uniquePlayers !== ordered.length;
 
+  /* Rebuy and add-on figures come ONLY from the detail query. If it did not
+     land, the honest answer is a dash. */
+  const countsKnown = detailState === 'ready';
+  const countText = (n: number) => (countsKnown ? n.toLocaleString() : '-');
+
   if (ordered.length === 0) {
     return (
       <section className="tl-panel et-panel" aria-labelledby="et-heading">
@@ -275,17 +298,25 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
         {showRebuys && (
           <div className="tl-stat">
             <span className="tl-stat__label">Rebuys</span>
-            <span className="tl-stat__value">{totals.rebuys.toLocaleString()}</span>
+            <span className="tl-stat__value">{countText(totals.rebuys)}</span>
           </div>
         )}
 
         {showAddOns && (
           <div className="tl-stat">
             <span className="tl-stat__label">Add-Ons</span>
-            <span className="tl-stat__value">{totals.addOns.toLocaleString()}</span>
+            <span className="tl-stat__value">{countText(totals.addOns)}</span>
           </div>
         )}
       </div>
+
+      {/* Said once, plainly, rather than left to be inferred from a row of
+          dashes. A refused query is not an empty field. */}
+      {detailState === 'unknown' && (showRebuys || showAddOns) && (
+        <p className="et-degraded">
+          Rebuy And Add-On Counts Could Not Be Loaded. Every Entry Is Still Listed Below.
+        </p>
+      )}
 
       {/* Scrolls inside itself. The page keeps exactly one scrollbar and the
           locked footer stays where the player left it. */}

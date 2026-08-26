@@ -218,6 +218,11 @@
   appearance: none;
   width: 100%;
   margin-top: 8px;
+  /* 44px is the floor for a thumb. At 9px padding around a 13px line this came
+     out around 35px and was the only sub-target control on the overview
+     (2026-08-26 audit). */
+  min-height: 44px;
+  touch-action: manipulation;
   padding: 9px 12px;
   border-radius: var(--tl-radius-sm);
   font: inherit;
@@ -391,6 +396,18 @@
   font-weight: 700;
   color: var(--tl-accent-strong);
   font-variant-numeric: tabular-nums;
+}
+
+/* The podium already carries 1st to 3rd. This list starts at 4th, so it needs
+   to say so - otherwise it reads as a second, shorter copy of the podium. */
+.dov-finishers__label {
+  display: block;
+  margin: 10px 0 4px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--tl-text-hint);
 }
 
 .dov-finishers {

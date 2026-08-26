@@ -623,31 +623,12 @@
   opacity: 0.9;
 }
 
-/* =================================================================================
-   PLACEHOLDER CARD -- Empty card slot
+/* PLACEHOLDER CARD — DELETED 2026-08-26.
+   Dan: "remove the ghost place holders for the turn and river that appear
+   after the flop." The markup went with it (see CommunityCards.tsx), so these
+   rules described nothing. A stylesheet carrying rules for elements that no
+   longer exist is how the next reader concludes a feature is still there.
    ================================================================================= */
-
-.community-cards__placeholder {
-  width: var(--cc-card-w);
-  height: var(--cc-card-h);
-  border-radius: var(--cc-card-radius);
-  overflow: hidden;
-  opacity: 0.4;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.community-cards__placeholder .card-image {
-  width: 100% !important;
-  height: 100% !important;
-}
-
-.community-cards__placeholder .card-back {
-  width: 100%;
-  height: 100%;
-  border-radius: var(--cc-card-radius);
-}
 
 /* =================================================================================
    SEPARATORS -- Visual grouping between flop/turn/river

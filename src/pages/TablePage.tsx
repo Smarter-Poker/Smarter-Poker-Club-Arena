@@ -2756,6 +2756,25 @@ export default function TablePage({
 
   // Buy-in processing lock to prevent double-click
   const buyInProcessingRef = useRef(false);
+  /**
+   * IDEMPOTENCY KEY — generated ONCE when the user first presses Confirm,
+   * held stable for the entire attempt lifecycle including offline retries.
+   *
+   * WHY: crypto.randomUUID() inside the callback produces a fresh UUID on every
+   * invocation. A network timeout after the RPC commits causes the UI to show
+   * "Buy-in failed" and invite a retry — which would call the RPC again with a
+   * new UUID, bypassing the idempotency table and double-debiting the wallet.
+   *
+   * THE FIX: mint the key here (null = no active attempt), set it at the top of
+   * onConfirmBuyIn before the first await, and clear it only on:
+   *   - confirmed success (RPC returned without error)
+   *   - user cancels (onCloseBuyInModal)
+   *   - a server-side rejection (rpcResult.success === false) — these are
+   *     genuine refusals, not network failures, and a retry would correctly fail
+   *     again, so we may safely rotate the key.
+   * Offline queue retries reuse the same key via their stored operationId.
+   */
+  const buyInIdempotencyKeyRef = useRef<string | null>(null);
   // FIX 132: Persistent hero seat ref — set IMMEDIATELY on buy-in, never stale
   // Prevents race condition where tableState.heroSeat is 0 during DB query but user tries to sit again
   const heroSeatRef = useRef(0);
@@ -14986,10 +15005,22 @@ export default function TablePage({
           setShowBuyInModal(false);
           setPendingSeat(null);
           setSelectedSeat(null);
+          // A cancel is a clean end to this attempt — rotate the key so any
+          // future attempt at the same seat+amount is a distinct transaction.
+          buyInIdempotencyKeyRef.current = null;
         }}
         onConfirmBuyIn={async (amount, autoRebuy) => {
           if (buyInProcessingRef.current) return;
           buyInProcessingRef.current = true;
+          // Mint a stable idempotency key for this entire attempt lifecycle.
+          // If one already exists (this is a retry of a failed-to-deliver RPC),
+          // REUSE IT — that is the whole point. A new UUID here would bypass the
+          // idempotency table and double-debit the wallet on a network retry.
+          if (!buyInIdempotencyKeyRef.current) {
+            buyInIdempotencyKeyRef.current = crypto.randomUUID();
+          }
+          const stableIdempotencyKey = buyInIdempotencyKeyRef.current;
+
           pendingSeatStackRef.current = amount;
           // Dan 2026-08-15: chips land in the seat on CONFIRM, not on RPC
           // completion. Close the modal and paint the stack in this frame; the
@@ -15051,14 +15082,17 @@ export default function TablePage({
                   setShowBuyInModal(false);
                   return;
                 }
-                const idempotencyKey = crypto.randomUUID();
+                // stableIdempotencyKey was minted once at the top of this
+                // callback and is held in buyInIdempotencyKeyRef. Do NOT mint
+                // a new UUID here — that would bypass the idempotency table on
+                // a network retry and double-debit the wallet.
                 const payload = {
                   p_user_id: userId,
                   p_table_id: tableId,
                   p_seat_number: selectedSeat,
                   p_amount: amount,
                   p_auto_rebuy: autoRebuy || false,
-                  p_idempotency_key: idempotencyKey,
+                  p_idempotency_key: stableIdempotencyKey,
                   p_club_id: useUserStore.getState().currentClubId ?? null,
                 };
                 const { data: rpcData, error: rpcErr } = await supabase.rpc(
@@ -15071,10 +15105,13 @@ export default function TablePage({
                     OfflineQueueService.enqueue({
                       action: 'TABLE_BUYIN',
                       payload,
-                      operationId: idempotencyKey,
+                      // operationId matches the key stored in the DB — so the
+                      // offline queue replay is idempotent at the server too.
+                      operationId: stableIdempotencyKey,
                     });
                     toast.success('Offline: Buy-in queued for retry.');
-                    // Don't throw, let the optimistic UI hold the seat
+                    // Don't throw, let the optimistic UI hold the seat.
+                    // Key stays in ref so any subsequent retry reuses it.
                     return;
                   }
                   throw new Error('Failed to buy-in: ' + rpcErr.message);
@@ -15110,10 +15147,17 @@ export default function TablePage({
                 }
                 if (rpcResult && rpcResult.success === false) {
                   reportError(rpcResult, 'TablePage.atomic_table_buyin_returned_failure');
+                  // Server explicitly refused (insufficient funds, seat taken, etc.).
+                  // This is a genuine rejection, NOT a network failure — it is safe
+                  // to rotate the key so a corrected retry is a fresh transaction.
+                  buyInIdempotencyKeyRef.current = null;
                   throw new Error(
                     'Buy-in rejected: ' + (rpcResult.error || 'Unknown server error')
                   );
                 }
+                // RPC committed — clear the key. The seat is taken; any future
+                // buy-in at this table is a distinct transaction.
+                buyInIdempotencyKeyRef.current = null;
                 setAccountBalance((prev) => Math.max(0, prev - amount));
                 totalBuyInRef.current += amount;
                 if (amount > peakStackRef.current) peakStackRef.current = amount;
@@ -15127,6 +15171,7 @@ export default function TablePage({
                   stack: amount,
                   autoRebuy,
                 });
+
                 // The game engine's 'player_seated' event will update table state globally.
                 // RoomService presence is no longer needed since TableWebSocket handles connection.
                 masterBus.emit('TABLE_SEATED', {

@@ -116,6 +116,14 @@ export const HAND_COMPLETION = {
   RIT_RUN_GAP_MS: 1800,
   /** Last river → winner ribbons + card highlights land together. */
   RIT_RIBBON_MS: 900,
+  /**
+   * RUN IT 3X recording (2026-08-26): the winner phase is INTERLEAVED per
+   * run — run 1's ribbon + highlights land, that run's pot ships, THEN run
+   * 2's ribbon, and so on. One of these windows per run covers the ribbon
+   * beat, the ship, and a settle before the next run takes the stage
+   * (measured ~2.5-3.2s per run in the reference).
+   */
+  RIT_RESULT_RUN_MS: 2600,
 } as const;
 
 export interface HandCompletionOpts {
@@ -164,12 +172,12 @@ export function handCompletionHoldMs(opts: HandCompletionOpts): number {
     const runs = opts.ritRuns as number;
     const streets = Math.max(1, Math.min(3, opts.ritStreetsPerRun ?? 3));
     const reveal =
-      H.RIT_REVEAL_LEAD_MS +
-      runs * streets * H.RIT_STREET_MS +
-      (runs - 1) * H.RIT_RUN_GAP_MS +
-      H.RIT_RIBBON_MS;
-    const extraShips = runs * H.POT_AWARD_STAGGER_MS;
-    return reveal + read + push + extraShips;
+      H.RIT_REVEAL_LEAD_MS + runs * streets * H.RIT_STREET_MS + (runs - 1) * H.RIT_RUN_GAP_MS;
+    // RUN IT 3X recording (2026-08-26): the winner phase replays run by run
+    // (ribbon → ship → settle, one RIT_RESULT_RUN_MS window each), which IS
+    // the showdown read for a multi-board hand — `read` is not added on top.
+    const resultWindows = runs * H.RIT_RESULT_RUN_MS;
+    return reveal + resultWindows + push;
   }
 
   return read + push;

@@ -100,12 +100,14 @@ describe('every beat is inside the hold', () => {
       ritRuns: 3,
       ritStreetsPerRun: 3,
     });
-    // Exactly the client timeline in TablePage's rit_result handler, plus
-    // the read + push the single-run hold already carries.
+    // Exactly the client timeline in TablePage's rit_result handler: the
+    // street-by-street reveal, then one RESULT window per run (ribbon →
+    // ship → settle — the 3X recording shows the winner phase replays run
+    // by run), then the pot-push/muck beats every hand carries.
     const H = HAND_COMPLETION;
-    const reveal2 =
-      H.RIT_REVEAL_LEAD_MS + 2 * 3 * H.RIT_STREET_MS + 1 * H.RIT_RUN_GAP_MS + H.RIT_RIBBON_MS;
-    expect(rit2).toBe(single + reveal2 + 2 * H.POT_AWARD_STAGGER_MS);
+    const push = H.BETS_SWEEP_MS + H.POT_PUSH_MS + H.MUCK_MS;
+    const reveal2 = H.RIT_REVEAL_LEAD_MS + 2 * 3 * H.RIT_STREET_MS + 1 * H.RIT_RUN_GAP_MS;
+    expect(rit2).toBe(reveal2 + 2 * H.RIT_RESULT_RUN_MS + push);
     expect(rit3).toBeGreaterThan(rit2);
     // A river-only re-deal (turn all-in) holds far less than a full re-deal.
     const rit2river = handCompletionHoldMs({

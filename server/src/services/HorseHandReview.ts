@@ -291,12 +291,12 @@ export async function recordHorseHandReviews(input: HorseReviewInput): Promise<v
       pruneArmed = true;
       setTimeout(
         () => {
-          void supabase
-            .rpc('sp_prune_horse_hand_reviews')
-            .then(({ error: perr }) => {
-              if (perr) reportError(new Error(perr.message), 'HorseHandReview.prune');
-            })
-            .catch((err: unknown) => reportError(err, 'HorseHandReview.prune'));
+          // supabase-js builders are PromiseLike without .catch — wrap in a
+          // real Promise so the rejection handler exists and is typed.
+          void (async () => {
+            const { error: perr } = await supabase.rpc('sp_prune_horse_hand_reviews');
+            if (perr) reportError(new Error(perr.message), 'HorseHandReview.prune');
+          })().catch((err: unknown) => reportError(err, 'HorseHandReview.prune'));
         },
         10 * 60 * 1000
       );

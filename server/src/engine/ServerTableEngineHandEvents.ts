@@ -732,7 +732,24 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         }
         if (this.handController) {
           const state = this.handController.getState();
-          if (hasWinners) this.currentHandPotSize = state.pot;
+          /* Dan 2026-08-26: "the board never displayed the winning hand, or
+             played the push-pot and total animation to the winner. This needs
+             to happen 100% of the time after every single hand."
+
+             `if (hasWinners)` was half of why it did not. Every path that
+             emits WINNERS: [] skipped this assignment and shipped `pot: 0` to
+             the client, whose award handler is gated on `potAmount > 0` — so
+             no chip fan, no "+N" float, no pot push, on any of:
+             HandController's skip-distribution path, its completeHand-threw
+             path, its no-distributable-winners path, and the RIT
+             finalizeRunout(true) path.
+
+             The pot SIZE is a fact about the hand that just finished; it does
+             not depend on whether this particular emit carries winners.
+             Recording it unconditionally means the client always knows what
+             was won, and the (correct) decision about whether there is anyone
+             to animate it to is left to the winners array itself. */
+          this.currentHandPotSize = state.pot;
           // POT-LEVEL SETTLEMENT (Dan section 29, 2026-08-25). `state.pots` is
           // the snapshot `completeHandInner()` took with calculatePots() just
           // before it decided the winners — so `eligiblePlayers` still names

@@ -67,12 +67,7 @@ export function PreviousHandCard({ handNumber, onTap }: PreviousHandCardProps) {
       >
         <div className="prev-hand-card__icon">
           {/* Custom playing-cards icon image */}
-          <img
-            src={prevHandIcon}
-            className="prev-hand-card__icon-img"
-            alt=""
-            draggable={false}
-          />
+          <img src={prevHandIcon} className="prev-hand-card__icon-img" alt="" draggable={false} />
         </div>
       </div>
     </div>

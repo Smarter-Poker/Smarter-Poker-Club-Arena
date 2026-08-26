@@ -186,6 +186,12 @@ import { reportError } from './utils/errorReporter';
 import SlugEnforcer from './components/common/SlugEnforcer';
 
 export default function App() {
+  useEffect(() => {
+    (window as any).triggerSentryTestCrash = () => {
+      throw new Error("Sentry test error from Agent - verifying DSN");
+    };
+  }, []);
+
   // Check if intro video has been shown this session
   // DISABLED — intro video turned off. To re-enable, restore the original useState initializer.
   const [showIntro, setShowIntro] = useState(false);

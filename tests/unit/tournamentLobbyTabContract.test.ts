@@ -202,6 +202,15 @@ describe('chips and chipsCompact', () => {
     expect(chips(0)).toBe('0');
   });
 
+  /* Inherited 2026-08-26 from the retired TournamentStandings, whose own spec
+     pinned this: a tournament chip is a whole chip, and printing "10,000.00"
+     reads as currency for a stack that cannot hold a fraction. */
+  it('prints whole chips, never a two-decimal money figure', () => {
+    expect(chips(10000)).toBe((10000).toLocaleString());
+    expect(chips(10000)).not.toContain('.');
+    expect(chips(10000.4)).toBe((10000).toLocaleString());
+  });
+
   it('survives every shape a nullable any-typed column can hold', () => {
     expect(chips(null)).toBe('0');
     expect(chips(undefined)).toBe('0');

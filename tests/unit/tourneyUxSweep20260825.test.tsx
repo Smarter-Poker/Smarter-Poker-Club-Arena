@@ -43,9 +43,10 @@ const TABLE_PAGE = 'src/pages/TablePage.tsx';
 const ANNOUNCE = 'src/components/table/TournamentAnnouncementOverlay.tsx';
 const HUD = 'src/components/tournament/TournamentHUD.tsx';
 const DETAILS = 'src/pages/tournament/TournamentDetails.tsx';
-const STANDINGS = 'src/components/tournament/TournamentStandings.tsx';
 const ENTRIES_TAB = 'src/components/tournament/details/EntriesTab.tsx';
 const RANKING_TAB = 'src/components/tournament/details/RankingTab.tsx';
+const TAB_TYPES = 'src/components/tournament/details/types.ts';
+const ENTRIES_HOOK = 'src/hooks/useTournamentEntries.ts';
 const REG_HOOK = 'src/hooks/useTournamentRegistration.ts';
 const SIGNUP_TSX = 'src/components/tournament/signUpDialog.tsx';
 const SIGNUP_CSS = 'src/components/tournament/signUpDialog.css';
@@ -102,15 +103,44 @@ describe('Item 1 - a running tournament can be watched', () => {
     expect(occurrences.length).toBeGreaterThanOrEqual(4);
   });
 
+  /* RE-POINTED 2026-08-26. This asserted the four halves of the behaviour
+     against `TournamentStandings`, which fetched its own copy of the field and
+     drew it as cards. That component has been retired - RankingTab is the one
+     ranking board on the platform now, and it renders from props - so the same
+     four halves are asserted at the addresses that hold them today:
+
+       the column is SELECTED       -> whichever query feeds the tab
+       the column reaches the row    -> the same mappers
+       the prop exists on the contract -> details/types.ts
+       only real tables are clickable  -> RankingTab
+
+     Nothing about what a player can do has changed; only where it is written. */
   it('a Ranking row carries its table id and can be activated', () => {
-    const src = code(read(STANDINGS));
-    // The column has to be SELECTED - this is the bit that was missing.
+    // Both feeds of the board select the column and carry it onto the entry.
     // Not the exact select string — adding a column must not break this.
-    expect(src).toMatch(/\.select\('[^']*\btable_id\b[^']*'\)/);
-    expect(src).toMatch(/tableId: p\.table_id \?\? null/);
-    expect(src).toMatch(/onWatchPlayer\?: \(tableId: string\) => void/);
+    for (const feed of [DETAILS, ENTRIES_HOOK]) {
+      const src = code(read(feed));
+      expect(src).toMatch(/\.select\(\s*'[^']*\btable_id\b[^']*'\s*\)/);
+      expect(src).toMatch(/table_id: \(e\.table_id as string \| null\) \|\| null/);
+    }
+
+    const contract = code(read(TAB_TYPES));
+    expect(contract).toMatch(/onWatchPlayer\?: \(tableId: string\) => void/);
+
     // Only rows that really have a table become buttons.
-    expect(src).toMatch(/const watchable = !!\(onWatchPlayer && player\.tableId\)/);
+    const tab = code(read(RANKING_TAB));
+    expect(tab).toMatch(/const watchable = eventRunning && !out && !!entry\.table_id/);
+    expect(tab).toMatch(/if \(!watchable\) \{/);
+  });
+
+  /* The lobby page's live pane used to mount `TournamentStandings` beside the
+     clock, so a running tournament had TWO ranking boards on the platform,
+     fetching the same rows and free to disagree. It mounts the tab now. */
+  it('the tournament page live pane mounts the same Ranking board', () => {
+    const page = code(read('src/pages/TournamentPage.tsx'));
+    expect(page).toMatch(/<RankingTab\b/);
+    expect(page).toMatch(/onWatchPlayer=\{watchPlayerTable\}/);
+    expect(page).not.toMatch(/TournamentStandings/);
   });
 
   /* MOVED 2026-08-25 (same commit): the details page no longer draws the entry

@@ -507,7 +507,7 @@ export default function FriendsPage() {
           <div className="friends-search">
             <input
               type="text"
-              placeholder="Search friends..."
+              placeholder="Search Friends..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => setSearchFocused(true)}

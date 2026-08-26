@@ -2,12 +2,11 @@
  * 📨 INVITE PAGE — Club Invitation
  */
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { MembershipService } from '../services/MembershipService';
 import { ClubsService } from '../services/ClubsService';
 import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';
@@ -47,7 +46,6 @@ export default function InvitePage() {
   const inviteCode = searchParams.get('code');
   const refCode = searchParams.get('ref');
   const { user } = useAuthUser();
-  useVisibilityRefresh(() => loadClubInfo());
 
   const [club, setClub] = useState<ClubInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,6 +58,85 @@ export default function InvitePage() {
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const qrCanvasRef = useRef<HTMLCanvasElement>(null);
   const toast = useToast();
+
+  const loadClubInfo = useCallback(
+    async (getIsMounted?: () => boolean) => {
+      if (!getIsMounted || getIsMounted()) {
+        setLoading(true);
+        setError(null);
+      }
+      try {
+        let clubQuery = supabase
+          .from('clubs')
+          .select(
+            'id, club_id, slug, name, description, member_count, avatar_url, logo_url, is_public'
+          );
+
+        if (inviteCode) {
+          clubQuery = clubQuery.eq('invite_code', inviteCode);
+        } else if (clubId) {
+          const { column, value } = resolveClubIdFilter(clubId);
+          clubQuery = clubQuery.eq(column, value);
+        } else {
+          if (!getIsMounted || getIsMounted()) {
+            setError('Invalid invitation link');
+            setLoading(false);
+          }
+          return;
+        }
+
+        const { data: clubData, error: clubError } = await clubQuery.maybeSingle();
+
+        if (getIsMounted && !getIsMounted()) return;
+        if (clubError || !clubData) {
+          setError('Club not found or invitation expired');
+          setLoading(false);
+          return;
+        }
+
+        setClub({
+          id: clubData.id,
+          club_id: clubData.club_id,
+          name: clubData.name,
+          description: clubData.description,
+          member_count: clubData.member_count || 0,
+          avatar_url: clubData.avatar_url,
+          logo_url: clubData.logo_url,
+          is_public: clubData.is_public,
+        });
+
+        if (user?.id) {
+          const { data: membership } = await supabase
+            .from('club_members')
+            .select('user_id, status')
+            .eq('club_id', clubData.id)
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (getIsMounted && !getIsMounted()) return;
+          // A 'pending' row is a queued approval request, NOT full membership —
+          // show the "awaiting approval" state instead of "you're a member".
+          if (membership?.status === 'pending') {
+            setPendingApproval(true);
+            setAlreadyMember(false);
+          } else {
+            setPendingApproval(false);
+            setAlreadyMember(!!membership);
+          }
+        }
+      } catch (err) {
+        reportError(err, 'InvitePage.Failed_to_load_club');
+        if (!getIsMounted || getIsMounted()) {
+          toast.error('Failed to load club information');
+          setError('Failed to load club information');
+        }
+      }
+      if (!getIsMounted || getIsMounted()) setLoading(false);
+    },
+    [clubId, inviteCode, user?.id, toast]
+  );
+
+  useVisibilityRefresh(() => loadClubInfo());
 
   useEffect(() => {
     let isMounted = true;
@@ -80,81 +157,7 @@ export default function InvitePage() {
       unsubJoined();
       unsubUpdated();
     };
-  }, [clubId, inviteCode]);
-
-  const loadClubInfo = async (getIsMounted?: () => boolean) => {
-    if (!getIsMounted || getIsMounted()) {
-      setLoading(true);
-      setError(null);
-    }
-    try {
-      let clubQuery = supabase
-        .from('clubs')
-        .select(
-          'id, club_id, slug, name, description, member_count, avatar_url, logo_url, is_public'
-        );
-
-      if (inviteCode) {
-        clubQuery = clubQuery.eq('invite_code', inviteCode);
-      } else if (clubId) {
-        const { column, value } = resolveClubIdFilter(clubId);
-        clubQuery = clubQuery.eq(column, value);
-      } else {
-        if (!getIsMounted || getIsMounted()) {
-          setError('Invalid invitation link');
-          setLoading(false);
-        }
-        return;
-      }
-
-      const { data: clubData, error: clubError } = await clubQuery.maybeSingle();
-
-      if (getIsMounted && !getIsMounted()) return;
-      if (clubError || !clubData) {
-        setError('Club not found or invitation expired');
-        setLoading(false);
-        return;
-      }
-
-      setClub({
-        id: clubData.id,
-        club_id: clubData.club_id,
-        name: clubData.name,
-        description: clubData.description,
-        member_count: clubData.member_count || 0,
-        avatar_url: clubData.avatar_url,
-        logo_url: clubData.logo_url,
-        is_public: clubData.is_public,
-      });
-
-      if (user?.id) {
-        const { data: membership } = await supabase
-          .from('club_members')
-          .select('user_id, status')
-          .eq('club_id', clubData.id)
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (getIsMounted && !getIsMounted()) return;
-        // A 'pending' row is a queued approval request, NOT full membership —
-        // show the "awaiting approval" state instead of "you're a member".
-        if (membership?.status === 'pending') {
-          setPendingApproval(true);
-          setAlreadyMember(false);
-        } else {
-          setPendingApproval(false);
-          setAlreadyMember(!!membership);
-        }
-      }
-    } catch (err) {
-      reportError(err, 'InvitePage.Failed_to_load_club');
-      if (!getIsMounted || getIsMounted()) {
-        toast.error('Failed to load club information');
-        setError('Failed to load club information');
-      }
-    }
-    if (!getIsMounted || getIsMounted()) setLoading(false);
-  };
+  }, [loadClubInfo]);
 
   // Store referral code if present
   useEffect(() => {
@@ -241,7 +244,7 @@ export default function InvitePage() {
         }
       }
     }
-  }, [club?.id]);
+  }, [club?.id, club?.slug, refCode, user?.id]);
 
   const handleCopyLink = async () => {
     try {
@@ -336,7 +339,7 @@ export default function InvitePage() {
               alt={club.name}
               loading="lazy"
             />
-          ) : Number(club.club_id) === SHARK_CLUB_ID ? (
+          ) : club.name?.toUpperCase().includes('SHARK') ? (
             <img src={`${MEDIA_BASE}images/shark-club-logo.jpg`} alt={club.name} loading="lazy" />
           ) : (
             <span>{club.name[0]?.toUpperCase()}</span>

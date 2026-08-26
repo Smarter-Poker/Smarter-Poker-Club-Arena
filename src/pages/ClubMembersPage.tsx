@@ -259,6 +259,8 @@ export default function ClubMembersPage() {
               .eq('user_id', user.id)
               .maybeSingle();
             if (live() && memberData) setUserRole(normaliseRole(memberData.role));
+
+
           }
         }
 

@@ -317,7 +317,7 @@ export default function BlacklistManagerPage() {
               <label style={styles.label}>User ID</label>
               <input
                 style={styles.input}
-                placeholder="Player's user ID"
+                placeholder="Player's User ID"
                 value={newUserId}
                 onChange={(e) => setNewUserId(e.target.value)}
               />
@@ -326,7 +326,7 @@ export default function BlacklistManagerPage() {
               <label style={styles.label}>Reason</label>
               <input
                 style={styles.input}
-                placeholder="Reason for ban"
+                placeholder="Reason For Ban"
                 value={newReason}
                 onChange={(e) => setNewReason(e.target.value)}
               />

@@ -684,7 +684,7 @@ export default function DepositWithdrawModal({
                 </label>
                 <input
                   type="text"
-                  placeholder="Enter destination..."
+                  placeholder="Enter Destination..."
                   value={withdrawAddress}
                   onChange={(e) => setWithdrawAddress(e.target.value)}
                 />

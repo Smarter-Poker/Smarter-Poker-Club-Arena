@@ -58,6 +58,10 @@ export interface ClubSettings {
   allow_rakeback: boolean;
   rakeback_percentage: number;
   default_time_bank: number; // seconds
+  bbj_rake_enabled: boolean;
+  spins_enabled: boolean;
+  spins_preseed_amount: number;
+  spins_wallet_funding: string;
 }
 
 export interface ClubWithDistance extends Club {

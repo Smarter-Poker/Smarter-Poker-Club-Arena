@@ -71,6 +71,19 @@ export interface TabInfo {
   decisionSecondsLeft?: number;
   /** Seconds left on a BURNING time bank at this table (auto time bank on). */
   timeBankSecondsLeft?: number;
+  /**
+   * Does the hero hold an ACTIVE SEAT at this table?
+   *
+   * Dan 2026-08-26: "the action bar on top of the playing page should not ever
+   * flash or change anything when you're on a table observing. It should just
+   * say the game and the stakes."
+   *
+   * Mirrors TableInstance.seated: true only from TABLE_SEATED or the
+   * server-truth rebuild reading table_seats WHERE left_at IS NULL. Undefined
+   * reads as "not seated", which is the safe default for a flag whose job is
+   * to decide whether the tab is allowed to move.
+   */
+  seated?: boolean;
 }
 
 /** What a pending decision is called on the pill. Short: it shares ~100px. */
@@ -477,62 +490,76 @@ export function TableTabBar({
       activeIsLobby
         ? []
         : createDefaultMenuSections(
-        {
-          onSitOut: () =>
-            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SIT_OUT' }),
-          onStandUpBB: () =>
-            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'STAND_UP_BB' }),
-          onRebuy: () =>
-            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'REBUY' }),
-          onAutoTopUp: () =>
-            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'AUTO_TOP_UP' }),
-          onAddOn: () =>
-            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'ADD_ON' }),
-          onSessionStats: () =>
-            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SESSION_STATS' }),
-          onSettings: () =>
-            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SETTINGS' }),
-          onToggleSounds: () =>
-            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'TOGGLE_SOUNDS' }),
-          onToggleVibrations: () =>
-            masterBus.emit('TABLE_MENU_ACTION', {
-              tableId: activeTabId,
-              action: 'TOGGLE_VIBRATIONS',
-            }),
-          onHandHistory: () =>
-            masterBus.emit('TABLE_MENU_ACTION', {
-              tableId: activeTabId,
-              action: 'HAND_HISTORY',
-            }),
-          onLeaderboard: () =>
-            masterBus.emit('TABLE_MENU_ACTION', {
-              tableId: activeTabId,
-              action: 'LEADERBOARD',
-            }),
-          onHelp: () =>
-            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'HELP' }),
-          onLeaveTable: () =>
-            masterBus.emit('TABLE_MENU_ACTION', {
-              tableId: activeTabId,
-              action: 'LEAVE_TABLE',
-            }),
-          /* `onChangeAvatar` / `onToggleAlias` used to be passed here and were
+            {
+              onSitOut: () =>
+                masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SIT_OUT' }),
+              onStandUpBB: () =>
+                masterBus.emit('TABLE_MENU_ACTION', {
+                  tableId: activeTabId,
+                  action: 'STAND_UP_BB',
+                }),
+              onRebuy: () =>
+                masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'REBUY' }),
+              onAutoTopUp: () =>
+                masterBus.emit('TABLE_MENU_ACTION', {
+                  tableId: activeTabId,
+                  action: 'AUTO_TOP_UP',
+                }),
+              onAddOn: () =>
+                masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'ADD_ON' }),
+              onSessionStats: () =>
+                masterBus.emit('TABLE_MENU_ACTION', {
+                  tableId: activeTabId,
+                  action: 'SESSION_STATS',
+                }),
+              onSettings: () =>
+                masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SETTINGS' }),
+              onToggleSounds: () =>
+                masterBus.emit('TABLE_MENU_ACTION', {
+                  tableId: activeTabId,
+                  action: 'TOGGLE_SOUNDS',
+                }),
+              onToggleVibrations: () =>
+                masterBus.emit('TABLE_MENU_ACTION', {
+                  tableId: activeTabId,
+                  action: 'TOGGLE_VIBRATIONS',
+                }),
+              onHandHistory: () =>
+                masterBus.emit('TABLE_MENU_ACTION', {
+                  tableId: activeTabId,
+                  action: 'HAND_HISTORY',
+                }),
+              onLeaderboard: () =>
+                masterBus.emit('TABLE_MENU_ACTION', {
+                  tableId: activeTabId,
+                  action: 'LEADERBOARD',
+                }),
+              onHelp: () =>
+                masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'HELP' }),
+              onLeaveTable: () =>
+                masterBus.emit('TABLE_MENU_ACTION', {
+                  tableId: activeTabId,
+                  action: 'LEAVE_TABLE',
+                }),
+              /* `onChangeAvatar` / `onToggleAlias` used to be passed here and were
              never placed on a menu item by createDefaultMenuSections — see the
              note on TableMenuProps.onOpenIdentity. The alias handler now goes
              directly to TableMenu as `onOpenIdentity` (below); the avatar
              picker is TableMenu's own in-app gallery. */
-        },
-        {
-          standUpBBBadge: tabs.find((t) => t.id === activeTabId)?.standUpNextBB ? 'ON' : undefined,
-          autoTopUpBadge: tabs.find((t) => t.id === activeTabId)?.isAutoRebuyEnabled
-            ? 'ON'
-            : undefined,
-          soundsBadge: tabs.find((t) => t.id === activeTabId)?.soundEnabled ? 'ON' : 'OFF',
-          vibrationsBadge: tabs.find((t) => t.id === activeTabId)?.vibrationsEnabled
-            ? 'ON'
-            : 'OFF',
-        }
-      ),
+            },
+            {
+              standUpBBBadge: tabs.find((t) => t.id === activeTabId)?.standUpNextBB
+                ? 'ON'
+                : undefined,
+              autoTopUpBadge: tabs.find((t) => t.id === activeTabId)?.isAutoRebuyEnabled
+                ? 'ON'
+                : undefined,
+              soundsBadge: tabs.find((t) => t.id === activeTabId)?.soundEnabled ? 'ON' : 'OFF',
+              vibrationsBadge: tabs.find((t) => t.id === activeTabId)?.vibrationsEnabled
+                ? 'ON'
+                : 'OFF',
+            }
+          ),
     [activeTabId, tabs, activeIsLobby]
   );
 
@@ -566,22 +593,63 @@ export function TableTabBar({
       <div className="table-tab-bar__tabs" ref={tabsRowRef}>
         {tabs.map((tab, i) => {
           const isActive = tab.id === activeTabId;
+          const heroHasCards = !!tab.holeCards && tab.holeCards.length >= 2;
+
+          /* ── OBSERVING: THE TAB HOLDS STILL ────────────────────────────────
+             Dan 2026-08-26: "THE ACTION BAR ON TOP OF THE PLAYING PAGE SHOULD
+             NOT EVER FLASH OR CHANGE ANYTHING WHEN YOUR ON A TABLE OBSERVING.
+             IT SHOULD JUST SAY THE GAME AND THE STAKES."
+
+             Almost everything this pill renders is hero state -- your cards,
+             your turn, your clock, your last action -- and a spectator has
+             none of it, so those parts were already quiet. ONE thing is not
+             hero state: `pot`. It belongs to the TABLE, so while you watch a
+             game you are not in, the sub-line flips between "Pot 14" and the
+             stakes on every street of every hand, forever. That is the
+             flashing, and no amount of "the hero has no cards" reasoning
+             suppresses it.
+
+             WHY THIS TEST IS NOT JUST `!tab.seated`. `seated` is the right
+             signal but it is not the only evidence, and getting it wrong in
+             the WRONG DIRECTION costs a player money: a seated player whose
+             `seated` flag has not landed yet would have their turn indicator
+             and their five-second flash suppressed, and would sit there
+             missing a decision the tab was built to warn them about. So any
+             evidence of involvement -- a seat, a turn, cards, an open
+             decision, a burning time bank -- disables the observer treatment.
+             The quiet path is only taken when every one of them says no. */
+          const observing =
+            tab.seated !== true &&
+            !tab.isMyTurn &&
+            !heroHasCards &&
+            !tab.decisionKind &&
+            tab.timeBankSecondsLeft === undefined;
+
           // Urgency is a property of the clock, not of which tab is focused —
           // the reference footage dims nothing on the active tab, and a player
           // staring at table 2 still needs table 2's own bar going red.
-          const isUrgent =
-            tab.isMyTurn && tab.timeRemaining !== undefined && tab.timeRemaining < 10;
-          const hasCards = !!tab.holeCards && tab.holeCards.length >= 2;
-          const flash = actionFlash[tab.id];
-          const result = resultFlash[tab.id];
+          const isMyTurn = !observing && tab.isMyTurn;
+          const isUrgent = isMyTurn && tab.timeRemaining !== undefined && tab.timeRemaining < 10;
+          const hasCards = !observing && heroHasCards;
+          const flash = observing ? undefined : actionFlash[tab.id];
+          const result = observing ? undefined : resultFlash[tab.id];
           const isMuted = !!mutedIds?.includes(tab.id);
           // Dan 2026-08-21: 5 seconds left on ANY clock at this table - turn,
           // discard, insurance or RIT - and the box flashes. On every tab,
           // focused or not: the clock does not care where you are looking.
-          const anySecondsLeft =
-            tab.decisionSecondsLeft !== undefined ? tab.decisionSecondsLeft : tab.timeRemaining;
+          const anySecondsLeft = observing
+            ? undefined
+            : tab.decisionSecondsLeft !== undefined
+              ? tab.decisionSecondsLeft
+              : tab.timeRemaining;
           const isFlashing = anySecondsLeft !== undefined && anySecondsLeft <= 5;
-          const decisionLabel = tab.decisionKind ? DECISION_LABEL[tab.decisionKind] : '';
+          const decisionLabel =
+            !observing && tab.decisionKind ? DECISION_LABEL[tab.decisionKind] : '';
+          const timeBankLeft = observing ? undefined : tab.timeBankSecondsLeft;
+          /* The pot is the only TABLE-level thing on this pill, so it is the
+             only one that has to be silenced explicitly. Stakes take its place,
+             which is what tells two NLH tabs apart anyway. */
+          const potToShow = !observing && tab.pot !== undefined && tab.pot > 0 ? tab.pot : null;
           const isDragging = dragState?.id === tab.id;
 
           return (
@@ -592,11 +660,11 @@ export function TableTabBar({
                 isActive && 'table-tab-bar__tab--active',
                 hasCards && 'table-tab-bar__tab--cards',
                 isFlashing && 'table-tab-bar__tab--flash',
-                tab.decisionKind && 'table-tab-bar__tab--decision',
-                tab.folded && 'table-tab-bar__tab--folded',
+                !observing && tab.decisionKind && 'table-tab-bar__tab--decision',
+                !observing && tab.folded && 'table-tab-bar__tab--folded',
                 result === 'win' && 'table-tab-bar__tab--won',
                 result === 'loss' && 'table-tab-bar__tab--lost',
-                !isActive && tab.isMyTurn && 'table-tab-bar__tab--turn',
+                !isActive && isMyTurn && 'table-tab-bar__tab--turn',
                 !isActive && isUrgent && 'table-tab-bar__tab--urgent',
               ]
                 .filter(Boolean)
@@ -618,7 +686,7 @@ export function TableTabBar({
               // accessible name at all. Announce the table and its state; the
               // cards themselves are visual sugar a screen reader can live
               // without (the table view reads them properly).
-              aria-label={`${formatGameTitle(tab.name)}${tab.isMyTurn ? ', your turn' : ''}`}
+              aria-label={`${formatGameTitle(tab.name)}${isMyTurn ? ', your turn' : ''}`}
               aria-current={isActive ? 'true' : undefined}
               style={
                 isDragging
@@ -645,13 +713,13 @@ export function TableTabBar({
                     {tab.decisionSecondsLeft ?? 0}s Left
                   </span>
                 </span>
-              ) : tab.timeBankSecondsLeft !== undefined ? (
+              ) : timeBankLeft !== undefined ? (
                 /* Dan 2026-08-21: "if they have auto time banks on, and it
                    kicks in, it should display TIME BANK with a countdown
                    clock in the box." */
                 <span className="table-tab-bar__tab-label">
                   <span className="table-tab-bar__tab-name">TIME BANK</span>
-                  <span className="table-tab-bar__tab-sub">{tab.timeBankSecondsLeft}s</span>
+                  <span className="table-tab-bar__tab-sub">{timeBankLeft}s</span>
                 </span>
               ) : hasCards ? (
                 <MiniCards cards={tab.holeCards!} />
@@ -667,9 +735,9 @@ export function TableTabBar({
                   {/* Sub-line: the live pot while a hand runs without the
                       hero, otherwise the stakes - which is what tells two
                       NLH tabs apart. */}
-                  {tab.pot !== undefined && tab.pot > 0 ? (
+                  {potToShow !== null ? (
                     <span className="table-tab-bar__tab-sub">
-                      Pot {tab.pot.toLocaleString('en-US')}
+                      Pot {potToShow.toLocaleString('en-US')}
                     </span>
                   ) : (
                     tab.stakes && <span className="table-tab-bar__tab-sub">{tab.stakes}</span>
@@ -678,12 +746,12 @@ export function TableTabBar({
               )}
 
               {/* Transient last-action chip ("Fold", "Call", ...) */}
-              {flash && !tab.isMyTurn && (
+              {flash && !isMyTurn && (
                 <span className="table-tab-bar__action-chip">{ACTION_LABEL[flash] ?? flash}</span>
               )}
 
               {/* Turn indicator — show timer or pulsing dot */}
-              {!isActive && tab.isMyTurn && (
+              {!isActive && isMyTurn && (
                 <span className="table-tab-bar__turn-dot">
                   {tab.timeRemaining !== undefined && tab.timeRemaining < 15
                     ? `${tab.timeRemaining}s`
@@ -695,7 +763,7 @@ export function TableTabBar({
                   edge of the pill whenever it is the hero's turn at this
                   table, active tab included, and drains left as time runs out.
                   Width steps once a second; the linear transition smooths it. */}
-              {tab.isMyTurn && tab.turnProgress !== undefined && (
+              {isMyTurn && tab.turnProgress !== undefined && (
                 <span
                   className={`table-tab-bar__timer-bar${
                     isUrgent ? ' table-tab-bar__timer-bar--urgent' : ''

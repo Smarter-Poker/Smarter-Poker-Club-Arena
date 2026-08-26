@@ -1,3 +1,5 @@
+import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOverlay';
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ARENA — Premium Poker Table Page
@@ -67,7 +69,6 @@
  * All five component files (TSX + CSS) and useTableModals.ts are deleted.
  */
 
-import { OfflineQueueService } from '../services/OfflineQueueService';
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { setShownCards } from '../services/ShowCardsService';
@@ -129,8 +130,12 @@ import { HydraService } from '../services/HydraService';
 import TableChat from '../components/table/TableChat';
 import { ChatBubble, bubbleForSeat, useSeatChatBubbles } from '../components/table/ChatBubble';
 import { holeCardCountFor } from '../lib/holeCardCount';
+import { shouldAnnounceBbjHit } from '../lib/bbjHitOnce';
+import { applyTableAppearance } from '../lib/applyTableAppearance';
+import BBJHitNotification from '../components/bbj/BBJHitNotification';
 import { type InsuranceOffer } from '../components/table/InsuranceModal';
 import { ThrowAnimationContainer } from '../components/table/ThrowAnimation';
+import { useTableEnvironment } from '../hooks/useTableEnvironment';
 import { useTabKeepAlive, workerTimeout, cancelWorkerTimeout } from '../hooks/useTabKeepAlive';
 import { STORAGE_KEYS } from '../lib/storage';
 import StraddleToggle from '../components/table/StraddleToggle';
@@ -895,7 +900,13 @@ function buildSpinDrawFromRow(row: SpinDrawRow | null | undefined): SpinWheelDat
 
 // Module-level guards to prevent multiple TablePage instances from cascading BBJ_HIT_GLOBAL
 const _LAST_BBJ_HIT_COUNT: Record<string, number> = {};
-let _LAST_BBJ_TOAST_TIME = 0;
+/* `_LAST_BBJ_TOAST_TIME` was deleted here 2026-08-26. It was a 5-second
+   module-level window, which de-duplicated four mounted tables shouting at
+   once and NOTHING else: a module variable is reinitialised by the page load,
+   so it was blind to the actual reported bug — the hub replaying a retained
+   jackpot event to every fresh socket. `shouldAnnounceBbjHit`
+   (lib/bbjHitOnce) replaces it and covers both, because it keys on the hit's
+   own identity and persists across the reload. */
 
 export default function TablePage({
   embeddedTableId,
@@ -921,107 +932,8 @@ export default function TablePage({
 
   // Prevent Chrome from throttling this tab (keeps horse timers alive)
   useTabKeepAlive();
-
-  // ─── PAGE TITLE ───
-  useEffect(() => {
-    document.title = tableId ? `${tableId} | Smarter Poker` : 'Table | Smarter Poker';
-  }, [tableId]);
-
-  // ─── MOBILE VIEWPORT LOCK — Prevent accidental pinch-zoom during poker play ───
-  useEffect(() => {
-    let newMeta: HTMLMetaElement | null = null;
-    const meta = document.querySelector('meta[name="viewport"]');
-    const originalContent = meta?.getAttribute('content') || '';
-    const pokerViewport =
-      'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
-
-    if (meta) {
-      meta.setAttribute('content', pokerViewport);
-    } else {
-      newMeta = document.createElement('meta');
-      newMeta.name = 'viewport';
-      newMeta.content = pokerViewport;
-      document.head.appendChild(newMeta);
-    }
-
-    // Try to lock orientation to portrait (non-blocking, fails silently on unsupported browsers)
-    try {
-      (screen.orientation as any)?.lock?.('portrait').catch(() => {});
-    } catch {
-      // Orientation lock not supported — ignore
-    }
-
-    return () => {
-      // Restore original viewport when leaving the table
-      if (newMeta) {
-        document.head.removeChild(newMeta);
-      } else {
-        const restoreMeta = document.querySelector('meta[name="viewport"]');
-        if (restoreMeta) {
-          restoreMeta.setAttribute(
-            'content',
-            originalContent || 'width=device-width, initial-scale=1'
-          );
-        }
-      }
-      try {
-        screen.orientation?.unlock?.();
-      } catch {
-        // Ignore
-      }
-    };
-  }, []);
-
-  // ─── SCREEN WAKE LOCK — Prevent screen dimming during active poker play ───
-  useEffect(() => {
-    let wakeLock: WakeLockSentinel | null = null;
-
-    const requestWakeLock = async () => {
-      try {
-        if ('wakeLock' in navigator) {
-          if (wakeLock) await wakeLock.release().catch(() => {});
-          wakeLock = await navigator.wakeLock.request('screen');
-        }
-      } catch {
-        // Wake Lock not supported or denied — ignore
-      }
-    };
-
-    // Reacquire wake lock when tab becomes visible again
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        requestWakeLock();
-      }
-    };
-
-    requestWakeLock();
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      wakeLock?.release().catch(() => {});
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
-
-  // ─── BACKGROUND TAB DETECTION — Pause animations when tab is hidden (saves battery) ───
-  useEffect(() => {
-    const tablePage = document.querySelector('.table-page');
-    if (!tablePage) return;
-
-    const handleVisibility = () => {
-      if (document.visibilityState === 'hidden') {
-        tablePage.classList.add('table-page--backgrounded');
-      } else {
-        tablePage.classList.remove('table-page--backgrounded');
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibility);
-      tablePage.classList.remove('table-page--backgrounded');
-    };
-  }, []);
+  useTableEnvironment(tableId);
+  useTableEnvironment(tableId);
 
   // Get current user
   const [userId, setUserId] = useState<string>('guest');
@@ -3180,6 +3092,119 @@ export default function TablePage({
   const [ritChosenRuns, setRitChosenRuns] = useState<2 | 3>(2);
   const [ritMaxRuns, setRitMaxRuns] = useState<2 | 3>(2);
   const [ritPlayerCount, setRitPlayerCount] = useState(2);
+  // ── POKERBROS PARITY 2026-08-26: consent-panel state ──
+  // The panel opens for EVERY all-in participant at rit_offer (responders
+  // used to wait blind until the chooser decided), renders one row per
+  // participant with a live checkmark per accept, and runs ONE shared
+  // countdown against the engine's deadline (deadline_ts on the wire).
+  const [ritAllPlayerIds, setRitAllPlayerIds] = useState<string[]>([]);
+  const [ritAcceptedIds, setRitAcceptedIds] = useState<string[]>([]);
+  const [ritChooserId, setRitChooserId] = useState<string | null>(null);
+  const [ritPotAmount, setRitPotAmount] = useState<number | null>(null);
+  const [ritTotalSeconds, setRitTotalSeconds] = useState(25);
+  const [ritHeroAccepted, setRitHeroAccepted] = useState(false);
+  const [ritChooserHasDecided, setRitChooserHasDecided] = useState(false);
+  const ritDeadlineRef = useRef(0);
+  // Reference behavior: a wide status strip rides the felt through the RIT
+  // question — "waiting" persists while the offer is open (spectators and
+  // folded players see it too), the accepted/rejected outcome replaces it for
+  // a few seconds. NOT a toast: the reference renders it over the table.
+  const [ritFeltBanner, setRitFeltBanner] = useState<string | null>(null);
+  const ritFeltBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const RIT_WAITING_BANNER = 'Waiting For Players To Run It Multiple Times.';
+  /**
+   * @param revertToWaiting — RUN IT 3X recording: a per-player accept banner
+   * shows for a few seconds, then the table drops BACK to the waiting strip
+   * while the offer still hangs. When set, expiry restores the waiting text
+   * instead of clearing, as long as the offer deadline is still in the
+   * future.
+   */
+  const showRitFeltBanner = useCallback((text: string, ms?: number, revertToWaiting?: boolean) => {
+    if (ritFeltBannerTimerRef.current) {
+      clearTimeout(ritFeltBannerTimerRef.current);
+      ritFeltBannerTimerRef.current = null;
+    }
+    setRitFeltBanner(text);
+    if (ms && ms > 0) {
+      ritFeltBannerTimerRef.current = setTimeout(() => {
+        ritFeltBannerTimerRef.current = null;
+        setRitFeltBanner(
+          revertToWaiting && ritDeadlineRef.current > Date.now() ? RIT_WAITING_BANNER : null
+        );
+      }, ms);
+    }
+  }, []);
+  /** When the last per-player accept banner fired — the collective
+   *  "players have accepted" banner is skipped if one just showed
+   *  (the 3X recording goes straight from the final accept's named banner
+   *  into the runout). */
+  const ritLastAcceptBannerAtRef = useRef(0);
+  // Reference behavior: the panel slides in a beat AFTER the table settles
+  // into "waiting" — not in the same frame as the all-in.
+  const ritPanelOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Reference behavior: the POT counter decrements as each pot leaves the
+  // middle (every game — splits, side pots, RIT boards). When non-null this
+  // overrides the snapshot pot during the award sequence.
+  const [potShipRemaining, setPotShipRemaining] = useState<number | null>(null);
+  // Reveal timeline: how many cards of each RIT board are face up right now.
+  // rit_result arrives with the full boards; the reference client deals them
+  // street by street (flop → pause → turn → pause → river, board by board),
+  // so the counts advance on a timer chain and the pot ship waits for it.
+  const [ritRevealCounts, setRitRevealCounts] = useState<number[] | null>(null);
+  const [ritRevealDone, setRitRevealDone] = useState(false);
+  /**
+   * RUN IT 3X recording (2026-08-26): the winner phase is INTERLEAVED per
+   * run — run 1's ribbon + highlights land, run 1's pots ship, THEN run 2's
+   * ribbon, and so on. How many runs have taken the stage so far; each
+   * board's ribbon/highlight/share label gates on its own run's turn.
+   */
+  const [ritRevealedRuns, setRitRevealedRuns] = useState(0);
+  /** Absolute wall-clock ms at which each run's ribbon lands (index = run-1).
+   *  POT_WIN aligns each run's award groups to these. */
+  const ritRunRibbonAtRef = useRef<number[]>([]);
+  const ritRevealTimersRef = useRef<number[]>([]);
+  const ritTimelineEndsAtRef = useRef(0);
+  const clearRitRevealTimers = useCallback(() => {
+    for (const t of ritRevealTimersRef.current) window.clearTimeout(t);
+    ritRevealTimersRef.current = [];
+  }, []);
+  /** Reset every piece of consent-panel + reveal state (hand boundary). */
+  const resetRitPanelState = useCallback(() => {
+    setRitAllPlayerIds([]);
+    setRitAcceptedIds([]);
+    setRitChooserId(null);
+    setRitPotAmount(null);
+    setRitHeroAccepted(false);
+    setRitChooserHasDecided(false);
+    setRitRevealCounts(null);
+    setRitRevealDone(false);
+    setRitRevealedRuns(0);
+    ritRunRibbonAtRef.current = [];
+    ritLastAcceptBannerAtRef.current = 0;
+    ritDeadlineRef.current = 0;
+    ritTimelineEndsAtRef.current = 0;
+    if (ritPanelOpenTimerRef.current) {
+      clearTimeout(ritPanelOpenTimerRef.current);
+      ritPanelOpenTimerRef.current = null;
+    }
+    if (ritFeltBannerTimerRef.current) {
+      clearTimeout(ritFeltBannerTimerRef.current);
+      ritFeltBannerTimerRef.current = null;
+    }
+    setRitFeltBanner(null);
+    setPotShipRemaining(null);
+  }, []);
+  // One shared countdown, ticking against the engine's wall-clock deadline.
+  useEffect(() => {
+    if (!showRIT) return;
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((ritDeadlineRef.current - Date.now()) / 1000));
+      setRitTimer(left);
+    };
+    tick();
+    const iv = window.setInterval(tick, 1000);
+    return () => window.clearInterval(iv);
+  }, [showRIT]);
 
   // Winner state — tracks winning players, hand names, amounts for highlighting + hand history
   const [winnerInfo, setWinnerInfo] = useState<{
@@ -3281,17 +3306,35 @@ export default function TablePage({
         }
       }
 
+      // POKERBROS PARITY 2026-08-26: the reveal timeline gates presentation.
+      // While the boards are still dealing, each run shows only the cards the
+      // timeline has turned so far (undealt slots render face down) and NO
+      // winner labels or highlights. RUN IT 3X recording: the winner phase
+      // then replays RUN BY RUN — each board's ribbon, highlights and share
+      // label appear on its own turn (ritRevealedRuns), ships aligned to it.
+      const visibleCount = ritRevealCounts?.[bi] ?? 5;
+      const revealed = ritRevealCounts === null || ritRevealDone || bi < ritRevealedRuns;
+
       return {
         boardIndex: bi,
         cards,
-        winnerNames,
-        winnerHandName,
-        highlightedIndices,
+        visibleCount: Math.min(5, Math.max(0, visibleCount)),
+        winnerNames: revealed ? winnerNames : [],
+        winnerHandName: revealed ? winnerHandName : undefined,
+        highlightedIndices: revealed ? highlightedIndices : [],
         sharePct,
         shareAmount: boardPot,
+        revealed,
       };
     });
-  }, [ritResult, tableState.players, tableState.gameType]);
+  }, [
+    ritResult,
+    tableState.players,
+    tableState.gameType,
+    ritRevealCounts,
+    ritRevealDone,
+    ritRevealedRuns,
+  ]);
 
   // ─── Multi-table info reporting ─────────────────────────────────────
   // When embedded in MultiTablePage, report table name/pot/turn status
@@ -3467,6 +3510,18 @@ export default function TablePage({
   // re-date itself on every render (2026-08-18).
   const tableSessionDate = useMemo(() => new Date(), []);
 
+  /* The bottom-right hit notification (Dan 2026-08-26). Null when nothing is
+     celebrating. `key` remounts the card if a second jackpot lands while the
+     first is still up, so the new one plays its own intro instead of
+     inheriting a card mid-outro. */
+  const [bbjHitNotice, setBbjHitNotice] = useState<{
+    key: string;
+    winnerName: string;
+    amount: number;
+    tableName: string;
+    tableId: string;
+  } | null>(null);
+
   // FIX 128: BBJ Celebration overlay state — triggered by server bbj_hit + bbj_payout_complete events
   const [showBBJCelebration, setShowBBJCelebration] = useState(false);
   const bbjHitDataRef = useRef<{
@@ -3595,7 +3650,15 @@ export default function TablePage({
   // FIX 96: Run It Twice handlers — Bible V8 §4.20 + Dan's rules
   // 2-phase flow: Chooser picks runs (1/2/3), others accept/decline
   const handleRITChooserDecide = async (runs: 1 | 2 | 3) => {
-    setShowRIT(false);
+    // POKERBROS PARITY 2026-08-26: choosing 2/3 keeps the panel OPEN in the
+    // waiting state (checks tick as responders agree; rit_all_accepted or
+    // rit_single_run closes it for everyone). Choosing 1 ends the question.
+    if (runs === 1) {
+      setShowRIT(false);
+    } else {
+      setRitChosenRuns(runs === 3 ? 3 : 2);
+      setRitChooserHasDecided(true);
+    }
     if (tableId) {
       const result = await respondToRIT(tableId, { runs });
       if (!result.success) {
@@ -3605,7 +3668,10 @@ export default function TablePage({
   };
 
   const handleRITAccept = async () => {
-    setShowRIT(false);
+    // Panel stays open showing "Waiting For Other Players…" with live checks;
+    // rit_all_accepted / rit_single_run close it for everyone together.
+    setRitHeroAccepted(true);
+    if (userId) setRitAcceptedIds((prev) => [...new Set([...prev, userId])]);
     if (tableId) {
       const result = await respondToRIT(tableId, { response: 'accept' });
       if (!result.success) {
@@ -3615,6 +3681,8 @@ export default function TablePage({
   };
 
   const handleRITDecline = async () => {
+    // A decline is final and instant — the server's rit_single_run broadcast
+    // closes the panel on every other client in the same moment.
     setShowRIT(false);
     if (tableId) {
       const result = await respondToRIT(tableId, { response: 'decline' });
@@ -3796,6 +3864,12 @@ export default function TablePage({
       if (potPushDelayTimerRef.current) clearTimeout(potPushDelayTimerRef.current);
       for (const t of potAwardStaggerTimersRef.current) clearTimeout(t);
       if (stackHoldReleaseTimerRef.current) clearTimeout(stackHoldReleaseTimerRef.current);
+      // POKERBROS PARITY 2026-08-26: the RIT reveal timeline must die with
+      // the page — a street reveal firing into an unmounted table is a leak.
+      for (const t of ritRevealTimersRef.current) clearTimeout(t);
+      if (ritResultTimerRef.current) clearTimeout(ritResultTimerRef.current);
+      if (ritPanelOpenTimerRef.current) clearTimeout(ritPanelOpenTimerRef.current);
+      if (ritFeltBannerTimerRef.current) clearTimeout(ritFeltBannerTimerRef.current);
     };
   }, []);
 
@@ -4057,6 +4131,17 @@ export default function TablePage({
                       bigBlind: hit.big_blind || 0,
                       winnerName: hit.bad_beat_name || 'A player',
                       amount: hit.bad_beat_amount || hit.total_payout || 0,
+                      /* Carried so the receiver can de-duplicate on the hit's
+                         own identity rather than on arrival time. This path
+                         is a postgres UPDATE, which does NOT replay on
+                         refresh — but it reaches the same notification as the
+                         engine path, and two producers feeding one gate must
+                         speak the same shape or the gate silently degrades to
+                         "unknown:0" for one of them. `hit_at` is the ledger's
+                         own timestamp; absent, freshness simply does not
+                         apply and identity still does. */
+                      handNumber: hit.hand_number ?? 0,
+                      emittedAt: hit.hit_at ? new Date(hit.hit_at).getTime() : undefined,
                     });
                   }
                 } catch (err) {
@@ -4238,6 +4323,36 @@ export default function TablePage({
   const [allInEquities, setAllInEquities] = useState<
     Array<{ userId: string; username: string; equity: number; seat: number }>
   >([]);
+
+  // POKERBROS PARITY 2026-08-26: consent-panel rows — one per all-in player,
+  // requester first, with hole cards (face up during the runout pause),
+  // equity when broadcast, and the live accepted check.
+  const ritPanelPlayers = useMemo(() => {
+    if (ritAllPlayerIds.length === 0) return [];
+    const ordered = [...ritAllPlayerIds].sort((a, b) => {
+      if (a === ritChooserId) return -1;
+      if (b === ritChooserId) return 1;
+      return 0;
+    });
+    return ordered.map((pid) => {
+      const p = tableState.players.find((pp) => pp?.id === pid);
+      const eq = allInEquities.find((e) => e.userId === pid);
+      return {
+        id: pid,
+        name: p?.name || eq?.username || 'Player',
+        cards: (p?.holeCards ?? []).filter((c): c is Card => c != null),
+        equityPct: eq ? eq.equity : undefined,
+        accepted: ritAcceptedIds.includes(pid),
+      };
+    });
+  }, [ritAllPlayerIds, ritAcceptedIds, ritChooserId, tableState.players, allInEquities]);
+
+  // The community cards on the felt at the moment of the all-in — the panel's
+  // board preview renders these plus face-down slots for the undealt streets.
+  const ritPanelBoardCards = useMemo(
+    () => tableState.communityCards.filter((c): c is Card => c != null),
+    [tableState.communityCards]
+  );
 
   // COMPETITOR-PARITY 2026-08-19: table-level ALL IN banner. The per-seat
   // badge existed but the RUNOUT itself had no table-wide moment. Fires once
@@ -4890,14 +5005,11 @@ export default function TablePage({
         const { error } = await supabase.rpc('atomic_table_rebuy', payload);
         if (error) {
           if (error.message?.includes('FetchError') || !navigator.onLine) {
-            OfflineQueueService.enqueue({
-              action: 'TABLE_REBUY',
-              payload,
-              operationId: idempotencyKey,
-            });
-            toast.success('Offline: Rebuy queued for retry.');
-            setBustRebuyOpen(false);
-            bustPromptFiredRef.current = true;
+            // A rebuy is a debit against a live wallet. It is not queued for
+            // later: nothing on the client can prove, at replay time, that the
+            // player still wants it or that the seat still exists. Fail here,
+            // honestly, while the player is watching.
+            toast?.error('You Are Offline. Rebuy When Your Connection Returns.');
           } else {
             toast?.error(error.message || 'Rebuy failed');
           }
@@ -5456,47 +5568,137 @@ export default function TablePage({
         return; // Don't process as regular state
       }
 
-      // FIX 96: RIT offer — show prompt to chooser or wait for chooser's decision
+      // FIX 96 → POKERBROS PARITY 2026-08-26: the consent panel opens for
+      // EVERY all-in participant the moment the offer exists — the chooser
+      // with Run Once / Twice / 3 Times, responders with Decline/Accept from
+      // the start (the engine's consent-race fix records an early accept).
+      // One shared countdown, pinned to the engine's deadline_ts.
       if (eventType === 'rit_offer') {
         const chooserId = handState.chooserPlayerId as string;
-        const allPlayerIds = handState.allPlayerIds as string[];
+        const allPlayerIds = (handState.allPlayerIds as string[]) || [];
         const maxRuns = (handState.maxRuns as number) || 2;
+        const timeoutSeconds = Number(handState.timeoutSeconds) || 25;
+        const deadlineTs = Number(handState.deadline_ts) || Date.now() + timeoutSeconds * 1000;
 
-        // Only show to all-in players involved in the RIT offer
+        // The waiting strip rides the felt for EVERYONE — spectators and
+        // folded players watch the question hang exactly like the reference,
+        // and it stays up until an outcome event replaces or clears it.
+        showRitFeltBanner(RIT_WAITING_BANNER);
+
+        // Only the all-in players get the consent panel itself.
         if (!userId || !allPlayerIds?.includes(userId)) return;
 
-        if (userId === chooserId) {
-          // This user is the CHOOSER (best hand) — show 1/2/3 options, 5 second timer
-          setRitIsChooser(true);
-          setRitMaxRuns((maxRuns === 3 ? 3 : 2) as 2 | 3);
-          setRitPlayerCount(allPlayerIds.length);
-          setRitTimer(5); // Chooser gets 5 seconds per Dan's rules
+        setRitAllPlayerIds(allPlayerIds);
+        setRitAcceptedIds([chooserId]);
+        setRitChooserId(chooserId);
+        setRitChooserHasDecided(false);
+        setRitHeroAccepted(false);
+        setRitPotAmount(typeof handState.pot === 'number' ? handState.pot : null);
+        setRitTotalSeconds(timeoutSeconds);
+        ritDeadlineRef.current = deadlineTs;
+        setRitIsChooser(userId === chooserId);
+        setRitMaxRuns((maxRuns === 3 ? 3 : 2) as 2 | 3);
+        setRitPlayerCount(allPlayerIds.length);
+        setRitOpponent(
+          tableStateRef.current?.players?.find((pp) => pp?.id === chooserId)?.name || 'Player'
+        );
+        setRitTimer(Math.max(0, Math.ceil((deadlineTs - Date.now()) / 1000)));
+        setDecisionDeadline({ kind: 'rit', at: deadlineTs });
+        // Reference cadence: the table settles into "waiting" for a beat,
+        // THEN the panel slides in. rit_single_run cancels a pending open.
+        if (ritPanelOpenTimerRef.current) clearTimeout(ritPanelOpenTimerRef.current);
+        ritPanelOpenTimerRef.current = setTimeout(() => {
+          ritPanelOpenTimerRef.current = null;
           setShowRIT(true);
-          setDecisionDeadline({ kind: 'rit', at: Date.now() + 5000 });
-        }
-        // Non-choosers wait for rit_chooser_decided event
+        }, 1500 * getAnimationSpeed());
         return;
       }
 
-      // FIX 96: Chooser decided — show accept/decline to other players
+      // FIX 96: Chooser decided — responders' panel flips from "is choosing"
+      // to "<name> Requests To Run It N Times"; the chooser's own panel stays
+      // open in the waiting state, checks ticking as responses land.
       if (eventType === 'rit_chooser_decided') {
         const chooserId = handState.chooserPlayerId as string;
         const chosenRuns = handState.chosenRuns as number;
         const waitingFor = handState.waitingFor as string[];
+        const acceptedIds = (handState.accepted_ids as string[]) || [chooserId];
+        const deadlineTs = Number(handState.deadline_ts) || 0;
 
-        if (!userId || userId === chooserId) return;
-        if (!waitingFor?.includes(userId)) return;
+        if (!userId) return;
+        if (userId !== chooserId && !waitingFor?.includes(userId) && !acceptedIds.includes(userId))
+          return;
 
-        setRitIsChooser(false);
         setRitChosenRuns((chosenRuns === 3 ? 3 : 2) as 2 | 3);
+        setRitChooserHasDecided(true);
+        setRitAcceptedIds((prev) => [...new Set([...prev, ...acceptedIds])]);
+        if (deadlineTs > 0) ritDeadlineRef.current = deadlineTs;
         // 2026-08-18: resolve to a display name HERE - this string renders
         // verbatim in the responder prompt, and passing the raw chooserId
         // showed players a UUID instead of who is asking to run it twice.
         setRitOpponent(
           tableStateRef.current?.players?.find((pp) => pp?.id === chooserId)?.name || 'Player'
         );
-        setRitTimer(10); // Others get 10 seconds
         setShowRIT(true);
+        return;
+      }
+
+      // POKERBROS PARITY 2026-08-26: a player accepted — tick their check.
+      // RUN IT 3X recording: the felt also announces each accept BY NAME for
+      // a few seconds ("<name> has accepted running multi-times."), then
+      // drops back to the waiting strip while the offer still hangs — this
+      // is the whole story for spectators and folded players, who have no
+      // panel.
+      if (eventType === 'rit_response_update') {
+        const acceptedIds = (handState.accepted_ids as string[]) || [];
+        if (acceptedIds.length > 0) {
+          setRitAcceptedIds((prev) => [...new Set([...prev, ...acceptedIds])]);
+        }
+        const who = handState.player_id as string | null;
+        if (who) {
+          const name =
+            tableStateRef.current?.players?.find((pp) => pp?.id === who)?.name || 'A Player';
+          ritLastAcceptBannerAtRef.current = Date.now();
+          showRitFeltBanner(`${name} Has Accepted Running Multi-Times.`, 3500, true);
+        }
+        return;
+      }
+
+      // POKERBROS PARITY 2026-08-26: unanimous consent — the panel closes for
+      // everyone at once and the accept banner rides over the felt while the
+      // first board starts dealing (toast layer enforces the popup style).
+      if (eventType === 'rit_all_accepted') {
+        // The panel closes for everyone at once and a pending pre-open beat
+        // is cancelled; the accept strip rides the felt while board 1 deals.
+        if (ritPanelOpenTimerRef.current) {
+          clearTimeout(ritPanelOpenTimerRef.current);
+          ritPanelOpenTimerRef.current = null;
+        }
+        setShowRIT(false);
+        setRitHeroAccepted(false);
+        const runs = (handState.runs as number) || 2;
+        // RUN IT 3X recording: when the FINAL accept's named banner just
+        // fired, the table goes straight into the runout under that banner —
+        // the collective line only shows when completion arrived without one
+        // (e.g. the chooser's own pick completed the consent).
+        if (Date.now() - ritLastAcceptBannerAtRef.current > 2000) {
+          showRitFeltBanner(
+            runs === 3
+              ? 'Players Have Accepted Running It 3 Times.'
+              : 'Players Have Accepted Running It Twice.',
+            4500
+          );
+        }
+        return;
+      }
+
+      // POKERBROS PARITY 2026-08-26: the host compelled the runs — no panel,
+      // just the announcement.
+      if (eventType === 'rit_mandatory') {
+        const runs = (handState.runs as number) || 2;
+        showRitFeltBanner(
+          runs === 3 ? 'Mandatory Run It 3 Times This Hand.' : 'Mandatory Run It Twice This Hand.',
+          4500
+        );
         return;
       }
 
@@ -5515,7 +5717,11 @@ export default function TablePage({
        * All three are legitimate poker. Say which one happened.
        */
       if (eventType === 'rit_single_run') {
+        // Any decline (or the chooser picking one board, or a timeout) kills
+        // the panel INSTANTLY for everyone — reference behavior — and the
+        // banner below names who ended it. The hand then runs once, paced.
         setShowRIT(false);
+        resetRitPanelState();
         const reason = handState.reason as string;
         const who = handState.player_id as string | null;
         const name = who
@@ -5527,7 +5733,11 @@ export default function TablePage({
             : reason === 'player_declined'
               ? `Running It Once. ${name} Declined.`
               : 'Running It Once. Not Everyone Agreed In Time.';
-        toast.info(message, 4000);
+        // Felt strip, not a toast — the reference rides the rejection over
+        // the table and leaves it up through the start of the single runout.
+        // (resetRitPanelState above cleared the waiting strip; this replaces
+        // it in the same commit of state.)
+        showRitFeltBanner(message, 5500);
         return;
       }
 
@@ -5548,14 +5758,93 @@ export default function TablePage({
             distribution,
             perBoardWinners: (handState.per_board_winners as string[][]) || undefined,
             potTotal: pots.reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
+            baseBoardCount: Math.min(
+              5,
+              Math.max(0, Number(handState.base_board_count as number) || 0)
+            ),
           });
           setTableState((prev) => ({
             ...prev,
             communityCards: normalizeCards(boards[0]) as Card[],
             boardStage: 'river',
           }));
+
+          // ── POKERBROS PARITY 2026-08-26: the reveal timeline ──
+          // The engine settles synchronously and hands us finished boards;
+          // the reference deals them out street by street, one board at a
+          // time. Stage the reveal: every board starts at the shared base
+          // count, then flop → turn → river land per board with the paced-
+          // runout cadence. Winner ribbons + highlights + the pot ship all
+          // wait for ritRevealDone / ritTimelineEndsAtRef.
+          clearRitRevealTimers();
+          const baseCount = Math.min(
+            5,
+            Math.max(0, Number(handState.base_board_count as number) || 0)
+          );
+          const speed = getAnimationSpeed();
+          // The engine's post-hand hold derives from the SAME constants
+          // (handCompletionSpec RIT_*), so the next hand always waits for
+          // exactly this timeline. Change them there, both sides move.
+          const STREET_MS = HAND_COMPLETION.RIT_STREET_MS * speed;
+          const RUN_GAP_MS = HAND_COMPLETION.RIT_RUN_GAP_MS * speed;
+          const RIBBON_MS = HAND_COMPLETION.RIT_RIBBON_MS * speed;
+          const counts = boards.map(() => baseCount);
+          setRitRevealCounts([...counts]);
+          setRitRevealDone(false);
+          // Streets still to deal from the base board: 3-card flop counts as
+          // one street beat, then turn, then river — same as the live deal.
+          const streetStops = [3, 4, 5].filter((n) => n > baseCount);
+          let at = HAND_COMPLETION.RIT_REVEAL_LEAD_MS * speed; // settle after the panel closes
+          for (let bi = 0; bi < boards.length; bi++) {
+            for (const stop of streetStops) {
+              const t = window.setTimeout(() => {
+                setRitRevealCounts((prev) => {
+                  if (!prev) return prev;
+                  const next = [...prev];
+                  next[bi] = Math.max(next[bi] ?? baseCount, stop);
+                  return next;
+                });
+              }, at);
+              ritRevealTimersRef.current.push(t);
+              at += STREET_MS;
+            }
+            at += RUN_GAP_MS;
+          }
+          // No streets to deal (defensive: river all-in) → reveal instantly.
+          if (streetStops.length === 0) at = 0;
+          // The loop above appended a trailing run gap after the last river;
+          // the winner phase starts a ribbon-beat after that river instead.
+          const riversDoneAt = Math.max(0, at - RUN_GAP_MS);
+
+          // ── RUN IT 3X recording: the winner phase replays RUN BY RUN ──
+          // ribbon + highlights for run 1 → run 1's pots ship → settle →
+          // run 2's ribbon → … One RIT_RESULT_RUN_MS window per run; the
+          // POT_WIN handler aligns each run's award groups to these times.
+          const RESULT_RUN_MS = HAND_COMPLETION.RIT_RESULT_RUN_MS * speed;
+          ritRunRibbonAtRef.current = [];
+          const nowTs = Date.now();
+          for (let r = 0; r < boards.length; r++) {
+            const ribbonDelay = riversDoneAt + RIBBON_MS + r * RESULT_RUN_MS;
+            ritRunRibbonAtRef.current.push(nowTs + ribbonDelay);
+            const runIndex = r + 1;
+            const tRibbon = window.setTimeout(() => {
+              setRitRevealCounts(boards.map(() => 5));
+              setRitRevealedRuns(runIndex);
+            }, ribbonDelay);
+            ritRevealTimersRef.current.push(tRibbon);
+          }
+          const doneAt = riversDoneAt + RIBBON_MS + boards.length * RESULT_RUN_MS;
+          const tDone = window.setTimeout(() => {
+            setRitRevealDone(true);
+          }, doneAt);
+          ritRevealTimersRef.current.push(tDone);
+          // The FIRST ship moment — the generic pot-ship hold reads this;
+          // per-group alignment to each run's ribbon rides ritRunRibbonAtRef.
+          ritTimelineEndsAtRef.current = nowTs + riversDoneAt + RIBBON_MS;
+
           if (ritResultTimerRef.current) clearTimeout(ritResultTimerRef.current);
-          ritResultTimerRef.current = setTimeout(() => setRitResult(null), 12_000);
+          // The overlay clear must outlive the reveal: timeline + read time.
+          ritResultTimerRef.current = setTimeout(() => setRitResult(null), doneAt + 12_000);
         }
         return;
       }
@@ -5663,6 +5952,26 @@ export default function TablePage({
       }
 
       if (eventType === 'bbj_payout_complete') {
+        /* Dan 2026-08-26 — THE REPLAY GATE, and this is the path the bug was
+           actually reported on: refresh the table and the jackpot celebrated
+           again. The hub retains transient events and re-delivers them to
+           every fresh socket (deliberately — a reconnect mid-hand must still
+           get the showdown reveal), and the only de-duplication was
+           `lastEventSeq`, which resets on connect BY DESIGN. So the client
+           had no way to tell a live hit from a replay. `shouldAnnounceBbjHit`
+           gives it one: a stable identity that survives the reload, plus a
+           freshness window for the player whose first sight of the event IS
+           the replay. See lib/bbjHitOnce. */
+        if (
+          !shouldAnnounceBbjHit({
+            tableId: (handState.table_id as string) || tableId,
+            handNumber: handState.hand_number as number,
+            emittedAt: handState.emitted_at as number,
+          })
+        ) {
+          return;
+        }
+
         // FIX 128: BBJ payout calculated — NOW show the celebration.
         // This event arrives from postHandTasks() which runs AFTER the hand is fully complete,
         // AFTER showdown cards are displayed, AFTER winners are shown.
@@ -5929,6 +6238,39 @@ export default function TablePage({
     if (event.setting === 'useRealName') {
       setUseRealName(event.value);
     }
+  });
+
+  /**
+   * THE HERO'S NEW AVATAR APPEARS ON THE FELT IMMEDIATELY.
+   *
+   * Dan 2026-08-26: "if a user changes their avatar... it needs to change,
+   * save and update in real time on the felt."
+   *
+   * It did not. `AvatarGallery` writes `profiles.avatar_url` and emits
+   * `USER_PROFILE_LOADED`, and THREE surfaces listened — the global header,
+   * the hamburger menu and the funnel tracker. The table was not one of them,
+   * and the table does not subscribe to `profiles` over realtime either. So
+   * the player picked a new avatar, watched their header change, looked back
+   * at their own seat and saw the old picture, for the rest of the session.
+   *
+   * Patching the seat directly rather than re-fetching: the event carries the
+   * new URL, the seat is already in state, and a refetch would race the
+   * engine snapshot that owns every other field on that player. Scoped to the
+   * hero's own id so one player's change can never repaint another's seat —
+   * an opponent's avatar arrives with the snapshot, from the server.
+   */
+  useMasterBusSubscription('USER_PROFILE_LOADED', (payload: any) => {
+    const newUrl = payload?.avatarUrl;
+    const who = payload?.userId;
+    if (!newUrl || !who || who !== userId) return;
+    setTableState((prev) => {
+      const hit = prev.players.some((p) => p && p.id === who && p.avatar !== newUrl);
+      if (!hit) return prev; // nothing to repaint — do not churn nine seats
+      return {
+        ...prev,
+        players: prev.players.map((p) => (p && p.id === who ? { ...p, avatar: newUrl } : p)),
+      };
+    });
   });
 
   // Fetch Hero profile just once if needed
@@ -7743,29 +8085,37 @@ export default function TablePage({
     // Show an in-game pop-up on all cash game tables when BBJ is hit globally.
     // Skip if the hit happened on THIS table — they already saw the massive animation.
     if (payload.tableId === tableId) return;
+    if (tableState.isTournament) return;
 
-    const now = Date.now();
-    if (!tableState.isTournament && now - _LAST_BBJ_TOAST_TIME > 5000) {
-      _LAST_BBJ_TOAST_TIME = now;
-      if (soundService.isEnabled()) soundService.playBadBeatJackpot();
-      /* AUDIT 2026-08-25: this string opened with a siren EMOJI, which
-         CLAUDE.md §5.3 forbids outright in source (it breaks the SWC
-         compiler), and it was the only emoji left in this file. It also read
-         "BBJ HIT! X just won $Y on Z! (Tap to observe)" — sentence case with
-         a parenthetical, against the popup rule that every word is
-         capitalised. The Toast layer's popupStyle transform capitalises for
-         us but cannot strip an emoji or rewrite a parenthetical, so both are
-         fixed at the source. The amount keeps .toLocaleString() (§5.5). */
-      toast?.success?.(
-        `Bad Beat Jackpot Hit. ${payload.winnerName} Won $${payload.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} On ${payload.tableName}. Tap To Observe.`,
-        10000,
-        () =>
-          masterBus.emit('OPEN_OBSERVE_TABLE', {
-            tableId: payload.tableId,
-            tableName: payload.tableName,
-          })
-      );
+    /* Dan 2026-08-26: "it should only display once, and at the actual time it
+       happens." The gate owns both halves — see lib/bbjHitOnce for why a
+       connection-scoped seq could never have covered a page refresh. */
+    if (
+      !shouldAnnounceBbjHit({
+        tableId: payload.tableId,
+        handNumber: payload.handNumber,
+        emittedAt: payload.emittedAt,
+      })
+    ) {
+      return;
     }
+
+    if (soundService.isEnabled()) soundService.playBadBeatJackpot();
+
+    /* Was a 10-second text toast in the shared stack (and before that, one
+       carrying a siren emoji, which CLAUDE.md §5.3 forbids outright). Dan
+       2026-08-26 replaced it: three seconds, bottom-right, exploding. The
+       card is its own fixed-position layer rather than a toast because the
+       toast stack QUEUES — a routine notice could push the rarest event on
+       the platform down the screen. Amount keeps .toLocaleString() (§5.5)
+       and the component capitalises its own labels (§5.7). */
+    setBbjHitNotice({
+      key: `${payload.tableId}:${payload.handNumber ?? 0}:${Date.now()}`,
+      winnerName: payload.winnerName,
+      amount: payload.amount,
+      tableName: payload.tableName,
+      tableId: payload.tableId,
+    });
   });
 
   useMasterBusSubscription('TIME_BANK_ACTIVATED', (payload: any) => {
@@ -8801,6 +9151,11 @@ export default function TablePage({
           clearTimeout(ritResultTimerRef.current);
           ritResultTimerRef.current = null;
         }
+        // POKERBROS PARITY 2026-08-26: no consent-panel or reveal-timeline
+        // artifact may leak into the next hand.
+        setShowRIT(false);
+        clearRitRevealTimers();
+        resetRitPanelState();
         // AUDIT-2 FIX 2026-08-20: the ALL IN banner timer was NOT cancelled at
         // the hand boundary — a hand starting inside the 1.8s window left
         // "ALL IN" splashed over the fresh deal.
@@ -9526,6 +9881,8 @@ export default function TablePage({
             boardHandNames: null,
           });
           setRitResult(null);
+          clearRitRevealTimers();
+          resetRitPanelState();
           setWinnerParticle((prev) => ({ ...prev, active: false }));
           setMuckingSeats(Array(9).fill(false));
           // SHOWDOWN SYSTEM 2026-08-25 cleanup (spec section 39): no showdown
@@ -9943,6 +10300,17 @@ export default function TablePage({
           ) {
             shipDelayMs += 1500 * getAnimationSpeed();
           }
+          // POKERBROS PARITY 2026-08-26: on a run-it-twice hand the engine
+          // settles synchronously, so pot_win arrives while the boards are
+          // still DEALING on the reveal timeline. The reference ships nothing
+          // until the last river has landed and the winner ribbons have had a
+          // beat — hold every award group until then. The groups themselves
+          // are already ordered run 1 → run N, main pot → side pots, so the
+          // ships then play board by board, one pot at a time.
+          const ritHoldMs = ritTimelineEndsAtRef.current - Date.now();
+          if (ritHoldMs > 0) {
+            shipDelayMs = Math.max(shipDelayMs, ritHoldMs + 600 * getAnimationSpeed());
+          }
           // Pot center in screen px (mirrors the constant 50,45 used by
           // chip-to-pot animations elsewhere).
           // 2026-08-04 FIX: scaler-relative percentages, not viewport. The old
@@ -9979,9 +10347,17 @@ export default function TablePage({
               toY: number;
               amount: number;
             }>;
+            /** RUN index (1..N) on run-it-twice hands; 1 otherwise. */
+            board: number;
+            /** This group's position among its own run's pots (0 = main). */
+            rankInBoard: number;
           }
+          const boardRankCounter = new Map<number, number>();
           const awardGroups: AwardGroupAnim[] = seqGroups.map((g) => {
-            const anim: AwardGroupAnim = { events: [], floats: [] };
+            const boardNo = g.board >= 1 ? g.board : 1;
+            const rankInBoard = boardRankCounter.get(boardNo) ?? 0;
+            boardRankCounter.set(boardNo, rankInBoard + 1);
+            const anim: AwardGroupAnim = { events: [], floats: [], board: boardNo, rankInBoard };
             for (const w of g.winners) {
               // Review fix 2026-08-25: pot_awards amounts are EXACT per-pot
               // shares — a 0 there is a real zero (a fully-raked micro pot),
@@ -10019,6 +10395,13 @@ export default function TablePage({
             return anim;
           });
           if (awardGroups.some((g) => g.events.length > 0)) {
+            // Reference behavior (2026-08-26): when pots leave the middle as
+            // a SEQUENCE, the POT counter drops as each one departs — the
+            // number over the felt always says what is still in the middle.
+            // Only engaged for multi-beat sequences; a single ship keeps
+            // PotDisplay's own slide-and-fade.
+            const sequenced = awardGroups.length > 1;
+            if (sequenced) setPotShipRemaining(potAmount);
             const fireGroup = (g: AwardGroupAnim) => {
               if (g.events.length === 0) return;
               setChipAnimations((prev) => [...prev, ...g.events]);
@@ -10027,15 +10410,33 @@ export default function TablePage({
               for (const plan of g.floats) {
                 spawnPotWinFloat(plan.fromX, plan.fromY, plan.toX, plan.toY, plan.amount);
               }
+              if (sequenced) {
+                const groupTotal = g.floats.reduce((s, f) => s + (f.amount || 0), 0);
+                setPotShipRemaining((prev) =>
+                  prev == null ? prev : Math.max(0, Math.round((prev - groupTotal) * 100) / 100)
+                );
+              }
               // Bible V8 §5.3: pot collect sweep sound — synced with chip animation
               // #175 gated for multi-table: only play on the active tab
               if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playPotCollect();
             };
             for (const t of potAwardStaggerTimersRef.current) clearTimeout(t);
             potAwardStaggerTimersRef.current = [];
+            // RUN IT 3X recording (2026-08-26): on a multi-board hand each
+            // run's pots ship on that RUN'S OWN turn — a ribbon-beat after
+            // its ribbon lands, pots within the run staggered as usual. The
+            // ribbon times come from the reveal timeline (ritRunRibbonAtRef).
+            const ribbonTimes = ritRunRibbonAtRef.current;
+            const speedNow = getAnimationSpeed();
             awardGroups.forEach((g, rank) => {
+              const ribbonAt = ribbonTimes[g.board - 1];
               const groupDelay =
-                shipDelayMs + rank * HAND_COMPLETION.POT_AWARD_STAGGER_MS * getAnimationSpeed();
+                ribbonTimes.length > 0 && ribbonAt
+                  ? Math.max(0, ribbonAt - Date.now()) +
+                    (HAND_COMPLETION.RIT_RIBBON_MS +
+                      g.rankInBoard * HAND_COMPLETION.POT_AWARD_STAGGER_MS) *
+                      speedNow
+                  : shipDelayMs + rank * HAND_COMPLETION.POT_AWARD_STAGGER_MS * speedNow;
               if (groupDelay > 0) {
                 const t = window.setTimeout(() => {
                   potAwardStaggerTimersRef.current = potAwardStaggerTimersRef.current.filter(
@@ -10056,11 +10457,27 @@ export default function TablePage({
           // pending share (see the displayPlayer hold at render). Scheduled
           // even when no fan could be built (seat lookup failure), so the
           // hold can never outlive the hand it belongs to.
+          // On a run-by-run RIT presentation the LAST ship is aligned to the
+          // last run's ribbon, not the uniform stagger — mirror the delay
+          // rule used to fire the groups above.
+          const ribbonTimesForHold = ritRunRibbonAtRef.current;
           const lastGroupDelay =
-            shipDelayMs +
-            Math.max(0, awardGroups.length - 1) *
-              HAND_COMPLETION.POT_AWARD_STAGGER_MS *
-              getAnimationSpeed();
+            ribbonTimesForHold.length > 0 && awardGroups.length > 0
+              ? Math.max(
+                  ...awardGroups.map((g) => {
+                    const ribbonAt = ribbonTimesForHold[g.board - 1];
+                    return ribbonAt
+                      ? Math.max(0, ribbonAt - Date.now()) +
+                          (HAND_COMPLETION.RIT_RIBBON_MS +
+                            g.rankInBoard * HAND_COMPLETION.POT_AWARD_STAGGER_MS) *
+                            getAnimationSpeed()
+                      : shipDelayMs;
+                  })
+                )
+              : shipDelayMs +
+                Math.max(0, awardGroups.length - 1) *
+                  HAND_COMPLETION.POT_AWARD_STAGGER_MS *
+                  getAnimationSpeed();
           if (stackHoldReleaseTimerRef.current) clearTimeout(stackHoldReleaseTimerRef.current);
           stackHoldReleaseTimerRef.current = setTimeout(
             () => {
@@ -12322,105 +12739,12 @@ export default function TablePage({
           top of a fixed-position page. The class names are kept so that
           stylesheet can take it over later without touching this file. */}
       {tableLoadFailure && (
-        <div
-          className="table-load-failure"
-          role="alert"
-          aria-live="assertive"
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 4000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '24px',
-            background: 'rgba(6, 10, 16, 0.88)',
-            backdropFilter: 'blur(4px)',
-          }}
-        >
-          <div
-            className="table-load-failure__card"
-            style={{
-              maxWidth: 340,
-              width: '100%',
-              textAlign: 'center',
-              background: '#141a24',
-              border: '1px solid rgba(255,255,255,0.12)',
-              borderRadius: 14,
-              padding: '22px 20px',
-              color: '#e8edf5',
-              boxShadow: '0 18px 48px rgba(0,0,0,0.55)',
-            }}
-          >
-            <h2
-              className="table-load-failure__title"
-              style={{ margin: '0 0 10px', fontSize: 18, fontWeight: 700 }}
-            >
-              {tableLoadFailure === 'missing' ? 'This Table Has Closed' : 'Cannot Reach This Table'}
-            </h2>
-            <p
-              className="table-load-failure__body"
-              style={{
-                margin: '0 0 18px',
-                fontSize: 14,
-                lineHeight: 1.5,
-                color: 'rgba(232,237,245,0.75)',
-              }}
-            >
-              {/* Title Case to match the rest of this page's card copy (see
-                  the seat-first buy-in sheet). Kept short for the same reason:
-                  long sentences do not survive it. No em dashes anywhere in
-                  player-facing text. */}
-              {tableLoadFailure === 'missing'
-                ? 'That Game Has Finished And The Table Was Taken Down. Nothing Was Charged And No Seat Was Taken.'
-                : 'We Could Not Load This Table After Five Tries. Your Connection May Be Down.'}
-            </p>
-            <div
-              className="table-load-failure__actions"
-              style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}
-            >
-              {tableLoadFailure === 'unreachable' && (
-                <button
-                  type="button"
-                  className="table-load-failure__btn table-load-failure__btn--primary"
-                  onClick={() => window.location.reload()}
-                  style={{
-                    minHeight: 44,
-                    padding: '0 18px',
-                    borderRadius: 10,
-                    border: 'none',
-                    background: '#2f6fed',
-                    color: '#fff',
-                    fontSize: 14,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Try Again
-                </button>
-              )}
-              <button
-                type="button"
-                className="table-load-failure__btn"
-                onClick={() => navigate(exitDestination())}
-                style={{
-                  minHeight: 44,
-                  padding: '0 18px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.22)',
-                  background: 'transparent',
-                  color: '#e8edf5',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Back To Lobby
-              </button>
-            </div>
-          </div>
-        </div>
+        <TableLoadFailureOverlay
+          tableLoadFailure={tableLoadFailure}
+          exitDestination={exitDestination}
+        />
       )}
+
       {/* Phase 1.2 PR-F: hero disconnect banner. Only renders when the
           engine FSM reports MISSING or DISCONNECTED for this user. */}
       {/* ── Bounty knockout (2026-08-20) ───────────────────────────────────
@@ -13084,8 +13408,18 @@ export default function TablePage({
                   {ritBoardsView.length >= 2 ? (
                     ritBoardsView.map((board) => (
                       <div
-                        className={`community-area__run community-area__run--board-${board.boardIndex + 1}`}
+                        className={`community-area__run community-area__run--board-${board.boardIndex + 1}${
+                          board.boardIndex > 0 ? ' community-area__run--extra' : ''
+                        }`}
                         key={`rit-run-${board.boardIndex + 1}`}
+                        /* Runs 2+ re-deal only the streets past the shared
+                           base board — the shared prefix renders dimmed on
+                           those rows (CSS keys off data-base-count), so the
+                           re-dealt cards read as the new information, like
+                           the reference. */
+                        data-base-count={
+                          board.boardIndex > 0 ? (ritResult?.baseBoardCount ?? 0) : 0
+                        }
                         style={
                           {
                             '--rit-run-delay': `${board.boardIndex * 0.4}s`,
@@ -13106,16 +13440,36 @@ export default function TablePage({
                                 : `${board.winnerNames[0]}${board.winnerHandName ? ` • ${board.winnerHandName}` : ''}`}
                             </span>
                           )}
-                          <span className="community-area__run-equity">
-                            {board.sharePct}%
-                            {board.shareAmount > 0
-                              ? ` ($${board.shareAmount.toLocaleString()})`
-                              : ''}
-                          </span>
+                          {/* Share %/$ only once the reveal has finished — the
+                              reference shows nothing on a board still dealing. */}
+                          {board.revealed && (
+                            <span className="community-area__run-equity">
+                              {board.sharePct}%
+                              {board.shareAmount > 0
+                                ? ` ($${board.shareAmount.toLocaleString()})`
+                                : ''}
+                            </span>
+                          )}
                         </div>
+                        {/* POKERBROS PARITY 2026-08-26: each run deals street
+                            by street on the reveal timeline — the cards and
+                            stage below advance flop → turn → river per run,
+                            so CommunityCards plays its own deal animation for
+                            every street exactly like a live board. */}
                         <CommunityCards
-                          cards={[...board.cards, ...rabbitRevealedCards]}
-                          stage="river"
+                          cards={[
+                            ...board.cards.slice(0, board.visibleCount),
+                            ...(board.revealed ? rabbitRevealedCards : []),
+                          ]}
+                          stage={
+                            board.visibleCount >= 5
+                              ? 'river'
+                              : board.visibleCount === 4
+                                ? 'turn'
+                                : board.visibleCount >= 3
+                                  ? 'flop'
+                                  : 'preflop'
+                          }
                           highlightedIndices={board.highlightedIndices}
                           winningHandName={board.winnerHandName}
                           deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
@@ -13331,11 +13685,23 @@ export default function TablePage({
             </div>
           )}
 
+          {/* POKERBROS PARITY 2026-08-26: the RIT status strip — "waiting"
+              persists while the offer hangs (spectators see it too), the
+              accepted/rejected outcome replaces it for a few seconds. */}
+          {ritFeltBanner && (
+            <div className="rit-felt-banner" role="status" aria-live="polite">
+              <span className="rit-felt-banner__text">{ritFeltBanner}</span>
+            </div>
+          )}
+
           {/* Pot Display — click to toggle chips/BB */}
           <div className="pot-area">
             <PotDisplay
-              mainPot={tableState.pot}
-              sidePots={tableState.sidePots}
+              /* Reference behavior (2026-08-26): during a sequenced award the
+                 POT counter names what is STILL in the middle, dropping as
+                 each pot ships (splits, side pots, every RIT board). */
+              mainPot={potShipRemaining ?? tableState.pot}
+              sidePots={potShipRemaining != null ? [] : tableState.sidePots}
               bigBlind={safeBB(tableState.blinds, 0)}
               displayMode={v8Settings.show_stack_in_bb ? 'bb' : 'chips'}
               onToggleDisplayMode={() => toggleV8Setting('show_stack_in_bb')}
@@ -14222,6 +14588,12 @@ export default function TablePage({
                         isFixedLimit={isFixedLimit}
                         showPotOdds={userSettings.showPotOdds}
                         confirmAllIn={userSettings.confirmAllIn}
+                        /* 2026-08-26: never passed, so ActionPanel always used
+                           its `= true` default and the "Bet Size Presets"
+                           toggle in the settings panel was decorative — it
+                           flipped, persisted nothing anyone read, and snapped
+                           back on reopen. */
+                        showBetSizePresets={userSettings.showBetSizePresets}
                       />
                     </>
                   );
@@ -14708,18 +15080,18 @@ export default function TablePage({
            now and THROWS on failure, so CardBackSelector reverts its tick and
            says what happened instead of congratulating the player. */
         onCardBackChanged={async (id) => {
-          masterBus.emit('UI_THEME_CHANGED', { key: 'ALL', value: { cards_id: id } });
-          masterBus.emit('SETTINGS_CHANGED', { setting: 'cardBack', value: id });
-          if (!userId) return;
-          const { error } = await supabase
-            .from('user_theme_settings')
-            .upsert(
-              { user_id: userId, game_type: 'ALL', cards_id: id },
-              { onConflict: 'user_id,game_type' }
-            );
-          if (error) {
-            reportError(error, 'TablePage.cardBackSaveFailed');
-            throw error;
+          /* 2026-08-26: routed through the one canonical writer so this
+             surface, the hamburger tiles and /settings cannot drift apart
+             again. It still THROWS on failure, which is what makes
+             CardBackSelector revert its tick instead of congratulating the
+             player on a save that did not happen. */
+          const result = await applyTableAppearance(
+            { cards_id: id },
+            { userId, previous: { cards_id: activeCardBack } }
+          );
+          if (!result.ok && userId) {
+            reportError(result.error, 'TablePage.cardBackSaveFailed');
+            throw result.error;
           }
         }}
         tableId={tableId}
@@ -14797,6 +15169,12 @@ export default function TablePage({
         ritChosenRuns={ritChosenRuns}
         ritMaxRuns={ritMaxRuns}
         ritPlayerCount={ritPlayerCount}
+        ritBoardCards={ritPanelBoardCards}
+        ritPotAmount={ritPotAmount}
+        ritPanelPlayers={ritPanelPlayers}
+        ritTotalSeconds={ritTotalSeconds}
+        ritHeroAccepted={ritHeroAccepted}
+        ritChooserHasDecided={ritChooserHasDecided}
         onRITChooserDecide={handleRITChooserDecide}
         onRITAccept={handleRITAccept}
         onRITDecline={handleRITDecline}
@@ -14857,6 +15235,16 @@ export default function TablePage({
         showBuyInModal={showBuyInModal}
         selectedSeat={selectedSeat}
         heroAvatarUrl={heroAvatarUrl}
+        /* The gallery already emits USER_PROFILE_LOADED, which the felt now
+           listens to (see the subscription above) — this is the direct path
+           for the panel's own avatar row, so it updates without waiting on
+           the bus round trip. */
+        onAvatarChanged={(url) => {
+          setTableState((prev) => ({
+            ...prev,
+            players: prev.players.map((p) => (p && p.id === userId ? { ...p, avatar: url } : p)),
+          }));
+        }}
         onCloseBuyInModal={() => {
           // Releasing the modal must release the optimistic seat too, or the
           // player is locked out of every seat at the table by their own
@@ -14961,16 +15349,18 @@ export default function TablePage({
                 if (rpcErr) {
                   reportError(rpcErr, 'TablePage.atomic_table_buyin_FAILED');
                   if (rpcErr.message?.includes('FetchError') || !navigator.onLine) {
-                    OfflineQueueService.enqueue({
-                      action: 'TABLE_BUYIN',
-                      payload,
-                      // operationId matches the key stored in the DB — so the
-                      // offline queue replay is idempotent at the server too.
-                      operationId: stableIdempotencyKey,
-                    });
-                    toast.success('Offline: Buy-in queued for retry.');
-                    // Don't throw, let the optimistic UI hold the seat.
-                    // Key stays in ref so any subsequent retry reuses it.
+                    // The buy-in is NOT queued for replay. A queued buy-in is a
+                    // debit that fires at a moment nobody chose, against a seat
+                    // that may be gone; the queue cannot check freshness with
+                    // anything but the device's own clock. Release the
+                    // optimistic seat and say so. stableIdempotencyKey stays in
+                    // its ref, so an immediate retry is still de-duplicated by
+                    // transaction_idempotency_keys on the server.
+                    revertSeat();
+                    setShowBuyInModal(false);
+                    toast?.error(
+                      'You Are Offline. Try The Buy-In Again When Your Connection Returns.'
+                    );
                     return;
                   }
                   throw new Error('Failed to buy-in: ' + rpcErr.message);
@@ -15099,13 +15489,27 @@ export default function TablePage({
             updateSetting('fourColorDeck', settingsUpdate.fourColorDeck);
           if (settingsUpdate.confirmAllIn !== undefined)
             updateSetting('confirmAllIn', settingsUpdate.confirmAllIn);
+          if (settingsUpdate.showBetSizePresets !== undefined)
+            updateSetting('showBetSizePresets', settingsUpdate.showBetSizePresets);
           if (settingsUpdate.animationSpeed !== undefined) {
+            /* INVERTED UNTIL 2026-08-26. `--animation-speed` is a DURATION
+               MULTIPLIER — bigger is slower — as utils/animationSpeed.ts and
+               every `calc(<time> * var(--animation-speed))` in the stylesheets
+               make plain, and as /settings has always mapped it
+               (settingsBridge: slow -> 1.5, fast -> 0.5).
+
+               This surface mapped it backwards, so choosing "Slow" at the
+               table HALVED every duration and choosing "Fast" doubled it. The
+               read-back in TableModalsLayer was inverted to match, which is
+               why it looked self-consistent here and disagreed with /settings:
+               set Slow at the table, open /settings, and it read "Fast". Both
+               ends now use the one meaning. */
             updateSetting(
               'animationSpeed',
               settingsUpdate.animationSpeed === 'slow'
-                ? 0.5
+                ? 1.5
                 : settingsUpdate.animationSpeed === 'fast'
-                  ? 1.5
+                  ? 0.5
                   : 1
             );
           }
@@ -15340,6 +15744,28 @@ export default function TablePage({
         armed={isHeroOnTheClock}
         soundEnabled={isSoundEnabled && ambientSoundsAllowed}
       />
+
+      {/* BAD BEAT JACKPOT HIT — bottom-right, three seconds, then it leaves on
+          its own (Dan 2026-08-26). Whether it appears at all is decided by
+          `shouldAnnounceBbjHit` at the subscription, never here; this only
+          draws what was already ruled announceable, and clears itself when
+          the card's own outro finishes. */}
+      {bbjHitNotice && (
+        <BBJHitNotification
+          key={bbjHitNotice.key}
+          winnerName={bbjHitNotice.winnerName}
+          amount={bbjHitNotice.amount}
+          tableName={bbjHitNotice.tableName}
+          onObserve={() => {
+            masterBus.emit('OPEN_OBSERVE_TABLE', {
+              tableId: bbjHitNotice.tableId,
+              tableName: bbjHitNotice.tableName,
+            });
+            setBbjHitNotice(null);
+          }}
+          onDone={() => setBbjHitNotice(null)}
+        />
+      )}
     </div>
   );
 }

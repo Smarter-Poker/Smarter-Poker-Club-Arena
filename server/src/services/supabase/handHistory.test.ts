@@ -295,7 +295,7 @@ describe('the background drain', () => {
   it('does not lose the rest of the batch when one entry throws', async () => {
     await queueOne(GLOBAL_HAND);
     await queueOne(GLOBAL_HAND + 1);
-    let n = 0;
+    const n = 0;
     insertResults = [];
     // Make the first insert throw outright rather than return an error.
     const original = existingByHandNumber;
@@ -320,9 +320,9 @@ describe('the background drain', () => {
       await drainHandHistoryQueue();
     }
     expect(handHistoryQueueDepth()).toBe(0);
-    expect(
-      mockReportError.mock.calls.some((c) => String(c[1]).includes('retry_exhausted'))
-    ).toBe(true);
+    expect(mockReportError.mock.calls.some((c) => String(c[1]).includes('retry_exhausted'))).toBe(
+      true
+    );
   });
 
   it('a second caller JOINS the in-flight drain instead of getting a no-op', async () => {
@@ -418,7 +418,12 @@ describe('buildHandHistoryTiers (Bible V8 §2.18, derived not stored)', () => {
     community_cards: ['As', 'Kd', '7c'],
     button_seat: 3,
     created_at: '2026-08-20T00:00:00.000Z',
-    hole_cards: { u1: [{ rank: 'A', suit: 'spades' }, { rank: 'K', suit: 'hearts' }] },
+    hole_cards: {
+      u1: [
+        { rank: 'A', suit: 'spades' },
+        { rank: 'K', suit: 'hearts' },
+      ],
+    },
     winners: [{ userId: 'u1', amount: 38, hand: { name: 'Two Pair', ranking: 3 } }],
     // NOTE: stack here is the POST-settlement stack — u1 has already been paid.
     players: [

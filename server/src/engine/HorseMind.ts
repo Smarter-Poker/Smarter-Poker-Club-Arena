@@ -57,6 +57,19 @@ export interface OpponentStats {
   folds: number;
   /** times they faced aggression (called, raised over, or folded to a bet) */
   facedAggr: number;
+  // ── V16 DEEP READS (2026-08-26) — observed once per COMPLETED hand ──
+  /** times they called preflop then faced the aggressor's flop c-bet */
+  cbetOpps: number;
+  /** ... and folded to it */
+  cbetFolds: number;
+  /** times their open raise got 3-bet */
+  f3bOpps: number;
+  /** ... and they folded to the 3-bet */
+  f3bFolds: number;
+  /** showdowns reached after they made a BIG river bet (>= 20bb) */
+  bigBetSD: number;
+  /** ... where the shown hand was two pair or better (value, not air) */
+  bigBetSDStrong: number;
   /** V7 recency window (exponentially decayed) — detects counter-adaptation */
   rHands: number;
   rFolds: number;
@@ -74,6 +87,12 @@ const freshStats = (): OpponentStats => ({
   passive: 0,
   folds: 0,
   facedAggr: 0,
+  cbetOpps: 0,
+  cbetFolds: 0,
+  f3bOpps: 0,
+  f3bFolds: 0,
+  bigBetSD: 0,
+  bigBetSDStrong: 0,
   rHands: 0,
   rFolds: 0,
   rFacedAggr: 0,
@@ -92,6 +111,18 @@ export interface ExploitProfile {
 }
 
 const NEUTRAL_EXPLOIT: ExploitProfile = { bluffMod: 1, callDownMod: 1, valueThinMod: 1 };
+
+/** V16: hand names that count as VALUE behind a big river bet. */
+const STRONG_HAND_NAMES = new Set([
+  'two pair',
+  'three of a kind',
+  'straight',
+  'flush',
+  'full house',
+  'four of a kind',
+  'straight flush',
+  'royal flush',
+]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BOARD TEXTURE
@@ -454,6 +485,12 @@ export class HorseMind {
         passive: num(r.passive),
         folds: num(r.folds),
         facedAggr: num(r.facedAggr),
+        cbetOpps: num(r.cbetOpps),
+        cbetFolds: num(r.cbetFolds),
+        f3bOpps: num(r.f3bOpps),
+        f3bFolds: num(r.f3bFolds),
+        bigBetSD: num(r.bigBetSD),
+        bigBetSDStrong: num(r.bigBetSDStrong),
         rHands: num(r.rHands),
         rFolds: num(r.rFolds),
         rFacedAggr: num(r.rFacedAggr),
@@ -1040,6 +1077,149 @@ export class HorseMind {
    * simply that player's profile; multiway it is the confidence-weighted blend
    * (bluffs must get through EVERYONE, so the blend leans conservative).
    */
+  // ───────────────────────────────────────────────────────────────────────
+  // V16 DEEP READS (2026-08-26) — full-hand observation at settlement
+  // ───────────────────────────────────────────────────────────────────────
+
+  /**
+   * Ingest one COMPLETED hand: fold-to-c-bet, fold-to-3-bet, and big-river-
+   * bet sizing tells need the whole hand (and the showdown), which the
+   * per-decision observe() stream never has. Called once per hand from the
+   * settlement path; idempotent per handKey. Best-effort by contract — a
+   * malformed history must never throw into settlement.
+   */
+  static observeHandComplete(
+    handKey: string,
+    actions: Array<{ userId?: string; action: string; amount?: number; stage: string }> | undefined,
+    bigBlind: number,
+    showdown?: Array<{ user_id: string; mucked: boolean; hand_name?: string }> | null
+  ): void {
+    try {
+      if (!actions || actions.length === 0 || !handKey) return;
+      const flag = `fh|${handKey}`;
+      if (this.handFlags.has(flag)) return;
+      this.handFlags.add(flag);
+      evictOldest(this.handFlags, MAX_HAND_FLAGS);
+
+      const bb = bigBlind > 0 ? bigBlind : 1;
+      const touch = (id: string): OpponentStats => {
+        let s = this.stats.get(id);
+        if (!s) {
+          if (this.stats.size >= MAX_TRACKED_PLAYERS) return freshStats(); // discard
+          s = freshStats();
+          this.stats.set(id, s);
+        }
+        this.dirty.add(id);
+        return s;
+      };
+
+      // ── Preflop: opener vs 3-bettor ──
+      const pre = actions.filter((a) => a.stage === 'preflop' && a.userId);
+      let openerId: string | null = null;
+      let openerIdx = -1;
+      let threeBetIdx = -1;
+      for (let i = 0; i < pre.length; i++) {
+        const a = pre[i];
+        if (a.action === 'raise' || a.action === 'bet' || a.action === 'all_in') {
+          if (openerId === null) {
+            openerId = a.userId!;
+            openerIdx = i;
+          } else if (threeBetIdx === -1 && a.userId !== openerId) {
+            threeBetIdx = i;
+          }
+        }
+      }
+      if (openerId && threeBetIdx > openerIdx) {
+        const s = touch(openerId);
+        s.f3bOpps++;
+        for (let i = threeBetIdx + 1; i < pre.length; i++) {
+          if (pre[i].userId !== openerId) continue;
+          if (pre[i].action === 'fold') s.f3bFolds++;
+          break; // the opener's FIRST response settles it
+        }
+      }
+
+      // ── Flop: the aggressor's c-bet and who folded to it ──
+      // Preflop aggressor = last preflop raiser.
+      let preAggr: string | null = null;
+      for (const a of pre) {
+        if (a.action === 'raise' || a.action === 'bet' || a.action === 'all_in') {
+          preAggr = a.userId!;
+        }
+      }
+      const flop = actions.filter((a) => a.stage === 'flop' && a.userId);
+      if (preAggr) {
+        let cbetIdx = -1;
+        for (let i = 0; i < flop.length; i++) {
+          if (flop[i].action === 'bet') {
+            if (flop[i].userId === preAggr) cbetIdx = i;
+            break; // only the FIRST flop bet can be a c-bet
+          }
+        }
+        if (cbetIdx >= 0) {
+          const responded = new Set<string>();
+          for (let i = cbetIdx + 1; i < flop.length; i++) {
+            const a = flop[i];
+            if (a.userId === preAggr || responded.has(a.userId!)) continue;
+            responded.add(a.userId!);
+            const s = touch(a.userId!);
+            s.cbetOpps++;
+            if (a.action === 'fold') s.cbetFolds++;
+          }
+        }
+      }
+
+      // ── River: big bets that reached showdown — did they mean it? ──
+      if (showdown && showdown.length > 0) {
+        const shown = new Map<string, { mucked: boolean; hand_name?: string }>();
+        for (const sd of showdown) {
+          if (sd?.user_id) shown.set(sd.user_id, sd);
+        }
+        const counted = new Set<string>();
+        for (const a of actions) {
+          if (a.stage !== 'river' || !a.userId || counted.has(a.userId)) continue;
+          if (a.action !== 'bet' && a.action !== 'raise' && a.action !== 'all_in') continue;
+          if ((a.amount ?? 0) < 20 * bb) continue;
+          const sd = shown.get(a.userId);
+          if (!sd) continue; // bet took it down — no showdown information
+          counted.add(a.userId);
+          const s = touch(a.userId);
+          s.bigBetSD++;
+          // A mucked hand after betting big and being called LOST — that is
+          // not value. Revealed hands are classified by name.
+          if (!sd.mucked && STRONG_HAND_NAMES.has((sd.hand_name ?? '').toLowerCase())) {
+            s.bigBetSDStrong++;
+          }
+        }
+      }
+    } catch {
+      /* full-hand observation is best-effort by contract */
+    }
+  }
+
+  /** Fold-to-c-bet frequency (0..1), or null below a 10-opportunity sample. */
+  static foldToCbetOf(id: string): number | null {
+    const s = this.stats.get(id);
+    if (!s || s.cbetOpps < 10) return null;
+    return s.cbetFolds / s.cbetOpps;
+  }
+
+  /** Fold-to-3-bet frequency (0..1), or null below an 8-opportunity sample. */
+  static foldTo3BetOf(id: string): number | null {
+    const s = this.stats.get(id);
+    if (!s || s.f3bOpps < 8) return null;
+    return s.f3bFolds / s.f3bOpps;
+  }
+
+  /** Of their big river bets that reached showdown, the fraction that were
+   *  real hands (two pair+). Null below a 5-showdown sample. High = their
+   *  big bets mean it; low = they bomb with air. */
+  static bigBetValueTendency(id: string): number | null {
+    const s = this.stats.get(id);
+    if (!s || s.bigBetSD < 5) return null;
+    return s.bigBetSDStrong / s.bigBetSD;
+  }
+
   static tableExploit(
     heroSeat: number,
     players: SeatPlayer[],

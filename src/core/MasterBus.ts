@@ -461,6 +461,13 @@ export interface BusPayloadMap {
     bigBlind: number;
     winnerName: string;
     amount: number;
+    /* 2026-08-26: the hit's own identity and emission time, so the receiver
+       de-duplicates on WHICH hit this is rather than on when it arrived —
+       the fix for the jackpot re-announcing on every page refresh. Optional
+       because a producer without a hand number still de-duplicates by table;
+       see lib/bbjHitOnce. */
+    handNumber?: number;
+    emittedAt?: number;
   };
   // Tournament lifecycle events
   PLAYER_ELIMINATED: {
@@ -739,7 +746,18 @@ export interface BusPayloadMap {
     equityPercent: number;
   };
   // Phase 6: Card Back Store payloads
-  SETTINGS_CHANGED: { setting: string; value: string | number | boolean };
+  SETTINGS_CHANGED: {
+    setting: string;
+    value: string | number | boolean;
+    /**
+     * Which hook instance emitted this, so a receiver can ignore its OWN echo
+     * without a stateful latch. See useTableSettings: the previous
+     * `localOriginRef` boolean got permanently stuck whenever the bus
+     * suppressed a duplicate emit, and silently swallowed the next real
+     * cross-component update.
+     */
+    origin?: string;
+  };
   DIAMOND_SPENT: { amount: number; item: string; category: string };
   // Gamification engagement events (Session Build)
   SETTLEMENT_RECEIPT_COPIED: { receiptId: string };

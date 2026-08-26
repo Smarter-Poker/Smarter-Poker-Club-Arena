@@ -23,6 +23,20 @@ export interface Card {
   suit: 'h' | 'd' | 'c' | 's';
 }
 
+/**
+ * POKERBROS PARITY 2026-08-26: one row per all-in participant in the consent
+ * panel — hole cards, equity when the table computed it, and a live check
+ * that flips green the moment that player agrees (rit_response_update).
+ */
+export interface RitPanelPlayer {
+  id: string;
+  name: string;
+  cards: Card[];
+  /** 0-100, absent when equity was not broadcast for this hand. */
+  equityPct?: number;
+  accepted: boolean;
+}
+
 export interface RunItTwicePromptProps {
   isOpen: boolean;
   /** FIX 96: true = this player chooses how many runs (2 or 3) */
@@ -39,6 +53,17 @@ export interface RunItTwicePromptProps {
   /** FIX 96: number of players in the all-in (affects RIT eligibility) */
   playerCount?: number;
   opponentName: string;
+  /** Community cards already dealt when the all-in locked (0, 3 or 4). */
+  boardCards?: Card[];
+  /** The full pot at stake. */
+  potAmount?: number;
+  /** All-in participants for the consent rows. */
+  players?: RitPanelPlayer[];
+  /** Countdown denominator — the shared offer window (engine 25s). */
+  totalSeconds?: number;
+  /** True once the hero has already accepted (buttons become a waiting line). */
+  heroAccepted?: boolean;
+  currency?: string;
 }
 
 export interface RunItTwiceBoardProps {
@@ -81,6 +106,12 @@ export function RunItTwicePrompt({
   maxRuns = 2,
   playerCount: _playerCount,
   opponentName,
+  boardCards = [],
+  potAmount,
+  players = [],
+  totalSeconds = 25,
+  heroAccepted = false,
+  currency = '$',
 }: RunItTwicePromptProps) {
   const [mounted, setMounted] = useState(false);
 
@@ -98,72 +129,131 @@ export function RunItTwicePrompt({
 
   // FIX 188: Bible V8 §4.20 — Chooser selects number of runs (2 or 3)
   // Phase 1: Chooser (best hand) picks runs. Phase 2: Others accept/decline.
+  //
+  // POKERBROS PARITY 2026-08-26: the panel is now the reference consent
+  // sheet — board preview with face-down slots for undealt streets, the pot,
+  // one shared live countdown, and a consent row per all-in player whose
+  // check flips the moment they agree. Responders can Accept or Decline from
+  // the moment the panel opens (the engine's consent-race fix records an
+  // accept that lands before the chooser picks).
   const isChooserPhase = isChooser && !chosenRuns;
-  const isResponderPhase = !isChooser || !!chosenRuns;
-  const runsLabel = chosenRuns === 3 ? 'Three Times' : 'Twice';
+  const runsLabel = chosenRuns === 3 ? '3 Times' : 'Twice';
+  const undealt = Math.max(0, 5 - boardCards.length);
 
   return (
     <div className="rit-overlay">
       <div
-        className="rit-prompt"
+        className="rit-panel"
         style={{
           opacity: mounted ? 1 : 0,
-          transform: mounted ? 'translateY(0)' : 'translateY(8px)',
-          transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+          transform: mounted ? 'translateY(0)' : 'translateY(10px)',
+          transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
         }}
+        role="dialog"
+        aria-label="Run it multiple times"
       >
-        <div className="rit-prompt__icon"></div>
-        <h3 className="rit-prompt__title">
-          {isChooserPhase ? 'Run It Multiple Times?' : `Run it ${runsLabel}?`}
-        </h3>
-        <p className="rit-prompt__text">
-          {isChooserPhase
-            ? 'You have the best hand. Choose how many times to run the remaining cards.'
-            : `${opponentName} wants to run the remaining cards ${runsLabel.toLowerCase()}. The pot will be split based on ${chosenRuns === 3 ? 'all three' : 'both'} runouts.`}
-        </p>
+        <h3 className="rit-panel__title">Run It Multiple Times</h3>
 
-        <div className="rit-prompt__timer">
-          <div className="rit-prompt__timer-bar">
-            <div
-              className="rit-prompt__timer-fill"
-              style={{ width: `${Math.min(100, (timeRemaining / 10) * 100)}%` }}
-            />
+        <div className="rit-panel__board-row">
+          <span className="rit-panel__board-label">Board:</span>
+          <div className="rit-panel__board-cards">
+            {boardCards.map((card, i) => (
+              <span key={`bc-${i}`} className="rit-panel__card">
+                <CardImage card={toCardImage(card)} size="xs" />
+              </span>
+            ))}
+            {Array.from({ length: undealt }, (_, i) => (
+              <span key={`bk-${i}`} className="rit-panel__card rit-panel__card--back" />
+            ))}
           </div>
-          <span className="rit-prompt__timer-text">{timeRemaining}s</span>
         </div>
 
-        <div className="rit-prompt__actions">
+        <div className="rit-panel__meta">
+          {potAmount != null && (
+            <span className="rit-panel__pot">
+              Pot: {currency}
+              {potAmount.toLocaleString()}
+            </span>
+          )}
+          <span className="rit-panel__countdown">Countdown: {Math.max(0, timeRemaining)}s</span>
+        </div>
+        <div className="rit-panel__timer-bar">
+          <div
+            className="rit-panel__timer-fill"
+            style={{
+              width: `${Math.min(100, Math.max(0, (timeRemaining / Math.max(1, totalSeconds)) * 100))}%`,
+            }}
+          />
+        </div>
+
+        {players.length > 0 && (
+          <div className="rit-panel__players">
+            {players.map((p) => (
+              <div key={p.id} className="rit-panel__player">
+                <div className="rit-panel__player-cards">
+                  {p.cards.map((card, i) => (
+                    <span key={`pc-${p.id}-${i}`} className="rit-panel__card rit-panel__card--sm">
+                      <CardImage card={toCardImage(card)} size="xs" />
+                    </span>
+                  ))}
+                </div>
+                <span className="rit-panel__player-name">{p.name}</span>
+                {typeof p.equityPct === 'number' && (
+                  <span className="rit-panel__player-equity">{p.equityPct.toFixed(2)}%</span>
+                )}
+                <span
+                  className={`rit-panel__check ${p.accepted ? 'rit-panel__check--on' : ''}`}
+                  aria-label={p.accepted ? `${p.name} accepted` : `${p.name} deciding`}
+                >
+                  {p.accepted ? '✓' : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p className="rit-panel__message">
+          {isChooserPhase
+            ? 'You Have The Best Hand. Choose How Many Times To Run It.'
+            : chosenRuns
+              ? `${opponentName} Requests To Run It ${runsLabel}.`
+              : `${opponentName} Is Choosing How Many Times To Run It.`}
+        </p>
+
+        <div className="rit-panel__actions">
           {isChooserPhase ? (
             <>
               {/* FIX 188: Chooser can decline (run once), run twice, or run three times */}
               <button
-                className="rit-prompt__btn rit-prompt__btn--decline"
+                className="rit-panel__btn rit-panel__btn--decline"
                 onClick={() => onChooserDecide?.(1)}
               >
                 Run Once
               </button>
               <button
-                className="rit-prompt__btn rit-prompt__btn--accept"
+                className="rit-panel__btn rit-panel__btn--accept"
                 onClick={() => onChooserDecide?.(2)}
               >
                 Run It Twice
               </button>
               {maxRuns >= 3 && (
                 <button
-                  className="rit-prompt__btn rit-prompt__btn--accept rit-prompt__btn--triple"
+                  className="rit-panel__btn rit-panel__btn--accept rit-panel__btn--triple"
                   onClick={() => onChooserDecide?.(3)}
                 >
-                  Run It 3×
+                  Run It 3 Times
                 </button>
               )}
             </>
+          ) : heroAccepted || (isChooser && !!chosenRuns) ? (
+            <span className="rit-panel__waiting">Waiting For Other Players…</span>
           ) : (
             <>
-              <button className="rit-prompt__btn rit-prompt__btn--decline" onClick={onDecline}>
-                No Thanks
+              <button className="rit-panel__btn rit-panel__btn--decline" onClick={onDecline}>
+                Decline
               </button>
-              <button className="rit-prompt__btn rit-prompt__btn--accept" onClick={onAccept}>
-                Run It {runsLabel}!
+              <button className="rit-panel__btn rit-panel__btn--accept" onClick={onAccept}>
+                Accept
               </button>
             </>
           )}
@@ -322,6 +412,12 @@ export interface RitResultData {
   /** Exact winner userIds per board (splits/side pots included). */
   perBoardWinners?: string[][];
   potTotal: number;
+  /**
+   * POKERBROS PARITY 2026-08-26: community cards already dealt when the
+   * all-in locked (0 / 3 / 4). Extra runs re-deal only the streets past
+   * this — the felt dims the shared prefix on runs 2+.
+   */
+  baseBoardCount?: number;
 }
 
 export interface RunItTwiceResultProps {

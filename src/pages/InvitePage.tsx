@@ -9,6 +9,7 @@ import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { ClubsService } from '../services/ClubsService';
 import { useToast } from '../components/common/Toast';
+import { QRCodeSVG } from 'qrcode.react';
 import { masterBus } from '../core/MasterBus';
 import './InvitePage.css';
 import { retryAsync } from '../utils/retryAsync';
@@ -56,7 +57,6 @@ export default function InvitePage() {
   const [inviteUrl, setInviteUrl] = useState('');
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const qrCanvasRef = useRef<HTMLCanvasElement>(null);
   const toast = useToast();
 
   const loadClubInfo = useCallback(
@@ -97,6 +97,10 @@ export default function InvitePage() {
         setClub({
           id: clubData.id,
           club_id: clubData.club_id,
+          // slug was queried and then dropped here, so club.slug was always
+          // undefined and every share link this page built pointed at the raw
+          // UUID instead of the readable /invite/<slug>.
+          slug: clubData.slug,
           name: clubData.name,
           description: clubData.description,
           member_count: clubData.member_count || 0,
@@ -104,6 +108,11 @@ export default function InvitePage() {
           logo_url: clubData.logo_url,
           is_public: clubData.is_public,
         });
+
+        // Park the code from the URL BEFORE the membership check below, which
+        // may need to redeem it. The effect further down also stores it, but it
+        // runs after this function has already finished.
+        if (refCode) ClubsService.rememberInviteCode(clubData.id, refCode);
 
         if (user?.id) {
           const { data: membership } = await supabase
@@ -117,6 +126,30 @@ export default function InvitePage() {
           // A 'pending' row is a queued approval request, NOT full membership —
           // show the "awaiting approval" state instead of "you're a member".
           if (membership?.status === 'pending') {
+            // ...unless they arrived on an invite link, which is what admits
+            // them. This page used to be a dead end for exactly the people it
+            // exists for: a player who joined an approval-gated club (all of
+            // them are) and whose redemption had not run — because it could
+            // not, or because they closed the tab mid-flight — came back to
+            // "Pending Approval" and a Browse Clubs button, with no way to
+            // spend the code that was sitting in their own localStorage.
+            const redeemed = await ClubsService.redeemStoredInviteCode(
+              membership as never,
+              clubData.id,
+              clubId || clubData.id,
+              user.id
+            );
+            if (getIsMounted && !getIsMounted()) return;
+
+            if (redeemed?.status && redeemed.status !== 'pending') {
+              setPendingApproval(false);
+              setAlreadyMember(true);
+              setLoading(false);
+              toast.success(`Welcome to ${clubData.name}!`);
+              navigate(`/clubs/${clubData.slug || clubData.id}`);
+              return;
+            }
+
             setPendingApproval(true);
             setAlreadyMember(false);
           } else {
@@ -133,7 +166,7 @@ export default function InvitePage() {
       }
       if (!getIsMounted || getIsMounted()) setLoading(false);
     },
-    [clubId, inviteCode, user?.id, toast]
+    [clubId, inviteCode, refCode, user?.id, toast, navigate]
   );
 
   useVisibilityRefresh(() => loadClubInfo());
@@ -159,10 +192,11 @@ export default function InvitePage() {
     };
   }, [loadClubInfo]);
 
-  // Store referral code if present
+  // Store referral code if present. loadClubInfo already parks it before it
+  // needs it; this is the safety net for a code that arrives afterwards.
   useEffect(() => {
     if (club?.id && refCode) {
-      window.localStorage.setItem(`referral_${club.id}`, refCode);
+      ClubsService.rememberInviteCode(club.id, refCode);
     }
   }, [club?.id, refCode]);
 
@@ -183,68 +217,8 @@ export default function InvitePage() {
       } else {
         setInviteUrl(refCode ? `${baseUrl}?ref=${refCode}` : baseUrl);
       }
-
-      // Draw a simple QR-like grid on canvas
-      const canvas = qrCanvasRef.current;
-      if (canvas) {
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          const size = 160;
-          canvas.width = size;
-          canvas.height = size;
-          ctx.fillStyle = '#0a0a14';
-          ctx.fillRect(0, 0, size, size);
-
-          // Draw subtle grid lines
-          ctx.strokeStyle = 'rgba(0, 212, 255, 0.1)';
-          ctx.lineWidth = 1;
-          for (let i = 0; i < size; i += 8) {
-            ctx.beginPath();
-            ctx.moveTo(i, 0);
-            ctx.lineTo(i, size);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(0, i);
-            ctx.lineTo(size, i);
-            ctx.stroke();
-          }
-
-          // Generate deterministic pattern from club ID
-          ctx.fillStyle = '#00d4ff';
-          const cellSize = 8;
-          const grid = size / cellSize;
-          const seed = club.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-
-          // Outer finder patterns
-          ctx.fillRect(8, 8, 24, 24);
-          ctx.clearRect(12, 12, 16, 16);
-          ctx.fillRect(16, 16, 8, 8);
-
-          ctx.fillRect(size - 32, 8, 24, 24);
-          ctx.clearRect(size - 28, 12, 16, 16);
-          ctx.fillRect(size - 24, 16, 8, 8);
-
-          ctx.fillRect(8, size - 32, 24, 24);
-          ctx.clearRect(12, size - 28, 16, 16);
-          ctx.fillRect(16, size - 24, 8, 8);
-
-          for (let x = 0; x < grid; x++) {
-            for (let y = 0; y < grid; y++) {
-              const hash = ((x * 31 + y * 17 + seed) * 7919) % 100;
-              // Skip finder pattern areas
-              if ((x < 5 && y < 5) || (x > grid - 6 && y < 5) || (x < 5 && y > grid - 6)) continue;
-
-              if (hash < 45) {
-                ctx.globalAlpha = hash % 3 === 0 ? 0.6 : 1; // Subtle opacity variance
-                ctx.fillRect(x * cellSize, y * cellSize, cellSize - 1, cellSize - 1);
-                ctx.globalAlpha = 1;
-              }
-            }
-          }
-        }
-      }
     }
-  }, [club?.id, club?.slug, refCode, user?.id, alreadyMember]);
+  }, [club?.id, club?.slug, refCode, user?.id]);
 
   const handleCopyLink = async () => {
     try {
@@ -260,7 +234,14 @@ export default function InvitePage() {
   };
 
   const handleJoin = async () => {
-    if (!club || !user?.id) return;
+    if (!club) return;
+    if (!user?.id) {
+      // AuthGuard should have sent them to login long before this, but a button
+      // that silently does nothing is the worst possible answer if it ever does
+      // happen — say so rather than looking broken.
+      toast.error('Please Sign In To Join This Club.');
+      return;
+    }
 
     setJoining(true);
     setError(null);
@@ -270,7 +251,13 @@ export default function InvitePage() {
       // 'pending' request, a public club yields an active membership. It also
       // emits CLUB_JOINED. We must NOT fake "Welcome!"/navigate-in/count-bump
       // for a pending request — the user is not a member until approved.
-      const membership = await ClubsService.join(club.id);
+      //
+      // ClubsService.join then redeems any invite code parked for this club and
+      // returns the membership AS IT STANDS AFTERWARDS, so a player who arrived
+      // on someone's link reaches the branch below already 'active'. Reading
+      // the pre-redemption row here is precisely the bug that made invite links
+      // dead ends.
+      const membership = await ClubsService.join(club.id, 'member', club.name);
 
       if (membership?.status === 'pending') {
         setPendingApproval(true);
@@ -388,23 +375,30 @@ export default function InvitePage() {
             {/* Shareable Invite Section */}
             <div className="share-invite-panel">
               <h3 className="share-invite-title">Share Invite</h3>
-              <canvas
-                ref={qrCanvasRef}
-                onClick={handleCopyLink}
+              <QRCodeSVG
+                value={inviteUrl || window.location.href}
+                size={120}
+                bgColor="#0a0a14"
+                fgColor="#00d4ff"
+                level="M"
+                includeMargin={false}
                 style={{
                   display: 'block',
                   margin: '0 auto 12px',
-                  width: 120,
-                  height: 120,
                   borderRadius: 8,
                   cursor: 'pointer',
                   border: '1px solid rgba(0, 212, 255, 0.3)',
                   boxShadow: '0 0 15px rgba(0, 212, 255, 0.15)',
                 }}
                 title="Click to copy invite link"
+                onClick={handleCopyLink}
               />
               <div className="share-link-row">
-                <input readOnly value={inviteUrl} className="share-link-input" />
+                <input
+                  readOnly
+                  value={inviteUrl || window.location.href}
+                  className="share-link-input"
+                />
                 <button
                   onClick={handleCopyLink}
                   className={`share-copy-btn ${copied ? 'copied' : ''}`}

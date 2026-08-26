@@ -1,0 +1,255 @@
+/**
+ * BAD BEAT JACKPOT — HIT NOTIFICATION (Dan 2026-08-26)
+ * "Stay on screen for 3 seconds, and EXPLODE with animations in the bottom
+ *  right corner before auto disappearing."
+ *
+ * Timing contract with BBJHitNotification.tsx:
+ *   intro   260ms   the card slams in
+ *   burst   700ms   confetti, fired once on mount
+ *   hold    3000ms  BBJ_NOTIFICATION_MS in the TSX
+ *   outro   420ms   OUTRO_MS in the TSX — keep these two in step
+ */
+
+.bbj-hit {
+  position: fixed;
+  /* Bottom RIGHT, clear of the iOS home indicator and of the table's own
+     action bar, which occupies the bottom strip on a phone. */
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: calc(max(16px, env(safe-area-inset-bottom, 0px)) + var(--sp-bbj-hit-lift, 0px));
+  /* Above the felt, its overlays and the toast stack; below a modal, which
+     is the one thing that should still be able to cover it. */
+  z-index: 9000;
+  /* The wrapper never eats a click — only the card inside opts back in, so a
+     celebration in the corner can never swallow a fold on a phone. */
+  pointer-events: none;
+  animation: bbjHitIn 0.26s cubic-bezier(0.18, 0.9, 0.32, 1.4) both;
+}
+
+.bbj-hit--leaving {
+  animation: bbjHitOut 0.42s cubic-bezier(0.4, 0, 0.7, 0.2) forwards;
+}
+
+@keyframes bbjHitIn {
+  0% {
+    opacity: 0;
+    transform: translateY(26px) scale(0.7);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes bbjHitOut {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.92);
+  }
+}
+
+/* ── THE CARD ──────────────────────────────────────────────────────────── */
+
+.bbj-hit__card {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  min-width: 208px;
+  padding: 12px 16px 11px;
+  border: 1px solid rgba(255, 214, 120, 0.75);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 42%),
+    linear-gradient(135deg, #2a1d05 0%, #1a1206 55%, #120c04 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 10px 30px rgba(0, 0, 0, 0.6),
+    0 0 26px rgba(255, 176, 32, 0.45);
+  text-align: right;
+  cursor: pointer;
+  font: inherit;
+  /* The gold rim breathes for the three seconds it is up. */
+  animation: bbjHitGlow 1.5s ease-in-out infinite;
+}
+
+.bbj-hit__card:disabled {
+  cursor: default;
+}
+
+.bbj-hit__card:focus-visible {
+  outline: 2px solid #ffd66b;
+  outline-offset: 3px;
+}
+
+@keyframes bbjHitGlow {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.28),
+      0 0 0 1px rgba(0, 0, 0, 0.5),
+      0 10px 30px rgba(0, 0, 0, 0.6),
+      0 0 26px rgba(255, 176, 32, 0.45);
+  }
+  50% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.4),
+      0 0 0 1px rgba(0, 0, 0, 0.5),
+      0 12px 34px rgba(0, 0, 0, 0.65),
+      0 0 40px rgba(255, 196, 60, 0.75);
+  }
+}
+
+.bbj-hit__title {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #ffd66b;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.bbj-hit__amount {
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 1.55rem;
+  font-weight: 900;
+  line-height: 1.05;
+  color: #fff6d8;
+  text-shadow:
+    0 1px 0 rgba(120, 70, 0, 0.9),
+    0 0 16px rgba(255, 200, 80, 0.8);
+  /* One scale punch on arrival, in step with the burst. */
+  animation: bbjHitPunch 0.5s cubic-bezier(0.18, 0.9, 0.32, 1.5) both;
+}
+
+@keyframes bbjHitPunch {
+  0% {
+    transform: scale(0.55);
+  }
+  60% {
+    transform: scale(1.14);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.bbj-hit__who {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.bbj-hit__where {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(255, 236, 190, 0.75);
+}
+
+/* ── THE EXPLOSION ─────────────────────────────────────────────────────── */
+
+.bbj-hit__burst {
+  position: absolute;
+  /* Centred on the card, so the shards appear to come out of the money. */
+  right: 46px;
+  bottom: 30px;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.bbj-hit__shard {
+  position: absolute;
+  width: 7px;
+  height: 11px;
+  border-radius: 2px;
+  opacity: 0;
+  /* Each shard's flight is entirely per-instance custom properties set in the
+     TSX (angle, distance, spin, delay), so twenty shards share ONE keyframe
+     instead of twenty hand-written ones. */
+  animation: bbjShardFly 0.7s cubic-bezier(0.15, 0.75, 0.35, 1) var(--bbj-delay, 0ms) both;
+  will-change: transform, opacity;
+}
+
+.bbj-hit__shard--0 {
+  background: linear-gradient(180deg, #ffe9a8, #ffc23c);
+}
+.bbj-hit__shard--1 {
+  background: linear-gradient(180deg, #fff6d8, #ff9d2f);
+}
+.bbj-hit__shard--2 {
+  background: linear-gradient(180deg, #ffffff, #ffd66b);
+}
+.bbj-hit__shard--3 {
+  background: linear-gradient(180deg, #ffc98a, #e8760f);
+}
+
+@keyframes bbjShardFly {
+  0% {
+    opacity: 1;
+    transform: rotate(var(--bbj-angle)) translateX(0) rotate(0deg) scale(0.6);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--bbj-angle)) translateX(var(--bbj-dist)) rotate(var(--bbj-spin)) scale(1);
+  }
+}
+
+/* ── REDUCED MOTION ────────────────────────────────────────────────────────
+   The card still appears, still holds its three seconds, still leaves — a
+   player who asked for less motion must not simply MISS a jackpot. What goes
+   is the movement: no slam, no burst (the TSX does not even render the
+   shards), no pulsing rim, no punch. */
+.bbj-hit--still,
+.bbj-hit--still.bbj-hit--leaving {
+  animation: none;
+}
+
+.bbj-hit--still .bbj-hit__card,
+.bbj-hit--still .bbj-hit__amount {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bbj-hit,
+  .bbj-hit--leaving,
+  .bbj-hit__card,
+  .bbj-hit__amount,
+  .bbj-hit__shard {
+    animation: none !important;
+  }
+}
+
+/* ── SMALL SCREENS ─────────────────────────────────────────────────────────
+   The action bar owns the bottom of a phone, so the card lifts clear of it
+   rather than overlapping the controls a player needs mid-hand. */
+@media (max-width: 480px) {
+  .bbj-hit {
+    --sp-bbj-hit-lift: 76px;
+    right: max(10px, env(safe-area-inset-right, 0px));
+  }
+
+  .bbj-hit__card {
+    min-width: 168px;
+    padding: 9px 12px 8px;
+    border-radius: 12px;
+  }
+
+  .bbj-hit__amount {
+    font-size: 1.25rem;
+  }
+
+  .bbj-hit__who {
+    font-size: 0.72rem;
+  }
+}

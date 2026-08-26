@@ -5077,6 +5077,12 @@
     ],
     "horse_mind_stats": [
       "aggr",
+      "bigbet_sd",
+      "bigbet_sd_strong",
+      "cbet_folds",
+      "cbet_opps",
+      "f3b_folds",
+      "f3b_opps",
       "faced_aggr",
       "folds",
       "hands",
@@ -11164,7 +11170,6 @@
       "can_draw_100x",
       "club_id"
     ],
-
     "v_system_health_cron": [
       "active",
       "failures_24h",

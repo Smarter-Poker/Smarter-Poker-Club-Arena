@@ -46,7 +46,7 @@ describe('shuffleChests', () => {
     // runs of a 120-chest inventory, the chance of the jackpot landing first
     // every time by luck is (1/120)^20.
     const inventory = buildInventory(2_000_00, 120, 'classic');
-    let firstPositions = new Set<number>();
+    const firstPositions = new Set<number>();
     for (let i = 0; i < 20; i++) {
       const shuffled = shuffleChests(inventory);
       firstPositions.add(shuffled.findIndex((c) => c.tier === 'jackpot'));

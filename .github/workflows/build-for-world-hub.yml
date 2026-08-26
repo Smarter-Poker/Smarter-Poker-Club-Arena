@@ -21,6 +21,57 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ═════════════════════════════════════════════════════════════════════════
+  # CLIENT TESTS GATE THE BUNDLE, BUT NO LONGER DELAY IT — split out 2026-08-26.
+  #
+  # This suite used to run as step 5 of build-and-store, IN FRONT of the build.
+  # Measured on run 32993261791, the critical path was:
+  #
+  #     Client tests          5m19s
+  #     Build Club Arena      1m59s
+  #     Checkout World Hub    3m36s
+  #     everything else       ~1m
+  #     ------------------------------
+  #     publish              ~12m
+  #
+  # Pushes land on main every two to three minutes. A twelve minute pipeline
+  # under a two to three minute arrival rate can only ever publish a sha that
+  # is already twelve minutes stale, and every push in between is cancelled
+  # while PENDING by `cancel-in-progress: false` — which is that setting
+  # working correctly, not failing. Production was fourteen commits behind
+  # while every one of those cancels looked like a broken deploy.
+  #
+  # The tests are 13s on a developer machine and 5m19s here because a GitHub
+  # runner has two cores and the suite is ~285s of aggregate work across 429
+  # files. Nothing is misconfigured; it is simply serialised.
+  #
+  # So it runs BESIDE the build instead of in front of it. The gate is exactly
+  # as strong: sync-to-world-hub needs BOTH jobs, so a red test still stops the
+  # bundle from shipping. It just stops adding its five minutes to the build's
+  # two.
+  # ═════════════════════════════════════════════════════════════════════════
+  client-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      HUSKY: '0'
+    steps:
+      - name: Checkout Club Arena
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Client tests must pass before the bundle ships
+        run: npx vitest run tests/
+
   build-and-store:
     runs-on: ubuntu-latest
     permissions:
@@ -61,22 +112,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      # ═══════════════════════════════════════════════════════════════════
-      # CLIENT TESTS GATE THE BUNDLE — added 2026-08-21.
-      #
-      # ci.yml's unit job exists but NEVER COMPLETES on main: pushes land
-      # faster than the ~6-minute CI and cancel-in-progress kills every run,
-      # while this workflow ships the bundle on push regardless. Proven live:
-      # a format pass mangled the em-dash classes in popupStyle.ts (Dan's
-      # BINDING popup rule) and 19 client tests sat red on main while the
-      # broken bundle served production. Same philosophy as the engine's
-      # "Server tests must pass before anything is deployed": the suite runs
-      # HERE, in the workflow that publishes, so a red suite means no sync.
-      # The whole suite is ~15s; a superseding push re-tests its own commit.
-      # ═══════════════════════════════════════════════════════════════════
-      - name: Client tests must pass before the bundle ships
-        run: npx vitest run tests/
 
       - name: Build Club Arena
         env:
@@ -161,7 +196,8 @@ jobs:
           echo "Proceeding to sync directly to World Hub..." >> $GITHUB_STEP_SUMMARY
 
   sync-to-world-hub:
-    needs: build-and-store
+    # BOTH: the bundle, and the tests that say it may ship.
+    needs: [build-and-store, client-tests]
     runs-on: ubuntu-latest
     # Needed by the sync-branch cleanup at the end of this job. build-and-store
     # already declares this because it PUSHES the branch; without it here the
@@ -212,6 +248,20 @@ jobs:
           # rejected, and the publish watchdog is what will say so out loud.
           token: ${{ steps.wh-token.outputs.token || secrets.WORLD_HUB_SYNC_TOKEN }}
           path: world-hub
+          # 3m36s on run 32993261791, materialising an entire Next.js app to
+          # write one directory inside it. This job reads nothing outside
+          # public/hub/club-arena and writes nothing outside it either: the
+          # rsync below targets exactly that path and the commit that follows
+          # stages exactly that path. Cone-mode sparse checkout gives us that
+          # directory and the git metadata to commit it, and skips the rest.
+          #
+          # fetch-depth: 1 is already the action's default; it is written out
+          # because the cost here was never history, it was tree size, and the
+          # next person to look at a slow checkout should not have to re-derive
+          # which of the two it was.
+          sparse-checkout: public/hub/club-arena
+          sparse-checkout-cone-mode: true
+          fetch-depth: 1
 
       - name: Sync dist/ to World Hub public/hub/club-arena/
         run: |

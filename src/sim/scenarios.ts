@@ -502,4 +502,149 @@ export const scenario04: Scenario = {
   ],
 };
 
-export const ALL_SCENARIOS: Scenario[] = [scenario01, scenario02, scenario03, scenario04];
+// ─────────────────────────────────────────────────────────────────────────
+// SCENARIO 05 — Villain fan, every hand size (Dan 2026-08-26 rebuild)
+// ─────────────────────────────────────────────────────────────────────────
+// One full 6-max ring, stepped through 2, 4, 5 and 6 face-down cards per
+// villain, then a 6-card showdown reveal and a fold. This is the visual
+// harness for the unified fan: every seat must show the SAME tucked,
+// outward-mirrored fan at every count, the reveal must grow in place, and
+// the fold must remove the fan with zero pod reflow.
+//
+// A villain's face-down hand is an array of NULLS: the seat draws one back
+// per slot (the per-card show contract, 2026-08-18), which is exactly how a
+// hidden PLO hand arrives from the engine, without SimPage needing to know
+// the variant.
+
+const hiddenHand = (n: number): (Card | null)[] => Array<null>(n).fill(null);
+
+function fanPlayers(count: number): (SeatPlayer | null)[] {
+  const mk = (seat: number, name: string, hero = false): SeatPlayer =>
+    ({
+      id: `seat-${seat}`,
+      name,
+      avatar: undefined,
+      stack: 200,
+      status: 'active',
+      holeCards: hero
+        ? [
+            card('A', 's'),
+            card('K', 's'),
+            card('Q', 'h'),
+            card('J', 'd'),
+            card('T', 'c'),
+            card('9', 'h'),
+          ].slice(0, count)
+        : hiddenHand(count),
+      showCards: false,
+      isHero: hero,
+    }) as SeatPlayer;
+  return [
+    mk(1, 'LeftLow'),
+    mk(2, 'LeftHigh'),
+    mk(3, 'HeroFan', true),
+    mk(4, 'TopSeat'),
+    mk(5, 'RightHigh'),
+    mk(6, 'RightLow'),
+  ];
+}
+
+const FAN_BASE: SimViewState = {
+  handNumber: 500,
+  boardStage: 'flop',
+  communityCards: [card('A', 'h'), card('K', 'c'), card('5', 'd')],
+  pot: 24,
+  players: fanPlayers(2),
+  positions: ['BTN', 'SB', 'BB', 'UTG', 'HJ', 'CO'],
+  lastActions: [null, null, null, null, null, null],
+  lastBetAmounts: [0, 0, 0, 0, 0, 0],
+  currentPlayerSeat: 4,
+  dealerSeat: 1,
+  currentBet: 0,
+  heroSeat: 3,
+  winnerIds: [],
+  winningHandName: '',
+  maxPlayers: 6,
+  blinds: '1/2',
+};
+
+export const scenario05: Scenario = {
+  id: 'villain-fan',
+  name: 'Villain Fan - 2/4/5/6 Cards',
+  description:
+    'Unified villain fan at every hand size. Every villain shows one tucked, outward-mirrored fan; only the card count changes between steps. Then a showdown reveal (grows in place) and a fold (fan removed, no pod reflow).',
+  steps: [
+    {
+      label: 'NLH - every villain fans 2 cards',
+      event: 'HOLE_CARDS_DEALT',
+      state: cloneState(FAN_BASE, { players: fanPlayers(2) }),
+      expect:
+        'Left-half seats fan left, right-half fan right, innermost card tucked under the avatar.',
+    },
+    {
+      label: 'PLO4 - every villain fans 4 cards',
+      event: 'HOLE_CARDS_DEALT',
+      state: cloneState(FAN_BASE, { players: fanPlayers(4) }),
+      expect:
+        'Four countable card edges per fan; fan no wider than the 2-card fan by more than ~50%.',
+    },
+    {
+      label: 'PLO5 - every villain fans 5 cards',
+      event: 'HOLE_CARDS_DEALT',
+      state: cloneState(FAN_BASE, { players: fanPlayers(5) }),
+      expect: 'Five countable edges; hero hand shows the held-hand arc.',
+    },
+    {
+      label: 'PLO6 - every villain fans 6 cards',
+      event: 'HOLE_CARDS_DEALT',
+      state: cloneState(FAN_BASE, { players: fanPlayers(6) }),
+      expect: 'Six countable edges at every seat; no fan crosses the rail or the betting lane.',
+    },
+    {
+      label: 'Showdown - seat 4 reveals a 6-card hand',
+      event: 'SHOWDOWN',
+      state: cloneState(FAN_BASE, {
+        boardStage: 'showdown',
+        players: fanPlayers(6).map((pl, i) =>
+          pl && i === 3
+            ? {
+                ...pl,
+                holeCards: [
+                  card('A', 'd'),
+                  card('K', 'd'),
+                  card('Q', 's'),
+                  card('J', 'c'),
+                  card('9', 's'),
+                  card('8', 'h'),
+                ],
+                showCards: true,
+              }
+            : pl
+        ),
+      }),
+      expect:
+        'Revealed fan flips in place at the same anchor, 1.25x with a wider step, above the nameplate.',
+    },
+    {
+      label: 'Fold - seats 2 and 5 fold, fans removed',
+      event: 'PLAYER_ACTION',
+      state: cloneState(FAN_BASE, {
+        players: fanPlayers(6).map((pl, i) =>
+          pl && (i === 1 || i === 4)
+            ? { ...pl, status: 'folded' as const, holeCards: undefined }
+            : pl
+        ),
+        lastActions: [null, 'fold', null, null, 'fold', null],
+      }),
+      expect: 'Folded seats show no fan and no pod reflow; FOLD badge takes the status slot.',
+    },
+  ],
+};
+
+export const ALL_SCENARIOS: Scenario[] = [
+  scenario01,
+  scenario02,
+  scenario03,
+  scenario04,
+  scenario05,
+];

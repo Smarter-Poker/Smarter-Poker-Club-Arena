@@ -77,6 +77,11 @@ export default function TournamentLobbyPage() {
   const [searchParams] = useSearchParams();
   const initialType = (searchParams.get('type') as TournamentTypeFilter) || 'all';
   const [typeFilter, setTypeFilter] = useState<TournamentTypeFilter>(initialType);
+
+  useEffect(() => {
+    const currentType = (searchParams.get('type') as TournamentTypeFilter) || 'all';
+    setTypeFilter(currentType);
+  }, [searchParams]);
   const [searchQuery, setSearchQuery] = useState('');
   const [visibleTournaments, setVisibleTournaments] = useState<Set<string>>(new Set());
   const [isInUnion, setIsInUnion] = useState(false);

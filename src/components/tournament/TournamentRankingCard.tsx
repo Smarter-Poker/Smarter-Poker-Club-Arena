@@ -402,7 +402,7 @@ export default function TournamentRankingCard({
             <span className="trc2__winning-hand-label">Winning Hand</span>
             <div className="trc2__winning-cards">
               {result.winningCards.map((c, i) => (
-                <CardImage key={i} card={c} size="md" className="trc2__winning-card" />
+                <CardImage key={i} card={c} size="lg" className="trc2__winning-card" />
               ))}
             </div>
           </div>

@@ -267,7 +267,7 @@ export function PlayerStats({
               <div className="player-stats__note-input">
                 <input
                   type="text"
-                  placeholder="Add a note..."
+                  placeholder="Add A Note..."
                   value={noteText}
                   onChange={(e) => setNoteText(e.target.value)}
                   autoFocus

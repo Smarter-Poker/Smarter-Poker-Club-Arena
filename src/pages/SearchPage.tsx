@@ -283,7 +283,7 @@ export default function SearchPage() {
       <div className="search-bar">
         <input
           type="text"
-          placeholder="Search clubs, players, tables, tournaments..."
+          placeholder="Search Clubs, Players, Tables, Tournaments..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setSearchFocused(true)}

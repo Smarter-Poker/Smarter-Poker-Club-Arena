@@ -198,7 +198,7 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
               <input
                 type="text"
                 className="input"
-                placeholder="e.g. Friday Night High Stakes"
+                placeholder="E.g. Friday Night High Stakes"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required

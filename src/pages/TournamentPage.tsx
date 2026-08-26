@@ -1820,7 +1820,7 @@ function LegacyCreateTournamentModal({ clubId, onClose, onCreate }: CreateModalP
           <label>Tournament Name</label>
           <input
             type="text"
-            placeholder="Enter name..."
+            placeholder="Enter Name..."
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />

@@ -232,7 +232,7 @@ export default function PlayerNotesPanel({
 
         <textarea
           className={styles.noteInput}
-          placeholder="Add notes about this player..."
+          placeholder="Add Notes About This Player..."
           value={currentNote}
           onChange={(e) => setCurrentNote(e.target.value)}
           rows={compact ? 3 : 5}
@@ -288,7 +288,7 @@ export default function PlayerNotesPanel({
       <input
         type="text"
         className={styles.searchInput}
-        placeholder="Search notes..."
+        placeholder="Search Notes..."
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
       />

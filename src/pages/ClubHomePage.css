@@ -271,6 +271,146 @@
   }
 }
 
+
+.club-home__bbj {
+  margin-left: auto;
+  text-align: right;
+}
+
+.bbj-label {
+  color: var(--text-secondary, #c8ccd4);
+  font-size: 0.65rem;
+  font-weight: bold;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.bbj-amount {
+  background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 0.3rem 0.65rem;
+  color: #ffffff;
+  font-weight: bold;
+  font-size: 1rem;
+  font-family:
+    'Inter',
+    -apple-system,
+    sans-serif;
+  letter-spacing: 0.5px;
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    0 0 12px rgba(255, 255, 255, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: all 0.3s ease;
+}
+
+.bbj-amount::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+  animation: bbjAmountShimmer 4s ease-in-out infinite;
+}
+
+@keyframes bbjAmountShimmer {
+  0%,
+  60% {
+    left: -100%;
+  }
+  100% {
+    left: 200%;
+  }
+}
+
+/* The .club-home__club-section / .club-card__* / .icon-link block that used to
+   live here was REMOVED on 2026-08-20 with the header rebuild — its markup no
+   longer exists (see .lobby-top above) and three of its rules were emoji
+   `content:` declarations. Leaving dead selectors behind is how a stylesheet
+   grows a second, contradictory copy of a component. */
+
+/* Wallet Display */
+.club-home__wallet {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.wallet-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #000;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: all 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+.wallet-row:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.wallet-row.gold {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.wallet-row.diamond {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.gold-icon::before {
+  content: '●';
+  color: #ffb800;
+  font-size: 1rem;
+}
+
+.diamond-icon::before {
+  content: '◆';
+  color: #3b82f6;
+  font-size: 1rem;
+}
+
+.wallet-amount {
+  color: white;
+  font-weight: 600;
+  font-size: 0.9rem;
+  min-width: 80px;
+  text-align: right;
+}
+
+.wallet-add-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #10b981;
+  border: none;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+}
+
+.wallet-add-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.5);
+}
 /* The .club-home__intro block moved into the header as .lobby-top__notice
    (line-clamped), and the three-row .club-home__filters / .filter-tab stack was
    replaced by the single .game-bar below. Both sets of markup are gone. */
@@ -620,6 +760,204 @@
    NEXT rule's selector list, so .empty-tables' centred grey padding was being
    applied to the status dot on every page that renders one. Deleted 2026-08-25
    in the pass that found it.) */
+.table-card {
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 0.75rem;
+  text-decoration: none;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.table-card:hover {
+  border-color: #1877f2;
+  transform: translateY(-2px);
+  box-shadow:
+    0 8px 24px rgba(24, 119, 242, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.table-card__header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.table-card__variant {
+  background: #1877f2;
+  color: white;
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+}
+
+.table-card__seats {
+  color: #888;
+  font-size: 0.75rem;
+}
+
+.table-card__body {
+  flex: 1;
+}
+
+.table-card__name {
+  color: white;
+  font-size: 0.9rem;
+  margin: 0 0 0.25rem;
+}
+
+.table-card__stakes {
+  color: #3b82f6;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.table-card__players {
+  color: #888;
+  font-size: 0.75rem;
+}
+
+.table-card__status {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: #888;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #888;
+}
+
+.status-dot.running,
+.status-dot.active {
+  background: #10b981;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.6);
+}
+
+.status-dot.waiting {
+  background: #f59e0b;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TOURNAMENT CARD
+═══════════════════════════════════════════════════════════════════════════════ */
+.tournament-card {
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 8px;
+  padding: 0.75rem;
+  text-decoration: none;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.tournament-card:hover {
+  border-color: #3b82f6;
+  transform: translateY(-2px);
+}
+
+.tournament-card.live {
+  border-color: rgba(239, 68, 68, 0.4);
+  box-shadow:
+    0 0 20px rgba(239, 68, 68, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.tournament-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.tournament-card__type {
+  background: #7c3aed;
+  color: white;
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.tournament-card__status {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.tournament-card__status.running {
+  color: #ef4444;
+}
+
+.tournament-card__status.announced {
+  color: #3b82f6;
+}
+
+.tournament-card__status.registering {
+  color: #ffffff;
+}
+
+.tournament-card__body {
+  flex: 1;
+}
+
+.tournament-card__name {
+  color: white;
+  font-size: 0.85rem;
+  margin: 0 0 0.35rem;
+  line-height: 1.2;
+}
+
+.tournament-card__buyin {
+  color: #fbbf24;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.tournament-card__fee {
+  color: #888;
+  font-size: 0.7rem;
+  margin-left: 0.25rem;
+}
+
+.tournament-card__gtd {
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.75rem;
+  margin-top: 0.15rem;
+}
+
+.tournament-card__players {
+  color: #888;
+  font-size: 0.7rem;
+  margin-top: 0.15rem;
+}
+
+.tournament-card__footer {
+  margin-top: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tournament-card__time {
+  color: #888;
+  font-size: 0.7rem;
+}
 /* ═══════════════════════════════════════════════════════════════════════════════
    EMPTY STATE
 ═══════════════════════════════════════════════════════════════════════════════ */

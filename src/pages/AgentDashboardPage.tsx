@@ -613,7 +613,7 @@ export default function AgentDashboardPage() {
                     className="admin-input"
                     value={transferTarget}
                     onChange={(e) => setTransferTarget(e.target.value)}
-                    placeholder="UUID of receiving agent"
+                    placeholder="UUID Of Receiving Agent"
                   />
                 </div>
                 <div>
@@ -633,7 +633,7 @@ export default function AgentDashboardPage() {
                     className="admin-input"
                     value={transferNotes}
                     onChange={(e) => setTransferNotes(e.target.value)}
-                    placeholder="Transfer reason..."
+                    placeholder="Transfer Reason..."
                   />
                 </div>
                 <button
@@ -885,7 +885,7 @@ export default function AgentDashboardPage() {
             <input
               className="admin-input"
               style={{ marginBottom: '16px' }}
-              placeholder="Search players by name..."
+              placeholder="Search Players By Name..."
               value={playerSearch}
               onChange={(e) => setPlayerSearch(e.target.value)}
             />

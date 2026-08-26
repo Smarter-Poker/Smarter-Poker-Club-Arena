@@ -273,7 +273,7 @@ export default function DisputeManagementPage() {
         <div style={{ marginBottom: '12px' }}>
           <input
             type="text"
-            placeholder="Search by name, reason, amount..."
+            placeholder="Search By Name, Reason, Amount..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{
@@ -382,7 +382,7 @@ export default function DisputeManagementPage() {
                         <>
                           <div className="resolution-form">
                             <textarea
-                              placeholder="Enter resolution notes..."
+                              placeholder="Enter Resolution Notes..."
                               value={resolutionText}
                               onChange={(e) => setResolutionText(e.target.value)}
                               rows={2}

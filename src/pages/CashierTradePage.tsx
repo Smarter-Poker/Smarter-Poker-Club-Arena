@@ -1478,7 +1478,7 @@ export default function CashierTradePage() {
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search members"
+              placeholder="Search Members"
               aria-label={`Search ${downline.length} member${downline.length === 1 ? '' : 's'}`}
             />
             <span className={styles.memberCount} aria-hidden="true">
@@ -1853,7 +1853,7 @@ export default function CashierTradePage() {
               step="0.01"
               aria-label="Chips Requested"
               onChange={(e) => setAskAmount(e.target.value)}
-              placeholder="How many chips?"
+              placeholder="How Many Chips?"
               autoFocus
             />
             <input
@@ -1861,7 +1861,7 @@ export default function CashierTradePage() {
               value={askNote}
               aria-label="Note"
               onChange={(e) => setAskNote(e.target.value)}
-              placeholder="Note (optional)"
+              placeholder="Note (Optional)"
               maxLength={120}
             />
             <div className={styles.modalHint}>

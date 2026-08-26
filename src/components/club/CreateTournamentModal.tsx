@@ -726,7 +726,7 @@ export default function CreateTournamentModal({
               className={styles.input}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Saturday Night Turbo"
+              placeholder="E.g. Saturday Night Turbo"
               required
               style={!name.trim() ? { borderColor: '#ef4444' } : undefined}
             />
@@ -1507,7 +1507,7 @@ export default function CreateTournamentModal({
                     value={shortDescription}
                     maxLength={200}
                     onChange={(e) => setShortDescription(e.target.value)}
-                    placeholder="Optional line shown on the tournament page"
+                    placeholder="Optional Line Shown On The Tournament Page"
                   />
                 </div>
 

@@ -166,6 +166,8 @@ interface StyleParams {
   sizingMultiplier: number;
   /** humanlike think-time range in ms */
   thinkRange: [number, number];
+  /** V18: stable per-horse sizing-family bias (0..1; 0.5 = neutral). */
+  familyBias?: number;
 }
 
 const STYLE_PARAMS: Record<HorseStyle, StyleParams> = {
@@ -524,6 +526,10 @@ export interface HorseGameStateV2 extends HorseGameState {
   gameMode?: 'cash' | 'tournament';
   /** V11: table ante (0/undefined = no ante). Antes widen preflop ranges. */
   ante?: number;
+  /** V18: the table allows a UTG straddle (2xBB). Straddle posts are not
+   *  ActionRecords, so the brain needs this to read a straddled pot as
+   *  UNOPENED dead money rather than an open raise. */
+  straddleActive?: boolean;
 }
 
 /**
@@ -716,6 +722,24 @@ export interface HorseDecideOpts {
   /** disable V16 PLO 3-bet polarity: AAxx 3-bets below the generic bar,
    *  speculative rundowns without AA flat at the margin (default: on) */
   v16PloPolar?: boolean;
+  /** disable the V18 straddle fix: a straddled pot reads as UNOPENED and
+   *  opens size off the straddle, instead of folding to dead money the
+   *  brain mistook for an open raise (default: enabled) */
+  v18Straddle?: boolean;
+  /** disable the V18 squeeze response: an opener facing a squeeze (caller
+   *  between) defends wider - squeeze ranges are polarized toward air
+   *  (default: enabled) */
+  v18Squeeze?: boolean;
+  /** disable the V18 self-image read: a horse whose own recent line was
+   *  bluff-heavy throttles bluffs - the table saw the same history it did
+   *  (default: enabled) */
+  v18SelfImage?: boolean;
+  /** disable the V18 exploit-sized river raises: value raises grow into
+   *  stations and shrink into nits (default: enabled) */
+  v18ExploitSize?: boolean;
+  /** disable the V18 per-horse sizing-family personality: a stable bias
+   *  inside the size families, zero-mean fleet-wide (default: on) */
+  v18Families?: boolean;
   /** disable the V17 positional-pressure layer (2026-08-26): bluff volume
    *  scales with how many live players still act BEHIND hero on this street
    *  — the binary ip/oop model treated first-of-four like first-of-two
@@ -779,11 +803,15 @@ let difficultyHint = 0;
  *  family with a little jitter; extreme fractions (geometric jams) pass
  *  through untouched. */
 const SIZE_FAMILIES = [0.33, 0.5, 0.66, 0.8, 1.0, 1.3];
-function snapFraction(frac: number): number {
+function snapFraction(frac: number, familyBias: number = 0.5): number {
   if (frac < 0.25 || frac > 1.4) return frac;
   let best = SIZE_FAMILIES[0];
   for (const f of SIZE_FAMILIES) if (Math.abs(frac - f) < Math.abs(frac - best)) best = f;
-  return best + (fastRandom() - 0.5) * 0.08;
+  // V18 FAMILY PERSONALITY: a stable per-horse shift inside the family
+  // (+/-3% of pot), zero-mean across the fleet. Two horses picking "half
+  // pot" land on 0.47 and 0.53 for the rest of their lives - the kind of
+  // signature real players carry and observers can even learn.
+  return best + (fastRandom() - 0.5) * 0.08 + (familyBias - 0.5) * 0.06;
 }
 
 /**
@@ -882,6 +910,15 @@ export class HorseLogic {
       }
     }
 
+    // V18: per-horse sizing-family personality, hashed from the id.
+    if (opts.v18Families !== false) {
+      let fh = 5381;
+      for (let i = 0; i < player.user_id.length; i++) {
+        fh = ((fh << 5) + fh + player.user_id.charCodeAt(i)) >>> 0;
+      }
+      params.familyBias = ((fh >>> 7) % 1000) / 1000;
+    }
+
     // V9: hourly mood gear-shift — a horse's bluff/aggression volume drifts
     // hour to hour the way a human's does. Zero-mean across the fleet.
     if ((opts.v9Mood ?? opts.v9) !== false) {
@@ -976,6 +1013,19 @@ export class HorseLogic {
     }
     if (history.length === 0 && gs.currentBet > bb * 1.05) {
       raises = gs.currentBet > bb * 4.5 ? 2 : 1;
+      // ═══ V18 STRADDLE FIX ═══ a UTG straddle posts 2xBB WITHOUT an
+      // ActionRecord, so this fallback read every straddled pot as an open
+      // raise and the fleet folded to dead money. When straddles are
+      // possible and the shape matches (no history, current bet at most the
+      // straddle), the pot is UNOPENED - the money in front is blind money.
+      if (
+        (opts.v18Straddle ?? true) !== false &&
+        gs.straddleActive === true &&
+        gs.currentBet <= bb * 2.2
+      ) {
+        raises = 0;
+        if (telemetryOn(opts)) noteFire('v18_straddle');
+      }
     }
 
     const position = classifyPosition(player.seat, gs.dealerSeat, gs.players, opts.v13 !== false);
@@ -1060,6 +1110,29 @@ export class HorseLogic {
         opts.v12 !== false ? (gs.format ?? (isTournamentMode(gs) ? 'mtt' : 'cash')) : undefined,
       targeted,
       raiserFoldTo3Bet: raiserF3b,
+      // V18 STRADDLE: the shape the fallback above detected - hand the
+      // truth to the preflop engine so its unopened branch owns the pot.
+      straddled:
+        (opts.v18Straddle ?? true) !== false &&
+        gs.straddleActive === true &&
+        gs.currentBet <= bb * 2.2 &&
+        history.length === 0,
+      // V18 SQUEEZE: hero opened, at least one caller came along, and then
+      // a 3-bet arrived - the classic squeeze shape. Squeeze ranges are
+      // polarized toward air, so the opener defends wider.
+      squeezed:
+        (opts.v18Squeeze ?? true) !== false &&
+        raises === 2 &&
+        callers >= 1 &&
+        history.length > 0 &&
+        (() => {
+          for (const a of history) {
+            if (a.action === 'raise' || a.action === 'bet') {
+              return a.userId === player.user_id; // hero made the FIRST raise
+            }
+          }
+          return false;
+        })(),
       // V16 PLO POLARITY: AAxx is the premium the generic percentile cannot
       // see past double-counted side cards; rundowns without it flat more.
       omahaAA:
@@ -1589,6 +1662,26 @@ export class HorseLogic {
     let bluffScale =
       exploit.bluffMod * blockerMod * posMod * Math.max(0.5, 1 - 2 * risk) * (quartered ? 0.6 : 1);
     if (huOn) bluffScale *= 1.12;
+    // ═══ V18 SELF-IMAGE ═══ the table watched hero's recent line too. A
+    // horse coming off a bluff-heavy stretch gets called down - throttle the
+    // bluffs until the image cools; a rock's rare bets get instant credit -
+    // bluff a touch more. Read from the SAME stats opponents read.
+    if ((opts.v18SelfImage ?? true) !== false && useMind) {
+      try {
+        const img = HorseMind.selfImageOf(player.user_id);
+        if (img !== null) {
+          if (img >= 0.75) {
+            bluffScale *= 0.85;
+            if (tele15) noteFire('v18_self_image');
+          } else if (img <= 0.35) {
+            bluffScale *= 1.1;
+            if (tele15) noteFire('v18_self_image');
+          }
+        }
+      } catch {
+        /* image is best-effort */
+      }
+    }
     // ═══ V17 POSITIONAL PRESSURE ═══
     // Bluff volume by players still to act: closing the action bluffs a
     // touch more (nobody left to wake up), one behind is neutral, and each
@@ -2092,7 +2185,16 @@ export class HorseLogic {
         !(dangered && cat < 6) &&
         fastRandom() < 0.55 * params.aggression + params.checkRaiseFreq + oopBoost
       ) {
-        const raiseToAmt = currentBet + (pot + toCall) * (0.7 + fastRandom() * 0.4);
+        // V18 EXPLOIT SIZING: on the river, a station (valueThinMod > 1)
+        // pays a bigger raise; a nit calls only what a smaller one asks.
+        let sizeF = 0.7 + fastRandom() * 0.4;
+        if ((opts.v18ExploitSize ?? true) !== false && isRiver) {
+          sizeF *= 1 + (exploit.valueThinMod - 1) * 0.5;
+          if (tele15 && Math.abs(exploit.valueThinMod - 1) > 0.03) {
+            noteFire('v18_exploit_size');
+          }
+        }
+        const raiseToAmt = currentBet + (pot + toCall) * sizeF;
         return this.raiseTo(raiseToAmt * params.sizingMultiplier, player, gs, vi);
       }
       return { action: 'call', amount: toCall, thinkTime: 0 };
@@ -2310,7 +2412,7 @@ export class HorseLogic {
     params: StyleParams,
     snap: boolean = true
   ): HorseDecision {
-    const frac = snap ? snapFraction(fraction) : fraction;
+    const frac = snap ? snapFraction(fraction, params.familyBias ?? 0.5) : fraction;
     return this.legalize(
       { action: 'bet', amount: pot * frac * params.sizingMultiplier, thinkTime: 0 },
       player,

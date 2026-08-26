@@ -382,7 +382,10 @@ export function diagnoseAndNudge(
    *  settlement truth, never the action-log reconstruction the 2026-08-23
    *  audit disqualified. */
   realBB100: number | null = null,
-  realHands: number = 0
+  realHands: number = 0,
+  /** V18: this horse's leak-tag counts from horse_review_rollup over the
+   *  window - the 20bb review system's verdicts, driving the dials. */
+  leaks: Record<string, number> | null = null
 ): TuneResult {
   let tightness = current.tightness ?? 1;
   let aggression = current.aggression ?? 1;
@@ -472,6 +475,38 @@ export function diagnoseAndNudge(
   // on this. bb100 is still recorded on the audit row as an estimate for a
   // human to read; it simply no longer moves a dial on its own.
   void bb100;
+
+  // ── V18 (2026-08-26): LEAK TAGS DRIVE THE DIALS ─────────────────────────
+  // The 20bb review system tags every big loss with WHAT went wrong. A horse
+  // that keeps producing the same tag has a personality problem the
+  // frequency benchmarks cannot see: the tags are hand-level verdicts on
+  // exact settlement data. Small steps, same clamps, honest reasons.
+  if (leaks) {
+    const n = (k: string): number => leaks[k] ?? 0;
+    const stackoffs =
+      n('nonnut_flush_stackoff') +
+      n('second_nut_flush_stackoff') +
+      n('dominated_straight_stackoff');
+    if (stackoffs >= 6) {
+      tightness += STEP / 2;
+      aggression -= STEP / 2;
+      reasons.push(
+        `leak: ${stackoffs} dominated-hand stackoffs in 20bb pots - tighten and calm down`
+      );
+    }
+    if (n('big_bet_fold') >= 10) {
+      bluffFreq -= STEP / 2;
+      reasons.push(
+        `leak: ${n('big_bet_fold')} big bluffs surrendered - fewer, better-picked bluffs`
+      );
+    }
+    if (n('preflop_stackoff') >= 8) {
+      tightness += STEP / 2;
+      reasons.push(
+        `leak: ${n('preflop_stackoff')} preflop stackoffs of 40bb+ - stop shipping marginal`
+      );
+    }
+  }
 
   // ── V16 (2026-08-26): THE REGRESSION RULE IS BACK, ON REAL NUMBERS ──────
   // horse_daily_nets aggregates the engine's EXACT settlement nets (the same
@@ -704,6 +739,40 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
       realNets.clear();
     }
 
+    // ── V18: leak-tag counts per horse over the window ──
+    const leaksByHorse = new Map<string, Record<string, number>>();
+    try {
+      const sinceDay = new Date(Date.now() - STUDY_WINDOW_DAYS * 86400_000)
+        .toISOString()
+        .slice(0, 10);
+      for (let offset = 0; ; offset += 1000) {
+        const { data, error } = await supabase
+          .from('horse_review_rollup')
+          .select('horse_user_id, leak_counts')
+          .gte('day', sinceDay)
+          .order('horse_user_id', { ascending: true })
+          .order('day', { ascending: true })
+          .range(offset, offset + 999);
+        if (error) throw new Error(error.message);
+        if (!data || data.length === 0) break;
+        for (const row of data as Array<{
+          horse_user_id: string;
+          leak_counts: Record<string, number> | null;
+        }>) {
+          if (!row.leak_counts) continue;
+          const acc = leaksByHorse.get(row.horse_user_id) ?? {};
+          for (const [k, v] of Object.entries(row.leak_counts)) {
+            acc[k] = (acc[k] ?? 0) + (Number(v) || 0);
+          }
+          leaksByHorse.set(row.horse_user_id, acc);
+        }
+        if (data.length < 1000) break;
+      }
+    } catch (err) {
+      reportError(err, 'HorseSelfTuner.leakTags');
+      leaksByHorse.clear();
+    }
+
     // Stream the study window through the accumulator, newest first.
     const since = new Date(Date.now() - STUDY_WINDOW_DAYS * 86400_000).toISOString();
     const stats = new Map<string, PlayStats>();
@@ -743,7 +812,13 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
       const rn = realNets.get(horseId);
       const realBB100 =
         rn && rn.hands >= MIN_REAL_HANDS_FOR_BB100 ? (rn.netBB / rn.hands) * 100 : null;
-      const { mods, reasons } = diagnoseAndNudge(s, prevMods, realBB100, rn?.hands ?? 0);
+      const { mods, reasons } = diagnoseAndNudge(
+        s,
+        prevMods,
+        realBB100,
+        rn?.hands ?? 0,
+        leaksByHorse.get(horseId) ?? null
+      );
       const changed =
         mods.tightness !== (prevMods.tightness ?? 1) ||
         mods.aggression !== (prevMods.aggression ?? 1) ||

@@ -665,6 +665,10 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'v17_positional', pairs: 6000, a: {}, b: { v17Pos: false } },
   { name: 'v17_river_probe', pairs: 6000, a: {}, b: { v17RiverProbe: false } },
   { name: 'shortdeck_v17', variant: 'short_deck', pairs: 6000, a: {}, b: { v17ShortDeck: false } },
+  // ── V18 (2026-08-26) ──
+  { name: 'v18_squeeze_response', pairs: 6000, a: {}, b: { v18Squeeze: false } },
+  { name: 'v18_self_image', pairs: 6000, a: {}, b: { v18SelfImage: false } },
+  { name: 'v18_exploit_size', pairs: 6000, a: {}, b: { v18ExploitSize: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
   { name: 'mind_layer', a: {}, b: { mind: false } },
@@ -693,6 +697,11 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v17RiverProbe: false,
       v17CatchBlock: false,
       v17ShortDeck: false,
+      v18Straddle: false,
+      v18Squeeze: false,
+      v18SelfImage: false,
+      v18ExploitSize: false,
+      v18Families: false,
       mind: false,
       streetIQ: false,
       handReading: false,

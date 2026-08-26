@@ -93,6 +93,14 @@ export interface PreflopCtx {
    *  folds 70% to 3-bets gets 3-bet-bluffed relentlessly; one who never
    *  folds gets bluffed at all only with real equity. */
   raiserFoldTo3Bet?: number | null;
+  /** V18 STRADDLE: the pot is straddled (2xBB posted blind, no
+   *  ActionRecord). The unopened test and open sizing key off the straddle
+   *  instead of the big blind. */
+  straddled?: boolean;
+  /** V18 SQUEEZE: hero opened, a caller came along, then the 3-bet - a
+   *  squeeze. Squeeze ranges are polarized toward air, so the opener
+   *  4-bets and calls wider. */
+  squeezed?: boolean;
   /** V16 PLO POLARITY: hero holds a pair of aces (undefined = layer off).
    *  AAxx 3-bets below the generic percentile bar; a speculative rundown
    *  WITHOUT it flats at the margin instead of bloating the pot OOP. */
@@ -240,7 +248,13 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   const depthLoosen = stackBB > 150 ? 0.02 : 0;
   const depthTighten = stackBB < 50 ? 0.03 : 0;
 
-  const unopened = raises === 0 && currentBet <= bb * 1.05;
+  // V18 STRADDLE: a straddled pot's current bet is the straddle (2xBB) with
+  // zero raises - that is blind money, not an open. The whole unopened
+  // branch (opens, limps, isolation) must own it, and open sizing keys off
+  // the straddle so a raise "to 3x" means 3x the straddle.
+  const straddled = ctx.straddled === true && raises === 0 && currentBet <= bb * 2.2;
+  const openUnit = straddled ? Math.max(currentBet, bb) : bb;
+  const unopened = (raises === 0 && currentBet <= bb * 1.05) || straddled;
 
   // ── Short stacks: push/fold (<=12bb) and reshove stacks (13-20bb) ──
   if (stackBB <= 12 && !ctx.isOmaha) {
@@ -310,7 +324,8 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
         return { a: 'call' };
       }
       const sizeBB = (2.2 + rand() * 0.8 + limpers * 1.0) * ctx.sizingMultiplier;
-      return { a: 'raiseTo', to: sizeBB * bb };
+      // V18: in a straddled pot the open is sized off the straddle.
+      return { a: 'raiseTo', to: sizeBB * openUnit };
     }
     // BvB limp mix from the SB with playable-but-not-open hands.
     if (bvb && toCall > 0 && toCall <= bb && strength >= 0.22 && rand() < 0.75) {
@@ -429,8 +444,12 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     const ip = position === 'late';
     // V12 ANTI-EXPLOIT: a hunter's 3-bets get 4-bet and called wider.
     const hunted3 = Math.max(0, Math.min(1, ctx.targeted ?? 0));
-    const fourBetThresh = t(0.93 - (ctx.aggression - 1) * 0.04) - 0.04 * hunted3;
-    const callThresh = t(ip ? 0.74 : 0.78) - 0.03 * hunted3;
+    // V18: a squeeze is bluff-heavier than a cold 3-bet - the squeezer is
+    // attacking the CALLER'S capped range, not the opener's. The opener
+    // defends wider on both branches.
+    const sq = ctx.squeezed === true ? 1 : 0;
+    const fourBetThresh = t(0.93 - (ctx.aggression - 1) * 0.04) - 0.04 * hunted3 - 0.03 * sq;
+    const callThresh = t(ip ? 0.74 : 0.78) - 0.03 * hunted3 - 0.02 * sq;
 
     if (strength >= fourBetThresh) {
       if (raises >= 3 || currentBet * 2.3 >= stack * 0.4) return { a: 'jam' };

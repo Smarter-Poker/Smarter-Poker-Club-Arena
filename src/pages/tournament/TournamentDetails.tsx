@@ -367,6 +367,7 @@ export default function TournamentDetails({
               registered_at?: string | null;
               rebuys?: number | null;
               add_on?: boolean | null;
+              is_satellite_qualifier?: boolean | null;
             };
             setEntries((prev) => {
               /**
@@ -407,6 +408,7 @@ export default function TournamentDetails({
                   created_at: newPlayer.registered_at ?? null,
                   rebuys: Number(newPlayer.rebuys) || 0,
                   add_ons: newPlayer.add_on ? 1 : 0,
+                  is_satellite_qualifier: Boolean(newPlayer.is_satellite_qualifier),
                 },
               ];
             });
@@ -424,6 +426,7 @@ export default function TournamentDetails({
               table_id?: string | null;
               rebuys?: number | null;
               add_on?: boolean | null;
+              is_satellite_qualifier?: boolean | null;
             };
             setEntries((prev) =>
               prev.map((e) =>
@@ -439,6 +442,11 @@ export default function TournamentDetails({
                         updatedPlayer.rebuys !== undefined && updatedPlayer.rebuys !== null
                           ? Number(updatedPlayer.rebuys) || 0
                           : e.rebuys,
+                      is_satellite_qualifier:
+                        updatedPlayer.is_satellite_qualifier !== undefined &&
+                        updatedPlayer.is_satellite_qualifier !== null
+                          ? Boolean(updatedPlayer.is_satellite_qualifier)
+                          : e.is_satellite_qualifier,
                       add_ons:
                         updatedPlayer.add_on !== undefined && updatedPlayer.add_on !== null
                           ? updatedPlayer.add_on

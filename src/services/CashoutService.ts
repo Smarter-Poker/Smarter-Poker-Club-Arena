@@ -619,12 +619,23 @@ class CashoutServiceClass {
    * Enforced server-side by fn_admin_remove_player_chips, which derives the
    * actor from auth.uid(), refuses agents, row-locks the member, returns the
    * chips to the club pool and writes a chip_transactions audit row.
+   *
+   * `opId` closes the lost-response window. This was the ONE staff money path
+   * with no idempotency key: a retry after a dropped reply pulled the chips a
+   * second time. Migration 20260826 added p_op_id, a replay branch and a
+   * partial unique index over (club_id, op_id) for admin_removal rows. Proved
+   * against production inside a rolled-back transaction: two calls with one
+   * key moved 300 chips once and wrote one ledger row.
+   *
+   * Pass a key HELD ACROSS A FAILURE. Minting one per call - which is what
+   * every leg here used to do - makes the parameter decorative.
    */
   async adminRemovePlayerChips(
     clubId: string,
     playerId: string,
     amount: number,
-    reason?: string
+    reason?: string,
+    opId?: string
   ): Promise<{ removed: number; balanceAfter: number }> {
     const resolvedClubId = await resolveClubUUID(clubId);
     const { data, error } = await supabase.rpc('fn_admin_remove_player_chips', {
@@ -632,6 +643,7 @@ class CashoutServiceClass {
       p_player_id: playerId,
       p_amount: amount,
       p_reason: reason || null,
+      p_op_id: opId || newOpId(),
     });
     if (error) {
       reportError(error, 'CashoutService.adminRemovePlayerChips');

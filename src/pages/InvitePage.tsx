@@ -97,6 +97,10 @@ export default function InvitePage() {
         setClub({
           id: clubData.id,
           club_id: clubData.club_id,
+          // slug was queried and then dropped here, so club.slug was always
+          // undefined and every share link this page built pointed at the raw
+          // UUID instead of the readable /invite/<slug>.
+          slug: clubData.slug,
           name: clubData.name,
           description: clubData.description,
           member_count: clubData.member_count || 0,
@@ -104,6 +108,11 @@ export default function InvitePage() {
           logo_url: clubData.logo_url,
           is_public: clubData.is_public,
         });
+
+        // Park the code from the URL BEFORE the membership check below, which
+        // may need to redeem it. The effect further down also stores it, but it
+        // runs after this function has already finished.
+        if (refCode) ClubsService.rememberInviteCode(clubData.id, refCode);
 
         if (user?.id) {
           const { data: membership } = await supabase
@@ -117,6 +126,30 @@ export default function InvitePage() {
           // A 'pending' row is a queued approval request, NOT full membership —
           // show the "awaiting approval" state instead of "you're a member".
           if (membership?.status === 'pending') {
+            // ...unless they arrived on an invite link, which is what admits
+            // them. This page used to be a dead end for exactly the people it
+            // exists for: a player who joined an approval-gated club (all of
+            // them are) and whose redemption had not run — because it could
+            // not, or because they closed the tab mid-flight — came back to
+            // "Pending Approval" and a Browse Clubs button, with no way to
+            // spend the code that was sitting in their own localStorage.
+            const redeemed = await ClubsService.redeemStoredInviteCode(
+              membership as never,
+              clubData.id,
+              clubId || clubData.id,
+              user.id
+            );
+            if (getIsMounted && !getIsMounted()) return;
+
+            if (redeemed?.status && redeemed.status !== 'pending') {
+              setPendingApproval(false);
+              setAlreadyMember(true);
+              setLoading(false);
+              toast.success(`Welcome to ${clubData.name}!`);
+              navigate(`/clubs/${clubData.slug || clubData.id}`);
+              return;
+            }
+
             setPendingApproval(true);
             setAlreadyMember(false);
           } else {
@@ -133,7 +166,7 @@ export default function InvitePage() {
       }
       if (!getIsMounted || getIsMounted()) setLoading(false);
     },
-    [clubId, inviteCode, user?.id, toast]
+    [clubId, inviteCode, refCode, user?.id, toast, navigate]
   );
 
   useVisibilityRefresh(() => loadClubInfo());
@@ -159,10 +192,11 @@ export default function InvitePage() {
     };
   }, [loadClubInfo]);
 
-  // Store referral code if present
+  // Store referral code if present. loadClubInfo already parks it before it
+  // needs it; this is the safety net for a code that arrives afterwards.
   useEffect(() => {
     if (club?.id && refCode) {
-      window.localStorage.setItem(`referral_${club.id}`, refCode);
+      ClubsService.rememberInviteCode(club.id, refCode);
     }
   }, [club?.id, refCode]);
 
@@ -200,7 +234,14 @@ export default function InvitePage() {
   };
 
   const handleJoin = async () => {
-    if (!club || !user?.id) return;
+    if (!club) return;
+    if (!user?.id) {
+      // AuthGuard should have sent them to login long before this, but a button
+      // that silently does nothing is the worst possible answer if it ever does
+      // happen — say so rather than looking broken.
+      toast.error('Please Sign In To Join This Club.');
+      return;
+    }
 
     setJoining(true);
     setError(null);
@@ -210,6 +251,12 @@ export default function InvitePage() {
       // 'pending' request, a public club yields an active membership. It also
       // emits CLUB_JOINED. We must NOT fake "Welcome!"/navigate-in/count-bump
       // for a pending request — the user is not a member until approved.
+      //
+      // ClubsService.join then redeems any invite code parked for this club and
+      // returns the membership AS IT STANDS AFTERWARDS, so a player who arrived
+      // on someone's link reaches the branch below already 'active'. Reading
+      // the pre-redemption row here is precisely the bug that made invite links
+      // dead ends.
       const membership = await ClubsService.join(club.id, 'member', club.name);
 
       if (membership?.status === 'pending') {

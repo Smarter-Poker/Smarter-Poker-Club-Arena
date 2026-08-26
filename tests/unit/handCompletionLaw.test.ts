@@ -82,6 +82,47 @@ describe('every beat is inside the hold', () => {
   it('the board clear is its own beat, longer after a showdown', () => {
     expect(boardClearMs(true)).toBeGreaterThan(boardClearMs(false));
   });
+
+  it('a run-it-twice hand holds for the whole client reveal timeline (2026-08-26)', () => {
+    // The engine settles RIT synchronously; the CLIENT deals the boards
+    // street by street afterwards. The hold must cover that timeline or the
+    // next hand deals over a board still turning its river.
+    const single = handCompletionHoldMs({ wentToShowdown: true, showdownHands: 2 });
+    const rit2 = handCompletionHoldMs({
+      wentToShowdown: true,
+      showdownHands: 2,
+      ritRuns: 2,
+      ritStreetsPerRun: 3,
+    });
+    const rit3 = handCompletionHoldMs({
+      wentToShowdown: true,
+      showdownHands: 2,
+      ritRuns: 3,
+      ritStreetsPerRun: 3,
+    });
+    // Exactly the client timeline in TablePage's rit_result handler: the
+    // street-by-street reveal, then one RESULT window per run (ribbon →
+    // ship → settle — the 3X recording shows the winner phase replays run
+    // by run), then the pot-push/muck beats every hand carries.
+    const H = HAND_COMPLETION;
+    const push = H.BETS_SWEEP_MS + H.POT_PUSH_MS + H.MUCK_MS;
+    const reveal2 = H.RIT_REVEAL_LEAD_MS + 2 * 3 * H.RIT_STREET_MS + 1 * H.RIT_RUN_GAP_MS;
+    expect(rit2).toBe(reveal2 + 2 * H.RIT_RESULT_RUN_MS + push);
+    expect(rit3).toBeGreaterThan(rit2);
+    // A river-only re-deal (turn all-in) holds far less than a full re-deal.
+    const rit2river = handCompletionHoldMs({
+      wentToShowdown: true,
+      showdownHands: 2,
+      ritRuns: 2,
+      ritStreetsPerRun: 1,
+    });
+    expect(rit2river).toBeLessThan(rit2);
+    expect(rit2river).toBeGreaterThan(single);
+    // ritRuns 0/undefined leaves the single-run hold untouched.
+    expect(handCompletionHoldMs({ wentToShowdown: true, showdownHands: 2, ritRuns: 0 })).toBe(
+      single
+    );
+  });
 });
 
 describe('the engine uses the spec instead of hand-written numbers', () => {

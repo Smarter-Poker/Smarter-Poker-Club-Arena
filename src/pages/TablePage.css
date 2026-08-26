@@ -3431,3 +3431,60 @@ body.ca-raising .bankroll-widget {
 .table-page[data-hero='false'] .table-container {
   --sp-hero-clear: 6px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RIT STATUS STRIP (2026-08-26, parity pass)
+   A wide dark strip across the felt while a Run It Multiple Times question
+   is open, and for the accepted/rejected outcome. Not a toast: it rides the
+   table like the ALL IN banner, visible to players AND spectators.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.rit-felt-banner {
+  position: absolute;
+  top: 58%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(92%, 420px);
+  z-index: 58;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(18, 22, 44, 0.92), rgba(12, 15, 32, 0.92));
+  border: 1px solid rgba(120, 150, 255, 0.22);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  animation: ritFeltBannerIn calc(0.3s * var(--animation-speed, 1)) ease-out;
+}
+
+.rit-felt-banner__text {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #dbe3f0;
+  text-align: center;
+  line-height: 1.4;
+}
+
+@keyframes ritFeltBannerIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* Runs 2+ re-deal only the streets past the shared base board. The RUN IT 3X
+   recording shows only the RE-DEALT cards for those runs (the shared prefix
+   is never drawn twice) — hide the prefix slots but keep their layout width,
+   so each extra run's cards sit exactly under their street positions like
+   the reference's parked river cards. base-count can only be 0 (preflop),
+   3 (flop) or 4 (turn). */
+.community-area__run--extra[data-base-count='3'] .community-cards__card:nth-child(-n + 3),
+.community-area__run--extra[data-base-count='4'] .community-cards__card:nth-child(-n + 4) {
+  visibility: hidden;
+}

@@ -55,6 +55,37 @@ export default function PromotionsPage() {
   const loadPromotionsRef = useRef(async () => {});
   const isMounted = useIsMounted();
 
+  // The player's own referral code. This modal used to invent one
+  // (`user.id.slice(0, 8).toUpperCase()`) and hand it out beside a link to
+  // `https://clubarena.poker/join`, which is neither the production domain nor
+  // a route that exists. Nobody who followed it could arrive anywhere, and the
+  // code it displayed matched no player, so redemption refused it as an unknown
+  // inviter. Both halves now come from the same place the rest of the app
+  // shares from: the real player_number, on the real invite route.
+  const [playerNumber, setPlayerNumber] = useState<string | null>(null);
+  useEffect(() => {
+    if (!user?.id) return;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('player_number')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (!isMounted.current) return;
+        setPlayerNumber(data?.player_number ?? null);
+      } catch (e) {
+        reportError(e, 'PromotionsPage.referral_code_lookup');
+      }
+    })();
+  }, [user?.id, isMounted]);
+
+  const referralCode = playerNumber || user?.id || '';
+  const referralLink =
+    clubId && referralCode
+      ? `${window.location.origin}/hub/club-arena/invite/${clubId}?ref=${referralCode}`
+      : '';
+
   // Load the user's existing claims so cards show Claimed vs claimable.
   useEffect(() => {
     if (!user?.id) return;
@@ -454,7 +485,8 @@ export default function PromotionsPage() {
                   return {
                     day: res.day,
                     reward: res.reward,
-                    rewardType: res.rewardType === 'vip_points' ? ('vip' as const) : ('chips' as const),
+                    rewardType:
+                      res.rewardType === 'vip_points' ? ('vip' as const) : ('chips' as const),
                   };
                 } catch (err) {
                   toast.error(err instanceof Error ? err.message : 'Could not claim daily bonus');
@@ -471,8 +503,8 @@ export default function PromotionsPage() {
       <ReferralModal
         isOpen={showReferral}
         onClose={() => setShowReferral(false)}
-        referralCode={user?.id?.slice(0, 8).toUpperCase() || 'POKER123'}
-        referralLink={`https://clubarena.poker/join?ref=${user?.id || 'guest'}`}
+        referralCode={referralCode}
+        referralLink={referralLink}
         totalReferrals={0}
       />
 

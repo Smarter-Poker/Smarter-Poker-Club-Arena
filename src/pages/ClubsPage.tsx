@@ -296,9 +296,13 @@ export default function ClubsPage() {
       }
 
       if (joinReferralCode.trim()) {
-        localStorage.setItem(`referral_${club.id}`, joinReferralCode.trim());
+        ClubsService.rememberInviteCode(club.id, joinReferralCode.trim());
       }
 
+      // join() redeems that code and hands back the membership AS IT STANDS
+      // AFTERWARDS, so the 'pending' branch below now only fires for someone
+      // who really is waiting on an owner — not for an invited player the
+      // redemption has already admitted.
       const membership = await ClubsService.join(club.id);
 
       // Refresh both clubs AND unions (joined club might belong to a union)

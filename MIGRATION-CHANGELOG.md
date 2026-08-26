@@ -15177,3 +15177,45 @@ contract in `docs/rit-pokerbros-parity.md`.
 consent broadcasts, per-run unmerged awards, 3-run board axis) + extended
 `tests/hand-history-shape.test.ts` (board-3 lift). `hand-history-shape`
 updated for the new `extraBoards` field in the same commit that adds it.
+
+### Round 2 (same session) — measured timings, felt banners, pot counter, hold fix
+
+Re-cut the recordings at 10fps and timestamped every card land and chip ship
+via inter-frame difference spikes. Then closed the gaps the measurements and a
+line-by-line re-read exposed:
+
+- **CRITICAL: the post-hand hold was shorter than the RIT reveal timeline**
+  (max ~7.9s vs ~12s for a 2-run preflop hand) — the next hand would deal
+  over a board still turning its river. `handCompletionSpec` (both mirrors,
+  byte-identical, test-pinned) gained RIT_REVEAL_LEAD_MS / RIT_STREET_MS /
+  RIT_RUN_GAP_MS / RIT_RIBBON_MS and `handCompletionHoldMs` a
+  `ritRuns`/`ritStreetsPerRun` branch; Dealing passes both from the new
+  `currentHandRitBaseBoardCount`. The client timeline now reads the SAME
+  constants — change them once, both sides move.
+- RIT status is a **felt strip, not a toast** (reference behavior): waiting
+  persists for everyone incl. spectators, outcome banners (decliner named)
+  replace it; the consent panel slides in a beat (~1.5s) after the strip.
+- **POT counter decrements per shipped pot** in any sequenced award — splits,
+  side pots, every RIT board (potShipRemaining override on PotDisplay).
+- Runs 2+ **dim the shared base cards** so re-dealt streets read as new.
+- Cadence retuned to measurements: POT_AWARD_STAGGER_MS 600 → 900, RIT run
+  gap 1500 → 1800.
+- New hold-math pins in tests/unit/handCompletionLaw.test.ts.
+
+### Round 3 — the RUN IT 3X recording (turn all-in, spectator view)
+
+Dan supplied a fourth reference recording (Crazy Pineapple HU turn all-in run
+three times, captured from a folded player's seat). Three behaviors adopted:
+
+- Per-player accept banners on the felt ("<name> Has Accepted Running
+  Multi-Times.", revert to the waiting strip while the offer hangs) — the
+  whole story for spectators, who have no panel. Collective banner suppressed
+  when a named one just fired.
+- Compact partial-re-deal layout: extra-run rows hide the shared-prefix
+  slots (width kept) so re-dealt cards sit under their street positions,
+  like the reference's parked rivers. Preflop keeps full rows.
+- INTERLEAVED winner phase: ribbon + highlights + ship per run, run by run
+  (RIT_RESULT_RUN_MS 2600ms windows; ships aligned to each run's ribbon via
+  ritRunRibbonAtRef). Engine hold formula now
+  reveal + runs x RIT_RESULT_RUN_MS + push — spec mirrors updated
+  byte-identical, handCompletionLaw pins updated in the same commit.

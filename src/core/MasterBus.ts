@@ -746,7 +746,18 @@ export interface BusPayloadMap {
     equityPercent: number;
   };
   // Phase 6: Card Back Store payloads
-  SETTINGS_CHANGED: { setting: string; value: string | number | boolean };
+  SETTINGS_CHANGED: {
+    setting: string;
+    value: string | number | boolean;
+    /**
+     * Which hook instance emitted this, so a receiver can ignore its OWN echo
+     * without a stateful latch. See useTableSettings: the previous
+     * `localOriginRef` boolean got permanently stuck whenever the bus
+     * suppressed a duplicate emit, and silently swallowed the next real
+     * cross-component update.
+     */
+    origin?: string;
+  };
   DIAMOND_SPENT: { amount: number; item: string; category: string };
   // Gamification engagement events (Session Build)
   SETTLEMENT_RECEIPT_COPIED: { receiptId: string };

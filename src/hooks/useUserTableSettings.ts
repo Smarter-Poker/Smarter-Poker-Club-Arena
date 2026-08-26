@@ -236,7 +236,11 @@ export function useUserTableSettings(userId: string | null | undefined) {
     return { ...DEFAULT_USER_TABLE_SETTINGS };
   });
   const [loading, setLoading] = useState(true);
-  const localOriginRef = useRef(false);
+  /* An identity, not a latch — see the long note in useTableSettings. A
+     boolean set-before-emit gets permanently stuck the moment MasterBus
+     suppresses a duplicate emit, and then swallows the next genuine
+     cross-component change. 2026-08-26. */
+  const originIdRef = useRef<string>(`uts-${Math.random().toString(36).slice(2)}`);
   // Keep a ref to the latest settings to avoid stale closure in toggleSetting
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -323,10 +327,7 @@ export function useUserTableSettings(userId: string | null | undefined) {
   // ── Listen for cross-component SETTINGS_CHANGED events ──
   useEffect(() => {
     const unsub = masterBus.subscribe('SETTINGS_CHANGED', (event) => {
-      if (localOriginRef.current) {
-        localOriginRef.current = false;
-        return;
-      }
+      if (event.payload?.origin === originIdRef.current) return;
       const { setting, value } = event.payload;
       if (setting && setting in DEFAULT_USER_TABLE_SETTINGS) {
         setSettings((prev) => {
@@ -363,8 +364,11 @@ export function useUserTableSettings(userId: string | null | undefined) {
       });
 
       // Broadcast for cross-component sync
-      localOriginRef.current = true;
-      masterBus.emit('SETTINGS_CHANGED', { setting: key, value: newValue });
+      masterBus.emit('SETTINGS_CHANGED', {
+        setting: key,
+        value: newValue,
+        origin: originIdRef.current,
+      });
 
       // Desktop alerts (2026-08-21): the toggle tap IS the user gesture -
       // this is the one place the app may ask for Notification permission.
@@ -457,8 +461,11 @@ export function useUserTableSettings(userId: string | null | undefined) {
       });
 
       // Broadcast for cross-component sync
-      localOriginRef.current = true;
-      masterBus.emit('SETTINGS_CHANGED', { setting: 'table_alias', value: alias });
+      masterBus.emit('SETTINGS_CHANGED', {
+        setting: 'table_alias',
+        value: alias,
+        origin: originIdRef.current,
+      });
 
       // Persist to Supabase
       try {

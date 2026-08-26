@@ -7480,7 +7480,12 @@ export default function TablePage({
       _LAST_BBJ_TOAST_TIME = now;
       toast?.success?.(
         `🚨 BBJ HIT on ${payload.tableName} (${payload.gameVariant.toUpperCase()} / ${payload.bigBlind})! ${payload.winnerName} won $${payload.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}!`,
-        10000
+        10000,
+        () =>
+          masterBus.emit('OPEN_OBSERVE_TABLE', {
+            tableId: payload.tableId,
+            tableName: payload.tableName,
+          })
       );
     }
   });

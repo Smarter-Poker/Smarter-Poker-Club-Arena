@@ -75,33 +75,13 @@
   border-color: #1877f2;
 }
 
-/* Hamburger Icon — sized to fit inside 40×40 trigger */
-.table-menu__hamburger {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 18px;
-}
-
-.table-menu__hamburger span {
+/* Custom hamburger icon image — fills the trigger button */
+.table-menu__trigger-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: inherit;
   display: block;
-  height: 2px;
-  background: #ffffff;
-  border-radius: 1.5px;
-  transition: all 0.2s ease;
-  box-shadow: 0 0 3px rgba(255, 255, 255, 0.25);
-}
-
-.table-menu__trigger--active .table-menu__hamburger span:nth-child(1) {
-  transform: translateY(6px) rotate(45deg);
-}
-
-.table-menu__trigger--active .table-menu__hamburger span:nth-child(2) {
-  opacity: 0;
-}
-
-.table-menu__trigger--active .table-menu__hamburger span:nth-child(3) {
-  transform: translateY(-6px) rotate(-45deg);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

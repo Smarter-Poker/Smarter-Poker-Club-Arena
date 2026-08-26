@@ -11786,6 +11786,12 @@
       "horse_user_id",
       "net_bb",
       "updated_at"
+    ],
+    "horse_brain_telemetry": [
+      "day",
+      "feature",
+      "fires",
+      "updated_at"
     ]
   }
 }

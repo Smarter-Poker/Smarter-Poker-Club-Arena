@@ -26,7 +26,9 @@ export interface UseTableSoundReturn {
 
   /** Whether the player has enabled auto-rebuy between hands. */
   isAutoRebuyEnabled: boolean;
-  setIsAutoRebuyEnabled: (v: boolean) => void;
+  // Accepts an updater so bus callbacks (which are registered once and would
+  // otherwise close over a stale value) can toggle correctly.
+  setIsAutoRebuyEnabled: React.Dispatch<React.SetStateAction<boolean>>;
 
   /**
    * Play the "your turn" audio alert.
@@ -108,9 +110,7 @@ export function useTableSound(): UseTableSoundReturn {
     setIsVibrationEnabledRaw(v);
   };
 
-  const setIsAutoRebuyEnabled = (v: boolean) => {
-    setIsAutoRebuyEnabledRaw(v);
-  };
+  const setIsAutoRebuyEnabled = setIsAutoRebuyEnabledRaw;
 
   // NEW-BUG-1 FIX: use dynamic isEnabled() not stale closure
   const playTurnAlert = () => {

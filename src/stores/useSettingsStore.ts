@@ -32,6 +32,10 @@ export const useSettingsStore = create<SettingsState>()(
       },
     }),
     {
+      // NOTE (2026-08-26): this key is exclusively zustand's. STORAGE_KEYS.SETTINGS
+      // in src/lib/storage.ts used to be the same string, and this middleware
+      // clobbered every save SettingsPage made. If you add another persisted
+      // store, give it its own name and check src/lib/storage.ts first.
       name: 'club-arena-settings',
     }
   )

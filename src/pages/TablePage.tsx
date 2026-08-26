@@ -103,6 +103,8 @@ import { normalizeCardBack } from '../components/table/CardImage';
  */
 
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
+import addScreenIcon from '../assets/icons/icon-addscreen.png';
+import timebankIconPage from '../assets/icons/icon-timebank.jpg';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { parseBlindStructure } from '../utils/parseBlindStructure';
@@ -252,7 +254,6 @@ import GameServerAPI, {
 import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
 //monteCarloEquity import removed — server-authoritative
 import './TablePage.css';
-import { ConnectionHUD } from '../components/table/ConnectionHUD';
 import { TableErrorBoundary } from '../components/common/TableErrorBoundary';
 // Phase 8-9 Premium Components
 import { TableReactions } from '../components/table/TableReactions';
@@ -5302,13 +5303,28 @@ export default function TablePage({
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       // Only warn if the player is actually seated
       if (tableState.heroSeat > 0 && tableId && userId && userId !== 'guest') {
-        // Fire seat cleanup (best-effort, may not complete before tab closes)
-        // sendBeacon with Blob to include Content-Type and apikey headers
-        const beaconUrl = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/rpc/player_leave_table?apikey=${import.meta.env.VITE_SUPABASE_ANON_KEY}`;
-        const blob = new Blob([JSON.stringify({ p_table_id: tableId, p_user_id: userId })], {
-          type: 'application/json',
-        });
-        navigator.sendBeacon?.(beaconUrl, blob);
+        // NO SEAT-CLEANUP BEACON HERE. Removed 2026-08-26.
+        //
+        // This used to sendBeacon() to rpc/player_leave_table. It never once
+        // worked: wallet_transactions has ZERO rows matching 'Tab-close%' for
+        // the whole life of the function. Two independent reasons, either
+        // sufficient:
+        //
+        //   1. It authenticated with VITE_SUPABASE_ANON_KEY, not the player's
+        //      session JWT, so PostgREST ran it as `anon`. player_leave_table
+        //      is not SECURITY DEFINER, so RLS on table_seats matched no row
+        //      and it returned having done nothing.
+        //   2. Since 20260826150000 (revoke_authenticated_execute_on_five_
+        //      economy_functions) the function's EXECUTE grant is postgres +
+        //      service_role only, so the call is now rejected outright.
+        //
+        // Do not "fix" it by re-pointing it at the session token or by making
+        // the function SECURITY DEFINER. A fire-and-forget beacon that moves
+        // money has no way to report failure, cannot be retried, and races the
+        // engine's own cash-out. The seat is already reclaimed correctly by the
+        // engine's startup sweep, which settles into club_members.chip_balance.
+        //
+        // The warning below stays: it is the part that actually helps.
         event.preventDefault();
         event.returnValue = '';
       }
@@ -6306,7 +6322,11 @@ export default function TablePage({
       // recreated every render.)
       setStandUpNextBB((prev) => !prev);
     } else if (event.action === 'AUTO_TOP_UP') {
-      setIsAutoRebuyEnabled(!isAutoRebuyEnabled);
+      // Same stale closure as STAND_UP_BB above, on the same callback, left
+      // unfixed when that one was corrected. Toggling Auto Top Up from the
+      // multi-table tab bar flipped against the value captured at
+      // registration and stopped responding after the first press.
+      setIsAutoRebuyEnabled((prev) => !prev);
     } else if (event.action === 'TOGGLE_SOUNDS') {
       // Toggle sound
       const muted = localStorage.getItem('table_sound_muted') === 'true';
@@ -12667,6 +12687,9 @@ export default function TablePage({
   const isHeroOnTheClock =
     tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress;
 
+  // Guards the auto top-up against re-entry while a debit is still in flight.
+  const autoTopUpInFlightRef = useRef(false);
+
   // --- NEW: Fully Functional Auto Top Up & Stand Up Next Big Blind ---
   useEffect(() => {
     // Only run when a hand is NOT in progress (i.e. between hands) and we are seated.
@@ -12716,23 +12739,52 @@ export default function TablePage({
       }
 
       // 2. Auto Top Up (Cash Games Only)
-      if (isAutoRebuyEnabled && !tableState.isTournament) {
-        const bbMatch =
-          typeof tableState.blinds === 'string' ? tableState.blinds.match(/\d+\/(\d+)/) : null;
-        const bb = bbMatch ? parseInt(bbMatch[1]) : 2;
-        const maxBuyIn = bb * 100;
+      //
+      // MONEY PATH 2026-08-26. Three defects fixed here; the first one made
+      // the feature dead on more than half the tables on the platform.
+      //
+      //   a) The big blind came from a hand-rolled `/\d+\/(\d+)/` against the
+      //      DISPLAY string. On decimal stakes that regex does not do what it
+      //      looks like it does: "0.25/0.50" matches the substring "25/0" and
+      //      captures "0", so bb parsed as 0, maxBuyIn as 0, and the
+      //      `currentStack < maxBuyIn` test below was false forever. Every
+      //      decimal-stakes table silently never topped up. `safeBB` is the
+      //      helper the other eleven call sites on this page already use, it
+      //      splits on "/" and parseFloats, and it has a sane fallback.
+      //
+      //   b) There was no in-flight guard. The effect's dependency list
+      //      includes `tableState.players`, which is a NEW array on every
+      //      snapshot, so between hands it can re-enter while the previous
+      //      addChips is still awaiting the engine — queueing a second debit
+      //      for a stack shortfall the first one already covered.
+      //
+      //   c) The failure path was `.catch(console.error)`. This is a wallet
+      //      debit; it reports like one now.
+      //
+      // The amount itself was never the client's to decide and still is not:
+      // handleAddChips -> GameServerAPI.addChips -> atomic_table_addon is the
+      // authoritative, atomic debit, and it rejects anything over the table's
+      // real cap without charging the wallet.
+      if (isAutoRebuyEnabled && !tableState.isTournament && !autoTopUpInFlightRef.current) {
+        const maxBuyIn = safeBB(tableState.blinds) * 100;
         const currentStack = Number(heroSeatData.stack || 0);
 
-        if (currentStack < maxBuyIn && accountBalance > 0) {
+        if (maxBuyIn > 0 && currentStack < maxBuyIn && accountBalance > 0) {
           const topUpAmount = Math.min(maxBuyIn - currentStack, accountBalance);
           if (topUpAmount > 0) {
+            autoTopUpInFlightRef.current = true;
             handleAddChips(topUpAmount)
               .then((res) => {
                 if (res && typeof window !== 'undefined') {
-                  toast?.success?.(`Auto Top Up: Added ${topUpAmount.toLocaleString()} chips`);
+                  toast?.success?.(`Auto Top Up: Added ${topUpAmount.toLocaleString()} Chips`);
                 }
               })
-              .catch(console.error);
+              .catch((err) => {
+                reportError(err, 'TablePage.auto_top_up_failed');
+              })
+              .finally(() => {
+                autoTopUpInFlightRef.current = false;
+              });
           }
         }
       }
@@ -13205,15 +13257,12 @@ export default function TablePage({
                 title="Open the lobby in a new tab"
                 aria-label="Open the lobby in a new tab"
               >
-                <svg width="20" height="20" viewBox="0 0 18 18" fill="none">
-                  <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.5" />
-                  <path
-                    d="M9 6v6M6 9h6"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
+                <img
+                  src={addScreenIcon}
+                  className="add-chips-icon-btn__img"
+                  alt=""
+                  draggable={false}
+                />
               </button>
             </div>
           )
@@ -13298,10 +13347,6 @@ export default function TablePage({
                 setShowShareHand(true);
               }}
             />
-            {/* Visual representation of Needs Post Blind button */}
-            <button className="floating-post-blind" style={{ display: 'none' }}>
-              Post Blind
-            </button>
           </div>
         }
         centerTop={null /* Game info moved to on-felt strip below community cards */}
@@ -13680,12 +13725,6 @@ export default function TablePage({
 
                 {/* FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay */}
 
-                {/* Connection Quality HUD */}
-                {tableId && userId !== 'guest' && (
-                  <TableErrorBoundary componentName="ConnectionHUD">
-                    <ConnectionHUD tableId={tableId} userId={userId} />
-                  </TableErrorBoundary>
-                )}
               </div>
             </div>
           </div>
@@ -14525,13 +14564,20 @@ export default function TablePage({
                 <div className="control-strip control-strip--transparent">
                   {/* Time Bank */}
                   <button
-                    className="control-strip__btn"
+                    className="control-strip__btn control-strip__btn--icon-img"
                     title="Time Bank"
                     onClick={handleActivateTimeBank}
                     disabled={timeBanksRemaining <= 0 || timeBankActive}
                   >
-                    <span className="control-strip__icon">◷</span>
-                    <span className="control-strip__count">{timeBanksRemaining}</span>
+                    <span className="control-strip__icon-wrap" aria-hidden="true">
+                      <img
+                        src={timebankIconPage}
+                        className="control-strip__timebank-img"
+                        alt=""
+                        draggable={false}
+                      />
+                      <span className="control-strip__count-overlay">{timeBanksRemaining}</span>
+                    </span>
                   </button>
 
                   {/* Timer Display. PERF 2026-08-25: a leaf that subscribes to
@@ -15051,10 +15097,7 @@ export default function TablePage({
       {/* Observing / Join indicators REMOVED — empty seats already show "+ SIT" */}
 
       {/* Floating Chat/Mail Toggle Button (Bottom-Right) & I'm Back */}
-      <div
-        className="floating-action-br"
-        style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}
-      >
+      <div className="floating-action-br">
         {tableState.players[tableState.heroSeat - 1]?.status === 'sitting_out' && (
           <button
             className="floating-im-back"

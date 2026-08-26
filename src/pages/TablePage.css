@@ -388,10 +388,6 @@
   color: #ffffff;
 }
 
-.jackpot-diamond {
-  font-size: 0.875rem;
-}
-
 .header-actions {
   display: flex;
   gap: 8px;
@@ -970,11 +966,6 @@
   text-overflow: ellipsis;
 }
 
-.table-brand__line--club {
-  color: rgba(255, 215, 0, 0.42);
-  letter-spacing: 0.08em;
-}
-
 /* Dan 2026-08-15 — felt masthead, two centered lines.
    Line 1 (date · club · game) is now a single .table-brand__line; the club
    name keeps its gold inside that row via this span instead of owning a line
@@ -983,12 +974,6 @@
    both rows centre under the wordmark with no extra work. */
 .table-brand__club {
   color: rgba(255, 215, 0, 0.5);
-}
-
-.table-brand__line--hand {
-  font-family: 'JetBrains Mono', 'SF Mono', monospace;
-  letter-spacing: 0.12em;
-  color: rgba(198, 210, 228, 0.34);
 }
 
 /* Tournament masthead line 2 (Dan 2026-08-20): Level # · blinds · clock.
@@ -1322,13 +1307,6 @@
     transform: translateY(0) scale(1) rotateY(0deg);
   }
 }
-.community-area__run-label {
-  font-size: 0.5rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
-}
 .table-page[data-boards='2'] .table-brand {
   top: 72%;
 }
@@ -1392,26 +1370,6 @@
   gap: 2px;
   z-index: 10;
   pointer-events: none;
-}
-.table-game-info__name {
-  font-size: 0.72rem;
-  font-weight: 800;
-  color: rgba(255, 255, 255, 0.82);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  text-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.9),
-    0 0 8px rgba(0, 0, 0, 0.45);
-}
-.table-game-info__stakes {
-  font-size: 0.68rem;
-  font-weight: 900;
-  color: rgba(255, 222, 92, 0.92);
-  letter-spacing: 0.16em;
-  text-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.9),
-    0 0 8px rgba(255, 222, 92, 0.18);
-  text-transform: uppercase;
 }
 
 /* Spectator badge — bottom edge of felt */
@@ -1752,14 +1710,6 @@
   border-radius: 7px 7px 0 0;
 }
 
-.control-strip__label {
-  font-size: 0.65rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.7);
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
 .control-strip__btn:active {
   transform: scale(0.96);
 }
@@ -1770,10 +1720,6 @@
   border-color: rgba(255, 255, 255, 0.15);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   transform: translateY(-1px);
-}
-
-.control-strip__btn--muted {
-  opacity: 0.4;
 }
 
 .control-strip__icon {
@@ -1787,6 +1733,48 @@
   color: #ffd700;
   font-weight: 700;
   text-shadow: 0 0 6px rgba(255, 215, 0, 0.3);
+}
+
+/* Icon-image variant: no default padding; the img fills the button */
+.control-strip__btn--icon-img {
+  padding: 0;
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+}
+
+/* Wrapper for image + count overlay */
+.control-strip__icon-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.control-strip__timebank-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  display: block;
+}
+
+/* White count overlaid on the image */
+.control-strip__count-overlay {
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(0, 0, 0, 0.7);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 .control-strip__timer {
@@ -1828,10 +1816,6 @@
   color: #ffd700;
   text-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
   position: relative;
-}
-
-.control-strip__spacer {
-  flex: 1;
 }
 
 /* ActionPanel.css handles its own button styling */
@@ -1968,19 +1952,6 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
   padding: 6px 14px;
-}
-
-.hud-game-info__type {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--off-white, #e4e6eb);
-  letter-spacing: 0.03em;
-}
-
-.hud-game-info__blinds {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--soft-white, #b0b3b8);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -2776,12 +2747,6 @@
     transform 0.15s ease,
     box-shadow 0.15s ease;
 }
-.diamond-purple-btn:hover {
-  transform: translateY(-1px);
-  box-shadow:
-    0 6px 16px rgba(124, 58, 237, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-}
 .diamond-ico {
   font-size: 16px;
   filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.5));
@@ -2834,9 +2799,16 @@
   transform: scale(0.95);
   background: rgba(255, 255, 255, 0.25);
 }
+/* Custom add-screen icon image */
+.add-chips-icon-btn__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: inherit;
+  display: block;
+}
 
-.floating-im-back,
-.floating-post-blind {
+.floating-im-back {
   background: linear-gradient(180deg, #10b981 0%, #059669 100%);
   border: 1px solid #34d399;
   color: white;
@@ -2854,13 +2826,12 @@
   bottom: 80px;
   right: 20px;
   z-index: 100;
-}
-
-.floating-action-bl {
-  position: absolute;
-  bottom: 80px;
-  left: 20px;
-  z-index: 100;
+  /* Was an inline style object on the element, rebuilt on every TablePage
+     render. It is four static declarations; they belong here. */
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
 }
 
 /* chat-mail-toggle-btn duplicate override REMOVED */

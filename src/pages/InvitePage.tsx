@@ -209,7 +209,10 @@ export default function InvitePage() {
           .from('profiles')
           .select('player_number')
           .eq('id', user.id)
-          .single()
+          // .maybeSingle(), never .single(): on zero rows .single() resolves
+          // with a PGRST116 error and null data, so the invite link quietly
+          // fell back to the raw user uuid instead of the player number.
+          .maybeSingle()
           .then(({ data }) => {
             const r = data?.player_number || user.id;
             setInviteUrl(`${baseUrl}?ref=${r}`);

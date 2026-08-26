@@ -177,5 +177,3 @@ export { sessionStatsService } from './SessionStatsService';
 export type { SessionStats } from './SessionStatsService';
 
 // Disconnect Protection (heartbeat, grace period, offline queue)
-export { disconnectProtectionService } from './DisconnectProtectionService';
-export type { ConnectionState, DisconnectConfig, DCAction } from './DisconnectProtectionService';

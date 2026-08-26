@@ -30,21 +30,30 @@
  * receives the same message as a seated player. This component joins it and
  * nothing else. There is no local emit anywhere in this file.
  *
- * ── THE ONE SERVER GAP, STATED PLAINLY ─────────────────────────────────────
+ * ── THE SERVER HALF, CLOSED 2026-08-26 ─────────────────────────────────────
  *
- * The engine picks its event name with
- * `res.mode === 'mystery' ? 'mystery_bounty_revealed' : 'bounty_collected'`,
- * but fn_collect_bounty only ever returns 'pko' | 'mystery_pre' | 'regular'
- * (verified against the live function body). So `mystery_bounty_revealed` is
- * UNREACHABLE in production today, and a mystery event's knockouts arrive as
- * `bounty_collected` with `mode: 'mystery_pre'`.
+ * Two events reach this component, and both are a mystery pull:
  *
- * Both names are accepted here, and the mode is what actually gates the
- * celebration. That is not a workaround for a missing broadcast - the
- * broadcast exists, reaches every client, and carries the amount. What the
- * server does NOT send is the prize's RANK, which is the second half:
+ *   - `bounty_collected` with `mode: 'mystery_pre'` - a head drawn at
+ *     registration, claimed before the mystery phase opened. fn_collect_bounty
+ *     returns 'pko' | 'mystery_pre' | 'regular' and never 'mystery', so the
+ *     engine's old `res.mode === 'mystery'` test was dead; it now sends this
+ *     name unconditionally, which is what it was already sending in practice;
+ *   - `mystery_bounty_revealed` - a CHEST, from the sealed inventory. This is
+ *     where the event's top prizes actually live, and it is the case Dan's
+ *     requirement is about. It used to carry the money only as `amountCents`,
+ *     so the amount check below saw nothing and the celebration stayed silent
+ *     through exactly the moment it exists for. The engine now sends `amount`
+ *     beside it (server/src/tournament/TournamentManagerEliminations.ts).
  *
- * ── HOW "TOP 3" IS DECIDED, FROM SERVER DATA ───────────────────────────────
+ * Both now carry `prizeRank` as well, computed by the engine against the
+ * event's own prize ladder - so the rank is decided once, on the server, from
+ * data every client would otherwise have to re-read. rankOf() prefers it.
+ *
+ * ── HOW "TOP 3" IS DECIDED WHEN THE SERVER DOES NOT SAY ────────────────────
+ *
+ * The derivation below is the FALLBACK, kept for an engine build that predates
+ * `prizeRank`. It reaches the same answer from the same data:
  *
  * A mystery head is drawn ONCE at registration and stored on
  * tournament_players.current_bounty. supabase/migrations/20260821_mystery_-
@@ -64,9 +73,8 @@
  * interrupt play for a routine head (which Dan explicitly ruled out) or stay
  * silent through a jackpot.
  *
- * If the engine later sends an authoritative rank (`prizeRank`) or the tier
- * label the chest schema already defines (`tier: 'jackpot'`), that WINS over
- * the derived ladder - see rankOf(). Nothing needs to change here when it does.
+ * An authoritative rank (`prizeRank`) or the tier the chest schema defines
+ * (`tier: 'jackpot'`) WINS over the derived ladder - see rankOf().
  *
  * ── HOUSE RULES THIS FILE IS BOUND BY ──────────────────────────────────────
  *
@@ -106,9 +114,9 @@ interface BountyRevealPayload {
   eliminatedName?: string;
   playerName?: string;
   poolRemaining?: number | string;
-  /** Not sent today. An authoritative 1-based rank if the engine ever adds one. */
+  /** The engine's own 1-based rank on the event's prize ladder. Preferred. */
   prizeRank?: number;
-  /** Not sent today. The chest schema's tier, where 'jackpot' is the top rung. */
+  /** The chest schema's tier, where 'jackpot' is the top rung. */
   tier?: string;
   isJackpot?: boolean;
 }
@@ -142,12 +150,40 @@ function money(n: number): string {
       });
 }
 
-/** A mystery event's knockouts, under either name the engine may use. */
-function isMysteryPull(type: string | undefined, data: BountyRevealPayload): boolean {
+/**
+ * A mystery event's knockouts, under either name the engine may use.
+ *
+ * Exported for tests/unit/mysteryBountyCelebrationContract.test.ts, which pins
+ * it against the modes fn_collect_bounty actually returns.
+ */
+export function isMysteryPull(type: string | undefined, data: BountyRevealPayload): boolean {
   if (type === 'mystery_bounty_revealed') return true;
   if (type !== 'bounty_collected') return false;
   const mode = String(data.mode || '').toLowerCase();
   return mode === 'mystery' || mode === 'mystery_pre';
+}
+
+/**
+ * The FALLBACK rank: how many distinct prizes on `ladder` are strictly larger
+ * than `amount`, plus one. `ladder` is largest first; an empty one is 0,
+ * meaning unknown, which celebrates nothing.
+ *
+ * Exported so the parity test can prove it agrees with the engine's own
+ * `prizeRankOf` for every input. If the two ever disagreed, a client on an
+ * older engine build would celebrate a different set of prizes than a client
+ * on a newer one, in the same tournament, at the same moment.
+ */
+export function rankFromLadder(amount: number, ladder: readonly number[]): number {
+  if (ladder.length === 0) return 0;
+  const target = Math.round(num(amount) * 100) / 100;
+  if (target <= 0) return 0;
+
+  let above = 0;
+  for (const v of ladder) {
+    if (v > target) above += 1;
+    else break;
+  }
+  return above + 1;
 }
 
 export default function MysteryBountyCelebration({ tournamentId }: { tournamentId: string }) {
@@ -243,20 +279,7 @@ export default function MysteryBountyCelebration({ tournamentId }: { tournamentI
     if (declared >= 1) return Math.round(declared);
     if (data.isJackpot === true || String(data.tier || '').toLowerCase() === 'jackpot') return 1;
 
-    const ladder = ladderRef.current;
-    if (ladder.length === 0) return 0;
-
-    const amount = Math.round(num(data.amount) * 100) / 100;
-    if (amount <= 0) return 0;
-
-    /* How many distinct prizes are strictly larger. One larger prize makes
-       this the second rung, and so on. */
-    let above = 0;
-    for (const v of ladder) {
-      if (v > amount) above += 1;
-      else break;
-    }
-    return above + 1;
+    return rankFromLadder(num(data.amount), ladderRef.current);
   }, []);
 
   /* ── SHOW ONE ─────────────────────────────────────────────────────────── */

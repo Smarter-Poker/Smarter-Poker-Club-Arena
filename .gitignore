@@ -157,3 +157,4 @@ _to_delete/
 /test_db*.mjs
 /patch_*.cjs
 /patch_*.js
+.git-msg-*.txt

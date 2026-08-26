@@ -129,6 +129,8 @@ import { HydraService } from '../services/HydraService';
 import TableChat from '../components/table/TableChat';
 import { ChatBubble, bubbleForSeat, useSeatChatBubbles } from '../components/table/ChatBubble';
 import { holeCardCountFor } from '../lib/holeCardCount';
+import { shouldAnnounceBbjHit } from '../lib/bbjHitOnce';
+import BBJHitNotification from '../components/bbj/BBJHitNotification';
 import { type InsuranceOffer } from '../components/table/InsuranceModal';
 import { ThrowAnimationContainer } from '../components/table/ThrowAnimation';
 import { useTabKeepAlive, workerTimeout, cancelWorkerTimeout } from '../hooks/useTabKeepAlive';
@@ -895,7 +897,13 @@ function buildSpinDrawFromRow(row: SpinDrawRow | null | undefined): SpinWheelDat
 
 // Module-level guards to prevent multiple TablePage instances from cascading BBJ_HIT_GLOBAL
 const _LAST_BBJ_HIT_COUNT: Record<string, number> = {};
-let _LAST_BBJ_TOAST_TIME = 0;
+/* `_LAST_BBJ_TOAST_TIME` was deleted here 2026-08-26. It was a 5-second
+   module-level window, which de-duplicated four mounted tables shouting at
+   once and NOTHING else: a module variable is reinitialised by the page load,
+   so it was blind to the actual reported bug — the hub replaying a retained
+   jackpot event to every fresh socket. `shouldAnnounceBbjHit`
+   (lib/bbjHitOnce) replaces it and covers both, because it keys on the hit's
+   own identity and persists across the reload. */
 
 export default function TablePage({
   embeddedTableId,
@@ -3467,6 +3475,18 @@ export default function TablePage({
   // re-date itself on every render (2026-08-18).
   const tableSessionDate = useMemo(() => new Date(), []);
 
+  /* The bottom-right hit notification (Dan 2026-08-26). Null when nothing is
+     celebrating. `key` remounts the card if a second jackpot lands while the
+     first is still up, so the new one plays its own intro instead of
+     inheriting a card mid-outro. */
+  const [bbjHitNotice, setBbjHitNotice] = useState<{
+    key: string;
+    winnerName: string;
+    amount: number;
+    tableName: string;
+    tableId: string;
+  } | null>(null);
+
   // FIX 128: BBJ Celebration overlay state — triggered by server bbj_hit + bbj_payout_complete events
   const [showBBJCelebration, setShowBBJCelebration] = useState(false);
   const bbjHitDataRef = useRef<{
@@ -4057,6 +4077,17 @@ export default function TablePage({
                       bigBlind: hit.big_blind || 0,
                       winnerName: hit.bad_beat_name || 'A player',
                       amount: hit.bad_beat_amount || hit.total_payout || 0,
+                      /* Carried so the receiver can de-duplicate on the hit's
+                         own identity rather than on arrival time. This path
+                         is a postgres UPDATE, which does NOT replay on
+                         refresh — but it reaches the same notification as the
+                         engine path, and two producers feeding one gate must
+                         speak the same shape or the gate silently degrades to
+                         "unknown:0" for one of them. `hit_at` is the ledger's
+                         own timestamp; absent, freshness simply does not
+                         apply and identity still does. */
+                      handNumber: hit.hand_number ?? 0,
+                      emittedAt: hit.hit_at ? new Date(hit.hit_at).getTime() : undefined,
                     });
                   }
                 } catch (err) {
@@ -5663,6 +5694,26 @@ export default function TablePage({
       }
 
       if (eventType === 'bbj_payout_complete') {
+        /* Dan 2026-08-26 — THE REPLAY GATE, and this is the path the bug was
+           actually reported on: refresh the table and the jackpot celebrated
+           again. The hub retains transient events and re-delivers them to
+           every fresh socket (deliberately — a reconnect mid-hand must still
+           get the showdown reveal), and the only de-duplication was
+           `lastEventSeq`, which resets on connect BY DESIGN. So the client
+           had no way to tell a live hit from a replay. `shouldAnnounceBbjHit`
+           gives it one: a stable identity that survives the reload, plus a
+           freshness window for the player whose first sight of the event IS
+           the replay. See lib/bbjHitOnce. */
+        if (
+          !shouldAnnounceBbjHit({
+            tableId: (handState.table_id as string) || tableId,
+            handNumber: handState.hand_number as number,
+            emittedAt: handState.emitted_at as number,
+          })
+        ) {
+          return;
+        }
+
         // FIX 128: BBJ payout calculated — NOW show the celebration.
         // This event arrives from postHandTasks() which runs AFTER the hand is fully complete,
         // AFTER showdown cards are displayed, AFTER winners are shown.
@@ -7743,29 +7794,37 @@ export default function TablePage({
     // Show an in-game pop-up on all cash game tables when BBJ is hit globally.
     // Skip if the hit happened on THIS table — they already saw the massive animation.
     if (payload.tableId === tableId) return;
+    if (tableState.isTournament) return;
 
-    const now = Date.now();
-    if (!tableState.isTournament && now - _LAST_BBJ_TOAST_TIME > 5000) {
-      _LAST_BBJ_TOAST_TIME = now;
-      if (soundService.isEnabled()) soundService.playBadBeatJackpot();
-      /* AUDIT 2026-08-25: this string opened with a siren EMOJI, which
-         CLAUDE.md §5.3 forbids outright in source (it breaks the SWC
-         compiler), and it was the only emoji left in this file. It also read
-         "BBJ HIT! X just won $Y on Z! (Tap to observe)" — sentence case with
-         a parenthetical, against the popup rule that every word is
-         capitalised. The Toast layer's popupStyle transform capitalises for
-         us but cannot strip an emoji or rewrite a parenthetical, so both are
-         fixed at the source. The amount keeps .toLocaleString() (§5.5). */
-      toast?.success?.(
-        `Bad Beat Jackpot Hit. ${payload.winnerName} Won $${payload.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} On ${payload.tableName}. Tap To Observe.`,
-        10000,
-        () =>
-          masterBus.emit('OPEN_OBSERVE_TABLE', {
-            tableId: payload.tableId,
-            tableName: payload.tableName,
-          })
-      );
+    /* Dan 2026-08-26: "it should only display once, and at the actual time it
+       happens." The gate owns both halves — see lib/bbjHitOnce for why a
+       connection-scoped seq could never have covered a page refresh. */
+    if (
+      !shouldAnnounceBbjHit({
+        tableId: payload.tableId,
+        handNumber: payload.handNumber,
+        emittedAt: payload.emittedAt,
+      })
+    ) {
+      return;
     }
+
+    if (soundService.isEnabled()) soundService.playBadBeatJackpot();
+
+    /* Was a 10-second text toast in the shared stack (and before that, one
+       carrying a siren emoji, which CLAUDE.md §5.3 forbids outright). Dan
+       2026-08-26 replaced it: three seconds, bottom-right, exploding. The
+       card is its own fixed-position layer rather than a toast because the
+       toast stack QUEUES — a routine notice could push the rarest event on
+       the platform down the screen. Amount keeps .toLocaleString() (§5.5)
+       and the component capitalises its own labels (§5.7). */
+    setBbjHitNotice({
+      key: `${payload.tableId}:${payload.handNumber ?? 0}:${Date.now()}`,
+      winnerName: payload.winnerName,
+      amount: payload.amount,
+      tableName: payload.tableName,
+      tableId: payload.tableId,
+    });
   });
 
   useMasterBusSubscription('TIME_BANK_ACTIVATED', (payload: any) => {
@@ -15340,6 +15399,28 @@ export default function TablePage({
         armed={isHeroOnTheClock}
         soundEnabled={isSoundEnabled && ambientSoundsAllowed}
       />
+
+      {/* BAD BEAT JACKPOT HIT — bottom-right, three seconds, then it leaves on
+          its own (Dan 2026-08-26). Whether it appears at all is decided by
+          `shouldAnnounceBbjHit` at the subscription, never here; this only
+          draws what was already ruled announceable, and clears itself when
+          the card's own outro finishes. */}
+      {bbjHitNotice && (
+        <BBJHitNotification
+          key={bbjHitNotice.key}
+          winnerName={bbjHitNotice.winnerName}
+          amount={bbjHitNotice.amount}
+          tableName={bbjHitNotice.tableName}
+          onObserve={() => {
+            masterBus.emit('OPEN_OBSERVE_TABLE', {
+              tableId: bbjHitNotice.tableId,
+              tableName: bbjHitNotice.tableName,
+            });
+            setBbjHitNotice(null);
+          }}
+          onDone={() => setBbjHitNotice(null)}
+        />
+      )}
     </div>
   );
 }

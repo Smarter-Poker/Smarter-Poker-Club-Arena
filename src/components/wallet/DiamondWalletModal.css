@@ -61,8 +61,11 @@
   border-radius: 8px;
   color: rgba(255, 255, 255, 0.6);
   font-size: 18px;
-  width: 36px;
-  height: 36px;
+  /* 375px-first: 36px was under the 44px guideline, and on a full-screen sheet
+     this is the primary way out (Escape is now wired too, but a phone has no
+     Escape key). */
+  width: 44px;
+  height: 44px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -113,6 +116,8 @@
 .diamond-wallet-modal__buy-btn {
   margin-top: 12px;
   padding: 8px 24px;
+  min-height: 44px;
+  touch-action: manipulation;
   background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(0, 150, 255, 0.2));
   border: 1px solid rgba(0, 212, 255, 0.5);
   border-radius: 20px;
@@ -139,6 +144,11 @@
 
 .diamond-wallet-modal__filter {
   padding: 6px 14px;
+  /* The filter pills were ~26px tall in a horizontally scrolling strip - the
+     hardest kind of small target to hit, because a miss scrolls the strip
+     instead of doing nothing. */
+  min-height: 44px;
+  touch-action: manipulation;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.04);
@@ -167,6 +177,23 @@
   text-align: center;
   padding: 40px;
   color: rgba(255, 255, 255, 0.3);
+}
+
+/* The way back from a failed read. Previously there was no failed-read state at
+   all: the errors were swallowed and the modal said "No Transactions Yet". */
+.diamond-wallet-modal__retry {
+  display: block;
+  margin: 16px auto 0;
+  min-height: 44px;
+  padding: 8px 24px;
+  border-radius: 20px;
+  border: 1px solid rgba(0, 212, 255, 0.5);
+  background: rgba(0, 212, 255, 0.15);
+  color: #00d4ff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 .diamond-wallet-modal__tx {

@@ -49,6 +49,60 @@ const colors = {
   danger: 'var(--danger)', // #F02849
 };
 
+/*
+ * CANONICAL TOGGLE (Dan, 2026-08-25: "EVERY TOGGLE INSIDE THE CLUB ARENA ...
+ * AND EVERY SINGLE HAMBURGER MENU.")
+ *
+ * PR #927 restyled every CLASS-BASED toggle through a global block in
+ * styles/club-engine.css, and edited HamburgerMenu.module.css in place because
+ * CSS Modules hash their class names. Neither reached these three switches:
+ * HamburgerMenu.tsx never imports HamburgerMenu.module.css (that file is dead —
+ * nothing in src imports it, and the build emits no CSS asset for it), and these
+ * buttons carry INLINE styles, which no stylesheet can override. So Sounds,
+ * Vibrations and Use Real Name were still the old 52x28 green pill in
+ * production while everything around them was blue. Verified against the live
+ * bundle: assets/HamburgerMenu-DzPe1C0c-v6.js contained #22c55e three times and
+ * #1877f2 zero times.
+ *
+ * Same geometry and colours as the global block: 51x31 track, 27px thumb,
+ * 20px travel, #1877F2 on / #39393D off. Behaviour, aria and handlers untouched.
+ */
+const CANONICAL_TOGGLE_ON = '#1877f2';
+const CANONICAL_TOGGLE_OFF = '#39393d';
+
+function canonicalToggleTrackStyle(on: boolean): React.CSSProperties {
+  return {
+    width: 51,
+    height: 31,
+    borderRadius: 999,
+    border: 'none',
+    padding: 2,
+    cursor: 'pointer',
+    backgroundColor: on ? CANONICAL_TOGGLE_ON : CANONICAL_TOGGLE_OFF,
+    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.06)',
+    transition: 'background-color 180ms ease',
+    display: 'flex',
+    alignItems: 'center',
+    position: 'relative' as const,
+    flexShrink: 0,
+    boxSizing: 'border-box' as const,
+    WebkitTapHighlightColor: 'transparent',
+  };
+}
+
+function canonicalToggleThumbStyle(on: boolean): React.CSSProperties {
+  return {
+    width: 27,
+    height: 27,
+    borderRadius: '50%',
+    backgroundColor: '#ffffff',
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.28)',
+    /* 51px track - 27px thumb - (2px x 2) = 20px of travel. */
+    transform: on ? 'translateX(20px)' : 'translateX(0)',
+    transition: 'transform 180ms cubic-bezier(0.32, 0.72, 0, 1)',
+  };
+}
+
 export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const navigate = useNavigate();
   const { user } = useAuthUser();
@@ -968,32 +1022,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onClick={handleSoundsToggle}
             aria-checked={soundsEnabled}
             role="switch"
-            style={{
-              width: 52,
-              height: 28,
-              borderRadius: 14,
-              border: soundsEnabled ? '2px solid #4ade80' : '2px solid #6b7280',
-              padding: 2,
-              cursor: 'pointer',
-              backgroundColor: soundsEnabled ? '#22c55e' : '#374151',
-              transition: 'all 0.25s ease',
-              display: 'flex',
-              alignItems: 'center',
-              position: 'relative' as const,
-              flexShrink: 0,
-            }}
+            style={canonicalToggleTrackStyle(soundsEnabled)}
           >
-            <span
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                backgroundColor: 'white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                transform: soundsEnabled ? 'translateX(24px)' : 'translateX(0)',
-                transition: 'transform 0.25s ease',
-              }}
-            />
+            <span style={canonicalToggleThumbStyle(soundsEnabled)} />
           </button>
         </div>
 
@@ -1004,32 +1035,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onClick={handleVibrationsToggle}
             aria-checked={vibrationsEnabled}
             role="switch"
-            style={{
-              width: 52,
-              height: 28,
-              borderRadius: 14,
-              border: vibrationsEnabled ? '2px solid #4ade80' : '2px solid #6b7280',
-              padding: 2,
-              cursor: 'pointer',
-              backgroundColor: vibrationsEnabled ? '#22c55e' : '#374151',
-              transition: 'all 0.25s ease',
-              display: 'flex',
-              alignItems: 'center',
-              position: 'relative' as const,
-              flexShrink: 0,
-            }}
+            style={canonicalToggleTrackStyle(vibrationsEnabled)}
           >
-            <span
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                backgroundColor: 'white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                transform: vibrationsEnabled ? 'translateX(24px)' : 'translateX(0)',
-                transition: 'transform 0.25s ease',
-              }}
-            />
+            <span style={canonicalToggleThumbStyle(vibrationsEnabled)} />
           </button>
         </div>
 
@@ -1042,32 +1050,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onClick={handleUseRealNameToggle}
             aria-checked={useRealName}
             role="switch"
-            style={{
-              width: 52,
-              height: 28,
-              borderRadius: 14,
-              border: useRealName ? '2px solid #4ade80' : '2px solid #6b7280',
-              padding: 2,
-              cursor: 'pointer',
-              backgroundColor: useRealName ? '#22c55e' : '#374151',
-              transition: 'all 0.25s ease',
-              display: 'flex',
-              alignItems: 'center',
-              position: 'relative' as const,
-              flexShrink: 0,
-            }}
+            style={canonicalToggleTrackStyle(useRealName)}
           >
-            <span
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                backgroundColor: 'white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                transform: useRealName ? 'translateX(24px)' : 'translateX(0)',
-                transition: 'transform 0.25s ease',
-              }}
-            />
+            <span style={canonicalToggleThumbStyle(useRealName)} />
           </button>
         </div>
 

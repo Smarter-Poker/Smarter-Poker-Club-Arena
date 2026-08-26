@@ -120,7 +120,7 @@ export interface ClubMember {
   rank_level?: number;
   sessions_played?: number;
   orange_ball_status?: string | null;
-  parent_agent_id?: string | null;
+  agent_id?: string | null;
   hands_played?: number; // DB column name (was 'total_hands')
   chips_won?: number; // DB column name (was 'total_won')
   chips_lost?: number; // DB column name (was 'total_lost')

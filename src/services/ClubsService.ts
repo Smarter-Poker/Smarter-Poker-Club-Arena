@@ -456,9 +456,9 @@ export async function leaveClub(clubId: string): Promise<void> {
     try {
       await supabase
         .from('club_members')
-        .update({ parent_agent_id: null })
+        .update({ agent_id: null })
         .eq('club_id', resolvedId)
-        .eq('parent_agent_id', userId);
+        .eq('agent_id', userId);
     } catch (e: unknown) {
       console.warn('[ClubsService] leaveClub: agent hierarchy cleanup failed (non-critical):', e);
     }
@@ -593,7 +593,7 @@ async function _getUserMembershipsUncached(
     .from('club_members')
     .select(
       `
-      club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
+      club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
       club:clubs(id, club_id, name, slug, description, avatar_url, logo_url, card_image_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, requires_approval, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next)
     `
     )
@@ -656,7 +656,7 @@ export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
   const { data, error } = await supabase
     .from('club_members')
     .select(
-      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
+      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
     )
     .eq('club_id', resolvedId)
     // was .order('reputation_xp'), a column that is 0 on all 1,499 rows in
@@ -739,7 +739,7 @@ export async function getClubLeaderboard(
   const { data, error } = await supabase
     .from('club_members')
     .select(
-      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
+      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
     )
     .eq('club_id', resolvedId)
     // same as above: reputation_xp was always 0, so "top 50" was 50 arbitrary

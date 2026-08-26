@@ -46,6 +46,7 @@ import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
 
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
+import ClubMemberGuard from './components/auth/ClubMemberGuard';
 import TOSGuard from './components/legal/TOSGuard';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 
@@ -546,9 +547,11 @@ export default function App() {
                   path="clubs/:clubId"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Home">
-                        <ClubHomePage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Home">
+                          <ClubHomePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -556,9 +559,11 @@ export default function App() {
                   path="clubs/:clubId/agents"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Agent Management">
-                        <AgentManagementPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Agent Management">
+                          <AgentManagementPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -566,9 +571,11 @@ export default function App() {
                   path="clubs/:clubId/create-table"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Create Table">
-                        <CreateTablePage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Create Table">
+                          <CreateTablePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -576,9 +583,11 @@ export default function App() {
                   path="clubs/:clubId/create-table/:gameType"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Table Config">
-                        <TableConfigPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Table Config">
+                          <TableConfigPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -586,9 +595,11 @@ export default function App() {
                   path="clubs/:clubId/dashboard"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Data">
-                        <ClubDataPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Data">
+                          <ClubDataPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -596,9 +607,11 @@ export default function App() {
                   path="clubs/:clubId/dashboard-full"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Dashboard">
-                        <ClubDashboard />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Dashboard">
+                          <ClubDashboard />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -618,9 +631,11 @@ export default function App() {
                   path="clubs/:clubId/lobby"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Lobby">
-                        <ClubHomePage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Lobby">
+                          <ClubHomePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -628,9 +643,11 @@ export default function App() {
                   path="clubs/:clubId/tournaments"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Tournaments">
-                        <TournamentPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Tournaments">
+                          <TournamentPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -638,9 +655,11 @@ export default function App() {
                   path="clubs/:clubId/messages"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Messages">
-                        <NavigateToMessenger />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Messages">
+                          <NavigateToMessenger />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -767,9 +786,11 @@ export default function App() {
                   path="clubs/:clubId/settlement"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Settlement">
-                        <SettlementPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Settlement">
+                          <SettlementPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -965,9 +986,11 @@ export default function App() {
                   path="clubs/:clubId/data"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Data">
-                        <ClubDataPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Data">
+                          <ClubDataPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1009,9 +1032,11 @@ export default function App() {
                   path="clubs/:clubId/cashier"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Cashier">
-                        <CashierTradePage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Cashier">
+                          <CashierTradePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1019,9 +1044,11 @@ export default function App() {
                   path="clubs/:clubId/cashier-classic"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Cashier">
-                        <CashierPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Cashier">
+                          <CashierPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1039,9 +1066,11 @@ export default function App() {
                   path="clubs/:clubId/agent-dashboard"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Super Agent Dashboard">
-                        <SuperAgentDashboard />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Super Agent Dashboard">
+                          <SuperAgentDashboard />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1059,9 +1088,11 @@ export default function App() {
                   path="clubs/:clubId/members"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Members">
-                        <ClubMembersPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Members">
+                          <ClubMembersPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1069,9 +1100,11 @@ export default function App() {
                   path="clubs/:clubId/promo-vault"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Promo Vault">
-                        <PromoVaultPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Promo Vault">
+                          <PromoVaultPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1079,9 +1112,11 @@ export default function App() {
                   path="clubs/:clubId/members/:userId"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Member Management">
-                        <MemberManagementPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Member Management">
+                          <MemberManagementPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1089,9 +1124,11 @@ export default function App() {
                   path="clubs/:clubId/members/:userId/statistics"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Player Statistics">
-                        <PlayerStatisticsPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Player Statistics">
+                          <PlayerStatisticsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1119,9 +1156,11 @@ export default function App() {
                   path="clubs/:clubId/jackpot"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Bad Beat Jackpot">
-                        <BadBeatJackpotPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Bad Beat Jackpot">
+                          <BadBeatJackpotPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1159,9 +1198,11 @@ export default function App() {
                   path="clubs/:clubId/promotions"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Promotions">
-                        <PromotionsPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Promotions">
+                          <PromotionsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1169,9 +1210,11 @@ export default function App() {
                   path="clubs/:clubId/settings"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Settings">
-                        <ClubSettingsPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Settings">
+                          <ClubSettingsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1219,9 +1262,11 @@ export default function App() {
                   path="clubs/:clubId/reports"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Report Review">
-                        <ReportReviewPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Report Review">
+                          <ReportReviewPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1229,9 +1274,11 @@ export default function App() {
                   path="clubs/:clubId/announcements"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Announcements">
-                        <ClubAnnouncementsPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Announcements">
+                          <ClubAnnouncementsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1249,9 +1296,11 @@ export default function App() {
                   path="clubs/:clubId/financials"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Financials">
-                        <ClubFinancialsPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Financials">
+                          <ClubFinancialsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1279,9 +1328,11 @@ export default function App() {
                   path="clubs/:clubId/disputes"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Disputes">
-                        <DisputeManagementPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Disputes">
+                          <DisputeManagementPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1409,9 +1460,11 @@ export default function App() {
                   path="clubs/:clubId/blacklist"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Blacklist Manager">
-                        <BlacklistManagerPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Blacklist Manager">
+                          <BlacklistManagerPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1419,9 +1472,11 @@ export default function App() {
                   path="clubs/:clubId/rules"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Rules">
-                        <ClubRulesPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Rules">
+                          <ClubRulesPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />

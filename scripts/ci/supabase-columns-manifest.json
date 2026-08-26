@@ -955,6 +955,19 @@
       "club_id",
       "table_id"
     ],
+    "ca_seat_stack_exits": [
+      "id",
+      "seat_id",
+      "table_id",
+      "user_id",
+      "club_id",
+      "seat_number",
+      "stack",
+      "exit_kind",
+      "db_role",
+      "app_name",
+      "occurred_at"
+    ],
     "ca_stat_distribution": [
       "cohort",
       "metric",
@@ -1422,6 +1435,14 @@
       "topup_total",
       "updated_at",
       "hands_attributed"
+    ],
+    "club_member_daily_stats_profit_backup_20260826": [
+      "club_id",
+      "table_id",
+      "user_id",
+      "stat_date",
+      "profit",
+      "backed_up_at"
     ],
     "club_member_table_state": [
       "table_id",
@@ -4770,6 +4791,20 @@
       "pots",
       "showdown"
     ],
+    "hand_history_compaction_policy": [
+      "id",
+      "enabled",
+      "headroom_factor",
+      "note",
+      "updated_at",
+      "resume_page"
+    ],
+    "hand_history_retention_policy": [
+      "id",
+      "horse_retention_days",
+      "updated_at",
+      "note"
+    ],
     "hand_players": [
       "id",
       "hand_id",
@@ -6316,6 +6351,10 @@
       "notes",
       "recommendation",
       "resolved_at"
+    ],
+    "phone_verification_receipts": [
+      "phone",
+      "verified_at"
     ],
     "pipeline_runs": [
       "id",

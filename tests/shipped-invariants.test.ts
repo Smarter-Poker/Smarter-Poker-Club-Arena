@@ -53,10 +53,22 @@ const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
   ],
 
   // Cashier — two screens that both got the downline wrong, opposite ways.
+  //
+  // 2026-08-25: re-anchored from ca_club_my_downline, for the same reason the
+  // trade grid was, plus a worse one. `ca_club_my_downline` RETURNS TABLE
+  // (agent_id, path, depth, username, ...) - one row per downline AGENT. This
+  // page cast it to `{ scoped, user_ids }` and read two fields it has never
+  // had, so the recipient filter collapsed to the viewer's own id and every
+  // super agent, agent and sub agent found exactly one recipient on the Send
+  // tab: themselves, which fn_agent_wallet_send refuses as a self-send.
+  //
+  // The sentinel also PASSED throughout, because the string survived in a
+  // comment. A capability sentinel that a comment can satisfy is not a
+  // sentinel; this one now names the call the send actually refuses on.
   [
     'src/pages/CashierPage.tsx',
-    'ca_club_my_downline',
-    'a super agent sees their downline, not the whole club',
+    "supabase.rpc('fn_club_cashier_members'",
+    'a super agent sees their downline, not the whole club and not just themselves',
   ],
   // 2026-08-25: re-anchored from ca_club_my_downline to fn_club_cashier_members.
   // The CAPABILITY pinned here is "the trade grid offers only the downline", and

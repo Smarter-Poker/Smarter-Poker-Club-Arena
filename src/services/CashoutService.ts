@@ -42,8 +42,19 @@ import { reportError } from '../utils/errorReporter';
 // Linux CI does not, which is exactly how a red test reached main on 2026-08-21.
 import { pushNotificationService } from './PushNotificationService';
 
-/** crypto.randomUUID is not in every embedded webview; fall back rather than throw. */
-function newOpId(): string {
+/**
+ * crypto.randomUUID is not in every embedded webview; fall back rather than throw.
+ *
+ * EXPORTED ON PURPOSE (2026-08-25). An op id minted INSIDE the service is fresh
+ * on every call, which protects nothing: the retry a lost response provokes is a
+ * SECOND call, and a second call used to carry a second op id and move the money
+ * twice. Every money leg below now takes an optional `opId`, and the screens that
+ * own the button hold one in a ref across a failure and clear it on success -
+ * the same shape CashierTradePage already uses (see
+ * tests/cashier-idempotency-keys.test.ts). The default keeps every existing
+ * caller working; it just cannot protect a retry it never sees.
+ */
+export function newOpId(): string {
   try {
     const c = globalThis.crypto as Crypto | undefined;
     if (c?.randomUUID) return c.randomUUID();
@@ -103,7 +114,20 @@ async function pushQuietly(
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export type CashoutStatus = 'pending' | 'approved' | 'completed' | 'cancelled' | 'rejected';
+/**
+ * 'expired' was missing until 2026-08-25, and it is a status the database
+ * genuinely writes: fn_expire_stale_cashouts flips a request that nobody acted
+ * on and refunds the escrow. Without it here, an expired row narrowed to a
+ * status this union says is impossible, and every `status === ...` branch in the
+ * UI silently treated it as pending.
+ */
+export type CashoutStatus =
+  | 'pending'
+  | 'approved'
+  | 'completed'
+  | 'cancelled'
+  | 'rejected'
+  | 'expired';
 
 export interface CashoutRequest {
   id: string;
@@ -151,8 +175,20 @@ class CashoutServiceClass {
     playerId: string,
     clubId: string,
     amount: number,
-    note?: string
+    note?: string,
+    opId?: string
   ): Promise<CashoutRequest | null> {
+    // A NaN from an empty input arrives at Postgres as null, where the RPC
+    // answers 'Amount Must Be Greater Than Zero' - a full round trip to be told
+    // something knowable here. Chip balances are whole chips, so a fractional
+    // request is a guaranteed refusal too.
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Enter An Amount Greater Than Zero');
+    }
+    if (!Number.isInteger(amount)) {
+      throw new Error('Enter A Whole Number Of Chips');
+    }
+
     const resolvedClubId = await resolveClubUUID(clubId);
 
     /**
@@ -168,7 +204,7 @@ class CashoutServiceClass {
       p_club_id: resolvedClubId,
       p_amount: amount,
       p_note: note || null,
-      p_op_id: newOpId(),
+      p_op_id: opId || newOpId(),
     });
     if (error) {
       reportError(error, 'CashoutService.requestCashout');
@@ -187,12 +223,19 @@ class CashoutServiceClass {
     // it cannot exist for a cashout that did not happen). The PUSH is the half
     // a database cannot send, and it is the half that reaches an agent who does
     // not currently have the app open.
-    await pushQuietly(
-      res.agent_id || '',
-      'Cash Out Requested',
-      `${res.player_name || 'A Player'} Requested To Cash Out ${amount.toLocaleString()} Chips`,
-      '/hub/club-arena/agent'
-    );
+    //
+    // NOT on a replay. `replayed: true` means this attempt found the original
+    // row rather than escrowing anything, so the agent's phone already buzzed
+    // for this exact request. Buzzing again would tell them a second cash out
+    // arrived when no second cash out exists.
+    if (!res.replayed) {
+      await pushQuietly(
+        res.agent_id || '',
+        'Cash Out Requested',
+        `${res.player_name || 'A Player'} Requested To Cash Out ${amount.toLocaleString()} Chips`,
+        '/hub/club-arena/agent'
+      );
+    }
 
     const cashout = await this.getCashout(newCashoutId);
 
@@ -216,11 +259,11 @@ class CashoutServiceClass {
    * it was is decided by whether auth.uid() is the player, and the ledger row
    * says so ('cashout_cancelled' versus 'cashout_denied').
    */
-  async cancelCashout(cashoutId: string, playerId: string): Promise<boolean> {
+  async cancelCashout(cashoutId: string, playerId: string, opId?: string): Promise<boolean> {
     const { data, error } = await supabase.rpc('fn_cashout_release', {
       p_cashout_id: cashoutId,
       p_note: null,
-      p_op_id: newOpId(),
+      p_op_id: opId || newOpId(),
     });
     if (error) {
       reportError(error, 'CashoutService.cancelCashout');
@@ -244,12 +287,17 @@ class CashoutServiceClass {
    * agent's wallet"), releases the escrow, writes the ledger row and notifies
    * the player, all in one transaction.
    */
-  async approveCashout(cashoutId: string, agentId: string, note?: string): Promise<boolean> {
+  async approveCashout(
+    cashoutId: string,
+    agentId: string,
+    note?: string,
+    opId?: string
+  ): Promise<boolean> {
     void agentId; // the server takes the approver from auth.uid(), never from here
     const { data, error } = await supabase.rpc('fn_cashout_approve', {
       p_cashout_id: cashoutId,
       p_note: note || null,
-      p_op_id: newOpId(),
+      p_op_id: opId || newOpId(),
     });
     if (error) {
       reportError(error, 'CashoutService.approveCashout');
@@ -258,12 +306,15 @@ class CashoutServiceClass {
     const res = unwrap(data);
     if (!res?.success) throw new Error(res?.error || 'Failed to approve cashout');
 
-    await pushQuietly(
-      res.player_id || '',
-      'Cash Out Approved',
-      `Your Cash Out Of ${Number(res.amount || 0).toLocaleString()} Chips Was Approved`,
-      '/hub/club-arena/cashier'
-    );
+    // A replay moved nothing; the player was already told. See requestCashout.
+    if (!res.replayed) {
+      await pushQuietly(
+        res.player_id || '',
+        'Cash Out Approved',
+        `Your Cash Out Of ${Number(res.amount || 0).toLocaleString()} Chips Was Approved`,
+        '/hub/club-arena/cashier'
+      );
+    }
 
     masterBus.emit('CASHOUT_APPROVED', { cashoutId, clubId: res.club_id || '' });
     masterBus.emit('BALANCE_UPDATED', {
@@ -302,12 +353,17 @@ class CashoutServiceClass {
    * authorisation the RPC performs under a row lock. Checking a permission in
    * the one place that can also enforce it is the point.
    */
-  async rejectCashout(cashoutId: string, agentId: string, reason?: string): Promise<boolean> {
+  async rejectCashout(
+    cashoutId: string,
+    agentId: string,
+    reason?: string,
+    opId?: string
+  ): Promise<boolean> {
     void agentId; // the server takes the actor from auth.uid()
     const { data, error } = await supabase.rpc('fn_cashout_release', {
       p_cashout_id: cashoutId,
       p_note: reason || null,
-      p_op_id: newOpId(),
+      p_op_id: opId || newOpId(),
     });
     if (error) {
       reportError(error, 'CashoutService.rejectCashout');
@@ -316,12 +372,15 @@ class CashoutServiceClass {
     const res = unwrap(data);
     if (!res?.success) throw new Error(res?.error || 'Failed to reject cashout');
 
-    await pushQuietly(
-      res.player_id || '',
-      'Cash Out Declined',
-      `Your Cash Out Of ${Number(res.amount || 0).toLocaleString()} Chips Was Declined And The Chips Are Back In Your Wallet`,
-      '/hub/club-arena/cashier'
-    );
+    // A replay moved nothing; the player was already told. See requestCashout.
+    if (!res.replayed) {
+      await pushQuietly(
+        res.player_id || '',
+        'Cash Out Declined',
+        `Your Cash Out Of ${Number(res.amount || 0).toLocaleString()} Chips Was Declined And The Chips Are Back In Your Wallet`,
+        '/hub/club-arena/cashier'
+      );
+    }
 
     masterBus.emit('BALANCE_UPDATED', {
       source: 'cashout_reject',
@@ -372,9 +431,18 @@ class CashoutServiceClass {
       p_status: 'pending',
     });
 
+    /**
+     * THROWS, and that is the fix (2026-08-25). This used to report the error
+     * and return `[]`, which AgentCashoutPanel renders as "No Pending Cashout
+     * Requests" - the queue failing to load and the queue being empty told the
+     * agent exactly the same thing. Worse, the panel already had a "Failed To
+     * Load Cashout Requests" state with a Retry button that no code path could
+     * ever reach. An agent must never be shown an empty worklist because a read
+     * failed; there is money waiting behind it.
+     */
     if (error) {
       reportError(error, 'CashoutService.getAgentCashouts');
-      return [];
+      throw new Error(error.message || 'Failed to load cashout requests');
     }
 
     return ((data || []) as Array<Record<string, unknown>>).map((d) => ({
@@ -462,7 +530,8 @@ class CashoutServiceClass {
     playerId: string,
     clubId: string,
     amount: number,
-    notes?: string
+    notes?: string,
+    opId?: string
   ): Promise<boolean> {
     void agentId; // the server takes the sender from auth.uid()
     const resolvedClubId = await resolveClubUUID(clubId);
@@ -472,7 +541,7 @@ class CashoutServiceClass {
       p_amount: amount,
       p_destination: 'player_wallet',
       p_reason: notes || null,
-      p_op_id: newOpId(),
+      p_op_id: opId || newOpId(),
     });
     if (error) {
       reportError(error, 'CashoutService.sendChipsToPlayer');
@@ -501,7 +570,8 @@ class CashoutServiceClass {
     clubId: string,
     transactionId: string,
     amount?: number,
-    reason?: string
+    reason?: string,
+    opId?: string
   ): Promise<{ amount: number; agentWalletAfter: number }> {
     const resolvedClubId = await resolveClubUUID(clubId);
     const { data, error } = await supabase.rpc('fn_agent_wallet_claim_back', {
@@ -509,7 +579,7 @@ class CashoutServiceClass {
       p_transaction_id: transactionId,
       p_amount: amount ?? null,
       p_reason: reason || null,
-      p_op_id: newOpId(),
+      p_op_id: opId || newOpId(),
     });
     if (error) {
       reportError(error, 'CashoutService.claimBackSend');
@@ -549,12 +619,23 @@ class CashoutServiceClass {
    * Enforced server-side by fn_admin_remove_player_chips, which derives the
    * actor from auth.uid(), refuses agents, row-locks the member, returns the
    * chips to the club pool and writes a chip_transactions audit row.
+   *
+   * `opId` closes the lost-response window. This was the ONE staff money path
+   * with no idempotency key: a retry after a dropped reply pulled the chips a
+   * second time. Migration 20260826 added p_op_id, a replay branch and a
+   * partial unique index over (club_id, op_id) for admin_removal rows. Proved
+   * against production inside a rolled-back transaction: two calls with one
+   * key moved 300 chips once and wrote one ledger row.
+   *
+   * Pass a key HELD ACROSS A FAILURE. Minting one per call - which is what
+   * every leg here used to do - makes the parameter decorative.
    */
   async adminRemovePlayerChips(
     clubId: string,
     playerId: string,
     amount: number,
-    reason?: string
+    reason?: string,
+    opId?: string
   ): Promise<{ removed: number; balanceAfter: number }> {
     const resolvedClubId = await resolveClubUUID(clubId);
     const { data, error } = await supabase.rpc('fn_admin_remove_player_chips', {
@@ -562,6 +643,7 @@ class CashoutServiceClass {
       p_player_id: playerId,
       p_amount: amount,
       p_reason: reason || null,
+      p_op_id: opId || newOpId(),
     });
     if (error) {
       reportError(error, 'CashoutService.adminRemovePlayerChips');
@@ -604,10 +686,31 @@ class CashoutServiceClass {
   }
 
   /**
-   * Auto-expire stale pending cashouts — returns escrowed chips to players.
+   * Auto-expire stale pending cashouts: returns escrowed chips to the player.
    * Call via cron/edge function on a schedule (e.g. every 6 hours).
+   *
+   * THIS USED TO THROW THE MOMENT IT DID ANY WORK (fixed 2026-08-25).
+   *
+   * `fn_expire_stale_cashouts` RETURNS INTEGER - the count of requests it
+   * expired. The repo migration that first created it (20260311_cashout_expiry)
+   * returned a TABLE, and this method still read the newer scalar as if it were
+   * that table: `for (const rec of data)` over a number is a TypeError, and
+   * `data.length` on a number is undefined. It only ever looked healthy because
+   * `0 || []` is `[]`, so a run that expired nothing returned a tidy zero and a
+   * run that expired anything crashed. The live signature was confirmed against
+   * production before this was changed.
+   *
+   * There are no per-player ids in a scalar, so one broadcast refresh is what
+   * this can honestly emit. Every screen that cares listens for BALANCE_UPDATED
+   * and refetches its own numbers.
+   *
+   * The retry is safe here and nowhere else in this file: the RPC selects only
+   * `status = 'pending'` rows and flips each to 'expired' in the same
+   * transaction, so a second attempt after a lost response finds nothing left to
+   * refund and returns 0. It carries no op id, which is why it must stay that
+   * self-limiting shape - see the server note in the audit report.
    */
-  async expireStale(maxHours = 72): Promise<{ expired: number; playersRefunded: string[] }> {
+  async expireStale(maxHours = 72): Promise<{ expired: number }> {
     const { data, error } = await retryAsync(
       () =>
         // Round 18 fix: my Round 9 RPC param is p_ttl_hours, caller used p_max_hours.
@@ -619,29 +722,24 @@ class CashoutServiceClass {
 
     if (error) {
       reportError(error, 'CashoutService.expireStale');
-      return { expired: 0, playersRefunded: [] };
+      return { expired: 0 };
     }
 
-    const expiredRecords = data || [];
-    const playersRefunded: string[] = [];
+    // Defensive on shape, not on trust: a scalar today, a single-row table on an
+    // older database. Anything else counts as nothing rather than crashing a
+    // scheduled job.
+    const raw = Array.isArray(data) ? (data[0] as unknown) : (data as unknown);
+    const expired =
+      typeof raw === 'number'
+        ? raw
+        : Number((raw as { expired?: number } | null)?.expired ?? 0) || 0;
 
-    // Emit BALANCE_UPDATED for each player whose chips were returned
-    for (const rec of expiredRecords) {
-      masterBus.emit('BALANCE_UPDATED', {
-        source: 'cashout_expired',
-        userId: rec.player_id,
-        amount: rec.amount,
-      });
-      playersRefunded.push(rec.player_id);
+    if (expired > 0) {
+      masterBus.emit('BALANCE_UPDATED', { source: 'cashout_expired' });
+      console.debug(`[Cashout] Expired ${expired} stale cashouts and refunded the escrow`);
     }
 
-    if (expiredRecords.length > 0) {
-      console.debug(
-        `[Cashout] Expired ${expiredRecords.length} stale cashouts, refunded ${playersRefunded.length} players`
-      );
-    }
-
-    return { expired: expiredRecords.length, playersRefunded };
+    return { expired };
   }
 }
 

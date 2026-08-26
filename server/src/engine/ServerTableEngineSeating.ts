@@ -606,7 +606,15 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           })
           .catch((err) => {
             console.warn(`[ServerTableEngine:${this.tableId}] atomicCashout on leave failed:`, err);
-            markSeatAsLeft(this.tableId, userId, player.seat_number);
+            // markSeatAsLeft is async. Called bare, a rejection on this path -
+            // the last-resort fallback that only runs because the cash-out
+            // ALREADY failed - was an unhandled promise rejection nobody saw.
+            void markSeatAsLeft(this.tableId, userId, player.seat_number).catch((mErr) => {
+              console.error(
+                `[ServerTableEngine:${this.tableId}] markSeatAsLeft fallback ALSO failed for ${userId} - seat may still be occupied:`,
+                mErr
+              );
+            });
             this.disconnectEngine.unregisterPlayer(this.tableId, userId);
             this.timeBankEngine.removePlayer(this.tableId, userId);
             this.straddleEngine.removePlayer(this.tableId, userId);

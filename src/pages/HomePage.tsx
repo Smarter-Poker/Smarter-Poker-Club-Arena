@@ -1538,7 +1538,20 @@ function HomePageInner() {
                     className={styles.clubCodeInput}
                     placeholder="Enter 5-Digit Club Code"
                     value={clubCode}
-                    onChange={(e) => setClubCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      // Detect pasted invite link
+                      const match = val.match(/\/invite\/([^/?]+)(?:\?ref=([a-zA-Z0-9]+))?/i);
+                      if (match) {
+                        const [, extractedClubId, extractedRef] = match;
+                        setShowJoinModal(false);
+                        navigate(
+                          `/invite/${extractedClubId}${extractedRef ? `?ref=${extractedRef}` : ''}`
+                        );
+                      } else {
+                        setClubCode(val.replace(/\D/g, '').slice(0, 6));
+                      }
+                    }}
                     onKeyDown={(e) => e.key === 'Enter' && handleJoinClubSubmit()}
                   />
                 </div>

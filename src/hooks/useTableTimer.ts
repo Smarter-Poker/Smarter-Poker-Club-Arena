@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { serverNow } from '../utils/serverClock';
+import { ActionClockStore } from './actionClockStore';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -33,25 +34,40 @@ import { serverNow } from '../utils/serverClock';
  * immune to dropped frames, throttling and a backgrounded tab. Nothing
  * accumulates, so nothing drifts.
  *
- * PUBLISHED ONCE A SECOND. React state changes only when the WHOLE second
- * changes. Every consumer of this hook either ceils the value or compares it to
- * a coarse threshold:
+ * PUBLISHED ONCE A SECOND. The reading changes only when the WHOLE second
+ * changes. Every consumer either ceils the value or compares it to a coarse
+ * threshold:
  *
- *   TablePage  `{Math.ceil(actionTimeRemaining)}s`     — whole seconds
- *   TablePage  `actionTimeRemaining <= 3 && > 0`       — whole-second boundary
+ *   TablePage  `{Math.ceil(seconds)}s`                 — whole seconds
+ *   TablePage  `seconds <= 3 && > 0`                   — whole-second boundary
  *   SeatSlot   `timerProgress <= 20` / `<= 33`         — colour class
  *   SeatSlot   `Math.ceil(secondsLeft)`                — whole seconds
  *
- * so NOT ONE of them can tell the difference, and the render count for a 15
- * second turn drops from roughly 450 to 15. The published `timerProgress` is
- * still computed from the PRECISE remainder at the instant of publication, not
- * from the rounded second, so the 20%/33% thresholds land where they always did
- * to within one publication.
+ * so NOT ONE of them can tell the difference, and the publication count for a 15
+ * second turn is 15 rather than roughly 450. The published progress is still
+ * computed from the PRECISE remainder at the instant of publication, not from
+ * the rounded second, so the 20%/33% thresholds land where they always did to
+ * within one publication.
  *
  * (The one place that wanted sub-second resolution is SeatSlot's legacy
  * `--timer-progress` fallback, which only renders when the engine has published
  * NO deadline at all. In that state there is no server timing to be smooth
  * about; it steps once a second now. The real ring is unaffected.)
+ *
+ * ─── NOT IN THE PAGE'S STATE (2026-08-25, second pass) ───────────────────────
+ *
+ * Publishing once a second still re-rendered TablePage once a second, for the
+ * whole of ANY player's turn, because the state lived in the component that
+ * calls this hook. Measured: TWENTY renders of the page across one 20 second
+ * turn, each one re-running a fifteen-thousand-line render body and every child
+ * that is not memoized.
+ *
+ * There is no React state here now. The reading goes into an `ActionClockStore`
+ * (see ./actionClockStore.ts) and the three leaves that genuinely need it —
+ * the acting seat, the control-strip numeral, the warning window — subscribe to
+ * it themselves with `useSyncExternalStore`. TablePage renders ZERO times for
+ * the countdown. Everything else about the clock is unchanged: same evaluation
+ * loop, same drivers, same deadline, same publication instants, same values.
  *
  * TWO DRIVERS. requestAnimationFrame while the tab is visible — it is free, it
  * is aligned to paint, and it keeps the last-second transition crisp — plus a
@@ -95,18 +111,22 @@ export interface UseTableTimerProps {
 
 export interface UseTableTimerReturn {
   /**
-   * WHOLE seconds remaining, rounded up: 15 for the whole of the first second,
-   * 1 for the whole of the last, 0 at expiry. Changes at most once a second —
-   * see the header. `setTimeRemaining` used to be returned beside it and was
-   * called by nobody; it was also a trap, because it wrote display state that
-   * the very next frame overwrote from the clock. It is gone.
+   * The countdown. Read it with `useActionClockSeconds` /
+   * `useActionClockProgress` / `useActionClockUrgent` in the LEAF that displays
+   * it, or synchronously with `clock.getSnapshot()`.
+   *
+   * `timeRemaining`, `timerProgress` and `isUrgent` used to be returned here as
+   * plain numbers, which meant the caller — TablePage — re-rendered on every
+   * publication. Handing back the store instead is the whole point of the
+   * 2026-08-25 second pass: the identity of this object never changes, so the
+   * caller renders once and never again for the clock.
+   *
+   * The instance is stable for the life of the hook, so it is safe in a
+   * dependency array and safe as a prop on a memoized child.
    */
-  timeRemaining: number;
+  clock: ActionClockStore;
   resetTimer: (time?: number) => void;
   extendTimer: (extraSeconds: number) => void;
-  isUrgent: boolean;
-  /** 0-100, computed from the precise remainder at the moment of publication. */
-  timerProgress: number;
 }
 
 const DEFAULT_INITIAL_TIME = 15;
@@ -136,19 +156,27 @@ export function useTableTimer({
   activeSeatKey,
 }: UseTableTimerProps): UseTableTimerReturn {
   /**
-   * ONE piece of state, published at whole-second granularity. Seconds and
-   * progress travel together so a publication is one render, not two.
+   * ONE reading, published at whole-second granularity, into an external store
+   * rather than React state. Seconds, progress and urgency travel together so a
+   * publication wakes a subscriber once, not three times.
+   *
+   * Lazily constructed and then never replaced: a fresh store on a re-render
+   * would orphan every subscriber that had already subscribed to the old one.
    */
-  const [clock, setClock] = useState(() => ({
-    seconds: Math.ceil(Math.max(0, initialTime)),
-    progress: initialTime > 0 ? 100 : 0,
-  }));
+  const storeRef = useRef<ActionClockStore | null>(null);
+  if (storeRef.current === null) {
+    storeRef.current = new ActionClockStore(
+      Math.ceil(Math.max(0, initialTime)),
+      initialTime > 0 ? 100 : 0
+    );
+  }
+  const clock = storeRef.current;
 
   /** The instant the turn ends, on the ENGINE's clock. */
   const deadlineRef = useRef<number>(serverNow() + initialTime * 1000);
-  /** Turn length, for `timerProgress`. A ref, not state: it is never rendered. */
+  /** Turn length, for the progress percentage. A ref: it is never rendered. */
   const totalTimeRef = useRef<number>(initialTime);
-  /** The whole second most recently pushed into state. */
+  /** The whole second most recently published. */
   const publishedSecondsRef = useRef<number>(Math.ceil(Math.max(0, initialTime)));
 
   const onTimeoutRef = useRef(onTimeout);
@@ -157,6 +185,13 @@ export function useTableTimer({
   isHeroTurnRef.current = isHeroTurn;
   const isActiveTurnRef = useRef(isActiveTurn);
   isActiveTurnRef.current = isActiveTurn;
+  /* `isUrgent` used to be derived on the caller's render path, so it tracked
+     `isHeroTurn` for free. It is published into the store now, which means the
+     publication has to be able to see both inputs — hence the refs, plus the
+     forced republication effect below that covers a change of either while the
+     whole second stands still. */
+  const urgencyThresholdRef = useRef(urgencyThreshold);
+  urgencyThresholdRef.current = urgencyThreshold;
 
   /**
    * The RAF loop below subscribes ONCE (empty dep array) and must therefore read
@@ -183,20 +218,27 @@ export function useTableTimer({
   turnDeadlineRef.current = turnDeadlineMs;
 
   /**
-   * Re-read the deadline and, ONLY if the whole second changed, render.
+   * Re-read the deadline and, ONLY if the whole second changed, publish.
    * Returns the precise remainder either way, because the expiry check needs it
-   * on every evaluation and not just on the ones that render.
+   * on every evaluation and not just on the ones that publish.
    */
-  const publish = useCallback((force = false): number => {
-    const remaining = Math.max(0, (deadlineRef.current - serverNow()) / 1000);
-    const whole = Math.ceil(remaining);
-    if (!force && whole === publishedSecondsRef.current) return remaining;
-    publishedSecondsRef.current = whole;
-    const total = totalTimeRef.current;
-    const progress = total > 0 ? Math.max(0, Math.min(100, (remaining / total) * 100)) : 0;
-    setClock({ seconds: whole, progress });
-    return remaining;
-  }, []);
+  const publish = useCallback(
+    (force = false): number => {
+      const remaining = Math.max(0, (deadlineRef.current - serverNow()) / 1000);
+      const whole = Math.ceil(remaining);
+      if (!force && whole === publishedSecondsRef.current) return remaining;
+      publishedSecondsRef.current = whole;
+      const total = totalTimeRef.current;
+      const progress = total > 0 ? Math.max(0, Math.min(100, (remaining / total) * 100)) : 0;
+      clock.publish({
+        seconds: whole,
+        progress,
+        isUrgent: isHeroTurnRef.current && whole <= urgencyThresholdRef.current && whole > 0,
+      });
+      return remaining;
+    },
+    [clock]
+  );
 
   // Bible V8 §6.1 deadline-driven reset. Whenever the server emits a new
   // turn_change (which bumps turnDeadlineMs and activeSeatKey), reseed.
@@ -226,7 +268,12 @@ export function useTableTimer({
     publish(true);
   }, [turnDeadlineMs, activeSeatKey, initialTime, publish]);
 
-  const isUrgent = isHeroTurn && clock.seconds <= urgencyThreshold && clock.seconds > 0;
+  /* Urgency is a function of the clock AND of whose turn it is. The clock
+     republishes on its own; this covers the other input changing between two
+     whole seconds — hero's turn opening or ending inside the urgency window. */
+  useEffect(() => {
+    publish(true);
+  }, [isHeroTurn, urgencyThreshold, publish]);
 
   const resetTimer = useCallback(
     (newTime?: number) => {
@@ -261,7 +308,6 @@ export function useTableTimer({
 
   useEffect(() => {
     let rafId = 0;
-    let watchdogId: ReturnType<typeof setInterval> | undefined;
     let cancelled = false;
     let lastEvalAt = -Infinity;
 
@@ -292,7 +338,11 @@ export function useTableTimer({
       const deadlineNow = turnDeadlineRef.current ?? 0;
       // isActiveTurn finally does something: a stale deadline from a finished
       // hand must not spend a time bank between hands.
-      if (isActiveTurnRef.current && isHeroTurnRef.current && heroFiredRef.current !== deadlineNow) {
+      if (
+        isActiveTurnRef.current &&
+        isHeroTurnRef.current &&
+        heroFiredRef.current !== deadlineNow
+      ) {
         heroFiredRef.current = deadlineNow;
         onTimeoutRef.current();
       }
@@ -309,12 +359,12 @@ export function useTableTimer({
     rafId = requestAnimationFrame(frame);
     // RAF is suspended in a hidden tab. This is what keeps the clock honest —
     // and keeps the time-bank request happening — while the phone is locked.
-    watchdogId = setInterval(() => tick(0), WATCHDOG_INTERVAL_MS);
+    const watchdogId = setInterval(() => tick(0), WATCHDOG_INTERVAL_MS);
 
     return () => {
       cancelled = true;
       cancelAnimationFrame(rafId);
-      if (watchdogId !== undefined) clearInterval(watchdogId);
+      clearInterval(watchdogId);
     };
   }, []); // Subscribe once for the hook's lifetime.
 
@@ -327,14 +377,10 @@ export function useTableTimer({
   // plays a tick immediately, so the two together stuttered the countdown and
   // could leave the loop running after the turn ended.
   //
-  // TablePage is now the SOLE owner of the warning loop. This hook still
-  // exposes `isUrgent` for visual urgency styling.
+  // The warning loop has ONE owner. It was TablePage; since 2026-08-25 it is
+  // <ActionClockWarning>, a leaf that subscribes to this clock and renders
+  // nothing, so the warning window no longer costs the page a render either.
+  // `isUrgent` is still published on the store for visual urgency styling.
 
-  return {
-    timeRemaining: clock.seconds,
-    resetTimer,
-    extendTimer,
-    isUrgent,
-    timerProgress: clock.progress,
-  };
+  return { clock, resetTimer, extendTimer };
 }

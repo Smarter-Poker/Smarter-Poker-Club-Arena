@@ -38,7 +38,7 @@ import { reportError } from '../../utils/errorReporter';
 /* Dan: "use the actual rabbit hunt dynamic image". Updated to the custom
    rabbit/crosshair icon provided by the user. Imported through Vite so it
    emits to dist/assets/ and reaches production via the automated build. */
-import rabbitHuntIcon from '../../assets/icons/icon-rabbit.jpg';
+import { useButtonImage } from '../../hooks/useButtonImage';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -105,6 +105,7 @@ export function RabbitHunt({
   rabbitDiamondCost,
   onReveal,
 }: RabbitHuntProps) {
+  const rabbitHuntIcon = useButtonImage('icon-rabbit');
   const { user } = useAuthUser();
   const toast = useToast();
 

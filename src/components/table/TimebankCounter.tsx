@@ -33,7 +33,7 @@
 
 import React from 'react';
 import './TimebankCounter.css';
-import timebankIcon from '../../assets/icons/icon-timebank.jpg';
+import { useButtonImage } from '../../hooks/useButtonImage';
 
 interface TimebankCounterProps {
   /**
@@ -59,6 +59,7 @@ export const TimebankCounter: React.FC<TimebankCounterProps> = ({
   low,
   bankSeconds = 20,
 }) => {
+  const timebankIcon = useButtonImage('icon-timebank');
   return (
     <button
       type="button"

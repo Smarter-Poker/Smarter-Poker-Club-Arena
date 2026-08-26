@@ -3067,6 +3067,23 @@ export default function TablePage({
   } | null>(null);
   const [showInsurance, setShowInsurance] = useState(false);
   const [insuranceOffer, setInsuranceOffer] = useState<InsuranceOffer | null>(null);
+  /**
+   * POKERBROS PARITY 2026-08-26: while the leader holds the insurance offer,
+   * every OTHER seat and observer shows a quiet status bar under the board
+   * ("Waiting For <name> Insurance Decision") - the reference flow's exact
+   * behavior. `until` is the offer's absolute expiry so the bar can never
+   * outlive the window even if the decision event is missed.
+   */
+  const [insuranceWaitingOn, setInsuranceWaitingOn] = useState<{
+    username: string;
+    until: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!insuranceWaitingOn) return;
+    const ms = Math.max(0, insuranceWaitingOn.until - Date.now());
+    const t = setTimeout(() => setInsuranceWaitingOn(null), ms + 500);
+    return () => clearTimeout(t);
+  }, [insuranceWaitingOn]);
 
   // Run It Twice state — FIX 96: 2-phase flow with chooser model
   const [showRIT, setShowRIT] = useState(false);
@@ -3591,23 +3608,16 @@ export default function TablePage({
   };
 
   // FIX 89: "Decline Now" — may be re-offered on later streets if equity shifts
+  // POKERBROS PARITY 2026-08-26 (Dan): "IF A PLAYER DECLINES, THEY DON'T GET
+  // OFFERED AGAIN." There is no street-only decline any more - every decline
+  // is final for the hand, so this simply delegates to the for-hand path.
   const handleInsuranceDecline = async () => {
-    setShowInsurance(false);
-    if (tableId) {
-      const result = await respondToInsurance(tableId, 'decline', 100, false);
-      if (!result.success) {
-        reportError(result.error, 'TablePage.Decline_failed');
-      }
-    }
-    // After insurance decision, show RIT prompt if set up
-    if (ritOpponent !== 'Opponent') {
-      setShowRIT(true);
-    }
+    await handleInsuranceDeclineForHand();
   };
 
-  // FIX 89: "Decline for Hand" — never re-offered on later streets.
-  // Per-street pause continues only for the player who is "ahead" (highest equity).
-  // If all players decline for hand, remaining streets run out instantly.
+  // A decline is final: never re-offered on later streets. Per-street pacing
+  // continues for any OTHER all-in player who has not declined - if they take
+  // the lead on a later street, the offer goes to them.
   const handleInsuranceDeclineForHand = async () => {
     setShowInsurance(false);
     if (tableId) {
@@ -3625,12 +3635,14 @@ export default function TablePage({
   const insuranceTimeoutRef = useRef<number | null>(null);
   useEffect(() => {
     if (showInsurance) {
-      // Auto-decline after 15 seconds
+      // Auto-decline when the SERVER'S offer window ends (the engine sends
+      // timeoutSeconds with the offer; 15s only as a fallback).
+      const windowMs = (insuranceOffer?.timeoutSeconds || 15) * 1000;
       insuranceTimeoutRef.current = workerTimeout(() => {
         if (!isMounted.current) return;
-        console.debug('[Insurance] Auto-declined after 15s timeout');
+        console.debug('[Insurance] Auto-declined after offer window elapsed');
         handleInsuranceDecline();
-      }, 15000);
+      }, windowMs);
     } else {
       // Cancel the timer when insurance is dismissed (user acted)
       if (insuranceTimeoutRef.current !== null) {
@@ -3645,7 +3657,9 @@ export default function TablePage({
         insuranceTimeoutRef.current = null;
       }
     };
-  }, [showInsurance]);
+    // insuranceOffer included so a re-offer on a later street re-arms the
+    // timer with that street's own window.
+  }, [showInsurance, insuranceOffer]);
 
   // FIX 96: Run It Twice handlers — Bible V8 §4.20 + Dan's rules
   // 2-phase flow: Chooser picks runs (1/2/3), others accept/decline
@@ -5543,6 +5557,33 @@ export default function TablePage({
         const serverOffers = handState.offers as any[];
         if (!serverOffers || serverOffers.length === 0) return;
 
+        // POKERBROS PARITY 2026-08-26: the offer event now carries the full
+        // popup context (leader cards, opponent cards, board, outs). Map the
+        // server card format (hearts/diamonds/...) to client shorthand.
+        const insSuitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
+          hearts: 'h',
+          diamonds: 'd',
+          clubs: 'c',
+          spades: 's',
+          h: 'h',
+          d: 'd',
+          c: 'c',
+          s: 's',
+        };
+        const mapCards = (raw: unknown): { rank: string; suit: 'h' | 'd' | 'c' | 's' }[] =>
+          Array.isArray(raw)
+            ? raw.map((c: any) => ({
+                rank: String(c?.rank ?? ''),
+                suit: insSuitMap[String(c?.suit ?? '')] || 'h',
+              }))
+            : [];
+
+        // The engine publishes how long the offer stands; honour it.
+        const insSecs =
+          Number(serverOffers[0]?.timeoutSeconds) ||
+          Number((handState as Record<string, unknown>).timeoutSeconds) ||
+          15;
+
         // Find the offer for the current hero player
         const heroOffer = serverOffers.find((o: any) => o.playerId === userId);
         if (heroOffer) {
@@ -5557,15 +5598,55 @@ export default function TablePage({
             potAmount: (handState.pot as number) || 0,
             yourStack: 0, // All-in — stack is 0
             opponentStack: 0,
-            yourCards: [], // Cards already displayed on table
-            board: [],
+            yourCards: mapCards(heroOffer.holeCards),
+            opponentCards: mapCards(heroOffer.opponents?.[0]?.holeCards),
+            board: mapCards(handState.board),
+            outs: mapCards(handState.outs),
+            timeoutSeconds: insSecs,
           });
           setShowInsurance(true);
-          // The engine publishes how long the offer stands; honour it.
-          const insSecs = Number((handState as Record<string, unknown>).timeoutSeconds) || 15;
+          setInsuranceWaitingOn(null);
           setDecisionDeadline({ kind: 'insurance', at: Date.now() + insSecs * 1000 });
+        } else {
+          // Everyone else (players AND observers) sees the reference flow's
+          // quiet status bar while the leader decides. Auto-expires with the
+          // offer window so a missed decline event cannot strand it.
+          const leaderName = String(serverOffers[0]?.username || 'Player');
+          setInsuranceWaitingOn({ username: leaderName, until: Date.now() + insSecs * 1000 });
         }
         return; // Don't process as regular state
+      }
+
+      // POKERBROS PARITY 2026-08-26: the leader's decision, table-wide — the
+      // reference flow announces it in a toast and drops the waiting bar.
+      if (eventType === 'insurance_accepted' || eventType === 'insurance_declined') {
+        setInsuranceWaitingOn(null);
+        const who = String((handState as Record<string, unknown>).username || 'Player');
+        const actorId = String((handState as Record<string, unknown>).playerId || '');
+        if (actorId && actorId !== userId) {
+          toast.info(
+            eventType === 'insurance_accepted'
+              ? `${who} Has Accepted Insurance`
+              : `${who} Has Declined Insurance`,
+            3000
+          );
+        }
+        return;
+      }
+
+      if (eventType === 'insurance_settled') {
+        const actorId = String((handState as Record<string, unknown>).playerId || '');
+        const payout = Number((handState as Record<string, unknown>).payout || 0);
+        const won = Boolean((handState as Record<string, unknown>).won);
+        if (actorId === userId) {
+          if (won && payout > 0) {
+            toast.success(`Insurance Paid You $${payout.toLocaleString()}`, 5000);
+          } else if (!won && payout === 0) {
+            // Push (chop) or premium kept — the pot result speaks for itself;
+            // only announce an actual payout to avoid noise.
+          }
+        }
+        return;
       }
 
       // FIX 96 → POKERBROS PARITY 2026-08-26: the consent panel opens for
@@ -13505,6 +13586,10 @@ export default function TablePage({
                         deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                         cardBack={activeCardBack}
                         playSounds={ambientSoundsAllowed}
+                        /* POKERBROS PARITY 2026-08-26: during the all-in
+                           runout (equity overlay live) the turn/river land
+                           face down and flip - the reference slowed reveal. */
+                        slowReveal={allInEquities.length > 0}
                       />
                       {/* DOUBLE-BOARD BOMB POT 2026-08-20: board 2, stacked
                           directly under board 1 like the reference — no label,
@@ -13523,6 +13608,7 @@ export default function TablePage({
                             deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                             cardBack={activeCardBack}
                             playSounds={false}
+                            slowReveal={allInEquities.length > 0}
                           />
                         </div>
                       )}
@@ -13691,6 +13777,15 @@ export default function TablePage({
           {ritFeltBanner && (
             <div className="rit-felt-banner" role="status" aria-live="polite">
               <span className="rit-felt-banner__text">{ritFeltBanner}</span>
+            </div>
+          )}
+
+          {/* POKERBROS PARITY 2026-08-26: while the leader holds an insurance
+              offer, everyone else sees the reference flow's quiet status bar -
+              the runout is visibly paused, not hung. */}
+          {insuranceWaitingOn && !showInsurance && (
+            <div className="insurance-waiting-bar" role="status" aria-live="polite">
+              Waiting For Insurance Decision From {insuranceWaitingOn.username}
             </div>
           )}
 

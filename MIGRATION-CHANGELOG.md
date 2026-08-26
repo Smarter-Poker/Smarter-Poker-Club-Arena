@@ -7,6 +7,53 @@
 
 ---
 
+## Cowork session 2026-08-26 — INSURANCE POKERBROS PARITY (reference video)
+
+Dan uploaded a screen recording of the reference app's all-in flow and asked
+for a 1:1 clone of its pacing and functionality: the action pauses, the offer
+is presented, turn/river are slowed and flipped, decisions are announced.
+Frame-by-frame analysis of the clip (observer view of a run-it-3x hand)
+documented: a bottom "waiting" status line while the offer stands, a
+table-wide toast when the decision is made, and each runout card landing face
+down and flipping after a beat.
+
+New binding rules from Dan, and what changed:
+
+1. **A decline is FINAL for the hand.** "If a player declines, they don't get
+   offered again." Timeout = decline = final (InsuranceEngine expiry callback,
+   respondToInsurance, client decline handlers, single Decline button in the
+   modal replacing the Decline Now / Decline For Hand pair).
+2. **Offers on every street to the CURRENT best hand** already existed
+   (per-street re-evaluation), but an eligibility defect defeated it: after
+   the leader declined, the pause flow only consulted players who had already
+   RECEIVED offers, gave up per-street pacing, and the villain who took the
+   lead on the next street was never offered. Eligibility is now computed
+   over ALL all-in players (ServerTableEngineRunout).
+3. **Decision events reach the table.** INSURANCE_ACCEPTED / DECLINED /
+   SETTLED died in a console.log (same defect class as the rakeback events);
+   they now go out on the hub as insurance_accepted / insurance_declined /
+   insurance_settled with the player's username. Client: toast on decision,
+   payout toast to the settled player.
+4. **Observer flow.** Everyone except the leader shows a quiet pulsing status
+   bar under the board ("Waiting For <name>'s Insurance Decision") that
+   auto-expires with the offer window (TablePage + CSS).
+5. **The popup got its missing content.** The offer event now carries the
+   leader's cards, opponent cards, board, street and server-computed OUTS
+   (InsuranceEquity.leaderOuts — exact next-street enumeration; quads /
+   board-pairing boats correctly excluded). InsuranceModal displays the outs
+   row and a LIVE ticking countdown (red under 5s) driven by the server's
+   timeoutSeconds instead of a frozen "15s".
+6. **Slowed all-in reveal.** During the runout (equity overlay live) turn and
+   river land FACE DOWN, hold a beat, then flip — reusing the flop's
+   two-surface flip markup with slow-reveal timing (CommunityCards
+   slowReveal prop + CSS; reduced-motion respected; newly-dealt window
+   extended to 1.8s in this mode so the flip is never torn out mid-turn).
+
+Tests: 96 server tests pass including new pins — timed-out offer is a final
+decline; leaderOuts counts 7 live clubs (not 9) in the set-vs-flush-draw spot.
+
+---
+
 ## Cowork session 2026-08-26 — HORSE BRAIN V15 + THE 20BB REVIEW SYSTEM
 
 Dan: "massive improvement and optimization to the decision making... I watched

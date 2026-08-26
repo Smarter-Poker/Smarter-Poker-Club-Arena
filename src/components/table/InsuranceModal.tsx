@@ -30,6 +30,15 @@ export interface InsuranceOffer {
   opponentCards?: { rank: string; suit: 'h' | 'd' | 'c' | 's' }[];
   board: { rank: string; suit: 'h' | 'd' | 'c' | 's' }[];
   evCashoutRake?: number; // EV cashout rake (default 1%)
+  /**
+   * POKERBROS PARITY 2026-08-26: the specific next-street cards that put the
+   * opponent ahead — shown as a row of small cards with a count, exactly the
+   * information the reference popup leads with. Computed server-side
+   * (InsuranceEquity.leaderOuts) and sent with the offer.
+   */
+  outs?: { rank: string; suit: 'h' | 'd' | 'c' | 's' }[];
+  /** Server-published offer window in seconds (drives the popup countdown). */
+  timeoutSeconds?: number;
 }
 
 export interface InsuranceModalProps {
@@ -81,6 +90,10 @@ export function InsuranceModal({
   const [activeTab, setActiveTab] = useState<ModalTab>('insurance');
   const [coverageAmount, setCoverageAmount] = useState(offer.maxCoverage);
   const [mounted, setMounted] = useState(false);
+  // POKERBROS PARITY 2026-08-26: a LIVE countdown. The prop used to be a
+  // static number that rendered "15s" for the whole window; the reference
+  // popup visibly counts down to its auto-decline.
+  const [secondsLeft, setSecondsLeft] = useState(offer.timeoutSeconds ?? timeRemaining);
 
   useEffect(() => {
     if (isOpen) {
@@ -92,6 +105,17 @@ export function InsuranceModal({
       setActiveTab('insurance');
     }
   }, [isOpen]);
+
+  // Countdown ticks once per second while open; re-arms when a later street's
+  // offer replaces this one (offer identity changes).
+  useEffect(() => {
+    if (!isOpen) return;
+    setSecondsLeft(offer.timeoutSeconds ?? timeRemaining);
+    const iv = setInterval(() => {
+      setSecondsLeft((s) => (s > 0 ? s - 1 : 0));
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [isOpen, offer, timeRemaining]);
 
   // ── Insurance calculations ──
   const premium = useMemo(
@@ -179,9 +203,11 @@ export function InsuranceModal({
               {activeTab === 'insurance' ? 'Insurance' : 'EV Cashout'}
             </h2>
           </div>
-          {timeRemaining !== undefined && (
-            <span className="insurance-modal__timer">{timeRemaining}s</span>
-          )}
+          <span
+            className={`insurance-modal__timer ${secondsLeft <= 5 ? 'insurance-modal__timer--urgent' : ''}`}
+          >
+            {secondsLeft}s
+          </span>
         </div>
 
         {/* Tab Switcher */}
@@ -262,6 +288,22 @@ export function InsuranceModal({
           </span>
         </div>
 
+        {/* Outs — the specific next-street cards that put you behind */}
+        {offer.outs && offer.outs.length > 0 && (
+          <div className="insurance-modal__outs">
+            <span className="insurance-modal__outs-label">
+              Outs Against You ({offer.outs.length})
+            </span>
+            <div className="insurance-modal__outs-cards">
+              {offer.outs.map((card, i) => (
+                <span key={i} className="insurance-modal__outs-card">
+                  <CardImage card={toCardImage(card)} size="xs" />
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ═══ INSURANCE TAB ═══ */}
         {activeTab === 'insurance' && (
           <>
@@ -324,22 +366,17 @@ export function InsuranceModal({
               </div>
             </div>
 
+            {/* POKERBROS PARITY 2026-08-26 (Dan): a decline is FINAL for the
+                hand, so the old "Decline Now" / "Decline For Hand" pair is one
+                button now. handleDecline routes to the for-hand path. */}
             <div className="insurance-modal__actions">
               <button
                 className="insurance-modal__btn insurance-modal__btn--decline"
-                onClick={handleDecline}
+                onClick={handleDeclineForHand}
+                title="Decline insurance for the rest of this hand"
               >
-                Decline Now
+                Decline
               </button>
-              {onDeclineForHand && (
-                <button
-                  className="insurance-modal__btn insurance-modal__btn--decline-hand"
-                  onClick={handleDeclineForHand}
-                  title="Decline insurance for all remaining streets this hand"
-                >
-                  Decline For Hand
-                </button>
-              )}
               <button
                 className="insurance-modal__btn insurance-modal__btn--accept"
                 onClick={handleAccept}

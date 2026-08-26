@@ -1538,7 +1538,7 @@ export default function CreateTournamentModal({
                       style={{ marginTop: '16px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}
                     >
                       <div className={styles.formGroup} style={{ flex: 1, minWidth: '120px' }}>
-                        <label>Number of Satellites</label>
+                        <label>Number Of Satellites</label>
                         <input
                           type="text"
                           inputMode="numeric"

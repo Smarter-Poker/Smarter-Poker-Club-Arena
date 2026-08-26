@@ -23,7 +23,6 @@ export interface SitOutModalProps {
   onClose: () => void;
   onReturn: () => void;
   onLeaveTable: () => void;
-  onAutoPostChange?: (enabled: boolean) => void;
   /**
    * HONESTY FIX 2026-08-16: this used to be `timeRemaining` — "seconds until
    * auto-kicked" — counting down from 300, alongside the warning "You will be
@@ -46,19 +45,12 @@ export interface SitOutModalProps {
    * Epoch ms of when sit-out began, or null if that is not known.
    */
   sitOutSince: number | null;
-  autoPostBlinds?: boolean;
   tableName?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
-
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -69,13 +61,10 @@ export function SitOutModal({
   onClose,
   onReturn,
   onLeaveTable,
-  onAutoPostChange,
   sitOutSince,
-  autoPostBlinds = true,
   tableName,
 }: SitOutModalProps) {
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
 
   // Reset the destructive confirm on every close.
   //
@@ -88,17 +77,11 @@ export function SitOutModal({
     if (!isOpen) setShowLeaveConfirm(false);
   }, [isOpen]);
 
-  // Count UP from when sit-out began. One interval for the lifetime of the
-  // open modal — the old countdown listed `displayTime` in its own dependency
-  // array, so it tore down and recreated the interval on every single tick.
-  useEffect(() => {
-    if (!isOpen) return;
-    const since = sitOutSince ?? Date.now();
-    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - since) / 1000)));
-    tick();
-    const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
-  }, [isOpen, sitOutSince]);
+  // REMOVED 2026-08-26: a 1 Hz setInterval that set `elapsed`, which appeared
+  // nowhere in this component's JSX, alongside a `formatTime` helper nothing
+  // called. It re-rendered the open modal once a second to display nothing.
+  // If a sit-out duration readout is wanted, render it from `sitOutSince` in a
+  // memoised child so the tick does not re-render the modal body.
 
   // Handle return
   const handleReturn = useCallback(() => {

@@ -56,10 +56,21 @@ describe('the whole scene steps back behind the winner (measured 0.73)', () => {
     expect(TABLE_CSS.slice(at, at + 400)).toMatch(/brightness\(0\.73\)/);
   });
 
-  it('every seat chrome element dims — cards excluded, they carry their own states', () => {
-    const at = SEAT_CSS.indexOf(".table-page--winner-flash .seat > :not([class*='seat__cards'])");
+  it('every seat chrome element dims — cards, +N float and sparkles excluded', () => {
+    const at = SEAT_CSS.indexOf('.table-page--winner-flash');
     expect(at, 'seat chrome dim rule missing').toBeGreaterThan(-1);
-    expect(SEAT_CSS.slice(at, at + 300)).toMatch(/brightness\(0\.73\)/);
+    const rule = SEAT_CSS.slice(at, SEAT_CSS.indexOf('}', at));
+    expect(rule).toMatch(/:not\(\[class\*='seat__cards'\]\)/);
+    expect(rule).toMatch(/:not\(\.seat__net-win\)/);
+    expect(rule).toMatch(/:not\(\.seat__win-sparkles\)/);
+    expect(rule).toMatch(/brightness\(0\.73\)/);
+  });
+
+  it('the page backdrop and the dealer button dim with the scene', () => {
+    expect(TABLE_CSS).toMatch(/\.table-page--winner-flash::before/);
+    const at = TABLE_CSS.indexOf('.table-page--winner-flash::before');
+    expect(TABLE_CSS.slice(at, at + 400)).toMatch(/rgba\(0,\s*0,\s*0,\s*0\.27\)/);
+    expect(TABLE_CSS).toMatch(/\.table-page--winner-flash \.dealer-button/);
   });
 
   it('the old golden table flash is gone — the reference has no flash', () => {
@@ -120,6 +131,22 @@ describe('the highlight is STEADY — zero motion at the cut', () => {
     expect(BOARD_CSS).not.toMatch(/--showdown \.community-cards__card\s*\{/);
   });
 
+  it('the specular sheen pauses on winning and dimmed cards alike', () => {
+    for (const sel of [
+      '.community-cards__card--highlighted::after',
+      '.community-cards__card--dimmed::after',
+    ]) {
+      const at = BOARD_CSS.indexOf(sel);
+      expect(at, `${sel} missing`).toBeGreaterThan(-1);
+      expect(BOARD_CSS.slice(at, BOARD_CSS.indexOf('}', at))).toMatch(/animation:\s*none/);
+    }
+  });
+
+  it('the hover lift is frozen while the winner tableau is painted', () => {
+    expect(BOARD_CSS).toMatch(/\.community-cards__card--dimmed:hover/);
+    expect(BOARD_CSS).toMatch(/\.community-cards__card--highlighted:hover/);
+  });
+
   it('CardImage no longer lifts a highlighted card off its slot', () => {
     const at = CARD_CSS.indexOf('.card-image--highlighted');
     expect(at).toBeGreaterThan(-1);
@@ -150,9 +177,32 @@ describe('the state lands as a CUT — nothing slower than 120ms', () => {
   });
 
   it('the seat chrome dim carries no transition — filters snap', () => {
-    const at = SEAT_CSS.indexOf(".table-page--winner-flash .seat > :not([class*='seat__cards'])");
+    const at = SEAT_CSS.indexOf('.table-page--winner-flash');
     const body = SEAT_CSS.slice(at, SEAT_CSS.indexOf('}', at));
     expect(body).not.toMatch(/transition/);
+  });
+});
+
+describe('the winner sequence details match the reference', () => {
+  it('the +N float is the measured bright yellow and rides above the dim', () => {
+    const at = SEAT_CSS.indexOf('.seat__net-win {');
+    expect(at).toBeGreaterThan(-1);
+    expect(SEAT_CSS.slice(at, SEAT_CSS.indexOf('}', at))).toMatch(/#ffe94a/i);
+  });
+
+  it('four-point star sparkles render over a positive win, and only a positive one', () => {
+    expect(SEAT).toMatch(/seat__win-sparkles/);
+    expect(SEAT).toMatch(/netWinAmount\s*>\s*0\s*&&\s*\(/);
+    const at = SEAT_CSS.indexOf('.seat__win-sparkle {');
+    expect(at, 'sparkle rule missing').toBeGreaterThan(-1);
+    const body = SEAT_CSS.slice(at, SEAT_CSS.indexOf('}', at));
+    expect(body).toMatch(/clip-path/);
+    expect(SEAT_CSS).toMatch(/seatWinSparkleTwinkle/);
+  });
+
+  it('the double-board bomb pot lights and dims board 2 like board 1', () => {
+    expect(TABLE_PAGE).toMatch(/board2HighlightedIndices/);
+    expect(TABLE_PAGE).toMatch(/highlightedIndices=\{board2HighlightedIndices\}/);
   });
 });
 

@@ -15201,3 +15201,21 @@ line-by-line re-read exposed:
 - Cadence retuned to measurements: POT_AWARD_STAGGER_MS 600 → 900, RIT run
   gap 1500 → 1800.
 - New hold-math pins in tests/unit/handCompletionLaw.test.ts.
+
+### Round 3 — the RUN IT 3X recording (turn all-in, spectator view)
+
+Dan supplied a fourth reference recording (Crazy Pineapple HU turn all-in run
+three times, captured from a folded player's seat). Three behaviors adopted:
+
+- Per-player accept banners on the felt ("<name> Has Accepted Running
+  Multi-Times.", revert to the waiting strip while the offer hangs) — the
+  whole story for spectators, who have no panel. Collective banner suppressed
+  when a named one just fired.
+- Compact partial-re-deal layout: extra-run rows hide the shared-prefix
+  slots (width kept) so re-dealt cards sit under their street positions,
+  like the reference's parked rivers. Preflop keeps full rows.
+- INTERLEAVED winner phase: ribbon + highlights + ship per run, run by run
+  (RIT_RESULT_RUN_MS 2600ms windows; ships aligned to each run's ribbon via
+  ritRunRibbonAtRef). Engine hold formula now
+  reveal + runs x RIT_RESULT_RUN_MS + push — spec mirrors updated
+  byte-identical, handCompletionLaw pins updated in the same commit.

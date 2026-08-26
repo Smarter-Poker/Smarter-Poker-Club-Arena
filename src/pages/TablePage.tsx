@@ -3111,7 +3111,15 @@ export default function TablePage({
   // a few seconds. NOT a toast: the reference renders it over the table.
   const [ritFeltBanner, setRitFeltBanner] = useState<string | null>(null);
   const ritFeltBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const showRitFeltBanner = useCallback((text: string, ms?: number) => {
+  const RIT_WAITING_BANNER = 'Waiting For Players To Run It Multiple Times.';
+  /**
+   * @param revertToWaiting — RUN IT 3X recording: a per-player accept banner
+   * shows for a few seconds, then the table drops BACK to the waiting strip
+   * while the offer still hangs. When set, expiry restores the waiting text
+   * instead of clearing, as long as the offer deadline is still in the
+   * future.
+   */
+  const showRitFeltBanner = useCallback((text: string, ms?: number, revertToWaiting?: boolean) => {
     if (ritFeltBannerTimerRef.current) {
       clearTimeout(ritFeltBannerTimerRef.current);
       ritFeltBannerTimerRef.current = null;
@@ -3120,10 +3128,17 @@ export default function TablePage({
     if (ms && ms > 0) {
       ritFeltBannerTimerRef.current = setTimeout(() => {
         ritFeltBannerTimerRef.current = null;
-        setRitFeltBanner(null);
+        setRitFeltBanner(
+          revertToWaiting && ritDeadlineRef.current > Date.now() ? RIT_WAITING_BANNER : null
+        );
       }, ms);
     }
   }, []);
+  /** When the last per-player accept banner fired — the collective
+   *  "players have accepted" banner is skipped if one just showed
+   *  (the 3X recording goes straight from the final accept's named banner
+   *  into the runout). */
+  const ritLastAcceptBannerAtRef = useRef(0);
   // Reference behavior: the panel slides in a beat AFTER the table settles
   // into "waiting" — not in the same frame as the all-in.
   const ritPanelOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -3137,6 +3152,16 @@ export default function TablePage({
   // so the counts advance on a timer chain and the pot ship waits for it.
   const [ritRevealCounts, setRitRevealCounts] = useState<number[] | null>(null);
   const [ritRevealDone, setRitRevealDone] = useState(false);
+  /**
+   * RUN IT 3X recording (2026-08-26): the winner phase is INTERLEAVED per
+   * run — run 1's ribbon + highlights land, run 1's pots ship, THEN run 2's
+   * ribbon, and so on. How many runs have taken the stage so far; each
+   * board's ribbon/highlight/share label gates on its own run's turn.
+   */
+  const [ritRevealedRuns, setRitRevealedRuns] = useState(0);
+  /** Absolute wall-clock ms at which each run's ribbon lands (index = run-1).
+   *  POT_WIN aligns each run's award groups to these. */
+  const ritRunRibbonAtRef = useRef<number[]>([]);
   const ritRevealTimersRef = useRef<number[]>([]);
   const ritTimelineEndsAtRef = useRef(0);
   const clearRitRevealTimers = useCallback(() => {
@@ -3153,6 +3178,9 @@ export default function TablePage({
     setRitChooserHasDecided(false);
     setRitRevealCounts(null);
     setRitRevealDone(false);
+    setRitRevealedRuns(0);
+    ritRunRibbonAtRef.current = [];
+    ritLastAcceptBannerAtRef.current = 0;
     ritDeadlineRef.current = 0;
     ritTimelineEndsAtRef.current = 0;
     if (ritPanelOpenTimerRef.current) {
@@ -3281,10 +3309,11 @@ export default function TablePage({
       // POKERBROS PARITY 2026-08-26: the reveal timeline gates presentation.
       // While the boards are still dealing, each run shows only the cards the
       // timeline has turned so far (undealt slots render face down) and NO
-      // winner labels or highlights; the ribbons, names and share amounts
-      // arrive together once the last river has landed.
+      // winner labels or highlights. RUN IT 3X recording: the winner phase
+      // then replays RUN BY RUN — each board's ribbon, highlights and share
+      // label appear on its own turn (ritRevealedRuns), ships aligned to it.
       const visibleCount = ritRevealCounts?.[bi] ?? 5;
-      const revealed = ritRevealDone || ritRevealCounts === null;
+      const revealed = ritRevealCounts === null || ritRevealDone || bi < ritRevealedRuns;
 
       return {
         boardIndex: bi,
@@ -3298,7 +3327,14 @@ export default function TablePage({
         revealed,
       };
     });
-  }, [ritResult, tableState.players, tableState.gameType, ritRevealCounts, ritRevealDone]);
+  }, [
+    ritResult,
+    tableState.players,
+    tableState.gameType,
+    ritRevealCounts,
+    ritRevealDone,
+    ritRevealedRuns,
+  ]);
 
   // ─── Multi-table info reporting ─────────────────────────────────────
   // When embedded in MultiTablePage, report table name/pot/turn status
@@ -5550,7 +5586,7 @@ export default function TablePage({
         // The waiting strip rides the felt for EVERYONE — spectators and
         // folded players watch the question hang exactly like the reference,
         // and it stays up until an outcome event replaces or clears it.
-        showRitFeltBanner('Waiting For Players To Run It Multiple Times.');
+        showRitFeltBanner(RIT_WAITING_BANNER);
 
         // Only the all-in players get the consent panel itself.
         if (!userId || !allPlayerIds?.includes(userId)) return;
@@ -5610,10 +5646,22 @@ export default function TablePage({
       }
 
       // POKERBROS PARITY 2026-08-26: a player accepted — tick their check.
+      // RUN IT 3X recording: the felt also announces each accept BY NAME for
+      // a few seconds ("<name> has accepted running multi-times."), then
+      // drops back to the waiting strip while the offer still hangs — this
+      // is the whole story for spectators and folded players, who have no
+      // panel.
       if (eventType === 'rit_response_update') {
         const acceptedIds = (handState.accepted_ids as string[]) || [];
         if (acceptedIds.length > 0) {
           setRitAcceptedIds((prev) => [...new Set([...prev, ...acceptedIds])]);
+        }
+        const who = handState.player_id as string | null;
+        if (who) {
+          const name =
+            tableStateRef.current?.players?.find((pp) => pp?.id === who)?.name || 'A Player';
+          ritLastAcceptBannerAtRef.current = Date.now();
+          showRitFeltBanner(`${name} Has Accepted Running Multi-Times.`, 3500, true);
         }
         return;
       }
@@ -5631,12 +5679,18 @@ export default function TablePage({
         setShowRIT(false);
         setRitHeroAccepted(false);
         const runs = (handState.runs as number) || 2;
-        showRitFeltBanner(
-          runs === 3
-            ? 'Players Have Accepted Running It 3 Times.'
-            : 'Players Have Accepted Running It Twice.',
-          4500
-        );
+        // RUN IT 3X recording: when the FINAL accept's named banner just
+        // fired, the table goes straight into the runout under that banner —
+        // the collective line only shows when completion arrived without one
+        // (e.g. the chooser's own pick completed the consent).
+        if (Date.now() - ritLastAcceptBannerAtRef.current > 2000) {
+          showRitFeltBanner(
+            runs === 3
+              ? 'Players Have Accepted Running It 3 Times.'
+              : 'Players Have Accepted Running It Twice.',
+            4500
+          );
+        }
         return;
       }
 
@@ -5761,13 +5815,35 @@ export default function TablePage({
           }
           // No streets to deal (defensive: river all-in) → reveal instantly.
           if (streetStops.length === 0) at = 0;
-          const doneAt = at + RIBBON_MS;
+          // The loop above appended a trailing run gap after the last river;
+          // the winner phase starts a ribbon-beat after that river instead.
+          const riversDoneAt = Math.max(0, at - RUN_GAP_MS);
+
+          // ── RUN IT 3X recording: the winner phase replays RUN BY RUN ──
+          // ribbon + highlights for run 1 → run 1's pots ship → settle →
+          // run 2's ribbon → … One RIT_RESULT_RUN_MS window per run; the
+          // POT_WIN handler aligns each run's award groups to these times.
+          const RESULT_RUN_MS = HAND_COMPLETION.RIT_RESULT_RUN_MS * speed;
+          ritRunRibbonAtRef.current = [];
+          const nowTs = Date.now();
+          for (let r = 0; r < boards.length; r++) {
+            const ribbonDelay = riversDoneAt + RIBBON_MS + r * RESULT_RUN_MS;
+            ritRunRibbonAtRef.current.push(nowTs + ribbonDelay);
+            const runIndex = r + 1;
+            const tRibbon = window.setTimeout(() => {
+              setRitRevealCounts(boards.map(() => 5));
+              setRitRevealedRuns(runIndex);
+            }, ribbonDelay);
+            ritRevealTimersRef.current.push(tRibbon);
+          }
+          const doneAt = riversDoneAt + RIBBON_MS + boards.length * RESULT_RUN_MS;
           const tDone = window.setTimeout(() => {
-            setRitRevealCounts(boards.map(() => 5));
             setRitRevealDone(true);
           }, doneAt);
           ritRevealTimersRef.current.push(tDone);
-          ritTimelineEndsAtRef.current = Date.now() + doneAt;
+          // The FIRST ship moment — the generic pot-ship hold reads this;
+          // per-group alignment to each run's ribbon rides ritRunRibbonAtRef.
+          ritTimelineEndsAtRef.current = nowTs + riversDoneAt + RIBBON_MS;
 
           if (ritResultTimerRef.current) clearTimeout(ritResultTimerRef.current);
           // The overlay clear must outlive the reveal: timeline + read time.
@@ -10241,9 +10317,17 @@ export default function TablePage({
               toY: number;
               amount: number;
             }>;
+            /** RUN index (1..N) on run-it-twice hands; 1 otherwise. */
+            board: number;
+            /** This group's position among its own run's pots (0 = main). */
+            rankInBoard: number;
           }
+          const boardRankCounter = new Map<number, number>();
           const awardGroups: AwardGroupAnim[] = seqGroups.map((g) => {
-            const anim: AwardGroupAnim = { events: [], floats: [] };
+            const boardNo = g.board >= 1 ? g.board : 1;
+            const rankInBoard = boardRankCounter.get(boardNo) ?? 0;
+            boardRankCounter.set(boardNo, rankInBoard + 1);
+            const anim: AwardGroupAnim = { events: [], floats: [], board: boardNo, rankInBoard };
             for (const w of g.winners) {
               // Review fix 2026-08-25: pot_awards amounts are EXACT per-pot
               // shares — a 0 there is a real zero (a fully-raked micro pot),
@@ -10308,9 +10392,21 @@ export default function TablePage({
             };
             for (const t of potAwardStaggerTimersRef.current) clearTimeout(t);
             potAwardStaggerTimersRef.current = [];
+            // RUN IT 3X recording (2026-08-26): on a multi-board hand each
+            // run's pots ship on that RUN'S OWN turn — a ribbon-beat after
+            // its ribbon lands, pots within the run staggered as usual. The
+            // ribbon times come from the reveal timeline (ritRunRibbonAtRef).
+            const ribbonTimes = ritRunRibbonAtRef.current;
+            const speedNow = getAnimationSpeed();
             awardGroups.forEach((g, rank) => {
+              const ribbonAt = ribbonTimes[g.board - 1];
               const groupDelay =
-                shipDelayMs + rank * HAND_COMPLETION.POT_AWARD_STAGGER_MS * getAnimationSpeed();
+                ribbonTimes.length > 0 && ribbonAt
+                  ? Math.max(0, ribbonAt - Date.now()) +
+                    (HAND_COMPLETION.RIT_RIBBON_MS +
+                      g.rankInBoard * HAND_COMPLETION.POT_AWARD_STAGGER_MS) *
+                      speedNow
+                  : shipDelayMs + rank * HAND_COMPLETION.POT_AWARD_STAGGER_MS * speedNow;
               if (groupDelay > 0) {
                 const t = window.setTimeout(() => {
                   potAwardStaggerTimersRef.current = potAwardStaggerTimersRef.current.filter(
@@ -10331,11 +10427,27 @@ export default function TablePage({
           // pending share (see the displayPlayer hold at render). Scheduled
           // even when no fan could be built (seat lookup failure), so the
           // hold can never outlive the hand it belongs to.
+          // On a run-by-run RIT presentation the LAST ship is aligned to the
+          // last run's ribbon, not the uniform stagger — mirror the delay
+          // rule used to fire the groups above.
+          const ribbonTimesForHold = ritRunRibbonAtRef.current;
           const lastGroupDelay =
-            shipDelayMs +
-            Math.max(0, awardGroups.length - 1) *
-              HAND_COMPLETION.POT_AWARD_STAGGER_MS *
-              getAnimationSpeed();
+            ribbonTimesForHold.length > 0 && awardGroups.length > 0
+              ? Math.max(
+                  ...awardGroups.map((g) => {
+                    const ribbonAt = ribbonTimesForHold[g.board - 1];
+                    return ribbonAt
+                      ? Math.max(0, ribbonAt - Date.now()) +
+                          (HAND_COMPLETION.RIT_RIBBON_MS +
+                            g.rankInBoard * HAND_COMPLETION.POT_AWARD_STAGGER_MS) *
+                            getAnimationSpeed()
+                      : shipDelayMs;
+                  })
+                )
+              : shipDelayMs +
+                Math.max(0, awardGroups.length - 1) *
+                  HAND_COMPLETION.POT_AWARD_STAGGER_MS *
+                  getAnimationSpeed();
           if (stackHoldReleaseTimerRef.current) clearTimeout(stackHoldReleaseTimerRef.current);
           stackHoldReleaseTimerRef.current = setTimeout(
             () => {

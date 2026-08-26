@@ -21,7 +21,7 @@ import { resolve } from 'path';
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
 const CASHOUT_LEGS = read(
-  'supabase/migrations/20260826020000_cashout_closing_legs_return_the_escrow_not_the_request.sql'
+  'supabase/migrations/20260826025000_cashout_closing_legs_return_the_escrow_not_the_request.sql'
 );
 const TWICE = read(
   'supabase/migrations/20260826030000_money_paths_that_could_run_twice_or_destroy_chips.sql'

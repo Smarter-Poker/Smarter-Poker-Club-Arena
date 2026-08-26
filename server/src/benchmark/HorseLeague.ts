@@ -661,6 +661,10 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // Measurable because playHand's sandbox settlement now feeds
   // observeHandComplete — the reads accumulate inside each pass's sandbox.
   { name: 'v16_deep_reads', pairs: 6000, a: {}, b: { v16Reads: false } },
+  // ── V17 (2026-08-26) ──
+  { name: 'v17_positional', pairs: 6000, a: {}, b: { v17Pos: false } },
+  { name: 'v17_river_probe', pairs: 6000, a: {}, b: { v17RiverProbe: false } },
+  { name: 'shortdeck_v17', variant: 'short_deck', pairs: 6000, a: {}, b: { v17ShortDeck: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
   { name: 'mind_layer', a: {}, b: { mind: false } },
@@ -685,6 +689,10 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v16Blockers: false,
       v16SizeCond: false,
       v16PloPolar: false,
+      v17Pos: false,
+      v17RiverProbe: false,
+      v17CatchBlock: false,
+      v17ShortDeck: false,
       mind: false,
       streetIQ: false,
       handReading: false,

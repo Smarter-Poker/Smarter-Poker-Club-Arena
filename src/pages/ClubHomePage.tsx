@@ -69,6 +69,7 @@ import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
 import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
+import { readLocalSession } from '../lib/authUtils';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
 import { matchesVariant } from '../utils/tournamentFilters';
 import { useUserStore } from '../stores/useUserStore';
@@ -3131,23 +3132,34 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                       haptic.medium();
                       let refQuery = '';
                       try {
-                        const {
-                          data: { user },
-                        } = await supabase.auth.getUser();
-                        if (user) {
+                        // readLocalSession, not the auth SDK's remote user
+                        // lookup: the pre-push guard blocks that call by name,
+                        // and it is right to. It is a network round trip to
+                        // GoTrue on every tap of Share, when the session is
+                        // already in localStorage, parsed and expiry-checked —
+                        // and this is a button a player expects to open the
+                        // share sheet instantly.
+                        const session = readLocalSession();
+                        if (session?.userId) {
                           const { data: prof } = await supabase
                             .from('profiles')
                             .select('player_number')
-                            .eq('id', user.id)
-                            .single();
-                          if (prof?.player_number) {
-                            refQuery = `?ref=${prof.player_number}`;
-                          } else {
-                            refQuery = `?ref=${user.id}`;
-                          }
+                            // .maybeSingle(), never .single(): a profile row that
+                            // does not exist yet is a normal state, and .single()
+                            // throws PGRST116 on zero rows — which this catch
+                            // would then swallow, silently dropping the referral
+                            // code from the invite link.
+                            .eq('id', session.userId)
+                            .maybeSingle();
+                          refQuery = prof?.player_number
+                            ? `?ref=${prof.player_number}`
+                            : `?ref=${session.userId}`;
                         }
-                      } catch (e) {
-                        // ignore
+                      } catch (err) {
+                        // The link still works without a referral code, so this
+                        // must never block the share — but it is a lost referral
+                        // credit, so it is reported rather than ignored.
+                        reportError(err, 'ClubHomePage.share_ref_lookup_failed');
                       }
                       const shareUrl = `${window.location.origin}/hub/club-arena/invite/${club.id}${refQuery}`;
                       try {

@@ -84,7 +84,14 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
               amount: a.amount,
               // A low hand's name IS its description ("Low: 8-6-4-3-2").
               hand_name: a.hand?.name ?? '',
-              hand_description: a.low ? (a.hand?.name ?? '') : (sd?.handDescription ?? ''),
+              // Review fix 2026-08-25: prefer the description the engine
+              // computed for THIS entry's hand (a.handDescription). Falling
+              // back to the showdown result's description is wrong on
+              // double-board hands — sd carries the BOARD-1 hand, so board-2
+              // groups paired a board-2 name with a board-1 description.
+              hand_description: a.low
+                ? (a.hand?.name ?? '')
+                : (a.handDescription ?? sd?.handDescription ?? ''),
               hole_card_indices: holeIndices,
             };
           }),
@@ -803,6 +810,10 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             .filter((r) => !this.isMuckedAtShowdown(r.userId))
             .map((r) => ({
               user_id: r.userId,
+              // Review fix 2026-08-25: carry the seat so a reconnecting
+              // client can rebuild reveal staggering without a players
+              // lookup (it still falls back to user_id resolution).
+              seat: r.seat ?? -1,
               cards: r.holeCards ?? [],
               best_hand_label: r.handName,
               best_hand_rank: r.handRanking,

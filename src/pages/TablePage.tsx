@@ -3107,6 +3107,44 @@ export default function TablePage({
     const t = setTimeout(() => setInsuranceWaitingOn(null), ms + 500);
     return () => clearTimeout(t);
   }, [insuranceWaitingOn]);
+  /**
+   * REFERENCE PARITY 2026-08-26 (Dan's leader-seat recording): three table
+   * moments around insurance -
+   * 1. A shield banner sweeps the felt for EVERYONE when the offer opens.
+   * 2. After a purchase, the fee sits beside the pot as its own chip pill
+   *    until the hand resolves (the reference holds "2.30" next to POT).
+   * 3. When insurance pays, the payout flies to the insured player's seat
+   *    with a chip fan and "+N" float (consumed by an effect further down
+   *    where the seat-geometry helpers are in scope).
+   */
+  const [showInsuranceBanner, setShowInsuranceBanner] = useState(false);
+  const insuranceBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [insurancePremiumHeld, setInsurancePremiumHeld] = useState<number | null>(null);
+  const [insurancePayoutFly, setInsurancePayoutFly] = useState<{
+    playerId: string;
+    amount: number;
+  } | null>(null);
+  // A new hand retires the fee pill and any unconsumed flight, even if the
+  // settlement event was missed (reconnect mid-hand, etc).
+  const insuranceHandNumber = tableState?.handNumber ?? 0;
+  useEffect(() => {
+    setInsurancePremiumHeld(null);
+    setInsurancePayoutFly(null);
+  }, [insuranceHandNumber]);
+  const flashInsuranceBanner = useCallback(() => {
+    setShowInsuranceBanner(true);
+    if (insuranceBannerTimerRef.current) clearTimeout(insuranceBannerTimerRef.current);
+    insuranceBannerTimerRef.current = setTimeout(() => {
+      insuranceBannerTimerRef.current = null;
+      setShowInsuranceBanner(false);
+    }, 1800 * getAnimationSpeed());
+  }, []);
+  useEffect(
+    () => () => {
+      if (insuranceBannerTimerRef.current) clearTimeout(insuranceBannerTimerRef.current);
+    },
+    []
+  );
 
   // Run It Twice state — FIX 96: 2-phase flow with chooser model
   const [showRIT, setShowRIT] = useState(false);
@@ -5670,6 +5708,10 @@ export default function TablePage({
           Number((handState as Record<string, unknown>).timeoutSeconds) ||
           15;
 
+        // REFERENCE PARITY 2026-08-26: the shield banner sweeps the felt for
+        // every seat and observer the moment the offer opens.
+        flashInsuranceBanner();
+
         // Find the offer for the current hero player
         const heroOffer = serverOffers.find((o: any) => o.playerId === userId);
         if (heroOffer) {
@@ -5696,6 +5738,11 @@ export default function TablePage({
             outs: mapCards(handState.outs),
             outPct: Number(handState.outPct) || undefined,
             timeoutSeconds: insSecs,
+            // REFERENCE PARITY 2026-08-26: the dialog's Rate readout and the
+            // Break Even preset ride the offer.
+            rate: Number(heroOffer.rate) || undefined,
+            atRisk: Number(heroOffer.atRisk) || undefined,
+            heroName: typeof heroOffer.username === 'string' ? heroOffer.username : undefined,
           });
           setShowInsurance(true);
           // The offer is a timed financial decision — same attention cue as
@@ -5719,6 +5766,12 @@ export default function TablePage({
         setInsuranceWaitingOn(null);
         const who = String((handState as Record<string, unknown>).username || 'Player');
         const actorId = String((handState as Record<string, unknown>).playerId || '');
+        if (eventType === 'insurance_accepted') {
+          // REFERENCE PARITY 2026-08-26: the paid fee sits beside the pot as
+          // its own chip pill until the hand resolves.
+          const paidPremium = Number((handState as Record<string, unknown>).premium || 0);
+          if (paidPremium > 0) setInsurancePremiumHeld(paidPremium);
+        }
         if (actorId && actorId !== userId) {
           toast.info(
             eventType === 'insurance_accepted'
@@ -5734,12 +5787,17 @@ export default function TablePage({
         const actorId = String((handState as Record<string, unknown>).playerId || '');
         const payout = Number((handState as Record<string, unknown>).payout || 0);
         const won = Boolean((handState as Record<string, unknown>).won);
-        if (actorId === userId) {
-          if (won && payout > 0) {
+        const settledName = String((handState as Record<string, unknown>).username || 'Player');
+        if (won && payout > 0) {
+          // REFERENCE PARITY 2026-08-26 (Dan): "an insurance paid animation
+          // should fly over to my avatar with some animation and toast
+          // celebration crediting the insurance payout." Everyone sees the
+          // flight; the toast names who it paid.
+          setInsurancePayoutFly({ playerId: actorId, amount: payout });
+          if (actorId === userId) {
             toast.success(`Insurance Paid You $${payout.toLocaleString()}`, 5000);
-          } else if (!won && payout === 0) {
-            // Push (chop) or premium kept — the pot result speaks for itself;
-            // only announce an actual payout to avoid noise.
+          } else {
+            toast.info(`Insurance Paid ${settledName} $${payout.toLocaleString()}`, 4000);
           }
         }
         return;
@@ -11193,6 +11251,28 @@ export default function TablePage({
 
   const seatPositions = useMemo(() => seatRotationMap.map((s) => s.pos), [seatRotationMap]);
 
+  /**
+   * REFERENCE PARITY 2026-08-26: consume the insurance-payout flight queued
+   * by the insurance_settled handler. Lives HERE because it needs the seat
+   * geometry (seatPositions/tableScaler) defined just above. Chip fan from
+   * the pot anchor to the insured player's seat, with the "+N" float riding
+   * along - the same visual grammar as a pot award.
+   */
+  useEffect(() => {
+    if (!insurancePayoutFly) return;
+    const { playerId, amount } = insurancePayoutFly;
+    setInsurancePayoutFly(null);
+    setInsurancePremiumHeld(null); // the contract resolved - the fee pill retires
+    const seatIdx = tableStateRef.current?.players?.findIndex((p) => p?.id === playerId) ?? -1;
+    if (seatIdx < 0 || !(amount > 0)) return;
+    const seatPct = seatPositions[seatIdx] || { x: 50, y: 50 };
+    const seatPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
+    const potPos = seatPctToViewportPx(tableScalerRef.current, POT_ANCHOR_PCT);
+    setChipAnimations((prev) => [...prev, ...createPotToWinnerEvent(potPos, seatPos, amount)]);
+    spawnPotWinFloat(potPos.x, potPos.y, seatPos.x, seatPos.y, amount);
+    haptic.medium();
+  }, [insurancePayoutFly, seatPositions, spawnPotWinFloat]);
+
   /* PERF 2026-08-25. Both of these were computed INSIDE the seat map, so each
      ran once per seat per render — and at the time this component re-rendered
      for the whole of anybody's turn, because it owned the action clock's state.
@@ -14077,6 +14157,16 @@ export default function TablePage({
             </div>
           )}
 
+          {/* REFERENCE PARITY 2026-08-26: the shield banner that sweeps the
+              felt when the insurance phase opens — every seat and observer
+              sees it, exactly like the ALL IN slam above. */}
+          {showInsuranceBanner && (
+            <div className="insurance-banner" role="status" aria-label="Insurance offered">
+              <span className="insurance-banner__shield">{'⛨'}</span>
+              <span className="insurance-banner__text">INSURANCE</span>
+            </div>
+          )}
+
           {/* Pot Display — click to toggle chips/BB */}
           <div className="pot-area">
             <PotDisplay
@@ -14111,6 +14201,21 @@ export default function TablePage({
                 PotDisplay, drawing the number twice (stacked). PotDisplay
                 already shows the amount + a chip stack next to it + side
                 pots, which is the single authoritative pot display. */}
+            {/* REFERENCE PARITY 2026-08-26: after a purchase the fee sits
+                beside the pot as its own chip pill until the hand resolves —
+                the reference holds "2.30" next to POT the same way. */}
+            {insurancePremiumHeld != null && insurancePremiumHeld > 0 && (
+              <div
+                className="insurance-premium-chip"
+                role="status"
+                aria-label={`Insurance fee held: ${insurancePremiumHeld}`}
+              >
+                <span className="insurance-premium-chip__icon">{'⛨'}</span>
+                <span className="insurance-premium-chip__amount">
+                  {insurancePremiumHeld.toLocaleString()}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* THE FLOATING TIME BANK PANEL IS GONE. Do not re-add it.

@@ -529,6 +529,25 @@
   font-size: 1rem;
   cursor: pointer;
   transition: all 0.15s ease;
+  /* Painted at 36px; TOUCHED at 44px. See the ::after below — same treatment
+     the close button gets, and the same reason: this row sits over a live
+     table on a phone. */
+  position: relative;
+}
+
+/* AUDIT 2026-08-25 — grow the hit area without moving a pixel of layout.
+   Widening or padding these controls would push the compose row and change the
+   panel's proportions; a transparent pseudo-element costs nothing and is
+   invisible. 4px on each side of a 36px box is 44px. */
+.table-chat__send::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+}
+
+/* A disabled send button must not keep a 44px hole in front of the input. */
+.table-chat__send:disabled::after {
+  content: none;
 }
 
 .table-chat__send:hover:not(:disabled) {

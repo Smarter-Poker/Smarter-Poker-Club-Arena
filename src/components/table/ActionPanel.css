@@ -1237,8 +1237,23 @@
   /* Seven buttons across a 390px phone: (390 - 24 padding - 24 gaps) / 7 is
      about 49px each, and "ALL IN" at 0.6875rem needs roughly 41px of that.
      Dropping a step keeps a comfortable margin instead of a hairline one. */
+  /* AUDIT 2026-08-25 — the HEIGHT is back to 44px.
+     It had been dropped to 40px in the same edit that made the labels smaller,
+     but the constraint the comment above describes is entirely HORIZONTAL:
+     seven buttons have to share the width. Height was never what made them fit,
+     and 40px puts a control the player presses inside a 15-second shot clock
+     under the 44px minimum touch target. The four pixels come out of the
+     overlay, which is `position: fixed` and simply grows upward over the felt —
+     nothing below it moves and the published --sp-bottom-row-h is untouched.
+
+     The hit area cannot be grown with a pseudo-element here: `.raise-preset`
+     is `overflow: hidden` (it clips the ::after sheen to the rounded corner),
+     which clips a negative-inset pseudo too. And it must not be grown
+     sideways in any case — the row is `nowrap` with a 4px gap, so overlapping
+     hit areas on adjacent SIZING buttons would not be a mis-tap, it would be a
+     different bet. */
   .raise-preset {
-    height: 40px;
+    height: 44px;
     font-size: 0.625rem;
     letter-spacing: 0.3px;
   }
@@ -1301,11 +1316,28 @@
     font-size: 0.625rem;
   }
 
+  /* 40px painted, 44px touched. Unlike `.raise-preset` this one is NOT
+     `overflow: hidden`, so the target can be grown without touching the
+     layout — and unlike the preset row there is no adjacent control within
+     2px to steal from: `.raise-header` keeps an 8px gap here and 10px below.
+     The pill stays 40px so the amount box keeps the width it was given at
+     375px. */
   .raise-adjust {
     width: 40px;
     height: 40px;
     font-size: 1.25rem;
     flex-shrink: 0;
+    position: relative;
+  }
+
+  .raise-adjust::after {
+    content: '';
+    position: absolute;
+    inset: -2px;
+  }
+
+  .raise-adjust:disabled::after {
+    content: none;
   }
 
   /* 375px, seven buttons: (375 - 20 padding - 18 gaps) / 7 is about 48px, and
@@ -1315,8 +1347,11 @@
     gap: 3px;
   }
 
+  /* 44px, for the same reason as the <=640px block: the seven-across
+     constraint is horizontal, and this is a control pressed on a shot clock.
+     Only the type and the side padding tighten at 375px. */
   .raise-preset {
-    height: 38px;
+    height: 44px;
     font-size: 0.5625rem;
     letter-spacing: 0.2px;
     padding: 0 1px;

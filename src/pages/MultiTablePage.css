@@ -937,3 +937,66 @@
   background: linear-gradient(180deg, #b45309 0%, #92400e 100%);
   border-color: rgba(251, 191, 36, 0.5);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CRASHED TABLE CARD (audit 2026-08-25)
+
+   Rendered by the per-slot TableErrorBoundary. Before this pass a render throw
+   in ONE TablePage unmounted all four, because the only boundary above them was
+   the single one in PersistentTableLayer wrapping the whole container. This is
+   what the failed slot shows instead, while the tables beside it keep dealing.
+
+   Deliberately calm: the player's instinct on seeing a crash at a poker table
+   is that their chips are gone, and they are not — the seat lives in
+   table_seats on the server and nothing here can vacate it.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.multi-table-page__crashed {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  background: #0a0c12;
+  color: #e4e6eb;
+}
+
+.multi-table-page__crashed-title {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.multi-table-page__crashed-body {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: rgba(228, 230, 235, 0.72);
+  max-width: 30ch;
+}
+
+.multi-table-page__crashed-name {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(228, 230, 235, 0.45);
+}
+
+.multi-table-page__crashed-btn {
+  margin-top: 4px;
+  padding: 10px 22px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.multi-table-page__crashed-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}

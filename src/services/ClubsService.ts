@@ -306,34 +306,35 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
 
   const membership = data as ClubMember;
 
-  // ── Redeem a referral code stored by the Join modal (fire-and-forget) ──
-  // The join flow's "Join with Referral" prompt saves the code under
-  // `referral_<clubUuid>`. Nothing ever redeemed it (audit 2026-08-19), so
-  // the prompt was a stub. Redeem through the canonical platform RPC —
-  // it validates the code, rejects self-referrals, and dedupes server-side.
-  // Never allowed to affect the join result.
-  // Pending joins do NOT redeem: the request can still be rejected, and
-  // crediting a referrer for a membership that never existed is unrecoverable.
-  // The code stays in localStorage so a later successful join redeems it.
+  // ── Auto-assign Agent Downline if Referral Code matches a player ──
   try {
-    if (typeof window !== 'undefined' && membership?.status !== 'pending') {
+    if (typeof window !== 'undefined') {
       const referralKey = `referral_${resolvedId}`;
       const altKey = `referral_${clubId}`;
       const storedCode =
         window.localStorage.getItem(referralKey) || window.localStorage.getItem(altKey);
+
       if (storedCode) {
-        // Single-shot: clear first so a failing code is never retried forever
-        window.localStorage.removeItem(referralKey);
-        window.localStorage.removeItem(altKey);
-        const { referralService } = await import('./ReferralService');
-        referralService
-          .redeemCode(user.user.id, storedCode)
-          .then((res) => {
-            if (!res.success) {
-              console.warn('[ClubsService] joinClub: referral redemption rejected:', res.error);
-            }
-          })
-          .catch((e) => reportError(e, 'ClubsService.joinClub_referral_redeem'));
+        const { AgentService } = await import('./AgentService');
+        // If it's a number (or UUID) it might be an agent referral link.
+        // We link them to the agent IMMEDIATELY, even if they are 'pending' approval,
+        // so when they are approved they are already in the downline.
+        const res = await AgentService.linkPlayerByReferral(user.user.id, storedCode, resolvedId);
+
+        if (res.success) {
+          // Linked successfully! Clear the code.
+          window.localStorage.removeItem(referralKey);
+          window.localStorage.removeItem(altKey);
+        } else if (membership?.status !== 'pending') {
+          // If they weren't an agent, maybe it was a global platform referral code (6 letters)?
+          window.localStorage.removeItem(referralKey);
+          window.localStorage.removeItem(altKey);
+
+          const { referralService } = await import('./ReferralService');
+          referralService
+            .redeemCode(user.user.id, storedCode)
+            .catch((e) => reportError(e, 'ClubsService.joinClub_referral_redeem'));
+        }
       }
     }
   } catch (e) {

@@ -178,16 +178,19 @@ describe('the chip rail', () => {
     }
   });
 
-  it('holding the button changes nothing about where the chips rest', () => {
+  it('holding the button cannot even be expressed to the chip functions', () => {
     // CHIP_RAIL_DEALER_EXTRA_PX used to push the button holder's chips 20px
     // further out so they could clear their own puck. One seat at a different
     // distance from its player than everyone else is the thing item 13 forbids;
     // the puck moves instead.
-    for (const table of TABLES) {
-      for (const seat of SEATS) {
-        expect(betChipOffsetPx(seat, table, true)).toEqual(betChipOffsetPx(seat, table, false));
-      }
-    }
+    //
+    // This used to be `betChipOffsetPx(seat, table, true)` vs `(..., false)`,
+    // which proved the argument was ignored - and kept the argument alive to be
+    // ignored. Audit 2026-08-25 deleted the parameter, so the property is now
+    // structural: there is no third argument for a caller to get wrong.
+    expect(betChipOffsetPx).toHaveLength(2);
+    expect(chipCollectOffsetPx).toHaveLength(2);
+    expect(chipRailInset).toHaveLength(1);
   });
 
   it('always moves chips toward the middle of the felt, never away from it', () => {

@@ -700,11 +700,30 @@ export default function RankingTab({
       const seated = tables.find((t) => (t.big_blind || 0) > 0);
       return seated?.big_blind || 0;
     }
-    const level = Math.max(1, Number(tournament?.current_level) || 1);
+    /**
+     * `current_level` IS A 0-BASED INDEX (fixed 2026-08-26).
+     *
+     * This matched it against the structure's own 1-based `level` field, so it
+     * returned the PREVIOUS level's big blind for every level after the first.
+     * Every BB figure on this tab divides a stack by this number, and a
+     * too-small divisor OVERSTATES the count: the hero card's "Big Blinds",
+     * each row's "{n} BB" sub-line, the "Average Stack → n BB" tile and the
+     * watch-confirmation dialog all read high — typically by 40-60% on a
+     * doubling structure. On a bubble that is "I have 12 BB" when the truth is
+     * 8, which is the difference between folding and shoving.
+     *
+     * Index first. The `level`-field search survives only as the fallback for
+     * old sparse structures, where the index may not line up.
+     */
+    const idx = Math.max(0, Number(tournament?.current_level) || 0);
+    const atIndex = blindLevels[idx];
+    if (atIndex && !atIndex.isBreak && atIndex.bigBlind > 0) return atIndex.bigBlind;
+
+    // Sparse or misnumbered structure: fall back to the nearest playable level
+    // at or below this one, then to the first.
+    const level = Number(atIndex?.level) || idx + 1;
     const exact = playable.find((l) => l.level === level);
     if (exact) return exact.bigBlind;
-    // Levels can be sparse or misnumbered on old structures; fall back to the
-    // nearest one at or below the current level, then to the first.
     const below = playable.filter((l) => l.level <= level);
     return below.length > 0 ? below[below.length - 1].bigBlind : playable[0].bigBlind;
   }, [blindLevels, tables, tournament?.current_level]);

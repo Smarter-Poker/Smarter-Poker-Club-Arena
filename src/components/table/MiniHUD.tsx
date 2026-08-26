@@ -99,10 +99,13 @@ const MiniHUD = memo(
       const pfr = Math.round((stats.pfrCount / stats.handsPlayed) * 100);
       const heat = getHeatLevel(vpip);
       const type = classifyPlayer(vpip, pfr);
-      const winRate =
-        stats.handsPlayed > 0 ? Math.round((stats.wonCount / stats.handsPlayed) * 100) : 0;
+      /* `winRate` deleted 2026-08-25: computed here on every stats change and
+         read by nothing in the render below. The memo's own comparator does
+         watch `wonCount`, so it was also re-running this whole block for a
+         number that never reached the screen. Hands won is shown on the stats
+         card, not on the per-seat HUD, which has room for two figures. */
 
-      return { vpip, pfr, heat, hands: stats.handsPlayed, type, winRate };
+      return { vpip, pfr, heat, hands: stats.handsPlayed, type };
     }, [stats]);
 
     if (!isVisible || !computed) return null;

@@ -254,7 +254,23 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
     if (payload?.tournamentId === tournamentId) {
       setClock((prev) => ({
         ...prev,
-        currentLevel: payload.level,
+        /**
+         * `+ 1` BECAUSE THE PAYLOAD CARRIES AN INDEX (fixed 2026-08-26).
+         *
+         * `clock.currentLevel` is rendered raw as `LEVEL {n}`, and the DB path
+         * above already converts (`currentLevel: levelState.levelIndex + 1`).
+         * This fast path did not, so the same state field was being written in
+         * two different conventions: on every level-up the projector clock
+         * flashed one level BACKWARDS (LEVEL 6 -> LEVEL 5) until the
+         * `refreshState()` below landed and corrected it — and on a slow
+         * refresh the wrong number was simply what the room read.
+         *
+         * `BLIND_LEVEL_CHANGE.level` is the identical value stored in
+         * `tournaments.current_level`: TournamentTimerService writes one
+         * variable to both, and the engine's is the index it uses on
+         * `blindStructure[]`.
+         */
+        currentLevel: Math.max(0, Number(payload.level) || 0) + 1,
         smallBlind: payload.smallBlind,
         bigBlind: payload.bigBlind,
         ante: payload.ante,
@@ -404,9 +420,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
             <span className="tc-stat-icon">◉</span>
             <span className="tc-stat-value">
               {clock.playersRemaining}
-              {clock.entrants > 0 && (
-                <span className="tc-stat-of"> / {clock.entrants}</span>
-              )}
+              {clock.entrants > 0 && <span className="tc-stat-of"> / {clock.entrants}</span>}
             </span>
             <span className="tc-stat-label">Remaining</span>
           </div>

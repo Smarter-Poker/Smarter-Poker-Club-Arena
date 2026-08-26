@@ -1438,11 +1438,57 @@ export default function TablePage({
     (import.meta as unknown as { env: Record<string, string | undefined> }).env
       ?.VITE_USE_ENGINE_WS !== '0';
   const {
-    snapshot: engineSnapshot,
+    snapshot: rawEngineSnapshot,
     status: engineWsStatus,
-    lastEvent: engineLastEvent,
+    lastEvent: rawEngineLastEvent,
     lastError: engineLastError,
   } = useEngineTableState(tableId || undefined, { enabled: USE_ENGINE_WS });
+
+  // RABBIT HUNT FREEZE 2026-08-25
+  const [rabbitHuntFreezeEnd, setRabbitHuntFreezeEnd] = useState<number>(0);
+  const [engineSnapshot, setEngineSnapshot] = useState<any>(null);
+  const [engineLastEvent, setEngineLastEvent] = useState<any>(null);
+  const frozenEventQueueRef = useRef<any[]>([]);
+  const frozenSnapshotRef = useRef<any>(null);
+
+  useEffect(() => {
+    frozenSnapshotRef.current = rawEngineSnapshot;
+    if (rabbitHuntFreezeEnd === 0 || Date.now() >= rabbitHuntFreezeEnd) {
+      setEngineSnapshot(rawEngineSnapshot);
+    }
+  }, [rawEngineSnapshot, rabbitHuntFreezeEnd]);
+
+  useEffect(() => {
+    if (!rawEngineLastEvent) return;
+    if (rabbitHuntFreezeEnd > Date.now()) {
+      frozenEventQueueRef.current.push(rawEngineLastEvent);
+    } else {
+      setEngineLastEvent(rawEngineLastEvent);
+    }
+  }, [rawEngineLastEvent, rabbitHuntFreezeEnd]);
+
+  useEffect(() => {
+    if (rabbitHuntFreezeEnd === 0) return;
+    const msLeft = rabbitHuntFreezeEnd - Date.now();
+    if (msLeft <= 0) return;
+
+    const t = setTimeout(() => {
+      setRabbitHuntFreezeEnd(0);
+      setEngineSnapshot(frozenSnapshotRef.current);
+
+      const playNextEvent = () => {
+        if (frozenEventQueueRef.current.length > 0) {
+          const ev = frozenEventQueueRef.current.shift();
+          setEngineLastEvent(ev);
+          if (frozenEventQueueRef.current.length > 0) {
+            setTimeout(playNextEvent, 50);
+          }
+        }
+      };
+      playNextEvent();
+    }, msLeft);
+    return () => clearTimeout(t);
+  }, [rabbitHuntFreezeEnd]);
   // Phase 1.2 PR-F: disconnect FSM states per userId, surfaced by the
   // engine WS payload. Drives DisconnectToast below.
   const [disconnectStates, setDisconnectStates] = useState<
@@ -3975,6 +4021,7 @@ export default function TablePage({
       suit: suitMap[String(c.suit)] || 'h',
     }));
     setRabbitRevealedCards(parsedCards);
+    setRabbitHuntFreezeEnd(Date.now() + 3000);
     return {
       success: true,
       cards: parsedCards,

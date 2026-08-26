@@ -1568,7 +1568,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id'
         );
       if (unionId) {
         // Union governance (2026-08-19): union clubs see the UNION's tables
@@ -3679,7 +3679,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             setPanelOpen(false);
             spinQuickJoin({ id: t.id, name: t.name, buy_in_amount: t.buy_in_amount }, variant);
           }}
-          canDelete={isOwner || userRole === 'admin'}
+          canDelete={
+            (isOwner || userRole === 'admin') &&
+            selectedEntry.players === 0 &&
+            (!(selectedEntry.raw as any).club_id || (selectedEntry.raw as any).club_id === clubId)
+          }
           onDeleteTable={(id) => {
             setPanelOpen(false);
             setDeleteTableConfirm({ show: true, tableId: id, tableName: selectedEntry.name });

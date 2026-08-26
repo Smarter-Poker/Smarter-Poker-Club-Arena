@@ -318,11 +318,11 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
         window.localStorage.removeItem(referralKey);
         window.localStorage.removeItem(altKey);
 
-        const { agentService } = await import('./AgentService');
+        const { AgentService } = await import('./AgentService');
         // If it's a number (or UUID) it might be an agent referral link.
         // We link them to the agent IMMEDIATELY, even if they are 'pending' approval,
         // so when they are approved they are already in the downline.
-        const res = await agentService.linkPlayerByReferral(user.user.id, storedCode, resolvedId);
+        const res = await AgentService.linkPlayerByReferral(user.user.id, storedCode, resolvedId);
 
         if (!res.success && membership?.status !== 'pending') {
           // If they weren't an agent, maybe it was a global platform referral code (6 letters)?

@@ -1312,11 +1312,29 @@ export class HorseLogic {
         nuts15 = null;
       }
     }
-    /** nut-class for raising purposes: full house+, the nut flush, or the nut straight */
+    /** nut-class for raising purposes: full house+, the nut flush, or the nut
+     *  straight — DEMOTED by the board itself (line-by-line sweep, same day):
+     *  a nut straight is not the nuts on a three-flush board, and a flush is
+     *  not the nuts on a paired board. Raises on those boards are flushes and
+     *  boats; the demoted hand check-calls instead of raising, which is the
+     *  small-ball line these spots demand. */
+    let boardMono15 = false;
+    let boardPaired15 = false;
+    if (useV15 && vi.isOmaha && nuts15 != null) {
+      const suitN = new Map<string, number>();
+      const rankN = new Map<string, number>();
+      for (const bc of gs.communityCards) {
+        suitN.set(bc.suit, (suitN.get(bc.suit) || 0) + 1);
+        rankN.set(bc.rank, (rankN.get(bc.rank) || 0) + 1);
+      }
+      for (const n of suitN.values()) if (n >= 3) boardMono15 = true;
+      for (const n of rankN.values()) if (n >= 2) boardPaired15 = true;
+    }
     const nutClass15 =
       cat >= 7 ||
       (nuts15 != null &&
-        ((cat === 6 && nuts15.higherFlushRanks === 0) || (cat === 5 && nuts15.straightIsNut)));
+        ((cat === 6 && nuts15.higherFlushRanks === 0 && !boardPaired15) ||
+          (cat === 5 && nuts15.straightIsNut && !boardMono15)));
     // Did hero bet/raise THIS street and then get raised? The strongest
     // possible "they have it" signal, and the exact line Dan flagged.
     let raisedAfterAggr = false;

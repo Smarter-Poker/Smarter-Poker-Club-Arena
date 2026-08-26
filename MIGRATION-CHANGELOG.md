@@ -7,6 +7,92 @@
 
 ---
 
+## Cowork session 2026-08-26 — HORSE BRAIN V15 + THE 20BB REVIEW SYSTEM
+
+Dan: "massive improvement and optimization to the decision making... I watched
+horses check-shoving small flushes... a horse call off 800 chips with a 9-high
+flush in PLO6 where your opponent always has a bigger flush when raised...
+every hand where a horse wins or loses 20bb needs to be flagged and reviewed."
+
+### PR #1001 — V15 Omaha nut discipline (MERGED, deployed, verified on engine)
+
+Full audit of the decision pipeline (HorseLogic / HorseEval / HorsePreflop /
+HorseMind / scheduleHorseAction). Root causes of the small-flush payoffs:
+
+1. **The equity model could not see that a PLO raiser has a flush.** V12
+   board-contact conditioning was NLH-only; PLO opponents were sampled from
+   preflop bands, so a nine-high flush priced itself ~75-85% against a range
+   that is really bigger flushes. Omaha aggressors now get cheap structural
+   contact conditioning (bounded redraws, wide-band pots only).
+2. **No concept of flush rank.** cat 6 was cat 6. New `omahaNutStatus()`
+   counts live higher flushes / detects nut straights. Dominated hands facing
+   a raise play against a CAPPED equity, never value-raise on any street
+   unless near-lock, and call rather than jam when committed.
+3. **plo5/plo6 preflop scores inflated by hole count** — measured median plo6
+   hand scored 0.53 (above the 0.52 call-a-raise bar) vs plo4's 0.24. Fixed
+   with measured median-shift normalization (-4.7 / -8.8 pts).
+4. **No small ball**: non-nut value sizing damped (x0.86 plo5, x0.78 plo6),
+   dominated flush multiway checks 60%, multiway tightening scales with hole
+   count.
+
+League now deals variants: playHand is variant-generic and a nightly
+`plo6_v15_discipline` matchup measures v15 on/off (the NLH matchups cannot
+see it by construction). Verified deployed: engine container restarted 14:46
+UTC, `grep -c omahaNutStatus /app/dist/engine/*.js` returns hits.
+HorseOmahaDiscipline.test.ts pins Dan's exact hands. Honest scope note: v15
+shipped on correctness + scenario tests; first league numbers arrive with the
+next nightly run — compare against the 2026-08-23 baseline only.
+
+### PR #1002 — 20bb hand flag + review capture (this PR)
+
+`recordHorseHandReviews()` beside writeHandFacts at settlement: any horse at
+|net| >= 20bb gets a row in `horse_hand_reviews` (exact in-memory nets, NOT
+the action-log reconstruction that fails chip conservation in 38% of hands).
+Leak tags at write time: nonnut_flush_stackoff, second_nut_flush_stackoff,
+dominated_straight_stackoff, big_bet_fold, preflop_stackoff, river_aggr_lost.
+Permanent per-horse/day rollup via `fn_hhr_rollup_add`; raw rows prune at 30
+days. Migration `20260826144505_horse_hand_reviews.sql` APPLIED to production
+(tables + RLS + admin RPCs `ca_horse_hand_reviews`, `ca_horse_review_summary`
+gated on `fn_is_horse_admin()`); schema manifest regenerated. Measured volume
+first: 485k hands/day, 3.3% reach 40bb pots -> 15-30k rows/day.
+
+### Daily audit loop (added same session, Dan follow-up)
+
+`horse_daily_audit` (migration `20260826151309`, APPLIED): one row per day
+with machine-computed findings — leak-tag spikes vs the trailing week, horses
+bleeding 400bb+ in flagged pots, league layers resolving significant-negative,
+illegal league actions, capture-coverage gaps (a variant dealing big pots but
+writing zero review rows), missing evidence payloads, net outliers, untagged
+losses — each finding carrying severity, category (schema/logic/gto),
+evidence, and a recommendation. Computation lives in SQL
+(`fn_run_horse_daily_audit`); the engine's `HorseDailyAudit.ts` is a thin
+scheduler (06:00-09:00 UTC window, boot check, catch-up, `horse_job_runs`
+claim key `daily_audit` — all the 2026-08-23 nightly-job lessons). The daily
+Claude analysis writes into `agent_analysis` via
+`fn_horse_audit_set_agent_analysis`; a scheduled Cowork task runs it every
+day. Self-test on live data: the very first run correctly flagged 7
+capture-coverage criticals because the capture PR had not yet deployed.
+
+### World Hub PR #781 — /horses/hand-reviews admin dashboard
+
+Fleet summary (per-horse big wins/losses, net bb, leak counts, clickable
+filters) + flagged-hand browser with expandable street-by-street detail.
+FOLLOW-UP: pages/horses/index.js has 26 pre-existing argument-less
+getSession() calls, so any edit to it is blocked by pre-commit CHECK C — the
+nav button for hand-reviews cannot land until that file gets the authUtils
+refactor. Page is reachable directly at /horses/hand-reviews.
+
+### Also verified this session (before the brain work)
+
+club-arena Vercel project (`prj_tmZtfoqDmUFwusuOiPivr2nM52QM`) is a DEAD
+duplicate: link severed, one ERROR deploy ever (the "services" framework
+misconfig), nothing serves from it; the real pipeline (build-for-world-hub ->
+hub-vanguard) is healthy. Recommend Dan deletes the project in the dashboard.
+Commander's CANCELED deploys are the Ignored Build Step skip rule working on
+docs-only commits, not a failure. estate-integrity: 0 problems across all 7.
+
+---
+
 ## Cowork session 2026-08-25 (part 3) — THE CLUB PAGE, LINE BY LINE
 
 Dan: "go through it all line by line, check for any bugs, stubs, gaps, errors,

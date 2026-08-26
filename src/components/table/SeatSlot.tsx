@@ -2177,15 +2177,35 @@ export const SeatSlot = memo(
           <div className="seat__bombpot-badge">BOMB</div>
         )}
 
-        {/* Bounty Badge */}
+        {/* Bounty Badge.
+
+            2026-08-26, two fixes:
+
+            (a) NO FORCED CENTS. This used `minimumFractionDigits: 2`, so a
+                12-chip bounty rendered `◎ 12.00` — four glyphs of which two
+                carry nothing, at 0.55rem, on the most size-constrained badge
+                on the felt. Every other tournament money surface rounds
+                through `utils/buyIn.money()`. Fractional bounties (mystery
+                bounty splits) still show their decimals; whole ones do not
+                pretend to have any.
+
+            (b) IT HAD NO ACCESSIBLE TEXT. The only content was an unlabelled
+                geometric glyph plus a number, announced as "circled ring
+                operator twelve" — and the seat's own aria-label names seat,
+                player, status and stack but not the bounty, so the figure was
+                unavailable anywhere else. */}
         {bountyValue != null && bountyValue > 0 && (
-          <div className="seat__bounty">
-            <span className="seat__bounty-target">◎</span>
-            <span className="seat__bounty-val">
-              {(Math.trunc(bountyValue * 100) / 100).toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
+          <div
+            className="seat__bounty"
+            aria-label={`Bounty ${bountyValue.toLocaleString('en-US', {
+              maximumFractionDigits: 2,
+            })} chips`}
+          >
+            <span className="seat__bounty-target" aria-hidden="true">
+              ◎
+            </span>
+            <span className="seat__bounty-val" aria-hidden="true">
+              {bountyValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}
             </span>
           </div>
         )}

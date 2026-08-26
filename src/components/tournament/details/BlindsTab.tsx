@@ -119,13 +119,14 @@ function epoch(iso: string | null | undefined): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
-/** Match a level by its own `level` field, else by position. Always in range. */
-function indexOfLevel(levels: NormalisedBlindLevel[], levelNumber: number): number {
-  if (levels.length === 0) return 0;
-  const byField = levels.findIndex((l) => Number(l.level) === levelNumber);
-  const i = byField >= 0 ? byField : levelNumber - 1;
-  return Math.min(Math.max(0, i), levels.length - 1);
-}
+/**
+ * `indexOfLevel` DELETED 2026-08-26. It searched for a level whose 1-based
+ * `level` field equalled `current_level`, which is a 0-based index — so it
+ * confidently returned the wrong element for every level after the first, and
+ * its positional fallback (`levelNumber - 1`) subtracted the one that had
+ * never been added. The row already carries the index; there is nothing to
+ * search for.
+ */
 
 /** "20 Min", "3 Min", "2.5 Min" — or a dash, because a level is never 0 long. */
 function minutesText(duration: number | null | undefined): string {
@@ -241,11 +242,37 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
     !isFinished && (status === 'RUNNING' || status === 'LATE_REG' || startedMs !== null);
 
   const levelCount = blindLevels.length;
-  const rowLevelNumber = Math.max(1, Number(row.current_level) || 1);
-  const levelNumber = busLevel ? busLevel.level : rowLevelNumber;
-  const index = indexOfLevel(blindLevels, levelNumber);
+  /**
+   * `current_level` IS A 0-BASED INDEX, NOT A LEVEL NUMBER (fixed 2026-08-26).
+   *
+   * The engine stores the value it indexes the structure with:
+   * `blindStructure[this.currentLevel]` … `.update({ current_level:
+   * this.currentLevel })` (TournamentManagerBase). `BLIND_LEVEL_CHANGE.level`
+   * is the SAME number — TournamentTimerService writes one variable to both.
+   * But the stored structures number their own `level` field FROM 1, so
+   * element 0 reads `level: 1`.
+   *
+   * This tab used to clamp to `Math.max(1, … || 1)` and then match on the
+   * 1-based `level` field, so from the first level-up onward it was a whole
+   * level behind: with the engine on `current_level = 5` (level 6) it printed
+   * "Level 5" and level 5's blinds, while the Overview tab one tap away
+   * printed "Level 6" off the same row. It also measured Time Remaining
+   * against the previous level's duration and advertised the live level as
+   * "Next". That is Dan's 2026-08-25 report — "still says Level 1 even though
+   * it's clearly Level 2" — surviving in a second tab.
+   *
+   * `tournamentLevel()` in components/lobby/tournamentFigures.ts is the
+   * canonical converter and carries the production evidence; use it rather
+   * than open-coding the arithmetic a fourth time.
+   */
+  const levelIndex = busLevel
+    ? Math.max(0, Number(busLevel.level) || 0)
+    : Math.max(0, Number(row.current_level) || 0);
+  const index = Math.min(levelIndex, Math.max(0, levelCount - 1));
   const current: NormalisedBlindLevel | undefined = blindLevels[index];
   const next: NormalisedBlindLevel | null = blindLevels[index + 1] ?? null;
+  /** Display number for the fallback when the structure has no `level` field. */
+  const levelNumber = index + 1;
 
   /** Where this level's clock started. Null means genuinely unknown. */
   const levelAnchorMs: number | null = (() => {

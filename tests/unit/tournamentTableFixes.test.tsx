@@ -122,10 +122,25 @@ describe('MiniStatsCard Tournament Stats Bar', () => {
    * later) to assert what the corner must now actually contain.
    *
    * The two things worth protecting are unchanged and are both still asserted:
-   * it renders for a tournament EVEN WHEN NOT SEATED, and tapping it still
-   * opens the tournament lobby / info panel.
+   * it renders for a tournament, and tapping it opens the tournament lobby /
+   * info panel.
+   *
+   * ── 2026-08-26: THIS SPEC USED AN IMPOSSIBLE FIXTURE ──────────────────────
+   *
+   * It passed `isSeated={false}` together with `currentStack={12345}`, a
+   * combination production cannot produce: TablePage feeds
+   * `players[heroSeat - 1]?.stack || 0`, and an observer's `heroSeat` is 0, so
+   * an unseated viewer's stack is ALWAYS 0. The spec therefore asserted the
+   * figures render for a spectator while proving nothing about what a spectator
+   * actually sees — which was `Stack 0 · Hands 0 · VPIP 0% · Won 0`, a readout
+   * that looks like a broken HUD. Watching a running tournament is a first-class
+   * route now (Dan 2026-08-25, item 1), so that is a real screen a real user
+   * reaches.
+   *
+   * Split in two, with fixtures that can occur: a SEATED player gets the
+   * figures, an observer gets the lobby button and no zeroes.
    */
-  it('renders the real stats bar in tournament mode even when not seated', () => {
+  it('renders the real stats bar for a seated tournament player', () => {
     const handleTap = vi.fn();
     render(
       <MiniStatsCard
@@ -134,7 +149,7 @@ describe('MiniStatsCard Tournament Stats Bar', () => {
         handsPlayed={20}
         vpipCount={5}
         handsWon={3}
-        isSeated={false}
+        isSeated={true}
         isTournament={true}
         onTap={handleTap}
       />
@@ -160,6 +175,36 @@ describe('MiniStatsCard Tournament Stats Bar', () => {
     expect(statsBtn).not.toHaveTextContent(/P&L/i);
 
     fireEvent.click(statsBtn);
+    expect(handleTap).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows an observer the lobby button, not four zeroes', () => {
+    /* The fixture a spectator actually produces: heroSeat 0, so every session
+       figure is 0. Printing "Stack 0 · Hands 0 · VPIP 0% · Won 0" reads as a
+       broken HUD rather than as "you are watching". The BUTTON must survive —
+       it is how an observer reaches standings, payouts and the clock — so this
+       asserts both halves: still tappable, no zero readout. */
+    const handleTap = vi.fn();
+    render(
+      <MiniStatsCard
+        currentStack={0}
+        totalBuyIn={0}
+        handsPlayed={0}
+        vpipCount={0}
+        handsWon={0}
+        isSeated={false}
+        isTournament={true}
+        onTap={handleTap}
+      />
+    );
+
+    const btn = screen.getByRole('button', { name: /tournament lobby/i });
+    expect(btn).toBeInTheDocument();
+    expect(btn).not.toHaveTextContent('Stack');
+    expect(btn).not.toHaveTextContent('VPIP');
+    expect(btn).not.toHaveTextContent('0%');
+
+    fireEvent.click(btn);
     expect(handleTap).toHaveBeenCalledTimes(1);
   });
 

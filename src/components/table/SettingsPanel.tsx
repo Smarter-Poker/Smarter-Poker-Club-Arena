@@ -18,6 +18,7 @@ import { ThemeSettingsModal } from './ThemeSettingsModal';
 import { useUserTableSettings } from '../../hooks/useUserTableSettings';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
+import { resolveAvatarDisplay } from '../../utils/avatarUtils';
 import './SettingsPanel.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -109,7 +110,7 @@ export function SettingsPanel({
   settings,
   onSettingsChange,
   userId = '',
-  currentAvatarUrl = '/avatars/default-player.png',
+  currentAvatarUrl = '',
   isVip = false,
   userDiamonds = 0,
   currentCardBack = 'black',
@@ -408,7 +409,7 @@ export function SettingsPanel({
                 <img
                   loading="lazy"
                   decoding="async"
-                  src={currentAvatarUrl}
+                  src={resolveAvatarDisplay(currentAvatarUrl, userId)}
                   alt="Avatar"
                   className="settings-avatar-preview"
                 />

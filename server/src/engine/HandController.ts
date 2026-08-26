@@ -1649,16 +1649,47 @@ export class HandController {
     // but += on binary floats is where cross-hand drift was born.
     this.snapChips();
 
-    // SHOWDOWN POLISH 2026-08-25: scale the per-pot display shares by the
-    // same global rake ratio the merged winners were scaled by, so each
-    // pot's fan carries a post-rake number and a user's per-pot shares sum
-    // (to within a rounding cent) to the amount actually credited. Display
-    // only — the credited money above came exclusively from adjustedWinners.
+    // SHOWDOWN POLISH 2026-08-25 (review fix): scale the per-pot display
+    // shares by the same global rake ratio the merged winners were scaled
+    // by, then REPAIR each user's rounding pennies against the amount they
+    // were actually credited — independent Math.round per entry could drift
+    // a user's displayed shares cents away from their real credit, and the
+    // "+N" floats are the numbers players read (this repo's own history —
+    // the hand-254 one-cent chop — treats displayed penny drift as a bug).
+    // The repair walks a user's entries largest-first, adjusting the last
+    // one so the sum matches the credit EXACTLY. Display only — credited
+    // money came exclusively from adjustedWinners above.
+    //
+    // Each entry also carries its own engine-generated hand description —
+    // board-2 groups previously inherited the BOARD-1 description from the
+    // showdown results, pairing e.g. a board-2 "Flush" name with a board-1
+    // "Two Pair" description.
     const rakeRatio = totalWinnerAmount > 0 ? totalWinnings / totalWinnerAmount : 1;
     const scaledPerPot = this.pendingPerPotAwards.map((a) => ({
       ...a,
       amount: Math.round(a.amount * rakeRatio * 100) / 100,
+      handDescription: a.low ? (a.hand?.name ?? '') : a.hand ? describeHand(a.hand) : '',
     }));
+    const creditByUser = new Map(
+      adjustedWinners.map((w) => [w.userId, Math.round(w.amount * 100)])
+    );
+    const entriesByUser = new Map<string, typeof scaledPerPot>();
+    for (const a of scaledPerPot) {
+      const g = entriesByUser.get(a.userId);
+      if (g) g.push(a);
+      else entriesByUser.set(a.userId, [a]);
+    }
+    for (const [userId, entries] of entriesByUser) {
+      const credit = creditByUser.get(userId);
+      if (credit === undefined) continue;
+      const summed = entries.reduce((s, e) => s + Math.round(e.amount * 100), 0);
+      const diff = credit - summed;
+      if (diff !== 0 && entries.length > 0) {
+        // Put the penny difference on the user's largest entry, floored at 0.
+        const target = entries.reduce((m, e) => (e.amount > m.amount ? e : m), entries[0]);
+        target.amount = Math.max(0, (Math.round(target.amount * 100) + diff) / 100);
+      }
+    }
 
     this.emit({
       type: 'WINNERS',

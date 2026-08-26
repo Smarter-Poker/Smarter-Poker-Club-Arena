@@ -393,9 +393,11 @@ export type HandEvent =
       winnersByBoard?: Array<{ board: 1 | 2; userId: string; amount: number; handName?: string }>;
       /**
        * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the unmerged per-pot(-half)
-       * award breakdown — see PerPotAward. Amounts are pre-rake shares; the
-       * engine layer scales them proportionally for display before emitting
-       * pot_win's pot_awards groups.
+       * award breakdown — see PerPotAward. Amounts here are already POST-rake:
+       * HandController scales the raw pot shares by the global rake ratio and
+       * penny-repairs each user's shares against their credited total before
+       * this event is emitted. ServerTableEngine groups them verbatim into
+       * pot_win's pot_awards.
        */
       perPotAwards?: PerPotAward[];
     }
@@ -522,8 +524,10 @@ export interface Winner {
  * (pot, hi/lo half, winner). Winner[] merges a player's shares across pots —
  * the settlement contract — but the presentation layer needs to know which
  * pot each share came from to sequence "main pot… then side pot 1…" and to
- * label HIGH vs LOW winners on hi-lo boards. Amounts are exact pre-rake
- * shares of the named pot(-half); board is set on double-board hands.
+ * label HIGH vs LOW winners on hi-lo boards. Amounts are post-rake display
+ * shares (scaled + penny-repaired against the user's credited total in
+ * HandController before WINNERS is emitted); board is set on double-board
+ * hands.
  * Presentation data only — never used to move money.
  */
 export interface PerPotAward {
@@ -533,6 +537,13 @@ export interface PerPotAward {
   amount: number;
   hand?: EvaluatedHand;
   board?: 1 | 2;
+  /**
+   * Review fix 2026-08-25: the engine-generated description of THIS entry's
+   * hand ("Kings Full Of Nines" / the low's name for low halves). Computed
+   * where the hand is known, so board-2 groups no longer inherit board-1
+   * showdown descriptions downstream.
+   */
+  handDescription?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

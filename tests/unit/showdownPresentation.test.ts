@@ -52,6 +52,10 @@ describe('buildAwardGroups', () => {
     expect(groups[1].winners).toEqual([{ userId: 'b', amount: 50 }]);
     expect(groups[2].potIndex).toBe(1);
     expect(groups[2].winners).toEqual([{ userId: 'a', amount: 30 }]);
+    // Review fix 2026-08-25: engine groups are flagged exact — consumers
+    // must render their amounts verbatim (a zero is a real zero) and never
+    // fall back to merged totals or equal-split estimates.
+    expect(groups.every((g) => g.exact)).toBe(true);
   });
 
   it('falls back to per-winner pot_index grouping on the interim wire', () => {
@@ -67,6 +71,8 @@ describe('buildAwardGroups', () => {
     expect(groups.length).toBe(2);
     expect(groups[0].winners[0]).toEqual({ userId: 'a', amount: 100 });
     expect(groups[1].winners[0]).toEqual({ userId: 'c', amount: 40 });
+    // Legacy groupings are estimates — never flagged exact.
+    expect(groups.every((g) => g.exact === false)).toBe(true);
   });
 
   it('degrades to one group for pre-2026 payloads (winner_ids only)', () => {

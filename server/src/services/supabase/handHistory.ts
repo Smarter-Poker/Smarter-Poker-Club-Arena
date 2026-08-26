@@ -120,7 +120,7 @@ export async function logHandHistory(params: {
    * ruling. Revealed entries carry the hand identity; mucked entries
    * deliberately do NOT (participants can read this row back, and a mucked
    * range stays private — the 2026-08-17 leak rule). Written to the
-   * `showdown` jsonb column (migration 20260825_hand_history_showdown).
+   * `showdown` jsonb column (migration 20260825_hand_history_showdown_reveal).
    * Replays and dispute review render the reveal sequence from this.
    */
   showdownReveal?: Array<{

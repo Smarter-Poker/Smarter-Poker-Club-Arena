@@ -45,6 +45,15 @@ export interface AwardGroup {
   board: 1 | 2;
   low: boolean;
   winners: Array<{ userId: string; amount: number }>;
+  /**
+   * Review fix 2026-08-25: true when this group came from the engine's
+   * `pot_awards` breakdown, whose amounts are EXACT post-rake per-pot
+   * shares. Consumers must render those amounts verbatim — a zero share is
+   * a real zero, not missing data — and must not fall back to merged totals
+   * or equal-split estimates. False for the legacy pot_index / single-group
+   * degradations, where estimating is the best available.
+   */
+  exact: boolean;
 }
 
 /**
@@ -74,6 +83,7 @@ export function buildAwardGroups(
         winners: (g.winners ?? [])
           .filter((w) => w && typeof w.user_id === 'string')
           .map((w) => ({ userId: w.user_id, amount: w.amount ?? 0 })),
+        exact: true,
       }))
       .filter((g) => g.winners.length > 0);
   }
@@ -101,6 +111,7 @@ export function buildAwardGroups(
       board: 1 as const,
       low: false,
       winners: byPot.get(potIndex)!,
+      exact: false,
     }));
 }
 

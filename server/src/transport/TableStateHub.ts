@@ -365,6 +365,9 @@ export class TableStateHub {
     if (!room) return;
     if (room.subscribers.size === 0) {
       this.rooms.delete(tableId);
+      // Review fix 2026-08-25: the event-seq counter goes with the room, or
+      // long-lived processes accumulate one entry per dead table forever.
+      this.eventSeqs.delete(tableId);
       return;
     }
     room.lastSnapshot = null;

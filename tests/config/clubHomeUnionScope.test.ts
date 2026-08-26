@@ -66,16 +66,18 @@ describe('the union scope exists in exactly one place', () => {
 });
 
 describe('the client asks for the union too, on both queries', () => {
-  it('the club query is scoped by club, the union query by union', () => {
-    // Two queries by design: a union club's own private games PLUS the
-    // union's. Losing either empties a tab.
-    expect(clubHome).toMatch(/\.eq\('club_id', resolvedId\)\.eq\('is_private', true\)/);
-    expect(clubHome).toMatch(/\.eq\('union_id', unionId\)/);
+  it('scopes the tournament fetch through the one shared rule', () => {
+    // Superseded within the day: this used to assert TWO queries, one scoped
+    // by club and one by union. That asymmetry against the single-query table
+    // path is exactly what let the union branch go missing from the
+    // tournament side, so the shape is now identical for both.
+    expect(clubHome).toMatch(/applyClubScope\(clubTournamentQuery/);
+    expect(clubHome).toMatch(/applyClubScope\(tableQuery/);
   });
 
-  it('both selects carry variant, so nothing has to guess from a name', () => {
+  it('every tournament select carries variant, so nothing guesses from a name', () => {
     const selects = clubHome.match(/'id, name, game_type[^']*'/g) ?? [];
-    expect(selects.length).toBeGreaterThanOrEqual(2);
+    expect(selects.length).toBeGreaterThanOrEqual(1);
     for (const sel of selects) expect(sel).toContain('variant');
   });
 });

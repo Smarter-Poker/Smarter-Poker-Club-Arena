@@ -1213,19 +1213,32 @@
   opacity: 0.55;
 }
 
-/* AUDIT 2026-08-25: two `.seat--sitout` rules were deleted from here — a
-   grayscale filter on the avatar and an 'AWAY' pill drawn over the info box.
-   Neither had ever applied. The class is emitted as `seat--${player.status}`
-   and PlayerStatus spells it `sitting_out`, with an underscore; `sitout` is not
-   a member of the union and never was, so the selector could not match at any
-   point in this file's history.
+/* Dan approved 2026-08-26: grayscale avatar + AWAY pill for sitting-out seats.
+   Previously drafted under `.seat--sitout` (wrong class, never fired). Now
+   scoped to `.seat--sitting_out` which is what SeatSlot actually emits. */
 
-   The away/sitting-out state is NOT unsignalled without them: the pair of
-   rules above dims the whole seat to 0.55, and `.seat__status-dot--away` /
-   `--sitting_out` draw the coloured dot on the avatar. Renaming these to
-   `.seat--sitting_out` instead of deleting them would have SHIPPED A NEW
-   VISUAL — a pill centred over the name and stack — which is a design decision
-   nobody has taken, not a bug fix. Do that deliberately or not at all. */
+.seat--away .seat__avatar,
+.seat--sitting_out .seat__avatar {
+  filter: grayscale(60%);
+}
+
+.seat--away .seat__info::after,
+.seat--sitting_out .seat__info::after {
+  content: 'AWAY';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.75);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 1;
+}
 
 /* ─── ALL IN ──────────────────────────────────────────────────────────── */
 

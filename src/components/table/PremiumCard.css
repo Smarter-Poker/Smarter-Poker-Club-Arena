@@ -154,7 +154,9 @@
    CARD BACK - Custom image design
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.card-back {
+/* Scoped to .premium-card to avoid collision with CardReveal.css and
+   CommunityCards.css which each define their own .card-back rules */
+.premium-card .card-back {
   position: absolute;
   inset: 0;
   border-radius: 8px;

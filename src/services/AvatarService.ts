@@ -16,6 +16,12 @@
 import { supabase } from '../lib/supabase';
 import { reportError, reportWarning } from '../utils/errorReporter';
 import { generateDefaultAvatar, getAvatarWithFallback } from '../utils/avatarGenerator';
+import {
+  ALL_COSMETICS,
+  isCosmeticOwned,
+  resolveCosmetic,
+  type AvatarCosmetic,
+} from '../cosmetics/avatarCosmetics';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -571,6 +577,215 @@ class AvatarServiceClass {
    */
   getDefaultAvatarUrl(): string {
     return DEFAULT_AVATAR_SVG;
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  //  AVATAR COSMETICS — frames + auras
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /**
+   * What this player currently has equipped.
+   *
+   * `ok` exists for the same reason `AvatarLibraryResult` has `presetsFailed`:
+   * a failed read and "nothing equipped" are both `{frame:null, aura:null}`, and
+   * a picker that draws them identically tells the player their gold frame was
+   * never bought. The caller has to be able to tell the two apart.
+   */
+  async getCosmetics(
+    userId: string
+  ): Promise<{ frame: string | null; aura: string | null; ok: boolean }> {
+    if (!userId) return { frame: null, aura: null, ok: false };
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('equipped_frame, equipped_aura')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (error) {
+        reportWarning('profiles cosmetics read failed', 'AvatarService.getCosmetics', {
+          code: error.code,
+        });
+        return { frame: null, aura: null, ok: false };
+      }
+
+      /* Resolved, not passed through. A row can hold a retired token or one
+         from a build we have not shipped yet; returning it raw would push an
+         unrenderable value into the picker's selected state and the player
+         would see nothing highlighted with no explanation. */
+      return {
+        frame: resolveCosmetic(data?.equipped_frame, 'frame')?.id ?? null,
+        aura: resolveCosmetic(data?.equipped_aura, 'aura')?.id ?? null,
+        ok: true,
+      };
+    } catch (err) {
+      reportError(err, 'AvatarService.getCosmetics');
+      return { frame: null, aura: null, ok: false };
+    }
+  }
+
+  /**
+   * The catalog, annotated with what this player owns.
+   *
+   * `ok:false` means ownership is UNKNOWN. Callers must render that as "we could
+   * not check" and refuse to equip, not as "you own nothing" — the difference
+   * between a lock a player understands and a purchase that appears to have
+   * evaporated.
+   */
+  async getCosmeticCatalog(
+    userId: string
+  ): Promise<{ cosmetics: (AvatarCosmetic & { isOwned: boolean })[]; ok: boolean }> {
+    if (!userId) {
+      return { cosmetics: ALL_COSMETICS.map((c) => ({ ...c, isOwned: false })), ok: false };
+    }
+
+    /* TWO INDEPENDENT SOURCES, TRACKED SEPARATELY.
+       An earlier version of this method ANDed a single `ok` into every
+       `isOwned`, which reads as prudent and is not: a VIP whose unlock-ledger
+       query hiccupped would have been told they own nothing, and the frame they
+       pay for would vanish on a transient error. VIP membership is a complete
+       answer for a vip-tier cosmetic on its own — it does not need the ledger
+       to have answered. So each source contributes only what it actually knows,
+       and `ok` reports whether the picture is complete. */
+    let vipOk = true;
+    let ledgerOk = true;
+
+    const vipPromise = (async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('is_vip')
+        .eq('id', userId)
+        .maybeSingle();
+      if (error) {
+        vipOk = false;
+        reportWarning('is_vip read failed', 'AvatarService.getCosmeticCatalog', {
+          code: error.code,
+        });
+        return false;
+      }
+      return Boolean(data?.is_vip);
+    })();
+
+    const unlockPromise = (async () => {
+      const { data, error } = await supabase
+        .from('avatar_unlocks')
+        .select('avatar_id')
+        .eq('user_id', userId);
+      if (error) {
+        ledgerOk = false;
+        reportWarning('avatar_unlocks read failed', 'AvatarService.getCosmeticCatalog', {
+          code: error.code,
+        });
+        return new Set<string>();
+      }
+      const out = new Set<string>();
+      for (const row of data || []) {
+        const token = normalizeUnlockToken(row?.avatar_id);
+        if (token) out.add(token);
+      }
+      return out;
+    })();
+
+    const [isVip, unlockedTokens] = await Promise.all([vipPromise, unlockPromise]);
+
+    return {
+      cosmetics: ALL_COSMETICS.map((c) => ({
+        ...c,
+        /* Each source contributes only what it actually proved. FAILING CLOSED
+           HAPPENS AT ONE PLACE ONLY - inside each promise above, where an error
+           returns `false` / an empty set. Re-checking `vipOk` / `ledgerOk` here
+           as well was tried and removed: it is unreachable belt-and-braces (the
+           values are already safe by then), so no test could tell it from its
+           own absence, and an untestable guard is indistinguishable from a
+           decorative one. One guard, in one place, with a test that can see it. */
+        isOwned: isCosmeticOwned(c, { isVip, unlockedTokens }),
+      })),
+      ok: vipOk && ledgerOk,
+    };
+  }
+
+  /**
+   * Equip (or clear) a frame and an aura.
+   *
+   * `null` means unequip and is always permitted. Anything else must resolve in
+   * the catalog AND be owned — checked here so the player gets a sentence
+   * instead of a Postgres error, and checked AGAIN by
+   * `trg_profiles_cosmetics_ownership`, which is the actual guard. This method
+   * is the polite half; the trigger is the half that cannot be skipped by
+   * anyone who opens devtools.
+   *
+   * `profiles` is written first and is the source of truth: it is what the seat
+   * query on the engine reads and what every other player's realtime
+   * subscription is watching. `user_avatars` mirrors it for parity with the
+   * World Hub's AvatarContext, and a mirror failure does not fail the equip.
+   */
+  async setCosmetics(
+    userId: string,
+    frame: string | null,
+    aura: string | null
+  ): Promise<{ ok: boolean; reason?: 'not-owned' | 'unknown-cosmetic' | 'write-failed' }> {
+    if (!userId) return { ok: false, reason: 'write-failed' };
+
+    const resolvedFrame = frame ? resolveCosmetic(frame, 'frame') : null;
+    const resolvedAura = aura ? resolveCosmetic(aura, 'aura') : null;
+    if ((frame && !resolvedFrame) || (aura && !resolvedAura)) {
+      return { ok: false, reason: 'unknown-cosmetic' };
+    }
+
+    if (resolvedFrame || resolvedAura) {
+      /* `ok` is deliberately NOT consulted here. Ownership is decided per
+         cosmetic, and a cosmetic that is not in `ownedIds` is refused whether
+         that is because the player does not own it or because the source that
+         would have proved it did not answer. Bailing on `!ok` instead would
+         refuse a VIP their own frame whenever the unrelated unlock-ledger query
+         happened to fail. */
+      const { cosmetics } = await this.getCosmeticCatalog(userId);
+      const ownedIds = new Set(cosmetics.filter((c) => c.isOwned).map((c) => c.id));
+      if (resolvedFrame && !ownedIds.has(resolvedFrame.id)) {
+        return { ok: false, reason: 'not-owned' };
+      }
+      if (resolvedAura && !ownedIds.has(resolvedAura.id)) {
+        return { ok: false, reason: 'not-owned' };
+      }
+    }
+
+    const payload = {
+      equipped_frame: resolvedFrame?.id ?? null,
+      equipped_aura: resolvedAura?.id ?? null,
+    };
+
+    try {
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update(payload)
+        .eq('id', userId);
+
+      if (profileError) {
+        reportError(profileError, 'AvatarService.setCosmetics_profile');
+        /* 23514 is the ownership trigger firing. It reaches here only when the
+           client-side check above passed and the database disagreed, which
+           means the entitlement changed underneath us — report it as
+           not-owned so the player reads the true reason. */
+        return {
+          ok: false,
+          reason: profileError.code === '23514' ? 'not-owned' : 'write-failed',
+        };
+      }
+
+      const { error: mirrorError } = await supabase
+        .from('user_avatars')
+        .update(payload)
+        .eq('user_id', userId);
+
+      if (mirrorError) {
+        console.warn('[AvatarService] Cosmetics mirror write failed:', mirrorError.message);
+      }
+
+      return { ok: true };
+    } catch (err) {
+      reportError(err, 'AvatarService.setCosmetics');
+      return { ok: false, reason: 'write-failed' };
+    }
   }
 }
 

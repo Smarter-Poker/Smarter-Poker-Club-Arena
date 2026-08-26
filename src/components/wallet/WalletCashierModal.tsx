@@ -307,9 +307,31 @@ export default function WalletCashierModal({
     walletType === 'club_bank' && canMintInClubBank(viewerRole, { standalone: inUnion === false });
 
   const tabs = cashierTabs(walletType);
-  const destinations = cashierDestinations(walletType);
+  /* AGENT TO AGENT ALWAYS CREDITS THE AGENT WALLET (Dan 2026-08-25).
+     A recipient who holds a float is funded IN that float, so the choice
+     disappears rather than being offered and then overridden. The database
+     coerces it too - fn_agent_wallet_send derives the destination from the
+     recipient's role and ignores what the client asked for - because a
+     dropdown is a suggestion and anything holding a session can call the RPC
+     directly. This is the half that stops the mistake being OFFERED. */
+  const recipientHoldsFloat = recipient ? canHoldAgentWallet(recipient.role) : false;
+  const destinations = useMemo(() => {
+    const all = cashierDestinations(walletType);
+    if (!recipientHoldsFloat) return all;
+    const only = all.filter((d) => d === 'agent_wallet');
+    return only.length > 0 ? only : all;
+  }, [walletType, recipientHoldsFloat]);
   /** The agent wallet's Claim Back tab is a different shape from the bank's. */
   const agentClaimTab = walletType === 'agent_wallet' && tab === 'claim';
+
+  /* Picking a player, choosing their player wallet, then switching to an agent
+     would otherwise leave `destination` on a value the list no longer offers -
+     the send would still be coerced server-side, but the summary line above
+     the button would be describing a transfer that is not the one about to
+     happen. */
+  useEffect(() => {
+    if (recipientHoldsFloat && destination !== 'agent_wallet') setDestination('agent_wallet');
+  }, [recipientHoldsFloat, destination]);
 
   // ── Club + bank balance ───────────────────────────────────────────────────
   const loadClub = useCallback(async () => {

@@ -57,6 +57,7 @@ import { parseBlindStructure } from '../utils/parseBlindStructure';
 // it, so flipping the flag is a pure rollout switch.
 import { useEngineTableState } from '../hooks/useEngineTableState';
 import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
+import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
 import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
 
 import { gameCode } from '../utils/gameCode';
@@ -2628,7 +2629,7 @@ export default function TablePage({
         setShowSettings(true);
         break;
       case 'HAND_HISTORY':
-        setShowHandReplay(true);
+        setShowHandHistory(true);
         break;
       case 'HELP':
         setShowGameRules(true);
@@ -3630,6 +3631,7 @@ export default function TablePage({
       if (bbjTimerRef.current) clearTimeout(bbjTimerRef.current);
       if (bbjSeatCreditsTimerRef.current) clearTimeout(bbjSeatCreditsTimerRef.current);
       if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
+      if (rabbitExpiryTimerRef.current) clearTimeout(rabbitExpiryTimerRef.current);
       if (potShipTimerRef.current) clearTimeout(potShipTimerRef.current);
       if (potPushDelayTimerRef.current) clearTimeout(potPushDelayTimerRef.current);
       for (const t of potAwardStaggerTimersRef.current) clearTimeout(t);
@@ -3900,6 +3902,8 @@ export default function TablePage({
   /** Live diamond price from feature_pricing, sent with the offer. */
   const [rabbitDiamondCost, setRabbitDiamondCost] = useState<number | null>(null);
   const rabbitHandNumberRef = useRef<number | null>(null);
+  /** Takes the Rabbit Hunt button down when the server's offer TTL runs out. */
+  const rabbitExpiryTimerRef = useRef<number | null>(null);
 
   const handleRabbitReveal = useCallback(async (): Promise<RabbitHuntRevealResult> => {
     if (!tableId) return { success: false, error: 'Table Not Ready' };
@@ -5587,9 +5591,9 @@ export default function TablePage({
         // had just sat down, saw a live Rabbit Hunt button whose only possible
         // outcome was the server refusing them.
         const eligibleIds = Array.isArray(handState.eligible_user_ids)
-          ? (handState.eligible_user_ids as string[])
+          ? handState.eligible_user_ids.map(String)
           : null;
-        const heroMayHunt = !eligibleIds || (!!userId && eligibleIds.includes(userId));
+        const heroMayHunt = !eligibleIds || (!!userId && eligibleIds.includes(String(userId)));
         if (available > 0 && heroMayHunt) {
           rabbitHandNumberRef.current = Number(handState.hand_number ?? 0) || null;
           setRabbitCardsAvailable(available);
@@ -5598,6 +5602,28 @@ export default function TablePage({
           const cost = Number(handState.diamond_cost);
           if (Number.isFinite(cost) && cost > 0) setRabbitDiamondCost(cost);
           setIsRabbitAvailable(true);
+
+          // TAKE THE BUTTON DOWN WHEN THE OFFER DIES.
+          //
+          // The engine expires an offer after 90s and refuses a late reveal with
+          // "That Hand Is Too Old To Rabbit Hunt". It has always SENT expires_at
+          // for exactly this — and the client ignored it, so the button sat
+          // there after the offer was dead and the only thing left to click was
+          // a refusal. Offering something that cannot be bought is worse than
+          // not offering it.
+          if (rabbitExpiryTimerRef.current) clearTimeout(rabbitExpiryTimerRef.current);
+          const expiresAt = Number(handState.expires_at);
+          if (Number.isFinite(expiresAt) && expiresAt > 0) {
+            // Clock skew between server and browser is real, so never schedule a
+            // negative or absurd delay: clamp to the TTL the server applies.
+            const msLeft = Math.max(0, Math.min(expiresAt - Date.now(), 120_000));
+            rabbitExpiryTimerRef.current = window.setTimeout(() => {
+              rabbitExpiryTimerRef.current = null;
+              setIsRabbitAvailable(false);
+              setRabbitCardsAvailable(0);
+              rabbitHandNumberRef.current = null;
+            }, msLeft);
+          }
         }
         return;
       }
@@ -7967,6 +7993,56 @@ export default function TablePage({
   }, [tableId, userId]);
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // REALTIME PROFILES — a seated player's avatar or cosmetics changed
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Changing your avatar used to change it on YOUR screen only; everyone else
+  // kept the old face until they reloaded, because identity fields reach other
+  // clients on the engine snapshot and the engine only re-reads `profiles` at
+  // the top of a deal. Between hands, on an idle table, and on a table that is
+  // still filling, nothing re-read anything.
+  //
+  // The engine remains authoritative — this only ever refreshes the three
+  // identity fields, never stack, status, cards or seat. See the hook for why
+  // postgres_changes and not the engine socket or the legacy broadcast channel.
+  const seatedUserIds = useMemo(() => tableState.players.map((p) => p?.id), [tableState.players]);
+
+  const handleSeatedProfileChange = useCallback((change: SeatedProfileChange) => {
+    setTableState((prev) => {
+      const idx = prev.players.findIndex((p) => p?.id === change.userId);
+      if (idx === -1) return prev;
+      const existing = prev.players[idx];
+      if (!existing) return prev;
+
+      const nextAvatar = change.avatar ?? existing.avatar;
+      const nextFrame = change.frame ?? undefined;
+      const nextAura = change.aura ?? undefined;
+
+      /* No-op guard. Realtime echoes the hero's own write back to them, and a
+         `profiles` UPDATE fires for any column — a chip balance, a last-seen
+         stamp — so most deliveries here change nothing. Returning `prev`
+         unchanged is what stops each one re-rendering nine seats. */
+      if (
+        existing.avatar === nextAvatar &&
+        existing.frame === nextFrame &&
+        existing.aura === nextAura
+      ) {
+        return prev;
+      }
+
+      const updatedPlayers = [...prev.players];
+      updatedPlayers[idx] = {
+        ...existing,
+        avatar: nextAvatar,
+        frame: nextFrame,
+        aura: nextAura,
+      };
+      return { ...prev, players: updatedPlayers };
+    });
+  }, []);
+
+  useSeatedProfileSync(tableId, seatedUserIds, handleSeatedProfileChange);
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // WAITLIST → HORSE YIELD — When a real player is waiting & table full, remove a horse
   // ═══════════════════════════════════════════════════════════════════════════
   // Seated-only gate for the waitlist yield below. A spectator has no seat to
@@ -10150,6 +10226,12 @@ export default function TablePage({
       setIsRabbitAvailable(false);
       setRabbitCardsAvailable(0);
       rabbitHandNumberRef.current = null;
+      // The previous hand's expiry timer must die with the offer it belonged to,
+      // or it fires mid-next-hand and clears an offer that is not its own.
+      if (rabbitExpiryTimerRef.current) {
+        clearTimeout(rabbitExpiryTimerRef.current);
+        rabbitExpiryTimerRef.current = null;
+      }
       // NOTE: the deal animation is triggered by the discrete HAND_STARTED
       // handler (single source). AUDIT FIX 2026-07-19: the redundant bump that
       // used to live here was removed — now that handNumber advances via the
@@ -12263,7 +12345,7 @@ export default function TablePage({
                         id: 'history',
                         label: 'Hand History',
                         icon: <HandHistoryIcon />,
-                        onClick: () => setShowHandReplay(true),
+                        onClick: () => setShowHandHistory(true),
                       },
                       {
                         id: 'leaderboard',
@@ -14048,7 +14130,7 @@ export default function TablePage({
             <button
               className="menu-item"
               onClick={() => {
-                setShowHandReplay(true);
+                setShowHandHistory(true);
                 setIsSideMenuOpen(false);
               }}
             >

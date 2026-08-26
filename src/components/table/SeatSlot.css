@@ -240,6 +240,21 @@
     transform var(--duration-fast) var(--ease-out);
 }
 
+/* Equipped frame + aura.
+   AvatarCosmetics sizes itself in `em` so one component fits the 56px seat, the
+   1.33x hero seat, the header orb and a 96px picker tile without four sets of
+   pixel values. This is where the seat says how big an `em` is: 0.22 of the
+   avatar puts the frame's ring at about 2.5px on a 56px seat, matching the
+   plain border it replaces, and scales with --seat-avatar-size on its own.
+
+   `.seat__avatar` is `overflow: hidden`, so the frame's OUTER glow is clipped
+   and only the ring plus its inner glow survive. That is deliberate: an
+   unclipped 15px halo on a nine-handed felt would bleed into the neighbouring
+   seat's cards. */
+.seat__avatar .sp-cosmetic {
+  font-size: calc(var(--seat-avatar-size, 56px) * 0.22);
+}
+
 .seat__avatar-img {
   width: 100%;
   height: 100%;
@@ -988,7 +1003,28 @@
   --seat-avatar-size: calc(var(--seat-avatar-base, 84px) * var(--seat-avatar-hero-ratio, 1.3333));
   /* Must clear the wider avatar. 96/84 = 128/112 = 8/7, so deriving keeps the
      name box in the same proportion to the art at every breakpoint. */
-  width: calc(var(--seat-avatar-size) * 8 / 7);
+  width: calc(var(--seat-avatar-size) * 8 / 7) !important;
+}
+
+@media (max-width: 640px) {
+  .seat.seat--hero {
+    --seat-avatar-size: calc(66px * var(--seat-avatar-hero-ratio, 1.3333)) !important;
+    width: calc(66px * var(--seat-avatar-hero-ratio, 1.3333) * 8 / 7) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .seat.seat--hero {
+    --seat-avatar-size: calc(58px * var(--seat-avatar-hero-ratio, 1.3333)) !important;
+    width: calc(58px * var(--seat-avatar-hero-ratio, 1.3333) * 8 / 7) !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .seat.seat--hero {
+    --seat-avatar-size: calc(52px * var(--seat-avatar-hero-ratio, 1.3333)) !important;
+    width: calc(52px * var(--seat-avatar-hero-ratio, 1.3333) * 8 / 7) !important;
+  }
 }
 
 .seat--hero .seat__avatar {

@@ -28,6 +28,7 @@ import { getAvatarWithFallback } from '../../utils/avatarGenerator';
 import { soundService, haptic } from '../../services/SoundService';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import RiveAvatar from './RiveAvatar';
+import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { startMotionBudget } from '../../utils/motionBudget';
 import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
 import { sortCardsByRank } from '../../lib/tableCardDisplay';
@@ -161,6 +162,15 @@ export interface SeatPlayer {
   id: string;
   name: string;
   avatar?: string;
+  /**
+   * Equipped avatar frame token (`frame-gold`, ...), from
+   * `profiles.equipped_frame`. Arrives with the avatar in the engine snapshot
+   * and is refreshed live by the table's profiles subscription. Undefined or an
+   * unknown token draws nothing.
+   */
+  frame?: string;
+  /** Equipped avatar aura token (`aura-fire`, ...), from `profiles.equipped_aura`. */
+  aura?: string;
   stack: number;
   status: PlayerStatus;
   /**
@@ -1736,6 +1746,17 @@ export const SeatSlot = memo(
                 {player.name.charAt(0).toUpperCase() || '?'}
               </span>
             ) : null}
+
+            {/* Equipped frame + aura — Bible V8 §11 cosmetics.
+                Inside `.seat__avatar` on purpose: that element owns the circle
+                and the `position: relative`, so the overlay inherits both and
+                stays a circle without knowing the seat's geometry.
+
+                `still` because a nine-handed felt could otherwise run nine
+                infinite keyframe loops behind the cards, and `aura-glitch`
+                repeats six times a second. The aura still reads as an aura; it
+                just stops repainting. */}
+            {showAvatar && <AvatarCosmetics frame={player.frame} aura={player.aura} still />}
 
             {/* Folded overlay */}
             {lastAction === 'fold' && <div className="seat__avatar-fold-overlay" />}

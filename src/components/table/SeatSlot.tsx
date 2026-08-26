@@ -519,12 +519,15 @@ function getActionLabel(action: LastAction, amount?: number): string {
  * clamped into the sane band still renders sensibly.
  */
 const VILLAIN_FAN: Record<number, { step: number; rot: number }> = {
-  1: { step: 0.42, rot: 0 },
-  2: { step: 0.42, rot: 7 },
-  3: { step: 0.3, rot: 10 },
-  4: { step: 0.22, rot: 12 },
-  5: { step: 0.2, rot: 12 },
-  6: { step: 0.18, rot: 12 },
+  /* Dan 2026-08-26 round 3: "more tightly compacted together, not so spread
+     out" — the slide per card came down across the board; the rotation is
+     what separates the backs, exactly like the reference crops. */
+  1: { step: 0.3, rot: 0 },
+  2: { step: 0.3, rot: 7 },
+  3: { step: 0.18, rot: 10 },
+  4: { step: 0.14, rot: 12 },
+  5: { step: 0.13, rot: 12 },
+  6: { step: 0.12, rot: 12 },
 };
 
 /**

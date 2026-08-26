@@ -99,7 +99,7 @@ describe('the variant hand size reaches an already-rendered seat', () => {
     );
     expect(fan().style.getPropertyValue('--vh-n')).toBe('4');
     expect(fan().style.getPropertyValue('--vh-rot-step')).toBe('12deg');
-    expect(fan().style.getPropertyValue('--vh-step-f-base')).toBe('0.22');
+    expect(fan().style.getPropertyValue('--vh-step-f-base')).toBe('0.14');
     // Each card carries its own fan index, innermost = 0.
     const cards = [...container.querySelectorAll('.seat__card--back')] as HTMLElement[];
     expect(cards.map((c) => c.style.getPropertyValue('--vh-i'))).toEqual(['0', '1', '2', '3']);

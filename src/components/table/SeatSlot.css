@@ -1266,9 +1266,12 @@
                    bottoms stay clustered and the tops splay like a held
                    hand-fan. Per-card angle comes from the count (--vh-rot-step,
                    7deg for a pair up to 12deg for 4-6 cards)
-     step          small horizontal slide per card (--vh-step-f, 0.18-0.42 of a
-                   card width) so backs never coincide exactly
-     tuck          the innermost card slips 0.2 x card width under the avatar
+     step          small horizontal slide per card (--vh-step-f, 0.12-0.3 of a
+                   card width) so backs never coincide exactly — tight, the
+                   rotation is what separates them
+     overlap       the cluster lies IN FRONT of the avatar, its inner card
+                   reaching 0.8 x card width onto the art (round 3:
+                   "overlapping the avatar faces like in the reference")
      vertical      cluster centre = avatar centre
      side          right-half villains carry it RIGHT of the avatar, left-half
                    villains LEFT (the .seat--cards-left/right rules at the end
@@ -1280,12 +1283,16 @@
    derives here in the cascade, inspectable in devtools. */
 .seat__cards--opponent {
   --vh-n: 2;
-  --vh-step-f: var(--vh-step-f-base, 0.42);
+  --vh-step-f: var(--vh-step-f-base, 0.3);
   /* Small by design (Dan's close-ups); floored so a back never dissolves. */
   --vh-card-h: max(26px, calc(var(--seat-avatar-size, 84px) * 0.52 * var(--vh-reveal, 1)));
   --vh-card-w: calc(var(--vh-card-h) * 0.714);
   --vh-step: calc(var(--vh-card-w) * var(--vh-step-f));
-  --vh-tuck: calc(var(--vh-card-w) * 0.2);
+  /* How far the cluster's inner card reaches ONTO the avatar. Dan 2026-08-26
+     round 3: "opponents' hole cards should be overlapping the avatar faces
+     like in the shared reference." The cluster sits IN FRONT of the art,
+     roughly straddling the avatar's edge: 0.8 of a card width inside it. */
+  --vh-overlap: calc(var(--vh-card-w) * 0.8);
   --vh-fan-w: calc(var(--vh-card-w) + (var(--vh-n) - 1) * var(--vh-step));
   /* Mirrors the splay on left-hand clusters; flipped by `.seat--cards-left`. */
   --vh-dir: 1;
@@ -1296,20 +1303,21 @@
      seat's first child, so its centre is half the token from the seat's top. */
   top: calc(var(--seat-avatar-size, 84px) / 2);
   transform: translateY(-50%);
-  /* UNDER the avatar (wrap is z 2): the tuck. The innermost card slides
-     behind the character, which is what reads as a held hand. */
-  z-index: 1;
+  /* IN FRONT of the avatar (wrap is z 2, art z 3), like the reference — the
+     backs lie on the character's shoulder. Below the status dot / position
+     badge pair and every action pill, which must stay readable over it. */
+  z-index: 4;
   /* ONE shadow on the group — per-card shadows stack into mud at 6 cards. */
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
   pointer-events: none;
 }
 
 /* Each card is placed absolutely inside the cluster from its own index. The
-   nearest-the-avatar card is index 0 and paints on TOP of the others (but
-   still under the avatar), so the stack order runs outermost -> innermost ->
-   avatar, exactly like a hand actually held in front of a chest. The pivot
-   BELOW the card (origin 50% 120%) is what turns per-card rotation into the
-   PokerBros rosette: bottoms nested, tops splayed. */
+   nearest-the-avatar card is index 0 and paints on TOP of the others, so the
+   stack order runs outermost -> innermost, the whole cluster lying on the
+   avatar like a hand held at the shoulder. The pivot BELOW the card (origin
+   50% 120%) is what turns per-card rotation into the PokerBros rosette:
+   bottoms nested, tops splayed. */
 .seat__cards--opponent .seat__card {
   --vh-rot: calc(
     (var(--vh-i, 0) - (var(--vh-n) - 1) / 2) * var(--vh-rot-step, 7deg) * var(--vh-dir) *
@@ -3347,16 +3355,18 @@
    cards render outboard, and the two can never collide.
 
    The anchor is the AVATAR, not the seat box: 50% of the seat is the avatar's
-   centre line, so `50% + token/2 - tuck` starts the fan exactly one tuck-depth
-   (0.32 x card width) INSIDE the art's edge — the innermost card slides under
-   the character and the avatar overlaps it (fan z 1, wrap z 2). If the pod
-   moves or the token retunes at a breakpoint, the fan follows by construction.
+   centre line, so `50% + token/2 - overlap` starts the cluster 0.8 of a card
+   width INSIDE the art's edge — the backs lie ON the character's shoulder,
+   in front of the art (cluster z 4 over the wrap's 2), which is exactly the
+   reference client's read (Dan 2026-08-26 round 3: "overlapping the avatar
+   faces"). If the pod moves or the token retunes at a breakpoint, the
+   cluster follows by construction.
 
    These rules only place the container; everything about its size and its
    cards derives on the base `.seat__cards--opponent` rule further up. The
    showdown reveal keeps this same anchor and just grows in place. */
 .seat--cards-right .seat__cards--opponent {
-  left: calc(50% + var(--seat-avatar-size, 84px) / 2 - var(--vh-tuck));
+  left: calc(50% + var(--seat-avatar-size, 84px) / 2 - var(--vh-overlap));
   right: auto;
 }
 .seat--cards-right .seat__cards--opponent .seat__card {
@@ -3367,7 +3377,7 @@
 .seat--cards-left .seat__cards--opponent {
   --vh-dir: -1;
   left: auto;
-  right: calc(50% + var(--seat-avatar-size, 84px) / 2 - var(--vh-tuck));
+  right: calc(50% + var(--seat-avatar-size, 84px) / 2 - var(--vh-overlap));
 }
 .seat--cards-left .seat__cards--opponent .seat__card {
   left: auto;

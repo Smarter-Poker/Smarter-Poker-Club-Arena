@@ -68,8 +68,8 @@ import SpinActivationPanel from '../components/club/SpinActivationPanel';
 import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
 import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
-import { reportError } from '../utils/errorReporter';
 import { readLocalSession } from '../lib/authUtils';
+import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
 import { matchesVariant } from '../utils/tournamentFilters';
 import { useUserStore } from '../stores/useUserStore';
@@ -624,6 +624,26 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // a cached club renders would let the watchdog declare a stall over a lobby
   // the player is looking at.
   const hasDataRef = useRef(Boolean(bootCache?.club));
+
+  /**
+   * Has the AUTHORITATIVE chain painted the game LISTS for this club yet?
+   *
+   * Deliberately NOT `hasDataRef`, and the difference is a real bug I nearly
+   * shipped. `hasDataRef` is seeded from the boot cache, and that cache holds
+   * `{ club, tables }` and NO tournaments (see setClubHomeCache). So a
+   * returning player - the commonest visit there is - mounts with hasDataRef
+   * already true and an EMPTY tournament list. Gating the fast path on it
+   * would skip the one call that fills that list, and the MTT board would sit
+   * empty until the slow chain landed. That trades a flicker for a blank.
+   *
+   * This ref means what the guard actually needs to ask: are there real,
+   * chain-fetched rows on screen that a narrower answer could damage? It is
+   * false on a cached boot (so the fast path still runs and still paints) and
+   * true only from the moment the chain has answered, which is exactly when
+   * the fast path has nothing left to contribute. Cleared per club by the
+   * reset effect below.
+   */
+  const listsPaintedRef = useRef(false);
   const loadingRef = useRef(false);
   const [wsConnected, setWsConnected] = useState(true);
 
@@ -670,6 +690,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     setLoading(true);
     loadingRef.current = false;
     hasDataRef.current = false;
+    listsPaintedRef.current = false;
   }, [clubId]);
 
   // ── Watchdog: a hung fetch must never strand the skeleton forever ──
@@ -1301,14 +1322,18 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
           if (lobbyPainted) return; // the real chain already answered
 
-          /* WARM RELOAD: this club's lobby is already on screen with rows the
-             authoritative chain fetched, and those rows carry five columns
-             this RPC does not select. Painting now can only take information
-             away, which is the card-jumping Dan recorded. The fast path exists
-             to remove first-paint latency and there is no latency to remove
-             here. `hasDataRef` is cleared on every club change (see the reset
-             effect), so switching clubs still gets the speed-up. */
-          if (hasDataRef.current) return;
+          /* WARM RELOAD: the authoritative chain has already painted this
+             club's lists, and its rows carry five columns this RPC does not
+             select. Painting now can only take information away, which is the
+             card-jumping Dan recorded. The fast path exists to remove
+             first-paint latency and there is none left to remove here.
+
+             NOT `hasDataRef` - that is seeded from a boot cache holding no
+             tournaments, so gating on it would skip the fast path on exactly
+             the visit that needs it and leave the MTT board blank. See the
+             declaration of listsPaintedRef. Cleared per club by the reset
+             effect, so switching clubs still gets the speed-up. */
+          if (listsPaintedRef.current) return;
 
           if (stale() || (getIsMounted && !getIsMounted())) return;
           lobbyPainted = true;
@@ -1334,12 +1359,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               setClubNames(home.club_names as Record<string, string>);
             }
             // Force a status check to ensure non-members and pending members get sent to the Invite page.
-            if (authUser?.id) {
+            const localSession = readLocalSession();
+            if (localSession?.userId) {
               const { data: memStat } = await supabase
                 .from('club_members')
                 .select('status')
                 .eq('club_id', home.club.id)
-                .eq('user_id', authUser.id)
+                .eq('user_id', localSession.userId)
                 .maybeSingle();
               if (!memStat || !['active', 'approved'].includes(memStat.status)) {
                 navigate(`/invite/${clubId}`);
@@ -1444,6 +1470,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
          Data" toast. */
       const authRes = await getAuthUser();
       const authUser = authRes?.data?.user ?? null;
+      if (!authUser) {
+        if (getIsMounted && !getIsMounted()) return;
+        navigate(`/invite/${clubId}`);
+        return;
+      }
       if (authUser) {
         if (getIsMounted && !getIsMounted()) return;
         setCurrentUserId(authUser.id);
@@ -1456,7 +1487,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
            whose answer went straight into the bin. */
         const memberResult = await supabase
           .from('club_members')
-          .select('role')
+          .select('role, status')
           .eq('club_id', resolvedId)
           .eq('user_id', authUser.id)
           .maybeSingle();
@@ -1898,6 +1929,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
          * empty from the fast path, which had the same answer; the only case
          * this changes is where the two disagree and one is a degraded read.
          */
+        /* The chain has answered with real rows. From here the fast path has
+           nothing to add and could only narrow them (see listsPaintedRef). */
+        listsPaintedRef.current = true;
         if (allTournaments.length > 0) {
           setTournaments(allTournaments);
         } else {

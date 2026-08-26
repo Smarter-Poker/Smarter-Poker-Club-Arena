@@ -412,6 +412,12 @@ export interface RitResultData {
   /** Exact winner userIds per board (splits/side pots included). */
   perBoardWinners?: string[][];
   potTotal: number;
+  /**
+   * POKERBROS PARITY 2026-08-26: community cards already dealt when the
+   * all-in locked (0 / 3 / 4). Extra runs re-deal only the streets past
+   * this — the felt dims the shared prefix on runs 2+.
+   */
+  baseBoardCount?: number;
 }
 
 export interface RunItTwiceResultProps {

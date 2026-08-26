@@ -69,7 +69,16 @@ import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOve
  * All five component files (TSX + CSS) and useTableModals.ts are deleted.
  */
 
-import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  startTransition,
+  useMemo,
+  lazy,
+  Suspense,
+} from 'react';
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
@@ -131,7 +140,6 @@ import TableChat from '../components/table/TableChat';
 import { ChatBubble, bubbleForSeat, useSeatChatBubbles } from '../components/table/ChatBubble';
 import { holeCardCountFor } from '../lib/holeCardCount';
 import { shouldAnnounceBbjHit } from '../lib/bbjHitOnce';
-import BBJHitNotification from '../components/bbj/BBJHitNotification';
 import { type InsuranceOffer } from '../components/table/InsuranceModal';
 import { ThrowAnimationContainer } from '../components/table/ThrowAnimation';
 import { useTableEnvironment } from '../hooks/useTableEnvironment';
@@ -151,7 +159,6 @@ import FoldProtectionDialog from '../components/table/FoldProtectionDialog';
 // Phase 2 T2-02 (spec §5.7): Always-visible timebank counter (bottom-left).
 import TimebankCounter from '../components/table/TimebankCounter';
 // Dan 2026-08-21, item 3: buy more time banks with diamonds (1/10/25/100/500).
-import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
 import { soundService, haptic } from '../services/SoundService';
 import {
@@ -195,7 +202,7 @@ import {
 } from '../components/table/TableMenuIcons';
 import { useToast } from '../components/common/Toast';
 import { isVibrationAllowed, setVibrationAllowed } from '../utils/vibrationGate';
-import KnockoutAnimation, { type KnockoutData } from '../components/tournament/KnockoutAnimation';
+import { type KnockoutData } from '../components/tournament/KnockoutAnimation';
 import MysteryBountyChest, {
   formatBountyTierLabel,
   type MysteryChestData,
@@ -229,7 +236,6 @@ import SpectatorBadge from '../components/table/SpectatorBadge';
 import { horseBugReporter } from '../services/HorseBugReporter';
 import { useUserTableSettings } from '../hooks/useUserTableSettings';
 import { useUserThemeSettings } from '../hooks/useUserThemeSettings';
-import PineappleDiscard from '../components/table/PineappleDiscard';
 import GameServerAPI, {
   submitAction,
   respondToRIT,
@@ -602,6 +608,71 @@ import { adaptServiceHandToPanel, panelHandToShareable } from '../lib/handHistor
 import { useUserStore } from '../stores/useUserStore';
 import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
+
+// ─── LAZY, CONDITIONAL-ONLY SURFACES ──────────────────────────────────────
+const KnockoutAnimationLazy = lazy(() => import('../components/tournament/KnockoutAnimation'));
+/**
+ * KnockoutAnimation renders from exactly one conditional branch and is off screen for
+ * almost every hand, so its code is fetched the first time that branch is
+ * taken rather than sitting in the TablePage chunk for everyone. The Suspense
+ * boundary lives here, not at the call site, so the JSX that renders it is
+ * unchanged and a missed boundary is impossible.
+ */
+function KnockoutAnimation(props: React.ComponentProps<typeof KnockoutAnimationLazy>) {
+  return (
+    <Suspense fallback={null}>
+      <KnockoutAnimationLazy {...props} />
+    </Suspense>
+  );
+}
+
+const BBJHitNotificationLazy = lazy(() => import('../components/bbj/BBJHitNotification'));
+/**
+ * BBJHitNotification renders from exactly one conditional branch and is off screen for
+ * almost every hand, so its code is fetched the first time that branch is
+ * taken rather than sitting in the TablePage chunk for everyone. The Suspense
+ * boundary lives here, not at the call site, so the JSX that renders it is
+ * unchanged and a missed boundary is impossible.
+ */
+function BBJHitNotification(props: React.ComponentProps<typeof BBJHitNotificationLazy>) {
+  return (
+    <Suspense fallback={null}>
+      <BBJHitNotificationLazy {...props} />
+    </Suspense>
+  );
+}
+
+const TimeBankStoreModalLazy = lazy(() => import('../components/table/TimeBankStoreModal'));
+/**
+ * TimeBankStoreModal renders from exactly one conditional branch and is off screen for
+ * almost every hand, so its code is fetched the first time that branch is
+ * taken rather than sitting in the TablePage chunk for everyone. The Suspense
+ * boundary lives here, not at the call site, so the JSX that renders it is
+ * unchanged and a missed boundary is impossible.
+ */
+function TimeBankStoreModal(props: React.ComponentProps<typeof TimeBankStoreModalLazy>) {
+  return (
+    <Suspense fallback={null}>
+      <TimeBankStoreModalLazy {...props} />
+    </Suspense>
+  );
+}
+
+const PineappleDiscardLazy = lazy(() => import('../components/table/PineappleDiscard'));
+/**
+ * PineappleDiscard renders from exactly one conditional branch and is off screen for
+ * almost every hand, so its code is fetched the first time that branch is
+ * taken rather than sitting in the TablePage chunk for everyone. The Suspense
+ * boundary lives here, not at the call site, so the JSX that renders it is
+ * unchanged and a missed boundary is impossible.
+ */
+function PineappleDiscard(props: React.ComponentProps<typeof PineappleDiscardLazy>) {
+  return (
+    <Suspense fallback={null}>
+      <PineappleDiscardLazy {...props} />
+    </Suspense>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WINDOW-LEVEL LOCKS — TRUE singletons that survive module reloads, lazy-load

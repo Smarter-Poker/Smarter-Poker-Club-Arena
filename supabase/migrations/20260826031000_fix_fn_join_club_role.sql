@@ -51,7 +51,7 @@ BEGIN
   END IF;
 
   INSERT INTO club_members (club_id, user_id, role, status, tier, rank_level, orange_ball_status)
-  VALUES (p_club_id, v_uid, v_role::member_role, v_status, 'bronze', 0, 'cold')
+  VALUES (p_club_id, v_uid, v_role, v_status, 'bronze', 0, 'cold')
   ON CONFLICT (club_id, user_id) DO NOTHING
   RETURNING * INTO v_row;
 

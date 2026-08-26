@@ -40,7 +40,8 @@ import { supabase } from '../lib/supabase';
 import { readLocalSession } from '../lib/authUtils';
 import { reportError, reportWarning } from '../utils/errorReporter';
 
-export type WaitlistStatus = 'waiting' | 'notified' | 'seated' | 'cancelled' | 'expired';
+// DB constraint: 'waiting'|'notified'|'seated'|'left'|'cleared'|'expired'. 'cancelled' is NOT valid.
+export type WaitlistStatus = 'waiting' | 'notified' | 'seated' | 'left' | 'cleared' | 'expired';
 
 export interface WaitlistEntry {
   id: string;
@@ -227,7 +228,7 @@ export const WaitlistService = {
     }
     const { data, error } = await supabase
       .from('table_waitlist')
-      .update({ status: 'cancelled' })
+      .update({ status: 'left' })
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .in('status', ACTIVE_STATES)
@@ -443,7 +444,7 @@ export const WaitlistService = {
     if (!uid) return false;
     const { error } = await supabase
       .from('table_waitlist')
-      .update({ status: 'cancelled' })
+      .update({ status: 'left' })
       .eq('table_id', tableId)
       .eq('user_id', uid)
       .in('status', ACTIVE_STATES)

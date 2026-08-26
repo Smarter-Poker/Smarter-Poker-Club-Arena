@@ -5302,13 +5302,28 @@ export default function TablePage({
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       // Only warn if the player is actually seated
       if (tableState.heroSeat > 0 && tableId && userId && userId !== 'guest') {
-        // Fire seat cleanup (best-effort, may not complete before tab closes)
-        // sendBeacon with Blob to include Content-Type and apikey headers
-        const beaconUrl = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/rpc/player_leave_table?apikey=${import.meta.env.VITE_SUPABASE_ANON_KEY}`;
-        const blob = new Blob([JSON.stringify({ p_table_id: tableId, p_user_id: userId })], {
-          type: 'application/json',
-        });
-        navigator.sendBeacon?.(beaconUrl, blob);
+        // NO SEAT-CLEANUP BEACON HERE. Removed 2026-08-26.
+        //
+        // This used to sendBeacon() to rpc/player_leave_table. It never once
+        // worked: wallet_transactions has ZERO rows matching 'Tab-close%' for
+        // the whole life of the function. Two independent reasons, either
+        // sufficient:
+        //
+        //   1. It authenticated with VITE_SUPABASE_ANON_KEY, not the player's
+        //      session JWT, so PostgREST ran it as `anon`. player_leave_table
+        //      is not SECURITY DEFINER, so RLS on table_seats matched no row
+        //      and it returned having done nothing.
+        //   2. Since 20260826150000 (revoke_authenticated_execute_on_five_
+        //      economy_functions) the function's EXECUTE grant is postgres +
+        //      service_role only, so the call is now rejected outright.
+        //
+        // Do not "fix" it by re-pointing it at the session token or by making
+        // the function SECURITY DEFINER. A fire-and-forget beacon that moves
+        // money has no way to report failure, cannot be retried, and races the
+        // engine's own cash-out. The seat is already reclaimed correctly by the
+        // engine's startup sweep, which settles into club_members.chip_balance.
+        //
+        // The warning below stays: it is the part that actually helps.
         event.preventDefault();
         event.returnValue = '';
       }

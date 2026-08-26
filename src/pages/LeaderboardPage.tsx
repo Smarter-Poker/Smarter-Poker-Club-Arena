@@ -14,6 +14,7 @@ import { Virtuoso } from 'react-virtuoso';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
+
 import type { LeaderboardSettings, LeaderboardPayout } from '../services/LeaderboardService';
 import { LeaderboardService } from '../services/LeaderboardService';
 import type {
@@ -307,6 +308,7 @@ export default function LeaderboardPage() {
       isMounted = false;
     };
   }, [selectedClubId, userClubs]);
+
 
   // 2026-08-24: a useMasterBusChannel({ table: 'tournament_players',
   // filter: null }) used to sit here. It NEVER SUBSCRIBED - the hook

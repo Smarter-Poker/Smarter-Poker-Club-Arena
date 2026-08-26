@@ -2533,16 +2533,16 @@
   }
 
   .table-scaler {
-    max-width: none;
-    max-height: 100%;
-    /* Landscape keeps the OLD width-then-clamp sizing on purpose. The portrait
-       formula derives width from --sp-table-h, and that budget is built for a
-       page whose action bar spans the bottom — here the bar is a 44%-wide
-       column beside the felt (see .action-panel-wrapper above), so the bottom
-       reserve does not apply and the subtraction can go small or negative.
-       Restoring `width: 100%` leaves this orientation exactly as it was rather
-       than feeding it a number that was never measured for it. */
-    width: 100%;
+    /* Portrait's --sp-table-h pattern extended to landscape.
+       The action panel is a 44% column beside the felt, so
+       the felt area is ~56vw minus 8px left padding.
+       Both constraints are set; aspect-ratio picks the binding one. */
+    --sp-ls-table-w: calc(56vw - 8px);
+    --sp-ls-table-h: calc(100svh - 40px - env(safe-area-inset-bottom, 0px));
+    max-width: var(--sp-ls-table-w);
+    max-height: var(--sp-ls-table-h);
+    width: auto;
+    /* aspect-ratio on .table-scaler now holds by construction */
   }
 
   /* Smaller community cards in landscape */
@@ -3367,12 +3367,10 @@ body.ca-raising .bankroll-widget {
        (0,2,1, at the foot of this file) still collapses it for a spectator,
        who has neither a hero plate nor a time-bank tile. */
     --sp-hero-clear: 88px;
-    /* Measured on production after #685: the 12px side gutters held the
-       scaler at 360px, so the 374px cap never engaged. 4px gutters give the
-       oval its full 374px — ~23px longer at the same 605/1000 aspect, so
-       every seat stays on the painted rail. */
-    padding-left: 4px;
-    padding-right: 4px;
+    /* 2026-08-26: gutters removed per Dan — edge-to-edge felt at 375px
+       measures 375x619.8 (up from 367x606.6 with 4px gutters). Side-seat
+       overhang at narrow viewports is addressed by the max-width: 340px
+       safeguard in SeatSlot.css. */
   }
 
   .table-scaler {

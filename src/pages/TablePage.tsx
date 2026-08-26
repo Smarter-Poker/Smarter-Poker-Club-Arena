@@ -51,25 +51,20 @@
  * stylesheet defined was either defined somewhere else as well or rendered by
  * nothing at all - so removing them cannot change a pixel on any screen.
  *
- * DELIBERATELY LEFT, and this is a defect rather than a preference:
+ * CLEANED UP 2026-08-26 (dead-component pass):
  * BankrollWidget, SessionTimer, StreakBadge, StreamerMode and CardReveal are
- * also mounted nowhere and this file is their only importer in src/ - but each
- * of their stylesheets declares a BARE, UNSCOPED class that another component
- * on another page renders and that NOTHING ELSE DEFINES:
+ * also mounted nowhere and this file was their only importer in src/. Their
+ * orphaned global CSS classes have been migrated to their actual consumers:
  *
- *   BankrollWidget.css  .stack-value   <- RebuyModal, AddOnModal
- *   SessionTimer.css    .timer-value   <- TournamentClock
- *   StreakBadge.css     .streak-badge  <- LeaderboardPage
- *   StreamerMode.css    .option        <- PrivacySettings, TableConfigPage +5
- *   CardReveal.css      .cards         <- 20 files, table and non-table
+ *   StreakBadge.css   .streak-badge  → LeaderboardPage.css (scoped)
+ *   CardReveal.css    .cards         → scoped to .card-reveal in CardReveal.css
+ *   ChipStack.css     .chip--partial, .pot-label, .pot-value
+ *                                    → PotDisplay.css (PotDisplay now owns them)
+ *   StreamerMode.css  .option        → only used in StreamerMode itself (deleted)
+ *   BankrollWidget.css .stack-value  → only used in BankrollWidget itself (deleted)
+ *   SessionTimer.css  .timer-value   → only used in SessionTimer itself (deleted)
  *
- * So those screens are styled today only because this page imports a component
- * it never renders. Deleting the import unstyles them, silently, somewhere
- * nobody would think to look. The fix is to move each orphaned rule into the
- * stylesheet of the component that actually renders it - which touches the
- * leaderboard, the tournament clock and the rebuy modal, none of which is the
- * table. That is a deliberate follow-up, not a thing to do quietly inside a
- * table pass. Do not simply drop these imports.
+ * All five component files (TSX + CSS) and useTableModals.ts are deleted.
  */
 
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
@@ -196,20 +191,6 @@ import {
   LeaveTableIcon,
 } from '../components/table/TableMenuIcons';
 import { useToast } from '../components/common/Toast';
-/* DO NOT REMOVE THIS IMPORT BECAUSE THE COMPONENT IS UNUSED. It is unused —
-   deliberately kept. `components/table/ChipStack.tsx` is the ONLY module in
-   the whole of src/ that imports `components/table/ChipStack.css`, and that
-   stylesheet is the ONLY definition of `.chip--partial`, `.pot-label` and
-   `.pot-value` reachable at runtime. PotDisplay, PremiumPot and ChipPhysics
-   all render those class names on the live felt and none of them loads the
-   file. Dropping this line takes the CSS out of the bundle with it and the
-   pot label and partial chips lose their styling, with nothing going red.
-   (`components/chips/ChipStack.tsx` is a DIFFERENT component with its own
-   stylesheet, and nothing imports that one at all.)
-   The real fix is for the stylesheet to be owned by PotDisplay, or promoted
-   to a shared file. Until someone does that, this import is what holds it in.
-   Found while removing 28 genuinely dead imports on 2026-08-25. */
-import '../components/table/ChipStack.css';
 import { isVibrationAllowed, setVibrationAllowed } from '../utils/vibrationGate';
 import KnockoutAnimation, { type KnockoutData } from '../components/tournament/KnockoutAnimation';
 import MysteryBountyChest, {
@@ -242,7 +223,6 @@ import { notificationService } from '../services/NotificationService';
 import SpectatorBadge from '../components/table/SpectatorBadge';
 // FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay
 // import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
-import SessionTimer from '../components/table/SessionTimer';
 import { horseBugReporter } from '../services/HorseBugReporter';
 import { useUserTableSettings } from '../hooks/useUserTableSettings';
 import { useUserThemeSettings } from '../hooks/useUserThemeSettings';
@@ -279,11 +259,7 @@ import { TablePerfMonitor } from '../components/table/TablePerfMonitor';
 // createChipToPotEvent imports removed — imported for years, never rendered
 // or called (dead weight in the TablePage chunk).
 import { playerStyleClassifier } from '../services/PlayerStyleClassifier';
-// Phase 9: Previously unwired table components
-import { StreamerMode } from '../components/table/StreamerMode';
-import { BankrollWidget } from '../components/table/BankrollWidget';
 import IdentityModal from '../components/table/IdentityModal';
-import { StreakBadge } from '../components/table/StreakBadge';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';

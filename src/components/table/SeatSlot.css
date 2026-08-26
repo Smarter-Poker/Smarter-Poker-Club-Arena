@@ -183,7 +183,12 @@
   height: var(--seat-avatar-size, 84px);
   flex-shrink: 0;
   z-index: 2;
-  margin-bottom: -6px; /* overlap into info box */
+  /* Overlap into the info box. A TOKEN (declared on `.seat`, retuned by the
+     breakpoint blocks) rather than a literal, because the villain card
+     cluster hangs its bottom edge exactly 1px above the plate and must read
+     the SAME number — see `.seat__cards--opponent`. Two copies of this value
+     is how the cards and the plate would drift apart. */
+  margin-bottom: calc(-1 * var(--sp-wrap-overlap, 6px));
 }
 
 /* AUDIT 2026-08-25: `.seat__circular-timer` (an absolutely-positioned box for
@@ -1272,7 +1277,8 @@
      overlap       the cluster lies IN FRONT of the avatar, its inner card
                    reaching 0.8 x card width onto the art (round 3:
                    "overlapping the avatar faces like in the reference")
-     vertical      cluster centre = avatar centre
+     vertical      cluster bottom = 1px above the name/chip plate (round 4:
+                   "1 pixel above the action bar")
      side          right-half villains carry it RIGHT of the avatar, left-half
                    villains LEFT (the .seat--cards-left/right rules at the end
                    of this file)
@@ -1299,10 +1305,15 @@
   position: absolute;
   width: var(--vh-fan-w);
   height: var(--vh-card-h);
-  /* Cluster centre sits on the avatar's centre. The avatar wrap is the
-     seat's first child, so its centre is half the token from the seat's top. */
-  top: calc(var(--seat-avatar-size, 84px) / 2);
-  transform: translateY(-50%);
+  /* Dan 2026-08-26 round 4: "lower them all down slightly so they are 1 pixel
+     above the action bar." The cluster's BOTTOM edge sits exactly 1px above
+     the name/chip plate. The plate's top is the avatar slot's height minus
+     the wrap's overlap into it, so both are derived from the same two tokens
+     and the pixel holds at every breakpoint — including the compact top-cap
+     seats — with nothing to retune. translateY(-100%) anchors by the bottom,
+     so the showdown reveal grows UPWARD from the same resting edge. */
+  top: calc(var(--seat-avatar-size, 84px) - var(--sp-wrap-overlap, 6px) - 1px);
+  transform: translateY(-100%);
   /* IN FRONT of the avatar (wrap is z 2, art z 3), like the reference — the
      backs lie on the character's shoulder. Below the status dot / position
      badge pair and every action pill, which must stay readable over it. */
@@ -2689,9 +2700,10 @@
   }
 
   /* Only the overlap into the name box is tuned per breakpoint now; the slot
-     size itself comes from --seat-avatar-base above. */
-  .seat__avatar-wrap {
-    margin-bottom: -5px;
+     size itself comes from --seat-avatar-base above. On `.seat` because the
+     wrap AND the villain cluster both read it. */
+  .seat {
+    --sp-wrap-overlap: 5px;
   }
 
   .seat__info {
@@ -2766,8 +2778,8 @@
     --sp-card2-step: 23px;
   }
 
-  .seat__avatar-wrap {
-    margin-bottom: -4px;
+  .seat {
+    --sp-wrap-overlap: 4px;
   }
 
   .seat__info {

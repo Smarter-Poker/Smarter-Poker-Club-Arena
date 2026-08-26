@@ -4835,14 +4835,26 @@ export default function TablePage({
       setBustRebuyProcessing(true);
       try {
         const idempotencyKey = crypto.randomUUID();
-        const { error } = await supabase.rpc('atomic_table_rebuy', {
+        const payload = {
           p_user_id: userId,
           p_table_id: tableId,
           p_amount: amount,
           p_idempotency_key: idempotencyKey,
-        });
+        };
+        const { error } = await supabase.rpc('atomic_table_rebuy', payload);
         if (error) {
-          toast?.error(error.message || 'Rebuy failed');
+          if (error.message?.includes('FetchError') || !navigator.onLine) {
+            OfflineQueueService.enqueue({
+              action: 'TABLE_REBUY',
+              payload,
+              operationId: idempotencyKey,
+            });
+            toast.success('Offline: Rebuy queued for retry.');
+            setBustRebuyOpen(false);
+            bustPromptFiredRef.current = true;
+          } else {
+            toast?.error(error.message || 'Rebuy failed');
+          }
           setBustRebuyProcessing(false);
           return;
         }

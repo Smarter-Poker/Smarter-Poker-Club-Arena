@@ -242,7 +242,7 @@ export default function InvitePage() {
         }
       }
     }
-  }, [club?.id]);
+  }, [club?.id, club?.slug, refCode, user?.id]);
 
   const handleCopyLink = async () => {
     try {

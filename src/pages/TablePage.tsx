@@ -3672,6 +3672,13 @@ export default function TablePage({
   const bbjTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // CA-22 BUG FIX: handCompleteTimerRef tracks the 3s HAND_COMPLETE table-reset timer.
   const handCompleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Review fix 2026-08-25 (spec 16/19 vs 21/24): wall-clock timestamp at which
+  // the LAST pot-award beat (fan + float) will have landed, written by the
+  // POT_WIN handler. A hand with many sequenced pots (multi-way side pots,
+  // double-board hi-lo = up to 8 beats) can outlast the fixed settle hold;
+  // HAND_COMPLETE extends its table-reset timer to at least this instant so
+  // the reset can never wipe an award animation that is still in flight.
+  const potAwardAnimEndAtRef = useRef(0);
 
   // Unmount guard for all four CA-19..CA-22 animation timers.
   useEffect(() => {
@@ -9458,10 +9465,17 @@ export default function TablePage({
         // 3x left ~12s of stale board on screen if a HAND_STARTED event is ever
         // dropped, where the old hardcoded 3000ms risked about one second.
         // Never shorter than the engine's own hold, never more than double it.
-        const holdMs = Math.min(
+        const holdMsScaled = Math.min(
           holdBaseMs * 2,
           Math.max(holdBaseMs, holdBaseMs * getAnimationSpeed())
         );
+        // Review fix 2026-08-25: a long award sequence (many side pots,
+        // double-board hi-lo) can outlast the settle hold. Stretch the reset
+        // to at least 400ms past the final beat's landing instant recorded by
+        // POT_WIN — bounded (the POT_WIN estimate is itself bounded by group
+        // count), and a no-op for ordinary one/two-pot hands.
+        const animRemainingMs = potAwardAnimEndAtRef.current - Date.now();
+        const holdMs = Math.max(holdMsScaled, animRemainingMs + 400);
         // CA-22: track so unmount can cancel — prevents setTableState on dead page
         if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
         handCompleteTimerRef.current = window.setTimeout(() => {
@@ -9616,14 +9630,44 @@ export default function TablePage({
           const muckedPlayers =
             ((evt.data as any).mucked_players as Array<{ user_id: string; seat?: number }>) || [];
           const reveals =
-            ((evt.data as any).reveals as Array<{ user_id: string; reveal_order?: number }>) || [];
-          if (muckedPlayers.length > 0 || reveals.length > 0) {
+            ((evt.data as any).reveals as Array<{
+              user_id: string;
+              seat?: number;
+              reveal_order?: number;
+            }>) || [];
+          // Review fix 2026-08-25: the server defaults seat to -1 when the
+          // showdown result predates seat capture, so seat-only resolution
+          // silently dropped those players. Resolve by user_id against the
+          // live player list first; the wire seat is the fallback.
+          const seatIdxOf = (userId: string, wireSeat?: number): number => {
+            const byId = tableStateRef.current.players.findIndex((p) => p?.id === userId);
+            if (byId >= 0) return byId;
+            const s = (wireSeat ?? 0) - 1;
+            return s >= 0 && s < 9 ? s : -1;
+          };
+          if (muckedPlayers.length > 0) {
             const muckedMask = Array(9).fill(false) as boolean[];
             for (const m of muckedPlayers) {
-              const seatIdx = (m.seat ?? 0) - 1;
-              if (seatIdx >= 0 && seatIdx < 9) muckedMask[seatIdx] = true;
+              const seatIdx = seatIdxOf(m.user_id, m.seat);
+              if (seatIdx >= 0) muckedMask[seatIdx] = true;
             }
             setMuckedLabelSeats(muckedMask);
+          }
+          // Review fix 2026-08-25: this event carries reveal_order too —
+          // apply it, so a client that missed the discrete `showdown` event
+          // (reconnect mid-settle) still staggers flips in the legal order
+          // instead of flipping everyone at once.
+          if (reveals.length > 0) {
+            const orderBySeat: Record<number, number> = {};
+            for (const r of reveals) {
+              const seatIdx = seatIdxOf(r.user_id, r.seat);
+              if (seatIdx >= 0 && typeof r.reveal_order === 'number') {
+                orderBySeat[seatIdx] = r.reveal_order;
+              }
+            }
+            if (Object.keys(orderBySeat).length > 0) {
+              showdownRevealOrderRef.current = orderBySeat;
+            }
           }
         } catch {
           /* reconciliation is best-effort — the snapshot remains authoritative */
@@ -9915,6 +9959,13 @@ export default function TablePage({
           const awardGroups: AwardGroupAnim[] = seqGroups.map((g) => {
             const anim: AwardGroupAnim = { events: [], floats: [] };
             for (const w of g.winners) {
+              // Review fix 2026-08-25: pot_awards amounts are EXACT per-pot
+              // shares — a 0 there is a real zero (a fully-raked micro pot),
+              // and the old `w.amount || mergedTotal || split` fallback chain
+              // inflated it to the player's MERGED cross-pot total, showing
+              // "+40" twice for a 20/20 split across pots. Skip the beat
+              // instead. Estimating remains for legacy non-exact groups.
+              if (g.exact && !(w.amount > 0)) continue;
               // SeatPlayer.id is the userId — players[] index = seatNumber - 1.
               const seatIdx = tableStateRef.current.players.findIndex((p) => p?.id === w.userId);
               if (seatIdx < 0) continue;
@@ -9923,10 +9974,11 @@ export default function TablePage({
               const winnerPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
               // The group's own share — exact for THIS pot(-half), not the
               // player's merged total.
-              const share =
-                w.amount ||
-                winnerInfoRef.current?.amounts?.[w.userId] ||
-                potAmount / (winnerIds.length || 1);
+              const share = g.exact
+                ? w.amount
+                : w.amount ||
+                  winnerInfoRef.current?.amounts?.[w.userId] ||
+                  potAmount / (winnerIds.length || 1);
               // createPotToWinnerEvent already returns a fan of 3-8 chips with
               // bezier arc, staggered 40ms each, 600ms duration — spec match.
               anim.events.push(...createPotToWinnerEvent(potPos, winnerPos, share));
@@ -9993,6 +10045,10 @@ export default function TablePage({
             },
             lastGroupDelay + 700 * getAnimationSpeed()
           );
+          // Review fix 2026-08-25: record when the final beat lands so the
+          // HAND_COMPLETE reset hold can stretch to cover a long pot
+          // sequence instead of wiping it mid-flight.
+          potAwardAnimEndAtRef.current = Date.now() + lastGroupDelay + 700 * getAnimationSpeed();
 
           // Dan 2026-08-19, bug list item 6: push the POT ITSELF to the winner,
           // not just a fan of chips. `.pot-display--collect` and its
@@ -12914,10 +12970,11 @@ export default function TablePage({
                           winnerInfo.boardHandNames ? undefined : winnerInfo.handDescription
                         }
                         /* SHOWDOWN POLISH 2026-08-25 (spec 33): the hi-lo
-                           split's LOW WINNER line. */
-                        lowWinnerLabel={
-                          winnerInfo.boardHandNames ? undefined : winnerInfo.lowWinnerLabel
-                        }
+                           split's LOW WINNER line. Review fix: NOT gated on
+                           boardHandNames — a double-board hi-lo hand has both
+                           per-board names AND a low winner, and suppressing
+                           the label hid a real winner's credit line. */
+                        lowWinnerLabel={winnerInfo.lowWinnerLabel}
                         deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                         cardBack={activeCardBack}
                         playSounds={ambientSoundsAllowed}

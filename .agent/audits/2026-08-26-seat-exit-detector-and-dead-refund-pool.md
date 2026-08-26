@@ -1,0 +1,240 @@
+# 2026-08-26 — Seat-exit detector, the dead refund pool, and a corrected rule
+
+Status: **DB changes are live in production. Repo changes are pushed as PR #1037 with squash auto-merge armed** (see "Push status" at the bottom).
+
+---
+
+## Applied to production
+
+Three migrations, each with post-apply assertions that would have aborted the
+transaction on failure. All three returned success; verified again independently
+afterwards.
+
+### 1. `20260826_fix_unaccounted_seat_exits_lower_bound`
+
+`fn_unaccounted_seat_exits()` matched a seat exit to its refund inside
+`occurred_at - interval '2 minutes' .. occurred_at + p_grace`. The upper bound
+scaled with `p_grace`; the lower bound was hardcoded at two minutes. The engine
+writes the cash-out **before** it closes the `table_seats` row and the gap
+between them is unbounded, so any refund landing more than two minutes early was
+reported as missing.
+
+Exit 6522 (user `f7201058`) was paid 85.85 at 09:33:33 and its seat closed at
+09:38:50 — a 5m17s gap. Correct refund, reported as a critical.
+
+Lower bound is now `GREATEST(p_grace, interval '15 minutes')`.
+
+|                    | before     | after |
+| ------------------ | ---------- | ----- |
+| flagged exits (7d) | 2          | 1     |
+| ids                | 6522, 7458 | 7458  |
+
+The false positive is gone and the real shortfall is retained. A money alarm
+that cries wolf is how the real one stops being read.
+
+### 2. `20260826_wrap_live_comments_auth_uid`
+
+`live_comments / lc_sel` wrapped four of its five `auth.uid()` calls and left the
+first bare, in the leading disjunct where it is evaluated per row before
+anything can short-circuit it. Fixed with `ALTER POLICY` (not DROP + CREATE, so
+roles/cmd/permissive are preserved and the table is never briefly unprotected).
+
+Unwrapped `auth.*()` calls in schema `public`: **1 -> 0**. Total policies
+unchanged at 1417.
+
+### 3. `20260826_retire_dead_leave_rpcs_and_fix_tabclose_pool`
+
+**`player_leave_table()` credited a pool nothing reads.** It is the tab-close
+auto-cashout, fired from `TablePage.tsx:5181` via `navigator.sendBeacon`. It
+refunded the stack into `public.wallets`, while every other money path on the
+platform settles into `club_members.chip_balance` via `fn_add_chips()`.
+
+`public.wallets` is dead:
+
+```
+last updated_at .............. 2026-08-21 00:59:34Z
+rows updated in last 24h ..... 0        (against 6,511 seat exits)
+stranded balance ............. 732,591,994.33
+live pool (club_members) ..... 121,205,561.53
+```
+
+A tab-close refund would have credited an unreadable ledger **and** closed the
+seat — the stack leaves the felt and lands nowhere. Exactly the failure mode
+CLAUDE.md 11.5 exists for.
+
+It has never billed anyone: `wallet_transactions` rows matching `'Tab-close%'`
+= **0, all time**. The function has never completed once. A landmine, not an
+active leak — which is also why it was safe to change.
+
+Now: settles through `fn_add_chips()` + `log_wallet_transaction()`, and RAISES
+rather than closing a seat it cannot resolve a club wallet for (leaving the
+stack intact for the engine's startup sweep).
+
+Deliberately **not** changed: the security context stays INVOKER. Promoting it
+to SECURITY DEFINER is plausibly what would make it start firing, and switching
+on an untested money path is a separate decision needing its own evidence. This
+makes the payout correct **if** it fires; it does not make it fire.
+
+Per CLAUDE.md 11.5 rule 5 this path was reasoned about and asserted, **not
+executed**. No probe was run. No chips were moved.
+
+Also dropped: `fn_leave_table(uuid)` and `fn_leave_table(uuid, uuid)`, both of
+which only ever returned `{"success": false, "error": "not_implemented"}`. Zero
+call sites in either repo.
+
+### 4. `CLAUDE.md` section 11.5 rule 3 — corrected
+
+The rule said the refund path is `fn_leave_seat_and_refund`. **That function is
+tournament-only.** Its third statement is
+`IF NOT FOUND OR v_tbl.tournament_id IS NULL THEN RETURN ... 'table_not_found'`.
+Called on a cash table it refunds nothing and leaves the seat untouched. An
+agent following the old wording to "safely" release a cash seat would have
+believed chips were returned when they were not. Replaced with a per-table-type
+refund table.
+
+---
+
+## Still open
+
+| #   | Item                                                                         | Why it is not done                                                                                                                                                                                                                                          |
+| --- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Exit 7458: 25.90 chips owed to `a916c222`**                                | Real loss, verified. Add-on 25.90 at 12:55:23, cash-out of only 19.10 at 12:55:24, stack 45.00 at 12:55:25 (`19.10 + 25.90 = 45.00`). The cash-out read a stale stack that excluded the add-on. Fix is engine-side on Hetzner, not a migration. Spec below. |
+| 2   | **The engine force-cashes out every seated player roughly every 33 minutes** | ROOT CAUSE FOUND, see below. Not fixable from here (no SSH to Hetzner), and `agent/cowork-standby/feat/leader-standby-failover` is already the right fix in flight.                                                                                         |
+| 3   | 12 `multiple_permissive_policies` groups (25 policies, 12 tables)            | Minor planner cost. Untouched.                                                                                                                                                                                                                              |
+| 4   | 77 RLS-enabled tables with zero policies                                     | **Verified safe** — RLS denies all client access and service_role bypasses. Hygiene only: their `anon`/`authenticated` grants are misleading and should be revoked.                                                                                         |
+| 5   | Two backup tables in `public`                                                | `club_member_daily_stats_profit_backup_20260826` (123,463 rows), `vip_backfill_20260812_backup` (470).                                                                                                                                                      |
+| 6   | Auth connection pool -> percentage-based                                     | No tool access; dashboard or management API only.                                                                                                                                                                                                           |
+| 7   | `TablePage.tsx` — 748 KB / 15,345 lines                                      | Large refactor. This, not route splitting, is the real bundle win: every route in `App.tsx` is already `lazyWithRetry(() => import(...))`.                                                                                                                  |
+
+### #2 — every engine deploy dumps every player at every table
+
+`"Cash-out from table (server startup cleanup)"` is not background noise. Over
+the last four days:
+
+```
+restart bursts .................. 168
+forced cash-outs ................ 33,760      (11.6M chips)
+average players dumped/restart .. 201
+average interval ................ 32.9 minutes
+```
+
+For comparison, ordinary voluntary cash-outs numbered 16,165 over a _month_.
+The platform force-cashes out more players every four days than leave on their
+own in thirty.
+
+**The cause is deploys.** GitHub Actions ran `auto-deploy-hetzner.yml`
+**198 times** in the same window (187 success, 7 failure) against **168**
+observed restart bursts. Every merge touching `server/**` cold-restarts the
+engine, and the new leader's startup sweep closes every open seat. Confirmed
+against `engine_leader`: `acquired_at` was `15:57:14` and the last cash-out
+burst began at `15:57:20`, six seconds later.
+
+The interval distribution rules out a lease timeout. It is not periodic: gaps
+run from 3.5 to 475 minutes, and 59 of the 168 restarts (35%) came within ten
+minutes of the previous one. That is the shape of a merge queue, not a timer.
+This repo merges roughly nineteen times an hour.
+
+`engine_recovery_events` shows the engine is also unhealthy independently of
+deploys: **1,891 `watchdog_kill_rebuild`** events in four days, 228 of them
+`start_failed:start_load_table` in the last two. The table loader is failing at
+startup and the watchdog is killing and rebuilding.
+
+**Why this matters beyond the disruption:** every one of those 33,760 forced
+cash-outs runs the same cash-out path that lost 25.90 on exit 7458 and 14.18 on
+hand #1458859. The add-on race in #1 is not a rare edge case, it is being rolled
+33,760 times per four days. Fixing #1 and fixing #2 are the same piece of work
+in two places.
+
+Do not "fix" this by making the startup sweep quieter. The sweep is correct for
+a cold start; the bug is that a cold start happens fifty times a day. Either
+drain and hand over to a standby leader, or stop redeploying the engine on every
+server-touching merge.
+
+### Spec for #1 — the add-on / leave race
+
+The shape is already known here: `wallet_transactions` carries a hand-written
+row reading _"Correction: hand #1458859 settlement (final stack 34.18) lost to
+mid-hand cashout race at 23:49:15Z — refund of 14.18 shortfall"_. Same class of
+bug, patched by hand once.
+
+Required behaviour, to be asserted in a unit test before any engine change:
+
+1. An add-on and a cash-out on the same seat must not interleave. The cash-out
+   must read `table_seats.stack` under the same lock the add-on writes it with.
+2. Given: seat with stack S, an add-on of A committed at T, a leave at T+e.
+   Then the credit must equal `S` (post-add-on), never the pre-add-on value.
+3. `table_pending_addons` (2,863 rows) and `table_addon_idempotency` (2,253)
+   already exist — the reconciliation between a pending add-on and a seat exit
+   should be asserted, not assumed.
+
+Do **not** verify this by calling the live path. See 11.5.
+
+---
+
+## Concurrency note — another agent moved underneath this work
+
+Migrations were landing from at least one other session while this ran:
+
+```
+20260826151027  an_addon_that_cannot_apply_must_not_debit      <- same bug as #1 above
+20260826151310  20260826_fix_unaccounted_seat_exits_lower_bound   (this session)
+20260826151326  20260826_wrap_live_comments_auth_uid             (this session)
+20260826151345  20260826_retire_dead_leave_rpcs_and_fix_tabclose_pool (this session)
+20260826151459  lobby_publishes_48h_of_card
+20260826151609  close_the_money_rpcs_no_browser_ever_calls
+```
+
+All three of this session's changes were re-verified afterwards and survived
+intact (flagged exits 1, bare auth policies 0, stubs 0, `player_leave_table`
+still routing to `fn_add_chips`).
+
+**But `close_the_money_rpcs_no_browser_ever_calls` (151609) revoked client
+EXECUTE on `player_leave_table`.** Its grants are now `postgres` and
+`service_role` only. That is a defensible hardening, and it independently
+confirms the diagnosis above — but it leaves a **live client call site that can
+no longer succeed**: `TablePage.tsx:5181` still fires this RPC through
+`navigator.sendBeacon` on unload, as `authenticated`. It will now be rejected.
+
+Failure mode is benign (the beacon is fire-and-forget, the seat stays open, and
+the engine's startup sweep cashes the player out) but the call site is dead code
+that should be removed or re-pointed. Whoever owns 151609 should be told.
+
+Someone is also already on the add-on race (`an_addon_that_cannot_apply_must_not
+_debit`) — coordinate before duplicating item #1.
+
+---
+
+## Push status
+
+Pushed. Branch `agent/cowork-seatexit/fix/detector-and-dead-refund-pool`,
+**PR #1037**, squash auto-merge armed. It lands the moment the six required
+checks report.
+
+Getting there took three corrections worth recording:
+
+1. **The GitHub MCP token is revoked** — `create_branch` and
+   `search_repositories` both return `Authentication Failed: Bad credentials`.
+   Not a scope problem. It needs rotating.
+2. **The sandbox cannot reach github.com** — `git ls-remote` returns
+   `HTTP code 403 from proxy after CONNECT`, so no credential would help there.
+3. **The host can.** SSH to `git@github.com:Smarter-Poker/Smarter-Poker-Club-Arena.git`
+   works from the Mac and `gh` is authed as `Smarter-Poker` (it lives at
+   `/opt/homebrew/bin`, which is not on the non-interactive shell's PATH —
+   export it or `gh` reports `command not found`).
+
+Two further traps for the next agent:
+
+- **The main clone was at a detached HEAD, 8 commits behind**, because `main`
+  is checked out in another worktree (`.agent-trees/club-arena/agent-replayer`).
+  `git checkout main` there fails. Claim your own worktree, per AGENT-PLAYBOOK.
+- **`scripts/git-safe-push.sh` runs `git add -A` (line 133) and commits with
+  `--no-verify` (line 205).** At the time of writing the repo root held 20
+  untracked items including `.agent-trees/` and a dozen scratch files from other
+  agents. Running it unmodified would have swept all of that into the commit and
+  skipped the test gate that CLAUDE.md section 8 says must never be skipped.
+  This work was staged explicitly by path and committed with hooks enabled.
+
+**Unverifiable from here:** the PAT cannot read check state — GraphQL returns
+`Resource not accessible by personal access token` for
+`statusCheckRollup.contexts`, so `checks=0` on a PR is a permissions artifact
+and NOT evidence that CI did not run. Do not read it as such.

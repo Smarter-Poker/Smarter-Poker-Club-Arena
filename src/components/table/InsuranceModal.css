@@ -112,6 +112,64 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
+/* Final 5 seconds: the countdown goes red and pulses. */
+.insurance-modal__timer--urgent {
+  background: rgba(239, 68, 68, 0.22);
+  color: #ef4444;
+  box-shadow:
+    0 0 8px rgba(239, 68, 68, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: insuranceTimerUrgent 1s ease-in-out infinite;
+}
+@keyframes insuranceTimerUrgent {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   OUTS — the next-street cards that put the leader behind
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.insurance-modal__outs {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px 4px;
+}
+
+.insurance-modal__outs-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #f87171;
+}
+
+.insurance-modal__outs-cards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px;
+  max-width: 100%;
+}
+
+.insurance-modal__outs-card {
+  display: inline-flex;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .insurance-modal__timer--urgent {
+    animation: none;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    CARDS DISPLAY
    ═══════════════════════════════════════════════════════════════════════════════ */

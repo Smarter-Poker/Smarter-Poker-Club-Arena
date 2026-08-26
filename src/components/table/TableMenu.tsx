@@ -32,6 +32,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
+import hamburgerIcon from '../../assets/icons/icon-hamburger.jpg';
 
 // ─── SVG Icons for Identity section ─── */
 const AvatarIcon = () => (
@@ -446,11 +447,12 @@ export function TableMenu({
         aria-haspopup="menu"
         aria-expanded={isOpen}
       >
-        <span className="table-menu__hamburger">
-          <span />
-          <span />
-          <span />
-        </span>
+        <img
+          src={hamburgerIcon}
+          className="table-menu__trigger-img"
+          alt=""
+          draggable={false}
+        />
         {/* Notification badge */}
         {badgeCount != null && badgeCount > 0 && (
           <span className="table-menu__badge" aria-label={`${badgeCount} notifications`}>

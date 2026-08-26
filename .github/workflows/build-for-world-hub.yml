@@ -4,6 +4,26 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # CATCH-UP, because `push` alone is not a guarantee that main publishes.
+    #
+    # The concurrency rule below is right and deliberate, but it has one
+    # consequence worth naming: when a new push arrives, GitHub cancels the run
+    # that was PENDING in the group. That is what makes each wave converge on
+    # the newest main instead of publishing nothing. It also means the publish
+    # of a given commit can be cancelled and then never re-attempted, because
+    # the only thing that ever starts this workflow is another push. If the
+    # pushes stop right after a cancellation - the end of a merge train, the
+    # end of a working day - main and production stay diverged until somebody
+    # pushes again.
+    #
+    # publish-watchdog.yml notices within 30 minutes and re-dispatches once.
+    # This makes the common case self-correct without waiting for the alarm,
+    # and it mirrors auto-deploy-hetzner.yml, which has had a catch-up schedule
+    # for exactly this reason.
+    #
+    # `publish-needed` below keeps an up-to-date cycle down to one curl.
+    - cron: '*/20 * * * *'
 
 # 2026-08-21: was cancel-in-progress: true, which deadlocked publishing.
 # This build takes about 4 minutes. With several agents pushing to main every
@@ -21,6 +41,48 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ── IS THERE ANYTHING TO PUBLISH AT ALL? ──────────────────────────────────
+  # A job rather than a step, because the work this guards is spread across
+  # TWO jobs that run in parallel (`client-tests` and `build-and-store`), and
+  # a step output cannot cross a runner. Putting the check inside
+  # build-and-store would have let the whole test suite run anyway on a cycle
+  # that had nothing to publish, which is most of the cost it is meant to save.
+  #
+  # Only the SCHEDULE is deduped. A push is by definition new work, and a human
+  # dispatching this by hand is usually forcing a republish of something that
+  # looks stuck - deduping either would be the publish bug this exists to
+  # prevent.
+  publish-needed:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      skip: ${{ steps.dedupe.outputs.skip }}
+    steps:
+      - name: Compare production against this commit
+        id: dedupe
+        if: github.event_name == 'schedule'
+        run: |
+          LIVE=$(curl -fsS --max-time 20 \
+            https://smarter.poker/hub/club-arena/build-info.json 2>/dev/null \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ca_sha",""))' \
+            2>/dev/null || echo "")
+          HEAD_SHA="${{ github.sha }}"
+          if [ -z "$LIVE" ]; then
+            # Unreadable is NOT up to date. FAIL OPEN and publish: a stale CDN
+            # or a broken build-info is exactly when this needs to run, and
+            # reading "cannot tell" as "current" would make the safety net
+            # silently useless.
+            echo "::notice::build-info.json unreadable - publishing rather than assuming."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          elif [ "$LIVE" = "$HEAD_SHA" ]; then
+            echo "::notice::Production already serves ${HEAD_SHA:0:7} - nothing to publish."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Production serves ${LIVE:0:7}, main is ${HEAD_SHA:0:7} - publishing."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
   # ═════════════════════════════════════════════════════════════════════════
   # CLIENT TESTS GATE THE BUNDLE, BUT NO LONGER DELAY IT — split out 2026-08-26.
   #
@@ -51,6 +113,8 @@ jobs:
   # two.
   # ═════════════════════════════════════════════════════════════════════════
   client-tests:
+    needs: publish-needed
+    if: needs.publish-needed.outputs.skip != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -73,6 +137,8 @@ jobs:
         run: npx vitest run tests/
 
   build-and-store:
+    needs: publish-needed
+    if: needs.publish-needed.outputs.skip != 'true'
     runs-on: ubuntu-latest
     permissions:
       # read is enough now: this job uploads an artifact instead of pushing a

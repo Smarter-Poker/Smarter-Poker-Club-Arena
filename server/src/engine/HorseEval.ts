@@ -427,7 +427,9 @@ export interface OmahaDrawInfo {
   straightOuts: number;
   /** 9+ straight outs — a true wrap */
   bigWrap: boolean;
-  /** the draw is worth fighting for: nut flush draw or a big wrap */
+  /** V16 plo8: one card from the NUT LOW with A-2 live in hand */
+  nutLowDraw: boolean;
+  /** the draw is worth fighting for: nut flush draw, big wrap, or nut-low draw */
   nutty: boolean;
 }
 
@@ -436,6 +438,7 @@ const NO_DRAW_INFO: OmahaDrawInfo = {
   dominatedFlushDraw: false,
   straightOuts: 0,
   bigWrap: false,
+  nutLowDraw: false,
   nutty: false,
 };
 
@@ -447,7 +450,13 @@ const NO_DRAW_INFO: OmahaDrawInfo = {
  * straight-family hand). Called lazily and only in the semi-bluff decision
  * band, so the enumeration cost never touches value-hand decisions.
  */
-export function omahaDrawQuality(hole: Card[], board: Card[]): OmahaDrawInfo {
+export function omahaDrawQuality(
+  hole: Card[],
+  board: Card[],
+  /** V16 plo8: also grade the NUT-LOW draw — the hi-lo half the old grader
+   *  was blind to. */
+  isHiLo: boolean = false
+): OmahaDrawInfo {
   if (!hole || hole.length < 4 || !board || board.length < 3 || board.length > 4) {
     return NO_DRAW_INFO;
   }
@@ -488,12 +497,40 @@ export function omahaDrawQuality(hole: Card[], board: Card[]): OmahaDrawInfo {
     }
 
     const bigWrap = straightOuts >= 9;
+
+    // V16 plo8: a NUT-LOW draw (A-2 in hand, two distinct low board cards,
+    // one more low card needed) is half the pot with the best possible low —
+    // real semi-bluff equity the high-only grader scored as nothing.
+    let nutLowDraw = false;
+    if (isHiLo) {
+      const lowRank = (r: number): number => (r === 14 ? 1 : r);
+      const boardLows = new Set<number>();
+      for (const c of board) {
+        const lr = lowRank(RANK_VALUES[c.rank]);
+        if (lr <= 8) boardLows.add(lr);
+      }
+      const holeRanks = new Set<number>();
+      for (const c of hole) holeRanks.add(lowRank(RANK_VALUES[c.rank]));
+      // A + 2 live (not counterfeit by the board) with exactly 2 distinct
+      // board lows = one card from the nut low.
+      if (
+        boardLows.size === 2 &&
+        holeRanks.has(1) &&
+        holeRanks.has(2) &&
+        !boardLows.has(1) &&
+        !boardLows.has(2)
+      ) {
+        nutLowDraw = true;
+      }
+    }
+
     return {
       nutFlushDraw,
       dominatedFlushDraw,
       straightOuts,
       bigWrap,
-      nutty: nutFlushDraw || bigWrap,
+      nutLowDraw,
+      nutty: nutFlushDraw || bigWrap || nutLowDraw,
     };
   } catch {
     return NO_DRAW_INFO;
@@ -641,6 +678,9 @@ export interface HiLoSplit {
 export interface OppPostflopRead {
   aggrW: number;
   checked: number;
+  /** V16: fired a big (>= 20bb) bet on the newest street — sampled toward
+   *  two-pair-plus contact, not just any contact. */
+  bigBet?: boolean;
 }
 
 /** Does this NLH-family hand connect with the CURRENT board — a pair or
@@ -1205,9 +1245,13 @@ export function simulateEquity(
           }
         };
         if (read.aggrW > 0) {
-          const pConnect = Math.min(0.9, 0.4 + read.aggrW * 2.2);
-          for (let t = 0; t < 3; t++) {
-            if (connectsBoard(oppCards, boardCards, vi.isShortDeck) >= 2) break;
+          // V16: a BIG bet is sampled toward REAL strength (two pair+), not
+          // just any contact — an overbettor's range is not middle pair.
+          const wantCat = read.bigBet ? 3 : 2;
+          const pConnect = Math.min(0.9, (read.bigBet ? 0.55 : 0.4) + read.aggrW * 2.2);
+          const tries = read.bigBet ? 4 : 3;
+          for (let t = 0; t < tries; t++) {
+            if (connectsBoard(oppCards, boardCards, vi.isShortDeck) >= wantCat) break;
             if (fastRandom() >= pConnect) break; // some of the range IS air
             redraw();
           }

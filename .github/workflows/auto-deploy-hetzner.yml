@@ -70,7 +70,18 @@ on:
   # is not already serving it — the dedupe step exits in seconds otherwise,
   # so the CI cost of an up-to-date hour is one checkout and one curl.
   schedule:
-    - cron: '17 * * * *'
+    # EVERY 20 MINUTES, WHICH IS MIN_RESTART_SPACING_SEC. Was hourly, and the
+    # mismatch was a 40-minute dead zone: a commit that coalesced at minute 18
+    # could not land until the next hour even though it became eligible at
+    # minute 38. On 2026-08-26 that hid a merged engine fix for 13 minutes and
+    # would have hidden it for up to 40 — with the deploy reporting success
+    # the whole time. Matching the cadence to the gate means a coalesced
+    # commit lands at the first moment it is allowed to.
+    #
+    # Cost is unchanged in the common case: the dedupe step below exits in
+    # seconds when production already serves this commit, so an up-to-date
+    # cycle is one checkout and one curl.
+    - cron: '*/20 * * * *'
   workflow_dispatch:
     inputs:
       force:
@@ -167,7 +178,13 @@ jobs:
              && [ "$UNHEALTHY" = "false" ] \
              && [ "$UPTIME" != "ERR" ] && [ "$UPTIME" -lt "$MIN_RESTART_SPACING_SEC" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
-            echo "::notice::Engine restarted only ${UPTIME}s ago (< ${MIN_RESTART_SPACING_SEC}s) and is healthy with ${TABLES} tables — coalescing. A later push or the hourly catch-up lands $SHORT."
+            # WARNING, not notice: this run is about to finish GREEN having
+            # deployed NOTHING, and an agent reading `gh run list` sees only
+            # "completed/success". A warning is an annotation, so it surfaces
+            # in the run header and in `gh run view` without anyone thinking
+            # to read the log of a successful run. See the NOT DEPLOYED step
+            # at the end of this job, which exists for the same reason.
+            echo "::warning title=NOT DEPLOYED::Engine restarted only ${UPTIME}s ago (< ${MIN_RESTART_SPACING_SEC}s) and is healthy with ${TABLES} tables — coalescing. This run shipped NOTHING. The catch-up schedule lands $SHORT within ${MIN_RESTART_SPACING_SEC}s."
             exit 0
           fi
           echo "skip=false" >> $GITHUB_OUTPUT
@@ -556,6 +573,52 @@ jobs:
             done
             docker image prune -f --filter "dangling=true" >/dev/null 2>&1
             echo "images retained:"; docker images club-arena-engine --format "  {{.Tag}}  {{.CreatedSince}}"' || true
+
+      # ── THE STEP THAT EXISTS TO BE SEEN ────────────────────────────────
+      # A coalesced or drained run finishes GREEN having shipped nothing, and
+      # `gh run list` shows only "completed/success". On 2026-08-26 that cost
+      # a real investigation: a merged engine fix was believed live for
+      # thirteen minutes because the deploy said success, and the only way to
+      # learn otherwise was to read the log of a run that had not failed.
+      #
+      # A step that runs ONLY on the skip paths fixes that for good, because
+      # the FIRST thing anyone checks after `gh run list` is the job's steps:
+      #   gh api repos/OWNER/REPO/actions/runs/<id>/jobs --jq '.jobs[].steps[]'
+      # and this name is unmissable there. Cheap, needs no new permissions,
+      # and cannot itself fail the deploy.
+      - name: 'DID NOT DEPLOY — this run shipped nothing'
+        if: steps.dedupe.outputs.skip == 'true' || steps.drain.outputs.skip == 'true'
+        run: |
+          REASON="already serving this commit"
+          if [ "${{ steps.drain.outputs.skip }}" = "true" ]; then
+            REASON="drain gate — humans are seated in live hands"
+          elif [ "${{ steps.dedupe.outputs.skip }}" = "true" ]; then
+            REASON="coalescing — the engine restarted too recently, or it is already on this commit"
+          fi
+          {
+            echo "## THIS RUN DEPLOYED NOTHING"
+            echo ""
+            echo "Reason: **$REASON**"
+            echo ""
+            echo "The run is green because skipping was the CORRECT action, not"
+            echo "because \`$SHA\` reached production. Do not treat this tick as"
+            echo "proof the engine is running your code."
+            echo ""
+            echo "It lands on the next catch-up (every 20 minutes, matching"
+            echo "MIN_RESTART_SPACING_SEC) or on the next push. To land it now:"
+            echo ""
+            echo '```'
+            echo "gh workflow run auto-deploy-hetzner.yml --ref main"
+            echo '```'
+            echo ""
+            echo "Verify what is ACTUALLY running before believing anything:"
+            echo ""
+            echo '```'
+            echo "gh api repos/\${{ github.repository }}/actions/runs/<id>/jobs \\"
+            echo "  --jq '.jobs[].steps[] | \"\\(.name): \\(.conclusion)\"'"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning title=DID NOT DEPLOY::$REASON — $SHA is NOT on production."
 
       - name: Post-deploy summary
         if: always()

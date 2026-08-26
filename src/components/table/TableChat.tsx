@@ -13,37 +13,20 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import './TableChat.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import chatIcon from '../../assets/icons/icon-chat.jpg';
 
 /**
- * Dan 2026-08-21 (bug list item 5): "change the email icon for chat into a true
- * chat icon — like the shape we have now for our messenger in the global
- * header, but white."
- *
- * The collapsed chat button was the ✉ envelope glyph, which reads as mail, not
- * as a conversation. This is the global header's messenger mark — the rounded
- * speech bubble with the tail at the bottom-left and the double-chevron bolt —
- * drawn as vector so it can be pure white at any size, rather than reusing the
- * header's brushed-metal PNG.
+ * ChatBubbleIcon renders the custom chat bubbles image provided by Dan.
+ * The image has a dark background that blends naturally with the dark button.
  */
 function ChatBubbleIcon() {
   return (
-    <svg
-      width="22"
-      height="22"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        d="M12 2.2C6.42 2.2 2 6.42 2 11.6c0 2.9 1.4 5.5 3.62 7.2v3.4l3.35-1.84c.96.27 1.98.41 3.03.41 5.58 0 10-4.22 10-9.4S17.58 2.2 12 2.2z"
-        fill="#ffffff"
-      />
-      <path
-        d="M6.5 14.9l3.85-4.05 2.28 2.35 3.37-2.35-3.85 4.05-2.28-2.35L6.5 14.9z"
-        fill="#0f1420"
-      />
-    </svg>
+    <img
+      src={chatIcon}
+      className="chat-collapsed__icon-img"
+      alt=""
+      draggable={false}
+    />
   );
 }
 

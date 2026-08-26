@@ -497,29 +497,34 @@ function getActionLabel(action: LastAction, amount?: number): string {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * THE VILLAIN FAN TUNING — Dan 2026-08-26 rebuild, spec section 3d.
+ * THE VILLAIN CLUSTER TUNING — Dan 2026-08-26, corrected same day against the
+ * PokerBros close-ups: "THE FANNING WAS ONLY EVER SUPPOSED TO BE DONE FOR THE
+ * HERO'S SEAT." A villain's face-down hand is a SMALL rotational cluster —
+ * card size fixed at ~0.52 x avatar in CSS — and these two numbers are the
+ * ONLY thing that changes with card count:
  *
- * One geometry serves every hand size; these two numbers are the ONLY thing
- * that changes with card count. More cards must not mean a wider fan, so the
- * size multiplier shrinks and the step tightens as the count rises. The step
- * never goes below 0.28 of a card width — below that a fan stops being
- * countable and reads as a single red bar, which is the defect this rebuild
- * exists to remove.
+ *   step  horizontal slide per card, as a fraction of card width. A pair
+ *         sits side-by-side (0.42); bigger hands nest their bottoms tighter
+ *         because the ROTATION is what separates them.
+ *   rot   degrees of splay per card, pivoting about a point below the card's
+ *         bottom edge, symmetric around the cluster centre. 7deg keeps a
+ *         hold'em pair nearly parallel like the reference; 12deg gives 4-6
+ *         cards the full rosette.
  *
- * Applied as CSS custom properties on the fan container (never as inline
+ * Applied as CSS custom properties on the cluster container (never as inline
  * pixel values), so the geometry stays inspectable in devtools and the
  * responsive system retunes it through --seat-avatar-size alone.
  *
  * 3 is not a live variant; it falls between 2 and 4 so a malformed count
  * clamped into the sane band still renders sensibly.
  */
-const VILLAIN_FAN: Record<number, { mult: number; step: number }> = {
-  1: { mult: 1.0, step: 0.45 },
-  2: { mult: 1.0, step: 0.45 },
-  3: { mult: 0.97, step: 0.41 },
-  4: { mult: 0.94, step: 0.38 },
-  5: { mult: 0.9, step: 0.34 },
-  6: { mult: 0.86, step: 0.3 },
+const VILLAIN_FAN: Record<number, { step: number; rot: number }> = {
+  1: { step: 0.42, rot: 0 },
+  2: { step: 0.42, rot: 7 },
+  3: { step: 0.3, rot: 10 },
+  4: { step: 0.22, rot: 12 },
+  5: { step: 0.2, rot: 12 },
+  6: { step: 0.18, rot: 12 },
 };
 
 /**
@@ -1730,13 +1735,14 @@ export const SeatSlot = memo(
           </div>
         ) : null}
 
-        {/* Hole Cards — opponents: ONE fan for every hand size (Dan 2026-08-26
-            rebuild). The count comes from the variant, the geometry from CSS;
-            there is deliberately NO game-type layout branch here — that branch
-            (the old `--twocard` hold'em treatment) was the second renderer this
-            rebuild deleted. Also renders during isFolding so the fly-out
-            animation can play before unmount; the pod itself never reflows
-            when the fan goes, because the fan is absolutely positioned. */}
+        {/* Hole Cards — opponents: ONE small rotational cluster for every hand
+            size (Dan 2026-08-26, PokerBros reference). The count comes from
+            the variant, the geometry from CSS; there is deliberately NO
+            game-type layout branch here — that branch (the old `--twocard`
+            hold'em treatment) was the second renderer this rebuild deleted.
+            Also renders during isFolding so the fly-out animation can play
+            before unmount; the pod itself never reflows when the cluster
+            goes, because it is absolutely positioned. */}
         {!player.isHero &&
           (player.status === 'active' || player.status === 'all_in' || isFolding || isMucking) && (
             <div
@@ -1744,7 +1750,7 @@ export const SeatSlot = memo(
               style={
                 {
                   '--vh-n': opponentCardCount,
-                  '--vh-mult': (VILLAIN_FAN[opponentCardCount] ?? VILLAIN_FAN[2]).mult,
+                  '--vh-rot-step': `${(VILLAIN_FAN[opponentCardCount] ?? VILLAIN_FAN[2]).rot}deg`,
                   /* -base, not --vh-step-f itself: the showdown reveal widens
                      the step to 0.55 via a class rule, and an inline value
                      would beat it. */

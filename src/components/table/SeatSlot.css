@@ -1249,52 +1249,52 @@
    HOLE CARDS — PokerBros-style layout
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-/* ═══ THE VILLAIN FAN — ONE GEOMETRY FOR 2, 4, 5 AND 6 CARDS ═════════════════
-   Dan 2026-08-26 rebuild. The old system had TWO renderers — hold'em villains
-   drew hero-sized flat pairs (`--twocard`), Omaha villains drew compressed
-   slivers with a backing plate — plus a third anchor for the showdown reveal.
-   All of that is deleted. Every villain hand is now the same tucked, mirrored
-   fan; game type determines the card COUNT and nothing else.
+/* ═══ THE VILLAIN CLUSTER — ONE GEOMETRY FOR 2, 4, 5 AND 6 CARDS ═════════════
+   Dan 2026-08-26 rebuild, corrected same day against the PokerBros close-ups:
+   "THE FANNING WAS ONLY EVER SUPPOSED TO BE DONE FOR THE HERO'S SEAT... the
+   down cards need to be scaled down to this size (card size to avatar size)."
 
-   Geometry (spec 2026-08-26):
-     card height   0.78 x avatar diameter, scaled down per count (--vh-mult)
+   A villain's face-down hand is a SMALL ROTATIONAL CLUSTER beside the avatar
+   — the PokerBros card-back rosette — not a wide countable spread. The wide
+   spread belongs to the hero's own row alone. What that means here:
+
+     card height   ~0.52 x avatar diameter — deliberately small; it signals
+                   "this player has cards", it is not meant to be studied
      card width    height x 0.714 (real playing-card ratio)
-     step          fraction of card width per count (--vh-step-f), never < 0.28
-     tuck          innermost card slides 0.32 x card width UNDER the avatar
-     arc           1.5deg per card, symmetric about the fan centre, mirrored
-                   on left-hand fans, origin bottom-centre
-     vertical      fan centre = avatar centre, lifted 6% of card height
-     floor         card width never drops below 22px (the max() below)
+     splay         the fan is ROTATION, not translation: cards pivot about a
+                   point below their bottom edge (origin 50% 120%), so the
+                   bottoms stay clustered and the tops splay like a held
+                   hand-fan. Per-card angle comes from the count (--vh-rot-step,
+                   7deg for a pair up to 12deg for 4-6 cards)
+     step          small horizontal slide per card (--vh-step-f, 0.18-0.42 of a
+                   card width) so backs never coincide exactly
+     tuck          the innermost card slips 0.2 x card width under the avatar
+     vertical      cluster centre = avatar centre
+     side          right-half villains carry it RIGHT of the avatar, left-half
+                   villains LEFT (the .seat--cards-left/right rules at the end
+                   of this file)
 
-   The TSX sets three inline properties on this element — --vh-n (count),
-   --vh-mult and --vh-step-f-base — and one per card (--vh-i, its index,
-   innermost = 0). Everything else derives here, in the cascade, where it is
-   inspectable in devtools. WHERE the fan hangs (left/right of the avatar) is
-   the `.seat--cards-left/right` rules at the end of this file: left-half
-   seats fan LEFT, right-half seats fan RIGHT — away from table centre, so
-   the betting lane between pod and pot stays clear. */
+   Still one geometry for every variant: game type changes the card COUNT and
+   nothing else. The TSX sets --vh-n, --vh-step-f-base and --vh-rot-step on
+   this element and --vh-i (index, innermost = 0) per card; everything else
+   derives here in the cascade, inspectable in devtools. */
 .seat__cards--opponent {
   --vh-n: 2;
-  --vh-mult: 1;
-  --vh-step-f: var(--vh-step-f-base, 0.45);
-  /* 30.8px height = the 22px minimum card width, spec section 4. */
-  --vh-card-h: max(
-    30.8px,
-    calc(var(--seat-avatar-size, 84px) * 0.78 * var(--vh-mult) * var(--vh-reveal, 1))
-  );
+  --vh-step-f: var(--vh-step-f-base, 0.42);
+  /* Small by design (Dan's close-ups); floored so a back never dissolves. */
+  --vh-card-h: max(26px, calc(var(--seat-avatar-size, 84px) * 0.52 * var(--vh-reveal, 1)));
   --vh-card-w: calc(var(--vh-card-h) * 0.714);
   --vh-step: calc(var(--vh-card-w) * var(--vh-step-f));
-  --vh-tuck: calc(var(--vh-card-w) * 0.32);
+  --vh-tuck: calc(var(--vh-card-w) * 0.2);
   --vh-fan-w: calc(var(--vh-card-w) + (var(--vh-n) - 1) * var(--vh-step));
-  /* Mirrors the arc on left-hand fans; flipped by `.seat--cards-left`. */
+  /* Mirrors the splay on left-hand clusters; flipped by `.seat--cards-left`. */
   --vh-dir: 1;
   position: absolute;
   width: var(--vh-fan-w);
   height: var(--vh-card-h);
-  /* Fan centre sits on the avatar's centre, lifted 6% of card height so the
-     card tops clear the shoulder line. The avatar wrap is the seat's first
-     child, so its centre is half the token from the seat's top. */
-  top: calc(var(--seat-avatar-size, 84px) / 2 - var(--vh-card-h) * 0.06);
+  /* Cluster centre sits on the avatar's centre. The avatar wrap is the
+     seat's first child, so its centre is half the token from the seat's top. */
+  top: calc(var(--seat-avatar-size, 84px) / 2);
   transform: translateY(-50%);
   /* UNDER the avatar (wrap is z 2): the tuck. The innermost card slides
      behind the character, which is what reads as a held hand. */
@@ -1304,14 +1304,19 @@
   pointer-events: none;
 }
 
-/* Each card is placed absolutely inside the fan from its own index. The
+/* Each card is placed absolutely inside the cluster from its own index. The
    nearest-the-avatar card is index 0 and paints on TOP of the others (but
    still under the avatar), so the stack order runs outermost -> innermost ->
-   avatar, exactly like a hand actually held in front of a chest. */
+   avatar, exactly like a hand actually held in front of a chest. The pivot
+   BELOW the card (origin 50% 120%) is what turns per-card rotation into the
+   PokerBros rosette: bottoms nested, tops splayed. */
 .seat__cards--opponent .seat__card {
-  --vh-rot: calc((var(--vh-i, 0) - (var(--vh-n) - 1) / 2) * 1.5deg * var(--vh-dir));
+  --vh-rot: calc(
+    (var(--vh-i, 0) - (var(--vh-n) - 1) / 2) * var(--vh-rot-step, 7deg) * var(--vh-dir) *
+      var(--vh-rot-scale, 1)
+  );
   /* The deal/fold/showdown keyframes all settle on rotate(--card-rotation);
-     aliasing it means every animation lands exactly on the fan's own arc. */
+     aliasing it means every animation lands exactly on the cluster's splay. */
   --card-rotation: var(--vh-rot);
   position: absolute;
   top: 0;
@@ -1319,21 +1324,22 @@
   height: var(--vh-card-h);
   border-radius: calc(var(--vh-card-w) * 0.14);
   margin: 0;
-  transform-origin: bottom center;
+  transform-origin: 50% 120%;
   transform: rotate(var(--vh-rot));
   z-index: calc(6 - var(--vh-i, 0));
-  /* The backs need an edge, or a dark card back on dark felt is a smudge —
-     and the visible edge is what makes the fan COUNTABLE. */
+  /* The backs need an edge, or a dark card back on dark felt is a smudge. */
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
 
-/* SHOWDOWN REVEAL — same anchor, bigger and flatter so the ranks read.
-   Scale 1.25x, step 0.55 (spec section 6), and the fan lifts ABOVE the
-   nameplate (z 14 clears the plate's 3 and the badges' 5-6) for the duration
-   of the reveal. Returns to normal when the next hand clears showCards. */
+/* SHOWDOWN REVEAL — same anchor, grown and laid flat so the ranks read.
+   The cluster's base size is deliberately tiny, so the reveal scales 1.6x,
+   widens the slide to a readable 0.55 step, flattens the splay to a third
+   (--vh-rot-scale) and lifts ABOVE the nameplate (z 14 clears the plate's 3
+   and the badges' 5-6) for the duration. Back to normal next hand. */
 .seat__cards--opponent.seat__cards--revealed {
-  --vh-reveal: 1.25;
+  --vh-reveal: 1.6;
   --vh-step-f: 0.55;
+  --vh-rot-scale: 0.33;
   z-index: 14;
 }
 
@@ -1487,11 +1493,12 @@
   border-radius: 3px;
 }
 
-/* Revealed opponent cards: the fan stays at its own anchor and simply grows —
-   scale 1.25x, step 0.55 — so ranks and suits are readable at showdown. Both
-   values live on the fan container (see the `--vh-reveal` / `--vh-step-f`
-   override near the base `.seat__cards--opponent` rule); nothing here may
-   restate a pixel size, or the unified geometry forks again. */
+/* Revealed opponent cards: the cluster stays at its own anchor and grows in
+   place — scale 1.6x, step 0.55, splay flattened — so ranks and suits are
+   readable at showdown. All the values live on the cluster container (see the
+   `--vh-reveal` / `--vh-step-f` / `--vh-rot-scale` override near the base
+   `.seat__cards--opponent` rule); nothing here may restate a pixel size, or
+   the unified geometry forks again. */
 
 /* Hero cards — v10 layout (Dan-approved): large, white-bordered, and LINED UP
  * in a single row with a small even overlap. NO fan rotation — the earlier

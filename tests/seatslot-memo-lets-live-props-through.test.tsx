@@ -119,7 +119,8 @@ describe('an empty seat can still change', () => {
         isHeroReservedSeat={false}
       />
     );
-    expect(container.querySelector('.seat__empty-label')?.textContent).toBe('EMPTY');
+    // 2026-08-26: seat button is now an <img>; the label is conveyed via alt.
+    expect(container.querySelector('.seat__empty-img')?.getAttribute('alt')).toBe('Empty seat');
 
     rerender(
       <SeatSlot
@@ -132,7 +133,9 @@ describe('an empty seat can still change', () => {
         isHeroReservedSeat
       />
     );
-    expect(container.querySelector('.seat__empty-label')?.textContent).toBe('YOUR SEAT');
+    expect(container.querySelector('.seat__empty-img')?.getAttribute('alt')).toBe(
+      'Your reserved seat'
+    );
   });
 
   it('and says so to a screen reader, not "empty"', () => {

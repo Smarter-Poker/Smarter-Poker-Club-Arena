@@ -30,6 +30,23 @@ export interface InsuranceOffer {
   opponentCards?: { rank: string; suit: 'h' | 'd' | 'c' | 's' }[];
   board: { rank: string; suit: 'h' | 'd' | 'c' | 's' }[];
   evCashoutRake?: number; // EV cashout rake (default 1%)
+  /**
+   * POKERBROS PARITY 2026-08-26: the specific next-street cards that put the
+   * opponent ahead — shown as a row of small cards with a count, exactly the
+   * information the reference popup leads with. Computed server-side
+   * (InsuranceEquity.leaderOuts) and sent with the offer.
+   */
+  outs?: { rank: string; suit: 'h' | 'd' | 'c' | 's' }[];
+  /** Chance (%) the next card is one of the outs — shown next to the count. */
+  outPct?: number;
+  /**
+   * Every all-in opponent, for multiway spots. When present it replaces the
+   * single opponentCards column so a 3-way all-in shows BOTH hands you are
+   * insured against, each under its player's name.
+   */
+  opponents?: { username?: string; cards: { rank: string; suit: 'h' | 'd' | 'c' | 's' }[] }[];
+  /** Server-published offer window in seconds (drives the popup countdown). */
+  timeoutSeconds?: number;
 }
 
 export interface InsuranceModalProps {
@@ -81,6 +98,10 @@ export function InsuranceModal({
   const [activeTab, setActiveTab] = useState<ModalTab>('insurance');
   const [coverageAmount, setCoverageAmount] = useState(offer.maxCoverage);
   const [mounted, setMounted] = useState(false);
+  // POKERBROS PARITY 2026-08-26: a LIVE countdown. The prop used to be a
+  // static number that rendered "15s" for the whole window; the reference
+  // popup visibly counts down to its auto-decline.
+  const [secondsLeft, setSecondsLeft] = useState(offer.timeoutSeconds ?? timeRemaining);
 
   useEffect(() => {
     if (isOpen) {
@@ -93,21 +114,35 @@ export function InsuranceModal({
     }
   }, [isOpen]);
 
+  // Countdown ticks once per second while open; re-arms when a later street's
+  // offer replaces this one (offer identity changes).
+  useEffect(() => {
+    if (!isOpen) return;
+    setSecondsLeft(offer.timeoutSeconds ?? timeRemaining);
+    const iv = setInterval(() => {
+      setSecondsLeft((s) => (s > 0 ? s - 1 : 0));
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [isOpen, offer, timeRemaining]);
+
   // ── Insurance calculations ──
   const premium = useMemo(
-    () => Math.trunc(coverageAmount * offer.premiumRate),
+    () => Math.round(coverageAmount * offer.premiumRate * 100) / 100,
     [coverageAmount, offer.premiumRate]
   );
-  const payout = useMemo(() => coverageAmount - premium, [coverageAmount, premium]);
+  const payout = useMemo(
+    () => Math.round((coverageAmount - premium) * 100) / 100,
+    [coverageAmount, premium]
+  );
 
   // ── EV Cashout calculations ──
   const evCashoutRake = offer.evCashoutRake ?? 0.01;
   const evRaw = useMemo(
-    () => Math.trunc(offer.potAmount * (offer.equityPercent / 100)),
+    () => Math.round(offer.potAmount * (offer.equityPercent / 100) * 100) / 100,
     [offer.potAmount, offer.equityPercent]
   );
   const evCashoutAmount = useMemo(
-    () => Math.trunc(evRaw * (1 - evCashoutRake)),
+    () => Math.round(evRaw * (1 - evCashoutRake) * 100) / 100,
     [evRaw, evCashoutRake]
   );
   const evRakeAmount = useMemo(() => evRaw - evCashoutAmount, [evRaw, evCashoutAmount]);
@@ -143,7 +178,10 @@ export function InsuranceModal({
   }, [evCashoutAmount, offer.equityPercent, onEvCashout]);
 
   // Slider grid for the coverage range — see the onChange note on the input.
-  const coverageStep = Math.max(1, Math.floor(offer.maxCoverage / 100));
+  // MICRO-STAKES MONEY MATH 2026-08-26: below 100 chips the old integer step
+  // (min 1) made a 3.51 max slider jump 0-1-2-3 and Math.trunc presets showed
+  // 25% of 3.51 as 0. Cents everywhere the economy is decimal.
+  const coverageStep = offer.maxCoverage >= 100 ? Math.floor(offer.maxCoverage / 100) : 0.01;
   const coverageGridMax = useMemo(() => {
     if (!(offer.maxCoverage > 0)) return offer.maxCoverage;
     return Math.floor(offer.maxCoverage / coverageStep) * coverageStep;
@@ -151,9 +189,9 @@ export function InsuranceModal({
 
   const presets = useMemo(
     () => [
-      { label: '25%', value: Math.trunc(offer.maxCoverage * 0.25) },
-      { label: '50%', value: Math.trunc(offer.maxCoverage * 0.5) },
-      { label: '75%', value: Math.trunc(offer.maxCoverage * 0.75) },
+      { label: '25%', value: Math.round(offer.maxCoverage * 0.25 * 100) / 100 },
+      { label: '50%', value: Math.round(offer.maxCoverage * 0.5 * 100) / 100 },
+      { label: '75%', value: Math.round(offer.maxCoverage * 0.75 * 100) / 100 },
       { label: 'MAX', value: offer.maxCoverage },
     ],
     [offer.maxCoverage]
@@ -179,9 +217,11 @@ export function InsuranceModal({
               {activeTab === 'insurance' ? 'Insurance' : 'EV Cashout'}
             </h2>
           </div>
-          {timeRemaining !== undefined && (
-            <span className="insurance-modal__timer">{timeRemaining}s</span>
-          )}
+          <span
+            className={`insurance-modal__timer ${secondsLeft <= 5 ? 'insurance-modal__timer--urgent' : ''}`}
+          >
+            {secondsLeft}s
+          </span>
         </div>
 
         {/* Tab Switcher */}
@@ -221,23 +261,40 @@ export function InsuranceModal({
             </div>
           </div>
           <div className="insurance-modal__vs">Vs</div>
-          <div className="insurance-modal__hand">
-            <span className="insurance-modal__hand-label">Opponent</span>
-            <div className="insurance-modal__hand-cards">
-              {offer.opponentCards ? (
-                offer.opponentCards.map((card, i) => (
-                  <span key={i} className="insurance-modal__card">
-                    <CardImage card={toCardImage(card)} size="xs" />
-                  </span>
-                ))
-              ) : (
-                <>
-                  <span className="insurance-modal__card insurance-modal__card--hidden">?</span>
-                  <span className="insurance-modal__card insurance-modal__card--hidden">?</span>
-                </>
-              )}
+          {/* Multiway: one column per all-in opponent, each named. Falls back
+              to the single opponentCards column for older payloads. */}
+          {offer.opponents && offer.opponents.length > 0 ? (
+            offer.opponents.map((opp, oi) => (
+              <div key={oi} className="insurance-modal__hand">
+                <span className="insurance-modal__hand-label">{opp.username || 'Opponent'}</span>
+                <div className="insurance-modal__hand-cards">
+                  {opp.cards.map((card, i) => (
+                    <span key={i} className="insurance-modal__card">
+                      <CardImage card={toCardImage(card)} size="xs" />
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="insurance-modal__hand">
+              <span className="insurance-modal__hand-label">Opponent</span>
+              <div className="insurance-modal__hand-cards">
+                {offer.opponentCards ? (
+                  offer.opponentCards.map((card, i) => (
+                    <span key={i} className="insurance-modal__card">
+                      <CardImage card={toCardImage(card)} size="xs" />
+                    </span>
+                  ))
+                ) : (
+                  <>
+                    <span className="insurance-modal__card insurance-modal__card--hidden">?</span>
+                    <span className="insurance-modal__card insurance-modal__card--hidden">?</span>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Board */}
@@ -262,6 +319,23 @@ export function InsuranceModal({
           </span>
         </div>
 
+        {/* Outs — the specific next-street cards that put you behind */}
+        {offer.outs && offer.outs.length > 0 && (
+          <div className="insurance-modal__outs">
+            <span className="insurance-modal__outs-label">
+              Outs Against You ({offer.outs.length}
+              {offer.outPct ? ` • ${offer.outPct.toFixed(1)}%` : ''})
+            </span>
+            <div className="insurance-modal__outs-cards">
+              {offer.outs.map((card, i) => (
+                <span key={i} className="insurance-modal__outs-card">
+                  <CardImage card={toCardImage(card)} size="xs" />
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ═══ INSURANCE TAB ═══ */}
         {activeTab === 'insurance' && (
           <>
@@ -280,7 +354,7 @@ export function InsuranceModal({
                    player cannot insure the last 5. Treat the last grid stop as
                    the true maximum, exactly as the raise and buy-in sliders do. */
                 onChange={(e) => {
-                  const raw = parseInt(e.target.value, 10);
+                  const raw = parseFloat(e.target.value);
                   setCoverageAmount(raw >= coverageGridMax ? offer.maxCoverage : raw);
                 }}
                 aria-label={`Insurance coverage amount, up to ${offer.maxCoverage}`}
@@ -324,22 +398,17 @@ export function InsuranceModal({
               </div>
             </div>
 
+            {/* POKERBROS PARITY 2026-08-26 (Dan): a decline is FINAL for the
+                hand, so the old "Decline Now" / "Decline For Hand" pair is one
+                button now. handleDecline routes to the for-hand path. */}
             <div className="insurance-modal__actions">
               <button
                 className="insurance-modal__btn insurance-modal__btn--decline"
-                onClick={handleDecline}
+                onClick={handleDeclineForHand}
+                title="Decline insurance for the rest of this hand"
               >
-                Decline Now
+                Decline
               </button>
-              {onDeclineForHand && (
-                <button
-                  className="insurance-modal__btn insurance-modal__btn--decline-hand"
-                  onClick={handleDeclineForHand}
-                  title="Decline insurance for all remaining streets this hand"
-                >
-                  Decline For Hand
-                </button>
-              )}
               <button
                 className="insurance-modal__btn insurance-modal__btn--accept"
                 onClick={handleAccept}

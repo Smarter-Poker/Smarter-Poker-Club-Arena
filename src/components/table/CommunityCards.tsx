@@ -62,6 +62,13 @@ export interface CommunityCardsProps {
    * RIT run-boards (which never re-fire stage transitions) are unaffected.
    */
   playSounds?: boolean;
+  /**
+   * POKERBROS PARITY 2026-08-26: true during an all-in runout. Turn and river
+   * cards then land FACE DOWN, hold a beat, and flip over - the reference
+   * flow's slowed reveal - instead of the normal one-sided spin-in. Normal
+   * (non-all-in) streets keep their existing animation.
+   */
+  slowReveal?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -113,6 +120,8 @@ interface CardFaceProps {
   /** True for the brief window after the winning cards are named — see the
    *  dead-animation note on the container. Drives ccHighlightPop. */
   highlightPop?: boolean;
+  /** All-in runout: turn/river land face down and flip (see the prop note). */
+  slowReveal?: boolean;
 }
 
 function CardFace({
@@ -124,11 +133,17 @@ function CardFace({
   deckStyle,
   cardBack,
   highlightPop = false,
+  slowReveal = false,
 }: CardFaceProps) {
   // Only apply animation classes to NEWLY DEALT cards — existing cards stay still
   const isTurnCard = isNewlyDealt && stage === 'turn' && index === 3;
   const isRiverCard = isNewlyDealt && (stage === 'river' || stage === 'showdown') && index === 4;
   const isFlopDeal = isNewlyDealt && stage === 'flop' && index < 3;
+  // POKERBROS PARITY 2026-08-26: the slowed all-in reveal replaces the normal
+  // turn/river spin with the two-surface land-then-flip the flop already has.
+  // Both use the .community-cards__flip markup; the slow-reveal class retimes
+  // it (land face down, hold, flip) - see the stylesheet.
+  const isSlowFlip = slowReveal && (isTurnCard || isRiverCard);
 
   return (
     <div
@@ -139,14 +154,15 @@ function CardFace({
         // winning hand.
         isHighlighted && highlightPop ? 'community-cards__card--highlight-pop' : '',
         isFlopDeal ? 'community-cards__card--flop-deal' : '',
-        isTurnCard ? 'community-cards__card--turn' : '',
-        isRiverCard ? 'community-cards__card--river' : '',
+        isTurnCard && !isSlowFlip ? 'community-cards__card--turn' : '',
+        isRiverCard && !isSlowFlip ? 'community-cards__card--river' : '',
+        isSlowFlip ? 'community-cards__card--slow-reveal' : '',
       ]
         .filter(Boolean)
         .join(' ')}
       style={{ animationDelay: `${index * 100}ms`, '--card-index': index } as React.CSSProperties}
     >
-      {isFlopDeal ? (
+      {isFlopDeal || isSlowFlip ? (
         /*
          * Dan 2026-08-19, bug list item 5: "flops must deal 3 cards face down
          * then fan open (animation), not just appear."
@@ -206,6 +222,7 @@ function CommunityCardsComponent({
   deckStyle,
   cardBack,
   playSounds = true,
+  slowReveal = false,
 }: CommunityCardsProps) {
   const visibleCount = useMemo(() => getVisibleCardCount(stage), [stage]);
   const prevStageRef = useRef(stage);
@@ -249,7 +266,11 @@ function CommunityCardsComponent({
     // IMPROVEMENT PASS 2026-08-19: the window scales with --animation-speed,
     // the same multiplier the keyframes use — a slowed table no longer has
     // its flip markup torn out mid-animation.
-    const windowMs = Math.round(1400 * getAnimationSpeed());
+    // POKERBROS PARITY 2026-08-26: the slowed all-in turn/river flip (land
+    // face down 0.75s hold, then a 0.5s turn) outlives the normal 1.4s
+    // window; tearing its markup out mid-flip snaps the card face-up, the
+    // exact defect the longer flop window fixed.
+    const windowMs = Math.round((slowReveal ? 1800 : 1400) * getAnimationSpeed());
     if (visibleCount > prevCount) {
       // New cards appeared — mark them as newly dealt
       const newIndices = new Set<number>();
@@ -275,7 +296,7 @@ function CommunityCardsComponent({
       }
     }
     prevVisibleCountRef.current = visibleCount;
-  }, [visibleCount]);
+  }, [visibleCount, slowReveal]);
 
   // Bible V8 §5.1: Stage label + haptic feedback on stage transitions
   useEffect(() => {
@@ -402,6 +423,7 @@ function CommunityCardsComponent({
               deckStyle={deckStyle}
               cardBack={cardBack}
               highlightPop={highlightPop}
+              slowReveal={slowReveal}
             />
           ) : /* Dan 2026-08-26: "remove the ghost placeholders for the turn
                  and river that appear after the flop."
@@ -474,6 +496,9 @@ export const CommunityCards = memo(CommunityCardsComponent, (prev, next) => {
   if (prev.lowWinnerLabel !== next.lowWinnerLabel) return false;
   if (prev.deckStyle !== next.deckStyle) return false;
   if (prev.playSounds !== next.playSounds) return false;
+  // POKERBROS PARITY 2026-08-26: the all-in slow-reveal mode changes which
+  // animation the next street gets - it must invalidate the memo.
+  if (prev.slowReveal !== next.slowReveal) return false;
   // AUDIT-2 FIX 2026-08-20: cardBack was missing — it was added as a prop
   // specifically to stop mismatched backs, but changing the deck in settings
   // left the board's placeholders and the face-down flop on the OLD back

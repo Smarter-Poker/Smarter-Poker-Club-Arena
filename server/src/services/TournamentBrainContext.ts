@@ -35,6 +35,10 @@ export interface TournamentBrainContext {
   avgStackChips: number;
   /** PKO: share of the prize pool sitting in bounties (0 = not a bounty) */
   bountyFactor: number;
+  /** V16 ICM: live stacks in chips, descending, capped at 200 entries. */
+  stacks: number[];
+  /** V16 ICM: payout percentages by place (1st first), capped at 9 places. */
+  payoutPct: number[];
 }
 
 interface TournamentRowLite {
@@ -54,7 +58,9 @@ export function deriveContext(
   row: TournamentRowLite,
   playersLeft: number,
   entrants: number,
-  chipSum: number
+  chipSum: number,
+  /** V16 ICM: live stack list (any order; stored sorted desc, capped). */
+  liveStacks: number[] = []
 ): TournamentBrainContext {
   const type = (row.tournament_type || '').toUpperCase();
   const variant = (row.variant || '').toLowerCase();
@@ -91,6 +97,20 @@ export function deriveContext(
       ? bountyPool / (prizePool + bountyPool)
       : 0;
 
+  // V16 ICM inputs: the payout CURVE and the live stack DISTRIBUTION are
+  // what a real Malmuth-Harville pressure model needs; counts alone were why
+  // the old premium had to be a flat guess.
+  const payoutPct = (places ?? [])
+    .slice()
+    .sort((a, b) => a.place - b.place)
+    .slice(0, 9)
+    .map((p) => p.percentage)
+    .filter((p) => p > 0);
+  const stacks = liveStacks
+    .filter((s) => isFinite(s) && s > 0)
+    .sort((a, b) => b - a)
+    .slice(0, 200);
+
   return {
     format,
     entrants: Math.max(entrants, playersLeft),
@@ -100,6 +120,8 @@ export function deriveContext(
     nearBubble,
     avgStackChips: playersLeft > 0 ? chipSum / playersLeft : 0,
     bountyFactor: Math.max(0, Math.min(1, bountyFactor)),
+    stacks,
+    payoutPct,
   };
 }
 
@@ -201,13 +223,22 @@ async function refresh(tournamentId: string, e: CacheEntry): Promise<void> {
     const entrants = rows.length;
     let playersLeft = 0;
     let chipSum = 0;
+    const liveStacks: number[] = [];
     for (const r of rows) {
       const st = (r.status || '').toLowerCase();
       if (st === 'eliminated' || st === 'busted' || st === 'unregistered') continue;
       playersLeft++;
-      chipSum += Number(r.chips) || 0;
+      const chips = Number(r.chips) || 0;
+      chipSum += chips;
+      if (chips > 0) liveStacks.push(chips);
     }
-    e.ctx = deriveContext(tRes.data as TournamentRowLite, playersLeft, entrants, chipSum);
+    e.ctx = deriveContext(
+      tRes.data as TournamentRowLite,
+      playersLeft,
+      entrants,
+      chipSum,
+      liveStacks
+    );
   } catch (err) {
     reportError(err, 'TournamentBrainContext.refresh');
     // keep the last known ctx — stale beats nothing

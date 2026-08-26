@@ -33,6 +33,7 @@
 
 import React from 'react';
 import './TimebankCounter.css';
+import timebankIcon from '../../assets/icons/icon-timebank.jpg';
 
 interface TimebankCounterProps {
   /**
@@ -47,9 +48,7 @@ interface TimebankCounterProps {
   low?: boolean;
   /**
    * Seconds one time bank adds to the clock. Engine default is 20.
-   * No longer printed on the tile — the flat tile has room for one number and
-   * the useful one is how many banks are left. It is still in the label and the
-   * tooltip, so the answer is one hover or one screen-reader stop away.
+   * The count is shown as a white number overlay on the icon image.
    */
   bankSeconds?: number;
 }
@@ -76,28 +75,19 @@ export const TimebankCounter: React.FC<TimebankCounterProps> = ({
           : `${count} time bank${count === 1 ? '' : 's'} remaining (${bankSeconds}s each)`
       }
     >
-      {/* One monochrome outline glyph: a clock face with two small winder stems,
-          enough to read as "shot clock" at 16px without any of the alarm
-          clock's fills. currentColor throughout, so the tile owns the colour. */}
-      <span className="tbc-glyph" aria-hidden="true">
-        <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-          <circle cx="10" cy="11.2" r="6.4" stroke="currentColor" strokeWidth="1.4" />
-          <path
-            d="M10 7.8v3.4l2.3 1.5"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M5.5 3.2 3.6 5M14.5 3.2 16.4 5"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-          />
-        </svg>
-      </span>
-      <span className="tbc-count">{count === null ? '-' : count}</span>
+      {/* Resolved 2026-08-26: main replaced the outline glyph with the
+          stopwatch image + overlay, and that newer design is kept. The only
+          thing carried across from this branch is the null case: `count` is
+          null until the TRUE balance loads, and must render as a dash rather
+          than a fabricated number (it used to be seeded with a hard 4 and
+          shown to a player holding 481). */}
+      {/* Custom stopwatch icon with time-bank count overlaid in white bold text */}
+      <div className="tbc-img-wrap" aria-hidden="true">
+        <img src={timebankIcon} className="tbc-icon-img" alt="" draggable={false} />
+        <span className={`tbc-count-overlay${low ? ' tbc-count-overlay--low' : ''}`}>
+          {count === null ? '-' : count}
+        </span>
+      </div>
     </button>
   );
 };

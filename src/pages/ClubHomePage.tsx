@@ -650,6 +650,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   // cache was unreachable (keys embed the user id), and the panel sat on a
   // skeleton for a full roundtrip it did not need. The store survives route
   // changes; the async path below still confirms it.
+  const currentUser = useUserStore((state) => state.user);
   const [currentUserId, setCurrentUserId] = useState<string | null>(
     () => useUserStore.getState().user?.id ?? null
   );
@@ -3392,6 +3393,24 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   {(club.member_count || 0).toLocaleString()}
                 </span>
               </div>
+              {currentUser?.player_number && (
+                <div
+                  className="lobby-club__meta"
+                  style={{
+                    marginTop: '2px',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    gap: '2px',
+                  }}
+                >
+                  <span className="lobby-club__id" style={{ userSelect: 'all' }}>
+                    Player {currentUser.player_number}
+                  </span>
+                  <span className="lobby-club__id" style={{ userSelect: 'all', color: '#9aa5b6' }}>
+                    {club.name}
+                  </span>
+                </div>
+              )}
 
               <div
                 style={{
@@ -3465,11 +3484,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                         if (navigator.share) {
                           await navigator.share({
                             title: club.name,
-                            text: `Join ${club.name} on Smarter Poker!`,
+                            text: `${currentUser?.display_name || 'A player'} invited you to join ${club.name}`,
                             url: shareUrl,
                           });
                         } else {
-                          await navigator.clipboard.writeText(shareUrl);
+                          await navigator.clipboard.writeText(
+                            `${currentUser?.display_name || 'A player'} invited you to join ${club.name}\n\n${shareUrl}`
+                          );
                           toast.success('Club link copied!');
                         }
                       } catch (e) {

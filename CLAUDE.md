@@ -396,6 +396,21 @@ Nothing on the platform caught it. `reconcile_ledger_nightly` compares
 `club_members.chip_balance` directly, so the drift was invisible to the one
 check that exists.
 
+**Something catches it now** (migration
+`20260825_chips_cannot_leave_the_felt_unnoticed`). A `BEFORE DELETE OR UPDATE
+OF left_at` trigger on `table_seats` appends every exit of a NON-ZERO stack to
+`ca_seat_stack_exits`, with the DB role and application name that did it.
+`fn_unaccounted_seat_exits()` lists the ones with no matching wallet credit,
+and `reconcile_ledger_nightly` now files each of those into
+`ledger_reconcile_log` as **critical**. The trigger never blocks — a guard that
+can refuse a seat exit can strand a player mid-hand — so this makes the failure
+LOUD, not impossible. Rule 3 below is still the rule.
+
+`fn_club_chip_circulation()` prints the two pools that reconciliation had never
+looked at: `club_members.chip_balance` and `table_seats.stack`. As this was
+written that was 121,417,782 chips in member wallets and 1,139,873 on the felt,
+none of it reconciled by anything before today.
+
 THE RULE:
 
 1. **A function that moves money is probed inside a transaction you ROLL BACK.**

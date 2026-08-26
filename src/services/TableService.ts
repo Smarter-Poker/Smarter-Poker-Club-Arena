@@ -368,6 +368,14 @@ class TableService {
         // off, which nothing documented. It is an explicit switch now.
         time_bank_enabled: defaultSettings.time_bank_enabled ?? true,
         wait_for_big_blind: defaultSettings.wait_for_big_blind ?? true,
+        /* AUTO RESTART, 2026-08-25. CreateTableModal has had an Auto Restart
+           checkbox since it was written and it landed in `settings` only - the
+           JSONB blob nothing reads. The COLUMN is what fn_table_lifecycle_pass
+           consults, so the checkbox has never meant anything. Same class of
+           bug as the straddle / bomb-pot / ante mirrors above it, and the same
+           fix: carry the host's choice to the column the reader actually
+           looks at. */
+        auto_restart: defaultSettings.auto_restart ?? false,
         // 7-2 game: winner holding any 7-2 collects a bounty (in BB) from each
         // other dealt-in player, post-flop only. Engine reads these columns.
         seven_deuce_enabled: defaultSettings.seven_deuce_enabled ?? false,

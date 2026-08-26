@@ -1502,12 +1502,13 @@ export default function TableConfigPage() {
               label="Auto Extension"
               value={config.autoExtension}
               onChange={(v) => updateConfig('autoExtension', v)}
-              tooltip="Extend table automatically"
+              tooltip="Keep this table open when it empties"
             />
             <Toggle
               label="Auto Restart"
               value={config.autoRestart}
               onChange={(v) => updateConfig('autoRestart', v)}
+              tooltip="Reopen this table if it closes"
             />
             <Toggle
               label="Auto Create Table"

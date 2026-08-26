@@ -3396,24 +3396,24 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   {(club.member_count || 0).toLocaleString()}
                 </span>
               </div>
-              {currentUser?.player_number && (
-                <div
-                  className="lobby-club__meta"
-                  style={{
-                    marginTop: '2px',
-                    flexDirection: 'column',
-                    alignItems: 'flex-start',
-                    gap: '2px',
-                  }}
-                >
+              <div
+                className="lobby-club__meta"
+                style={{
+                  marginTop: '2px',
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                  gap: '2px',
+                }}
+              >
+                {currentUser?.player_number && (
                   <span className="lobby-club__id" style={{ userSelect: 'all' }}>
                     Player {currentUser.player_number}
                   </span>
-                  <span className="lobby-club__id" style={{ userSelect: 'all', color: '#9aa5b6' }}>
-                    {club.name}
-                  </span>
-                </div>
-              )}
+                )}
+                <span className="lobby-club__id" style={{ userSelect: 'all', color: '#9aa5b6' }}>
+                  {club.name}
+                </span>
+              </div>
 
               <div
                 style={{

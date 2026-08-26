@@ -720,7 +720,15 @@ export class HorseFleetManager {
       await this.spawnOverflowTables(tables, allActiveSeats || []);
 
       // ...and the other direction, which never existed until 2026-08-19.
+      // Note it now skips any table carrying `auto_extension` — see there.
       await this.retireSurplusTables(tables, surplusTableIds, allActiveSeats || []);
+
+      // The same two directions for a HOST's own table, from the switches on
+      // the table creation page: Auto Restart reopens a closed one, Auto
+      // Create Table opens a sibling when it fills. The fleet's own spawn and
+      // retire above only know DEFAULT_TABLES; this knows every table that
+      // carries the flag, which is what makes a host's switch mean anything.
+      await this.runTableLifecyclePass();
     } catch (err: any) {
       reportError(err, 'HorseFleet.seedAllTables_error');
     } finally {
@@ -774,6 +782,15 @@ export class HorseFleetManager {
           retirable.map((t) => t.id)
         )
         .is('tournament_id', null)
+        /* AUTO EXTENSION (Dan 2026-08-25, table-creation parity). The toggle
+           says "Extend table automatically" and had no reader at all. This is
+           what it extends: the table's LIFE. A host who switched it on is
+           saying "do not close my table just because it went quiet", so an
+           empty table carrying the flag is skipped here and stays open for
+           business. `.not(...)` rather than a filter on the JS side because
+           this is the query that does the closing - a check anywhere else
+           could be raced past. */
+        .not('auto_extension', 'is', true)
         .in('status', ['waiting', 'running']);
       if (error) {
         reportError(error, 'HorseFleet.retireSurplusTables_failed');
@@ -801,6 +818,36 @@ export class HorseFleetManager {
    * tables are seeded by the normal cycle on the next pass; empty overflow
    * tables simply idle (the stale-table lifecycle owns closing).
    */
+  /**
+   * AUTO RESTART and AUTO CREATE TABLE (Dan 2026-08-25, table-creation
+   * parity). Two more switches that had tooltips and no readers.
+   *
+   * The rules live in `fn_table_lifecycle_pass` rather than here for the same
+   * reason spawnOverflowTables below could not simply be widened: THAT method
+   * only knows the fleet's own DEFAULT_TABLES, matched by name prefix. A
+   * host's table is not in that list and never could be. The SQL pass asks the
+   * question of every table that carries the flag, which is the only way a
+   * host's own switch can mean anything.
+   *
+   * Idempotent, so it is safe on every cycle, and it reports what it did so
+   * this can log it rather than guess.
+   */
+  private async runTableLifecyclePass(): Promise<void> {
+    try {
+      const { data, error } = await supabase.rpc('fn_table_lifecycle_pass');
+      if (error) {
+        reportError(error, 'HorseFleet.tableLifecyclePass_failed');
+        return;
+      }
+      if (!Array.isArray(data) || data.length === 0) return;
+      for (const row of data as Array<{ action?: string; table_name?: string }>) {
+        console.log(`[HorseFleet] lifecycle: ${row.action} "${row.table_name}" (host switch)`);
+      }
+    } catch (err) {
+      reportError(err, 'HorseFleet.tableLifecyclePass_error');
+    }
+  }
+
   private async spawnOverflowTables(
     tables: Array<{ id: string; name: string; max_players: number }>,
     allActiveSeats: Array<{ table_id: string }>

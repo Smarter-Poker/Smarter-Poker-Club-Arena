@@ -80,14 +80,25 @@ describe('the rule is enforced where it can actually bite', () => {
     expect(svc).toContain('return [];');
   });
 
-  it('the dealing loop feeds the eviction machinery it already had', () => {
-    const loop = src('server/src/engine/ServerTableEngineDealing.ts');
-    expect(loop).toContain('collectNitEvictions');
+  it('the eviction machinery it already had feeds the rule', () => {
+    // MOVED 2026-08-25, and this test moved with it. The three eviction reasons
+    // — sit-out timeout, away-blind cap, nit-game VPIP — used to live inline in
+    // the dealing loop. They now live in ServerTableEngineBase.evictExpiredSitOuts,
+    // because the dealing loop is NOT running in the case Dan reported: a table
+    // below the minimum to deal parks in start()'s wait-for-players loop, so a
+    // sitting-out player could hold the seat forever and no eviction rule of any
+    // kind was consulted. The shared method is called from both loops, so this
+    // rule now bites in strictly more places than it did.
+    const evict = src('server/src/engine/ServerTableEngineBase.ts');
+    expect(evict).toContain('collectNitEvictions');
     // Same atomicCashout + unregister path as sit-out and away-blind, with its
     // own reason on the seat_left event.
-    expect(loop).toContain("'nit_game_vpip'");
+    expect(evict).toContain("'nit_game_vpip'");
     // Gated on the column: no round trip on a table without the rule.
-    expect(loop).toContain('this.tableInfo?.nit_game === true');
+    expect(evict).toContain('this.tableInfo?.nit_game === true');
+    // And it is genuinely reachable from the loop that deals.
+    const loop = src('server/src/engine/ServerTableEngineDealing.ts');
+    expect(loop).toContain('evictExpiredSitOuts');
   });
 
   it('the engine is actually sent the column it gates on', () => {

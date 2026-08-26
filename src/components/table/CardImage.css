@@ -123,11 +123,34 @@
  * Adding a ninth design is now one rule of two lines, and it cannot be
  * silently overridden by an ancestor-scoped rule again.
  */
+/* 2026-08-25: `--cb-gradient` was SET twelve times below and READ nowhere. This
+   rule painted `var(--cb-image, none)` alone, so a card back whose .webp 404s
+   or has not downloaded yet drew NOTHING but the 2px border - an empty outline
+   on dark felt, which is the exact symptom the 2026-08-23 note above was
+   written to have fixed. The comment at the end of that note ("The gradient and
+   border stay here as the fallback for a missing file") described a fallback
+   that did not exist, and the note in TableVisualHotfix.css line 348 asserts
+   this rule "paints two layers, `var(--cb-image), gradient`" - it did not.
+
+   It does now. `background-image` takes a LAYER LIST, first layer on top:
+   the artwork covers the gradient when it loads, and when it 404s or is still
+   in flight the browser paints nothing for that layer and the gradient below
+   shows through. That is the whole mechanism - no JS error handler, no
+   onerror, no class toggle, and nothing to keep in sync.
+
+   `background-size: cover` with a single value applies to BOTH layers, which
+   is what a gradient wants anyway. The literal in the var() fallback is
+   classic_blue, matching --cb-border's own default on the next line, so an
+   element that somehow carries neither a design class nor an inline image is
+   still a solid navy card rather than a hole. */
 .card-image--back .card-back {
   width: 100%;
   height: 100%;
-  background-image: var(--cb-image, none);
+  background-image:
+    var(--cb-image, none), var(--cb-gradient, linear-gradient(135deg, #1e3a5f 0%, #0d2137 100%));
   background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
   border: 2px solid var(--cb-border, #3a6ea5);
   border-radius: inherit;
   display: flex;

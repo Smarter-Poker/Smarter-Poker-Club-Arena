@@ -358,8 +358,26 @@
    because the shorthand carries !important that reset is !important too, so
    CardImage.css's plain `background-size: cover` cannot win it back and the
    artwork would tile at natural size instead of filling the card. */
+/* 2026-08-25 ROUND THREE. The chain described at points 1-3 above was never
+   written: this rule read `--cb-image` and then jumped straight to a flat
+   `background-color: #35598f`, so on the table page - the only page that
+   matters - a 404'd or still-downloading back painted the SAME navy rectangle
+   for all twelve designs. `--cb-gradient` and `--card-back-gradient` were both
+   set (twelve times each, in CardImage.css and TablePage.css) and read zero
+   times, so both halves of the intended fallback were decoration.
+
+   The layer list below is that chain, in order, top to bottom:
+     1. --cb-image            the artwork, inline from CardBack
+     2. --cb-gradient         the design the player actually chose
+     3. --card-back-gradient  the Bible V8 11.2 Cards-tab theme token
+     4. the literal           classic_blue, if an element has no design class
+     5. background-color      the opaque floor, so a back is never see-through
+   A background image that fails simply does not paint, so each step is reached
+   exactly when the one above it is unavailable. */
 .table-page .seat .card-image--back .card-back {
-  background-image: var(--cb-image, none) !important;
+  background-image:
+    var(--cb-image, none),
+    var(--cb-gradient, var(--card-back-gradient, linear-gradient(135deg, #1e3a5f 0%, #0d2137 100%))) !important;
   background-color: #35598f !important;
   background-size: cover !important;
   background-position: center center !important;

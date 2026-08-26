@@ -13,7 +13,16 @@
  *    per-club rows instead of .maybeSingle()).
  */
 
-import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
+import {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+  lazy,
+  Suspense,
+  useLayoutEffect,
+} from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { tabTransition, instant } from '../components/stats/statsMotion';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -1060,8 +1069,26 @@ export default function PlayerStatsPage() {
       ?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'auto' });
   }, [category]);
 
-  // Kept current on every render, for the debouncer and the replay above.
-  loadRef.current = loadAllData;
+  /* Kept current for the debouncer and the in-flight replay above.
+   *
+   * ASSIGNED IN A LAYOUT EFFECT, NOT DURING RENDER. This used to be a bare
+   * `loadRef.current = loadAllData` at render scope. Mutating a ref while
+   * rendering is a side effect in a function React is allowed to call more than
+   * once and to throw away - StrictMode double-invokes it in development, and
+   * concurrent rendering may abandon a render entirely - so an abandoned render
+   * could leave the ref pointing at a loader belonging to state that was never
+   * committed. That is precisely the stale-closure bug the ref exists to prevent,
+   * reintroduced one level up.
+   *
+   * useLayoutEffect runs synchronously after every commit and before paint, and
+   * both readers are post-commit: one is inside an async load's `finally`, the
+   * other inside a setTimeout owned by a MasterBus subscription created in a
+   * passive effect. Passive effects run after layout effects, so the ref is
+   * always populated before anything can read it.
+   */
+  useLayoutEffect(() => {
+    loadRef.current = loadAllData;
+  });
 
   // A tab return means time has passed, so it CLEARS the memo and refetches.
   useVisibilityRefresh(() => loadAllData({ fresh: true }));
@@ -1520,12 +1547,31 @@ export default function PlayerStatsPage() {
         role="tablist"
         aria-label="Statistics Sections"
         onKeyDown={(e) => {
-          if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+          /* A ROVING TABINDEX MUST ACTUALLY MOVE FOCUS.
+             Each tab is `tabIndex={category === cat ? 0 : -1}`, so selecting a
+             new one drops the OLD button to -1. Without the focus() below, focus
+             stayed on that old button - now removed from the tab order - so a
+             keyboard user got no announcement of the new tab, and their next Tab
+             press jumped somewhere unrelated. The ARIA tablist pattern requires
+             focus to follow selection; selection alone is only half of it.
+
+             focus() is safe to call before React re-renders: programmatic focus
+             works on a tabIndex={-1} element, and the attribute updates to 0 in
+             the same commit. */
+          const KEYS = ['ArrowRight', 'ArrowLeft', 'Home', 'End'];
+          if (!KEYS.includes(e.key)) return;
           e.preventDefault();
           const i = TABS.indexOf(category);
           const next =
-            e.key === 'ArrowRight' ? (i + 1) % TABS.length : (i - 1 + TABS.length) % TABS.length;
-          setCategory(TABS[next]);
+            e.key === 'Home'
+              ? TABS[0]
+              : e.key === 'End'
+                ? TABS[TABS.length - 1]
+                : e.key === 'ArrowRight'
+                  ? TABS[(i + 1) % TABS.length]
+                  : TABS[(i - 1 + TABS.length) % TABS.length];
+          setCategory(next);
+          document.getElementById(`stats-tab-${next}`)?.focus();
         }}
       >
         {TABS.map((cat) => (

@@ -89,6 +89,32 @@
     0 4px 12px rgba(63, 185, 80, 0.3);
 }
 
+/* Leave Table, alongside "I'm Back". Added 2026-08-25 with the button itself —
+   the component had built a handleLeave for a prop it was given and then never
+   rendered anything to call it.
+
+   Deliberately secondary styling, not another green pill: returning is the
+   expected action and leaving is the exit. It must still read as a real button,
+   because for a sitting-out player this is the only way off the table. */
+.sitout-modal__leave-btn {
+  padding: 10px 20px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  background: transparent;
+  border: 1px solid rgba(248, 81, 73, 0.55);
+  border-radius: 12px;
+  color: #f85149;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  white-space: nowrap;
+}
+
+.sitout-modal__leave-btn:hover {
+  background: rgba(248, 81, 73, 0.12);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(248, 81, 73, 0.25);
+}
+
 /* =================================================================================
    RESPONSIVE — Mobile
    ================================================================================= */

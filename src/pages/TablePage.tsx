@@ -243,12 +243,11 @@ import GameServerAPI, {
   setSitOut,
   showHand as serverShowHand,
   toggleStraddle as serverToggleStraddle,
-  // `postBBToEnter` is deliberately NOT imported here any more. The overlay
-  // that called it is a notice now: cash entry is free, the only players still
-  // waiting are the two the engine holds out for one hand, and the engine
-  // refuses that call for both of them. The endpoint and its bbOnlyPosts path
-  // stay on the server for the fuzzer and for any future opt-in, but nothing
-  // in the product may bill a player for a hand they are about to get free.
+  // Dan 2026-08-26, binding: "Every single player needs to either wait for the
+  // BB or post when entering a cash game... no free hands or coming in behind
+  // the blinds." So this is imported again and the overlay is a real choice
+  // once more. It was dropped on 2026-08-25 when entry briefly became free.
+  postBBToEnter as serverPostBBToEnter,
   requestRabbitHunt,
 } from '../services/GameServerAPI';
 import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
@@ -2300,6 +2299,8 @@ export default function TablePage({
   }, [engineWsStatus, isActive]);
 
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
+  // Guards the entry-post overlay against a double tap billing two big blinds.
+  const [isPostingBB, setIsPostingBB] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showBuyInModal, setShowBuyInModal] = useState(false);
   // 2026-04-14 per Dan: bust rebuy flow
@@ -15044,23 +15045,45 @@ export default function TablePage({
         !tableState.isTournament &&
         Array.isArray(tableState.waitingForBBUserIds) &&
         tableState.waitingForBBUserIds.includes(userId) && (
-          /* Dan 2026-08-25: this is a NOTICE now, not a button.
-             It used to read "Post BB To Enter — Skip The Wait, Pay The BB Now",
-             which was fair when a new player faced a long wait for the big
-             blind to rotate to them. Entry is free now and the wait is at most
-             one hand, so the only players still waiting are the two the engine
-             deliberately holds out for a hand: the seat the small blind is
-             about to reach, and the seat the button is about to reach. For
-             those, the offer was no longer a shortcut — it was a way to pay a
-             live big blind to be dealt into the small blind, which the house
-             rule forbids outright. The engine now refuses that call; there is
-             no reason to keep asking the player to make it. */
-          <div className="post-bb-overlay-button post-bb-overlay-button--notice">
-            <span className="post-bb-overlay-button__title">Seat Reserved</span>
-            <span className="post-bb-overlay-button__sub">
-              You'll Be Dealt In Free Once The Button Passes
+          /* Dan 2026-08-26, binding: a cash entrant either waits for the big
+             blind or posts it. There is no free hand and no coming in behind
+             the blinds, so this is a real choice again rather than the notice
+             it briefly became on 2026-08-25.
+
+             The engine refuses the post from two seats - the one the small
+             blind is about to reach and the one the button is about to reach -
+             because posting skips the wait, not a house rule. The refusal
+             comes back as a toast and the player simply keeps waiting; the big
+             blind reaches them shortly and they post it as their own. */
+          <button
+            type="button"
+            className="post-bb-overlay-button"
+            disabled={isPostingBB}
+            onClick={async () => {
+              if (isPostingBB || !tableId) return;
+              setIsPostingBB(true);
+              try {
+                const res = await serverPostBBToEnter(tableId);
+                if (res?.success) {
+                  toast.success('Posting The Big Blind. You Are In This Hand.');
+                } else {
+                  toast.error(res?.error || 'Could Not Post The Big Blind.');
+                }
+              } catch (e) {
+                reportError(e, 'TablePage.postBBToEnter');
+                toast.error('Could Not Post The Big Blind.');
+              } finally {
+                setIsPostingBB(false);
+              }
+            }}
+          >
+            <span className="post-bb-overlay-button__title">
+              {isPostingBB ? 'Posting...' : 'Post Big Blind To Enter'}
             </span>
-          </div>
+            <span className="post-bb-overlay-button__sub">
+              Or Wait. You Are Dealt In When The Big Blind Reaches Your Seat.
+            </span>
+          </button>
         )}
 
       {/* ═══════════════════════════════════════════════════════════════════════

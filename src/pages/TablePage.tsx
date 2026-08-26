@@ -13593,10 +13593,8 @@ export default function TablePage({
                             so CommunityCards plays its own deal animation for
                             every street exactly like a live board. */}
                         <CommunityCards
-                          cards={[
-                            ...board.cards.slice(0, board.visibleCount),
-                            ...(board.revealed ? rabbitRevealedCards : []),
-                          ]}
+                          cards={board.cards.slice(0, board.visibleCount)}
+                          rabbitCards={board.revealed ? rabbitRevealedCards : []}
                           stage={
                             board.visibleCount >= 5
                               ? 'river'
@@ -13617,7 +13615,8 @@ export default function TablePage({
                   ) : (
                     <>
                       <CommunityCards
-                        cards={[...tableState.communityCards, ...rabbitRevealedCards]}
+                        cards={tableState.communityCards}
+                        rabbitCards={rabbitRevealedCards}
                         stage={
                           bombPotHoldFlop && tableState.boardStage === 'flop'
                             ? 'preflop'
@@ -13653,7 +13652,8 @@ export default function TablePage({
                       {tableState.communityCards2.length > 0 && (
                         <div className="community-area__board2">
                           <CommunityCards
-                            cards={[...tableState.communityCards2, ...rabbitRevealedCards]}
+                            cards={tableState.communityCards2}
+                            rabbitCards={rabbitRevealedCards}
                             stage={
                               bombPotHoldFlop && tableState.boardStage === 'flop'
                                 ? 'preflop'
@@ -13724,7 +13724,6 @@ export default function TablePage({
                   )}
 
                 {/* FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay */}
-
               </div>
             </div>
           </div>

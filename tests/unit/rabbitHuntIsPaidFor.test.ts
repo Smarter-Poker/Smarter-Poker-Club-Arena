@@ -254,12 +254,37 @@ describe('who is offered a hunt, and for how many cards', () => {
     expect(COMPONENT).toMatch(/usesRemaining/);
   });
 
-  it('the staggered reveal does not flicker', () => {
-    // Inline animationDelay with no fill mode paints each card in its DEFAULT
-    // state during the delay, so all five appear at once, blink out, and
-    // re-animate.
-    const css = read('src/components/table/RabbitHunt.css');
-    expect(css).toMatch(/animation: cardReveal 0\.5s ease backwards/);
+  it('the reveal flip does not flicker through its delay', () => {
+    // POKERBROS PARITY 2026-08-26: the reveal moved onto the CommunityCards
+    // board — backs appear in a hard cut, hold ~120ms, then ALL cards flip
+    // together (ccRabbitFlip). The fill mode is the anti-flicker guarantee:
+    // without `both`, each card paints in its RESTING state (face up) during
+    // the 120ms delay, so the faces flash, blink out, and re-animate — the
+    // same bug the old cardReveal/`backwards` pin in RabbitHunt.css guarded.
+    const css = read('src/components/table/CommunityCards.css');
+    expect(css).toMatch(/animation: ccRabbitFlip [^;]*both/);
+    // And the flip must be SIMULTANEOUS — the reference turns the whole board
+    // over in one video frame. A per-index delay would reintroduce a stagger.
+    const flipAt = css.indexOf('.community-cards__rabbit-flip {');
+    expect(flipAt).toBeGreaterThan(-1);
+    expect(css.slice(flipAt, css.indexOf('}', flipAt))).not.toMatch(/--card-index/);
+  });
+
+  it('rabbit cards render even when the hand ended preflop', () => {
+    // The board derives its visible count from the STAGE, and a preflop fold
+    // leaves stage 'preflop' (count 0) — which is exactly when Rabbit Hunt
+    // exists. The reveal used to be APPENDED into `cards`, so it was invisible
+    // there: the player paid and saw nothing. It travels as its own prop now
+    // (an inference from trailing cards would misfire on the bomb pot's
+    // hold-flop gate, which passes dealt cards with stage forced to preflop),
+    // and rabbit slots bypass the preflop placeholder suppression.
+    const board = read('src/components/table/CommunityCards.tsx');
+    expect(board).toMatch(/rabbitCards/);
+    expect(board).toMatch(/community-cards__card--rabbit/);
+    expect(TABLE_PAGE).toMatch(/rabbitCards=\{rabbitRevealedCards\}/);
+    // The old shape must not come back: appending the reveal into `cards`
+    // hides it behind the stage-derived count.
+    expect(TABLE_PAGE).not.toMatch(/\.\.\.rabbitRevealedCards/);
   });
 
   it('the reveal panel positions itself instead of falling out of the layout', () => {

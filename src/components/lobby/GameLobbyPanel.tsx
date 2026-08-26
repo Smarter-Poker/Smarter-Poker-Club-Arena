@@ -599,6 +599,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                             ? 'You'
                             : 'Player'}
                         </span>
+                        <span className="glp__wl-time">~{(i + 1) * 5}m</span>
                       </li>
                     ))}
                   </ol>

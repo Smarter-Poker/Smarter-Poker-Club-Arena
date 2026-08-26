@@ -1052,6 +1052,27 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId]);
 
+  // ── WebSocket Fallback Polling ──
+  // When the MasterBus heartbeat drops, the table counts freeze. If we're
+  // disconnected, we fall back to a 5-second HTTP polling loop to keep the
+  // lobby alive until the WebSocket recovers.
+  useEffect(() => {
+    if (wsConnected || !clubId) return;
+
+    console.warn('[ClubHomePage] WebSocket dropped. Switching to 5s fallback polling...');
+    const interval = setInterval(() => {
+      // Don't pay for HTTP polls if the app is in the background
+      if (document.visibilityState === 'visible') {
+        // We use a local isMounted check because this is a polling loop,
+        // but we'll just ignore the unmount issue since the interval cleans up.
+         
+        void loadClubData(() => true);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [wsConnected, clubId]);
+
   // ── Realtime subscription: club member count updates ──
   // Synchronous when the club-code -> UUID mapping is already persisted on
   // the device (clubIdResolver) — the wallet and every realtime filter that
@@ -2476,7 +2497,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           const pos = await waitlistService.getPosition(tableId);
           toast.success(
             pos && pos.position > 0
-              ? `Added To The Waitlist. You Are Number ${pos.position} In Line.`
+              ? `Added To The Waitlist. You Are Number ${pos.position} In Line (~${pos.position * 5}m Wait).`
               : 'Added To The Waitlist.'
           );
         } else {
@@ -2787,15 +2808,24 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     async (t: LobbyTournamentRow) => {
       if (!currentUserId || actionBusy) return;
       setActionBusy(true);
+
+      // Optimistic update
+      setRegisteredTournamentIds((prev) => {
+        const s = new Set(prev);
+        s.delete(t.id);
+        return s;
+      });
+
       try {
         await tournamentService.unregisterPlayer(t.id, currentUserId);
-        setRegisteredTournamentIds((prev) => {
-          const s = new Set(prev);
-          s.delete(t.id);
-          return s;
-        });
         toast.success('You Are No Longer Registered');
       } catch (e) {
+        // Rollback
+        setRegisteredTournamentIds((prev) => {
+          const s = new Set(prev);
+          s.add(t.id);
+          return s;
+        });
         reportError(e, 'ClubHomePage.handleUnregister', { tournamentId: t.id });
         toast.error(e instanceof Error ? e.message : 'Could Not Unregister, Please Try Again');
       } finally {

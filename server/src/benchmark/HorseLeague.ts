@@ -35,6 +35,8 @@ import {
   restoreFastRandom,
   fastRandom,
   scoreHoldem,
+  scoreOmahaHi,
+  variantInfo,
 } from '../engine/HorseEval.js';
 import { SUITS, RANKS, validateAction, calculateBettingState } from '../engine/PokerEngine.js';
 import { supabase } from '../services/supabase.js';
@@ -59,6 +61,10 @@ export interface LeagueResult {
 
 export interface LeagueMatchup {
   name: string;
+  /** game variant the matchup deals (default 'nlh'). V15: the plo6 matchup
+   *  exists because the Omaha discipline layer cannot be measured by an NLH
+   *  deal at all. */
+  variant?: string;
   a: HorseDecideOpts;
   b: HorseDecideOpts;
   /** V12.3: RETIRED as an opt-in — EVERY matchup is now sandboxed. It was
@@ -114,8 +120,14 @@ export function playHand(
   counters?: { illegal: number; truncated: number },
   /** V12.2: when present, decisions run against this sandboxed HorseMind and
    *  the per-seat `mind` flag is honored (default on) instead of forced off. */
-  sandbox?: HorseMindSandbox
+  sandbox?: HorseMindSandbox,
+  /** V15: game variant to deal (default 'nlh'). Omaha variants deal the full
+   *  hole count, enforce pot-limit sizing in validation, and score showdowns
+   *  with the Omaha evaluator. */
+  gameVariant: string = 'nlh'
 ): number[] {
+  const vi = variantInfo(gameVariant);
+  const holeCount = vi.holeCount;
   seedFastRandom(handSeed);
   // Deterministic deck for this seed (Fisher-Yates on fastRandom).
   const deck = [...FULL_DECK];
@@ -143,7 +155,7 @@ export function playHand(
         stack: START_STACK,
         bet: 0,
         totalInvested: 0,
-        cards: [deck[s * 2], deck[s * 2 + 1]],
+        cards: deck.slice(s * holeCount, s * holeCount + holeCount),
         is_folded: false,
         is_all_in: false,
         is_sitting_out: false,
@@ -151,7 +163,7 @@ export function playHand(
       } as SeatPlayer,
     });
   }
-  const board = deck.slice(SEATS * 2, SEATS * 2 + 5);
+  const board = deck.slice(SEATS * holeCount, SEATS * holeCount + 5);
 
   const idx = (seatNo: number) => (seatNo - 1 + SEATS) % SEATS;
   const sbIdx = idx(dealerSeat + 1);
@@ -228,7 +240,7 @@ export function playHand(
         minRaise,
         lastRaise,
         stage,
-        gameVariant: 'nlh',
+        gameVariant,
         bigBlind: BB,
         dealerSeat,
         actionHistory: history,
@@ -255,7 +267,7 @@ export function playHand(
       // different code path from production and could never catch an illegal
       // sizing. `tally` keeps the counting optional without changing the path.
       if (action === 'bet' || action === 'raise') {
-        const bs = calculateBettingState(pot, currentBet, p.bet, BB, lastRaise, false);
+        const bs = calculateBettingState(pot, currentBet, p.bet, BB, lastRaise, vi.isPotLimit);
         if (!validateAction(action as never, amount, p.stack, bs).valid) {
           tally.illegal++;
           action = toCall > 0 ? 'fold' : 'check';
@@ -408,7 +420,11 @@ export function playHand(
     winnings[seats.indexOf(live()[0])] = pot;
   } else {
     const scores = seats.map((s) =>
-      s.player.is_folded ? -1 : scoreHoldem(s.player.cards.concat(board), 7, false)
+      s.player.is_folded
+        ? -1
+        : vi.isOmaha
+          ? scoreOmahaHi(s.player.cards, board)
+          : scoreHoldem(s.player.cards.concat(board), s.player.cards.length + 5, vi.isShortDeck)
     );
     // Layered side pots by contribution level.
     const levels = [...new Set(contenders.map((c) => c.contributed))].sort((a, b) => a - b);
@@ -489,8 +505,8 @@ export async function runMatchup(
     const evenIsA = (s: number) => (s % 2 === 0 ? matchup.a : matchup.b);
     const evenIsB = (s: number) => (s % 2 === 0 ? matchup.b : matchup.a);
 
-    const net1 = playHand(handSeed, dealerSeat, evenIsA, counters, sb1);
-    const net2 = playHand(handSeed, dealerSeat, evenIsB, counters, sb2);
+    const net1 = playHand(handSeed, dealerSeat, evenIsA, counters, sb1, matchup.variant ?? 'nlh');
+    const net2 = playHand(handSeed, dealerSeat, evenIsB, counters, sb2, matchup.variant ?? 'nlh');
 
     let aNet = 0;
     for (let s = 0; s < SEATS; s++) {
@@ -541,6 +557,9 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // it, both sides with the mind on — the matchup the 2026-08-22 handoff
   // deferred for lack of a pollution-free mind mode.
   { name: 'v12_ranges_river', a: {}, b: { v12: false } },
+  // V15 Omaha nut discipline, measured where it lives: a plo6 deal. The
+  // other matchups deal NLH, where v15 changes nothing by construction.
+  { name: 'plo6_v15_discipline', variant: 'plo6', a: {}, b: { v15: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
   { name: 'mind_layer', a: {}, b: { mind: false } },
@@ -558,6 +577,7 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       // LeagueAblationCompleteness.test.ts now fails if a future layer
       // drifts out of this list the same way.
       v12: false,
+      v15: false,
       mind: false,
       streetIQ: false,
       handReading: false,

@@ -27,8 +27,7 @@ export interface QueuedMutation {
     | 'CREDIT_COMMISSION'
     | 'CREDIT_RAKEBACK'
     | 'TABLE_BUYIN'
-    | 'TABLE_REBUY'
-    | 'TABLE_ADDON';
+    | 'TABLE_REBUY';
   payload: Record<string, unknown>;
   createdAt: number;
   retries: number;
@@ -232,6 +231,21 @@ export const OfflineQueueService = {
    * instead of being replayed by a future change.
    */
   async executeMutation(mutation: QueuedMutation): Promise<boolean> {
+    // ── TTL GUARD (5 MINUTES) ──
+    // Replaying a buy-in from days ago is incredibly dangerous. We strictly drop
+    // mutations older than 5 minutes.
+    const MAX_AGE_MS = 5 * 60 * 1000;
+    const ageMs = Date.now() - mutation.createdAt;
+    if (ageMs > MAX_AGE_MS) {
+      reportError(
+        new Error(`[OfflineQueue] Mutation expired (TTL 5m) and was dropped: ${mutation.action}`),
+        'OfflineQueueService.MUTATION_EXPIRED',
+        { action: mutation.action, ageMs }
+      );
+      // Return true so it gets removed from the queue immediately without retrying
+      return true;
+    }
+
     const action = mutation.action as string;
     if (action === 'TABLE_BUYIN' || action === 'TABLE_REBUY') {
       try {

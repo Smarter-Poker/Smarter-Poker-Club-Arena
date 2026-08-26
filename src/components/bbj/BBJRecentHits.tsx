@@ -27,7 +27,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import CardImage from '../table/CardImage';
-import Avatar from '../common/Avatar';
+import { PlayerAvatar as Avatar } from '../avatars/PlayerAvatar';
 import { toDeckCards } from '../../utils/deckCards';
 import type { Card as DeckCard } from '../table/CardImage';
 import { bestFive } from '../../utils/handEvaluator';
@@ -264,7 +264,7 @@ export function BBJRecentHits({
         <div className="bbj-hits__caption">Last 3 Bad Beat Jackpot Winners</div>
         {EXAMPLE_HITS.map((ex) => (
           <div className="bbj-hits__row" key={ex.id} aria-label="Jackpot win">
-            <Avatar name={ex.name} size="medium" className="bbj-hits__avatar" />
+            <Avatar name={ex.name} size="md" className="bbj-hits__avatar" />
             <div className="bbj-hits__who">
               <span className="bbj-hits__name">{ex.name}</span>
               <span className="bbj-hits__id">{ex.playerId}</span>
@@ -330,7 +330,7 @@ export function BBJRecentHits({
             <Avatar
               src={hit.bad_beat_avatar_url || undefined}
               name={hit.bad_beat_name}
-              size="medium"
+              size="md"
               className="bbj-hits__avatar"
             />
 

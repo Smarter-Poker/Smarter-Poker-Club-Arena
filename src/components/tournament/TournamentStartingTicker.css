@@ -155,3 +155,55 @@
     padding: 0 18px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   OVERLAY ANNOUNCEMENTS (Dan 2026-08-26)
+   ───────────────────────────────────────────────────────────────────────────
+   "alerting players if there is an overlay or potential overlay to jump in
+   and play."
+
+   Deliberately a DIFFERENT colour from the cyan STARTING SOON flag. The two
+   say different things and a player should be able to tell which one is on
+   the bar without reading it: cyan means "hurry", gold means "there is money
+   here". Reusing the cyan would have made the strongest message this room can
+   send look like the routine one.
+
+   Gold on near-black rather than the usual green: green reads as "success /
+   confirmed" everywhere else in this app (ClubAnnouncementBanner uses it for
+   exactly that), and an overlay is neither. It is treasure.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.mtt-ticker__flag--overlay {
+  background: linear-gradient(180deg, #f5c542 0%, #d99e1f 100%);
+  color: #1a1205;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+/* A LIVE overlay - late registration open on a running event - is the one
+   with a closing door, so it is the only thing on this strip allowed to
+   pulse. The potential one is information; this one is a countdown with
+   money attached. */
+.mtt-ticker__flag--overlay-live {
+  animation: mttOverlayPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes mttOverlayPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 197, 66, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 10px 2px rgba(245, 197, 66, 0.85);
+  }
+}
+
+/* The house rule the rest of this file already follows: nothing moves for a
+   player who asked for no motion. They still get the flag and the colour,
+   which is the whole message - only the pulse goes. */
+@media (prefers-reduced-motion: reduce) {
+  .mtt-ticker__flag--overlay-live {
+    animation: none;
+    box-shadow: 0 0 8px 1px rgba(245, 197, 66, 0.7);
+  }
+}

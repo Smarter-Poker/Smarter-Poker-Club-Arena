@@ -3054,11 +3054,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 // INSIDE that cashier - there is no mint button out here any
                 // more, and no mint at all once the club is in a union.
                 onOpenPlayerWallet={() => setShowPlayerWallet(true)}
-                onOpenPromoWallet={(balance) => {
+                onOpenPromoWallet={() => {
                   setUnionWalletModal({
                     key: 'promo',
                     label: 'Promo Wallet',
-                    balance: balance || 0,
+                    balance: 0,
                   });
                 }}
                 onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
@@ -3080,10 +3080,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                   setUnionWalletModal({
                     key: 'spin_reserve',
                     label: 'Spins Treasury',
-                    balance: balance || 0,
+                    balance: 0,
                   })
                 }
-                onOpenClubBackupBBJ={() => setUnionTreasuryModal('backup')}
               />
             </div>
           )}

@@ -11873,13 +11873,26 @@ export default function TablePage({
       let prevLastAction: any = null;
       let prevLastBet: number | null = null;
       let prevStatus: any = null;
+      // 2026-08-26: these three used to be assigned unconditionally inside the
+      // updater below. A React updater must be PURE, and under concurrent
+      // rendering it can be re-invoked against a rebased base state - at which
+      // point the second pass reads the values this very call already made
+      // optimistic. revert() then restores the OPTIMISTIC state instead of the
+      // pre-action state, so a rejected fold or call stays on screen forever:
+      // the player sees themselves folded at a table where they are still live.
+      // Capturing exactly once keeps the pre-action snapshot whatever React
+      // does with the updater afterwards.
+      let captured = false;
 
       setTableState((prev) => {
         const players = [...prev.players];
         const hero = players[idx];
-        prevLastAction = prev.lastActions[idx] ?? null;
-        prevLastBet = prev.lastBetAmounts[idx] ?? 0;
-        prevStatus = hero?.status ?? null;
+        if (!captured) {
+          captured = true;
+          prevLastAction = prev.lastActions[idx] ?? null;
+          prevLastBet = prev.lastBetAmounts[idx] ?? 0;
+          prevStatus = hero?.status ?? null;
+        }
 
         const newActions = [...prev.lastActions];
         newActions[idx] = label as any;
@@ -12500,10 +12513,16 @@ export default function TablePage({
       } else if (key === 'c' || key === 'w') {
         e.preventDefault();
         // Bible V8 + spec §5.5: Check is legal when currentBet <= hero's current bet.
-        const canCheck =
-          (tableState.currentBet || 0) <=
-          (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0);
-        if (canCheck) {
+        //
+        // 2026-08-26: this used to inline that comparison against `tableState`,
+        // which is NOT in this effect's dependency array. It read fresh values
+        // only because handleFold/handleCheck/handleCall are recreated every
+        // render and re-run the effect - so the correctness of a hotkey that
+        // COMMITS CHIPS depended on a re-subscribe happening on every snapshot.
+        // canCheckRightNow() is the same memoised helper handleFold already
+        // uses, so there is now one derivation instead of two and the deps
+        // below can be honest.
+        if (canCheckRightNow()) {
           handleCheck();
         } else {
           handleCall();
@@ -12523,7 +12542,7 @@ export default function TablePage({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isHeroTurnContext, handleFold, handleCheck, handleCall]);
+  }, [isHeroTurnContext, handleFold, handleCheck, handleCall, handleRaise, canCheckRightNow]);
 
   // Keep the all-in hotkey pointed at the current handler (see allInHotkeyRef).
   useEffect(() => {

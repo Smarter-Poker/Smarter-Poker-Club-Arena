@@ -20,11 +20,9 @@ import './MiniStatsCard.css';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export interface MiniStatsObserver {
-  id: string;
-  name: string;
-  avatar?: string;
-}
+/* `MiniStatsObserver` deleted 2026-08-26: it typed the `observers` prop, and
+   that prop went with the unreachable expanded panel. Exported from the barrel
+   and imported by nothing. */
 
 export interface MiniStatsCardProps {
   /** Current hero stack */

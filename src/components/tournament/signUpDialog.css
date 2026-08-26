@@ -133,7 +133,10 @@
   justify-content: space-between;
   gap: 14px;
   padding: 9px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  /* No bottom border here: the separator is a TOP border on each row after the
+     first (see `.signup-row + .signup-row`). Declaring both meant two rules for
+     the same property on the same selector, the later one inert — dead CSS that
+     reads like intent (2026-08-26 audit). */
 }
 
 /* `:last-of-type` matched nothing: the last `div` child of the card is
@@ -142,9 +145,6 @@
    inverted — the border goes on the TOP of each row after the first. */
 .signup-row + .signup-row {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
-}
-.signup-row {
-  border-bottom: none;
 }
 
 .signup-row.total {

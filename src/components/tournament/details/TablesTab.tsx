@@ -371,6 +371,16 @@ export default function TablesTab({
 
   const handleOpen = useCallback(
     (table: TournamentTable) => {
+      /* 2026-08-26 audit: this opened whatever row was clicked, with no closed
+         check. `featuredTableId` on the details page refuses to feature a
+         closed table for exactly this reason — a WATCH that lands on a dead
+         felt is worse than no WATCH — but the Tables grid had no equivalent, so
+         a closed row was still a live "open the felt" button. Say why instead
+         of opening nothing. */
+      if (String(table.status || '').toLowerCase() === 'closed') {
+        toast.warning('That Table Has Closed');
+        return;
+      }
       const opened = openTableAsObserver(navigate, {
         tableId: table.id,
         tableName: table.name,

@@ -4585,6 +4585,18 @@ export default function TablePage({
   rebuyProcessingRef.current = rebuyProcessing;
 
   /**
+   * "This player paid to stay in." Set the instant a rebuy is confirmed, and
+   * cleared when their stack actually reflects it (or when they bust again).
+   *
+   * 2026-08-26, third audit: `exitIfBusted` guarded on `stack > 0`, which is
+   * local state that lags the server. Between `processRebuy` resolving and the
+   * engine broadcasting the new stack, the guard reads 0 and the player who
+   * just paid is ejected. A flag set at the moment of purchase cannot lose that
+   * race the way a derived value can.
+   */
+  const rebuyJustSucceededRef = useRef(false);
+
+  /**
    * THE LAST-RESORT EXIT (2026-08-25, second audit).
    *
    * Called by `releaseBustHold` when the hold ends and there is no deferred
@@ -4601,6 +4613,14 @@ export default function TablePage({
       if (!tableStateRef.current.isTournament) return;
       const seat = tableStateRef.current.heroSeat;
       if (seat <= 0) return;
+      /* 2026-08-26, third audit: the stack check below is a RACE, not a
+         guarantee. `processRebuy` resolving is the SERVER acknowledging the
+         purchase; the new stack arrives afterwards over the engine feed. So a
+         player who has just paid can still read 0 here for a moment, and this
+         is the function that removes them from the table. `rebuyJustSucceededRef`
+         is set by the confirm handler and is the authoritative "they paid" flag
+         — it does not depend on local state having caught up yet. */
+      if (rebuyJustSucceededRef.current) return;
       const stack = tableStateRef.current.players[seat - 1]?.stack ?? 0;
       if (stack > 0) return;
       heroSeatRef.current = 0;
@@ -4621,6 +4641,10 @@ export default function TablePage({
     const stack = heroPlayer.stack ?? 0;
     if (stack > 0) {
       bustPromptFiredRef.current = false;
+      /* The rebuy has landed: local state now agrees with the server, so the
+         "they just paid" override is no longer needed and must be cleared, or
+         a LATER bust in the same tournament could never exit. */
+      rebuyJustSucceededRef.current = false;
       return;
     }
     /* Dan 2026-08-25 (binding): `if (tableState.isHandInProgress) return;` used
@@ -6470,6 +6494,40 @@ export default function TablePage({
             }, delayMs);
           };
 
+          /**
+           * ═══════════════════════════════════════════════════════════════════
+           *  PUBLISH IT. WITHOUT THIS LINE THE WHOLE BUST HOLD IS A NO-OP.
+           * ═══════════════════════════════════════════════════════════════════
+           *
+           * 2026-08-26, third audit. `goToLobbyWithResultRef` had FOUR readers
+           * and ZERO writers:
+           *
+           *   releaseBustHold          replays a deferred elimination
+           *   exitIfBusted             the hold's last-resort exit
+           *   the tournament_players   'eliminated' fallback
+           *   the rebuy-decline path
+           *
+           * Every one of them is `?.()`, so every one silently did nothing. A
+           * busted player got `heroSeat = 0` and NOTHING ELSE — no
+           * SESSION_ENDED, no TABLE_LEFT, no CLOSE_TABLE_TAB, no result card,
+           * no navigation. They sat at a dead felt with a hidden seat for the
+           * rest of the session. That is precisely the failure the hold was
+           * written to prevent, and it shipped inside the fix for it.
+           *
+           * It went unnoticed because the specs guarding the hold assert that
+           * the READ exists in the source. A ref that is never written passes
+           * that assertion forever. tests/unit/tablePageBustHold.test.ts now
+           * asserts the ASSIGNMENT, and asserts there is at least one writer
+           * for every reader.
+           *
+           * The function has to be declared here — it closes over `table`,
+           * `exitStarted` and the subscription's own scope (see the note at its
+           * declaration) — so the ref is the bridge to the component body. It is
+           * nulled in this effect's cleanup so a torn-down subscription cannot
+           * navigate a page that has moved on.
+           */
+          goToLobbyWithResultRef.current = goToLobbyWithResult;
+
           const breakChan = masterBus.getOrCreateChannel(breakChanKey);
           breakChan
             .on('broadcast', { event: 'tournament_event' }, (payload: any) => {
@@ -7365,6 +7423,11 @@ export default function TablePage({
         clearTimeout(tournamentExitTimerRef.current);
         tournamentExitTimerRef.current = null;
       }
+      /* The exit function closes over THIS subscription's scope (`table`,
+         `exitStarted`). Once the subscription is gone it must not be callable:
+         a hold released after teardown would otherwise navigate a page that has
+         already moved on. Cleared here, published where it is declared. */
+      goToLobbyWithResultRef.current = null;
       if (bountyChannelRef.current) {
         // BUG-C FIX: Read tournamentId from tableStateRef (fresh) instead of stale closure
         const tournId = tableStateRef.current.tournamentId || tableId;
@@ -14909,6 +14972,11 @@ export default function TablePage({
           setRebuyProcessing(true);
           try {
             await tournamentService.processRebuy(tableState.tournamentId, userId);
+            /* Set BEFORE anything else can run. The stack that proves this
+               purchase arrives over the engine feed a moment from now, and
+               `exitIfBusted` must not be allowed to look at the stale zero in
+               between — see rebuyJustSucceededRef. */
+            rebuyJustSucceededRef.current = true;
             toast?.success('Rebuy successful - chips added to your stack');
             setShowRebuyModal(false);
             /* Dan 2026-08-25: the player REBOUGHT, so any exit the elimination

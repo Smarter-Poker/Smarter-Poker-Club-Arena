@@ -152,8 +152,13 @@ export function TournamentHUD({
            fault is quiet, and the moment a read succeeds the normal cadence is
            restored (see the success branch). A clock that is late is recoverable;
            a clock that has given up is not. */
-        if (failures === 5 && resyncRef.current) {
-          clearInterval(resyncRef.current);
+        /* `>= 5 && !backedOff`, not `=== 5` (2026-08-26 audit). With strict
+           equality, a failure that arrived when `resyncRef.current` happened to
+           be null — the terminal-status stop racing a failure — skipped the
+           install, and because the ref stays null the poll was then dead for
+           good: the exact "gave up permanently" bug this block replaced. */
+        if (failures >= 5 && !backedOff) {
+          if (resyncRef.current) clearInterval(resyncRef.current);
           resyncRef.current = setInterval(() => void refresh(), BACKOFF_MS);
           backedOff = true;
         }
@@ -281,7 +286,14 @@ export function TournamentHUD({
         userSelect: 'none',
         lineHeight: 1.1,
       }}
-      role="status"
+      /* NOT `role="status"`. That is an aria-live=polite region, and this
+         element re-renders every second for the countdown — so a screen reader
+         re-announced level, blinds, ante, countdown, players and average stack
+         once a second for the entire tournament (2026-08-26 audit). `group`
+         with a label keeps it navigable and reachable without narrating it
+         continuously; the countdown itself is hidden from the accessibility
+         tree below, since a value that changes every second is noise there. */
+      role="group"
       aria-label="Tournament clock"
     >
       {/* Level / break badge */}
@@ -347,6 +359,9 @@ export function TournamentHUD({
             fontVariantNumeric: 'tabular-nums',
             color: tournament.status === 'RUNNING' ? timerColor : '#9aa7ae',
           }}
+          /* Changes every second; announcing it is noise. The level and blinds
+             beside it carry the information that actually matters. */
+          aria-hidden="true"
         >
           {tournament.status === 'RUNNING' ? fmtClock(remaining) : '--:--'}
         </span>

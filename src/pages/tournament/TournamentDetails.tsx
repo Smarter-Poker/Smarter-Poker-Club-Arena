@@ -67,7 +67,7 @@ import { TABS, normaliseTabId } from '../../components/tournament/details/types'
 import { blindLevelMinutes } from '../../components/lobby/tournamentFigures';
 import { reportError } from '../../utils/errorReporter';
 import { formatBuyIn } from '../../utils/buyIn';
-import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
+import { useTournamentRegistration, isLateStatus } from '../../hooks/useTournamentRegistration';
 import { useMysteryBounty } from '../../hooks/useMysteryBounty';
 import { openTableAsObserver } from '../../utils/observeTable';
 
@@ -680,7 +680,13 @@ export default function TournamentDetails({
         // The hook derives late-registration from status, so LATE_REG is not
         // missed the way five hand-rolled `=== 'RUNNING'` copies missed it.
         status: tournament.status,
-        is_late_registration: isLate,
+        /* `undefined`, not `false`. The hook does
+           `t.is_late_registration ?? isLateStatus(t.status)`, and `false ?? x`
+           is `false` — so passing the boolean from a pre-start Register button
+           OVERRODE the derivation and told a LATE_REG entrant "Cannot Unregister
+           Within 1 Minute Of The Start Time", which is the untrue copy that
+           derivation exists to prevent. Only ever force it to TRUE. */
+        is_late_registration: isLate || undefined,
       },
       () => {
         setIsRegistered(true);
@@ -778,25 +784,53 @@ export default function TournamentDetails({
   );
 
   /**
+   * IS THIS EVENT LIVE ENOUGH TO WATCH?
+   *
+   * 2026-08-26, third audit: every watch surface gated on `=== 'RUNNING'`, so
+   * during LATE_REG — an event that is dealing, with players at tables — the
+   * WATCH button vanished, the `?watch=1` intent silently did nothing, and the
+   * Entries and Ranking rows went inert. That is the same blind spot
+   * `isLateStatus` was written to fix on the registration side, reproduced on
+   * the watching side. A tournament is watchable whenever it has started;
+   * `isLateStatus` already means exactly that. */
+  const isWatchable = isLateStatus(tournament?.status);
+
+  /**
    * `?watch=1` — a Watch button somewhere else asked us to open the featured
    * table as soon as we know which one it is.
    *
    * 2026-08-25, second audit. A surface that only holds a tournament id cannot
    * resolve the featured table without a query of its own, so it passes the
    * INTENT instead and this page, which already computes `featuredTableId` from
-   * data it keeps live, acts on it. Fires at most once (`watchIntentDoneRef`)
-   * so a re-render, a realtime tick or the player navigating back cannot
-   * re-open the table on top of them.
+   * data it keeps live, acts on it.
+   *
+   * 2026-08-26, third audit — TWO defects, both in the four lines below.
+   *
+   *  - `watchIntentDoneRef` is COMPONENT-scoped, and acting on the intent
+   *    navigates away, which UNMOUNTS this page. Pressing Back remounts it at
+   *    the same `?watch=1` url with a fresh ref, so the intent fired again and
+   *    dragged the player straight back onto the felt they had just left. The
+   *    docstring claimed Back was covered; it was not. The url is now rewritten
+   *    with `replace`, so the intent is CONSUMED — Back returns to the lobby,
+   *    and even a forced remount finds no `watch` param to act on.
+   *  - it required `status === 'RUNNING'`, so a LATE_REG event — dealing, with
+   *    players seated — ignored the intent entirely. See `isWatchable`.
    */
   const watchIntentDoneRef = useRef(false);
   useEffect(() => {
     if (watchIntentDoneRef.current) return;
-    if (new URLSearchParams(location.search).get('watch') !== '1') return;
-    if (tournament?.status !== 'RUNNING') return;
+    const params = new URLSearchParams(location.search);
+    if (params.get('watch') !== '1') return;
+    if (!isWatchable) return;
     if (!featuredTableId) return; // still resolving; try again when it lands
     watchIntentDoneRef.current = true;
+    // Consume the intent BEFORE acting on it, so the history entry we leave
+    // behind can never re-trigger it.
+    params.delete('watch');
+    const qs = params.toString();
+    navigate({ search: qs ? `?${qs}` : '' }, { replace: true });
     watchTable(featuredTableId);
-  }, [featuredTableId, tournament?.status, location.search, watchTable]);
+  }, [featuredTableId, isWatchable, location.search, watchTable, navigate]);
 
   const handleUnregister = async () => {
     if (isProcessing || !tournament) return;
@@ -901,7 +935,10 @@ export default function TournamentDetails({
             blindLevels,
             currentUserId: user?.id,
             isRegistered,
-            onWatchPlayer: isRunning ? watchTable : undefined,
+            /* `isWatchable`, not `isRunning`: during LATE_REG the event is
+               dealing and every one of these rows points at a live table, but
+               the old gate made them inert (2026-08-26 audit). */
+            onWatchPlayer: isWatchable ? watchTable : undefined,
             mysteryBounty: isMysteryBountyEvent ? mysteryBounty : null,
             onOpenTab: setActiveTab,
           }
@@ -1026,7 +1063,10 @@ export default function TournamentDetails({
           {(() => {
             const myEntry = entries.find((e) => e.user_id === user?.id);
 
-            if (tournament.status === 'RUNNING') {
+            /* `isWatchable` covers LATE_REG as well as RUNNING. A late-reg
+               event has players at tables — refusing to show WATCH for it was
+               the same blind spot the registration side already fixed. */
+            if (isWatchable) {
               if (myEntry?.status === 'playing' && myEntry.table_id) {
                 return (
                   <Link to={`/table/${myEntry.table_id}`} className="btn btn-enter-table">

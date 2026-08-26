@@ -5591,9 +5591,9 @@ export default function TablePage({
         // had just sat down, saw a live Rabbit Hunt button whose only possible
         // outcome was the server refusing them.
         const eligibleIds = Array.isArray(handState.eligible_user_ids)
-          ? (handState.eligible_user_ids as string[])
+          ? handState.eligible_user_ids.map(String)
           : null;
-        const heroMayHunt = !eligibleIds || (!!userId && eligibleIds.includes(userId));
+        const heroMayHunt = !eligibleIds || (!!userId && eligibleIds.includes(String(userId)));
         if (available > 0 && heroMayHunt) {
           rabbitHandNumberRef.current = Number(handState.hand_number ?? 0) || null;
           setRabbitCardsAvailable(available);

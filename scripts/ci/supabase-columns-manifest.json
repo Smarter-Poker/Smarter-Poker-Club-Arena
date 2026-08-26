@@ -6285,7 +6285,8 @@
       "chips_won",
       "detected_auto",
       "created_at",
-      "street_decisions"
+      "street_decisions",
+      "engine_suggestion"
     ],
     "pb_profiles": [
       "id",

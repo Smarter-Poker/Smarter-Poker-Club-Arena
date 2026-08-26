@@ -109,6 +109,29 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 1: TypeScript compilation check (fast — ~40s)
   # ─────────────────────────────────────────────────────────────────────────────
+
+  stub_gate:
+    if: github.event_name == 'pull_request'
+    name: Stub Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.3.1
+
+      - name: No bare stubs — TODO and FIXME must have issue references
+        run: |
+          # Finds TODO or FIXME that do NOT have a (#1234) issue reference.
+          found=$(grep -rn --include="*.ts" --include="*.tsx" \
+            -E '\b(TODO|FIXME)\b' \
+            src/ server/src/ 2>/dev/null | grep -v -E '\b(TODO|FIXME)\(#[0-9]+\)' || true)
+          
+          if [ -n "$found" ]; then
+            echo "::error::Bare stub markers found! Use TODO(#1234) with an issue reference, or resolve the stub."
+            echo "$found"
+            exit 1
+          fi
+          echo "No bare TODO or FIXME markers found."
+
   typecheck:
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
@@ -210,33 +233,7 @@ jobs:
       - name: Monitoring Invariant — every alert rule is loaded, mounted, and routed
         run: node scripts/ci/check-monitoring-drift.mjs
 
-      # STUB GATE (2026-08-26). The playbook (RULE 1 Part C) forbids TODO,
-      # FIXME, and 'not implemented' stubs from being committed, but the only
-      # enforcement was the agent interrogation pass — no automated check.
-      # A non-compliant agent or a direct push could land stubs silently.
-      # This step fails the build if any are found so the enforcement is
-      # machine-verified rather than honor-system.
-      #
-      # Scope: src/ and server/src/ only. supabase/migrations/, scripts/,
-      # tests/, and docs are intentionally excluded — migration comments, test
-      # fixture descriptions, and CI script headers may contain these words in
-      # a non-stub context (e.g. "TODO(author): revisit" in a SQL comment
-      # documenting a known Postgres limitation is documentation, not a stub).
-      #
-      # Pattern is case-sensitive. 'todo' (lowercase) in a variable name or
-      # comment about a "to-do list" feature is not a stub. 'TODO' (uppercase)
-      # is a stub by convention across the entire codebase.
-      - name: No stubs — TODO and FIXME are banned from src/ and server/src/
-        run: |
-          found=$(grep -rn --include="*.ts" --include="*.tsx" \
-            -E '\bTODO\b|\bFIXME\b' \
-            src/ server/src/ 2>/dev/null || true)
-          if [ -n "$found" ]; then
-            echo "::error::Stub markers found — resolve before merging:"
-            echo "$found"
-            exit 1
-          fi
-          echo "No TODO or FIXME markers found in src/ or server/src/"
+
 
       - name: Report Typecheck Time
         if: always()

@@ -1290,8 +1290,10 @@
 .seat__cards--opponent {
   --vh-n: 2;
   --vh-step-f: var(--vh-step-f-base, 0.3);
-  /* Small by design (Dan's close-ups); floored so a back never dissolves. */
-  --vh-card-h: max(26px, calc(var(--seat-avatar-size, 84px) * 0.52 * var(--vh-reveal, 1)));
+  /* Small by design (Dan's close-ups); floored so a back never dissolves.
+     2026-08-26: reduced to 50 % of the original size (0.52 → 0.26, floor 26 → 13 px)
+     so opponent down-cards are clearly smaller than hero cards on every display. */
+  --vh-card-h: max(13px, calc(var(--seat-avatar-size, 84px) * 0.26 * var(--vh-reveal, 1)));
   --vh-card-w: calc(var(--vh-card-h) * 0.714);
   --vh-step: calc(var(--vh-card-w) * var(--vh-step-f));
   /* How far the cluster's inner card reaches ONTO the avatar. Dan 2026-08-26

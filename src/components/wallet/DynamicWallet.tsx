@@ -1266,6 +1266,15 @@ export default function DynamicWallet({
       hint: 'This Club Keeps Its Own Rake',
       onOpen: () => onOpenClubRake?.(data.clubRakeTreasury || 0),
     },
+    backup_bbj: {
+      key: 'backup_bbj',
+      label: 'BBJ Backup Wallet',
+      icon: 'reserve',
+      value: animBackupBBJ,
+      known: data.backupBBJ !== null,
+      hint: 'Next Jackpot Seed',
+      onOpen: () => onOpenUnionBackupBBJ?.(data.backupBBJ || 0),
+    },
   };
 
   const UNION_ROWS: WalletRow[] = [

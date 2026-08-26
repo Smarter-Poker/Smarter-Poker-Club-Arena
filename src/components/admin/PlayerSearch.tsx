@@ -61,7 +61,31 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
     setSearched(true);
     setSearchError(null);
     try {
-      // Real Supabase search
+      // SCOPED TO THE CLUB. Always.
+      //
+      // `clubId` has been a declared prop of this component all along and was
+      // referenced NOWHERE in the query - so a staff member on one club's
+      // Players tab searched every profile on the platform, all 1,022 of them,
+      // email included. `profiles_select` is `USING (true)` for authenticated,
+      // so nothing downstream narrowed it either.
+      //
+      // The inner embed on club_members does the scoping in the same round
+      // trip: PostgREST turns `club_members!inner(club_id)` plus the matching
+      // .eq into a join, so a profile with no membership in this club cannot
+      // come back at all - it is filtered in the database, not after the rows
+      // have already crossed the wire. Doing it by fetching the club's member
+      // ids and passing them to .in() is not an option: 590 uuids is a 22KB
+      // query string.
+      //
+      // The only mount is AgentManagementPage, which always has a club in its
+      // route, so a missing clubId is a wiring mistake and says so rather than
+      // quietly falling back to searching everybody.
+      if (!clubId) {
+        setResults([]);
+        setSearchError('No Club Selected. Open This From A Club.');
+        return;
+      }
+
       let profileQuery = supabase
         .from('profiles')
         .select(
@@ -72,9 +96,11 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
                     email,
                     status,
                     created_at,
-                    last_active
+                    last_active,
+                    club_members!inner(club_id)
                 `
         )
+        .eq('club_members.club_id', clubId)
         .limit(20);
 
       // Apply search filter based on type.
@@ -122,28 +148,28 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
       const balances: Record<string, number> = {};
 
       if (playerIds.length > 0) {
-        // Get club membership counts
+        // Club membership counts, and the CLUB CHIP BALANCE, from the one table
+        // that actually holds both.
+        //
+        // The balance used to come from `wallets` filtered to wallet_type
+        // 'PLAYER'. That column read 0 for every player, structurally and
+        // always: `wallets`' only SELECT policy is `Users can read own wallets`
+        // (auth.uid() = user_id), so an admin querying .in('user_id', [...])
+        // got back their own row and nothing else. A staff screen showing every
+        // player with 0 chips is worse than showing no column.
+        //
+        // club_members.chip_balance is the live pool - it is what
+        // fn_club_chip_circulation() counts - and it is already being read here
+        // for the club count, so this costs no extra round trip.
         const { data: memberships } = await supabase
           .from('club_members')
-          .select('user_id, club_id')
+          .select('user_id, club_id, chip_balance')
           .in('user_id', playerIds);
 
         if (memberships) {
           memberships.forEach((m) => {
             clubCounts[m.user_id] = (clubCounts[m.user_id] || 0) + 1;
-          });
-        }
-
-        // Get wallet balances
-        const { data: wallets } = await supabase
-          .from('wallets')
-          .select('user_id, play_balance:balance')
-          .eq('wallet_type', 'PLAYER')
-          .in('user_id', playerIds);
-
-        if (wallets) {
-          wallets.forEach((w) => {
-            balances[w.user_id] = w.play_balance || 0;
+            balances[m.user_id] = (balances[m.user_id] || 0) + Number(m.chip_balance || 0);
           });
         }
       }

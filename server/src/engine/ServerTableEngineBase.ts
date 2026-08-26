@@ -2690,9 +2690,24 @@ export abstract class ServerTableEngineBase {
     const evictable = Array.from(new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable]));
     if (evictable.length === 0) return;
 
+    // Dan 2026-08-26, binding: "a player can never leave the table while they
+    // are all in. they must wait for the hand to be finished." An eviction is
+    // still a departure, and this one cashes the seat out. Both call sites are
+    // between hands today, so this should never fire - which is the point: the
+    // safety was call-site placement rather than a check, and a future caller
+    // would not know that. leaveTable() refuses the same case explicitly.
+    const evictHand = this.handController?.getState();
+
     for (const userId of evictable) {
       const seated = this.seatedPlayers.find((p) => p.user_id === userId);
       if (!seated) continue;
+      const evictSelf = evictHand?.players.find((p) => p.user_id === userId);
+      if (evictSelf?.is_all_in && !evictSelf.is_folded) {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] NOT evicting ${userId} — all-in in a live hand`
+        );
+        continue;
+      }
       const awayBlindEvict = blindEvictSet.has(userId);
       const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
       console.log(

@@ -401,6 +401,47 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * If between hands, mark seat as left immediately.
    */
   public leaveTable(userId: string): { success: boolean; error?: string; immediate: boolean } {
+    // ═══════════════════════════════════════════════════════════════════════
+    // NOBODY LEAVES WHILE THEY ARE ALL-IN. CASH OR TOURNAMENT.
+    //
+    // Dan 2026-08-26, binding: "in cash games or tournaments, a player can
+    // never leave the table while they are all in. they must wait for the hand
+    // to be finished."
+    //
+    // This is FIRST, before the roster lookup and before the cash/tournament
+    // split, because `leaveTable` is the single chokepoint every real departure
+    // goes through: HTTP /leave, the admin kick, and the horse rotator. One
+    // refusal here closes all three for both table types.
+    //
+    // What it used to do instead, on both branches:
+    //
+    //     if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in)
+    //
+    // -- it read is_all_in only to SKIP THE AUTO-FOLD, and then carried on
+    // leaving. So an all-in player was marked sitting_out in a live pot and the
+    // client navigated them away mid-runout, off the hand they still had every
+    // chip in.
+    //
+    // `is_all_in` is engine memory, not a table_seats column, so the check has
+    // to live here. It is set in HandController the moment a stack reaches zero
+    // and is only cleared when the next hand builds a fresh player array, which
+    // is exactly the window this rule is about.
+    //
+    // A folded player is free to go: their chips are no longer in the pot.
+    // ═══════════════════════════════════════════════════════════════════════
+    const liveHand = this.handController?.getState();
+    const liveSelf = liveHand?.players.find((p) => p.user_id === userId);
+    if (liveSelf?.is_all_in && !liveSelf.is_folded) {
+      console.log(
+        `[ServerTableEngine:${this.tableId}] refusing leave for ${userId} — all-in in a live hand`
+      );
+      return {
+        success: false,
+        error: 'You Are All In. You Cannot Leave Until The Hand Is Finished.',
+        immediate: false,
+      };
+    }
+
     const player = this.seatedPlayers.find((p) => p.user_id === userId);
     if (!player) {
       // Dan 2026-08-20 (leave-stuck fix): `seatedPlayers` is the HAND roster,

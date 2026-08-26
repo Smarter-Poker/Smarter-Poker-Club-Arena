@@ -92,6 +92,12 @@ export default function CreateTournamentModal({
   const [satelliteSeats, setSatelliteSeats] = useState('1');
   const [satelliteTargets, setSatelliteTargets] = useState<{ id: string; name: string }[]>([]);
 
+  // ── Auto Satellite Generation (for Main Events) ──
+  const [generateSatellites, setGenerateSatellites] = useState(false);
+  const [genSatCount, setGenSatCount] = useState('1');
+  const [genSatBuyIn, setGenSatBuyIn] = useState('');
+  const [genSatSeats, setGenSatSeats] = useState('1');
+
   // ── Start Time ──
   const [startTimeMode, setStartTimeMode] = useState<'now' | 'scheduled' | 'schedule_only'>('now');
   const [scheduledDate, setScheduledDate] = useState('');
@@ -606,8 +612,31 @@ export default function CreateTournamentModal({
       }
 
       if (!scheduleEnabled || startTimeMode !== 'schedule_only') {
-        await tournamentService.createTournament(clubId, tournamentConfig);
-        toast.success('Tournament created');
+        const mainTournament = await tournamentService.createTournament(clubId, tournamentConfig);
+
+        // Auto Satellite Generation
+        if (!isSatellite && generateSatellites) {
+          const satCount = Math.max(1, parseInt(genSatCount) || 1);
+          const satBuyIn = parseInt(genSatBuyIn) || Math.max(1, Math.round(parsedBuyIn * 0.1));
+          const satSeats = Math.max(1, parseInt(genSatSeats) || 1);
+
+          for (let i = 0; i < satCount; i++) {
+            await tournamentService.createTournament(clubId, {
+              ...tournamentConfig,
+              name: `Satellite to ${tournamentConfig.name}${satCount > 1 ? ` #${i + 1}` : ''}`,
+              type: 'satellite',
+              buyIn: satBuyIn,
+              guaranteedPrize: 0,
+              satelliteTarget: {
+                tournamentId: mainTournament.id,
+                seatsAwarded: satSeats,
+              },
+            });
+          }
+          toast.success(`Main Event and ${satCount} Satellite(s) Created`);
+        } else {
+          toast.success('Tournament created');
+        }
       }
       onSuccess();
     } catch (error: any) {
@@ -1487,8 +1516,78 @@ export default function CreateTournamentModal({
             </div>
           )}
 
+          {/* ── Auto Satellite Generation ── */}
+          {!isSatellite && (
+            <div className={styles.row}>
+              <div className={styles.col} style={{ flex: '1 1 100%' }}>
+                <div
+                  className={styles.formGroup}
+                  style={{ borderTop: '1px solid #334155', paddingTop: '16px', marginTop: '8px' }}
+                >
+                  <label style={{ fontWeight: 700, color: '#60a5fa' }}>
+                    <input
+                      type="checkbox"
+                      checked={generateSatellites}
+                      onChange={(e) => setGenerateSatellites(e.target.checked)}
+                      className={styles.checkbox}
+                    />
+                    Generate Satellites To This Event?
+                  </label>
+                  {generateSatellites && (
+                    <div
+                      style={{ marginTop: '16px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}
+                    >
+                      <div className={styles.formGroup} style={{ flex: 1, minWidth: '120px' }}>
+                        <label>Satellites To Create</label>
+                        <input
+                          type="number"
+                          className={styles.input}
+                          value={genSatCount}
+                          onChange={(e) => setGenSatCount(e.target.value)}
+                          min="1"
+                          max="10"
+                        />
+                      </div>
+                      <div className={styles.formGroup} style={{ flex: 1, minWidth: '120px' }}>
+                        <label>Satellite Buy-In</label>
+                        <input
+                          type="number"
+                          className={styles.input}
+                          value={genSatBuyIn}
+                          onChange={(e) => setGenSatBuyIn(e.target.value)}
+                          min="1"
+                          placeholder={Math.round(parseInt(buyIn) * 0.1 || 10).toString()}
+                        />
+                      </div>
+                      <div className={styles.formGroup} style={{ flex: 1, minWidth: '120px' }}>
+                        <label>Seats Awarded</label>
+                        <input
+                          type="number"
+                          className={styles.input}
+                          value={genSatSeats}
+                          onChange={(e) => setGenSatSeats(e.target.value)}
+                          min="1"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {generateSatellites && (
+                    <span className={styles.helperText} style={{ marginTop: 8, display: 'block' }}>
+                      Satellites Will Be Created Automatically Using The Same Format/Rules As This
+                      Event, But Linked As Feeders. You Can Edit Their Start Times In The Lobby
+                      Later.
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ── Advanced Options (PokerBros parity, 2026-08-22) ── */}
-          <div className={styles.sectionDivider}>
+          <div
+            className={styles.sectionDivider}
+            style={{ borderTop: '1px solid #334155', paddingTop: '16px', marginTop: '8px' }}
+          >
             <button
               type="button"
               className={styles.select}

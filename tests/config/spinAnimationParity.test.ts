@@ -115,7 +115,8 @@ describe('3. an empty seat is decided by whether it can be taken', () => {
     const empty = seat.slice(seat.indexOf('if (!player) {'), seat.indexOf('OCCUPIED SEAT'));
     expect(empty).not.toMatch(/if \(isTournament\)/);
     expect(empty).toMatch(/if \(!canSit\)/);
-    expect(empty).toMatch(/seat__empty-word/);
+    // 2026-08-26: text spans replaced by <img class="seat__empty-img">
+    expect(empty).toMatch(/seat__empty-img/);
   });
 
   it('branches no visual inside SeatSlot on tournament-ness at all', () => {
@@ -131,11 +132,10 @@ describe('3. an empty seat is decided by whether it can be taken', () => {
     expect(canSit).toMatch(/!tableState\.isTournament \|\| !!seatFirstBuyIn/);
   });
 
-  it('keeps the breathing ring on a seat that is open, and off one that is not', () => {
-    expect(seatCss).toMatch(
-      /\.seat--empty::before\s*\{[^}]*animation:\s*emptyPulse 3s[^}]*infinite/
-    );
-    expect(seatCss).toMatch(/\.seat--empty\.seat--empty-locked::before\s*\{[^}]*animation:\s*none/);
+  it('keeps the pseudo-element disabled on all empty seats (no breathing ring)', () => {
+    // 2026-08-26: the pulse ring was replaced by the coin image asset.
+    // The ::before pseudo-element is suppressed via content:none on all seats.
+    expect(seatCss).toMatch(/\.seat--empty::before\s*\{[^}]*content:\s*none/);
   });
 });
 

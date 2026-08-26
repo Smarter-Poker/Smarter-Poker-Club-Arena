@@ -497,11 +497,32 @@ class AgentServiceClass {
    *
    * The player's club_members.agent_id is set to the agent's user_id.
    */
+  /**
+   * Redeem an invite/referral code for the CALLING player.
+   *
+   * The returned `status` and `agentId` come from the RPC's own RETURNING row,
+   * so they describe the membership as it exists AFTER redemption. Callers must
+   * prefer them over anything they read before this ran: for an approval-gated
+   * club this call is what promotes the row from 'pending' to 'active', and a
+   * caller that keeps its earlier copy will show an approval wall to a player
+   * the database has already let in.
+   *
+   * `code` is the machine-readable reason on failure (`unknown_inviter`,
+   * `inviter_not_in_club`, `self_referral`, `not_a_member`, ...). It is never a
+   * thrown error — a bad code is an ordinary outcome, not an exception.
+   */
   async linkPlayerByReferral(
     playerId: string,
     referralCode: string | number,
     clubId: string
-  ): Promise<{ success: boolean; agentName?: string }> {
+  ): Promise<{
+    success: boolean;
+    agentName?: string;
+    agentId?: string | null;
+    status?: string;
+    code?: string;
+    error?: string;
+  }> {
     const resolvedClubId = await resolveClubUUID(clubId);
 
     // 1. Fetch the agent's name first just for the UI toast
@@ -520,7 +541,7 @@ class AgentServiceClass {
       agentName = agentProfile.username;
     }
 
-    // 2. Run the secure RPC that links them and bypasses the gate
+    // 2. Run the secure RPC that links them and admits them
     const { data, error } = await supabase.rpc('fn_redeem_club_invite_code', {
       p_club_id: resolvedClubId,
       p_user_id: playerId,
@@ -528,16 +549,31 @@ class AgentServiceClass {
     });
 
     if (error || !data?.success) {
-      reportError(error || new Error(data?.error), 'AgentService.linkPlayerByReferral', {
-        playerId,
-        referralCode,
-      });
-      return { success: false };
+      // Report the RPC's own reason code, not just "it failed". Until
+      // 2026-08-26 this branch was hit on EVERY call — the RPC compared a text
+      // player_number to an integer and raised 42883 every time — and because
+      // the reason never reached the report, a totally broken money-adjacent
+      // path looked like a stream of players simply arriving without a code.
+      reportError(
+        error || new Error(data?.error || 'redeem failed'),
+        'AgentService.linkPlayerByReferral',
+        {
+          playerId,
+          referralCode,
+          reason: data?.code ?? error?.code ?? 'unknown',
+        }
+      );
+      return { success: false, code: data?.code, error: data?.error ?? error?.message };
     }
 
     console.debug(`[AgentService] Linked player ${playerId} via referral code ${referralCode}`);
     masterBus.emit('CLUB_UPDATED', { clubId });
-    return { success: true, agentName };
+    return {
+      success: true,
+      agentName: data.agent_name ?? agentName,
+      agentId: data.agent_id ?? null,
+      status: data.status,
+    };
   }
 
   /**

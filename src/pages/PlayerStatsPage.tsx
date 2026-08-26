@@ -13,7 +13,16 @@
  *    per-club rows instead of .maybeSingle()).
  */
 
-import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
+import {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+  lazy,
+  Suspense,
+  useLayoutEffect,
+} from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { tabTransition, instant } from '../components/stats/statsMotion';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -1060,8 +1069,26 @@ export default function PlayerStatsPage() {
       ?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'auto' });
   }, [category]);
 
-  // Kept current on every render, for the debouncer and the replay above.
-  loadRef.current = loadAllData;
+  /* Kept current for the debouncer and the in-flight replay above.
+   *
+   * ASSIGNED IN A LAYOUT EFFECT, NOT DURING RENDER. This used to be a bare
+   * `loadRef.current = loadAllData` at render scope. Mutating a ref while
+   * rendering is a side effect in a function React is allowed to call more than
+   * once and to throw away - StrictMode double-invokes it in development, and
+   * concurrent rendering may abandon a render entirely - so an abandoned render
+   * could leave the ref pointing at a loader belonging to state that was never
+   * committed. That is precisely the stale-closure bug the ref exists to prevent,
+   * reintroduced one level up.
+   *
+   * useLayoutEffect runs synchronously after every commit and before paint, and
+   * both readers are post-commit: one is inside an async load's `finally`, the
+   * other inside a setTimeout owned by a MasterBus subscription created in a
+   * passive effect. Passive effects run after layout effects, so the ref is
+   * always populated before anything can read it.
+   */
+  useLayoutEffect(() => {
+    loadRef.current = loadAllData;
+  });
 
   // A tab return means time has passed, so it CLEARS the memo and refetches.
   useVisibilityRefresh(() => loadAllData({ fresh: true }));

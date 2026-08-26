@@ -37,6 +37,14 @@ export interface InsuranceOffer {
    * (InsuranceEquity.leaderOuts) and sent with the offer.
    */
   outs?: { rank: string; suit: 'h' | 'd' | 'c' | 's' }[];
+  /** Chance (%) the next card is one of the outs — shown next to the count. */
+  outPct?: number;
+  /**
+   * Every all-in opponent, for multiway spots. When present it replaces the
+   * single opponentCards column so a 3-way all-in shows BOTH hands you are
+   * insured against, each under its player's name.
+   */
+  opponents?: { username?: string; cards: { rank: string; suit: 'h' | 'd' | 'c' | 's' }[] }[];
   /** Server-published offer window in seconds (drives the popup countdown). */
   timeoutSeconds?: number;
 }
@@ -247,23 +255,40 @@ export function InsuranceModal({
             </div>
           </div>
           <div className="insurance-modal__vs">Vs</div>
-          <div className="insurance-modal__hand">
-            <span className="insurance-modal__hand-label">Opponent</span>
-            <div className="insurance-modal__hand-cards">
-              {offer.opponentCards ? (
-                offer.opponentCards.map((card, i) => (
-                  <span key={i} className="insurance-modal__card">
-                    <CardImage card={toCardImage(card)} size="xs" />
-                  </span>
-                ))
-              ) : (
-                <>
-                  <span className="insurance-modal__card insurance-modal__card--hidden">?</span>
-                  <span className="insurance-modal__card insurance-modal__card--hidden">?</span>
-                </>
-              )}
+          {/* Multiway: one column per all-in opponent, each named. Falls back
+              to the single opponentCards column for older payloads. */}
+          {offer.opponents && offer.opponents.length > 0 ? (
+            offer.opponents.map((opp, oi) => (
+              <div key={oi} className="insurance-modal__hand">
+                <span className="insurance-modal__hand-label">{opp.username || 'Opponent'}</span>
+                <div className="insurance-modal__hand-cards">
+                  {opp.cards.map((card, i) => (
+                    <span key={i} className="insurance-modal__card">
+                      <CardImage card={toCardImage(card)} size="xs" />
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="insurance-modal__hand">
+              <span className="insurance-modal__hand-label">Opponent</span>
+              <div className="insurance-modal__hand-cards">
+                {offer.opponentCards ? (
+                  offer.opponentCards.map((card, i) => (
+                    <span key={i} className="insurance-modal__card">
+                      <CardImage card={toCardImage(card)} size="xs" />
+                    </span>
+                  ))
+                ) : (
+                  <>
+                    <span className="insurance-modal__card insurance-modal__card--hidden">?</span>
+                    <span className="insurance-modal__card insurance-modal__card--hidden">?</span>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Board */}
@@ -292,7 +317,8 @@ export function InsuranceModal({
         {offer.outs && offer.outs.length > 0 && (
           <div className="insurance-modal__outs">
             <span className="insurance-modal__outs-label">
-              Outs Against You ({offer.outs.length})
+              Outs Against You ({offer.outs.length}
+              {offer.outPct ? ` • ${offer.outPct.toFixed(1)}%` : ''})
             </span>
             <div className="insurance-modal__outs-cards">
               {offer.outs.map((card, i) => (

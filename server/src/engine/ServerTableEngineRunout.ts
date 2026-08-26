@@ -1631,23 +1631,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         // 'BEHIND' — INSURANCE WILL BE OFFERED TO THE PLAYER THAT IS
         // 'AHEAD' IF ANY STREETS ARE STILL PENDING."
         // ═══════════════════════════════════════════════════════════════════
-        // ELIGIBILITY FIX 2026-08-26: anyEligibleForInsurance() only looks at
-        // players who already RECEIVED an offer. With two all-in players, the
-        // leader declining left the offers list holding only that one declined
-        // entry, the check returned false, and the flow gave up per-street
-        // pacing - so when the OTHER player took the lead on the next street
-        // (Dan: "IF HERO HAS THE BEST HAND ON THE FLOP ... THEN THE VILLAIN
-        // HAS THE BEST HAND ON THE TURN, THEY GET TO ACCEPT OR DECLINE") they
-        // were never offered anything. Eligibility is over ALL all-in players:
-        // anyone without a final decline on record can still be offered.
-        const declinedIds = new Set(
-          this.insuranceEngine
-            .getOffers(this.tableId)
-            .filter((o) => o.declinedForHand)
-            .map((o) => o.playerId)
-        );
-        const anyStillEligible = offerPlayers.some((p) => !declinedIds.has(p.playerId));
-        if (!anyStillEligible) {
+        if (!this.insurancePauseStillLive(offerPlayers)) {
           // ALL players declined for hand — per-street pause is void.
           // Deal remaining streets instantly and finalize.
           console.log(
@@ -1677,6 +1661,29 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   }
 
   /**
+   * ELIGIBILITY FIX 2026-08-26: does the per-street insurance pause continue?
+   *
+   * anyEligibleForInsurance() only looks at players who already RECEIVED an
+   * offer. With two all-in players, the leader declining left the offers list
+   * holding only that one declined entry, the check returned false, and the
+   * flow gave up per-street pacing - so when the OTHER player took the lead
+   * on the next street (Dan: "IF HERO HAS THE BEST HAND ON THE FLOP ... THEN
+   * THE VILLAIN HAS THE BEST HAND ON THE TURN, THEY GET TO ACCEPT OR
+   * DECLINE") they were never offered anything. Eligibility is over ALL
+   * all-in players: anyone without a final decline on record can still be
+   * offered, so the pause must survive them.
+   */
+  protected insurancePauseStillLive(offerPlayers: Array<{ playerId: string }>): boolean {
+    const declinedIds = new Set(
+      this.insuranceEngine
+        .getOffers(this.tableId)
+        .filter((o) => o.declinedForHand)
+        .map((o) => o.playerId)
+    );
+    return offerPlayers.some((p) => !declinedIds.has(p.playerId));
+  }
+
+  /**
    * Broadcast insurance offers to clients via Supabase Realtime.
    * Includes all fields needed for the InsurancePanel slider UI.
    */
@@ -1699,6 +1706,16 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       this.seatedPlayers.find((p) => p.user_id === playerId)?.username ||
       'Player';
     const street = !context ? '' : context.board.length === 3 ? 'flop' : 'turn';
+    // Outs as a probability of the NEXT card: outs / unseen cards. The popup
+    // renders it next to the count ("10 Outs - 22.7%").
+    let outPct = 0;
+    if (context && context.outs.length > 0) {
+      const known =
+        context.board.length + context.allInPlayers.reduce((n, p) => n + (p.cards?.length ?? 0), 0);
+      const deckSize = this.tableInfo?.game_variant === 'short_deck' ? 36 : 52;
+      const unseen = Math.max(1, deckSize - known);
+      outPct = Math.round((context.outs.length / unseen) * 1000) / 10;
+    }
     this.hub?.emitEvent(this.tableId, {
       type: 'insurance_offers',
       table_id: this.tableId,
@@ -1708,6 +1725,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       board: context?.board ?? [],
       outs: context?.outs ?? [],
       outCount: context?.outs.length ?? 0,
+      outPct,
       offers: offers.map((o) => ({
         playerId: o.playerId,
         username: nameOf(o.playerId),

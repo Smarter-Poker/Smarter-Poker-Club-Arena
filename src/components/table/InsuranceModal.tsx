@@ -125,6 +125,14 @@ export function InsuranceModal({
     return () => clearInterval(iv);
   }, [isOpen, offer, timeRemaining]);
 
+  // STALE-SLIDER GUARD 2026-08-26: coverage is seeded from the offer in
+  // useState, which never re-runs — if a different offer replaces this one,
+  // the slider could sit above the new maximum and accept would over-ask.
+  // Re-seed to full coverage whenever the offer identity changes.
+  useEffect(() => {
+    setCoverageAmount(offer.maxCoverage);
+  }, [offer]);
+
   // ── Insurance calculations ──
   const premium = useMemo(
     () => Math.round(coverageAmount * offer.premiumRate * 100) / 100,
@@ -136,6 +144,12 @@ export function InsuranceModal({
   );
 
   // ── EV Cashout calculations ──
+  // DEAD-BUTTON FIX 2026-08-26: enableEvCashout defaulted true, TablePage
+  // never passed onEvCashout, and NO server endpoint exists for EV cashout —
+  // so the tab rendered a "Cash Out" button that quietly did nothing to a
+  // player making a financial decision. The tab now requires a real handler;
+  // until the server grows one, the modal is insurance-only.
+  const evCashoutAvailable = enableEvCashout && typeof onEvCashout === 'function';
   const evCashoutRake = offer.evCashoutRake ?? 0.01;
   const evRaw = useMemo(
     () => Math.round(offer.potAmount * (offer.equityPercent / 100) * 100) / 100,
@@ -225,7 +239,7 @@ export function InsuranceModal({
         </div>
 
         {/* Tab Switcher */}
-        {enableEvCashout && (
+        {evCashoutAvailable && (
           <div className="insurance-modal__tabs">
             <button
               className={`insurance-modal__tab ${activeTab === 'insurance' ? 'insurance-modal__tab--active' : ''}`}
@@ -344,7 +358,12 @@ export function InsuranceModal({
               <input
                 type="range"
                 className="insurance-modal__slider"
-                min={0}
+                /* SLIDER FLOOR 2026-08-26: min was 0, and a 0-coverage accept
+                   round-trips as coveragePercent 0 -> server clamps to 1% -
+                   the player buys insurance they asked NOT to have. Zero
+                   coverage IS the Decline button; the slider starts at one
+                   step. */
+                min={coverageStep}
                 max={offer.maxCoverage}
                 step={coverageStep}
                 value={coverageAmount}
@@ -420,7 +439,7 @@ export function InsuranceModal({
         )}
 
         {/* ═══ EV CASHOUT TAB ═══ */}
-        {activeTab === 'ev-cashout' && (
+        {activeTab === 'ev-cashout' && evCashoutAvailable && (
           <>
             <div className="insurance-modal__ev-section">
               <div className="insurance-modal__ev-hero">

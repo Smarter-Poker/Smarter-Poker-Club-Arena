@@ -3597,9 +3597,15 @@ export default function TablePage({
     if (tableId) {
       // coverageAmount from slider maps to coveragePercent on server
       // If not provided, defaults to 100% (full insurance)
+      // SLIDER FLOOR 2026-08-26: never send 0% — a cents-level coverage on a
+      // large max can round to 0, and the server clamps 0 up to 1% anyway.
+      // Clamping HERE means the confirmation the player saw is what is bought.
       const coveragePct =
         coverageAmount && insuranceOffer
-          ? Math.round((coverageAmount / insuranceOffer.maxCoverage) * 100)
+          ? Math.max(
+              1,
+              Math.min(100, Math.round((coverageAmount / insuranceOffer.maxCoverage) * 100))
+            )
           : 100;
       const result = await respondToInsurance(tableId, 'accept', coveragePct);
       if (!result.success) {
@@ -13724,7 +13730,6 @@ export default function TablePage({
                   )}
 
                 {/* FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay */}
-
               </div>
             </div>
           </div>

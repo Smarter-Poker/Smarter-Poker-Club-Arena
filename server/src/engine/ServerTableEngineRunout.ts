@@ -942,6 +942,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     const existingBoard = this.handController.getCommunityCards();
     const remainingDeck = this.handController.getRemainingDeck();
     const cardsNeeded = 5 - existingBoard.length;
+    // POKERBROS PARITY 2026-08-26: the hand-completion hold sizes itself from
+    // this — the client reveals each board street by street from here.
+    this.currentHandRitBaseBoardCount = existingBoard.length;
 
     if (remainingDeck.length < cardsNeeded * runs) {
       reportError(

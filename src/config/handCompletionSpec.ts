@@ -86,7 +86,7 @@ export const HAND_COMPLETION = {
    * iterates pots[0..n] and distributePot appends), so the client only has
    * to respect the order it was handed. A single winner is unaffected.
    */
-  POT_AWARD_STAGGER_MS: 600,
+  POT_AWARD_STAGGER_MS: 900,
   /**
    * A Bad Beat Jackpot is real money and plays a ~9s full-screen celebration.
    * Nothing about a jackpot is rushed: the table waits for the whole thing.
@@ -97,6 +97,25 @@ export const HAND_COMPLETION = {
   BOARD_CLEAR_FOLD_MS: 500,
   /** The next hand's dealing animation (cardDealIn / heroCardDeal). */
   DEAL_MS: 700,
+  /**
+   * ── RUN IT TWICE reveal timeline (PokerBros parity, 2026-08-26) ──
+   *
+   * A run-it-twice hand settles synchronously on the server, but the CLIENT
+   * deals the boards street by street, run by run, at the paced-runout
+   * cadence — measured off Dan's reference recordings at 10fps: streets
+   * ~1.3-1.4s apart, ~1.8s between boards, winner ribbons ~0.9s after the
+   * last river, pots shipping ~0.9-1.2s apart. The engine derives its
+   * post-hand hold from these same numbers (handCompletionHoldMs), so the
+   * next hand can never deal over a board that is still being revealed.
+   */
+  /** Beat after the consent panel closes before the first card turns. */
+  RIT_REVEAL_LEAD_MS: 600,
+  /** One street landing on a RIT board (matches allInStreetPauseMs). */
+  RIT_STREET_MS: 1400,
+  /** The pause between one board finishing and the next board dealing. */
+  RIT_RUN_GAP_MS: 1800,
+  /** Last river → winner ribbons + card highlights land together. */
+  RIT_RIBBON_MS: 900,
 } as const;
 
 export interface HandCompletionOpts {
@@ -106,6 +125,10 @@ export interface HandCompletionOpts {
   showdownHands?: number;
   /** Did this hand hit the Bad Beat Jackpot? */
   bbjHit?: boolean;
+  /** Run It Twice: how many boards were dealt (0/undefined = single run). */
+  ritRuns?: number;
+  /** Run It Twice: streets each board re-dealt (1 = river-only, 3 = full). */
+  ritStreetsPerRun?: number;
 }
 
 /**
@@ -128,6 +151,27 @@ export function handCompletionHoldMs(opts: HandCompletionOpts): number {
     H.SHOWDOWN_READ_MAX_MS,
     H.SHOWDOWN_READ_BASE_MS + extra * H.SHOWDOWN_READ_PER_EXTRA_HAND_MS
   );
+
+  /**
+   * POKERBROS PARITY 2026-08-26: a run-it-twice hand's boards are revealed by
+   * the CLIENT street by street after the engine has already settled, so the
+   * hold must additionally cover the whole reveal timeline plus the extra
+   * per-board pot ships — otherwise the next hand deals over a board that is
+   * still turning its river. Mirrors the client timeline in TablePage's
+   * rit_result handler exactly (same constants, same arithmetic).
+   */
+  if ((opts.ritRuns ?? 0) >= 2) {
+    const runs = opts.ritRuns as number;
+    const streets = Math.max(1, Math.min(3, opts.ritStreetsPerRun ?? 3));
+    const reveal =
+      H.RIT_REVEAL_LEAD_MS +
+      runs * streets * H.RIT_STREET_MS +
+      (runs - 1) * H.RIT_RUN_GAP_MS +
+      H.RIT_RIBBON_MS;
+    const extraShips = runs * H.POT_AWARD_STAGGER_MS;
+    return reveal + read + push + extraShips;
+  }
+
   return read + push;
 }
 

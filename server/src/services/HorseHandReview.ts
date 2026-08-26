@@ -194,8 +194,6 @@ export function buildReviewRows(input: HorseReviewInput): HorseReviewRow[] {
   const bb = input.bigBlind > 0 ? input.bigBlind : 1;
   const dealtCount = input.holeCardsAll.size || input.roster.length;
   const format = input.tournamentId ? 'tournament' : dealtCount === 2 ? 'hu_cash' : 'cash';
-  const showdownStages = new Set(['river']);
-  void showdownStages;
 
   const rows: HorseReviewRow[] = [];
   for (const uid of horses) {
@@ -238,8 +236,13 @@ export function buildReviewRows(input: HorseReviewInput): HorseReviewRow[] {
       net_amount: net,
       net_bb: r2(netBB),
       pot_size: input.potSize ?? null,
-      hole_cards: holeCards,
-      board: input.board ?? null,
+      // Store the PARSED shape when parsing succeeded (one consistent shape
+      // for the UI and the daily analysis SQL), but NEVER discard evidence:
+      // when the parser rejects a payload the raw shape is stored as-is, so
+      // the audit's evidence_payload_missing finding can distinguish "parser
+      // needs updating" from "data truly absent".
+      hole_cards: holeCards ?? seatInfo?.cards ?? null,
+      board: board ?? input.board ?? null,
       actions: input.actions ?? null,
       leak_tags: tags,
     });
@@ -261,17 +264,27 @@ export async function recordHorseHandReviews(input: HorseReviewInput): Promise<v
     const rows = buildReviewRows(input);
     if (rows.length === 0) return;
 
-    const { error } = await supabase
+    // ignoreDuplicates = ON CONFLICT DO NOTHING, and .select() returns only
+    // the rows actually INSERTED — so a re-processed hand (settlement retry)
+    // inserts nothing, returns nothing, and the rollup below adds nothing.
+    // Without this, a retry would dedupe the rows but double-count the
+    // rollup.
+    const { data: inserted, error } = await supabase
       .from('horse_hand_reviews')
-      .upsert(rows as never[], { onConflict: 'hand_id,horse_user_id', ignoreDuplicates: true });
+      .upsert(rows as never[], { onConflict: 'hand_id,horse_user_id', ignoreDuplicates: true })
+      .select('horse_user_id');
     if (error) {
       reportError(new Error(error.message), 'HorseHandReview.insert');
       return;
     }
+    const insertedIds = new Set(
+      ((inserted ?? []) as Array<{ horse_user_id: string }>).map((r) => r.horse_user_id)
+    );
 
-    // Rollup, one RPC per row (rows per hand are 1-3; volume is tiny).
+    // Rollup, one RPC per INSERTED row (rows per hand are 1-3; volume tiny).
     const day = input.playedAt.slice(0, 10);
     for (const row of rows) {
+      if (!insertedIds.has(row.horse_user_id)) continue;
       const { error: rerr } = await supabase.rpc('fn_hhr_rollup_add', {
         p_horse: row.horse_user_id,
         p_day: day,

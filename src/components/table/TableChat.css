@@ -618,3 +618,29 @@
     max-height: 280px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FAILED SEND
+   ═══════════════════════════════════════════════════════════════════════════
+   A message whose insert into `table_chat` was refused. It used to be deleted
+   from the list, so the player watched their own line appear and then vanish
+   with no explanation anywhere. It now dims, says so, and is removed after
+   FAILED_MESSAGE_LINGER_MS. */
+
+.chat-message--failed {
+  opacity: 0.55;
+}
+
+.chat-message--failed .chat-message__bubble {
+  border: 1px solid rgba(248, 81, 73, 0.5);
+}
+
+.chat-message__failed {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #f85149;
+  white-space: nowrap;
+}

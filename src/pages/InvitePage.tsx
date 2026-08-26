@@ -41,6 +41,7 @@ export default function InvitePage() {
   const { clubId } = useParams();
   const [searchParams] = useSearchParams();
   const inviteCode = searchParams.get('code');
+  const refCode = searchParams.get('ref');
   const { user } = useAuthUser();
   useVisibilityRefresh(() => loadClubInfo());
 
@@ -147,11 +148,30 @@ export default function InvitePage() {
     if (!getIsMounted || getIsMounted()) setLoading(false);
   };
 
+  // Store referral code if present
+  useEffect(() => {
+    if (club?.id && refCode) {
+      window.localStorage.setItem(`referral_${club.id}`, refCode);
+    }
+  }, [club?.id, refCode]);
+
   // Generate invite URL and simple QR code when club loads
   useEffect(() => {
     if (club?.id) {
-      const url = `${window.location.origin}/invite/${club.id}`;
-      setInviteUrl(url);
+      const baseUrl = `${window.location.origin}/hub/club-arena/invite/${club.id}`;
+      if (user?.id) {
+        supabase
+          .from('profiles')
+          .select('player_number')
+          .eq('id', user.id)
+          .single()
+          .then(({ data }) => {
+            const r = data?.player_number || user.id;
+            setInviteUrl(`${baseUrl}?ref=${r}`);
+          });
+      } else {
+        setInviteUrl(refCode ? `${baseUrl}?ref=${refCode}` : baseUrl);
+      }
 
       // Draw a simple QR-like grid on canvas
       const canvas = qrCanvasRef.current;

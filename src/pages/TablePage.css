@@ -2895,14 +2895,14 @@
   align-items: center;
   gap: 2px;
   padding: 10px 24px;
-  border: 2px solid #ffd54a;
+  border: 2px solid #00d4ff;
   border-radius: 24px;
   background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
-  color: #ffde5c;
+  color: #00d4ff;
   font-family: inherit;
   font-weight: 700;
   box-shadow:
-    0 0 18px rgba(255, 213, 74, 0.45),
+    0 0 18px rgba(0, 212, 255, 0.45),
     0 4px 14px rgba(0, 0, 0, 0.5);
 }
 /* Interactive affordances live here, on the button form only. */
@@ -2919,9 +2919,9 @@ button.post-bb-overlay-button:hover {
 .post-bb-overlay-button--notice {
   cursor: default;
   animation: none;
-  border-color: rgba(255, 213, 74, 0.55);
+  border-color: rgba(0, 212, 255, 0.55);
   box-shadow:
-    0 0 12px rgba(255, 213, 74, 0.22),
+    0 0 12px rgba(0, 212, 255, 0.22),
     0 4px 14px rgba(0, 0, 0, 0.5);
 }
 .post-bb-overlay-button__title {
@@ -2936,12 +2936,12 @@ button.post-bb-overlay-button:hover {
 @keyframes post-bb-pulse {
   from {
     box-shadow:
-      0 0 18px rgba(255, 213, 74, 0.45),
+      0 0 18px rgba(0, 212, 255, 0.45),
       0 4px 14px rgba(0, 0, 0, 0.5);
   }
   to {
     box-shadow:
-      0 0 28px rgba(255, 213, 74, 0.85),
+      0 0 28px rgba(0, 212, 255, 0.85),
       0 4px 14px rgba(0, 0, 0, 0.5);
   }
 }
@@ -3096,7 +3096,7 @@ body.ca-raising .bankroll-widget {
   font-size: 1.05rem;
   font-weight: 800;
   letter-spacing: 0.01em;
-  color: #ffd54a;
+  color: #00d4ff;
   -webkit-text-stroke: 0.5px rgba(0, 0, 0, 0.55);
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.85),

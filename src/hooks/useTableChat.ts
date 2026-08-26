@@ -27,7 +27,13 @@ export interface ReactionEvent {
 const REACTION_MSG_REGEX = /^\[REACTION:(.+):(\d+)\]$/;
 const THROW_MSG_REGEX = /^\[THROW:(.+):(\d+)\]$/;
 const REACTION_LIFETIME_MS = 2500;
-const RATE_LIMIT_MS = 1000; // 1 message per second
+/**
+ * 1 message per second. `SEND_COOLDOWN_MS` in TableChat must be >= this, or the
+ * compose box clears the input for a message this limiter then discards.
+ */
+const RATE_LIMIT_MS = 1000;
+/** How long a message that failed to send stays visible before it is removed. */
+const FAILED_MESSAGE_LINGER_MS = 4000;
 
 // ── Basic profanity filter (client-side, additive safety net) ──
 const PROFANITY_LIST = [
@@ -433,6 +439,28 @@ export function useTableChat(
     [players, userId]
   );
 
+  /**
+   * The send was refused. Say so, then clean up.
+   *
+   * This used to be `prev.filter(m => m.id !== tempId)` — the message the
+   * player had just watched appear simply vanished, with nothing anywhere to
+   * say it had not been sent. `club_chat` already marked a failed row and let
+   * it linger before removing it; table chat did not, and the difference was
+   * the difference between "the network dropped that one" and "this chat is
+   * broken".
+   *
+   * FAILED_MESSAGE_LINGER_MS is long enough to read and short enough that the
+   * transcript does not accumulate corpses.
+   */
+  const markFailed = useCallback((tempId: string) => {
+    setChatMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, isFailed: true } : m)));
+    const timer = setTimeout(() => {
+      setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
+      pendingTimersRef.current.delete(timer);
+    }, FAILED_MESSAGE_LINGER_MS);
+    pendingTimersRef.current.add(timer);
+  }, []);
+
   const handleSendChatMessage = useCallback(
     async (message: string) => {
       if (!tableId || !userId) return;
@@ -477,13 +505,14 @@ export function useTableChat(
 
         if (error) {
           reportError(error, 'useTableChat.Failed_to_send_chat');
-          setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
+          markFailed(tempId);
         }
       } catch (err) {
-        setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
+        reportError(err, 'useTableChat.Failed_to_send_chat');
+        markFailed(tempId);
       }
     },
-    [tableId, userId, players]
+    [tableId, userId, players, markFailed]
   );
 
   return {

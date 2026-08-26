@@ -88,6 +88,14 @@ export interface SeatPlayer {
   position?: string;
   /** Bible V8 §2.3: Player avatar URL */
   avatar_url?: string;
+  /**
+   * Equipped avatar frame token, e.g. `frame-gold`. Travels with `avatar_url`
+   * because it is drawn on top of it; a client that has one and not the other
+   * renders a ring around the wrong picture. Empty string means none.
+   */
+  equipped_frame?: string;
+  /** Equipped avatar aura token, e.g. `aura-fire`. Empty string means none. */
+  equipped_aura?: string;
   /** Bible V8 §2.3: Whether this player is an AI horse */
   is_horse?: boolean;
 }
@@ -199,6 +207,22 @@ export interface TableInfo {
   cap_bb?: number | null;
   /** Deal a Hold'em table as Pineapple. See dealtGameVariant. */
   pineapple_holdem?: boolean;
+  /**
+   * NIT GAME. The master switch for the three VPIP numbers below; with it off
+   * they do nothing. The rules themselves live in SQL (fn_nit_check /
+   * fn_nit_evictions) because the VPIP they measure is already stored per hand
+   * in ca_hand_facts -- computing it a second time here is how two answers to
+   * the same question appear. These four are carried so the engine can skip
+   * the round trip entirely on the tables that have the rule switched off,
+   * which is all of them today.
+   */
+  nit_game?: boolean;
+  /** Minimum VPIP at THIS table, checked between hands. 0 disables. */
+  maintain_percent_min?: number | null;
+  /** Hands at this table before the maintain rule may judge. */
+  maintain_hands?: number | null;
+  /** Minimum LIFETIME VPIP, checked at the door by atomic_table_buyin. */
+  career_percent_min?: number | null;
 }
 
 export interface SeatedPlayer {
@@ -223,6 +247,10 @@ export interface SeatedPlayer {
   is_sitting_out?: boolean;
   /** Bible V8 §2.3: Player avatar for broadcast */
   avatar_url?: string;
+  /** Equipped avatar frame token for broadcast, e.g. `frame-gold`. */
+  equipped_frame?: string;
+  /** Equipped avatar aura token for broadcast, e.g. `aura-fire`. */
+  equipped_aura?: string;
   /** Bible V8 §4.2: Player returning from sit-out must post dead blind */
   returning_from_sitout?: boolean;
   /** Bible V8 §4.2: Player is waiting for BB position before playing */

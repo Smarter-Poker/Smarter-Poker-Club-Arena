@@ -57,6 +57,7 @@ import { parseBlindStructure } from '../utils/parseBlindStructure';
 // it, so flipping the flag is a pure rollout switch.
 import { useEngineTableState } from '../hooks/useEngineTableState';
 import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
+import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
 import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
 
 import { gameCode } from '../utils/gameCode';
@@ -877,6 +878,10 @@ function buildSpinDrawFromRow(row: SpinDrawRow | null | undefined): SpinWheelDat
   };
 }
 
+// Module-level guards to prevent multiple TablePage instances from cascading BBJ_HIT_GLOBAL
+const _LAST_BBJ_HIT_COUNT: Record<string, number> = {};
+let _LAST_BBJ_TOAST_TIME = 0;
+
 export default function TablePage({
   embeddedTableId,
   onTableInfoUpdate,
@@ -1433,11 +1438,57 @@ export default function TablePage({
     (import.meta as unknown as { env: Record<string, string | undefined> }).env
       ?.VITE_USE_ENGINE_WS !== '0';
   const {
-    snapshot: engineSnapshot,
+    snapshot: rawEngineSnapshot,
     status: engineWsStatus,
-    lastEvent: engineLastEvent,
+    lastEvent: rawEngineLastEvent,
     lastError: engineLastError,
   } = useEngineTableState(tableId || undefined, { enabled: USE_ENGINE_WS });
+
+  // RABBIT HUNT FREEZE 2026-08-25
+  const [rabbitHuntFreezeEnd, setRabbitHuntFreezeEnd] = useState<number>(0);
+  const [engineSnapshot, setEngineSnapshot] = useState<any>(null);
+  const [engineLastEvent, setEngineLastEvent] = useState<any>(null);
+  const frozenEventQueueRef = useRef<any[]>([]);
+  const frozenSnapshotRef = useRef<any>(null);
+
+  useEffect(() => {
+    frozenSnapshotRef.current = rawEngineSnapshot;
+    if (rabbitHuntFreezeEnd === 0 || Date.now() >= rabbitHuntFreezeEnd) {
+      setEngineSnapshot(rawEngineSnapshot);
+    }
+  }, [rawEngineSnapshot, rabbitHuntFreezeEnd]);
+
+  useEffect(() => {
+    if (!rawEngineLastEvent) return;
+    if (rabbitHuntFreezeEnd > Date.now()) {
+      frozenEventQueueRef.current.push(rawEngineLastEvent);
+    } else {
+      setEngineLastEvent(rawEngineLastEvent);
+    }
+  }, [rawEngineLastEvent, rabbitHuntFreezeEnd]);
+
+  useEffect(() => {
+    if (rabbitHuntFreezeEnd === 0) return;
+    const msLeft = rabbitHuntFreezeEnd - Date.now();
+    if (msLeft <= 0) return;
+
+    const t = setTimeout(() => {
+      setRabbitHuntFreezeEnd(0);
+      setEngineSnapshot(frozenSnapshotRef.current);
+
+      const playNextEvent = () => {
+        if (frozenEventQueueRef.current.length > 0) {
+          const ev = frozenEventQueueRef.current.shift();
+          setEngineLastEvent(ev);
+          if (frozenEventQueueRef.current.length > 0) {
+            setTimeout(playNextEvent, 50);
+          }
+        }
+      };
+      playNextEvent();
+    }, msLeft);
+    return () => clearTimeout(t);
+  }, [rabbitHuntFreezeEnd]);
   // Phase 1.2 PR-F: disconnect FSM states per userId, surfaced by the
   // engine WS payload. Drives DisconnectToast below.
   const [disconnectStates, setDisconnectStates] = useState<
@@ -2628,7 +2679,7 @@ export default function TablePage({
         setShowSettings(true);
         break;
       case 'HAND_HISTORY':
-        setShowHandReplay(true);
+        setShowHandHistory(true);
         break;
       case 'HELP':
         setShowGameRules(true);
@@ -3637,6 +3688,7 @@ export default function TablePage({
       if (bbjTimerRef.current) clearTimeout(bbjTimerRef.current);
       if (bbjSeatCreditsTimerRef.current) clearTimeout(bbjSeatCreditsTimerRef.current);
       if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
+      if (rabbitExpiryTimerRef.current) clearTimeout(rabbitExpiryTimerRef.current);
       if (potShipTimerRef.current) clearTimeout(potShipTimerRef.current);
       if (potPushDelayTimerRef.current) clearTimeout(potPushDelayTimerRef.current);
       for (const t of potAwardStaggerTimersRef.current) clearTimeout(t);
@@ -3871,7 +3923,46 @@ export default function TablePage({
               table: 'bbj_pools',
               filter: `id=eq.${pool.pool_id}`,
             },
-            (payload) => {
+            async (payload) => {
+              const prevHitCount = (payload.old as any)?.hit_count || 0;
+              const nextHitCount = (payload.new as any)?.hit_count || 0;
+
+              if (
+                nextHitCount > prevHitCount &&
+                nextHitCount > (_LAST_BBJ_HIT_COUNT[pool.pool_id] || 0) &&
+                isMounted.current
+              ) {
+                _LAST_BBJ_HIT_COUNT[pool.pool_id] = nextHitCount;
+                try {
+                  const { data } = await supabase.rpc('fn_bbj_recent_hits', {
+                    p_pool_id: pool.pool_id,
+                    p_limit: 1,
+                  });
+                  if (data && data.length > 0) {
+                    const hit = data[0];
+                    let tName = hit.table_name;
+                    if (!tName && hit.table_id) {
+                      const tRes = await supabase
+                        .from('tables')
+                        .select('name')
+                        .eq('id', hit.table_id)
+                        .maybeSingle();
+                      if (tRes.data) tName = tRes.data.name;
+                    }
+                    masterBus.emit('BBJ_HIT_GLOBAL', {
+                      tableId: hit.table_id || '',
+                      tableName: tName || 'a table',
+                      gameVariant: hit.game_variant || 'Poker',
+                      bigBlind: hit.big_blind || 0,
+                      winnerName: hit.bad_beat_name || 'A player',
+                      amount: hit.bad_beat_amount || hit.total_payout || 0,
+                    });
+                  }
+                } catch (err) {
+                  console.error('Failed to fetch BBJ hit details:', err);
+                }
+              }
+
               const next = (payload.new as { main_balance?: number | string })?.main_balance;
               const parsed = Number(next);
               if (Number.isFinite(parsed) && isMounted.current) setBbjAmount(parsed);
@@ -3904,9 +3995,12 @@ export default function TablePage({
   // pack, then five diamonds) and answers only the caller that paid.
   const [isRabbitAvailable, setIsRabbitAvailable] = useState(false);
   const [rabbitCardsAvailable, setRabbitCardsAvailable] = useState(0);
+  const [rabbitRevealedCards, setRabbitRevealedCards] = useState<Card[]>([]);
   /** Live diamond price from feature_pricing, sent with the offer. */
   const [rabbitDiamondCost, setRabbitDiamondCost] = useState<number | null>(null);
   const rabbitHandNumberRef = useRef<number | null>(null);
+  /** Takes the Rabbit Hunt button down when the server's offer TTL runs out. */
+  const rabbitExpiryTimerRef = useRef<number | null>(null);
 
   const handleRabbitReveal = useCallback(async (): Promise<RabbitHuntRevealResult> => {
     if (!tableId) return { success: false, error: 'Table Not Ready' };
@@ -3929,12 +4023,15 @@ export default function TablePage({
       c: 'c',
       s: 's',
     };
+    const parsedCards = result.cards.map((c) => ({
+      rank: String(c.rank) as any,
+      suit: suitMap[String(c.suit)] || 'h',
+    }));
+    setRabbitRevealedCards(parsedCards);
+    setRabbitHuntFreezeEnd(Date.now() + 3000);
     return {
       success: true,
-      cards: result.cards.map((c) => ({
-        rank: String(c.rank),
-        suit: suitMap[String(c.suit)] || 'h',
-      })),
+      cards: parsedCards,
       source: result.source,
       diamondsSpent: result.diamonds_spent,
       // The server counts the VIP monthly pool down on every reveal and has
@@ -5594,9 +5691,9 @@ export default function TablePage({
         // had just sat down, saw a live Rabbit Hunt button whose only possible
         // outcome was the server refusing them.
         const eligibleIds = Array.isArray(handState.eligible_user_ids)
-          ? (handState.eligible_user_ids as string[])
+          ? handState.eligible_user_ids.map(String)
           : null;
-        const heroMayHunt = !eligibleIds || (!!userId && eligibleIds.includes(userId));
+        const heroMayHunt = !eligibleIds || (!!userId && eligibleIds.includes(String(userId)));
         if (available > 0 && heroMayHunt) {
           rabbitHandNumberRef.current = Number(handState.hand_number ?? 0) || null;
           setRabbitCardsAvailable(available);
@@ -5605,6 +5702,28 @@ export default function TablePage({
           const cost = Number(handState.diamond_cost);
           if (Number.isFinite(cost) && cost > 0) setRabbitDiamondCost(cost);
           setIsRabbitAvailable(true);
+
+          // TAKE THE BUTTON DOWN WHEN THE OFFER DIES.
+          //
+          // The engine expires an offer after 90s and refuses a late reveal with
+          // "That Hand Is Too Old To Rabbit Hunt". It has always SENT expires_at
+          // for exactly this — and the client ignored it, so the button sat
+          // there after the offer was dead and the only thing left to click was
+          // a refusal. Offering something that cannot be bought is worse than
+          // not offering it.
+          if (rabbitExpiryTimerRef.current) clearTimeout(rabbitExpiryTimerRef.current);
+          const expiresAt = Number(handState.expires_at);
+          if (Number.isFinite(expiresAt) && expiresAt > 0) {
+            // Clock skew between server and browser is real, so never schedule a
+            // negative or absurd delay: clamp to the TTL the server applies.
+            const msLeft = Math.max(0, Math.min(expiresAt - Date.now(), 120_000));
+            rabbitExpiryTimerRef.current = window.setTimeout(() => {
+              rabbitExpiryTimerRef.current = null;
+              setIsRabbitAvailable(false);
+              setRabbitCardsAvailable(0);
+              rabbitHandNumberRef.current = null;
+            }, msLeft);
+          }
         }
         return;
       }
@@ -6289,6 +6408,12 @@ export default function TablePage({
                        the engine just decided, whereas the row may not have
                        been written yet when we read it. */
                     finishPlace: position || full?.finishPlace || null,
+                    winningCards:
+                      position === 1
+                        ? (tableStateRef.current.players[
+                            tableStateRef.current.heroSeat - 1
+                          ]?.holeCards?.filter((c) => c !== null) as Card[])
+                        : undefined,
                     prize: prize || full?.prize || 0,
                   },
                 });
@@ -7411,6 +7536,27 @@ export default function TablePage({
   // The subscribeToHandState callback handles 'insurance_offers' events.
   // Legacy MasterBus handler removed — server is the single source of truth.
 
+  useMasterBusSubscription('BBJ_HIT_GLOBAL', (payload: any) => {
+    // Show an in-game pop-up on all cash game tables when BBJ is hit globally.
+    // Skip if the hit happened on THIS table — they already saw the massive animation.
+    if (payload.tableId === tableId) return;
+
+    const now = Date.now();
+    if (!tableState.isTournament && now - _LAST_BBJ_TOAST_TIME > 5000) {
+      _LAST_BBJ_TOAST_TIME = now;
+      if (soundService.isEnabled()) soundService.playBadBeatJackpot();
+      toast?.success?.(
+        `🚨 BBJ HIT! ${payload.winnerName} just won $${payload.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} on ${payload.tableName}! (Tap to observe)`,
+        10000,
+        () =>
+          masterBus.emit('OPEN_OBSERVE_TABLE', {
+            tableId: payload.tableId,
+            tableName: payload.tableName,
+          })
+      );
+    }
+  });
+
   useMasterBusSubscription('TIME_BANK_ACTIVATED', (payload: any) => {
     /* Two transports publish this - the supabase channel (camelCase, via
        TableWebSocket) and the engine hub (snake_case). The hub's shape used to
@@ -7972,6 +8118,56 @@ export default function TablePage({
       supabase.removeChannel(channel);
     };
   }, [tableId, userId]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // REALTIME PROFILES — a seated player's avatar or cosmetics changed
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Changing your avatar used to change it on YOUR screen only; everyone else
+  // kept the old face until they reloaded, because identity fields reach other
+  // clients on the engine snapshot and the engine only re-reads `profiles` at
+  // the top of a deal. Between hands, on an idle table, and on a table that is
+  // still filling, nothing re-read anything.
+  //
+  // The engine remains authoritative — this only ever refreshes the three
+  // identity fields, never stack, status, cards or seat. See the hook for why
+  // postgres_changes and not the engine socket or the legacy broadcast channel.
+  const seatedUserIds = useMemo(() => tableState.players.map((p) => p?.id), [tableState.players]);
+
+  const handleSeatedProfileChange = useCallback((change: SeatedProfileChange) => {
+    setTableState((prev) => {
+      const idx = prev.players.findIndex((p) => p?.id === change.userId);
+      if (idx === -1) return prev;
+      const existing = prev.players[idx];
+      if (!existing) return prev;
+
+      const nextAvatar = change.avatar ?? existing.avatar;
+      const nextFrame = change.frame ?? undefined;
+      const nextAura = change.aura ?? undefined;
+
+      /* No-op guard. Realtime echoes the hero's own write back to them, and a
+         `profiles` UPDATE fires for any column — a chip balance, a last-seen
+         stamp — so most deliveries here change nothing. Returning `prev`
+         unchanged is what stops each one re-rendering nine seats. */
+      if (
+        existing.avatar === nextAvatar &&
+        existing.frame === nextFrame &&
+        existing.aura === nextAura
+      ) {
+        return prev;
+      }
+
+      const updatedPlayers = [...prev.players];
+      updatedPlayers[idx] = {
+        ...existing,
+        avatar: nextAvatar,
+        frame: nextFrame,
+        aura: nextAura,
+      };
+      return { ...prev, players: updatedPlayers };
+    });
+  }, []);
+
+  useSeatedProfileSync(tableId, seatedUserIds, handleSeatedProfileChange);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // WAITLIST → HORSE YIELD — When a real player is waiting & table full, remove a horse
@@ -10205,7 +10401,14 @@ export default function TablePage({
       // Rabbit Hunt: Reset for new hand
       setIsRabbitAvailable(false);
       setRabbitCardsAvailable(0);
+      setRabbitRevealedCards([]);
       rabbitHandNumberRef.current = null;
+      // The previous hand's expiry timer must die with the offer it belonged to,
+      // or it fires mid-next-hand and clears an offer that is not its own.
+      if (rabbitExpiryTimerRef.current) {
+        clearTimeout(rabbitExpiryTimerRef.current);
+        rabbitExpiryTimerRef.current = null;
+      }
       // NOTE: the deal animation is triggered by the discrete HAND_STARTED
       // handler (single source). AUDIT FIX 2026-07-19: the redundant bump that
       // used to live here was removed — now that handNumber advances via the
@@ -12319,7 +12522,7 @@ export default function TablePage({
                         id: 'history',
                         label: 'Hand History',
                         icon: <HandHistoryIcon />,
-                        onClick: () => setShowHandReplay(true),
+                        onClick: () => setShowHandHistory(true),
                       },
                       {
                         id: 'leaderboard',
@@ -12738,7 +12941,7 @@ export default function TablePage({
                           </span>
                         </div>
                         <CommunityCards
-                          cards={board.cards}
+                          cards={[...board.cards, ...rabbitRevealedCards]}
                           stage="river"
                           highlightedIndices={board.highlightedIndices}
                           winningHandName={board.winnerHandName}
@@ -12751,7 +12954,7 @@ export default function TablePage({
                   ) : (
                     <>
                       <CommunityCards
-                        cards={tableState.communityCards}
+                        cards={[...tableState.communityCards, ...rabbitRevealedCards]}
                         stage={
                           bombPotHoldFlop && tableState.boardStage === 'flop'
                             ? 'preflop'
@@ -12783,7 +12986,7 @@ export default function TablePage({
                       {tableState.communityCards2.length > 0 && (
                         <div className="community-area__board2">
                           <CommunityCards
-                            cards={tableState.communityCards2}
+                            cards={[...tableState.communityCards2, ...rabbitRevealedCards]}
                             stage={
                               bombPotHoldFlop && tableState.boardStage === 'flop'
                                 ? 'preflop'
@@ -14105,7 +14308,7 @@ export default function TablePage({
             <button
               className="menu-item"
               onClick={() => {
-                setShowHandReplay(true);
+                setShowHandHistory(true);
                 setIsSideMenuOpen(false);
               }}
             >
@@ -14754,6 +14957,12 @@ export default function TablePage({
         showHandHistory={showHandHistory}
         handHistory={handHistory}
         onCloseHandHistory={() => setShowHandHistory(false)}
+        onReplay={(hand) => {
+          setLastHandId(hand.id);
+          setShowHandDetail(false);
+          setShowHandHistory(false);
+          setShowHandReplay(true);
+        }}
         // Session Summary props removed (Phase 2 2026-08-22): the in-table
         // modal was dead — SessionSummaryHost at the app root owns the card.
         // Session HUD

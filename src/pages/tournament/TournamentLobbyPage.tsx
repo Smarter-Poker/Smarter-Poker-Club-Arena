@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -74,7 +74,14 @@ export default function TournamentLobbyPage() {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<TournamentStatus>('upcoming');
-  const [typeFilter, setTypeFilter] = useState<TournamentTypeFilter>('all');
+  const [searchParams] = useSearchParams();
+  const initialType = (searchParams.get('type') as TournamentTypeFilter) || 'all';
+  const [typeFilter, setTypeFilter] = useState<TournamentTypeFilter>(initialType);
+
+  useEffect(() => {
+    const currentType = (searchParams.get('type') as TournamentTypeFilter) || 'all';
+    setTypeFilter(currentType);
+  }, [searchParams]);
   const [searchQuery, setSearchQuery] = useState('');
   const [visibleTournaments, setVisibleTournaments] = useState<Set<string>>(new Set());
   const [isInUnion, setIsInUnion] = useState(false);

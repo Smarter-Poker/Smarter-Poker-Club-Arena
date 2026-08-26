@@ -164,7 +164,7 @@ export const NOMINAL_SCALER: Size = { w: 605, h: 1000 };
  * constrains. On a hypothetical landscape table the two differ; no breakpoint
  * produces one.
  */
-export const CHIP_RAIL_WIDTH_PCT = 11.5;
+export const CHIP_RAIL_WIDTH_PCT = 12.5;
 
 /**
  * Where a chip finishes when it is collected, as a fraction of seat-to-centre.
@@ -193,7 +193,7 @@ export const CHIP_COLLECT_FRACTION = 0.9;
  * leaving the two markers far enough apart for MARKER_MIN_GAP_WIDTH_PCT to be
  * satisfied by the rotation alone on every unclamped seat.
  */
-export const BUTTON_RAIL_RATIO = 0.78;
+export const BUTTON_RAIL_RATIO = 0.85;
 
 /**
  * How far off the chip line the button starts, in degrees.

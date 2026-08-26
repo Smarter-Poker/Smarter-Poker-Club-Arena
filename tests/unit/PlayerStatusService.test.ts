@@ -64,7 +64,7 @@ describe('PlayerStatusService', () => {
   describe('generateProfileLink', () => {
     it('should construct correct URL', () => {
       const link = playerStatusService.generateProfileLink('user-123');
-      expect(link).toBe('https://smarter.poker/profile/user-123');
+      expect(link).toBe('https://smarter.poker/hub/club-arena/profile/user-123');
     });
   });
 
@@ -85,7 +85,7 @@ describe('PlayerStatusService', () => {
       expect(card.username).toBe('Alice');
       expect(card.avatarUrl).toBe('https://img.com/a.png');
       expect(card.level).toBe(5);
-      expect(card.link).toBe('https://smarter.poker/profile/u1');
+      expect(card.link).toBe('https://smarter.poker/hub/club-arena/profile/u1');
     });
 
     it('should use default avatar when not provided', () => {

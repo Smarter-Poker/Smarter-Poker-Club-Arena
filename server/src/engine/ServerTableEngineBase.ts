@@ -2557,19 +2557,39 @@ export abstract class ServerTableEngineBase {
    * correctly showed them as out: the felt and the database disagreed, and the
    * felt was the one taking money.
    *
-   * Runs on every seat sweep rather than once: `sitOut` is idempotent, and a
-   * seat that appears later (a player who was mid-buy-in at boot) still gets
-   * its state applied. Never un-sits anyone — sitting back in is a player
-   * action, and a stale `false` must not override a live sit-out.
+   * REGISTER FIRST. This is the whole reason the first version of this method
+   * did nothing at all: `DisconnectEngine.sitOut()` opens with
+   * `const state = this.playerStates.get(key); if (!state) return;`, and that
+   * Map is only ever populated by `registerPlayer`, which runs inside dealHand.
+   * At boot it is empty, so every sitOut() here returned at the guard — while
+   * the console.log below still announced a restore that had not happened. A
+   * log that lies is worse than no log: it makes the bug unfindable.
+   *
+   * `registerPlayer` is idempotent (it returns early when the key exists), so
+   * calling it here cannot disturb a player the dealing loop has already set up.
+   *
+   * Called from BOTH the start-up wait loop and the dealing loop's seat sweep,
+   * so a seat that appears later — someone mid-buy-in when the engine booted —
+   * still gets its state applied. Never un-sits anyone: sitting back in is a
+   * player action, and a stale `false` must not override a live sit-out.
    */
   protected restoreSitOutsFromSeats(): void {
     for (const p of this.seatedPlayers) {
       if (p.is_sitting_out !== true) continue;
       if (this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) continue;
+      this.disconnectEngine.registerPlayer(this.tableId, p.user_id);
       this.disconnectEngine.sitOut(this.tableId, p.user_id, 'voluntary');
-      console.log(
-        `[ServerTableEngine:${this.tableId}] Restored sit-out for ${p.user_id} from table_seats`
-      );
+      // Report the OUTCOME, not the attempt.
+      if (this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Restored sit-out for ${p.user_id} from table_seats`
+        );
+      } else {
+        reportError(
+          new Error(`sit-out restore had no effect for ${p.user_id}`),
+          'ServerTableEngine.sit_out_restore_no_effect'
+        );
+      }
     }
   }
 

@@ -37,6 +37,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { readLocalSession } from '../../lib/authUtils';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { CardImage } from '../table/CardImage';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import type { TournamentResult } from '../../services/pendingSessionSummary';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
@@ -293,10 +294,14 @@ export default function TournamentRankingCard({
         share?: (d: { title?: string; text?: string; url?: string }) => Promise<void>;
       };
       if (typeof nav.share === 'function') {
-        await nav.share({ title: 'Smarter.Poker', text, url: window.location.origin });
+        await nav.share({
+          title: 'Smarter.Poker',
+          text,
+          url: `${window.location.origin}/hub/club-arena`,
+        });
         return;
       }
-      await navigator.clipboard.writeText(`${text} ${window.location.origin}`);
+      await navigator.clipboard.writeText(`${text} ${window.location.origin}/hub/club-arena`);
       setShared(true);
       window.setTimeout(() => setShared(false), 2000);
     } catch {
@@ -310,7 +315,7 @@ export default function TournamentRankingCard({
       return;
     }
     onDismiss();
-    navigate('/tournaments');
+    navigate(result.isSpin ? '/tournaments?type=spin' : '/tournaments');
   };
 
   return createPortal(
@@ -394,6 +399,18 @@ export default function TournamentRankingCard({
             <span className="trc2__reward-value">{formatMoney(totalWon)}</span>
           </div>
         </div>
+
+        {/* ── Winning hand (if applicable) ── */}
+        {result.winningCards && result.winningCards.length > 0 && (
+          <div className="trc2__winning-hand">
+            <span className="trc2__winning-hand-label">Winning Hand</span>
+            <div className="trc2__winning-cards">
+              {result.winningCards.map((c, i) => (
+                <CardImage key={i} card={c} size="lg" className="trc2__winning-card" />
+              ))}
+            </div>
+          </div>
+        )}
 
         {result.bountyWinnings > 0 && (
           <div className="trc2__payout-split">

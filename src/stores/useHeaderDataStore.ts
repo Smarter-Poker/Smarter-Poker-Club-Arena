@@ -27,10 +27,21 @@ import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
+import { resolveCosmetic } from '../cosmetics/avatarCosmetics';
 
 interface HeaderDataState {
   // Data
   avatarUrl: string | null;
+  /**
+   * The player's own equipped cosmetics, for the header orb and the hamburger.
+   *
+   * They live beside `avatarUrl` rather than in a store of their own because
+   * they are drawn ON the avatar: a surface that has one and not the other
+   * paints a gold ring around a stale face. Same fetch, same cache, same
+   * realtime channel, same invalidation.
+   */
+  equippedFrame: string | null;
+  equippedAura: string | null;
   notificationCount: number;
   unreadMessages: number;
   isMessengerPageActive: boolean;
@@ -44,6 +55,7 @@ interface HeaderDataState {
   // Actions
   loadOnce: (userId: string) => void;
   setAvatarUrl: (url: string | null) => void;
+  setCosmetics: (frame: string | null, aura: string | null) => void;
   setNotificationCount: (count: number) => void;
   setUnreadMessages: (count: number) => void;
   setMessengerPageActive: (active: boolean) => void;
@@ -123,6 +135,13 @@ function scheduleCount(kind: string, run: () => void | Promise<void>): void {
 
 export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
   avatarUrl: null,
+  /* Not hydrated from localStorage the way the avatar is, deliberately. The
+     avatar cache exists to kill a visible pop-in of the player's own face; a
+     frame that appears a beat later is not that, and caching an entitlement
+     locally means a lapsed VIP keeps seeing their frame until the cache is
+     cleared. Cosmetics come from the database or they do not appear. */
+  equippedFrame: null,
+  equippedAura: null,
   notificationCount: hydrateCount('ca-notif-count'),
   unreadMessages: hydrateCount('ca-msg-count'),
   isMessengerPageActive: false,
@@ -135,6 +154,26 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
   setAvatarUrl: (url) => {
     set({ avatarUrl: url });
     persistAvatar(get()._userId, url);
+  },
+
+  /**
+   * Resolved on the way in, never stored raw.
+   *
+   * A row can hold a token from a build that is not this one — a retired
+   * cosmetic, a Hub-only experiment, something typed into the SQL editor.
+   * Resolving here means every consumer of this store gets either a token it
+   * can render or null, and no surface has to defend itself individually.
+   *
+   * The self-echo guard is not decoration: this setter is called by the initial
+   * fetch, the retry, the realtime handler and the picker, and without it a
+   * realtime echo of the player's own write re-renders the whole header.
+   */
+  setCosmetics: (frame, aura) => {
+    const nextFrame = resolveCosmetic(frame, 'frame')?.id ?? null;
+    const nextAura = resolveCosmetic(aura, 'aura')?.id ?? null;
+    const state = get();
+    if (state.equippedFrame === nextFrame && state.equippedAura === nextAura) return;
+    set({ equippedFrame: nextFrame, equippedAura: nextAura });
   },
 
   setNotificationCount: (count) => {
@@ -189,7 +228,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         const [profileResult, notifResult, msgResult] = await Promise.all([
           supabase
             .from('profiles')
-            .select('avatar_url:arena_avatar_url')
+            .select('avatar_url:arena_avatar_url, equipped_frame, equipped_aura')
             .eq('id', userId)
             .maybeSingle(),
           supabase
@@ -234,6 +273,10 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
           const avatarUrl = profileResult.data?.avatar_url || null;
           set({ avatarUrl });
           persistAvatar(userId, avatarUrl);
+          get().setCosmetics(
+            profileResult.data?.equipped_frame ?? null,
+            profileResult.data?.equipped_aura ?? null
+          );
         }
 
         set({ notificationCount: notifCount, unreadMessages: msgCount });
@@ -250,7 +293,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
             const [pR, nR, mR] = await Promise.all([
               supabase
                 .from('profiles')
-                .select('avatar_url:arena_avatar_url')
+                .select('avatar_url:arena_avatar_url, equipped_frame, equipped_aura')
                 .eq('id', userId)
                 .maybeSingle(),
               supabase
@@ -273,6 +316,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
               const retriedAvatar = pR.data?.avatar_url || null;
               set({ avatarUrl: retriedAvatar });
               persistAvatar(userId, retriedAvatar);
+              get().setCosmetics(pR.data?.equipped_frame ?? null, pR.data?.equipped_aura ?? null);
             }
             set({
               notificationCount: nR.count || 0,
@@ -365,6 +409,39 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
           });
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${userId}`,
+        },
+        (payload: { new?: Record<string, unknown> }) => {
+          /* The player's own row changed. This is what makes a change made on
+             ANOTHER surface — the World Hub's avatar page, a second tab, the
+             table's settings panel — reach this header without a reload.
+             `profiles` is in the supabase_realtime publication (verified
+             2026-08-25); `table_seats` is NOT, which is why the identical-looking
+             `table-seats-live` subscription in TablePage has never delivered a
+             row and could not be copied here.
+
+             A partial payload must not blank the orb: only a string is
+             accepted, and `avatar_url` is read from `arena_avatar_url` because
+             realtime delivers RAW COLUMN NAMES — the select alias does not
+             apply to a replication payload. */
+          const row = payload?.new;
+          if (!row) return;
+          const nextAvatar = row['arena_avatar_url'];
+          if (typeof nextAvatar === 'string' && nextAvatar) {
+            get().setAvatarUrl(nextAvatar);
+          }
+          get().setCosmetics(
+            typeof row['equipped_frame'] === 'string' ? (row['equipped_frame'] as string) : null,
+            typeof row['equipped_aura'] === 'string' ? (row['equipped_aura'] as string) : null
+          );
+        }
+      )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
           console.debug('[HeaderDataStore] Realtime channel error:', err?.message || err);
@@ -455,6 +532,11 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
     }
     set({
       avatarUrl: null,
+      // Cleared with the avatar for the same reason the avatar cache is: on a
+      // shared device the next account must not inherit the last one's face,
+      // and a frame is part of that face.
+      equippedFrame: null,
+      equippedAura: null,
       notificationCount: 0,
       unreadMessages: 0,
       _loaded: false,

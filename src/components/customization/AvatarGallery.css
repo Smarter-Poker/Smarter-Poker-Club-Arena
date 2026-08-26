@@ -84,6 +84,22 @@
   flex-direction: column;
   align-items: center;
   gap: 4px;
+  /* The cosmetics overlay is absolutely positioned against this column. It
+     targets the 56px image, not the whole column, so it is pinned to the top
+     and given the image's height below rather than filling to the label. */
+  position: relative;
+  font-size: 12px;
+}
+.ag-preview__current .sp-cosmetic,
+.ag-preview__selected .sp-cosmetic {
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 56px;
+  height: 56px;
+  bottom: auto;
+  right: auto;
+  border-radius: 50%;
 }
 .ag-preview__img {
   width: 56px;
@@ -212,12 +228,20 @@
   background: none;
   border: none;
   color: #8b949e;
-  font-size: 0.8rem;
+  /* 0.75rem, not the 0.8rem this was.
+     A fourth tab arrived 2026-08-25 and the modal is 380px wide with 16px of
+     padding a side, leaving 87px per tab. "Presets (24)" at 0.8rem does not fit
+     in that and the row wrapped. Nothing here may wrap: `.ag-tabs` is a flex
+     row and a wrapped label pushes the grid down past the fold on a 375px
+     screen. */
+  font-size: 0.75rem;
   font-weight: 600;
-  padding: 8px 0;
+  padding: 8px 2px;
   cursor: pointer;
   border-bottom: 2px solid transparent;
   transition: all 0.2s;
+  white-space: nowrap;
+  min-width: 0;
 }
 .ag-tab:hover {
   color: #e4e6eb;
@@ -418,6 +442,120 @@
 .ag-apply--saving {
   opacity: 0.6;
   cursor: wait;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   STYLE TAB — frames + auras
+   ══════════════════════════════════════════════════════════════════════════
+   Sized for 375px first. The modal is 380px wide but caps at `calc(100vw -
+   32px)` on a phone, so the tile row has about 311px of usable width. Five
+   tiles (None + four frames) at 64px plus 8px gaps would be 352px and would
+   overflow, so the row SCROLLS HORIZONTALLY INSIDE ITSELF rather than making
+   the page scroll sideways. */
+
+.ag-style {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.ag-style__heading {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8b949e;
+}
+
+.ag-style__row {
+  display: flex;
+  gap: 8px;
+  /* Contained overflow. The page body must never move sideways. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 6px;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ag-style__tile {
+  flex: 0 0 auto;
+  width: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 2px solid transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  color: #e4e6eb;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+  /* 64 wide by ~86 tall clears the 44px minimum touch target comfortably in
+     both axes; the swatch alone would not. */
+  min-height: 44px;
+}
+
+.ag-style__tile:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.ag-style__tile--selected {
+  border-color: #3fb950;
+  background: rgba(63, 185, 80, 0.1);
+}
+
+.ag-style__tile--locked .ag-style__swatch {
+  opacity: 0.45;
+}
+
+.ag-style__tile:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+/* The swatch is a neutral disc that the real cosmetic is drawn onto, so what
+   the player taps is the cosmetic itself at tile size and not an illustration
+   of it. `position: relative` and the radius are what AvatarCosmetics inherits;
+   the font-size is what its `em` units resolve against. */
+.ag-style__swatch {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 9px;
+  background: linear-gradient(135deg, #2a2f45 0%, #171b2c 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ag-style__swatch--none {
+  color: #8b949e;
+  font-size: 1.1rem;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+}
+
+.ag-style__name {
+  font-size: 0.65rem;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.ag-style__lock {
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #ffd700;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -245,7 +245,7 @@ export default function AuthPage() {
 
     try {
       await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth?mode=reset`,
+        redirectTo: `${window.location.origin}/hub/club-arena/auth?mode=reset`,
       });
 
       // SECURITY: Always show success regardless of whether email exists

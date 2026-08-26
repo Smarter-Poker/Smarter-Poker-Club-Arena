@@ -123,15 +123,37 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     seat_number?: number;
     username?: string;
     avatar_url?: string;
+    equipped_frame?: string;
+    equipped_aura?: string;
   }): {
     username: string;
     avatar_url: string;
+    equipped_frame: string;
+    equipped_aura: string;
   } {
+    /* COSMETICS ARE IDENTITY (2026-08-25). The equipped frame and aura are
+       returned here rather than beside the call sites precisely because of the
+       anonymous-table rule above: they are worn ON the avatar, they are rare,
+       and they are stable across sessions. A table where every name reads
+       "Player 4" but exactly one seat burns with `frame-hellfire` every night
+       is not anonymous - it has one anonymous player and one signature. They
+       are scrubbed with the name and the picture, on the same branch, so a
+       future field cannot be added to one and forgotten in the other. */
     if (!this.tableInfo?.is_anonymous) {
-      return { username: p.username ?? '', avatar_url: p.avatar_url ?? '' };
+      return {
+        username: p.username ?? '',
+        avatar_url: p.avatar_url ?? '',
+        equipped_frame: p.equipped_frame ?? '',
+        equipped_aura: p.equipped_aura ?? '',
+      };
     }
     const seat = p.seat ?? p.seat_number ?? 0;
-    return { username: seat > 0 ? `Player ${seat}` : 'Player', avatar_url: '' };
+    return {
+      username: seat > 0 ? `Player ${seat}` : 'Player',
+      avatar_url: '',
+      equipped_frame: '',
+      equipped_aura: '',
+    };
   }
 
   private bettingStructureFields(state: GameState): {

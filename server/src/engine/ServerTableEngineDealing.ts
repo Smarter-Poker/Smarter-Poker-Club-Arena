@@ -28,6 +28,7 @@ import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
 import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { handCompletionHoldMs, boardClearMs } from '../config/handCompletionSpec.js';
+import { collectNitEvictions } from '../services/supabase/nitGame.js';
 
 export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -86,6 +87,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
           loadSeatedPlayers(this.tableId)
         );
+        // Restart fidelity: apply persisted is_sitting_out to seats the engine
+        // has not seen yet. The start-up loop calls this too, but it breaks the
+        // moment enough players are seated and never runs again — so a player
+        // who was mid-buy-in at boot, or who joined during the wait, would be
+        // dealt in despite the database saying they are sitting out.
+        this.restoreSitOutsFromSeats();
         await this.withStepBudget(
           'refresh_blinds',
           ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
@@ -207,16 +214,50 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             this.tableId,
             seatedIds
           );
+          // ── Dan 2026-08-25, table-creation parity: NIT GAME ──
+          // "VPIP NEEDS TO BE BUILT OUT ... FULLY BUILT OUT AND IMPLEMENTED
+          //  FOR ALL CASH GAMES." `nit_game` and its three numbers were
+          // columns the creation page wrote and nothing read; the toggle's own
+          // tooltip promises a "Penalty for tight play" and there was none.
+          //
+          // The rule is a query (fn_nit_evictions) rather than engine state,
+          // because ca_hand_facts already stores VPIP per player per hand from
+          // the same derivation the player's own HUD shows. A second counter
+          // here would be a second answer, and the two would part company the
+          // first time this process restarted mid-session.
+          //
+          // GATED ON THE COLUMN so the round trip never happens on a table
+          // without the rule - which is every table today. A failure returns
+          // an empty list: a stats query that cannot answer must not throw
+          // anyone out of a hand they were entitled to play.
+          const nitEvictable: string[] = [];
+          if (this.tableInfo?.nit_game === true) {
+            const nits = await collectNitEvictions(this.tableId);
+            for (const n of nits) {
+              console.log(
+                `[ServerTableEngine:${this.tableId}] nit game: ${n.userId} is at ` +
+                  `${n.vpip}% VPIP over ${n.hands} hands, table requires ${n.required}%`
+              );
+              nitEvictable.push(n.userId);
+            }
+          }
+
           const blindEvictSet = new Set(blindEvictable);
-          const evictable = Array.from(new Set([...sitOutEvictable, ...blindEvictable]));
+          const nitEvictSet = new Set(nitEvictable);
+          const evictable = Array.from(
+            new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable])
+          );
           for (const userId of evictable) {
             const seated = this.seatedPlayers.find((p) => p.user_id === userId);
             if (!seated) continue;
             const awayBlindEvict = blindEvictSet.has(userId);
+            const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
             console.log(
               awayBlindEvict
                 ? `[ServerTableEngine:${this.tableId}] evicting ${userId} — away, already charged one SB and one BB`
-                : `[ServerTableEngine:${this.tableId}] evicting ${userId} — sat out past the 2-orbit / 5-minute limit`
+                : nitEvict
+                  ? `[ServerTableEngine:${this.tableId}] evicting ${userId} — below this nit game's VPIP floor`
+                  : `[ServerTableEngine:${this.tableId}] evicting ${userId} — sat out past the 2-orbit / 5-minute limit`
             );
             this.hub?.emitEvent(this.tableId, {
               type: 'seat_left',
@@ -224,7 +265,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               seat: seated.seat_number,
               user_id: userId,
               mid_hand: false,
-              reason: awayBlindEvict ? 'away_blind_cap' : 'sit_out_timeout',
+              reason: awayBlindEvict
+                ? 'away_blind_cap'
+                : nitEvict
+                  ? 'nit_game_vpip'
+                  : 'sit_out_timeout',
               timestamp: Date.now(),
             });
             atomicCashout(userId, this.tableId, seated.seat_number)
@@ -737,7 +782,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandNotificationLog = []; // Bible V8 §2.16: Reset notification log
     this.currentHandBBJHit = null; // BBJ: Reset hit detection for new hand
     this.currentHandBBJPayoutConfig = null;
-    this.rabbitHuntInFlight.clear(); // Rabbit Hunt: no purchase survives a hand boundary
+    // NOTE: rabbitHuntInFlight is deliberately NOT cleared here. It looks like
+    // per-hand state and is not — it is a concurrency LOCK, taken immediately
+    // before the billing RPC and released in that call's `finally`. Clearing it
+    // at the hand boundary drops the lock out from under an in-flight purchase,
+    // so a second tap sails past the "already loading" check and the player is
+    // billed twice: exactly the failure the lock was added to prevent. The
+    // `finally` is what bounds this set, on every path including a throw.
     this.currentHandRitBoards = 0; // RIT VERIFIER FIX 2026-08-21: new hand, no boards
     this.timeBankActivatedThisTurn = false; // Bible V8 §6.2: Reset time bank flag for new hand
     this.showHandPlayers = null; // Reset voluntary show-hand set for new hand
@@ -828,6 +879,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // Bible V8 §2.3: Carry through identity fields for broadcast
       is_horse: p.is_horse ?? false,
       avatar_url: p.avatar_url ?? '',
+      equipped_frame: p.equipped_frame ?? '',
+      equipped_aura: p.equipped_aura ?? '',
     }));
 
     // Rotate dealer — AUDIT FIX 2026-07-19: SEAT-based moving button. Advance to
@@ -1184,36 +1237,40 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // Only initialize time bank if player is NEW (don't reset existing pool per session)
       if (!this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)) {
         const tbTotal = this.timeBankBaseSeconds + (tbExtras.get(p.user_id) ?? 0);
-        // RESTART FIDELITY (Dan 2026-08-25). `syncStacks` has always written
-        // time_bank_remaining and time_bank_uses_remaining, and loadSeatedPlayers
-        // has always read them back — and then this line threw them away and
-        // handed every player a FULL bank. So an engine restart silently refilled
-        // the time banks of everyone at the table: a player who had burned all of
-        // theirs stalling got a fresh set for free on the next deploy.
+        // ── REVERTED 2026-08-25, same day it shipped. Read this before trying
+        //    the restart-fidelity time-bank restore again. ──
         //
-        // The persisted value wins when there IS one. `?? tbTotal` covers a
-        // genuinely new seat (columns null) and keeps the VIP/purchased extras
-        // path exactly as it was.
-        const seated = this.seatedPlayers.find((s) => s.user_id === p.user_id);
-        const persistedSeconds = Number(seated?.time_bank_remaining);
-        const persistedUses = Number(seated?.time_bank_uses_remaining);
-        const hasPersisted = Number.isFinite(persistedSeconds) && persistedSeconds >= 0;
-        const remainingSeconds = hasPersisted ? persistedSeconds : tbTotal;
-        const usesRemaining =
-          hasPersisted && Number.isFinite(persistedUses) && persistedUses >= 0
-            ? persistedUses
-            : Math.ceil(remainingSeconds / 20);
-
+        // The intent was right: syncStacks writes time_bank_remaining,
+        // loadSeatedPlayers reads it back, and this line threw it away, so a
+        // restart refilled everyone's bank for free. The implementation was
+        // wrong in a way that made things strictly WORSE than the refill:
+        //
+        //   `time_bank_remaining INTEGER DEFAULT 30` (20260313_time_bank_
+        //   persistence.sql) — the column is never null, and loadSeatedPlayers
+        //   additionally coerces `|| 0`. So "is there a persisted value?" was
+        //   ALWAYS true and the fallback branch was unreachable for every
+        //   player on every table.
+        //
+        // The damage: every seat got 30s/4 uses instead of the table base plus
+        // their VIP and purchased extras, which made fetchTimeBankExtras dead
+        // code; and dbConsumedSeconds was seeded at (tbTotal - 30), so a VIP
+        // with 300s of extras had 310 seconds of their monthly quota booked as
+        // spent the instant they sat down.
+        //
+        // A correct version needs a way to tell "this seat has never been
+        // seeded" from "this seat has 30 seconds left", which the schema cannot
+        // currently express. That needs a nullable marker column, not a cleverer
+        // read of these two. Until then the generous behaviour is the safe one:
+        // a free refill on a restart costs the house a few seconds of clock; the
+        // broken version silently overcharged VIP quota on every table.
         this.timeBankEngine.initializePlayer(this.tableId, p.user_id, {
-          remainingSeconds,
-          usesRemaining,
+          remainingSeconds: tbTotal,
+          usesRemaining: Math.ceil(tbTotal / 20),
         });
         this.timeBankMeta.set(p.user_id, {
-          // initialSeconds is what this seat STARTED the session with, which is
-          // still the full allowance — the consumed part is the difference.
           initialSeconds: tbTotal,
           baseSeconds: this.timeBankBaseSeconds,
-          dbConsumedSeconds: Math.max(0, tbTotal - remainingSeconds),
+          dbConsumedSeconds: 0,
         });
       }
       this.disconnectEngine.registerPlayer(this.tableId, p.user_id);

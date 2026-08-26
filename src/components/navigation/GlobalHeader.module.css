@@ -241,6 +241,20 @@
     opacity 0.15s ease;
   cursor: pointer;
   animation: pulse-orb 2s ease-in-out infinite;
+  /* The equipped frame/aura overlay is absolutely positioned against this
+     element and inherits its 50% radius, so the orb has to be a containing
+     block. It was `static` before nothing was ever drawn on top of it. */
+  position: relative;
+}
+
+/* AvatarCosmetics is authored in `em` so one component serves the 40px orb and
+   the 56px seat. `:global` because the overlay's classes come from a plain
+   stylesheet, not this module, so CSS Modules must not hash them.
+
+   9px, not the orb's own 18px: at 18px the frame's inset glow (1.8em) would be
+   32px on a 40px circle and swallow the face entirely. */
+.profileOrb :global(.sp-cosmetic) {
+  font-size: 9px;
 }
 
 .profileOrb:hover {

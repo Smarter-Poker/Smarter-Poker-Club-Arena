@@ -27,6 +27,7 @@ import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
 import { AvatarGallery } from '../customization/AvatarGallery';
+import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { isCardBackUnlocked } from '../table/CardImage';
 
 interface HamburgerMenuProps {
@@ -59,6 +60,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [showBBEnabled, setShowBBEnabled] = useState(false);
   // Avatar from persistent header store (avoids duplicate Supabase query)
   const avatarUrl = useHeaderDataStore((s) => s.avatarUrl);
+  const equippedFrame = useHeaderDataStore((s) => s.equippedFrame);
+  const equippedAura = useHeaderDataStore((s) => s.equippedAura);
   const [userName, setUserName] = useState<string>('');
   const [useRealName, setUseRealName] = useState(false);
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
@@ -577,19 +580,34 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             cursor: 'pointer',
           }}
         >
-          <img
-            loading="lazy"
-            decoding="async"
-            src={avatarUrl || generateDefaultAvatar()}
-            alt=""
+          {/* Wrapped so the equipped frame/aura has a positioned, radius-owning
+              parent to fill. The <img> itself cannot be that parent: an
+              absolutely positioned child of an <img> is not a thing. */}
+          <div
             style={{
+              position: 'relative',
               width: 48,
               height: 48,
               borderRadius: '50%',
-              objectFit: 'cover',
-              border: `2px solid ${colors.divider}`,
+              flexShrink: 0,
+              fontSize: 11,
             }}
-          />
+          >
+            <img
+              loading="lazy"
+              decoding="async"
+              src={avatarUrl || generateDefaultAvatar()}
+              alt=""
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: '50%',
+                objectFit: 'cover',
+                border: `2px solid ${colors.divider}`,
+              }}
+            />
+            <AvatarCosmetics frame={equippedFrame} aura={equippedAura} />
+          </div>
           <div style={{ flex: 1 }}>
             <div
               style={{

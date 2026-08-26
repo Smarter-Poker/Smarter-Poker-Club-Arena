@@ -830,7 +830,7 @@ export default function TournamentDetails({
    * tournament page.
    */
   const shareTournament = useCallback(async () => {
-    const url = `${window.location.origin}/tournaments/${tournament?.id ?? ''}`;
+    const url = `${window.location.origin}/hub/club-arena/tournaments/${tournament?.id ?? ''}`;
     const title = tournament?.name || 'Tournament';
     try {
       if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {

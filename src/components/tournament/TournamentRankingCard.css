@@ -448,3 +448,32 @@
     transform: none;
   }
 }
+
+/* ── Winning Hand ── */
+.trc2__winning-hand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 12px 0;
+  padding: 12px 10px;
+  background: linear-gradient(180deg, rgba(0, 212, 255, 0.08) 0%, rgba(0, 212, 255, 0.02) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 212, 255, 0.15);
+}
+.trc2__winning-hand-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #00d4ff;
+}
+.trc2__winning-cards {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+.trc2__winning-card {
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4));
+}

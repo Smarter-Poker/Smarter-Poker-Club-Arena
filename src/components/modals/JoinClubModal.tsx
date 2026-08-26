@@ -9,8 +9,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { sanitizeInput } from '../../utils/sanitizeInput';
 import { reportError } from '../../utils/errorReporter';
 
-// You can create a CSS module for this, but for now we will reuse existing global/modal styles or create one.
-import styles from './CreateClubModal.module.css';
+import styles from './JoinClubModal.module.css';
 
 interface JoinClubModalProps {
   isOpen: boolean;
@@ -100,85 +99,55 @@ export default function JoinClubModal({ isOpen, onClose, onSuccess }: JoinClubMo
 
   return (
     <div className={styles.overlay} onClick={onClose}>
-      <div
-        className={styles.modalContainer}
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          padding: '2rem',
-          background: '#11131a',
-          borderRadius: '12px',
-          border: '1px solid rgba(255,255,255,0.1)',
-          width: '90%',
-          maxWidth: '400px',
-        }}
-      >
-        <h2 style={{ margin: '0 0 1rem', color: '#fff', fontSize: '1.5rem', textAlign: 'center' }}>
-          Join A Club
-        </h2>
-
-        <p
-          style={{
-            color: '#a0aec0',
-            fontSize: '0.9rem',
-            marginBottom: '1.5rem',
-            textAlign: 'center',
+      <div className={styles.modalContainer} onClick={(e) => e.stopPropagation()}>
+        <button
+          className={styles.closeButton}
+          onClick={() => {
+            haptic.light();
+            onClose();
           }}
-        >
+          aria-label="Close"
+        />
+
+        <h2 className={styles.title}>Join A Club</h2>
+
+        <p className={styles.subtitle}>
           Enter A 5 Or 6 Digit Club Code To Join An Existing Poker Club.
         </p>
 
-        <input
-          ref={inputRef}
-          type="tel"
-          inputMode="numeric"
-          pattern="[0-9]{5,6}"
-          maxLength={6}
-          placeholder="e.g. 48291"
-          value={clubCode}
-          onChange={(e) => {
-            const val = e.target.value;
-            // Detect pasted invite link
-            const match = val.match(/\/invite\/([^/?]+)(?:\?ref=([a-zA-Z0-9]+))?/i);
-            if (match) {
-              const [, extractedClubId, extractedRef] = match;
-              onClose();
-              navigate(`/invite/${extractedClubId}${extractedRef ? `?ref=${extractedRef}` : ''}`);
-              return;
-            }
-            setClubCode(val.replace(/\D/g, ''));
-          }}
-          onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
-          style={{
-            width: '100%',
-            padding: '1rem',
-            fontSize: '1.5rem',
-            textAlign: 'center',
-            letterSpacing: '0.2em',
-            background: 'rgba(0,0,0,0.5)',
-            border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: '8px',
-            color: '#fff',
-            marginBottom: '1.5rem',
-          }}
-        />
+        <div className={styles.inputWrapper}>
+          <input
+            ref={inputRef}
+            type="tel"
+            inputMode="numeric"
+            pattern="[0-9]{5,6}"
+            maxLength={6}
+            placeholder="e.g. 48291"
+            className={styles.codeInput}
+            value={clubCode}
+            onChange={(e) => {
+              const val = e.target.value;
+              // Detect pasted invite link
+              const match = val.match(/\/invite\/([^/?]+)(?:\?ref=([a-zA-Z0-9]+))?/i);
+              if (match) {
+                const [, extractedClubId, extractedRef] = match;
+                onClose();
+                navigate(`/invite/${extractedClubId}${extractedRef ? `?ref=${extractedRef}` : ''}`);
+                return;
+              }
+              setClubCode(val.replace(/\D/g, ''));
+            }}
+            onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
+          />
+        </div>
 
         <button
+          className={styles.joinButton}
           onClick={() => {
             haptic.success();
             handleJoin();
           }}
           disabled={isJoining || clubCode.length < 5}
-          style={{
-            width: '100%',
-            padding: '1rem',
-            background: isJoining || clubCode.length < 5 ? '#2d3748' : '#3182ce',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '1.1rem',
-            fontWeight: 'bold',
-            cursor: isJoining || clubCode.length < 5 ? 'not-allowed' : 'pointer',
-          }}
         >
           {isJoining ? 'Joining...' : 'JOIN CLUB'}
         </button>

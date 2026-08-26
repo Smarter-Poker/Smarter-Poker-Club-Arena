@@ -121,7 +121,6 @@ interface ColumnDef {
      imprecise. */
   labelFor?: (e: LobbyEntry) => string;
   className?: string;
-  hideOnMobile?: boolean;
   sortable?: boolean;
   sortValue?: (e: LobbyEntry) => number | string;
   render: (e: LobbyEntry, ctx: LobbyRowContext) => React.ReactNode;
@@ -446,7 +445,10 @@ const COL_NAME: ColumnDef = {
   label: 'Game',
   className: 'lt-col-name',
   sortable: true,
-  sortValue: (e) => (e.name || '').toLowerCase(),
+  /* Sort what the row SHOWS. A cash row's first line is cashTitleLines()'s
+     headline ("NLH 1 / 2"); the table's own name is line two. Sorting on
+     `name` reordered the board against text the player was not reading. */
+  sortValue: (e) => (e.kind === 'cash' ? cashTitleLines(e).headline : e.name || '').toLowerCase(),
   render: (e, ctx) => {
     if (e.kind === 'mtt') {
       /* Dan 2026-08-23: MTT titles are two lines — name + variation on top,
@@ -513,7 +515,10 @@ const COL_VARIANT: ColumnDef = {
   sortable: true,
   sortValue: (e) => e.gameLabel,
   render: (e) => (
-    <abbr className="lt-variant" title={e.variantLabel}>
+    /* <abbr title> is a hover affordance and half this traffic has no hover,
+       so "PLO5" had no expansion at all on a phone or from a keyboard. The
+       long name rides along for assistive tech and for the accessible name. */
+    <abbr className="lt-variant" title={e.variantLabel} aria-label={e.variantLabel}>
       {e.gameLabel}
     </abbr>
   ),
@@ -555,7 +560,11 @@ const COL_GTD: ColumnDef = {
   label: 'Guarantee',
   className: 'lt-col-num',
   sortable: true,
-  sortValue: (e) => e.guaranteeValue,
+  /* render() returns null for a freezeout with no guarantee, so a raw 0 here
+     floated every BLANK cell above every real one on an ascending sort.
+     Infinity sinks unknowns in both directions - the convention COL_TSTACK and
+     COL_FORMAT already follow, and the comparator is built for it. */
+  sortValue: (e) => (e.guaranteeValue > 0 ? e.guaranteeValue : Infinity),
   /* null, not a dash. A non-empty cell defeats `td:empty`, so every freezeout
      without a guarantee grew a labelled GUARANTEE well containing a hyphen. */
   render: (e) =>
@@ -607,12 +616,24 @@ const COL_STATUS: ColumnDef = {
     </span>
   ),
 };
+/* One source for the word, so the sort and the cell can never disagree.
+   Sorting on the raw `kind` key ordered cash, mtt, sng, spin and PRINTED
+   Cash, MTT, Heads Up, Spin - alphabetical in neither. */
+function kindLabel(e: LobbyEntry): string {
+  return e.kind === 'cash'
+    ? 'Cash'
+    : e.kind === 'spin'
+      ? 'Spin'
+      : e.kind === 'sng'
+        ? 'Heads Up'
+        : 'MTT';
+}
 const COL_KIND: ColumnDef = {
   key: 'kind',
   label: 'Type',
   className: 'lt-col-kind',
   sortable: true,
-  sortValue: (e) => e.kind,
+  sortValue: (e) => kindLabel(e),
   render: (e) => (
     <span className="lt-kind">
       {/* COL_KIND is in the ALL set alone, and the ALL list is MTTs and cash
@@ -621,13 +642,7 @@ const COL_KIND: ColumnDef = {
           them to a bare `: 'MTT'` means the day that scope changes, a Spin
           silently calls itself an MTT rather than failing visibly. A label
           that is merely unused costs nothing; one that is wrong costs trust. */}
-      {e.kind === 'cash'
-        ? 'Cash'
-        : e.kind === 'spin'
-          ? 'Spin'
-          : e.kind === 'sng'
-            ? 'Heads Up'
-            : 'MTT'}
+      {kindLabel(e)}
     </span>
   ),
 };
@@ -819,7 +834,13 @@ const COL_ACTIONS: ColumnDef = {
       return (
         <span className="lt-actions">
           {ctx.onViewTable && (
-            <button type="button" className="lt-act lt-act--ghost" data-act="view" onClick={run}>
+            <button
+              type="button"
+              className="lt-act lt-act--ghost"
+              data-act="view"
+              onClick={run}
+              aria-label={`View Table ${e.name}`}
+            >
               View Table
             </button>
           )}
@@ -829,12 +850,19 @@ const COL_ACTIONS: ColumnDef = {
               className={`lt-act ${waiting ? 'lt-act--done' : 'lt-act--primary'}`}
               data-act="waitlist"
               onClick={run}
+              aria-label={`${waiting ? 'Leave Waitlist For' : 'Join Waitlist For'} ${e.name}`}
             >
               {waiting ? 'Leave Waitlist' : 'Join Waitlist'}
             </button>
           )}
           {!full && ctx.onJoinTable && (
-            <button type="button" className="lt-act lt-act--primary" data-act="join" onClick={run}>
+            <button
+              type="button"
+              className="lt-act lt-act--primary"
+              data-act="join"
+              onClick={run}
+              aria-label={`${seated ? 'Return To' : headsUp ? 'Sit Down At' : 'Join'} ${e.name}`}
+            >
               {seated ? 'Return To Table' : headsUp ? 'Sit Down' : 'Join Table'}
             </button>
           )}
@@ -868,6 +896,7 @@ const COL_ACTIONS: ColumnDef = {
                 className={`lt-act ${mine ? 'lt-act--done' : 'lt-act--primary'}`}
                 data-act="view"
                 onClick={run}
+                aria-label={`${mine ? 'Return To' : 'Watch'} ${e.name}`}
               >
                 {mine ? 'Return To Game' : 'Watch'}
               </button>
@@ -884,6 +913,7 @@ const COL_ACTIONS: ColumnDef = {
               className="lt-act lt-act--primary"
               data-act="register"
               onClick={run}
+              aria-label={`Sit Down At ${e.name}`}
             >
               Sit Down
             </button>
@@ -903,7 +933,13 @@ const COL_ACTIONS: ColumnDef = {
     return (
       <span className="lt-actions">
         {ctx.onViewTable && (
-          <button type="button" className="lt-act lt-act--ghost" data-act="view" onClick={run}>
+          <button
+            type="button"
+            className="lt-act lt-act--ghost"
+            data-act="view"
+            onClick={run}
+            aria-label={`Details For ${e.name}`}
+          >
             Details
           </button>
         )}
@@ -913,12 +949,19 @@ const COL_ACTIONS: ColumnDef = {
             className={`lt-act ${registered ? 'lt-act--done' : 'lt-act--primary'}`}
             data-act={registered ? 'view' : 'register'}
             onClick={run}
+            aria-label={`${registered ? 'Registered For' : 'Register For'} ${e.name}`}
           >
             {registered ? 'Registered' : 'Register'}
           </button>
         )}
         {closedToEntry && ctx.onViewTable && (
-          <button type="button" className="lt-act lt-act--primary" data-act="view" onClick={run}>
+          <button
+            type="button"
+            className="lt-act lt-act--primary"
+            data-act="view"
+            onClick={run}
+            aria-label={`${registered ? 'Return To' : 'Watch'} ${e.name}`}
+          >
             {registered ? 'Return To Game' : 'Watch'}
           </button>
         )}
@@ -997,7 +1040,7 @@ const LobbyRow = memo(function LobbyRow({
              the value — and it is always the right word, which a class name
              could not guarantee: Stakes and Buy-In share .lt-col-num. */
           data-label={col.labelFor ? col.labelFor(entry) : col.label}
-          className={`${col.className || ''} ${col.hideOnMobile ? 'hide-on-mobile' : ''}`}
+          className={col.className || ''}
         >
           {col.render(entry, ctx)}
         </td>
@@ -1155,9 +1198,7 @@ export default function LobbyTable({
   /* Only the Spin tabs can render the badge (it requires kind === 'spin', and
      the ALL list never contains a Spin), so every other tab was fetching a
      view whose answer it could not display. */
-  const spinTiers = useSpinTierAvailability(
-    category === 'SPIN' || category === 'SNG' ? clubId : undefined
-  );
+  const spinTiers = useSpinTierAvailability(category === 'SPIN' ? clubId : undefined);
   const rowCtx = useMemo<LobbyRowContext>(
     () => ({ ...ctx, spinTopTierLive: spinTiers?.can_draw_100x === true }),
     [ctx, spinTiers]
@@ -1261,8 +1302,16 @@ export default function LobbyTable({
     /* The write happens OUTSIDE the updater. React may invoke an updater more
        than once (StrictMode, bail-out replays), and a side effect in there is
        a correctness hazard the moment it stops being idempotent. */
-    let committed: { key: string; dir: SortDir } | null = null;
-    setSort((prev) => {
+    /* COMPUTED FROM `sort`, NOT FROM AN UPDATER (2026-08-26). The write used
+       to read a variable assigned inside setSort's updater, which React only
+       runs synchronously on the eager-bailout path - and this table always has
+       other work pending (the 1Hz tick every MTT row subscribes to, plus the
+       keyboard cursor), so the updater ran later and the write was skipped.
+       The player's chosen sort was silently not remembered. `sort` is the
+       state this handler already renders from, so deriving from it is both
+       correct and idempotent. */
+    const prev = sort;
+    {
       /**
        * TWO STATES, NOT THREE (Dan 2026-08-23: "CLICK A 3RD TIME AND ITS
        * RANDOM. REMOVE THE RANDOM ONLY HIGH AND LOW. SAME BROKEN
@@ -1279,16 +1328,24 @@ export default function LobbyTable({
         !prev || prev.key !== col.key
           ? { key: col.key, dir: 'asc' }
           : { key: col.key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
-      committed = next;
-      return next;
-    });
-    if (committed) writeSort(clubId, category, committed);
+      setSort(next);
+      writeSort(clubId, category, next);
+    }
   };
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       /* Home/End/PageUp/PageDown are what a keyboard user reaches for in a
          list this dense - 111 rows is a lot of ArrowDown. */
+      /* ONLY THE SCROLLER'S OWN KEYS (2026-08-26). preventDefault() in a
+         child handler does not stop the event bubbling here, so Enter on a
+         sortable column header sorted the board AND navigated the player out
+         of the lobby; Enter on the favourite star toggled the star and left;
+         Enter on a card's action button fired that action and activated a
+         DIFFERENT, cursored row. Every one of those targets is a real element
+         inside this region, so the cheapest correct test is whether the event
+         started on the scroller itself. */
+      if (e.target !== e.currentTarget) return;
       const NAV = ['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageDown', 'PageUp'];
       if (!NAV.includes(e.key) && e.key !== 'Enter') return;
       if (sorted.length === 0) return;
@@ -1334,7 +1391,13 @@ export default function LobbyTable({
   return (
     <div
       className="lobby-table-wrap"
-      role="region"
+      /* WAS role="region" (2026-08-26). aria-activedescendant is only honoured
+         on a composite widget role - grid, listbox, combobox, application - and
+         a region is a landmark, so the cursor this file moves with the arrow
+         keys was announced to nobody. The role belongs on the element that
+         actually takes focus and handles the keys, which is this one; the
+         table below keeps its own grid semantics for the rows. */
+      role="grid"
       aria-label={`Game list, ${sorted.length} game${sorted.length === 1 ? '' : 's'}`}
       tabIndex={0}
       onKeyDown={handleKeyDown}
@@ -1363,7 +1426,7 @@ export default function LobbyTable({
           carries five, so dropping its Max Payout at 1340px starved a table
           that had room to spare — and the payout IS the Spin. */}
       <table className={`lobby-table lobby-table--${category.toLowerCase()}`} role="grid">
-        <thead>
+        <thead role="rowgroup">
           {/* The explicit row/gridcell roles below are not redundant. Under
               640px this table stops being a table - thead/tbody/tr/td all
               become block or flex boxes so each row can be a card - and a
@@ -1377,7 +1440,7 @@ export default function LobbyTable({
               return (
                 <th
                   key={col.key}
-                  className={`${col.className || ''}${col.sortable ? ' is-sortable' : ''}${active ? ' is-sorted' : ''}${col.hideOnMobile ? ' hide-on-mobile' : ''}`}
+                  className={`${col.className || ''}${col.sortable ? ' is-sortable' : ''}${active ? ' is-sorted' : ''}`}
                   /* A sortable column that is not the active sort announces
                      "none", which is what tells a screen reader it CAN be
                      sorted. Leaving it undefined named only the one column
@@ -1418,7 +1481,7 @@ export default function LobbyTable({
             })}
           </tr>
         </thead>
-        <tbody ref={bodyRef}>
+        <tbody ref={bodyRef} role="rowgroup">
           {loading &&
             entries.length === 0 &&
             Array.from({ length: 8 }).map((_, i) => (
@@ -1429,11 +1492,7 @@ export default function LobbyTable({
                 role="row"
               >
                 {columns.map((c) => (
-                  <td
-                    key={c.key}
-                    role="gridcell"
-                    className={`${c.className || ''} ${c.hideOnMobile ? 'hide-on-mobile' : ''}`}
-                  >
+                  <td key={c.key} role="gridcell" className={c.className || ''}>
                     <span className="lt-skel" />
                   </td>
                 ))}

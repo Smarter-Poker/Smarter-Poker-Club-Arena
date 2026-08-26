@@ -167,10 +167,15 @@ describe('the title reads from a left edge, the heading above it does not', () =
     expect(CSS).toMatch(/\.lobby-table td\.lt-col-name \{[^}]*text-align: left/);
   });
 
-  it('starts the title box at the left of its cell', () => {
+  it('does not carry a justify-content that cannot apply', () => {
+    /* `.lt-name { justify-content: flex-start }` was pinned here and then
+       measured: every .lt-name the component renders also carries --mtt,
+       --cash or --seatfirst, all of which set `flex-direction: column`, and
+       flex-start is already the default on the column axis. It changed
+       nothing. The two rules below are what actually deliver the left edge,
+       so those are what this file pins. */
     const rule = /(?:^|\n)\.lt-name \{([^}]*)\}/.exec(CSS);
-    expect(rule, '.lt-name rule not found').toBeTruthy();
-    expect(rule![1]).toContain('justify-content: flex-start');
+    if (rule) expect(rule[1]).not.toContain('justify-content');
   });
 
   it('stacks line 1 and line 2 of a title on the same left edge', () => {

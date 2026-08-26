@@ -499,15 +499,20 @@ class AgentServiceClass {
    */
   async linkPlayerByReferral(
     playerId: string,
-    referralCode: number,
+    referralCode: string | number,
     clubId: string
   ): Promise<{ success: boolean; agentName?: string }> {
     // 1. Find the agent by player_number (referral code)
-    const { data: agentProfile } = await supabase
-      .from('profiles')
-      .select('id, username')
-      .eq('player_number', referralCode)
-      .maybeSingle();
+    let agentProfileQuery = supabase.from('profiles').select('id, username');
+    if (typeof referralCode === 'string' && referralCode.includes('-')) {
+      agentProfileQuery = agentProfileQuery.eq('id', referralCode);
+    } else {
+      agentProfileQuery = agentProfileQuery.eq(
+        'player_number',
+        typeof referralCode === 'string' ? parseInt(referralCode, 10) : referralCode
+      );
+    }
+    const { data: agentProfile } = await agentProfileQuery.maybeSingle();
 
     if (!agentProfile) {
       return { success: false };

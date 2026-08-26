@@ -14936,3 +14936,43 @@ profit** by uuid. Flagged for Dan rather than changed unilaterally, since
 tightening it would break that feature.
 
 Shipped as club-arena #848 and World-Hub #738.
+
+## 2026-08-25 — Showdown system: adversarial-review fixes F1-F14 (PR #923)
+
+Fourteen findings from the adversarial review of the showdown polish batch
+(#872), fixed in one PR across both tiers. Merged as 86023ca5 with CI green;
+client tier verified serving a descendant sha in production build-info.json,
+engine landing rides the coalescing catch-up (both deploy runs coalesced at
+805s/1104s uptime; the notice names the sha the catch-up lands).
+
+**Client — EngineStateClient rewritten around one unified inbound FIFO.**
+The prior fix requeued state frames behind pending events, which still let a
+LATER event leapfrog and could starve. Now: every frame joins one inbox in
+arrival order; a state frame with an empty inbox keeps the synchronous fast
+path; the drain applies contiguous state frames and dispatches at most one
+EVENT per macrotask (Task-56 guarantee kept); the hub's per-table EVENT `seq`
+(stamped in TableStateHub, cleaned up on room drop) de-duplicates on the same
+connection; connect/disconnect clear the queue. Pinned end-to-end by 8 specs
+in tests/engine-event-ordering.test.ts (E-before-S, E-after-S, E1/S1/E2,
+dedupe, legacy no-seq, reconnect-clears).
+
+**Server.** Per-pot display shares are penny-repaired per user against the
+credited total after rake scaling (largest entry absorbs the diff — displayed
+cents now always sum to the credit). PerPotAward carries its own
+handDescription so board-2 pot_win groups stop inheriting the board-1
+description. RIT: the discrete showdown event now emits BEFORE rit_result,
+honors the street aggressor for reveal order (spec 2 parity), counts in
+showdownHandsTotal, and Runout's four `startsWith('plo')` checks became
+isOmahaVariant (flo8 was evaluated as hold'em). showdown_cards_revealed
+reveals now carry seat.
+
+**Client presentation.** lowWinnerLabel no longer suppressed on double-board
+hi-lo (a real winner's line was hidden). buildAwardGroups flags engine groups
+`exact` — a zero share renders as a real zero instead of being inflated to
+the player's merged total by the `||` fallback. The HAND_COMPLETE reset hold
+stretches to cover long award sequences (potAwardAnimEndAtRef). The
+SHOWDOWN_CARDS_REVEALED reconciliation resolves seats by user_id (server
+sends -1 defaults) and applies reveal_order for reconnecting clients.
+
+Scheduled task verify-showdown-review-fix-landing independently re-verifies
+both tiers and reports.

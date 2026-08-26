@@ -563,7 +563,20 @@ export default function TournamentPage() {
       const { data: tables, error: tablesErr } = await supabase
         .from('tables')
         .select('id, status, current_players')
-        .eq('tournament_id', selectedTournament.id);
+        .eq('tournament_id', selectedTournament.id)
+        /* 2026-08-25: soft-deleted tables were eligible to be picked as the
+           "featured" one to watch. The house rule everywhere else that reads
+           this table filters them out (see UnionGamesPage's table query); this
+           one did not, so a deleted row could win the busiest-table sort and
+           the Watch button would open a felt that no longer exists.
+
+           `.not('is_deleted', 'is', true)` rather than `.eq(..., false)`:
+           the column is NULLABLE (verified against production, default false),
+           and `.eq(false)` would silently DROP any row where it is null. There
+           are no such rows today — 81,352 false, 43 true, 0 null — but "exclude
+           what is deleted" is the actual intent, and it is the phrasing that
+           stays correct if a future insert ever omits the column. */
+        .not('is_deleted', 'is', true);
       if (tablesErr) {
         toast.error('Failed to load tables');
         return;

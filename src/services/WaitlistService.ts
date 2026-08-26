@@ -441,7 +441,7 @@ export const WaitlistService = {
     if (!tableId) return false;
     const uid = userId ?? (await currentUserId());
     if (!uid) return false;
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('table_waitlist')
       .update({ status: 'cancelled' })
       .eq('table_id', tableId)
@@ -452,7 +452,9 @@ export const WaitlistService = {
       reportError(error, 'WaitlistService.leave', { tableId, userId: uid });
       return false;
     }
-    return (data?.length ?? 0) > 0;
+    // If data is empty, they were already off the active waitlist (seated, deleted, or cancelled).
+    // The goal is achieved, so return true.
+    return true;
   },
 };
 

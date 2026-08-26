@@ -112,7 +112,7 @@ export default function XMTTPage() {
         let query = supabase
           .from('tournaments')
           .select(
-            'id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, club_id'
+            'id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, club_id, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
           )
           .or(await clubGamesOrFilter(uuid))
           .order('start_time', { ascending: false });
@@ -137,7 +137,7 @@ export default function XMTTPage() {
         supabase
           .from('tournaments')
           .select(
-            'id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool'
+            'id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
           )
           .eq('id', tournamentId)
           .maybeSingle(),

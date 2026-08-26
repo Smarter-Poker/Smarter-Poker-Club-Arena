@@ -2259,7 +2259,8 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 .equity-overlay {
   position: absolute;
-  top: -24px;
+  top: auto;
+  bottom: -40px; /* Dan 2026-08-25: winning percentage must be under the avatars, not over the cards */
   left: 50%;
   transform: translateX(-50%);
   font-size: 24px;

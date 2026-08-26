@@ -220,7 +220,7 @@ export type { TableHUDProps } from './TableHUD';
 
 // Mini Stats Card — Upper-Right HUD Widget
 export { MiniStatsCard } from './MiniStatsCard';
-export type { MiniStatsCardProps, MiniStatsObserver } from './MiniStatsCard';
+export type { MiniStatsCardProps } from './MiniStatsCard';
 
 // Previous Hand Card — Bottom-Left HUD Widget
 export { PreviousHandCard } from './PreviousHandCard';

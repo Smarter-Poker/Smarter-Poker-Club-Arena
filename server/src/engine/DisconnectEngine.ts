@@ -626,13 +626,35 @@ export class DisconnectEngine {
    * AFTER THE BUTTON PASSES THEM TWICE, OR AFTER 5 MINUTES, WHICHEVER HAPPENS
    * FIRST." Called once per hand start with the players seated at THIS table.
    */
-  tickSitOutsAndCollectEvictions(tableId: string, playerIds: string[]): string[] {
+  tickSitOutsAndCollectEvictions(
+    tableId: string,
+    playerIds: string[],
+    opts: { countOrbit?: boolean } = {}
+  ): string[] {
+    // Dan 2026-08-25: "IF YOU ARE SITTING OUT IT NEVER KICKS YOU OFF THE TABLE.
+    // YOU CAN LITERALLY HOLD THAT SEAT FOREVER. IT SHOULD BE 2 ORBITS OR 5
+    // MINUTES, WHICHEVER IS FIRST."
+    //
+    // Two things were wrong, and they hid each other.
+    //
+    // `countOrbit` exists because this used to increment on EVERY call, and the
+    // caller is the dealing loop — which runs once per hand while dealing and
+    // once per 3-second idle tick while not. So "2 orbits" was really "3 hands"
+    // OR "about nine seconds of sitting at an idle table", depending on
+    // something the rule never mentions. Now only a real deal advances the
+    // orbit count, and the caller says so.
+    //
+    // The 5-minute half is still evaluated on EVERY call, deal or not. That is
+    // the half that has to work when the table has gone quiet, which is exactly
+    // when a seat gets held forever.
     const evict: string[] = [];
     const now = Date.now();
     for (const playerId of playerIds) {
       const state = this.playerStates.get(`${tableId}:${playerId}`);
       if (!state || !state.isSittingOut) continue;
-      state.sitOutOrbits = (state.sitOutOrbits ?? 0) + 1;
+      if (opts.countOrbit) {
+        state.sitOutOrbits = (state.sitOutOrbits ?? 0) + 1;
+      }
       const orbitsUp = (state.sitOutOrbits ?? 0) > DisconnectEngine.SITOUT_MAX_ORBITS;
       const timeUp =
         state.sitOutSince != null && now - state.sitOutSince >= DisconnectEngine.SITOUT_MAX_MS;

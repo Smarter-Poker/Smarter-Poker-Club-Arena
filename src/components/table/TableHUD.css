@@ -68,9 +68,49 @@
     env(safe-area-inset-left, 8px);
 }
 
-/* Allow child interactive elements to receive clicks */
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE CORNERS DO NOT CATCH TAPS — THEIR CONTENTS DO (fixed 2026-08-26)
+   ═══════════════════════════════════════════════════════════════════════════
+
+   These used to be `pointer-events: auto` on the corner DIVS. That was
+   harmless while the upper-right corner held one 44px icon, and it stopped
+   being harmless the moment the tournament stats bar moved in beside it
+   (Dan 2026-08-25, item 4: "tournaments are still missing the stats bar in
+   the right corner").
+
+   `.hud-ur-column` now holds TournamentHUD — an unbreakable inline-flex row
+   of five segments, roughly 300-340px wide. At <=768px the corner becomes
+   `position: fixed` and shrink-wraps to that width. The VISUAL shrink comes
+   from `transform: scale(0.74)` on the CHILD, so the corner's own layout box
+   is never reduced: on a 375px phone it stayed a ~330px-wide transparent slab
+   sitting at z-index 100 over seats at z-index 10, swallowing every tap aimed
+   at the top-right seats. Invisible, and only on tournament tables, which is
+   the hardest kind of bug to report.
+
+   Mobile-first is a house rule (Dan, working rule 6), so the fix is the one
+   that cannot regress: the corner is transparent to input like the layer it
+   lives in, and only its actual children accept it. A wide empty corner then
+   costs nothing, whatever ends up inside it next. */
 .table-hud__corner,
 .table-hud__center-top {
+  pointer-events: none;
+}
+
+/* Direct children accept input again — but `.hud-ur-column` is itself only a
+   layout wrapper, and it is as WIDE as its widest child (the tournament bar)
+   while its short child (the 44px stats icon) sits at `align-items: flex-end`.
+   So the column carries the same empty slab the corner used to, and it has to
+   be transparent for the same reason. Its two real children take the input. */
+.table-hud__corner > *,
+.table-hud__center-top > * {
+  pointer-events: auto;
+}
+
+.hud-ur-column {
+  pointer-events: none;
+}
+
+.hud-ur-column > * {
   pointer-events: auto;
 }
 
@@ -163,20 +203,33 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 6px;
-  /* TournamentHUD is a single unbreakable row of segments; scaling from the
-     top-right keeps it hugging the corner instead of pushing the felt. */
+}
+
+/* TournamentHUD is a single unbreakable row of segments; scaling from the
+   top-right keeps it hugging the corner instead of pushing the felt. The
+   origin lives with the transform it belongs to (see the breakpoints below). */
+.hud-ur-column > .tournament-hud-bar {
   transform-origin: top right;
 }
 
+/* SCALE THE BAR, NOT THE COLUMN (fixed 2026-08-26).
+   These transforms used to sit on `.hud-ur-column`, which also holds the stats
+   icon. `MiniStatsCard.css` pins that icon at 44x44 deliberately, for touch —
+   and a transformed hit area follows the transform, so scale(0.74) quietly made
+   it ~33x33, under the 44px minimum, on the very control Dan asked to be
+   reachable on the table screen. Only the tournament bar needs to shrink. */
 @media (max-width: 900px) {
-  .hud-ur-column {
+  .hud-ur-column > .tournament-hud-bar {
     transform: scale(0.88);
   }
 }
 
 @media (max-width: 600px) {
-  .hud-ur-column {
+  .hud-ur-column > .tournament-hud-bar {
     transform: scale(0.74);
+  }
+
+  .hud-ur-column {
     gap: 4px;
   }
 }

@@ -60,6 +60,7 @@ export type BusEventType =
   | 'NOTIFICATION_READ'
   | 'WAITLIST_POSITION_CHANGED'
   | 'WAITLIST_PROMOTED'
+  | 'WAITLIST_CHANGED'
   | 'SESSION_SUMMARY_DISMISSED'
   | 'ACHIEVEMENT_UNLOCKED'
   | 'MISSION_PROGRESS'
@@ -375,6 +376,7 @@ export interface BusPayloadMap {
   NOTIFICATION_READ: { notifId: string | null; allRead: boolean };
   WAITLIST_POSITION_CHANGED: { tableId: string; position: number; tableName: string };
   WAITLIST_PROMOTED: { tableId: string; userId: string; tableName: string };
+  WAITLIST_CHANGED: void;
   SESSION_SUMMARY_DISMISSED: { tableId: string };
   ACHIEVEMENT_UNLOCKED: {
     userId: string;

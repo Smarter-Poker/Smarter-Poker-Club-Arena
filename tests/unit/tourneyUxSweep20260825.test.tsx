@@ -58,7 +58,8 @@ describe('Item 1 - a running tournament can be watched', () => {
     const src = code(read(DETAILS));
     expect(src).toMatch(/const featuredTableId = useMemo\(/);
     expect(src).toMatch(/className="btn btn-watch"/);
-    expect(src).toMatch(/onClick=\{\(\) => watchTable\(featuredTableId\)\}/);
+    // Whitespace-tolerant: the old exact-source match broke on a prettier wrap.
+    expect(src).toMatch(/watchTable\(\s*featuredTableId\s*\)/);
   });
 
   it('the featured table is the chip leader table, and never a closed one', () => {
@@ -104,7 +105,8 @@ describe('Item 1 - a running tournament can be watched', () => {
   it('a Ranking row carries its table id and can be activated', () => {
     const src = code(read(STANDINGS));
     // The column has to be SELECTED - this is the bit that was missing.
-    expect(src).toMatch(/\.select\('user_id, username, chips, status, position, table_id'\)/);
+    // Not the exact select string — adding a column must not break this.
+    expect(src).toMatch(/\.select\('[^']*\btable_id\b[^']*'\)/);
     expect(src).toMatch(/tableId: p\.table_id \?\? null/);
     expect(src).toMatch(/onWatchPlayer\?: \(tableId: string\) => void/);
     // Only rows that really have a table become buttons.
@@ -126,11 +128,17 @@ describe('Item 1 - a running tournament can be watched', () => {
     expect(src).toMatch(/onWatchPlayer\?\.\(entry\.table_id as string\)/);
   });
 
-  it('Ranking rows are only clickable while the tournament is RUNNING', () => {
-    // The page is the single gate: no handler unless the event is running.
+  it('Ranking rows are clickable whenever the event is LIVE, late reg included', () => {
+    /* 2026-08-26, third audit. This spec used to require
+       `onWatchPlayer: isRunning ? ...`, i.e. `status === 'RUNNING'` — which
+       made every watch surface go INERT during LATE_REG, an event that is
+       dealing with players at tables. The spec was pinning the defect. The gate
+       is `isLateStatus`, the same predicate the registration side already uses
+       for "this event has started". */
     const page = code(read(DETAILS));
-    expect(page).toMatch(/onWatchPlayer: isRunning \? watchTable : undefined/);
-    expect(page).toMatch(/const isRunning = tournament\?\.status === 'RUNNING'/);
+    expect(page).toMatch(/onWatchPlayer: isWatchable \? watchTable : undefined/);
+    expect(page).toMatch(/const isWatchable = isLateStatus\(tournament\?\.status\)/);
+    expect(page).not.toMatch(/onWatchPlayer: isRunning \?/);
 
     // And the tab honours it rather than deriving a second rule of its own.
     const src = code(read(RANKING_TAB));
@@ -442,7 +450,11 @@ describe('Item 10 - busting holds action so the rebuy can be offered', () => {
        PersistentTableLayer HIDES rather than unmounts, so navigating away with
        the prompt open left the hold active for the rest of the session. */
     expect(src).toMatch(/const BUST_HOLD_MODAL_MS = 120_000;/);
-    expect(src).toMatch(/releaseBustHoldRef\.current\?\.\(\)/);
+    /* 2026-08-26, third audit: asserting that `releaseBustHoldRef.current?.()`
+       appears SOMEWHERE in a 15,000-line file is satisfied by the rebuy re-arm
+       just as happily as by the backstop. Assert the timer is installed WITH
+       the constant. */
+    expect(src).toMatch(/hold\.deadline = setTimeout\([\s\S]{0,600}BUST_HOLD_MODAL_MS/);
   });
 
   it('a slow rebuy check cannot open a modal over a table the player has left', () => {
@@ -473,7 +485,21 @@ describe('Item 10 - busting holds action so the rebuy can be offered', () => {
 
   it('declining releases immediately and rebuying cancels the deferred exit', () => {
     expect(src).toMatch(/bustHoldRef\.current\.pendingExit = null;\s*releaseBustHold\(\);/);
-    expect(src).toMatch(/setShowRebuyModal\(false\);[\s\S]{0,400}releaseBustHold\(\);/);
+    /* 2026-08-26, third audit: this used to be a single 400-char window match
+       that `onConfirmRebuy` satisfied — so the CONFIRM path proved the claim
+       about the DECLINE path, and deleting `onCloseRebuyModal` entirely still
+       passed. Slice each handler and assert inside it. */
+    const confirm = src.slice(src.indexOf('onConfirmRebuy'), src.indexOf('onCloseRebuyModal'));
+    expect(confirm, 'a rebuy must discard the deferred exit').toMatch(
+      /bustHoldRef\.current\.pendingExit = null;/
+    );
+    expect(confirm).toMatch(/releaseBustHold\(\)/);
+
+    const decline = src.slice(
+      src.indexOf('onCloseRebuyModal'),
+      src.indexOf('onCloseRebuyModal') + 1200
+    );
+    expect(decline, 'declining must release the hold immediately').toMatch(/releaseBustHold\(\)/);
   });
 });
 
@@ -504,7 +530,7 @@ describe("Item 11 - the hero's chips sit closer to the rail", () => {
   });
 
   it("the hero's chips are pulled well back from where they were", () => {
-    const heroDist = dist(betChipOffsetPx(HERO, NOMINAL_SCALER, false));
+    const heroDist = dist(betChipOffsetPx(HERO, NOMINAL_SCALER));
     expect(heroDist).toBeGreaterThan(0);
     // Comfortably inside the 200px that produced the complaint, with headroom
     // so an honest re-tune does not trip it.
@@ -512,8 +538,8 @@ describe("Item 11 - the hero's chips sit closer to the rail", () => {
   });
 
   it('the hero is not the outlier: every seat walks the same rail', () => {
-    const heroDist = dist(betChipOffsetPx(HERO, NOMINAL_SCALER, false));
-    const topDist = dist(betChipOffsetPx({ x: 50, y: 0 }, NOMINAL_SCALER, false));
+    const heroDist = dist(betChipOffsetPx(HERO, NOMINAL_SCALER));
+    const topDist = dist(betChipOffsetPx({ x: 50, y: 0 }, NOMINAL_SCALER));
     // The two seats opposite each other, both outside the painted felt by the
     // same amount, must be treated identically to within rounding.
     expect(Math.abs(heroDist - topDist)).toBeLessThanOrEqual(20);
@@ -669,8 +695,13 @@ describe('Audit - the dialog cannot confirm a buy-in nobody was shown', () => {
   });
 
   it('traps focus and gives it back', () => {
-    expect(src).toMatch(/restoreFocusRef/);
-    expect(src).toMatch(/e\.key !== 'Tab'/);
+    /* 2026-08-26, third audit: this used to assert only that a ref NAMED
+       `restoreFocusRef` existed and that the string 'Tab' appeared — satisfied
+       by a file that never calls `.focus()` at all. Assert the actual moves. */
+    expect(src).toMatch(/restoreFocusRef\.current = document\.activeElement/);
+    expect(src).toMatch(/back && typeof back\.focus === 'function'[\s\S]{0,80}back\.focus\(\)/);
+    // and the trap must pull focus back IN, not merely notice Tab
+    expect(src).toMatch(/if \(!inside\) \{[\s\S]{0,120}\.focus\(\)/);
   });
 });
 
@@ -684,7 +715,13 @@ describe('Audit - the tournament HUD stops when there is nothing left to ask', (
        single point of failure the poll exists to remove. Deny-list now, so an
        unrecognised status keeps polling. */
     expect(src).toMatch(/const TERMINAL = \[/);
-    expect(src).toMatch(/TERMINAL\.includes\(status\)/);
+    /* The clear must be INSIDE the terminal branch. The old assertion looked
+       for `clearInterval(resyncRef.current)` anywhere in the file, which the
+       unmount cleanup satisfied — the stop branch could have been deleted
+       outright (2026-08-26 audit). */
+    expect(src).toMatch(
+      /if \(t && TERMINAL\.includes\(status\)\) \{[\s\S]{0,200}clearInterval\(resyncRef\.current\)/
+    );
     expect(src).not.toMatch(/status !== 'RUNNING' && status !== 'REGISTERING'/);
     // The list must cover the ends, and must NOT contain a live status.
     const m = src.match(/const TERMINAL = \[([^\]]*)\]/);
@@ -823,7 +860,12 @@ describe('Second audit - a button labelled Watch actually watches', () => {
     expect(src).toMatch(/get\('watch'\) !== '1'/);
     expect(src).toMatch(/watchIntentDoneRef/);
     // once only, and only for a running event
-    expect(src).toMatch(/tournament\?\.status !== 'RUNNING'/);
+    /* Was `status !== 'RUNNING'`, which ignored the intent for a LATE_REG
+       event (2026-08-26 audit). And the intent must be CONSUMED from the url,
+       or pressing Back re-fires it and drags the player onto the felt again. */
+    expect(src).toMatch(/if \(!isWatchable\) return;/);
+    expect(src).toMatch(/params\.delete\('watch'\)/);
+    expect(src).toMatch(/\{ replace: true \}/);
   });
 });
 

@@ -55,6 +55,12 @@ export interface ServerPingMessage {
 export interface ServerEventMessage {
   type: 'EVENT';
   tableId: string;
+  /**
+   * Review fix 2026-08-25: the hub's per-table monotonic event sequence,
+   * consumed for same-connection de-duplication. Optional — legacy frames
+   * and recorded fixtures omit it.
+   */
+  seq?: number;
   payload: Record<string, unknown>;
 }
 export type ServerMessage =
@@ -225,6 +231,9 @@ export class EngineStateClient {
   /** Close the connection permanently. */
   disconnect(): void {
     this.intentionalClose = true;
+    // Review fix 2026-08-25: no queued frame may fire onSnapshot/onEvent
+    // against a page that has moved on (the CA-22 class).
+    this.resetInbox();
     if (this.onOnline !== null && typeof window !== 'undefined') {
       window.removeEventListener('online', this.onOnline);
       this.onOnline = null;
@@ -359,6 +368,10 @@ export class EngineStateClient {
       // the live connection's state.
       if (this.ws !== ws) return;
       this.clearHandshakeTimer();
+      // Review fix 2026-08-25: a fresh connection starts with an empty
+      // inbound queue and a fresh event-seq epoch — the dead socket's
+      // frames must not precede (or dedupe against) this connection's.
+      this.resetInbox();
       this.retryCount = 0;
       this.unansweredResyncs = 0;
       this.setStatus('connected');
@@ -449,115 +462,144 @@ export class EngineStateClient {
     };
   }
 
+  /**
+   * ═══ THE UNIFIED INBOUND QUEUE (review fix 2026-08-25) ═══
+   *
+   * History, because three constraints meet here:
+   *
+   *  - Task 56 (2026-04-17): two EVENTs in one tick collapsed into one React
+   *    render and pot_win vanished. Cure: each EVENT gets its own macrotask.
+   *  - Showdown reveal (2026-08-25): the engine emits the showdown EVENT
+   *    before the revealing snapshot, but state frames applied synchronously
+   *    while events were deferred — the snapshot overtook the event and the
+   *    reveal stagger died. First cure (requeue the state frame behind
+   *    pending events) was reviewed and found wanting: no staleness guard, a
+   *    starvation window, and it still inverted an EVENT emitted after a
+   *    state frame.
+   *  - This queue is the cure for all three at once. Every non-PING frame
+   *    enters ONE FIFO in arrival order. The drain applies contiguous state
+   *    frames synchronously, dispatches exactly ONE event per macrotask,
+   *    then yields. Guarantees: server emit order IS client observation
+   *    order in both directions; every event still gets its own render; a
+   *    state frame is never observed before an event the server emitted
+   *    first; drain always advances (no starvation); and connect/disconnect
+   *    clear the queue, so a dead socket's frames can never reach a live
+   *    page (the CA-22 class). A lone state frame with an empty queue keeps
+   *    the old zero-latency fast path.
+   */
+  private inbox: ServerMessage[] = [];
+  private drainScheduled = false;
+  /**
+   * SHOWDOWN POLISH review fix: consume the hub's per-table EVENT seq —
+   * duplicates and out-of-order replays on the SAME connection are dropped.
+   * Reset on every (re)connect: the hub's counter restarts with the engine,
+   * and a fresh socket legitimately re-receives retained reveal events.
+   */
+  private lastEventSeq = 0;
+
   private handleMessage(msg: ServerMessage): void {
-    switch (msg.type) {
-      case 'SNAPSHOT': {
-        // SHOWDOWN POLISH 2026-08-25: the engine deliberately emits the
-        // `showdown` event BEFORE the revealing snapshot so the client can
-        // latch the reveal-order stagger before any card turns face up. But
-        // event dispatch is deferred one macrotask (see the EVENT case),
-        // while state frames used to apply synchronously — so whenever both
-        // frames landed in one tick the snapshot overtook the event and the
-        // sequenced reveal silently degraded to a simultaneous flip. If
-        // events are still pending, requeue this state frame BEHIND them:
-        // timers fire FIFO, so every earlier event gets its own render
-        // first (preserving the Task-56 one-render-per-event fix), and the
-        // snapshot renders after — server emit order, end to end.
-        if (this.pendingEvents.length > 0) {
-          setTimeout(() => this.handleMessage(msg), 0);
-          return;
-        }
-        this.snapshot = msg.state;
-        this.seq = msg.seq;
-        this.opts.onSnapshot(this.snapshot, this.seq);
-        return;
+    if (msg.type === 'PING') {
+      // Keepalive never queues — answering late defeats its purpose.
+      try {
+        this.ws?.send(JSON.stringify({ type: 'PONG', ts: msg.ts }));
+      } catch {
+        /* onclose will reconnect */
       }
-      case 'DELTA': {
-        // SHOWDOWN POLISH 2026-08-25: same ordering rule as SNAPSHOT — see
-        // the comment there. Requeued BEFORE gap detection so a deferred
-        // delta is judged against the seq at its actual apply time.
-        if (this.pendingEvents.length > 0) {
-          setTimeout(() => this.handleMessage(msg), 0);
-          return;
-        }
-        // If we don't have a snapshot yet, we can't apply a patch — request one.
-        if (!this.snapshot) {
-          this.requestResync();
-          return;
-        }
-        // Gap detection: if msg.prev !== local seq, we're missing something.
-        if (msg.prev !== this.seq) {
-          this.requestResync();
-          return;
+      return;
+    }
+    // Fast path: a state frame with nothing queued applies immediately,
+    // exactly as it always has.
+    if (this.inbox.length === 0 && (msg.type === 'SNAPSHOT' || msg.type === 'DELTA')) {
+      this.applyStateFrame(msg);
+      return;
+    }
+    this.inbox.push(msg);
+    this.scheduleDrain();
+  }
+
+  private scheduleDrain(): void {
+    if (this.drainScheduled) return;
+    this.drainScheduled = true;
+    setTimeout(() => {
+      this.drainScheduled = false;
+      this.drainInbox();
+    }, 0);
+  }
+
+  private drainInbox(): void {
+    while (this.inbox.length > 0) {
+      const msg = this.inbox.shift()!;
+      if (msg.type === 'EVENT') {
+        // Seq-based de-duplication (0/absent = legacy frame, always passes).
+        const seq = (msg as { seq?: number }).seq;
+        if (typeof seq === 'number' && seq > 0) {
+          if (seq <= this.lastEventSeq) continue;
+          this.lastEventSeq = seq;
         }
         try {
-          // applyPatch mutates in place by default; pass a cloned target
-          // for stable snapshot semantics downstream.
-          const next = structuredClone(this.snapshot) as EngineSnapshot;
-          applyPatch(next, msg.patch, /* validate */ false);
-          this.snapshot = next;
-          this.seq = msg.seq;
-          this.opts.onSnapshot(this.snapshot, this.seq);
-        } catch {
-          // Patch failed — force a resync
-          this.requestResync();
+          this.opts.onEvent(msg.payload);
+        } catch (err) {
+          // Never let a listener throw propagate back into the WS
+          // message pump — it would kill the connection.
+          console.error('[EngineStateClient] onEvent listener threw', err);
         }
+        // One render per event: yield before anything else is observed.
+        if (this.inbox.length > 0) this.scheduleDrain();
         return;
       }
-      case 'PING': {
-        try {
-          this.ws?.send(JSON.stringify({ type: 'PONG', ts: msg.ts }));
-        } catch {
-          /* onclose will reconnect */
-        }
-        return;
-      }
-      case 'EVENT': {
-        // Forward the transient event payload to the owning hook so the UI
-        // can dispatch by payload.type (insurance_offers, rit_offer, etc).
-        //
-        // Dan 2026-04-17 (Task 56 — pot shipping / winner acknowledgment):
-        // The server emits `pot_win` and `hand_complete` back-to-back in the
-        // same synchronous code path (HandController.completeHand). On the
-        // client, both WS frames often arrive in the same JS macrotask, so
-        // React 18's automatic batching collapsed the two `setLastEvent(...)`
-        // calls into a single render — only `hand_complete` survived, and
-        // `pot_win` was dropped silently. That's why the pot-shipping
-        // animation + winner banner never fired on production.
-        //
-        // Fix: defer each event dispatch to its own macrotask via
-        // `setTimeout(..., 0)`. That forces a separate React render per
-        // event, so every `useEffect([engineLastEvent])` watcher observes
-        // every event in order. Tiny (<1ms) latency penalty, totally
-        // invisible to the user — the animations now fire every hand.
-        // SHOWDOWN POLISH 2026-08-25: the deferral stays — each event still
-        // gets its own macrotask and its own React render, which is what
-        // fixed the collapsed pot_win — but the event is now TRACKED while
-        // pending, so a state frame arriving in the same tick can requeue
-        // itself behind it (see the SNAPSHOT case). Timer FIFO then plays
-        // event render(s) first and the snapshot render after: server emit
-        // order end to end, one render per event, both preserved.
-        const payload = msg.payload;
-        const entry = { payload };
-        this.pendingEvents.push(entry);
-        setTimeout(() => {
-          const i = this.pendingEvents.indexOf(entry);
-          if (i >= 0) this.pendingEvents.splice(i, 1);
-          try {
-            this.opts.onEvent(payload);
-          } catch (err) {
-            // Never let a listener throw propagate back into the WS
-            // message pump — it would kill the connection.
-            console.error('[EngineStateClient] onEvent listener threw', err);
-          }
-        }, 0);
-        return;
-      }
+      // SNAPSHOT / DELTA: apply in queue position, keep draining — state
+      // may share a render with a LATER event (server order preserved),
+      // never with an earlier one.
+      this.applyStateFrame(msg);
     }
   }
 
-  /** SHOWDOWN POLISH 2026-08-25: events awaiting their deferred dispatch. */
-  private pendingEvents: Array<{ payload: Record<string, unknown> }> = [];
+  private applyStateFrame(msg: ServerMessage): void {
+    if (msg.type === 'SNAPSHOT') {
+      // Monotonicity belt: never roll state backwards. The hub's seq is
+      // monotonic per table and an engine restart forces a reconnect (which
+      // clears local seq via the fresh subscribe), so an older seq here can
+      // only be a stale frame.
+      if (this.snapshot && typeof msg.seq === 'number' && msg.seq < this.seq) return;
+      this.snapshot = msg.state;
+      this.seq = msg.seq;
+      this.opts.onSnapshot(this.snapshot, this.seq);
+      return;
+    }
+    if (msg.type !== 'DELTA') return;
+    // If we don't have a snapshot yet, we can't apply a patch — request one.
+    if (!this.snapshot) {
+      this.requestResync();
+      return;
+    }
+    // Gap detection: if msg.prev !== local seq, we're missing something.
+    if (msg.prev !== this.seq) {
+      this.requestResync();
+      return;
+    }
+    try {
+      // applyPatch mutates in place by default; pass a cloned target
+      // for stable snapshot semantics downstream.
+      const next = structuredClone(this.snapshot) as EngineSnapshot;
+      applyPatch(next, msg.patch, /* validate */ false);
+      this.snapshot = next;
+      this.seq = msg.seq;
+      this.opts.onSnapshot(this.snapshot, this.seq);
+    } catch {
+      // Patch failed — force a resync
+      this.requestResync();
+    }
+  }
+
+  /**
+   * Review fix 2026-08-25: a socket boundary empties the queue. Frames from
+   * a dead connection must never apply after reconnect, and a reconnect's
+   * first snapshot must not sit behind a dead socket's events.
+   */
+  private resetInbox(): void {
+    this.inbox = [];
+    this.lastEventSeq = 0;
+  }
 
   private requestResync(): void {
     try {

@@ -468,22 +468,38 @@ function getActionLabel(action: LastAction, amount?: number): string {
 // HOLE CARDS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * One card in a seat's row.
+ *
+ * `index` was accepted here and never read - the body branches only on
+ * hidden/card/isHero/isWinner - while every call site dutifully passed
+ * `index={i}`. A parameter that is accepted and ignored is a lie in the
+ * signature: the next reader assumes the card knows its own position in the
+ * row (for a stagger, for a z-order, for the per-card show picker) and writes
+ * code that depends on something the component never had. Removed 2026-08-25.
+ * The React `key` still carries the position, which is where it belongs.
+ *
+ * `eager` exists because the two rows that are ALWAYS in view - the hero's own
+ * hand, and a villain's cards at showdown - should not have their faces
+ * deferred by the browser's lazy heuristic at the exact moment the player is
+ * trying to read them. See CardImage's `loading` prop.
+ */
 function HoleCard({
   card,
   hidden = false,
-  index,
   isHero = false,
   isWinner = false,
   deckStyle,
   cardBack = 'classic_blue',
+  eager = false,
 }: {
   card?: Card | null;
   hidden?: boolean;
-  index: number;
   isHero?: boolean;
   isWinner?: boolean;
   deckStyle?: '4color' | '2color';
   cardBack?: string;
+  eager?: boolean;
 }) {
   const size = isHero ? 'md' : 'sm';
 
@@ -496,7 +512,13 @@ function HoleCard({
   }
   return (
     <div className={`seat__card seat__card--face${isWinner ? ' seat__card--winner' : ''}`}>
-      <CardImage card={card} deckStyle={deckStyle} size={size} isHighlighted={isWinner} />
+      <CardImage
+        card={card}
+        deckStyle={deckStyle}
+        size={size}
+        isHighlighted={isWinner}
+        loading={eager ? 'eager' : 'lazy'}
+      />
     </div>
   );
 }
@@ -600,6 +622,34 @@ export const SeatSlot = memo(
       showPickedCardIndexes,
       onToggleShowCard,
     } = props;
+
+    /**
+     * THE CALLBACKS, ALWAYS THE LATEST ONES (audit 2026-08-25).
+     *
+     * `onSit`, `onAction` and `onAvatarClick` are the three props this seat
+     * accepts that the memo comparator below deliberately does NOT compare, and
+     * that is the right call: TablePage builds all three as inline arrows
+     * (`onSit={() => handleSeatClick(seatNumber)}`), so comparing them would be
+     * comparing a brand-new function every render and the memo would never skip
+     * anything - nine seats times up to four mounted tables, re-rendering on
+     * every parent tick.
+     *
+     * The cost of not comparing them is that the seat keeps whichever closure
+     * it last rendered with, and those closures capture live table state:
+     * `handleSeatClick` reads `pendingSeat` and the roster to decide whether the
+     * hero may sit, and the avatar handler captures `player` to target notes and
+     * throwables. A seat that has nothing else changing about it - which is
+     * exactly an EMPTY seat, the one `onSit` belongs to - can sit on a stale
+     * closure indefinitely and act on a table that has moved on.
+     *
+     * A ref costs nothing and removes the trade entirely: the memo still skips
+     * the render, and the handler that eventually fires is the current one.
+     * Assigned during render rather than in an effect on purpose - the value has
+     * to be correct for a click that lands before React commits, and there is
+     * nothing to clean up.
+     */
+    const callbacksRef = useRef({ onSit, onAction, onAvatarClick });
+    callbacksRef.current = { onSit, onAction, onAvatarClick };
 
     /**
      * Dan 2026-08-23: "when a player folds, their blue countdown light should
@@ -716,27 +766,41 @@ export const SeatSlot = memo(
       return () => moved.disconnect();
     }, [hasPlayer]);
 
-    // Animated stack change — flash green/red when stack changes
+    /**
+     * Animated stack change — flash green/red when the stack moves.
+     *
+     * AUDIT 2026-08-25: the effect keyed on `player?.stack` ALONE while its
+     * "have we seen this player before" latch only reset when the seat rendered
+     * EMPTY. A seat does not always pass through empty: one snapshot can carry
+     * player A leaving and player B arriving in the same chair, and the seat
+     * then renders straight from A to B. The effect saw a stack change, found
+     * the latch still armed, and floated `B.stack - A.stack` over the new
+     * arrival - a green +4,000 or a red -900 on a player who had done nothing.
+     * Comparing the OCCUPANT as well makes a change of player what it actually
+     * is: a fresh sit-down, which never animates.
+     */
     const [stackDelta, setStackDelta] = useState<number>(0);
     const prevStackRef = React.useRef<number>(player?.stack ?? 0);
-    const wasSeatedRef = React.useRef<boolean>(!!player); // Track if player was already present
+    const seatedIdRef = React.useRef<string | null>(player?.id ?? null);
+    const playerId = player?.id ?? null;
     useEffect(() => {
       if (!player) {
-        wasSeatedRef.current = false; // Player left — reset for next occupant
+        seatedIdRef.current = null; // Player left — reset for next occupant
         return;
       }
+      const sameOccupant = seatedIdRef.current === player.id;
       const diff = player.stack - prevStackRef.current;
-      // Only animate if player was already seated (not initial sit-down)
-      if (diff !== 0 && wasSeatedRef.current) {
+      prevStackRef.current = player.stack;
+      seatedIdRef.current = player.id;
+      // Only animate for a player who was already sitting here.
+      if (diff !== 0 && sameOccupant) {
         setStackDelta(diff);
         const t = setTimeout(() => setStackDelta(0), 2000);
-        prevStackRef.current = player.stack;
-        wasSeatedRef.current = true;
         return () => clearTimeout(t);
       }
-      prevStackRef.current = player.stack;
-      wasSeatedRef.current = true; // Mark as seated after first render
-    }, [player?.stack]);
+      // A new occupant must not inherit the last one's floating delta.
+      if (!sameOccupant) setStackDelta(0);
+    }, [player?.stack, playerId]);
 
     /**
      * Which avatar URL (if any) failed to load, so the monogram can take over.
@@ -1122,23 +1186,30 @@ export const SeatSlot = memo(
       },
     };
 
-    // Stack glow pulse — when stack changes by >20%
+    // Stack glow pulse — when the stack changes by >20%.
+    // Same occupant guard as the delta above, and for the same reason: a chair
+    // changing hands is not a 20% swing, and it used to pulse like one.
     const [stackGlow, setStackGlow] = useState(false);
     const prevStackForGlowRef = React.useRef<number>(player?.stack ?? 0);
+    const glowOccupantRef = React.useRef<string | null>(player?.id ?? null);
     useEffect(() => {
-      if (!player) return;
+      if (!player) {
+        glowOccupantRef.current = null;
+        return;
+      }
       const prev = prevStackForGlowRef.current;
-      if (prev > 0) {
+      const sameOccupant = glowOccupantRef.current === player.id;
+      prevStackForGlowRef.current = player.stack;
+      glowOccupantRef.current = player.id;
+      if (sameOccupant && prev > 0) {
         const percentChange = Math.abs(player.stack - prev) / prev;
         if (percentChange > 0.2) {
           setStackGlow(true);
           const timer = setTimeout(() => setStackGlow(false), 600);
-          prevStackForGlowRef.current = player.stack;
           return () => clearTimeout(timer);
         }
       }
-      prevStackForGlowRef.current = player.stack;
-    }, [player?.stack]);
+    }, [player?.stack, playerId]);
 
     const containerClasses = useMemo(() => {
       const cls = ['seat'];
@@ -1231,7 +1302,14 @@ export const SeatSlot = memo(
         return (
           <div
             className={`${containerClasses} seat--empty-locked`}
-            aria-label={`Seat ${seatNumber}: empty`}
+            data-seat-num={seatNumber}
+            /* The label used to say "empty" for both branches, so the hero's
+               own reserved seat announced itself as an empty chair while the
+               screen read YOUR SEAT. A screen-reader user looking for where
+               they are about to appear was told the opposite. */
+            aria-label={
+              isHeroReservedSeat ? `Seat ${seatNumber}: your seat` : `Seat ${seatNumber}: empty`
+            }
           >
             <span className="seat__empty-label">{isHeroReservedSeat ? 'YOUR SEAT' : 'EMPTY'}</span>
           </div>
@@ -1240,13 +1318,14 @@ export const SeatSlot = memo(
       return (
         <div
           className={containerClasses}
-          onClick={onSit}
+          data-seat-num={seatNumber}
+          onClick={() => callbacksRef.current.onSit?.()}
           onKeyDown={(e) => {
             // Lobby audit P2-5: keyboard users must be able to sit via the
             // role="button" empty seat. Mirror the onClick (onSit) handler.
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
-              onSit?.();
+              callbacksRef.current.onSit?.();
             }
           }}
           role="button"
@@ -1506,7 +1585,7 @@ export const SeatSlot = memo(
            It rides on the seat rather than on the card row so the CSS can key
            both the hero row and the opponent row off one class. */
         className={`${containerClasses} seat--cards-${cardSide}`}
-        onClick={onAction}
+        onClick={() => callbacksRef.current.onAction?.()}
         data-seat-num={seatNumber}
         role="region"
         /* isActingNow: a screen reader must not keep announcing a folded seat
@@ -1564,13 +1643,16 @@ export const SeatSlot = memo(
                        SHOWDOWN SYSTEM 2026-08-25: revealHeld keeps the back on
                        until this seat's turn in the reveal sequence. */
                       hidden={!player.showCards || card == null || revealHeld}
-                      index={i}
                       isWinner={
                         isWinner &&
                         (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
                       }
                       deckStyle={deckStyle}
                       cardBack={cardBack}
+                      /* A revealed villain hand is being read RIGHT NOW - the
+                         showdown is the one moment a card face has to be on
+                         screen the instant it flips. */
+                      eager={player.showCards}
                     />
                   ))
                 : /* Dan 2026-08-23: this used to be exactly two hard-coded backs,
@@ -1584,13 +1666,7 @@ export const SeatSlot = memo(
                    derived from the same number that decides how many backs are
                    drawn, rather than from a second copy of this expression. */
                   Array.from({ length: opponentCardCount }, (_, i) => (
-                    <HoleCard
-                      key={i}
-                      hidden={true}
-                      index={i}
-                      deckStyle={deckStyle}
-                      cardBack={cardBack}
-                    />
+                    <HoleCard key={i} hidden={true} deckStyle={deckStyle} cardBack={cardBack} />
                   ))}
             </div>
           )}
@@ -1655,7 +1731,7 @@ export const SeatSlot = memo(
               avatarClickable
                 ? (e) => {
                     e.stopPropagation();
-                    onAvatarClick?.();
+                    callbacksRef.current.onAvatarClick?.();
                   }
                 : undefined
             }
@@ -1674,7 +1750,7 @@ export const SeatSlot = memo(
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
                       e.stopPropagation();
-                      onAvatarClick?.();
+                      callbacksRef.current.onAvatarClick?.();
                     }
                   }
                 : undefined
@@ -1700,8 +1776,15 @@ export const SeatSlot = memo(
               <RiveAvatar
                 avatarUrl={avatarUrl}
                 gesture={avatarGesture}
-                isActive={isActive}
-                isFolded={lastAction === 'fold' || player.status === 'folded'}
+                /* isActingNow, not isActive. `hasFolded` exists precisely so
+                   that ONE value answers "is this seat acting" for the ring,
+                   the urgency colours, the tense idle, the alert gesture and
+                   the screen-reader label - and the rig was the one consumer
+                   still reading the raw snapshot flag. A player who has just
+                   folded kept telling their rig it was still on the clock for
+                   the whole round trip. */
+                isActive={isActingNow}
+                isFolded={hasFolded}
                 size={player.isHero ? SEAT_AVATAR_PX_HERO : SEAT_AVATAR_PX}
                 onRigActive={setRigActive}
               />
@@ -1808,6 +1891,30 @@ export const SeatSlot = memo(
           {player.isHero && timeBankArmed && (
             <span className="seat__tb-armed" aria-live="polite">
               Time Bank Ready
+            </span>
+          )}
+
+          {/**
+           * AUDIT 2026-08-25 — the time bank being SPENT had a stylesheet and
+           * no element.
+           *
+           * `.seat__tb-active` is a fully written rule in SeatSlot.css, with
+           * its own `seat-tb-active-flash` keyframe, and nothing has ever
+           * rendered that class. So the ARMED state (a press that spends
+           * nothing yet) got a label while the ACTIVE state — the one where the
+           * player is burning banked seconds — got only a red box-shadow on the
+           * plate, which is indistinguishable at a glance from the ordinary
+           * critical-time colour the ring already turns.
+           *
+           * Not hero-only, deliberately: TablePage sets `isTimeBankActive` for
+           * the acting seat alone, and knowing an OPPONENT has gone into the
+           * tank on borrowed time is exactly the information a player wants.
+           * Gated on isActingNow for the same reason the class list is — a
+           * seat that has just folded must not keep a live clock on it.
+           */}
+          {isActingNow && isTimeBankActive && (
+            <span className="seat__tb-active" aria-live="polite">
+              Time Bank
             </span>
           )}
 
@@ -1984,7 +2091,6 @@ export const SeatSlot = memo(
                   <HoleCard
                     card={card}
                     hidden={false}
-                    index={i}
                     isHero={true}
                     isWinner={
                       isWinner &&
@@ -1992,6 +2098,10 @@ export const SeatSlot = memo(
                     }
                     deckStyle={deckStyle}
                     cardBack={cardBack}
+                    /* The hero's own hand is on screen for the whole hand and is
+                       the first thing they look at. Nothing about it should be
+                       deferred. */
+                    eager
                   />
                 )}
               </span>
@@ -2088,6 +2198,27 @@ export const SeatSlot = memo(
     if (prev.timerProgress !== next.timerProgress) return false;
     if (prev.isActive !== next.isActive) return false;
     if (prev.canSit !== next.canSit) return false;
+    /**
+     * AUDIT 2026-08-25 — two props that were passed, read, and then blocked.
+     *
+     * `holeCardCount` is the variant's hand size and it is the ONLY thing that
+     * decides how many face-down backs a hidden villain draws. TablePage feeds
+     * it from `tableState.gameType`, which is EMPTY on the first paint and
+     * arrives with the table row a moment later. Without this line the memo
+     * swallowed that arrival, so a seat that had already rendered kept the
+     * default of two backs for the rest of the session - the exact "PLO6 seat
+     * shows a Hold'em hand" symptom the prop was added on 2026-08-23 to fix,
+     * reintroduced one layer up. It only recovered if some unrelated prop
+     * happened to change on that seat first.
+     *
+     * `isHeroReservedSeat` is worse, because it is an EMPTY-seat prop and the
+     * comparator's `if (!pp && !np) return true` short-circuit is the last
+     * thing that runs: two empty seats always compared equal, so nothing about
+     * an empty seat could ever change. The moment the hero reserves a seat that
+     * seat is supposed to read YOUR SEAT instead of EMPTY, and it never did.
+     */
+    if (prev.holeCardCount !== next.holeCardCount) return false;
+    if (prev.isHeroReservedSeat !== next.isHeroReservedSeat) return false;
     if (prev.position !== next.position) return false;
     if (prev.isTournament !== next.isTournament) return false;
     if (prev.bigBlind !== next.bigBlind) return false;
@@ -2190,6 +2321,19 @@ export const SeatSlot = memo(
     if (pp.isHero !== np.isHero) return false;
     if (pp.showCards !== np.showCards) return false;
     if (pp.avatar !== np.avatar) return false;
+    /**
+     * AUDIT 2026-08-25 — the equipped cosmetics were compared by nothing.
+     *
+     * `frame` and `aura` are declared on SeatPlayer with the note "refreshed
+     * live by the table's profiles subscription", and `<AvatarCosmetics>` is
+     * rendered from them. The subscription rewrites the player object and
+     * changes ONLY these two fields, so the memo returned true and the seat
+     * never repainted: equipping a frame changed nothing at the table until
+     * something else about that player moved. The claim in the doc comment was
+     * simply not implemented on this side of the boundary.
+     */
+    if (pp.frame !== np.frame) return false;
+    if (pp.aura !== np.aura) return false;
     if (prev.showStackInBB !== next.showStackInBB) return false;
     // Compare holeCards without JSON.stringify (performance optimization)
     const ph = pp.holeCards;

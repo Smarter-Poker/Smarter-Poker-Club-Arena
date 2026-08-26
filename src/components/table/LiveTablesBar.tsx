@@ -39,6 +39,13 @@ export default function LiveTablesBar({ tables, urgent, onReturn }: LiveTablesBa
         className="live-tables-bar live-tables-bar--urgent"
         onClick={() => onReturn(urgent.tableId)}
         title="Your turn - return to the table"
+        /* Audit 2026-08-25: this dock is the ONLY signal a player browsing the
+           cashier gets that a hand is about to be folded out from under them,
+           and it appeared with no announcement at all. `assertive`, because by
+           definition there are seconds left; the label carries the table name
+           so the announcement is actionable rather than "action needed". */
+        aria-live="assertive"
+        aria-atomic="true"
       >
         <span className="live-tables-bar__dot live-tables-bar__dot--urgent" aria-hidden="true">
           ●

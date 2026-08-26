@@ -96,12 +96,12 @@ export function MiniStatsCard({
         type="button"
         className="mini-stats-card mini-stats-card--tournament-stats"
         onClick={handleClick}
-        aria-label={`Tournament stats. Stack ${currentStack.toLocaleString()}, ${handsPlayed} hands played. Opens tournament lobby.`}
+        aria-label={`Tournament stats. Stack ${currentStack.toLocaleString('en-US')}, ${handsPlayed} hands played. Opens tournament lobby.`}
         title="Tournament Stats & Lobby"
       >
         <span className="mini-stats-card__tstat">
           <span className="mini-stats-card__tstat-label">Stack</span>
-          <span className="mini-stats-card__tstat-value">{currentStack.toLocaleString()}</span>
+          <span className="mini-stats-card__tstat-value">{currentStack.toLocaleString('en-US')}</span>
         </span>
         <span className="mini-stats-card__tstat">
           <span className="mini-stats-card__tstat-label">Hands</span>

@@ -530,7 +530,7 @@ describe("Item 11 - the hero's chips sit closer to the rail", () => {
   });
 
   it("the hero's chips are pulled well back from where they were", () => {
-    const heroDist = dist(betChipOffsetPx(HERO, NOMINAL_SCALER, false));
+    const heroDist = dist(betChipOffsetPx(HERO, NOMINAL_SCALER));
     expect(heroDist).toBeGreaterThan(0);
     // Comfortably inside the 200px that produced the complaint, with headroom
     // so an honest re-tune does not trip it.
@@ -538,8 +538,8 @@ describe("Item 11 - the hero's chips sit closer to the rail", () => {
   });
 
   it('the hero is not the outlier: every seat walks the same rail', () => {
-    const heroDist = dist(betChipOffsetPx(HERO, NOMINAL_SCALER, false));
-    const topDist = dist(betChipOffsetPx({ x: 50, y: 0 }, NOMINAL_SCALER, false));
+    const heroDist = dist(betChipOffsetPx(HERO, NOMINAL_SCALER));
+    const topDist = dist(betChipOffsetPx({ x: 50, y: 0 }, NOMINAL_SCALER));
     // The two seats opposite each other, both outside the painted felt by the
     // same amount, must be treated identically to within rounding.
     expect(Math.abs(heroDist - topDist)).toBeLessThanOrEqual(20);

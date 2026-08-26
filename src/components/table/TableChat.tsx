@@ -10,7 +10,7 @@
  * - System messages (joins, wins, etc.)
  */
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import './TableChat.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
@@ -91,6 +91,13 @@ export interface TableChatProps {
   messages: ChatMessage[];
   onSendMessage: (message: string) => void;
   myPlayerId?: string;
+  /**
+   * @deprecated Accepted and never read. Every message this component renders
+   * is already handed to it in `messages`; the subscription, the insert and the
+   * per-table filtering all live in `useTableChat`, which is where the table id
+   * genuinely belongs. TablePage still passes it (TablePage.tsx, the
+   * `<TableChat>` block) and that line can go.
+   */
   tableId?: string;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -198,7 +205,6 @@ export function TableChat({
   messages,
   onSendMessage,
   myPlayerId,
-  tableId,
   isCollapsed = false,
   onToggleCollapse,
   maxMessages = 100,
@@ -212,7 +218,10 @@ export function TableChat({
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  /* `inputRef` used to live here, attached to the compose box and read by
+     nothing. Removed rather than given a job: the only job on offer was
+     autofocus on open, and on a phone that pops the software keyboard over a
+     live hand the moment somebody glances at chat. */
   const panelRef = useRef<HTMLDivElement>(null);
   const previousMessagesLengthRef = useRef(0);
   const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -240,14 +249,27 @@ export function TableChat({
     if (!isScrolledUp) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
+    /* AUDIT 2026-08-25 — the cleanup that used to live here ran on EVERY re-run
+       of this effect, not just on unmount, and `isScrolledUp` is one of its
+       dependencies. So: a message arrives, the 600ms "new" timer starts, the
+       player scrolls the panel a pixel, `isScrolledUp` flips, the cleanup kills
+       the timer, and the effect body does not start another one because
+       `messages.length` has not moved. `newMessageIds` is then never emptied and
+       those messages keep their slide-in class for the rest of the session.
 
-    return () => {
+       The unmount cleanup that the return was really for is its own effect
+       below, where it cannot be re-run by anything. */
+  }, [messages.length, isScrolledUp]);
+
+  useEffect(
+    () => () => {
       if (animationTimerRef.current) {
         clearTimeout(animationTimerRef.current);
         animationTimerRef.current = null;
       }
-    };
-  }, [messages.length, isScrolledUp]);
+    },
+    []
+  );
 
   // Track scroll position to show/hide scroll-to-bottom FAB
   const handleScroll = useCallback(() => {
@@ -262,10 +284,20 @@ export function TableChat({
     setIsScrolledUp(false);
   }, []);
 
-  // Trim messages to max limit before rendering
-  const displayMessages = [...messages]
-    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
-    .slice(-maxMessages);
+  /* Trim messages to max limit before rendering.
+     Memoised because this component is a child of TablePage, which re-renders
+     on every snapshot, every chip animation and — until the action clock was
+     fixed today — thirty times a second for the whole of anybody's turn. A
+     hundred-element copy, sort and slice on each of those is work nobody asked
+     for, and it also produced a brand-new array identity every time, which is
+     what stopped any downstream memo from ever holding. */
+  const displayMessages = useMemo(
+    () =>
+      [...messages]
+        .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+        .slice(-maxMessages),
+    [messages, maxMessages]
+  );
 
   // Handle send
   const handleSend = useCallback(() => {
@@ -348,6 +380,7 @@ export function TableChat({
         className="chat-collapsed chat-collapsed--muted"
         onClick={onToggleCollapse}
         title="Chat is muted"
+        aria-label="Chat is muted"
       >
         <span className="chat-collapsed__icon" style={{ opacity: 0.4 }}>
           <ChatBubbleIcon />
@@ -358,11 +391,24 @@ export function TableChat({
 
   if (isCollapsed) {
     return (
-      <button className="chat-collapsed" onClick={onToggleCollapse} aria-label="Open table chat">
+      <button
+        className="chat-collapsed"
+        onClick={onToggleCollapse}
+        aria-label={
+          unreadCount > 0
+            ? `Open table chat, ${unreadCount.toLocaleString()} unread`
+            : 'Open table chat'
+        }
+      >
         <span className="chat-collapsed__icon">
           <ChatBubbleIcon />
         </span>
-        {unreadCount > 0 && <span className="chat-collapsed__badge">{unreadCount}</span>}
+        {/* The badge is an 18px circle. Beyond two digits the number stops
+            fitting and starts stretching the pill across the chat glyph, and
+            "how many exactly" was never the point past that. */}
+        {unreadCount > 0 && (
+          <span className="chat-collapsed__badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
+        )}
       </button>
     );
   }
@@ -413,8 +459,9 @@ export function TableChat({
             className="table-chat__scroll-fab"
             onClick={scrollToBottom}
             title="Jump to latest"
+            aria-label="Jump to latest message"
           >
-            ↓
+            &#8595;
           </button>
         )}
       </div>
@@ -424,7 +471,6 @@ export function TableChat({
       <div className="table-chat__input-container">
         {/* Emoji toggle removed */}
         <input
-          ref={inputRef}
           type="text"
           className="table-chat__input"
           value={inputValue}
@@ -438,8 +484,10 @@ export function TableChat({
           className="table-chat__send"
           onClick={handleSend}
           disabled={!inputValue.trim() || isDisabled}
+          aria-label="Send message"
+          title="Send"
         >
-          ➤
+          &#10148;
         </button>
       </div>
     </div>

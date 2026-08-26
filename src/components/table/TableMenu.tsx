@@ -91,6 +91,22 @@ export interface TableMenuProps {
   sessionDuration?: string;
   /** Observers watching the table — shown in menu dropdown */
   observers?: TableMenuObserver[];
+  /**
+   * AUDIT 2026-08-25 — A HANDLER THAT REACHED NOTHING.
+   *
+   * `createDefaultMenuSections` DECLARED `onChangeAvatar`, `onToggleAlias` and
+   * `aliasLabel` in its handlers object and then never put any of them on a
+   * menu action. TableTabBar passed `onToggleAlias` (emitting
+   * TABLE_MENU_ACTION / 'TOGGLE_ALIAS', which TablePage answers by opening
+   * IdentityModal) and it was dropped on the floor, so the identity dialog was
+   * unreachable from the only menu in the app that offers it.
+   *
+   * The Identity section is injected by THIS component, not by
+   * `createDefaultMenuSections`, so the handler has to arrive here to be usable.
+   * That is what this prop is. When it is absent the section still renders its
+   * own real-name switch, so a standalone TableMenu is unchanged.
+   */
+  onOpenIdentity?: () => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -112,9 +128,12 @@ export function createDefaultMenuSections(
     onLeaderboard?: () => void;
     onHelp?: () => void;
     onLeaveTable?: () => void;
-    onChangeAvatar?: () => void;
-    onToggleAlias?: () => void;
-    aliasLabel?: string;
+    /* `onChangeAvatar`, `onToggleAlias` and `aliasLabel` were declared here and
+       used by nothing — see the note on TableMenuProps.onOpenIdentity. The
+       Identity section belongs to TableMenu itself; the alias handler now
+       arrives there as `onOpenIdentity`, and the avatar picker is TableMenu's
+       own in-app AvatarGallery (a popup WINDOW at a live table, which the old
+       CHANGE_AVATAR path opened, loses you the table). */
   },
   state?: {
     standUpBBBadge?: string;
@@ -243,8 +262,10 @@ export function TableMenu({
   handNumber,
   sessionDuration,
   observers = [],
+  onOpenIdentity,
 }: TableMenuProps) {
-  const [activeSection, setActiveSection] = useState<string | null>(null);
+  /* `activeSection` / `setActiveSection` deleted 2026-08-25: state written by
+     nobody and read by nobody since the file was written. */
   const menuRef = useRef<HTMLDivElement>(null);
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
   const [useRealName, setUseRealName] = useState(false);
@@ -314,12 +335,38 @@ export function TableMenu({
           ),
           onClick: () => setShowAvatarGallery(true),
         },
+        /* Two DIFFERENT identity settings live here, and until this pass one of
+           them was unreachable while the other called itself by the other's
+           name.
+
+           `use_real_name` (this row) picks between the player's real name and
+           their username, is read by utils/playerDisplayName and by TablePage's
+           hero-name derivation, and is genuinely live. Its old label —
+           "Using Real Name (vs Alias)" — called the USERNAME an alias, which is
+           the term the OTHER setting uses, so the two were indistinguishable in
+           a list. Relabelled to what it actually switches, with the current
+           value as the badge.
+
+           `use_alias` / `table_alias` (the row below) is a club alias worn at
+           the table, and it wins over both of the above on the felt. It is
+           edited in IdentityModal, which is what `onOpenIdentity` opens. */
         {
-          id: 'alias-toggle',
-          label: useRealName ? 'Using Real Name (vs Alias)' : 'Using Alias (vs Real Name)',
+          id: 'display-name',
+          label: 'Display Name',
           icon: <NameTagIcon />,
+          badge: useRealName ? 'Real Name' : 'Username',
           onClick: handleUseRealNameToggle,
         },
+        ...(onOpenIdentity
+          ? [
+              {
+                id: 'table-alias',
+                label: 'Table Alias',
+                icon: <NameTagIcon />,
+                onClick: onOpenIdentity,
+              },
+            ]
+          : []),
       ] as MenuAction[],
     },
     ...propSections,
@@ -465,9 +512,12 @@ export function TableMenu({
                       <span className="table-menu__section-title">{section.title}</span>
                     )}
                     {section.actions.map((action, i) => {
+                      /* `sections.indexOf(section)` (object identity, O(n^2))
+                         replaced with the index the map already hands us. Two
+                         sections that happened to be the same object reference
+                         would have shared a stagger origin. */
                       const actionIndex =
-                        sections.slice(0, sections.indexOf(section)).flatMap((s) => s.actions)
-                          .length + i;
+                        sections.slice(0, sIdx).reduce((n, s) => n + s.actions.length, 0) + i;
                       return (
                         <button
                           key={action.id}

@@ -1130,8 +1130,31 @@ export default function ActionPanel({
       }`}
     >
       {raiseOverlay}
-      {!isRaiseMode && (
-        <div className="action-row">
+      {/* ═══ THE ROW IS NOT CONDITIONAL. ═══════════════════════════════════
+          AUDIT 2026-08-25. This was `{!isRaiseMode && (<div className="action-row">`,
+          which quietly reverted Dan's 2026-08-25 item 5 — "these 3 action
+          buttons should be on the bottom, and if you click Raise, the action
+          slider and other buttons pop open and can OVERLAY the Hero" — back to
+          the older behaviour where raise mode REPLACED the whole panel.
+
+          Nothing else in this component or its stylesheet had been reverted
+          with it, so five things had been dead ever since:
+
+            - `handleRaiseClick`'s `if (isRaiseMode) { setIsRaiseMode(false) }`
+              close branch: the button it belongs to was not on screen;
+            - `action-btn--on`, a whole styling rule written for "it stays on
+              the row now and a second tap closes the overlay";
+            - `aria-expanded={isRaiseMode}`, which could only ever be false;
+            - `.action-panel--raise .raise-layout { margin: 0 auto 10px }` —
+              a documented gap between the overlay and "the row it floats
+              above", floating above nothing;
+            - the whole premise of `--sp-bottom-row-h`, which is the measured
+              height of THIS row and which every other stylesheet reserves
+              against. A row that disappears is a reserve that lies.
+
+          The panel is `position: fixed; bottom: 0`, so the overlay grows the
+          panel UPWARD over the felt and this row does not move a pixel. */}
+      <div className="action-row">
           {/* FOLD — Always Red, Left */}
           <button
             className="action-btn action-btn--fold"
@@ -1234,8 +1257,7 @@ export default function ActionPanel({
               {isDesktop && <span className="action-btn__shortcut">R</span>}
             </button>
           )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

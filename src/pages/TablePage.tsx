@@ -2275,6 +2275,34 @@ export default function TablePage({
   useEffect(() => {
     if (!tableId || !userId) return;
     const onPageHide = () => {
+      // ── AWAY-BEACON GUARD (2026-08-26) ──────────────────────────────────────
+      // iOS Safari fires `pagehide` on every soft navigation, including the
+      // transition FROM the lobby panel INTO this table. A player who just
+      // bought a seat has no established engine WS yet, so if the beacon fires
+      // within the first 5 s of seat acquisition the engine immediately marks
+      // them AWAY before their first heartbeat can clear it — and they sit stuck
+      // AWAY, never dealt in, until they reload.
+      //
+      // Suppress the beacon when BOTH:
+      //   a) the seat was acquired less than 5 s ago, AND
+      //   b) the engine WS has not yet reported 'connected'
+      //
+      // Once the WS is established the heartbeat loop is running, and a
+      // subsequent pagehide is unambiguously a real departure — send normally.
+      // If there is no seat at all (hero is a spectator), we never have an
+      // seatAcquiredAt and the beacon must NOT be suppressed (spectators can leave
+      // freely; this guard is only about a brand-new seat).
+      const acquiredAt = seatAcquiredAtRef.current;
+      const seatAge = acquiredAt != null ? Date.now() - acquiredAt : Infinity;
+      const wsEstablished = engineWsStatus === 'connected';
+      if (acquiredAt != null && seatAge < 5_000 && !wsEstablished) {
+        // Brand-new seat, WS not up yet — pagehide is almost certainly a
+        // spurious iOS navigation event, not a real departure. Skip the beacon;
+        // the WS open will prove the player is present, and a real disconnect
+        // later will trigger the normal away path via the heartbeat timeout.
+        return;
+      }
+
       let accessToken: string | null = null;
       try {
         const raw = localStorage.getItem('smarter-poker-auth');
@@ -2288,7 +2316,7 @@ export default function TablePage({
     };
     window.addEventListener('pagehide', onPageHide);
     return () => window.removeEventListener('pagehide', onPageHide);
-  }, [tableId, userId]);
+  }, [tableId, userId, engineWsStatus]);
 
   // ── Dan 2026-08-21: "the games can never freeze or die" — last-resort
   // auto-recovery. EngineStateClient now retries forever, but if the socket
@@ -2759,6 +2787,21 @@ export default function TablePage({
   // FIX 132: Persistent hero seat ref — set IMMEDIATELY on buy-in, never stale
   // Prevents race condition where tableState.heroSeat is 0 during DB query but user tries to sit again
   const heroSeatRef = useRef(0);
+  /**
+   * Timestamp (ms) at which the hero's seat was first acquired this session.
+   * Used by the pagehide away-beacon guard: iOS Safari fires `pagehide` on
+   * every soft navigation, including navigating FROM the lobby panel INTO the
+   * table. A player who just bought in has no established WS heartbeat yet, so
+   * if the beacon fires within a 5-second window of seat acquisition the engine
+   * immediately marks them AWAY before their first heartbeat can clear it —
+   * and they sit stuck AWAY, never dealt in, until they reload.
+   *
+   * The fix: suppress the away beacon when the seat was acquired < 5s ago AND
+   * the engine WS has not yet reported 'connected'. Once the WS is established
+   * (heartbeat loop running), a pagehide is unambiguously a real departure and
+   * the beacon should fire normally.
+   */
+  const seatAcquiredAtRef = useRef<number | null>(null);
 
   // ── Tournament masthead data (Dan 2026-08-20, from a seat at a live table:
   //    "1st line Date, (game type) Poker Spins, Club Name, Union Name. 2nd
@@ -10937,6 +10980,7 @@ export default function TablePage({
         // Paid. The seat is ours — paint it and close the sheet.
         const mySeat = res.seat_number ?? seatNumber;
         heroSeatRef.current = mySeat;
+        seatAcquiredAtRef.current = Date.now();
         setPendingSeat(mySeat);
         setTableState((prev) => ({ ...prev, heroSeat: mySeat }));
         setSeatFirstConfirm(null);
@@ -15120,6 +15164,7 @@ export default function TablePage({
                 // The seat + stack were already painted above, before this RPC
                 // was even sent. Nothing to do here but confirm the ref.
                 heroSeatRef.current = selectedSeat;
+                seatAcquiredAtRef.current = Date.now();
                 HydraService.onRealPlayerJoined(tableId, userId);
                 await sendAction('player_seated', {
                   seat: selectedSeat,

@@ -2423,9 +2423,18 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
     const unsub = masterBus.subscribeDebounced('WAITLIST_CHANGED', load, 300);
 
+    // Re-query when tab regains focus: a player who was seated from the waitlist
+    // while browsing another tab will see stale "You Are Waitlisted" badges.
+    // Reconciling on visibility-change clears them the moment they come back.
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') load();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     return () => {
       cancelled = true;
       unsub();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [currentUserId]);
 

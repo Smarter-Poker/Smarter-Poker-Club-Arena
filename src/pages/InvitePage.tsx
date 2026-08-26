@@ -18,7 +18,6 @@ import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { reportError } from '../utils/errorReporter';
 import { MEDIA_BASE } from '../utils/mediaBase';
-import { SHARK_CLUB_ID } from '../lib/constants';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 const inviteStepAnimationStyle = {
@@ -56,7 +55,6 @@ export default function InvitePage() {
   const [inviteUrl, setInviteUrl] = useState('');
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const qrCanvasRef = useRef<HTMLCanvasElement>(null);
   const toast = useToast();
 
   const loadClubInfo = useCallback(
@@ -183,66 +181,6 @@ export default function InvitePage() {
       } else {
         setInviteUrl(refCode ? `${baseUrl}?ref=${refCode}` : baseUrl);
       }
-
-      // Draw a simple QR-like grid on canvas
-      const canvas = qrCanvasRef.current;
-      if (canvas) {
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          const size = 160;
-          canvas.width = size;
-          canvas.height = size;
-          ctx.fillStyle = '#0a0a14';
-          ctx.fillRect(0, 0, size, size);
-
-          // Draw subtle grid lines
-          ctx.strokeStyle = 'rgba(0, 212, 255, 0.1)';
-          ctx.lineWidth = 1;
-          for (let i = 0; i < size; i += 8) {
-            ctx.beginPath();
-            ctx.moveTo(i, 0);
-            ctx.lineTo(i, size);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(0, i);
-            ctx.lineTo(size, i);
-            ctx.stroke();
-          }
-
-          // Generate deterministic pattern from club ID
-          ctx.fillStyle = '#00d4ff';
-          const cellSize = 8;
-          const grid = size / cellSize;
-          const seed = club.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-
-          // Outer finder patterns
-          ctx.fillRect(8, 8, 24, 24);
-          ctx.clearRect(12, 12, 16, 16);
-          ctx.fillRect(16, 16, 8, 8);
-
-          ctx.fillRect(size - 32, 8, 24, 24);
-          ctx.clearRect(size - 28, 12, 16, 16);
-          ctx.fillRect(size - 24, 16, 8, 8);
-
-          ctx.fillRect(8, size - 32, 24, 24);
-          ctx.clearRect(12, size - 28, 16, 16);
-          ctx.fillRect(16, size - 24, 8, 8);
-
-          for (let x = 0; x < grid; x++) {
-            for (let y = 0; y < grid; y++) {
-              const hash = ((x * 31 + y * 17 + seed) * 7919) % 100;
-              // Skip finder pattern areas
-              if ((x < 5 && y < 5) || (x > grid - 6 && y < 5) || (x < 5 && y > grid - 6)) continue;
-
-              if (hash < 45) {
-                ctx.globalAlpha = hash % 3 === 0 ? 0.6 : 1; // Subtle opacity variance
-                ctx.fillRect(x * cellSize, y * cellSize, cellSize - 1, cellSize - 1);
-                ctx.globalAlpha = 1;
-              }
-            }
-          }
-        }
-      }
     }
   }, [club?.id, club?.slug, refCode, user?.id, alreadyMember]);
 
@@ -338,11 +276,25 @@ export default function InvitePage() {
               src={sizedStorageUrl(club.logo_url || club.avatar_url || '', 96)}
               alt={club.name}
               loading="lazy"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.onerror = null; // prevent loop
+                if (club.name?.toUpperCase().includes('SHARK')) {
+                  target.src = `${MEDIA_BASE}images/shark-club-logo.jpg`;
+                } else {
+                  target.style.display = 'none';
+                  if (target.parentElement) {
+                    const span = document.createElement('span');
+                    span.innerText = club.name?.[0]?.toUpperCase() || '?';
+                    target.parentElement.appendChild(span);
+                  }
+                }
+              }}
             />
           ) : club.name?.toUpperCase().includes('SHARK') ? (
             <img src={`${MEDIA_BASE}images/shark-club-logo.jpg`} alt={club.name} loading="lazy" />
           ) : (
-            <span>{club.name[0]?.toUpperCase()}</span>
+            <span>{club.name?.[0]?.toUpperCase() || '?'}</span>
           )}
         </div>
 
@@ -388,21 +340,28 @@ export default function InvitePage() {
             {/* Shareable Invite Section */}
             <div className="share-invite-panel">
               <h3 className="share-invite-title">Share Invite</h3>
-              <canvas
-                ref={qrCanvasRef}
-                onClick={handleCopyLink}
+              <div
+                className="qr-code-wrapper"
                 style={{
-                  display: 'block',
-                  margin: '0 auto 12px',
-                  width: 120,
-                  height: 120,
-                  borderRadius: 8,
+                  margin: '0 auto 16px',
+                  display: 'flex',
+                  justifyContent: 'center',
                   cursor: 'pointer',
-                  border: '1px solid rgba(0, 212, 255, 0.3)',
-                  boxShadow: '0 0 15px rgba(0, 212, 255, 0.15)',
                 }}
+                onClick={handleCopyLink}
                 title="Click to copy invite link"
-              />
+              >
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(inviteUrl)}&color=00d4ff&bgcolor=0a0a14`}
+                  alt="QR Code"
+                  loading="lazy"
+                  style={{
+                    borderRadius: 8,
+                    border: '1px solid rgba(0, 212, 255, 0.3)',
+                    boxShadow: '0 0 15px rgba(0, 212, 255, 0.15)',
+                  }}
+                />
+              </div>
               <div className="share-link-row">
                 <input readOnly value={inviteUrl} className="share-link-input" />
                 <button
@@ -411,6 +370,23 @@ export default function InvitePage() {
                 >
                   {copied ? 'Copied!' : 'Copy'}
                 </button>
+                {navigator.share && (
+                  <button
+                    onClick={() => {
+                      navigator
+                        .share({
+                          title: `Join ${club.name}`,
+                          text: `You've been invited to join ${club.name} on Club Arena!`,
+                          url: inviteUrl,
+                        })
+                        .catch(() => {});
+                    }}
+                    className="share-copy-btn"
+                    style={{ background: 'rgba(0, 212, 255, 0.2)', marginLeft: '6px' }}
+                  >
+                    Share
+                  </button>
+                )}
               </div>
             </div>
           </>

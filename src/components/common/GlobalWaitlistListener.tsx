@@ -80,6 +80,8 @@ export default function GlobalWaitlistListener() {
     }
 
     const channel = masterBus.getOrCreateChannel(WAITLIST_CHANNEL_KEY);
+
+    // ── SEAT VACANCY (existing) ── when a seat is freed, check if hero is #1 ──
     channel.on(
       'postgres_changes',
       {
@@ -121,6 +123,28 @@ export default function GlobalWaitlistListener() {
           }
         } catch (err) {
           reportError(err, 'GlobalWaitlistListener.Error_checking_waitlist_position');
+        }
+      }
+    );
+
+    // ── SEAT GRANTED (new) ── when hero is INSERTED into a seat on a table they
+    // were waiting on, their `table_waitlist` row should be marked 'seated' by
+    // the DB trigger, but regardless we need to invalidate the lobby badge.
+    // Previously only DELETE was watched, so badges stuck when the engine seated
+    // someone via INSERT (no preceding DELETE on a fresh seat).
+    channel.on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'table_seats',
+        filter: `table_id=in.(${watched.join(',')})`,
+      },
+      (payload) => {
+        const seatedUserId = (payload.new as any)?.user_id;
+        // Only care when WE were the one seated — emit so ClubHomePage re-queries
+        if (seatedUserId === user.id) {
+          masterBus.emit('WAITLIST_CHANGED', undefined as void);
         }
       }
     );

@@ -342,8 +342,8 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
         }
       }
     }
-  } catch (e) {
-    reportError(e, 'ClubsService.joinClub_referral');
+  } catch (_err) {
+    reportError(_err, 'ClubsService.joinClub_referral');
   }
 
   // Emit CLUB_JOINED for cross-page reactivity (lobby, carousel, detail pages).
@@ -367,13 +367,18 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
         .select('name')
         .eq('id', resolvedId)
         .maybeSingle();
-      if (cData?.name) cName = cData.name;
-    } catch (e) {
+      if (cData?.name) {
+        cName = cData.name
+          .split(' ')
+          .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .join(' ');
+      }
+    } catch (_err) {
       /* ignore */
     }
     masterBus.emit('CLUB_JOINED', { clubId: resolvedId, clubName: cName, action: 'member_joined' });
-  } catch (e) {
-    console.warn('[ClubsService] joinClub: bus emit failed (non-critical):', e);
+  } catch (_err) {
+    console.warn('[ClubsService] joinClub: bus emit failed (non-critical):', _err);
   }
 
   return membership;
@@ -515,8 +520,8 @@ export async function leaveClub(clubId: string): Promise<void> {
     const { masterBus } = await import('../core/MasterBus');
     masterBus.emit('CLUB_LEFT', { clubId: resolvedId, action: 'member_left' });
     masterBus.emit('CLUB_UPDATED', { clubId: resolvedId, action: 'member_left' });
-  } catch (e) {
-    console.warn('[ClubsService] leaveClub: bus emit failed (non-critical):', e);
+  } catch (_err) {
+    console.warn('[ClubsService] leaveClub: bus emit failed (non-critical):', _err);
   }
 }
 
@@ -656,8 +661,11 @@ async function _getUserMembershipsUncached(
             club.member_count = countMap.get(club.id);
           }
         }
-      } catch (e) {
-        console.warn('[ClubsService] Live member count enrichment failed (using stale counts):', e);
+      } catch (_err) {
+        console.warn(
+          '[ClubsService] Live member count enrichment failed (using stale counts):',
+          _err
+        );
       }
     }
   }
@@ -843,8 +851,8 @@ export async function deleteClub(clubId: string): Promise<void> {
     const { masterBus } = await import('../core/MasterBus');
     masterBus.emit('CLUB_LEFT', { clubId: resolvedId, action: 'club_deleted' });
     masterBus.emit('CLUB_UPDATED', { clubId: resolvedId, action: 'club_deleted' });
-  } catch (e) {
-    console.warn('[ClubsService] deleteClub: bus emit failed (non-critical):', e);
+  } catch (_err) {
+    console.warn('[ClubsService] deleteClub: bus emit failed (non-critical):', _err);
   }
 }
 
@@ -1119,7 +1127,7 @@ export async function getLiveMemberCount(clubId: string): Promise<number> {
     if (!error && typeof data === 'number' && Number.isFinite(data)) {
       candidates.push(data);
     }
-  } catch (e) {
+  } catch (_err) {
     // RPC not deployed — rely on the other sources
   }
 
@@ -1133,7 +1141,7 @@ export async function getLiveMemberCount(clubId: string): Promise<number> {
     if (club?.member_count && Number.isFinite(club.member_count)) {
       candidates.push(club.member_count);
     }
-  } catch (e) {
+  } catch (_err) {
     /* fall through */
   }
 

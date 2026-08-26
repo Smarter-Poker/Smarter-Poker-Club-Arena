@@ -172,6 +172,14 @@ export function spawnAheadMsFor(cfg: Record<string, unknown>): number {
  * head start; the ramp is the rule.
  */
 export const HORSE_SEED_WITHIN_MS = 60 * 60 * 1000;
+/* DELIBERATELY NO LONGER EQUAL TO MTT_PRESTART_RAMP_MS (2026-08-26).
+   They were aligned on 2026-08-23 when both meant "about to start". The ramp
+   now runs for the full 72-hour publish window so the board is never a wall of
+   empty games; this constant is a different thing - the head start given at
+   SPAWN, before the ramp has ticked once. Seeding three days early would put
+   chips into a pool for an event that has only just appeared, and the ramp
+   reaches it within one tick anyway. One hour is still exactly right for a
+   head start. */
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PURE SCHEDULING LOGIC — exported so the matching rules are testable with no DB

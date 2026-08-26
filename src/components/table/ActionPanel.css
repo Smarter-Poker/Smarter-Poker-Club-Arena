@@ -300,6 +300,35 @@
   margin: 0 auto;
 }
 
+/* ═══ THE THREE BUTTONS STAND DOWN WHILE THE SLIDER IS OPEN ════════════════
+   Dan 2026-08-26: "the 3 buttons on the bottom of the action tab need to
+   DISAPPEAR when you click Raise. Only the new action bar with the slider
+   should be there."
+
+   This reverses his 2026-08-25 item 5, which asked for the opposite (the row
+   staying put while the overlay floats above it). Latest instruction wins.
+
+   HIDDEN, NOT REMOVED, and the distinction is load-bearing. `--sp-action-h`
+   is MEASURED from this panel's real height by a ResizeObserver in
+   TablePage, and every other stylesheet reserves felt against it. `display:
+   none` would shrink the panel mid-raise, the reserve would shrink with it,
+   and the whole table would resize and reflow underneath the player while
+   they are dragging a bet — the one moment nothing on screen should move.
+   `visibility: hidden` keeps the box exactly as tall as it was, so the felt
+   does not budge and the slider stays where the thumb already is.
+
+   `pointer-events: none` matters too: an invisible button that still takes
+   taps is worse than a visible one. The overlay's own Back button remains
+   the way out, so nothing depends on tapping through this row.
+
+   The five things the 2026-08-25 note lists as depending on the row still
+   work: it is in the DOM, it still has its measured height, `aria-expanded`
+   still reports honestly, and the close branch is reachable via Back. */
+.action-panel--raise .action-row {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .action-panel .action-btn {
   flex: 1;
   display: flex;
@@ -378,7 +407,7 @@
 /* ─── FOLD (Red) ──────────────────────────────────────────── */
 /* ─── FOLD ─────────────────────────────────────────────────── */
 .action-panel .action-btn--fold {
-  background: linear-gradient(180deg, #1587F8 0%, #0078FF 40%, #003A9E 100%);
+  background: linear-gradient(180deg, #1587f8 0%, #0078ff 40%, #003a9e 100%);
   box-shadow:
     0 4px 0 #002070,
     0 6px 20px rgba(21, 135, 248, 0.35),
@@ -397,7 +426,7 @@
 
 /* ─── CHECK ────────────────────────────────────────────────── */
 .action-panel .action-btn--check {
-  background: linear-gradient(180deg, #1587F8 0%, #0078FF 40%, #003A9E 100%);
+  background: linear-gradient(180deg, #1587f8 0%, #0078ff 40%, #003a9e 100%);
   box-shadow:
     0 4px 0 #002070,
     0 6px 20px rgba(21, 135, 248, 0.35),
@@ -416,7 +445,7 @@
 
 /* ─── CALL ─────────────────────────────────────────────────── */
 .action-panel .action-btn--call {
-  background: linear-gradient(180deg, #1587F8 0%, #0078FF 40%, #003A9E 100%);
+  background: linear-gradient(180deg, #1587f8 0%, #0078ff 40%, #003a9e 100%);
   box-shadow:
     0 4px 0 #002070,
     0 6px 20px rgba(21, 135, 248, 0.35),
@@ -435,7 +464,7 @@
 
 /* ─── RAISE ────────────────────────────────────────────────── */
 .action-panel .action-btn--raise {
-  background: linear-gradient(180deg, #1587F8 0%, #0078FF 40%, #003A9E 100%);
+  background: linear-gradient(180deg, #1587f8 0%, #0078ff 40%, #003a9e 100%);
   box-shadow:
     0 4px 0 #002070,
     0 6px 20px rgba(21, 135, 248, 0.35),
@@ -467,7 +496,7 @@
 
 /* ─── ALL-IN — The big play ────────────────────────────────── */
 .action-panel .action-btn--allin {
-  background: linear-gradient(180deg, #1587F8 0%, #0078FF 40%, #003A9E 100%);
+  background: linear-gradient(180deg, #1587f8 0%, #0078ff 40%, #003a9e 100%);
   box-shadow:
     0 4px 0 #002070,
     0 6px 20px rgba(21, 135, 248, 0.4),
@@ -502,7 +531,6 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
 }
-
 
 /* ═══════════════════════════════════════════════════════════════
    RAISE MODE

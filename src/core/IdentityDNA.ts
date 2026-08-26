@@ -39,6 +39,7 @@ export interface UserProfile {
   tier?: string; // Raw DB tier value (e.g. "Newcomer")
   created_at: string;
   updated_at?: string;
+  player_number?: number;
 }
 
 export interface IdentityDNAStatus {
@@ -356,6 +357,7 @@ class IdentityDNACore {
             vip_level: ((profile as any).tier ||
               profile.vip_level ||
               'bronze') as UserProfile['vip_level'],
+            player_number: profile.player_number,
           });
           console.debug('[IdentityDNA] Full profile loaded from database');
         }
@@ -385,7 +387,7 @@ class IdentityDNACore {
     const { data, error } = await supabase
       .from('profiles')
       .select(
-        'id, username, display_name, avatar_url:arena_avatar_url, tier, created_at, updated_at'
+        'id, username, display_name, avatar_url:arena_avatar_url, tier, created_at, updated_at, player_number'
       )
       .eq('id', userId)
       .maybeSingle();

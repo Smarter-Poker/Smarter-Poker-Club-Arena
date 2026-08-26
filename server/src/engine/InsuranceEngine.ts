@@ -57,6 +57,12 @@ export interface InsuranceOffer {
   insuredAmount: number;
   /** Coverage percentage chosen by player (1-100, default 100) */
   coveragePercent: number;
+  /**
+   * REFERENCE PARITY 2026-08-26: the leader's own committed chips this hand.
+   * The popup's Break Even preset sets the fee so the payout returns exactly
+   * this amount.
+   */
+  atRisk: number;
   status: 'offered' | 'accepted' | 'declined' | 'settled';
   /** If true, player declined for the entire hand (won't be re-offered on later streets) */
   declinedForHand: boolean;
@@ -110,7 +116,9 @@ export class InsuranceEngine {
     enabled: false,
     houseMargin: 1.2, // 20% house edge — per Dan's explicit instruction
     maxInsurablePercent: 100, // Max insurable = pot amount
-    offerTimeoutSeconds: 15,
+    // REFERENCE PARITY 2026-08-26: the reference dialog opens at ~26s and
+    // counts down. 25 matches it (was 15).
+    offerTimeoutSeconds: 25,
     minPotForInsurance: 0,
     equityIterations: 5000,
   };
@@ -218,16 +226,25 @@ export class InsuranceEngine {
     if (pushFrac >= 0.99 || lossFrac <= 0) return [];
     const lossGivenNotPush = Math.min(1, lossFrac / (1 - pushFrac));
 
-    // Insured amount = what the leader can actually LOSE (their own committed
-    // chips this hand), capped by the max-insurable fraction of the pot.
+    // REFERENCE PARITY 2026-08-26 (Dan's leader-seat recording): the insured
+    // pot covers the WINNINGS the leader stands to collect, capped by the
+    // max-insurable fraction of the pot - the reference dialog's max insured
+    // is approximately the pot, well above the leader's own stake. The old
+    // at-risk cap (insure only your committed chips) undersold coverage to
+    // roughly half the pot heads-up. The leader's committed chips still ride
+    // the offer as `atRisk` - the Break Even preset needs them.
     const maxInsurable = pot * (config.maxInsurablePercent / 100);
-    const fullInsuredAmount = Math.round(Math.min(leader.atRisk, maxInsurable) * 100) / 100;
+    const fullInsuredAmount = Math.round(maxInsurable * 100) / 100;
     // Premium = fair cost x houseMargin. houseMargin 1.20 => a 20% edge banked by
     // the club/union. Player EV = payout*pLoss - premium = -(margin-1)*fair < 0.
     const fullPremium =
       Math.round(fullInsuredAmount * lossGivenNotPush * config.houseMargin * 100) / 100;
 
     if (fullInsuredAmount <= 0) return [];
+    // FINAL AUDIT 2026-08-26: at dust stakes the cents-rounded premium can hit
+    // 0.00 while the insured amount is positive - a FREE payout contract the
+    // union bank would fund. Uninsurable at this granularity: no offer.
+    if (fullPremium <= 0) return [];
 
     const offer: InsuranceOffer = {
       tableId,
@@ -240,6 +257,7 @@ export class InsuranceEngine {
       fullInsuredAmount,
       insuredAmount: fullInsuredAmount,
       coveragePercent: 100,
+      atRisk: Math.round(leader.atRisk * 100) / 100,
       status: 'offered',
       declinedForHand: false,
     };
@@ -303,8 +321,13 @@ export class InsuranceEngine {
     const offer = offers.find((o) => o.playerId === playerId && o.status === 'offered');
     if (!offer) return false;
 
-    // Clamp coverage to valid range
-    const coverage = Math.max(1, Math.min(100, Math.round(coveragePercent)));
+    // Clamp coverage to valid range.
+    // FINAL AUDIT 2026-08-26: hundredths of a percent, no longer whole
+    // percents. The fee-first dialog converts its cents-precision fee to a
+    // percentage; rounding that to an integer here charged up to half a
+    // percent of the full premium more or less than the number the player
+    // was shown. What is displayed is what is bought, to the cent.
+    const coverage = Math.max(0.01, Math.min(100, Math.round(coveragePercent * 100) / 100));
     const coverageMultiplier = coverage / 100;
 
     // Scale insured amount and premium by coverage percentage
@@ -372,7 +395,8 @@ export class InsuranceEngine {
     const offer = offers.find((o) => o.playerId === playerId && o.status === 'offered');
     if (!offer) return null;
 
-    const coverage = Math.max(1, Math.min(100, Math.round(coveragePercent)));
+    // FINAL AUDIT 2026-08-26: same fractional precision as acceptPartial.
+    const coverage = Math.max(0.01, Math.min(100, Math.round(coveragePercent * 100) / 100));
     const coverageMultiplier = coverage / 100;
 
     return {

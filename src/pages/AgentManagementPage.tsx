@@ -877,6 +877,11 @@ export default function AgentManagementPage() {
         {activeTab === 'players' && (
           <div className={styles.playersSection}>
             <PlayerSearch
+              /* Scopes the search to THIS club. The prop was declared on
+                 PlayerSearch all along and never passed, so a staff member on
+                 one club's Players tab searched every profile on the platform,
+                 email included. */
+              clubId={clubId}
               onPlayerSelect={(player) => {
                 toast.info(`Selected: ${player.username}`);
               }}

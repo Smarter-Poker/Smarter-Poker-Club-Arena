@@ -14,8 +14,6 @@ import React, { useMemo, useEffect, useRef, useState, memo } from 'react';
 import { CardImage, CardBack, type Card } from './CardImage';
 import { haptic, soundService } from '../../services/SoundService';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
-import { ParticleSystem } from './ParticleSystem';
-import { triggerScreenShake } from '../../utils/ScreenShake';
 import './CommunityCards.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -29,6 +27,17 @@ export type BoardStage = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
 export interface CommunityCardsProps {
   cards: Card[];
   stage: BoardStage;
+  /**
+   * RABBIT HUNT 2026-08-26: the paid post-hand reveal, rendered into the
+   * undealt slots AFTER the stage-derived board. An EXPLICIT prop on purpose:
+   * TablePage used to append these into `cards`, and since the visible count
+   * derives from the STAGE, a preflop fold (count 0) hid the entire paid
+   * reveal. Inferring "trailing cards are rabbit cards" instead would break
+   * the double-board bomb pot's hold-flop gate, which deliberately passes
+   * dealt cards with stage forced to 'preflop' to keep them hidden. Only this
+   * prop ever animates the reference's rabbit flip.
+   */
+  rabbitCards?: Card[];
   highlightedIndices?: number[];
   winningHandName?: string; // e.g. "Straight" — shown as overlay at showdown
   /**
@@ -89,6 +98,9 @@ export interface CommunityCardsProps {
  */
 const NO_HIGHLIGHTS: readonly number[] = Object.freeze([]);
 
+/** Stable no-rabbit default — same identity rule as NO_HIGHLIGHTS above. */
+const NO_RABBIT_CARDS: Card[] = Object.freeze([]) as unknown as Card[];
+
 function getVisibleCardCount(stage: BoardStage): number {
   switch (stage) {
     case 'preflop':
@@ -113,13 +125,18 @@ interface CardFaceProps {
   card: Card;
   index: number;
   isHighlighted: boolean;
+  /**
+   * POKERBROS PARITY 2026-08-26 (frame-by-frame of the reference recording):
+   * the moment the winning five are named, every board card NOT in them drops
+   * to ~50% brightness in a single beat, while the winning cards keep full
+   * brightness behind their gold border. True exactly when a highlight set
+   * exists and this card is not in it.
+   */
+  isDimmed: boolean;
   isNewlyDealt: boolean;
   stage: BoardStage;
   deckStyle?: '4color' | '2color';
   cardBack?: string;
-  /** True for the brief window after the winning cards are named — see the
-   *  dead-animation note on the container. Drives ccHighlightPop. */
-  highlightPop?: boolean;
   /** All-in runout: turn/river land face down and flip (see the prop note). */
   slowReveal?: boolean;
 }
@@ -128,11 +145,11 @@ function CardFace({
   card,
   index,
   isHighlighted,
+  isDimmed,
   isNewlyDealt,
   stage,
   deckStyle,
   cardBack,
-  highlightPop = false,
   slowReveal = false,
 }: CardFaceProps) {
   // Only apply animation classes to NEWLY DEALT cards — existing cards stay still
@@ -150,9 +167,7 @@ function CardFace({
       className={[
         'community-cards__card',
         isHighlighted ? 'community-cards__card--highlighted' : '',
-        // The pop only means anything on a card that is actually part of the
-        // winning hand.
-        isHighlighted && highlightPop ? 'community-cards__card--highlight-pop' : '',
+        isDimmed ? 'community-cards__card--dimmed' : '',
         isFlopDeal ? 'community-cards__card--flop-deal' : '',
         isTurnCard && !isSlowFlip ? 'community-cards__card--turn' : '',
         isRiverCard && !isSlowFlip ? 'community-cards__card--river' : '',
@@ -204,19 +219,53 @@ function CardFace({
   );
 }
 
-interface PlaceholderCardProps {
+interface RabbitCardProps {
+  card: Card;
   index: number;
+  deckStyle?: '4color' | '2color';
   cardBack?: string;
 }
 
-function PlaceholderCard({ index, cardBack }: PlaceholderCardProps) {
+/**
+ * RABBIT HUNT REVEAL — POKERBROS PARITY 2026-08-26, from a frame-by-frame pass
+ * over the reference recording (RABBIT HUNT.MOV, 26-Aug PLO5 preflop fold):
+ *
+ *   frame 0        every undealt slot shows a card BACK, full size, in a hard
+ *                  cut — no slide, no scale-in, no stagger. All backs land in
+ *                  the same video frame the tap registers.
+ *   ~120ms hold    the backs sit face down (about 4 frames at 30fps).
+ *   ~170ms flip    ALL cards turn over TOGETHER — a horizontal edge-on flip
+ *                  (rotateY), never one-by-one. There is no dealing animation
+ *                  and no winner highlight; the hand ended on a fold.
+ *   ~70ms settle   the faces overshoot slightly larger and settle.
+ *
+ * The revealed board then simply stays until the next hand clears it.
+ *
+ * Two real surfaces (back + face) on a preserve-3d box, exactly like the flop
+ * flip above — a one-sided element would show a mirrored face mid-turn. The
+ * resting transform is FACE UP so reduced-motion players just see the cards.
+ */
+function RabbitCard({ card, index, deckStyle, cardBack }: RabbitCardProps) {
   return (
-    <div className="community-cards__placeholder" style={{ animationDelay: `${index * 100}ms` }}>
-      {/* Was hardcoded 'classic_red' — see the cardBack note on the props. */}
-      <CardBack size="lg" style={cardBack} />
+    <div
+      className="community-cards__card community-cards__card--rabbit"
+      style={{ '--card-index': index } as React.CSSProperties}
+    >
+      <div className="community-cards__rabbit-flip">
+        <div className="community-cards__flip-face community-cards__flip-face--back">
+          <CardBack size="lg" style={cardBack} />
+        </div>
+        <div className="community-cards__flip-face community-cards__flip-face--front">
+          <CardImage card={card} deckStyle={deckStyle} size="lg" loading="eager" />
+        </div>
+      </div>
     </div>
   );
 }
+
+/* `PlaceholderCard` was deleted 2026-08-26 with the ghost turn/river slots it
+   drew (Dan: "remove the ghost place holders for the turn and river that
+   appear after the flop"). Nothing rendered it afterwards. */
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -225,6 +274,7 @@ function PlaceholderCard({ index, cardBack }: PlaceholderCardProps) {
 function CommunityCardsComponent({
   cards,
   stage,
+  rabbitCards = NO_RABBIT_CARDS,
   highlightedIndices = NO_HIGHLIGHTS as number[],
   winningHandName,
   winningHandDescription,
@@ -235,28 +285,19 @@ function CommunityCardsComponent({
   slowReveal = false,
 }: CommunityCardsProps) {
   const visibleCount = useMemo(() => getVisibleCardCount(stage), [stage]);
+  /**
+   * RABBIT HUNT 2026-08-26: how many reveal cards fit in the undealt slots.
+   * Before the explicit prop, the reveal was appended into `cards` — and since
+   * the visible count derives from the STAGE, a preflop fold (count 0) hid the
+   * entire paid reveal: the player paid and saw nothing.
+   */
+  const rabbitCount = Math.max(0, Math.min(rabbitCards.length, 5 - visibleCount));
   const prevStageRef = useRef(stage);
   const prevCardCountRef = useRef(cards.length);
   const prevVisibleCountRef = useRef(visibleCount);
   const [showdownMode, setShowdownMode] = useState(false);
-  const [highlightPop, setHighlightPop] = useState(false);
   const [newlyDealtIndices, setNewlyDealtIndices] = useState<Set<number>>(new Set());
   const [stageLabel, setStageLabel] = useState<string | null>(null);
-  const [showParticles, setShowParticles] = useState(false);
-  const [particleOrigin, setParticleOrigin] = useState<{ x: number; y: number } | undefined>();
-  const prevHighlightRef = useRef<number[]>([]);
-  const containerRef = useRef<HTMLDivElement>(null);
-  // CA-13 BUG FIX: the 2500ms setShowParticles(false) inside the showdown branch
-  // of the stage-transition useEffect was fire-and-forget. If the hand ends and
-  // the board clears before 2.5s, the component unmounts and setState fires.
-  const showParticlesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Unmount guard for the particles timer
-  useEffect(() => {
-    return () => {
-      if (showParticlesTimerRef.current) clearTimeout(showParticlesTimerRef.current);
-    };
-  }, []);
 
   // FIX 184: Removed duplicate haptic here — stage transition useEffect below already
   // fires haptic on flop/turn/river. Having both caused double-haptic on every deal.
@@ -340,27 +381,14 @@ function CommunityCardsComponent({
         if (playSounds) haptic.medium();
         if (playSounds && soundService.isEnabled()) soundService.playCommunityCard();
       } else if (stage === 'showdown') {
+        // POKERBROS PARITY 2026-08-26 (frame-by-frame of the reference
+        // recording): showdown is a HARD CUT. The reference has no screen
+        // shake, no spark burst and no scale pop at any point in the winner
+        // sequence — the old triggerScreenShake + ParticleSystem beats here
+        // were motion the reference does not have. The haptic stays: it is
+        // physical feedback, not something on screen.
         if (playSounds) haptic.strong();
         setShowdownMode(true);
-
-        // Screen shake on showdown
-        triggerScreenShake('medium', containerRef.current);
-
-        // Gold spark burst from board center
-        if (containerRef.current) {
-          const rect = containerRef.current.getBoundingClientRect();
-          setParticleOrigin({
-            x: rect.left + rect.width / 2,
-            y: rect.top + rect.height / 2,
-          });
-        }
-        setShowParticles(true);
-        // CA-13: cancel any lingering timer before setting a new one
-        if (showParticlesTimerRef.current) clearTimeout(showParticlesTimerRef.current);
-        showParticlesTimerRef.current = setTimeout(() => {
-          showParticlesTimerRef.current = null;
-          setShowParticles(false);
-        }, 2500);
       }
       prevStageRef.current = stage;
       return () => {
@@ -369,21 +397,24 @@ function CommunityCardsComponent({
     }
   }, [stage]);
 
-  // Highlight pop animation — when highlightedIndices changes
+  // POKERBROS PARITY 2026-08-26: the highlight-pop state machine is gone.
+  // A measured frame-by-frame pass of the reference recording shows the
+  // winner state is a single-frame hard cut — no pop, no ramp — so there is
+  // nothing left for a timer to drive.
+
+  // RABBIT HUNT 2026-08-26: one snap + a light haptic when the reveal lands.
+  // ONE beat, not per-card — the reference turns all cards over in the same
+  // frame, so five staggered snaps would invent a deal that never happened.
+  const prevRabbitCountRef = useRef(0);
   useEffect(() => {
-    const highlightStr = JSON.stringify(highlightedIndices);
-    const prevStr = JSON.stringify(prevHighlightRef.current);
-    if (highlightStr !== prevStr && highlightedIndices.length > 0) {
-      setHighlightPop(true);
-      // AUDIT 2026-08-20: window was 400ms against a 500ms ccHighlightPop
-      // keyframe — even once wired (see below) it would have been cut at 80%.
-      // Scaled like every other window so a slowed table cannot clip it.
-      const timer = setTimeout(() => setHighlightPop(false), 500 * getAnimationSpeed() + 60);
-      prevHighlightRef.current = highlightedIndices;
-      return () => clearTimeout(timer);
+    if (rabbitCount > 0 && prevRabbitCountRef.current === 0) {
+      if (playSounds) {
+        haptic.light();
+        if (soundService.isEnabled()) soundService.playCommunityCard();
+      }
     }
-    prevHighlightRef.current = highlightedIndices;
-  }, [highlightedIndices]);
+    prevRabbitCountRef.current = rabbitCount;
+  }, [rabbitCount, playSounds]);
 
   // Create array of 5 slots
   const slots = useMemo(() => {
@@ -393,19 +424,29 @@ function CommunityCardsComponent({
           type: 'card' as const,
           card: cards[i],
           isHighlighted: highlightedIndices.includes(i),
+          // POKERBROS PARITY 2026-08-26: a highlight set dims every card
+          // outside it — the two states arrive together, in the same frame.
+          isDimmed: highlightedIndices.length > 0 && !highlightedIndices.includes(i),
           isNewlyDealt: newlyDealtIndices.has(i),
+        };
+      }
+      // RABBIT HUNT 2026-08-26: the paid reveal fills the undealt slots.
+      if (i < visibleCount + rabbitCount && rabbitCards[i - visibleCount]) {
+        return {
+          type: 'rabbit' as const,
+          card: rabbitCards[i - visibleCount],
+          isNewlyDealt: false,
         };
       }
       return { type: 'placeholder' as const, isNewlyDealt: false };
     });
-  }, [cards, visibleCount, highlightedIndices, newlyDealtIndices]);
+  }, [cards, visibleCount, rabbitCards, rabbitCount, highlightedIndices, newlyDealtIndices]);
 
   return (
     <div
-      ref={containerRef}
       className={`community-cards ${showdownMode ? 'community-cards--showdown' : ''}`}
       role="region"
-      aria-label={`Community cards: ${cards.length > 0 ? cards.map((c) => `${c.rank} of ${c.suit}`).join(', ') : 'none dealt'}${winningHandName ? ` - ${winningHandName}` : ''}`}
+      aria-label={`Community cards: ${cards.length > 0 ? cards.map((c) => `${c.rank} of ${c.suit}`).join(', ') : 'none dealt'}${rabbitCount > 0 ? `; rabbit hunt: ${rabbitCards.map((c) => `${c.rank} of ${c.suit}`).join(', ')}` : ''}${winningHandName ? ` - ${winningHandName}` : ''}`}
     >
       {/* Bible V8 §5.1: Stage label (FLOP/TURN/RIVER) — fades in briefly when cards are dealt */}
       {stageLabel && (
@@ -422,26 +463,48 @@ function CommunityCardsComponent({
           was written for. */}
       <div className="community-cards__container">
         {slots.map((slot, i) =>
-          slot.type === 'card' ? (
+          slot.type === 'rabbit' ? (
+            // RABBIT HUNT 2026-08-26: renders even at stage 'preflop' — the
+            // reveal exists precisely because the hand ended before these
+            // cards were dealt, so the preflop placeholder suppression below
+            // must not apply to it.
+            <RabbitCard
+              key={`rabbit-${i}`}
+              card={slot.card}
+              index={i}
+              deckStyle={deckStyle}
+              cardBack={cardBack}
+            />
+          ) : slot.type === 'card' ? (
             <CardFace
               key={`card-${i}`}
               card={slot.card}
               index={i}
               isHighlighted={slot.isHighlighted}
+              isDimmed={slot.isDimmed}
               isNewlyDealt={slot.isNewlyDealt}
               stage={stage}
               deckStyle={deckStyle}
               cardBack={cardBack}
-              highlightPop={highlightPop}
               slowReveal={slowReveal}
             />
-          ) : // Phase 2 T1-07 — per POKERBROS_CLONE_SPEC.md line 485:
-          //   "Preflop: cards exist but are hidden/not displayed"
-          // Suppress placeholder card backs during preflop. Post-flop we
-          // still show placeholders for not-yet-dealt slots (turn/river).
-          stage === 'preflop' ? null : (
-            <PlaceholderCard key={`placeholder-${i}`} index={i} cardBack={cardBack} />
-          )
+          ) : /* Dan 2026-08-26: "remove the ghost placeholders for the turn
+                 and river that appear after the flop."
+
+                 An undealt slot now renders NOTHING at any stage. The dashed
+                 outlines were meant to keep the board visually centred before
+                 the turn and river land, but the row is centred by its own
+                 flex layout, so they bought nothing and read as two empty
+                 card-shaped holes sitting on the felt — on a phone, where the
+                 board is already small, they were the loudest thing on it.
+
+                 The preflop suppression this replaces (Phase 2 T1-07) was the
+                 same instinct applied to one street; this is it applied to
+                 all of them. `PlaceholderCard` and its `.community-cards__
+                 placeholder` styles were deleted with it rather than left
+                 behind — a component nothing renders is how a stylesheet ends
+                 up full of rules for markup that no longer exists. */
+          null
         )}
       </div>
 
@@ -458,7 +521,10 @@ function CommunityCardsComponent({
       {/* Winning Hand Name — premium-style "Straight" label below community cards */}
       {winningHandName && (
         <div className="community-cards__hand-name">
-          {winningHandName}
+          {/* POKERBROS PARITY 2026-08-26: the name is its own span so the
+              band background (parent) and the gold gradient fill
+              (background-clip: text on this span) can coexist. */}
+          <span className="community-cards__hand-name-text">{winningHandName}</span>
           {/* SHOWDOWN SYSTEM 2026-08-25 (spec section 14): the secondary
               descriptive line — smaller, under the classification. */}
           {winningHandDescription && (
@@ -471,17 +537,6 @@ function CommunityCardsComponent({
           {lowWinnerLabel && <div className="community-cards__low-winner">{lowWinnerLabel}</div>}
         </div>
       )}
-
-      {/* Gold Spark Burst on Showdown */}
-      <ParticleSystem
-        active={showParticles}
-        mode="sparks"
-        origin={particleOrigin}
-        count={50}
-        intensity={1.5}
-        duration={2500}
-        onComplete={() => setShowParticles(false)}
-      />
     </div>
   );
 }
@@ -505,6 +560,10 @@ export const CommunityCards = memo(CommunityCardsComponent, (prev, next) => {
   // until some unrelated prop happened to change.
   if (prev.cardBack !== next.cardBack) return false;
   if (JSON.stringify(prev.cards) !== JSON.stringify(next.cards)) return false;
+  // RABBIT HUNT 2026-08-26: the reveal arrives as its own prop; without this
+  // compare the memo swallowed the reveal and the paid cards never painted.
+  if (JSON.stringify(prev.rabbitCards ?? []) !== JSON.stringify(next.rabbitCards ?? []))
+    return false;
   if (JSON.stringify(prev.highlightedIndices) !== JSON.stringify(next.highlightedIndices))
     return false;
   return true;

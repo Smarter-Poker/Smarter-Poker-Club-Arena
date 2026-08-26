@@ -20,14 +20,7 @@ import chatIcon from '../../assets/icons/icon-chat.jpg';
  * The image has a dark background that blends naturally with the dark button.
  */
 function ChatBubbleIcon() {
-  return (
-    <img
-      src={chatIcon}
-      className="chat-collapsed__icon-img"
-      alt=""
-      draggable={false}
-    />
-  );
+  return <img src={chatIcon} className="chat-collapsed__icon-img" alt="" draggable={false} />;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

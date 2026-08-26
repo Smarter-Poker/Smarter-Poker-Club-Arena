@@ -447,12 +447,7 @@ export function TableMenu({
         aria-haspopup="menu"
         aria-expanded={isOpen}
       >
-        <img
-          src={hamburgerIcon}
-          className="table-menu__trigger-img"
-          alt=""
-          draggable={false}
-        />
+        <img src={hamburgerIcon} className="table-menu__trigger-img" alt="" draggable={false} />
         {/* Notification badge */}
         {badgeCount != null && badgeCount > 0 && (
           <span className="table-menu__badge" aria-label={`${badgeCount} notifications`}>

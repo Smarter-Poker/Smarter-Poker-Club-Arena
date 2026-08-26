@@ -114,8 +114,16 @@ describe('horses do not occupy an event that has not started', () => {
     expect(HORSE_SEED_WITHIN_MS).toBe(60 * 60 * 1000);
   });
 
-  it('matches the ramp window, so spawn-time seeding and the ramp agree', () => {
-    expect(HORSE_SEED_WITHIN_MS).toBe(MTT_PRESTART_RAMP_MS);
+  it('is DELIBERATELY shorter than the ramp window', () => {
+    /* These were aligned on 2026-08-23, when both meant "about to start".
+       They mean different things now. MTT_PRESTART_RAMP_MS is the whole field
+       build and runs for the full 72-hour publish window, so the board is
+       never a wall of empty games. This constant is the head start given at
+       SPAWN, before the ramp has ticked once - and seeding three days early
+       would put chips into a pool for an event that has only just appeared,
+       for no gain, since the ramp reaches it within one tick anyway. */
+    expect(HORSE_SEED_WITHIN_MS).toBeLessThan(MTT_PRESTART_RAMP_MS);
+    expect(HORSE_SEED_WITHIN_MS).toBe(60 * 60 * 1000);
   });
 
   it('an event published a day out is outside the seed window', () => {

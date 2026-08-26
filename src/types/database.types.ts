@@ -404,6 +404,7 @@ export interface TournamentPlayer {
   bounty_winnings: number;
   current_bounty: number;
   mystery_bounty_value?: number | null;
+  is_satellite_qualifier?: boolean;
 }
 
 export type TournamentPlayerStatus = 'registered' | 'playing' | 'eliminated' | 'winner';

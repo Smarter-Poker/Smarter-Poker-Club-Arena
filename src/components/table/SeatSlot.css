@@ -17,25 +17,17 @@
      substitution, which is not true of a `:root` alias (see the note there). */
   --seat-avatar-size: var(--seat-avatar-base, 84px);
 
-  /* ── THE TWO-CARD HAND SIZE — one declaration, two consumers ──────────────
-     Dan 2026-08-25 round 2, item 10: "for holdem, every player should have
-     their cards displayed exactly as the hero has theirs."
+  /* ── THE TWO-CARD HAND SIZE — the hero row's base tokens ──────────────────
+     Read by `.seat__cards--hero` (its 2-card baseline; the PLO :has() guards
+     retune the hero row per hand size). 2026-08-26: the hold'em-villain
+     consumer (`.seat__cards--twocard`) was DELETED with the second villain
+     renderer — every villain hand now draws through the one fan geometry on
+     `.seat__cards--opponent`, sized from the avatar token, and game type
+     changes only the card count. These tokens are hero-only again.
 
-     "Exactly as the hero" is only true if there is one set of numbers, so the
-     2-card size lives HERE, on the seat, and both rows read it:
-
-       .seat__cards--hero                          (the hero's own row)
-       .seat__cards--opponent.seat__cards--twocard (a villain in a 2-card game)
-
-     On `.seat` rather than on either row because that is the element the
-     responsive blocks already retune — they override --seat-avatar-base here,
-     so the card size retunes in the same place and by the same rule, and
-     neither row can be given a size the other did not get.
-
-     Only the TWO-card size is shared. The PLO4/5/6 guards further down still
-     retune the hero row alone: six full-size cards beside a villain do not fit
-     at 375px, and a face-down back carries one bit of information, so the
-     compact overlapped treatment costs those hands nothing.
+     On `.seat` because that is the element the responsive blocks already
+     retune — they override --seat-avatar-base here, so the card size retunes
+     in the same place and by the same rule.
 
      Height is round(width x 1.4) — the 2.5:3.5 playing-card ratio, made exact
      so the card art is never resampled. Keep it exact if these change. */
@@ -1257,107 +1249,101 @@
    HOLE CARDS — PokerBros-style layout
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-/* Opponent cards — small, tucked behind/beside the avatar */
-/* Dan 2026-08-23: "right now you can barely see if the user has cards or not."
-   Two separate reasons the backs were invisible, and both are here.
+/* ═══ THE VILLAIN FAN — ONE GEOMETRY FOR 2, 4, 5 AND 6 CARDS ═════════════════
+   Dan 2026-08-26 rebuild. The old system had TWO renderers — hold'em villains
+   drew hero-sized flat pairs (`--twocard`), Omaha villains drew compressed
+   slivers with a backing plate — plus a third anchor for the showdown reveal.
+   All of that is deleted. Every villain hand is now the same tucked, mirrored
+   fan; game type determines the card COUNT and nothing else.
 
-   1. z-index: 1. The avatar wrap is 2, the avatar itself 3, the badges 5 - so
-      the cards were painting UNDERNEATH the character standing in front of
-      them. 6 puts them above the avatar and still below the action badge and
-      the last-action pill (10+), which must stay readable over everything.
-   2. left: calc(100% - 14px) hung all but 14px of the row off the outside of
-      the seat, where the felt is darkest and there is no plate behind them.
-      Tucking to 100% - 22px keeps the row anchored to the seat's edge with
-      enough of it over the plate to read as belonging to that player.
+   Geometry (spec 2026-08-26):
+     card height   0.78 x avatar diameter, scaled down per count (--vh-mult)
+     card width    height x 0.714 (real playing-card ratio)
+     step          fraction of card width per count (--vh-step-f), never < 0.28
+     tuck          innermost card slides 0.32 x card width UNDER the avatar
+     arc           1.5deg per card, symmetric about the fan centre, mirrored
+                   on left-hand fans, origin bottom-centre
+     vertical      fan centre = avatar centre, lifted 6% of card height
+     floor         card width never drops below 22px (the max() below)
 
-   The row also has to hold up to SIX cards now (see holeCardCount in
-   SeatSlot.tsx). Six 30px cards laid flat is 180px, wider than the whole seat,
-   so the children overlap - the same device the hero row already uses. A back
-   carries no information beyond "this player has a hand", so overlapping them
-   costs nothing and the count stays countable. */
-/* ── WHERE THE ROW LANDS IS NOT DECIDED HERE ──────────────────────────────
-   Dan 2026-08-24 centred every villain's row UNDER the plate ("the players on
-   the left side of the table should have their cards under them, not on the
-   right"), which is what `top: 100%` / `left: 50%` below still express. Dan
-   2026-08-25 round 2, item 7, moved it again: every face-down row now hangs
-   BESIDE the avatar on the side that points at the felt, and only the showdown
-   reveal is still drawn over the plate. Both of those anchors live in ONE place
-   at the end of this file, where nothing in the three breakpoint blocks between
-   here and there can reach them — read that section, not this rule, for where a
-   row actually goes. What stays here is what a row IS: an absolutely positioned
-   flex line above the avatar, with one drop shadow over the whole group. */
+   The TSX sets three inline properties on this element — --vh-n (count),
+   --vh-mult and --vh-step-f-base — and one per card (--vh-i, its index,
+   innermost = 0). Everything else derives here, in the cascade, where it is
+   inspectable in devtools. WHERE the fan hangs (left/right of the avatar) is
+   the `.seat--cards-left/right` rules at the end of this file: left-half
+   seats fan LEFT, right-half seats fan RIGHT — away from table centre, so
+   the betting lane between pod and pot stays clear. */
 .seat__cards--opponent {
-  /* How much of every card after the first is hidden under the one before it.
-     A token rather than a literal because a hold'em row overrides it at the end
-     of this file, taking the hero's own spacing (`step - w`) so two villains'
-     cards sit exactly as far apart as the hero's do. One name, one place, no
-     second copy of the overlap arithmetic.
-
-     12px against the 20px top-cap card and the 22-30px base card leaves an
-     8-18px sliver of every card after the first: wide enough to count a
-     six-card hand, narrow enough that six fit where two used to. */
-  --sp-opp-overlap: 12px;
+  --vh-n: 2;
+  --vh-mult: 1;
+  --vh-step-f: var(--vh-step-f-base, 0.45);
+  /* 30.8px height = the 22px minimum card width, spec section 4. */
+  --vh-card-h: max(
+    30.8px,
+    calc(var(--seat-avatar-size, 84px) * 0.78 * var(--vh-mult) * var(--vh-reveal, 1))
+  );
+  --vh-card-w: calc(var(--vh-card-h) * 0.714);
+  --vh-step: calc(var(--vh-card-w) * var(--vh-step-f));
+  --vh-tuck: calc(var(--vh-card-w) * 0.32);
+  --vh-fan-w: calc(var(--vh-card-w) + (var(--vh-n) - 1) * var(--vh-step));
+  /* Mirrors the arc on left-hand fans; flipped by `.seat--cards-left`. */
+  --vh-dir: 1;
   position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  margin-top: 3px;
-  display: flex;
-  z-index: 6;
-  /* Drop shadow on the ROW, so the fan reads as one object against the felt
-     rather than six separately-shadowed rectangles. */
-  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.7));
+  width: var(--vh-fan-w);
+  height: var(--vh-card-h);
+  /* Fan centre sits on the avatar's centre, lifted 6% of card height so the
+     card tops clear the shoulder line. The avatar wrap is the seat's first
+     child, so its centre is half the token from the seat's top. */
+  top: calc(var(--seat-avatar-size, 84px) / 2 - var(--vh-card-h) * 0.06);
+  transform: translateY(-50%);
+  /* UNDER the avatar (wrap is z 2): the tuck. The innermost card slides
+     behind the character, which is what reads as a held hand. */
+  z-index: 1;
+  /* ONE shadow on the group — per-card shadows stack into mud at 6 cards. */
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
+  pointer-events: none;
 }
 
-/* ── Dan 2026-08-25, item 12: ONE PLAYER'S HAND IS ONE OBJECT ───────────────
-   "When the two players on the top have cards displayed at once, there is no
-   separation and they appear to be 10 cards."
-
-   Two fixes, and this is the second half of it. The first half is geometric -
-   the top seats now hang their rows on OPPOSITE, outboard sides (see the end
-   of this file), so the two groups sit at the far edges of the table with both
-   avatars and the whole felt between them. That alone ends the unbroken row.
-
-   This is the belt to that pair of braces: a group of face-down backs gets its
-   own backing plate and hairline, so it reads as one player's hand no matter
-   whose cards end up near it - at 2-max, at 9-max, and at whatever the next
-   ring is. It is deliberately NOT applied to a revealed hand: at showdown the
-   ranks are the whole point and a frame around them is noise, and the revealed
-   row already has its own anchor over the plate. */
-.seat__cards--opponent:not(.seat__cards--revealed) {
-  padding: 2px;
-  border-radius: 5px;
-  background: rgba(6, 10, 20, 0.55);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
-}
-
-/* Overlap every card after the first. -12px on a 30px card leaves an 18px
-   sliver of each - wide enough to count, narrow enough that six fit in the
-   space two used to take.
-
-   Dan 2026-08-23: NOT when the hand is revealed. ":not(.seat__cards--revealed)"
-   is the whole point of this selector. A face-down back carries one bit - this
-   player has a hand - so overlapping backs loses nothing. A shown hand is the
-   most important thing on the table for those few seconds, and stacking the
-   cards on top of each other hides the very ranks the player is trying to read.
-   That is "crooked and mis alligned". */
-.seat__cards--opponent:not(.seat__cards--revealed) .seat__card:nth-child(n + 2) {
-  margin-left: calc(-1 * var(--sp-opp-overlap, 12px));
-}
-
-/* A shown hand lies flat and evenly spaced, in rank order (see SeatSlot.tsx).
-   Small positive gap rather than a negative margin: every card fully visible,
-   nothing rotated, nothing overlapping. */
-.seat__cards--opponent.seat__cards--revealed {
-  gap: 2px;
-}
-.seat__cards--opponent.seat__cards--revealed > * + * {
-  margin-left: 0;
-}
-
-/* The backs need an edge, or a dark card back on a dark felt is a smudge. */
+/* Each card is placed absolutely inside the fan from its own index. The
+   nearest-the-avatar card is index 0 and paints on TOP of the others (but
+   still under the avatar), so the stack order runs outermost -> innermost ->
+   avatar, exactly like a hand actually held in front of a chest. */
 .seat__cards--opponent .seat__card {
+  --vh-rot: calc((var(--vh-i, 0) - (var(--vh-n) - 1) / 2) * 1.5deg * var(--vh-dir));
+  /* The deal/fold/showdown keyframes all settle on rotate(--card-rotation);
+     aliasing it means every animation lands exactly on the fan's own arc. */
+  --card-rotation: var(--vh-rot);
+  position: absolute;
+  top: 0;
+  width: var(--vh-card-w);
+  height: var(--vh-card-h);
+  border-radius: calc(var(--vh-card-w) * 0.14);
+  margin: 0;
+  transform-origin: bottom center;
+  transform: rotate(var(--vh-rot));
+  z-index: calc(6 - var(--vh-i, 0));
+  /* The backs need an edge, or a dark card back on dark felt is a smudge —
+     and the visible edge is what makes the fan COUNTABLE. */
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+/* SHOWDOWN REVEAL — same anchor, bigger and flatter so the ranks read.
+   Scale 1.25x, step 0.55 (spec section 6), and the fan lifts ABOVE the
+   nameplate (z 14 clears the plate's 3 and the badges' 5-6) for the duration
+   of the reveal. Returns to normal when the next hand clears showCards. */
+.seat__cards--opponent.seat__cards--revealed {
+  --vh-reveal: 1.25;
+  --vh-step-f: 0.55;
+  z-index: 14;
+}
+
+/* The acting player's highlight includes the fan — the hand must sit INSIDE
+   the glow, not next to it looking detached. Winner glow, same idea in gold. */
+.seat--active .seat__cards--opponent {
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45)) drop-shadow(0 0 5px rgba(0, 229, 255, 0.4));
+}
+.seat--winner .seat__cards--opponent {
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45)) drop-shadow(0 0 7px rgba(255, 215, 0, 0.45));
 }
 
 /* When opponent cards are revealed at showdown, they pop out larger.
@@ -1501,13 +1487,11 @@
   border-radius: 3px;
 }
 
-/* Revealed opponent cards are slightly bigger */
-.seat__cards--revealed .seat__card {
-  width: 36px;
-  height: 50px;
-  border-radius: 5px;
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.6);
-}
+/* Revealed opponent cards: the fan stays at its own anchor and simply grows —
+   scale 1.25x, step 0.55 — so ranks and suits are readable at showdown. Both
+   values live on the fan container (see the `--vh-reveal` / `--vh-step-f`
+   override near the base `.seat__cards--opponent` rule); nothing here may
+   restate a pixel size, or the unified geometry forks again. */
 
 /* Hero cards — v10 layout (Dan-approved): large, white-bordered, and LINED UP
  * in a single row with a small even overlap. NO fan rotation — the earlier
@@ -1789,10 +1773,22 @@
   gap: 1px;
 }
 
-/* ─── OPPONENT CARD BACKS — Deal-in animation ────────────────────────── */
+/* ─── OPPONENT CARD BACKS — Deal-in animation ──────────────────────────
+   Spec section 6: ~180ms with a slight ease-out, stagger capped at 30ms per
+   card so a 6-card deal never reads as sluggish. The stagger is driven by the
+   card's own fan index (--vh-i), so it works at every count through one rule. */
 
 .seat__cards--opponent .seat__card--back {
-  animation: opponentCardDeal 0.4s ease-out forwards;
+  animation: opponentCardDeal calc(0.18s * var(--animation-speed, 1)) ease-out backwards;
+  animation-delay: calc(var(--vh-i, 0) * 30ms * var(--animation-speed, 1));
+}
+
+/* isDealing (HAND_STARTED) uses the shared cardDealIn flight; give the
+   opponent fan the same 180ms/30ms envelope there too. 0-3-0, so it beats the
+   generic `.seat__cards--dealing .seat__card` timing and its 2-card delays. */
+.seat__cards--opponent.seat__cards--dealing .seat__card {
+  animation-duration: calc(0.18s * var(--animation-speed, 1));
+  animation-delay: calc(var(--vh-i, 0) * 30ms * var(--animation-speed, 1));
 }
 
 @keyframes opponentCardDeal {
@@ -2615,10 +2611,6 @@
     width: 28px;
     height: 38px;
   }
-  .seat__cards--revealed .seat__card {
-    width: 32px;
-    height: 44px;
-  }
   /* tablet — right of the name/chip box, centred on that box (see base rule).
      The two-card size now lives on `.seat` above (Dan 2026-08-25 round 2, item
      10 — the hero and a hold'em villain must read one set of numbers); the
@@ -2703,10 +2695,6 @@
     width: 24px;
     height: 34px;
   }
-  .seat__cards--revealed .seat__card {
-    width: 28px;
-    height: 40px;
-  }
   /* phone — right of the name/chip box, centred on that box (see base rule).
      On a 375px viewport the scaler is capped at 320px wide and the 66px hero
      seat is centred, so the row starts ~200px in and has ~100px of felt to the
@@ -2783,10 +2771,6 @@
   .seat__card {
     width: 22px;
     height: 30px;
-  }
-  .seat__cards--revealed .seat__card {
-    width: 26px;
-    height: 36px;
   }
   /* small phone — right of the name/chip box, centred on it (see base rule).
      Tightest budget of the four breakpoints: ~90px of felt to the right. The
@@ -3241,14 +3225,11 @@
   --hero-lift: 0px;
 }
 
-.seat__cards--opponent.seat__cards--revealed {
-  left: 50%;
-  right: auto;
-  top: auto;
-  bottom: calc(100% - 10px);
-  transform: translateX(-50%);
-  z-index: 14;
-}
+/* 2026-08-26: the revealed row's separate over-the-plate anchor was DELETED
+   here. A showdown reveal now flips in place at the fan's one anchor beside
+   the avatar (scale 1.25x, step 0.55 — see the reveal override near the base
+   fan rule). Two anchors for one element is the exact two-renderer disease
+   this rebuild removed; do not reintroduce a second one. */
 
 /* Dan 2026-08-21 (item 15): hero's LIVE hand strength, under the name/chip box.
    Deliberately quieter than .seat__hand-name — that one announces a settled
@@ -3347,178 +3328,43 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   EVERY VILLAIN'S FACE-DOWN ROW HANGS BESIDE THE AVATAR
+   WHERE THE VILLAIN FAN HANGS — MIRRORED OUTWARD, ANCHORED TO THE POD
    ═══════════════════════════════════════════════════════════════════════════
 
-   Dan 2026-08-24 asked for the top cap and the bottom-centre seat to hang their
-   row beside the avatar ("PLAYER AT THE TOP NEEDS TO HAVE HIS CARDS TO THE
-   RIGHT OF HIM, NOT UNDER HIM") and for the rail seats to keep theirs UNDER the
-   plate. Dan 2026-08-25 round 2, item 7, replaces that second half:
+   Dan 2026-08-26 rebuild, spec section 3b: cards fan AWAY from table centre.
+   Left-half seats fan left, right-half seats fan right, dead-centre seats
+   (top-centre, hero slot) default right. The side is `seatCardSide` in
+   lib/tableSeatGeometry.ts, derived from the seat's measured position — never
+   from a seat index, which means a different chair at every table size. This
+   keeps the betting lane (between pod and pot) clear: chips render inboard,
+   cards render outboard, and the two can never collide.
 
-     "THE VILLAN IN THE POSITION WHERE BARRELBLITZ IS, SHOULD HAVE THEIR CARDS
-      ON THE LEFT SIDE OF THEM. 'AGGRO ANDY' POSITION SHOULD HAVE THEM TO THE
-      RIGHT SIDE OF THE AVATAR, BUT WITH 1 PIXEL OF PADDING BETWEEN WHERE THE
-      CARDS START / END AND THE AVATAR IS."
+   The anchor is the AVATAR, not the seat box: 50% of the seat is the avatar's
+   centre line, so `50% + token/2 - tuck` starts the fan exactly one tuck-depth
+   (0.32 x card width) INSIDE the art's edge — the innermost card slides under
+   the character and the avatar overlaps it (fan z 1, wrap z 2). If the pod
+   moves or the token retunes at a breakpoint, the fan follows by construction.
 
-   BarrelBlitz is a RIGHT-rail seat wanting cards on its left; Aggro Andy is the
-   BOTTOM-LEFT seat wanting them on its right. Both are the same instruction —
-   point the cards at the felt — so the placement below is no longer scoped to
-   two wrappers. Every seat hangs its face-down row beside the avatar, and the
-   SIDE is `seatCardSide` in lib/tableSeatGeometry.ts:
-
-     TOP CAP        outboard, away from the middle of the table.
-     EVERY OTHER    inboard, toward it.
-
-   Read that file for the rule; the two bands are named there and must not be
-   confused. In short: the top cap has no felt beneath it, so its row hangs off
-   the SIDE of the table and the only thing outboard buys is separation between
-   the two top hands (item 12 — five and five reading as ten). Everywhere else
-   there IS felt inboard, and outboard is what ran a right-rail PLO hand clean
-   off the edge of a 375px phone, which is what this replaces.
-
-   THE 1px, and why it is measured from the AVATAR rather than from the seat:
-   `left: calc(100% + 4px)` used to measure from the SEAT's edge, and the seat
-   is a whole name-plate wider than the avatar standing in the middle of it —
-   on a phone that is 12px of empty column plus the 4px, so the row started
-   ~16px clear of the character it belongs to and read as loose cards on the
-   felt. 50% of the seat IS the avatar's centre line, so its edge is half the
-   avatar token away: `50% ± (--seat-avatar-size / 2) + 1px` puts the row
-   exactly one pixel off the art at every breakpoint, including the compact
-   56px top row, with no per-breakpoint number to keep in step.
-
-   Vertically the row centres on the avatar's own midline rather than the old
-   `top: 22%` of the seat, which drifted with the plate's height.
-
-   Specificity: `:not()` makes these 0-2-0 and 0-3-0, so they beat the base
-   `.seat__cards--opponent` (0-1-0) that still owns the flex row, the z-index
-   and the drop shadow. Showdown reveals are excluded throughout and keep their
-   own anchor — the revealed row draws above the plate, see the rule further
-   up this file. */
-.seat__cards--opponent:not(.seat__cards--revealed) {
-  top: calc(var(--seat-avatar-size, 84px) / 2);
-  bottom: auto;
-  margin-top: 0;
-  transform: translateY(-50%);
+   These rules only place the container; everything about its size and its
+   cards derives on the base `.seat__cards--opponent` rule further up. The
+   showdown reveal keeps this same anchor and just grows in place. */
+.seat--cards-right .seat__cards--opponent {
+  left: calc(50% + var(--seat-avatar-size, 84px) / 2 - var(--vh-tuck));
+  right: auto;
 }
-
-.seat--cards-right .seat__cards--opponent:not(.seat__cards--revealed) {
-  left: calc(50% + var(--seat-avatar-size, 84px) / 2 + 1px);
+.seat--cards-right .seat__cards--opponent .seat__card {
+  left: calc(var(--vh-i, 0) * var(--vh-step));
   right: auto;
 }
 
-.seat--cards-left .seat__cards--opponent:not(.seat__cards--revealed) {
+.seat--cards-left .seat__cards--opponent {
+  --vh-dir: -1;
   left: auto;
-  right: calc(50% + var(--seat-avatar-size, 84px) / 2 + 1px);
+  right: calc(50% + var(--seat-avatar-size, 84px) / 2 - var(--vh-tuck));
 }
-
-/* The top cap is the one place a row hangs OFF the side of the table rather
-   than over it, so its group has to be the narrowest one on screen or a PLO5
-   hand at the top-left seat runs off the felt entirely. 20px backs with the
-   12px overlap leave an 8px sliver each: a five-card group is 20 + 4 x 8 =
-   52px, which clears the scaler's edge at 375px on every ring including the
-   3-max and 5-max diagonals, the two that sit furthest out. Scoped to the
-   face-down row so a showdown reveal keeps the full-size cards it needs.
-
-   This is also why the hold'em treatment below cannot reach the top cap. A
-   2-card hero-size group is 55px on a 375px phone, and the 3-max/5-max top
-   diagonals sit at x 20.5 — 65.6px from the scaler's left edge — so an outboard
-   55px group starting one avatar-half (28px) inside that would begin 16px off
-   the left of the table. The top cap hangs into space; it does not get to spend
-   space it has not got.
-
-   THE `.seat` IN THE SELECTOR IS LOAD-BEARING, not decoration. Without it this
-   is 0-4-0 and so is the hold'em rule below — a tie broken by source order, and
-   the hold'em rule is written later, so it would silently win and put 55px of
-   cards off the side of a 5-max table. `.seat` makes it 0-5-0 and the priority
-   is stated rather than inherited from where someone happened to paste a rule.
-   Same device, same reason, as `.seat-wrapper--top .seat` above. */
-.seat-wrapper--top .seat .seat__cards--opponent:not(.seat__cards--revealed) .seat__card {
-  width: 20px;
-  height: 28px;
-}
-
-/* ── Dan 2026-08-25 round 2, item 10: HOLD'EM VILLAINS GET THE HERO'S CARDS ──
-   "For holdem, every player should have their cards displayed exactly as the
-   hero has theirs."
-
-   `seat__cards--twocard` is set by SeatSlot.tsx from the count the row is about
-   to draw, so it is on exactly the rows that hold two cards — a hold'em hand,
-   revealed or face down — and never on a PLO4/5/6 row. Scoped to the face-down
-   row here because that is what Dan is looking at: the shrunken overlapped
-   slivers that exist so SIX backs can fit beside a villain. Two do not need
-   that, and a revealed hand already lies flat at its own size with the ranks
-   the whole point (Dan 2026-08-23 — a shown hand is never overlapped).
-
-   Three declarations, all of them reading the hero's own numbers:
-
-     size     --sp-card2-w / -h, the same tokens `.seat__cards--hero` reads.
-     spacing  the overlap the hero row gets from `step - w`, handed to the
-              opponent row's existing `--sp-opp-overlap` so the nth-child rule
-              above does the work. Two cards then sit exactly as far apart as
-              the hero's do, at every breakpoint, with no second copy of the
-              arithmetic to drift.
-     framing  no dark backing plate. That plate groups a five- or six-card
-              fan so two neighbouring hands cannot read as one (item 12); a
-              hero-sized PAIR is already unmistakably one hand, and a dark box
-              around it is the one thing the hero's own row does not have. */
-.seat__cards--opponent.seat__cards--twocard:not(.seat__cards--revealed) {
-  --sp-opp-overlap: calc(var(--sp-card2-w, 44px) - var(--sp-card2-step, 32px));
-  padding: 0;
-  background: none;
-  box-shadow: none;
-}
-
-.seat__cards--opponent.seat__cards--twocard:not(.seat__cards--revealed) .seat__card {
-  width: var(--sp-card2-w, 44px);
-  height: var(--sp-card2-h, 62px);
-  /* 6px is the hero card's radius; the villain base is 4px, sized for a 22px
-     back. A card drawn at the hero's size gets the hero's corner. */
-  border-radius: 6px;
-}
-
-/* ── AUDIT 2026-08-25: the SIZE has to survive the reveal, or item 10 stops
-      being true at the one moment it matters ──────────────────────────────
-
-   The `:not(.seat__cards--revealed)` above is correct for the OVERLAP and the
-   backing plate: those exist so six face-down backs fit beside a villain, and
-   a revealed hand lies flat and ungrouped by design (Dan 2026-08-23). But the
-   SIZE was swept into the same selector, and there is a rule 2,000 lines up
-   that catches what falls out of it:
-
-     .seat__cards--revealed .seat__card { width: 36px; height: 50px }
-
-   So a hold'em villain drew hero-sized cards face DOWN and then SHRANK to
-   36x50 the instant they were turned over - "exactly as the hero has theirs"
-   until the only moment a player actually reads them, and 36px on a 375px
-   phone is where a rank starts to guess at you. Nothing chose that; it is
-   where the two selectors happened to leave it.
-
-   Same footprint as the face-down row that already ships on these seats, so
-   nothing about the anchoring or the felt clearance changes. Only two-card
-   games: six 44px cards do not fit beside a villain, which is why the compact
-   treatment exists at all.
-
-   0-4-0, so it beats `.seat__cards--revealed .seat__card` (0-2-0) wherever it
-   applies without touching the PLO rows. */
-.seat__cards--opponent.seat__cards--twocard.seat__cards--revealed .seat__card {
-  width: var(--sp-card2-w, 44px);
-  height: var(--sp-card2-h, 62px);
-  border-radius: 6px;
-}
-
-/* The top cap is the exception, and it is pinned rather than left to fall out
-   of the cascade. Those seats have the banner above them and their row hangs
-   OUTBOARD, off the side of the table - which is the one place a wider row has
-   nowhere to go. They keep exactly the size they render at today; this rule
-   exists so that stays true rather than being an accident of specificity.
-   0-6-0. */
-.seat-wrapper--top
-  .seat
-  .seat__cards--opponent.seat__cards--twocard.seat__cards--revealed
-  .seat__card {
-  width: 36px;
-  height: 50px;
-  border-radius: 5px;
+.seat--cards-left .seat__cards--opponent .seat__card {
+  left: auto;
+  right: calc(var(--vh-i, 0) * var(--vh-step));
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -3555,4 +3401,65 @@
   box-shadow:
     0 0 0 2px rgba(255, 59, 48, 0.9),
     0 0 15px rgba(255, 59, 48, 0.7);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HERO OMAHA FAN — Dan 2026-08-26 (PokerBros reference, PLO5 close-up)
+   ═══════════════════════════════════════════════════════════════════════════
+   "All PLO games should display the hero's cards fanned out like this."
+
+   Four-plus-card hero hands get a held-hand arc: each card rotates about its
+   bottom-centre and drops slightly toward the edges (a parabolic arc — the
+   squared centred index — because CSS calc() has no abs()). Two-card hold'em
+   hands are untouched, per the long-standing no-fan ruling for the pair.
+
+   The transform lands on the FLEX CHILD (the .seat__card-pick wrapper), not
+   on .seat__card, so the `transform: none` inline-guard on the card and the
+   hover/deal animations underneath it keep working unchanged. A card marked
+   with the show-picker keeps its straight -6px lift (`:not()` below) — the
+   lift IS its marker.
+
+   The child index and the count are both derived here in CSS (`--sp-hfan-i`
+   by nth-child, `--sp-hfan-n` by the same child-counting :has() device the
+   size guards use), so no TSX change and no per-card inline style. Written
+   `:has(> :nth-child(n))` — WITHOUT the `*` — deliberately: these rules add
+   an ARC, not a size, and the HeroCardRowGeometry test counts the starred
+   form to pin the four per-breakpoint size tunings. */
+.seat__cards--hero > :nth-child(1) {
+  --sp-hfan-i: 0;
+}
+.seat__cards--hero > :nth-child(2) {
+  --sp-hfan-i: 1;
+}
+.seat__cards--hero > :nth-child(3) {
+  --sp-hfan-i: 2;
+}
+.seat__cards--hero > :nth-child(4) {
+  --sp-hfan-i: 3;
+}
+.seat__cards--hero > :nth-child(5) {
+  --sp-hfan-i: 4;
+}
+.seat__cards--hero > :nth-child(6) {
+  --sp-hfan-i: 5;
+}
+
+.seat__cards--hero:has(> :nth-child(4)) {
+  --sp-hfan-n: 4;
+}
+.seat__cards--hero:has(> :nth-child(5)) {
+  --sp-hfan-n: 5;
+}
+.seat__cards--hero:has(> :nth-child(6)) {
+  --sp-hfan-n: 6;
+}
+
+.seat__cards--hero:has(> :nth-child(4)) > *:not(.seat__card-pick--marked) {
+  /* Centred index: -1.5..+1.5 at four cards, -2.5..+2.5 at six. */
+  --sp-hfan-c: calc(var(--sp-hfan-i, 0) - (var(--sp-hfan-n, 4) - 1) / 2);
+  transform-origin: bottom center;
+  /* 3deg per card (PLO6 edges reach +/-7.5deg, the PokerBros read) and a
+     gentle arc: the edge cards sit lower, like a hand actually held. */
+  transform: rotate(calc(var(--sp-hfan-c) * 3deg))
+    translateY(calc(var(--sp-hfan-c) * var(--sp-hfan-c) * 1.4px));
 }

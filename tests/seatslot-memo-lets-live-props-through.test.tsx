@@ -77,9 +77,15 @@ describe('the variant hand size reaches an already-rendered seat', () => {
     expect(container.querySelectorAll('.seat__card--back')).toHaveLength(6);
   });
 
-  it('and the 2-card class follows it, so the row is never sized for a hand it is not drawing', () => {
+  it('and the fan variables follow it, so the fan is never sized for a hand it is not drawing', () => {
+    // 2026-08-26 villain-fan rebuild: there is no 2-card layout class any
+    // more (that WAS the second renderer). The count reaches CSS as --vh-n on
+    // the fan container, with the per-count tuning beside it; this pins that
+    // the whole set moves together when the variant arrives.
     const { container, rerender } = renderSeat({ holeCardCount: 2 });
-    expect(container.querySelector('.seat__cards--twocard')).not.toBeNull();
+    const fan = () => container.querySelector('.seat__cards--opponent') as HTMLElement;
+    expect(container.querySelector('.seat__cards--twocard')).toBeNull();
+    expect(fan().style.getPropertyValue('--vh-n')).toBe('2');
 
     rerender(
       <SeatSlot
@@ -91,7 +97,12 @@ describe('the variant hand size reaches an already-rendered seat', () => {
         holeCardCount={4}
       />
     );
-    expect(container.querySelector('.seat__cards--twocard')).toBeNull();
+    expect(fan().style.getPropertyValue('--vh-n')).toBe('4');
+    expect(fan().style.getPropertyValue('--vh-mult')).toBe('0.94');
+    expect(fan().style.getPropertyValue('--vh-step-f-base')).toBe('0.38');
+    // Each card carries its own fan index, innermost = 0.
+    const cards = [...container.querySelectorAll('.seat__card--back')] as HTMLElement[];
+    expect(cards.map((c) => c.style.getPropertyValue('--vh-i'))).toEqual(['0', '1', '2', '3']);
   });
 });
 

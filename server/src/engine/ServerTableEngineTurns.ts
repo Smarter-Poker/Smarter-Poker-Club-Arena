@@ -1862,11 +1862,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     };
 
     // Get decision — SYNCHRONOUS (budgeted <15ms incl. Monte Carlo equity)
+    // PROOF OF RECEIPT: telemetry is set HERE and only here — this is the
+    // one call site that is a real horse at a real table.
     const decision = HorseLogic.decide(
       enginePlayer as any,
       gameState as any,
       horseStyle,
-      horseMods
+      horseMods,
+      { telemetry: true }
     );
 
     // Humanlike think time comes from the decision engine itself (style- and

@@ -67,6 +67,10 @@ import { decidePreflopV7, type PreflopPosition } from './HorsePreflop.js';
 import { reportError } from '../services/errorReporter.js';
 // V16 ICM: real Malmuth-Harville pressure from the live stack distribution.
 import { bubbleFactor, premiumFromBubbleFactor } from './IcmModel.js';
+// PROOF OF RECEIPT (Dan 2026-08-26): live decisions stamp the layers that
+// actually executed. Gated on opts.telemetry — league/benchmark/tests never
+// count. See engine/BrainTelemetry.ts.
+import { noteFire, telemetryOn } from './BrainTelemetry.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
 // HorseEval.ts (extracted verbatim; zero behavior change).
 import {
@@ -539,7 +543,12 @@ function isTournamentMode(gs: HorseGameStateV2): boolean {
  * drops — hardest around the bubble, gone again deep in the money with a big
  * stack. Returns an additive threshold premium (0 for cash games).
  */
+/** PROOF OF RECEIPT: which path the last icmRisk call took. Module-level is
+ *  safe for the same reason difficultyHint is: decisions are synchronous. */
+let lastIcmPath: 'real' | 'legacy' | 'none' = 'none';
+
 function icmRisk(gs: HorseGameStateV2, stackBB: number, useV16Icm: boolean = true): number {
+  lastIcmPath = 'legacy';
   // icmRisk v2 (V12, 2026-08-22): real bubble model from TournamentBrainContext.
   const explicit = gs.tournament;
   if (!isTournamentMode(gs)) return 0;
@@ -582,6 +591,7 @@ function icmRisk(gs: HorseGameStateV2, stackBB: number, useV16Icm: boolean = tru
       let premium = premiumFromBubbleFactor(bf);
       // PKO: bounty share still trims pressure — covered all-ins pay.
       if ((explicit.bountyFactor ?? 0) >= 0.2) premium = Math.max(0, premium - 0.02);
+      lastIcmPath = 'real';
       return premium;
     } catch {
       /* fall through to the legacy heuristic */
@@ -683,6 +693,10 @@ export interface HorseDecideOpts {
   v12?: boolean;
   /** ablation hook (benchmarks only) — defaults to the v12 master flag */
   v12Ranges?: boolean;
+  /** PROOF OF RECEIPT: set true ONLY by the live engine's scheduleHorseAction
+   *  — every synthetic caller (league, benchmarks, tests) leaves it unset so
+   *  the fire counters describe the real fleet and nothing else. */
+  telemetry?: boolean;
   /** disable the V16 real-ICM layer (2026-08-26): Malmuth-Harville bubble
    *  factor from the live stack distribution + payout curve, replacing the
    *  flat premium whenever the tournament context supplies both (default:
@@ -861,8 +875,14 @@ export class HorseLogic {
     }
 
     const v7 = opts.v7 !== false;
+    const tele = telemetryOn(opts);
+    if (tele) {
+      noteFire('decide');
+      noteFire(`decide_${vi.isOmaha ? 'omaha' : vi.isShortDeck ? 'short_deck' : 'nlh'}`);
+    }
     let decision: HorseDecision;
     if (gs.stage === 'preflop') {
+      if (tele && (opts.v7Preflop ?? v7)) noteFire('preflop_v7');
       decision =
         (opts.v7Preflop ?? v7)
           ? this.decidePreflopV7Glue(player, gs, vi, params, opts)
@@ -981,6 +1001,7 @@ export class HorseLogic {
         const raiser = gs.players.find((p) => p.seat === lastRaiserSeat);
         if (raiser && raiser.user_id !== player.user_id) {
           raiserF3b = HorseMind.foldTo3BetOf(raiser.user_id);
+          if (raiserF3b !== null && telemetryOn(opts)) noteFire('v16_reads_f3b');
         }
       } catch {
         /* reads are best-effort */
@@ -1242,6 +1263,9 @@ export class HorseLogic {
     const useRake10 = (opts.v10Rake ?? opts.v10) !== false;
     const useThin10 = (opts.v10ThinValue ?? opts.v10) !== false;
     const { currentBet, pot } = gs;
+    // PROOF OF RECEIPT: declared once, up front — several stamped blocks run
+    // before the equity/risk section.
+    const tele15 = telemetryOn(opts);
     const toCall = Math.max(0, currentBet - player.bet);
     const stack = player.stack;
     const facingBet = toCall > 0;
@@ -1288,6 +1312,12 @@ export class HorseLogic {
         // stripping the flag the mind attached, so HorseEval needs no opts.
         if ((opts.v16SizeCond ?? true) === false && oppReads) {
           for (const r of oppReads) if (r) r.bigBet = false;
+        }
+        if (tele15) {
+          if (bands && bands.some((b) => b !== null)) {
+            noteFire(vi.isOmaha ? 'banded_mc_omaha' : 'banded_mc_nlh');
+          }
+          if (oppReads && oppReads.some((r) => r?.bigBet)) noteFire('v16_sizecond_bigbet');
         }
         exploit = HorseMind.tableExploit(player.seat, gs.players, useCounterAdapt);
         const tex = HorseMind.texture(gs.communityCards);
@@ -1337,6 +1367,7 @@ export class HorseLogic {
     const risk = useV7
       ? icmRisk(gs, gs.bigBlind > 0 ? stack / gs.bigBlind : 100, opts.v16Icm !== false)
       : 0;
+    if (tele15 && useV7 && isTournamentMode(gs)) noteFire(`icm_${lastIcmPath}`);
     // V15: equities cluster tighter still with 5 and 6 hole cards, so the
     // per-opponent multiway tightening scales with hole count.
     const useV15 = opts.v15 !== false;
@@ -1352,7 +1383,10 @@ export class HorseLogic {
     const huOn =
       (opts.v16Hu ?? true) !== false &&
       gs.players.filter((p) => !p.is_folded && !p.is_sitting_out).length === 2;
-    if (huOn) mw = Math.max(-0.02, mw - 0.015);
+    if (huOn) {
+      mw = Math.max(-0.02, mw - 0.015);
+      if (tele15) noteFire('v16_hu_overlay');
+    }
 
     // V8 O8 SCOOP/QUARTER AWARENESS — the defining skill of hi-lo poker.
     // A hand that frequently SCOOPS both halves bets and raises harder; a
@@ -1418,6 +1452,7 @@ export class HorseLogic {
     if (useV15 && vi.isOmaha && (cat === 5 || cat === 6)) {
       try {
         nuts15 = omahaNutStatus(player.cards, gs.communityCards);
+        if (tele15 && nuts15) noteFire('v15_nut_status');
       } catch {
         nuts15 = null;
       }
@@ -1727,6 +1762,7 @@ export class HorseLogic {
           const ftc = HorseMind.foldToCbetOf(opponents[0].user_id);
           if (ftc !== null) {
             cbetFreqMult *= Math.max(0.75, Math.min(1.4, 0.6 + ftc));
+            if (tele15) noteFire('v16_reads_cbet');
           }
         } catch {
           /* reads are best-effort */
@@ -1792,6 +1828,7 @@ export class HorseLogic {
         for (const [suit16, n16] of suitN16) {
           if (n16 === 2 && !player.cards.some((hc) => hc.suit === suit16)) {
             unblock16 = 1.15;
+            if (tele15) noteFire('v16_unblocker');
             break;
           }
         }
@@ -1904,6 +1941,7 @@ export class HorseLogic {
         if (!isRiver) cap += 0.1; // redraws + protection before the river
         if (oppCount >= 2) cap -= 0.05; // a raise INTO A FIELD is more nutted
         eq15 = Math.min(equity, Math.max(0.05, cap));
+        if (tele15 && eq15 < equity) noteFire('v15_eq_capped');
       }
     }
 
@@ -1959,6 +1997,7 @@ export class HorseLogic {
         !nutClass15 &&
         eq15 - dominationPenalty < 0.85
       ) {
+        if (tele15) noteFire('v15_raise_gate');
         return { action: 'call', amount: toCall, thinkTime: 0 };
       }
       const oopBoost = useIQ && !ip ? params.checkRaiseFreq * 0.6 : 0;
@@ -2069,6 +2108,7 @@ export class HorseLogic {
             if (tell !== null) {
               if (tell >= 0.75) respect += 0.12;
               else if (tell <= 0.4) respect -= 0.1;
+              if (telemetryOn(opts)) noteFire('v16_reads_tell');
             }
           }
         }

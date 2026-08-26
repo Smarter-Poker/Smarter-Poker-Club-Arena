@@ -32,6 +32,9 @@
 #   bash scripts/agent-trees-snapshot.sh --list     # what has been captured
 #   bash scripts/agent-trees-snapshot.sh --prune    # drop snapshots over 30d
 #   bash scripts/agent-trees-snapshot.sh --dedupe   # drop snapshots identical to a newer one
+#
+# Retention: a snapshot is only written when the tree actually changed, so an
+# idle worktree costs nothing and --prune's 30d window is about age, not volume.
 set -uo pipefail
 
 MODE="${1:-snapshot}"

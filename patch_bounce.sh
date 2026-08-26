@@ -1,0 +1,2 @@
+sed -i '' -e 's/navigate(\`\/invite\/${clubId}\`);/console.error("BOUNCED from Guard! userId:", localSession?.userId, "memStat:", memStat); navigate(\`\/invite\/${clubId}\`);/' src/components/auth/ClubMemberGuard.tsx
+sed -i '' -e 's/navigate(\`\/invite\/${clubId}\`);/console.error("BOUNCED from HomePage fast path! userId:", localSession?.userId, "memStat:", memStat); navigate(\`\/invite\/${clubId}\`);/' src/pages/ClubHomePage.tsx

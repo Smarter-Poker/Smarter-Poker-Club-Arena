@@ -262,7 +262,11 @@ export async function createClub(clubData: {
 /**
  * Join a club with role assignment
  */
-export async function joinClub(clubId: string, role: MemberRole = 'member'): Promise<ClubMember> {
+export async function joinClub(
+  clubId: string,
+  role: MemberRole = 'member',
+  knownClubName?: string
+): Promise<ClubMember> {
   const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
 
@@ -360,16 +364,18 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
        club it is showing, so a CLUB_UPDATED carrying the other spelling never
        refreshed the lobby. One spelling, everywhere. */
     // We need the club name for the push notification to display something friendly instead of a UUID
-    let cName = '';
-    try {
-      const { data: cData } = await supabase
-        .from('clubs')
-        .select('name')
-        .eq('id', resolvedId)
-        .maybeSingle();
-      if (cData?.name) cName = cData.name;
-    } catch (e) {
-      /* ignore */
+    let cName = knownClubName || '';
+    if (!cName) {
+      try {
+        const { data: cData } = await supabase
+          .from('clubs')
+          .select('name')
+          .eq('id', resolvedId)
+          .maybeSingle();
+        if (cData?.name) cName = cData.name;
+      } catch (e) {
+        /* ignore */
+      }
     }
     masterBus.emit('CLUB_JOINED', { clubId: resolvedId, clubName: cName, action: 'member_joined' });
   } catch (e) {

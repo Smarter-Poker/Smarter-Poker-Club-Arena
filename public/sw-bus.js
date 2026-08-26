@@ -323,7 +323,8 @@ sw.addEventListener('message', (event) => {
         if (eventType === 'BALANCE_UPDATED') {
             body = `Source: ${payload?.source || 'unknown'}`;
         } else if (eventType === 'CLUB_JOINED' || eventType === 'CLUB_LEFT') {
-            body = payload?.clubName || payload?.clubId || '';
+            const rawName = payload?.clubName || payload?.clubId || '';
+            body = rawName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
         } else if (eventType === 'TABLE_SEATED' || eventType === 'TABLE_LEFT') {
             body = `Table: ${payload?.tableId || ''}`;
         }

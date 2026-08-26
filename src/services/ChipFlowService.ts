@@ -88,6 +88,8 @@ export const ChipFlowService = {
       );
     }
 
+    const idempotencyKey = crypto.randomUUID();
+
     // 1. Execute atomic transfer & logging in a single Postgres transaction
     const { error: transferErr } = await retryAsync(
       () =>
@@ -98,6 +100,7 @@ export const ChipFlowService = {
           p_category: category,
           p_description: description,
           p_related_entity_id: relatedEntityId || null,
+          p_idempotency_key: idempotencyKey,
         }),
       3
     );

@@ -109,6 +109,25 @@
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
 }
 
+/* Hunts-left count, sitting in the artwork's empty lower band — styled to the
+   icon's blue-neon metal rather than the gold of the price pill, so the two
+   never read as the same number. */
+.rabbit-hunt__remaining {
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: #cfe4ff;
+  text-shadow:
+    0 0 6px rgba(64, 140, 255, 0.9),
+    0 1px 2px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
 /* Corner price pill. The reference has no billing, we do — the price must be
    on screen before the tap. */
 .rabbit-hunt__cost {
@@ -151,6 +170,11 @@
 
   .rabbit-hunt__icon-img {
     border-radius: 12px;
+  }
+
+  .rabbit-hunt__remaining {
+    font-size: 0.56rem;
+    bottom: 4px;
   }
 }
 

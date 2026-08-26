@@ -250,7 +250,13 @@ export function RabbitHunt({
           className={`rabbit-hunt__button ${isRevealing ? 'rabbit-hunt__button--loading' : ''} ${isVIP ? 'rabbit-hunt__button--vip' : ''}`}
           onClick={handleReveal}
           disabled={isRevealing}
-          aria-label={isRevealing ? 'Revealing Rabbit Hunt' : 'Rabbit Hunt'}
+          aria-label={
+            isRevealing
+              ? 'Revealing Rabbit Hunt'
+              : typeof vipRemaining === 'number'
+                ? `Rabbit Hunt, ${vipRemaining} Free This Month`
+                : 'Rabbit Hunt'
+          }
           title="Rabbit Hunt"
         >
           <img
@@ -260,6 +266,18 @@ export function RabbitHunt({
             aria-hidden="true"
             draggable={false}
           />
+          {/* Dan 2026-08-26: "there is enough space below to add the current
+              total rabbit hunts the user has left." The artwork's lower band
+              is empty, so the count overlays INSIDE the icon rather than
+              growing the button. VIP-only by necessity: the monthly pool is
+              the one per-user stock the client can know BEFORE the press
+              (checkVIPStatus above) — the offer event is a table broadcast
+              and cannot carry a per-user number, and a pack's uses_remaining
+              only comes back after a reveal consumes one. Non-VIPs have no
+              stock, only a price, and the price pill already shows it. */}
+          {!isRevealing && typeof vipRemaining === 'number' && (
+            <span className="rabbit-hunt__remaining">{vipRemaining} Left</span>
+          )}
           {!isRevealing && (
             <span
               className={`rabbit-hunt__cost ${isVIP && vipRemaining !== 0 ? 'rabbit-hunt__cost--free' : ''}`}

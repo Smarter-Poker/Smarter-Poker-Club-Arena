@@ -308,8 +308,8 @@ BEGIN
 END;
 $function$;
 
-GRANT EXECUTE ON FUNCTION public.add_diamonds_to_balance TO authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_purchase_chips TO authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_purchase_club_chips TO authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_pay_player_chips TO authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_bbj_promo_payout_atomic TO authenticated;
+GRANT EXECUTE ON FUNCTION public.add_diamonds_to_balance(uuid, integer, text, text, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_purchase_chips(uuid, numeric, integer, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_purchase_club_chips(uuid, uuid, numeric, integer, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_pay_player_chips(uuid, numeric, text, text, uuid, uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_bbj_promo_payout_atomic(uuid, numeric, uuid[], text, text) TO authenticated;

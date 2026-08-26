@@ -31,6 +31,7 @@
 #   bash scripts/agent-trees-snapshot.sh            # snapshot this repo's trees
 #   bash scripts/agent-trees-snapshot.sh --list     # what has been captured
 #   bash scripts/agent-trees-snapshot.sh --prune    # drop snapshots over 30d
+#   bash scripts/agent-trees-snapshot.sh --dedupe   # drop snapshots identical to a newer one
 set -uo pipefail
 
 MODE="${1:-snapshot}"
@@ -66,6 +67,26 @@ if [ "$MODE" = "--prune" ]; then
   exit 0
 fi
 
+# ── --dedupe ───────────────────────────────────────────────────────────────
+# Collapses snapshots that are byte-identical to a newer one. Keeps the newest
+# ref for every distinct (worktree, tree) pair and every branch-* ref, so no
+# distinct content is ever dropped. Safe to run at any time; use it once after
+# adopting the dedupe above to clear a namespace that already exploded.
+if [ "$MODE" = "--dedupe" ]; then
+  git -C "$ROOT" for-each-ref --format='%(refname) %(objectname)' refs/wip/ \
+  | awk '$1 !~ /\/branch-/' \
+  | while read -r ref obj; do
+      tree=$(git -C "$ROOT" rev-parse -q --verify "${obj}^{tree}" 2>/dev/null) || continue
+      name=$(printf '%s' "$ref" | cut -d/ -f3)
+      printf '%s\t%s\t%s\n' "$name/$tree" "$ref" "$ref"
+    done \
+  | sort -r \
+  | awk -F'\t' 'seen[$1]++ { print "delete " $2 }' \
+  | git -C "$ROOT" update-ref --stdin
+  echo "deduped. refs/wip now holds $(git -C "$ROOT" for-each-ref --format='%(refname)' refs/wip/ | wc -l | tr -d ' ') ref(s)."
+  exit 0
+fi
+
 # ── snapshot ───────────────────────────────────────────────────────────────
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 TOTAL=0
@@ -84,10 +105,35 @@ while IFS= read -r line; do
       if [ -n "$(git -C "$DIR" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
         SNAP=$(git -C "$DIR" stash create "wip snapshot ${STAMP} (${BR:-detached})" 2>/dev/null || true)
         if [ -n "$SNAP" ]; then
-          git -C "$ROOT" update-ref "refs/wip/${NAME}/${STAMP}" "$SNAP"
-          FILES=$(git -C "$DIR" status --porcelain --untracked-files=no | wc -l | tr -d ' ')
-          echo "captured  refs/wip/${NAME}/${STAMP}  (${FILES} file(s), branch ${BR:-detached})"
-          TOTAL=$((TOTAL+1))
+          # DEDUPE, added 2026-08-26. This block wrote a new timestamped ref on
+          # EVERY run whether or not the tree had changed, while the local-commit
+          # block below has always compared against the existing ref first. Run
+          # from launchd every 10 minutes across ~250 worktrees, that reached
+          # 63,322 refs in club-arena and 31,011 in the World Hub within days --
+          # 94,333 refs holding 1,282 distinct snapshots. packed-refs passed 5MB
+          # and produced a transient "unterminated line in .git/packed-refs" that
+          # broke ordinary git commands.
+          #
+          # An identical snapshot is not a second copy of the work, it is the
+          # same object with another name. Compare the TREE against the newest
+          # snapshot already held for this worktree and skip when it matches.
+          # branch-* refs are excluded from the comparison: they point at HEAD
+          # commits, not stash commits, and have their own dedupe below.
+          NEWTREE=$(git -C "$ROOT" rev-parse -q --verify "${SNAP}^{tree}" 2>/dev/null || true)
+          LASTREF=$(git -C "$ROOT" for-each-ref --sort=-refname \
+                      --format='%(refname)' "refs/wip/${NAME}/" 2>/dev/null \
+                    | grep -v "/branch-" | head -1)
+          LASTTREE=""
+          [ -n "$LASTREF" ] && LASTTREE=$(git -C "$ROOT" rev-parse -q --verify "${LASTREF}^{tree}" 2>/dev/null || true)
+
+          if [ -n "$NEWTREE" ] && [ "$NEWTREE" = "$LASTTREE" ]; then
+            : # unchanged since the last snapshot - the existing ref already holds it
+          else
+            git -C "$ROOT" update-ref "refs/wip/${NAME}/${STAMP}" "$SNAP"
+            FILES=$(git -C "$DIR" status --porcelain --untracked-files=no | wc -l | tr -d ' ')
+            echo "captured  refs/wip/${NAME}/${STAMP}  (${FILES} file(s), branch ${BR:-detached})"
+            TOTAL=$((TOTAL+1))
+          fi
         fi
       fi
 

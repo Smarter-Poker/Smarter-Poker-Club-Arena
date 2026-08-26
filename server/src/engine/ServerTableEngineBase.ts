@@ -698,6 +698,18 @@ export abstract class ServerTableEngineBase {
   protected playerTurnStartTime: number = 0;
   protected playerTurnDuration: number = 0;
   protected timeBankActivatedThisTurn: boolean = false;
+  /**
+   * Set when the player whose turn it is drops out of reconnect grace.
+   *
+   * A time bank is a use-it-or-lose-it asset the player PAYS for. Auto-
+   * activating one for somebody whose socket is gone spends it on a decision
+   * they cannot make. Cleared by handleTurnChange, so a reconnect inside the
+   * same turn restores the normal behaviour, and by every genuinely new turn.
+   *
+   * This deliberately does NOT touch any deadline. See
+   * handlePlayerDisconnectedMidTurn (ServerTableEngineTurns) for why.
+   */
+  protected timeBankSuppressedThisTurn: boolean = false;
   protected showHandPlayers: Set<string> | null = null; // Bible V8 §4.21: players who voluntarily show hand
 
   /**
@@ -851,6 +863,9 @@ export abstract class ServerTableEngineBase {
           .catch((err) => {
             reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_persist_threw');
           });
+      }
+      if (event.type === 'PLAYER_DISCONNECTED') {
+        this.handlePlayerDisconnectedMidTurn(event.playerId);
       }
       if (event.type === 'PLAYER_RECONNECTED') {
         // ── ADDITIVE observability (#5): WS reconnect counter ──
@@ -2888,6 +2903,7 @@ export abstract class ServerTableEngineBase {
   // ── Implemented by ServerTableEngineTurns (layer 3/8) ──
   protected abstract clearTurnTimer(): void;
   protected abstract rearmTurnTimerIfCurrent(userId: string): void;
+  protected abstract handlePlayerDisconnectedMidTurn(userId: string): void;
 
   // ── Implemented by ServerTableEngineDealing (layer 5/8) ──
   protected abstract dealingLoop(): Promise<void>;

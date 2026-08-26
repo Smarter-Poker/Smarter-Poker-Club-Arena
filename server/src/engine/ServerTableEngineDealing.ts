@@ -585,11 +585,26 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               needsRebuyPause = true; // Cash games always have rebuy
             } else if (this.tableInfo?.tournament_id) {
               try {
-                const { data: t } = await supabase
+                // .maybeSingle(), never .single() (2026-08-26). This was
+                // .single(), which answers zero rows with
+                // { data: null, error: PGRST116 } instead of throwing — so the
+                // catch below never fired, the error was discarded with the
+                // destructure, `t` came back null, needsRebuyPause stayed
+                // false, and a busted player in a rebuy tournament lost the
+                // five second window to buy back in. The next hand simply
+                // started. Nothing logged.
+                const { data: t, error: tErr } = await supabase
                   .from('tournaments')
                   .select('is_rebuy, rebuy_levels, late_reg_levels, current_level')
                   .eq('id', this.tableInfo.tournament_id)
-                  .single();
+                  .maybeSingle();
+
+                if (tErr) {
+                  console.error(
+                    `[ServerTableEngine:${this.tableId}] Could not read tournament ${this.tableInfo.tournament_id} for the rebuy pause:`,
+                    tErr
+                  );
+                }
 
                 if (t && t.is_rebuy) {
                   const cap = t.rebuy_levels ?? t.late_reg_levels ?? 0;

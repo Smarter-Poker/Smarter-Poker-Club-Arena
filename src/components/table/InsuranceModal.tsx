@@ -127,19 +127,22 @@ export function InsuranceModal({
 
   // ── Insurance calculations ──
   const premium = useMemo(
-    () => Math.trunc(coverageAmount * offer.premiumRate),
+    () => Math.round(coverageAmount * offer.premiumRate * 100) / 100,
     [coverageAmount, offer.premiumRate]
   );
-  const payout = useMemo(() => coverageAmount - premium, [coverageAmount, premium]);
+  const payout = useMemo(
+    () => Math.round((coverageAmount - premium) * 100) / 100,
+    [coverageAmount, premium]
+  );
 
   // ── EV Cashout calculations ──
   const evCashoutRake = offer.evCashoutRake ?? 0.01;
   const evRaw = useMemo(
-    () => Math.trunc(offer.potAmount * (offer.equityPercent / 100)),
+    () => Math.round(offer.potAmount * (offer.equityPercent / 100) * 100) / 100,
     [offer.potAmount, offer.equityPercent]
   );
   const evCashoutAmount = useMemo(
-    () => Math.trunc(evRaw * (1 - evCashoutRake)),
+    () => Math.round(evRaw * (1 - evCashoutRake) * 100) / 100,
     [evRaw, evCashoutRake]
   );
   const evRakeAmount = useMemo(() => evRaw - evCashoutAmount, [evRaw, evCashoutAmount]);
@@ -175,7 +178,10 @@ export function InsuranceModal({
   }, [evCashoutAmount, offer.equityPercent, onEvCashout]);
 
   // Slider grid for the coverage range — see the onChange note on the input.
-  const coverageStep = Math.max(1, Math.floor(offer.maxCoverage / 100));
+  // MICRO-STAKES MONEY MATH 2026-08-26: below 100 chips the old integer step
+  // (min 1) made a 3.51 max slider jump 0-1-2-3 and Math.trunc presets showed
+  // 25% of 3.51 as 0. Cents everywhere the economy is decimal.
+  const coverageStep = offer.maxCoverage >= 100 ? Math.floor(offer.maxCoverage / 100) : 0.01;
   const coverageGridMax = useMemo(() => {
     if (!(offer.maxCoverage > 0)) return offer.maxCoverage;
     return Math.floor(offer.maxCoverage / coverageStep) * coverageStep;
@@ -183,9 +189,9 @@ export function InsuranceModal({
 
   const presets = useMemo(
     () => [
-      { label: '25%', value: Math.trunc(offer.maxCoverage * 0.25) },
-      { label: '50%', value: Math.trunc(offer.maxCoverage * 0.5) },
-      { label: '75%', value: Math.trunc(offer.maxCoverage * 0.75) },
+      { label: '25%', value: Math.round(offer.maxCoverage * 0.25 * 100) / 100 },
+      { label: '50%', value: Math.round(offer.maxCoverage * 0.5 * 100) / 100 },
+      { label: '75%', value: Math.round(offer.maxCoverage * 0.75 * 100) / 100 },
       { label: 'MAX', value: offer.maxCoverage },
     ],
     [offer.maxCoverage]
@@ -348,7 +354,7 @@ export function InsuranceModal({
                    player cannot insure the last 5. Treat the last grid stop as
                    the true maximum, exactly as the raise and buy-in sliders do. */
                 onChange={(e) => {
-                  const raw = parseInt(e.target.value, 10);
+                  const raw = parseFloat(e.target.value);
                   setCoverageAmount(raw >= coverageGridMax ? offer.maxCoverage : raw);
                 }}
                 aria-label={`Insurance coverage amount, up to ${offer.maxCoverage}`}

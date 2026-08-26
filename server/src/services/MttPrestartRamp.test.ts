@@ -196,3 +196,139 @@ describe('mttPrestartHorseTarget — the per-tick step', () => {
     expect(ask).toBeLessThanOrEqual(MTT_PRESTART_MAX_STEP);
   });
 });
+
+describe('a GUARANTEE decides the field, not the default cap', () => {
+  /**
+   * Dan 2026-08-26: "the horses should fill any and all seats to insure that
+   * the guarantee is always met."
+   *
+   * MTT_PRESTART_MAX_HORSES is 24 - the right default for an ordinary event,
+   * and nowhere near enough for a guaranteed one. The Sunday $200 Deep Stack
+   * promises 20,000 and pays 180 of every 200 entry into the pool, so covering
+   * it takes 112 entries. Ramping to 24 would have left ~15,000 of overlay on
+   * an event the club had already promised to cover.
+   *
+   * A horse entry is a REAL entry: fn_register_horse_for_tournament debits the
+   * horse's wallet, writes a rake row and adds the prize share to prize_pool.
+   * So this genuinely funds the guarantee rather than papering over it.
+   */
+  const deepStack = (over: Record<string, unknown> = {}) => ({
+    msUntilStart: 1000, // T-1s: the ramp curve is at full stretch
+    maxPlayers: 1000,
+    variant: 'freezeout',
+    currentPlayers: 5,
+    guaranteedPrize: 20000,
+    prizePool: 900,
+    buyInPrizeShare: 180,
+    ...over,
+  });
+
+  /**
+   * The ramp WALKS toward its goal - MTT_PRESTART_MAX_STEP caps one tick at 6
+   * so a single call can never jump the field. GameServer re-ticks every 45s
+   * inside a 60-minute window, so ~80 ticks are available. This runs the same
+   * loop and returns where it settles, which is the thing worth asserting:
+   * a single call's answer is a step, not the goal.
+   */
+  const rampToSettle = (over: Record<string, unknown> = {}) => {
+    let current = Number(deepStack(over).currentPlayers) || 0;
+    let pool = Number(deepStack(over).prizePool) || 0;
+    const share = Number(deepStack(over).buyInPrizeShare) || 0;
+    for (let tick = 0; tick < 80; tick++) {
+      const ask = mttPrestartHorseTarget(
+        deepStack({ ...over, currentPlayers: current, prizePool: pool })
+      );
+      if (ask <= current) break;
+      // Each horse seated pays its prize share into the pool, exactly as
+      // fn_register_horse_for_tournament does.
+      pool += (ask - current) * share;
+      current = ask;
+    }
+    return { seated: current, pool };
+  };
+
+  it('ramps far past the default 24 when a guarantee demands it', () => {
+    // 20,000 guaranteed, 900 in, 180 a head. The default cap answers 24; the
+    // guarantee needs the field to keep climbing until the pool covers it.
+    const { seated, pool } = rampToSettle({ currentPlayers: 5 });
+    expect(seated).toBeGreaterThan(MTT_PRESTART_MAX_HORSES);
+    expect(pool).toBeGreaterThanOrEqual(20000);
+  });
+
+  it('one tick is a STEP, never a jump to the goal', () => {
+    const ask = mttPrestartHorseTarget(deepStack({ currentPlayers: 100 }));
+    expect(ask).toBeLessThanOrEqual(100 + 6);
+  });
+
+  it('counts the PRIZE side of the buy-in, never the total', () => {
+    /* 180 of every 200 reaches the pool; the 20 fee is rake and never does.
+       Sizing the field on the total would seat fewer horses than the
+       guarantee needs and leave it short - the pool would land under 20,000
+       while the ramp believed it was done. */
+    const onPrizeSide = rampToSettle({ currentPlayers: 0 });
+    expect(onPrizeSide.pool).toBeGreaterThanOrEqual(20000);
+    // 900 is already in the fixture's pool, so the gap is 19,100 and the
+    // honest count is ceil(19,100 / 180) = 107 - not 20,000 / 180.
+    expect(onPrizeSide.seated).toBeGreaterThanOrEqual(Math.ceil((20000 - 900) / 180));
+  });
+
+  it('does not double count the field that already paid in', () => {
+    /* `currentPlayers` already contributed to `prizePool`. A field that is
+       HALF way there must settle at roughly half the extra seats, not the
+       same number as an empty one. */
+    const fromEmpty = rampToSettle({ currentPlayers: 0, prizePool: 0 });
+    const fromHalf = rampToSettle({ currentPlayers: 56, prizePool: 10080 });
+    expect(fromEmpty.pool).toBeGreaterThanOrEqual(20000);
+    expect(fromHalf.pool).toBeGreaterThanOrEqual(20000);
+    // The half-full event seats far fewer ADDITIONAL horses.
+    expect(fromHalf.seated - 56).toBeLessThan(fromEmpty.seated);
+  });
+
+  it('stops the moment the field has covered the guarantee', () => {
+    // Pool at the guarantee: nothing left to fund, so the default rule applies
+    // again and a field already past it is left alone.
+    const ask = mttPrestartHorseTarget(deepStack({ currentPlayers: 200, prizePool: 20000 }));
+    expect(ask).toBe(0);
+  });
+
+  it('leaves an event with NO guarantee on the original 24', () => {
+    const ask = mttPrestartHorseTarget(
+      deepStack({ currentPlayers: 0, guaranteedPrize: 0, prizePool: 0 })
+    );
+    expect(ask).toBeLessThanOrEqual(MTT_PRESTART_MAX_HORSES);
+  });
+
+  it('STILL leaves a seat for a human, whatever the guarantee asks for', () => {
+    /* Safety property 1, and the one a guarantee must never be allowed to
+       override: a 40-seat event with an enormous guarantee fills to 39, not
+       40. A full field is a table no human can join. */
+    const ask = mttPrestartHorseTarget(
+      deepStack({ maxPlayers: 40, currentPlayers: 0, guaranteedPrize: 1_000_000 })
+    );
+    expect(ask).toBeLessThanOrEqual(39);
+  });
+
+  it('never asks for more than the event can seat', () => {
+    for (const seats of [10, 50, 200, 1000]) {
+      const ask = mttPrestartHorseTarget(
+        deepStack({ maxPlayers: seats, currentPlayers: 0, guaranteedPrize: 5_000_000 })
+      );
+      expect(ask).toBeLessThanOrEqual(seats - 1);
+    }
+  });
+
+  it('a freeroll guarantee cannot divide by zero into an infinite field', () => {
+    const ask = mttPrestartHorseTarget(
+      deepStack({ currentPlayers: 0, buyInPrizeShare: 0, guaranteedPrize: 20000 })
+    );
+    expect(Number.isFinite(ask)).toBe(true);
+    expect(ask).toBeLessThanOrEqual(MTT_PRESTART_MAX_HORSES);
+  });
+
+  it('is still bounded by the ramp window - no filling an event days out', () => {
+    const ask = mttPrestartHorseTarget(
+      deepStack({ msUntilStart: 6 * 24 * 60 * 60 * 1000, currentPlayers: 0 })
+    );
+    expect(ask).toBe(0);
+  });
+});

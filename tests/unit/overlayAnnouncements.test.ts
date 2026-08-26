@@ -48,24 +48,31 @@ const deepStack = (over: Partial<OverlayCandidate> = {}): OverlayCandidate => ({
   ...over,
 });
 
-describe('an announcement has to be NEAR', () => {
-  it('says nothing about a guarantee six days out', () => {
-    // The exact case that would have put 19,100 on the bar all week.
-    expect(overlayFor(deepStack({ start_time: at(6 * 24 * HOUR) }), NOW)).toBeNull();
-  });
+describe('any short guaranteed event on the board announces', () => {
+  /* Dan 2026-08-26 overruled the original 12-hour window: "IT SHOULD BE
+     ANNOUNCING OVERLAY ALERTS FOR ANY TOURNAMENT THAT DOESN'T APPEAR TO BE
+     MEETING THE GUARANTEE."
 
-  it('speaks once the event is inside the announce window', () => {
-    const a = overlayFor(deepStack({ start_time: at(ANNOUNCE_WITHIN_MS - HOUR) }), NOW);
+     So distance no longer silences an announcement. What still does is
+     MATERIALITY (next describe) - and what stops the flag being permanent is
+     the horse ramp, which fills a guaranteed event to whatever covers it in
+     the last hour. The announcement is a window that genuinely closes rather
+     than a standing complaint. */
+  it('announces a guarantee six days out, which is the whole publish window', () => {
+    const a = overlayFor(deepStack({ start_time: at(6 * 24 * HOUR) }), NOW);
     expect(a).not.toBeNull();
     expect(a!.tier).toBe('potential');
     expect(a!.overlay).toBe(19100);
   });
 
-  it('is silent one minute outside the window and speaks one minute inside it', () => {
-    expect(overlayFor(deepStack({ start_time: at(ANNOUNCE_WITHIN_MS + 60_000) }), NOW)).toBeNull();
-    expect(
-      overlayFor(deepStack({ start_time: at(ANNOUNCE_WITHIN_MS - 60_000) }), NOW)
-    ).not.toBeNull();
+  it('covers the full board: the window is at least the 6-day publish horizon', () => {
+    // A 200+ buy-in publishes 6 days ahead, so anything shorter would leave
+    // the flagship silent on the very day it appears.
+    expect(ANNOUNCE_WITHIN_MS).toBeGreaterThanOrEqual(6 * 24 * HOUR);
+  });
+
+  it('still ignores something absurdly far out, so the window is a window', () => {
+    expect(overlayFor(deepStack({ start_time: at(30 * 24 * HOUR) }), NOW)).toBeNull();
   });
 });
 
@@ -180,13 +187,23 @@ describe('ranking: live first, then the biggest number', () => {
   });
 
   it('drops everything that does not qualify, rather than padding the bar', () => {
+    /* `far` now QUALIFIES - Dan's rule is any short guaranteed event on the
+       board. What is still dropped is a covered event and one with no
+       guarantee at all, which is the difference between a useful flag and a
+       permanent one. */
     const rows: OverlayCandidate[] = [
       deepStack({ id: 'far', start_time: at(5 * 24 * HOUR) }),
       deepStack({ id: 'covered', prize_pool: 20000 }),
       deepStack({ id: 'no-guarantee', guaranteed_prize: 0 }),
+      deepStack({ id: 'immaterial', prize_pool: 19900 }),
       deepStack({ id: 'real' }),
     ];
-    expect(rankOverlayAnnouncements(rows, NOW).map((r) => r.id)).toEqual(['real']);
+    const ids = rankOverlayAnnouncements(rows, NOW, 10).map((r) => r.id);
+    expect(ids).toContain('real');
+    expect(ids).toContain('far');
+    expect(ids).not.toContain('covered');
+    expect(ids).not.toContain('no-guarantee');
+    expect(ids).not.toContain('immaterial');
   });
 
   it('survives junk without throwing', () => {

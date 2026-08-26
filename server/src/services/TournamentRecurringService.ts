@@ -937,6 +937,19 @@ export function mttPrestartHorseTarget(opts: {
   variant: string;
   /** Entrants already registered. Bounds how far one tick may jump. */
   currentPlayers?: number;
+  /**
+   * `tournaments.guaranteed_prize`. When set, the field goal is whatever it
+   * takes to COVER it - see the note below.
+   */
+  guaranteedPrize?: number;
+  /** `tournaments.prize_pool` - what the field has actually paid in so far. */
+  prizePool?: number;
+  /**
+   * `tournaments.buy_in_amount` - the PRIZE side of the entry. The fee is rake
+   * and never reaches the pool, so using the total here would under-count the
+   * entries needed and leave the guarantee short.
+   */
+  buyInPrizeShare?: number;
 }): number {
   const { msUntilStart, maxPlayers, variant } = opts;
   const current = Math.max(0, Number(opts.currentPlayers) || 0);
@@ -950,8 +963,44 @@ export function mttPrestartHorseTarget(opts: {
   if (startsOnBoughtSeats(variant, maxPlayers)) return 0;
 
   const seats = Number(maxPlayers) || 0;
+
+  /* ── THE GUARANTEE DECIDES THE FIELD (Dan 2026-08-26) ──────────────────────
+     "the horses should fill any and all seats to insure that the guarantee is
+     always met."
+
+     MTT_PRESTART_MAX_HORSES is 24. That is the right default for an ordinary
+     event - enough to make a lobby row look like a game without spending the
+     club's chips on a field nobody asked for. It is nowhere near enough for a
+     GUARANTEED one: the Sunday $200 Deep Stack promises 20,000 and pays 180 of
+     every 200 entry into the pool, so covering it takes 112 entries. Ramping
+     to 24 would have left roughly 15,000 of overlay on an event the club had
+     already promised to cover.
+
+     A horse entry is a REAL entry. fn_register_horse_for_tournament debits the
+     horse's wallet through atomic_deduct_wallet_and_log, writes a rake row and
+     adds `v_split.prize` to prize_pool - the same money movement a human makes.
+     So horses filling seats does not paper over the shortfall, it genuinely
+     funds it, and the guarantee stops being an overlay at all.
+
+     THE CAP IS STILL A CAP. `seats - 1` is untouched (safety property 1: the
+     table always leaves a chair for a human), and a guarantee can never ask
+     for more than the event's own field. What changes is only the FLOOR: an
+     event carrying a guarantee ramps to whatever covers it, an event without
+     one keeps the 24 it always had. */
+  const guarantee = Math.max(0, Number(opts.guaranteedPrize) || 0);
+  const pool = Math.max(0, Number(opts.prizePool) || 0);
+  const prizeShare = Math.max(0, Number(opts.buyInPrizeShare) || 0);
+  const shortfall = guarantee - pool;
+  const entriesToCover =
+    guarantee > 0 && shortfall > 0 && prizeShare > 0 ? Math.ceil(shortfall / prizeShare) : 0;
+
+  /* Entries needed ON TOP of the field that is already there. `current`
+     already paid into `pool`, so adding it back would double count them and
+     over-fill the event. */
+  const guaranteeGoal = entriesToCover > 0 ? current + entriesToCover : 0;
+
   // Always leave a seat: see safety property 1.
-  const fieldGoal = Math.min(seats - 1, MTT_PRESTART_MAX_HORSES);
+  const fieldGoal = Math.min(seats - 1, Math.max(MTT_PRESTART_MAX_HORSES, guaranteeGoal));
   if (fieldGoal < 1) return 0;
 
   const elapsed = 1 - msUntilStart / MTT_PRESTART_RAMP_MS; // 0 at T-60, 1 at T-0

@@ -118,10 +118,12 @@ export default function InvitePage() {
 
       setClub({
         id: clubData.id,
+        club_id: clubData.club_id,
         name: clubData.name,
         description: clubData.description,
         member_count: clubData.member_count || 0,
         avatar_url: clubData.avatar_url,
+        logo_url: clubData.logo_url,
         is_public: clubData.is_public,
       });
 

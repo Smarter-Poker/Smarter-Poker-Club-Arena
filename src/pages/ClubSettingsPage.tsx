@@ -390,7 +390,11 @@ export default function ClubSettingsPage() {
         .from('profiles')
         .select('player_number')
         .eq('id', user.id)
-        .single()
+        // .maybeSingle(), never .single(): a profile row that does not exist
+        // yet is a normal state, and .single() resolves with a PGRST116 error
+        // and null data. The .then below only reads `data`, so the failure was
+        // invisible and the player number silently never rendered.
+        .maybeSingle()
         .then(({ data }) => {
           if (isMounted && data) {
             setPlayerNumber(data.player_number);

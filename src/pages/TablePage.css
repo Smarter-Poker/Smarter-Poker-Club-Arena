@@ -2793,8 +2793,7 @@
   background: rgba(255, 255, 255, 0.25);
 }
 
-.floating-im-back,
-.floating-post-blind {
+.floating-im-back {
   background: linear-gradient(180deg, #10b981 0%, #059669 100%);
   border: 1px solid #34d399;
   color: white;
@@ -2812,6 +2811,12 @@
   bottom: 80px;
   right: 20px;
   z-index: 100;
+  /* Was an inline style object on the element, rebuilt on every TablePage
+     render. It is four static declarations; they belong here. */
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
 }
 
 .floating-action-bl {

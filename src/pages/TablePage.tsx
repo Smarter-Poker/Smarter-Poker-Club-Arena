@@ -13207,10 +13207,6 @@ export default function TablePage({
                 setShowShareHand(true);
               }}
             />
-            {/* Visual representation of Needs Post Blind button */}
-            <button className="floating-post-blind" style={{ display: 'none' }}>
-              Post Blind
-            </button>
           </div>
         }
         centerTop={null /* Game info moved to on-felt strip below community cards */}
@@ -14946,10 +14942,7 @@ export default function TablePage({
       {/* Observing / Join indicators REMOVED — empty seats already show "+ SIT" */}
 
       {/* Floating Chat/Mail Toggle Button (Bottom-Right) & I'm Back */}
-      <div
-        className="floating-action-br"
-        style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}
-      >
+      <div className="floating-action-br">
         {tableState.players[tableState.heroSeat - 1]?.status === 'sitting_out' && (
           <button
             className="floating-im-back"

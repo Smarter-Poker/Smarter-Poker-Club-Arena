@@ -1641,10 +1641,11 @@
    winnerCardPulse loop is gone for that reason. */
 .seat__card--winner {
   box-shadow:
-    0 0 0 2px #e7a93c,
-    0 0 10px rgba(240, 180, 70, 0.75),
-    0 0 22px rgba(235, 165, 50, 0.4),
-    0 4px 12px rgba(0, 0, 0, 0.4);
+    0 0 0 2px #e9b355,
+    0 0 10px rgba(240, 180, 80, 0.8),
+    0 0 22px rgba(235, 165, 50, 0.45),
+    0 4px 12px rgba(0, 0, 0, 0.4),
+    inset 0 0 14px rgba(235, 170, 60, 0.18);
 }
 
 /* POKERBROS PARITY 2026-08-26: while the winning five are lit, every OTHER
@@ -1654,8 +1655,21 @@
    (a hard cut in the reference; four frames is the closest polish-safe
    equivalent). */
 .seat__card--dimmed {
-  filter: brightness(0.5) saturate(0.75);
-  transition: filter 0.12s ease-out;
+  /* Measured off the reference frames: 0.28 of pre-showdown brightness,
+     channel-neutral — same as the board's losing cards. */
+  filter: brightness(0.28);
+  transition: filter 0.09s ease-out;
+}
+
+/* POKERBROS PARITY 2026-08-26 (audit round 2, measured): while a winner is
+   on display the reference dims the ENTIRE scene ~27% — every name plate
+   (the winner's included, measured 0.67-0.72), every avatar, every badge —
+   and only the winning cards and the banner stay at full brightness. The
+   seat's card rows are excluded here because the cards carry their own
+   states: winning cards full, all other face-up cards at 0.28. No
+   transition: the reference onset is a one-frame cut. */
+.table-page--winner-flash .seat > :not([class*='seat__cards']) {
+  filter: brightness(0.73);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -1914,25 +1928,23 @@
 
 /* ─── WINNING HAND NAME — "Straight", "Full House" etc. ────────── */
 
+/* POKERBROS PARITY 2026-08-26 (audit round 2): the reference renders the
+   seat-level hand name as PLAIN small text under the player's info — no
+   gold pill, no border, no italic, no sheen. The banner over the felt is
+   the loud element; this line is quiet confirmation. */
 .seat__hand-name {
   position: relative;
   text-align: center;
-  padding: 2px 12px;
+  padding: 1px 6px;
   margin-top: 2px;
-  background: linear-gradient(135deg, rgba(255, 215, 0, 0.2) 0%, rgba(255, 180, 0, 0.15) 100%);
-  border: 1px solid rgba(255, 215, 0, 0.5);
-  border-radius: 8px;
-  font-size: 0.75rem;
-  font-weight: 800;
-  color: #ffd700;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
-  letter-spacing: 0.03em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgba(233, 233, 238, 0.92);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  letter-spacing: 0.04em;
   white-space: nowrap;
   z-index: 25;
   animation: handNameAppear 0.5s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  font-style: italic;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(255, 215, 0, 0.15);
 }
 
 /* SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the engine ruled this hand
@@ -1957,27 +1969,8 @@
   animation: handNameAppear 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.seat__hand-name::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 60%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
-  animation: handNameSheen 2s ease-in-out 0.5s infinite;
-  pointer-events: none;
-}
-
-@keyframes handNameSheen {
-  0%,
-  100% {
-    left: -100%;
-  }
-  50% {
-    left: 150%;
-  }
-}
+/* The pill's sliding sheen went with the pill (see the parity note above).
+   handNameAppear below is shared with the MUCKED label and stays. */
 
 @keyframes handNameAppear {
   0% {

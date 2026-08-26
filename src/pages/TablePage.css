@@ -157,30 +157,31 @@
   transition: opacity 0.5s ease;
 }
 
-/* ─── Winner Celebration — golden flash on table ─── */
-.table-page--winner-flash .table-surface {
-  animation: winnerTableFlash calc(1.5s * var(--animation-speed, 1)) ease-out;
+/* ─── Winner display — the whole scene steps back (POKERBROS PARITY
+   2026-08-26, audit round 2, measured off the reference recording) ───
+
+   While a winner is on display the reference dims the ENTIRE scene to
+   roughly 0.73 of itself in a single-frame cut: the felt art, the rail,
+   the center brand block, the pot, every seat (see SeatSlot.css for the
+   per-seat half of this rule). Only the winning cards and the banner hold
+   full brightness. The old winnerTableFlash golden pulse was motion the
+   reference does not have — replaced by this dim.
+
+   Implementation note: this cannot be one overlay div. `.seat-wrapper`
+   (z-index: 10) and `.table-surface` (z-index: 1) are stacking contexts,
+   so no single sheet can sit above a seat's plate but below the same
+   seat's cards. Each chrome group therefore dims itself; the exclusions
+   (cards, banner) simply carry no filter. Filters snap with no
+   transition: the measured onset is a hard cut between two 30fps frames. */
+.table-page--winner-flash .table-art,
+.table-page--winner-flash .table-brand,
+.table-page--winner-flash .pot-area {
+  filter: brightness(0.73);
 }
 
-@keyframes winnerTableFlash {
-  0% {
-    box-shadow:
-      inset 0 0 120px rgba(255, 215, 0, 0.15),
-      inset 0 4px 12px rgba(255, 255, 255, 0.08),
-      inset 0 -4px 12px rgba(0, 0, 0, 0.4);
-  }
-  50% {
-    box-shadow:
-      inset 0 0 200px rgba(255, 215, 0, 0.08),
-      inset 0 4px 12px rgba(255, 255, 255, 0.08),
-      inset 0 -4px 12px rgba(0, 0, 0, 0.4);
-  }
-  100% {
-    box-shadow:
-      inset 0 4px 12px rgba(255, 255, 255, 0.08),
-      inset 0 -4px 12px rgba(0, 0, 0, 0.4),
-      inset 0 0 80px rgba(0, 0, 0, 0.12);
-  }
+/* The top bar dims more gently in the reference (~0.85-0.89). */
+.table-page--winner-flash .table-header {
+  filter: brightness(0.85);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

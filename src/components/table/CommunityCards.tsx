@@ -14,8 +14,6 @@ import React, { useMemo, useEffect, useRef, useState, memo } from 'react';
 import { CardImage, CardBack, type Card } from './CardImage';
 import { haptic, soundService } from '../../services/SoundService';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
-import { ParticleSystem } from './ParticleSystem';
-import { triggerScreenShake } from '../../utils/ScreenShake';
 import './CommunityCards.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -125,9 +123,6 @@ interface CardFaceProps {
   stage: BoardStage;
   deckStyle?: '4color' | '2color';
   cardBack?: string;
-  /** True for the brief window after the winning cards are named — see the
-   *  dead-animation note on the container. Drives ccHighlightPop. */
-  highlightPop?: boolean;
   /** All-in runout: turn/river land face down and flip (see the prop note). */
   slowReveal?: boolean;
 }
@@ -141,7 +136,6 @@ function CardFace({
   stage,
   deckStyle,
   cardBack,
-  highlightPop = false,
   slowReveal = false,
 }: CardFaceProps) {
   // Only apply animation classes to NEWLY DEALT cards — existing cards stay still
@@ -160,9 +154,6 @@ function CardFace({
         'community-cards__card',
         isHighlighted ? 'community-cards__card--highlighted' : '',
         isDimmed ? 'community-cards__card--dimmed' : '',
-        // The pop only means anything on a card that is actually part of the
-        // winning hand.
-        isHighlighted && highlightPop ? 'community-cards__card--highlight-pop' : '',
         isFlopDeal ? 'community-cards__card--flop-deal' : '',
         isTurnCard && !isSlowFlip ? 'community-cards__card--turn' : '',
         isRiverCard && !isSlowFlip ? 'community-cards__card--river' : '',
@@ -249,24 +240,8 @@ function CommunityCardsComponent({
   const prevCardCountRef = useRef(cards.length);
   const prevVisibleCountRef = useRef(visibleCount);
   const [showdownMode, setShowdownMode] = useState(false);
-  const [highlightPop, setHighlightPop] = useState(false);
   const [newlyDealtIndices, setNewlyDealtIndices] = useState<Set<number>>(new Set());
   const [stageLabel, setStageLabel] = useState<string | null>(null);
-  const [showParticles, setShowParticles] = useState(false);
-  const [particleOrigin, setParticleOrigin] = useState<{ x: number; y: number } | undefined>();
-  const prevHighlightRef = useRef<number[]>([]);
-  const containerRef = useRef<HTMLDivElement>(null);
-  // CA-13 BUG FIX: the 2500ms setShowParticles(false) inside the showdown branch
-  // of the stage-transition useEffect was fire-and-forget. If the hand ends and
-  // the board clears before 2.5s, the component unmounts and setState fires.
-  const showParticlesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Unmount guard for the particles timer
-  useEffect(() => {
-    return () => {
-      if (showParticlesTimerRef.current) clearTimeout(showParticlesTimerRef.current);
-    };
-  }, []);
 
   // FIX 184: Removed duplicate haptic here — stage transition useEffect below already
   // fires haptic on flop/turn/river. Having both caused double-haptic on every deal.
@@ -350,27 +325,14 @@ function CommunityCardsComponent({
         if (playSounds) haptic.medium();
         if (playSounds && soundService.isEnabled()) soundService.playCommunityCard();
       } else if (stage === 'showdown') {
+        // POKERBROS PARITY 2026-08-26 (frame-by-frame of the reference
+        // recording): showdown is a HARD CUT. The reference has no screen
+        // shake, no spark burst and no scale pop at any point in the winner
+        // sequence — the old triggerScreenShake + ParticleSystem beats here
+        // were motion the reference does not have. The haptic stays: it is
+        // physical feedback, not something on screen.
         if (playSounds) haptic.strong();
         setShowdownMode(true);
-
-        // Screen shake on showdown
-        triggerScreenShake('medium', containerRef.current);
-
-        // Gold spark burst from board center
-        if (containerRef.current) {
-          const rect = containerRef.current.getBoundingClientRect();
-          setParticleOrigin({
-            x: rect.left + rect.width / 2,
-            y: rect.top + rect.height / 2,
-          });
-        }
-        setShowParticles(true);
-        // CA-13: cancel any lingering timer before setting a new one
-        if (showParticlesTimerRef.current) clearTimeout(showParticlesTimerRef.current);
-        showParticlesTimerRef.current = setTimeout(() => {
-          showParticlesTimerRef.current = null;
-          setShowParticles(false);
-        }, 2500);
       }
       prevStageRef.current = stage;
       return () => {
@@ -379,21 +341,10 @@ function CommunityCardsComponent({
     }
   }, [stage]);
 
-  // Highlight pop animation — when highlightedIndices changes
-  useEffect(() => {
-    const highlightStr = JSON.stringify(highlightedIndices);
-    const prevStr = JSON.stringify(prevHighlightRef.current);
-    if (highlightStr !== prevStr && highlightedIndices.length > 0) {
-      setHighlightPop(true);
-      // AUDIT 2026-08-20: window was 400ms against a 500ms ccHighlightPop
-      // keyframe — even once wired (see below) it would have been cut at 80%.
-      // Scaled like every other window so a slowed table cannot clip it.
-      const timer = setTimeout(() => setHighlightPop(false), 500 * getAnimationSpeed() + 60);
-      prevHighlightRef.current = highlightedIndices;
-      return () => clearTimeout(timer);
-    }
-    prevHighlightRef.current = highlightedIndices;
-  }, [highlightedIndices]);
+  // POKERBROS PARITY 2026-08-26: the highlight-pop state machine is gone.
+  // A measured frame-by-frame pass of the reference recording shows the
+  // winner state is a single-frame hard cut — no pop, no ramp — so there is
+  // nothing left for a timer to drive.
 
   // Create array of 5 slots
   const slots = useMemo(() => {
@@ -415,7 +366,6 @@ function CommunityCardsComponent({
 
   return (
     <div
-      ref={containerRef}
       className={`community-cards ${showdownMode ? 'community-cards--showdown' : ''}`}
       role="region"
       aria-label={`Community cards: ${cards.length > 0 ? cards.map((c) => `${c.rank} of ${c.suit}`).join(', ') : 'none dealt'}${winningHandName ? ` - ${winningHandName}` : ''}`}
@@ -446,7 +396,6 @@ function CommunityCardsComponent({
               stage={stage}
               deckStyle={deckStyle}
               cardBack={cardBack}
-              highlightPop={highlightPop}
               slowReveal={slowReveal}
             />
           ) : // Phase 2 T1-07 — per POKERBROS_CLONE_SPEC.md line 485:
@@ -472,7 +421,10 @@ function CommunityCardsComponent({
       {/* Winning Hand Name — premium-style "Straight" label below community cards */}
       {winningHandName && (
         <div className="community-cards__hand-name">
-          {winningHandName}
+          {/* POKERBROS PARITY 2026-08-26: the name is its own span so the
+              band background (parent) and the gold gradient fill
+              (background-clip: text on this span) can coexist. */}
+          <span className="community-cards__hand-name-text">{winningHandName}</span>
           {/* SHOWDOWN SYSTEM 2026-08-25 (spec section 14): the secondary
               descriptive line — smaller, under the classification. */}
           {winningHandDescription && (
@@ -485,17 +437,6 @@ function CommunityCardsComponent({
           {lowWinnerLabel && <div className="community-cards__low-winner">{lowWinnerLabel}</div>}
         </div>
       )}
-
-      {/* Gold Spark Burst on Showdown */}
-      <ParticleSystem
-        active={showParticles}
-        mode="sparks"
-        origin={particleOrigin}
-        count={50}
-        intensity={1.5}
-        duration={2500}
-        onComplete={() => setShowParticles(false)}
-      />
     </div>
   );
 }

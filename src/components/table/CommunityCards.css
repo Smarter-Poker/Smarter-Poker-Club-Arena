@@ -481,11 +481,16 @@
      banner) lands in ONE beat, a hard cut of a single video frame. */
 .community-cards__card--highlighted {
   box-shadow:
-    /* Thin warm-gold ring, sits just outside the card edge */
-    0 0 0 2px #e7a93c,
-    /* Tight amber halo */ 0 0 10px rgba(240, 180, 70, 0.75),
-    /* Soft outer halo */ 0 0 22px rgba(235, 165, 50, 0.4),
-    /* Card elevation shadow */ 0 4px 12px rgba(0, 0, 0, 0.3);
+    /* Thin warm-gold ring, sits just outside the card edge.
+       Measured off the reference frames: ring core samples up to
+       rgb(232,194,115), ring mean rgb(191,154,78). */
+    0 0 0 2px #e9b355,
+    /* Tight amber halo */ 0 0 10px rgba(240, 180, 80, 0.8),
+    /* Soft outer halo */ 0 0 22px rgba(235, 165, 50, 0.45),
+    /* Card elevation shadow */ 0 4px 12px rgba(0, 0, 0, 0.3),
+    /* Slight warm cast over the face — the reference's winning cards read
+       ~5% warm (r 0.95, g 0.91, b 0.83 of their pre-showdown selves) */
+    inset 0 0 14px rgba(235, 170, 60, 0.18);
   z-index: 4;
 }
 
@@ -512,8 +517,12 @@
    The specular sheen sweep is suppressed while dimmed: a glossy light pass
    over a card the UI is telling you LOST reads as a glitch. */
 .community-cards__card--dimmed {
-  filter: brightness(0.5) saturate(0.75);
-  transition: filter 0.12s ease-out;
+  /* Measured off the reference frames: losing cards drop to 0.28 of their
+     pre-showdown brightness, channel-neutral (r/g/b ratios 0.284/0.282/0.28)
+     — a pure darken, no desaturation. 90ms is under 3 frames at 30fps: the
+     closest polish-safe rendering of the reference's one-frame cut. */
+  filter: brightness(0.28);
+  transition: filter 0.09s ease-out;
 }
 
 .community-cards__card--dimmed::after {
@@ -525,31 +534,13 @@
    SHOWDOWN MODE -- Entire board gets golden ambient
    ================================================================================= */
 
-.community-cards--showdown .community-cards__card {
-  box-shadow:
-    0 0 14px rgba(255, 215, 0, 0.25),
-    0 0 4px rgba(255, 215, 0, 0.15),
-    0 3px 10px rgba(0, 0, 0, 0.3);
-  transition: box-shadow 0.5s var(--cc-ease-smooth);
-}
-
-/* Highlight pop for winning hand cards (applied via JS).
-   POKERBROS PARITY 2026-08-26: the reference has NO scale bounce — the
-   highlight state is a one-frame hard cut. The old 0.5s scale(1.14) spring
-   is replaced by a 150ms brightness settle, just enough to read as "lit"
-   without inventing motion the reference does not have. */
-.community-cards__card--highlight-pop {
-  animation: ccHighlightPop 0.15s ease-out;
-}
-
-@keyframes ccHighlightPop {
-  0% {
-    filter: brightness(1.35);
-  }
-  100% {
-    filter: brightness(1);
-  }
-}
+/* POKERBROS PARITY 2026-08-26 (audit round 2): the showdown-wide golden
+   ambient that used to sit on every card here is gone — in the reference the
+   cards look exactly like themselves until the winner cut, and after the cut
+   the only glow anywhere is the winning cards' own halo. The highlight-pop
+   class and its keyframe are gone with it: the measured onset is a
+   single-frame hard cut with zero ramp (band, borders, dim and banner all
+   land between two adjacent 30fps frames). */
 
 /* =================================================================================
    CARD INNER CONTENT -- Rank + suit typography
@@ -725,14 +716,20 @@
      without reading as a rendering stutter on slower displays. */
 .community-cards__hand-name {
   position: absolute;
-  top: calc(100% + 10px);
+  /* Measured: the reference band's top edge sits ~2px under the cards
+     (band rows 468..528 against cards ending at 466, at 64px card scale). */
+  top: calc(100% + 4px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 20;
-  width: max(320px, 140%);
-  padding: 6px 0 8px;
+  width: max(320px, 150%);
+  /* Band height ~0.94x card height in the reference; the text rides the
+     band's vertical center with the flare along the bottom edge. */
+  padding: 10px 0 14px;
   text-align: center;
-  font-size: 1.9rem;
+  /* Measured glyph height ≈ 0.33x card height (21px against 64px cards).
+     Track the card size so every breakpoint keeps the reference ratio. */
+  font-size: clamp(1.1rem, calc(var(--cc-card-h, 91px) * 0.33), 1.9rem);
   font-weight: 900;
   letter-spacing: 0.04em;
   white-space: nowrap;
@@ -746,13 +743,22 @@
     rgba(30, 18, 8, 0.55) 82%,
     transparent 100%
   );
+  /* Fallback for the description/low children; the name itself is painted
+     by the gradient on .community-cards__hand-name-text. */
   color: #f5c343;
-  background-clip: border-box;
-  text-shadow:
-    0 1px 0 rgba(255, 236, 160, 0.55),
-    0 2px 4px rgba(0, 0, 0, 0.85),
-    0 0 18px rgba(240, 170, 50, 0.45);
-  animation: ccBannerCut 0.12s ease-out;
+  animation: ccBannerCut 0.09s ease-out;
+}
+
+/* The hand name's gold fill — measured stroke core #ffe39c with deeper gold
+   toward the glyph base. background-clip: text needs its own element so it
+   cannot fight the band gradient on the parent; text-shadow does not apply
+   to clipped text, so the outline + glow ride drop-shadow filters. */
+.community-cards__hand-name-text {
+  background: linear-gradient(180deg, #fff2bb 0%, #ffe097 45%, #edbb4e 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 14px rgba(240, 170, 50, 0.45));
 }
 
 @keyframes ccBannerCut {
@@ -941,7 +947,6 @@
   .community-cards__card--slow-reveal,
   .community-cards__card--slow-reveal .community-cards__flip,
   .community-cards__card--highlighted,
-  .community-cards__card--highlight-pop,
   .community-cards__highlight-glow,
   .community-cards__stage-label,
   .community-cards__hand-name,
@@ -966,8 +971,8 @@
 
   .community-cards__card--highlighted {
     box-shadow:
-      0 0 0 2px #e7a93c,
-      0 0 10px rgba(240, 180, 70, 0.75),
+      0 0 0 2px #e9b355,
+      0 0 10px rgba(240, 180, 80, 0.8),
       0 4px 12px rgba(0, 0, 0, 0.3);
   }
 
@@ -990,16 +995,11 @@
   }
 }
 
+/* The banner font derives from --cc-card-h (see the clamp() on the rule
+   above), so the old per-breakpoint font-size overrides are gone: every
+   breakpoint already retargets --cc-card-h and the 0.33 ratio follows. */
 @media (max-width: 480px) {
   .community-cards__hand-name {
-    font-size: 1.35rem;
-    top: calc(100% + 7px);
-  }
-}
-
-@media (max-width: 380px) {
-  .community-cards__hand-name {
-    font-size: 1.15rem;
-    top: calc(100% + 6px);
+    top: calc(100% + 3px);
   }
 }

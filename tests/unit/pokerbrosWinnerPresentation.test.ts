@@ -1,31 +1,34 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  POKERBROS WINNER PRESENTATION — the 2026-08-26 frame-by-frame parity pass
+ *  POKERBROS WINNER PRESENTATION — the 2026-08-26 frame-by-frame parity passes
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Dan supplied a screen recording of the reference client's showdown (26 Aug,
- * PLO5 "Flush" hand) and asked for a 1:1 clone. A frame-by-frame pass of that
- * recording pinned four facts this file guards:
+ * PLO5 "Flush" hand) and asked for a 1:1 clone. Round 1 eyeballed the frames;
+ * round 2 MEASURED them (pixel sampling across the 30fps sequence). The
+ * numbers this file pins all come from those measurements:
  *
- *  1. DIMMING EXISTS. The moment the winning five are named, every card
- *     OUTSIDE them — board cards, a losing shown hand, and the winner's own
- *     unused hole cards — drops to roughly half brightness. Winning cards
- *     keep full brightness. This was the missing half of the highlight:
- *     lighting the winners without dimming the rest reads as "nothing
- *     happened" on a bright board.
+ *  1. THE WHOLE SCENE DIMS. At the winner cut the reference multiplies the
+ *     entire scene by ~0.73 — felt art, center brand block, pot, every name
+ *     plate including the WINNER's (measured 0.67-0.72) — in one frame.
  *
- *  2. THE HIGHLIGHT IS STEADY. The reference never pulses, lifts, bobs or
- *     scales a winning card. The old infinite ccHighlightPulse /
- *     winnerCardPulse / ccGlowPulse loops and CardImage's translateY lift
- *     are exactly the kind of motion the reference does not have.
+ *  2. LOSING CARDS DROP TO 0.28. Every card outside the winning five reads
+ *     0.28 of its pre-showdown brightness, channel-neutral (measured r/g/b
+ *     ratios 0.284/0.282/0.280 — a pure darken, no desaturation).
  *
- *  3. THE STATE IS A CUT, NOT A FADE. Border, halo, dim and banner all land
- *     within one video frame (~33ms). Transitions here are capped at 150ms —
- *     anything slower is visibly not the reference.
+ *  3. WINNING CARDS HOLD FULL BRIGHTNESS (measured 0.95/0.91/0.83 — a
+ *     slight warm cast from the halo) behind a STEADY thin warm-gold ring
+ *     (ring samples up to rgb(232,194,115)). Nothing pulses, lifts, pops,
+ *     shakes or sparkles — the reference has zero motion at the cut.
  *
- *  4. THE BANNER SITS BELOW THE BOARD: a translucent dark band with a hot
- *     orange flare streak and a gold hand name, superseding the older
- *     above-the-board blue-glow label.
+ *  4. THE STATE IS A ONE-FRAME CUT. Highlight, dim, banner and scene-dim
+ *     land together between two adjacent 30fps frames. Transitions here are
+ *     capped at 90-120ms; anything slower is visibly not the reference.
+ *
+ *  5. THE BANNER hugs the board (band top ~2px under the cards), spans the
+ *     table as a translucent dark strip, carries the hand name in light
+ *     gold (measured stroke core #ffe39c, glyph height ~0.33x card height)
+ *     over an orange lens-flare streak along the band's lower edge.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -40,47 +43,62 @@ const SEAT = strip(read('src/components/table/SeatSlot.tsx'));
 const SEAT_CSS = read('src/components/table/SeatSlot.css');
 const CARD_CSS = read('src/components/table/CardImage.css');
 const TABLE_PAGE = strip(read('src/pages/TablePage.tsx'));
+const TABLE_CSS = read('src/pages/TablePage.css');
 
-describe('cards outside the winning five DIM (board)', () => {
+describe('the whole scene steps back behind the winner (measured 0.73)', () => {
+  it('felt art, brand block and pot dim under the winner-flash class', () => {
+    for (const sel of ['table-art', 'table-brand', 'pot-area']) {
+      expect(TABLE_CSS, `${sel} must dim`).toMatch(
+        new RegExp(`\\.table-page--winner-flash[^{]*\\.${sel}`)
+      );
+    }
+    const at = TABLE_CSS.indexOf('.table-page--winner-flash .table-art');
+    expect(TABLE_CSS.slice(at, at + 400)).toMatch(/brightness\(0\.73\)/);
+  });
+
+  it('every seat chrome element dims — cards excluded, they carry their own states', () => {
+    const at = SEAT_CSS.indexOf(".table-page--winner-flash .seat > :not([class*='seat__cards'])");
+    expect(at, 'seat chrome dim rule missing').toBeGreaterThan(-1);
+    expect(SEAT_CSS.slice(at, at + 300)).toMatch(/brightness\(0\.73\)/);
+  });
+
+  it('the old golden table flash is gone — the reference has no flash', () => {
+    // Strip comments first: the dim block's own comment names the retired
+    // keyframe when explaining why it is gone.
+    const cssNoComments = TABLE_CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(cssNoComments).not.toMatch(/winnerTableFlash/);
+  });
+});
+
+describe('cards outside the winning five drop to 0.28 (measured, channel-neutral)', () => {
   it('the board derives a dim state from the highlight set', () => {
     expect(BOARD).toMatch(/isDimmed:\s*highlightedIndices\.length\s*>\s*0/);
     expect(BOARD).toMatch(/!highlightedIndices\.includes\(i\)/);
   });
 
-  it('the dim class is applied to the card, and the CSS halves brightness', () => {
-    expect(BOARD).toMatch(/community-cards__card--dimmed/);
-    const at = BOARD_CSS.indexOf('.community-cards__card--dimmed');
-    expect(at, 'dim rule missing from board CSS').toBeGreaterThan(-1);
-    expect(BOARD_CSS.slice(at, at + 300)).toMatch(/brightness\(0\.\d+\)/);
+  it('board and seat dim rules use the measured 0.28, with no desaturation', () => {
+    for (const [css, sel] of [
+      [BOARD_CSS, '.community-cards__card--dimmed'],
+      [SEAT_CSS, '.seat__card--dimmed'],
+    ] as const) {
+      const at = css.indexOf(sel);
+      expect(at, `${sel} missing`).toBeGreaterThan(-1);
+      const body = css.slice(at, css.indexOf('}', at));
+      expect(body).toMatch(/brightness\(0\.28\)/);
+      expect(body).not.toMatch(/saturate/);
+    }
   });
-});
 
-describe('cards outside the winning five DIM (seats)', () => {
-  it('SeatSlot accepts the table-wide winnerDisplayActive flag', () => {
+  it('SeatSlot dims non-winning face-up cards at every seat while a winner shows', () => {
     expect(SEAT).toMatch(/winnerDisplayActive\?:\s*boolean/);
-  });
-
-  it('both hole-card rows dim non-winning face-up cards while a winner shows', () => {
     const uses = SEAT.match(/isDimmed=\{\s*winnerDisplayActive\s*&&/g) || [];
     expect(uses.length, 'villain row AND hero row must both dim').toBeGreaterThanOrEqual(2);
-  });
-
-  it('the memo comparator lets the dim flag through', () => {
     expect(SEAT).toMatch(/prev\.winnerDisplayActive\s*!==\s*next\.winnerDisplayActive/);
-  });
-
-  it('TablePage raises the flag from winnerInfo', () => {
     expect(TABLE_PAGE).toMatch(/winnerDisplayActive=\{winnerInfo\.playerIds\.length\s*>\s*0\}/);
-  });
-
-  it('the seat dim rule exists and halves brightness', () => {
-    const at = SEAT_CSS.indexOf('.seat__card--dimmed');
-    expect(at, 'dim rule missing from seat CSS').toBeGreaterThan(-1);
-    expect(SEAT_CSS.slice(at, at + 300)).toMatch(/brightness\(0\.\d+\)/);
   });
 });
 
-describe('the highlight is STEADY — the reference never pulses a winning card', () => {
+describe('the highlight is STEADY — zero motion at the cut', () => {
   it('no infinite pulse loops on winner styling', () => {
     for (const css of [BOARD_CSS, SEAT_CSS, CARD_CSS]) {
       expect(css).not.toMatch(/ccHighlightPulse\s+[^;]*infinite/);
@@ -89,43 +107,79 @@ describe('the highlight is STEADY — the reference never pulses a winning card'
     }
   });
 
+  it('the highlight-pop state machine is gone from the board component', () => {
+    expect(BOARD).not.toMatch(/highlightPop/);
+    expect(BOARD_CSS).not.toMatch(/@keyframes\s+ccHighlightPop/);
+  });
+
+  it('showdown fires no screen shake and no particle burst', () => {
+    expect(BOARD).not.toMatch(/triggerScreenShake|ParticleSystem/);
+  });
+
+  it('the showdown-wide golden ambient on every board card is gone', () => {
+    expect(BOARD_CSS).not.toMatch(/--showdown \.community-cards__card\s*\{/);
+  });
+
   it('CardImage no longer lifts a highlighted card off its slot', () => {
     const at = CARD_CSS.indexOf('.card-image--highlighted');
     expect(at).toBeGreaterThan(-1);
-    // Only the rule BODY — the neighbouring --folded rule's grayscale() would
-    // false-positive a bare /scale\(/ across a fixed-width slice.
     const body = CARD_CSS.slice(at, CARD_CSS.indexOf('}', at));
     expect(body).not.toMatch(/translateY|[^a-z]scale\(/);
   });
 });
 
-describe('the state lands as a CUT — nothing slower than 150ms', () => {
-  it('board dim transition is fast', () => {
-    const at = BOARD_CSS.indexOf('.community-cards__card--dimmed');
-    const rule = BOARD_CSS.slice(at, at + 300);
-    const ms = rule.match(/transition:\s*filter\s+0\.(\d+)s/);
-    expect(ms, 'dim transition missing').not.toBeNull();
-    expect(Number(`0.${ms![1]}`)).toBeLessThanOrEqual(0.15);
+describe('the state lands as a CUT — nothing slower than 120ms', () => {
+  it('board and seat dim transitions are within 3 frames at 30fps', () => {
+    for (const [css, sel] of [
+      [BOARD_CSS, '.community-cards__card--dimmed'],
+      [SEAT_CSS, '.seat__card--dimmed'],
+    ] as const) {
+      const at = css.indexOf(sel);
+      const body = css.slice(at, css.indexOf('}', at));
+      const ms = body.match(/transition:\s*filter\s+0\.(\d+)s/);
+      expect(ms, `${sel} transition missing`).not.toBeNull();
+      expect(Number(`0.${ms![1]}`)).toBeLessThanOrEqual(0.12);
+    }
   });
 
   it('the banner enters as a hard cut, not a spring', () => {
     expect(BOARD_CSS).toMatch(/ccBannerCut/);
     expect(BOARD_CSS).not.toMatch(/ccHandNameShimmer/);
+    const at = BOARD_CSS.indexOf('animation: ccBannerCut');
+    expect(BOARD_CSS.slice(at, at + 60)).toMatch(/0\.0?9\d*s|0\.1[0-2]?s/);
+  });
+
+  it('the seat chrome dim carries no transition — filters snap', () => {
+    const at = SEAT_CSS.indexOf(".table-page--winner-flash .seat > :not([class*='seat__cards'])");
+    const body = SEAT_CSS.slice(at, SEAT_CSS.indexOf('}', at));
+    expect(body).not.toMatch(/transition/);
   });
 });
 
-describe('the banner is the reference banner', () => {
-  it('sits BELOW the board', () => {
+describe('the banner is the reference banner (measured geometry)', () => {
+  it('hugs the board from below', () => {
     const at = BOARD_CSS.indexOf('.community-cards__hand-name {');
     expect(at).toBeGreaterThan(-1);
-    expect(BOARD_CSS.slice(at, at + 500)).toMatch(/top:\s*calc\(100%/);
+    expect(BOARD_CSS.slice(at, at + 800)).toMatch(/top:\s*calc\(100%\s*\+\s*4px\)/);
   });
 
-  it('gold text over a translucent dark band with the orange flare streak', () => {
-    const at = BOARD_CSS.indexOf('.community-cards__hand-name {');
-    const rule = BOARD_CSS.slice(at, at + 1400);
-    expect(rule).toMatch(/#f5c343/i);
+  it('the hand name is a gradient-gold span over the band, sized off the card height', () => {
+    expect(BOARD).toMatch(/community-cards__hand-name-text/);
+    const at = BOARD_CSS.indexOf('.community-cards__hand-name-text {');
+    expect(at, 'gradient span rule missing').toBeGreaterThan(-1);
+    const body = BOARD_CSS.slice(at, BOARD_CSS.indexOf('}', at));
+    expect(body).toMatch(/background-clip:\s*text/);
+    expect(body).toMatch(/#ffe097/i);
+    const nameAt = BOARD_CSS.indexOf('.community-cards__hand-name {');
+    expect(BOARD_CSS.slice(nameAt, nameAt + 1200)).toMatch(
+      /font-size:\s*clamp\([^;]*--cc-card-h[^;]*0\.33/
+    );
+  });
+
+  it('the orange lens-flare streak rides the band bottom', () => {
     const flareAt = BOARD_CSS.indexOf('.community-cards__hand-name::before');
-    expect(BOARD_CSS.slice(flareAt, flareAt + 900)).toMatch(/255,\s*158,\s*64/);
+    const body = BOARD_CSS.slice(flareAt, flareAt + 900);
+    expect(body).toMatch(/bottom:\s*2px/);
+    expect(body).toMatch(/255,\s*158,\s*64/);
   });
 });

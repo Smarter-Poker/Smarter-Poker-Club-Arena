@@ -1382,16 +1382,6 @@
       "pot_total",
       "updated_at"
     ],
-    "club_invites": [
-      "id",
-      "club_id",
-      "agent_id",
-      "code",
-      "email",
-      "expires_at",
-      "status",
-      "created_at"
-    ],
     "club_leaderboard_settings": [
       "club_id",
       "payout_currency",
@@ -6552,12 +6542,6 @@
       "hands_dealt",
       "sum_big_blind"
     ],
-    "player_wallets": [
-      "user_id",
-      "chips",
-      "diamonds",
-      "updated_at"
-    ],
     "poker_clips": [
       "id",
       "source_type",
@@ -9390,7 +9374,8 @@
       "table_id",
       "seat_number",
       "chip_count",
-      "club_id"
+      "club_id",
+      "is_satellite_qualifier"
     ],
     "tournament_registration_approvals": [
       "tournament_id",

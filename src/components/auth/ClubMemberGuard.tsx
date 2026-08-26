@@ -68,3 +68,4 @@ export default function ClubMemberGuard({ children }: { children: ReactNode }) {
 
   return <>{children}</>;
 }
+// Trigger CI to bypass GitHub Actions queue desync

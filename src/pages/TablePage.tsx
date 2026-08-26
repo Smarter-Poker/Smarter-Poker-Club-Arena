@@ -3866,7 +3866,41 @@ export default function TablePage({
               table: 'bbj_pools',
               filter: `id=eq.${pool.pool_id}`,
             },
-            (payload) => {
+            async (payload) => {
+              const prevHitCount = (payload.old as any)?.hit_count || 0;
+              const nextHitCount = (payload.new as any)?.hit_count || 0;
+
+              if (nextHitCount > prevHitCount && isMounted.current) {
+                try {
+                  const { data } = await supabase.rpc('fn_bbj_recent_hits', {
+                    p_pool_id: pool.pool_id,
+                    p_limit: 1,
+                  });
+                  if (data && data.length > 0) {
+                    const hit = data[0];
+                    let tName = hit.table_name;
+                    if (!tName && hit.table_id) {
+                      const tRes = await supabase
+                        .from('tables')
+                        .select('name')
+                        .eq('id', hit.table_id)
+                        .maybeSingle();
+                      if (tRes.data) tName = tRes.data.name;
+                    }
+                    masterBus.emit('BBJ_HIT_GLOBAL', {
+                      tableId: hit.table_id || '',
+                      tableName: tName || 'a table',
+                      gameVariant: hit.game_variant || 'Poker',
+                      bigBlind: hit.big_blind || 0,
+                      winnerName: hit.bad_beat_name || 'A player',
+                      amount: hit.bad_beat_amount || hit.total_payout || 0,
+                    });
+                  }
+                } catch (err) {
+                  console.error('Failed to fetch BBJ hit details:', err);
+                }
+              }
+
               const next = (payload.new as { main_balance?: number | string })?.main_balance;
               const parsed = Number(next);
               if (Number.isFinite(parsed) && isMounted.current) setBbjAmount(parsed);
@@ -7429,6 +7463,16 @@ export default function TablePage({
   // FIX 89: INSURANCE_OFFERED is now server-authoritative via Realtime broadcast.
   // The subscribeToHandState callback handles 'insurance_offers' events.
   // Legacy MasterBus handler removed — server is the single source of truth.
+
+  useMasterBusSubscription('BBJ_HIT_GLOBAL', (payload: any) => {
+    // Show an in-game pop-up on all cash game tables when BBJ is hit globally.
+    if (!tableState.isTournament) {
+      toast?.success?.(
+        `🚨 BBJ HIT on ${payload.tableName} (${payload.gameVariant.toUpperCase()} / ${payload.bigBlind})! ${payload.winnerName} won $${payload.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}!`,
+        10000
+      );
+    }
+  });
 
   useMasterBusSubscription('TIME_BANK_ACTIVATED', (payload: any) => {
     /* Two transports publish this - the supabase channel (camelCase, via

@@ -31,6 +31,27 @@ export interface CardImageProps {
   isHighlighted?: boolean;
   isFolded?: boolean;
   className?: string;
+  /**
+   * Whether the browser may defer this card's face.
+   *
+   * Defaults to `lazy`, which is right for the long lists this component also
+   * serves (BBJ history, hand replays, the card-back store) - dozens of faces
+   * below the fold.
+   *
+   * It is wrong for the two rows that decide a hand. AUDIT 2026-08-25: the
+   * felt's cards were lazy too, and lazy has a real cost exactly where it hurts
+   * most. A `loading="lazy"` image inside a `display: none` subtree is not
+   * fetched at all, and MultiTablePage keeps up to four tables mounted with the
+   * inactive ones display:none - so switching tabs showed a beat of empty card
+   * boxes while the faces were fetched and decoded. At showdown the same
+   * heuristic delays the one frame the player is actually reading. The felt now
+   * passes `eager` for the hero's hand, a revealed villain hand and the
+   * community board; every other caller keeps the lazy default.
+   *
+   * Cheap to do: the whole WebP deck is ~8KB a card and shared by every table,
+   * so the second table pays nothing.
+   */
+  loading?: 'lazy' | 'eager';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -156,6 +177,7 @@ export function CardImage({
   isHighlighted = false,
   isFolded = false,
   className = '',
+  loading = 'lazy',
 }: CardImageProps) {
   // ── Dan 2026-08-18: make the four-colour deck setting actually apply ──
   //
@@ -185,7 +207,12 @@ export function CardImage({
     setFallbackStep(0);
   }, [imagePath]);
   const imgError = fallbackStep >= 2;
-  const effectivePath = fallbackStep === 1 ? imagePath.replace(/\.webp$/, '.png') : imagePath;
+  // AUDIT 2026-08-25: this read `fallbackStep === 1 ? png : webp`, so at step 2
+  // - the give-up state - the src flipped BACK to the .webp that had already
+  // 404'd. The <img> is still mounted (hidden with display:none so the box keeps
+  // its size), so the browser re-requested a URL known to be dead every time the
+  // fallback rendered. Once we have moved past the WebP it never comes back.
+  const effectivePath = fallbackStep >= 1 ? imagePath.replace(/\.webp$/, '.png') : imagePath;
 
   const classes = [
     'card-image',
@@ -200,7 +227,7 @@ export function CardImage({
   return (
     <div className={classes}>
       <img
-        loading="lazy"
+        loading={loading}
         decoding="async"
         src={effectivePath}
         alt={`${card.rank} of ${SUIT_MAP[card.suit] || card.suit}`}
@@ -334,6 +361,129 @@ export function normalizeCardBack(style: string | undefined | null): string {
   if (!style) return DEFAULT_CARD_BACK;
   if ((CARD_BACK_IDS as readonly string[]).includes(style)) return style;
   return CARD_BACK_ALIASES[style] ?? DEFAULT_CARD_BACK;
+}
+
+/**
+ * Is this an id the app has ever meant something by?
+ *
+ * normalizeCardBack answers `classic_blue` for anything it does not recognise,
+ * which is the right answer when you are about to PAINT a card and the wrong
+ * answer when you are about to decide what somebody OWNS: without this guard a
+ * junk row in feature_purchases normalises to classic_blue and reads as a
+ * purchase of it.
+ */
+export function isKnownCardBackId(style: string | undefined | null): boolean {
+  if (!style) return false;
+  return (
+    (CARD_BACK_IDS as readonly string[]).includes(style) ||
+    Object.prototype.hasOwnProperty.call(CARD_BACK_ALIASES, style)
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// THE CARD BACK CATALOGUE — one list, every surface
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Dan 2026-08-25: "every selectable feature must be 100% fully built out,
+// functional and actually change and update in real time when selected."
+//
+// THREE SURFACES SELL CARD BACKS — CardBackSelector (the diamond store),
+// ThemeSettingsModal's Cards tab, and the table hamburger menu — and each kept
+// its OWN copy of the list. That is the defect this repo has now fixed three
+// separate times, always in one copy at a time:
+//
+//   - 2026-08-20  ThemeSettingsModal offered standard-red / premium-gold /
+//                 premium-platinum. Matched nothing. All collapsed to
+//                 classic_blue.
+//   - 2026-08-25  HamburgerMenu offered default / emerald / crimson /
+//                 midnight / obsidian. Same outcome, five days later.
+//   - now         CardBackSelector sold TWELVE ids that resolved to SEVEN
+//                 designs. `classic` (50 diamonds), `burgundy` (75) and the
+//                 free `red` were the identical picture; `navy` (75), `black`
+//                 and `blue` were the identical picture. Three paid designs
+//                 were pixel-for-pixel a free one.
+//
+// Meanwhile FOUR designs with real artwork on disk — diamond, dragon, galaxy,
+// neon — were not for sale anywhere.
+//
+// The catalogue below is keyed by the CANONICAL ids, the ones the artwork is
+// named after, so a tile cannot exist without a picture and two tiles cannot
+// share one. Every surface reads it. cardBackCatalog.test.ts pins both
+// properties: full coverage of CARD_BACK_IDS, and no two entries alike.
+
+export type CardBackTier = 'standard' | 'premium' | 'exclusive';
+
+export interface CardBackDesign {
+  /** Canonical id. Artwork lives at `cards/backs/table/<id>.webp`. */
+  id: (typeof CARD_BACK_IDS)[number];
+  name: string;
+  tier: CardBackTier;
+  /** Diamond price. 0 for the free tier. */
+  price: number;
+}
+
+export const CARD_BACK_CATALOG: readonly CardBackDesign[] = [
+  // ── Free ──
+  { id: 'classic_blue', name: 'Classic Blue', tier: 'standard', price: 0 },
+  { id: 'classic_red', name: 'Classic Red', tier: 'standard', price: 0 },
+  { id: 'royal', name: 'Royal', tier: 'standard', price: 0 },
+  // ── Premium ──
+  { id: 'neon', name: 'Neon', tier: 'premium', price: 75 },
+  { id: 'galaxy', name: 'Galaxy', tier: 'premium', price: 75 },
+  { id: 'diamond', name: 'Diamond', tier: 'premium', price: 100 },
+  { id: 'dragon', name: 'Dragon', tier: 'premium', price: 125 },
+  { id: 'gold', name: 'Premium Gold', tier: 'premium', price: 150 },
+  // ── Exclusive ──
+  { id: 'carbon', name: 'Carbon Fiber', tier: 'exclusive', price: 175 },
+  { id: 'holographic', name: 'Holographic', tier: 'exclusive', price: 200 },
+  { id: 'club-branded', name: 'Club Crest', tier: 'exclusive', price: 250 },
+  { id: 'diamond-foil', name: 'Diamond Foil', tier: 'exclusive', price: 300 },
+];
+
+/** The catalogue entry a stored id resolves to. Never undefined. */
+export function cardBackDesign(style: string | undefined | null): CardBackDesign {
+  const id = normalizeCardBack(style);
+  return CARD_BACK_CATALOG.find((d) => d.id === id) ?? CARD_BACK_CATALOG[0];
+}
+
+/**
+ * ONE ownership rule, used by the store AND by the theme modal.
+ *
+ * They used to disagree, and both directions of the disagreement were real:
+ * the modal gated paid designs on VIP alone, so a player who had SPENT 150
+ * diamonds on Premium Gold in the store still saw it padlocked in the modal;
+ * and the store gated on purchases alone, so a VIP who already had every
+ * design free in the modal was quoted a price for it in the store.
+ */
+export function isCardBackUnlocked(
+  style: string | undefined | null,
+  opts: { isVip?: boolean; owned?: readonly string[] } = {}
+): boolean {
+  const design = cardBackDesign(style);
+  if (design.tier === 'standard') return true;
+  if (opts.isVip) return true;
+  return hasPurchasedCardBack(design.id, opts.owned ?? []);
+}
+
+/**
+ * Does this list of feature_purchases rows contain a purchase of this design?
+ *
+ * Separate from isCardBackUnlocked, and exported, because the interesting case
+ * is invisible through that function: it answers `true` for the free designs
+ * before it ever looks at purchases, so the junk-handling below cannot be
+ * observed there and a test of it passes whether the guard exists or not.
+ *
+ * The guard matters because purchases are recorded under a legacy store id
+ * (`gold`, `navy`) as well as a canonical one, so the comparison has to
+ * normalise — and normalizeCardBack answers `classic_blue` for ANYTHING. One
+ * malformed row would otherwise read as owning classic_blue.
+ */
+export function hasPurchasedCardBack(
+  style: string | undefined | null,
+  owned: readonly string[]
+): boolean {
+  const id = normalizeCardBack(style);
+  return owned.some((o) => isKnownCardBackId(o) && normalizeCardBack(o) === id);
 }
 
 /**

@@ -64,6 +64,13 @@ on:
       # trigger a live restart (a restart voids in-flight hands).
       - '!server/**/*.test.ts'
       - '!server/sim/**'
+  # 2026-08-24: hourly catch-up. The drain gate below now DEFERS a restart
+  # while humans are seated (instead of kicking them after 8 minutes), so a
+  # deferred deploy needs a later ride. This run deploys HEAD iff production
+  # is not already serving it — the dedupe step exits in seconds otherwise,
+  # so the CI cost of an up-to-date hour is one checkout and one curl.
+  schedule:
+    - cron: '17 * * * *'
   workflow_dispatch:
     inputs:
       force:
@@ -100,9 +107,76 @@ jobs:
         with:
           ref: ${{ github.event.inputs.ref_sha || github.sha }}
 
+      # 2026-08-24: DEDUPE. A restart is not free — it disconnects every
+      # player and voids in-flight hands — so an engine already serving this
+      # exact commit must not be bounced again. This is what makes the hourly
+      # catch-up schedule nearly free, and it also absorbs redundant push
+      # triggers (263 server-touching commits landed in the week before this
+      # was written; every one was a full restart).
+      - name: Skip if production already serves this commit
+        id: dedupe
+        run: |
+          SHORT="${SHA:0:8}"
+          BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
+          VER=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
+          if [ -n "$VER" ] && [ "$VER" = "$SHORT" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Production already serves $SHORT — nothing to deploy."
+            exit 0
+          fi
+          # 2026-08-24: RESTART COALESCING. On the night this was added the
+          # engine restarted 5 times in one hour as a merge train landed —
+          # each restart voids in-flight hands and costs ~2 minutes of table
+          # rehydration (4404s), even with nobody human seated. A restart is
+          # only allowed once the running engine is at least 20 minutes old;
+          # a younger engine defers, and the NEXT push or the hourly catch-up
+          # lands a newer HEAD that contains this commit anyway. Manual
+          # workflow_dispatch (the force path) bypasses the spacing gate.
+          MIN_RESTART_SPACING_SEC=1200
+          UPTIME=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("uptime"); print("ERR" if v is None else int(float(v)))' 2>/dev/null || echo ERR)
+
+          # 2026-08-24: COALESCING MUST NOT PROTECT A BROKEN ENGINE.
+          #
+          # The spacing gate exists to stop a merge train voiding in-flight
+          # hands. That reasoning only holds while the running engine is
+          # actually dealing. It restarts for reasons other than deploys —
+          # a healthcheck kill, a promoted standby, a crash — and when it
+          # does, its uptime is permanently under the threshold, so EVERY
+          # deploy coalesces, including the hourly catch-up. The commit that
+          # would stop the restarting is then the one commit that can never
+          # land. That deadlock held four engine fixes off production for an
+          # hour on the night this was written, while every run reported
+          # success having deployed nothing.
+          #
+          # So: an engine that is not dealing has no in-flight hands to
+          # protect, and deferring for its sake is pure downside. liveness
+          # and activeTables both come from the health body already fetched
+          # above, so this costs nothing.
+          LIVENESS=$(echo "$BODY" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("liveness",""))' 2>/dev/null || echo "")
+          TABLES=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("activeTables"); print("ERR" if v is None else int(v))' 2>/dev/null || echo ERR)
+          UNHEALTHY=false
+          if [ -z "$BODY" ] || [ "$LIVENESS" != "ok" ]; then
+            UNHEALTHY=true
+            echo "::notice::Engine health is '${LIVENESS:-unreadable}' — spacing gate bypassed."
+          elif [ "$TABLES" != "ERR" ] && [ "$TABLES" -eq 0 ]; then
+            UNHEALTHY=true
+            echo "::notice::Engine reports 0 active tables — nothing to protect, spacing gate bypassed."
+          fi
+
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ] \
+             && [ "$UNHEALTHY" = "false" ] \
+             && [ "$UPTIME" != "ERR" ] && [ "$UPTIME" -lt "$MIN_RESTART_SPACING_SEC" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "::notice::Engine restarted only ${UPTIME}s ago (< ${MIN_RESTART_SPACING_SEC}s) and is healthy with ${TABLES} tables — coalescing. A later push or the hourly catch-up lands $SHORT."
+            exit 0
+          fi
+          echo "skip=false" >> $GITHUB_OUTPUT
+          echo "Production serves '${VER:-unreadable}' (uptime ${UPTIME}s), deploying $SHORT."
+
       # See design note 7. Cheap (~1 min) and it is the only thing standing
       # between a failing engine test and production.
       - name: Setup Node 22
+        if: steps.dedupe.outputs.skip != 'true'
         uses: actions/setup-node@v4.1.0
         with:
           node-version: 22
@@ -110,6 +184,7 @@ jobs:
           cache-dependency-path: server/package-lock.json
 
       - name: Server tests must pass before anything is deployed
+        if: steps.dedupe.outputs.skip != 'true'
         working-directory: server
         run: |
           npm ci
@@ -117,6 +192,7 @@ jobs:
           npm test
 
       - name: Setup SSH key
+        if: steps.dedupe.outputs.skip != 'true'
         env:
           # The two repos disagreed on the name of this secret: World Hub's
           # workflows read HETZNER_SSH_PRIVATE_KEY, this one read
@@ -163,6 +239,7 @@ jobs:
 
       - name: Capture pre-deploy state (this is the rollback target)
         id: pre
+        if: steps.dedupe.outputs.skip != 'true'
         run: |
           # No 2>&1 here: it folded ssh/git stderr into the value, which then
           # went into $GITHUB_OUTPUT (multi-line values break the file-command
@@ -190,6 +267,7 @@ jobs:
           echo "Pre-deploy commit on host: $BEFORE_SHA"
 
       - name: Pre-flight checks
+        if: steps.dedupe.outputs.skip != 'true'
         run: |
           # An empty .env yields a container that boots and then fails every
           # query — worse than not deploying, because it looks alive.
@@ -204,7 +282,9 @@ jobs:
 
       - name: Drain gate — do not void live hands
         id: drain
+        if: steps.dedupe.outputs.skip != 'true'
         run: |
+          echo "skip=false" >> $GITHUB_OUTPUT
           if [ "${{ github.event.inputs.force }}" = "true" ]; then
             echo "force=true — skipping drain gate"; exit 0
           fi
@@ -232,9 +312,36 @@ jobs:
             echo "attempt $i/16: $HUMANS human(s) seated, waiting 30s..."
             sleep 30
           done
-          echo "::warning::Humans still seated after ~8min — proceeding (SIGTERM drain flushes state)"
+          # 2026-08-24: THE GATE NOW FAILS CLOSED. The old fallback here was
+          # "::warning:: proceeding" — with ~25 server-touching merges a day,
+          # that restarted the engine under seated humans over and over,
+          # voiding live hands and crashing tournaments mid-play. A deploy is
+          # deferrable; a player's hand is not.
+          #
+          # Bounded, though: an engine that has already run MAX_ENGINE_AGE_SEC
+          # without picking up new code is allowed one restart even with
+          # humans seated (SIGTERM drain still flushes state). Without the cap
+          # a table that never empties could pin production on stale code
+          # forever — including stale SECURITY fixes, which is worse than one
+          # interrupted hand. The hourly `schedule:` trigger retries the
+          # deferred deploy and lands it in the first empty window, so in
+          # practice the cap is rarely reached.
+          MAX_ENGINE_AGE_SEC=21600  # 6 hours
+          BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
+          UPTIME=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("uptime"); print("ERR" if v is None else int(float(v)))' 2>/dev/null || echo ERR)
+          if [ "$UPTIME" = "ERR" ]; then
+            echo "::warning::Humans seated AND uptime unreadable — the gate is blind. Proceeding (old behaviour) so a broken /health cannot pin production on stale code."
+            exit 0
+          fi
+          if [ "$UPTIME" -ge "$MAX_ENGINE_AGE_SEC" ]; then
+            echo "::warning::Humans still seated, but the engine is ${UPTIME}s old (>= ${MAX_ENGINE_AGE_SEC}s staleness cap) — proceeding (SIGTERM drain flushes state)"
+            exit 0
+          fi
+          echo "skip=true" >> $GITHUB_OUTPUT
+          echo "::notice::Deploy DEFERRED — humans are seated and the engine is only ${UPTIME}s old. The hourly catch-up run will land this commit in the first empty window."
 
       - name: Pull the exact commit onto the host
+        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
         run: |
           # Design note 5: reset to $SHA, never to a moving origin/main.
           ~/hssh "cd $REPO_DIR && git fetch origin && git reset --hard $SHA && git rev-parse HEAD"
@@ -246,6 +353,7 @@ jobs:
           ~/hssh "chmod +x $REPO_DIR/server/scripts/*.sh"
 
       - name: Build immutable image
+        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
         run: |
           ~/hssh "cd $REPO_DIR/server && docker build \
             --build-arg GIT_COMMIT_SHA=$SHA \
@@ -253,6 +361,7 @@ jobs:
           ~/hssh "docker image inspect $IMAGE_REPO:$SHA >/dev/null"
 
       - name: Install/refresh host supervisor
+        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
         run: |
           # Re-run every deploy so the systemd units can never drift from the
           # repo, and a rebuilt host self-heals on its first deploy.
@@ -261,7 +370,31 @@ jobs:
           # someone who already holds the deploy key.
           ~/hssh "REPO_DIR=$REPO_DIR ADMIN_ALLOW_IPS='${{ vars.ADMIN_ALLOW_IPS }}' $REPO_DIR/server/scripts/install-engine-supervisor.sh"
 
+      - name: Exactly one engine may answer for this host
+        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
+        run: |
+          # club-arena-engine-2 was created 2026-08-23T13:29Z on port 8081 with
+          # this same run-spec and nothing in this pipeline knew about it. It
+          # never received a deploy, it took the fleet whenever the managed
+          # container blinked, and for a while BOTH containers reported
+          # leadership.role=leader with the tables split between them — 14 on
+          # one, 10 on the other — which is the 404/close-4404 state the
+          # Caddyfile explicitly says must never happen.
+          #
+          # A second engine is not automatically wrong; an UNMANAGED one is.
+          # If the standby pair is ever restored, teach this workflow to deploy
+          # both and update this guard. Until then, finding a stranger wearing
+          # the engine label is a stop.
+          FOUND=$(~/hssh "docker ps --filter label=sp.role=engine --format '{{.Names}}'" | tr -d '\r' | grep -v "^$CONTAINER$" || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::Unmanaged engine container(s) running alongside $CONTAINER: $FOUND"
+            ~/hssh "docker ps --filter label=sp.role=engine --format '{{.Names}} {{.Image}} {{.Ports}}'" || true
+            exit 1
+          fi
+          echo "OK — $CONTAINER is the only container labelled sp.role=engine"
+
       - name: Cut over to the new image
+        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
         run: |
           # Runs the SHA tag directly. :current is NOT moved yet — see design
           # note 6. If this step fails, every recovery path still recreates the
@@ -270,16 +403,35 @@ jobs:
 
       - name: Verify — liveness AND that the running build is the one we shipped
         id: health
+        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
         run: |
           SHORT="${SHA:0:8}"
-          # 24x5s = 120s. The image declares --health-start-period=90s and the
-          # supervisor allows 120s of boot grace; a 60s budget declared failure
-          # on engines that were merely still loading their tables, and then
-          # rolled back a healthy deploy.
+          # ── ASK THE CONTAINER, NOT THE HOSTNAME ─────────────────────────────
+          # This polled $ENGINE_URL until 2026-08-23. That is a Caddy vhost, and
+          # Caddy was configured that morning as an active/standby PAIR:
+          #
+          #     reverse_proxy localhost:8080 localhost:8081 { lb_policy first }
+          #
+          # So while THIS deploy restarted 8080, Caddy failed over to 8081 — a
+          # second engine container that no part of this pipeline has ever
+          # updated. Verification therefore read the OTHER instance's version,
+          # never matched $SHORT, and rolled back a build that was fine. Four
+          # consecutive deploys died that way (18:36-21:05 UTC) and production
+          # ran 13:23 code for eight hours while every one of those runs
+          # reported a tidy rollback.
+          #
+          # It was also a RACE, which is why it looked intermittent: when 8080
+          # came back inside Caddy's 5s health interval the failover never
+          # happened and the same pipeline passed.
+          #
+          # A load balancer's job is to hide which instance answers. That makes
+          # it the wrong thing to ask "is the build I just shipped running?".
+          # Ask the container. The public URL is checked immediately after, for
+          # what it CAN answer: that the proxy is serving at all.
           for i in $(seq 1 24); do
             sleep 5
-            BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" || echo "")
-            [ -z "$BODY" ] && { echo "attempt $i: no response"; continue; }
+            BODY=$(~/hssh "curl -sf --max-time 10 http://127.0.0.1:${PORT:-8080}/health" 2>/dev/null || echo "")
+            [ -z "$BODY" ] && { echo "attempt $i: container not answering yet"; continue; }
             RUNNING=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('running'))" 2>/dev/null || echo "")
             VER=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
             LIVE=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('liveness',''))" 2>/dev/null || echo "")
@@ -288,15 +440,33 @@ jobs:
               UPTIME=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('uptime',-1))")
               echo "uptime=$UPTIME" >> $GITHUB_OUTPUT
               echo "verified=true" >> $GITHUB_OUTPUT
-              echo "Engine healthy AND serving $SHORT"
-              exit 0
+              echo "Container $CONTAINER healthy AND serving $SHORT"
+              break
+            fi
+            if [ "$i" = "24" ]; then
+              echo "::error::Verification failed after 24 attempts — $CONTAINER is not serving $SHORT"
+              ~/hssh "docker logs --tail 120 $CONTAINER" || true
+              exit 1
             fi
           done
-          echo "::error::Verification failed after 24 attempts — engine is not serving $SHORT"
-          ~/hssh "docker logs --tail 120 $CONTAINER" || true
+
+          # ── AND THE PUBLIC HOSTNAME MUST BE SERVING THAT SAME BUILD ─────────
+          # Liveness alone is not enough: an unmanaged twin answering this
+          # hostname is exactly how eight hours of stale code went unnoticed.
+          # If the proxy is serving a DIFFERENT version than the one we just
+          # verified in the container, something else is behind that name.
+          for i in $(seq 1 12); do
+            PUB=$(curl -sf --max-time 10 "$ENGINE_URL/health" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
+            echo "public attempt $i: $ENGINE_URL serves version=$PUB (want $SHORT)"
+            [ "$PUB" = "$SHORT" ] && { echo "Public hostname serving $SHORT"; exit 0; }
+            sleep 5
+          done
+          echo "::error::$CONTAINER serves $SHORT but $ENGINE_URL does not — another instance is answering that hostname."
+          ~/hssh "docker ps --filter label=sp.role=engine --format '{{.Names}} {{.Image}} {{.Ports}}'" || true
           exit 1
 
       - name: Promote :current to the verified build
+        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
         run: |
           # Only now. Every recovery path (supervisor, autoheal recreate, the
           # guarantee step, a host reboot) resolves :current, so :current must
@@ -336,7 +506,10 @@ jobs:
           exit 1
 
       - name: GUARANTEE the engine is running, with the right run-spec
-        if: always()
+        # 2026-08-24: also gated on dedupe — on a skipped run no SSH key was
+        # installed, so ~/hssh does not exist and this step could only fail.
+        # A skipped run touched nothing, so there is nothing to guarantee.
+        if: always() && steps.dedupe.outputs.skip != 'true'
         run: |
           # Closes the stop -> run window: if this job died, was cancelled, or
           # the runner vanished mid-cutover, the container may be absent or
@@ -368,7 +541,7 @@ jobs:
             fi' || true
 
       - name: Retention — keep the last 5 builds, never the rollback target
-        if: success()
+        if: success() && steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
         run: |
           # Only 40-hex SHA tags are candidates. The old filter treated every
           # non-reserved tag as expendable, which would have deleted the
@@ -391,6 +564,8 @@ jobs:
           {
             echo "## Auto-deploy summary"
             echo "- Trigger: ${{ github.event_name }}"
+            echo "- Deduped (already serving this commit): ${{ steps.dedupe.outputs.skip || 'n/a' }}"
+            echo "- Deferred by drain gate (humans seated): ${{ steps.drain.outputs.skip || 'n/a' }}"
             echo "- Deploying: \`$SHA\`"
             echo "- Host before: \`${{ steps.pre.outputs.before_sha }}\`"
             echo "- Host after:  \`$AFTER_SHA\`"

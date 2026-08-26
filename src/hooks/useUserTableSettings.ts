@@ -88,29 +88,26 @@ export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
   table_alias: '',
   multi_auto_switch: true,
   multi_action_queue: true,
-  // ── THESE TWO MUST MATCH THE DATABASE (2026-08-23) ──
+  // ── THESE TWO MUST MATCH THE DATABASE ──
   //
-  // `user_table_settings` declares both of these NOT NULL DEFAULT false. This
-  // object declared them true, and TableSettingsPanel renders every toggle
-  // straight from it — so a user with no settings row was shown "Desktop Turn
-  // Alerts" and "Shared Connection (Beta)" switched ON while both were, in
-  // fact, OFF:
+  // TableSettingsPanel renders every toggle straight from this object until
+  // the user's row loads, and the save path is a per-key upsert — so a client
+  // default that disagrees with the column default both lies to the user AND
+  // silently flips their other settings on first save (full history in
+  // tests/user-table-settings-defaults.test.ts). The database is the source
+  // of truth; change it in a migration FIRST, then here.
   //
-  //   * the `ca_ws_mux` mirror is only written inside `if (data)`, so with no
-  //     row EngineStateClient never sees the flag and opens per-table sockets
-  //     exactly as before;
-  //   * Notification permission is only ever requested by the toggle tap, so
-  //     an alerts switch that starts ON has no permission behind it.
-  //
-  // The toggle therefore displayed the opposite of reality, and the first tap
-  // "turned off" something that had never been on. For the mux that is worse
-  // than cosmetic: it makes the beta unsoakable, because you cannot tell who
-  // is actually running it.
-  //
-  // The database is the source of truth — these follow it. Pinned by
-  // tests/user-table-settings-defaults.test.ts so they cannot drift again.
+  // multi_desktop_alerts stays false: Notification permission is only ever
+  // requested by the toggle tap, so an alerts switch must never start ON.
   multi_desktop_alerts: false,
-  multi_shared_socket: false,
+  // 2026-08-24 (Dan, binding): shared socket promoted from opt-in beta to the
+  // DEFAULT transport. Per-join TLS handshakes (300-600ms) were plaguing
+  // every table join globally; the /ws/multi server path shipped 2026-08-21
+  // with unit coverage on both sides. DB default flipped to true in migration
+  // 20260824_shared_socket_default_on.sql (applied to production the same
+  // day). The toggle remains the kill switch: turning it OFF writes
+  // ca_ws_mux='0' and EngineStateClient falls back to per-table sockets.
+  multi_shared_socket: true,
 };
 
 // Metadata for rendering toggles
@@ -140,50 +137,50 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
   {
     key: 'show_avatars',
     label: 'Show Avatars',
-    description: 'Display player avatar images at seats',
+    description: 'Display Player Avatar Images At Seats',
   },
   {
     key: 'show_badges',
     label: 'Show Badges',
-    description: 'Display VIP/achievement badges at seats',
+    description: 'Display VIP/Achievement Badges At Seats',
   },
   {
     key: 'cards_pre_sort',
     label: 'Cards Pre-Sort',
-    description: 'Auto-sort hole cards by rank (high to low)',
+    description: 'Auto-Sort Hole Cards By Rank (High To Low)',
   },
   {
     key: 'gestures_enabled',
     label: 'Gestures',
-    description: 'Enable swipe/drag gesture controls for actions',
+    description: 'Enable Swipe/Drag Gesture Controls For Actions',
   },
   {
     key: 'card_slide',
     label: 'Card Slide',
-    description: 'Enable card peek/slide reveal animation',
+    description: 'Enable Card Peek/Slide Reveal Animation',
   },
   {
     key: 'card_squeeze',
     label: 'Card Squeeze',
-    description: 'Deal your cards face down - drag up to squeeze them open like a live game',
+    description: 'Deal Your Cards Face Down - Drag Up To Squeeze Them Open Like A Live Game',
   },
   {
     key: 'show_stack_in_bb',
-    label: 'Show Stack in Big Blinds',
-    description: 'Display chip stacks as BB count instead of chip value',
+    label: 'Show Stack In Big Blinds',
+    description: 'Display Chip Stacks As BB Count Instead Of Chip Value',
   },
   {
     key: 'auto_time_bank',
     label: 'Auto Time Bank',
-    description: 'Auto-activate time bank when primary timer expires',
+    description: 'Auto-Activate Time Bank When Primary Timer Expires',
   },
   {
     key: 'enhanced_view',
     label: 'Enhanced View',
-    description: 'Enable enhanced visual effects and animations',
+    description: 'Enable Enhanced Visual Effects And Animations',
   },
-  { key: 'text_message', label: 'Text Message', description: 'Enable text chat at table' },
-  { key: 'emoji_enabled', label: 'Emoji', description: 'Enable emoji reactions/throwables' },
+  { key: 'text_message', label: 'Text Message', description: 'Enable Text Chat At Table' },
+  { key: 'emoji_enabled', label: 'Emoji', description: 'Enable Emoji Reactions/Throwables' },
   // Dan 2026-08-18: "remove the skip animations toggle, animations are not
   // optional." This definition list is what renders the switches, so dropping
   // the entry removes the control everywhere it appeared. The column and the
@@ -196,27 +193,28 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
   {
     key: 'use_alias',
     label: 'Use Club Alias',
-    description: 'Display your club alias instead of your smarter.poker name at the table',
+    description: 'Display Your Club Alias Instead Of Your Smarter.Poker Name At The Table',
   },
   {
     key: 'multi_auto_switch',
     label: 'Multi-Table Auto-Switch',
-    description: 'Jump to a table automatically when its turn clock is nearly out',
+    description: 'Jump To A Table Automatically When Its Turn Clock Is Nearly Out',
   },
   {
     key: 'multi_action_queue',
     label: 'Multi-Table Action Queue',
-    description: 'After you act, advance to the next table already waiting on you',
+    description: 'After You Act, Advance To The Next Table Already Waiting On You',
   },
   {
     key: 'multi_desktop_alerts',
     label: 'Desktop Turn Alerts',
-    description: 'Browser notification when a table needs you and this tab is in the background',
+    description: 'Browser Notification When A Table Needs You And This Tab Is In The Background',
   },
   {
     key: 'multi_shared_socket',
-    label: 'Shared Connection (Beta)',
-    description: 'All tables share one game connection - fewer reconnects, better battery',
+    label: 'Shared Connection',
+    description:
+      'All Tables Share One Game Connection - Instant Table Joins, Fewer Reconnects, Better Battery',
   },
 ];
 

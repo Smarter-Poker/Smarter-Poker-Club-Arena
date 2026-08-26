@@ -25,6 +25,8 @@ import { clubGamesOrFilter } from '../utils/unionScope';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
+
 const formatDate = (ts: string | null) => {
   if (!ts) return '';
   return new Date(ts).toLocaleDateString(undefined, {
@@ -77,6 +79,8 @@ interface TournamentDetail {
 }
 
 export default function XMTTPage() {
+  const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
+
   const { user } = useAuthUser();
   const toast = useToast();
   const [searchParams] = useSearchParams();
@@ -108,7 +112,7 @@ export default function XMTTPage() {
         let query = supabase
           .from('tournaments')
           .select(
-            'id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, club_id'
+            'id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, club_id, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
           )
           .or(await clubGamesOrFilter(uuid))
           .order('start_time', { ascending: false });
@@ -133,7 +137,7 @@ export default function XMTTPage() {
         supabase
           .from('tournaments')
           .select(
-            'id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool'
+            'id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
           )
           .eq('id', tournamentId)
           .maybeSingle(),
@@ -228,22 +232,47 @@ export default function XMTTPage() {
   });
 
   // Register / Unregister
+  /**
+   * Dan 2026-08-25 (binding): one confirmation per buy-in — and this page had
+   * ZERO. It called `tournamentService.registerPlayer` directly, so an XMTT
+   * entry was a single unconfirmed tap that debited the wallet, while
+   * `registerMtt` sat destructured and unused at the top of the file.
+   *
+   * Routed through the shared hook, which owns the Sign Up card, the
+   * double-tap guard and the seat lookup. `club_id` matters here: an XMTT
+   * spans clubs, and the balance the card shows must be read against the club
+   * that actually pays for the seat, not whichever club is ambient.
+   */
   const handleRegister = async (tournamentId: string) => {
     if (!user || !clubId) return;
-    try {
-      // registerPlayer handles buy-in deduction, escrow, duplicate check, and event emission
-      await tournamentService.registerPlayer(
-        tournamentId,
-        user.id,
-        user.display_name || user.username || 'Player'
-      );
-      loadTournaments(clubId);
-      if (selectedTournament === tournamentId) loadDetail(tournamentId);
-    } catch (err: any) {
-      setActionError(safeErrorMessage(err));
-      clearTimeout(errorTimerRef.current);
-      errorTimerRef.current = setTimeout(() => setActionError(null), 5000);
+    const t = tournaments.find((x) => x.id === tournamentId);
+    if (!t) {
+      setActionError('That Tournament Is No Longer Listed');
+      return;
     }
+    await registerMtt(
+      {
+        id: t.id,
+        name: t.name,
+        // This page aliases the column as `buy_in` in its select.
+        buy_in_amount: Number((t as any).buy_in ?? (t as any).buy_in_amount ?? 0),
+        buy_in_fee: Number(t.buy_in_fee ?? 0),
+        start_time: (t as any).start_time ?? null,
+        /* The player's OWN club, never the row's `club_id`: a union tournament
+           carries the union container in that column (see the note at the top
+           of loadTournaments), and handing a union id to the balance RPC reads
+           a wallet that does not exist. */
+        club_id: clubId,
+        bounty_amount: (t as any).is_bounty ? (t as any).bounty_amount || 0 : 0,
+        is_pko: !!(t as any).is_pko,
+        is_mystery_bounty: !!(t as any).is_mystery_bounty,
+        status: t.status,
+      },
+      () => {
+        loadTournaments(clubId);
+        if (selectedTournament === tournamentId) loadDetail(tournamentId);
+      }
+    );
   };
 
   const handleUnregister = async (tournamentId: string) => {

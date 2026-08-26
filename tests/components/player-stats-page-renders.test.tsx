@@ -97,9 +97,22 @@ vi.mock('../../src/hooks/useAuthUser', () => ({
   }),
 }));
 
+/**
+ * Dan 2026-08-25: this page now renders ClubBottomNav (the footer belongs on
+ * every page the footer can reach), which uses `useLocation` and `Link`. A mock
+ * that stops at useParams/useNavigate made the whole page throw
+ * "No useLocation export is defined on the react-router-dom mock" - which reads
+ * as a broken stats page and is really a stale mock. Anything this page renders
+ * transitively has to be answerable here.
+ */
 vi.mock('react-router-dom', () => ({
   useParams: () => ({}),
   useNavigate: () => vi.fn(),
+  useLocation: () => ({ pathname: '/stats', search: '', hash: '', state: null, key: 'test' }),
+  // JSX (automatic runtime) rather than React.createElement: a vi.mock factory
+  // is hoisted above the imports, so referencing an imported React binding
+  // inside it would blow up before initialisation.
+  Link: ({ to, children }: { to: string; children?: unknown }) => <a href={to}>{children}</a>,
 }));
 
 vi.mock('../../src/services/AgentRakeService', () => ({

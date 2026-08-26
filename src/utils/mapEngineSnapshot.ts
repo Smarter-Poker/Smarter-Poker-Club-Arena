@@ -38,8 +38,18 @@ export interface EnginePublicPlayer {
   time_bank_uses_remaining?: number;
   position?: string;
   avatar_url?: string;
+  /** Equipped avatar frame token, e.g. `frame-gold`. '' or absent means none. */
+  equipped_frame?: string;
+  /** Equipped avatar aura token, e.g. `aura-fire`. '' or absent means none. */
+  equipped_aura?: string;
   is_horse?: boolean;
   hand_name?: string;
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25: the engine ruled this hand muckable at
+   * showdown and the player has not voluntarily shown — the seat renders a
+   * MUCKED label instead of cards. Never inferred client-side.
+   */
+  is_mucked?: boolean;
 }
 
 export interface EngineActionRecord {
@@ -76,10 +86,22 @@ export interface EnginePublishedState {
   winners?: Array<{ user_id: string; amount: number }>;
   min_raise: number;
   last_raise: number;
+  /**
+   * 2026-08-23: the betting structure, published by the engine rather than
+   * guessed from the variant string. See server/src/engine/BettingStructure.ts.
+   * Optional so a snapshot from an older engine build still maps cleanly.
+   */
+  betting_structure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  /** Fixed limit only: the street's one legal wager (small bet or big bet). */
+  fixed_bet_size?: number;
+  /** Fixed limit only: bet and three raises are in — fold or call only. */
+  wagers_capped?: boolean;
   turn_start_time_ms?: number;
+
   turn_duration_ms?: number;
   /** Phase 1.2 PR-F: absolute wall-clock deadline for the current turn. */
   turn_deadline_ms?: number;
+  time_bank_active?: boolean;
   /** Engine wall clock at broadcast time. Lets the client correct for device
    *  clock drift when working out how much of a turn has elapsed. */
   server_time_ms?: number;
@@ -116,21 +138,40 @@ export interface MappedTableStatePatch {
     id: string;
     name: string;
     avatar?: string;
+    /** Equipped avatar frame token. Drawn over `avatar` by AvatarCosmetics. */
+    frame?: string;
+    /** Equipped avatar aura token. Drawn under `avatar` by AvatarCosmetics. */
+    aura?: string;
     stack: number;
     status: 'active' | 'folded' | 'all_in' | 'sitting_out' | 'away' | 'disconnected';
     holeCards?: Array<{ rank: string; suit: string }>;
     showCards: boolean;
     isHero: boolean;
+    /** SHOWDOWN SYSTEM 2026-08-25: engine-decided muck — seat shows MUCKED. */
+    isMucked?: boolean;
   } | null>;
   /** Current bet for action panel. */
   currentBet: number;
   minRaise: number;
   lastRaise: number;
+  /**
+   * 2026-08-23: which betting structure the action panel should draw — a
+   * slider for no-limit and pot-limit, a single fixed-size button for limit.
+   * Undefined on snapshots from an engine build that predates this field; the
+   * panel then falls back to deriving it from the variant string.
+   */
+  bettingStructure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  /** Fixed limit only: the street's one legal wager. */
+  fixedBetSize?: number;
+  /** Fixed limit only: the round is capped — fold or call only. */
+  wagersCapped?: boolean;
+
   /** For action timer. */
   actionTimerDeadline?: number;
   /** Server-authoritative turn start wall-clock (for CSS ring animation). */
   actionTimerStartTime?: number;
   actionTimerPlayerId?: string;
+  isTimeBankActive?: boolean;
   /** hand number */
   handNumber: number;
   /** side pots */
@@ -241,11 +282,17 @@ export function mapEngineSnapshot(
       id: p.user_id,
       name: p.username ?? '',
       avatar: p.avatar_url,
+      /* Normalised to undefined, never ''. The seat merge in TablePage treats
+         a falsy cosmetic as "none equipped" and an empty string would round-trip
+         through the realtime merge as a value worth preserving. */
+      frame: p.equipped_frame || undefined,
+      aura: p.equipped_aura || undefined,
       stack: p.stack,
       status: STATUS_FROM_PLAYER(p),
       holeCards: p.cards && p.cards.length > 0 ? p.cards : undefined,
       showCards: !!(p.cards && p.cards.length > 0 && p.user_id !== heroUserId),
       isHero: p.user_id === heroUserId,
+      isMucked: p.is_mucked === true,
     };
     positions[idx] = p.position ?? null;
   }
@@ -332,24 +379,48 @@ export function mapEngineSnapshot(
     players,
     currentBet: s.current_bet ?? 0,
     minRaise: s.min_raise ?? 0,
+    // 2026-08-23: pass the engine's betting structure straight through. The
+    // action panel used to re-derive it from the variant string, which made
+    // everything that was not PLO no-limit — a fixed-limit table would have
+    // drawn a no-limit slider and had every drag rejected.
+    bettingStructure: s.betting_structure,
+    fixedBetSize: s.fixed_bet_size,
+    wagersCapped: s.wagers_capped,
+
     lastRaise: s.last_raise ?? 0,
     actionTimerDeadline,
     actionTimerStartTime: s.turn_start_time_ms,
     actionTimerPlayerId: s.current_player ?? undefined,
+    isTimeBankActive: s.time_bank_active ?? false,
     handNumber: s.hand_number ?? 0,
     sidePots,
     disconnectStates: s.disconnect_states ?? {},
     // Phase 2 T1-01: winners with net amount. Server emits winners[] with
     // total pot received per winner. We look up the player's totalInvested
-    // to compute net profit (what the client wants to show as "+N").
+    // to compute net profit (what the client shows as "+N" / "-N").
+    //
+    // Dan 2026-08-23: this is SIGNED, and used to be wrapped in Math.max(0,...).
+    // Winning a pot is not the same as making money on it. Chop a pot after the
+    // rake comes off the top and a "winner" can take back less than they put
+    // in - exactly the case Dan named ("+XXX or -XXX if the pot was chopped and
+    // rake was removed"). The clamp turned that real loss into a flat 0, and
+    // because the float only renders for a POSITIVE amount it then showed
+    // nothing at all: the one hand where a player most wants to know what
+    // happened to their chips was the one hand that told them nothing.
     winners: (s.winners ?? []).map((w) => {
-      const p = s.players.find((pp) => pp.user_id === w.user_id);
+      // AUDIT FIX 2026-08-25: the engine historically emitted this entry with
+      // a camelCase `userId` while this mapper read `user_id` — every winner
+      // mapped to userId undefined / seat 0, and the "+N" net float, the muck
+      // loser-mask and the stack hold all silently missed. The engine now
+      // emits `user_id`; accept BOTH so either side can deploy first.
+      const wid = w.user_id ?? (w as unknown as { userId?: string }).userId ?? '';
+      const p = s.players.find((pp) => pp.user_id === wid);
       const invested = p?.totalInvested ?? 0;
       return {
-        userId: w.user_id,
+        userId: wid,
         seat: p?.seat ?? 0,
         amount: w.amount,
-        netAmount: Math.max(0, w.amount - invested),
+        netAmount: w.amount - invested,
       };
     }),
     // Bible V8 §4.2 — Waiting-for-BB user IDs (Walkthrough Step 4 fix 2026-04-29)

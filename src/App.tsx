@@ -13,19 +13,18 @@ import TournamentStartingTicker from './components/tournament/TournamentStarting
 import TournamentAutoSeat from './components/tournament/TournamentAutoSeat';
 import { MEDIA_BASE } from './utils/mediaBase';
 import { Suspense, useState, useEffect } from 'react';
-import { lazyWithRetry as lazy } from './utils/lazyWithRetry';
 import { supabase } from './lib/supabase';
 import { realtimeChannelService } from './services/RealtimeChannelService';
 import { OfflineQueueService } from './services/OfflineQueueService';
-import { busEventLogger } from './services/BusEventLogger';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
+import UnionSkinGuard from './components/common/UnionSkinGuard';
 import { ChallengeToastListener } from './components/notifications/ChallengeToastListener';
 import LastClubTracker from './components/common/LastClubTracker';
 import WaitlistBanner from './components/common/WaitlistBanner';
 import { addBreadcrumb } from './core/SentryInit';
 
 // Intro Video — lazy-loaded (only shown once per session, not needed for initial paint)
-const IntroVideo = lazy(() => import('./components/IntroVideo'));
+const IntroVideo = lazyWithRetry(() => import('./components/IntroVideo'));
 import { useSettingsStore } from './stores/useSettingsStore';
 
 // Layouts
@@ -41,121 +40,124 @@ import ConnectionStatusBar from './components/ConnectionStatusBar';
 import PersistentTableLayer from './components/table/PersistentTableLayer';
 import BusToastBridge from './components/common/BusToastBridge';
 import { ConfirmHost } from './components/common/confirmDialog';
+import { SignUpHost } from './components/tournament/signUpDialog';
 import MilestoneToast from './components/common/MilestoneToast';
-import { bootServices, shutdownServices } from './services/ServiceBootstrap';
-import { preloadCriticalChunks } from './utils/ChunkPreloader';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
-import { supabaseConnectionWatchdog } from './utils/supabaseConnectionWatchdog';
 
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
+import ClubMemberGuard from './components/auth/ClubMemberGuard';
 import TOSGuard from './components/legal/TOSGuard';
+import { lazyWithRetry } from './utils/lazyWithRetry';
 
 // Pages (lazy loaded for performance)
-const AuthPage = lazy(() => import('./pages/AuthPage'));
-const HomePage = lazy(() => import('./pages/HomePage'));
+const AuthPage = lazyWithRetry(() => import('./pages/AuthPage'));
+const HomePage = lazyWithRetry(() => import('./pages/HomePage'));
 
-const ClubsPage = lazy(() => import('./pages/ClubsPage'));
-const ClubHomePage = lazy(() => import('./pages/ClubHomePage'));
-const ClubDashboard = lazy(() => import('./pages/club/ClubDashboard'));
-const ClubDataPage = lazy(() => import('./pages/club/ClubDataPage'));
-const CreateClubPage = lazy(() => import('./pages/CreateClubPage'));
-const CreateTablePage = lazy(() => import('./pages/CreateTablePage'));
-const TableConfigPage = lazy(() => import('./pages/TableConfigPage'));
-const AgentManagementPage = lazy(() => import('./pages/AgentManagementPage'));
-const TournamentPage = lazy(() => import('./pages/TournamentPage'));
-const TournamentDetails = lazy(() => import('./pages/tournament/TournamentDetails'));
-const TournamentLobbyPage = lazy(() => import('./pages/tournament/TournamentLobbyPage'));
-const TournamentResultsPage = lazy(() => import('./pages/tournament/TournamentResultsPage'));
-const TablePage = lazy(() => import('./pages/TablePage'));
-const ProfilePage = lazy(() => import('./pages/ProfilePage'));
-const DailyChallengesPage = lazy(() => import('./pages/DailyChallengesPage'));
-const SettingsPage = lazy(() => import('./pages/SettingsPage'));
-const UnionsPage = lazy(() => import('./pages/UnionsPage'));
-const UnionDetailPage = lazy(() => import('./pages/UnionDetailPage'));
-const UnionStatementsPage = lazy(() => import('./pages/UnionStatementsPage'));
-const CreateUnionPage = lazy(() => import('./pages/CreateUnionPage'));
-const SettlementPage = lazy(() => import('./pages/SettlementPage'));
+const ClubsPage = lazyWithRetry(() => import('./pages/ClubsPage'));
+const ClubHomePage = lazyWithRetry(() => import('./pages/ClubHomePage'));
+const ClubDashboard = lazyWithRetry(() => import('./pages/club/ClubDashboard'));
+const ClubDataPage = lazyWithRetry(() => import('./pages/club/ClubDataPage'));
+const CreateClubPage = lazyWithRetry(() => import('./pages/CreateClubPage'));
+const CreateTablePage = lazyWithRetry(() => import('./pages/CreateTablePage'));
+const TableConfigPage = lazyWithRetry(() => import('./pages/TableConfigPage'));
+const AgentManagementPage = lazyWithRetry(() => import('./pages/AgentManagementPage'));
+const TournamentPage = lazyWithRetry(() => import('./pages/TournamentPage'));
+const TournamentDetails = lazyWithRetry(() => import('./pages/tournament/TournamentDetails'));
+const TournamentLobbyPage = lazyWithRetry(() => import('./pages/tournament/TournamentLobbyPage'));
+const TournamentResultsPage = lazyWithRetry(
+  () => import('./pages/tournament/TournamentResultsPage')
+);
+const TablePage = lazyWithRetry(() => import('./pages/TablePage'));
+const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'));
+const DailyChallengesPage = lazyWithRetry(() => import('./pages/DailyChallengesPage'));
+const SettingsPage = lazyWithRetry(() => import('./pages/SettingsPage'));
+const UnionsPage = lazyWithRetry(() => import('./pages/UnionsPage'));
+const UnionDetailPage = lazyWithRetry(() => import('./pages/UnionDetailPage'));
+const UnionStatementsPage = lazyWithRetry(() => import('./pages/UnionStatementsPage'));
+const CreateUnionPage = lazyWithRetry(() => import('./pages/CreateUnionPage'));
+const SettlementPage = lazyWithRetry(() => import('./pages/SettlementPage'));
 
 // New Pages
-const LeaderboardPage = lazy(() => import('./pages/LeaderboardPage'));
-const HandHistoryPage = lazy(() => import('./pages/HandHistoryPage'));
-const PlayerWalletPage = lazy(() => import('./pages/PlayerWalletPage'));
-const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
-const MessagesPage = lazy(() => import('./pages/MessagesPage'));
-const ClubMessagesPage = lazy(() => import('./pages/ClubMessagesPage'));
-const SearchPage = lazy(() => import('./pages/SearchPage'));
-const HelpPage = lazy(() => import('./pages/HelpPage'));
-const CashierPage = lazy(() => import('./pages/CashierPage'));
-const CashierTradePage = lazy(() => import('./pages/CashierTradePage'));
-const SuperAgentDashboard = lazy(() => import('./pages/SuperAgentDashboard'));
-const AchievementsPage = lazy(() => import('./pages/AchievementsPage'));
-const ClubMembersPage = lazy(() => import('./pages/ClubMembersPage'));
-const FriendsPage = lazy(() => import('./pages/FriendsPage'));
-const RakebackPage = lazy(() => import('./pages/RakebackPage'));
-const BadBeatJackpotPage = lazy(() => import('./pages/BadBeatJackpotPage'));
-const PlayerStatsPage = lazy(() => import('./pages/PlayerStatsPage'));
-const PromotionsPage = lazy(() => import('./pages/PromotionsPage'));
-const ClubSettingsPage = lazy(() => import('./pages/ClubSettingsPage'));
-const TransactionHistoryPage = lazy(() => import('./pages/TransactionHistoryPage'));
-const InvitePage = lazy(() => import('./pages/InvitePage'));
-const TableCreationPage = lazy(() => import('./pages/TableCreationPage'));
-const ReportPlayerPage = lazy(() => import('./pages/ReportPlayerPage'));
-const ReportReviewPage = lazy(() => import('./pages/ReportReviewPage'));
-const ClubAnnouncementsPage = lazy(() => import('./pages/ClubAnnouncementsPage'));
-const VIPPage = lazy(() => import('./pages/VIPPage'));
-const ClubFinancialsPage = lazy(() => import('./pages/ClubFinancialsPage'));
-const BonusPage = lazy(() => import('./pages/BonusPage'));
-const WaitlistPage = lazy(() => import('./pages/WaitlistPage'));
-const ClubRulesPage = lazy(() => import('./pages/ClubRulesPage'));
-const NotificationCenter = lazy(() => import('./pages/NotificationCenter'));
-const BusDevToolsPage = lazy(() => import('./pages/BusDevToolsPage'));
-const FinancialAlertsPage = lazy(() => import('./pages/FinancialAlertsPage'));
-const DisputeManagementPage = lazy(() => import('./pages/DisputeManagementPage'));
-const FinancialHealthPage = lazy(() => import('./pages/FinancialHealthPage'));
-const FinancialAdminHub = lazy(() => import('./pages/FinancialAdminHub'));
-const RateAuditPage = lazy(() => import('./pages/RateAuditPage'));
-const SettlementDashboardPage = lazy(() => import('./pages/SettlementDashboardPage'));
-const AgentPortalPage = lazy(() => import('./pages/AgentPortalPage'));
-const RakebackDashboard = lazy(() => import('./pages/RakebackDashboard'));
-const CreditAdminPanel = lazy(() => import('./pages/CreditAdminPanel'));
-const SettlementHistoryPage = lazy(() => import('./pages/SettlementHistoryPage'));
-const FlashPoolPage = lazy(() => import('./pages/FlashPoolPage'));
-const BlacklistManagerPage = lazy(() => import('./pages/BlacklistManagerPage'));
-const SessionHistoryPage = lazy(() => import('./pages/SessionHistoryPage'));
+const LeaderboardPage = lazyWithRetry(() => import('./pages/LeaderboardPage'));
+const HandHistoryPage = lazyWithRetry(() => import('./pages/HandHistoryPage'));
+const PlayerWalletPage = lazyWithRetry(() => import('./pages/PlayerWalletPage'));
+const NotificationsPage = lazyWithRetry(() => import('./pages/NotificationsPage'));
+const NavigateToMessenger = lazyWithRetry(() => import('./pages/NavigateToMessenger'));
+const SearchPage = lazyWithRetry(() => import('./pages/SearchPage'));
+const HelpPage = lazyWithRetry(() => import('./pages/HelpPage'));
+const CashierPage = lazyWithRetry(() => import('./pages/CashierPage'));
+const CashierTradePage = lazyWithRetry(() => import('./pages/CashierTradePage'));
+const SuperAgentDashboard = lazyWithRetry(() => import('./pages/SuperAgentDashboard'));
+const AchievementsPage = lazyWithRetry(() => import('./pages/AchievementsPage'));
+const ClubMembersPage = lazyWithRetry(() => import('./pages/ClubMembersPage'));
+const MemberManagementPage = lazyWithRetry(() => import('./pages/MemberManagementPage'));
+const PlayerStatisticsPage = lazyWithRetry(() => import('./pages/PlayerStatisticsPage'));
+const PromoVaultPage = lazyWithRetry(() => import('./pages/PromoVaultPage'));
+const FriendsPage = lazyWithRetry(() => import('./pages/FriendsPage'));
+const RakebackPage = lazyWithRetry(() => import('./pages/RakebackPage'));
+const BadBeatJackpotPage = lazyWithRetry(() => import('./pages/BadBeatJackpotPage'));
+const PlayerStatsPage = lazyWithRetry(() => import('./pages/PlayerStatsPage'));
+const PromotionsPage = lazyWithRetry(() => import('./pages/PromotionsPage'));
+const ClubSettingsPage = lazyWithRetry(() => import('./pages/ClubSettingsPage'));
+const TransactionHistoryPage = lazyWithRetry(() => import('./pages/TransactionHistoryPage'));
+const InvitePage = lazyWithRetry(() => import('./pages/InvitePage'));
+const ReportPlayerPage = lazyWithRetry(() => import('./pages/ReportPlayerPage'));
+const ReportReviewPage = lazyWithRetry(() => import('./pages/ReportReviewPage'));
+const ClubAnnouncementsPage = lazyWithRetry(() => import('./pages/ClubAnnouncementsPage'));
+const VIPPage = lazyWithRetry(() => import('./pages/VIPPage'));
+const ClubFinancialsPage = lazyWithRetry(() => import('./pages/ClubFinancialsPage'));
+const BonusPage = lazyWithRetry(() => import('./pages/BonusPage'));
+const WaitlistPage = lazyWithRetry(() => import('./pages/WaitlistPage'));
+const ClubRulesPage = lazyWithRetry(() => import('./pages/ClubRulesPage'));
+const NotificationCenter = lazyWithRetry(() => import('./pages/NotificationCenter'));
+const BusDevToolsPage = lazyWithRetry(() => import('./pages/BusDevToolsPage'));
+const FinancialAlertsPage = lazyWithRetry(() => import('./pages/FinancialAlertsPage'));
+const DisputeManagementPage = lazyWithRetry(() => import('./pages/DisputeManagementPage'));
+const FinancialHealthPage = lazyWithRetry(() => import('./pages/FinancialHealthPage'));
+const FinancialAdminHub = lazyWithRetry(() => import('./pages/FinancialAdminHub'));
+const RateAuditPage = lazyWithRetry(() => import('./pages/RateAuditPage'));
+const SettlementDashboardPage = lazyWithRetry(() => import('./pages/SettlementDashboardPage'));
+const AgentPortalPage = lazyWithRetry(() => import('./pages/AgentPortalPage'));
+const RakebackDashboard = lazyWithRetry(() => import('./pages/RakebackDashboard'));
+const CreditAdminPanel = lazyWithRetry(() => import('./pages/CreditAdminPanel'));
+const SettlementHistoryPage = lazyWithRetry(() => import('./pages/SettlementHistoryPage'));
+const FlashPoolPage = lazyWithRetry(() => import('./pages/FlashPoolPage'));
+const BlacklistManagerPage = lazyWithRetry(() => import('./pages/BlacklistManagerPage'));
+const SessionHistoryPage = lazyWithRetry(() => import('./pages/SessionHistoryPage'));
 
 // Q4: New Backported Pages (Hub → Club Arena)
-const AntiCheatPage = lazy(() => import('./pages/AntiCheatPage'));
-const XMTTPage = lazy(() => import('./pages/XMTTPage'));
-const MarketplacePage = lazy(() => import('./pages/MarketplacePage'));
-const UnionGamesPage = lazy(() => import('./pages/UnionGamesPage'));
-const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage'));
-const PlayerSessionsPage = lazy(() => import('./pages/PlayerSessionsPage'));
-const AgentDashboardPage = lazy(() => import('./pages/AgentDashboardPage'));
-const UnionDashboardPage = lazy(() => import('./pages/UnionDashboardPage'));
+const AntiCheatPage = lazyWithRetry(() => import('./pages/AntiCheatPage'));
+const XMTTPage = lazyWithRetry(() => import('./pages/XMTTPage'));
+const MarketplacePage = lazyWithRetry(() => import('./pages/MarketplacePage'));
+const UnionGamesPage = lazyWithRetry(() => import('./pages/UnionGamesPage'));
+const AdminDashboardPage = lazyWithRetry(() => import('./pages/AdminDashboardPage'));
+const PlayerSessionsPage = lazyWithRetry(() => import('./pages/PlayerSessionsPage'));
+const AgentDashboardPage = lazyWithRetry(() => import('./pages/AgentDashboardPage'));
+const UnionDashboardPage = lazyWithRetry(() => import('./pages/UnionDashboardPage'));
 
 // Q3: Social, Messaging & Discovery Pages
-const PublicProfilePage = lazy(() => import('./pages/PublicProfilePage'));
+const PublicProfilePage = lazyWithRetry(() => import('./pages/PublicProfilePage'));
 
 // Shared/Public Pages
-const HandReplayerPage = lazy(() => import('./pages/share/HandReplayerPage'));
+const HandReplayerPage = lazyWithRetry(() => import('./pages/share/HandReplayerPage'));
 // VISIBLE FIX 2026-08-15: ShareHand emits /replay?h=<payload> for every share
 // channel, and no such route existed — every shared link 404'd.
-const SharedHandReplayPage = lazy(() => import('./pages/share/SharedHandReplayPage'));
-const SimPage = lazy(() => import('./pages/SimPage'));
+const SharedHandReplayPage = lazyWithRetry(() => import('./pages/share/SharedHandReplayPage'));
+const SimPage = lazyWithRetry(() => import('./pages/SimPage'));
 
 // System Pages
-const HealthCheckPage = lazy(() => import('./pages/HealthCheckPage'));
+const HealthCheckPage = lazyWithRetry(() => import('./pages/HealthCheckPage'));
 
 // Legal Pages
-const TermsOfServicePage = lazy(() => import('./pages/legal/TermsOfServicePage'));
-const ClubPromotionRulesPage = lazy(() => import('./pages/legal/PromotionsPage'));
-const FairGamingPage = lazy(() => import('./pages/legal/FairGamingPage'));
-const PrivacyPolicyPage = lazy(() => import('./pages/legal/PrivacyPolicyPage'));
+const TermsOfServicePage = lazyWithRetry(() => import('./pages/legal/TermsOfServicePage'));
+const ClubPromotionRulesPage = lazyWithRetry(() => import('./pages/legal/PromotionsPage'));
+const FairGamingPage = lazyWithRetry(() => import('./pages/legal/FairGamingPage'));
+const PrivacyPolicyPage = lazyWithRetry(() => import('./pages/legal/PrivacyPolicyPage'));
 
 // Admin Singletons
-const EngineDashboard = lazy(() => import('./pages/admin/EngineDashboard'));
-const AnalyticsDashboard = lazy(() => import('./pages/admin/AnalyticsDashboard'));
+const EngineDashboard = lazyWithRetry(() => import('./pages/admin/EngineDashboard'));
+const AnalyticsDashboard = lazyWithRetry(() => import('./pages/admin/AnalyticsDashboard'));
 
 // Loading fallback
 function LoadingSpinner() {
@@ -181,6 +183,7 @@ function TableRouteSurface() {
 // Imported from centralized storage keys
 import { STORAGE_KEYS } from './lib/storage';
 import { reportError } from './utils/errorReporter';
+import SlugEnforcer from './components/common/SlugEnforcer';
 
 export default function App() {
   // Check if intro video has been shown this session
@@ -252,45 +255,111 @@ export default function App() {
 
   // ── Start BusEventLogger, Connection Watchdog & register Service Worker ──
   useEffect(() => {
-    busEventLogger.start();
+    let disposed = false;
 
-    // Start Supabase connection watchdog (monitors connectivity, emits bus events,
-    // auto-reconnects realtime channels on recovery)
-    supabaseConnectionWatchdog.start();
+    // PERF 2026-08-24. Every module started below runs AFTER first paint, and
+    // every one of them was a STATIC import at the top of this file — so its
+    // whole dependency tree was welded into the entry chunk and had to be
+    // downloaded, parsed and evaluated BEFORE the lobby could paint. That is
+    // how SettlementCronService and FinancialCronService, neither of which the
+    // lobby has any use for, ended up on the critical path of every boot.
+    //
+    // Importing them here instead is behaviour-neutral (they already only ran
+    // from this effect) and takes them out of the first paint entirely.
+    const deferred = Promise.all([
+      import('./services/BusEventLogger'),
+      import('./utils/supabaseConnectionWatchdog'),
+      import('./services/ServiceBootstrap'),
+      import('./utils/ChunkPreloader'),
+    ])
+      .then(([logger, watchdog, bootstrap, preloader]) => {
+        // Unmounted while the chunks were in flight: start nothing, so the
+        // cleanup below has nothing to tear down.
+        if (disposed) return null;
 
-    // Register SW for background notifications
-    // FIX: Use base-relative path so the SW is found under /hub/club-arena/
-    // HARDENED: Force update check every time to bust stale SW caches after re-deploy
+        logger.busEventLogger.start();
+
+        // Start Supabase connection watchdog (monitors connectivity, emits bus
+        // events, auto-reconnects realtime channels on recovery)
+        watchdog.supabaseConnectionWatchdog.start();
+
+        // Boot all engine services
+        bootstrap.bootServices().catch((err) => {
+          reportError(err, 'App.Service_bootstrap_failed');
+        });
+
+        // Preload critical page chunks during idle time so they're cached
+        // for instant re-entry when navigating back from the World Hub
+        preloader.preloadCriticalChunks();
+
+        return { logger, watchdog, bootstrap };
+      })
+      .catch((err) => {
+        reportError(err, 'App.Deferred_service_start_failed');
+        return null;
+      });
+
+    // ── Register the service worker ────────────────────────────────────────
+    //
+    // SCOPE, 2026-08-24. This registered `/hub/club-arena/sw-bus.js` with no
+    // scope option, so it took the default: the script's own directory,
+    // `/hub/club-arena/` — WITH the trailing slash. Scope matching is a plain
+    // string prefix, and `/hub/club-arena/` is not a prefix of
+    // `/hub/club-arena`. That bare URL is exactly what the World Hub tile
+    // links to and what the SPA fallback rewrite serves, so the single most
+    // common way into this app produced an UNCONTROLLED page: no precached
+    // shell, no cache-first chunks, no media cache. Every one of those
+    // optimisations was live in the file and reached nobody who arrived by
+    // the front door. Deep links (/hub/club-arena/clubs/x) were in scope,
+    // which is why it looked like it worked when tested.
+    //
+    // Asking for `/hub/club-arena` covers the bare URL and everything under
+    // it. That is wider than the script's directory, so the server must say
+    // `Service-Worker-Allowed: /hub/club-arena` (World Hub vercel.json). If
+    // that header is ever absent the registration rejects with a SecurityError
+    // — we fall back to the default scope so behaviour is never worse than it
+    // was, rather than ending up with no service worker at all.
     if ('serviceWorker' in navigator) {
-      const swPath =
+      const base =
         import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
-          ? `${import.meta.env.BASE_URL}sw-bus.js`
-          : '/sw-bus.js';
+          ? import.meta.env.BASE_URL
+          : '/';
+      const swPath = `${base}sw-bus.js`;
+      // BASE_URL carries a trailing slash; the scope must not, or we are back
+      // to the bug above.
+      const wideScope = base.length > 1 ? base.replace(/\/$/, '') : '/';
+
+      const afterRegister = (reg: ServiceWorkerRegistration) => {
+        // Force the browser to check for a new version of the SW immediately.
+        // If sw-bus.js has changed (e.g., DEPLOY_TS updated), the browser will
+        // install the new SW, which triggers activate → clears old caches.
+        reg.update().catch(() => {});
+      };
+
       navigator.serviceWorker
-        .register(swPath)
-        .then((reg) => {
-          // Force the browser to check for a new version of the SW immediately.
-          // If sw-bus.js has changed (e.g., DEPLOY_TS updated), the browser will
-          // install the new SW, which triggers activate → clears old caches.
-          reg.update().catch(() => {});
-        })
-        .catch((err) => console.warn('[App] Service worker registration failed:', err));
+        .register(swPath, { scope: wideScope })
+        .then(afterRegister)
+        .catch(() =>
+          navigator.serviceWorker
+            .register(swPath)
+            .then(afterRegister)
+            .catch((err) => console.warn('[App] Service worker registration failed:', err))
+        );
     }
 
-    // Boot all engine services
-    bootServices().catch((err) => {
-      reportError(err, 'App.Service_bootstrap_failed');
-    });
-
-    // Preload critical page chunks during idle time so they're cached
-    // for instant re-entry when navigating back from the World Hub
-    preloadCriticalChunks();
-
     return () => {
-      busEventLogger.stop();
-      supabaseConnectionWatchdog.stop();
-      // Tear down engine services (online listener, cron timer, IndexedDB)
-      shutdownServices();
+      disposed = true;
+      // Tear down whatever actually started. If the chunks never resolved, or
+      // resolved after unmount, `deferred` is null and there is nothing to do.
+      deferred
+        .then((mods) => {
+          if (!mods) return;
+          mods.logger.busEventLogger.stop();
+          mods.watchdog.supabaseConnectionWatchdog.stop();
+          // Tear down engine services (online listener, cron timer, IndexedDB)
+          mods.bootstrap.shutdownServices();
+        })
+        .catch(() => {});
     };
   }, []);
 
@@ -300,8 +369,21 @@ export default function App() {
         <ChallengeToastListener />
         <GlobalBalanceSync />
         <LastClubTracker />
+        {/* Dan 2026-08-23, binding: "players, agents, super agents, nobody
+          should ever see the union skins." A union is a `clubs` row, so every
+          /clubs/:clubId/* route will render it through the club chrome. The
+          links that did so are fixed at source; this is the backstop for a
+          bookmark, a shared URL, or the next feature to make the same mistake.
+          Owner and union admins pass through. */}
+        <UnionSkinGuard />
         <BusToastBridge />
         <ConfirmHost />
+        {/* Dan 2026-08-25: the ONE tournament buy-in confirmation. Mounted here
+          for the same reason ConfirmHost is - every register button in the app
+          goes through useTournamentRegistration, which awaits this imperatively,
+          and it must be reachable from the club lobby, the tournament page, XMTT
+          and union games alike, not only from the tournament details route. */}
+        <SignUpHost />
         {/* Dan 2026-08-18: Session Complete now pops in the LOBBY, so its host
           lives outside <Routes> - it has to survive the navigate() off the
           table, and "the lobby" is HomePage OR ClubHomePage (which now serves
@@ -370,6 +452,7 @@ export default function App() {
               </>
             }
           >
+            <SlugEnforcer />
             <Routes>
               {/* ═══════════════════════════════════════════════════════════════
                         PUBLIC ROUTES (No Auth Required)
@@ -415,9 +498,9 @@ export default function App() {
                 path="table/:tableId"
                 element={
                   <AuthGuard>
-                    <RouteErrorBoundary>
+                    <PageErrorBoundary pageName="Table">
                       <TableRouteSurface />
-                    </RouteErrorBoundary>
+                    </PageErrorBoundary>
                   </AuthGuard>
                 }
               />
@@ -464,9 +547,11 @@ export default function App() {
                   path="clubs/:clubId"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Home">
-                        <ClubHomePage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Home">
+                          <ClubHomePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -474,9 +559,11 @@ export default function App() {
                   path="clubs/:clubId/agents"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Agent Management">
-                        <AgentManagementPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Agent Management">
+                          <AgentManagementPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -484,9 +571,11 @@ export default function App() {
                   path="clubs/:clubId/create-table"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Create Table">
-                        <CreateTablePage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Create Table">
+                          <CreateTablePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -494,9 +583,11 @@ export default function App() {
                   path="clubs/:clubId/create-table/:gameType"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Table Config">
-                        <TableConfigPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Table Config">
+                          <TableConfigPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -504,9 +595,11 @@ export default function App() {
                   path="clubs/:clubId/dashboard"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Data">
-                        <ClubDataPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Data">
+                          <ClubDataPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -514,9 +607,11 @@ export default function App() {
                   path="clubs/:clubId/dashboard-full"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Dashboard">
-                        <ClubDashboard />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Dashboard">
+                          <ClubDashboard />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -536,9 +631,11 @@ export default function App() {
                   path="clubs/:clubId/lobby"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Lobby">
-                        <ClubHomePage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Lobby">
+                          <ClubHomePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -546,9 +643,11 @@ export default function App() {
                   path="clubs/:clubId/tournaments"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Tournaments">
-                        <TournamentPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Tournaments">
+                          <TournamentPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -556,9 +655,11 @@ export default function App() {
                   path="clubs/:clubId/messages"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Messages">
-                        <MessagesPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Messages">
+                          <NavigateToMessenger />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -685,9 +786,11 @@ export default function App() {
                   path="clubs/:clubId/settlement"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Settlement">
-                        <SettlementPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Settlement">
+                          <SettlementPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -780,7 +883,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Messages">
-                        <MessagesPage />
+                        <NavigateToMessenger />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -790,7 +893,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="New Message">
-                        <MessagesPage />
+                        <NavigateToMessenger />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -800,7 +903,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Messages">
-                        <MessagesPage />
+                        <NavigateToMessenger />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -810,7 +913,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Club Messages">
-                        <ClubMessagesPage />
+                        <NavigateToMessenger />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -820,7 +923,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Club Messages">
-                        <ClubMessagesPage />
+                        <NavigateToMessenger />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -883,9 +986,11 @@ export default function App() {
                   path="clubs/:clubId/data"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Data">
-                        <ClubDataPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Data">
+                          <ClubDataPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -927,9 +1032,11 @@ export default function App() {
                   path="clubs/:clubId/cashier"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Cashier">
-                        <CashierTradePage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Cashier">
+                          <CashierTradePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -937,9 +1044,11 @@ export default function App() {
                   path="clubs/:clubId/cashier-classic"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Cashier">
-                        <CashierPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Cashier">
+                          <CashierPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -957,9 +1066,11 @@ export default function App() {
                   path="clubs/:clubId/agent-dashboard"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Super Agent Dashboard">
-                        <SuperAgentDashboard />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Super Agent Dashboard">
+                          <SuperAgentDashboard />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -977,9 +1088,47 @@ export default function App() {
                   path="clubs/:clubId/members"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Members">
-                        <ClubMembersPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Members">
+                          <ClubMembersPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/promo-vault"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Promo Vault">
+                          <PromoVaultPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/members/:userId"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Member Management">
+                          <MemberManagementPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/members/:userId/statistics"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Player Statistics">
+                          <PlayerStatisticsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1007,9 +1156,11 @@ export default function App() {
                   path="clubs/:clubId/jackpot"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Bad Beat Jackpot">
-                        <BadBeatJackpotPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Bad Beat Jackpot">
+                          <BadBeatJackpotPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1047,9 +1198,11 @@ export default function App() {
                   path="clubs/:clubId/promotions"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Promotions">
-                        <PromotionsPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Promotions">
+                          <PromotionsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1057,9 +1210,11 @@ export default function App() {
                   path="clubs/:clubId/settings"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Settings">
-                        <ClubSettingsPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Settings">
+                          <ClubSettingsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1107,9 +1262,11 @@ export default function App() {
                   path="clubs/:clubId/reports"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Report Review">
-                        <ReportReviewPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Report Review">
+                          <ReportReviewPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1117,9 +1274,11 @@ export default function App() {
                   path="clubs/:clubId/announcements"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Announcements">
-                        <ClubAnnouncementsPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Announcements">
+                          <ClubAnnouncementsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1137,9 +1296,11 @@ export default function App() {
                   path="clubs/:clubId/financials"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Financials">
-                        <ClubFinancialsPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Financials">
+                          <ClubFinancialsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1167,9 +1328,11 @@ export default function App() {
                   path="clubs/:clubId/disputes"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Disputes">
-                        <DisputeManagementPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Disputes">
+                          <DisputeManagementPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1297,9 +1460,11 @@ export default function App() {
                   path="clubs/:clubId/blacklist"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Blacklist Manager">
-                        <BlacklistManagerPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Blacklist Manager">
+                          <BlacklistManagerPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1307,9 +1472,11 @@ export default function App() {
                   path="clubs/:clubId/rules"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Rules">
-                        <ClubRulesPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Rules">
+                          <ClubRulesPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1329,16 +1496,6 @@ export default function App() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="Clubs List">
                         <ClubsPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
-                />
-                <Route
-                  path="clubs/:clubId/table-creation"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Table Creation">
-                        <TableCreationPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

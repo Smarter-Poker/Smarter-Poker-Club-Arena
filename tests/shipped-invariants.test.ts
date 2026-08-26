@@ -37,23 +37,54 @@ const has = (p: string, needle: string) => existsSync(root(p)) && read(p).includ
 const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
   // Roles — the grant matrix lives in Postgres; the client must ASK it.
   ['src/types/clubRoles.ts', 'co_owner', 'the seven club roles, including co_owner'],
+  // 2026-08-23: re-anchored from ClubMembersPage to MemberManagementPage. The
+  // Players tab was split - the roster lists, the member page acts - so role
+  // granting moved wholesale. The CAPABILITY is what this pins, so it follows
+  // the code to its new file rather than being deleted along with the old one.
   [
-    'src/pages/ClubMembersPage.tsx',
+    'src/pages/MemberManagementPage.tsx',
     'ca_club_grantable_roles',
-    'the members page asks the server what it may offer',
+    'the member page asks the server what it may offer',
   ],
-  ['src/pages/ClubMembersPage.tsx', 'fn_club_set_member_role', 'one write path for a role change'],
+  [
+    'src/pages/MemberManagementPage.tsx',
+    'fn_club_set_member_role',
+    'one write path for a role change',
+  ],
 
   // Cashier — two screens that both got the downline wrong, opposite ways.
+  //
+  // 2026-08-25: re-anchored from ca_club_my_downline, for the same reason the
+  // trade grid was, plus a worse one. `ca_club_my_downline` RETURNS TABLE
+  // (agent_id, path, depth, username, ...) - one row per downline AGENT. This
+  // page cast it to `{ scoped, user_ids }` and read two fields it has never
+  // had, so the recipient filter collapsed to the viewer's own id and every
+  // super agent, agent and sub agent found exactly one recipient on the Send
+  // tab: themselves, which fn_agent_wallet_send refuses as a self-send.
+  //
+  // The sentinel also PASSED throughout, because the string survived in a
+  // comment. A capability sentinel that a comment can satisfy is not a
+  // sentinel; this one now names the call the send actually refuses on.
   [
     'src/pages/CashierPage.tsx',
-    'ca_club_my_downline',
-    'a super agent sees their downline, not the whole club',
+    "supabase.rpc('fn_club_cashier_members'",
+    'a super agent sees their downline, not the whole club and not just themselves',
+  ],
+  // 2026-08-25: re-anchored from ca_club_my_downline to fn_club_cashier_members.
+  // The CAPABILITY pinned here is "the trade grid offers only the downline", and
+  // it now comes from the function the SEND ITSELF refuses on
+  // (fn_club_cashier_can_transact walks the same edge), so the list and the
+  // refusal cannot disagree. The old call built the list a third way and its
+  // super_agent branch also swept in every unassigned member of the club.
+  [
+    'src/pages/CashierTradePage.tsx',
+    'fn_club_cashier_members',
+    'the trade grid offers only the downline the send RPC will accept',
   ],
   [
     'src/pages/CashierTradePage.tsx',
-    'ca_club_my_downline',
-    'a super agent sees their whole downline, not only direct assignees',
+    'fn_agent_wallet_send',
+    'the trade grid spends the agent wallet, not a second club-ledger path',
   ],
 
   // Union statements — the settlement lifecycle.
@@ -96,6 +127,33 @@ const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
     'src/services/LeaderboardService.ts',
     "rpc('fn_club_tournament_stats',",
     'the club tournament leaderboard is aggregated in the database, not from a capped page of rows',
+  ],
+  // 2026-08-26: club_chat RLS was requiring status='active' while production
+  // holds 1480 'approved' and only 20 'active' — club chat was silent for
+  // 98.7% of members. The migration widens both INSERT and SELECT to
+  // ANY(['active','approved']). Guard: the migration must exist on disk so it
+  // cannot be silently deleted. Checked via MUST_NOT_EXIST below.
+  // 2026-08-26: /avatars/default-player.png does not exist in either repo.
+  // SpectatorOverlay and SettingsPanel both referenced it. Now both use
+  // resolveAvatarDisplay from avatarUtils, which falls back to DiceBear.
+  // This pin catches anyone re-introducing the broken path.
+  [
+    'src/components/table/SpectatorOverlay.tsx',
+    'resolveAvatarDisplay',
+    'SpectatorOverlay must not reference the non-existent /avatars/default-player.png',
+  ],
+  [
+    'src/components/table/SettingsPanel.tsx',
+    'resolveAvatarDisplay',
+    'SettingsPanel must not reference the non-existent /avatars/default-player.png',
+  ],
+  // 2026-08-26: PremiumCard.css declared a global .card-back { rotateY(180deg) }
+  // which collided with CardReveal.css and CommunityCards.css. Scoped to
+  // .premium-card .card-back so only cards inside a PremiumCard container flip.
+  [
+    'src/components/table/PremiumCard.css',
+    '.premium-card .card-back',
+    'PremiumCard card-back rule must be scoped to avoid colliding with CardReveal and CommunityCards',
   ],
 ];
 
@@ -221,6 +279,30 @@ describe('shipped functionality is still here', () => {
       expect(
         /THEIRS_SHA=\$\(printf '%s' "\$THEIRS_JSON"/.test(wf),
         'THEIRS_SHA is being parsed from something other than the deployed file'
+      ).toBe(true);
+    });
+
+    it('the build output travels as an artifact, not an 84MB branch push', () => {
+      /* 2026-08-23: the sync job used to read dist/ out of an orphan branch
+         force-pushed as `build/world-hub-sync-<sha>`. From 05:17 UTC every
+         publish died there with `remote: fatal error in commit_refs`, four
+         runs and a manual dispatch, and production sat 40 minutes behind main
+         with a dozen merged pull requests stuck behind it. A small push to the
+         repo worked and the same 84MB dist pushed from a workstation over SSH
+         worked, so it was neither the ref backend nor the size - only the
+         runner's HTTPS push of that pack. upload-artifact is what passing
+         build output between jobs is for, and it also ends the 84MB push per
+         commit and the ref left behind by every failed run. */
+      const wf = publisher();
+      expect(wf.includes('actions/upload-artifact')).toBe(true);
+      expect(wf.includes('actions/download-artifact')).toBe(true);
+      expect(
+        /git push[^\n]*build\/world-hub-sync/.test(wf),
+        'the orphan sync branch is back - that push is what deadlocked publishing'
+      ).toBe(false);
+      expect(
+        wf.includes('if-no-files-found: error'),
+        'an empty dist would upload silently and the sync would publish nothing'
       ).toBe(true);
     });
 

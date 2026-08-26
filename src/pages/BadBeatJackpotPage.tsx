@@ -512,6 +512,8 @@ export default function BadBeatJackpotPage() {
               onClick={() => setPromoAmount(String(jackpot?.promo_balance || 0))}
               style={{
                 padding: '10px 12px',
+                minHeight: '44px',
+                touchAction: 'manipulation',
                 borderRadius: '10px',
                 border: '1px solid rgba(255,255,255,0.12)',
                 background: 'rgba(255,255,255,0.04)',
@@ -528,6 +530,8 @@ export default function BadBeatJackpotPage() {
               disabled={distributingPromo}
               style={{
                 padding: '10px 18px',
+                minHeight: '44px',
+                touchAction: 'manipulation',
                 borderRadius: '10px',
                 border: 'none',
                 background: 'linear-gradient(135deg,#af52de,#8e44ad)',

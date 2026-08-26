@@ -56,7 +56,12 @@ function harness() {
     usesRemaining: 2,
   });
   engine.playerTurnDuration = 15;
-  engine.playerTurnStartTime = Date.now();
+  // The 15s decision clock is SPENT. Since 2026-08-23 that is a precondition
+  // for spending a bank at all ("it should not take a time bank ... until you
+  // have truly used your entire 15 seconds"). This file is about what a
+  // reconnect does to an already-running bank, not about when one may start,
+  // so the harness now opens at the only moment a bank can legitimately begin.
+  engine.playerTurnStartTime = Date.now() - 15_000;
   return engine;
 }
 

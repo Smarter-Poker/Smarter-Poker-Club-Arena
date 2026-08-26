@@ -33,6 +33,10 @@ export interface TabInfo {
    *  timer bar under the tab. undefined when it is not your turn there. */
   turnProgress?: number;
   pot?: number;
+  isAutoRebuyEnabled?: boolean;
+  standUpNextBB?: boolean;
+  soundEnabled?: boolean;
+  vibrationsEnabled?: boolean;
   /**
    * PokerBros parity: the hero's hole cards at this table, comma-joined
    * ("Ah,Qc" / "Td,9h"; "" or undefined when not in a hand or folded).
@@ -100,9 +104,20 @@ const MiniCards = React.memo(function MiniCards({ cards }: { cards: string }) {
     .map((c) => c.trim())
     .filter((c) => c.length >= 2);
   if (parsed.length === 0) return null;
+  // Dan 2026-08-25: two size steps, not one. On a 375px phone a pill is ~55px
+  // wide, and PLO6's SIX cards have to live in that; sizing PLO4 and PLO6 the
+  // same meant either PLO6 clipped or PLO4 was needlessly tiny. `--wide` is
+  // the 3-4 card step, `--xwide` the 5-6 card one. Both classes are applied at
+  // 5+, so `--xwide` only has to override the two dimensions that differ.
+  const sizeClasses = [
+    parsed.length > 2 && 'table-tab-bar__mini-cards--wide',
+    parsed.length > 4 && 'table-tab-bar__mini-cards--xwide',
+  ]
+    .filter(Boolean)
+    .join(' ');
   return (
     <span
-      className={`table-tab-bar__mini-cards${parsed.length > 2 ? ' table-tab-bar__mini-cards--wide' : ''}`}
+      className={`table-tab-bar__mini-cards${sizeClasses ? ` ${sizeClasses}` : ''}`}
       aria-hidden="true"
     >
       {parsed.map((c, i) => {
@@ -134,7 +149,6 @@ export interface TableTabBarProps {
   activeTabId: string;
   onTabSelect: (tabId: string) => void;
   onAddTable: () => void;
-  jackpotAmount?: number;
   maxTables?: number;
   /** Batch 3: reorder a tab to a new index (drag on desktop, long-press
    *  menu Move Left/Right everywhere). */
@@ -163,7 +177,6 @@ export function TableTabBar({
   activeTabId,
   onTabSelect,
   onAddTable,
-  jackpotAmount,
   maxTables = 4,
   realtimeDown = false,
   onReorder,
@@ -408,66 +421,128 @@ export function TableTabBar({
     [onTabSelect]
   );
 
-  const handleClose = useCallback(
-    (e: React.MouseEvent, tabId: string) => {
-      e.stopPropagation();
-      if (tabs.length <= 1) return;
+  /** A LOBBY tab is a placeholder, not a seat — no engine, no chips. */
+  const isLobbyId = (id: string) => id.startsWith('lobby:');
 
-      // Route X-button clicks through the secure cashout layer,
-      // bypassing the instant component teardown in MultiTablePage
-      masterBus.emit('TABLE_MENU_ACTION', {
-        tableId: tabId,
-        action: 'FORCE_LEAVE_TABLE',
-      });
-    },
-    [tabs.length]
-  );
+  const handleClose = useCallback((e: React.MouseEvent, tabId: string) => {
+    /* Audit 2026-08-25: this began `if (tabs.length <= 1) return;` — dead in
+       one direction and wrong in the other. Dead because the X is only
+       RENDERED under the same condition, so the guard never ran. Wrong because
+       that render condition itself hid the X on a single table, while the
+       long-press quick menu right beside it offers "Leave Table" at one table
+       (deliberately — see its note). One control present, its twin missing, on
+       the state a player is in most of the time.
+
+       Leaving one table has never needed a second table to exist:
+       FORCE_LEAVE_TABLE is the secure cashout path in the owning TablePage, and
+       MultiTablePage's TABLE_LEFT handler calls goToLobby() when the last tab
+       closes. The count gate survives only for a LOBBY tab, where closing your
+       only tab would leave an empty bar behind — exactly the rule the quick
+       menu already applies. */
+    e.stopPropagation();
+
+    // Route X-button clicks through the secure cashout layer,
+    // bypassing the instant component teardown in MultiTablePage
+    masterBus.emit('TABLE_MENU_ACTION', {
+      tableId: tabId,
+      action: 'FORCE_LEAVE_TABLE',
+    });
+  }, []);
 
   const handleMenuClose = useCallback(() => setIsMenuOpen(false), []);
   const handleMenuToggle = useCallback(() => setIsMenuOpen((prev) => !prev), []);
 
+  /**
+   * AUDIT 2026-08-25 — FIFTEEN MENU ITEMS THAT DID NOTHING ON A LOBBY TAB.
+   *
+   * Every item below emits TABLE_MENU_ACTION addressed to `activeTabId`, and
+   * both TablePage subscriptions filter on `event.tableId !== tableId`. When
+   * the active tab is a LOBBY tab that id is a synthetic `lobby:<ts>` string
+   * that no TablePage owns, so Sit Out, Add Chips, Auto Top Up, Hand History,
+   * Leaderboard, Session Stats, Table Settings, Sounds, Vibrations, Help and
+   * Stand Up Next Big Blind all resolved to nothing at all — no action, no
+   * error, no explanation. (Leave Table was the exception: MultiTablePage
+   * catches lobby-prefixed LEAVE/FORCE_LEAVE and closes the tab.)
+   *
+   * A lobby tab has no seat, so none of those items HAVE an answer. Rather than
+   * offer them and swallow the result, the table sections are dropped there.
+   * TableMenu still renders its own Identity section — the avatar picker and
+   * the display-name switch are account settings and work anywhere — so the
+   * hamburger is never an empty menu.
+   */
+  const activeIsLobby = isLobbyId(activeTabId);
+
   const menuSections = useMemo(
     () =>
-      createDefaultMenuSections({
-        onSitOut: () =>
-          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SIT_OUT' }),
-        onRebuy: () =>
-          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'REBUY' }),
-        onAddOn: () =>
-          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'ADD_ON' }),
-        onSessionStats: () =>
-          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SESSION_STATS' }),
-        onSettings: () =>
-          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SETTINGS' }),
-        onHandHistory: () =>
-          masterBus.emit('TABLE_MENU_ACTION', {
-            tableId: activeTabId,
-            action: 'HAND_HISTORY',
-          }),
-        onLeaderboard: () =>
-          masterBus.emit('TABLE_MENU_ACTION', {
-            tableId: activeTabId,
-            action: 'LEADERBOARD',
-          }),
-        onHelp: () => masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'HELP' }),
-        onLeaveTable: () =>
-          masterBus.emit('TABLE_MENU_ACTION', {
-            tableId: activeTabId,
-            action: 'LEAVE_TABLE',
-          }),
-        onChangeAvatar: () =>
-          masterBus.emit('TABLE_MENU_ACTION', {
-            tableId: activeTabId,
-            action: 'CHANGE_AVATAR',
-          }),
-        onToggleAlias: () =>
-          masterBus.emit('TABLE_MENU_ACTION', {
-            tableId: activeTabId,
-            action: 'TOGGLE_ALIAS',
-          }),
-      }),
-    [activeTabId]
+      activeIsLobby
+        ? []
+        : createDefaultMenuSections(
+        {
+          onSitOut: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SIT_OUT' }),
+          onStandUpBB: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'STAND_UP_BB' }),
+          onRebuy: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'REBUY' }),
+          onAutoTopUp: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'AUTO_TOP_UP' }),
+          onAddOn: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'ADD_ON' }),
+          onSessionStats: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SESSION_STATS' }),
+          onSettings: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SETTINGS' }),
+          onToggleSounds: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'TOGGLE_SOUNDS' }),
+          onToggleVibrations: () =>
+            masterBus.emit('TABLE_MENU_ACTION', {
+              tableId: activeTabId,
+              action: 'TOGGLE_VIBRATIONS',
+            }),
+          onHandHistory: () =>
+            masterBus.emit('TABLE_MENU_ACTION', {
+              tableId: activeTabId,
+              action: 'HAND_HISTORY',
+            }),
+          onLeaderboard: () =>
+            masterBus.emit('TABLE_MENU_ACTION', {
+              tableId: activeTabId,
+              action: 'LEADERBOARD',
+            }),
+          onHelp: () =>
+            masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'HELP' }),
+          onLeaveTable: () =>
+            masterBus.emit('TABLE_MENU_ACTION', {
+              tableId: activeTabId,
+              action: 'LEAVE_TABLE',
+            }),
+          /* `onChangeAvatar` / `onToggleAlias` used to be passed here and were
+             never placed on a menu item by createDefaultMenuSections — see the
+             note on TableMenuProps.onOpenIdentity. The alias handler now goes
+             directly to TableMenu as `onOpenIdentity` (below); the avatar
+             picker is TableMenu's own in-app gallery. */
+        },
+        {
+          standUpBBBadge: tabs.find((t) => t.id === activeTabId)?.standUpNextBB ? 'ON' : undefined,
+          autoTopUpBadge: tabs.find((t) => t.id === activeTabId)?.isAutoRebuyEnabled
+            ? 'ON'
+            : undefined,
+          soundsBadge: tabs.find((t) => t.id === activeTabId)?.soundEnabled ? 'ON' : 'OFF',
+          vibrationsBadge: tabs.find((t) => t.id === activeTabId)?.vibrationsEnabled
+            ? 'ON'
+            : 'OFF',
+        }
+      ),
+    [activeTabId, tabs, activeIsLobby]
   );
+
+  /**
+   * Opens IdentityModal in the owning TablePage. Withheld on a lobby tab for
+   * the same reason as the sections above: nothing would answer it there.
+   */
+  const handleOpenIdentity = useCallback(() => {
+    masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'TOGGLE_ALIAS' });
+  }, [activeTabId]);
 
   return (
     <div className="table-tab-bar">
@@ -645,7 +720,7 @@ export function TableTabBar({
                   pair (focus lands on the outer, clicks can fire both). A
                   span with role=button + its own key handling keeps the DOM
                   legal and both controls independently operable. */}
-              {tabs.length > 1 && (
+              {(!isLobbyId(tab.id) || tabs.length > 1) && (
                 <span
                   role="button"
                   tabIndex={0}
@@ -658,8 +733,10 @@ export function TableTabBar({
                       handleClose(e as unknown as React.MouseEvent, tab.id);
                     }
                   }}
-                  title="Close table"
-                  aria-label={`Close ${tab.name}`}
+                  title={isLobbyId(tab.id) ? 'Close lobby' : 'Leave table'}
+                  aria-label={
+                    isLobbyId(tab.id) ? 'Close lobby' : `Leave ${formatGameTitle(tab.name)}`
+                  }
                 >
                   ×
                 </span>
@@ -695,18 +772,11 @@ export function TableTabBar({
         ))}
       </div>
 
-      {/* Jackpot Badge */}
-      {jackpotAmount !== undefined && jackpotAmount > 0 && (
-        <div className="table-tab-bar__jackpot">
-          <span className="table-tab-bar__jackpot-label">JACKPOT</span>
-          <span className="table-tab-bar__jackpot-amount">
-            {jackpotAmount.toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </span>
-        </div>
-      )}
+      {/* Jackpot badge REMOVED — Dan 2026-08-23: "you still have the
+          duplicated BBJ in the header that needs to be removed."
+          BadBeatJackpot's .bbj-widget banner sits directly below this bar and
+          shows the same pool for the same table. Two live copies of one number
+          is one too many, and the header is the copy with less room. */}
 
       {/* Batch 3: long-press / right-click quick menu */}
       {quickMenu &&
@@ -719,7 +789,7 @@ export function TableTabBar({
           // Mute, and Sit Out fired a real engine call with a synthetic
           // 'lobby:' id. Lobby tabs get exactly what makes sense for them:
           // Move Left/Right and Close.
-          const isLobby = tab.id.startsWith('lobby:');
+          const isLobby = isLobbyId(tab.id);
           const item = (label: string, fn: () => void, danger = false, disabled = false) => (
             <button
               key={label}
@@ -766,8 +836,25 @@ export function TableTabBar({
                     false,
                     idx === tabs.length - 1
                   )}
+                {/* Dan 2026-08-23: "when you right click on an action tab, or
+                    hold it down on mobile, you should get an option to Leave
+                    Table (an alternate way to leave a table)."
+
+                    It was already here — behind `tabs.length > 1`. So the menu
+                    offered Leave Table at two tables and hid it at one, which
+                    is the case a player is in most of the time: the reported
+                    screenshot is a single MTT tab showing Sit Out, Mute Table
+                    and a greyed-out Move Left / Move Right, with no way out.
+
+                    Leaving one table has never needed a second table to exist.
+                    `'leave'` emits FORCE_LEAVE_TABLE to the owning TablePage —
+                    the secure cashout path — and when the last tab closes,
+                    MultiTablePage's TABLE_LEFT handler calls goToLobby(). The
+                    count gate stays only for a LOBBY tab, where "Close Lobby"
+                    on your only tab would close the thing you are looking at
+                    and leave an empty bar behind. */}
                 {onQuickAction &&
-                  tabs.length > 1 &&
+                  (!isLobby || tabs.length > 1) &&
                   item(
                     isLobby ? 'Close Lobby' : 'Leave Table',
                     () => onQuickAction(tab.id, 'leave'),
@@ -791,7 +878,12 @@ export function TableTabBar({
           onToggle={handleMenuToggle}
           sections={menuSections}
           position="bottom-left"
-          tableName={tabs.find((t) => t.id === activeTabId)?.name || 'Table'}
+          tableName={
+            activeIsLobby
+              ? 'Lobby'
+              : formatGameTitle(tabs.find((t) => t.id === activeTabId)?.name) || 'Table'
+          }
+          onOpenIdentity={activeIsLobby ? undefined : handleOpenIdentity}
         />
       </div>
     </div>

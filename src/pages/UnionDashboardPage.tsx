@@ -20,6 +20,11 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { fmt, timeAgo } from '../utils/format';
 import { SettlementService } from '../services/SettlementService';
 import UnionWalletModal, { type UnionWalletKey } from '../components/union/UnionWalletModal';
+import UnionTreasuryDetailModal, {
+  type TreasuryDetailMode,
+} from '../components/union/UnionTreasuryDetailModal';
+import SpinActivationPanel from '../components/club/SpinActivationPanel';
+import { useSpinsWallet } from '../hooks/useSpinsWallet';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import { getUnionLevel } from '../utils/clubLevels';
 import { reportError } from '../utils/errorReporter';
@@ -150,6 +155,18 @@ export default function UnionDashboardPage() {
     label: string;
     balance: number;
   } | null>(null);
+  /**
+   * Dan 2026-08-24: "rake treasury should open up to see all the data for all
+   * rake accumulated" and "back up BBJ needs to be clickable as well and expand
+   * to see data and transaction history and stats".
+   *
+   * Separate state from walletModal because they answer different questions.
+   * walletModal asks "who do I pay from this wallet"; this asks "where did this
+   * money come from and what has moved". The detail panel carries a Send From
+   * This Wallet button that hands off to walletModal, so nothing that used to
+   * be one click away is now two.
+   */
+  const [treasuryModal, setTreasuryModal] = useState<TreasuryDetailMode | null>(null);
   const [roster, setRoster] = useState<
     {
       user_id: string;
@@ -723,6 +740,15 @@ export default function UnionDashboardPage() {
   // ── Computed ───────────────────────────────────────────────
   const isLead = adminRole === 'union_lead';
 
+  /**
+   * The union's LIVE Spins wallet -- the float multipliers are actually paid
+   * from. Deliberately distinct from the "Spin Reserve" tile beside it, which
+   * shows union_wallets.spin_reserve_wallet: capital earmarked for Spins but
+   * NOT yet deployed. The two never double-count, and until now only the
+   * undeployed half had a tile anywhere in the product.
+   */
+  const unionSpins = useSpinsWallet(unionId, Boolean(unionId));
+
   // ── Union-wide player roster (Dan 2026-08-22: every player of every club,
   //    with their role — the union is for tracking, so it must SEE everyone). ──
   useEffect(() => {
@@ -1059,15 +1085,17 @@ export default function UnionDashboardPage() {
                     },
                     {
                       key: 'rake',
-                      label: 'Rake Wallet',
+                      label: 'Rake Treasury',
                       color: '#31A24C',
                       value: wallets.rake_wallet,
+                      detail: 'rake',
                     },
                     {
                       key: 'bbj',
                       label: `BBJ Pool${bbjPool ? ` (${bbjPool.hit_count} hits)` : ''}`,
                       color: '#F7C52A',
                       value: bbjPool?.main_balance ?? 0,
+                      detail: 'bbj',
                     },
                     {
                       key: 'promo',
@@ -1075,7 +1103,19 @@ export default function UnionDashboardPage() {
                       color: '#C084FC',
                       value: wallets.promo_wallet,
                     },
-                  ] as { key: UnionWalletKey; label: string; color: string; value: number }[]
+                  ] as {
+                    key: UnionWalletKey;
+                    label: string;
+                    color: string;
+                    value: number;
+                    /**
+                     * Tiles WITH a detail mode open the data panel; tiles
+                     * without open the send-to-member flow directly. Rake and
+                     * BBJ are the two the operator reads before spending, so
+                     * they lead with the numbers and offer Send inside.
+                     */
+                    detail?: TreasuryDetailMode;
+                  }[]
                 ).map((w) => (
                   <button
                     key={w.key}
@@ -1083,7 +1123,9 @@ export default function UnionDashboardPage() {
                     style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
                     aria-label={`Open ${w.label}`}
                     onClick={() =>
-                      setWalletModal({ key: w.key, label: w.label, balance: w.value || 0 })
+                      w.detail
+                        ? setTreasuryModal(w.detail)
+                        : setWalletModal({ key: w.key, label: w.label, balance: w.value || 0 })
                     }
                   >
                     <div className="admin-stat-value" style={{ color: w.color }}>
@@ -1092,12 +1134,48 @@ export default function UnionDashboardPage() {
                     <div className="admin-stat-label">{w.label} ›</div>
                   </button>
                 ))}
+                {/* BACKUP JACKPOT (Dan 2026-08-24). bbj_pools.backup_balance is
+                    a real bank holding money — 12,055.65 at the time this was
+                    added — and it had no tile anywhere in the product, so there
+                    was no way to see it and no way to move it. Distinct from
+                    union_wallets.bbj_wallet on the Wallet tab: that is a wallet
+                    column, this is the pool's backup bank, different money. */}
+                <button
+                  className="admin-stat-card"
+                  style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                  aria-label="Open Backup Jackpot"
+                  onClick={() => setTreasuryModal('backup')}
+                >
+                  <div className="admin-stat-value" style={{ color: '#4599FF' }}>
+                    {fmt(bbjPool?.backup_balance ?? 0)}
+                  </div>
+                  <div className="admin-stat-label">Backup Jackpot ›</div>
+                </button>
                 {/* Spin reserve. It is NOT a send source - the pool is priced on
                     being net-neutral over volume, and a manual withdrawal would
                     break that silently - but it was the only tile on the page
                     you could not open, which meant the wallet that funds the
                     entire Spin economy had no ledger anywhere in the product.
                     It opens read-only: balance and full history, no send flow. */}
+                {/* THE DEPLOYED pool. The tile below shows
+                    union_wallets.spin_reserve_wallet, which is capital
+                    earmarked for Spins but NOT yet in play; this is the float
+                    every multiplier is actually paid from. They never
+                    double-count, and until now only the undeployed half had a
+                    tile anywhere in the product. Opens the Spins tab, where
+                    the activation panel explains the seed and the repayment
+                    plan behind this number. */}
+                <button
+                  className="admin-stat-card"
+                  style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                  aria-label="Open Spins Wallet"
+                  onClick={() => setTab('settings')}
+                >
+                  <div className="admin-stat-value" style={{ color: '#39d17a' }}>
+                    {unionSpins.state === null ? '-' : fmt(unionSpins.balance)}
+                  </div>
+                  <div className="admin-stat-label">Spins Wallet ›</div>
+                </button>
                 <button
                   className="admin-stat-card"
                   style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
@@ -1115,6 +1193,33 @@ export default function UnionDashboardPage() {
                   </div>
                   <div className="admin-stat-label">Spin Reserve ›</div>
                 </button>
+                {/* SPINS TREASURY (Dan 2026-08-24: "the wallet is still missing
+                    the spins treasury"). The two tiles above are the halves:
+                    Spin Reserve is capital earmarked but NOT in play, Spins
+                    Wallet is the deployed pool float every multiplier is paid
+                    from. They are disjoint by construction and never double
+                    count, so the treasury is their sum — and until now the
+                    union could see both halves and never the whole. Opens the
+                    reserve ledger, the only one of the two with a history. */}
+                <button
+                  className="admin-stat-card"
+                  style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                  aria-label="Open Spins Treasury"
+                  onClick={() =>
+                    setWalletModal({
+                      key: 'spin_reserve',
+                      label: 'Spin Reserve',
+                      balance: wallets.spin_reserve_wallet || 0,
+                    })
+                  }
+                >
+                  <div className="admin-stat-value" style={{ color: '#39d17a' }}>
+                    {unionSpins.state === null
+                      ? '-'
+                      : fmt((wallets.spin_reserve_wallet || 0) + unionSpins.balance)}
+                  </div>
+                  <div className="admin-stat-label">Spins Treasury ›</div>
+                </button>
               </div>
             )}
 
@@ -1127,7 +1232,7 @@ export default function UnionDashboardPage() {
                   value={annMsg}
                   onChange={(e) => setAnnMsg(e.target.value)}
                   maxLength={500}
-                  placeholder="Announcement to all clubs..."
+                  placeholder="Announcement To All Clubs..."
                   rows={3}
                   style={{ resize: 'vertical' }}
                 />
@@ -1189,7 +1294,7 @@ export default function UnionDashboardPage() {
               className="admin-input"
               value={clubSearch}
               onChange={(e) => setClubSearch(e.target.value)}
-              placeholder="Search clubs..."
+              placeholder="Search Clubs..."
               style={{ marginBottom: '16px', maxWidth: '300px' }}
             />
             <div
@@ -1298,7 +1403,7 @@ export default function UnionDashboardPage() {
                 className="admin-input"
                 value={agentSearch}
                 onChange={(e) => setAgentSearch(e.target.value)}
-                placeholder="Search agents..."
+                placeholder="Search Agents..."
                 style={{ maxWidth: '300px' }}
               />
               <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={exportAgents}>
@@ -1364,7 +1469,7 @@ export default function UnionDashboardPage() {
               <input
                 className="admin-input"
                 style={{ flex: 1 }}
-                placeholder="Search players by name, club or role…"
+                placeholder="Search Players By Name, Club Or Role…"
                 value={rosterSearch}
                 onChange={(e) => setRosterSearch(e.target.value)}
               />
@@ -1450,8 +1555,14 @@ export default function UnionDashboardPage() {
                       value: wallets.rake_wallet,
                     },
                     {
+                      // union_wallets.bbj_wallet, NOT bbj_pools.backup_balance.
+                      // This tile read "Backup BBJ Wallet", which is the same
+                      // words as the Backup Jackpot tile on the Overview tab
+                      // and a different balance — two numbers under one name is
+                      // how an operator moves the wrong money. Renamed to the
+                      // column it actually shows.
                       key: 'bbj',
-                      label: 'Backup BBJ Wallet',
+                      label: 'BBJ Reserve Wallet',
                       color: '#F7C52A',
                       value: wallets.bbj_wallet,
                     },
@@ -1484,6 +1595,25 @@ export default function UnionDashboardPage() {
                     you could not open, which meant the wallet that funds the
                     entire Spin economy had no ledger anywhere in the product.
                     It opens read-only: balance and full history, no send flow. */}
+                {/* THE DEPLOYED pool. The tile below shows
+                    union_wallets.spin_reserve_wallet, which is capital
+                    earmarked for Spins but NOT yet in play; this is the float
+                    every multiplier is actually paid from. They never
+                    double-count, and until now only the undeployed half had a
+                    tile anywhere in the product. Opens the Spins tab, where
+                    the activation panel explains the seed and the repayment
+                    plan behind this number. */}
+                <button
+                  className="admin-stat-card"
+                  style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                  aria-label="Open Spins Wallet"
+                  onClick={() => setTab('settings')}
+                >
+                  <div className="admin-stat-value" style={{ color: '#39d17a' }}>
+                    {unionSpins.state === null ? '-' : fmt(unionSpins.balance)}
+                  </div>
+                  <div className="admin-stat-label">Spins Wallet ›</div>
+                </button>
                 <button
                   className="admin-stat-card"
                   style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
@@ -1529,7 +1659,7 @@ export default function UnionDashboardPage() {
                   <input
                     className="admin-input"
                     style={{ flex: '1 1 150px' }}
-                    placeholder="Notes (optional)"
+                    placeholder="Notes (Optional)"
                     value={depositForm.notes}
                     onChange={(e) => setDepositForm((f) => ({ ...f, notes: e.target.value }))}
                   />
@@ -2437,6 +2567,24 @@ export default function UnionDashboardPage() {
 
         {tab === 'settings' && (
           <div className="admin-tab-content">
+            {/* SPINS - the union half of the owner menu.
+                A union OWNS the Spin wallet for every club inside it
+                (fn_spin_reserve_owner resolves COALESCE(clubs.union_id,
+                club_id)), so this is the only place its lead can switch Spins
+                on, choose the stake and seed the wallet. Passing the union's
+                own id is correct and deliberate: it resolves through the same
+                owner lookup as a club id and lands on the union's pool.
+
+                Rendered for every admin, not just isLead. The panel asks the
+                route who may act and shows a read-only view to anyone else -
+                a union admin should be able to SEE where the multiplier money
+                comes from without being able to spend it. */}
+            {unionId && (
+              <div className="admin-card" style={{ padding: '20px', marginBottom: '16px' }}>
+                <SpinActivationPanel clubId={unionId} />
+              </div>
+            )}
+
             {isLead ? (
               <div className="admin-card" style={{ padding: '20px' }}>
                 <h3 className="admin-card-title">Union Settings</h3>
@@ -2695,7 +2843,7 @@ export default function UnionDashboardPage() {
                       className="admin-input"
                       value={adminSearch}
                       onChange={(e) => setAdminSearch(e.target.value)}
-                      placeholder="Search by username..."
+                      placeholder="Search By Username..."
                     />
                     <button
                       className="admin-btn admin-btn-ghost"
@@ -2786,6 +2934,35 @@ export default function UnionDashboardPage() {
           walletLabel={walletModal.label}
           balance={walletModal.balance}
           onSent={() => void loadDashboard(unionId)}
+        />
+      )}
+
+      {treasuryModal && unionId && (
+        <UnionTreasuryDetailModal
+          isOpen
+          onClose={() => setTreasuryModal(null)}
+          unionId={unionId}
+          mode={treasuryModal}
+          // A backup-to-main or backup-to-promo move changes the pool row the
+          // tiles read, so the dashboard must refetch or the numbers behind the
+          // panel are stale the moment it closes.
+          onMoved={() => void loadDashboard(unionId)}
+          // Backup is jackpot liability owed to players. It has no
+          // send-to-member flow, deliberately: the only ways out are the two
+          // in-union destinations offered inside the panel.
+          onSendFrom={
+            treasuryModal === 'backup'
+              ? undefined
+              : () => {
+                  const isRake = treasuryModal === 'rake';
+                  setTreasuryModal(null);
+                  setWalletModal({
+                    key: isRake ? 'rake' : 'bbj',
+                    label: isRake ? 'Rake Treasury' : 'BBJ Pool',
+                    balance: isRake ? wallets?.rake_wallet || 0 : (bbjPool?.main_balance ?? 0),
+                  });
+                }
+          }
         />
       )}
     </div>

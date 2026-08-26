@@ -11,7 +11,15 @@
 import nodeCrypto from 'node:crypto';
 import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
-import { mysteryChestHoldMs } from '../config/mysteryChestSpec.js';
+import {
+  mysteryChestHoldMs,
+  mysteryChestPostRevealMs,
+  MYSTERY_BOUNTY_QUEUE_COALESCE_MS,
+} from '../config/mysteryChestSpec.js';
+import { MYSTERY_BOUNTY_REVEAL_DELAY_MS, formatBountyTier } from '../config/mysteryBountySpec.js';
+import { buildRecipientClaims } from './mysteryBountyDraw.js';
+import { buildPrizeLadder, prizeRankOf, isMysteryCollectMode } from './mysteryPrizeLadder.js';
+import { attributeKnockout } from './knockoutAttribution.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { computePlacePrize } from './payoutMath.js';
 import {
@@ -20,7 +28,45 @@ import {
   remainingPoolAfterAwards,
 } from './payoutStructure.js';
 
+interface QueuedBountyReveal {
+  awardId: string;
+  tableId: string | null;
+  eliminatedUserId: string;
+  designatedRevealer: string;
+  recipientUserIds: string[];
+}
+
+interface TableRevealQueue {
+  /** Chests reserved and not yet on screen, in reserve order. */
+  waiting: QueuedBountyReveal[];
+  /** The chest currently owning the table, or null between chests. */
+  active: QueuedBountyReveal | null;
+  /** How many of this burst have been presented — the "1" in "1 OF 3". */
+  presented: number;
+  /** Open only until the first chest of a burst is presented. */
+  coalesceTimer: ReturnType<typeof setTimeout> | null;
+}
+
 export abstract class TournamentManagerEliminations extends TournamentManagerBase {
+  /**
+   * One reveal queue per table (sections 22 and 61 — only the affected table
+   * pauses). Keyed by table id; the empty string is the degenerate "knockout
+   * with no table" case, which still needs ordering so its broadcasts do not
+   * interleave.
+   */
+  private bountyRevealQueues: Map<string, TableRevealQueue> = new Map();
+  /**
+   * Every award this manager has already put in a queue.
+   *
+   * `fn_mystery_bounty_reserve` is idempotent by design: a re-swept
+   * elimination gets the SAME award id back with `already: true`. Without
+   * this set, that reply would queue a second presentation of a chest that is
+   * already on screen — and, in the worst case, a second `fn_mystery_bounty_pay`
+   * for it. The RPC's own key makes the payment safe; this makes the
+   * PRESENTATION safe (section 80/33).
+   */
+  private dispatchedBountyAwards: Set<string> = new Set();
+
   protected startEliminationChecker(): void {
     this.eliminationTimer = setInterval(async () => {
       if (!this.running || this.isProcessingEliminations) return;
@@ -32,26 +78,106 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // seat stacks across every table, then push them to tournament_players in
         // ONE bulk statement (fn_sync_tournament_chips) instead of one UPDATE per
         // seat per table every 5s (the old N+1 that flooded Postgres logs).
-        const chipUpdates: { user_id: string; chips: number }[] = [];
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  ONE PLAYER, ONE STACK (2026-08-25)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * Two defects, both of which end with a live player's chip count being
+         * set from a stack that is not theirs any more.
+         *
+         * (a) THE READ WAS NOT CHECKED. `if (seats)` skipped a table whose
+         *     read failed exactly as if that table had no seats, so the sweep
+         *     went on to bust players using a chip picture it knew was
+         *     incomplete. Deciding who is out on a partial read is the same
+         *     mistake as deciding a tournament is over on a failed count.
+         *
+         * (b) SEATS WERE NOT DEDUPED BY PLAYER. One entry was pushed per SEAT,
+         *     and a player can hold more than one open seat: a table move that
+         *     writes the destination seat but does not stamp `left_at` on the
+         *     source leaves both rows live. Measured on production
+         *     2026-08-25, one running MTT (Turbo Tuesday Graveyard): 502 open
+         *     seats across 376 distinct players, 108 of them holding more than
+         *     one, double-counting 1,461,180 chips. Postgres resolves
+         *     `UPDATE ... FROM jsonb_to_recordset` against duplicate keys by
+         *     picking an ARBITRARY row, so `fn_sync_tournament_chips` could
+         *     overwrite a live stack with a dead one — and a dead seat's stack
+         *     is frequently 0, which is precisely what the bust sweep below
+         *     eliminates people for.
+         *
+         * The live seat is the one most recently joined, so keep that and drop
+         * the rest. If two open seats claim the same `joined_at`, or it is
+         * missing, there is no evidence for which is live: that player is
+         * UNKNOWN and is left out of this sync entirely rather than guessed at.
+         *
+         * This does NOT fix the duplicate seats themselves — they are created
+         * by the table-move path in TournamentManager, which this layer does
+         * not own. It stops them from moving money here.
+         */
+        // null = this player holds seats we cannot rank; skip them, do not guess.
+        const bestSeat = new Map<string, { chips: number; joinedAt: number } | null>();
         for (const [tableId] of this.tableEngines) {
-          const { data: seats } = await supabase
+          const { data: seats, error: seatsErr } = await supabase
             .from('table_seats')
-            .select('user_id, stack')
+            .select('user_id, stack, joined_at')
             .eq('table_id', tableId)
             .is('left_at', null);
 
-          if (seats) {
-            for (const seat of seats) {
-              // Guard against corrupted stack values (NaN, negative, undefined).
-              const stackValue =
-                typeof seat.stack === 'number' && !isNaN(seat.stack) && seat.stack >= 0
-                  ? seat.stack
-                  : 0;
-              // Floor here too — tournament_players.chips is INTEGER (the RPC also
-              // floors, but keep the payload clean).
-              chipUpdates.push({ user_id: seat.user_id, chips: Math.floor(stackValue) });
+          if (seatsErr) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] seat read failed on table ${tableId.slice(0, 8)} (${seatsErr.message}) — skipping the whole sweep rather than busting on a partial chip picture`
+              ),
+              'Tournament.seat_read_failed'
+            );
+            return; // the finally block clears isProcessingEliminations
+          }
+
+          for (const seat of seats ?? []) {
+            // Guard against corrupted stack values (NaN, negative, undefined).
+            const stackValue =
+              typeof seat.stack === 'number' && !isNaN(seat.stack) && seat.stack >= 0
+                ? seat.stack
+                : 0;
+            // Floor here too — tournament_players.chips is INTEGER (the RPC also
+            // floors, but keep the payload clean).
+            const chips = Math.floor(stackValue);
+            const joinedAt = seat.joined_at ? new Date(seat.joined_at).getTime() : NaN;
+
+            const held = bestSeat.get(seat.user_id);
+            if (held === undefined) {
+              bestSeat.set(seat.user_id, { chips, joinedAt });
+              continue;
+            }
+            if (held === null) continue; // already ruled UNKNOWN this sweep
+            if (!Number.isFinite(joinedAt) || !Number.isFinite(held.joinedAt)) {
+              bestSeat.set(seat.user_id, null); // no evidence which seat is live
+              continue;
+            }
+            if (joinedAt > held.joinedAt) {
+              bestSeat.set(seat.user_id, { chips, joinedAt });
+            } else if (joinedAt === held.joinedAt) {
+              bestSeat.set(seat.user_id, null); // a tie is not evidence either
             }
           }
+        }
+
+        const chipUpdates: { user_id: string; chips: number }[] = [];
+        const ambiguousSeatUsers: string[] = [];
+        for (const [userId, seat] of bestSeat) {
+          if (seat === null) {
+            ambiguousSeatUsers.push(userId);
+            continue;
+          }
+          chipUpdates.push({ user_id: userId, chips: seat.chips });
+        }
+        if (ambiguousSeatUsers.length > 0) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] ${ambiguousSeatUsers.length} player(s) hold multiple open seats with no usable joined_at — chip sync skipped for them this sweep: ${ambiguousSeatUsers.map((u) => u.slice(0, 8)).join(', ')}`
+            ),
+            'Tournament.ambiguous_live_seat'
+          );
         }
 
         if (chipUpdates.length > 0) {
@@ -63,12 +189,85 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         }
 
         // Find ALL busted players (0 chips) in a single query
-        let { data: busted } = await supabase
+        let { data: busted, error: bustedErr } = await supabase
           .from('tournament_players')
           .select('user_id, chips')
           .eq('tournament_id', this.tournamentId)
           .eq('status', 'playing')
           .lte('chips', 0);
+
+        // PAYOUT-INTEGRITY 2026-08-25: an unreadable bust list is UNKNOWN. The
+        // error was discarded, so a failed read looked exactly like "nobody
+        // busted" — and the sweep then fell straight through to the finish
+        // check below and could complete the tournament on the strength of it.
+        if (bustedErr) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] bust list unreadable (${bustedErr.message}) — skipping this sweep entirely`
+            ),
+            'Tournament.busted_list_unavailable'
+          );
+          return; // the finally block clears isProcessingEliminations
+        }
+
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  A ZERO-CHIP FIELD IS NEVER A RESULT (2026-08-23)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * Two guards, because the absence of them cost 276 Spins in one day.
+         *
+         * GUARD 1 — the credit is still pending. A Spin seats its field as
+         * reservations at zero chips and writes the real stacks only once the
+         * wheel stops. `bustingArmedAt` is the instant that credit is due; a
+         * sweep before it is reading placeholders, not a poker result.
+         *
+         * GUARD 2 — the whole field reads zero. Chips are conserved: every
+         * chip one player loses another player gains, so the sum of live
+         * stacks is a constant and cannot be zero while anybody is still
+         * playing. "every remaining player has <= 0" is therefore not a state
+         * poker can produce. It means the stacks were never written, or the
+         * seat sync failed, and the only correct response is to bust NOBODY
+         * and let the next sweep read real numbers.
+         *
+         * What the old code did instead: spare the arbitrary largest of the
+         * zeroes, eliminate the rest, and hand that player first prize. Buy-ins
+         * collected, prize paid, not one card dealt.
+         *
+         * GUARD 2 is deliberately independent of GUARD 1 rather than folded
+         * into it — a process restart inside the reveal window rearms nothing,
+         * and a broken seat sync is not on a timer at all.
+         */
+        if (busted && busted.length > 0 && Date.now() < this.bustingArmedAt) {
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Bust sweep held — stacks not credited yet (${Math.ceil(
+              (this.bustingArmedAt - Date.now()) / 1000
+            )}s)`
+          );
+          return; // the finally block clears isProcessingEliminations
+        }
+
+        if (busted && busted.length > 0) {
+          const { count: liveCount, error: liveErr } = await supabase
+            .from('tournament_players')
+            .select('*', { count: 'exact', head: true })
+            .eq('tournament_id', this.tournamentId)
+            .eq('status', 'playing');
+          if (
+            !liveErr &&
+            typeof liveCount === 'number' &&
+            liveCount > 0 &&
+            busted.length >= liveCount
+          ) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] all ${liveCount} live player(s) read 0 chips — uncredited stacks, not a bust. Eliminating nobody this sweep.`
+              ),
+              'Tournament.zero_chip_field_refused'
+            );
+            return; // the finally block clears isProcessingEliminations
+          }
+        }
 
         if (busted && busted.length > 0) {
           // Get current remaining count BEFORE processing any eliminations
@@ -189,7 +388,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             ),
             'Tournament.remaining_count_unavailable'
           );
-        } else if (remainingCount <= 1) {
+        } else if (remainingCount > 1) {
+          // MYSTERY BOUNTY ACTIVATION (2026-08-25). This is the only place in
+          // the engine that knows, between hands and from a count it has just
+          // verified, how many players can still be knocked out — which is
+          // both halves of the activation predicate and the size of the chest
+          // inventory. Guarded on `> 1` so the phase can never open on the
+          // heads-up hand that ends the event.
+          try {
+            await this.maybeActivateMysteryBounty(remainingCount);
+          } catch (mbErr) {
+            reportError(mbErr, 'Tournament.mystery_bounty_activation_sweep');
+          }
+        }
+
+        if (
+          !remainingErr &&
+          remainingCount !== null &&
+          remainingCount !== undefined &&
+          remainingCount <= 1
+        ) {
           try {
             // Use maybeSingle to handle edge case where 0 players remain
             const { data: winner } = await supabase
@@ -276,11 +494,31 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             this.tournamentCache.variant === 'spin' ||
             this.tournamentCache.tournament_type === 'SPIN';
           if (!isSpin) {
-            const { count: playingNow } = await supabase
+            const { count: playingNow, error: playingNowErr } = await supabase
               .from('tournament_players')
               .select('*', { count: 'exact', head: true })
               .eq('tournament_id', this.tournamentId)
               .eq('status', 'playing');
+
+            // PAYOUT-INTEGRITY 2026-08-25: the third `(count || 0)` in this
+            // file, and the last one. On a failed count `|| 0` reads as zero
+            // players remaining, which satisfies `playingNow <= payoutCount`
+            // and BURSTS THE BUBBLE — hand-for-hand is cancelled and every
+            // engine resumes dealing while the field is still one elimination
+            // from the money. Hand-for-hand exists precisely so that a player
+            // on a slow table is not busted into the bubble by a fast one; a
+            // supabase timeout must not be able to switch it off. An
+            // unreadable count is UNKNOWN: leave the bubble state exactly as
+            // it is and re-check on the next sweep.
+            if (playingNowErr || playingNow === null || playingNow === undefined) {
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] hand-for-hand: playing count unavailable (${playingNowErr?.message ?? 'null count'}) — bubble state left unchanged this cycle`
+                ),
+                'Tournament.hand_for_hand_count_unavailable'
+              );
+              return; // the finally block clears isProcessingEliminations
+            }
 
             let payoutCount = 0;
             if (this.tournamentCache.payout_structure) {
@@ -295,11 +533,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               if (Array.isArray(payouts)) payoutCount = payouts.length;
             }
 
-            if (
-              payoutCount > 0 &&
-              (playingNow || 0) === payoutCount + 1 &&
-              !this.handForHandActive
-            ) {
+            if (payoutCount > 0 && playingNow === payoutCount + 1 && !this.handForHandActive) {
               this.handForHandActive = true;
               if (!this.handForHandAnnounced) {
                 this.handForHandAnnounced = true;
@@ -318,7 +552,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 // Start hand-for-hand sync check
                 this.startHandForHandSync();
               }
-            } else if (this.handForHandActive && (playingNow || 0) <= payoutCount) {
+            } else if (this.handForHandActive && playingNow <= payoutCount) {
               // Bubble burst — resume normal play
               this.handForHandActive = false;
               this.stopHandForHandSync();
@@ -338,7 +572,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       } finally {
         this.isProcessingEliminations = false;
       }
-    }, 5000);
+    }, TournamentManagerBase.ELIMINATION_SWEEP_MS);
   }
 
   /**
@@ -413,6 +647,84 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     return rebought;
   }
 
+  /**
+   * Vacate every seat this player holds AT THIS TOURNAMENT'S TABLES.
+   *
+   * Idempotent by construction (`.is('left_at', null)`), so it is safe to call
+   * from the already-eliminated early return as well as the main path.
+   *
+   * SCOPE, 2026-08-18: this UPDATE used to be scoped by user_id alone, so
+   * busting a player out of a tournament stamped left_at on EVERY open seat
+   * they held — including cash tables. Players are not confined to one context
+   * (HorseFleetManager explicitly allows multi-tabling, and registerHorses only
+   * excludes horses busy in another TOURNAMENT), so a bustout could silently
+   * eject someone from a cash game they were winning, stranding the stack in a
+   * left_at row that atomicCashout never sees.
+   *
+   * The result is CHECKED, 2026-08-23. It was not, and a seat release that
+   * fails silently is indistinguishable from one that never ran — which is
+   * exactly how "the busted player is still sitting there" reaches a player
+   * with nothing in the logs to explain it.
+   */
+  protected async releaseTournamentSeat(userId: string): Promise<void> {
+    try {
+      const { data: tournamentTables, error: tablesErr } = await supabase
+        .from('tables')
+        .select('id')
+        .eq('tournament_id', this.tournamentId);
+
+      if (tablesErr) {
+        console.error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] seat release: could not list tables — ${tablesErr.message}`
+        );
+        return;
+      }
+
+      const tournamentTableIds = (tournamentTables ?? []).map((t: { id: string }) => t.id);
+      if (tournamentTableIds.length === 0) {
+        console.warn(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] seat release: no tables carry this tournament_id — ${userId.slice(0, 8)} may still be seated`
+        );
+        return;
+      }
+
+      const { error: seatErr } = await supabase
+        .from('table_seats')
+        .update({ left_at: new Date().toISOString() })
+        .eq('user_id', userId)
+        .in('table_id', tournamentTableIds)
+        .is('left_at', null);
+
+      if (seatErr) {
+        console.error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] seat release FAILED for ${userId.slice(0, 8)} — ${seatErr.message}`
+        );
+      }
+
+      /**
+       * Dan 2026-08-23: "when a player busts, they must be removed as soon as
+       * they are out." The seat above is released immediately, but the player
+       * COUNT was not: tournaments.current_players is a registration counter
+       * that only ever climbs. A busted player therefore still occupied a seat
+       * as far as the lobby tile and the seat-first start gate were concerned,
+       * which is how live spins ended up advertising 3/3 with seats standing
+       * empty and refusing every attempt to buy one.
+       *
+       * Re-derive both counters from the seat rows that are actually live.
+       * Best-effort: a counter that fails to refresh must never abort a
+       * bust-out mid-payout.
+       */
+      const { error: syncErr } = await supabase.rpc('fn_sync_seat_first_player_count', {
+        p_tournament_id: this.tournamentId,
+      });
+      if (syncErr) {
+        reportError(syncErr, 'TournamentManagerEliminations.seat_count_resync_failed');
+      }
+    } catch (err) {
+      reportError(err, 'Tournament.release_tournament_seat_threw');
+    }
+  }
+
   protected async eliminatePlayer(userId: string, position: number): Promise<void> {
     // Guard: check if already eliminated (prevents double-processing)
     const { data: playerCheck, error: checkErr } = await supabase
@@ -428,10 +740,21 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       playerCheck.status === 'eliminated' ||
       playerCheck.status === 'winner'
     ) {
+      /* Dan 2026-08-23: a busted player must not keep the seat.
+         This early return is correct for the money and the position — those
+         are already done — but it used to skip the seat release at the bottom
+         of this method too. Any elimination first marked by another path (the
+         recovery watchdog, ChipRaceEngine, a raced sweep) therefore left the
+         player sitting at the table forever, because the ONLY code that
+         stamps left_at is below this line. Releasing is idempotent, so run it
+         on the way out. */
+      if (!checkErr && playerCheck?.status === 'eliminated') {
+        await this.releaseTournamentSeat(userId);
+      }
       return; // Already processed
     }
 
-    const { data: tournament } = await supabase
+    const { data: tournament, error: tournamentErr } = await supabase
       .from('tournaments')
       .select(
         // spin_multiplier + tournament_type: a Spin's payout split is a pure
@@ -443,6 +766,33 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       )
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
+
+    /**
+     * PAYOUT-INTEGRITY 2026-08-25: THE PRIZE IS COMPUTED FROM THIS ROW, SO A
+     * ROW WE COULD NOT READ IS NOT A PRIZE OF ZERO.
+     *
+     * The error was discarded and `if (tournament)` then skipped the prize
+     * calculation entirely, so a single failed read stamped the player
+     * `eliminated`, position N, prize 0 — and everything downstream treats
+     * that as settled. The early-return guard at the top of this method sees
+     * status 'eliminated' and returns, so the normal path never revisits it;
+     * the bounty is skipped for the same reason (`hasBounty` reads flags off
+     * the same null row) and bubble protection with it. Only the recovery
+     * watchdog would ever top it up, and only while the tournament is
+     * COMPLETING.
+     *
+     * Not stamping anything is strictly recoverable: the player still has 0
+     * chips and the next 5s sweep busts them again with a readable row.
+     */
+    if (tournamentErr || !tournament) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] cannot price place ${position} for ${userId.slice(0, 8)} — tournament row unreadable (${tournamentErr?.message ?? 'no row'}). Eliminating nobody; the next sweep retries.`
+        ),
+        'Tournament.elimination_tournament_unreadable'
+      );
+      return;
+    }
 
     let prize = 0;
     // TOURNEY-AUDIT 2026-07-24 (sweep 6): SATELLITES pay SEATS, not cash — the
@@ -461,21 +811,61 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
     }
 
-    const { error: updateErr, count: updateCount } = await supabase
+    // PAYOUT-INTEGRITY 2026-08-25: `{ count: 'exact' }` added. PostgREST only
+    // returns a row count when the request asks for one, so `updateCount` was
+    // ALWAYS null here and the `updateCount === 0` half of the guard below
+    // could never fire — the "another process already eliminated them" case
+    // was being caught by luck (the earlier status re-read) rather than by
+    // this CAS. Asking for the count is what makes the guard the guard.
+    const {
+      error: updateErr,
+      count: updateCount,
+      status: updateStatus,
+    } = await supabase
       .from('tournament_players')
-      .update({
-        status: 'eliminated',
-        position,
-        prize,
-        eliminated_at: new Date().toISOString(),
-      })
+      .update(
+        {
+          status: 'eliminated',
+          position,
+          prize,
+          eliminated_at: new Date().toISOString(),
+        },
+        { count: 'exact' }
+      )
       .eq('tournament_id', this.tournamentId)
       .eq('user_id', userId)
       .eq('status', 'playing'); // Only update if still playing (prevents double-processing)
 
-    if (updateErr || (updateCount !== null && updateCount === 0)) {
+    if (updateErr) {
+      // A DB error and "somebody else got there first" were both returned
+      // silently, so an elimination that FAILED looked identical to one that
+      // was already done — and this is the write that decides whether a prize
+      // is ever paid for this place. Report the failure; the next sweep sees
+      // the player still 'playing' with 0 chips and retries.
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] elimination write FAILED for ${userId.slice(0, 8)} at place ${position} (http ${updateStatus}): ${updateErr.message} — place unassigned, prize ${prize} unpaid`
+        ),
+        'Tournament.elimination_write_failed'
+      );
+      return;
+    }
+    if (updateCount !== null && updateCount === 0) {
       return; // Player was already eliminated by another process
     }
+
+    /* Dan 2026-08-23: "they must be removed from the table... it currently
+       doesn't remove them."
+
+       The seat release used to sit at the very BOTTOM of this method, behind
+       the bounty block — a knocker lookup, a 10-row hand_history scan and an
+       RPC, every one of them an awaited round-trip, all wrapped in a try that
+       swallows. A player whose bust triggered any of that stayed visibly
+       seated for the duration, and the 5s sweep can already lag the bust by
+       hands. The seat is not payment and it is not attribution: it is the one
+       thing another player is waiting on. Release it the instant the status
+       write commits. */
+    await this.releaseTournamentSeat(userId);
 
     if (prize > 0) {
       // Retry prize credit up to 3 times with exponential backoff
@@ -526,7 +916,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // by construction (see the basePosition notes above), so exactly one
     // player can ever hold paidPlaces + 1; the in-memory flag and the
     // per-user idempotency key are belt and braces on top of that.
-    if (!isSatellite && tournament && (tournament as any).bubble_protection === true && prize <= 0) {
+    if (
+      !isSatellite &&
+      tournament &&
+      (tournament as any).bubble_protection === true &&
+      prize <= 0
+    ) {
       try {
         const payouts = resolvePayoutStructure(tournament as any);
         const paidPlaces = Array.isArray(payouts) ? payouts.length : 0;
@@ -594,19 +989,39 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           .maybeSingle();
 
         // Find the busted player's LAST HAND at that table to determine the knocker.
-        // TOURNEY-AUDIT 2026-07-24: two fixes. (a) The old query took the most
-        // recent hand at the table regardless of whether the eliminated player
-        // was even IN it — the 5s elimination sweep can lag several hands, so
-        // bounties routed to the winner of some later, unrelated pot. Now the
-        // recent hands are scanned for the last one the busted player played.
-        // (b) With multiple winners (side pots), the knocker is the winner who
-        // took the LARGEST amount (the main pot containing the busted player's
-        // chips), not whichever entry happened to be first in the array.
+        // TOURNEY-AUDIT 2026-07-24: (a) The old query took the most recent hand
+        // at the table regardless of whether the eliminated player was even IN
+        // it — the 5s elimination sweep can lag several hands, so bounties
+        // routed to the winner of some later, unrelated pot. The recent hands
+        // are scanned for the last one the busted player played.
+        //
+        // KNOCKOUT ATTRIBUTION 2026-08-25 (Dan section 29). (b) used to say
+        // "the knocker is the winner who took the LARGEST amount (the main pot
+        // containing the busted player's chips)". Those two things are not the
+        // same thing, and the parenthesis was the bug: with a side pot, the
+        // largest winner is usually the player who was NOT in the pot that
+        // busted anybody. The credit belongs to the winner(s) of the pot that
+        // contained the eliminated player's final chips, which is now a
+        // recorded fact (`hand_history.pots`) rather than a guess about
+        // amounts. See knockoutAttribution.ts for the full rule; it falls back
+        // to the old heuristic on rows written before the column existed.
         let knockerId: string | null = null;
+        // SPLIT KNOCKOUTS (Dan sections 27/28). A tied pot means every tied
+        // winner shares one chest, equally.
+        let claimants: Array<{ userId: string; weight: number }> = [];
+        /**
+         * The hand the knockout happened in. Stream B's reserve call has been
+         * passing `p_hand_id: null` since it shipped, so `tournament_bounty_
+         * awards.hand_id` — the only link between an award and the hand that
+         * earned it — was empty on every row. Nothing could audit a bounty
+         * back to its knockout. It is available right here and simply was not
+         * being selected.
+         */
+        let knockoutHandId: string | null = null;
         if (seat?.table_id) {
           const { data: recentHands } = await supabase
             .from('hand_history')
-            .select('winners, players')
+            .select('id, winners, players, pots')
             .eq('table_id', seat.table_id)
             .order('created_at', { ascending: false })
             .limit(10);
@@ -616,18 +1031,33 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               Array.isArray(hand.players) &&
               hand.players.some((p: any) => (p.userId || p.user_id) === userId);
             if (!inHand) continue;
-            if (hand.winners && Array.isArray(hand.winners)) {
-              const candidates = hand.winners
-                .filter((w: any) => (w.userId || w.user_id) !== userId)
-                .sort((a: any, b: any) => Number(b.amount || 0) - Number(a.amount || 0));
-              knockerId = candidates.length ? candidates[0].userId || candidates[0].user_id : null;
+            knockoutHandId = hand.id ? String(hand.id) : null;
+            const attribution = attributeKnockout(hand as any, userId);
+            knockerId = attribution.knockerUserId;
+            claimants = attribution.claimants.map((c) => ({ ...c }));
+            if (attribution.basis === 'largest_winner' && Array.isArray(hand.pots)) {
+              // Pots were stored and still could not settle the question. Not
+              // fatal — the fallback pays somebody — but it means the recorded
+              // breakdown disagrees with the recorded winners, which is worth
+              // a signal rather than a silent shrug.
+              console.warn(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] knockout attribution fell back to ` +
+                  `largest-winner for ${userId.slice(0, 8)} despite stored pots (hand ${knockoutHandId})`
+              );
             }
             break; // only the busted player's most recent hand counts
           }
         }
 
         if (knockerId) {
-          await this.processBountyCollection(tournament, userId, knockerId, seat?.table_id ?? null);
+          await this.processBountyCollection(
+            tournament,
+            userId,
+            knockerId,
+            seat?.table_id ?? null,
+            claimants,
+            knockoutHandId
+          );
         } else {
           console.warn(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Could not determine knocker for ${userId.slice(0, 8)} — bounty skipped`
@@ -646,19 +1076,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // silently eject someone from a cash game they were winning, stranding the
     // stack in a left_at row that atomicCashout never sees. Scope it to the
     // tables that belong to this tournament.
-    const { data: tournamentTables } = await supabase
-      .from('tables')
-      .select('id')
-      .eq('tournament_id', this.tournamentId);
-    const tournamentTableIds = (tournamentTables ?? []).map((t: { id: string }) => t.id);
-    if (tournamentTableIds.length > 0) {
-      await supabase
-        .from('table_seats')
-        .update({ left_at: new Date().toISOString() })
-        .eq('user_id', userId)
-        .in('table_id', tournamentTableIds)
-        .is('left_at', null);
-    }
+    // Seat release now happens IMMEDIATELY after the status write above, not
+    // here. See releaseTournamentSeat() for why.
 
     // Broadcast player_eliminated event to all table pages
     // The elimination toast in TournamentDetails/TournamentPage needs a name;
@@ -702,8 +1121,32 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
      * played the chest for a knockout that happened somewhere else. Clients
      * match on it and ignore knockouts that are not theirs.
      */
-    tableId: string | null = null
+    tableId: string | null = null,
+    /**
+     * Everyone with a claim on this knockout and the weight of that claim.
+     * Sections 27/28: the winners of the pot that held the busted player's
+     * last chips, equally weighted when that pot was tied. Empty (or a single
+     * entry) is the ordinary case: one knocker takes the whole bounty.
+     */
+    claimants: Array<{ userId: string; weight: number }> = [],
+    /** The hand_history row this knockout happened in, for the audit link. */
+    handId: string | null = null
   ): Promise<void> {
+    // ── MYSTERY PHASE ──────────────────────────────────────────────────────
+    // Once the chests are open, this knockout draws one. fn_collect_bounty
+    // refuses in that state ('mystery_phase_active'), so this is not an
+    // optimisation — it is the only path that pays.
+    if (this.mysteryBountyStage === 'active' && tournament?.is_mystery_bounty) {
+      await this.processMysteryBountyKnockout(
+        eliminatedUserId,
+        knockerUserId,
+        tableId,
+        claimants,
+        handId
+      );
+      return;
+    }
+
     // DAN'S SPEC 2026-08-15: bounties are FUNDED (registration splits the
     // buy-in into rake / bounty_pool / prize_pool) and paid out of that pool
     // by a single atomic RPC. This replaces four separate writes here
@@ -797,45 +1240,75 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         /* the head falls as an initial — same as every knockout before today */
       }
 
-      await this.broadcast(
-        res.mode === 'mystery' ? 'mystery_bounty_revealed' : 'bounty_collected',
-        {
-          mode: res.mode,
-          amount: res.paid_cash,
-          addedToHead: res.added_to_head,
-          // playerName = whose head was revealed/claimed
-          playerName: nameOf(eliminatedUserId),
-          eliminatedName: nameOf(eliminatedUserId),
-          eliminatedUserId,
-          eliminatedAvatar,
-          knockerName: nameOf(knockerUserId),
-          knockerUserId,
-          avgBounty: tournament?.bounty_amount || undefined,
-          poolRemaining: res.pool_remaining,
-          // Which table this happened at — see the tableId parameter.
-          tableId,
-        }
-      );
+      // NOTE: When an event is both PKO and mystery, `fn_collect_bounty` returns
 
-      // HOLD THE DEAL (Dan 2026-08-21): "after it finished and the prize is
-      // awarded, the next hand starts with the dealing animation." The chest
-      // owns the screen for the length of its sequence, so the table must not
-      // deal a hand underneath it. Same mechanism the spin wheel uses; when
-      // the hold expires the dealing loop resumes and the next hand deals in
-      // with its normal shuffle + deal animation.
+      // 'pko'. In that case `res.paid_cash` is half a head, so ranking it against
+      // the mystery ladder would report a rung nobody pulled. Ask Dan what "top 3 pull"
+      // means in a hybrid format, or if such an event will ever be configured.
+      // For now, a PKO+mystery knockout gets no prize rank.
+      const prizeRank = isMysteryCollectMode(res.mode)
+        ? await this.preMysteryPrizeRank(res.paid_cash)
+        : undefined;
+
+      // ── THE EVENT NAME IS A CONSTANT, AND THAT IS THE FIX ────────────────
       //
-      // Only the knockout's own table pauses. A knockout on table 3 must not
-      // stall tables 1 and 2.
-      if (res.mode === 'mystery' && tableId) {
-        const engine = this.tableEngines.get(tableId);
-        if (engine) {
-          try {
-            engine.holdDealingUntil(Date.now() + mysteryChestHoldMs());
-          } catch {
-            /* the hold is presentation; never let it break the payout path */
-          }
-        }
-      }
+      // This used to read:
+      //
+      //     res.mode === 'mystery' ? 'mystery_bounty_revealed' : 'bounty_collected'
+      //
+      // `fn_collect_bounty` never returns 'mystery' — it returns 'pko',
+      // 'mystery_pre' or 'regular' (see mysteryPrizeLadder.ts, which quotes the
+      // live CASE). So the ternary was dead in both directions, and worse: had
+      // it ever fired it would have sent the CHEST event under a payload the
+      // chest cannot read. `mystery_bounty_revealed` belongs to
+      // settleMysteryBountyAward below and carries awardId / amountCents /
+      // tier / recipients; TablePage feeds it straight into the chest queue and
+      // useMysteryBounty refetches the mystery RPCs on it. A pre-phase knockout
+      // has no award and no chest, so borrowing that name would have played a
+      // full-screen reveal for a chest that does not exist.
+      //
+      // The celebration banner accepts `bounty_collected` and gates on the mode
+      // — which is why it works at all today — so this name is the correct one
+      // and the only one this path may send.
+      await this.broadcast('bounty_collected', {
+        mode: res.mode,
+        amount: res.paid_cash,
+        // THE RANK, FROM THE SERVER (Dan 2026-08-25). Which rung of this
+        // event's prize ladder was just pulled, 1 being the largest. Only a
+        // mystery pull gets one: on a pko knockout `paid_cash` is half the
+        // head, and half a head has no rung. Undefined drops off the wire,
+        // and the client falls back to deriving it, exactly as it does today.
+        prizeRank,
+        addedToHead: res.added_to_head,
+        // playerName = whose head was revealed/claimed
+        playerName: nameOf(eliminatedUserId),
+        eliminatedName: nameOf(eliminatedUserId),
+        eliminatedUserId,
+        eliminatedAvatar,
+        knockerName: nameOf(knockerUserId),
+        knockerUserId,
+        avgBounty: tournament?.bounty_amount || undefined,
+        poolRemaining: res.pool_remaining,
+        // Which table this happened at — see the tableId parameter.
+        tableId,
+      });
+
+      // NO DEAL HOLD ON THIS PATH, DELIBERATELY (corrected 2026-08-26).
+      //
+      // A `holdDealingUntil(now + mysteryChestHoldMs())` used to sit here under
+      // `res.mode === 'mystery'`. Like the event name above, that test could
+      // never be true, so the hold never ran — and reviving it for the real
+      // value ('mystery_pre') would have been the wrong fix twice over:
+      //
+      //   - the hold exists so a table does not deal a hand under a live CHEST
+      //     sequence, and there is no chest before the mystery phase opens.
+      //     Pausing every mystery event's tables for the length of an animation
+      //     that never plays is a stall, not a fix;
+      //   - the chest path already holds correctly and by a better mechanism.
+      //     openBountyGate() calls beginBountyReveal() (a COUNT-based gate, so
+      //     three chests in one hand hold for all three) plus holdDealingUntil()
+      //     as the wall-clock failsafe. See ServerTableEngineBase's note on why
+      //     a deadline alone is wrong here.
     } catch {
       /* the reveal broadcast is cosmetic — never block the payout path */
     }
@@ -846,57 +1319,655 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   }
 
   /**
-   * Credit bounty amount to knocker's wallet with transaction logging
+   * ═════════════════════════════════════════════════════════════════════════
+   *  MYSTERY BOUNTY KNOCKOUT — reserve, hold the deal, reveal, pay
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * Four steps, in this order, and the order is the point.
+   *
+   * 1. RESERVE. `fn_mystery_bounty_reserve` takes the next chest atomically
+   *    and writes the award and the recipient split. It deliberately does NOT
+   *    return the amount: the surest way to keep a number out of a broadcast
+   *    is for the code that builds the broadcast never to have seen it
+   *    (section 19).
+   *
+   * 2. HOLD THE DEAL. The chest owns the screen for the length of its
+   *    sequence, so the table must not deal a hand underneath it. Same
+   *    mechanism the spin wheel uses, and only the knockout's own table
+   *    pauses — a bustout on table 3 must not stall tables 1 and 2.
+   *
+   * 3. REVEAL, on a timer. The winner's client opens the chest at
+   *    CHEST_AUTO_OPEN_MS whether they tap or not. A tap before then calls
+   *    `fn_mystery_bounty_reveal` from the browser and shows THEM the number
+   *    first, which is the whole reason there is a tap; the engine's call
+   *    below is idempotent and returns the identical payload, so the private
+   *    reveal and the table broadcast can never disagree.
+   *
+   * 4. PAY. Only after the reveal, and only through `fn_mystery_bounty_pay`,
+   *    which credits every recipient through `fn_credit_and_log` under the key
+   *    `mb:{award}:{user}` and moves `bounty_pool_paid`.
+   *
+   * NOTHING HERE THROWS INTO THE ELIMINATION SWEEP. A reveal that fails to
+   * broadcast is a knockout with no animation; a reserve that throws would
+   * stop the sweep processing every other bustout in the event.
    */
-  protected async creditBountyToWallet(
+  protected async processMysteryBountyKnockout(
+    eliminatedUserId: string,
     knockerUserId: string,
-    amount: number,
-    eliminatedUserId: string
+    tableId: string | null,
+    claimants: Array<{ userId: string; weight: number }>,
+    handId: string | null = null
   ): Promise<void> {
-    // Retry bounty credit up to 3 times with exponential backoff
-    let creditSuccess = false;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      // LEDGER-INTEGRITY 2026-08-22: one key covers the credit and its row.
-      const { error: creditErr } = await supabase.rpc('fn_credit_and_log', {
-        p_user_id: knockerUserId,
-        p_amount: amount,
-        // A3 FIX (2026-07-28): this credit sits inside a 3x retry loop and the
-        // `tournament_bounties` dedupe INSERT only happens AFTER it succeeds, so
-        // a committed-but-timed-out credit was paid again on the next attempt
-        // (2-3x bounty mint). One bounty per (eliminated, knocker) pair per
-        // tournament, so that tuple is the natural idempotency key.
-        p_idempotency_key: `tourney:${this.tournamentId}:bounty:${eliminatedUserId}:${knockerUserId}`,
-        p_category: 'bounty',
-        p_description: `Bounty collected from eliminated player`,
-        p_related_entity_id: this.tournamentId,
-      });
-      if (!creditErr) {
-        creditSuccess = true;
-        break;
-      }
-      reportError(
-        new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Bounty credit attempt ${attempt}/3 failed for ${knockerUserId.slice(0, 8)}: ${creditErr.message}`
-        ),
-        'TournamentthistournamentIdslic.Bounty_credit_attempt_attempt3'
-      );
-      if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
-    }
+    const recipients = buildRecipientClaims(knockerUserId, claimants);
+    if (recipients.length === 0) return;
 
-    if (!creditSuccess) {
+    // op_id makes THIS call idempotent; the award's unique
+    // (tournament, eliminated) key makes the whole knockout idempotent. The
+    // op id is derived from the knockout rather than random so that a retry of
+    // the same sweep pass presents the same id.
+    const opId = nodeCrypto
+      .createHash('sha256')
+      .update(`mb:${this.tournamentId}:${eliminatedUserId}`)
+      .digest('hex');
+    const opUuid = [
+      opId.slice(0, 8),
+      opId.slice(8, 12),
+      // Version 4 nibble and variant bits, so the value is a legal UUID and
+      // Postgres accepts it. It is a name, not entropy — the entropy that
+      // matters was spent on the inventory shuffle.
+      '4' + opId.slice(13, 16),
+      ((parseInt(opId.slice(16, 17), 16) & 0x3) | 0x8).toString(16) + opId.slice(17, 20),
+      opId.slice(20, 32),
+    ].join('-');
+
+    const { data: reserved, error: reserveErr } = await supabase.rpc('fn_mystery_bounty_reserve', {
+      p_tournament_id: this.tournamentId,
+      p_eliminated_user_id: eliminatedUserId,
+      p_recipients: recipients,
+      p_table_id: tableId,
+      // AUDIT LINK 2026-08-25: this was hard-coded null, so
+      // `tournament_bounty_awards.hand_id` — the only pointer from an award
+      // back to the hand that earned it — was empty on every row ever
+      // written. The eliminations sweep reads that hand three lines earlier;
+      // it simply was not being selected or passed.
+      p_hand_id: handId,
+      p_op_id: opUuid,
+      p_reveal_ms: MYSTERY_BOUNTY_REVEAL_DELAY_MS,
+    });
+
+    if (reserveErr) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Bounty credit FAILED after 3 retries for ${knockerUserId.slice(0, 8)} — ${amount} chips lost`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty reserve FAILED for ${eliminatedUserId.slice(0, 8)}: ${reserveErr.message}`
         ),
-        'TournamentthistournamentIdslic.CRITICAL'
+        'Tournament.mystery_bounty_reserve_failed'
       );
       return;
     }
 
-    // The ledger row is written by fn_credit_and_log above, inside the same
-    // idempotency key as the credit, so there is no separate log call left to
-    // fail on its own — and no way for a retry to write a second one.
+    const res = (reserved ?? {}) as {
+      ok?: boolean;
+      reason?: string;
+      already?: boolean;
+      status?: string;
+      award_id?: string;
+      queue_index?: number;
+      queue_total?: number;
+      designated_revealer?: string;
+      recipient_user_ids?: string[];
+    };
+
+    if (!res.ok || !res.award_id) {
+      if (res.reason === 'inventory_exhausted') {
+        // Every chest is spoken for and a player was still knocked out. That
+        // is a real accounting event, not a hiccup: the inventory is sized to
+        // the field at activation, so it means more knockouts happened than
+        // there were players.
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] mystery bounty INVENTORY EXHAUSTED at knockout of ${eliminatedUserId.slice(0, 8)}`
+          ),
+          'Tournament.mystery_bounty_inventory_exhausted'
+        );
+      } else if (res.reason !== 'mystery_phase_not_active') {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] mystery bounty not reserved (${res.reason}) for ${eliminatedUserId.slice(0, 8)}`
+          ),
+          'Tournament.mystery_bounty_not_reserved'
+        );
+      }
+      return;
+    }
+
+    // Already completed on an earlier pass — nothing to re-announce.
+    if (res.already && res.status === 'completed') return;
+
+    // 2, 3 and 4 are the queue's job from here. Enqueueing CLOSES THE TABLE'S
+    // REVEAL GATE IMMEDIATELY (sections 21-26): the table stops before the
+    // first chest is even on screen, so a second knockout discovered a moment
+    // later cannot find that a hand has already been dealt over it.
+    this.enqueueBountyReveal({
+      awardId: res.award_id,
+      tableId,
+      eliminatedUserId,
+      designatedRevealer: res.designated_revealer ?? knockerUserId,
+      recipientUserIds: res.recipient_user_ids ?? [],
+    });
   }
+
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  THE TABLE'S REVEAL QUEUE (Dan sections 21-26, 51-57, 61-65)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * ONE CHEST AT A TIME, PER TABLE, IN ORDER.
+   *
+   * Three knockouts in one hand are three chests, shown as "MYSTERY BOUNTY
+   * 1 OF 3", then 2 of 3, then 3 of 3 — and the dealer button may not move
+   * until the last of them is finished (sections 25 and 64).
+   *
+   * WHAT THIS REPLACES. The reserve path used to fire a bare
+   * `setTimeout(..., 9700)` per award. Three simultaneous knockouts therefore
+   * revealed three chests AT THE SAME INSTANT, on top of each other, each
+   * labelled with a queue counter the SQL had computed independently — the
+   * first one reserved says "1 of 1", the second "2 of 2", the third "3 of 3",
+   * because `fn_mystery_bounty_reserve` counts what is open at the moment IT
+   * runs and cannot know about the two knockouts the sweep has not reached
+   * yet. Right numbers to a question nobody asked.
+   *
+   * The counter is therefore computed HERE, where the whole burst is visible,
+   * after a short coalescing window (MYSTERY_BOUNTY_QUEUE_COALESCE_MS). The
+   * queue is keyed by table because section 22 and section 61 are explicit
+   * that only the affected table pauses: the tournament clock, the blind-level
+   * clock and every other table keep running, and they do not consult this.
+   *
+   * IDEMPOTENCE. `dispatchedBountyAwards` means a re-swept elimination (which
+   * `fn_mystery_bounty_reserve` answers with the SAME award id) cannot enqueue
+   * the same chest twice — section 80/33: a duplicate event cannot double-pay.
+   */
+  private enqueueBountyReveal(item: {
+    awardId: string;
+    tableId: string | null;
+    eliminatedUserId: string;
+    designatedRevealer: string;
+    recipientUserIds: string[];
+  }): void {
+    if (this.dispatchedBountyAwards.has(item.awardId)) return;
+    this.dispatchedBountyAwards.add(item.awardId);
+
+    const key = item.tableId ?? '';
+    let q = this.bountyRevealQueues.get(key);
+    if (!q) {
+      q = { waiting: [], active: null, presented: 0, coalesceTimer: null };
+      this.bountyRevealQueues.set(key, q);
+    }
+    q.waiting.push(item);
+
+    // CLOSE THE GATE NOW, not at presentation. The award exists and the money
+    // is reserved; the table must not deal another hand in the seconds between
+    // the reserve and the chest appearing.
+    //
+    // The deadline is a failsafe only — the gate is normally closed by
+    // `finishBountyReveal` — so it is sized for this award's worst case: it
+    // may have to wait out every chest queued ahead of it.
+    const depth = q.waiting.length + (q.active ? 1 : 0);
+    this.openBountyGate(
+      item.tableId,
+      item.awardId,
+      Date.now() + MYSTERY_BOUNTY_QUEUE_COALESCE_MS + depth * mysteryChestHoldMs() + 15000
+    );
+
+    if (!q.active && !q.coalesceTimer) {
+      q.coalesceTimer = setTimeout(() => {
+        const live = this.bountyRevealQueues.get(key);
+        if (live) live.coalesceTimer = null;
+        void this.pumpBountyRevealQueue(key);
+      }, MYSTERY_BOUNTY_QUEUE_COALESCE_MS);
+      // A queue timer must never keep the process alive on its own.
+      (q.coalesceTimer as unknown as { unref?: () => void }).unref?.();
+    }
+  }
+
+  /** Close the table's dealing gate for one award. Never throws. */
+  private openBountyGate(tableId: string | null, awardId: string, deadlineMs: number): void {
+    if (!tableId) return;
+    const engine = this.tableEngines.get(tableId);
+    if (!engine) return;
+    try {
+      engine.beginBountyReveal(awardId, deadlineMs);
+      // The time-based hold as well, belt and braces: an older engine build
+      // that predates the gate still stops on this one, and it is what the
+      // spin wheel already uses so the two cannot fight.
+      engine.holdDealingUntil(deadlineMs);
+    } catch {
+      /* the hold is presentation; never let it break the payout path */
+    }
+  }
+
+  /** Re-open the table's dealing gate. */
+  private closeBountyGate(tableId: string | null, awardId: string): void {
+    if (!tableId) return;
+    const engine = this.tableEngines.get(tableId);
+    if (!engine) return;
+    try {
+      engine.endBountyReveal(awardId);
+    } catch {
+      /* nothing to release */
+    }
+  }
+
+  /**
+   * Put the next chest on screen, or declare the table's queue empty.
+   *
+   * Nothing in here is allowed to throw: it runs detached from the elimination
+   * sweep (deliberately — the sweep must not sit for seventeen seconds holding
+   * `isProcessingEliminations` while an animation plays, or every other bustout
+   * in the event waits behind it), so an unhandled rejection here would be an
+   * unhandled rejection in the engine process.
+   */
+  protected async pumpBountyRevealQueue(key: string): Promise<void> {
+    const q = this.bountyRevealQueues.get(key);
+    if (!q || q.active) return;
+
+    const next = q.waiting.shift();
+    if (!next) {
+      // SECTION 63: the queue is empty, the overlay may clear, the button may
+      // move, the next hand may deal. The gate is already open by now (each
+      // award released its own on completion); this event is what tells the
+      // clients the sequence is over.
+      this.bountyRevealQueues.delete(key);
+      q.presented = 0;
+      try {
+        await this.broadcast('mystery_bounty_complete', { tableId: key || null });
+      } catch {
+        /* the all-clear is cosmetic; the gate has already re-opened */
+      }
+      return;
+    }
+
+    q.active = next;
+    q.presented += 1;
+    const queueIndex = q.presented;
+    const queueTotal = q.presented + q.waiting.length;
+
+    // Re-arm this award's own failsafe from the moment it actually starts, so
+    // a chest that waited a long time behind others still gets a full window.
+    this.openBountyGate(
+      next.tableId,
+      next.awardId,
+      Date.now() + mysteryChestHoldMs() + mysteryChestPostRevealMs()
+    );
+
+    // The pending broadcast. NO AMOUNT (section 19) — the number does not
+    // leave the database until the chest is opened.
+    try {
+      const names = await this.resolveBountyNames([next.eliminatedUserId, next.designatedRevealer]);
+      await this.broadcast('mystery_bounty_pending', {
+        tableId: next.tableId,
+        awardId: next.awardId,
+        recipientUserIds: next.recipientUserIds,
+        designatedRevealer: next.designatedRevealer,
+        designatedRevealerName: names(next.designatedRevealer),
+        eliminatedUserId: next.eliminatedUserId,
+        eliminatedName: names(next.eliminatedUserId),
+        queueIndex,
+        queueTotal,
+        deadlineMs: MYSTERY_BOUNTY_REVEAL_DELAY_MS,
+      });
+    } catch (err) {
+      reportError(err, 'Tournament.mystery_bounty_pending_broadcast_failed');
+    }
+
+    // The reveal, on the deadline. The designated revealer's own tap normally
+    // gets there first (from the browser, which is the drama); this call is
+    // idempotent and returns the identical payload, so section 54's "auto
+    // reveal so a table can never wedge" costs nothing when they did tap and
+    // saves the table when they did not.
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          await this.settleMysteryBountyAward(
+            next.awardId,
+            next.tableId,
+            next.eliminatedUserId,
+            queueIndex,
+            queueTotal
+          );
+        } catch (err) {
+          reportError(err, 'Tournament.mystery_bounty_settle_threw');
+        } finally {
+          this.finishBountyReveal(key, next);
+        }
+      })();
+    }, MYSTERY_BOUNTY_REVEAL_DELAY_MS);
+    (timer as unknown as { unref?: () => void }).unref?.();
+  }
+
+  /**
+   * One chest is done. Let its animation finish, THEN release the table and
+   * start the next one.
+   *
+   * Section 63, in order: reveal, animation done, UI clears, button moves,
+   * next hand. The reveal broadcast has just gone out; the clients are only
+   * now playing the lid, the explosion and the count-up. Releasing the gate on
+   * the broadcast would deal the next hand underneath all of that.
+   */
+  private finishBountyReveal(key: string, item: { awardId: string; tableId: string | null }): void {
+    const settle = setTimeout(() => {
+      this.closeBountyGate(item.tableId, item.awardId);
+      const q = this.bountyRevealQueues.get(key);
+      if (q && q.active?.awardId === item.awardId) q.active = null;
+      void this.pumpBountyRevealQueue(key);
+    }, mysteryChestPostRevealMs());
+    (settle as unknown as { unref?: () => void }).unref?.();
+  }
+
+  /**
+   * Usernames for a knockout, as one lookup.
+   *
+   * The chest names both players ("Alice Eliminated Bob"), and the pending
+   * broadcast is the only chance to supply them — the reveal payload from
+   * `fn_mystery_bounty_reveal` carries ids and money, deliberately, because it
+   * is a money function. Failure returns 'Player' for everyone rather than
+   * throwing: a nameless chest is a cosmetic loss, a thrown lookup is a
+   * knockout with no bounty.
+   */
+  protected async resolveBountyNames(
+    userIds: Array<string | null | undefined>
+  ): Promise<(id: string) => string> {
+    const ids = Array.from(new Set(userIds.filter((u): u is string => !!u)));
+    if (ids.length === 0) return () => 'Player';
+    try {
+      const { data } = await supabase
+        .from('tournament_players')
+        .select('user_id, username')
+        .eq('tournament_id', this.tournamentId)
+        .in('user_id', ids);
+      const map = new Map<string, string>(
+        (data ?? []).map((r: any) => [String(r.user_id), String(r.username || 'Player')])
+      );
+      return (id: string) => map.get(id) || 'Player';
+    } catch {
+      return () => 'Player';
+    }
+  }
+
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  HOW BIG WAS THAT, COMPARED TO EVERYTHING ELSE IN THE EVENT
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * Two ladders, because a mystery event has two prize pools in sequence and
+   * they are stored in different tables and different units:
+   *
+   *   - BEFORE the mystery phase opens, the prize is the head drawn at
+   *     registration, in whole currency, living on `tournament_players.
+   *     current_bounty` until it is claimed and on `tournament_bounties.
+   *     bounty_amount` afterwards;
+   *   - AFTER it opens, the prize is a chest from the sealed inventory, in
+   *     cents, on `tournament_bounty_chests.amount_cents`.
+   *
+   * Both return `undefined` rather than a number they are not sure of, and
+   * both swallow their own errors: a missing rank costs a celebration, and a
+   * thrown lookup would cost a knockout its broadcast.
+   *
+   * THE TOP SLICE. Each read is ordered largest-first and capped, rather than
+   * pulling a whole field. PostgREST caps an uncapped select at 1,000 rows in
+   * an unspecified order, so a big field could have hidden the largest prize
+   * from a query that looked complete. Ordering makes the slice the TOP of the
+   * ladder by construction, which is the only part any of this decides on: a
+   * prize outside the slice comes back ranked past the end of it, and every
+   * consumer reads that as "not the top three".
+   */
+  private async preMysteryPrizeRank(amount: number | undefined): Promise<number | undefined> {
+    try {
+      const [live, claimed] = await Promise.all([
+        supabase
+          .from('tournament_players')
+          .select('current_bounty')
+          .eq('tournament_id', this.tournamentId)
+          .order('current_bounty', { ascending: false })
+          .limit(200),
+        supabase
+          .from('tournament_bounties')
+          .select('bounty_amount')
+          .eq('tournament_id', this.tournamentId)
+          .order('bounty_amount', { ascending: false })
+          .limit(200),
+      ]);
+
+      // The head just pulled is on this ladder either way: fn_collect_bounty
+      // zeroes `current_bounty` and writes `tournament_bounties` in the same
+      // transaction, which has committed by the time this runs.
+      const ladder = buildPrizeLadder([
+        ...((live.data ?? []) as Array<{ current_bounty: unknown }>).map((r) => r.current_bounty),
+        ...((claimed.data ?? []) as Array<{ bounty_amount: unknown }>).map((r) => r.bounty_amount),
+      ]);
+
+      const rank = prizeRankOf(amount, ladder);
+      return rank > 0 ? rank : undefined;
+    } catch {
+      /* no rank is a quiet celebration; a throw would be a lost knockout */
+      return undefined;
+    }
+  }
+
+  /**
+   * The chest's rung, in CENTS, against the inventory seeded at activation.
+   *
+   * The inventory is immutable once seeded — `fn_mystery_bounty_reserve` only
+   * ever moves a chest's `status` — so this ladder is the same on every call
+   * and is deliberately not cached: a knockout is a rare event, and a cache
+   * that survives a manager restart or a re-seeded event is a wrong answer
+   * that nothing would ever notice.
+   */
+  private async chestPrizeRank(amountCents: number | undefined): Promise<number | undefined> {
+    try {
+      const { data } = await supabase
+        .from('tournament_bounty_chests')
+        .select('amount_cents')
+        .eq('tournament_id', this.tournamentId)
+        .order('amount_cents', { ascending: false })
+        .limit(200);
+
+      const ladder = buildPrizeLadder(
+        ((data ?? []) as Array<{ amount_cents: unknown }>).map((r) => r.amount_cents)
+      );
+      const rank = prizeRankOf(amountCents, ladder);
+      return rank > 0 ? rank : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * FINAL RECONCILIATION (Dan sections 46 and 71).
+   *
+   * Runs at completion, BEFORE fn_finalize_bounty_pool, on both finish paths
+   * (the ordinary one and the final-table deal). Two jobs:
+   *
+   *   - settle every chest nobody claimed to the champion. The last player
+   *     standing was never knocked out, so their own chest is theirs, and so
+   *     is any chest a broken elimination left behind;
+   *   - prove the event balances. `sum(paid) === mystery_bounty_pool_cents`,
+   *     to the cent, or a critical error names the variance.
+   *
+   * Order matters: settle moves `bounty_pool_paid`, so fn_finalize_bounty_pool
+   * afterwards pays the champion only the genuine residual of the REGULAR half
+   * rather than the mystery money a second time.
+   */
+  protected async reconcileMysteryBounty(winnerId: string | null): Promise<void> {
+    if (!this.tournamentCache?.is_mystery_bounty) return;
+    if (this.mysteryBountyStage === 'pending') return;
+    try {
+      const { data, error } = await supabase.rpc('fn_mystery_bounty_settle', {
+        p_tournament_id: this.tournamentId,
+        p_winner_user_id: winnerId,
+      });
+      if (error) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty settlement FAILED: ${error.message}`
+          ),
+          'Tournament.mystery_bounty_settle_failed'
+        );
+        return;
+      }
+      const res = (data ?? {}) as {
+        ok?: boolean;
+        balanced?: boolean;
+        pool_cents?: number;
+        settled_cents?: number;
+        unclaimed_cents?: number;
+        variance_cents?: number;
+      };
+      this.mysteryBountyStage = 'complete';
+      if (res.ok && res.balanced === false) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty DOES NOT RECONCILE — pool ${res.pool_cents}c, settled ${res.settled_cents}c, variance ${res.variance_cents}c`
+          ),
+          'Tournament.mystery_bounty_unbalanced'
+        );
+      } else if (res.ok) {
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Mystery bounty reconciled exactly: ${res.settled_cents}c of ${res.pool_cents}c (${res.unclaimed_cents}c unclaimed to champion)`
+        );
+      }
+    } catch (err) {
+      reportError(err, 'Tournament.mystery_bounty_settle_threw');
+    }
+  }
+
+  /** Reveal (idempotently), pay, and tell the table what was in the chest. */
+  protected async settleMysteryBountyAward(
+    awardId: string,
+    tableId: string | null,
+    eliminatedUserId: string,
+    queueIndex: number,
+    queueTotal: number
+  ): Promise<void> {
+    try {
+      const { data: revealed, error: revealErr } = await supabase.rpc('fn_mystery_bounty_reveal', {
+        p_award_id: awardId,
+        p_actor_user_id: null,
+        p_auto: true,
+      });
+      if (revealErr || !(revealed as { ok?: boolean } | null)?.ok) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty reveal FAILED for award ${awardId}: ${revealErr?.message ?? 'refused'}`
+          ),
+          'Tournament.mystery_bounty_reveal_failed'
+        );
+        return;
+      }
+      const rev = revealed as {
+        amount_cents: number;
+        tier: string;
+        is_jackpot: boolean;
+        recipients: Array<{ user_id: string; amount_cents: number }>;
+      };
+
+      // PAY BEFORE BROADCASTING. If the credit fails, nobody should have been
+      // shown a number they are not going to receive.
+      const { error: payErr } = await supabase.rpc('fn_mystery_bounty_pay', {
+        p_award_id: awardId,
+      });
+      if (payErr) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty PAY FAILED for award ${awardId} (${rev.amount_cents}c): ${payErr.message}`
+          ),
+          'Tournament.mystery_bounty_pay_failed'
+        );
+        return;
+      }
+
+      const recipients = (rev.recipients ?? []).map((r) => ({
+        userId: r.user_id,
+        amountCents: r.amount_cents,
+      }));
+      // The names the chest displays. The reveal RPC returns ids and money —
+      // correctly, it is a money function — so they are resolved here.
+      const names = await this.resolveBountyNames([
+        eliminatedUserId,
+        ...recipients.map((r) => r.userId),
+      ]);
+
+      // THE RANK OF THIS CHEST among the event's sealed inventory. This is the
+      // path Dan's requirement is actually about: the top prizes in a mystery
+      // bounty pool are drawn from the chests, not from the pre-phase heads.
+      const prizeRank = await this.chestPrizeRank(rev.amount_cents);
+
+      await this.broadcast('mystery_bounty_revealed', {
+        tableId,
+        awardId,
+        amountCents: rev.amount_cents,
+        /**
+         * THE SAME FIGURE IN WHOLE CURRENCY (added 2026-08-26).
+         *
+         * Every other bounty payload on this channel calls the money `amount`,
+         * and this one carried only `amountCents`. That is the whole reason the
+         * celebration banner could never fire for its intended case: it reads
+         * `amount`, got undefined, and bailed on `amount <= 0` before it ever
+         * looked at the rank. The top prizes in the event are pulled here, so
+         * "the top 3 prizes are pulled" was the one moment it stayed silent.
+         *
+         * Additive, and it cannot disturb anything: TablePage prefers
+         * `amountCents` whenever it is a number and only falls back to `amount`
+         * for engine builds older than 2026-08-25, so the chest reads exactly
+         * what it read before.
+         */
+        amount: Math.round(rev.amount_cents) / 100,
+        /** 1-based rung on the chest ladder, largest first. See the helper. */
+        prizeRank,
+        // SECTION 50: the tier is the SERVER'S, from the chest that was drawn.
+        // The client used to infer it from `amount / avgBounty`, which meant
+        // the same chest could be called a Mega Prize on one screen and a Huge
+        // Prize on another as the average moved during the event.
+        tier: rev.tier,
+        tierLabel: formatBountyTier(rev.tier),
+        isJackpot: rev.is_jackpot,
+        recipients: recipients.map((r) => ({ ...r, name: names(r.userId) })),
+        eliminatedUserId,
+        eliminatedName: names(eliminatedUserId),
+        knockerUserId: recipients[0]?.userId ?? null,
+        knockerName: recipients[0] ? names(recipients[0].userId) : 'Player',
+        queueIndex,
+        queueTotal,
+      });
+
+      // NOTE: `mystery_bounty_complete` is NOT sent here. It belongs to the
+      // table's reveal queue, which knows whether another chest is waiting
+      // behind this one; a per-award count of open awards across the whole
+      // TOURNAMENT (which is what used to run here) declared the sequence over
+      // on table 1 whenever table 4 happened to be idle, and never declared it
+      // over at all while any other table had a knockout in flight.
+
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY CHEST ${rev.tier} ${rev.amount_cents}c over ${eliminatedUserId.slice(0, 8)}`
+      );
+    } catch (err) {
+      reportError(err, 'Tournament.mystery_bounty_settle_threw');
+    }
+  }
+
+  /* DEAD CODE REMOVED 2026-08-25: `creditBountyToWallet`.
+   *
+   * It was the client-side bounty payment path — credit the knocker, then
+   * write the dedupe row — and DAN'S SPEC 2026-08-15 replaced it with
+   * `fn_collect_bounty`, which does the whole thing in one transaction (see
+   * processBountyCollection above). The method was left behind with ZERO
+   * callers, verified across all of server/src.
+   *
+   * It is deleted rather than left "just in case" because a second, unused
+   * money path is a live hazard: it credits `tourney:{id}:bounty:{e}:{k}` on
+   * its own, outside fn_collect_bounty's pool cap and outside its
+   * tournament_bounties accounting, so anything that ever called it again
+   * would pay a bounty the funded pool has no record of. If a caller is ever
+   * needed, call the RPC. */
 
   /**
    * Recalculate prizes for players eliminated during late reg.
@@ -904,33 +1975,64 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * This credits the difference now that the final pool is known.
    */
   protected async recalculateEliminatedPrizes(finalPrizePool: number): Promise<void> {
-    const { data: eliminated } = await supabase
+    const { data: eliminated, error: eliminatedErr } = await supabase
       .from('tournament_players')
       .select('user_id, position, prize')
       .eq('tournament_id', this.tournamentId)
       .eq('status', 'eliminated')
       .gt('prize', 0); // Only ITM players
 
+    // PAYOUT-INTEGRITY 2026-08-25: this runs exactly ONCE, when the pool is
+    // finalised at the close of late registration. `!eliminated` swallowed a
+    // read error as "no ITM players to adjust" and there is no second pass —
+    // every early finisher simply keeps the prize computed against the smaller
+    // pool, and nothing anywhere says why.
+    if (eliminatedErr) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] prize recalc ABORTED — could not read ITM finishers (${eliminatedErr.message}); early busts keep their pre-late-reg prizes`
+        ),
+        'Tournament.prize_recalc_read_failed'
+      );
+      return;
+    }
     if (!eliminated || eliminated.length === 0) return;
 
-    let payouts = this.tournamentCache?.payout_structure;
-    if (typeof payouts === 'string') {
-      try {
-        payouts = JSON.parse(payouts);
-      } catch {
-        payouts = [];
-      }
-    }
-    if (!Array.isArray(payouts)) return;
+    // PAYOUT-INTEGRITY 2026-08-25: use the SHARED structure resolver, not a
+    // bare parse of the cached column. resolvePayoutStructure rebuilds a
+    // Spin's split from its multiplier when the stored column is unusable,
+    // which is the same rule both live payout sites follow — parsing the
+    // column here meant a top-up computed from a DIFFERENT structure than the
+    // payment it is topping up.
+    const payouts = resolvePayoutStructure(this.tournamentCache as any);
+    if (!payouts || payouts.length === 0) return;
 
     for (const player of eliminated) {
-      const payoutEntry = payouts.find((p: any) => p.place === player.position);
+      const payoutEntry = payouts.find((p: any) => Number(p.place) === Number(player.position));
       if (!payoutEntry) continue;
 
-      // Round 40 RE-RUN: Math.round on prize calc + diff to avoid IEEE 754 drift
-      // shaving 1¢ off a player's payout adjustment.
-      const correctPrize =
-        Math.round(((finalPrizePool * payoutEntry.percentage) / 100) * 100) / 100;
+      /**
+       * PAYOUT-INTEGRITY 2026-08-25: A FOURTH INDEPENDENT PRIZE FORMULA.
+       *
+       * This was `Math.round(((finalPrizePool * percentage) / 100) * 100) / 100`
+       * — every place rounded on its own, which is exactly the scheme
+       * computePlacePrize was written to replace (see payoutMath.ts). Two
+       * consequences, both real money:
+       *
+       *   1. It DISAGREES with the payment it is adjusting. eliminatePlayer
+       *      pays the last paid place the residual; this recomputed that same
+       *      place as a raw rounded percentage, credited the difference, and
+       *      then wrote its own number into `prize`. On the 9-place structure
+       *      over a 483.00 pool the independent rounding sums to 483.01, so
+       *      the pool pays out a cent more than it holds.
+       *   2. It puts the row permanently at odds with
+       *      fn_tournament_payout_reconcile, which implements the residual
+       *      rule — so the reconciler reports a false overpay and raises a
+       *      critical alert on a tournament that is fine.
+       *
+       * One rule, one helper, every site.
+       */
+      const correctPrize = computePlacePrize(finalPrizePool, payouts, Number(player.position));
       const difference = Math.round((correctPrize - (player.prize || 0)) * 100) / 100;
 
       if (difference > 0) {
@@ -955,12 +2057,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         });
 
         if (!creditErr) {
-          // Update the recorded prize
-          await supabase
+          // Update the recorded prize.
+          // PAYOUT-INTEGRITY 2026-08-25: the idempotency key above is keyed on
+          // `correctPrize`, so an unrecorded top-up cannot be re-credited — but
+          // the row then under-reports what the player was actually paid, and
+          // `fn_tournament_payout_reconcile` reads that row. It would see a
+          // shortfall that no longer exists and top the player up AGAIN under
+          // its own key. Report the write failure instead of discarding it.
+          const { error: recordErr } = await supabase
             .from('tournament_players')
             .update({ prize: correctPrize })
             .eq('tournament_id', this.tournamentId)
             .eq('user_id', player.user_id);
+          if (recordErr) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] prize recalc CREDITED ${difference} to ${player.user_id.slice(0, 8)} but could not record prize=${correctPrize}: ${recordErr.message}`
+              ),
+              'Tournament.prize_recalc_record_failed'
+            );
+          }
         } else {
           reportError(
             new Error(
@@ -1259,11 +2375,23 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         .eq('status', 'playing');
     }
     const winnerId = ordered[0].user_id;
-    await supabase
+    // PAYOUT-INTEGRITY 2026-08-25: same rule as the normal finish path — an
+    // unstamped winner row on a settled deal reads as an unresolved player to
+    // the recovery watchdog, which would then re-rank the field and pay place
+    // 1 from the PAYOUT STRUCTURE on top of the chop that was just settled.
+    const { error: dealWinnerErr } = await supabase
       .from('tournament_players')
       .update({ status: 'winner', position: 1 })
       .eq('tournament_id', this.tournamentId)
       .eq('user_id', winnerId);
+    if (dealWinnerErr) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: deal winner row not stamped for ${winnerId.slice(0, 8)}: ${dealWinnerErr.message}`
+        ),
+        'Tournament.final_table_deal_winner_stamp_failed'
+      );
+    }
 
     await this.broadcast('final_table_deal', {
       payouts: payoutRows,
@@ -1277,6 +2405,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       this.tournamentCache?.is_pko ||
       this.tournamentCache?.is_mystery_bounty
     ) {
+      // Mystery chests settle FIRST — see reconcileMysteryBounty.
+      await this.reconcileMysteryBounty(winnerId);
       try {
         const { error: finErr } = await supabase.rpc('fn_finalize_bounty_pool', {
           p_tournament_id: this.tournamentId,
@@ -1298,7 +2428,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     await this.settleTournamentRake(this.tournamentCache);
 
     // fn_final_table_deal already claimed RUNNING -> COMPLETING; close it out.
-    await supabase
+    const { error: dealCompletedErr } = await supabase
       .from('tournaments')
       .update({
         status: 'COMPLETED',
@@ -1308,6 +2438,18 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       })
       .eq('id', this.tournamentId)
       .eq('status', 'COMPLETING');
+    // PAYOUT-INTEGRITY 2026-08-25: a deal left in COMPLETING is picked up by
+    // recoverStuckCompletingTournaments, which pays from the PAYOUT STRUCTURE
+    // — the one thing this path's docblock says must never be applied to a
+    // deal. Discarding this error made that silent; it must be loud.
+    if (dealCompletedErr) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: deal settled but COMPLETING -> COMPLETED failed: ${dealCompletedErr.message} — the structure-based recovery watchdog can now reach a dealt event`
+        ),
+        'Tournament.final_table_deal_completed_transition_failed'
+      );
+    }
 
     // Release the players and close the tables — same tail as finishTournament.
     for (const [tableId, engine] of this.tableEngines) {
@@ -1338,13 +2480,28 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     );
 
     // Atomic DB guard: only proceed if we can claim the RUNNING → COMPLETING transition
-    const { data: claimResult } = await supabase
+    const { data: claimResult, error: claimErr } = await supabase
       .from('tournaments')
       .update({ status: 'COMPLETING' } as any)
       .eq('id', this.tournamentId)
       .eq('status', 'RUNNING')
       .select('id')
       .maybeSingle();
+
+    // PAYOUT-INTEGRITY 2026-08-25: not claiming is the SAFE outcome — nothing
+    // is paid twice — but a failed CAS and a lost race were reported with the
+    // same reassuring line, and only one of them is benign. A tournament whose
+    // claim errors is still RUNNING with one player left and no bust to come,
+    // so nothing retries it and it hangs there until a human notices.
+    if (claimErr) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: could not claim RUNNING -> COMPLETING: ${claimErr.message} — tournament left RUNNING, winner ${winnerId.slice(0, 8)} unpaid`
+        ),
+        'Tournament.finish_claim_failed'
+      );
+      return;
+    }
 
     if (!claimResult) {
       console.log(
@@ -1366,22 +2523,36 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // spec rather than falling through to "winner takes the whole pool",
         // which on a 10x+ Spin is a 20% overpay on top of money already sent
         // to 2nd and 3rd at elimination. See payoutStructure.ts.
-        'payout_structure, prize_pool, buy_in_fee, current_players, club_id, name, status, is_bounty, is_pko, is_mystery_bounty, variant, tournament_type, spin_multiplier, satellite_target_id'
+        'payout_structure, prize_pool, buy_in_fee, current_players, club_id, name, status, is_bounty, is_pko, is_mystery_bounty, variant, tournament_type, spin_multiplier, satellite_target_id, satellite_seats'
       )
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
     if (!tournament || tourneyLoadErr) {
+      /**
+       * PAYOUT-INTEGRITY 2026-08-25: DO NOT MARK IT COMPLETED.
+       *
+       * This branch used to do the worst possible thing with a failed read: it
+       * wrote COMPLETED — with no CAS guard at all, so it overrode whatever the
+       * status actually was — while stating in its own message that it was
+       * paying nobody. That is not a recoverable state. The winner's prize and
+       * every unpaid ITM place are gone, and they are gone FOR GOOD, because
+       * `recoverStuckCompletingTournaments` only ever looks at COMPLETING; the
+       * one mechanism built to rescue exactly this case can no longer see it.
+       *
+       * The tournament has already been claimed into COMPLETING above. Leaving
+       * it there is what the watchdog is for: it re-reads the tournament, ranks
+       * the survivors, pays every place from the structure and completes the
+       * event. So on an unreadable row we stop and leave the claim standing —
+       * a tournament that finishes a few minutes late, instead of a field that
+       * is never paid.
+       */
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Could not load tournament for finish: ${tourneyLoadErr?.message} — marking COMPLETED without payouts`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Could not load tournament for finish: ${tourneyLoadErr?.message ?? 'no row'} — left in COMPLETING for recoverStuckCompletingTournaments to pay and close`
         ),
         'TournamentthistournamentIdslic.CRITICAL'
       );
-      await supabase
-        .from('tournaments')
-        .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
-        .eq('id', this.tournamentId);
       this.stop();
       return;
     }
@@ -1543,11 +2714,25 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
     }
 
-    await supabase
+    // PAYOUT-INTEGRITY 2026-08-25: this row is the ONLY record that place 1
+    // was paid. Discarded, a failure here left the champion status='playing'
+    // with prize 0 on a COMPLETED event — unattributable money, the same shape
+    // as the 113 under-paid tournaments the comment above describes — and
+    // fn_tournament_payout_reconcile would then read prize 0 for place 1 and
+    // try to top the winner up to the full first prize a second time.
+    const { error: winnerStampErr } = await supabase
       .from('tournament_players')
       .update({ status: 'winner', position: 1, prize: winnerPrize })
       .eq('tournament_id', this.tournamentId)
       .eq('user_id', winnerId);
+    if (winnerStampErr) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: winner row not stamped for ${winnerId.slice(0, 8)} (prize ${winnerPrize}): ${winnerStampErr.message}`
+        ),
+        'Tournament.winner_row_stamp_failed'
+      );
+    }
 
     // ── SATELLITE SEAT AWARDS ──
     // TOURNEY-AUDIT 2026-07-24 (sweep 6): satellites finally award what they
@@ -1577,6 +2762,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // by the tiered mystery draw. One RPC, idempotent on the ownbounty key,
       // and it leaves bounty_pool_paid == bounty_pool so the event is exactly
       // conserving (verified live: pool 75.00 -> paid 75.00, residual 0.00).
+      // Mystery chests settle FIRST — see reconcileMysteryBounty.
+      await this.reconcileMysteryBounty(winnerId);
       try {
         const { data: fin, error: finErr } = await supabase.rpc('fn_finalize_bounty_pool', {
           p_tournament_id: this.tournamentId,
@@ -1654,7 +2841,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // are actually collected (entry/rebuy/add-on/re-entry, minus reversals). The
     // old overwrite (`buy_in_fee × current_players`) replaced the accurate
     // collected total with a phantom number that counted free horse entries.
-    await supabase
+    // PAYOUT-INTEGRITY 2026-08-25: result checked. A discarded failure here
+    // leaves the event in COMPLETING — which is harmless, because the recovery
+    // watchdog finds it and finishes it idempotently — but SILENT, so nobody
+    // learns that the normal finish path is failing to close its own events.
+    const { error: completedErr } = await supabase
       .from('tournaments')
       .update({
         status: 'COMPLETED',
@@ -1671,6 +2862,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       })
       .eq('id', this.tournamentId)
       .eq('status', 'COMPLETING'); // Guard: only COMPLETING → COMPLETED
+    if (completedErr) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETING -> COMPLETED failed: ${completedErr.message} — left for recoverStuckCompletingTournaments`
+        ),
+        'Tournament.completed_transition_failed'
+      );
+    }
 
     // PAYOUT-INTEGRITY 2026-08-20: final settlement check. Prizes are emitted
     // incrementally (places 2..N as players bust, place 1 here), so until now

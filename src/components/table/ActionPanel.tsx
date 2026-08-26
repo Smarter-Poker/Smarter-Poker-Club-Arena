@@ -28,6 +28,23 @@ interface ActionPanelProps {
   allInTo?: number;
   pot: number;
   bigBlind: number;
+  /**
+   * The table's SMALL blind. Dan 2026-08-23 (item 9): "the bet slider should go
+   * up in smaller increments, it snap goes to the next BB amount instead of
+   * allowing the user to choose an amount inbetween the blinds."
+   *
+   * The slider used to step by a whole big blind, so on a 1/2 table it could
+   * only ever produce 12, 14, 16 - every amount between the blinds was
+   * unreachable by drag. The step is now the table's own chip unit, and the
+   * small blind IS that unit by definition: it is the smallest amount this
+   * table ever forces onto the felt, so every multiple of it is an amount a
+   * player can actually make.
+   *
+   * Optional because the panel can derive it: for every standard structure the
+   * small blind is half the big blind, which is the fallback. Pass it when the
+   * structure is not half (2/5, 3/6) so the grid is exact rather than close.
+   */
+  smallBlind?: number;
   onAction: (action: 'fold' | 'check' | 'call' | 'raise' | 'allin', amount?: number) => void;
   isMyTurn?: boolean;
   showPotOdds?: boolean;
@@ -43,7 +60,15 @@ interface ActionPanelProps {
   /** True for PLO4/5/6, so the preset row always offers RAISE POT. */
   isPotLimit?: boolean;
   /**
+   * True for the fixed-limit games (FLH, FLO8), where the street has exactly
+   * one legal wager and `minRaise === maxRaise`. The sizing panel is skipped
+   * entirely — there is nothing to size — and the button shows the amount.
+   * 2026-08-23.
+   */
+  isFixedLimit?: boolean;
+  /**
    * Highest bet on the CURRENT street (server-authoritative `currentBet`), as a
+
    * raise-TO absolute. Required for the multiplier presets to mean anything
    * when hero is facing a bet: "3X" against an open to 15 is a raise to 45, not
    * to 3 big blinds. Defaults to 0 (unopened pot) -> multipliers fall back to
@@ -76,6 +101,22 @@ interface ActionPanelProps {
    * the parent fall back to horizontal during the visual rollout if needed.
    */
   verticalSlider?: boolean;
+  /**
+   * Dan 2026-08-25 (binding): "tournaments and cash games should ALWAYS be
+   * defaulted to actual totals unless the user changes the setting to BB.
+   * Enforce that rule and functionality."
+   *
+   * This panel used to print big blinds unconditionally — the sub-label under
+   * the bet amount and both slider cap figures were BB whatever the player had
+   * chosen — so a table whose every other number was chips still handed the
+   * player "26BB / 4BB" on the control they actually bet with.
+   *
+   * This is the SAME user setting the seats and the pot read
+   * (`user_table_settings.show_stack_in_bb`, default false). Off = chips
+   * everywhere, which is the default and the rule. It is a prop rather than a
+   * hook read so this component stays presentational and unit-testable.
+   */
+  showStackInBB?: boolean;
 }
 
 function formatChips(amount: number): string {
@@ -95,6 +136,72 @@ function roundToChip(amount: number, smallestChip: number, min: number, max: num
   const rounded = Math.round(amount / smallestChip) * smallestChip;
   const clean = Math.round(rounded * 100) / 100;
   return Math.max(min, Math.min(max, clean));
+}
+
+/**
+ * A slider position budget. Beyond this the step is doubled: a range of a
+ * million chips at 1-chip resolution is not finer control, it is a control
+ * whose every pixel spans forty values, and it makes the arrow keys useless.
+ * Two thousand is already far more positions than a phone has pixels, so this
+ * only ever engages on tournament-sized ranges.
+ */
+export const MAX_SLIDER_POSITIONS = 2000;
+
+/**
+ * The drag increment for the bet slider.
+ *
+ * WHY THIS EXISTS (Dan 2026-08-23, item 9). The slider was
+ * `step={bigBlind || 1}`, anchored at `min={minRaise}`, so `<input
+ * type="range">` could only ever emit `minRaise + n * bigBlind`. On a 1/2
+ * table with min-raise 12 that is 12, 14, 16, 18 - 13 and 15 did not exist as
+ * far as the drag was concerned, which is exactly what Dan saw as "it snap
+ * goes to the next BB amount". At 0.25/0.50 stakes it was worse: a 0.50 step
+ * across a 60-chip range gave 120 positions where the table's own chips allow
+ * four times that.
+ *
+ * The step is the table's chip unit (the small blind), doubled while the range
+ * would otherwise blow past MAX_SLIDER_POSITIONS. Doubling rather than
+ * arbitrary scaling keeps every step a whole number of chips, so a coarsened
+ * step still lands on amounts the table can make.
+ *
+ * LEGALITY: the engine imposes NO granularity rule. `validateAction` in
+ * server/src/engine/PokerEngine.ts checks only `raiseAmount >= minRaise` and
+ * `amount <= maxRaiseTo` (plus the pot-limit ceiling), each with a half-cent
+ * tolerance. So any cent-resolution value inside [minRaise, maxRaise] is
+ * accepted - the step is a usability choice, not a legality one, and the
+ * type-in field is what covers the amounts between two steps.
+ */
+export function betSliderStep(minRaise: number, maxRaise: number, smallestChip: number): number {
+  const chip = smallestChip > 0 ? smallestChip : 0.01;
+  const range = maxRaise - minRaise;
+  if (!(range > 0)) return chip;
+  let step = chip;
+  while (range / step > MAX_SLIDER_POSITIONS) step *= 2;
+  return Math.round(step * 100) / 100;
+}
+
+/**
+ * Keep a typed bet amount to something that can be a bet.
+ *
+ * Dan 2026-08-23: "there should also be an area to click and type if a user
+ * wants a very specific amount." A raw text input accepts "12e5", "--3" and
+ * "1.2.3", and `Number('12e5')` is 1,200,000 - a silent shove. Filtering as
+ * the user types means the field can never HOLD a value that would surprise
+ * them on commit, rather than swallowing it afterwards.
+ *
+ * Comma is accepted and normalised to a point (EU keypads emit it). At most
+ * two decimals, because the engine's chips are whole cents.
+ */
+export function sanitizeAmountDraft(raw: string): string {
+  const stripped = raw.replace(/[^0-9.,]/g, '').replace(/,/g, '.');
+  const firstDot = stripped.indexOf('.');
+  if (firstDot === -1) return stripped;
+  const whole = stripped.slice(0, firstDot);
+  const frac = stripped
+    .slice(firstDot + 1)
+    .replace(/\./g, '')
+    .slice(0, 2);
+  return `${whole}.${frac}`;
 }
 
 export interface RaisePreset {
@@ -267,7 +374,10 @@ export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
   if (isPreflop) {
     // The bet being faced. Unopened pot -> the big blind.
     const base = Math.max(currentBet, bigBlind) || bigBlind || 1;
-    const multiples = isPotLimit ? [2, 3, 4] : [2, 3, 4, 5];
+    // Dan 2026-08-23 (item 9): "2.5X should be an option." It sits between 2X
+    // and 3X because the row is read left to right as ascending sizes, and a
+    // 2.5X open is the modern default the row had no button for at all.
+    const multiples = isPotLimit ? [2, 2.5, 3, 4] : [2, 2.5, 3, 4, 5];
     const presets = multiples.map((n) => finalizeExact(`${n}X`, base * n));
     if (isPotLimit) {
       presets.push(finalize('POT', potSizedRaiseTo(currentBet, pot, callAmount)));
@@ -285,7 +395,7 @@ export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
   // higher multiple clamps onto that same number and you get a row of buttons
   // that all do the same thing.
   if (currentBet > 0) {
-    const multiples = isPotLimit ? [2, 3] : [2, 3, 4, 5];
+    const multiples = isPotLimit ? [2, 2.5, 3] : [2, 2.5, 3, 4, 5];
     const presets = multiples.map((n) => finalizeExact(`${n}X`, currentBet * n));
     presets.push(finalize('POT', potSizedRaiseTo(currentBet, pot, callAmount)));
     return presets;
@@ -318,6 +428,7 @@ export default function ActionPanel({
   allInTo,
   pot,
   bigBlind,
+  smallBlind,
   onAction,
   isMyTurn = true,
   showPotOdds = false,
@@ -325,15 +436,73 @@ export default function ActionPanel({
   showBetSizePresets = true,
   isPreflop = false,
   isPotLimit = false,
+  isFixedLimit = false,
   currentBet = 0,
+
   raiseIntent,
   verticalSlider = true,
+  // Chips is the default and the rule — see the prop's docstring.
+  showStackInBB = false,
 }: ActionPanelProps) {
-  const smallestChip = Math.max(bigBlind / 2, 0.01);
+  /**
+   * The table's chip unit. The small blind when the parent knows it, otherwise
+   * half the big blind, which is the small blind for every standard structure.
+   * Never below a cent: the engine's chips are whole cents (see the CENT_EPS
+   * note in server/src/engine/PokerEngine.ts), so a finer grid would invent
+   * amounts that do not exist.
+   */
+  const smallestChip = useMemo(() => {
+    const sb = smallBlind && smallBlind > 0 ? smallBlind : bigBlind / 2;
+    return Math.max(Math.round(sb * 100) / 100, 0.01);
+  }, [smallBlind, bigBlind]);
   const minRaise = roundToChip(rawMinRaise, smallestChip, rawMinRaise, rawMaxRaise);
   const maxRaise = rawMaxRaise;
   // Only an amount that reaches the REAL all-in threshold is an all-in.
   const allInThreshold = allInTo ?? rawMaxRaise;
+
+  /**
+   * Dan 2026-08-23 (item 9). Was `bigBlind || 1`, which is what made the drag
+   * "snap to the next BB amount". See betSliderStep for the full account.
+   */
+  const sliderStep = useMemo(
+    () => betSliderStep(minRaise, maxRaise, smallestChip),
+    [minRaise, maxRaise, smallestChip]
+  );
+
+  /** Chips are whole cents; kill binary dust before it reaches a button. */
+  const cleanChips = useCallback((n: number) => Math.round(n * 100) / 100, []);
+
+  /**
+   * Clamp into the legal range WITHOUT snapping. Used for typed amounts and
+   * for preset values, both of which are exact on purpose: a button labelled
+   * 2.5X that raises 2.6X is the defect Dan reported on the NX row in August,
+   * and a typed 13.37 that commits 13 is the same defect on the keypad.
+   */
+  const clampAmount = useCallback(
+    (n: number) => cleanChips(Math.min(Math.max(n, minRaise), maxRaise)),
+    [cleanChips, minRaise, maxRaise]
+  );
+
+  /**
+   * Round onto the slider's OWN value grid (minRaise + n * sliderStep), so the
+   * number under the thumb is always a number the thumb can be at. Used by the
+   * drag and by the +/- nudges; deliberately NOT used by the keypad.
+   */
+  const snapToSliderGrid = useCallback(
+    (n: number) => {
+      const bounded = Math.min(Math.max(n, minRaise), maxRaise);
+      // The ceiling is never rounded away from. maxRaise is the all-in (or the
+      // pot cap), and it is only on the step grid by coincidence - snapping it
+      // to the nearest step is how the panel used to offer 186 when hero's
+      // stack was 187.50 and call it a shove.
+      if (bounded >= maxRaise) return cleanChips(maxRaise);
+      if (!(sliderStep > 0)) return cleanChips(bounded);
+      const steps = Math.round((bounded - minRaise) / sliderStep);
+      return clampAmount(minRaise + steps * sliderStep);
+    },
+    [sliderStep, minRaise, maxRaise, cleanChips, clampAmount]
+  );
+
   const [isRaiseMode, setIsRaiseMode] = useState(false);
   const [raiseAmount, setRaiseAmount] = useState(minRaise);
   const [turnPulse, setTurnPulse] = useState(false);
@@ -371,11 +540,35 @@ export default function ActionPanel({
    * tall one the thumb could not reach the top of its own track - which is
    * where the all-in cap sits. Measured instead, and kept measured.
    */
+  /**
+   * A CALLBACK REF, NOT A `useRef` + A DEPENDENCY GUESS (changed 2026-08-26).
+   *
+   * This measured through `railRef.current` inside an effect keyed on
+   * `[isRaiseMode]`. But the rail only EXISTS when `effectiveVerticalSlider` is
+   * true (`windowWidth >= 1024`), which that dependency list never mentioned:
+   * widening a window from 900px to 1200px with the raise overlay open mounted
+   * the rail with nothing observing it, and `railLength` stayed at the 240px
+   * default. On WebKit that is the pre-rotation width of the range input, so
+   * the track stopped spanning the rail and the thumb could not reach the top —
+   * the all-in cap, i.e. exactly the failure the comment above says this was
+   * added to fix.
+   *
+   * Adding the missing dependency also does not work here: the flag is declared
+   * ~80 lines further down, so referencing it is a TDZ error (TypeScript
+   * refused it). A callback ref sidesteps the question — React calls it with
+   * the node on mount and with null on unmount, whatever caused either — so the
+   * observation can no longer disagree with the element's real lifetime.
+   */
   const railRef = useRef<HTMLDivElement | null>(null);
+  const [railEl, setRailEl] = useState<HTMLDivElement | null>(null);
+  const setRailNode = useCallback((node: HTMLDivElement | null) => {
+    railRef.current = node;
+    setRailEl(node);
+  }, []);
   const [railLength, setRailLength] = useState(240);
 
   useEffect(() => {
-    const el = railRef.current;
+    const el = railEl;
     if (!el || typeof ResizeObserver === 'undefined') return;
     const measure = () => {
       const h = Math.round(el.getBoundingClientRect().height);
@@ -385,7 +578,9 @@ export default function ActionPanel({
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [isRaiseMode]);
+    // Keyed on the NODE. Mount, unmount and remount all re-run this by
+    // construction, so no dependency list has to predict when the rail exists.
+  }, [railEl]);
 
   useEffect(() => {
     setRaiseAmount(minRaise);
@@ -422,7 +617,7 @@ export default function ActionPanel({
         : Math.min(Math.max(raiseIntentAmount, minRaise), maxRaise);
     haptic.light();
     setIsRaiseMode(true);
-    setRaiseAmount(roundToChip(target, smallestChip, minRaise, maxRaise));
+    setRaiseAmount(snapToSliderGrid(target));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raiseIntentNonce]);
 
@@ -501,7 +696,6 @@ export default function ActionPanel({
    * treat the LAST grid position as maxRaise. Nothing else moves: every lower
    * position is still exactly where it was.
    */
-  const sliderStep = bigBlind || 1;
   const sliderGridMax = useMemo(() => {
     if (!(maxRaise > minRaise)) return maxRaise;
     const steps = Math.floor((maxRaise - minRaise) / sliderStep);
@@ -514,10 +708,30 @@ export default function ActionPanel({
   const handleRaiseClick = useCallback(() => {
     if (!canRaise && !canAllIn) return;
     haptic.light();
+    /* Dan 2026-08-25 (item 5): the sizing controls open as an OVERLAY above a
+       three-button row that never moves, so unlike the old full-panel swap
+       this button is still on screen while the overlay is up. It therefore has
+       to close it too - otherwise the only way back out is the Back button
+       hiding at the top of the overlay. */
+    if (isRaiseMode) {
+      setIsRaiseMode(false);
+      return;
+    }
+    // 2026-08-23 (fixed limit): there is exactly ONE legal wager on this street
+    // — TablePage collapses minRaise and maxRaise onto it — so there is nothing
+    // to size and no panel to open. Opening the sizing panel here would draw a
+    // slider with a zero-length track and a preset row where every button reads
+    // the same number. The tap IS the bet.
+    if (isFixedLimit) {
+      haptic.medium();
+      if (minRaise >= allInThreshold) onAction('allin', allInThreshold);
+      else onAction('raise', minRaise);
+      return;
+    }
     setIsRaiseMode(true);
     setRaiseAmount(minRaise);
     lastSnapRef.current = minRaise;
-  }, [canRaise, canAllIn, minRaise]);
+  }, [canRaise, canAllIn, minRaise, isFixedLimit, allInThreshold, onAction, isRaiseMode]);
 
   const handleConfirmRaise = useCallback(() => {
     haptic.medium(); // FIX 196: Bible V8 §5.4 — raise = medium haptic (was strong/heavy, reserved for all_in)
@@ -544,20 +758,33 @@ export default function ActionPanel({
     setIsRaiseMode(false);
   }, [allInThreshold, onAction]);
 
+  /**
+   * The +/- nudges move by ONE slider step, not by one big blind.
+   *
+   * Dan 2026-08-23 (item 9) reported the slider, but the nudges had the same
+   * defect and it was worse: from 13 on a 1/2 table, `+` added the big blind
+   * and then re-rounded, so the amount went 13 -> 15 and 14 was unreachable by
+   * any control on the panel. Stepping by the grid also guarantees the number
+   * and the thumb agree after a nudge.
+   */
   const adjustRaise = useCallback(
     (delta: number) => {
       haptic.light();
-      setRaiseAmount((prev) => roundToChip(prev + delta, smallestChip, minRaise, maxRaise));
+      setRaiseAmount((prev) => snapToSliderGrid(prev + delta));
     },
-    [minRaise, maxRaise, smallestChip]
+    [snapToSliderGrid]
   );
 
   const setPreset = useCallback(
     (value: number) => {
       haptic.medium();
-      setRaiseAmount(roundToChip(value, smallestChip, minRaise, maxRaise));
+      // Clamp only. A preset value is already exact by construction (2.5X of
+      // the bet faced, or a pot fraction already snapped to the chip grid in
+      // computeRaisePresets); re-snapping it here to the chip unit is what made
+      // an exact 2.5X of 15 commit 40 instead of 37.50 on a 5/10 table.
+      setRaiseAmount(clampAmount(value));
     },
-    [minRaise, maxRaise, smallestChip]
+    [clampAmount]
   );
 
   // Phase 2 T1-03: tap-the-amount → numeric keyboard.
@@ -570,24 +797,29 @@ export default function ActionPanel({
       amountInputRef.current?.focus();
       amountInputRef.current?.select();
     });
-  }, [raiseAmount]);
+  }, [raiseAmount, cleanChips]);
 
   const commitAmountEdit = useCallback(() => {
     setAmountTyping(false);
     if (!amountDraft) return; // empty input — keep prior amount
-    // Allow comma decimals (some EU locales) and strip $ / spaces.
-    const cleaned = amountDraft.replace(/[,\s$]/g, '');
-    const parsed = Number(cleaned);
+    // The draft is already filtered to digits and one separator by
+    // sanitizeAmountDraft, so this only has to catch the half-typed states a
+    // filter cannot reject: "", ".", "0".
+    const parsed = Number(amountDraft);
     if (!Number.isFinite(parsed) || parsed <= 0) return; // garbage — keep prior
     // Spec §5.2:
     //   - exceeds stack → AUTO-CAPS to all-in (= maxRaise)
     //   - below minimum → snaps to min legal
-    // roundToChip already clamps into [minRaise, maxRaise]; the all-in cap is
-    // therefore implicit (maxRaise IS the all-in amount per the engine).
-    const next = roundToChip(parsed, smallestChip, minRaise, maxRaise);
-    setRaiseAmount(next);
+    //
+    // Clamp ONLY. Dan 2026-08-23 (item 9): "there should also be an area to
+    // click and type if a user wants a very specific amount." Snapping the
+    // typed number to the slider's step would defeat the entire feature - the
+    // whole reason to type is to reach an amount between two steps. Any cent
+    // value inside [minRaise, maxRaise] is legal: PokerEngine.validateAction
+    // enforces the two bounds and nothing else.
+    setRaiseAmount(clampAmount(parsed));
     haptic.medium();
-  }, [amountDraft, smallestChip, minRaise, maxRaise]);
+  }, [amountDraft, clampAmount]);
 
   const cancelAmountEdit = useCallback(() => {
     setAmountTyping(false);
@@ -599,8 +831,10 @@ export default function ActionPanel({
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const raw = Number(e.target.value);
       // Top of the grid means "all the way" — see sliderGridMax above.
-      const val =
-        raw >= sliderGridMax ? maxRaise : roundToChip(raw, smallestChip, minRaise, maxRaise);
+      // Below that, `raw` is already on the grid when the drag produced it;
+      // snapping is what puts a value back on the grid after the keypad has
+      // left it between two steps.
+      const val = raw >= sliderGridMax ? maxRaise : snapToSliderGrid(raw);
       setRaiseAmount(val);
 
       // Snap feedback — trigger haptic when crossing a BB boundary
@@ -623,10 +857,10 @@ export default function ActionPanel({
         }
       }
     },
-    // minRaise / maxRaise / smallestChip / sliderGridMax are all read above;
-    // they were missing here and only stayed correct by accident, because
-    // `presets` happens to change whenever they do.
-    [bigBlind, presets, smallestChip, minRaise, maxRaise, sliderGridMax]
+    // maxRaise / sliderGridMax / snapToSliderGrid are all read above; they were
+    // missing here once and only stayed correct by accident, because `presets`
+    // happens to change whenever they do.
+    [bigBlind, presets, maxRaise, sliderGridMax, snapToSliderGrid]
   );
 
   const sliderProgress =
@@ -651,8 +885,28 @@ export default function ActionPanel({
   const isOpeningBet = currentBet <= 0;
   const wagerVerb = isOpeningBet ? 'Bet' : 'Raise';
 
-  // ─── RAISE MODE ──────────────────────────────────────────────
-  if (isRaiseMode) {
+  /**
+   * ─── RAISE SIZING OVERLAY ────────────────────────────────────
+   *
+   * Dan 2026-08-25 (item 5): "these 3 action buttons should be on the bottom,
+   * and if you click Raise, the action slider and other buttons pop open and
+   * can overlay the Hero and other things when clicked to open."
+   *
+   * Raise mode used to REPLACE the whole panel: the three buttons disappeared,
+   * a much taller box took their place, and the bar's height changed under a
+   * table that had already reserved room for the short version. It is an
+   * OVERLAY now — this block renders ABOVE the pinned row, inside the same
+   * `position: fixed; bottom: 0` panel, so the panel grows UPWARD over the hero
+   * and the bottom of the felt and the row underneath never moves a pixel.
+   *
+   * That also settles `--sp-action-h`, the reserve every other stylesheet reads:
+   * it is measured on `.action-panel-wrapper`, and this panel is `position:
+   * fixed`, so it is not part of that wrapper's flow. Opening the overlay
+   * cannot grow the published height, which is the whole point — the table must
+   * not reflow when the slider appears.
+   */
+  const raiseOverlay = (() => {
+    if (!isRaiseMode) return null;
     // Phase 2 T1-02: shared slider markup so the vertical and horizontal
     // variants stay in lockstep for accessibility (same min/max/step/aria-*).
     const sliderEl = (
@@ -661,7 +915,8 @@ export default function ActionPanel({
         className="raise-slider"
         min={minRaise}
         max={maxRaise}
-        step={bigBlind || 1}
+        /* One chip, not one big blind. See betSliderStep. */
+        step={sliderStep}
         value={raiseAmount}
         onChange={handleSliderChange}
         style={{ '--slider-progress': `${sliderProgress}%` } as React.CSSProperties}
@@ -677,207 +932,254 @@ export default function ActionPanel({
       />
     );
 
+    /* Phase 2 T1-02: vertical layout splits the panel — main column on the
+       left holds amount + presets + confirm; slider sits on the right edge per
+       spec §5.2. Horizontal fallback retains the legacy stack. */
     return (
-      <div
-        className={`action-panel action-panel--raise${effectiveVerticalSlider ? ' action-panel--raise-vertical' : ''}`}
-      >
-        {/* Phase 2 T1-02: vertical layout splits the panel — main column on
-            the left holds amount + presets + confirm; slider sits on the right
-            edge per spec §5.2. Horizontal fallback retains the legacy stack. */}
-        <div className="raise-layout">
-          <div className="raise-main">
-            {/* Amount Display with +/- */}
-            <div className="raise-header">
-              <button
-                className="raise-adjust raise-adjust--minus"
-                onClick={() => adjustRaise(-bigBlind)}
-                disabled={raiseAmount <= minRaise}
-              >
-                −
-              </button>
-              <div className="raise-value">
-                {amountTyping ? (
-                  <input
-                    ref={amountInputRef}
-                    type="text"
-                    /* iOS shows the digits-only keypad; Android still gets a
+      <div className="raise-layout">
+        <div className="raise-main">
+          {/* Amount Display with +/- */}
+          <div className="raise-header">
+            <button
+              className="raise-adjust raise-adjust--minus"
+              onClick={() => adjustRaise(-sliderStep)}
+              disabled={raiseAmount <= minRaise}
+              aria-label={`Decrease By ${formatChips(sliderStep)}`}
+            >
+              −
+            </button>
+            <div className="raise-value">
+              {amountTyping ? (
+                <input
+                  ref={amountInputRef}
+                  type="text"
+                  /* iOS shows the digits-only keypad; Android still gets a
                        numeric keyboard with the spec-required decimal point. */
-                    inputMode="decimal"
-                    pattern="[0-9]*[.,]?[0-9]*"
-                    className="raise-value__input"
-                    value={amountDraft}
-                    onChange={(e) => setAmountDraft(e.target.value)}
-                    onBlur={commitAmountEdit}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        commitAmountEdit();
-                      } else if (e.key === 'Escape') {
-                        e.preventDefault();
-                        cancelAmountEdit();
-                      }
-                    }}
-                    aria-label={`Type exact bet amount, between ${formatChips(
-                      minRaise
-                    )} and ${formatChips(maxRaise)}`}
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    className="raise-value__amount"
-                    onClick={beginEditAmount}
-                    aria-label={`Edit bet amount ${formatChips(raiseAmount)} - opens numeric keyboard`}
-                    title="Tap to type exact amount"
-                  >
-                    {formatChips(raiseAmount)}
-                  </button>
-                )}
-                {bigBlind > 0 && !amountTyping && (
-                  <span className="raise-value__bb">{(raiseAmount / bigBlind).toFixed(1)} BB</span>
-                )}
-              </div>
-              <button
-                className="raise-adjust raise-adjust--plus"
-                onClick={() => adjustRaise(bigBlind)}
-                disabled={raiseAmount >= maxRaise}
-              >
-                +
-              </button>
+                  inputMode="decimal"
+                  pattern="[0-9]*[.,]?[0-9]*"
+                  className="raise-value__input"
+                  value={amountDraft}
+                  /* Filter as they type. A raw text field accepts "12e5",
+                       and Number("12e5") is 1,200,000 - a silent shove on a
+                       control the player thinks is a bet box. */
+                  onChange={(e) => setAmountDraft(sanitizeAmountDraft(e.target.value))}
+                  onBlur={commitAmountEdit}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      commitAmountEdit();
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      cancelAmountEdit();
+                    }
+                  }}
+                  aria-label={`Type exact bet amount, between ${formatChips(
+                    minRaise
+                  )} and ${formatChips(maxRaise)}`}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="raise-value__amount"
+                  onClick={beginEditAmount}
+                  aria-label={`Edit bet amount ${formatChips(raiseAmount)} - opens numeric keyboard`}
+                  title="Tap to type exact amount"
+                >
+                  {formatChips(raiseAmount)}
+                </button>
+              )}
+              {/* Big blinds only when the player asked for them — chips are
+                  the default everywhere (Dan 2026-08-25). */}
+              {showStackInBB && bigBlind > 0 && !amountTyping && (
+                <span className="raise-value__bb">{(raiseAmount / bigBlind).toFixed(1)} BB</span>
+              )}
             </div>
+            <button
+              className="raise-adjust raise-adjust--plus"
+              onClick={() => adjustRaise(sliderStep)}
+              disabled={raiseAmount >= maxRaise}
+              aria-label={`Increase By ${formatChips(sliderStep)}`}
+            >
+              +
+            </button>
+          </div>
 
-            {/* Horizontal slider — only rendered in legacy mode. */}
-            {!effectiveVerticalSlider && (
-              <div className="raise-slider-wrap">
-                {sliderEl}
-                <div className="raise-slider-ticks">
-                  <div className="raise-slider-tick" style={{ left: '25%' }} />
-                  <div className="raise-slider-tick" style={{ left: '50%' }} />
-                  <div className="raise-slider-tick" style={{ left: '75%' }} />
-                  <div className="raise-slider-tick" style={{ left: '100%' }} />
-                </div>
+          {/* Horizontal slider — only rendered in legacy mode. */}
+          {!effectiveVerticalSlider && (
+            <div className="raise-slider-wrap">
+              {sliderEl}
+              <div className="raise-slider-ticks">
+                <div className="raise-slider-tick" style={{ left: '25%' }} />
+                <div className="raise-slider-tick" style={{ left: '50%' }} />
+                <div className="raise-slider-tick" style={{ left: '75%' }} />
+                <div className="raise-slider-tick" style={{ left: '100%' }} />
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Preset Row */}
-            {showBetSizePresets && (
-              <div className="raise-presets">
-                {presets.map((p) => (
-                  <button
-                    key={p.label}
-                    className={`raise-preset${raiseAmount === p.value ? ' raise-preset--on' : ''}`}
-                    onClick={() => setPreset(p.value)}
-                    /* Only dead when there is no legal raise at all. The old
+          {/* Preset Row */}
+          {showBetSizePresets && (
+            <div className="raise-presets">
+              {presets.map((p) => (
+                <button
+                  key={p.label}
+                  className={`raise-preset${raiseAmount === p.value ? ' raise-preset--on' : ''}`}
+                  onClick={() => setPreset(p.value)}
+                  /* Only dead when there is no legal raise at all. The old
                        `p.value < minRaise` test could never fire (value is
                        already clamped to minRaise) while `p.value > maxRaise`
                        greyed out every preset a short stack could still shove
                        into. Over-stack now snaps to all-in, per spec 5.2. */
-                    disabled={minRaise > maxRaise}
-                    title={`${wagerVerb} ${formatChips(p.value)}`}
-                    aria-label={`${p.label} - ${wagerVerb.toLowerCase()} ${formatChips(p.value)}`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-                <button
-                  className="raise-preset raise-preset--allin"
-                  onClick={handleAllIn}
-                  // Never offer a shove hero is not entitled to make. The
-                  // server would reject it, but a button that produces an
-                  // error toast is a broken button.
-                  disabled={!canAllIn}
-                  title={`All in for ${formatChips(allInThreshold)}`}
-                  aria-label={`Bet all in for ${formatChips(allInThreshold)}`}
+                  disabled={minRaise > maxRaise}
+                  title={`${wagerVerb} ${formatChips(p.value)}`}
+                  aria-label={`${p.label} - ${wagerVerb.toLowerCase()} ${formatChips(p.value)}`}
                 >
-                  ALL IN
+                  {p.label}
                 </button>
-              </div>
-            )}
-            {/* Confirm / Cancel Row */}
-            <div className="raise-actions">
+              ))}
               <button
-                className="raise-cancel"
-                onClick={() => setIsRaiseMode(false)}
-                aria-label="Back"
+                className="raise-preset raise-preset--allin"
+                onClick={handleAllIn}
+                // Never offer a shove hero is not entitled to make. The
+                // server would reject it, but a button that produces an
+                // error toast is a broken button.
+                disabled={!canAllIn}
+                title={`All in for ${formatChips(allInThreshold)}`}
+                aria-label={`Bet all in for ${formatChips(allInThreshold)}`}
               >
-                Back
+                ALL IN
               </button>
-              {/* 2026-08-20: the confirm button said "Raise N" even when N was
+            </div>
+          )}
+          {/* Confirm / Cancel Row */}
+          <div className="raise-actions">
+            <button
+              className="raise-cancel"
+              onClick={() => setIsRaiseMode(false)}
+              aria-label="Back"
+            >
+              Back
+            </button>
+            {/* 2026-08-20: the confirm button said "Raise N" even when N was
                   hero's whole stack and handleConfirmRaise was about to
                   dispatch `allin`. Now that the slider can actually reach the
                   top (see sliderGridMax), that state is one drag away, and a
                   button that says Raise while it shoves is the same class of
                   lie the ALL IN label had. Say which action it is. */}
-              <button
-                className={`raise-confirm${
-                  raiseAmount >= allInThreshold ? ' raise-confirm--allin' : ''
-                }`}
-                onClick={handleConfirmRaise}
-                aria-label={
-                  raiseAmount >= allInThreshold
-                    ? `All in for ${formatChips(raiseAmount)}`
-                    : `${wagerVerb} ${formatChips(raiseAmount)}`
-                }
-              >
-                {raiseAmount >= allInThreshold ? 'All In' : wagerVerb} {formatChips(raiseAmount)}
-              </button>
-            </div>
+            <button
+              className={`raise-confirm${
+                raiseAmount >= allInThreshold ? ' raise-confirm--allin' : ''
+              }`}
+              onClick={handleConfirmRaise}
+              aria-label={
+                raiseAmount >= allInThreshold
+                  ? `All in for ${formatChips(raiseAmount)}`
+                  : `${wagerVerb} ${formatChips(raiseAmount)}`
+              }
+            >
+              {raiseAmount >= allInThreshold ? 'All In' : wagerVerb} {formatChips(raiseAmount)}
+            </button>
           </div>
+        </div>
 
-          {/* Phase 2 T1-02: vertical slider rail on the right per spec §5.2.
+        {/* Phase 2 T1-02: vertical slider rail on the right per spec §5.2.
               Uses a CSS-rotated <input type="range"> wrapped in a fixed-height
               column. Tick marks correspond to 25/50/75/100% of the legal range.
               Hidden when verticalSlider is false. */}
-          {effectiveVerticalSlider && (
-            <div className="raise-slider-vertical">
-              <div
-                className="raise-slider-vertical__rail"
-                ref={railRef}
-                style={{ ['--raise-rail-length' as string]: `${railLength}px` }}
-              >
-                {sliderEl}
-                <div className="raise-slider-vertical__ticks" aria-hidden="true">
-                  {/* BB labels at 25/50/75/100% of the raise range */}
-                  {[100, 75, 50, 25].map((pct) => {
-                    // Evenly spaced across the LEGAL range, which already ends
-                    // at the hero's stack - so the top tick is the all-in.
-                    const val = minRaise + (maxRaise - minRaise) * (pct / 100);
-                    const isTop = pct === 100;
-                    return (
-                      <div
-                        key={pct}
-                        className={`raise-slider-vertical__tick${
-                          isTop ? ' raise-slider-vertical__tick--max' : ''
-                        }`}
-                        style={{ bottom: `${pct}%` }}
-                      >
-                        <span className="raise-slider-vertical__tick-label">
-                          {isTop ? 'ALL IN' : formatChips(Math.round(val))}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="raise-slider-vertical__caps" aria-hidden="true">
-                <span className="raise-slider-vertical__cap raise-slider-vertical__cap--max">
-                  {bigBlind > 0 ? `${Math.round(maxRaise / bigBlind)}BB` : formatChips(maxRaise)}
-                </span>
-                <span className="raise-slider-vertical__cap raise-slider-vertical__cap--min">
-                  {bigBlind > 0 ? `${Math.round(minRaise / bigBlind)}BB` : formatChips(minRaise)}
-                </span>
+        {effectiveVerticalSlider && (
+          <div className="raise-slider-vertical">
+            <div
+              className="raise-slider-vertical__rail"
+              ref={setRailNode}
+              style={{ ['--raise-rail-length' as string]: `${railLength}px` }}
+            >
+              {sliderEl}
+              <div className="raise-slider-vertical__ticks" aria-hidden="true">
+                {/* BB labels at 25/50/75/100% of the raise range */}
+                {[100, 75, 50, 25].map((pct) => {
+                  // Evenly spaced across the LEGAL range, which already ends
+                  // at the hero's stack - so the top tick is the all-in.
+                  // Snapped onto the slider's own grid: a tick that names an
+                  // amount the thumb cannot land on is a target you cannot
+                  // hit. `Math.round` used to do this job, which also erased
+                  // the label entirely at 0.25/0.50 stakes, where four ticks
+                  // across a 10-chip range all rounded to the same integer.
+                  const val = snapToSliderGrid(minRaise + (maxRaise - minRaise) * (pct / 100));
+                  const isTop = pct === 100;
+                  return (
+                    <div
+                      key={pct}
+                      className={`raise-slider-vertical__tick${
+                        isTop ? ' raise-slider-vertical__tick--max' : ''
+                      }`}
+                      style={{ bottom: `${pct}%` }}
+                    >
+                      <span className="raise-slider-vertical__tick-label">
+                        {isTop ? 'ALL IN' : formatChips(val)}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-          )}
-        </div>
+            {/* Dan 2026-08-25: the max cap sat at the top of this column at
+                exactly the height of the 100% tick label, so "26BB" and
+                "ALL IN" printed on top of each other (visible in his
+                screenshot as "A26BB"). They named the same number anyway —
+                the top tick IS the all-in — so only the floor is labelled
+                here now. Do not re-add a --max cap without moving the top
+                tick label out of its way first.
+                And the floor prints CHIPS unless the player switched to BB;
+                every other number on the felt already did. */}
+            <div className="raise-slider-vertical__caps" aria-hidden="true">
+              <span className="raise-slider-vertical__cap raise-slider-vertical__cap--min">
+                {showStackInBB && bigBlind > 0
+                  ? `${Math.round(minRaise / bigBlind)}BB`
+                  : formatChips(minRaise)}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     );
-  }
+  })();
 
-  // ─── STANDARD 3-BUTTON MODE ──────────────────────────────────
+  // ─── PINNED 3-BUTTON ROW ─────────────────────────────────────
+  // Always rendered, in every state, flush with the bottom of the viewport.
+  // The sizing overlay above it is a sibling, not a replacement.
   return (
     <div
-      className={`action-panel ${isMyTurn ? 'action-panel--active' : ''} ${turnPulse ? 'action-panel--attention' : ''}`}
+      className={`action-panel${isMyTurn ? ' action-panel--active' : ''}${
+        turnPulse ? ' action-panel--attention' : ''
+      }${isRaiseMode ? ' action-panel--raise' : ''}${
+        isRaiseMode && effectiveVerticalSlider ? ' action-panel--raise-vertical' : ''
+      }`}
     >
+      {raiseOverlay}
+      {/* ═══ THE ROW IS NOT CONDITIONAL. ═══════════════════════════════════
+          AUDIT 2026-08-25. This was `{!isRaiseMode && (<div className="action-row">`,
+          which quietly reverted Dan's 2026-08-25 item 5 — "these 3 action
+          buttons should be on the bottom, and if you click Raise, the action
+          slider and other buttons pop open and can OVERLAY the Hero" — back to
+          the older behaviour where raise mode REPLACED the whole panel.
+
+          Nothing else in this component or its stylesheet had been reverted
+          with it, so five things had been dead ever since:
+
+            - `handleRaiseClick`'s `if (isRaiseMode) { setIsRaiseMode(false) }`
+              close branch: the button it belongs to was not on screen;
+            - `action-btn--on`, a whole styling rule written for "it stays on
+              the row now and a second tap closes the overlay";
+            - `aria-expanded={isRaiseMode}`, which could only ever be false;
+            - `.action-panel--raise .raise-layout { margin: 0 auto 10px }` —
+              a documented gap between the overlay and "the row it floats
+              above", floating above nothing;
+            - the whole premise of `--sp-bottom-row-h`, which is the measured
+              height of THIS row and which every other stylesheet reserves
+              against. A row that disappears is a reserve that lies.
+
+          The panel is `position: fixed; bottom: 0`, so the overlay grows the
+          panel UPWARD over the felt and this row does not move a pixel. */}
       <div className="action-row">
         {/* FOLD — Always Red, Left */}
         <button
@@ -956,11 +1258,15 @@ export default function ActionPanel({
           </button>
         ) : (
           <button
-            className="action-btn action-btn--raise"
+            className={`action-btn action-btn--raise${isRaiseMode ? ' action-btn--on' : ''}`}
             onClick={handleRaiseClick}
             disabled={!canRaise}
             title={isDesktop ? 'Raise/Bet (R or E)' : undefined}
-            aria-label={`Open ${wagerVerb.toLowerCase()} panel`}
+            /* The button survives the overlay opening now (Dan 2026-08-25,
+               item 5), so it is a disclosure control rather than a one-way
+               door: say which way the next tap goes. */
+            aria-expanded={isRaiseMode}
+            aria-label={`${isRaiseMode ? 'Close' : 'Open'} ${wagerVerb.toLowerCase()} panel`}
           >
             {/* Per PokerBros spec §5.1: the Raise button itself shows ONLY
                 the word "Raise" (or "Bet" when no current bet). The actual
@@ -969,6 +1275,11 @@ export default function ActionPanel({
                 when this button is tapped. We removed the prior "{N} BB"
                 sub-label which the user explicitly flagged as wrong. */}
             <span className="action-btn__label">{wagerVerb}</span>
+            {/* 2026-08-23: in fixed limit the amount is NOT a choice the player
+                is about to make in a sizing panel — it is the only legal wager
+                on this street. Hiding it (correct for no-limit, per the spec
+                note above) would mean tapping blind, so print it. */}
+            {isFixedLimit && <span className="action-btn__amount">{formatChips(minRaise)}</span>}
             {isDesktop && <span className="action-btn__shortcut">R</span>}
           </button>
         )}

@@ -66,6 +66,27 @@ beforeEach(async () => {
   FakeWebSocket.instances = [];
   vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
   vi.useFakeTimers({ shouldAdvanceTime: true });
+  // 2026-08-24: RESET THE MODULE GRAPH BETWEEN TESTS.
+  //
+  // `engineSocketMux` is a module-level singleton, and the mux deliberately
+  // LINGERS its physical socket after the last table is released so a player
+  // switching tables reuses a warm connection instead of paying a fresh TLS
+  // handshake. That linger is correct in production and poison across tests:
+  // the socket survived into the next test, `ensureSocket()` saw an already-OPEN
+  // connection and created nothing, and `live()` - which reads the most recent
+  // FakeWebSocket, an array this hook has just emptied - returned undefined.
+  //
+  // It surfaced when the linger went from 5s to 60s: tests here advance the
+  // clock 40s, which used to be long enough to expire the old socket by
+  // accident. That made the isolation bug invisible rather than absent, and it
+  // failed in CI while passing locally because `shouldAdvanceTime: true` lets
+  // real elapsed time move the fake clock too, so the outcome depended on how
+  // fast the machine was.
+  //
+  // resetModules gives each test its own EngineStateClient AND its own mux.
+  // Both imports below happen after it, so they still share one module graph
+  // and CLOSE_MUX_SUPERSEDED remains the identity the client actually compares.
+  vi.resetModules();
   const mod = await import('../src/services/EngineStateClient');
   EngineStateClient = mod.EngineStateClient;
   EngineChannelClient = mod.EngineChannelClient;
@@ -169,6 +190,153 @@ describe('EngineStateClient — a token that will not load', () => {
 
     expect(calls).toBeGreaterThan(1);
     expect(statuses).not.toEqual(['connecting']);
+    c.disconnect();
+  });
+});
+
+describe('EngineChannelClient — heartbeat dialects (2026-08-24)', () => {
+  it('answers CHANNEL_PING with CHANNEL_PONG (the server sweep only counted that)', async () => {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    void c.connect();
+    await flush();
+    const ws = live();
+    ws._open();
+    await flush();
+    ws._frame({ type: 'CHANNEL_PING', ts: 1 });
+    const pongs = ws.sent
+      .map((s) => JSON.parse(s) as { type: string })
+      .filter((m) => m.type === 'CHANNEL_PONG');
+    expect(pongs).toHaveLength(1);
+    c.disconnect();
+  });
+
+  it('still answers plain PING with PONG', async () => {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    void c.connect();
+    await flush();
+    const ws = live();
+    ws._open();
+    await flush();
+    ws._frame({ type: 'PING', ts: 7 });
+    const pongs = ws.sent
+      .map((s) => JSON.parse(s) as { type: string; ts?: number })
+      .filter((m) => m.type === 'PONG');
+    expect(pongs).toHaveLength(1);
+    expect(pongs[0]?.ts).toBe(7);
+    c.disconnect();
+  });
+});
+
+describe('EngineChannelClient — resubscribe on reconnect (2026-08-24)', () => {
+  it('replays JOIN_CLUB / UPDATE_PRESENCE / JOIN_TOURNAMENT / JOIN_LOBBY on the new socket', async () => {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    void c.connect();
+    await flush();
+    const first = live();
+    first._open();
+    await flush();
+
+    c.send({ type: 'JOIN_CLUB', clubId: 'club-1' });
+    c.send({ type: 'UPDATE_PRESENCE', clubId: 'club-1', status: 'at_table', currentTableId: 't1' });
+    c.send({ type: 'JOIN_TOURNAMENT', tournamentId: 'tourney-1' });
+    c.send({ type: 'JOIN_LOBBY' });
+    // A club joined and then left must NOT be replayed.
+    c.send({ type: 'JOIN_CLUB', clubId: 'club-2' });
+    c.send({ type: 'LEAVE_CLUB', clubId: 'club-2' });
+
+    // Server restarts: the socket dies, the client reconnects on backoff.
+    first._serverClose(1001);
+    await vi.advanceTimersByTimeAsync(5_000);
+    const second = live();
+    expect(second).not.toBe(first);
+    second._open();
+    await flush();
+
+    const replayed = second.sent.map((s) => JSON.parse(s) as { type: string; clubId?: string });
+    const types = replayed.map((m) => `${m.type}${m.clubId ? ':' + m.clubId : ''}`);
+    expect(types).toContain('JOIN_CLUB:club-1');
+    expect(types).toContain('UPDATE_PRESENCE:club-1');
+    expect(types).toContain('JOIN_TOURNAMENT');
+    expect(types).toContain('JOIN_LOBBY');
+    expect(types).not.toContain('JOIN_CLUB:club-2');
+    c.disconnect();
+  });
+
+  it('does NOT replay on the FIRST connect (the original JOINs are queued already)', async () => {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    // Queued while offline — flushed on open. A replay on first connect would
+    // send each JOIN twice.
+    c.send({ type: 'JOIN_LOBBY' });
+    await flush();
+    const ws = live();
+    ws._open();
+    await flush();
+    const joins = ws.sent
+      .map((s) => JSON.parse(s) as { type: string })
+      .filter((m) => m.type === 'JOIN_LOBBY');
+    expect(joins).toHaveLength(1);
+    c.disconnect();
+  });
+
+  it('onStatusChange reports the reconnect so surfaces can refetch missed state', async () => {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    const seen: string[] = [];
+    const unsub = c.onStatusChange((s) => seen.push(s));
+    void c.connect();
+    await flush();
+    live()._open();
+    await flush();
+    live()._serverClose(1001);
+    await vi.advanceTimersByTimeAsync(5_000);
+    live()._open();
+    await flush();
+    expect(seen).toContain('reconnecting');
+    expect(seen.filter((s) => s === 'connected').length).toBeGreaterThanOrEqual(2);
+    unsub();
+    c.disconnect();
+  });
+});
+
+describe('EngineChannelClient — periodic subscription re-assert (2026-08-24)', () => {
+  it('re-sends desired JOINs on a live socket every REASSERT interval', async () => {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    void c.connect();
+    await flush();
+    const ws = live();
+    ws._open();
+    await flush();
+    c.send({ type: 'JOIN_LOBBY' });
+    c.send({ type: 'JOIN_TOURNAMENT', tournamentId: 'tt' });
+    const countJoins = () =>
+      ws.sent.map((s) => JSON.parse(s) as { type: string }).filter((m) => m.type === 'JOIN_LOBBY')
+        .length;
+    expect(countJoins()).toBe(1);
+
+    // Keep the link "alive" so the watchdog never tears it down, and advance
+    // past the re-assert interval: the JOIN must be sent again, unprompted.
+    for (let i = 0; i < 20; i++) {
+      ws._frame({ type: 'PING', ts: i });
+      await vi.advanceTimersByTimeAsync(10_000);
+    }
+    expect(countJoins()).toBeGreaterThanOrEqual(2);
     c.disconnect();
   });
 });

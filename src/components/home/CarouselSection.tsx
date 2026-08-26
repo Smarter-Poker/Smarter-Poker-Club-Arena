@@ -7,7 +7,7 @@
  * live stats. Single-click navigates to the club's lobby.
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 import haptic from '../../services/HapticService';
 import PremiumSFX from '../../services/PremiumSFX';
@@ -19,14 +19,16 @@ import { Carousel } from '../carousel';
 import { preloadClubLobby } from '../../utils/ChunkPreloader';
 import type { ToastContextValue } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 // Lazy-load heavy component
 
-const ClubCardPanel = lazy(() => import('../club/ClubCardPanel'));
+const ClubCardPanel = lazyWithRetry(() => import('../club/ClubCardPanel'));
 
 // ── Types ─────────────────────────────────────────
 export interface UserClub {
   id: string;
+  slug?: string;
   name?: string;
   club_id?: number | string;
   logo_url?: string;
@@ -90,6 +92,38 @@ export default function CarouselSection({
      state that can only ever hold one value is worse than no state, because it
      reads as a live feature. */
   const [orderedClubs, setOrderedClubs] = useState<UserClub[]>(displayClubs);
+
+  /* PHONE CARD WIDTH (Dan 2026-08-23: "THE MAIN CARD IS TOO BIG, CAN'T SEE THE
+     CARDS TO THE LEFT OR RIGHT").
+
+     Measured on a 390px viewport: the centre card came out 265px wide and the
+     step between centres is 0.94 of that, so each neighbour had 52px showing —
+     a sliver with no name and no stats on it, which reads as "there is only
+     one club". The carousel's own default is `trackWidth * 0.55`, tuned on a
+     desktop track where 55% still leaves room either side; on a phone the
+     track IS the viewport, so 55% eats it.
+
+     52% of the viewport capped at 210px puts the neighbours back at roughly a
+     hundred pixels each — enough to show that they are club cards and to aim
+     a thumb at. Desktop keeps the existing behaviour untouched: the override
+     only applies under 480px. */
+  const [phoneItemWidth, setPhoneItemWidth] = useState<number | undefined>(() =>
+    typeof window !== 'undefined' && window.innerWidth <= 480
+      ? Math.min(175, Math.round(window.innerWidth * 0.42))
+      : undefined
+  );
+  useEffect(() => {
+    const recompute = () =>
+      setPhoneItemWidth(
+        window.innerWidth <= 480 ? Math.min(175, Math.round(window.innerWidth * 0.42)) : undefined
+      );
+    window.addEventListener('resize', recompute);
+    window.addEventListener('orientationchange', recompute);
+    return () => {
+      window.removeEventListener('resize', recompute);
+      window.removeEventListener('orientationchange', recompute);
+    };
+  }, []);
 
   // Keep orderedClubs in sync with displayClubs (respecting saved order)
   useEffect(() => {
@@ -177,7 +211,7 @@ export default function CarouselSection({
       } catch {
         /* quota / private mode - navigation still works */
       }
-      navigate(`/clubs/${club.id}`);
+      navigate(`/clubs/${club.slug || club.id}`);
     },
     [navigate]
   );
@@ -343,6 +377,8 @@ export default function CarouselSection({
              one. 0.94 stays above (1 + 0.8) / 2 = 0.9, the point below which a
              neighbour would start to overlap the centre card. */
           visibleCards={3}
+          /* undefined on desktop, so the carousel's own sizing still applies. */
+          itemWidth={phoneItemWidth}
           spacingRatio={0.94}
           edgeScale={0.8}
           initialIndex={initialIndex}

@@ -48,17 +48,18 @@ type HistoryFilter = 'all' | 'won' | 'lost' | 'big-pots';
    a record.
 
    The first correction (2026-08-23) added PLO5 and PLO6 and was STILL wrong for
-   three of the eight variants actually running: `plo8` contains "PLO" so it was
-   shared as PLO4, and `short_deck`, `pineapple` and `ofc_pineapple` all fell
-   through to NLH — 73,000+ hands in the last three days between them. Checking
-   the live catalogue before writing the mapping, rather than after, would have
-   caught it: nlh, plo4, plo5, plo6, plo8, short_deck, pineapple, ofc_pineapple.
+   three of the variants actually running: `plo8` contains "PLO" so it was
+   shared as PLO4, and `short_deck` and `pineapple` fell through to NLH.
+   Checking the live catalogue before writing the mapping, rather than after,
+   would have caught it: nlh, plo4, plo5, plo6, plo8, short_deck, pineapple.
 
-   Order matters twice over: PLO8 must be tested before the PLO catch-all, and
-   OFC_PINEAPPLE before PINEAPPLE. */
+   `ofc_pineapple` was retired the same day (migration
+   20260823_retire_ofc_pineapple_variant.sql): it was never a game this
+   platform dealt, only a mislabel on Crazy Pineapple tables.
+
+   Order still matters: PLO8 must be tested before the PLO catch-all. */
 function toShareVariant(gameType: string | undefined): ShareableHand['variant'] {
   const g = (gameType || '').toUpperCase();
-  if (g.includes('OFC')) return 'OFC Pineapple';
   if (g.includes('PINEAPPLE')) return 'Pineapple';
   if (g.includes('SHORT')) return 'Short Deck';
   if (g.includes('PLO8')) return 'PLO8';

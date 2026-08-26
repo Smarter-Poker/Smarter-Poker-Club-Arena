@@ -20,9 +20,118 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # WHICH CHECKS CAN THIS DIFF ACTUALLY BREAK?
+  #
+  # Added 2026-08-23. Club Arena took about 28 pull-request pushes an hour and
+  # ran all five jobs on every one - 18 billed minutes a push, roughly $100 a
+  # day, which was the entire Actions bill. GitHub bills each job rounded up to
+  # a whole minute, so a job that cannot possibly fail still costs a minute.
+  #
+  # Measured over the last 30 merged pull requests: 78% never touch server/ yet
+  # every one ran the server engine suite, and a third never touch src/ yet
+  # every one built the bundle, ran the unit suite and drove a browser.
+  #
+  # This job answers "what changed" once, from the API, with no checkout, and
+  # the heavy jobs below gate on it. A job skipped by a job-level `if` reports
+  # as SKIPPED, and a ruleset counts a skipped required check as satisfied - so
+  # nothing has to change in branch protection and no pull request can be left
+  # waiting on a check that never runs. That is the whole reason this is a job
+  # rather than a `paths:` filter on the workflow, which WOULD strand them.
+  #
+  # typecheck is deliberately NOT gated: it carries the repo-wide invariants
+  # (phantom columns, rake parity, seat law, dead code, UI copy) and those can
+  # be broken by a file in any directory, including a migration or a doc.
+  # ───────────────────────────────────────────────────────────────────────────
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    if: github.event_name == 'pull_request'
+    # The gh call below is a 403 without this. GITHUB_TOKEN defaults to read on
+    # contents only, and there is no top-level permissions block in this file.
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      src: ${{ steps.f.outputs.src }}
+      server: ${{ steps.f.outputs.server }}
+      tests: ${{ steps.f.outputs.tests }}
+    steps:
+      - id: f
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # V13: retry, and FAIL OPEN. This call fails the entire CI run on a
+          # transient GitHub 500 ("this diff is temporarily unavailable due to
+          # heavy server load"), which happened on PR #436 and blocked a green
+          # branch on an infrastructure hiccup. A path filter is an
+          # OPTIMISATION - when it cannot tell what changed, the safe answer is
+          # to run everything, never to fail the build.
+          FILES=""
+          for attempt in 1 2 3; do
+            if FILES=$(gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '.[].filename'); then
+              break
+            fi
+            echo "::warning::could not list changed files (attempt $attempt) - retrying"
+            FILES=""
+            sleep $((attempt * 5))
+          done
+          if [ -z "$FILES" ]; then
+            echo "::notice::changed-file list unavailable - running everything"
+            echo "src=true"    >> "$GITHUB_OUTPUT"
+            echo "server=true" >> "$GITHUB_OUTPUT"
+            echo "tests=true"  >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$FILES" | sed 's/^/  /'
+          has() { echo "$FILES" | grep -qE "$1" && echo true || echo false; }
+          # A change to the workflow, the lockfile or the build config can break
+          # anything, so treat those as touching everything.
+          # .npmrc and .nvmrc are in this list because they change how
+          # dependencies INSTALL and which runtime runs them, so they can break
+          # anything - added 2026-08-23 when the pull request REMOVING an .npmrc
+          # setting skipped the build job that was supposed to prove it safe.
+          WIDE=$(has '^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github/workflows/ci\.yml)')
+          if [ "$WIDE" = "true" ]; then
+            echo "src=true"    >> "$GITHUB_OUTPUT"
+            echo "server=true" >> "$GITHUB_OUTPUT"
+            echo "tests=true"  >> "$GITHUB_OUTPUT"
+            echo "::notice::build/config change - running everything"
+            exit 0
+          fi
+          echo "src=$(has '^src/')"       >> "$GITHUB_OUTPUT"
+          echo "server=$(has '^server/')" >> "$GITHUB_OUTPUT"
+          echo "tests=$(has '^tests/')"   >> "$GITHUB_OUTPUT"
+
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 1: TypeScript compilation check (fast — ~40s)
   # ─────────────────────────────────────────────────────────────────────────────
+
+  stub_gate:
+    if: github.event_name == 'pull_request'
+    name: Stub Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.3.1
+
+      - name: No bare stubs — TODO and FIXME must have issue references
+        run: |
+          # Finds TODO or FIXME that do NOT have a (#1234) issue reference.
+          found=$(grep -rn --include="*.ts" --include="*.tsx" \
+            -E '\b(TODO|FIXME)\b' \
+            src/ server/src/ 2>/dev/null | grep -v -E '\b(TODO|FIXME)\(#[0-9]+\)' || true)
+          
+          if [ -n "$found" ]; then
+            echo "::error::Bare stub markers found! Use TODO(#1234) with an issue reference, or resolve the stub."
+            echo "$found"
+            exit 1
+          fi
+          echo "No bare TODO or FIXME markers found."
+
   typecheck:
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
@@ -32,7 +141,7 @@ jobs:
     if: github.event_name == 'pull_request'
     name: TypeScript Check
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -124,6 +233,8 @@ jobs:
       - name: Monitoring Invariant — every alert rule is loaded, mounted, and routed
         run: node scripts/ci/check-monitoring-drift.mjs
 
+
+
       - name: Report Typecheck Time
         if: always()
         run: |
@@ -132,6 +243,7 @@ jobs:
           echo "## ⏱️ Typecheck Duration: ${ELAPSED}s" >> $GITHUB_STEP_SUMMARY
 
       # ── Commit Message Lint ──────────────────────────────────────────────
+
       - name: Commit Message Lint
         if: github.event_name == 'push'
         continue-on-error: true
@@ -301,6 +413,27 @@ jobs:
             exit 1
           fi
 
+      # BLOCKING: the client's stakes ladder must equal the server's. The
+      # server file is what charges the BBJ fee, caps the rake and decides the
+      # payout percent handed to bbj_atomic_payout_v2; the client file is what
+      # TELLS the player those numbers. On 2026-08-23 they disagreed on four of
+      # six tiers — a 0.2/0.4 game was Nano to the client and Micro to the
+      # server, and Micro's fee was published as 0.25bb while 0.60bb was
+      # charged. A comment cannot hold two files together; this can.
+      - name: Rake Config Parity — client vs server
+        run: |
+          set -o pipefail
+          echo "## Rake Config Parity" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-rakeconfig-parity.mjs 2>&1 | tee /tmp/rakeparity.log; then
+            echo "OK — src/config/RakeConfig.ts matches server/src/config/RakeConfig.ts." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Client and server rake config have diverged — see log. The server" >> $GITHUB_STEP_SUMMARY
+            echo "file is the authority; change the client to match, and update" >> $GITHUB_STEP_SUMMARY
+            echo "bbj_stakes_tiers in the same PR so the published mirror keeps up." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       # BLOCKING: a client-read table with NO writer anywhere (client
       # .from().insert/update, server/src, or an RPC/migration body) means the UI
       # reads a table nothing populates -> silent empty/stale values. Detection is
@@ -432,10 +565,27 @@ jobs:
     # commit tests an identical tree. 34 of every 100 CI runs were that
     # duplicate, and CI is six jobs, each billed as a whole minute even
     # when it takes twenty seconds.
-    if: github.event_name == 'pull_request'
+    # The unit suite tests src/ from tests/. A pull request touching neither
+    # cannot change its result - and this is the most expensive job here.
+    needs: changes
+    # FAILS CLOSED, and this is the whole point.
+    #
+    # 2026-08-23, caught within the hour: the `changes` job 403'd, its dependants
+    # were skipped by `needs:` as GitHub does by default, every required check
+    # reported SKIPPED - and a ruleset counts a skipped required check as
+    # SATISFIED. For a few minutes this repo would have merged unchecked code and
+    # shown all green doing it. That is precisely the silent failure this estate
+    # exists to prevent, introduced by the change meant to save money.
+    #
+    # `always()` makes the job evaluate even when `changes` did not succeed, and
+    # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
+    # treated as "could break anything", never as "nothing to do".
+    if: >-
+      always() && github.event_name == 'pull_request' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')
     name: Client Unit Tests (vitest)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -467,7 +617,24 @@ jobs:
     # commit tests an identical tree. 34 of every 100 CI runs were that
     # duplicate, and CI is six jobs, each billed as a whole minute even
     # when it takes twenty seconds.
-    if: github.event_name == 'pull_request'
+    # 78% of pull requests never touch server/. This suite is two billed
+    # minutes and cannot be broken by a file outside it.
+    needs: changes
+    # FAILS CLOSED, and this is the whole point.
+    #
+    # 2026-08-23, caught within the hour: the `changes` job 403'd, its dependants
+    # were skipped by `needs:` as GitHub does by default, every required check
+    # reported SKIPPED - and a ruleset counts a skipped required check as
+    # SATISFIED. For a few minutes this repo would have merged unchecked code and
+    # shown all green doing it. That is precisely the silent failure this estate
+    # exists to prevent, introduced by the change meant to save money.
+    #
+    # `always()` makes the job evaluate even when `changes` did not succeed, and
+    # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
+    # treated as "could break anything", never as "nothing to do".
+    if: >-
+      always() && github.event_name == 'pull_request' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.server == 'true')
     name: Server Engine (typecheck + tests)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -518,10 +685,26 @@ jobs:
     # commit tests an identical tree. 34 of every 100 CI runs were that
     # duplicate, and CI is six jobs, each billed as a whole minute even
     # when it takes twenty seconds.
-    if: github.event_name == 'pull_request'
+    # Nothing outside src/ changes the bundle, its size or its Lighthouse score.
+    needs: changes
+    # FAILS CLOSED, and this is the whole point.
+    #
+    # 2026-08-23, caught within the hour: the `changes` job 403'd, its dependants
+    # were skipped by `needs:` as GitHub does by default, every required check
+    # reported SKIPPED - and a ruleset counts a skipped required check as
+    # SATISFIED. For a few minutes this repo would have merged unchecked code and
+    # shown all green doing it. That is precisely the silent failure this estate
+    # exists to prevent, introduced by the change meant to save money.
+    #
+    # `always()` makes the job evaluate even when `changes` did not succeed, and
+    # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
+    # treated as "could break anything", never as "nothing to do".
+    if: >-
+      always() && github.event_name == 'pull_request' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: Production Build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -696,6 +879,33 @@ jobs:
           SP_PASS: ${{ secrets.SP_PASS }}
         continue-on-error: false
 
+      # ── MOBILE FIT + AVATAR WATCHDOG (2026-08-24) ─────────────────────────
+      # The August mobile sweep ended with two live guarantees: no Club Arena
+      # page scrolls sideways on a phone, and no avatar renders broken. These
+      # are exactly the regressions a CSS/asset PR can silently reintroduce,
+      # so the scheduled production run re-proves both on every cycle using
+      # the same instrumented harnesses the sweep itself used. A representative
+      # route subset keeps this under ~3 minutes; the full 101-route sweep can
+      # be run locally with no ROUTES env. Signed-out runs still measure — the
+      # harness logs in with the same optional secrets as the E2E step and
+      # falls back to public pages without them.
+      - name: Mobile Fit Audit (no sideways scroll, production)
+        if: always()
+        run: node scripts/e2e-mobile-overflow-audit.mjs
+        env:
+          SP_EMAIL: ${{ secrets.SP_EMAIL }}
+          SP_PASS: ${{ secrets.SP_PASS }}
+          FAIL_ON_FINDINGS: '1'
+          ROUTES: '["/","/auth","/clubs/a0000000-0000-0000-0000-000000000001","/clubs/a0000000-0000-0000-0000-000000000001/members","/clubs/a0000000-0000-0000-0000-000000000001/cashier","/clubs/a0000000-0000-0000-0000-000000000001/tournaments","/clubs/a0000000-0000-0000-0000-000000000001/settings","/clubs/a0000000-0000-0000-0000-000000000001/promotions","/profile","/friends","/cashier","/transactions","/vip","/marketplace","/settlement-dashboard","/analytics","/dev/bus","/leaderboard"]'
+
+      - name: Avatar Audit (no broken avatars, production)
+        if: always()
+        run: node scripts/e2e-avatar-audit.mjs
+        env:
+          SP_EMAIL: ${{ secrets.SP_EMAIL }}
+          SP_PASS: ${{ secrets.SP_PASS }}
+          FAIL_ON_FINDINGS: '1'
+
       - name: Upload Playwright Report
         if: always()
         uses: actions/upload-artifact@v4
@@ -820,7 +1030,24 @@ jobs:
     # commit tests an identical tree. 34 of every 100 CI runs were that
     # duplicate, and CI is six jobs, each billed as a whole minute even
     # when it takes twenty seconds.
-    if: github.event_name == 'pull_request'
+    # This one builds the app AGAIN, installs Chromium and serves it - four
+    # billed minutes, and only src/ can change what it measures.
+    needs: changes
+    # FAILS CLOSED, and this is the whole point.
+    #
+    # 2026-08-23, caught within the hour: the `changes` job 403'd, its dependants
+    # were skipped by `needs:` as GitHub does by default, every required check
+    # reported SKIPPED - and a ruleset counts a skipped required check as
+    # SATISFIED. For a few minutes this repo would have merged unchecked code and
+    # shown all green doing it. That is precisely the silent failure this estate
+    # exists to prevent, introduced by the change meant to save money.
+    #
+    # `always()` makes the job evaluate even when `changes` did not succeed, and
+    # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
+    # treated as "could break anything", never as "nothing to do".
+    if: >-
+      always() && github.event_name == 'pull_request' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: CSS Beat E2E (multi-table + animations)
     runs-on: ubuntu-latest
     timeout-minutes: 20

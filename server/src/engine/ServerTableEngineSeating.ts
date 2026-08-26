@@ -384,8 +384,10 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       // Cancel any pending sit-out
       this.pendingSitOut.delete(userId);
       this.disconnectEngine.sitBack(this.tableId, userId);
-      // Bible V8 §4.2: Mark player as returning — must post dead blind on next hand
-      this.returningFromSitout.add(userId);
+      // Bible V8 §4.2: Mark player as returning — must post dead blind on next hand (cash tables only)
+      if (!this.isTournamentTable()) {
+        this.returningFromSitout.add(userId);
+      }
     }
 
     // FIX 143: willFoldNextHand is informational — player finishes current hand normally
@@ -417,6 +419,49 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       return { success: true, immediate: true };
     }
 
+    if (this.isTournamentTable()) {
+      // In tournaments, leaving the table NEVER cashes out or clears the seat.
+      // The player is auto-folded if mid-hand, marked sitting_out in table_seats
+      // and disconnectEngine, and continues to be dealt in / blinded out until
+      // they return and sit down or run out of chips.
+      if (this.handController !== null) {
+        const state = this.handController.getState();
+        const enginePlayer = state.players.find((p) => p.user_id === userId);
+        if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in) {
+          let folded = false;
+          try {
+            folded = this.handController.performAction(enginePlayer.seat, 'fold') === true;
+            if (folded) {
+              console.log(
+                `[ServerTableEngine:${this.tableId}] Tournament player ${userId} auto-folded on leave`
+              );
+            }
+          } catch (err) {
+            console.warn(
+              `[ServerTableEngine:${this.tableId}] Auto-fold on tournament leave threw: ${err}`
+            );
+          }
+          if (!folded) {
+            this.preActionEngine.setPreAction(this.tableId, userId, 'auto_fold');
+          }
+        }
+      }
+
+      supabase
+        .from('table_seats')
+        .update({ status: 'sitting_out' })
+        .eq('table_id', this.tableId)
+        .eq('user_id', userId)
+        .is('left_at', null)
+        .then(({ error }) => {
+          if (error)
+            console.warn(`[ServerTableEngine] tournament sit-out update failed:`, error.message);
+        });
+
+      this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
+      return { success: true, immediate: true };
+    }
+
     // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_left discrete event so
     // every connected client (including spectators) can re-render the
     // empty seat without diffing the next state snapshot.
@@ -429,10 +474,33 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       timestamp: Date.now(),
     });
 
-    if (this.handController !== null) {
+    // Dan 2026-08-25, BINDING: "LEAVE TABLE SHOULD ALWAYS OVERRIDE ANYTHING
+    // ELSE... LEAVE TABLE IS LIKE THE RESET BUTTON, CLEARS EVERYTHING FROM THAT
+    // TABLE." And: "if you are SITTING OUT but click LEAVE TABLE, it doesn't
+    // leave the table, it silently fails."
+    //
+    // THE BUG WAS THIS BRANCH. It asked "is a hand running AT THIS TABLE", not
+    // "is THIS PLAYER in that hand". A sitting-out player is excluded from the
+    // deal, so they took the mid-hand path anyway: the auto-fold was skipped
+    // (there is no enginePlayer for them), and the seat was merely flagged
+    // leave_pending. That flag is only ever processed by processLeavePending at
+    // SETTLEMENT — so if no hand completed afterwards (the table dropped below
+    // the minimum to deal, or the hand died on the safety timeout, which skips
+    // settlement) the row was never touched again. The player was gone from the
+    // UI, still in the seat, chips still on the table. It could sit like that
+    // forever, and nothing swept it.
+    //
+    // Deferral is now reserved for the only case that needs it: a player with
+    // live chips in the pot of a hand still being played. Everyone else —
+    // sitting out, already folded, all-in and settled, or simply not dealt in —
+    // leaves immediately.
+    const handState = this.handController?.getState();
+    const playerInLiveHand = handState?.players.find((p) => p.user_id === userId && !p.is_folded);
+
+    if (this.handController !== null && playerInLiveHand) {
       // Mid-hand: fold the player immediately if it's their turn or they're still in
-      const state = this.handController.getState();
-      const enginePlayer = state.players.find((p) => p.user_id === userId);
+      const state = handState!;
+      const enginePlayer = playerInLiveHand;
 
       if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in) {
         // FIX 2026-08-22: performAction RETURNS FALSE when it isn't the
@@ -576,20 +644,65 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * The player cannot play until the BB position rotates to their seat.
    */
   public registerWaitForBB(userId: string): void {
-    if (this.tableInfo?.wait_for_big_blind) {
+    // Dan 2026-08-25: every cash new-joiner is registered now, whatever
+    // `wait_for_big_blind` says.
+    //
+    // The flag used to mean "make this player wait for the big blind before
+    // they can play", and turning it off skipped this set entirely. Since entry
+    // became free, this set no longer gates a WAIT — a joiner is released on the
+    // very next loop tick at no cost. All it still gates are the two positional
+    // hold-outs, and one of those enforces a BINDING rule: "CASH GAME PLAYERS
+    // CAN NEVER BE DEALT INTO THE SMALL BLIND."
+    //
+    // With the old gate, a host who set wait_for_big_blind = false skipped
+    // registration, which skipped the hold-out check, which dealt a brand-new
+    // player straight into the small blind on their first hand. A table setting
+    // must not be able to switch off a house rule, so the rule wins.
+    if (!this.isTournamentTable()) {
       this.waitingForBB.add(userId);
     }
   }
 
   /**
    * Bible V8 §4.2: Player opts to "Post BB" to enter immediately.
-   * When a new player sits at a cash game, they choose: post the BB now to be dealt
-   * in immediately, OR wait for the BB to reach their seat naturally.
-   * If they post, they pay 1× BB as a live blind and get dealt into the current hand.
+   *
+   * Dan 2026-08-25: THIS NO LONGER HAS A CALLER IN THE PRODUCT, deliberately.
+   * Sitting down is free and a new joiner is dealt in on the next loop tick, so
+   * the only players left in `waitingForBB` are the two being held out for one
+   * hand for positional reasons — and paying a live big blind to skip either is
+   * paying for something that is one hand away and free. Both are refused
+   * below. The endpoint and the bbOnlyPosts path it feeds stay for the fuzzer
+   * and for any future opt-in that has a real wait to skip.
    */
   public postBBToEnter(userId: string): { success: boolean; error?: string } {
     if (!this.waitingForBB.has(userId)) {
       return { success: false, error: 'Player is not waiting for BB' };
+    }
+    // Dan 2026-08-25: this endpoint may NOT buy its way past the small-blind
+    // rule. Since entry became free, the only reason a player is still waiting
+    // is one of the two positional hold-outs — so this call, which used to be a
+    // fair way to skip a long natural-BB wait, had become the one way to pay a
+    // live big blind for the privilege of being dealt into the small blind,
+    // which "CASH GAME PLAYERS CAN NEVER BE DEALT INTO THE SMALL BLIND"
+    // forbids outright. The wait it is offering to skip is now one hand, free.
+    const seat = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (seat && !this.isTournamentTable()) {
+      const sbSeatIndex = this.getSBSeatIndex();
+      const buttonSeatIndex = this.getButtonSeatIndex();
+      // BOTH hold-outs, not just the small blind. A player held out because they
+      // took the seat the button is about to reach was still able to call this
+      // and pay a live big blind for a hand the dealing loop would have dealt
+      // them free on the very next tick — the same asymmetry the SB guard
+      // exists to prevent, left open on the other half of the rule.
+      if (
+        (sbSeatIndex > 0 && seat.seat_number === sbSeatIndex) ||
+        (buttonSeatIndex > 0 && seat.seat_number === buttonSeatIndex)
+      ) {
+        return {
+          success: false,
+          error: 'You Will Be Dealt In Free Next Hand, The Button Has To Pass Your Seat First',
+        };
+      }
     }
     this.waitingForBB.delete(userId);
     // AUDIT FIX 2026-07-19: post ONLY a live BB to enter (no dead SB). Route

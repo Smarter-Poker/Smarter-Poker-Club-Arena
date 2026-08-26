@@ -14,6 +14,7 @@ import { reportError } from '../../utils/errorReporter';
 
 interface Club {
   id: string;
+  slug?: string;
   name: string;
   logo?: string;
   description: string;
@@ -83,6 +84,7 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
       // Map backend data to local Club interface
       const mappedClubs: Club[] = fetchedClubs.map((c) => ({
         id: c.id,
+        slug: c.slug,
         name: c.name,
         logo: c.logo_url || c.avatar_url,
         description: c.description || 'Welcome to our club!',
@@ -176,7 +178,7 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
         <span className="search-icon">⌕</span>
         <input
           type="text"
-          placeholder="Search clubs by name, game, or tag..."
+          placeholder="Search Clubs By Name, Game, Or Tag..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />

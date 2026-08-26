@@ -18,6 +18,9 @@ import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { FinancialExportService } from '../services/FinancialExportService';
 import DynamicWallet from '../components/wallet/DynamicWallet';
+import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
+import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import './ClubFinancialsPage.css';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -57,6 +60,14 @@ export default function ClubFinancialsPage() {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<'week' | 'month' | 'all'>('week');
   const [userRole, setUserRole] = useState<ClubRole>('player');
+  // Dan 2026-08-23: tapping Club Bank opens the Club Bank Cashier.
+  const [activeCashier, setActiveCashier] = useState<
+    'club_bank' | 'promo_wallet' | 'agent_wallet' | null
+  >(null);
+  // Dan 2026-08-24: "PLAYER WALLET NEEDS TO BE FULLY CLICKABLE AND OPEN TO SEE
+  // ALL TRANSACTIONS AND OTHER AVAILABLE DATA WHEN CLICKED." The row opens the
+  // member's own statement - a read-only view, so it is not an activeCashier.
+  const [showPlayerWallet, setShowPlayerWallet] = useState(false);
   const toast = useToast();
   useVisibilityRefresh(() => loadFinancials());
   const [visibleTransactions, setVisibleTransactions] = useState<Set<string>>(new Set());
@@ -143,7 +154,7 @@ export default function ClubFinancialsPage() {
     const unsubChipsWithdrawn = masterBus.subscribeDebounced('CHIPS_WITHDRAWN', refresh, 500);
     const unsubChipsDistributed = masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', refresh, 1000);
     const unsubClubUpdated = masterBus.subscribeDebounced('CLUB_UPDATED', refresh, 1000);
-    const unsubTxLogged = masterBus.subscribeDebounced('TRANSACTION_LOGGED' as any, refresh, 2000);
+    const unsubTxLogged = masterBus.subscribeDebounced('TRANSACTION_LOGGED', refresh, 2000);
     return () => {
       unsubBalance();
       unsubWallet();
@@ -386,10 +397,33 @@ export default function ClubFinancialsPage() {
         <DynamicWallet
           userId={user.id}
           clubId={clubId}
-          variant={userRole === 'owner' ? 'owner' : 'player'}
+          variant="club"
+          // Dan 2026-08-23: role decides the rows. Club Bank, and the cashier
+          // behind it, are owner / co-owner / admin / super agent only.
+          role={userRole}
           onBuyDiamonds={() => navigate('/vip')}
+          onOpenPlayerWallet={() => setShowPlayerWallet(true)}
+          onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
+          onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
+          onOpenClubBank={() => setActiveCashier('club_bank')}
           onOpenBBJ={() => navigate(`/clubs/${clubId}/jackpot`)}
         />
+      )}
+      {clubId && (
+        <>
+          <WalletCashierModal
+            isOpen={!!activeCashier}
+            onClose={() => setActiveCashier(null)}
+            clubId={clubId}
+            role={userRole}
+            walletType={activeCashier || DEFAULT_CASHIER_WALLET}
+          />
+          <PlayerWalletModal
+            isOpen={showPlayerWallet}
+            onClose={() => setShowPlayerWallet(false)}
+            clubId={clubId}
+          />
+        </>
       )}
       {/* Period Selector */}
       <div className="period-selector">
@@ -565,7 +599,7 @@ export default function ClubFinancialsPage() {
         </section>
       )}
 
-      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
+      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

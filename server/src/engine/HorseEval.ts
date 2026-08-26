@@ -24,6 +24,13 @@
 
 import type { Card } from '../types.js';
 import { SUITS, RANKS, RANK_VALUES } from './PokerEngine.js';
+import {
+  holeCardCount,
+  isOmahaVariant,
+  isHiLoVariant,
+  isShortDeckVariant,
+} from './VariantRules.js';
+import { isPotLimitVariant } from './BettingStructure.js';
 
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 
@@ -114,15 +121,21 @@ export type VariantInfo = {
 
 export function variantInfo(gameVariant: string): VariantInfo {
   const v = (gameVariant || 'nlh').toLowerCase();
-  const isOmaha = v.startsWith('plo');
-  const holeCount = v === 'plo5' ? 5 : v === 'plo6' ? 6 : isOmaha ? 4 : v === 'pineapple' ? 3 : 2;
+  // 2026-08-23: every field here was its own substring test, and `flo8` failed
+  // all of them — the horses would have read Fixed Limit Omaha Hi-Lo as a
+  // two-card Hold'em board and priced every decision off the wrong hand.
+  // `isPotLimit` was `isOmaha`, which is now doubly wrong: flo8 is an Omaha
+  // game that is NOT pot-limit, so ask BettingStructure rather than inferring.
+  const isOmaha = isOmahaVariant(v);
+  const holeCount = holeCardCount(v);
   return {
     holeCount,
     isOmaha,
-    isHiLo: v === 'plo8',
-    isShortDeck: v === 'short_deck',
-    isPotLimit: isOmaha,
-    iterations: v === 'plo6' ? 120 : v === 'plo5' ? 170 : v === 'plo8' ? 140 : isOmaha ? 220 : 450,
+    isHiLo: isHiLoVariant(v),
+    isShortDeck: isShortDeckVariant(v),
+    isPotLimit: isPotLimitVariant(v),
+    iterations:
+      v === 'plo6' ? 120 : v === 'plo5' ? 170 : isHiLoVariant(v) ? 140 : isOmaha ? 220 : 450,
   };
 }
 
@@ -488,6 +501,115 @@ export function omahaDrawQuality(hole: Card[], board: Card[]): OmahaDrawInfo {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// V15 OMAHA MADE-HAND NUT STATUS (Dan 2026-08-26)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The made-hand classifier stops at CATEGORY: a 9-high flush and the nut flush
+// are both "6". In Omaha that distinction is most of the game — when a bet gets
+// raised on a three-flush board, the raiser has a flush too, and the only
+// question that matters is WHOSE IS BIGGER. This answers it directly:
+// for a made flush, how many ranks of the flush suit that beat hero's best
+// suited hole card are still live (not on the board, not in hero's hand); for
+// a made straight, whether any two hole cards could make a bigger one on this
+// board. Cheap (no simulation), called lazily only for cat 5/6 Omaha hands.
+
+export interface OmahaNutStatus {
+  /** made category from scoreOmahaHiPartial (0 when unknown) */
+  category: number;
+  /** made flush only: count of LIVE ranks in the flush suit above hero's best
+   *  suited hole card. 0 = nut flush; 1 = second nut; 2+ = dominated. */
+  higherFlushRanks: number;
+  /** made straight only: no two hole cards make a bigger straight here */
+  straightIsNut: boolean;
+}
+
+const NO_NUT_STATUS: OmahaNutStatus = { category: 0, higherFlushRanks: 0, straightIsNut: true };
+
+export function omahaNutStatus(hole: Card[], board: Card[]): OmahaNutStatus {
+  if (!hole || hole.length < 2 || !board || board.length < 3) return NO_NUT_STATUS;
+  try {
+    const score = scoreOmahaHiPartial(hole, board);
+    const cat = Math.floor(score / 0x100000);
+    const out: OmahaNutStatus = { category: cat, higherFlushRanks: 0, straightIsNut: true };
+
+    if (cat === 6) {
+      // The flush suit: >= 3 on the board (Omaha uses exactly 3 board cards)
+      // where hero holds >= 2 (exactly 2 hole cards must play).
+      for (const suit of SUITS) {
+        const onBoard = board.filter((c) => c.suit === suit);
+        if (onBoard.length < 3) continue;
+        const heroSuited = hole.filter((c) => c.suit === suit);
+        if (heroSuited.length < 2) continue;
+        let heroTop = 0;
+        for (const c of heroSuited) heroTop = Math.max(heroTop, RANK_VALUES[c.rank]);
+        const seen = new Set<number>();
+        for (const c of onBoard) seen.add(RANK_VALUES[c.rank]);
+        for (const c of heroSuited) seen.add(RANK_VALUES[c.rank]);
+        let higher = 0;
+        for (let r = heroTop + 1; r <= 14; r++) if (!seen.has(r)) higher++;
+        out.higherFlushRanks = higher;
+        break;
+      }
+    } else if (cat === 5) {
+      // Best straight ANY two hole cards could make: a 5-rank window holding
+      // at least 3 distinct board ranks is fillable (the opponent supplies
+      // the at-most-2 missing ranks from their hole).
+      const boardRankSet = new Set<number>();
+      for (const c of board) boardRankSet.add(RANK_VALUES[c.rank]);
+      const heroTop = score & 0xfffff;
+      let bestTop = 0;
+      for (let top = 14; top >= 5 && bestTop === 0; top--) {
+        let onBoard = 0;
+        for (let k = 0; k < 5; k++) {
+          const r = top - k === 1 ? 14 : top - k; // wheel: the 5-high straight uses the ace
+          if (boardRankSet.has(r)) onBoard++;
+        }
+        if (onBoard >= 3) bestTop = top;
+      }
+      out.straightIsNut = bestTop <= heroTop;
+    }
+    return out;
+  } catch {
+    return NO_NUT_STATUS;
+  }
+}
+
+/**
+ * V15: cheap Omaha board-contact test for the MC sampler — no hand scoring.
+ * Pair-or-better contact (a hole rank on the board, or a pocket pair), a
+ * two-card flush holding in a two-suited/monotone board suit, or two hole
+ * cards coordinating with the board's straight window.
+ */
+export function omahaConnectsBoard(hole: Card[], board: Card[]): boolean {
+  const boardRanks = new Set<number>();
+  for (const c of board) boardRanks.add(RANK_VALUES[c.rank]);
+  const holeRankCount = new Map<number, number>();
+  for (const c of hole) {
+    const r = RANK_VALUES[c.rank];
+    if (boardRanks.has(r)) return true; // paired the board
+    holeRankCount.set(r, (holeRankCount.get(r) || 0) + 1);
+  }
+  for (const n of holeRankCount.values()) if (n >= 2) return true; // pocket pair
+  // Flush contact: board suit with >= 2 and two suited hole cards.
+  const boardSuit = new Map<string, number>();
+  for (const c of board) boardSuit.set(c.suit, (boardSuit.get(c.suit) || 0) + 1);
+  for (const [suit, n] of boardSuit) {
+    if (n >= 2 && hole.filter((c) => c.suit === suit).length >= 2) return true;
+  }
+  // Straight-ish contact: two distinct hole ranks each within 2 of a board rank.
+  let near = 0;
+  for (const r of holeRankCount.keys()) {
+    for (const b of boardRanks) {
+      if (Math.abs(r - b) <= 2) {
+        near++;
+        break;
+      }
+    }
+  }
+  return near >= 2;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MONTE CARLO EQUITY — variant-aware, opponent-count-aware, draw-aware
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -571,6 +693,120 @@ export function connectsBoard(hole: Card[], board: Card[], shortDeck: boolean): 
  * supported variants. Draws are priced naturally because the runout completes
  * the board every iteration.
  */
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// V13 EXACT BAND SAMPLING (2026-08-23)
+// ═══════════════════════════════════════════════════════════════════════════════
+// The band sampler used REJECTION sampling: redraw uniformly up to `tries`
+// times and, if nothing landed in the band, keep the CLOSEST MISS at full
+// weight. For a tight read that is a disaster, because the tighter the band the
+// lower the per-draw hit rate and so the more often the fallback fires — and
+// the fallback's expected value is the best of ~15 draws that all FAILED the
+// band, i.e. a hand just under it.
+//
+// Measured, hero AQs on A-K-7 against a [0.85, 1.0] read (27 legal combos, 2.5%
+// of the deck): true equity 55.4%, sampler 72.4% — SEVENTEEN POINTS too high,
+// systematically, in hero's favour. A horse facing a 4-bet priced its hand as a
+// crush and called off.
+//
+// A two-card range is small enough to enumerate exactly, so there is no reason
+// to sample it by rejection at all. The tables below hold every combo sorted by
+// preflop percentile; a band is then a CONTIGUOUS SLICE found by binary search,
+// and sampling is one uniform draw from that slice plus a collision check
+// against the cards already dealt. Exact, and cheaper than the loop it replaces.
+// Omaha keeps the old path — its combo space is far too large to enumerate.
+
+type ComboTable = { scores: Float64Array; c1: Card[]; c2: Card[] };
+
+function buildComboTable(shortDeck: boolean): ComboTable {
+  const src = shortDeck ? SHORT_DECK_CARDS : FULL_DECK;
+  const rows: Array<{ s: number; a: Card; b: Card }> = [];
+  for (let i = 0; i < src.length; i++) {
+    for (let j = i + 1; j < src.length; j++) {
+      rows.push({ s: holdemPreflopScore(src[i], src[j], shortDeck), a: src[i], b: src[j] });
+    }
+  }
+  rows.sort((x, y) => x.s - y.s);
+  const scores = new Float64Array(rows.length);
+  const c1: Card[] = new Array(rows.length);
+  const c2: Card[] = new Array(rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    scores[i] = rows[i].s;
+    c1[i] = rows[i].a;
+    c2[i] = rows[i].b;
+  }
+  return { scores, c1, c2 };
+}
+
+let comboFull: ComboTable | null = null;
+let comboShort: ComboTable | null = null;
+const comboTable = (shortDeck: boolean): ComboTable => {
+  if (shortDeck) return (comboShort ??= buildComboTable(true));
+  return (comboFull ??= buildComboTable(false));
+};
+
+/** First index whose score is >= v. */
+function lowerBound(a: Float64Array, v: number): number {
+  let lo = 0;
+  let hi = a.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (a[mid] < v) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** Availability scratch, indexed by card id — reused, never allocated. */
+const cardAvail = new Uint8Array(64);
+const cardId = (c: Card): number => ((RANK_VALUES[c.rank] - 2) << 2) | (SUIT_INDEX[c.suit] ?? 0);
+
+/**
+ * Place an in-band two-card hand into deck[windowStart..windowStart+1] by
+ * swapping it in from the undealt remainder. Returns false when the band has no
+ * combo left that avoids the cards already dealt, in which case the caller
+ * keeps its uniform draw.
+ */
+function placeBandCombo(
+  deck: Card[],
+  windowStart: number,
+  n: number,
+  band: [number, number],
+  shortDeck: boolean
+): boolean {
+  const tbl = comboTable(shortDeck);
+  const lo = lowerBound(tbl.scores, band[0]);
+  const hi = lowerBound(tbl.scores, band[1] + 1e-12);
+  const span = hi - lo;
+  if (span <= 0) return false;
+
+  cardAvail.fill(0);
+  for (let i = windowStart; i < n; i++) cardAvail[cardId(deck[i])] = 1;
+
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const idx = lo + Math.floor(fastRandom() * span);
+    const a = tbl.c1[idx];
+    const b = tbl.c2[idx];
+    if (!cardAvail[cardId(a)] || !cardAvail[cardId(b)]) continue;
+    // Swap both into the window.
+    for (let k = 0; k < 2; k++) {
+      const want = k === 0 ? a : b;
+      const slot = windowStart + k;
+      if (deck[slot] === want) continue;
+      for (let j = slot; j < n; j++) {
+        if (deck[j] === want) {
+          const tmp = deck[slot];
+          deck[slot] = deck[j];
+          deck[j] = tmp;
+          break;
+        }
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
 export function simulateEquity(
   holeCards: Card[],
   boardCards: Card[],
@@ -595,9 +831,16 @@ export function simulateEquity(
   // V3 perf: banded Omaha sampling adds rejection-scoring cost; trim the
   // iteration count to stay inside the per-decision millisecond budget.
   if (oppBands && vi.isOmaha) {
-    // Multiway banded pots multiply the rejection-sampling cost per iteration;
-    // scale the iteration count down harder to hold the latency budget.
-    iterations = Math.max(60, Math.floor(iterations * (numOpponents >= 3 ? 0.5 : 0.65)));
+    // V13: the trim was HALVING the sample in exactly the spots that matter
+    // most — multiway banded pots — and the measured cost was severe. Run to
+    // run, a banded 4-opponent PLO estimate moved by 2sd = 6.5 to 10.4
+    // percentage points, against strategy tiers only 10 to 12 points apart:
+    // a PLO decision could land in a different tier from the RNG alone, and
+    // the difficultyHint "tank on close spots" read was measuring noise.
+    // Measured latency at the untrimmed count is 11-13 ms against a 25 ms
+    // budget, so the trim was buying headroom the engine did not need.
+    // Softened to a light trim for the widest multiway case only.
+    iterations = Math.max(120, Math.floor(iterations * (numOpponents >= 3 ? 0.85 : 1)));
   }
   const known = new Set<string>();
   for (const c of holeCards) known.add(cardKey(c));
@@ -625,12 +868,19 @@ export function simulateEquity(
   // ablation): later checkpoints + stricter margin than the first cut — keeps
   // nearly all the latency win with no measurable equity-precision cost.
   const V7_THRESHOLDS = [0.18, 0.3, 0.42, 0.52, 0.62, 0.8];
+  // V13: the floor used to be Math.max(60, ...), which for a trimmed Omaha
+  // budget of 60 made checkpoint[0] EQUAL the whole budget — a no-op — and left
+  // the other two out of order. The adaptive early exit was therefore dead for
+  // every Omaha variant, while the iteration counts had been cut on the
+  // assumption that it was live. Sorted, with a floor that can actually be
+  // reached, the exit works again and pays for the larger samples above on the
+  // decisions that are not close.
   const checkpoints = adaptive
     ? [
-        Math.max(60, Math.floor(iterations * 0.4)),
+        Math.max(30, Math.floor(iterations * 0.4)),
         Math.floor(iterations * 0.65),
         Math.floor(iterations * 0.85),
-      ]
+      ].sort((a, b) => a - b)
     : null;
   let done = 0;
 
@@ -684,56 +934,72 @@ export function simulateEquity(
         const distOf = (s: number): number =>
           s < band[0] ? band[0] - s : s > band[1] ? s - band[1] : 0;
 
-        const narrow = band[1] - band[0] < 0.45;
-        const tries = vi.isOmaha ? (narrow ? 6 : 4) : narrow ? 14 : 6;
-
-        let bestDist = distOf(scoreOf(oppCards));
-        let bestKeys: string[] | null = null; // null = current window is best
-        if (bestDist > 0) {
-          bestKeys = [];
-          for (let i = 0; i < oppHole; i++) bestKeys.push(cardKey(oppCards[i]));
-          for (let t = 0; t < tries && bestDist > 0; t++) {
-            // Redraw the window uniformly from the remainder of the deck.
-            for (let i = 0; i < oppHole; i++) {
-              const slot = windowStart + i;
-              const j = slot + Math.floor(fastRandom() * (n - slot));
-              const tmp = deck[slot];
-              deck[slot] = deck[j];
-              deck[j] = tmp;
-              oppCards[i] = deck[slot];
-            }
-            const d = distOf(scoreOf(oppCards));
-            if (d < bestDist) {
-              bestDist = d;
-              if (d === 0) {
-                bestKeys = null; // current window is in-band — done
-              } else {
-                bestKeys = [];
-                for (let i = 0; i < oppHole; i++) bestKeys.push(cardKey(oppCards[i]));
-              }
-            }
+        // V13: NLH-family two-card ranges are sampled EXACTLY from the
+        // enumerated combo table — no rejection, no closest-miss fallback.
+        // Measured bias of the old path on a [0.85,1.0] read: +17 equity
+        // points in hero's favour. Omaha keeps rejection sampling because its
+        // combo space cannot be enumerated.
+        if (!vi.isOmaha && oppHole === 2) {
+          if (placeBandCombo(deck, windowStart, n, band, vi.isShortDeck)) {
+            oppCards[0] = deck[windowStart];
+            oppCards[1] = deck[windowStart + 1];
           }
-          // Restore the best-seen draw into the window if the final redraw
-          // was not it (cards were displaced into [windowStart, n) by swaps).
-          if (bestKeys) {
-            for (let i = 0; i < oppHole; i++) {
-              const slot = windowStart + i;
-              if (cardKey(deck[slot]) === bestKeys[i]) {
+          // If the band has nothing left that avoids the dealt cards, the
+          // uniform draw already in the window stands — the same fail-safe
+          // the old code had, but now it is the rare case rather than the
+          // majority one.
+        } else {
+          const narrow = band[1] - band[0] < 0.45;
+          const tries = vi.isOmaha ? (narrow ? 6 : 4) : narrow ? 14 : 6;
+
+          let bestDist = distOf(scoreOf(oppCards));
+          let bestKeys: string[] | null = null; // null = current window is best
+          if (bestDist > 0) {
+            bestKeys = [];
+            for (let i = 0; i < oppHole; i++) bestKeys.push(cardKey(oppCards[i]));
+            for (let t = 0; t < tries && bestDist > 0; t++) {
+              // Redraw the window uniformly from the remainder of the deck.
+              for (let i = 0; i < oppHole; i++) {
+                const slot = windowStart + i;
+                const j = slot + Math.floor(fastRandom() * (n - slot));
+                const tmp = deck[slot];
+                deck[slot] = deck[j];
+                deck[j] = tmp;
                 oppCards[i] = deck[slot];
-                continue;
               }
-              for (let j = slot + 1; j < n; j++) {
-                if (cardKey(deck[j]) === bestKeys[i]) {
-                  const tmp = deck[slot];
-                  deck[slot] = deck[j];
-                  deck[j] = tmp;
-                  break;
+              const d = distOf(scoreOf(oppCards));
+              if (d < bestDist) {
+                bestDist = d;
+                if (d === 0) {
+                  bestKeys = null; // current window is in-band — done
+                } else {
+                  bestKeys = [];
+                  for (let i = 0; i < oppHole; i++) bestKeys.push(cardKey(oppCards[i]));
                 }
               }
-              oppCards[i] = deck[slot];
+            }
+            // Restore the best-seen draw into the window if the final redraw
+            // was not it (cards were displaced into [windowStart, n) by swaps).
+            if (bestKeys) {
+              for (let i = 0; i < oppHole; i++) {
+                const slot = windowStart + i;
+                if (cardKey(deck[slot]) === bestKeys[i]) {
+                  oppCards[i] = deck[slot];
+                  continue;
+                }
+                for (let j = slot + 1; j < n; j++) {
+                  if (cardKey(deck[j]) === bestKeys[i]) {
+                    const tmp = deck[slot];
+                    deck[slot] = deck[j];
+                    deck[j] = tmp;
+                    break;
+                  }
+                }
+                oppCards[i] = deck[slot];
+              }
             }
           }
-        }
+        } // end Omaha rejection-sampling branch (V13)
       }
 
       // ═══ V12 BOARD-CONTACT CONDITIONING (NLH family, flop+) ═══
@@ -743,8 +1009,57 @@ export function simulateEquity(
       // probability scaled by how hard they have been betting; a passive
       // checked line gets its monsters down-sampled (capped stays capped).
       const read = oppReads ? oppReads[o] : null;
+      // ═══ V15 OMAHA BOARD-CONTACT CONDITIONING (Dan 2026-08-26) ═══
+      // The V12 conditioning below was NLH-only, so a PLO opponent RAISING on
+      // a three-flush board was still sampled from his preflop band — mostly
+      // hands with no flush — and a 9-high flush priced itself as a 75-85%
+      // favourite against a range that in reality is full of bigger flushes.
+      // This is the equity overstatement behind every "called off with the
+      // small flush" hand. Omaha aggressors are now pushed toward hands that
+      // CONTACT the board, using a cheap structural test (no scoring) and at
+      // most two redraws so the MC budget is untouched. Tight bands skip it:
+      // the Omaha band redraw cannot re-test the band (the V13 NLH collapse),
+      // so conditioning there would trade one bias for another — the explicit
+      // nut-discipline penalty in HorseLogic covers those pots instead.
+      if (read && vi.isOmaha && boardCards.length >= 3 && read.aggrW > 0) {
+        const bandWidth = band ? band[1] - band[0] : 1;
+        if (bandWidth >= 0.45) {
+          const pConnect = Math.min(0.85, 0.4 + read.aggrW * 2.0);
+          for (let t = 0; t < 2; t++) {
+            if (omahaConnectsBoard(oppCards, boardCards)) break;
+            if (fastRandom() >= pConnect) break; // some of the range IS air
+            for (let i = 0; i < oppHole; i++) {
+              const slot = windowStart + i;
+              const j = slot + Math.floor(fastRandom() * (n - slot));
+              const tmp = deck[slot];
+              deck[slot] = deck[j];
+              deck[j] = tmp;
+              oppCards[i] = deck[slot];
+            }
+          }
+        }
+      }
       if (read && !vi.isOmaha && boardCards.length >= 3) {
+        // V13: the redraw must STAY IN THE READ. It used to draw uniformly
+        // from the whole remaining deck and never re-test the band, so any
+        // in-band hand that failed to connect was replaced by an
+        // unconditioned random one — the intersection "in band AND
+        // connecting" was never sampled and the model collapsed to "anything
+        // that connects". A 3-bettor's c-betting range acquired bottom two
+        // pair and 72o, inflating villain equity and folding the horse's top
+        // pair on a dry board. When a band is present the redraw now draws
+        // from the band; without one it stays uniform, as before.
+        const band13 = oppBands ? oppBands[o] : null;
         const redraw = () => {
+          if (
+            band13 &&
+            oppHole === 2 &&
+            placeBandCombo(deck, windowStart, n, band13, vi.isShortDeck)
+          ) {
+            oppCards[0] = deck[windowStart];
+            oppCards[1] = deck[windowStart + 1];
+            return;
+          }
           for (let i = 0; i < oppHole; i++) {
             const slot = windowStart + i;
             const j = slot + Math.floor(fastRandom() * (n - slot));
@@ -1048,7 +1363,19 @@ export function omahaPreflopScore(cards: Card[], isHiLo: boolean): number {
   }
 
   // Normalize: premium AAKK-ds style hands land around 28-32 points.
-  return clamp01(pts / 30);
+  //
+  // V15 (Dan 2026-08-26): the raw point sum grows with every extra hole card
+  // (more pairs, more suits, more connections exist in 5 and 6 cards), and a
+  // single /30 divisor let that growth masquerade as hand strength. Measured
+  // over 200k random hands per variant: the MEDIAN plo6 hand scored 0.53 and
+  // the median plo5 hand 0.40 against plo4's 0.24 — above the facing-a-raise
+  // call threshold (0.52) on a completely average holding, which is why the
+  // plo5/plo6 fleets played far too many hands far too hard. Subtracting the
+  // measured median shift aligns the distributions almost exactly (p85 within
+  // 0.2 points, p95 within 1.4 points of plo4's curve), so a percentile
+  // threshold now selects the same QUALITY of hand in every Omaha variant.
+  const holeShift = cards.length >= 6 ? 8.8 : cards.length === 5 ? 4.7 : 0;
+  return clamp01((pts - holeShift) / 30);
 }
 
 /** Pineapple (3-card) preflop: best 2-card combo + backup potential. */

@@ -84,17 +84,39 @@
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
+  /* Dan 2026-08-25 ("the footer doesn't stay on the footer, it moves around"),
+     iOS Safari. `-webkit-overflow-scrolling: touch` has been a no-op for
+     momentum since iOS 13 — momentum is the default — but it is NOT a no-op
+     for the children: it promotes the scroller to its own UIScrollView layer,
+     and position:sticky / position:fixed descendants inside one repaint only
+     at scroll END. Finger down, the bar freezes wherever it was and rides up
+     the page; finger up, it snaps back to the bottom. That is exactly the
+     symptom, and it is the one line in this rule that is Safari-specific.
+     Removed, not replaced. */
   overscroll-behavior: contain;
   contain: layout paint;
 }
 
 /* Dan 2026-08-20 ("bottom row quick links should always be on the footer"):
-   ClubBottomNav is position:fixed, but inside this tab its containing block is
-   the transformed swipe track — the probe measured it parked at y=3870, three
-   screens below the fold. Sticky against this scroll container pins it to the
-   visible bottom at every scroll position instead. The CSS-module class name
-   is hashed, so match on the stable local-name substring. */
+   ClubBottomNav is position:fixed, but inside this tab `contain: layout paint`
+   above makes THIS ELEMENT its containing block, and the swipe track picks up a
+   transform mid-gesture on top of that — the probe measured it parked at
+   y=3870, three screens below the fold. Sticky against this scroll container
+   pins it to the visible bottom at every scroll position instead. The
+   CSS-module class name is hashed, so match on the stable local-name substring.
+
+   Dan 2026-08-25: this rule was CORRECT and INERT. Sticky resolves against the
+   nearest SCROLLPORT, and `.club-home`'s `overflow-x: hidden` was quietly
+   computing `overflow-y` to `auto` (CSS Overflow 3), making .club-home itself
+   that scrollport — a box of height:auto that never scrolls, so the offset was
+   never applied and the bar fell back to its static flow position mid-page.
+   Fixed at the source: .club-home now uses `overflow-x: clip`, which the spec
+   exempts from that promotion. Do not put `hidden` back there.
+
+   Portaling this bar to document.body is NOT the alternative: every lobby tab
+   stays mounted behind the active table tab, so a body-level fixed bar would
+   float over a live table. `contain: paint` clipping it to this tab is what
+   stops that, and sticky is what survives the clipping. */
 .multi-table-page__lobby-tab nav[class*='bottomNav'] {
   position: sticky;
   bottom: 0;
@@ -175,7 +197,7 @@
   padding: 0;
   background: rgba(0, 0, 0, 0.75);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  z-index: 99;
+  z-index: 350;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
@@ -315,12 +337,60 @@
   }
 
   .tile-toggle-btn {
-    min-height: 36px;
-    min-width: 36px;
+    /* 2026-08-23: 36px was still under the 44px tap minimum */
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+    /* Dan 2026-08-25: the tab strip beside this has to hold four tables at
+       375px, and the base 6px right margin was 6px of that budget. The 44px
+       tap target is untouched — only the empty space next to it. */
+    margin-right: 2px;
+  }
+
+  /* The strip is the thing that must survive a narrow screen, so give it every
+     pixel the two chips beside it do not claim. Without an explicit min-width:0
+     a flex item refuses to shrink past its content, and the overflow lands on
+     the tab strip's own scroller — which is the "Lobby tab is cut off" symptom
+     Dan reported. */
+  .multi-table-page__tab-bar-wrapper > .table-tab-bar {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* The strip's four-pill budget (see the arithmetic in TableTabBar.css) is
+     computed from a fixed 52px for this chip, so the chip has to actually hold
+     to it. A six-figure swing ellipsises rather than pushing a table off the
+     screen — the exact figure is one tap away in the breakdown this opens. */
+  .multi-table-page__pnl-chip {
+    /* border-box is the global reset (src/styles/club-engine.css), so 52px is
+       the whole chip, border and padding included. */
+    max-width: 52px;
+    padding: 4px 6px;
+    font-size: 0.62rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .table-grid {
     grid-template-columns: 1fr;
+  }
+
+  /* 2026-08-23 mobile pass — tap targets only, layout untouched */
+  .multi-table-page__take-seat-btn,
+  .multi-table-page__quickjoin-row,
+  .multi-table-page__quickjoin-lobby,
+  .multi-table-page__lobby-back,
+  .multi-table-grid__action {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  /* raise presets sit 60px above the strip edge; 40px keeps them tappable
+     without colliding with the fold/call strip below them */
+  .multi-table-grid__raise {
+    min-height: 40px;
+    touch-action: manipulation;
   }
 }
 
@@ -565,11 +635,94 @@
 .multi-table-page__quickjoin-name {
   flex: 1;
   min-width: 0;
+  /* Dan 2026-08-23: now holds the table name AND the ranking badge. flex, so
+     the badge keeps its full width and the NAME is what truncates — a badge
+     reading "Favou..." would be worse than a shortened table name. */
+  display: flex;
+  align-items: center;
+  gap: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.85rem;
   font-weight: 700;
+  /* Holds the name and its reason tag on one line. The name still ellipsises;
+     the tag never shrinks, because a truncated "Favourite" is worse than a
+     truncated table name. */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* WHY this row is where it is. Dan 2026-08-23 asked for Quick Join to lead with
+   favourites and similar games; a list that is silently ranked just reads as a
+   list in a random order, so each row says what earned it its place. */
+.multi-table-page__quickjoin-tag {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.5625rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9fb4cc;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* A favourite is the one tier the player chose themselves, so it is the one
+   that earns colour. Everything else stays neutral - if every tag is
+   highlighted, none of them is. */
+.multi-table-page__quickjoin-tag--fav {
+  color: #ffd76a;
+  background: rgba(255, 199, 60, 0.14);
+  border-color: rgba(255, 199, 60, 0.4);
+}
+
+/* Why this row is where it is: "Favourite", "Similar Game", "Same Game". */
+.multi-table-page__quickjoin-tag {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* A favourite is the strongest signal on the sheet, so it is the only badge
+   that gets colour. Gold rather than the blue CTA next to it: two blues on one
+   row would read as two buttons. */
+.multi-table-page__quickjoin-tag--fav {
+  background: rgba(240, 185, 11, 0.16);
+  border-color: rgba(240, 185, 11, 0.4);
+  color: #f0b90b;
+}
+
+/* Why this row is where it is: "Favourite", "Similar Game", "Same Game". */
+.multi-table-page__quickjoin-tag {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* A favourite is the strongest signal on the sheet, so it is the only badge
+   that gets colour. Gold rather than the blue CTA next to it: two blues on one
+   row would read as two buttons. */
+.multi-table-page__quickjoin-tag--fav {
+  background: rgba(240, 185, 11, 0.16);
+  border-color: rgba(240, 185, 11, 0.4);
+  color: #f0b90b;
 }
 
 .multi-table-page__quickjoin-meta {
@@ -806,4 +959,67 @@
 .multi-table-grid__raise--allin {
   background: linear-gradient(180deg, #b45309 0%, #92400e 100%);
   border-color: rgba(251, 191, 36, 0.5);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CRASHED TABLE CARD (audit 2026-08-25)
+
+   Rendered by the per-slot TableErrorBoundary. Before this pass a render throw
+   in ONE TablePage unmounted all four, because the only boundary above them was
+   the single one in PersistentTableLayer wrapping the whole container. This is
+   what the failed slot shows instead, while the tables beside it keep dealing.
+
+   Deliberately calm: the player's instinct on seeing a crash at a poker table
+   is that their chips are gone, and they are not — the seat lives in
+   table_seats on the server and nothing here can vacate it.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.multi-table-page__crashed {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  background: #0a0c12;
+  color: #e4e6eb;
+}
+
+.multi-table-page__crashed-title {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.multi-table-page__crashed-body {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: rgba(228, 230, 235, 0.72);
+  max-width: 30ch;
+}
+
+.multi-table-page__crashed-name {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(228, 230, 235, 0.45);
+}
+
+.multi-table-page__crashed-btn {
+  margin-top: 4px;
+  padding: 10px 22px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.multi-table-page__crashed-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
 }

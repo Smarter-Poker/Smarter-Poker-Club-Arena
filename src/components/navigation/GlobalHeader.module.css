@@ -33,7 +33,20 @@
   border-bottom: 3px solid rgba(200, 200, 200, 0.8);
   position: sticky;
   top: 0;
-  z-index: 100;
+  /* 2026-08-24: above HomePage's loading dim layer (z 100) — during a slow
+     club load the header used to sit dimmed underneath it and read as dead. */
+  z-index: 130;
+  /* NOTCH (Dan 2026-08-23, from a phone: "ZERO PADDING AT THE TOP, THE TOP
+     ACTION BAR IS CUT OFF"). index.html declares `viewport-fit=cover`, which
+     deliberately extends the page under the status bar and home indicator —
+     that is what makes the app look full-bleed. The cost is that anything
+     pinned to top: 0 renders UNDERNEATH the clock and the notch unless it
+     pays the inset back, and this header never did: Back, Hub and the
+     profile orb sat behind the status bar on every notched iPhone.
+
+     env() resolves to 0 on hardware without an inset, so desktop and older
+     phones are untouched. */
+  padding-top: calc(env(safe-area-inset-top, 0px) + 6px);
   gap: 8px;
   flex-wrap: nowrap;
   width: 100%;
@@ -228,6 +241,20 @@
     opacity 0.15s ease;
   cursor: pointer;
   animation: pulse-orb 2s ease-in-out infinite;
+  /* The equipped frame/aura overlay is absolutely positioned against this
+     element and inherits its 50% radius, so the orb has to be a containing
+     block. It was `static` before nothing was ever drawn on top of it. */
+  position: relative;
+}
+
+/* AvatarCosmetics is authored in `em` so one component serves the 40px orb and
+   the 56px seat. `:global` because the overlay's classes come from a plain
+   stylesheet, not this module, so CSS Modules must not hash them.
+
+   9px, not the orb's own 18px: at 18px the frame's inset glow (1.8em) would be
+   32px on a 40px circle and swallow the face entirely. */
+.profileOrb :global(.sp-cosmetic) {
+  font-size: 9px;
 }
 
 .profileOrb:hover {
@@ -267,7 +294,7 @@
 
 @media (max-width: 640px) {
   .header {
-    padding: 4px 6px;
+    padding: 4px 4px;
     gap: 2px;
   }
 
@@ -284,42 +311,69 @@
   }
 
   .headerRight > * {
-    height: 24px;
+    height: 30px;
+  }
+
+  /* Guard rail: the ten controls must fit the narrowest common phone. If a
+     future icon is added here, this is the line that keeps the last orb on
+     screen instead of clipping it — the row shrinks before it overflows. */
+  .headerLeft,
+  .headerRight {
+    min-width: 0;
   }
 
   .brandTextImg {
     display: none;
   }
 
+  /* Dan 2026-08-24: "INCREASE THE HAMBURGER MENU ICON, BACK AND HUB BUTTONS
+     TO BE THE SAME SIZE AS THE ICONS TO THE RIGHT." One size — 30px — for
+     every control in the bar, left and right. */
   .headerImgBtn {
-    height: 24px;
-    width: 24px;
-    padding: 2px;
+    height: 15px;
+    width: auto;
+    padding: 0;
   }
 
+  /* Nav pills are wide art, so height is the shared dimension — width follows
+     the aspect. A max-width would letterbox them short again. */
+  /* Dan 2026-08-24: BACK and HUB 25% smaller (20 -> 15px), everything round
+     bigger (22 -> 30px). The row still has to fit: 22*1.35 + 15*4.25 +
+     15*3.99 (left art) + 6*30 (round icons) + gaps = 372px inside a 390px
+     iPhone. */
   .headerNavBtn {
-    height: 24px;
+    height: 15px;
     width: auto;
-    max-width: 50px;
-    padding: 4px;
+    max-width: none;
+    padding: 0;
   }
 
   .hamburgerBtn {
-    width: 24px;
-    height: 24px;
-    padding: 4px;
+    width: auto;
+    height: 22px;
+    aspect-ratio: 1.35;
+    padding: 0;
   }
 
   .hideMobile {
     display: none !important;
   }
 
+  /* ONE HEIGHT FOR EVERY CONTROL (Dan 2026-08-24: "MAKE THE HAMBURGER MENU
+     ICON, THE BACK BUTTON AND THE HUB BUTTON THE SAME SIZES AS THE REST OF
+     THE ICONS"). The number is not a taste call, it is the only one that
+     fits: BACK and HUB are 4.25:1 and 3.99:1 pill art, the hamburger 1.35:1,
+     so the ten controls span 9.59h (left art) + 7h (round icons) + gaps. At
+     h=22 that is 380px inside a 390px iPhone; at h=24 it is 424px and the
+     Help orb gets clipped off the right edge — which is what was happening
+     at h=32. */
   .orbBtn,
   .orbLink,
   .profileOrb {
-    width: 24px;
-    height: 24px;
-    font-size: 10px;
+    width: 30px;
+    height: 30px;
+    font-size: 13px;
+    flex-shrink: 0;
   }
 
   .badge {
@@ -343,5 +397,63 @@
     width: 40px;
     height: 40px;
     font-size: 18px;
+  }
+}
+
+/* 320px-class phones (iPhone SE, small Androids), measured 2026-08-24: the
+   orb row's right edge landed at 334px in a 320px viewport — the last orb
+   and part of Help were clipped. Tighter gaps and 22px orbs bring the whole
+   bar to ~250px. 22px stays comfortably tappable because every orb keeps its
+   40px-min parent hit area via padding on the buttons themselves. */
+@media (max-width: 360px) {
+  .header {
+    padding: 4px 4px;
+    gap: 1px;
+  }
+  .headerLeft {
+    gap: 2px;
+  }
+  .headerRight {
+    gap: 2px;
+  }
+  .headerNavBtn {
+    max-width: none;
+    height: 12px;
+    width: auto;
+  }
+  .orbBtn,
+  .orbLink,
+  .profileOrb {
+    width: 24px;
+    height: 24px;
+  }
+  .headerImgBtn {
+    width: auto;
+    height: 12px;
+  }
+  .hamburgerBtn {
+    width: auto;
+    height: 18px;
+    aspect-ratio: 1.35;
+  }
+}
+
+/* PWA GUARANTEE (Dan 2026-08-24, from a phone screenshot: the hamburger sat
+   level with the clock). In an installed app (standalone/fullscreen) the page
+   draws under the status bar, and on some devices/stale shells
+   env(safe-area-inset-top) resolves to 0 — so the env() padding silently
+   vanishes. In app mode, enforce a floor: the header ALWAYS starts below the
+   phone's top bar. Browser tabs are untouched (the status bar lives outside
+   the viewport there).
+
+   LAST IN THE FILE ON PURPOSE. The mobile breakpoints above set the shorthand
+   `padding: 4px 6px`, and a shorthand RESETS padding-top — measured live on
+   the first deploy of this rule: computed padding-top came back 4px in
+   standalone mode because the 640px block out-cascaded it. Equal specificity
+   means source order decides; this block must stay after every rule that
+   touches .header's padding. */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .header {
+    padding-top: calc(max(env(safe-area-inset-top, 0px), 24px) + 6px);
   }
 }

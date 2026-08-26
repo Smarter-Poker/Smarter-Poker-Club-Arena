@@ -26,7 +26,6 @@ import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import './VIPPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import { reportError } from '../utils/errorReporter';
 
 export default function VIPPage() {
   const { user } = useAuthUser();
@@ -67,42 +66,20 @@ export default function VIPPage() {
     let isMounted = true;
     loadVIPStatus(() => isMounted);
 
-    // Real-time profile updates (diamonds, VIP status)
-    if (user?.id) {
-      const channelKey = 'vip-status';
-
-      const channel = masterBus.getOrCreateChannel(channelKey);
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'profiles',
-            filter: `id=eq.${user.id}`,
-          },
-          (payload) => {
-            if (!isMounted) return;
-            const newData = payload.new as any;
-            if (newData.diamonds !== undefined) {
-              setDiamonds(newData.diamonds);
-            }
-          }
-        )
-        .subscribe((status: string, err?: Error) => {
-          if (status === 'CHANNEL_ERROR') {
-            if (err) reportError(err?.message || err, 'VIPPage._Realtime_channel_error');
-          }
-          if (status === 'TIMED_OUT') {
-            console.warn('[VIPPage] Realtime channel timed out');
-          }
-        });
-
-      return () => {
-        isMounted = false;
-        masterBus.removeRegisteredChannel(channelKey);
-      };
-    }
+    // Real-time profile updates (diamonds, VIP status): NOT subscribed here.
+    //
+    // 2026-08-24: a `vip-status` channel used to live here carrying a single
+    // `profiles` (id=eq.<uid>) listener that did setDiamonds(payload.new.diamonds).
+    // PostgresSyncHooks' `global_db_sync:<userId>` channel already carries that
+    // exact listener - same table, same filter - created once at sign-in and
+    // never torn down by navigation. When profiles.diamonds changes it emits
+    // DIAMOND_BALANCE_CHANGED carrying { newBalance }, and the bus subscriber
+    // further down this file already does setDiamonds(newBalance) from exactly
+    // that payload.
+    //
+    // The whole channel is removed rather than just the listener: it had no
+    // other `.on()`, so keeping it would have left a Realtime subscription that
+    // listens to nothing, reconnects on error, and reports status for no reason.
     return () => {
       isMounted = false;
     };
@@ -281,22 +258,40 @@ export default function VIPPage() {
         <RewardsMarketplace
           currentPoints={vipPoints.current}
           onRedeem={async (reward: Reward) => {
-            // Real spend: deduct points server-side (validates balance, records the
-            // ledger entry). Only update the UI on success.
+            // Real spend AND a real grant. `p_reward_id` is what makes this
+            // honest: without it the RPC charged whatever `p_cost` the browser
+            // sent (so a 5,000-point pass cost one point) and granted nothing
+            // at all. With it, vip_reward_catalog prices the reward and the
+            // cosmetic lands in theme_unlocks / avatar_unlocks. p_cost is still
+            // sent for the audit trail; the server ignores it for catalog
+            // rewards. Migration 20260825_vip_reward_catalog.
             const { data, error } = await supabase.rpc('fn_redeem_vip_points', {
               p_cost: reward.pointsCost,
               p_reason: `Reward: ${reward.name}`,
+              p_reward_id: reward.id,
             });
+            // Refusals come back as `{ success: false, error }` with NO
+            // postgres error, so both halves must be checked.
             if (error || !data?.success) {
               toast.error(
                 data?.error === 'insufficient_points'
-                  ? 'Not enough VIP points for this reward.'
-                  : 'Redemption failed. Please try again.'
+                  ? 'Not Enough VIP Points For This Reward.'
+                  : data?.error === 'already_owned'
+                    ? 'You Already Own This Reward.'
+                    : data?.error === 'sold_out'
+                      ? 'That Reward Is Sold Out.'
+                      : 'Redemption Failed. Please Try Again.'
               );
               return;
             }
             setVipPoints((prev) => ({ ...prev, current: Number(data.balance ?? prev.current) }));
-            toast.success(`Redeemed: ${reward.name}`);
+            // Say what actually happened: a cosmetic is yours now, a physical
+            // or tournament reward still needs somebody to fulfil it.
+            toast.success(
+              data.status === 'granted'
+                ? `Unlocked: ${reward.name}`
+                : `Claimed: ${reward.name}. Your Club Will Fulfil This.`
+            );
           }}
         />
       )}
@@ -357,7 +352,14 @@ export default function VIPPage() {
                 icon: '◆',
                 title: 'Rabbit Hunt',
                 description: 'See undealt cards',
-                value: 'Unlimited',
+                // Dan 2026-08-25: 100 a month, then diamonds. This said
+                // "Unlimited" while the server charged from the 101st, which is
+                // a billing promise the product could not keep. Derived from
+                // VIP_GOLD_LIMITS like its sibling below, rather than a third
+                // hardcoded copy of the number — the cap lives in
+                // fn_consume_rabbit_hunt and this is the only place that quotes
+                // it to a customer.
+                value: `${VIP_GOLD_LIMITS.rabbitHunts} / month`,
               },
               {
                 id: 'timebank',
@@ -416,7 +418,15 @@ export default function VIPPage() {
       {/* Diamond Balance */}
       <section className="vip-section">
         <div className="diamond-balance">
-          <span className="diamond-icon"></span>
+          {/* The glyph is IN THE MARKUP, the way Shell.tsx does it. It used to
+              come from a `.diamond-icon::before { content: '◆' }` declared in
+              ClubHomePage.css - a page-scoped stylesheet that is loaded
+              globally, so this element rendered blank on any session that had
+              not visited a club lobby, and blank permanently once that leaked
+              rule was removed. */}
+          <span className="diamond-icon" aria-hidden="true">
+            ◆
+          </span>
           <span className="diamond-count">{diamonds.toLocaleString()}</span>
           <span className="diamond-label">Diamonds</span>
           <button className="diamond-buy-btn" onClick={() => setShowTopUpModal(true)}>

@@ -23,6 +23,7 @@ import './AchievementsPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
+import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { reportError } from '../utils/errorReporter';
 
 type SortMode = 'default' | 'rarity' | 'progress' | 'recent';
@@ -580,7 +581,7 @@ export default function AchievementsPage() {
   };
 
   return (
-    <div className="achievements-page">
+    <StandardContentLayout className="achievements-page" title="Achievements">
       {/* ═══════════════════════════════════════════════════════════════════════
                  STREAK & ACTIVITY HEADER (Initiative 14)
           ═══════════════════════════════════════════════════════════════════════ */}
@@ -1029,6 +1030,6 @@ export default function AchievementsPage() {
           onClose={() => setSharingAchievement(null)}
         />
       )}
-    </div>
+    </StandardContentLayout>
   );
 }

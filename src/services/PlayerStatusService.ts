@@ -148,7 +148,7 @@ class PlayerStatusServiceClass {
    */
   generateProfileLink(userId: string): string {
     const baseUrl = window.location.origin;
-    return `${baseUrl}/profile/${userId}`;
+    return `${baseUrl}/hub/club-arena/profile/${userId}`;
   }
 
   /**

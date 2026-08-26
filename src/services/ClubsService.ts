@@ -12,6 +12,7 @@ import { buildClubSlug, escapeIlikePattern } from '../utils/clubSlug';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
+import { cashoutService } from './CashoutService';
 
 // Module-level circuit breaker — resets after 5 min cooldown
 const _membershipBreaker = (() => {
@@ -92,7 +93,10 @@ export async function searchClubs(query: string): Promise<Club[]> {
     .select(
       'id, club_id, name, slug, description, avatar_url, logo_url, banner_url, color_theme, member_count, online_count, table_count, chip_treasury, is_public, requires_approval, gps_restricted, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
     )
-    .ilike('name', `%${query}%`)
+    /* `%` and `_` are ilike WILDCARDS. Interpolated raw, a search for "100%"
+       matched every club and "a_b" matched "axb". The escaper is already in
+       this file and already used a hundred lines down. */
+    .ilike('name', `%${escapeIlikePattern(query)}%`)
     .eq('is_public', true)
     .order('member_count', { ascending: false })
     .limit(20);
@@ -300,36 +304,42 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
     throw new Error(error?.message || 'Failed to join club');
   }
 
+  if (data && typeof data === 'object' && 'error' in data) {
+    reportError(new Error(data.error), 'ClubsService.Join_club_failed_RPC');
+    throw new Error(data.error);
+  }
+
   const membership = data as ClubMember;
 
-  // ── Redeem a referral code stored by the Join modal (fire-and-forget) ──
-  // The join flow's "Join with Referral" prompt saves the code under
-  // `referral_<clubUuid>`. Nothing ever redeemed it (audit 2026-08-19), so
-  // the prompt was a stub. Redeem through the canonical platform RPC —
-  // it validates the code, rejects self-referrals, and dedupes server-side.
-  // Never allowed to affect the join result.
-  // Pending joins do NOT redeem: the request can still be rejected, and
-  // crediting a referrer for a membership that never existed is unrecoverable.
-  // The code stays in localStorage so a later successful join redeems it.
+  // ── Auto-assign Agent Downline if Referral Code matches a player ──
   try {
-    if (typeof window !== 'undefined' && membership?.status !== 'pending') {
+    if (typeof window !== 'undefined') {
       const referralKey = `referral_${resolvedId}`;
       const altKey = `referral_${clubId}`;
       const storedCode =
         window.localStorage.getItem(referralKey) || window.localStorage.getItem(altKey);
+
       if (storedCode) {
-        // Single-shot: clear first so a failing code is never retried forever
-        window.localStorage.removeItem(referralKey);
-        window.localStorage.removeItem(altKey);
-        const { referralService } = await import('./ReferralService');
-        referralService
-          .redeemCode(user.user.id, storedCode)
-          .then((res) => {
-            if (!res.success) {
-              console.warn('[ClubsService] joinClub: referral redemption rejected:', res.error);
-            }
-          })
-          .catch((e) => reportError(e, 'ClubsService.joinClub_referral_redeem'));
+        const { AgentService } = await import('./AgentService');
+        // If it's a number (or UUID) it might be an agent referral link.
+        // We link them to the agent IMMEDIATELY, even if they are 'pending' approval,
+        // so when they are approved they are already in the downline.
+        const res = await AgentService.linkPlayerByReferral(user.user.id, storedCode, resolvedId);
+
+        if (res.success) {
+          // Linked successfully! Clear the code.
+          window.localStorage.removeItem(referralKey);
+          window.localStorage.removeItem(altKey);
+        } else if (membership?.status !== 'pending') {
+          // If they weren't an agent, maybe it was a global platform referral code (6 letters)?
+          window.localStorage.removeItem(referralKey);
+          window.localStorage.removeItem(altKey);
+
+          const { referralService } = await import('./ReferralService');
+          referralService
+            .redeemCode(user.user.id, storedCode)
+            .catch((e) => reportError(e, 'ClubsService.joinClub_referral_redeem'));
+        }
       }
     }
   } catch (e) {
@@ -340,7 +350,28 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
   // Harmless for pending joins — listeners simply re-fetch memberships.
   try {
     const { masterBus } = await import('../core/MasterBus');
-    masterBus.emit('CLUB_JOINED', { clubId, action: 'member_joined' });
+    /* THE RESOLVED UUID, LIKE EVERY OTHER EMIT.
+       This one sent the raw caller argument while leaveClub sends the resolved
+       id, and two consumers compare the value by identity: MasterBus registers
+       its realtime channel under `club:${clubId}` on JOIN and unsubscribes
+       `club:${clubId}` on LEAVE - join by club code then leave, and the key
+       never matches, so LEAVE_CLUB is never sent to the engine and the
+       listeners leak for the session. ClubHomePage compares it against the
+       club it is showing, so a CLUB_UPDATED carrying the other spelling never
+       refreshed the lobby. One spelling, everywhere. */
+    // We need the club name for the push notification to display something friendly instead of a UUID
+    let cName = '';
+    try {
+      const { data: cData } = await supabase
+        .from('clubs')
+        .select('name')
+        .eq('id', resolvedId)
+        .maybeSingle();
+      if (cData?.name) cName = cData.name;
+    } catch (e) {
+      /* ignore */
+    }
+    masterBus.emit('CLUB_JOINED', { clubId: resolvedId, clubName: cName, action: 'member_joined' });
   } catch (e) {
     console.warn('[ClubsService] joinClub: bus emit failed (non-critical):', e);
   }
@@ -391,16 +422,50 @@ export async function leaveClub(clubId: string): Promise<void> {
     );
   }
 
-  // 3. Cancel any pending cashout requests
-  try {
-    await supabase
-      .from('cashout_requests')
-      .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
-      .eq('club_id', resolvedId)
-      .eq('player_id', userId)
-      .eq('status', 'pending');
-  } catch (e: unknown) {
-    console.warn('[ClubsService] leaveClub: cashout cancel failed (non-critical):', e);
+  /* 3. Cancel any pending cashout requests.
+   *
+   * This used to be a direct `.update({ status: 'cancelled' })` on
+   * cashout_requests. On 2026-08-25 the migration
+   * `20260825_role_scoped_cashier_agent_wallet_and_cashout_escrow` dropped the
+   * `cashout_update` policy that had made that write possible, because it also
+   * let a player set status to 'approved' on their own request. Every write now
+   * goes through a SECURITY DEFINER function. This caller was not updated with
+   * it, so the statement survived as a NO-OP: RLS with no UPDATE policy does not
+   * raise, it matches zero rows, and PostgREST answers 200. The try/catch could
+   * never fire, and `leaveClub` reported success either way.
+   *
+   * What that cost, when a leaver had a pending cashout: the request stayed
+   * 'pending', the chip_escrow row stayed unreleased, so the escrowed chips were
+   * never added back to chip_balance and therefore were NOT included in the
+   * treasury return at step 4 either. Then step 6 deleted the membership. The
+   * chips existed only as an orphan escrow row belonging to a non-member.
+   *
+   * fn_cashout_release is the one path that actually returns them: it credits
+   * club_members.chip_balance, marks the escrow released and writes the ledger
+   * row, in one transaction. It must run BEFORE step 4 so the returned chips are
+   * part of the balance that goes back to the treasury.
+   *
+   * A failure here is NOT non-critical and is no longer swallowed. If the chips
+   * cannot be brought back out of escrow, leaving would strand them, so we stop
+   * and say so rather than completing a departure that loses money. */
+  const { data: pendingCashouts, error: pendingErr } = await supabase
+    .from('cashout_requests')
+    .select('id')
+    .eq('club_id', resolvedId)
+    .eq('player_id', userId)
+    .eq('status', 'pending');
+
+  if (pendingErr) {
+    reportError(pendingErr, 'ClubsService.leaveClub.pendingCashouts', { clubId: resolvedId });
+    throw new Error(
+      'Could not check whether you have a cash out waiting, so leaving was stopped. Try again.'
+    );
+  }
+
+  for (const row of pendingCashouts ?? []) {
+    // Throws on refusal. cancelCashout reads the RPC's {success,error} envelope,
+    // so a refusal arrives as an Error and not as a silent success.
+    await cashoutService.cancelCashout(row.id, userId);
   }
 
   // 4. If agent, clear downline references (before removing membership)
@@ -408,9 +473,9 @@ export async function leaveClub(clubId: string): Promise<void> {
     try {
       await supabase
         .from('club_members')
-        .update({ parent_agent_id: null })
+        .update({ agent_id: null })
         .eq('club_id', resolvedId)
-        .eq('parent_agent_id', userId);
+        .eq('agent_id', userId);
     } catch (e: unknown) {
       console.warn('[ClubsService] leaveClub: agent hierarchy cleanup failed (non-critical):', e);
     }
@@ -460,7 +525,76 @@ export async function leaveClub(clubId: string): Promise<void> {
  * Accepts an optional pre-resolved user to avoid redundant getAuthUser() calls.
  * This avoids redundant auth lookups when the caller already has the user.
  */
+/**
+ * In-flight de-duplication for the lobby's first query.
+ *
+ * PERF 2026-08-23. This is the first thing the app asks for after boot, and
+ * nothing could ask for it until React had mounted, resolved the route and
+ * loaded HomePage's chunk - several hundred milliseconds on mobile during
+ * which the network sat idle. warmUserMemberships() below starts it at
+ * module-eval time instead, and this memo makes HomePage's later call reuse
+ * that same request rather than issuing a second one.
+ *
+ * A SHORT TTL, deliberately: this is a warm-start window, not a cache. Five
+ * seconds is long enough to cover boot -> first render on a slow phone and
+ * short enough that nobody can observe a stale membership list; the page also
+ * has realtime subscriptions and its own SWR cache behind it.
+ *
+ * Keyed by user so a sign-out and sign-in cannot serve the previous account's
+ * clubs, and cleared on rejection so a failure is never memoised.
+ */
+const MEMBERSHIPS_WARM_TTL_MS = 5000;
+let _membershipsInflight: {
+  key: string;
+  at: number;
+  promise: Promise<(ClubMember & { club: Club })[]>;
+} | null = null;
+
+/** Test seam: drop the warm-start window. */
+export function clearMembershipsWarmCache(): void {
+  _membershipsInflight = null;
+}
+
+/**
+ * Start the lobby's first query before anything renders. Fire-and-forget:
+ * failures are swallowed here and surfaced normally to whoever asks next.
+ */
+export function warmUserMemberships(): void {
+  try {
+    void getUserMemberships().catch(() => {});
+  } catch {
+    /* never let a warm-up break boot */
+  }
+}
+
 export async function getUserMemberships(
+  preResolvedUser?: { id: string } | null
+): Promise<(ClubMember & { club: Club })[]> {
+  // Key on the RESOLVED user id, never on the argument. The warm start at boot
+  // has no user to hand, while HomePage passes the one it already resolved -
+  // keying on the argument gave them different keys, so they never shared and
+  // the warm start was pure extra load. A test pins this.
+  let warmKey = preResolvedUser?.id;
+  if (!warmKey) {
+    const { data: authed } = await getAuthUser();
+    warmKey = authed?.user?.id;
+    if (!warmKey) return [];
+  }
+
+  const warm = _membershipsInflight;
+  if (warm && warm.key === warmKey && Date.now() - warm.at < MEMBERSHIPS_WARM_TTL_MS) {
+    return warm.promise;
+  }
+  const promise = _getUserMembershipsUncached({ id: warmKey });
+  _membershipsInflight = { key: warmKey, at: Date.now(), promise };
+  // A failed request must not be remembered for five seconds.
+  promise.catch(() => {
+    if (_membershipsInflight?.promise === promise) _membershipsInflight = null;
+  });
+  return promise;
+}
+
+async function _getUserMembershipsUncached(
   preResolvedUser?: { id: string } | null
 ): Promise<(ClubMember & { club: Club })[]> {
   let userId: string;
@@ -476,7 +610,7 @@ export async function getUserMemberships(
     .from('club_members')
     .select(
       `
-      club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
+      club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
       club:clubs(id, club_id, name, slug, description, avatar_url, logo_url, card_image_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, requires_approval, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next)
     `
     )
@@ -539,7 +673,7 @@ export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
   const { data, error } = await supabase
     .from('club_members')
     .select(
-      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
+      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
     )
     .eq('club_id', resolvedId)
     // was .order('reputation_xp'), a column that is 0 on all 1,499 rows in
@@ -594,7 +728,10 @@ export async function getClubChallenges(clubId: string): Promise<ClubChallenge[]
     )
     .eq('club_id', resolvedId)
     .eq('status', 'active')
-    .order('ends_at', { ascending: true });
+    .order('ends_at', { ascending: true })
+    /* club_challenges grows without bound per club, and this ran on every
+       lobby load with no cap - the only query in this file without one. */
+    .limit(QUERY_LIMITS.LIST);
 
   if (error) {
     reportError(error, 'ClubsService.Get_challenges_failed');
@@ -619,7 +756,7 @@ export async function getClubLeaderboard(
   const { data, error } = await supabase
     .from('club_members')
     .select(
-      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
+      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
     )
     .eq('club_id', resolvedId)
     // same as above: reputation_xp was always 0, so "top 50" was 50 arbitrary
@@ -704,8 +841,8 @@ export async function deleteClub(clubId: string): Promise<void> {
   // Emit bus events so all open lobby/carousel tabs refresh immediately
   try {
     const { masterBus } = await import('../core/MasterBus');
-    masterBus.emit('CLUB_LEFT', { clubId, action: 'club_deleted' });
-    masterBus.emit('CLUB_UPDATED', { clubId, action: 'club_deleted' });
+    masterBus.emit('CLUB_LEFT', { clubId: resolvedId, action: 'club_deleted' });
+    masterBus.emit('CLUB_UPDATED', { clubId: resolvedId, action: 'club_deleted' });
   } catch (e) {
     console.warn('[ClubsService] deleteClub: bus emit failed (non-critical):', e);
   }
@@ -1000,19 +1137,20 @@ export async function getLiveMemberCount(clubId: string): Promise<number> {
     /* fall through */
   }
 
-  // ── Source C: Direct count (only correct when RLS permits full visibility) ──
-  try {
-    const { count, error } = await supabase
-      .from('club_members')
-      .select('*', { count: 'exact', head: true })
-      .eq('club_id', resolvedId)
-      .in('status', ['active', 'approved']);
-    if (!error && typeof count === 'number') {
-      candidates.push(count);
-    }
-  } catch (e) {
-    console.warn('[ClubsService] getLiveMemberCount direct count failed:', e);
-  }
+  /* Source C (a direct count) REMOVED 2026-08-26.
+   *
+   * Its own comment said "only correct when RLS permits full visibility", and
+   * that is the whole argument against keeping it. RLS can only REMOVE rows, so
+   * this count is always <= the true count. Source A is now genuinely SECURITY
+   * DEFINER (it was declared as such in a comment but was not, until
+   * 20260825460000) and returns the true count. Since the function below returns
+   * Math.max(...candidates), source C could never once have been selected - it
+   * was a 204 ms scan whose result was arithmetically guaranteed to lose.
+   *
+   * Measured, as the club owner who can see all 588 rows:
+   *   direct count ................. 204.61 ms
+   *   fn_get_club_member_count ......  0.55 ms
+   */
 
   if (candidates.length === 0) {
     reportError(new Error('getLiveMemberCount: no source returned a count'), 'ClubsService');

@@ -182,7 +182,7 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search a player…"
+          placeholder="Search A Player…"
           style={{
             flex: '1 1 180px',
             minWidth: 140,

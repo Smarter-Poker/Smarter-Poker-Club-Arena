@@ -1,0 +1,101 @@
+import { describe, it, expect } from 'vitest';
+import fs from 'fs';
+import path from 'path';
+
+/**
+ * AUTO RESTART / AUTO EXTENSION / AUTO CREATE TABLE — three switches on the
+ * table creation page with three tooltips and, until 2026-08-25, zero readers.
+ *
+ * `auto_restart` was worse than merely dead. CreateTableModal's checkbox landed
+ * in the `settings` JSONB blob nothing reads, so it never reached the column at
+ * all — the same class of bug as the straddle / bomb-pot / ante mirrors beside
+ * it in TableService.
+ *
+ * Each switch now means what its tooltip promises, anchored to behaviour that
+ * already existed rather than invented:
+ *
+ *   AUTO RESTART       GameServer's boot comment is the anchor — "CLOSED IS A
+ *                      DECISION, NOT A STATE TO CLEAN UP ... the fleet still
+ *                      reopens the tables it OWNS". A host's table, once
+ *                      closed, stayed closed forever. This is the host saying
+ *                      "reopen mine too".
+ *   AUTO EXTENSION     extends the table's LIFE: an empty table carrying it is
+ *                      skipped by retireSurplusTables instead of being closed
+ *                      for going quiet.
+ *   AUTO CREATE TABLE  the overflow spawn the fleet's own tables already got,
+ *                      extended to a host's table.
+ *
+ * The rules live in SQL (fn_table_lifecycle_pass) because spawnOverflowTables
+ * only knows DEFAULT_TABLES, matched by name prefix — a host's table is not in
+ * that list and never could be. Verified against production in rolled-back
+ * transactions; see the migration header.
+ */
+
+const src = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), 'utf8');
+
+describe('auto extension vetoes retirement, in the query that does the closing', () => {
+  const fleet = src('server/src/services/HorseFleetManager.ts');
+
+  it('is applied to the UPDATE, not filtered on the JS side', () => {
+    // A check anywhere else could be raced past between the seat fetch and the
+    // close. This is the statement that closes the table.
+    // The window is generous because the reasoning sits between the two, and
+    // that comment is the point: it is why the check is HERE and not in JS.
+    expect(fleet).toMatch(
+      /\.update\(\{ status: 'closed' \}\)[\s\S]{0,1200}?\.not\('auto_extension', 'is', true\)/
+    );
+  });
+});
+
+describe('the lifecycle pass runs, and knows more than DEFAULT_TABLES', () => {
+  const fleet = src('server/src/services/HorseFleetManager.ts');
+
+  it('is called on every cycle', () => {
+    expect(fleet).toContain('await this.runTableLifecyclePass();');
+  });
+
+  it('asks the database, which can see every flagged table', () => {
+    expect(fleet).toContain("supabase.rpc('fn_table_lifecycle_pass')");
+  });
+
+  it('never lets a failed pass take the fleet cycle down with it', () => {
+    const body = fleet.slice(
+      fleet.indexOf('private async runTableLifecyclePass'),
+      fleet.indexOf('private async spawnOverflowTables')
+    );
+    expect(body).toContain('try {');
+    expect(body).toContain('reportError(');
+    // Every failure path returns rather than throwing into the cycle.
+    expect(body).toContain('return;');
+  });
+});
+
+describe('auto_restart finally reaches the column', () => {
+  it('is mirrored out of the settings blob, like straddle and bomb pots before it', () => {
+    const svc = src('src/services/TableService.ts');
+    expect(svc).toMatch(/auto_restart: defaultSettings\.auto_restart \?\? false,/);
+  });
+
+  it('the modal still offers the checkbox that now means something', () => {
+    const modal = src('src/components/club/CreateTableModal.tsx');
+    expect(modal).toContain("toggleSetting('auto_restart')");
+  });
+});
+
+describe('the tooltips say what the switches actually do', () => {
+  const page = src('src/pages/TableConfigPage.tsx');
+
+  it('Auto Restart has one at all now', () => {
+    expect(page).toContain('Reopen this table if it closes');
+  });
+
+  it('Auto Extension says what it extends', () => {
+    // "Extend table automatically" left a host guessing what was extended.
+    expect(page).toContain('Keep this table open when it empties');
+    expect(page).not.toContain('Extend table automatically');
+  });
+
+  it('Auto Create Table was already clear and is unchanged', () => {
+    expect(page).toContain('Create new table when full');
+  });
+});

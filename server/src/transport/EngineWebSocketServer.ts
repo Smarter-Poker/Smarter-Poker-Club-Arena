@@ -348,6 +348,15 @@ export class EngineWebSocketServer {
             // blacklist-check error. Log and proceed.
           }
 
+          // Restrict Observers: a table may be seats-only (Dan 2026-08-25).
+          if (await this.isRestrictedObserver(tableId, auth.userId)) {
+            socket.write(
+              'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+            );
+            socket.destroy();
+            return;
+          }
+
           // 2026-08-19: IP Restriction, made real. The switch existed on the
           // create-table page since day one and enforced nothing. It means
           // what it means in a live room: two DIFFERENT accounts may not be at
@@ -476,6 +485,9 @@ export class EngineWebSocketServer {
    * Only the two lookup queries are avoided on a hit; nothing about the ban
    * decision itself is weakened.
    */
+  /** Per-table `restrict_observers`, cached like the IP rule. Never the seat. */
+  private observerRestrictionCache = new Map<string, { restricted: boolean; readAt: number }>();
+
   private async isBannedFromTable(tableId: string, userId: string): Promise<boolean> {
     let scope = this.tableScopeCache.get(tableId);
     if (!scope) {
@@ -526,6 +538,58 @@ export class EngineWebSocketServer {
     }
     this.banCache.set(banKey, { banned, readAt: Date.now() });
     return banned;
+  }
+
+  // ─── Restrict Observers (2026-08-25) ────────────────────────────────────
+  /**
+   * Is `userId` allowed to watch `tableId` without holding a seat?
+   *
+   * Dan 2026-08-25, table-creation parity. `restrict_observers` has been a
+   * toggle since February with ZERO references anywhere in the codebase: a
+   * non-seated user connected on exactly the same path as a seated one and
+   * there was no seated check in the transport at all.
+   *
+   * TWO READS, CACHED DIFFERENTLY ON PURPOSE:
+   *
+   *   the table's SETTING is cached like the IP rule below — it changes when a
+   *   host edits the table, which is rare;
+   *
+   *   the player's SEAT is NOT cached, ever. A player who has just bought in
+   *   connects within the same second, and a thirty-second stale "not seated"
+   *   would lock them out of the seat they just paid for. This is the one
+   *   check on this path where a cache is worse than a query.
+   *
+   * Fails OPEN on error, like every other gate in this file: a database blip
+   * must never refuse a legitimate connection.
+   */
+  private async isRestrictedObserver(tableId: string, userId: string): Promise<boolean> {
+    try {
+      const cached = this.observerRestrictionCache.get(tableId);
+      let restricted: boolean;
+      if (cached && Date.now() - cached.readAt < IP_RESTRICTION_TTL_MS) {
+        restricted = cached.restricted;
+      } else {
+        const { data } = await supabase
+          .from('tables')
+          .select('restrict_observers')
+          .eq('id', tableId)
+          .maybeSingle();
+        restricted = data?.restrict_observers === true;
+        this.observerRestrictionCache.set(tableId, { restricted, readAt: Date.now() });
+      }
+      if (!restricted) return false;
+
+      const { data: seat } = await supabase
+        .from('table_seats')
+        .select('seat_number')
+        .eq('table_id', tableId)
+        .eq('user_id', userId)
+        .is('left_at', null)
+        .maybeSingle();
+      return !seat;
+    } catch {
+      return false;
+    }
   }
 
   // ─── IP Restriction (2026-08-19) ────────────────────────────────────────
@@ -654,6 +718,16 @@ export class EngineWebSocketServer {
       send(data: string) {
         ws.send(data);
       },
+      // 2026-08-24: hub hard-drop → close the socket so the client's
+      // onclose fires NOW and it reconnects on the slow ladder (4429),
+      // instead of holding an open socket that will never speak again.
+      evict() {
+        try {
+          ws.close(CLOSE_RATE_LIMITED, 'backpressure evict - reconnect');
+        } catch {
+          /* ignore */
+        }
+      },
     };
     (ws as unknown as { __sub: HubSubscriber }).__sub = subscriber;
     this.hub.subscribe(tableId, subscriber);
@@ -752,6 +826,19 @@ export class EngineWebSocketServer {
           this.sendMuxError(conn, tableId, 'BANNED', 'Not permitted at this table');
           return;
         }
+        /* The multi-table client never touches the upgrade gate above, so the
+           same rule has to exist here or one surface enforces it and the other
+           does not. */
+        if (await this.isRestrictedObserver(tableId, conn.userId)) {
+          conn.subs.delete(tableId);
+          this.sendMuxError(
+            conn,
+            tableId,
+            'OBSERVERS_RESTRICTED',
+            'This Table Is Open To Seated Players Only'
+          );
+          return;
+        }
       } catch {
         /* same rule as the single-table path: a failed CHECK never refuses */
       }
@@ -773,6 +860,7 @@ export class EngineWebSocketServer {
       if (!this.connections.has(conn.ws) || conn.subs.get(tableId) !== 'pending') return;
       this.logConnectionAudit(conn.userId, tableId, conn.clientIp);
       const ws = conn.ws;
+      const self = this;
       const subscriber: HubSubscriber = {
         id: `${conn.id}:${tableId}`,
         get readyState() {
@@ -783,6 +871,14 @@ export class EngineWebSocketServer {
         },
         send(data: string) {
           ws.send(data);
+        },
+        // 2026-08-24: on a mux socket, closing the whole connection would
+        // punish the user's OTHER tables for one table's backpressure.
+        // Drop just this table's subscription and say so; the client's
+        // per-table facade sees the close and reconnects that table alone.
+        evict() {
+          conn.subs?.delete(tableId);
+          self.sendMuxError(conn, tableId, 'EVICTED', 'backpressure evict - resubscribe');
         },
       };
       conn.subs.set(tableId, subscriber);

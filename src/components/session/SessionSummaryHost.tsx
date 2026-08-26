@@ -244,6 +244,26 @@ export function SessionSummaryHost() {
       if (t.bountyWinnings > 0) {
         out.push({ label: 'Bounties', value: formatChips(t.bountyWinnings) });
       }
+      /* MYSTERY BOUNTY (Dan section 43). The chest half, broken out from the
+         Bounties tile above, which also holds the flat bounties paid before the
+         mystery phase opened. Cents on the payload, divided by 100 here. */
+      const mysteryCount = Number(t.mysteryBounties) || 0;
+      const mysteryCents = Number(t.mysteryBountyCents) || 0;
+      const mysteryLargestCents = Number(t.largestMysteryBountyCents) || 0;
+      if (mysteryCount > 0) {
+        out.push({ label: 'Mystery Bounties', value: String(mysteryCount) });
+      }
+      if (mysteryCents > 0) {
+        out.push({ label: 'Mystery Winnings', value: formatChips(mysteryCents / 100) });
+      }
+      if (mysteryLargestCents > 0) {
+        out.push({ label: 'Largest Mystery', value: formatChips(mysteryLargestCents / 100) });
+      }
+      /* Section 44: the total is prize + bounty, and it is only worth a tile of
+         its own when the two differ. */
+      if (t.bountyWinnings > 0) {
+        out.push({ label: 'Total Payout', value: formatChips(t.prize + t.bountyWinnings) });
+      }
       if (t.rebuys > 0) out.push({ label: 'Rebuys', value: String(t.rebuys) });
       if (t.addOns > 0) out.push({ label: 'Add Ons', value: String(t.addOns) });
       return out;
@@ -265,7 +285,7 @@ export function SessionSummaryHost() {
       { label: 'Win Rate', value: `${winRate}%` },
     ];
     if (payload.totalBuyIn != null && payload.totalBuyIn > 0) {
-      out.push({ label: 'Total Buy In', value: formatChips(payload.totalBuyIn) });
+      out.push({ label: "Buy In's", value: formatChips(payload.totalBuyIn) });
     }
     if (payload.totalRebuys > 0) {
       out.push({ label: 'Rebuys', value: String(payload.totalRebuys) });

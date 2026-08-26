@@ -10,7 +10,7 @@
  * - System messages (joins, wins, etc.)
  */
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import './TableChat.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
@@ -53,6 +53,16 @@ function ChatBubbleIcon() {
 
 export type ChatMessageType = 'PLAYER' | 'SYSTEM' | 'DEALER' | 'EMOJI';
 
+/**
+ * How long the compose box refuses a second send.
+ *
+ * Must stay >= `RATE_LIMIT_MS` in `useTableChat`. That one is the real limit
+ * (it guards the database write); this one exists so the refusal happens while
+ * the player's text is still in the box. If this drops below it, messages
+ * silently disappear again.
+ */
+export const SEND_COOLDOWN_MS = 1000;
+
 export interface ChatMessage {
   id: string;
   type: ChatMessageType;
@@ -62,12 +72,32 @@ export interface ChatMessage {
   content: string;
   timestamp: Date;
   isHighlighted?: boolean;
+  /**
+   * The insert into `table_chat` was refused.
+   *
+   * Before 2026-08-25 a failed send was handled by filtering the optimistic
+   * message out of the list. The player typed a line, watched it appear, and
+   * watched it disappear with no explanation and nothing in the UI to say why.
+   * That is a failed write rendered as an empty success state, which is exactly
+   * what the house rules forbid one layer up in the query code.
+   *
+   * `club_chat` already had the right treatment for this and table chat did not;
+   * this is that treatment.
+   */
+  isFailed?: boolean;
 }
 
 export interface TableChatProps {
   messages: ChatMessage[];
   onSendMessage: (message: string) => void;
   myPlayerId?: string;
+  /**
+   * @deprecated Accepted and never read. Every message this component renders
+   * is already handed to it in `messages`; the subscription, the insert and the
+   * per-table filtering all live in `useTableChat`, which is where the table id
+   * genuinely belongs. TablePage still passes it (TablePage.tsx, the
+   * `<TableChat>` block) and that line can go.
+   */
   tableId?: string;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -131,7 +161,7 @@ function MessageRow({ message, isOwnMessage, isNew = false }: MessageRowProps) {
 
   return (
     <div
-      className={`chat-message ${isOwnMessage ? 'chat-message--own' : ''} ${message.isHighlighted ? 'chat-message--highlighted' : ''} ${isNew ? 'chat-message--slide-in' : ''}`}
+      className={`chat-message ${isOwnMessage ? 'chat-message--own' : ''} ${message.isHighlighted ? 'chat-message--highlighted' : ''} ${isNew ? 'chat-message--slide-in' : ''} ${message.isFailed ? 'chat-message--failed' : ''}`}
     >
       {!isOwnMessage && (
         <div className="chat-message__avatar">
@@ -153,6 +183,14 @@ function MessageRow({ message, isOwnMessage, isNew = false }: MessageRowProps) {
       <div className="chat-message__bubble">
         {!isOwnMessage && <span className="chat-message__name">{message.playerName}</span>}
         <span className="chat-message__content">{message.content}</span>
+        {/* The one thing the player needs to know, in the place they are already
+            looking. `role="status"` because it is an outcome, not decoration:
+            the whole point is that a failed send is no longer silent. */}
+        {message.isFailed && (
+          <span className="chat-message__failed" role="status">
+            Not Sent
+          </span>
+        )}
         <span className="chat-message__time">{formatTime(message.timestamp)}</span>
       </div>
     </div>
@@ -167,7 +205,6 @@ export function TableChat({
   messages,
   onSendMessage,
   myPlayerId,
-  tableId,
   isCollapsed = false,
   onToggleCollapse,
   maxMessages = 100,
@@ -181,7 +218,11 @@ export function TableChat({
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  /* `inputRef` used to live here, attached to the compose box and read by
+     nothing. Removed rather than given a job: the only job on offer was
+     autofocus on open, and on a phone that pops the software keyboard over a
+     live hand the moment somebody glances at chat. */
+  const panelRef = useRef<HTMLDivElement>(null);
   const previousMessagesLengthRef = useRef(0);
   const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSentRef = useRef<number>(0);
@@ -208,14 +249,27 @@ export function TableChat({
     if (!isScrolledUp) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
+    /* AUDIT 2026-08-25 — the cleanup that used to live here ran on EVERY re-run
+       of this effect, not just on unmount, and `isScrolledUp` is one of its
+       dependencies. So: a message arrives, the 600ms "new" timer starts, the
+       player scrolls the panel a pixel, `isScrolledUp` flips, the cleanup kills
+       the timer, and the effect body does not start another one because
+       `messages.length` has not moved. `newMessageIds` is then never emptied and
+       those messages keep their slide-in class for the rest of the session.
 
-    return () => {
+       The unmount cleanup that the return was really for is its own effect
+       below, where it cannot be re-run by anything. */
+  }, [messages.length, isScrolledUp]);
+
+  useEffect(
+    () => () => {
       if (animationTimerRef.current) {
         clearTimeout(animationTimerRef.current);
         animationTimerRef.current = null;
       }
-    };
-  }, [messages.length, isScrolledUp]);
+    },
+    []
+  );
 
   // Track scroll position to show/hide scroll-to-bottom FAB
   const handleScroll = useCallback(() => {
@@ -230,18 +284,36 @@ export function TableChat({
     setIsScrolledUp(false);
   }, []);
 
-  // Trim messages to max limit before rendering
-  const displayMessages = [...messages]
-    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
-    .slice(-maxMessages);
+  /* Trim messages to max limit before rendering.
+     Memoised because this component is a child of TablePage, which re-renders
+     on every snapshot, every chip animation and — until the action clock was
+     fixed today — thirty times a second for the whole of anybody's turn. A
+     hundred-element copy, sort and slice on each of those is work nobody asked
+     for, and it also produced a brand-new array identity every time, which is
+     what stopped any downstream memo from ever holding. */
+  const displayMessages = useMemo(
+    () =>
+      [...messages]
+        .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+        .slice(-maxMessages),
+    [messages, maxMessages]
+  );
 
   // Handle send
   const handleSend = useCallback(() => {
     const now = Date.now();
-    if (now - lastSentRef.current < 300) return; // 300ms cooldown
-    lastSentRef.current = now;
+    /* SEND_COOLDOWN_MS, not the 300 this was.
+       There are TWO rate limiters on this path and they disagreed. This one
+       cleared the input at 300ms; `useTableChat.handleSendChatMessage` then
+       refused anything inside 1000ms and returned in silence. So a player
+       typing two quick messages had the second one taken out of the box and
+       thrown away, with no message, no toast and no way to get the text back.
+       Matching the hook's window means the refusal happens HERE, before the
+       input is cleared, so the text stays where the player can send it again. */
+    if (now - lastSentRef.current < SEND_COOLDOWN_MS) return;
 
     if (inputValue.trim() && !isDisabled) {
+      lastSentRef.current = now;
       onSendMessage(inputValue.trim());
       setInputValue('');
     }
@@ -255,6 +327,52 @@ export function TableChat({
     }
   };
 
+  /**
+   * Dan 2026-08-23: "THERE IS NO 'X' OFF ONCE ITS OPEN, YOU SHOULD BE ABLE TO
+   * CLICK THE X OR CLICK ANYWHERE ELSE ON THE SCREEN TO CLOSE IT."
+   *
+   * The panel had exactly one control, a "▾" titled "Minimize chat", and no
+   * dismissal of any other kind: no X, no outside click, no Escape. On a phone
+   * that chevron is a 22px target sitting over a live table, so a player who
+   * opened chat mid-hand had to hit it precisely or play the rest of the hand
+   * around a 280px box.
+   *
+   * Both listeners follow TableMenu.tsx (lines 332-353) deliberately — mousedown
+   * for outside, keydown for Escape, both attached only while open — so the
+   * table has ONE dismissal convention rather than two that drift apart.
+   *
+   * mousedown, not click: a click fires only after mouseup on the same element,
+   * so a press that starts outside and drifts onto the panel would not dismiss.
+   * mousedown also beats the action panel's own handlers to the event, which is
+   * what makes "tap a bet button while chat is open" close chat and still land
+   * the bet on the next tap rather than being swallowed.
+   */
+  const handleClose = useCallback(() => {
+    onToggleCollapse?.();
+  }, [onToggleCollapse]);
+
+  const isOpen = !isCollapsed && !isMuted;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        handleClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen, handleClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, handleClose]);
+
   // When muted, don't render the chat at all — just a silent icon
   if (isMuted) {
     return (
@@ -262,6 +380,7 @@ export function TableChat({
         className="chat-collapsed chat-collapsed--muted"
         onClick={onToggleCollapse}
         title="Chat is muted"
+        aria-label="Chat is muted"
       >
         <span className="chat-collapsed__icon" style={{ opacity: 0.4 }}>
           <ChatBubbleIcon />
@@ -272,22 +391,46 @@ export function TableChat({
 
   if (isCollapsed) {
     return (
-      <button className="chat-collapsed" onClick={onToggleCollapse} aria-label="Open table chat">
+      <button
+        className="chat-collapsed"
+        onClick={onToggleCollapse}
+        aria-label={
+          unreadCount > 0
+            ? `Open table chat, ${unreadCount.toLocaleString()} unread`
+            : 'Open table chat'
+        }
+      >
         <span className="chat-collapsed__icon">
           <ChatBubbleIcon />
         </span>
-        {unreadCount > 0 && <span className="chat-collapsed__badge">{unreadCount}</span>}
+        {/* The badge is an 18px circle. Beyond two digits the number stops
+            fitting and starts stretching the pill across the chat glyph, and
+            "how many exactly" was never the point past that. */}
+        {unreadCount > 0 && (
+          <span className="chat-collapsed__badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
+        )}
       </button>
     );
   }
 
   return (
-    <div className="table-chat">
+    <div className="table-chat" ref={panelRef} role="dialog" aria-label="Table chat">
       {/* Header */}
       <div className="table-chat__header">
         <span className="table-chat__title">Table Chat</span>
-        <button className="table-chat__minimize" onClick={onToggleCollapse} title="Minimize chat">
-          ▾
+        {/* The "▾" that used to live here read as MINIMIZE, and Dan's report is
+            that there was no way to turn chat off. Same callback, but now it
+            says what it does and is a 32px target instead of a 22px chevron.
+            &#10005; is the multiplication X GameLobbyPanel's close already uses
+            — one X glyph across the app, and no emoji (house rule: emoji break
+            the SWC compiler). */}
+        <button
+          className="table-chat__close"
+          onClick={handleClose}
+          title="Close chat"
+          aria-label="Close chat"
+        >
+          &#10005;
         </button>
       </div>
 
@@ -316,8 +459,9 @@ export function TableChat({
             className="table-chat__scroll-fab"
             onClick={scrollToBottom}
             title="Jump to latest"
+            aria-label="Jump to latest message"
           >
-            ↓
+            &#8595;
           </button>
         )}
       </div>
@@ -327,7 +471,6 @@ export function TableChat({
       <div className="table-chat__input-container">
         {/* Emoji toggle removed */}
         <input
-          ref={inputRef}
           type="text"
           className="table-chat__input"
           value={inputValue}
@@ -341,8 +484,10 @@ export function TableChat({
           className="table-chat__send"
           onClick={handleSend}
           disabled={!inputValue.trim() || isDisabled}
+          aria-label="Send message"
+          title="Send"
         >
-          ➤
+          &#10148;
         </button>
       </div>
     </div>

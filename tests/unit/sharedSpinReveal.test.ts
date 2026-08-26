@@ -55,7 +55,11 @@ describe('the reveal timing is one spec, mirrored into the engine', () => {
     // over the top of the card announcing the prize. Nothing compared the two
     // numbers, so nothing caught it. Every client timing is now DERIVED.
     const WHEEL = strip(read('src/components/tournament/SpinWheel.tsx'));
-    for (const literal of [/CHASE_MS\s*=\s*\d/, /RESULT_MS\s*=\s*\d/, /COUNTDOWN_STEP_MS\s*=\s*\d/]) {
+    for (const literal of [
+      /CHASE_MS\s*=\s*\d/,
+      /RESULT_MS\s*=\s*\d/,
+      /COUNTDOWN_STEP_MS\s*=\s*\d/,
+    ]) {
       expect(WHEEL, `a hand-written timing literal is back: ${literal}`).not.toMatch(literal);
     }
     expect(WHEEL).toMatch(/CHASE_MS = SPIN_REVEAL\.SPIN_MS/);
@@ -140,9 +144,58 @@ describe('the CLIENT animates against the shared clock', () => {
     expect(WHEEL).toMatch(/leadInMs \+ countdownMs/);
   });
 
-  it('the wheel can only play once per game, whichever trigger arrives first', () => {
-    const keys = TABLE_PAGE.match(/spin-reveal-\$\{/g) || [];
-    // one in the broadcast handler, one in the DB fallback — same key.
-    expect(keys.length).toBeGreaterThanOrEqual(2);
+  it('the wheel plays once per game, and "once" means PLAYED, not ARRIVED', () => {
+    /**
+     * REPLACED 2026-08-25 (defect D1). This used to assert the literal key was
+     * written in TWO places - the broadcast handler and the DB fallback - both
+     * of them stamping it the instant a trigger ARRIVED. sessionStorage
+     * survives a same-tab reload, so the one case the gate was written for
+     * ("the player refreshed mid-reveal") was the exact case it blocked: the
+     * wheel stayed down for the rest of that tab's life and the player never
+     * saw the draw they opened the Spin for.
+     *
+     * The contract now: ONE key builder, and the stamp is written from the
+     * wheel's own onDone. Arrival is guarded in memory instead - a ref, which
+     * resets on reload - so a refresh inside the sequence replays it against
+     * the engine's clock, and a refresh after it finished does not.
+     */
+    expect(TABLE_PAGE).toMatch(/function spinRevealPlayedKey\(/);
+    expect((TABLE_PAGE.match(/`spin-reveal-\$\{/g) || []).length).toBe(1);
+    expect(TABLE_PAGE).toMatch(/function markSpinRevealPlayed\(/);
+    // Completion, and only completion, stamps it.
+    expect(TABLE_PAGE).toMatch(/markSpinRevealPlayed\(spinRevealTournamentRef\.current\)/);
+    // The in-memory guard is what stops the broadcast and the DB fallback from
+    // both opening the wheel in the same instant.
+    expect(TABLE_PAGE).toMatch(/spinRevealPlayedRef\.current = true/);
+  });
+
+  it('a reveal whose sequence is already over never takes the screen', () => {
+    /**
+     * Defect D4. The DB fallback built the draw with NO revealAtMs, so
+     * SpinWheel started from the top, and it let a started_at up to 90s old
+     * through while the engine holds the deal for roughly 18s. A client that
+     * arrived late replayed a 3-2-1 countdown as a modal takeover over a hand
+     * already being played. The reveal instant travels with the draw now, and
+     * past spinRevealTotalMs() the wheel does not open at all.
+     */
+    expect(TABLE_PAGE).toMatch(/function spinRevealStillLive\(/);
+    expect(TABLE_PAGE).toMatch(/Date\.now\(\) - revealAtMs < spinRevealTotalMs\(\)/);
+    expect(TABLE_PAGE).toMatch(/revealAtMs: revealAtMs \?\? Date\.now\(\)/);
+    expect(TABLE_PAGE, 'the 90s window is back').not.toMatch(/90_000/);
+  });
+
+  it('a missed broadcast gets a bounded second chance once play begins', () => {
+    /**
+     * Defect D2. The DB fallback lived in a mount-only effect (deps
+     * [tableId, userId]), and a seat-first player is already AT the table
+     * before the game starts - when tournaments.spin_multiplier is still NULL,
+     * because it is only drawn at start. So on the very client the fallback
+     * was written for it ran once, against a NULL, and never again.
+     *
+     * The re-check must be bounded: a fixed attempt count, no standing poll.
+     */
+    expect(TABLE_PAGE).toMatch(/spin_reveal_post_start_recheck/);
+    expect(TABLE_PAGE).toMatch(/MAX_ATTEMPTS = 3/);
+    expect(TABLE_PAGE).toMatch(/attempts >= MAX_ATTEMPTS/);
   });
 });

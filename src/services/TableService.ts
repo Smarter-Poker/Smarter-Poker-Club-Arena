@@ -8,7 +8,7 @@ import { engineChannelClient } from './EngineStateClient';
 import type { PokerTable, TableSettings, GameVariant, HandState } from '../types/database.types';
 import { masterBus } from '../core/MasterBus';
 
-import { resolveClubUUID } from '../utils/clubIdResolver';
+import { resolveClubUUID, isUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 import { notifyServerLeave } from './GameServerAPI';
@@ -48,6 +48,22 @@ class TableService {
     // Resolve integer club_id to UUID for FK query
     const resolvedId = await resolveClubUUID(clubId);
 
+    /* THE RESOLVER RETURNS ITS INPUT WHEN IT CANNOT RESOLVE - an RLS refusal,
+       a PostgREST 400 and a dropped connection all land there - so `resolvedId`
+       can be a slug. Below it is CONCATENATED into a PostgREST `or=`
+       expression, where a slug containing a comma, a bracket or a quote splits
+       the expression and returns 400; a clean slug still reaches a uuid column
+       and errors with 22P02. Either way the lobby comes back empty, which is
+       indistinguishable from a club with no games. Refuse the query instead of
+       issuing one that is guaranteed to fail. */
+    if (!isUUID(resolvedId)) {
+      reportError(
+        new Error(`getClubTables: club id did not resolve to a UUID (${clubId})`),
+        'TableService.getClubTables_unresolved'
+      );
+      throw new Error('That Club Could Not Be Resolved');
+    }
+
     // UNION LAW (2026-08-19, Dan): a club inside a union lists the UNION's
     // games (all hosted by the union house club, stamped with union_id) plus
     // this club's OWN private tables. Sibling clubs' private games never show.
@@ -70,6 +86,18 @@ class TableService {
         'id, club_id, union_id, name, game_type, game_variant, stakes, small_blind, big_blind, min_buy_in, max_buy_in, max_players, current_players, status, settings, created_at'
       );
     if (unionId) {
+      /* Both ids are verified UUIDs at this point - `resolvedId` by the guard
+         at the top, `unionId` by the check here - so nothing user-controlled
+         reaches the `or=` grammar. */
+      if (!isUUID(unionId)) {
+        reportError(
+          new Error(`getClubTables: union id is not a UUID (${unionId})`),
+          'TableService.getClubTables_bad_union'
+        );
+        unionId = null;
+      }
+    }
+    if (unionId) {
       query = query.or(`union_id.eq.${unionId},and(club_id.eq.${resolvedId},is_private.eq.true)`);
     } else {
       query = query.eq('club_id', resolvedId);
@@ -84,8 +112,13 @@ class TableService {
       .limit(QUERY_LIMITS.LIST);
 
     if (error) {
+      /* NOT `return []`. An empty array here is the same answer this method
+         gives for a club that genuinely has no games, so a 400, an RLS
+         refusal or a dropped connection rendered as "no games in this club"
+         with nothing to retry - the same reasoning getSeatedPlayers already
+         records for its own throw. The caller can show a failure. */
       reportError(error, 'TableService.getClubTables');
-      return [];
+      throw error;
     }
     return data || [];
   }
@@ -214,6 +247,8 @@ class TableService {
       double_board: false,
       time_limit_minutes: 0,
       action_time_seconds: 15,
+      /* NOTE: this is the DEFAULTS block. The operator's own choice is carried
+         to the column below - see the action_time_seconds line in the insert. */
       min_buyin_bb: 20,
       max_buyin_bb: 100,
       insurance_enabled: false,
@@ -252,6 +287,16 @@ class TableService {
       throw new Error(gameCreationDeniedMessage(access));
     }
 
+    let effectiveUnionId = access.unionId;
+    if (access.allowed && !effectiveUnionId && !privateOnly) {
+      const { data: cData } = await supabase
+        .from('clubs')
+        .select('is_union')
+        .eq('id', resolvedClubId)
+        .maybeSingle();
+      if (cData?.is_union) effectiveUnionId = resolvedClubId;
+    }
+
     const { data, error } = await supabase
       .from('tables')
       .insert({
@@ -259,7 +304,7 @@ class TableService {
         // Stamp the owning union so a game built for a member club also shows
         // in the union's own views. NULL for a standalone club and for
         // private club games.
-        union_id: privateOnly ? null : access.unionId,
+        union_id: privateOnly ? null : effectiveUnionId,
         is_private: privateOnly,
         name,
         game_type: 'cash',
@@ -267,11 +312,35 @@ class TableService {
         stakes: smallBlind != null && bigBlind != null ? `${smallBlind}/${bigBlind}` : '1/2',
         small_blind: smallBlind,
         big_blind: bigBlind,
-        min_buy_in: bigBlind * 40,
-        max_buy_in: bigBlind * 200,
+        /**
+         * THE OPERATOR'S BUY-IN RANGE WAS BEING DISCARDED.
+         *
+         * CreateTableModal has min/max buy-in inputs, puts the host's numbers
+         * in `settings`, and these two lines then overwrote them with a fixed
+         * 40x/200x band on the way to the columns the RPC enforces. Whatever
+         * the host typed was accepted by the form, stored in a blob nothing
+         * reads, and silently replaced. The band is the FALLBACK now, which is
+         * what it was always meant to be.
+         */
+        min_buy_in:
+          Number(settings?.min_buyin_bb) > 0
+            ? Number(settings?.min_buyin_bb) * bigBlind
+            : bigBlind * 40,
+        max_buy_in:
+          Number(settings?.max_buyin_bb) > 0
+            ? Number(settings?.max_buyin_bb) * bigBlind
+            : bigBlind * 200,
         max_players: maxPlayers,
         current_players: 0,
         status: 'waiting',
+        /* Action Time was a slider whose value reached `settings` and stopped
+           there: the engine reads the COLUMN, and nothing mirrored it. Every
+           table built from the modal ran at the 15s default no matter what the
+           host chose. */
+        action_time_seconds:
+          Number(settings?.action_time_seconds) > 0
+            ? Math.round(Number(settings?.action_time_seconds))
+            : 15,
         settings: defaultSettings,
         // FIX-D1 2026-07-19: the engine (loadTable in server) reads TOP-LEVEL
         // columns, NOT the `settings` JSONB. Writing host gameplay choices only
@@ -309,6 +378,14 @@ class TableService {
         // off, which nothing documented. It is an explicit switch now.
         time_bank_enabled: defaultSettings.time_bank_enabled ?? true,
         wait_for_big_blind: defaultSettings.wait_for_big_blind ?? true,
+        /* AUTO RESTART, 2026-08-25. CreateTableModal has had an Auto Restart
+           checkbox since it was written and it landed in `settings` only - the
+           JSONB blob nothing reads. The COLUMN is what fn_table_lifecycle_pass
+           consults, so the checkbox has never meant anything. Same class of
+           bug as the straddle / bomb-pot / ante mirrors above it, and the same
+           fix: carry the host's choice to the column the reader actually
+           looks at. */
+        auto_restart: defaultSettings.auto_restart ?? false,
         // 7-2 game: winner holding any 7-2 collects a bounty (in BB) from each
         // other dealt-in player, post-flop only. Engine reads these columns.
         seven_deuce_enabled: defaultSettings.seven_deuce_enabled ?? false,
@@ -565,24 +642,17 @@ class TableService {
             });
         }
       } else {
-        // For tournaments, just clear the seat without crediting wallets
+        // In tournaments, leaving the table NEVER cashes out chips, deletes the seat,
+        // or eliminates the player. The player is placed in sit-out mode, chips stay
+        // on the table, and the server continues to blind them out / auto-muck until
+        // they return or bust.
         await supabase
           .from('table_seats')
-          .update({ left_at: new Date().toISOString() })
+          .update({ status: 'sitting_out' })
           .eq('table_id', tableId)
           .eq('seat_number', seatNo)
           .eq('user_id', userId)
           .is('left_at', null);
-      }
-
-      // If this is a tournament table, update tournament_players status
-      // (tableData already has tournament_id from the query at L258 — no second query needed)
-      if (tableData?.tournament_id) {
-        await supabase
-          .from('tournament_players')
-          .update({ status: 'eliminated', chips: 0 })
-          .eq('tournament_id', tableData.tournament_id)
-          .eq('user_id', userId);
       }
 
       // Update player count for TOURNAMENT leaves only

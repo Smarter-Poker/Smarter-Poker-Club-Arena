@@ -21,7 +21,10 @@
 .page {
   max-width: 720px;
   margin: 0 auto;
-  padding: 16px 12px 48px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  padding: 16px 12px max(70px, env(safe-area-inset-bottom));
   color: #e2e8f0;
   text-transform: capitalize;
   font-family: 'Rajdhani', 'Exo 2', sans-serif;
@@ -163,6 +166,7 @@
 
 .searchInput {
   width: 100%;
+  box-sizing: border-box;
   padding: 16px 20px 16px 48px;
   background: var(--metal-base);
   border: 2px solid var(--metal-highlight);
@@ -242,6 +246,7 @@
   letter-spacing: 0.05em;
   text-align: left;
   cursor: pointer;
+  touch-action: manipulation;
   transition: all 0.2s ease;
 }
 
@@ -262,7 +267,7 @@
   font-family: 'Exo 2', sans-serif;
   font-size: 0.95rem;
   line-height: 1.6;
-  text-transform: none; /* Keep answer text normal casing for readability */
+  text-transform: capitalize; /* User requested every word on page to be capitalized */
 }
 
 /* ── Empty State ── */
@@ -280,6 +285,17 @@
 @media (max-width: 480px) {
   .supportGrid {
     grid-template-columns: 1fr;
+  }
+  .header h1 {
+    font-size: 1.25rem;
+  }
+  .iconWrap {
+    width: 40px;
+    height: 40px;
+    font-size: 1.2rem;
+  }
+  .supportCard {
+    padding: 16px;
   }
 }
 

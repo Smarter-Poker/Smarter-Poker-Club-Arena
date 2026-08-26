@@ -73,20 +73,119 @@ export function TournamentHUD({
   const [derivedRemaining, setDerivedRemaining] = useState<number | null>(null);
   const [derivedAvgStack, setDerivedAvgStack] = useState<number | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const resyncRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Load + subscribe to live tournament level changes ──
   useEffect(() => {
     if (!tournamentId) return;
     let mounted = true;
 
-    (async () => {
+    /**
+     * 2026-08-25 audit: two defects lived in the first version of this.
+     *
+     *  - It reported EVERY failure, forever. No backoff, no counter, no
+     *    de-dupe. A persistent failure — an RLS denial, a deleted row, an
+     *    offline tab — filed an error report every 45 seconds, per open table,
+     *    for as long as the component stayed mounted (which, because
+     *    PersistentTableLayer hides rather than unmounts, is "the session").
+     *    Only the first few are information; the rest are noise that buries
+     *    real reports.
+     *  - Nothing stopped it. A COMPLETED or CANCELLED tournament has no next
+     *    level and no clock, and was polled every 45s regardless.
+     */
+    const POLL_MS = 45_000;
+    /** Where the poll retreats to after a sustained fault. See the catch. */
+    const BACKOFF_MS = 300_000;
+    let failures = 0;
+    let backedOff = false;
+    const refresh = async () => {
       try {
         const t = await tournamentService.getTournament(tournamentId);
-        if (mounted) setTournament(t);
+        if (!mounted) return;
+        // Recovered: come back to the normal cadence rather than staying on
+        // the five-minute backoff for the rest of the tournament.
+        if (backedOff && resyncRef.current) {
+          clearInterval(resyncRef.current);
+          resyncRef.current = setInterval(() => void refresh(), POLL_MS);
+          backedOff = false;
+        }
+        failures = 0;
+        setTournament(t);
+        /* Nothing left to track once the event is OVER: stop the poll rather
+           than asking the same settled question every 45 seconds.
+           
+           2026-08-25, second audit: this was an ALLOW-LIST of live statuses
+           (RUNNING / REGISTERING / LATE_REG) and it stopped the poll on
+           anything else — including ANNOUNCED, which is a perfectly live state
+           a tournament sits in before registration opens. A HUD whose first
+           read returned ANNOUNCED stopped polling FOREVER (the effect only
+           re-runs on tournamentId, and nothing restarts the interval), so when
+           the event went RUNNING it was back to realtime-only: the exact single
+           point of failure this poll was added to remove. An empty or missing
+           status tripped it too.
+           
+           It is a DENY-LIST of terminal states now. Anything unrecognised keeps
+           polling, which is the safe direction: a needless read every 45s costs
+           nothing, a stopped clock costs the player the blind level. */
+        const status = String((t as { status?: string } | null)?.status ?? '').toUpperCase();
+        const TERMINAL = ['COMPLETED', 'CANCELLED', 'FINISHED', 'ABORTED'];
+        if (t && TERMINAL.includes(status)) {
+          if (resyncRef.current) {
+            clearInterval(resyncRef.current);
+            resyncRef.current = null;
+          }
+        }
       } catch (e) {
-        reportError(e, 'TournamentHUD.load', { tournamentId });
+        if (!mounted) return;
+        failures += 1;
+        // First two only. After that the fault is established and repeating it
+        // tells nobody anything new.
+        if (failures <= 2) reportError(e, 'TournamentHUD.load', { tournamentId, failures });
+        /* 2026-08-25, second audit: this used to STOP the poll after five
+           failures, permanently. Five consecutive failures is about three
+           minutes — i.e. a tab that was offline over a train tunnel — and
+           because PersistentTableLayer hides rather than unmounts, "permanently"
+           meant the rest of the session. The cure was worse than the noise it
+           was treating.
+           
+           It BACKS OFF instead: the interval widens to five minutes so a hard
+           fault is quiet, and the moment a read succeeds the normal cadence is
+           restored (see the success branch). A clock that is late is recoverable;
+           a clock that has given up is not. */
+        /* `>= 5 && !backedOff`, not `=== 5` (2026-08-26 audit). With strict
+           equality, a failure that arrived when `resyncRef.current` happened to
+           be null — the terminal-status stop racing a failure — skipped the
+           install, and because the ref stays null the poll was then dead for
+           good: the exact "gave up permanently" bug this block replaced. */
+        if (failures >= 5 && !backedOff) {
+          if (resyncRef.current) clearInterval(resyncRef.current);
+          resyncRef.current = setInterval(() => void refresh(), BACKOFF_MS);
+          backedOff = true;
+        }
       }
-    })();
+    };
+
+    void refresh();
+
+    /**
+     * Dan 2026-08-25 (binding): "blind levels on the screen are never
+     * increasing."
+     *
+     * This HUD had EXACTLY ONE way to learn that the level changed: a
+     * postgres_changes subscription on the tournaments row. That is a single
+     * point of failure with no fallback — a dropped socket, a tab that slept
+     * through the UPDATE, a subscribe() that returned CHANNEL_ERROR (nothing
+     * here even looked at the status), and the HUD sits on its mount-time
+     * snapshot for the rest of the tournament, cheerfully printing LEVEL 1
+     * while the felt plays level 9. It never re-fetched, not once.
+     *
+     * A clock that can be wrong for an hour is worse than no clock. It now
+     * re-reads the authoritative row every 45 seconds while RUNNING, so the
+     * realtime feed is an OPTIMISATION (instant update) rather than the only
+     * source of truth, and the worst case is a level that is late by under a
+     * minute instead of stale forever.
+     */
+    resyncRef.current = setInterval(() => void refresh(), POLL_MS);
 
     const channel = masterBus.getOrCreateChannel(`tournament-hud-${tournamentId}`);
     channel
@@ -103,6 +202,8 @@ export function TournamentHUD({
 
     return () => {
       mounted = false;
+      if (resyncRef.current) clearInterval(resyncRef.current);
+      resyncRef.current = null;
       try {
         masterBus.removeRegisteredChannel(`tournament-hud-${tournamentId}`);
       } catch {
@@ -114,12 +215,14 @@ export function TournamentHUD({
   // ── 1-second countdown tick (only while RUNNING) ──
   useEffect(() => {
     if (tickRef.current) clearInterval(tickRef.current);
-    if (!tournament || tournament.status !== 'RUNNING') return;
+    // `hidden` returns null below, so a hidden HUD ticking once a second was
+    // re-rendering nothing, on every open table (2026-08-25 audit).
+    if (hidden || !tournament || tournament.status !== 'RUNNING') return;
     tickRef.current = setInterval(() => setTick((n) => (n + 1) % 3600), 1000);
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
     };
-  }, [tournament?.status, tournament?.id]);
+  }, [hidden, tournament?.status, tournament?.id]);
 
   // ── Derive players-remaining / avg-stack from live rows when not supplied ──
   useEffect(() => {
@@ -169,6 +272,12 @@ export function TournamentHUD({
 
   return (
     <div
+      /* Named so the HUD layer can scale THIS BAR on small screens without
+         scaling its neighbour. The column used to carry the transform, which
+         also shrank the 44px stats icon beside it to ~33px — a transformed hit
+         area follows the transform — putting the one control Dan asked to be
+         reachable on the table screen under the minimum touch target. */
+      className="tournament-hud-bar"
       style={{
         display: 'inline-flex',
         alignItems: 'stretch',
@@ -183,7 +292,14 @@ export function TournamentHUD({
         userSelect: 'none',
         lineHeight: 1.1,
       }}
-      role="status"
+      /* NOT `role="status"`. That is an aria-live=polite region, and this
+         element re-renders every second for the countdown — so a screen reader
+         re-announced level, blinds, ante, countdown, players and average stack
+         once a second for the entire tournament (2026-08-26 audit). `group`
+         with a label keeps it navigable and reachable without narrating it
+         continuously; the countdown itself is hidden from the accessibility
+         tree below, since a value that changes every second is noise there. */
+      role="group"
       aria-label="Tournament clock"
     >
       {/* Level / break badge */}
@@ -249,6 +365,9 @@ export function TournamentHUD({
             fontVariantNumeric: 'tabular-nums',
             color: tournament.status === 'RUNNING' ? timerColor : '#9aa7ae',
           }}
+          /* Changes every second; announcing it is noise. The level and blinds
+             beside it carry the information that actually matters. */
+          aria-hidden="true"
         >
           {tournament.status === 'RUNNING' ? fmtClock(remaining) : '--:--'}
         </span>

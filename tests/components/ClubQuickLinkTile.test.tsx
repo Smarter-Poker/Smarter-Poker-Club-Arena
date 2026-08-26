@@ -41,7 +41,7 @@ import ClubQuickLinkTile from '@/components/home/ClubQuickLinkTile';
 import { clearClubChipBalanceCache } from '@/utils/clubQuickLink';
 
 const TILE = {
-  img: 'images/tiles/cashier.webp',
+  img: 'images/tiles/cashier-v8.jpg', // the tile the lobby actually ships
   alt: 'Cashier',
   route: null,
   shortcutKey: '4',

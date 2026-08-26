@@ -26,8 +26,25 @@ export interface Card {
 export type HandStage = 'preflop' | 'flop' | 'pineapple_discard' | 'turn' | 'river' | 'showdown';
 // FIX 120: Added 'discard' action for Crazy Pineapple
 export type ActionType = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | 'discard';
-// FIX 116: Dead variants removed (flh, plo, plo_hilo, mixed) — Dan's 9 approved variants only
-export type GameVariant = 'nlh' | 'plo4' | 'plo5' | 'plo6' | 'plo8' | 'pineapple' | 'short_deck';
+// FIX 116: Dead variants removed (plo, plo_hilo, mixed) — Dan's approved variants only.
+//
+// 2026-08-23: `flh` comes BACK, and `flo8` joins it. FIX 116 removed them as
+// "dead" because nothing could create one — but the lobby's LIMIT tab and
+// ClubHomePage.cashKind() never stopped classifying on them, so the tab was
+// permanently empty and there was no way to fill it. They are dead no longer:
+// the engine now plays them fixed-limit (see engine/BettingStructure.ts) rather
+// than dealing a limit game and betting it no-limit.
+export type GameVariant =
+  | 'nlh'
+  | 'plo4'
+  | 'plo5'
+  | 'plo6'
+  | 'plo8'
+  | 'pineapple'
+  | 'short_deck'
+  | 'flh' // Fixed Limit Hold'em
+  | 'flo8'; // Fixed Limit Omaha Hi-Lo
+
 /** Bible V8 §3.1: Full table state machine states */
 export type TableStatus =
   | 'empty'
@@ -71,6 +88,14 @@ export interface SeatPlayer {
   position?: string;
   /** Bible V8 §2.3: Player avatar URL */
   avatar_url?: string;
+  /**
+   * Equipped avatar frame token, e.g. `frame-gold`. Travels with `avatar_url`
+   * because it is drawn on top of it; a client that has one and not the other
+   * renders a ring around the wrong picture. Empty string means none.
+   */
+  equipped_frame?: string;
+  /** Equipped avatar aura token, e.g. `aura-fire`. Empty string means none. */
+  equipped_aura?: string;
   /** Bible V8 §2.3: Whether this player is an AI horse */
   is_horse?: boolean;
 }
@@ -162,6 +187,42 @@ export interface TableInfo {
   /** Buy-in limits from database — used for add-on cap enforcement */
   min_buy_in?: number;
   max_buy_in?: number;
+  /* ── Parity pass, Dan 2026-08-25 ────────────────────────────────────────
+     Each of these is a control a host has always been able to set and the
+     engine has never been able to see. Adding a field here is necessary and
+     not sufficient: it must also be in the loadTable select in
+     services/supabase/tables.ts, which is the real contract. */
+  /** Seats that must be filled before a hand is dealt. Clamped at 2. */
+  auto_start_players?: number;
+  /** 'none' | 'player_choice' | 'mandatory_twice' | 'mandatory_three' */
+  run_it_mode?: string | null;
+  /** Hide usernames and avatars in the broadcast state. */
+  is_anonymous?: boolean;
+  /** Silence table chat. Enforced in RLS; carried here for the UI mirror. */
+  ban_chat?: boolean;
+  /** Refuse a socket from anyone not holding a seat. */
+  restrict_observers?: boolean;
+  /** Per-hand betting cap. cap_bb is the ceiling in big blinds. */
+  cap_enabled?: boolean;
+  cap_bb?: number | null;
+  /** Deal a Hold'em table as Pineapple. See dealtGameVariant. */
+  pineapple_holdem?: boolean;
+  /**
+   * NIT GAME. The master switch for the three VPIP numbers below; with it off
+   * they do nothing. The rules themselves live in SQL (fn_nit_check /
+   * fn_nit_evictions) because the VPIP they measure is already stored per hand
+   * in ca_hand_facts -- computing it a second time here is how two answers to
+   * the same question appear. These four are carried so the engine can skip
+   * the round trip entirely on the tables that have the rule switched off,
+   * which is all of them today.
+   */
+  nit_game?: boolean;
+  /** Minimum VPIP at THIS table, checked between hands. 0 disables. */
+  maintain_percent_min?: number | null;
+  /** Hands at this table before the maintain rule may judge. */
+  maintain_hands?: number | null;
+  /** Minimum LIFETIME VPIP, checked at the door by atomic_table_buyin. */
+  career_percent_min?: number | null;
 }
 
 export interface SeatedPlayer {
@@ -178,8 +239,18 @@ export interface SeatedPlayer {
   horse_profile?: string | Record<string, unknown>;
   time_bank_remaining?: number;
   time_bank_uses_remaining?: number;
+  /**
+   * Persisted sit-out flag from `table_seats`. Restart fidelity, 2026-08-25:
+   * the engine writes this column and, until now, never read it — so a restart
+   * between hands dealt cards to a player who had sat out.
+   */
+  is_sitting_out?: boolean;
   /** Bible V8 §2.3: Player avatar for broadcast */
   avatar_url?: string;
+  /** Equipped avatar frame token for broadcast, e.g. `frame-gold`. */
+  equipped_frame?: string;
+  /** Equipped avatar aura token for broadcast, e.g. `aura-fire`. */
+  equipped_aura?: string;
   /** Bible V8 §4.2: Player returning from sit-out must post dead blind */
   returning_from_sitout?: boolean;
   /** Bible V8 §4.2: Player is waiting for BB position before playing */
@@ -286,6 +357,22 @@ export interface HandStateBroadcast {
   stage: HandStage;
   min_raise: number;
   last_raise: number;
+  /**
+   * 2026-08-23: which betting structure this table plays, published rather than
+   * re-derived. The client used to ask `gameType.startsWith('plo')` for itself
+   * (TablePage), which silently makes every non-PLO variant no-limit — so a
+   * fixed-limit table would have drawn a no-limit bet slider.
+   */
+  betting_structure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  /** Fixed limit only: the street's one legal wager (small bet or big bet). */
+  fixed_bet_size?: number;
+  /**
+   * Fixed limit only: the street has taken its bet and three raises, so only
+   * fold and call remain. The client cannot work this out for itself —
+   * `action_history` is broadcast but `isFullRaise` is not, and the cap counts
+   * full raises.
+   */
+  wagers_capped?: boolean;
   /** Bible V8 §6.1: Absolute timestamp (ms) when the current turn started */
   turn_start_time_ms: number;
   /** Bible V8 §6.1: Total turn duration in ms (action_time_seconds × 1000) */
@@ -332,6 +419,15 @@ export type HandEvent =
        * with a straight". Only present on double-board hands.
        */
       winnersByBoard?: Array<{ board: 1 | 2; userId: string; amount: number; handName?: string }>;
+      /**
+       * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the unmerged per-pot(-half)
+       * award breakdown — see PerPotAward. Amounts here are already POST-rake:
+       * HandController scales the raw pot shares by the global rake ratio and
+       * penny-repairs each user's shares against their credited total before
+       * this event is emitted. ServerTableEngine groups them verbatim into
+       * pot_win's pot_awards.
+       */
+      perPotAwards?: PerPotAward[];
     }
   | { type: 'UNCALLED_BET_RETURNED'; seat: number; userId: string; amount: number }
   /**
@@ -370,6 +466,29 @@ export interface ShowdownResult {
   hand: EvaluatedHand;
   /** DOUBLE-BOARD BOMB POT 2026-08-20: the same hole cards evaluated on board 2. */
   hand2?: EvaluatedHand;
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25 (Dan spec sections 3-10): position in the
+   * table's reveal sequence. 0 = shows first (final-street last aggressor,
+   * or first player in normal river action order when the river checked
+   * through), then clockwise. Clients stagger the card flips by this index.
+   */
+  revealOrder?: number;
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25: true when this hand cannot win or tie any
+   * pot it is eligible for against the hands required to show before it, so
+   * poker rules permit it to be mucked. The engine — never the client —
+   * makes this call. A mucked hand's hole cards are withheld from the
+   * public broadcast; the seat renders a Mucked label instead. Always false
+   * for every live hand when an all-in ended further betting (spec section
+   * 8: all-in showdown exposes every live hand, no muck option).
+   */
+  mucked?: boolean;
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25: descriptive secondary line for the winning
+   * hand display, e.g. "Kings Full Of Nines" under "Full House". Generated
+   * by describeHand() from the actual evaluated hand.
+   */
+  handDescription?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -393,8 +512,20 @@ export interface BettingState {
   minRaise: number;
   pot: number;
   toCall: number;
-  /** Bible V8 §4.14: Max raise — Infinity for NL, pot+call for PL */
+  /**
+   * Bible V8 §4.14: Max raise SIZE — undefined for NL, pot+call for PL, and
+   * the street's fixed bet for FL (where it equals minRaise, so the only legal
+   * wager is exactly that size).
+   */
   maxRaise?: number;
+  /**
+   * Fixed-limit only. True once the street has taken its bet and three raises
+   * (BettingStructure.FIXED_LIMIT_MAX_WAGERS): no further bet or raise is
+   * legal, only fold and call.
+   */
+  wagersCapped?: boolean;
+  /** Which structure produced these bounds. Drives the rejection messages. */
+  structure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
 }
 
 export interface RakeConfig {
@@ -414,6 +545,33 @@ export interface Winner {
   /** Bible V8 §2.7: Which pot (0 = main, 1+ = side pots) this win came from */
   potIndex?: number;
   hand?: EvaluatedHand;
+}
+
+/**
+ * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): one UNMERGED award record per
+ * (pot, hi/lo half, winner). Winner[] merges a player's shares across pots —
+ * the settlement contract — but the presentation layer needs to know which
+ * pot each share came from to sequence "main pot… then side pot 1…" and to
+ * label HIGH vs LOW winners on hi-lo boards. Amounts are post-rake display
+ * shares (scaled + penny-repaired against the user's credited total in
+ * HandController before WINNERS is emitted); board is set on double-board
+ * hands.
+ * Presentation data only — never used to move money.
+ */
+export interface PerPotAward {
+  userId: string;
+  potIndex: number;
+  low: boolean;
+  amount: number;
+  hand?: EvaluatedHand;
+  board?: 1 | 2;
+  /**
+   * Review fix 2026-08-25: the engine-generated description of THIS entry's
+   * hand ("Kings Full Of Nines" / the low's name for low halves). Computed
+   * where the hand is known, so board-2 groups no longer inherit board-1
+   * showdown descriptions downstream.
+   */
+  handDescription?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

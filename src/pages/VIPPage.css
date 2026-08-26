@@ -2,7 +2,10 @@
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   background: var(--bg-primary);
-  padding-bottom: 2rem;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
 }
 
 .current-status {
@@ -344,6 +347,21 @@
   }
 }
 
+@media (max-width: 768px) {
+  .vip-extend-btn,
+  .vip-purchase-btn,
+  .diamond-buy-btn {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .current-status,
+  .vip-card-section {
+    margin: 0.75rem;
+    padding: 1rem;
+  }
+}
+
 /* ── Buy Diamonds Button ── */
 
 .diamond-buy-btn {
@@ -390,5 +408,17 @@
 @media (max-width: 480px) {
   .purchase-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* E2E 2026-08-23: icon + count + label + button overflowed a 360px viewport
+   (button measured right:440). Let the row wrap; the button takes a full row. */
+@media (max-width: 480px) {
+  .diamond-balance {
+    flex-wrap: wrap;
+  }
+  .diamond-buy-btn {
+    flex: 1 1 100%;
+    margin-left: 0;
   }
 }

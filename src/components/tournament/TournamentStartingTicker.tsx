@@ -38,6 +38,7 @@ import { formatGameTitle } from '../../utils/formatGameTitle';
 import { formatPopupText } from '../../utils/popupStyle';
 import { reportError } from '../../utils/errorReporter';
 import { busToast } from '../../core/MasterBus';
+import { measureTopChromeBottom, TOP_CHROME_SELECTORS } from './topChrome';
 import './TournamentStartingTicker.css';
 
 /** How far ahead an event counts as "about to start". */
@@ -99,13 +100,28 @@ export function TournamentStartingTicker() {
      Measuring beats hard-coding 56px: three stylesheets declare a
      --header-height (44px in one, 56px in two), the real header grows when its
      content wraps, and a wrong constant shows either a gap or the overlap we
-     are here to remove. Read the rendered header's bottom edge, start there. */
+     are here to remove. Read the rendered header's bottom edge, start there.
+
+     2026-08-23 — MEASURING ONLY THE HEADER BROKE THE "+" ON EVERY TOURNAMENT
+     TABLE. Inside /table/* there is no #global-header: <TablePage> is fixed to
+     the whole viewport and its top chrome is the multi-table tab bar. So the
+     lookup found nothing, headerBottom fell to 0, and this strip — fixed, 34px
+     tall, z-index 9400 — landed exactly on top of a tab bar whose own stacking
+     tops out at z-index 200. The "+" that opens a second table sits 24-30px
+     down, squarely inside that band, so every tap on it hit the ticker's
+     marquee button instead and opened the tournament lobby. Measured on
+     production: elementFromPoint at the button's centre returned
+     .mtt-ticker__track, and Playwright refused the click with
+     "<button class=mtt-ticker__track> ... intercepts pointer events".
+
+     The rule was never "sit under the header", it is "sit under whatever top
+     chrome this route actually has". So measure every candidate and start
+     below the lowest one. A hidden or absent element contributes nothing, so
+     the home page still gets top: 0. */
   const [headerBottom, setHeaderBottom] = useState(0);
   useEffect(() => {
     const measure = () => {
-      const el = document.getElementById('global-header') || document.querySelector('header');
-      setHeaderBottom(el ? Math.max(0, Math.round(el.getBoundingClientRect().bottom)) : 0);
-      return el;
+      setHeaderBottom(measureTopChromeBottom((sel) => document.querySelector(sel)));
     };
     measure();
     window.addEventListener('resize', measure);
@@ -115,16 +131,29 @@ export function TournamentStartingTicker() {
       ro = new ResizeObserver(measure);
     }
 
-    // The header might render slightly after the ticker during initial mount.
-    // Poll briefly to ensure we measure it and attach the observer.
+    /* Observe every candidate, not just the first one found. The tab bar is
+       not a fixture: it appears when the multi-table layer mounts, grows a row
+       when you add a table, and collapses off /table/*. Observing only the
+       element that happened to exist first is how the ticker ends up measured
+       against chrome that is no longer the lowest thing on screen.
+
+       observe() is idempotent per element, so re-attaching on each tick is
+       free and picks up nodes that mount late (the ticker itself only appears
+       when an MTT comes inside the five-minute window, which is usually long
+       after the route did). */
     let attempts = 0;
-    const poll = setInterval(() => {
-      const el = measure();
-      if (el && ro) {
-        ro.observe(el);
-        clearInterval(poll);
+    const attach = () => {
+      measure();
+      if (!ro) return;
+      for (const sel of TOP_CHROME_SELECTORS) {
+        const el = document.querySelector(sel);
+        if (el) ro.observe(el);
       }
-      if (++attempts > 10) clearInterval(poll); // Give up after 1s
+    };
+    attach();
+    const poll = setInterval(() => {
+      attach();
+      if (++attempts > 20) clearInterval(poll); // 2s of settling, then observers carry it
     }, 100);
 
     return () => {
@@ -165,7 +194,52 @@ export function TournamentStartingTicker() {
       try {
         const nowIso = new Date().toISOString();
         const horizonIso = new Date(Date.now() + LEAD_MS).toISOString();
-        const { data, error } = await supabase
+
+        /* DB LOAD PASS 2026-08-24: the player's own registrations used to be
+           fetched AFTER the upcoming-events query, filtered by the ids it
+           returned — three round trips in strict series on every poll tick.
+           There is no real dependency between them: the upcoming events are
+           scoped by CLUB and the registrations are scoped by USER, so both can
+           be in flight at once and intersected here. A player's REGISTERED row
+           count is small and `user_id` is indexed, so dropping the id filter
+           costs nothing. `loadScope()` caches after the first tick, so the
+           steady state is now one round trip instead of three. */
+        const registrationsPromise = (async () => {
+          const auth = await import('../../lib/authUtils').then((m) => m.readLocalSession());
+          if (!auth?.userId) return new Set<string>();
+          const { data: regData } = await supabase
+            .from('tournament_players')
+            .select('tournament_id')
+            .eq('user_id', auth.userId)
+            // DEAD PREDICATE, FIXED 2026-08-25. This asked for 'REGISTERED' in
+            // capitals. The column is written by TournamentService in LOWER
+            // case ('registered' on entry, flipped to 'playing' at start), so
+            // the filter matched zero rows and the ticker's "you are
+            // registered" badge could never render for anybody.
+            //
+            // Verified against production before changing it, not guessed:
+            //   eliminated 80,928 | winner 15,238 | playing 1,314 |
+            //   registered 20
+            // The earlier note here read that same distribution as "there is no
+            // REGISTERED" and concluded the badge needed a product decision.
+            // There is one, it is lower case, and the pending rows are simply
+            // rare because the engine promotes them to 'playing' at start.
+            //
+            // Both live values are kept: this list is only ever intersected
+            // with pre-start MTTs (status ANNOUNCED or REGISTERING below), so
+            // 'playing' cannot leak a running event into the bar, and keeping
+            // it means a re-entry row mid-flip still reads as entered.
+            .in('status', ['registered', 'playing'])
+            // ORDER BY is required, not cosmetic: a bare LIMIT in Postgres
+            // returns ARBITRARY rows, so if the predicate above is ever
+            // corrected and a player exceeds 200 matches, the 200 kept would be
+            // random and the badge would be wrong. Newest registrations first.
+            .order('registered_at', { ascending: false })
+            .limit(200);
+          return new Set((regData || []).map((r: { tournament_id: string }) => r.tournament_id));
+        })();
+
+        const upcomingPromise = supabase
           .from('tournaments')
           .select(
             'id, name, start_time, club_id, buy_in_amount, current_players, status, tournament_type'
@@ -186,24 +260,20 @@ export function TournamentStartingTicker() {
           .order('start_time', { ascending: true })
           .limit(5);
 
-        if (error || cancelled || !data) return;
+        const [{ data, error }, myRegs] = await Promise.all([
+          upcomingPromise,
+          registrationsPromise,
+        ]);
 
-        const tournamentIds = data.map((t) => t.id);
-        let myRegs = new Set<string>();
-        if (tournamentIds.length > 0) {
-          const auth = await import('../../lib/authUtils').then((m) => m.readLocalSession());
-          if (auth?.userId) {
-            const { data: regData } = await supabase
-              .from('tournament_players')
-              .select('tournament_id')
-              .eq('user_id', auth.userId)
-              .in('tournament_id', tournamentIds)
-              .in('status', ['REGISTERED']);
-            myRegs = new Set(
-              (regData || []).map((r: { tournament_id: string }) => r.tournament_id)
-            );
-          }
+        if (error) {
+          // Reported, not swallowed. The bar correctly renders NOTHING on a
+          // failed poll (it never claims "no tournaments"), but a silent
+          // return also meant a permanently broken query looked identical to a
+          // quiet schedule.
+          reportError(error, 'TournamentStartingTicker.fetchUpcoming');
+          return;
         }
+        if (cancelled || !data) return;
 
         setUpcoming(
           data.map((t: Record<string, unknown>) => ({
@@ -221,11 +291,41 @@ export function TournamentStartingTicker() {
       }
     };
 
-    fetchUpcoming();
-    const poll = setInterval(fetchUpcoming, POLL_MS);
+    /* DB LOAD PASS 2026-08-24: the poll used to run forever, including in
+       background tabs. Nobody can read a countdown they cannot see, so the
+       interval is suspended while the tab is hidden and the data is refreshed
+       the moment it comes back — which also means a returning player sees a
+       current countdown rather than one that drifted while they were away. */
+    let poll: ReturnType<typeof setInterval> | null = null;
+    const startPoll = () => {
+      if (poll !== null) return;
+      poll = setInterval(fetchUpcoming, POLL_MS);
+    };
+    const stopPoll = () => {
+      if (poll === null) return;
+      clearInterval(poll);
+      poll = null;
+    };
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        stopPoll();
+      } else {
+        void fetchUpcoming();
+        startPoll();
+      }
+    };
+
+    if (!document.hidden) {
+      void fetchUpcoming();
+      startPoll();
+    }
+    document.addEventListener('visibilitychange', onVisibility);
+
     return () => {
       cancelled = true;
-      clearInterval(poll);
+      stopPoll();
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [loadScope]);
 
@@ -312,22 +412,51 @@ export function TournamentStartingTicker() {
       formatPopupText(
         `${formatGameTitle(t.name)} starts in ${countdown(t.startsAt - now)}` +
           (t.buyIn > 0 ? ` · buy-in ${t.buyIn.toLocaleString()}` : ' · freeroll') +
-          ` · ${t.registered} registered`
+          // "entered", not "registered": this is tournaments.current_players,
+          // a registration COUNTER that is incremented on entry and never
+          // decremented, so it is an entry total and not a live head count.
+          ` · ${t.registered.toLocaleString()} entered`
       )
     )
     .join('        •        ');
 
   return (
-    <div className="mtt-ticker" role="status" aria-live="polite" style={{ top: headerBottom }}>
+    <div
+      className="mtt-ticker"
+      role="status"
+      aria-live="polite"
+      /* Dan 2026-08-23: "the ticker is way too thick on mobile." The strip
+         pays `padding-top: env(safe-area-inset-top)` so it clears the notch
+         when it is the topmost element — but when it sits BELOW the header
+         (headerBottom > 0) the header has already paid that inset, and paying
+         it twice turned a 34px strip into a ~90px band on notched iPhones.
+         Only the strip that actually touches top: 0 owes the inset. */
+      style={{ top: headerBottom, paddingTop: headerBottom > 0 ? 0 : undefined }}
+    >
       <span className="mtt-ticker__flag">STARTING SOON</span>
 
+      {/* Dan 2026-08-23: "if you click the ticker for the tournament running,
+          it should take you directly to the tournament registration page...
+          idk what this page even is that it took me to when clicked."
+
+          It went to a CLUB TOURNAMENT LIST — one step away from the event being
+          announced — built from the tournament's club id. Worse, on a union game
+          that id is the union's own hub club: the screenshot was the MIDWAY
+          UNION list with "+ CREATE TOURNAMENT" on it, shown to a player.
+
+          The ticker names ONE event and `primary.id` IS that event, so it now
+          opens that event. `/tournaments/:tournamentId` is TournamentDetails —
+          the registration page, which owns the Register button through
+          useTournamentRegistration. No club id is involved, so there is no
+          union surface left to leak. The '/tournaments' fallback is the GLOBAL
+          lobby, never club- or union-scoped. */}
       <button
         className="mtt-ticker__track"
         onClick={() => {
-          if (primary.clubId) navigate(`/clubs/${primary.clubId}/tournaments`);
+          if (primary.id) navigate(`/tournaments/${primary.id}`);
           else navigate('/tournaments');
         }}
-        title="Open the tournament lobby"
+        title={`Register For ${formatGameTitle(primary.name)}`}
       >
         {/* Duplicated so the marquee wraps seamlessly rather than snapping
             back to an empty bar. aria-hidden on the copy keeps a screen reader

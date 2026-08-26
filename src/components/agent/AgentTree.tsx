@@ -323,7 +323,7 @@ export default function AgentTree({ clubId, onAgentClick, onTransferClick }: Age
       <div className={styles.controls}>
         <input
           className={styles.searchInput}
-          placeholder="Search agents..."
+          placeholder="Search Agents..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />

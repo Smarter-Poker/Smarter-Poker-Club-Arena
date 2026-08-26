@@ -953,9 +953,14 @@ textarea:focus-visible,
    iOS Safari zooms the whole viewport when a text field is focused whose
    font-size is under 16px, and it does NOT zoom back out when the field
    blurs. The page is then left panned and oversized, which reads exactly like
-   "the app broke" — and the viewport meta here is `width=device-width,
-   initial-scale=1` with no `maximum-scale`, deliberately (locking zoom out
-   would fix the symptom by removing an accessibility feature).
+   "the app broke".
+
+   CORRECTION 2026-08-23: this comment used to claim the viewport carries no
+   `maximum-scale`. It does — index.html declares
+   `maximum-scale=1.0, user-scalable=no`, which today is what actually holds
+   the symptom back, at the cost of pinch-zoom for everyone (WCAG 1.4.4).
+   Sizing the fields correctly is what makes that lock removable rather than
+   load-bearing; see tests/e2e/mobile-input-zoom.spec.ts.
 
    55 input rules across the app set 0.8-0.9rem, so a tap on the friends
    search, the members search, the stake fields or any club form triggered it.
@@ -970,5 +975,235 @@ textarea:focus-visible,
   textarea,
   select {
     font-size: 16px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TOUCH TARGETS — REACHABLE WITHOUT REDRAWING THE CHIP (2026-08-23)
+   ═══════════════════════════════════════════════════════════════════════════════
+   Measured in production at 375px: 27 controls compute under 44px on their
+   short axis, the worst at 18px. Apple's guidance is 44pt, and a 4px-padding
+   chip is genuinely hard to hit with a thumb on a moving train.
+
+   Forcing `min-height: 44px` would work and would also REDRAW every one of
+   these — a 20px range tab becoming 44px is a visual redesign, not a fix.
+   Instead each control keeps its exact painted size and gains an invisible
+   44px-tall hit area via ::after. A click on a pseudo-element is dispatched
+   to its host, so nothing else changes.
+
+   VERTICAL ONLY, deliberately: every one of these fails on height (18-23px)
+   while already being 45-108px wide, and these chips sit in horizontal rows.
+   Expanding sideways would overlap the neighbouring chip and hand its taps to
+   the wrong control — the exact bug this is meant to prevent.
+
+   Scoped to `pointer: coarse` so a mouse, which does not need it, is
+   unaffected, and to the specific classes that were measured — not a blanket
+   rule, because a blanket rule would put a 44px invisible box around controls
+   that are already fine and start stealing taps.
+
+   `.dw__plus` is the one that also fails horizontally (22x22), so it is the
+   only one that grows both ways.
+
+   TWO WAYS THIS SILENTLY STOPS WORKING, both found live on 2026-08-25:
+
+   1. THE BAND OVERHANGS INTO A WRAPPED SECOND ROW. A 32px control with a 44px
+      ::after reaches 6px past its own box on each side. Put those controls in
+      a `flex-wrap: wrap` row with a 3px row-gap and every control on the upper
+      row loses its lower half to the ::after of the control BELOW it, which
+      paints later and therefore wins. That is not a metric failure, it is a
+      thumb landing on the wrong filter. `.game-bar__type` did exactly this
+      (24px of reach measured on production, all seven chips). The container
+      needs a row-gap of at least 12px, not the ::after a smaller height —
+      see .game-bar__types in ClubHomePage.css.
+
+   2. A LATER SIBLING QUIETLY BECOMES A STACKING CONTEXT. `position: static` is
+      not a promise: a bare `transform` makes an element a stacking context, so
+      it paints over this ::after, which carries no z-index of its own. That is
+      what cost the settings Reset button 8px of reach; the fix there was
+      `z-index: 1` on the host, applied in SettingsPage.module.css where it was
+      measured rather than blanket-applied here where it was not. */
+@media (pointer: coarse) {
+  .pt-range-tab,
+  .pl-tab,
+  .fr-challenge-btn,
+  .refd-copy-btn,
+  .stats-export-btn,
+  .replay-btn,
+  .analyze-btn,
+  .share-btn,
+  .fr-filter-chip,
+  .hh-filter-chip,
+  .lobby-favtoggle,
+  .export-btn,
+  .game-bar__sort-btn,
+  .game-bar__type,
+  .gl-tab,
+  .refd-share-btn,
+  .hero-diamonds,
+  .lobby-club__share,
+  .dw__plus,
+  /* Opt-in for one-off controls (inline styles, no class of their own). */
+  .tap-target {
+    position: relative;
+  }
+
+  .pt-range-tab::after,
+  .pl-tab::after,
+  .fr-challenge-btn::after,
+  .refd-copy-btn::after,
+  .stats-export-btn::after,
+  .replay-btn::after,
+  .analyze-btn::after,
+  .share-btn::after,
+  .fr-filter-chip::after,
+  .hh-filter-chip::after,
+  .lobby-favtoggle::after,
+  .export-btn::after,
+  .game-bar__sort-btn::after,
+  .game-bar__type::after,
+  .gl-tab::after,
+  .refd-share-btn::after,
+  .hero-diamonds::after,
+  .lobby-club__share::after,
+  .dw__plus::after,
+  .tap-target::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 44px;
+    /* Purely a hit area: never paints, never affects layout. */
+    background: transparent;
+  }
+
+  .lobby-club__share::after,
+  .dw__plus::after {
+    left: 50%;
+    right: auto;
+    min-width: 44px;
+    width: 44px;
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * CANONICAL TOGGLE — every switch in Club Arena, one look
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan, 2026-08-25: "EVERY TOGGLE INSIDE THE CLUB ARENA, INSIDE EVERY PAGE AND
+ * SUB PAGE, AND EVERY SINGLE HAMBURGER MENU."
+ *
+ * 48 files draw a toggle and they shared nothing. Measured, the switch visual
+ * came in three separate shapes, in twelve different stylesheets:
+ *
+ *   .toggle-slider                      checkbox + sibling span, thumb via ::after
+ *   .toggle-track  + .toggle-thumb      separate thumb element
+ *   .tsp-toggle__track + __thumb        table settings panel's own naming
+ *
+ * with on-states of gold (#ffd700), cyan and white-alpha depending on where you
+ * happened to be standing. src/components/toggles/Toggle.tsx existed as a
+ * "shared" component and was imported by ZERO files.
+ *
+ * WHY CSS AND NOT 48 EDITS. Dan chose "convert visual only, keep behaviour".
+ * This file is imported by main.tsx, so it loads on every route including every
+ * hamburger menu and modal. Restyling here changes every toggle at once and
+ * touches no JSX, so no handler, no state and no accessibility wiring can break.
+ * 48 mechanical edits could not make that promise.
+ *
+ * Geometry is Apple's switch (51x31 track, 27px thumb, 20px travel) and the
+ * colours match the World Hub's src/components/ui/Switch.jsx so the two apps
+ * finally agree.
+ */
+
+/* ── Track: the three shapes, normalised ─────────────────────────────────── */
+.toggle-slider,
+.toggle-switch,
+.toggle-track,
+.tsp-toggle__track {
+  width: 51px !important;
+  height: 31px !important;
+  border-radius: 999px !important;
+  background: #39393d !important;
+  position: relative !important;
+  flex-shrink: 0 !important;
+  box-sizing: border-box !important;
+  transition: background-color 180ms ease !important;
+  /* iOS paints a grey box on tap without this. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The small variant asked for a smaller pill; keep it proportional. */
+.toggle-slider.small {
+  width: 40px !important;
+  height: 24px !important;
+}
+
+/* ── Thumb: ::after for slider-style, real element for the others ────────── */
+.toggle-slider::after,
+.toggle-switch::after,
+.toggle-track .toggle-thumb,
+.tsp-toggle__track .tsp-toggle__thumb {
+  content: '';
+  position: absolute !important;
+  top: 2px !important;
+  left: 2px !important;
+  width: 27px !important;
+  height: 27px !important;
+  border-radius: 50% !important;
+  background: #ffffff !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.28) !important;
+  transform: translateX(0) !important;
+  transition: transform 180ms cubic-bezier(0.32, 0.72, 0, 1) !important;
+}
+
+.toggle-slider.small::after {
+  width: 20px !important;
+  height: 20px !important;
+}
+
+/* ── On state ────────────────────────────────────────────────────────────── */
+input:checked + .toggle-slider,
+input:checked + .toggle-switch,
+input:checked ~ .toggle-switch,
+input:checked ~ .toggle-track,
+.toggle-track.is-on,
+.toggle-track[data-on='true'],
+.tsp-toggle__track.is-on,
+[aria-checked='true'] .toggle-track,
+[aria-checked='true'] .tsp-toggle__track,
+[aria-checked='true'].toggle-slider {
+  background: #1877f2 !important;
+}
+
+input:checked + .toggle-slider::after,
+input:checked + .toggle-switch::after,
+input:checked ~ .toggle-switch::after,
+input:checked ~ .toggle-track .toggle-thumb,
+.toggle-track.is-on .toggle-thumb,
+.toggle-track[data-on='true'] .toggle-thumb,
+.tsp-toggle__track.is-on .tsp-toggle__thumb,
+[aria-checked='true'] .toggle-track .toggle-thumb,
+[aria-checked='true'] .tsp-toggle__track .tsp-toggle__thumb,
+[aria-checked='true'].toggle-slider::after {
+  transform: translateX(20px) !important;
+}
+
+input:checked + .toggle-slider.small::after {
+  transform: translateX(16px) !important;
+}
+
+/* ── Respect the OS setting ──────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .toggle-slider,
+  .toggle-switch,
+  .toggle-track,
+  .tsp-toggle__track,
+  .toggle-slider::after,
+  .toggle-switch::after,
+  .toggle-track .toggle-thumb,
+  .tsp-toggle__track .tsp-toggle__thumb {
+    transition: none !important;
   }
 }

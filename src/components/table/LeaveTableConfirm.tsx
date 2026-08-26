@@ -14,6 +14,7 @@ interface LeaveTableConfirmProps {
   isOpen: boolean;
   currentStack: number;
   tableName: string;
+  isTournament?: boolean;
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
 }
@@ -22,6 +23,7 @@ export default function LeaveTableConfirm({
   isOpen,
   currentStack,
   tableName,
+  isTournament = false,
   onConfirm,
   onCancel,
 }: LeaveTableConfirmProps) {
@@ -43,40 +45,66 @@ export default function LeaveTableConfirm({
   useEffect(() => {
     if (!isOpen) return;
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !leavingRef.current) onCancel();
+      if (e.key === 'Escape' && !leavingRef.current) {
+        onCancel();
+      }
     };
-    document.addEventListener('keydown', handleEsc);
-    return () => document.removeEventListener('keydown', handleEsc);
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
   }, [isOpen, onCancel]);
 
-  const handleConfirm = useCallback(async () => {
-    // leavingRef, not `leaving`: two taps inside one React batch both read the
-    // stale state value.
+  // Trap focus & lock body scroll
+  useEffect(() => {
+    if (!isOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    dialogRef.current?.focus();
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isOpen]);
+
+  const handleConfirm = async () => {
     if (leavingRef.current) return;
     leavingRef.current = true;
     setLeaving(true);
     try {
       await onConfirm();
     } finally {
-      if (leavingRef.current) {
-        leavingRef.current = false;
-        setLeaving(false);
-      }
+      // In normal operation onConfirm unmounts this whole tree on navigation.
+      // If it throws or no-ops, unlock so the player is not trapped.
+      leavingRef.current = false;
+      setLeaving(false);
     }
-  }, [onConfirm]);
+  };
 
   if (!isOpen) return null;
 
   return (
-    <div
-      className="leave-confirm__backdrop"
-      onClick={() => {
-        if (!leaving) onCancel();
-      }}
-    >
+    /* Dan 2026-08-25: "LEAVE TABLE FROM THE HAMBURGER MENU DOESN'T WORK AT ALL."
+       It worked. Nobody could see it.
+
+       These two class names were `leave-confirm-overlay` and `leave-confirm`,
+       and LeaveTableConfirm.css defines neither — it only has the BEM pair
+       `__backdrop` and `__dialog`, which every CHILD element here already uses.
+       The only `.leave-confirm-overlay` rule in the repo lives in
+       QuickLeaveButton.css, a component nothing imports, so that stylesheet is
+       not even in the bundle.
+
+       With no rule matching, the overlay lost `position: fixed`, `inset: 0` and
+       its z-index, and the dialog lost its background and sizing. It rendered as
+       a plain static flex child appended after `.table-page` — which is
+       `position: fixed; inset: 0; overflow: hidden` — so it was clipped out of
+       existence. State flipped, React rendered, and nothing appeared. Every
+       entry point that routes through this confirm (the tab-bar hamburger, the
+       in-table HUD hamburger, the header back arrow, and Leave while sitting
+       out) looked like a dead button. The paths that DID work — the tab X and
+       long-press — are exactly the ones that skip this dialog. */
+    <div className="leave-confirm__backdrop" onClick={leaving ? undefined : onCancel}>
       <div
-        className="leave-confirm__dialog"
         ref={dialogRef}
+        tabIndex={-1}
+        className="leave-confirm__dialog"
         onClick={(e) => e.stopPropagation()}
         role="alertdialog"
         aria-labelledby="leave-confirm-title"
@@ -100,17 +128,34 @@ export default function LeaveTableConfirm({
           </svg>
         </div>
         <h3 id="leave-confirm-title" className="leave-confirm__title">
-          Leave Table?
+          {isTournament ? 'Leave Tournament Table?' : 'Leave Table?'}
         </h3>
         <p id="leave-confirm-desc" className="leave-confirm__desc">
-          You Have{' '}
-          <strong>
-            {currentStack.toLocaleString('en-US', {
-              minimumFractionDigits: 0,
-              maximumFractionDigits: 0,
-            })}
-          </strong>{' '}
-          Chips At <strong>{tableName}</strong>. Your Chips Will Be Returned To Your Wallet.
+          {isTournament ? (
+            <>
+              You Have{' '}
+              <strong>
+                {currentStack.toLocaleString('en-US', {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 0,
+                })}
+              </strong>{' '}
+              Tournament Chips At <strong>{tableName}</strong>. In Tournaments, Leaving The Table
+              Places You On Sit-Out (Blinded Out / Auto-Folded). You Can Return Anytime Until
+              Eliminated.
+            </>
+          ) : (
+            <>
+              You Have{' '}
+              <strong>
+                {currentStack.toLocaleString('en-US', {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 0,
+                })}
+              </strong>{' '}
+              Chips At <strong>{tableName}</strong>. Your Chips Will Be Returned To Your Wallet.
+            </>
+          )}
         </p>
         <div className="leave-confirm__actions">
           <button

@@ -109,19 +109,18 @@ export default function RakebackPage() {
     enabled: !!user?.id,
   });
 
-  // Real-time updates when wallet changes (balance/earnings)
-  const handleWalletUpdate = useCallback(() => {
-    loadRakebackDataRef.current();
-  }, []);
-
-  useMasterBusChannel({
-    channelName: user?.id ? `wallet-updates-${user.id}` : null,
-    table: 'wallets',
-    filter: user?.id ? `user_id=eq.${user.id}` : null,
-    event: 'UPDATE',
-    onPayload: handleWalletUpdate,
-    enabled: !!user?.id,
-  });
+  // Real-time wallet updates: NOT subscribed here any more (2026-08-24).
+  //
+  // A `wallet-updates-<uid>` channel on `wallets` filtered by user_id used to
+  // sit here with a handleWalletUpdate callback. PostgresSyncHooks'
+  // `global_db_sync:<userId>` channel already carries that exact listener -
+  // same table, same filter - created once at sign-in and never torn down by
+  // navigation, and it emits BALANCE_UPDATED. The bus subscriber below already
+  // reloads on BALANCE_UPDATED, so the refresh path is unchanged and one
+  // subscription per visit to this page disappears.
+  //
+  // The rakeback_periods channel above STAYS: it is genuinely specific to this
+  // page and has no equivalent in the global channel.
 
   // Bus listeners: reload when balance changes or settlements complete
   useEffect(() => {
@@ -279,6 +278,8 @@ export default function RakebackPage() {
                 style={{
                   marginTop: '8px',
                   padding: '6px 16px',
+                  minHeight: '44px',
+                  touchAction: 'manipulation',
                   background:
                     claimStatus === 'success' ? '#34c759' : 'var(--accent-success, #34c759)',
                   color: '#fff',

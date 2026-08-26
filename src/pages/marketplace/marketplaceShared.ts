@@ -117,15 +117,15 @@ export function describeGrant(
   const qty = Math.max(1, Math.floor(Number(spec.qty) || 1));
   switch (spec.type) {
     case 'time_bank':
-      return `+${qty * secondsPerUse}s table time (${qty} ${qty === 1 ? 'use' : 'uses'})`;
+      return `+${qty * secondsPerUse}s Table Time (${qty} ${qty === 1 ? 'Use' : 'Uses'})`;
     case 'throwable':
-      return `${qty} free ${qty === 1 ? 'throw' : 'throws'}`;
+      return `${qty} Free ${qty === 1 ? 'Throw' : 'Throws'}`;
     case 'emote_pack':
-      return 'Unlocks the emote pack';
+      return 'Unlocks The Emote Pack';
     case 'table_skin':
-      return 'Unlocks the table theme';
+      return 'Unlocks The Table Theme';
     case 'avatar':
-      return 'Unlocks the avatar';
+      return 'Unlocks The Avatar';
     default:
       return null;
   }
@@ -135,6 +135,8 @@ export interface ShopPurchase {
   id: string;
   item_id: string;
   price_paid: number;
+  /** 'diamonds' for every purchase since 2026-08-23; 'chips' = legacy rows */
+  currency?: 'chips' | 'diamonds';
   created_at: string;
   item_name?: string | null;
   item_category?: string | null;
@@ -150,6 +152,8 @@ export interface ShopPurchase {
 export interface InventoryRow {
   id: string;
   item_id?: string | null;
+  /** links back to club_shop_purchases so the row can inherit its currency */
+  purchase_id?: string | null;
   item_name: string | null;
   category: string | null;
   price_paid: number;
@@ -298,13 +302,13 @@ const FALLBACK_VIP_PLANS: VipPlan[] = [
     planKey: null,
     checkoutPlan: null,
     name: 'Daily Pass',
-    period: '24 hours',
+    period: '24 Hours',
     priceUsd: null,
     priceDiamonds: 150,
     features: [
-      'All VIP table features for 24h',
-      'Rabbit hunt + stack in BB',
-      'Great for trying VIP',
+      'All VIP Table Features For 24h',
+      'Rabbit Hunt + Stack In BB',
+      'Great For Trying VIP',
     ],
   },
   {
@@ -312,14 +316,14 @@ const FALLBACK_VIP_PLANS: VipPlan[] = [
     planKey: 'monthly',
     checkoutPlan: 'vip-monthly',
     name: 'Monthly VIP',
-    period: 'per month',
+    period: 'Per Month',
     priceUsd: 19.99,
     priceDiamonds: 1999,
     features: [
-      'All VIP features, all month',
-      'Daily + monthly diamond bonuses',
-      'Time bank, offline protection, throwables',
-      'VIP badge across Smarter.Poker',
+      'All VIP Features, All Month',
+      'Daily + Monthly Diamond Bonuses',
+      'Time Bank, Offline Protection, Throwables',
+      'VIP Badge Across Smarter.Poker',
     ],
     featured: true,
   },
@@ -328,10 +332,10 @@ const FALLBACK_VIP_PLANS: VipPlan[] = [
     planKey: 'annual',
     checkoutPlan: 'vip-annual',
     name: 'Annual VIP',
-    period: 'per year',
+    period: 'Per Year',
     priceUsd: 199.99,
     priceDiamonds: 19999,
-    features: ['Everything in Monthly', 'Two months free vs monthly', 'Best long-run value'],
+    features: ['Everything In Monthly', 'Two Months Free Vs Monthly', 'Best Long-Run Value'],
   },
 ];
 
@@ -390,6 +394,16 @@ export interface Entitlements {
   emotePack: boolean;
   themeUnlock: boolean;
   avatars: string[];
+  /**
+   * The SPECIFIC themes the player owns, from `theme_unlocks`.
+   *
+   * `themeUnlock` above is the generic `feature_purchases.theme_unlock` flag
+   * that fn_redeem_shop_item also writes. It cannot say WHICH theme, and it
+   * accumulates one row per redemption, so "you own a table theme" was the most
+   * the strip could ever claim no matter how many were bought. `theme_unlocks`
+   * carries the theme_id, which is what any selector would have to gate on.
+   */
+  themes: string[];
   loaded: boolean;
 }
 
@@ -400,27 +414,36 @@ export const EMPTY_ENTITLEMENTS: Entitlements = Object.freeze({
   emotePack: false,
   themeUnlock: false,
   avatars: [],
+  themes: [],
   loaded: false,
 });
 
 /**
- * Read the player's live entitlement balances. Both tables are RLS-scoped to
- * the caller (feature_purchases_select_own / "Users can view their own
+ * Read the player's live entitlement balances. All three tables are RLS-scoped
+ * to the caller (feature_purchases_select_own / "Users can view their own
  * unlocks"), so this is a safe direct read.
+ *
+ * EVERY read is checked. `avatar_unlocks` used to be read with its error
+ * discarded, so a failed request rendered as "you own no avatars" - the same
+ * failure-as-empty-success shape the Store tab already had to fix. A caller
+ * that cannot tell "none" from "could not ask" will always print the wrong one.
  */
 export async function loadEntitlements(
   userId: string,
   secondsPerUse = DEFAULT_SECONDS_PER_TIME_BANK_USE
 ): Promise<Entitlements> {
   const nowIso = new Date().toISOString();
-  const [fp, av] = await Promise.all([
+  const [fp, av, th] = await Promise.all([
     supabase
       .from('feature_purchases')
       .select('feature, uses_remaining, expires_at')
       .eq('user_id', userId),
     supabase.from('avatar_unlocks').select('avatar_id').eq('user_id', userId),
+    supabase.from('theme_unlocks').select('theme_id').eq('user_id', userId),
   ]);
   if (fp.error) throw fp.error;
+  if (av.error) throw av.error;
+  if (th.error) throw th.error;
 
   const live = (fp.data || []).filter((r) => !r.expires_at || r.expires_at > nowIso);
   const sumUses = (feature: string) =>
@@ -431,13 +454,18 @@ export async function loadEntitlements(
     live.some((r) => r.feature === feature && r.uses_remaining == null);
 
   const timeBankUses = sumUses('time_bank_seconds');
+  // Deduped: fn_redeem_shop_item ON CONFLICT DO NOTHINGs the unlock but still
+  // writes a fresh generic feature_purchases row, so counting rows would
+  // over-report ownership on a re-redeem.
+  const themes = Array.from(new Set((th.data || []).map((r) => String(r.theme_id))));
   return {
     timeBankUses,
     timeBankSeconds: timeBankUses * secondsPerUse,
     throwables: sumUses('throwable'),
     emotePack: hasPermanent('emoji_pack'),
-    themeUnlock: hasPermanent('theme_unlock'),
-    avatars: (av.data || []).map((r) => String(r.avatar_id)),
+    themeUnlock: hasPermanent('theme_unlock') || themes.length > 0,
+    avatars: Array.from(new Set((av.data || []).map((r) => String(r.avatar_id)))),
+    themes,
     loaded: true,
   };
 }

@@ -13,9 +13,16 @@
  *   Schema: user_id, game_type, theme_id, table_id, button_id, background_id, cards_id
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { TABLE_SKINS, TABLE_BACKGROUNDS, TABLE_BACKGROUND_IDS } from '../../assets/tableAssets';
-import { CardBack, normalizeCardBack } from './CardImage';
+import {
+  TABLE_FELT_CATALOG,
+  isFeltUnlocked,
+  normalizeFeltId,
+  normalizeBackgroundId,
+  THEME_PRESET_SKINS,
+} from '../../lib/tableTheme';
+import { CardBack, normalizeCardBack, CARD_BACK_CATALOG, isCardBackUnlocked } from './CardImage';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -112,6 +119,35 @@ const BACKGROUND_ASSETS: ThemeAsset[] = TABLE_BACKGROUND_IDS.map((id) => ({
   vipOnly: BACKGROUND_META[id]?.vipOnly ?? false,
 }));
 
+/**
+ * FELTS AND CARD BACKS COME FROM THE SHARED CATALOGUES (2026-08-25).
+ *
+ * Both lists used to be typed out here as well as in the other picker that
+ * sells the same thing, and every time this repo has fixed one copy the other
+ * has gone on being wrong for days. Generating them means:
+ *
+ *   - a felt tile cannot exist unless a skin file exists behind it (the old
+ *     TableFeltSelector offered five ids that were not skins at all, every one
+ *     of which painted classic green, plus one mislabelled alias);
+ *   - a card-back tile cannot exist unless artwork exists for it, and the four
+ *     designs that were shipped but never offered anywhere — diamond, dragon,
+ *     galaxy, neon — now appear here on their own.
+ */
+const TABLE_ASSETS: ThemeAsset[] = TABLE_FELT_CATALOG.map((felt) => ({
+  id: felt.id,
+  name: felt.name,
+  thumbnail: felt.thumbnail,
+  vipOnly: felt.tier === 'vip',
+}));
+
+const CARD_ASSETS: ThemeAsset[] = CARD_BACK_CATALOG.map((design) => ({
+  id: design.id,
+  name: design.name,
+  // Only a fallback: renderAssetPreview draws the real <CardBack/>.
+  thumbnail: BACKGROUND_FALLBACK_GRADIENT,
+  vipOnly: design.tier !== 'standard',
+}));
+
 const THEME_ASSETS: Record<ThemeTab, ThemeAsset[]> = {
   themes: [
     {
@@ -145,89 +181,7 @@ const THEME_ASSETS: Record<ThemeTab, ThemeAsset[]> = {
       vipOnly: true,
     },
   ],
-  // Dan 2026-08-17: these ids now match TablePage's TABLE_SKINS registry
-  // exactly (the old five never did — every pick fell back to green).
-  // Thumbnails approximate each composite's palette.
-  table: [
-    {
-      id: 'neon_city',
-      name: 'Neon City',
-      thumbnail: 'linear-gradient(135deg, #2b2b33 40%, #d446b8 75%, #2ad4d4)',
-      vipOnly: false,
-    },
-    {
-      id: 'classic_green',
-      name: 'Classic Green',
-      thumbnail: 'linear-gradient(135deg, #0f9d63, #0a3d24)',
-      vipOnly: false,
-    },
-    {
-      id: 'carbon_red',
-      name: 'Carbon Red',
-      thumbnail: 'linear-gradient(135deg, #232326 55%, #b3221f)',
-      vipOnly: false,
-    },
-    {
-      id: 'ice_cavern',
-      name: 'Ice Cavern',
-      thumbnail: 'linear-gradient(135deg, #0c1524 40%, #3f6fae 75%, #bcd6ee)',
-      vipOnly: false,
-    },
-    {
-      id: 'arctic_white',
-      name: 'Arctic White',
-      thumbnail: 'linear-gradient(135deg, #f2f2f0 35%, #3f8fd4)',
-      vipOnly: false,
-    },
-    {
-      id: 'mahogany_red',
-      name: 'Royal Mahogany',
-      thumbnail: 'linear-gradient(135deg, #3a1410 30%, #b3273a 70%, #d8a437)',
-      vipOnly: false,
-    },
-    {
-      id: 'ocean_blue',
-      name: 'Ocean Blue',
-      thumbnail: 'linear-gradient(135deg, #1a4a7a, #0a243d)',
-      vipOnly: false,
-    },
-    {
-      id: 'crimson',
-      name: 'Crimson',
-      thumbnail: 'linear-gradient(135deg, #7a1a3a, #3d0a20)',
-      vipOnly: false,
-    },
-    {
-      id: 'electric_purple',
-      name: 'Electric Purple',
-      thumbnail: 'linear-gradient(135deg, #4a1a7a, #240a3d)',
-      vipOnly: false,
-    },
-    {
-      id: 'golden_sand',
-      name: 'Golden Sand',
-      thumbnail: 'linear-gradient(135deg, #7a6a1a, #3d380a)',
-      vipOnly: false,
-    },
-    {
-      id: 'jade_city',
-      name: 'Jade City',
-      thumbnail: 'linear-gradient(135deg, #14261c 40%, #2fae6f 75%, #9fe8c0)',
-      vipOnly: true,
-    },
-    {
-      id: 'amethyst_cavern',
-      name: 'Amethyst Cavern',
-      thumbnail: 'linear-gradient(135deg, #180c24 40%, #7d3fae 75%, #d9bcee)',
-      vipOnly: true,
-    },
-    {
-      id: 'carbon_ion',
-      name: 'Carbon Ion',
-      thumbnail: 'linear-gradient(135deg, #232326 55%, #1fb392)',
-      vipOnly: true,
-    },
-  ],
+  table: TABLE_ASSETS,
   button: [
     {
       // FIX-D7 2026-07-19: the app default is 'classic-white' but it wasn't a
@@ -280,65 +234,7 @@ const THEME_ASSETS: Record<ThemeTab, ThemeAsset[]> = {
   // an id can no longer appear here without artwork existing for it, and a
   // newly added background shows up in the picker on its own.
   background: BACKGROUND_ASSETS,
-  // Dan 2026-08-20: these ids are the REAL card-back designs (CARD_BACK_IDS in
-  // CardImage.tsx, each with its own artwork under
-  // public/cards/backs/table/*.webp). The previous list — standard-red,
-  // standard-blue, premium-gold, premium-black, premium-platinum — matched
-  // nothing: not CARD_BACK_IDS, not CARD_BACK_ALIASES. normalizeCardBack sent
-  // every one of them to the default classic_blue, so all five tiles rendered
-  // the identical navy back and picking any of them changed nothing on the
-  // felt. Free/VIP split mirrors CardBackSelector's standard vs premium/
-  // exclusive store tiers so the modal and the shop agree on what is paid.
-  cards: [
-    {
-      id: 'classic_red',
-      name: 'Classic Red',
-      thumbnail: 'linear-gradient(135deg, #8b0000, #4a0000)',
-      vipOnly: false,
-    },
-    {
-      id: 'classic_blue',
-      name: 'Classic Blue',
-      thumbnail: 'linear-gradient(135deg, #1e3a5f, #0d2137)',
-      vipOnly: false,
-    },
-    {
-      id: 'royal',
-      name: 'Royal',
-      thumbnail: 'linear-gradient(135deg, #4a0080, #1a0030)',
-      vipOnly: false,
-    },
-    {
-      id: 'gold',
-      name: 'Premium Gold',
-      thumbnail: 'linear-gradient(135deg, #ffd700, #b8860b)',
-      vipOnly: true,
-    },
-    {
-      id: 'holographic',
-      name: 'Holographic',
-      thumbnail: 'linear-gradient(135deg, #d3d3d3, #a9a9a9)',
-      vipOnly: true,
-    },
-    {
-      id: 'carbon',
-      name: 'Carbon Fiber',
-      thumbnail: 'linear-gradient(135deg, #434343, #000000)',
-      vipOnly: true,
-    },
-    {
-      id: 'club-branded',
-      name: 'Club Crest',
-      thumbnail: 'linear-gradient(135deg, #8b0000, #4a0000)',
-      vipOnly: true,
-    },
-    {
-      id: 'diamond-foil',
-      name: 'Diamond Foil',
-      thumbnail: 'linear-gradient(135deg, #e0e0e0, #ffffff)',
-      vipOnly: true,
-    },
-  ],
+  cards: CARD_ASSETS,
 };
 
 const TAB_TO_FIELD: Record<ThemeTab, keyof ThemeSelection> = {
@@ -363,43 +259,74 @@ const DEFAULT_SELECTION: ThemeSelection = {
  * overridden before Confirm). Free presets bundle only free assets; the two
  * VIP presets may bundle VIP assets because the preset tile itself is
  * VIP-gated by canAccessAsset before the bundle is applied.
+ *
+ * Dan 2026-08-25: the `table_id` half is NOT written here. It comes from
+ * THEME_PRESET_SKINS in lib/tableTheme, the same map resolveSkin consults when
+ * a stored row carries a theme id and no table id. Two copies of that pairing
+ * is precisely how "Rustic Wood" ended up bundling the green casino felt while
+ * the felt code sent the same preset somewhere else entirely.
  */
-const THEME_PRESET_BUNDLES: Record<string, Partial<ThemeSelection>> = {
+const PRESET_TRIMMINGS: Record<string, Omit<Partial<ThemeSelection>, 'table_id'>> = {
   'default-dark': {
-    table_id: 'neon_city',
     button_id: 'classic-white',
     background_id: 'midnight',
     cards_id: 'classic_red',
   },
   'classic-brown': {
-    table_id: 'mahogany_red',
     button_id: 'gray-d-gear',
     background_id: 'midnight',
     cards_id: 'classic_red',
   },
   'neon-blue': {
-    table_id: 'ice_cavern',
     button_id: 'blue-crystal',
     background_id: 'galaxy',
     cards_id: 'classic_blue',
   },
   'rustic-wood': {
-    table_id: 'classic_green',
     button_id: 'gold-star',
     background_id: 'golden_dusk',
     cards_id: 'gold',
   },
   'casino-green': {
-    table_id: 'jade_city',
     button_id: 'gold-star',
     background_id: 'jade_neon',
     cards_id: 'carbon',
   },
 };
 
-// Binary VIP access check: user is either VIP or not
-function canAccessAsset(isVip: boolean, vipOnly: boolean): boolean {
+const THEME_PRESET_BUNDLES: Record<string, Partial<ThemeSelection>> = Object.fromEntries(
+  Object.entries(PRESET_TRIMMINGS).map(([id, rest]) => [
+    id,
+    { table_id: THEME_PRESET_SKINS[id], ...rest },
+  ])
+);
+
+/**
+ * Can this player use this asset?
+ *
+ * Dan 2026-08-25: "a VIP/premium item must not be selectable by someone who
+ * does not own it, and an owned item must not be gated."
+ *
+ * The second half is the one that was broken. This modal gated every paid
+ * design on VIP status ALONE, while the diamond store next to it gated the
+ * SAME designs on a purchase alone. So a player who had spent 150 diamonds on
+ * Premium Gold in the store opened Theme Settings and found it padlocked, with
+ * an invitation to buy VIP to get the thing they had already bought.
+ *
+ * Card backs therefore route through the shared isCardBackUnlocked rule, which
+ * accepts either VIP or a purchase. Felts and backgrounds have no purchase
+ * path at all, so for them VIP remains the only key.
+ */
+function canAccessAsset(
+  tab: ThemeTab,
+  assetId: string,
+  isVip: boolean,
+  vipOnly: boolean,
+  ownedCardBacks: readonly string[]
+): boolean {
   if (!vipOnly) return true; // Free items always accessible
+  if (tab === 'cards') return isCardBackUnlocked(assetId, { isVip, owned: ownedCardBacks });
+  if (tab === 'table') return isFeltUnlocked(assetId, { isVip });
   return isVip; // VIP-only items require VIP status
 }
 
@@ -501,6 +428,44 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   const [gameType, setGameType] = useState<string>('ALL');
   const [selection, setSelection] = useState<ThemeSelection>({ ...DEFAULT_SELECTION });
   const [saving, setSaving] = useState(false);
+  /** Card backs bought with diamonds in the store. See canAccessAsset. */
+  const [ownedCardBacks, setOwnedCardBacks] = useState<string[]>([]);
+
+  // The live selection, readable from a callback without making every callback
+  // depend on it. handleSave needs the value it is replacing so it can put it
+  // back if the write fails.
+  const selectionRef = useRef(selection);
+  useEffect(() => {
+    selectionRef.current = selection;
+  }, [selection]);
+
+  // ── Which paid card backs has this player actually bought? ──
+  // Without this the modal padlocks a design the player owns (see
+  // canAccessAsset). Missing rows are not an error: nobody has bought one yet.
+  useEffect(() => {
+    if (!isOpen || !userId) return;
+    let mounted = true;
+    supabase
+      .from('feature_purchases')
+      .select('feature')
+      .eq('user_id', userId)
+      .like('feature', 'card_back_%')
+      .then(({ data, error }) => {
+        if (!mounted) return;
+        if (error) {
+          // Not fatal, and not silently swallowed either: a failure here means
+          // paid designs read as locked, so it has to be visible somewhere.
+          reportError(error, 'ThemeSettingsModal.Owned_card_backs_load_failed');
+          return;
+        }
+        setOwnedCardBacks(
+          (data || []).map((r: { feature: string }) => r.feature.replace('card_back_', ''))
+        );
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [isOpen, userId]);
 
   // Load existing theme for selected game type
   useEffect(() => {
@@ -517,16 +482,29 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           .maybeSingle();
 
         if (error) {
+          // A FAILED READ IS NOT "YOU HAVE THE DEFAULT THEME" (2026-08-25).
+          // This used to console.warn and return, leaving the grid showing
+          // DEFAULT_SELECTION — indistinguishable from a player who really has
+          // the defaults. They would then "correct" it, and the first tile they
+          // touched would overwrite the theme they could not see.
           console.warn('[ThemeSettings] Load failed:', error.message);
+          reportError(error, 'ThemeSettingsModal.Load_failed');
+          if (mounted) toast.error('Could Not Load Your Saved Theme. Try Again In A Moment.');
           return;
         }
 
         if (data && mounted) {
           setSelection({
             theme_id: data.theme_id || DEFAULT_SELECTION.theme_id,
-            table_id: data.table_id || DEFAULT_SELECTION.table_id,
+            // Normalised for the same reason cards_id is: rows hold legacy
+            // aliases ('dark-felt', 'diamond-pattern' are both live in
+            // production) which paint correctly but match no tile, so the tab
+            // looked like it had forgotten the player's choice.
+            table_id: normalizeFeltId(data.table_id || DEFAULT_SELECTION.table_id),
             button_id: data.button_id || DEFAULT_SELECTION.button_id,
-            background_id: data.background_id || DEFAULT_SELECTION.background_id,
+            background_id: normalizeBackgroundId(
+              data.background_id || DEFAULT_SELECTION.background_id
+            ),
             // Dan 2026-08-20: normalise, or a row still holding one of the old
             // invented ids (standard-red, premium-platinum, ...) highlights no
             // tile at all and the tab looks like it forgot the user's choice.
@@ -545,9 +523,11 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
             if (fallback && mounted) {
               setSelection({
                 theme_id: fallback.theme_id || DEFAULT_SELECTION.theme_id,
-                table_id: fallback.table_id || DEFAULT_SELECTION.table_id,
+                table_id: normalizeFeltId(fallback.table_id || DEFAULT_SELECTION.table_id),
                 button_id: fallback.button_id || DEFAULT_SELECTION.button_id,
-                background_id: fallback.background_id || DEFAULT_SELECTION.background_id,
+                background_id: normalizeBackgroundId(
+                  fallback.background_id || DEFAULT_SELECTION.background_id
+                ),
                 cards_id: normalizeCardBack(fallback.cards_id || DEFAULT_SELECTION.cards_id),
               });
             } else if (mounted) {
@@ -559,6 +539,8 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
         }
       } catch (err) {
         console.warn('[ThemeSettings] Unexpected error:', err);
+        reportError(err, 'ThemeSettingsModal.Load_failed');
+        if (mounted) toast.error('Could Not Load Your Saved Theme. Try Again In A Moment.');
       }
     };
 
@@ -566,67 +548,97 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     return () => {
       mounted = false;
     };
+    // `toast` is stable for the life of the provider; listing it would re-run
+    // the load on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, userId, gameType]);
+
+  /**
+   * APPLY NOW, PERSIST, AND UNDO IF THE PERSIST FAILED.
+   *
+   * Dan 2026-08-25: a selection must "actually change and update in real time
+   * when selected" AND "need a success toast or save feature". Both, and they
+   * have to stay consistent with each other:
+   *
+   *   1. the new selection is broadcast on the bus IMMEDIATELY, so the felt
+   *      under the modal repaints on the tap rather than after a round trip;
+   *   2. it is written to user_theme_settings;
+   *   3. if that write fails the UI is put BACK — state, bus and all — and the
+   *      failure is reported. It previously toasted the error while leaving the
+   *      tile ticked and the table repainted, so the next time the player
+   *      opened the modal their choice had silently reverted.
+   */
+  const handleSave = useCallback(
+    async (overrideSelection?: Partial<ThemeSelection>) => {
+      if (!userId) return;
+      const previous = selectionRef.current;
+      const currentToSave = { ...previous, ...(overrideSelection || {}) };
+      setSaving(true);
+      // 1. Live, before the network.
+      masterBus.emit('UI_THEME_CHANGED', { key: gameType, value: currentToSave });
+      try {
+        const { error } = await supabase.from('user_theme_settings').upsert(
+          {
+            user_id: userId,
+            game_type: gameType,
+            ...currentToSave,
+          },
+          { onConflict: 'user_id,game_type' }
+        );
+
+        if (error) {
+          setSelection(previous);
+          masterBus.emit('UI_THEME_CHANGED', { key: gameType, value: previous });
+          toast.error('Could Not Save Your Theme. Please Try Again.');
+          reportError(error, 'ThemeSettingsModal.Save_failed');
+        } else {
+          toast.success('Theme Applied');
+          // No longer closing modal on auto-save
+        }
+      } catch (err) {
+        setSelection(previous);
+        masterBus.emit('UI_THEME_CHANGED', { key: gameType, value: previous });
+        toast.error('Could Not Save Your Theme. Please Try Again.');
+        reportError(err, 'ThemeSettingsModal.Unexpected_save_error');
+      }
+      setSaving(false);
+    },
+    [userId, gameType, toast]
+  );
 
   const handleAssetSelect = useCallback(
     (tab: ThemeTab, assetId: string, vipOnly: boolean) => {
-      if (!canAccessAsset(isVip, vipOnly)) {
-        // FIX 221: Bible V8 §11.2.3 — show VIP upgrade prompt (not just a toast)
+      if (!canAccessAsset(tab, assetId, isVip, vipOnly, ownedCardBacks)) {
         setShowVipPrompt(true);
         return;
       }
       const field = TAB_TO_FIELD[tab];
-      // Dan 2026-08-17 (STEP 8): Tab 1 presets are coordinated BUNDLES, not a
-      // fifth independent knob. Before this, theme_id saved but nothing read
-      // it, so the Themes tab was inert. Picking a preset now pre-fills the
-      // other four categories (the user can still override any tab before
-      // Confirm; non-VIP presets only bundle non-VIP assets).
+      let newSel: Partial<ThemeSelection> = {};
+
       if (tab === 'themes') {
         const bundle = THEME_PRESET_BUNDLES[assetId];
-        setSelection((prev) => ({ ...prev, [field]: assetId, ...(bundle || {}) }));
-        return;
+        newSel = { [field]: assetId, ...(bundle || {}) };
+      } else {
+        newSel = { [field]: assetId };
       }
-      setSelection((prev) => ({ ...prev, [field]: assetId }));
+
+      setSelection((prev) => ({ ...prev, ...newSel }));
+      handleSave(newSel);
     },
-    [isVip]
+    [isVip, ownedCardBacks, handleSave]
   );
 
-  const handleSave = useCallback(async () => {
-    if (!userId) return;
-    setSaving(true);
-    try {
-      const { error } = await supabase.from('user_theme_settings').upsert(
-        {
-          user_id: userId,
-          game_type: gameType,
-          ...selection,
-        },
-        { onConflict: 'user_id,game_type' }
-      );
-
-      if (error) {
-        toast.error('Failed to save theme settings.');
-        reportError(error, 'ThemeSettingsModal.Save_failed');
-      } else {
-        /* Dan 2026-08-19: saving is not applying. The modal wrote the row and
-           closed, but every open table had already read its theme once on
-           mount, so the felt/background/cards/button silently stayed on the
-           old skin until a full reload. Broadcast the new selection so every
-           mounted table repaints in real time. */
-        masterBus.emit('UI_THEME_CHANGED', { key: gameType, value: selection });
-        toast.success('Theme applied');
-        onClose();
-      }
-    } catch (err) {
-      toast.error('Failed to save theme settings.');
-      reportError(err, 'ThemeSettingsModal.Unexpected_save_error');
-    }
-    setSaving(false);
-  }, [userId, gameType, selection, toast, onClose]);
-
+  /**
+   * RESET DID NOTHING (2026-08-25). It set local state and stopped: no write,
+   * no bus emit, no toast. The grid snapped back to the defaults, the table
+   * behind the modal kept the old theme, and the moment you closed and
+   * reopened, your old theme was back — because it had never been replaced.
+   * It now goes through exactly the same path as picking a tile.
+   */
   const handleReset = useCallback(() => {
     setSelection({ ...DEFAULT_SELECTION });
-  }, []);
+    handleSave({ ...DEFAULT_SELECTION });
+  }, [handleSave]);
 
   if (!isOpen) return null;
 
@@ -678,7 +690,13 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
         <div className="theme-modal__grid">
           {currentAssets.map((asset) => {
             const isSelected = currentSelected === asset.id;
-            const isLocked = !canAccessAsset(isVip, asset.vipOnly);
+            const isLocked = !canAccessAsset(
+              activeTab,
+              asset.id,
+              isVip,
+              asset.vipOnly,
+              ownedCardBacks
+            );
 
             return (
               <div
@@ -716,7 +734,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           </button>
           <button
             className="theme-modal__btn theme-modal__btn--save"
-            onClick={handleSave}
+            onClick={() => handleSave()}
             disabled={saving}
           >
             {saving ? 'Saving...' : 'Confirm'}

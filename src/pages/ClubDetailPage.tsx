@@ -9,6 +9,7 @@ import { useState, useEffect, useRef, Component, type ReactNode, type ErrorInfo 
 import { isClubStaff, type ClubRole } from '../types/clubRoles';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import styles from './ClubDetailPage.module.css';
+import { formatGameTitle } from '../utils/formatGameTitle';
 import { getLocalStorage, setLocalStorage } from '../lib/storage';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import ActivityHeatmap from '../components/common/ActivityHeatmap';
@@ -866,7 +867,7 @@ export default function ClubDetailPage() {
       if (tableData) {
         const mappedTablesResult: ClubTable[] = tableData.map((t: any) => ({
           id: t.id,
-          name: t.name || 'Table',
+          name: formatGameTitle(t.name) || 'Table',
           gameVariant: t.game_variant || 'NLH',
           stakes: t.stakes || '1/2',
           currentPlayers: t.current_players || 0,
@@ -1142,7 +1143,7 @@ export default function ClubDetailPage() {
       {/* Quick Stats */}
       <section
         className={styles.statsRow}
-        style={{ animation: `slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)` }}
+        style={{ animation: `animationsSlideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)` }}
       >
         <StatCard
           value={animatedOnlineCount}
@@ -1449,13 +1450,13 @@ export default function ClubDetailPage() {
                   <div
                     key={table.id}
                     className={styles.tableCard}
-                    style={{ animation: `slideInUp 0.5s ease-out ${idx * 0.06}s both` }}
+                    style={{ animation: `animationsSlideInUp 0.5s ease-out ${idx * 0.06}s both` }}
                   >
                     <div className={styles.tableCardHeader}>
                       <h4>{table.name}</h4>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <StatusBadge status={table.status} />
-                        {isClubStaff(userRole) && (
+                        {isClubStaff(userRole) && table.currentPlayers === 0 && (
                           <button
                             className={styles.deleteTableBtn}
                             onClick={(e) => {
@@ -1500,7 +1501,7 @@ export default function ClubDetailPage() {
               <h3>All Members ({filteredMembers.length})</h3>
               <input
                 type="search"
-                placeholder="Search members..."
+                placeholder="Search Members..."
                 className={styles.searchInput}
                 value={memberSearch}
                 onChange={(e) => setMemberSearch(e.target.value)}
@@ -1589,97 +1590,101 @@ export default function ClubDetailPage() {
               </div>
             ) : (
               <>
-                <table className={styles.membersTable}>
-                  <thead>
-                    <tr>
-                      <th>Player</th>
-                      <th>Role</th>
-                      <th>Balance</th>
-                      <th>Status</th>
-                      <th>Joined</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredMembers.slice(0, memberLimit).map((member, idx) => (
-                      <tr
-                        key={member.id}
-                        style={{ animation: `slideInUp 0.5s ease-out ${idx * 0.05}s both` }}
-                      >
-                        <td>
-                          <div className={styles.memberCell}>
-                            <div className={styles.memberAvatarSmall}>
-                              {member.username.charAt(0)}
-                            </div>
-                            {member.username}
-                          </div>
-                        </td>
-                        <td>
-                          <RoleBadge role={member.role} />
-                        </td>
-                        <td className={styles.balanceCell}>
-                          {member.chipBalance.toLocaleString()}
-                        </td>
-                        <td>
-                          <StatusBadge status={member.status} />
-                        </td>
-                        <td className={styles.dateCell}>
-                          {new Date(member.joinedAt).toLocaleDateString()}
-                        </td>
-                        <td style={{ position: 'relative' }}>
-                          <button
-                            className={styles.actionBtn}
-                            onClick={() =>
-                              setShowMemberMenu(showMemberMenu === member.id ? null : member.id)
-                            }
-                            aria-label={`Actions for ${member.username}`}
-                            disabled={memberActionLoading === member.id}
-                          >
-                            {memberActionLoading === member.id ? '◷' : '⋮'}
-                          </button>
-                          {showMemberMenu === member.id && (
-                            <div className={styles.memberMenu}>
-                              {member.role !== 'admin' && member.role !== 'owner' && (
-                                <button
-                                  onClick={() => handleMemberAction(member.id, 'promote')}
-                                  aria-label="Promote member to admin"
-                                >
-                                  {' '}
-                                  Promote
-                                </button>
-                              )}
-                              {member.role === 'admin' && (
-                                <button
-                                  onClick={() => handleMemberAction(member.id, 'demote')}
-                                  aria-label="Demote admin to member"
-                                >
-                                  {' '}
-                                  Demote
-                                </button>
-                              )}
-                              {member.status === 'active' && member.role !== 'owner' && (
-                                <button
-                                  onClick={() => handleMemberAction(member.id, 'suspend')}
-                                  aria-label="Suspend member"
-                                >
-                                  Suspend
-                                </button>
-                              )}
-                              {member.role !== 'owner' && (
-                                <button
-                                  onClick={() => handleMemberAction(member.id, 'remove')}
-                                  aria-label="Remove member from club"
-                                >
-                                  Remove
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </td>
+                <div className={styles.membersTableScroll}>
+                  <table className={styles.membersTable}>
+                    <thead>
+                      <tr>
+                        <th>Player</th>
+                        <th>Role</th>
+                        <th>Balance</th>
+                        <th>Status</th>
+                        <th>Joined</th>
+                        <th>Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {filteredMembers.slice(0, memberLimit).map((member, idx) => (
+                        <tr
+                          key={member.id}
+                          style={{
+                            animation: `animationsSlideInUp 0.5s ease-out ${idx * 0.05}s both`,
+                          }}
+                        >
+                          <td>
+                            <div className={styles.memberCell}>
+                              <div className={styles.memberAvatarSmall}>
+                                {member.username.charAt(0)}
+                              </div>
+                              {member.username}
+                            </div>
+                          </td>
+                          <td>
+                            <RoleBadge role={member.role} />
+                          </td>
+                          <td className={styles.balanceCell}>
+                            {member.chipBalance.toLocaleString()}
+                          </td>
+                          <td>
+                            <StatusBadge status={member.status} />
+                          </td>
+                          <td className={styles.dateCell}>
+                            {new Date(member.joinedAt).toLocaleDateString()}
+                          </td>
+                          <td style={{ position: 'relative' }}>
+                            <button
+                              className={styles.actionBtn}
+                              onClick={() =>
+                                setShowMemberMenu(showMemberMenu === member.id ? null : member.id)
+                              }
+                              aria-label={`Actions for ${member.username}`}
+                              disabled={memberActionLoading === member.id}
+                            >
+                              {memberActionLoading === member.id ? '◷' : '⋮'}
+                            </button>
+                            {showMemberMenu === member.id && (
+                              <div className={styles.memberMenu}>
+                                {member.role !== 'admin' && member.role !== 'owner' && (
+                                  <button
+                                    onClick={() => handleMemberAction(member.id, 'promote')}
+                                    aria-label="Promote member to admin"
+                                  >
+                                    {' '}
+                                    Promote
+                                  </button>
+                                )}
+                                {member.role === 'admin' && (
+                                  <button
+                                    onClick={() => handleMemberAction(member.id, 'demote')}
+                                    aria-label="Demote admin to member"
+                                  >
+                                    {' '}
+                                    Demote
+                                  </button>
+                                )}
+                                {member.status === 'active' && member.role !== 'owner' && (
+                                  <button
+                                    onClick={() => handleMemberAction(member.id, 'suspend')}
+                                    aria-label="Suspend member"
+                                  >
+                                    Suspend
+                                  </button>
+                                )}
+                                {member.role !== 'owner' && (
+                                  <button
+                                    onClick={() => handleMemberAction(member.id, 'remove')}
+                                    aria-label="Remove member from club"
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
                 {/* #3: Load More button when members exceed limit */}
                 {filteredMembers.length > memberLimit && (
                   <button
@@ -1724,7 +1729,7 @@ export default function ClubDetailPage() {
                   <div
                     key={agent.id}
                     className={styles.agentCard}
-                    style={{ animation: `slideInUp 0.5s ease-out ${idx * 0.06}s both` }}
+                    style={{ animation: `animationsSlideInUp 0.5s ease-out ${idx * 0.06}s both` }}
                   >
                     <div className={styles.agentAvatar}>{agent.displayName?.charAt(0) || '?'}</div>
                     <div className={styles.agentInfo}>
@@ -1931,7 +1936,7 @@ export default function ClubDetailPage() {
       )}
 
       {/* Fixed Bottom Navigation Bar */}
-      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} clubName={club?.name} />}
+      {clubId && <ClubBottomNav clubId={clubId} />}
 
       {/* Confirm Modal for Table Deletion */}
       <ConfirmModal
@@ -1996,7 +2001,7 @@ export default function ClubDetailPage() {
                   setTables(
                     data.map((t: any) => ({
                       id: t.id,
-                      name: t.name || 'Table',
+                      name: formatGameTitle(t.name) || 'Table',
                       gameVariant: t.game_variant || 'NLH',
                       stakes: t.stakes || '1/2',
                       currentPlayers: t.current_players || 0,

@@ -211,6 +211,83 @@ export const unionApi = {
       notes,
     });
   },
+
+  // ── Treasury detail reads (Dan 2026-08-24) ────────────────────────────────
+  // "Rake treasury should open up to see all the data for all rake
+  // accumulated" / "back up BBJ needs to be clickable as well and expand to
+  // see data and transaction history and stats etc."
+  //
+  // Both are reads, so idempotent:false — they must not burn an idempotency
+  // key, and re-requesting one is always safe.
+
+  /** Wallet balance vs lifetime ledger, 30 days by day and by club, last 50 rows. */
+  rakeDetail(unionId: string) {
+    return callUnionApi(
+      'union-wallet',
+      { action: 'get_rake_detail', unionId },
+      { idempotent: false }
+    );
+  },
+
+  /**
+   * The three BBJ banks, the live split against the 50/25/25 house rule, who
+   * was credited for funding them, and recent jackpot movements.
+   */
+  bbjDetail(unionId: string) {
+    return callUnionApi(
+      'union-wallet',
+      { action: 'get_bbj_detail', unionId },
+      { idempotent: false }
+    );
+  },
+
+  /**
+   * Move chips out of the BACKUP jackpot bank.
+   *
+   * Only two destinations exist and both stay inside the union's own money:
+   * 'main' tops the live jackpot back up, 'promo' credits union_wallets
+   * .promo_wallet (NOT the pool's promo bank — different balances). There is
+   * deliberately no club destination: backup is jackpot liability owed to
+   * players, and paying it into a club treasury would turn player money into
+   * operator money in one call.
+   */
+  bbjBackupTransfer(
+    unionId: string,
+    amount: number,
+    destination: 'main' | 'promo',
+    notes?: string
+  ) {
+    return callUnionApi('union-wallet', {
+      action: 'bbj_backup_transfer',
+      unionId,
+      amount,
+      destination,
+      notes,
+    });
+  },
+
+  /**
+   * Spend the promo wallet: into a member club's treasury, or into the main
+   * jackpot. clubId is required for 'club' and the endpoint rejects the call
+   * without it; fn_union_promo_send independently verifies the club is in
+   * this union, without which this would be a chip mint into any club.
+   */
+  promoSend(
+    unionId: string,
+    amount: number,
+    destination: 'club' | 'bbj_main',
+    clubId?: string,
+    notes?: string
+  ) {
+    return callUnionApi('union-wallet', {
+      action: 'promo_send',
+      unionId,
+      amount,
+      destination,
+      clubId,
+      notes,
+    });
+  },
 };
 
 export default unionApi;

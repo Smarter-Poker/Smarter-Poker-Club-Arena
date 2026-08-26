@@ -1,101 +1,123 @@
 .theme-selector h3 {
-    color: #fff;
-    margin: 0 0 16px;
-    font-size: 1rem;
+  color: #fff;
+  margin: 0 0 16px;
+  font-size: 1rem;
 }
 
+/* Mobile first: at 375px a 140px minimum forced a single column with a wide
+   dead gutter. Two columns is the base; wider screens fill with more. */
 .themes-grid {
-    display: grid;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (min-width: 420px) {
+  .themes-grid {
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: 12px;
+  }
 }
 
 .theme-card {
-    position: relative;
-    background: rgba(0, 0, 0, 0.2);
-    border: 2px solid transparent;
-    border-radius: 12px;
-    overflow: hidden;
-    cursor: pointer;
-    transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  position: relative;
+  background: rgba(0, 0, 0, 0.2);
+  border: 2px solid transparent;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
 .theme-card:hover:not(.locked) {
-    border-color: rgba(255, 255, 255, 0.2);
-    transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
 }
 
 .theme-card.selected {
-    border-color: #ffd700;
-    box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);
+  border-color: #ffd700;
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);
 }
 
 .theme-card.locked {
-    cursor: not-allowed;
-    opacity: 0.7;
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
+/* The tile now shows the SAME preview gradient the theme actually applies,
+   set inline from TABLE_THEMES. It used to be three flat swatches that
+   resembled nothing on the felt (and the themes they previewed did not
+   exist at all). */
 .theme-preview {
-    display: flex;
-    height: 60px;
+  position: relative;
+  height: 60px;
+  width: 100%;
 }
 
-.preview-color {
-    flex: 1;
+.theme-preview__rail {
+  position: absolute;
+  inset: 8px;
+  border-radius: 999px;
+  border: 3px solid;
+  opacity: 0.6;
+  pointer-events: none;
 }
 
 .theme-info {
-    padding: 10px 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .theme-name {
-    color: #fff;
-    font-weight: 500;
-    font-size: 0.9rem;
+  color: #fff;
+  font-weight: 500;
+  font-size: 0.9rem;
 }
 
 .theme-badge {
-    font-size: 0.7rem;
-    padding: 2px 6px;
-    border-radius: 4px;
-    width: fit-content;
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  width: fit-content;
 }
 
 .theme-badge.vip {
-    background: rgba(255, 215, 0, 0.15);
-    color: #ffd700;
+  background: rgba(255, 215, 0, 0.15);
+  color: #ffd700;
 }
 
 .theme-badge.premium {
-    background: linear-gradient(90deg, rgba(255, 215, 0, 0.2), rgba(255, 140, 0, 0.2));
-    color: #fbbf24;
+  background: linear-gradient(90deg, rgba(255, 215, 0, 0.2), rgba(255, 140, 0, 0.2));
+  color: #fbbf24;
 }
 
 .lock-overlay {
-    position: absolute;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.5rem;
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
 }
 
 .selected-check {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 24px;
-    height: 24px;
-    background: #ffd700;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #000;
-    font-weight: bold;
-    font-size: 0.8rem;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  background: #ffd700;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #000;
+  font-weight: bold;
+  font-size: 0.8rem;
 }

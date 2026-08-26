@@ -282,7 +282,7 @@ export default function AgentPortalPage() {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
           gap: '10px',
           marginBottom: '16px',
           ...sectionStyle(1),
@@ -346,6 +346,8 @@ export default function AgentPortalPage() {
               marginTop: '6px',
               width: '100%',
               padding: '6px',
+              minHeight: '44px',
+              touchAction: 'manipulation',
               fontSize: '0.7rem',
               fontWeight: 700,
               background: 'rgba(16,185,129,0.12)',
@@ -469,6 +471,8 @@ export default function AgentPortalPage() {
               disabled={!agentClubId}
               style={{
                 padding: '6px 14px',
+                minHeight: '44px',
+                touchAction: 'manipulation',
                 background: 'rgba(239,68,68,0.15)',
                 border: '1px solid rgba(239,68,68,0.4)',
                 borderRadius: '8px',

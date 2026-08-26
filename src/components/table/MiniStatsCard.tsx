@@ -13,18 +13,16 @@
  * Transparent glass design to not obstruct the table.
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 import './MiniStatsCard.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export interface MiniStatsObserver {
-  id: string;
-  name: string;
-  avatar?: string;
-}
+/* `MiniStatsObserver` deleted 2026-08-26: it typed the `observers` prop, and
+   that prop went with the unreachable expanded panel. Exported from the barrel
+   and imported by nothing. */
 
 export interface MiniStatsCardProps {
   /** Current hero stack */
@@ -41,10 +39,8 @@ export interface MiniStatsCardProps {
   isSeated: boolean;
   /** Tap handler — opens full session stats modal */
   onTap?: () => void;
-  /** Observers watching the table */
-  observers?: MiniStatsObserver[];
-  /** Whether we are displaying real-time results (true overrides expanded logic) */
-  showRealTimeResults?: boolean;
+  /** Whether the table is a tournament */
+  isTournament?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -59,48 +55,62 @@ export function MiniStatsCard({
   handsWon,
   isSeated,
   onTap,
-  observers = [],
-  // Dan 2026-04-17: stats panel was covering 40% of the table by default.
-  // Collapse by default — single-line P&L pill. Tap expands to full panel.
-  showRealTimeResults = false,
+  isTournament = false,
 }: MiniStatsCardProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  // Don't show if not seated
-  if (!isSeated) return null;
+  // Don't show if not seated (unless in a tournament, where stats/lobby button is always visible)
+  if (!isSeated && !isTournament) return null;
 
   const pnl = currentStack - totalBuyIn;
   const pnlColor = pnl >= 0 ? 'var(--success, #31A24C)' : 'var(--danger, #F02849)';
   const pnlSign = pnl >= 0 ? '+' : '';
   const vpipPct = handsPlayed > 0 ? Math.round((vpipCount / handsPlayed) * 100) : 0;
-  const winRate = handsPlayed > 0 ? Math.round((handsWon / handsPlayed) * 100) : 0;
-
-  // Resolve effective expand state. `onTap` (if provided) opens the full
-  // SessionStats modal; internal isExpanded toggle only matters when onTap
-  // is not wired. showRealTimeResults forces expanded display.
-  const expanded = showRealTimeResults || isExpanded;
+  /* `winRate` deleted 2026-08-25: computed on every render and read by
+     nothing. `handsWon` is shown directly on the tournament bar instead. */
 
   const handleClick = () => {
-    if (onTap) {
-      onTap();
-    } else {
-      setIsExpanded((prev) => !prev);
-    }
+    onTap?.();
   };
 
-  // ─── Collapsed (default): icon-only stats button (Dan 2026-04-17). The
-  // previous "P&L +$N" pill was text — Dan wanted an icon. Renders a compact
-  // stats/chart SVG with a tiny status dot whose color signals P&L direction.
-  if (!expanded) {
-    const pnlDirection = pnl > 0 ? 'up' : pnl < 0 ? 'down' : 'flat';
+  /**
+   * TOURNAMENT STATS BAR — Dan 2026-08-25 (binding): "tournaments are still
+   * missing the stats bar in the right corner."
+   *
+   * They were, and this early return is why. It short-circuited PAST every
+   * figure the card exists to show and rendered a bare chart glyph with the
+   * word STATS — a button that opens a panel, not a stats bar. A player in a
+   * tournament could see nothing about their own game without tapping.
+   *
+   * It now shows the numbers, in the corner, the way a cash table does. Buy-In
+   * and P&L are deliberately absent: in a tournament your buy-in is money and
+   * your stack is chips, so subtracting one from the other is meaningless. The
+   * four figures below are all genuinely session-tracked for tournament tables too
+   * (handsPlayed / vpipCount / handsWon are incremented in TablePage
+   * regardless of table kind), so none of this is invented.
+   *
+   * The tap target is unchanged: it still opens the tournament lobby / info
+   * panel, which is where standings, payouts and the clock live in full.
+   */
+  /**
+   * A SPECTATOR HAS NO STATS, SO DO NOT PRINT FOUR ZEROES (fixed 2026-08-26).
+   *
+   * `currentStack` is `players[heroSeat - 1]?.stack || 0`, and an observer's
+   * `heroSeat` is 0 — so the tournament bar rendered
+   * `Stack 0 · Hands 0 · VPIP 0% · Won 0` to anyone WATCHING a tournament.
+   * That reads as a broken HUD, not as "you are not in this one", and watching
+   * a running event is a first-class route now (Dan 2026-08-25, item 1).
+   *
+   * The reason the tournament branch ignores `isSeated` at all is that this
+   * control is also the way into the tournament lobby, which an observer very
+   * much does want. So keep the button, drop the figures.
+   */
+  if (isTournament && !isSeated) {
     return (
       <button
         type="button"
         className="mini-stats-card mini-stats-card--icon"
         onClick={handleClick}
-        aria-label={`Session stats, P&L ${pnlSign}${pnl.toLocaleString()}`}
-        title="Session Stats"
-        data-pnl-direction={pnlDirection}
+        aria-label="Tournament lobby. Standings, payouts and the clock."
+        title="Tournament Lobby"
       >
         <svg
           width="16"
@@ -113,94 +123,101 @@ export function MiniStatsCard({
           strokeLinejoin="round"
           aria-hidden="true"
         >
-          {/* Bar-chart icon — 4 vertical bars ascending */}
-          <path d="M3 21h18" />
-          <rect x="5" y="13" width="3" height="6" rx="0.5" />
-          <rect x="10.5" y="9" width="3" height="10" rx="0.5" />
-          <rect x="16" y="5" width="3" height="14" rx="0.5" />
+          {/* Trophy — the lobby, not a session readout */}
+          <path d="M8 21h8" />
+          <path d="M12 17v4" />
+          <path d="M7 4h10v5a5 5 0 0 1-10 0V4z" />
+          <path d="M7 6H5a2 2 0 0 0 0 4h2" />
+          <path d="M17 6h2a2 2 0 0 1 0 4h-2" />
         </svg>
-        <span
-          className="mini-stats-card__dot"
-          style={{ background: pnlColor }}
-          aria-hidden="true"
-        />
       </button>
     );
   }
 
-  return (
-    <div
-      className="mini-stats-card mini-stats-card--expanded"
-      onClick={handleClick}
-      role="button"
-      tabIndex={0}
-      aria-label="Session stats"
-    >
-      {/* Real-Time Results View */}
-      <div className="mini-stats-card__details">
-        <div className="mini-stats-card__row">
-          <span className="mini-stats-card__label">Buy-In</span>
-          <span className="mini-stats-card__value">{totalBuyIn.toLocaleString()}</span>
-        </div>
-        <div className="mini-stats-card__row">
-          <span className="mini-stats-card__label">P&L</span>
-          <span className="mini-stats-card__value" style={{ color: pnlColor, fontWeight: 700 }}>
-            {pnlSign}
-            {pnl.toLocaleString()}
+  if (isTournament) {
+    return (
+      <button
+        type="button"
+        className="mini-stats-card mini-stats-card--tournament-stats"
+        onClick={handleClick}
+        aria-label={`Tournament stats. Stack ${currentStack.toLocaleString('en-US')}, ${handsPlayed} hands played. Opens tournament lobby.`}
+        title="Tournament Stats & Lobby"
+      >
+        <span className="mini-stats-card__tstat">
+          <span className="mini-stats-card__tstat-label">Stack</span>
+          <span className="mini-stats-card__tstat-value">
+            {currentStack.toLocaleString('en-US')}
           </span>
-        </div>
-        <div className="mini-stats-card__row">
-          <span className="mini-stats-card__label">Stack</span>
-          <span className="mini-stats-card__value">{currentStack.toLocaleString()}</span>
-        </div>
-        <div className="mini-stats-card__row">
-          <span className="mini-stats-card__label">VPIP</span>
-          <span className="mini-stats-card__value">{vpipPct}%</span>
-        </div>
+        </span>
+        <span className="mini-stats-card__tstat">
+          <span className="mini-stats-card__tstat-label">Hands</span>
+          <span className="mini-stats-card__tstat-value">{handsPlayed}</span>
+        </span>
+        <span className="mini-stats-card__tstat">
+          <span className="mini-stats-card__tstat-label">VPIP</span>
+          <span className="mini-stats-card__tstat-value">{vpipPct}%</span>
+        </span>
+        <span className="mini-stats-card__tstat">
+          <span className="mini-stats-card__tstat-label">Won</span>
+          <span className="mini-stats-card__tstat-value">{handsWon}</span>
+        </span>
+      </button>
+    );
+  }
 
-        {/* Observers / Who's watching */}
-        <div
-          className="mini-stats-card__observers"
-          style={{
-            marginTop: '6px',
-            paddingTop: '6px',
-            borderTop: '1px dashed rgba(255,255,255,0.1)',
-          }}
-        >
-          <span
-            className="mini-stats-card__label"
-            style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
-          >
-            <span className="mini-stats-card__observer-icon" style={{ color: '#22c55e' }}>
-              ◉
-            </span>
-            Who's Watching: {observers.length}
-          </span>
-        </div>
-        {observers.length > 0 ? (
-          <div className="mini-stats-card__observer-list">
-            {observers.slice(0, 5).map((obs) => (
-              <span key={obs.id} className="mini-stats-card__observer-name">
-                {obs.name}
-              </span>
-            ))}
-            {observers.length > 5 && (
-              <span className="mini-stats-card__observer-more">+{observers.length - 5} More</span>
-            )}
-          </div>
-        ) : (
-          <div className="mini-stats-card__observer-list" style={{ opacity: 0.5 }}>
-            <span
-              className="mini-stats-card__observer-name"
-              style={{ fontStyle: 'italic', background: 'transparent', padding: 0 }}
-            >
-              Nobody Yet
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
+  // ─── Collapsed (default): icon-only stats button (Dan 2026-04-17). The
+  // previous "P&L +$N" pill was text — Dan wanted an icon. Renders a compact
+  // stats/chart SVG with a tiny status dot whose color signals P&L direction.
+  const pnlDirection = pnl > 0 ? 'up' : pnl < 0 ? 'down' : 'flat';
+  return (
+    <button
+      type="button"
+      className="mini-stats-card mini-stats-card--icon"
+      onClick={handleClick}
+      aria-label={`Session stats, P&L ${pnlSign}${pnl.toLocaleString()}`}
+      title="Session Stats"
+      data-pnl-direction={pnlDirection}
+    >
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        {/* Bar-chart icon — 4 vertical bars ascending */}
+        <path d="M3 21h18" />
+        <rect x="5" y="13" width="3" height="6" rx="0.5" />
+        <rect x="10.5" y="9" width="3" height="10" rx="0.5" />
+        <rect x="16" y="5" width="3" height="14" rx="0.5" />
+      </svg>
+      <span className="mini-stats-card__dot" style={{ background: pnlColor }} aria-hidden="true" />
+    </button>
   );
 }
+
+/**
+ * THE EXPANDED PANEL IS GONE (2026-08-25, second audit).
+ *
+ * ~70 lines rendered Buy-In / P&L / Stack / VPIP / Who's Watching inline on
+ * the felt, and NOTHING COULD EVER REACH THEM. `expanded` is
+ * `showRealTimeResults || isExpanded`; no caller in the app passes
+ * `showRealTimeResults`, and TablePage always passes `onTap`, so
+ * `setIsExpanded` (the only writer of `isExpanded`) is unreachable. The
+ * branch had been dead in production since the card was collapsed to an icon
+ * on 2026-04-17, along with the `observers` prop that fed it.
+ *
+ * Nothing is lost: tapping the icon opens the full SessionStats modal, which
+ * shows the same figures with room to read them. If an inline panel is ever
+ * wanted again it belongs in that modal's component, not as a second
+ * rendering of the same numbers behind a flag nobody sets.
+ *
+ * Unreachable by construction, which is why the icon branch above simply
+ * returns and there is no third branch here.
+ */
 
 export default MiniStatsCard;

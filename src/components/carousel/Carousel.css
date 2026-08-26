@@ -60,6 +60,9 @@
   width: var(--sp-carousel-item-w, 300px);
   /* transform and opacity are written inline every frame by the component;
      declaring a transition on them would fight the rAF loop and add lag. */
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
   will-change: transform, opacity;
 }
 

@@ -10,12 +10,29 @@ import {
   Deck,
   evaluateHand,
   evaluateOmahaHand,
+  evaluateOmahaLowHand,
   calculatePots,
   calculateBettingState,
   validateAction,
   calculateRake,
   determineWinners,
+  describeHand,
+  compareHands,
+  compareLowHands,
 } from './PokerEngine.js';
+import {
+  isFixedLimitVariant,
+  isPotLimitVariant,
+  fixedLimitBetSize,
+  isFixedLimitCapped,
+} from './BettingStructure.js';
+import {
+  holeCardCount,
+  isHiLoVariant,
+  isOmahaVariant,
+  isShortDeckVariant,
+} from './VariantRules.js';
+
 import type {
   Card,
   HandStage,
@@ -30,8 +47,11 @@ import type {
   EvaluatedHand,
   Pot,
   Winner,
+  PerPotAward,
   RakeConfig,
+  BettingState,
 } from '../types.js';
+
 import { reportError } from '../services/errorReporter.js';
 import { createHandStateMachine, type HandFSMState } from './StateMachine.js';
 
@@ -126,6 +146,20 @@ export class HandController {
   private pendingWinnersByBoard:
     | Array<{ board: 1 | 2; userId: string; amount: number; handName?: string }>
     | undefined;
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25 (Dan spec section 8): set the moment an all-in
+   * ends all possible betting with cards to come. At such a showdown every
+   * live hand is exposed and nobody may muck — cash, tournament, heads-up,
+   * multiway, main pots and side pots alike. Per-hand: a HandController lives
+   * for exactly one hand, so no reset is needed.
+   */
+  private allInShowdownLocked = false;
+  /**
+   * SHOWDOWN POLISH 2026-08-25: the unmerged per-pot(-half) award breakdown
+   * collected by determineWinners for the WINNERS emit. Per-hand — a
+   * HandController lives for exactly one hand.
+   */
+  private pendingPerPotAwards: PerPotAward[] = [];
   /** FIX-225: Bible V8 §1.6/§3.2 — Formal Hand State Machine */
   private handFSM = createHandStateMachine('idle');
 
@@ -531,20 +565,11 @@ export class HandController {
   }
 
   private getCardsPerPlayer(): number {
-    switch (this.config.gameVariant) {
-      case 'plo4':
-        return 4;
-      case 'plo5':
-        return 5;
-      case 'plo6':
-        return 6;
-      case 'plo8':
-        return 4; // Omaha Hi-Lo: 4 cards
-      case 'pineapple':
-        return 3; // Pineapple: 3 hole cards, discard 1 later
-      default:
-        return 2; // nlh, short_deck
-    }
+    // 2026-08-23: this was a switch whose `default: return 2` silently made any
+    // variant it had not been taught a Hold'em game. `flo8` is four cards and
+    // would have been dealt two. VariantRules is the one table now — see the
+    // header there for the five copies of this fact that used to exist.
+    return holeCardCount(this.config.gameVariant);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -596,35 +621,17 @@ export class HandController {
       if (!aofLegal) return false;
     }
 
-    // Bible V8 §4.14: PLO variants use pot-limit betting
-    const isPotLimit = this.config.gameVariant.startsWith('plo');
-    const bettingState = calculateBettingState(
-      this.state.pot,
-      this.state.currentBet,
-      player.bet,
-      this.config.bigBlind,
-      this.state.lastRaise,
-      isPotLimit
-    );
+    // Bible V8 §4.14: PLO variants use pot-limit betting; flh/flo8 use
+    // fixed-limit (2026-08-23). `buildBettingState` is the one place that
+    // decides which — the nine copies of `startsWith('plo')` are gone.
+    const bettingState = this.buildBettingState(player);
 
-    // ── Dan 2026-08-21 (PLO hard cap) ──
-    // In pot-limit the maximum is the pot, so a stack bigger than the cap
-    // CANNOT shove. validateAction rejects that (PokerEngine.ts) — the rule
-    // truth — but a bare rejection would freeze the table when the shove came
-    // from an automated path (horse decision, disconnect auto-action, watchdog
-    // force). Pot-limit "all in" means "bet the legal maximum", so clamp.
-    let effAction: ActionType = action;
-    let effAmount = amount;
-    if (isPotLimit && action === 'all_in' && bettingState.maxRaise !== undefined) {
-      const allInTo = player.bet + player.stack;
-      const capTo = this.state.currentBet + bettingState.maxRaise;
-      if (allInTo > capTo + 0.005) {
-        effAction = this.state.currentBet > 0 ? 'raise' : 'bet';
-        effAmount = Math.round(capTo * 100) / 100;
-      }
-    }
+    const clamped = this.clampToStructure(player, action, amount, bettingState);
+    const effAction: ActionType = clamped.action;
+    const effAmount = clamped.amount;
 
     const validation = validateAction(effAction, effAmount, player.stack, bettingState);
+
     if (!validation.valid) return false;
     action = effAction;
     amount = effAmount;
@@ -920,8 +927,18 @@ export class HandController {
       player.bet = 0;
     }
     this.state.currentBet = 0;
-    this.state.lastRaise = this.config.bigBlind;
-    this.state.minRaise = this.config.bigBlind;
+    // 2026-08-23: on a fixed-limit table the street's wager is the reset value,
+    // not the big blind — turn and river are played for the BIG bet. Leaving
+    // this at bigBlind would have let a turn all-in of one small bet count as a
+    // full raise and reopen betting, since canReopenBetting compares against
+    // lastRaise. The stage has not moved yet, so ask about the one we are
+    // moving INTO.
+    const incomingStage = this.nextStageAfter(this.state.stage);
+    const streetReset = isFixedLimitVariant(this.config.gameVariant)
+      ? fixedLimitBetSize(this.config.bigBlind, incomingStage)
+      : this.config.bigBlind;
+    this.state.lastRaise = streetReset;
+    this.state.minRaise = streetReset;
 
     const deck = this.state.deck as unknown as Deck;
 
@@ -939,6 +956,10 @@ export class HandController {
       const canStillAct = this.getActivePlayers().filter((p) => !p.is_all_in);
       if (canStillAct.length < 2) {
         this.state.currentPlayerSeat = -1;
+        // SHOWDOWN SYSTEM 2026-08-25 (Dan spec section 8): an all-in ended all
+        // possible betting with cards still to come. Every live hand must be
+        // exposed at showdown — no muck option. completeHandInner reads this.
+        this.allInShowdownLocked = true;
         this.emit({
           type: 'ALL_IN_RUNOUT',
           board: [...this.state.communityCards],
@@ -1017,6 +1038,19 @@ export class HandController {
     // parity fix comment there. Reaching this point means at least two
     // players can still act on the newly dealt street. The 2026-08-15
     // parked-turn-pointer fix lives on in the pre-deal block.
+    //
+    // SHOWDOWN SYSTEM 2026-08-25 (Dan spec sections 3 + 6, TDA): the player
+    // who shows first is the last aggressor ON THE FINAL BETTING ROUND — not
+    // the last aggressor anywhere in the hand. lastAggressorSeat used to be
+    // set once and never cleared, so a preflop raiser who check-called the
+    // whole way down was still forced to show first. A new betting round is
+    // beginning here, so the previous street's aggression no longer counts
+    // toward showdown order. If this street checks through (or every later
+    // street does), the fallback in completeHandInner — first live player in
+    // normal river action order — takes over. An all-in runout parks ABOVE
+    // this line, deliberately preserving the aggressor of the final betting
+    // round that actually completed.
+    this.state.lastAggressorSeat = -1;
     this.state.currentPlayerSeat = this.getFirstPostflopPlayer();
     this.emitTurnChange();
   }
@@ -1383,8 +1417,11 @@ export class HandController {
 
     if (activePlayers.length > 1) {
       // FIX 122: Pass shortDeck flag so showdown display uses correct hand rankings
-      const isShortDeck = this.config.gameVariant === 'short_deck';
-      const isOmaha = this.config.gameVariant.startsWith('plo');
+      const isShortDeck = isShortDeckVariant(this.config.gameVariant);
+      // 2026-08-23: was `startsWith('plo')`, which reads `flo8` — Fixed Limit
+      // Omaha Hi-Lo — as a Hold'em game and evaluates it with any five of
+      // seven instead of exactly two from hand.
+      const isOmaha = isOmahaVariant(this.config.gameVariant);
       const evaluator = isOmaha
         ? evaluateOmahaHand
         : (h: Card[], c: Card[]) => evaluateHand(h, c, isShortDeck);
@@ -1400,12 +1437,17 @@ export class HandController {
         hand2: showBoard2 ? evaluator(p.cards, this.state.communityCards2) : undefined,
       }));
 
-      // Bible V8 §4.21: Sort showdown results — last aggressor shows first,
-      // then clockwise. If no aggressor, first player left of dealer shows first.
+      // Bible V8 §4.21 + Dan spec sections 3/6/7: sort showdown results — the
+      // FINAL betting round's last aggressor shows first, then clockwise. If
+      // that street checked through (no aggressor), the first LIVE player in
+      // normal river action order shows first — heads-up that is the Big
+      // Blind, since the BB acts first postflop. getFirstShowdownSeat differs
+      // from getFirstPostflopPlayer in that an all-in player is still a live
+      // hand at showdown and must not be skipped over.
       const firstToShow =
         this.state.lastAggressorSeat >= 0
           ? this.state.lastAggressorSeat
-          : this.getFirstPostflopPlayer();
+          : this.getFirstShowdownSeat();
       if (firstToShow >= 0) {
         // FIX 165: Use max physical seat + 1 for modular distance, not player count.
         // Players may have non-contiguous seats (e.g., seats 1,3,5,7 at a 9-seat table).
@@ -1417,6 +1459,8 @@ export class HandController {
           return aDist - bDist;
         });
       }
+
+      this.applyShowdownRevealRules(showdownResults, pots);
 
       this.emit({ type: 'SHOWDOWN', results: showdownResults });
     }
@@ -1441,28 +1485,50 @@ export class HandController {
           eligiblePlayers: [...pot.eligiblePlayers],
         });
       }
+      // SHOWDOWN POLISH 2026-08-25: collect the unmerged per-pot(-half)
+      // breakdown for each board so the award sequence can play board 1's
+      // pots and then board 2's, each with its exact share.
+      const perPot1: PerPotAward[] = [];
+      const perPot2: PerPotAward[] = [];
       const winners1 = determineWinners(
         this.state.players,
         this.state.communityCards,
         potsBoard1,
         this.config.gameVariant,
-        this.state.dealerSeat
+        this.state.dealerSeat,
+        perPot1
       );
       const winners2 = determineWinners(
         this.state.players,
         this.state.communityCards2,
         potsBoard2,
         this.config.gameVariant,
-        this.state.dealerSeat
+        this.state.dealerSeat,
+        perPot2
       );
+      this.pendingPerPotAwards = [
+        ...perPot1.map((a) => ({ ...a, board: 1 as const })),
+        ...perPot2.map((a) => ({ ...a, board: 2 as const })),
+      ];
       // Merge by user, integer cents throughout so the sum stays exact.
       const byUser = new Map<string, number>();
+      // Keep the evaluated hand alongside the money. Rebuilding these entries as
+      // { userId, amount } alone dropped `hand`, so on every double board the
+      // merged winners carried no hand name and no cards — the board could
+      // neither name the winning hand nor light the cards that made it. Where a
+      // user won both boards, the higher-ranking hand is the one shown.
+      const handByUser = new Map<string, (typeof winners1)[number]['hand']>();
       for (const w of [...winners1, ...winners2]) {
         byUser.set(w.userId, (byUser.get(w.userId) ?? 0) + Math.round(w.amount * 100));
+        const held = handByUser.get(w.userId);
+        if (w.hand && (!held || (w.hand.ranking ?? 0) > (held.ranking ?? 0))) {
+          handByUser.set(w.userId, w.hand);
+        }
       }
       winners = Array.from(byUser.entries()).map(([userId, cents]) => ({
         userId,
         amount: cents / 100,
+        hand: handByUser.get(userId),
       }));
       // Round 2: keep the per-board story for the WINNERS emit below —
       // clients label each board with its own winner + hand name.
@@ -1481,23 +1547,134 @@ export class HandController {
         })),
       ];
     } else {
+      const perPot: PerPotAward[] = [];
       winners = determineWinners(
         this.state.players,
         this.state.communityCards,
         pots,
         this.config.gameVariant,
-        this.state.dealerSeat
+        this.state.dealerSeat,
+        perPot,
+        // A pot whose eligibility snapshot matched nobody is still awarded -
+        // to the contenders - but we want to know it happened, because a bad
+        // snapshot means a side pot was built from state that has since moved.
+        (info) =>
+          reportError(
+            new Error(
+              `[HandController] pot ${info.potIndex} eligibility snapshot matched no contender ` +
+                `(${info.snapshotEligible} listed, ${info.contenders} in the hand, ${info.potAmount} chips) - ` +
+                `awarded to the contenders instead`
+            ),
+            'HandController.pot_eligibility_snapshot_stale'
+          )
       );
+      this.pendingPerPotAwards = perPot;
     }
 
-    // Bible V8 §1.9 — No-winners guard: if determineWinners returns empty
-    // (edge case: all eligible players gone), award pot to last active player
-    if (winners.length === 0 && activePlayers.length > 0) {
-      console.warn(
-        `[HandController] No winners found — awarding pot to last active player ${activePlayers[0].user_id}`
+    /**
+     * A HAND ALWAYS HAS A WINNER (Dan 2026-08-26, binding).
+     *
+     * Verbatim: "a hand must ALWAYS have a winner, no matter what, that can
+     * never happen, you must trigger a RE-CHECK or re-verification because it
+     * is impossible for there to not be a winner ever."
+     *
+     * This used to read: award the pot to `activePlayers[0]`. That is not a
+     * fallback, it is a coin toss dressed as one - the first entry of an array
+     * has no relationship to who held the best hand, and the pot is real money.
+     *
+     * Empty winners never means "nobody won". It means the EVALUATION failed,
+     * and the answer to a failed evaluation is to evaluate again, properly.
+     * determineWinners no longer drops a pot on a stale eligibility snapshot,
+     * so reaching here at all is close to impossible - but "close to" is not a
+     * thing to settle a pot on.
+     *
+     * The re-check, in order, and every step decides on MERIT:
+     *
+     *   1. Re-run the evaluation against one pot holding the whole amount with
+     *      every contender eligible. This is the same showdown with the
+     *      snapshot removed from the question, and it is what recovers a stale
+     *      or mis-shaped eligibility list.
+     *   2. If exactly one contender remains, that player wins uncontested.
+     *      This is a legitimate outcome, not a guess.
+     *   3. If the evaluator still cannot separate them, split the pot equally
+     *      among the contenders. Nobody is favoured by list position, and the
+     *      money stays with the people who were still in the hand.
+     *
+     * Every branch past step 1 is a critical alarm, because reaching them means
+     * the evaluator failed on a real hand and somebody has to look at it.
+     */
+    if (winners.length === 0) {
+      const contenders = this.state.players.filter(
+        (p) => !p.is_folded && Array.isArray(p.cards) && p.cards.length > 0
       );
       const totalPot = pots.reduce((sum, p) => sum + p.amount, 0);
-      winners = [{ userId: activePlayers[0].user_id, amount: totalPot }];
+
+      reportError(
+        new Error(
+          `[HandController] determineWinners returned no winners for a ${totalPot} chip pot ` +
+            `with ${contenders.length} contender(s) - re-verifying`
+        ),
+        'HandController.no_winners_recheck'
+      );
+
+      // 1. Re-evaluate with the eligibility question removed.
+      if (contenders.length > 0 && totalPot > 0) {
+        winners = determineWinners(
+          this.state.players,
+          this.state.communityCards,
+          [
+            {
+              amount: totalPot,
+              eligiblePlayers: contenders.map((p) => p.user_id),
+            } as (typeof pots)[number],
+          ],
+          this.config.gameVariant,
+          this.state.dealerSeat
+        );
+      }
+
+      // 2. One contender left is a winner, not a guess.
+      if (winners.length === 0 && contenders.length === 1) {
+        winners = [{ userId: contenders[0].user_id, amount: totalPot }];
+        reportError(
+          new Error(
+            `[HandController] re-check settled a ${totalPot} chip pot on the single remaining contender`
+          ),
+          'HandController.no_winners_single_contender'
+        );
+      }
+
+      // 3. Still nothing: split among the contenders. Never by list position.
+      if (winners.length === 0 && contenders.length > 0) {
+        const cents = Math.round(totalPot * 100);
+        const share = Math.floor(cents / contenders.length);
+        const remainder = cents - share * contenders.length;
+        winners = contenders.map((p, i) => ({
+          userId: p.user_id,
+          // The odd cents go to the earliest seats, the same rule the split-pot
+          // path uses, so the total is exact and the choice is not arbitrary.
+          amount: (share + (i < remainder ? 1 : 0)) / 100,
+        }));
+        reportError(
+          new Error(
+            `[HandController] EVALUATOR FAILED on a real showdown - split a ${totalPot} chip pot ` +
+              `equally among ${contenders.length} contenders. This needs a human.`
+          ),
+          'HandController.no_winners_evaluator_failed'
+        );
+      }
+
+      // 4. No contenders at all and money on the table is a state we must not
+      //    settle silently. Leaving winners empty lets the caller's own
+      //    conservation checks refuse the hand rather than invent a recipient.
+      if (winners.length === 0 && totalPot > 0) {
+        reportError(
+          new Error(
+            `[HandController] ${totalPot} chips with NO contender in the hand - refusing to invent a winner`
+          ),
+          'HandController.no_winners_no_contenders'
+        );
+      }
     }
 
     const playerCount = this.state.players.filter((p) => !p.is_sitting_out).length;
@@ -1580,15 +1757,219 @@ export class HandController {
     // but += on binary floats is where cross-hand drift was born.
     this.snapChips();
 
+    // SHOWDOWN POLISH 2026-08-25 (review fix): scale the per-pot display
+    // shares by the same global rake ratio the merged winners were scaled
+    // by, then REPAIR each user's rounding pennies against the amount they
+    // were actually credited — independent Math.round per entry could drift
+    // a user's displayed shares cents away from their real credit, and the
+    // "+N" floats are the numbers players read (this repo's own history —
+    // the hand-254 one-cent chop — treats displayed penny drift as a bug).
+    // The repair walks a user's entries largest-first, adjusting the last
+    // one so the sum matches the credit EXACTLY. Display only — credited
+    // money came exclusively from adjustedWinners above.
+    //
+    // Each entry also carries its own engine-generated hand description —
+    // board-2 groups previously inherited the BOARD-1 description from the
+    // showdown results, pairing e.g. a board-2 "Flush" name with a board-1
+    // "Two Pair" description.
+    const rakeRatio = totalWinnerAmount > 0 ? totalWinnings / totalWinnerAmount : 1;
+    const scaledPerPot = this.pendingPerPotAwards.map((a) => ({
+      ...a,
+      amount: Math.round(a.amount * rakeRatio * 100) / 100,
+      handDescription: a.low ? (a.hand?.name ?? '') : a.hand ? describeHand(a.hand) : '',
+    }));
+    const creditByUser = new Map(
+      adjustedWinners.map((w) => [w.userId, Math.round(w.amount * 100)])
+    );
+    const entriesByUser = new Map<string, typeof scaledPerPot>();
+    for (const a of scaledPerPot) {
+      const g = entriesByUser.get(a.userId);
+      if (g) g.push(a);
+      else entriesByUser.set(a.userId, [a]);
+    }
+    for (const [userId, entries] of entriesByUser) {
+      const credit = creditByUser.get(userId);
+      if (credit === undefined) continue;
+      const summed = entries.reduce((s, e) => s + Math.round(e.amount * 100), 0);
+      const diff = credit - summed;
+      if (diff !== 0 && entries.length > 0) {
+        // Put the penny difference on the user's largest entry, floored at 0.
+        const target = entries.reduce((m, e) => (e.amount > m.amount ? e : m), entries[0]);
+        target.amount = Math.max(0, (Math.round(target.amount * 100) + diff) / 100);
+      }
+    }
+
     this.emit({
       type: 'WINNERS',
       winners: adjustedWinners,
       winnersByBoard: this.pendingWinnersByBoard,
+      perPotAwards: scaledPerPot,
     });
     this.handFSM.transition('settlement');
     this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake, bbjFee });
     this.emitBombPotCompleted();
     this.handFSM.transition('idle');
+  }
+
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25 (Dan spec sections 3-11): annotate the sorted
+   * showdown results with reveal order, muck eligibility, and the descriptive
+   * hand line. The ENGINE decides who may muck — never the client.
+   *
+   * The rules, walking the results in reveal order (last final-street
+   * aggressor first, else first player in normal river action order):
+   *
+   *   - The first player to show always tables their hand.
+   *   - Each later player must show if, in ANY pot they are eligible for,
+   *     their hand beats OR TIES the best hand already required to show for
+   *     that pot — on either board of a double-board hand, and on either the
+   *     high or the qualifying low half of a hi-lo hand. This is also the
+   *     accidental-muck protection: a hand that wins or ties any available
+   *     pot is automatically tabled and can never be mucked (spec section 5).
+   *   - A player whose hand cannot win or tie anything may muck: their hole
+   *     cards stay private and the seat renders MUCKED (spec section 4).
+   *   - When an all-in ended all possible betting (allInShowdownLocked),
+   *     EVERY live hand is exposed and nobody may muck (spec section 8) —
+   *     cash and tournament, heads-up and multiway, main and side pots.
+   *
+   * Because a mucked hand strictly loses to a shown, pot-eligible hand in
+   * every pot it could contest, determineWinners can never award a mucked
+   * hand anything — the muck decision and the payout stay consistent by
+   * construction.
+   */
+  private applyShowdownRevealRules(results: ShowdownResult[], pots: Pot[]): void {
+    results.forEach((r, i) => {
+      r.revealOrder = i;
+      r.handDescription = describeHand(r.hand);
+      r.mucked = false;
+    });
+
+    // Spec section 8: all-in with no further betting possible — expose all.
+    if (this.allInShowdownLocked) return;
+
+    // AUDIT FIX 2026-08-25 (spec sections 8/10, "River all-ins" included): the
+    // runout park only catches an all-in with CARDS TO COME. A river all-in
+    // that gets called, or a multiway pot where the last live stacks went in
+    // on the final street, reaches here without the lock — yet at most one
+    // live player could still have bet, so this too is an all-in showdown and
+    // every live hand is tabled. When two or more live players still have
+    // chips behind (spec section 9's shape), normal muck rules apply.
+    const liveCanStillBet = results.filter((r) => {
+      const p = this.state.players.find((pp) => pp.seat === r.seat);
+      return p ? !p.is_all_in : false;
+    }).length;
+    if (liveCanStillBet <= 1) return;
+
+    const isHiLo = isHiLoVariant(this.config.gameVariant);
+    const lowByUser = new Map<string, number[] | null>();
+    // AUDIT FIX 2026-08-25 (double-board hi-lo): each board settles its own
+    // hi AND lo half, so muck eligibility must consider the board-2 low too —
+    // without lowByUser2/bestShownLo2, a hand winning ONLY board-2's low was
+    // ruled muckable and then paid, breaking the mucked-hands-never-win
+    // invariant.
+    const board2Live = results.some((r) => r.hand2 !== undefined);
+    const lowByUser2 = new Map<string, number[] | null>();
+    if (isHiLo) {
+      for (const r of results) {
+        const low = evaluateOmahaLowHand(r.cards, this.state.communityCards);
+        lowByUser.set(r.userId, low ? low.kickers : null);
+        if (board2Live) {
+          const low2 = evaluateOmahaLowHand(r.cards, this.state.communityCards2);
+          lowByUser2.set(r.userId, low2 ? low2.kickers : null);
+        }
+      }
+    }
+    // SHOWDOWN POLISH 2026-08-25 (hygiene): the low comparator is the SAME
+    // exported function the payout path uses (PokerEngine.compareLowHands) —
+    // the previous local duplicate could have drifted from the function that
+    // actually awards the low half.
+    const compareLowKickers = compareLowHands;
+
+    // Per pot index: the best hand among players already required to show.
+    const bestShownHi: (EvaluatedHand | null)[] = pots.map(() => null);
+    const bestShownLo: (number[] | null)[] = pots.map(() => null);
+    const bestShownHi2: (EvaluatedHand | null)[] = pots.map(() => null);
+    const bestShownLo2: (number[] | null)[] = pots.map(() => null);
+
+    for (const r of results) {
+      let eligibleAnywhere = false;
+      let mustShow = false;
+      // AUDIT FIX 2026-08-25 (BBJ integrity): a hand of four of a kind or
+      // better is ALWAYS tabled, win or lose. The Bad Beat Jackpot pays the
+      // LOSER of exactly such a hand, and bbj_hit broadcasts that hand's
+      // identity — a jackpot paid on a hand the table never saw is a
+      // contradiction, and every cardroom tables jackpot hands. Ranking 8 is
+      // FOUR_OF_A_KIND in both standard and short-deck orderings.
+      if (r.hand.ranking >= 8 || (r.hand2 && r.hand2.ranking >= 8)) {
+        mustShow = true;
+      }
+      for (let potIdx = 0; !mustShow && potIdx < pots.length; potIdx++) {
+        if (!pots[potIdx].eligiblePlayers.includes(r.userId)) continue;
+        eligibleAnywhere = true;
+        const hi = bestShownHi[potIdx];
+        if (hi === null || compareHands(r.hand, hi) >= 0) {
+          mustShow = true;
+          break;
+        }
+        if (r.hand2) {
+          const hi2 = bestShownHi2[potIdx];
+          if (hi2 === null || compareHands(r.hand2, hi2) >= 0) {
+            mustShow = true;
+            break;
+          }
+        }
+        if (isHiLo) {
+          const myLow = lowByUser.get(r.userId) ?? null;
+          if (myLow) {
+            const lo = bestShownLo[potIdx];
+            if (lo === null || compareLowKickers(myLow, lo) <= 0) {
+              mustShow = true;
+              break;
+            }
+          }
+          // AUDIT FIX 2026-08-25: board-2's low half competes too.
+          const myLow2 = board2Live ? (lowByUser2.get(r.userId) ?? null) : null;
+          if (myLow2) {
+            const lo2 = bestShownLo2[potIdx];
+            if (lo2 === null || compareLowKickers(myLow2, lo2) <= 0) {
+              mustShow = true;
+              break;
+            }
+          }
+        }
+      }
+      // Defensive: a live hand that somehow appears in no pot still shows.
+      // (eligibleAnywhere is only meaningful when the pot loop actually ran —
+      // a hand force-shown by the jackpot rule above skips the loop and is
+      // already showing, which is the safe direction.)
+      if (!eligibleAnywhere && !mustShow) mustShow = true;
+
+      if (!mustShow) {
+        r.mucked = true;
+        continue;
+      }
+      for (let potIdx = 0; potIdx < pots.length; potIdx++) {
+        if (!pots[potIdx].eligiblePlayers.includes(r.userId)) continue;
+        const hi = bestShownHi[potIdx];
+        if (hi === null || compareHands(r.hand, hi) > 0) bestShownHi[potIdx] = r.hand;
+        if (r.hand2) {
+          const hi2 = bestShownHi2[potIdx];
+          if (hi2 === null || compareHands(r.hand2, hi2) > 0) bestShownHi2[potIdx] = r.hand2;
+        }
+        if (isHiLo) {
+          const myLow = lowByUser.get(r.userId) ?? null;
+          if (myLow) {
+            const lo = bestShownLo[potIdx];
+            if (lo === null || compareLowKickers(myLow, lo) < 0) bestShownLo[potIdx] = myLow;
+          }
+          const myLow2 = board2Live ? (lowByUser2.get(r.userId) ?? null) : null;
+          if (myLow2) {
+            const lo2 = bestShownLo2[potIdx];
+            if (lo2 === null || compareLowKickers(myLow2, lo2) < 0) bestShownLo2[potIdx] = myLow2;
+          }
+        }
+      }
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1637,6 +2018,25 @@ export class HandController {
       iterations++;
     }
     return activePlayers[0]?.seat ?? -1;
+  }
+
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25: first LIVE hand in normal river action order
+   * — the seat that tables first when the final street checked through.
+   * Unlike getFirstPostflopPlayer this does NOT skip all-in players: an
+   * all-in hand cannot act in a betting round but is very much live at
+   * showdown and holds its place in the reveal order.
+   */
+  private getFirstShowdownSeat(): number {
+    const live = this.getActivePlayers();
+    if (live.length === 0) return -1;
+    let seat = this.getNextActiveSeat(this.state.dealerSeat);
+    for (let i = 0; i < this.state.players.length; i++) {
+      const p = this.state.players.find((pp) => pp.seat === seat);
+      if (p && !p.is_folded && !p.is_sitting_out) return seat;
+      seat = this.getNextActiveSeat(seat);
+    }
+    return live[0]?.seat ?? -1;
   }
 
   /** Is this seat currently able to act (not folded, all-in, or sitting out)? */
@@ -1736,15 +2136,22 @@ export class HandController {
     }
     const actions: ActionType[] = ['fold'];
     const toCall = this.state.currentBet - player.bet;
+    // 2026-08-23 (fixed limit): once a street has taken its bet and three
+    // raises the round is capped — fold and call are the only moves. Withheld
+    // here as well as rejected in validateAction so the button never appears.
+    const wagersCapped =
+      isFixedLimitVariant(this.config.gameVariant) &&
+      isFixedLimitCapped(this.state.actionHistory, this.state.stage);
     if (toCall === 0) {
       actions.push('check');
+
       // FIX-A1 2026-07-19: when there is no bet to call, an opening wager is a
       // `bet` (currentBet===0, e.g. post-flop checked to this player). But when a
       // bet already exists and this player owes nothing — the BB or straddler
       // exercising their option preflop — the legal move is a `raise`, not a
       // `bet` (validateAction rejects `bet` while currentBet>0). Offering `bet`
       // there left the option un-actionable from the menu.
-      if (player.stack > 0) {
+      if (player.stack > 0 && !wagersCapped) {
         if (this.state.currentBet === 0) actions.push('bet');
         else if (this.canReopenBetting(player)) actions.push('raise');
       }
@@ -1754,8 +2161,10 @@ export class HandController {
       // when the player can legally REOPEN betting. A sub-full-raise all-in does
       // not reopen action for a player who has already voluntarily acted this
       // street and is not now facing a full raise since their last action.
-      if (player.stack > toCall && this.canReopenBetting(player)) actions.push('raise');
+      if (player.stack > toCall && !wagersCapped && this.canReopenBetting(player))
+        actions.push('raise');
     }
+
     // ── Dan 2026-08-21 (fuzzer INV-LEGALITY) ──────────────────────────────
     // all_in used to be pushed UNCONDITIONALLY, and in pot-limit that made the
     // menu lie. performAction clamps a pot-limit shove down to the pot cap and
@@ -1770,35 +2179,24 @@ export class HandController {
     // the rule can never disagree again. Calling all-in with a stack of zero
     // is likewise not an action.
     if (player.stack > 0) {
-      const isPotLimit = this.config.gameVariant.startsWith('plo');
-      const bettingState = calculateBettingState(
-        this.state.pot,
-        this.state.currentBet,
-        player.bet,
-        this.config.bigBlind,
-        this.state.lastRaise,
-        isPotLimit
-      );
-      let probeAction: ActionType = 'all_in';
-      let probeAmount: number | undefined;
-      if (isPotLimit && bettingState.maxRaise !== undefined) {
-        const allInTo = player.bet + player.stack;
-        const capTo = this.state.currentBet + bettingState.maxRaise;
-        if (allInTo > capTo + 0.005) {
-          probeAction = this.state.currentBet > 0 ? 'raise' : 'bet';
-          probeAmount = Math.round(capTo * 100) / 100;
-        }
-      }
+      // 2026-08-23: probe through the SAME clamp performAction uses, so the
+      // menu and the rule cannot drift apart — that drift is exactly what the
+      // fuzzer caught in pot-limit, and fixed limit has three ceilings (small
+      // bet, big bet, capped round) for it to drift against.
+      const bettingState = this.buildBettingState(player);
+      const probe = this.clampToStructure(player, 'all_in', undefined, bettingState);
       // A clamped pot-limit shove is a RAISE by the time performAction runs
       // (that is where the "all_in is exempt" note stops applying - the clamp
       // has already rewritten the action), so it must also pass the
       // reopen-betting rule. A player who has acted and faces only a
       // sub-full-raise may call or fold, never raise: TDA 44 / Bible V8
-      // 4.14. Offering all_in there is what the fuzzer caught.
-      const clamped = probeAction !== 'all_in';
+      // 4.14. Offering all_in there is what the fuzzer caught. (The fixed-limit
+      // branch of the clamp already degrades such a raise to a call, so this
+      // only still bites in pot-limit.)
+      const wasClamped = probe.action !== 'all_in';
       const legal =
-        validateAction(probeAction, probeAmount, player.stack, bettingState).valid &&
-        (!clamped || this.canReopenBetting(player));
+        validateAction(probe.action, probe.amount, player.stack, bettingState).valid &&
+        (!wasClamped || probe.action !== 'raise' || this.canReopenBetting(player));
       if (legal) {
         actions.push('all_in');
       }
@@ -1816,6 +2214,133 @@ export class HandController {
    * Note: this gates the explicit `raise` action only. A player may always go
    * `all_in` for their remaining stack even when it does not reopen betting.
    */
+  /**
+   * The street `advanceStage` is about to move into. Mirrors the order its own
+   * switch already hardcodes; it exists only so the fixed-limit bet size can be
+   * reset for the INCOMING street before the transition happens.
+   */
+  private nextStageAfter(stage: HandStage): HandStage {
+    switch (stage) {
+      case 'preflop':
+        return 'flop';
+      case 'flop':
+        // Crazy Pineapple inserts its discard between flop and turn; both are
+        // small-bet streets, so either answer sizes the same, but name the one
+        // advanceStage actually goes to.
+        return this.config.gameVariant === 'pineapple' ? 'pineapple_discard' : 'turn';
+      case 'pineapple_discard':
+        return 'turn';
+      case 'turn':
+        return 'river';
+      default:
+        return 'showdown';
+    }
+  }
+
+  /**
+   * The legal betting bounds for a player about to act, under whichever
+   * structure this table's variant uses.
+   *
+   * 2026-08-23: this replaces `gameVariant.startsWith('plo')`, which was
+   * duplicated at both call sites here and twice more in ServerTableEngineTurns.
+   * Four copies of a two-way test is exactly how a third structure gets
+   * silently treated as no-limit — which is what would have happened to `flh`.
+   */
+  private buildBettingState(player: SeatPlayer): BettingState {
+    const variant = this.config.gameVariant;
+
+    if (isFixedLimitVariant(variant)) {
+      return calculateBettingState(
+        this.state.pot,
+        this.state.currentBet,
+        player.bet,
+        this.config.bigBlind,
+        this.state.lastRaise,
+        false,
+        {
+          // Small bet preflop and flop, big bet turn and river.
+          betSize: fixedLimitBetSize(this.config.bigBlind, this.state.stage),
+          capped: isFixedLimitCapped(this.state.actionHistory, this.state.stage),
+        }
+      );
+    }
+
+    return calculateBettingState(
+      this.state.pot,
+      this.state.currentBet,
+      player.bet,
+      this.config.bigBlind,
+      this.state.lastRaise,
+      isPotLimitVariant(variant)
+    );
+  }
+
+  /**
+   * Rewrite an action the structure's ceiling forbids into the largest thing
+   * it does allow.
+   *
+   * ── Dan 2026-08-21 (PLO hard cap) ──
+   * In pot-limit the maximum is the pot, so a stack bigger than the cap CANNOT
+   * shove. validateAction rejects that (PokerEngine.ts) — the rule truth — but
+   * a bare rejection would freeze the table when the shove came from an
+   * automated path (horse decision, disconnect auto-action, watchdog force).
+   * Pot-limit "all in" means "bet the legal maximum", so clamp.
+   *
+   * ── 2026-08-23 (fixed limit) ──
+   * Fixed limit has the same problem, harder: the ceiling is the street's bet
+   * and it drops to the standing bet once the round is capped, so a deep
+   * stack's shove has to become a plain call. And unlike pot-limit, a clamped
+   * fixed-limit raise can land on a player who may not reopen betting — so
+   * that case degrades to a call rather than returning false and stalling the
+   * seat. Pot-limit behaviour below is deliberately left byte-identical to
+   * what it was; only the fixed-limit branch is new.
+   */
+  private clampToStructure(
+    player: SeatPlayer,
+    action: ActionType,
+    amount: number | undefined,
+    bs: BettingState
+  ): { action: ActionType; amount?: number } {
+    if (action !== 'all_in' || bs.maxRaise === undefined) return { action, amount };
+
+    const allInTo = player.bet + player.stack;
+    const isFixed = bs.structure === 'fixed_limit';
+    // A capped street admits no wager at all, so the ceiling is the bet already
+    // standing — the shove can only ever be a call.
+    const capTo =
+      isFixed && bs.wagersCapped ? this.state.currentBet : this.state.currentBet + bs.maxRaise;
+
+    if (allInTo <= capTo + 0.005) return { action, amount };
+
+    if (!isFixed) {
+      return {
+        action: this.state.currentBet > 0 ? 'raise' : 'bet',
+        amount: Math.round(capTo * 100) / 100,
+      };
+    }
+
+    // Already at or past the ceiling with nothing owed: there is no wager left
+    // to make, so this is a check (or a call if a bet still stands).
+    if (capTo <= player.bet + 0.005) {
+      return {
+        action: this.state.currentBet > player.bet + 0.005 ? 'call' : 'check',
+        amount: undefined,
+      };
+    }
+    // Capped street with chips behind: matching the bet is all that is left.
+    if (capTo <= this.state.currentBet + 0.005) {
+      return { action: 'call', amount: undefined };
+    }
+    const wager: ActionType = this.state.currentBet > 0 ? 'raise' : 'bet';
+    // TDA 44 / Bible V8 §4.14: the clamp has rewritten this into a raise, so it
+    // must now satisfy the reopen rule the raise path enforces. A player who
+    // cannot reopen may call or fold, never raise.
+    if (wager === 'raise' && !this.canReopenBetting(player)) {
+      return { action: 'call', amount: undefined };
+    }
+    return { action: wager, amount: Math.round(capTo * 100) / 100 };
+  }
+
   private canReopenBetting(player: SeatPlayer): boolean {
     const stageActions = this.state.actionHistory.filter((a) => a.stage === this.state.stage);
 

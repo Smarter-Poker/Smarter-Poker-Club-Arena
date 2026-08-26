@@ -22,6 +22,7 @@ import { supabase, getAuthUser } from '../../lib/supabase';
 import haptic from '../../services/HapticService';
 import styles from './FindPlayerModal.module.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { sizedStorageUrl } from '../../utils/avatarGenerator';
 import { sanitizeInput } from '../../utils/sanitizeInput';
 import { reportError } from '../../utils/errorReporter';
 
@@ -166,7 +167,7 @@ async function getUserSearchScope(userId: string): Promise<SearchScope> {
 
     // ── 4. Build searchable user ID pool based on role ──
     if (result.role === 'player') {
-      result.searchableUserIds = result.friendIds;
+      result.searchableUserIds = [...new Set([...result.friendIds, userId])];
     } else {
       // Elevated role: get all club member IDs
       if (result.clubIds.length > 0) {
@@ -178,17 +179,14 @@ async function getUserSearchScope(userId: string): Promise<SearchScope> {
 
         if (clubMembers) {
           const memberIds = clubMembers.map((cm: any) => cm.user_id);
-          result.searchableUserIds = [...new Set([...memberIds, ...result.friendIds])];
+          result.searchableUserIds = [...new Set([...memberIds, ...result.friendIds, userId])];
         }
       }
 
       if (result.searchableUserIds.length === 0) {
-        result.searchableUserIds = result.friendIds;
+        result.searchableUserIds = [...new Set([...result.friendIds, userId])];
       }
     }
-
-    // Filter out self
-    result.searchableUserIds = result.searchableUserIds.filter((id) => id !== userId);
   } catch (err) {
     reportError(err, 'FindPlayerModal.getUserSearchScope');
   }
@@ -639,7 +637,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
               <input
                 type="text"
                 className={styles.searchInput}
-                placeholder="Search by name or alias..."
+                placeholder="Search By Name Or Alias..."
                 value={searchQuery}
                 onChange={(e) => handleInputChange(e.target.value)}
                 onKeyDown={(e) => {
@@ -698,7 +696,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                           <img
                             loading="lazy"
                             decoding="async"
-                            src={s.avatar_url}
+                            src={sizedStorageUrl(s.avatar_url, 44)}
                             alt=""
                             onError={(e) => {
                               (e.target as HTMLImageElement).src = generateDefaultAvatar();
@@ -791,7 +789,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                           <img
                             loading="lazy"
                             decoding="async"
-                            src={player.avatar_url}
+                            src={sizedStorageUrl(player.avatar_url, 44)}
                             alt=""
                             onError={(e) => {
                               (e.target as HTMLImageElement).src = generateDefaultAvatar();

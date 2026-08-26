@@ -34,6 +34,9 @@ export default class RouteErrorBoundary extends Component<Props, State> {
     // Auto-reload on stale chunk errors (after deploys)
     if (
       error.message?.includes('dynamically imported module') ||
+      error.message?.includes('Importing a module script failed') ||
+      error.message?.includes('error loading dynamically imported module') ||
+      error.message?.includes('Unable to preload CSS') ||
       error.message?.includes('Failed to fetch') ||
       error.message?.includes('ChunkLoadError') ||
       error.name === 'ChunkLoadError'

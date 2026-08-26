@@ -22,6 +22,7 @@ import { formatDateShort as formatDate } from '../utils/format';
 import { retryFetch } from '../utils/retryFetch';
 import { useIsMounted } from '../hooks/useIsMounted';
 import PageSkeleton from '../components/common/PageSkeleton';
+import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { reportError } from '../utils/errorReporter';
 
 interface Promotion {
@@ -106,31 +107,57 @@ export default function PromotionsPage() {
     // Real-time promotions updates (INSERT + UPDATE + DELETE)
     const channelKey = clubId ? `promotions-live-${clubId}` : 'promotions-live';
 
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'promotions',
-        },
-        (payload) => {
-          if (!isMounted) return;
-          if (payload.eventType === 'INSERT') {
-            toast.info(' New promotion available!');
+    /* DB LOAD PASS 2026-08-24: this subscription had no filter, so every
+       promotion write for every club on the platform was delivered here and
+       re-ran the page's own club-scoped query — and could even toast "New
+       promotion available!" for another club's promotion.
+
+       The route param may be a slug, so the club UUID has to be resolved
+       before the filter can be built; hence the async setup. Without a clubId
+       this is the global promotions surface and there is no narrower scope to
+       apply. Do not remove the filter on the club route. */
+    const setupRealtime = async () => {
+      const resolvedClubId = clubId ? await resolveClubUUID(clubId) : null;
+
+      /* A club slug that fails to resolve must NOT fall through to an
+         unfiltered subscription. Spreading `...(resolved ? {filter} : {})`
+         reads as harmless, but on the failure path it silently restores the
+         platform-wide firehose this scoping exists to remove - and
+         tests/no-unfiltered-realtime-firehose.test.ts is static, so it cannot
+         see a runtime widening. No scope means no subscription; the page still
+         renders from its initial load. (clubId absent entirely is different:
+         that is the legitimate global promotions surface.) */
+      if (clubId && !resolvedClubId) return;
+      if (!isMounted) return;
+
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'promotions',
+            ...(resolvedClubId ? { filter: `club_id=eq.${resolvedClubId}` } : {}),
+          },
+          (payload) => {
+            if (!isMounted) return;
+            if (payload.eventType === 'INSERT') {
+              toast.info('New Promotion Available');
+            }
+            loadPromotionsRef.current();
           }
-          loadPromotionsRef.current();
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'PromotionsPage._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[PromotionsPage] Realtime channel timed out');
-        }
-      });
+        )
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            if (err) reportError(err?.message || err, 'PromotionsPage._Realtime_channel_error');
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[PromotionsPage] Realtime channel timed out');
+          }
+        });
+    };
+    void setupRealtime();
 
     return () => {
       isMounted = false;
@@ -247,7 +274,7 @@ export default function PromotionsPage() {
   };
 
   return (
-    <div className="promotions-page">
+    <StandardContentLayout className="promotions-page" title="Promotions">
       {/* Daily Bonus Button */}
       <div className="daily-bonus-banner" onClick={() => setShowBonusWheel(true)}>
         <span className="bonus-icon">▦</span>
@@ -451,6 +478,6 @@ export default function PromotionsPage() {
 
       {/* Bottom Navigation */}
       {clubId && <ClubBottomNav clubId={clubId} />}
-    </div>
+    </StandardContentLayout>
   );
 }

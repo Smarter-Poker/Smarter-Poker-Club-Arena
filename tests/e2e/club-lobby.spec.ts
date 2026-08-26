@@ -66,7 +66,11 @@ test.describe('Club lobby', () => {
       return;
     }
 
-    await expect(count).toBeVisible();
+    // 2026-08-24: the bare "N Games" line was removed at Dan's request. The
+    // count now renders ONLY while a filter or search is hiding games, where
+    // it explains a short list rather than restating its length. So its
+    // absence is correct here; when it IS present it must still be honest.
+    if ((await count.count()) === 0) return;
     const shown = Number(
       (await count.locator('strong').first().innerText()).replace(/[^0-9]/g, '')
     );
@@ -89,7 +93,8 @@ test.describe('Club lobby', () => {
       const count = page.locator('.lobby-count__text');
       if (rows === 0) {
         await expect(count).toHaveCount(0);
-      } else {
+      } else if ((await count.count()) > 0) {
+        // Present only while something is narrowing the list — see above.
         const shown = Number(
           (await count.locator('strong').first().innerText()).replace(/[^0-9]/g, '')
         );
@@ -97,6 +102,45 @@ test.describe('Club lobby', () => {
       }
     }
   });
+
+  /**
+   * A TOURNAMENT goes to its own screen. A CASH game opens the panel.
+   *
+   * Dan 2026-08-25: "when you click any of the MTT fields in the display
+   * inside of ALL or MTT, it should open to the tournament lobby." The old
+   * rule here was narrower — only a tournament already RUNNING / in LATE REG /
+   * COMPLETED routed, and a REGISTERING one fell through to the pre-commit
+   * panel. Same row, same tab, two destinations depending on a status the
+   * player cannot see. `openEntry` now short-circuits on `kind === 'mtt'`
+   * alone, so this selector drops the status classes with it.
+   *
+   * The contract this spec defends is UNCHANGED and still asserted on both
+   * destinations: selecting a row never JOINS, REGISTERS or SPENDS. A
+   * read-only tournament screen does none of those (verified: `registerMtt`
+   * is reachable only from the sign-up modal's onClick, and the auto-open-seat
+   * effect requires an existing `tournament_players` row). Only WHERE the
+   * review happens changed.
+   *
+   * Lobby rows carry `data-kind`, so which of the two a row is can be read off
+   * the row itself instead of guessed from its position.
+   */
+  const ROUTED_MTT = '[data-kind="mtt"]';
+
+  /**
+   * Index of the first row of one kind or the other, or -1. Reading the index
+   * and then clicking through a normal Playwright locator keeps the click a
+   * real click, with the actionability checks intact — only the CHOICE of row
+   * is made in the page.
+   */
+  async function firstRow(page: Page, kind: 'panel' | 'mtt'): Promise<number> {
+    return page.evaluate(
+      ({ sel, wantMtt }) =>
+        [
+          ...document.querySelectorAll('.club-home__games .lt-row:not(.lt-row--skeleton)'),
+        ].findIndex((r) => r.matches(sel) === wantMtt),
+      { sel: ROUTED_MTT, wantMtt: kind === 'mtt' }
+    );
+  }
 
   test('selecting a row opens the game lobby panel without joining', async ({ page }) => {
     const ok = await expectRoute(page, LOBBY);
@@ -106,8 +150,11 @@ test.describe('Club lobby', () => {
     const rows = await rowCount(page);
     test.skip(rows === 0, 'no games in this lobby right now');
 
+    const i = await firstRow(page, 'panel');
+    test.skip(i < 0, 'every game in this lobby is a tournament, which routes instead');
+
     const before = page.url();
-    await page.locator('.club-home__games .lt-row:not(.lt-row--skeleton)').first().click();
+    await page.locator('.club-home__games .lt-row:not(.lt-row--skeleton)').nth(i).click();
 
     // The panel opens with the Casino Plaque; the URL must not move — a row
     // click reviews the game, it never joins, registers, or spends.
@@ -116,11 +163,52 @@ test.describe('Club lobby', () => {
       timeout: 8000,
     });
     await expect(panel.locator('.cplaque')).toBeVisible();
-    expect(page.url(), 'selecting a row navigated away from the lobby').toBe(before);
+
+    /* The panel deep-links itself: ClubHomePage writes `?game=<id>` while it
+       is open so the selection survives a refresh and can be shared. That is
+       a search-param write on the SAME route, not navigation, and comparing
+       whole URLs called it a failure — the second way this assertion had gone
+       stale against a deliberate change. Compare the route, and require that
+       the only thing added is the deep link. */
+    const now = new URL(page.url());
+    expect(now.pathname, 'selecting a row navigated away from the lobby').toBe(
+      new URL(before).pathname
+    );
+    for (const [k] of now.searchParams) {
+      expect(k, 'selecting a row changed more than the game deep link').toBe('game');
+    }
 
     // Escape closes the panel.
     await page.keyboard.press('Escape');
     await expect(panel, 'Escape did not close the game lobby panel').toBeHidden({ timeout: 8000 });
+  });
+
+  test('selecting a tournament at ANY status opens its own screen, and still does not register', async ({
+    page,
+  }) => {
+    const ok = await expectRoute(page, LOBBY);
+    if (!ok) return;
+    await lobbySettled(page);
+
+    const i = await firstRow(page, 'mtt');
+    test.skip(i < 0, 'no tournament in this lobby right now');
+
+    const row = page.locator('.club-home__games .lt-row:not(.lt-row--skeleton)').nth(i);
+    const id = await row.getAttribute('data-id');
+    expect(id, 'a lobby row rendered without a data-id').toBeTruthy();
+
+    await row.click();
+
+    // It reviews the tournament. It must be THAT tournament, and it must not
+    // have committed the player to anything on the way there.
+    await expect(page, 'a tournament row did not open its own screen').toHaveURL(
+      new RegExp(`/tournaments/${id}(?:[/?#]|$)`),
+      { timeout: 10000 }
+    );
+    await expect(
+      page.locator('.glp'),
+      'the game lobby panel opened on top of the tournament screen'
+    ).toHaveCount(0);
   });
 
   test('a full table says it is full and offers the queue without navigating', async ({ page }) => {

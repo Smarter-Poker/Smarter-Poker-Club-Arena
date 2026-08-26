@@ -45,6 +45,10 @@ export interface StakesTier {
   rakeCap: number;
   rakeCapBB: number;
   bbjFeeBB: number;
+  /** % of the BBJ main pool paid when the jackpot hits at this tier.
+   *  Present so getBBJPayoutPercentForBB can READ the table instead of
+   *  hand-mirroring a second cascade beside it. */
+  bbjPayoutTotalPercent: number;
 }
 
 export interface BBJQualifyingHand {
@@ -127,36 +131,54 @@ export const BBJ_PIVOT_THRESHOLD = 100000;
 // STAKES TIERS — Fallback for custom/non-standard stakes
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * MIRROR OF server/src/config/RakeConfig.ts — do not edit one without the other.
+ *
+ * 2026-08-23: this copy had drifted from the server's on four of six rows, and
+ * the server is the one that charges the fee and pays the jackpot:
+ *
+ *              this file (was)            server (authority)
+ *   nano       0.05/0.10 - 0.25/0.50      0.05/0.10 - 0.1/0.2   maxBB 0.5 vs 0.2
+ *   micro      0.30/0.60 - 0.50/1.00      0.2/0.4 - 0.4/0.8     fee 0.25 vs 0.60
+ *   small      1/2                        0.5/1 - 1.5/3         minBB 1.5 vs 1
+ *   high       5/10 - 10/25               5/10 - 20/40          maxBB 25 vs 40
+ *
+ * scripts/ci/check-rakeconfig-parity.mjs now fails the build if they diverge
+ * again, so this comment cannot quietly become false the way the last one did.
+ */
 export const STAKES_TIERS: Record<string, StakesTier> = {
   nano: {
     label: 'Nano',
-    blindRange: '0.05/0.10 - 0.25/0.50',
+    blindRange: '0.05/0.10 - 0.1/0.2',
     minBB: 0.1,
-    maxBB: 0.5,
+    maxBB: 0.2,
     rakePercent: 10,
     rakeCap: 3,
     rakeCapBB: 3,
     bbjFeeBB: 0.6,
+    bbjPayoutTotalPercent: 15,
   },
   micro: {
     label: 'Micro',
-    blindRange: '0.30/0.60 - 0.50/1.00',
-    minBB: 0.6,
-    maxBB: 1,
+    blindRange: '0.2/0.4 - 0.4/0.8',
+    minBB: 0.3,
+    maxBB: 0.8,
     rakePercent: 10,
-    rakeCap: 5,
-    rakeCapBB: 5,
-    bbjFeeBB: 0.25,
+    rakeCap: 3,
+    rakeCapBB: 3,
+    bbjFeeBB: 0.6,
+    bbjPayoutTotalPercent: 25,
   },
   small: {
     label: 'Small',
-    blindRange: '1/2',
-    minBB: 1.5,
+    blindRange: '0.5/1 - 1.5/3',
+    minBB: 1,
     maxBB: 3,
     rakePercent: 10,
     rakeCap: 5,
     rakeCapBB: 5,
     bbjFeeBB: 0.25,
+    bbjPayoutTotalPercent: 40,
   },
   mid: {
     label: 'Mid',
@@ -167,26 +189,29 @@ export const STAKES_TIERS: Record<string, StakesTier> = {
     rakeCap: 8,
     rakeCapBB: 8,
     bbjFeeBB: 0.12,
+    bbjPayoutTotalPercent: 55,
   },
   high: {
     label: 'High',
-    blindRange: '5/10 - 10/25',
+    blindRange: '5/10 - 20/40',
     minBB: 9,
-    maxBB: 25,
+    maxBB: 40,
     rakePercent: 10,
     rakeCap: 15,
     rakeCapBB: 15,
     bbjFeeBB: 0.06,
+    bbjPayoutTotalPercent: 70,
   },
   nosebleeds: {
     label: 'Nosebleeds',
     blindRange: '25/50+',
-    minBB: 26,
+    minBB: 41,
     maxBB: Infinity,
     rakePercent: 10,
     rakeCap: 20,
     rakeCapBB: 20,
     bbjFeeBB: 0.03,
+    bbjPayoutTotalPercent: 85,
   },
 };
 
@@ -254,6 +279,22 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     handRank: 'four_of_a_kind',
     minRankValue: 'KKKK',
   },
+  // 2026-08-23: flo8 is the same GAME as plo8 — four cards, exactly-two rule,
+  // 8-or-better low. Only the betting differs, and betting has nothing to do
+  // with which hand qualifies for the jackpot. Mirrors the server copy.
+  flo8: {
+    label: 'FLO8 (Hi-Lo 8 or Better)',
+    minLosingHand: 'KKKK2',
+    description: 'Four of a Kind (Kings) or better must LOSE - evaluated on HIGH hand only',
+    rules: [
+      'Must use exactly 2 cards from hand',
+      'Both players must use two cards from their hole cards',
+      'BBJ evaluated on HIGH hand only (low hand does not qualify)',
+    ],
+    handRank: 'four_of_a_kind',
+    minRankValue: 'KKKK',
+  },
+
   plo_hilo: {
     label: 'PLO8 (Hi-Lo 8 or Better)',
     minLosingHand: 'KKKK2',
@@ -356,13 +397,11 @@ const BBJ_SHORT_LABELS: Record<string, string> = {
  * payout, fix it HERE by re-syncing with the server file.
  */
 export function getBBJPayoutPercentForBB(bigBlind: number | string): number {
-  const bb = parseFloat(String(bigBlind)) || 0;
-  if (bb <= 0.2) return 15; // Nano
-  if (bb <= 0.8) return 25; // Micro
-  if (bb <= 3) return 40; // Small
-  if (bb <= 8) return 55; // Mid
-  if (bb <= 40) return 70; // High
-  return 85; // Nosebleeds
+  // Reads the tier table rather than repeating its boundaries. The old body
+  // was a hand-kept copy of the server's cascade sitting inches from a
+  // DIFFERENT cascade in getTierForBB — two ladders in one file, disagreeing.
+  // One cascade, one table, one answer.
+  return getTierForBB(bigBlind).bbjPayoutTotalPercent;
 }
 
 /** Per-variant info for the on-table BBJ widget. */
@@ -426,11 +465,15 @@ export function findScheduleMatch(
  */
 export function getTierForBB(bigBlind: number | string): StakesTier {
   const bb = parseFloat(String(bigBlind)) || 0;
-  if (bb <= 0.5) return STAKES_TIERS.nano;
-  if (bb <= 1) return STAKES_TIERS.micro;
+  // Boundaries are the server's getStakesTierForBB cascade, to the digit.
+  // They used to be 0.5 / 1 / 3 / 8 / 25, which put a 0.2/0.4 game in Nano
+  // (server: Micro) and a 0.5/1 game in Micro (server: Small) — so the fee and
+  // cap this helper reported were the wrong tier's for four common stakes.
+  if (bb <= 0.2) return STAKES_TIERS.nano;
+  if (bb <= 0.8) return STAKES_TIERS.micro;
   if (bb <= 3) return STAKES_TIERS.small;
   if (bb <= 8) return STAKES_TIERS.mid;
-  if (bb <= 25) return STAKES_TIERS.high;
+  if (bb <= 40) return STAKES_TIERS.high;
   return STAKES_TIERS.nosebleeds;
 }
 

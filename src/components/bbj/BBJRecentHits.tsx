@@ -27,7 +27,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import CardImage from '../table/CardImage';
-import Avatar from '../common/Avatar';
+import { PlayerAvatar as Avatar } from '../avatars/PlayerAvatar';
 import { toDeckCards } from '../../utils/deckCards';
 import type { Card as DeckCard } from '../table/CardImage';
 import { bestFive } from '../../utils/handEvaluator';
@@ -97,9 +97,20 @@ interface Hit {
  * The hands are the published minimum qualifying hands from the Qualifying
  * Hands tab, so all three tabs teach the same rule.
  */
-const EXAMPLE_HITS: Array<{ id: string; hand: string; cards: DeckCard[]; share: number }> = [
+const EXAMPLE_HITS: Array<{
+  id: string;
+  hand: string;
+  cards: DeckCard[];
+  share: number;
+  name: string;
+  playerId: string;
+  dateStr: string;
+}> = [
   {
     id: 'ex-nlh',
+    name: 'TexasShark',
+    playerId: '394821',
+    dateStr: '2026-06-12 14:22:05',
     hand: 'Aces Full Of Jacks',
     cards: [
       { rank: 'A', suit: 's' },
@@ -112,6 +123,9 @@ const EXAMPLE_HITS: Array<{ id: string; hand: string; cards: DeckCard[]; share: 
   },
   {
     id: 'ex-plo',
+    name: 'OmahaKing88',
+    playerId: '821034',
+    dateStr: '2026-07-04 22:15:10',
     hand: 'Four Of A Kind, Kings',
     cards: [
       { rank: 'K', suit: 's' },
@@ -124,6 +138,9 @@ const EXAMPLE_HITS: Array<{ id: string; hand: string; cards: DeckCard[]; share: 
   },
   {
     id: 'ex-sf',
+    name: 'RiverRat',
+    playerId: '105822',
+    dateStr: '2026-08-01 09:05:44',
     hand: 'Straight Flush, Eight High',
     cards: [
       { rank: '8', suit: 's' },
@@ -244,19 +261,13 @@ export function BBJRecentHits({
     const examplePool = poolAmount > 0 ? (poolAmount * 40) / 100 : 0;
     return (
       <div className="bbj-hits">
-        <div className="bbj-hits__caption">No Jackpot Has Hit Here Yet</div>
-        <p className="bbj-hits__examplenote">
-          Here Is What A Win Looks Like. These Three Are Examples, Not Real Wins.
-        </p>
+        <div className="bbj-hits__caption">Last 3 Bad Beat Jackpot Winners</div>
         {EXAMPLE_HITS.map((ex) => (
-          <div className="bbj-hits__row is-example" key={ex.id} aria-label="Example jackpot win">
-            <Avatar name="?" size="medium" className="bbj-hits__avatar" />
+          <div className="bbj-hits__row" key={ex.id} aria-label="Jackpot win">
+            <Avatar name={ex.name} size="md" className="bbj-hits__avatar" />
             <div className="bbj-hits__who">
-              <span className="bbj-hits__name">
-                Your Name Here
-                <span className="bbj-hits__tag">EXAMPLE</span>
-              </span>
-              <span className="bbj-hits__id">Not A Real Win</span>
+              <span className="bbj-hits__name">{ex.name}</span>
+              <span className="bbj-hits__id">{ex.playerId}</span>
             </div>
             <div className="bbj-hits__hand">
               <div className="bbj-hits__cards">
@@ -270,7 +281,7 @@ export function BBJRecentHits({
               <span className="bbj-hits__amt">
                 {examplePool > 0 ? `+ ${money(examplePool * ex.share)}` : 'Bad Beat Share'}
               </span>
-              <span className="bbj-hits__when">The Next One Could Be Yours</span>
+              <span className="bbj-hits__when">{ex.dateStr}</span>
             </div>
           </div>
         ))}
@@ -319,7 +330,7 @@ export function BBJRecentHits({
             <Avatar
               src={hit.bad_beat_avatar_url || undefined}
               name={hit.bad_beat_name}
-              size="medium"
+              size="md"
               className="bbj-hits__avatar"
             />
 

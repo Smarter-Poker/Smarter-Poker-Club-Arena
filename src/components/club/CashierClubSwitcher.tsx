@@ -136,7 +136,7 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
       closeMenu(false);
       if (club.id === currentClub?.id) return;
       haptic.light();
-      navigate(`/clubs/${club.id}/cashier`);
+      navigate(`/clubs/${club.slug || club.id}/cashier`);
     },
     [closeMenu, currentClub, navigate]
   );

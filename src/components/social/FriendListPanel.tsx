@@ -121,7 +121,7 @@ function FriendListPanelInner({
         try {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, username, display_name, avatar_url:arena_avatar_url, level, tier')
+            .select('id, username, display_name, avatar_url, level, tier')
             .in('id', allFriendIds);
           if (profiles) {
             for (const p of profiles) profileMap[p.id] = p;
@@ -321,7 +321,7 @@ function FriendListPanelInner({
       <div className={styles.searchBar}>
         <input
           type="text"
-          placeholder="Search friends..."
+          placeholder="Search Friends..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
@@ -335,7 +335,7 @@ function FriendListPanelInner({
         <div className={styles.addFriendRow}>
           <input
             type="text"
-            placeholder="Enter username..."
+            placeholder="Enter Username..."
             value={addFriendInput}
             onChange={(e) => setAddFriendInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleAddFriend()}

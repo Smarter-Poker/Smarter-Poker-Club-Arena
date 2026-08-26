@@ -27,6 +27,8 @@ import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
 import { AvatarGallery } from '../customization/AvatarGallery';
+import AvatarCosmetics from '../avatars/AvatarCosmetics';
+import { isCardBackUnlocked } from '../table/CardImage';
 
 interface HamburgerMenuProps {
   isOpen: boolean;
@@ -47,6 +49,60 @@ const colors = {
   danger: 'var(--danger)', // #F02849
 };
 
+/*
+ * CANONICAL TOGGLE (Dan, 2026-08-25: "EVERY TOGGLE INSIDE THE CLUB ARENA ...
+ * AND EVERY SINGLE HAMBURGER MENU.")
+ *
+ * PR #927 restyled every CLASS-BASED toggle through a global block in
+ * styles/club-engine.css, and edited HamburgerMenu.module.css in place because
+ * CSS Modules hash their class names. Neither reached these three switches:
+ * HamburgerMenu.tsx never imports HamburgerMenu.module.css (that file is dead —
+ * nothing in src imports it, and the build emits no CSS asset for it), and these
+ * buttons carry INLINE styles, which no stylesheet can override. So Sounds,
+ * Vibrations and Use Real Name were still the old 52x28 green pill in
+ * production while everything around them was blue. Verified against the live
+ * bundle: assets/HamburgerMenu-DzPe1C0c-v6.js contained #22c55e three times and
+ * #1877f2 zero times.
+ *
+ * Same geometry and colours as the global block: 51x31 track, 27px thumb,
+ * 20px travel, #1877F2 on / #39393D off. Behaviour, aria and handlers untouched.
+ */
+const CANONICAL_TOGGLE_ON = '#1877f2';
+const CANONICAL_TOGGLE_OFF = '#39393d';
+
+function canonicalToggleTrackStyle(on: boolean): React.CSSProperties {
+  return {
+    width: 51,
+    height: 31,
+    borderRadius: 999,
+    border: 'none',
+    padding: 2,
+    cursor: 'pointer',
+    backgroundColor: on ? CANONICAL_TOGGLE_ON : CANONICAL_TOGGLE_OFF,
+    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.06)',
+    transition: 'background-color 180ms ease',
+    display: 'flex',
+    alignItems: 'center',
+    position: 'relative' as const,
+    flexShrink: 0,
+    boxSizing: 'border-box' as const,
+    WebkitTapHighlightColor: 'transparent',
+  };
+}
+
+function canonicalToggleThumbStyle(on: boolean): React.CSSProperties {
+  return {
+    width: 27,
+    height: 27,
+    borderRadius: '50%',
+    backgroundColor: '#ffffff',
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.28)',
+    /* 51px track - 27px thumb - (2px x 2) = 20px of travel. */
+    transform: on ? 'translateX(20px)' : 'translateX(0)',
+    transition: 'transform 180ms cubic-bezier(0.32, 0.72, 0, 1)',
+  };
+}
+
 export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const navigate = useNavigate();
   const { user } = useAuthUser();
@@ -58,17 +114,24 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [showBBEnabled, setShowBBEnabled] = useState(false);
   // Avatar from persistent header store (avoids duplicate Supabase query)
   const avatarUrl = useHeaderDataStore((s) => s.avatarUrl);
+  const equippedFrame = useHeaderDataStore((s) => s.equippedFrame);
+  const equippedAura = useHeaderDataStore((s) => s.equippedAura);
   const [userName, setUserName] = useState<string>('');
   const [useRealName, setUseRealName] = useState(false);
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
   const [isVIP, setIsVIP] = useState(false);
+  /** Paid card backs this player has actually bought (feature_purchases). */
+  const [ownedCardBacks, setOwnedCardBacks] = useState<string[]>([]);
   const { diamonds: diamondBalance } = useWalletStore();
   const [selectedCardColor, setSelectedCardColor] = useState(() => {
     try {
-      return localStorage.getItem(STORAGE_KEYS.CARD_COLOR) || 'default';
+      // 'default' was never one of the ids this menu offers, so a player who
+      // had not picked before saw NO tile highlighted at all - the same defect
+      // FIX-D7 fixed for the dealer button. classic_blue is the app default.
+      return localStorage.getItem(STORAGE_KEYS.CARD_COLOR) || 'classic_blue';
     } catch (err) {
       reportError(err, 'HamburgerMenu.Error');
-      return 'default';
+      return 'classic_blue';
     }
   });
 
@@ -230,6 +293,45 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             setIsVIP(data.is_vip || data.tier === 'vip' || false);
           }
         });
+
+      /* Dan 2026-08-25: `profiles.show_stack_bb` above is the LEGACY copy of
+       * this preference. The felt reads `user_table_settings.show_stack_in_bb`,
+       * and before today only this menu wrote the legacy column — so an account
+       * carrying an old `true` there showed this switch ON while every table
+       * drew chips. Whatever the table is actually obeying is what this switch
+       * must display, so the canonical row wins when it exists. No row means
+       * the user never chose, which is chips, which is the default. */
+      supabase
+        .from('user_table_settings')
+        .select('show_stack_in_bb')
+        .eq('user_id', user.id)
+        .maybeSingle()
+        .then(({ data: uts, error: utsErr }) => {
+          if (utsErr || !uts || uts.show_stack_in_bb === null) return;
+          setShowBBEnabled(uts.show_stack_in_bb);
+          try {
+            localStorage.setItem(STORAGE_KEYS.SHOW_STACK_BB, String(uts.show_stack_in_bb));
+          } catch {
+            /* private mode */
+          }
+        });
+
+      // Card backs bought with diamonds. Needed because this menu decides
+      // whether a paid design is selectable — see the gate on the swatches.
+      supabase
+        .from('feature_purchases')
+        .select('feature')
+        .eq('user_id', user.id)
+        .like('feature', 'card_back_%')
+        .then(({ data, error }) => {
+          if (error) {
+            reportError(error, 'HamburgerMenu.Owned_card_backs_load_failed');
+            return;
+          }
+          setOwnedCardBacks(
+            (data || []).map((r: { feature: string }) => r.feature.replace('card_back_', ''))
+          );
+        });
     }
   }, [user?.id]);
 
@@ -328,7 +430,29 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     updateSetting(STORAGE_KEYS.SHOW_STACK_BB, 'show_stack_bb', newValue, () =>
       setShowBBEnabled(!newValue)
     );
-    masterBus.emit('SETTINGS_CHANGED', { setting: 'showStackInBB', value: newValue });
+    /* Dan 2026-08-25 (binding): "tournaments and cash games should always be
+     * defaulted to actual totals unless the user changes the setting to BB."
+     *
+     * TWO bugs lived in this one line. The bus key was `showStackInBB`, but
+     * useUserTableSettings only accepts a key that IS a field of
+     * DEFAULT_USER_TABLE_SETTINGS — `show_stack_in_bb` — so it dropped this
+     * event on the floor and the table never changed. And the value only ever
+     * landed in `profiles.show_stack_bb`, while the felt reads
+     * `user_table_settings.show_stack_in_bb`: two columns for one preference,
+     * free to disagree forever. The canonical one is now written here too, so
+     * this switch and the in-table switch are the same switch.
+     *
+     * The `profiles` write above stays for now — other surfaces still read it —
+     * but user_table_settings is the source of truth for what the table draws. */
+    masterBus.emit('SETTINGS_CHANGED', { setting: 'show_stack_in_bb', value: newValue });
+    if (user?.id) {
+      void supabase
+        .from('user_table_settings')
+        .upsert({ user_id: user.id, show_stack_in_bb: newValue }, { onConflict: 'user_id' })
+        .then(({ error: bbErr }) => {
+          if (bbErr) reportError(bbErr, 'HamburgerMenu.Show_stack_bb_save_failed');
+        });
+    }
   };
 
   const handleResetTutorial = async () => {
@@ -510,19 +634,34 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             cursor: 'pointer',
           }}
         >
-          <img
-            loading="lazy"
-            decoding="async"
-            src={avatarUrl || generateDefaultAvatar()}
-            alt=""
+          {/* Wrapped so the equipped frame/aura has a positioned, radius-owning
+              parent to fill. The <img> itself cannot be that parent: an
+              absolutely positioned child of an <img> is not a thing. */}
+          <div
             style={{
+              position: 'relative',
               width: 48,
               height: 48,
               borderRadius: '50%',
-              objectFit: 'cover',
-              border: `2px solid ${colors.divider}`,
+              flexShrink: 0,
+              fontSize: 11,
             }}
-          />
+          >
+            <img
+              loading="lazy"
+              decoding="async"
+              src={avatarUrl || generateDefaultAvatar()}
+              alt=""
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: '50%',
+                objectFit: 'cover',
+                border: `2px solid ${colors.divider}`,
+              }}
+            />
+            <AvatarCosmetics frame={equippedFrame} aura={equippedAura} />
+          </div>
           <div style={{ flex: 1 }}>
             <div
               style={{
@@ -883,32 +1022,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onClick={handleSoundsToggle}
             aria-checked={soundsEnabled}
             role="switch"
-            style={{
-              width: 52,
-              height: 28,
-              borderRadius: 14,
-              border: soundsEnabled ? '2px solid #4ade80' : '2px solid #6b7280',
-              padding: 2,
-              cursor: 'pointer',
-              backgroundColor: soundsEnabled ? '#22c55e' : '#374151',
-              transition: 'all 0.25s ease',
-              display: 'flex',
-              alignItems: 'center',
-              position: 'relative' as const,
-              flexShrink: 0,
-            }}
+            style={canonicalToggleTrackStyle(soundsEnabled)}
           >
-            <span
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                backgroundColor: 'white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                transform: soundsEnabled ? 'translateX(24px)' : 'translateX(0)',
-                transition: 'transform 0.25s ease',
-              }}
-            />
+            <span style={canonicalToggleThumbStyle(soundsEnabled)} />
           </button>
         </div>
 
@@ -919,32 +1035,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onClick={handleVibrationsToggle}
             aria-checked={vibrationsEnabled}
             role="switch"
-            style={{
-              width: 52,
-              height: 28,
-              borderRadius: 14,
-              border: vibrationsEnabled ? '2px solid #4ade80' : '2px solid #6b7280',
-              padding: 2,
-              cursor: 'pointer',
-              backgroundColor: vibrationsEnabled ? '#22c55e' : '#374151',
-              transition: 'all 0.25s ease',
-              display: 'flex',
-              alignItems: 'center',
-              position: 'relative' as const,
-              flexShrink: 0,
-            }}
+            style={canonicalToggleTrackStyle(vibrationsEnabled)}
           >
-            <span
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                backgroundColor: 'white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                transform: vibrationsEnabled ? 'translateX(24px)' : 'translateX(0)',
-                transition: 'transform 0.25s ease',
-              }}
-            />
+            <span style={canonicalToggleThumbStyle(vibrationsEnabled)} />
           </button>
         </div>
 
@@ -957,32 +1050,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onClick={handleUseRealNameToggle}
             aria-checked={useRealName}
             role="switch"
-            style={{
-              width: 52,
-              height: 28,
-              borderRadius: 14,
-              border: useRealName ? '2px solid #4ade80' : '2px solid #6b7280',
-              padding: 2,
-              cursor: 'pointer',
-              backgroundColor: useRealName ? '#22c55e' : '#374151',
-              transition: 'all 0.25s ease',
-              display: 'flex',
-              alignItems: 'center',
-              position: 'relative' as const,
-              flexShrink: 0,
-            }}
+            style={canonicalToggleTrackStyle(useRealName)}
           >
-            <span
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                backgroundColor: 'white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                transform: useRealName ? 'translateX(24px)' : 'translateX(0)',
-                transition: 'transform 0.25s ease',
-              }}
-            />
+            <span style={canonicalToggleThumbStyle(useRealName)} />
           </button>
         </div>
 
@@ -1028,49 +1098,103 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             padding: '8px 16px 12px',
           }}
         >
+          {/*
+            THE ONLY IDS THAT ARE REAL CARD BACKS.
+
+            This list used to read default / emerald / crimson / royal / gold /
+            midnight / obsidian / neon. Six of those eight match NOTHING - not
+            CARD_BACK_IDS in CardImage.tsx, not CARD_BACK_ALIASES - so
+            normalizeCardBack sent every one of them to classic_blue. Every tile
+            painted the same navy back and picking any of them changed nothing
+            on the felt.
+
+            That is the identical defect Dan recorded in ThemeSettingsModal on
+            2026-08-20 (standard-red / premium-gold / premium-platinum, same
+            outcome). It was fixed there and left standing here, because the two
+            menus keep their own copy of the catalogue.
+
+            Every id here is in CARD_BACK_IDS and has artwork on disk under
+            public/cards/backs/table/. neon, diamond, dragon and galaxy are real
+            designs this menu was never offering at all.
+            vipOnly mirrors it too, so this menu and the shop agree on what is
+            paid rather than offering a premium back as if it were free.
+          */}
           {[
             {
-              id: 'default',
-              name: 'Deep Ocean',
-              bg: 'linear-gradient(145deg, rgba(8, 20, 40, 0.9), rgba(5, 12, 28, 0.95))',
+              id: 'classic_blue',
+              name: 'Classic Blue',
+              bg: 'linear-gradient(135deg, #1e3a5f, #0d2137)',
+              vipOnly: false,
             },
             {
-              id: 'emerald',
-              name: 'Emerald Night',
-              bg: 'linear-gradient(145deg, rgba(5, 30, 20, 0.9), rgba(3, 18, 12, 0.95))',
-            },
-            {
-              id: 'crimson',
-              name: 'Crimson Velvet',
-              bg: 'linear-gradient(145deg, rgba(40, 8, 15, 0.9), rgba(28, 5, 10, 0.95))',
+              id: 'classic_red',
+              name: 'Classic Red',
+              bg: 'linear-gradient(135deg, #8b0000, #4a0000)',
+              vipOnly: false,
             },
             {
               id: 'royal',
-              name: 'Royal Purple',
-              bg: 'linear-gradient(145deg, rgba(20, 8, 40, 0.9), rgba(12, 5, 28, 0.95))',
+              name: 'Royal',
+              bg: 'linear-gradient(135deg, #4a0080, #1a0030)',
+              vipOnly: false,
             },
             {
               id: 'gold',
-              name: 'Gold Rush',
-              bg: 'linear-gradient(145deg, rgba(35, 28, 8, 0.9), rgba(24, 18, 5, 0.95))',
+              name: 'Premium Gold',
+              bg: 'linear-gradient(135deg, #ffd700, #b8860b)',
+              vipOnly: true,
             },
             {
-              id: 'midnight',
-              name: 'Midnight Ice',
-              bg: 'linear-gradient(145deg, rgba(5, 10, 35, 0.9), rgba(3, 6, 22, 0.95))',
+              id: 'holographic',
+              name: 'Holographic',
+              bg: 'linear-gradient(135deg, #d3d3d3, #a9a9a9)',
+              vipOnly: true,
             },
             {
-              id: 'obsidian',
-              name: 'Obsidian',
-              bg: 'linear-gradient(145deg, rgba(15, 15, 15, 0.9), rgba(8, 8, 8, 0.95))',
+              id: 'carbon',
+              name: 'Carbon Fiber',
+              bg: 'linear-gradient(135deg, #434343, #000000)',
+              vipOnly: true,
             },
             {
               id: 'neon',
-              name: 'Neon Cyber',
-              bg: 'linear-gradient(145deg, rgba(5, 15, 25, 0.9), rgba(3, 8, 18, 0.95))',
+              name: 'Neon',
+              bg: 'linear-gradient(135deg, #00f0ff, #0066ff)',
+              vipOnly: true,
+            },
+            {
+              id: 'diamond',
+              name: 'Diamond',
+              bg: 'linear-gradient(135deg, #b9f2ff, #4aa3c7)',
+              vipOnly: true,
+            },
+            {
+              id: 'dragon',
+              name: 'Dragon',
+              bg: 'linear-gradient(135deg, #7a1f1f, #2b0808)',
+              vipOnly: true,
+            },
+            {
+              id: 'galaxy',
+              name: 'Galaxy',
+              bg: 'linear-gradient(135deg, #2b1055, #7597de)',
+              vipOnly: true,
             },
           ].map((preset) => {
             const isSelected = selectedCardColor === preset.id;
+            /**
+             * vipOnly WAS DECLARED ON EVERY PRESET AND READ BY NOTHING.
+             *
+             * 2026-08-25. Seven of these ten designs are paid: the diamond
+             * store charges 75 to 300 for them and Theme Settings padlocks them
+             * behind VIP. This menu handed every one of them to every player
+             * for free, in one tap, with no lock and no check. Same rule here
+             * as everywhere else now: free, or VIP, or bought.
+             */
+            const locked = !isCardBackUnlocked(preset.id, {
+              isVip: isVIP,
+              owned: ownedCardBacks,
+            });
             return (
               <div
                 key={preset.id}
@@ -1079,44 +1203,86 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                   flexDirection: 'column',
                   alignItems: 'center',
                   gap: 4,
-                  cursor: 'pointer',
+                  cursor: locked ? 'not-allowed' : 'pointer',
+                  opacity: locked ? 0.5 : 1,
                 }}
                 onClick={async () => {
-                  setSelectedCardColor(preset.id);
-                  localStorage.setItem(STORAGE_KEYS.CARD_COLOR, preset.id);
-                  try {
-                    masterBus.emit('CARD_COLOR_CHANGED', { preset: preset.id });
-                  } catch (err) {
-                    reportError(err, 'HamburgerMenu.Error');
-                    /* */
+                  if (locked) {
+                    toast.info('That Card Back Is A Premium Design. Unlock It In The Shop.');
+                    return;
                   }
-                  if (user?.id) {
+                  setSelectedCardColor(preset.id);
+                  /**
+                   * THE TRANSLATION TABLE OUTLIVED THE IDS IT TRANSLATED.
+                   *
+                   * 2026-08-25. The list above was corrected two days ago from
+                   * the invented ids (default / emerald / crimson / midnight /
+                   * obsidian) to the REAL designs — and this map, which existed
+                   * only to translate those invented ids, was left in place. It
+                   * has no entry for any of the new ids, so `|| 'black'` caught
+                   * them, and 'black' aliases to classic_blue:
+                   *
+                   *   classic_red  -> classic_blue      dragon  -> classic_blue
+                   *   royal        -> classic_blue      galaxy  -> classic_blue
+                   *   holographic  -> classic_blue      diamond -> classic_blue
+                   *   carbon       -> classic_blue      neon    -> royal
+                   *
+                   * Eight of the ten tiles saved a design other than the one
+                   * they showed. The fix made the menu offer real designs and
+                   * left it saving the wrong one, which is worse than before,
+                   * because it now looks right in the picker.
+                   *
+                   * These ids ARE the canonical ids. Nothing needs translating.
+                   */
+                  const realCardId = preset.id;
+
+                  masterBus.emit('UI_THEME_CHANGED', {
+                    key: 'ALL',
+                    value: { cards_id: realCardId },
+                  });
+                  masterBus.emit('CARD_COLOR_CHANGED', { preset: preset.id });
+
+                  if (!user?.id) {
+                    toast.success('Card Back Applied');
+                  } else {
                     try {
-                      const { data: currentProfile } = await supabase
-                        .from('profiles')
-                        .select('preferences')
-                        .eq('id', user.id)
+                      const { data: currentSettings } = await supabase
+                        .from('user_theme_settings')
+                        .select('*')
+                        .eq('user_id', user.id)
+                        .eq('game_type', 'ALL')
                         .maybeSingle();
-                      const prefs = (currentProfile?.preferences as Record<string, unknown>) || {};
-                      const { error: saveErr } = await supabase
-                        .from('profiles')
-                        .update({ preferences: { ...prefs, card_color_preset: preset.id } })
-                        .eq('id', user.id);
-                      if (saveErr) {
-                        reportError(saveErr, 'HamburgerMenu.Card_color_save_failed');
-                        toast.error('Card color could not be saved. Please try again.');
+
+                      const { error } = await supabase.from('user_theme_settings').upsert(
+                        {
+                          user_id: user.id,
+                          game_type: 'ALL',
+                          ...(currentSettings || {}),
+                          cards_id: realCardId,
+                        },
+                        { onConflict: 'user_id,game_type' }
+                      );
+                      // The success toast used to fire BEFORE this write and
+                      // the error was only ever sent to reportError, so a
+                      // failed save congratulated the player and then quietly
+                      // reverted the next time they opened a table.
+                      if (error) {
+                        reportError(error, 'HamburgerMenu.Card_color_save_failed');
+                        toast.error('Could Not Save That Card Back. Please Try Again.');
+                      } else {
+                        toast.success('Card Back Applied');
                       }
                     } catch (err) {
-                      reportError(err, 'HamburgerMenu.Error');
-                      toast.error('Card color could not be saved. Please try again.');
+                      reportError(err, 'HamburgerMenu.Card_color_save_failed');
+                      toast.error('Could Not Save That Card Back. Please Try Again.');
                     }
                   }
-                  toast.success(`Card color: ${preset.name}`);
                 }}
               >
                 <div
-                  title={preset.name}
+                  title={locked ? `${preset.name} (Premium)` : preset.name}
                   style={{
+                    position: 'relative',
                     width: 36,
                     height: 36,
                     borderRadius: '50%',
@@ -1128,8 +1294,29 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                       ? '0 0 8px rgba(0, 212, 255, 0.4)'
                       : '0 2px 4px rgba(0,0,0,0.3)',
                     transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
-                />
+                >
+                  {/* Text, not an emoji padlock. Without it the tile looked
+                      free and simply refused to work when tapped. */}
+                  {locked && (
+                    <span
+                      style={{
+                        fontSize: 8,
+                        fontWeight: 800,
+                        letterSpacing: '0.04em',
+                        color: '#0b0b0b',
+                        background: 'linear-gradient(135deg, #ffd700, #d4a017)',
+                        borderRadius: 5,
+                        padding: '1px 3px',
+                      }}
+                    >
+                      VIP
+                    </span>
+                  )}
+                </div>
                 <span
                   style={{
                     fontSize: 9,
@@ -1188,10 +1375,10 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           { key: '?', desc: 'Show Shortcuts' },
           { key: 'Esc', desc: 'Close Menu / Modal' },
           { key: 'H', desc: 'Go Home' },
-          { key: 'L', desc: 'Go to Home' },
-          { key: 'T', desc: 'Go to Tournaments' },
-          { key: 'P', desc: 'Go to Profile' },
-          { key: 'S', desc: 'Go to Settings' },
+          { key: 'L', desc: 'Go To Home' },
+          { key: 'T', desc: 'Go To Tournaments' },
+          { key: 'P', desc: 'Go To Profile' },
+          { key: 'S', desc: 'Go To Settings' },
         ].map((shortcut, i) => (
           <div
             key={`shortcut-${i}`}
@@ -1233,7 +1420,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         <div style={sectionHeaderStyle}>Support & Legal</div>
         {[
           { label: 'Help & FAQ', path: '/help' },
-          { label: 'Terms of Service', path: '/legal/tos' },
+          { label: 'Terms Of Service', path: '/legal/tos' },
           { label: 'Privacy Policy', path: '/legal/privacy' },
           { label: 'Fair Gaming', path: '/legal/fair-gaming' },
           { label: 'Promotion Rules', path: '/legal/promotions' },

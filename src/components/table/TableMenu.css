@@ -9,32 +9,34 @@
   z-index: 100;
 }
 
-/* Position variants */
-
-.table-menu--top-left .table-menu__dropdown {
-  left: 0;
-  right: auto;
-}
-
-.table-menu--top-right .table-menu__dropdown {
-  right: 0;
-  left: auto;
-}
-
-.table-menu--bottom-left .table-menu__dropdown {
-  top: auto;
-  bottom: 100%;
-  left: 0;
-  right: auto;
-  margin-bottom: 8px;
-}
-
-.table-menu--bottom-right .table-menu__dropdown {
-  top: auto;
-  bottom: 100%;
-  right: 0;
-  left: auto;
-  margin-bottom: 8px;
+/* Position variants — RETIRED 2026-08-23.
+ *
+ * Dan: "the hamburger menu... clicks to open up all the options inside of it!
+ * It currently opens to an X only."
+ *
+ * These four rules are why. They date from when .table-menu__dropdown was a
+ * small dropdown anchored to the trigger. On 2026-08-22 it became a FIXED
+ * full-height drawer (`position: fixed; top:0; left:0; bottom:0; height:100dvh`)
+ * — but these variants were left behind, and `.table-menu--bottom-left
+ * .table-menu__dropdown` is specificity (0,2,0) against the drawer's (0,1,0),
+ * so the variant wins no matter which is declared later.
+ *
+ * TableTabBar mounts the menu with position="bottom-left", so the live drawer
+ * was resolving to `top: auto; bottom: 100%` — and on a FIXED element `bottom:
+ * 100%` is measured from the viewport, which parks a 100dvh panel entirely
+ * above the top of the screen. The menu opened correctly every time. It was
+ * just rendered off-screen, so all a player ever saw was the trigger flipping
+ * to an X.
+ *
+ * The variants now carry only horizontal intent for any future anchored menu
+ * and never touch the drawer's own geometry. The drawer is a left-edge panel
+ * by definition; there is nothing left for a position variant to decide. */
+.table-menu--top-left,
+.table-menu--top-right,
+.table-menu--bottom-left,
+.table-menu--bottom-right {
+  /* Positioning of the panel is owned by .table-menu__dropdown alone. */
+  position: relative;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -118,7 +120,7 @@
   width: min(75vw, 360px);
   min-width: 0;
   height: 100dvh;
-  z-index: 100; /* Must sit above .table-menu__backdrop (z-index: 99) */
+  z-index: 2000; /* Must sit above TablePage (1100) and .table-menu__backdrop (1999) */
   background: linear-gradient(180deg, rgba(28, 33, 40, 0.96) 0%, rgba(22, 27, 34, 0.98) 100%);
   backdrop-filter: blur(20px) saturate(1.3);
   -webkit-backdrop-filter: blur(20px) saturate(1.3);
@@ -387,7 +389,7 @@
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.4);
-  z-index: 99;
+  z-index: 1999;
   animation: backdropFade 0.2s ease;
 }
 
@@ -473,4 +475,20 @@
   font-size: 10px;
   color: #fbbf24;
   font-style: italic;
+}
+
+.table-menu__action {
+  animation: tableMenuActionSlideIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) backwards;
+  animation-delay: calc(var(--stagger-idx, 0) * 40ms);
+}
+
+@keyframes tableMenuActionSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

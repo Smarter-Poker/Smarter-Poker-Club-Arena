@@ -104,6 +104,12 @@ export default function SuperAgentDashboard() {
               event: '*',
               schema: 'public',
               table: 'chip_transactions',
+              // DB LOAD PASS 2026-08-24: this had no filter, so every chip
+              // movement anywhere on the platform was decoded and delivered to
+              // every open super-agent dashboard, which then reloaded a view
+              // that only ever shows THIS club. chip_transactions carries
+              // club_id — scope to it, and do not widen it again.
+              filter: `club_id=eq.${resolvedId}`,
             },
             () => loadDashboardData()
           )

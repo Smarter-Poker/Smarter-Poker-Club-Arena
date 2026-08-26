@@ -8,6 +8,7 @@
  * declarations for the hooks each layer calls on the layer below.
  */
 
+import * as EngineMetrics from '../observability/engineInstruments.js';
 import { HandController } from './HandController.js';
 import type { Street as ShadowStreet } from './eventlog/events.js';
 import { logHandHistory } from '../services/supabase.js';
@@ -17,6 +18,90 @@ import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { ServerTableEngineSettlement } from './ServerTableEngineSettlement.js';
 
 export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettlement {
+  /**
+   * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): fold the unmerged per-pot
+   * awards into ORDERED display groups for pot_win — board 1 before board 2,
+   * main pot before side pots, the high half before the low half. Each group
+   * carries its winners with the exact post-rake share of that pot(-half),
+   * plus the hand identity that won it (for a low, the qualifying low's own
+   * self-describing name). Presentation data only; a failure here must never
+   * break the payout event, so the whole build is fenced.
+   */
+  protected buildPotAwardGroups(): Array<{
+    pot_index: number;
+    board: 1 | 2;
+    low: boolean;
+    winners: Array<{
+      user_id: string;
+      amount: number;
+      hand_name: string;
+      hand_description: string;
+      hole_card_indices: number[];
+    }>;
+  }> {
+    try {
+      const awards = this.currentHandPerPotAwards;
+      if (!awards || awards.length === 0) return [];
+      const keyOf = (a: (typeof awards)[number]) =>
+        `${a.board ?? 1}|${a.potIndex}|${a.low ? 1 : 0}`;
+      const groups = new Map<string, typeof awards>();
+      for (const a of awards) {
+        const k = keyOf(a);
+        const g = groups.get(k);
+        if (g) g.push(a);
+        else groups.set(k, [a]);
+      }
+      const orderedKeys = [...groups.keys()].sort((x, y) => {
+        const [bx, px, lx] = x.split('|').map(Number);
+        const [by, py, ly] = y.split('|').map(Number);
+        if (bx !== by) return bx - by;
+        if (px !== py) return px - py;
+        return lx - ly;
+      });
+      return orderedKeys.map((k) => {
+        const g = groups.get(k)!;
+        const [board, potIndex, low] = k.split('|').map(Number);
+        return {
+          pot_index: potIndex,
+          board: (board === 2 ? 2 : 1) as 1 | 2,
+          low: low === 1,
+          winners: g.map((a) => {
+            const sd = this.currentHandShowdownResults.find((r) => r.userId === a.userId);
+            const holeIndices: number[] = [];
+            try {
+              const cards = a.hand?.cards;
+              if (sd && Array.isArray(cards)) {
+                const used = new Set(cards.map((c) => `${c?.rank}${c?.suit}`));
+                (sd.holeCards ?? []).forEach((c, i) => {
+                  if (used.has(`${c?.rank}${c?.suit}`)) holeIndices.push(i);
+                });
+              }
+            } catch {
+              /* decoration only */
+            }
+            return {
+              user_id: a.userId,
+              amount: a.amount,
+              // A low hand's name IS its description ("Low: 8-6-4-3-2").
+              hand_name: a.hand?.name ?? '',
+              // Review fix 2026-08-25: prefer the description the engine
+              // computed for THIS entry's hand (a.handDescription). Falling
+              // back to the showdown result's description is wrong on
+              // double-board hands — sd carries the BOARD-1 hand, so board-2
+              // groups paired a board-2 name with a board-1 description.
+              hand_description: a.low
+                ? (a.hand?.name ?? '')
+                : (a.handDescription ?? sd?.handDescription ?? ''),
+              hole_card_indices: holeIndices,
+            };
+          }),
+        };
+      });
+    } catch {
+      // Never let the display breakdown break pot_win.
+      return [];
+    }
+  }
   protected async handleHandEvent(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
     switch (event.type) {
       case 'HAND_START':
@@ -476,7 +561,9 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         break;
 
       case 'SHOWDOWN':
-        // Capture showdown hand evaluations for BBJ detection
+        // Capture showdown hand evaluations for BBJ detection.
+        // SHOWDOWN SYSTEM 2026-08-25: also capture the engine-decided reveal
+        // metadata — seat, reveal order, muck eligibility, hand description.
         this.currentHandShowdownResults = ((event as any).results || []).map((r: any) => ({
           userId: r.userId,
           handRanking: r.hand?.ranking ?? 0,
@@ -487,7 +574,57 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
               ? { rank: c.slice(0, -1), suit: c.slice(-1) }
               : { rank: c.rank, suit: c.suit }
           ),
+          seat: r.seat,
+          revealOrder: r.revealOrder,
+          mucked: r.mucked === true,
+          handDescription: r.handDescription ?? '',
         }));
+        // SHOWDOWN POLISH 2026-08-25: muck-rate observability. If a future
+        // change silently kills mucking, this pair flatlines against each
+        // other — no DB sampling needed to notice. Metrics must never affect
+        // gameplay, hence the fence.
+        try {
+          EngineMetrics.showdownHandsTotal.inc(1, { table_id: this.tableId });
+          const muckedCount = this.currentHandShowdownResults.filter((r) => r.mucked).length;
+          if (muckedCount > 0) {
+            EngineMetrics.muckedHandsTotal.inc(muckedCount, { table_id: this.tableId });
+          }
+        } catch {
+          /* metrics must never affect gameplay */
+        }
+        // 2026-04-16 fix: Emit discrete showdown event so the client can
+        // trigger showdown sound + card reveal animations (Bible V8 §4.6).
+        // Previously only broadcastCurrentState was called, which sends a
+        // state snapshot but NOT a discrete event the client handler matches.
+        // SHOWDOWN SYSTEM 2026-08-25: the discrete showdown event now carries
+        // the reveal SEQUENCE. Clients stagger the card flips by reveal_order
+        // (last final-street aggressor first, then clockwise) and render
+        // MUCKED seats instead of hands. A mucked player's hand identity is
+        // withheld — publishing "Pair, ranking 2" for a hand whose cards stay
+        // private would leak exactly what the muck exists to protect.
+        //
+        // AUDIT FIX 2026-08-25 (ordering): this event now goes out BEFORE the
+        // revealing snapshot below. The client latches its flip stagger on the
+        // snapshot's showCards rising edge, reading the order this event
+        // delivered — sent after the snapshot, the order routinely lost the
+        // race and every reveal degraded to a simultaneous flip.
+        this.hub?.emitEvent(this.tableId, {
+          type: 'showdown',
+          table_id: this.tableId,
+          hand_number: this.handCount,
+          results: this.currentHandShowdownResults.map((r) => {
+            const mucked = this.isMuckedAtShowdown(r.userId);
+            return {
+              user_id: r.userId,
+              seat: r.seat ?? -1,
+              reveal_order: r.revealOrder ?? 0,
+              mucked,
+              hand_name: mucked ? '' : r.handName,
+              hand_ranking: mucked ? 0 : r.handRanking,
+              hand_description: mucked ? '' : (r.handDescription ?? ''),
+            };
+          }),
+        });
         this.broadcastCurrentState();
         // ── ADDITIVE event-sourcing shadow (#1): record ShowdownRevealed ──
         if (this.shadowRecorder && this.handController) {
@@ -499,20 +636,6 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           }));
           this.shadowRecorder.recordShowdownRevealed(sdReveals);
         }
-        // 2026-04-16 fix: Emit discrete showdown event so the client can
-        // trigger showdown sound + card reveal animations (Bible V8 §4.6).
-        // Previously only broadcastCurrentState was called, which sends a
-        // state snapshot but NOT a discrete event the client handler matches.
-        this.hub?.emitEvent(this.tableId, {
-          type: 'showdown',
-          table_id: this.tableId,
-          hand_number: this.handCount,
-          results: this.currentHandShowdownResults.map((r) => ({
-            user_id: r.userId,
-            hand_name: r.handName,
-            hand_ranking: r.handRanking,
-          })),
-        });
         // AUDIT FIX 2026-07-19: the showdown_cards_revealed event (which carries
         // hole cards) is emitted in the WINNERS handler instead of here — at
         // SHOWDOWN time the winners aren't known yet, so it could not respect
@@ -570,21 +693,59 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // the merged winners so pot_win can tell the client which board each
         // winner took and with what hand.
         this.currentHandWinnersByBoard = (event as any).winnersByBoard ?? [];
+        // SHOWDOWN POLISH 2026-08-25: the unmerged per-pot(-half) breakdown.
+        // Gated on hasWinners for the same reason the winner state is (the
+        // empty WINNERS emit on the RIT path must not wipe pre-set state).
+        if (hasWinners) {
+          this.currentHandPerPotAwards = (event as any).perPotAwards ?? [];
+        }
         if (hasWinners) {
           this.currentHandWinnerIds = (event.winners || []).map(
             (w: any) => w.userId || w.user_id || ''
           );
           // Bible V8 §2.7: Winner Object — userId, amount, potIndex, hand (evaluated hand description)
+          // SHOWDOWN SYSTEM 2026-08-25: keep `cards` — the exact best five the
+          // evaluator chose. Narrowing it away here is what left pot_win's
+          // card_indices permanently empty: the derivation below reads
+          // w.hand?.cards, and this map was dropping it on capture. The five
+          // formerly-skipped specs in tests/unit/winningCardHighlight.test.ts
+          // pin this wire at both ends.
           this.currentHandWinners = (event.winners || []).map((w: any) => ({
             userId: w.userId || w.user_id || '',
             amount: w.amount || 0,
             potIndex: w.potIndex ?? 0,
-            hand: w.hand ? { name: w.hand.name || '', ranking: w.hand.ranking ?? 0 } : undefined,
+            hand: w.hand
+              ? {
+                  name: w.hand.name || '',
+                  ranking: w.hand.ranking ?? 0,
+                  cards: Array.isArray(w.hand.cards) ? w.hand.cards : undefined,
+                }
+              : undefined,
           }));
         }
         if (this.handController) {
           const state = this.handController.getState();
           if (hasWinners) this.currentHandPotSize = state.pot;
+          // POT-LEVEL SETTLEMENT (Dan section 29, 2026-08-25). `state.pots` is
+          // the snapshot `completeHandInner()` took with calculatePots() just
+          // before it decided the winners — so `eligiblePlayers` still names
+          // everyone who had a claim on each pot, which is the whole question
+          // a knockout attribution has to answer.
+          //
+          // THIS IS THE ONLY MOMENT IT EXISTS. `HandController.getPots()`
+          // recalculates from the live players, and by the time postHandTasks
+          // runs the winners' stacks have already moved. Capturing here rather
+          // than at the write is why hand_history can finally record which pot
+          // held the busted player's last chips.
+          if (hasWinners && Array.isArray(state.pots)) {
+            this.currentHandPots = state.pots.map((p, index) => ({
+              index,
+              amount: Number(p?.amount) || 0,
+              eligible: Array.isArray(p?.eligiblePlayers)
+                ? p.eligiblePlayers.map((u) => String(u ?? '')).filter(Boolean)
+                : [],
+            }));
+          }
           // Note: rake + bbjFee are captured from HAND_COMPLETE event, not from state
           // Bible V8 §1.9: Capture totalInvested for equal-share rakeback tracking (FIX 144)
           this.currentHandContributions.clear();
@@ -638,18 +799,37 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           // The uncontested case is untouched: no showdown means no SHOWDOWN
           // event, so none of this runs and a player who wins when everyone
           // folds is still never forced to show.
-          const reveals = this.currentHandShowdownResults.map((r) => ({
-            user_id: r.userId,
-            cards: r.holeCards ?? [],
-            best_hand_label: r.handName,
-            best_hand_rank: r.handRanking,
-          }));
-          if (reveals.length > 0) {
+          // SHOWDOWN SYSTEM 2026-08-25 (Dan spec section 4): a hand the engine
+          // ruled muckable stays PRIVATE — it is excluded from the public
+          // reveal entirely, and the seat renders MUCKED instead. A voluntary
+          // show (showHandPlayers) overrides the muck: hiding is the default,
+          // showing is consent. All-in showdowns never produce mucked=true
+          // (HandController.applyShowdownRevealRules), so every live all-in
+          // hand still rides this event exactly as before.
+          const reveals = this.currentHandShowdownResults
+            .filter((r) => !this.isMuckedAtShowdown(r.userId))
+            .map((r) => ({
+              user_id: r.userId,
+              // Review fix 2026-08-25: carry the seat so a reconnecting
+              // client can rebuild reveal staggering without a players
+              // lookup (it still falls back to user_id resolution).
+              seat: r.seat ?? -1,
+              cards: r.holeCards ?? [],
+              best_hand_label: r.handName,
+              best_hand_rank: r.handRanking,
+              best_hand_description: r.handDescription ?? '',
+              reveal_order: r.revealOrder ?? 0,
+            }));
+          const muckedPlayers = this.currentHandShowdownResults
+            .filter((r) => this.isMuckedAtShowdown(r.userId))
+            .map((r) => ({ user_id: r.userId, seat: r.seat ?? -1 }));
+          if (reveals.length > 0 || muckedPlayers.length > 0) {
             this.hub?.emitEvent(this.tableId, {
               type: 'showdown_cards_revealed',
               table_id: this.tableId,
               hand_number: this.handCount,
               reveals,
+              mucked_players: muckedPlayers,
               timestamp: Date.now(),
             });
           }
@@ -740,11 +920,42 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             // reads this as `card_indices` and lights exactly these.
             card_indices: winningBoardIndices,
             // Per-winner amounts for accurate sub-pot ship animations on chops
-            winners: this.currentHandWinners.map((w) => ({
-              user_id: w.userId,
-              amount: w.amount,
-              hand_name: w.hand?.name,
-            })),
+            // SHOWDOWN SYSTEM 2026-08-25: hand_description is the secondary
+            // display line ("Kings Full Of Nines"); hole_card_indices are the
+            // indices of the winner's OWN hole cards that participate in the
+            // winning five, so the seat can light exactly those (the board
+            // half of the highlight rides card_indices above).
+            winners: this.currentHandWinners.map((w) => {
+              const sd = this.currentHandShowdownResults.find((r) => r.userId === w.userId);
+              const holeIndices: number[] = [];
+              try {
+                if (sd && w.hand?.cards) {
+                  const usedKeys = new Set(
+                    (w.hand.cards as Array<{ rank?: string; suit?: string }>).map(
+                      (c) => `${c?.rank}${c?.suit}`
+                    )
+                  );
+                  (sd.holeCards ?? []).forEach((c, i) => {
+                    if (usedKeys.has(`${c?.rank}${c?.suit}`)) holeIndices.push(i);
+                  });
+                }
+              } catch {
+                // Decoration only — never let a highlight break the payout event.
+              }
+              return {
+                user_id: w.userId,
+                amount: w.amount,
+                hand_name: w.hand?.name,
+                hand_description: sd?.handDescription ?? '',
+                hole_card_indices: holeIndices,
+                // SHOWDOWN follow-up 2026-08-25 (spec 16/19): which pot this
+                // winner's FIRST share came from (0 = main). The client
+                // sequences award animations by this — main pot first, then
+                // each side pot — so a hand with different winners for
+                // different pots resolves as a visible sequence, not a blur.
+                pot_index: w.potIndex ?? 0,
+              };
+            }),
             // Round 2 (double board): board 1 / board 2 winner + hand-name
             // breakdown. Empty array on single-board hands.
             winners_by_board: this.currentHandWinnersByBoard.map((w) => ({
@@ -753,6 +964,16 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
               amount: w.amount,
               hand_name: w.handName,
             })),
+            // SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the UNMERGED award
+            // groups, one per (board, pot, hi/lo half), in award order — main
+            // pot's high half first, its low half second, then each side pot,
+            // then board 2. Each group carries its own winners with the EXACT
+            // share of that pot(-half), post-rake-scaled — so the client can
+            // finally play "A takes the main… C takes the side" as separate
+            // beats even when one player appears in several groups, and can
+            // label HIGH vs LOW winners on hi-lo boards. The flat winners[]
+            // above stays authoritative for totals.
+            pot_awards: this.buildPotAwardGroups(),
           });
 
           // Phase X5 (2026-04-29) — Bible V8 §1.16 pot_distributed companion
@@ -761,11 +982,22 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           // a state-snapshot diff. This event names every pot index, the
           // amount that pot held, and the user_ids that received that
           // pot's chips.
+          // SHOWDOWN SYSTEM 2026-08-25 eligibility fix: GameState.pots stores
+          // `eligiblePlayers`; the old read of `p.eligible` (the BROADCAST
+          // payload's rename, applied only in ServerTableEngine.ts) was always
+          // undefined here, so every pot listed every winner and side-pot
+          // breakdowns were wrong for the client and the audit trail alike.
           const stateSnapshot = this.handController?.getState?.() as unknown as
-            | { pots?: Array<{ amount: number; eligibleSeats?: number[]; eligible?: string[] }> }
+            | {
+                pots?: Array<{
+                  amount: number;
+                  eligiblePlayers?: string[];
+                  eligible?: string[];
+                }>;
+              }
             | undefined;
           const potBreakdown = (stateSnapshot?.pots ?? []).map((p, idx) => {
-            const eligibleIds = p.eligible ?? [];
+            const eligibleIds = p.eligiblePlayers ?? p.eligible ?? [];
             const eligibleWinners = this.currentHandWinners.filter(
               (w) => eligibleIds.length === 0 || eligibleIds.includes(w.userId)
             );

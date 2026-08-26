@@ -362,7 +362,7 @@ export default function ClubAnnouncementsPage() {
             maxLength={100}
           />
           <textarea
-            placeholder="Write your announcement..."
+            placeholder="Write Your Announcement..."
             value={newContent}
             onChange={(e) => setNewContent(e.target.value)}
             rows={4}
@@ -429,7 +429,7 @@ export default function ClubAnnouncementsPage() {
         )}
       </div>
 
-      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
+      {clubId && <ClubBottomNav clubId={clubId} />}
 
       {/* Confirm Modal */}
       <ConfirmModal

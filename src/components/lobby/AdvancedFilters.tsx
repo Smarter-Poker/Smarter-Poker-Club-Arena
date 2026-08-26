@@ -43,8 +43,8 @@ const TABS: { key: FilterGameType; label: string }[] = [
   { key: 'OMAHA', label: 'Omaha' },
   { key: 'LIMIT', label: 'Limit' },
   { key: 'MTT', label: 'MTT' },
-  { key: 'SPIN', label: 'Spin-It' },
-  { key: 'SNG', label: 'HU' },
+  { key: 'SPIN', label: 'Spins' },
+  { key: 'SNG', label: 'Heads Up' },
 ];
 
 export type FilterStore = Partial<Record<FilterGameType, GameFilterValue>>;
@@ -61,20 +61,69 @@ export function loadFilters(clubId: string): FilterStore {
 
     const clean: FilterStore = {};
     for (const [type, value] of Object.entries(parsed)) {
-      const spec = FILTER_SPECS[type as Exclude<FilterGameType, 'ALL'>];
-      if (!spec || !value) continue;
-      const known = new Set(spec.features.map((f) => f.key));
-      const gameKeys = new Set((spec.games ?? []).map((g) => g.key));
-      const statusKeys = new Set(spec.statuses.map((s) => s.key));
-      clean[type as FilterGameType] = {
-        ...emptyFilterValue(spec),
-        ...value,
-        // Drop keys a previous build wrote that this one no longer defines.
-        games: (value.games ?? []).filter((g) => gameKeys.has(g)),
-        statuses: (value.statuses ?? []).filter((s) => statusKeys.has(s)),
-        mustHave: (value.mustHave ?? []).filter((k) => known.has(k)),
-        hide: (value.hide ?? []).filter((k) => known.has(k)),
-      };
+      /* PER TAB. This loop used to sit inside the outer try alone, so one
+         malformed tab - a `games` saved as a string, say, which throws on
+         `.filter` - discarded the user's OTHER, perfectly valid tabs. */
+      try {
+        const spec = FILTER_SPECS[type as Exclude<FilterGameType, 'ALL'>];
+        if (!spec || !value || typeof value !== 'object') continue;
+        const known = new Set(spec.features.map((f) => f.key));
+        const gameKeys = new Set((spec.games ?? []).map((g) => g.key));
+        const statusKeys = new Set(spec.statuses.map((s) => s.key));
+        const presetKeys = new Set(spec.range.presets.map((pr) => pr.key));
+        const list = (x: unknown) => (Array.isArray(x) ? (x as string[]) : []);
+        const empty = emptyFilterValue(spec);
+        /* NUMBERS ARE UNTRUSTED TOO. `...value` used to overwrite the
+           defaults with whatever was on disk, and nothing checked it.
+           JSON.stringify writes NaN as `null`, so an older build could leave
+           `rangeMin: null` - and the very next thing to touch it is
+           `fmt(value.rangeMin)`, which calls `.toFixed(2)` on it and throws
+           inside render, unmounting the whole lobby. Clamping also repairs a
+           value saved against an older, narrower spec, which otherwise
+           persisted verbatim and silently hid rows. */
+        const clampTo = (x: unknown, lo: number, hi: number, fallback: number) => {
+          const n = Number(x);
+          return Number.isFinite(n) ? Math.min(Math.max(n, lo), hi) : fallback;
+        };
+        clean[type as FilterGameType] = {
+          ...empty,
+          ...value,
+          // Drop keys a previous build wrote that this one no longer defines.
+          games: list(value.games).filter((g) => gameKeys.has(g)),
+          statuses: list(value.statuses).filter((st) => statusKeys.has(st)),
+          mustHave: list(value.mustHave).filter((k) => known.has(k)),
+          hide: list(value.hide).filter((k) => known.has(k)),
+          /* Left unvalidated, one preset key this build no longer defines
+             made matchesPreset false for EVERY row: an empty lobby, no
+             explanation, and no way back except Reset. */
+          selectedRanges: list(value.selectedRanges).filter((k) => presetKeys.has(k)),
+          rangeMin: clampTo(value.rangeMin, spec.range.min, spec.range.max, empty.rangeMin),
+          rangeMax: clampTo(value.rangeMax, spec.range.min, spec.range.max, empty.rangeMax),
+          seatMin: spec.seats
+            ? clampTo(value.seatMin, spec.seats.min, spec.seats.max, empty.seatMin)
+            : empty.seatMin,
+          seatMax: spec.seats
+            ? clampTo(value.seatMax, spec.seats.min, spec.seats.max, empty.seatMax)
+            : empty.seatMax,
+        };
+        /* CLAMPING EACH BOUND SEPARATELY CANNOT UNDO AN INVERSION. A stored
+           pair with min above max survives both clamps unchanged, and the
+           one-step gap on the thumbs then keeps re-applying the out-of-range
+           partner every drag - the range freezes, the tab empties, and Reset
+           is the only way back. An inverted pair is not repairable, so it is
+           discarded for the spec's own full range. */
+        const repaired = clean[type as FilterGameType]!;
+        if (repaired.rangeMin > repaired.rangeMax) {
+          repaired.rangeMin = empty.rangeMin;
+          repaired.rangeMax = empty.rangeMax;
+        }
+        if (repaired.seatMin > repaired.seatMax) {
+          repaired.seatMin = empty.seatMin;
+          repaired.seatMax = empty.seatMax;
+        }
+      } catch (perTab) {
+        reportError(perTab, 'AdvancedFilters.loadFilters.tab', { type });
+      }
     }
     return clean;
   } catch (e) {
@@ -111,13 +160,29 @@ interface AdvancedFiltersProps {
   initialType: FilterGameType;
   onClose: () => void;
   onApply: (store: FilterStore) => void;
+  sortKey?: string;
+  onSortChange?: (k: any) => void;
+  sortOptions?: { key: string; label: string }[];
+  /**
+   * ALL has no filter spec of its own, and the lobby deliberately ignores the
+   * per-type filters while it is the active tab - so on ALL this sheet showed
+   * a game-type row and five filter sections that could be set, saved, and
+   * then have no effect on the list behind them. In that mode it is a Sort
+   * sheet and says so: the type tabs and every filter section are gone, and
+   * only Sort By remains. Nothing on screen does nothing.
+   */
+  sortOnly?: boolean;
 }
 
 export default function AdvancedFilters({
+  sortKey,
+  onSortChange,
+  sortOptions,
   clubId,
   initialType,
   onClose,
   onApply,
+  sortOnly = false,
 }: AdvancedFiltersProps) {
   const [activeType, setActiveType] = useState<FilterGameType>(
     // ALL has no spec of its own; open on Hold'em, the first that does.
@@ -149,6 +214,15 @@ export default function AdvancedFilters({
       spec ? (store[activeType] ?? emptyFilterValue(spec)) : emptyFilterValue(FILTER_SPECS.HOLDEM),
     [store, activeType, spec]
   );
+
+  /* One step for this spec, shared by both thumbs and both clamps. */
+  /* A step of 0.01 is right for the BLINDS slider (min 0.02) and wrong for
+     every buy-in slider, whose min is 0 - which also satisfies `< 1`. That
+     turned a 0-15,000 range into 1.5 million steps: one arrow key moved the
+     filter by a cent, and dragging produced 3847.23 under a header whose own
+     formatter says buy-ins carry no decimals. A min ABOVE zero and below one
+     is the only case that needs cents. */
+  const rangeStep = spec ? (spec.range.min > 0 && spec.range.min < 1 ? 0.01 : 1) : 1;
 
   const patch = useCallback(
     (next: Partial<GameFilterValue>) => {
@@ -212,51 +286,88 @@ export default function AdvancedFilters({
         className="afx-sheet"
         role="dialog"
         aria-modal="true"
-        aria-label="Advanced Filters"
+        aria-label={sortOnly ? 'Sort' : 'Advanced Filters'}
         onClick={(e) => e.stopPropagation()}
       >
         <header className="afx-head">
-          <button className="afx-back" onClick={onClose} aria-label="Close advanced filters">
+          <button
+            className="afx-back"
+            onClick={onClose}
+            aria-label={sortOnly ? 'Close sort' : 'Close advanced filters'}
+          >
             &#8249;&#8249;
           </button>
-          <h2>Advanced Filters</h2>
+          <h2>{sortOnly ? 'Sort' : 'Advanced Filters'}</h2>
         </header>
 
-        <div className="afx-tabs" role="tablist" aria-label="Game type">
-          {TABS.filter((t) => t.key !== 'ALL').map((t) => (
-            <button
-              key={t.key}
-              role="tab"
-              aria-selected={activeType === t.key}
-              className={`afx-tab ${activeType === t.key ? 'is-active' : ''}`}
-              onClick={() => setActiveType(t.key)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        {!sortOnly && (
+          <div className="afx-tabs" role="group" aria-label="Game Type">
+            {TABS.filter((t) => t.key !== 'ALL').map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                aria-pressed={activeType === t.key}
+                className={`afx-tab ${activeType === t.key ? 'is-active' : ''}`}
+                onClick={() => setActiveType(t.key)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="afx-body">
-          {spec && (
+          {sortOptions && onSortChange && (
+            /* Open by default in sortOnly mode: it is the ONLY content there,
+               and a sheet titled Sort that shows one collapsed accordion row
+               looks empty on arrival. In full mode there are six sections and
+               collapsed is right. */
+            <details className="afx-section" open={sortOnly}>
+              <summary>
+                <h3>Sort By</h3>
+              </summary>
+              <div className="afx-chips">
+                {sortOptions.map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    className={`afx-chip ${sortKey === opt.key ? 'is-on' : ''}`}
+                    aria-pressed={sortKey === opt.key}
+                    onClick={() => onSortChange(opt.key)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </details>
+          )}
+
+          {!sortOnly && spec && (
             <>
               {spec.format && (
-                <section className="afx-section">
-                  <h3>Format:</h3>
+                <details className="afx-section">
+                  <summary>
+                    <h3>Format:</h3>
+                  </summary>
                   {chipRow(spec.format, 'format', value.format)}
-                </section>
+                </details>
               )}
 
               {spec.games && (
-                <section className="afx-section">
-                  <h3>Games:</h3>
+                <details className="afx-section">
+                  <summary>
+                    <h3>Games:</h3>
+                  </summary>
                   {chipRow(spec.games, 'games', value.games)}
-                </section>
+                </details>
               )}
 
-              <section className="afx-section">
-                <h3>
-                  {spec.range.label}: {fmt(value.rangeMin)} - {fmt(value.rangeMax)}
-                </h3>
+              <details className="afx-section">
+                <summary>
+                  <h3>
+                    {spec.range.label}: {fmt(value.rangeMin)} - {fmt(value.rangeMax)}
+                  </h3>
+                </summary>
                 {/* Two overlaid range inputs rather than a custom drag handler.
                     A hand-rolled two-thumb slider has to reimplement pointer
                     capture, keyboard stepping and the accessibility tree; two
@@ -272,15 +383,39 @@ export default function AdvancedFilters({
                       right: `${100 - ((value.rangeMax - spec.range.min) / (spec.range.max - spec.range.min)) * 100}%`,
                     }}
                   />
+                  {/* STEP COMES FROM THE MIN, NOT THE MAX.
+                      `spec.range.max > 100 ? 1 : 0.01` chose whole numbers for
+                      the blinds slider because its max is 5000 - but the
+                      precision is needed at the BOTTOM. A step of 1 based at
+                      min 0.02 makes the only reachable values 0.02, 1.02,
+                      2.02..., so the Micro (0.02-0.2) and Small (0.2-3) tiers
+                      the spec itself defines could not be selected at all.
+                      5000 is not step-valid from that base either, so the max
+                      thumb was silently sanitised to 4999.02 by the browser -
+                      which then read as a permanently active filter that hid
+                      every 5000-blind table.
+
+                      And the thumbs keep a one-step gap. Both inputs sit at
+                      the same coordinates and the max one is later in the DOM,
+                      so it wins the pointer; dragging the min all the way up
+                      buried it underneath, where neither could move and the
+                      range was frozen to a single point with an empty lobby
+                      and no way back but Reset. */}
                   <input
                     type="range"
                     aria-label={`Minimum ${spec.range.label}`}
                     min={spec.range.min}
                     max={spec.range.max}
-                    step={spec.range.max > 100 ? 1 : 0.01}
+                    step={rangeStep}
                     value={value.rangeMin}
                     onChange={(e) =>
-                      patch({ rangeMin: Math.min(Number(e.target.value), value.rangeMax), selectedRanges: [] })
+                      patch({
+                        rangeMin: Math.max(
+                          spec.range.min,
+                          Math.min(Number(e.target.value), value.rangeMax - rangeStep)
+                        ),
+                        selectedRanges: [],
+                      })
                     }
                   />
                   <input
@@ -288,10 +423,16 @@ export default function AdvancedFilters({
                     aria-label={`Maximum ${spec.range.label}`}
                     min={spec.range.min}
                     max={spec.range.max}
-                    step={spec.range.max > 100 ? 1 : 0.01}
+                    step={rangeStep}
                     value={value.rangeMax}
                     onChange={(e) =>
-                      patch({ rangeMax: Math.max(Number(e.target.value), value.rangeMin), selectedRanges: [] })
+                      patch({
+                        rangeMax: Math.min(
+                          spec.range.max,
+                          Math.max(Number(e.target.value), value.rangeMin + rangeStep)
+                        ),
+                        selectedRanges: [],
+                      })
                     }
                   />
                 </div>
@@ -306,7 +447,7 @@ export default function AdvancedFilters({
                         aria-pressed={on}
                         onClick={() => {
                           const arr = value.selectedRanges || [];
-                          const nextArr = on ? arr.filter(k => k !== p.key) : [...arr, p.key];
+                          const nextArr = on ? arr.filter((k) => k !== p.key) : [...arr, p.key];
                           patch({ selectedRanges: nextArr });
                         }}
                       >
@@ -315,14 +456,16 @@ export default function AdvancedFilters({
                     );
                   })}
                 </div>
-              </section>
+              </details>
 
-              <section className="afx-section">
-                <h3>
-                  {spec.seats
-                    ? `${spec.seatsLabel}: ${value.seatMin} min ${value.seatMax} max`
-                    : spec.seatsLabel}
-                </h3>
+              <details className="afx-section">
+                <summary>
+                  <h3>
+                    {spec.seats
+                      ? `${spec.seatsLabel}: ${value.seatMin} min ${value.seatMax} max`
+                      : spec.seatsLabel}
+                  </h3>
+                </summary>
                 {chipRow(spec.statuses, 'statuses', value.statuses)}
                 {spec.seats && (
                   <div className="afx-range">
@@ -342,7 +485,12 @@ export default function AdvancedFilters({
                       max={spec.seats.max}
                       value={value.seatMin}
                       onChange={(e) =>
-                        patch({ seatMin: Math.min(Number(e.target.value), value.seatMax) })
+                        patch({
+                          seatMin: Math.max(
+                            spec.seats!.min,
+                            Math.min(Number(e.target.value), value.seatMax - 1)
+                          ),
+                        })
                       }
                     />
                     <input
@@ -352,17 +500,24 @@ export default function AdvancedFilters({
                       max={spec.seats.max}
                       value={value.seatMax}
                       onChange={(e) =>
-                        patch({ seatMax: Math.max(Number(e.target.value), value.seatMin) })
+                        patch({
+                          seatMax: Math.min(
+                            spec.seats!.max,
+                            Math.max(Number(e.target.value), value.seatMin + 1)
+                          ),
+                        })
                       }
                     />
                   </div>
                 )}
-              </section>
+              </details>
 
               {spec.features.length > 0 && (
                 <>
-                  <section className="afx-section">
-                    <h3>Must-Have Features:</h3>
+                  <details className="afx-section">
+                    <summary>
+                      <h3>Must-Have Features:</h3>
+                    </summary>
                     <p className="afx-hint">Show Tables Only With ALL Selected Features.</p>
                     <div className="afx-grid">
                       {spec.features.map((f) => (
@@ -377,10 +532,12 @@ export default function AdvancedFilters({
                         </button>
                       ))}
                     </div>
-                  </section>
+                  </details>
 
-                  <section className="afx-section">
-                    <h3>Hide:</h3>
+                  <details className="afx-section">
+                    <summary>
+                      <h3>Hide:</h3>
+                    </summary>
                     <p className="afx-hint">Tables With Selected Features Will Be Hidden.</p>
                     <div className="afx-grid">
                       {spec.features.map((f) => (
@@ -397,41 +554,52 @@ export default function AdvancedFilters({
                         </button>
                       ))}
                     </div>
-                  </section>
+                  </details>
                 </>
               )}
             </>
           )}
         </div>
 
-        <footer className="afx-foot">
-          <button className="afx-btn afx-btn--cancel" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="afx-btn afx-btn--reset"
-            onClick={() => {
-              /* Resets THIS TAB only. A single Reset that wiped every game
+        {/* In sort-only mode the sort chips apply as they are pressed, so
+            Cancel / Reset / Save would be three buttons acting on filters
+            that are not on screen. One Done. */}
+        {sortOnly ? (
+          <footer className="afx-foot">
+            <button className="afx-btn afx-btn--save" onClick={onClose}>
+              Done
+            </button>
+          </footer>
+        ) : (
+          <footer className="afx-foot">
+            <button className="afx-btn afx-btn--cancel" onClick={onClose}>
+              Cancel
+            </button>
+            <button
+              className="afx-btn afx-btn--reset"
+              onClick={() => {
+                /* Resets THIS TAB only. A single Reset that wiped every game
                  type would be a destructive action behind an innocuous label -
                  a player clearing their Hold'em filters does not expect their
                  MTT preferences to go with them. */
-              if (!spec) return;
-              setStore((prev) => ({ ...prev, [activeType]: emptyFilterValue(spec) }));
-            }}
-          >
-            Reset
-          </button>
-          <button
-            className="afx-btn afx-btn--save"
-            onClick={() => {
-              saveFilters(clubId, store);
-              onApply(store);
-              onClose();
-            }}
-          >
-            Save
-          </button>
-        </footer>
+                if (!spec) return;
+                setStore((prev) => ({ ...prev, [activeType]: emptyFilterValue(spec) }));
+              }}
+            >
+              Reset
+            </button>
+            <button
+              className="afx-btn afx-btn--save"
+              onClick={() => {
+                saveFilters(clubId, store);
+                onApply(store);
+                onClose();
+              }}
+            >
+              Save
+            </button>
+          </footer>
+        )}
       </div>
     </div>,
     document.body

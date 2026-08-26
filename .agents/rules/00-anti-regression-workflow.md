@@ -1,9 +1,119 @@
+# RULE 1 — VERIFICATION PASS. Do not take your own word for it.
+
+Every claim below needs a command behind it, and you must paste the output.
+
+PART A — IS IT ACTUALLY SHIPPED?
+git status --porcelain # must be empty of tracked files
+git log --oneline origin/main..HEAD # must be empty
+git branch -r --contains HEAD # must name your branch
+gh pr list --head <your-branch> # must show a PR, or explain why not
+If any of those is wrong, you are not finished. Fix it before continuing.
+
+PART B — DID YOU FOLLOW THE RULES?
+pwd # must be under .agent-trees/
+git log -1 --format='%an <%ae>' # must be Smarter-Poker # <254329056+...@users.noreply.github.com>
+git log --oneline origin/main..HEAD | wc -l
+State plainly whether you used --no-verify at any point. If you did, say where and why.
+
+PART C — IS THE CODE ACTUALLY DONE?
+Re-read your own diff before answering: `git diff origin/main...HEAD`
+
+1. STUBS — any TODO, FIXME, `throw new Error('not implemented')`,
+   empty catch, hardcoded placeholder, mock left in a real path?
+   Search for them; do not rely on memory.
+2. WIRING — is every new function actually CALLED? Every new component
+   rendered? Every new route reachable? Every emitted event listened
+   for? Name the caller for each thing you added.
+3. DATABASE — did you add a migration? Was it APPLIED to production
+   via the Supabase MCP? A migration file that never ran is a feature
+   the code believes in and the database has never heard of.
+4. REGRESSIONS — what existing behaviour does this change? Which tests
+   covered it? Did you update them in the SAME commit, or leave them
+   asserting the old rule?
+5. ERROR PATHS — what happens when the network fails, the row is
+   missing, the user is logged out? Show me where each is handled.
+
+PART D — DOES IT RUN?
+npx tsc --noEmit # paste the result
+npx vitest run <the tests covering your change>
+npm run build # if you touched src/
+Paste real output. "Tests pass" without a count is not an answer.
+
+PART E — IS IT LIVE?
+If your PR merged: what SHA does production serve right now, and does it
+contain your commit? Check it. Do not say "should be live shortly".
+If your PR has not merged: what is blocking it, in the words of the
+check that is failing?
+
+ANSWER FORMAT: for each of A–E, either the command output showing it is
+satisfied, or a plain statement of what is not done and what you are
+doing about it. If something is incomplete, say so — an honest gap is
+worth more than a confident claim I have to discover is wrong.
+
 ---
+
+---
+
 description: The one and only way agents ship code in this repo. Binding on Claude, Antigravity, Cowork and every other agent.
 trigger: always_on
+
 ---
 
 # 100% AUTOMATIC PUBLISHING — ZERO HUMAN INTERVENTION
+
+# RULE 1 — VERIFICATION PASS. Do not take your own word for it.
+
+Every claim below needs a command behind it, and you must paste the output.
+
+PART A — IS IT ACTUALLY SHIPPED?
+git status --porcelain # must be empty of tracked files
+git log --oneline origin/main..HEAD # must be empty
+git branch -r --contains HEAD # must name your branch
+gh pr list --head <your-branch> # must show a PR, or explain why not
+If any of those is wrong, you are not finished. Fix it before continuing.
+
+PART B — DID YOU FOLLOW THE RULES?
+pwd # must be under .agent-trees/
+git log -1 --format='%an <%ae>' # must be Smarter-Poker # <254329056+...@users.noreply.github.com>
+git log --oneline origin/main..HEAD | wc -l
+State plainly whether you used --no-verify at any point. If you did, say where and why.
+
+PART C — IS THE CODE ACTUALLY DONE?
+Re-read your own diff before answering: `git diff origin/main...HEAD`
+
+1. STUBS — any TODO, FIXME, `throw new Error('not implemented')`,
+   empty catch, hardcoded placeholder, mock left in a real path?
+   Search for them; do not rely on memory.
+2. WIRING — is every new function actually CALLED? Every new component
+   rendered? Every new route reachable? Every emitted event listened
+   for? Name the caller for each thing you added.
+3. DATABASE — did you add a migration? Was it APPLIED to production
+   via the Supabase MCP? A migration file that never ran is a feature
+   the code believes in and the database has never heard of.
+4. REGRESSIONS — what existing behaviour does this change? Which tests
+   covered it? Did you update them in the SAME commit, or leave them
+   asserting the old rule?
+5. ERROR PATHS — what happens when the network fails, the row is
+   missing, the user is logged out? Show me where each is handled.
+
+PART D — DOES IT RUN?
+npx tsc --noEmit # paste the result
+npx vitest run <the tests covering your change>
+npm run build # if you touched src/
+Paste real output. "Tests pass" without a count is not an answer.
+
+PART E — IS IT LIVE?
+If your PR merged: what SHA does production serve right now, and does it
+contain your commit? Check it. Do not say "should be live shortly".
+If your PR has not merged: what is blocking it, in the words of the
+check that is failing?
+
+ANSWER FORMAT: for each of A–E, either the command output showing it is
+satisfied, or a plain statement of what is not done and what you are
+doing about it. If something is incomplete, say so — an honest gap is
+worth more than a confident claim I have to discover is wrong.
+
+---
 
 > **↗ `AGENT-PLAYBOOK.md` at the repository root is the front door.** Same file
 > in all seven repos, checked hourly by `estate-integrity`. It carries the ship

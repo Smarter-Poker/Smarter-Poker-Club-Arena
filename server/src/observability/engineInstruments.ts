@@ -48,6 +48,20 @@ export const allInEquityDuration: Histogram = metricsRegistry.histogram(
   'poker_all_in_equity_duration_ms',
   'All-in equity computation duration (ms)'
 );
+/**
+ * SHOWDOWN POLISH 2026-08-25: showdown/muck observability. A future change
+ * that silently kills mucking (the exact regression class the 2026-08-25
+ * audit caught twice) shows up here as mucked_hands_total flatlining while
+ * showdown_hands_total keeps climbing — no DB sampling required.
+ */
+export const showdownHandsTotal: Counter = metricsRegistry.counter(
+  'poker_showdown_hands_total',
+  'Hands that reached a contested showdown (label: table_id)'
+);
+export const muckedHandsTotal: Counter = metricsRegistry.counter(
+  'poker_mucked_hands_total',
+  'Showdown holdings the engine ruled muckable (label: table_id)'
+);
 
 /**
  * Span exporter is attached ONLY when the flag is on, so span export is a no-op

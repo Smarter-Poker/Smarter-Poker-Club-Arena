@@ -112,6 +112,26 @@ function jsxTextNodes(file, source) {
     return !!prev && ts.isJsxExpression(prev);
   };
 
+  /**
+   * The mirror of continuesAWord: this text node STARTS a word that an
+   * expression finishes, i.e. `x{count}` in a truncated chip stack. The letter
+   * is a multiplier or unit PREFIX, not a word, and "X1,234" is not a chip
+   * count anybody writes.
+   *
+   * Same tell, reversed: the text ends with a letter, with no space after it,
+   * and the node immediately following is an expression container. Found by
+   * this gate on 2026-08-23 blocking three files (ChipPhysics, ChipStack,
+   * PotDisplay) that all render the identical `x{count.toLocaleString()}`.
+   */
+  const precedesAnExpression = (node) => {
+    const parent = node.parent;
+    if (!parent || !parent.children) return false;
+    const i = parent.children.indexOf(node);
+    if (i < 0 || i >= parent.children.length - 1) return false;
+    const next = parent.children[i + 1];
+    return !!next && ts.isJsxExpression(next);
+  };
+
   const visit = (node) => {
     if (node.kind === ts.SyntaxKind.JsxText) {
       // node.pos, NOT getStart(). getStart() skips leading trivia, and for
@@ -124,7 +144,8 @@ function jsxTextNodes(file, source) {
       const text = source.slice(start, end);
       if (/[A-Za-z]/.test(text)) {
         const suffix = /^[A-Za-z]/.test(text) && continuesAWord(node);
-        out.push({ start, end, text, suffix });
+        const prefix = /[A-Za-z]$/.test(text) && precedesAnExpression(node);
+        out.push({ start, end, text, suffix, prefix });
       }
     }
     node.forEachChild(visit);
@@ -158,6 +179,12 @@ for (const file of walk(SRC)) {
       cased = head + titleCaseText(n.text.slice(head.length));
     } else {
       cased = titleCaseText(n.text);
+    }
+    if (n.prefix) {
+      // Leave the trailing prefix-word alone, keep the casing of the rest.
+      // `x{count}` stays `x`; "Buy In x{n}" keeps "Buy In" cased and its x.
+      const m = n.text.match(/[A-Za-z][A-Za-z0-9'’]*$/);
+      if (m) cased = cased.slice(0, cased.length - m[0].length) + m[0];
     }
     if (cased !== n.text) changes.push({ ...n, cased });
   }

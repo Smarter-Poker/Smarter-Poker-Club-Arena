@@ -230,6 +230,11 @@ export class RakebackEngine {
         period: new Date().toISOString(),
         totalDistributed,
         playersCount,
+        /* 2026-08-23: the totals alone were unusable. TablePage's handler is
+           `payload.distributions[userId]` — it tells a player what THEY
+           received, and a grand total cannot answer that. Sent as a plain
+           object because the event crosses JSON. */
+        distributions: Object.fromEntries(distribution),
       });
     }
 

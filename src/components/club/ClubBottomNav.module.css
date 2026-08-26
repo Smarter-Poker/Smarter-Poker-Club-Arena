@@ -1,8 +1,23 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * ♠ CLUB ARENA — Club Bottom Navigation Styles
- * PokerBros-style fixed bottom navigation bar
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Dan 2026-08-25: this file lost a lot of rules that had no markup left.
+ *   .clubHeader / .clubBadge / .clubName / .clubStats / .divider — a club
+ *     summary strip above the tabs that has not been rendered in months.
+ *   .badge + @keyframes badgePop — died with the Messenger tab on 2026-08-21.
+ *   .navItem.active + ::after + @keyframes activeSlide — the active tab is not
+ *     rendered at all now, so there is nothing to highlight.
+ *   .navItem.disabled — no code ever applied it.
+ * Dead CSS is not free: it is what a future reader copies when they add the
+ * next tab, and .active in particular would silently contradict the rule that
+ * the current page's tab must not appear.
+ *
+ * The two @media (max-width: 400px) blocks were also merged. There were two,
+ * and the SECOND silently overrode the first — the careful 21px icon / 9px
+ * label sizing in the first block (chosen so CASHIER and PLAYERS stop hitting
+ * the ellipsis) never actually applied, because a later block set 20px/8px.
  */
 
 .bottomNav {
@@ -28,131 +43,74 @@
      component from contributing another one. */
   transform: none;
   contain: none;
-  background: linear-gradient(180deg, rgba(15, 25, 40, 0.98) 0%, rgba(8, 15, 25, 0.99) 100%);
+  background: #000000;
   border-top: 1px solid rgba(0, 180, 255, 0.15);
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(10px) saturate(1.1);
-  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+  /* No backdrop-filter. The background is fully opaque, so there is nothing
+     behind this bar to blur - the only effect was a compositing layer, on a
+     position:fixed element that is on screen for the whole session. */
 }
 
-/* Club header bar showing active tables/tournaments */
-.clubHeader {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 6px 12px;
-  background: linear-gradient(
-    90deg,
-    rgba(0, 80, 120, 0.6) 0%,
-    rgba(0, 100, 150, 0.4) 50%,
-    rgba(0, 80, 120, 0.6) 100%
-  );
-  border-bottom: 1px solid rgba(0, 180, 255, 0.15);
-  font-size: 11px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  overflow-x: auto;
-  white-space: nowrap;
-}
-
-.clubBadge {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  color: #000;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: 700;
-  font-size: 10px;
-}
-
-.clubName {
-  color: #fff;
-  font-weight: 600;
-}
-
-.clubStats {
-  color: rgba(0, 200, 255, 0.9);
-  font-weight: 500;
-}
-
-.divider {
-  color: rgba(255, 255, 255, 0.3);
-  margin: 0 4px;
-}
-
-/* Navigation items container */
+/* Navigation items container. A <ul> since 2026-08-25 — a bar of links is a
+   list, and screen readers announce "5 items" instead of running them
+   together. list-style/margin/padding are reset because the global reset does
+   not reach a CSS-module class. */
 .navItems {
   display: flex;
   align-items: stretch;
   justify-content: space-around;
   padding: 8px 0;
+  margin: 0;
+  list-style: none;
+}
+
+/* The <li>. It owns the flex sizing so the <a> can fill it entirely and the
+   whole cell stays tappable, not just the icon and label. */
+.navCell {
+  /* `flex: 1` alone is `1 1 0%` with an AUTO min-width, and a flex item refuses
+     to shrink below its content — so with 6 tabs on a 375px phone the row
+     overflowed instead of dividing. min-width:0 lets each cell take its true
+     share and hand the overflow to the label's existing ellipsis. */
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  margin: 0 4px;
 }
 
 /* Individual nav item */
 .navItem {
   position: relative;
   display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  /* `flex: 1` alone is `1 1 0%` with an AUTO min-width, and a flex item refuses
-     to shrink below its content — so with 6 tabs on a 375px phone (Msgs,
-     Players, Cashier, Market, Data, Admin) the row overflowed instead of
-     dividing. min-width:0 lets each cell take its true 1/6 and hand the
-     overflow to the label's existing ellipsis. Added 2026-08-20 with the
-     Marketplace tab, which is what pushed staff from five tabs to six. */
-  flex: 1 1 0;
-  min-width: 0;
+  /* 44px is the minimum comfortable touch target; the row is 74px tall, so
+     this costs nothing and guarantees the cell is not smaller than the finger
+     using it when the bar is scaled down on a short viewport. */
+  min-height: 44px;
   padding: 8px 4px;
   text-decoration: none;
   color: rgba(255, 255, 255, 0.5);
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   border-radius: 8px;
-  margin: 0 4px;
 }
 
 .navItem:hover {
   color: rgba(0, 200, 255, 0.9);
   background: rgba(0, 180, 255, 0.1);
-  transform: translateY(-2px);
 }
 
-.navItem.active {
+/* Keyboard focus has to be visible on its own. :hover alone left a
+   keyboard-only user with no idea which tab they were on, and the tab that
+   would have told them (the active one) is deliberately not rendered. */
+.navItem:focus-visible {
+  outline: 2px solid #00d4ff;
+  outline-offset: -2px;
   color: #00d4ff;
-  background: linear-gradient(145deg, rgba(0, 180, 255, 0.18), rgba(0, 130, 200, 0.1));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
-
-.navItem.active::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 20%;
-  width: 60%;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #00d4ff, transparent);
-  border-radius: 2px;
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
-  animation: activeSlide 0.3s ease-out;
-}
-
-@keyframes activeSlide {
-  from {
-    transform: scaleX(0);
-    opacity: 0;
-  }
-  to {
-    transform: scaleX(1);
-    opacity: 1;
-  }
-}
-
-.navItem.active .icon {
-  filter: drop-shadow(0 0 6px rgba(0, 212, 255, 0.6));
-  transform: scale(1.05);
+  background: rgba(0, 180, 255, 0.12);
 }
 
 /* Icon styling */
@@ -162,9 +120,15 @@
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
+/* THE LIFT LIVES HERE, ON THE ICON. It used to be `.navItem:hover
+   { transform: translateY(-2px) }`, which never fired: useStaggerAnimation
+   returns `{opacity, transform, transition}` and it is applied as an INLINE
+   style on the link, and an inline transform beats any non-!important
+   stylesheet rule. The icon carries no inline style, so one transform here
+   does both jobs and the reduced-motion rule below can actually reach it. */
 .navItem:hover .icon {
   filter: drop-shadow(0 0 4px rgba(0, 212, 255, 0.3));
-  transform: scale(1.05);
+  transform: translateY(-2px) scale(1.05);
 }
 
 /* Label styling */
@@ -180,14 +144,17 @@
   text-align: center;
 }
 
-/* Six tabs on a narrow phone. At 375px each cell is ~58px wide and the
-   horizontal margin/padding eats 16 of them, so "CASHIER" and "PLAYERS" hit
-   the ellipsis and read as "CASHI…". Tightening the gutters below 400px buys
-   back the characters instead of shortening the words — the house rule is
-   short labels precisely because this row truncates (CLAUDE.md §9). */
+/* Five tabs on a narrow phone. At 375px each cell is ~70px wide and the
+   horizontal margin/padding eats 16 of them, so "CASHIER" and "PLAYERS" come
+   close to the ellipsis. Tightening the gutters below 400px buys back the
+   characters instead of shortening the words — the house rule is short labels
+   precisely because this row truncates (CLAUDE.md §9). */
 @media (max-width: 400px) {
-  .navItem {
+  .navCell {
     margin: 0 1px;
+  }
+
+  .navItem {
     padding: 8px 2px;
     gap: 3px;
   }
@@ -203,72 +170,40 @@
   }
 }
 
-/* Notification badge */
-.badge {
-  position: absolute;
-  top: 2px;
-  right: 8px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: #ef4444;
-  color: #fff;
-  font-size: 9px;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
-  pointer-events: none;
-  animation: badgePop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-@keyframes badgePop {
-  0% {
-    transform: scale(0);
-  }
-  70% {
-    transform: scale(1.2);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-/* Disabled state for players tab when not admin */
-.navItem.disabled {
-  opacity: 0.4;
-  pointer-events: none;
-}
-
-/* Responsive adjustments */
-@media (max-width: 400px) {
-  .navItem {
-    padding: 6px 2px;
-    margin: 0 2px;
-  }
-
+/* Motion is decoration here: the destinations are identical without it. The
+   stagger itself is skipped in useStaggerAnimation; this covers the hover lift
+   and the icon scale, which are CSS-only. */
+@media (prefers-reduced-motion: reduce) {
+  .navItem,
   .icon {
-    width: 20px;
-    height: 20px;
+    transition: none;
   }
 
-  .label {
-    font-size: 8px;
-    letter-spacing: 0;
-  }
-
-  .clubHeader {
-    font-size: 10px;
-    padding: 4px 8px;
+  .navItem:hover .icon {
+    transform: none;
   }
 }
 
-/* Safe area for devices with home indicators */
-@supports (padding-bottom: env(safe-area-inset-bottom)) {
+/* Dan 2026-08-25: the bar now renders on the player stats page, which has a
+   print dossier. A position:fixed bar prints on every page of that PDF. */
+@media print {
   .bottomNav {
-    padding-bottom: env(safe-area-inset-bottom);
+    display: none;
+  }
+}
+
+/* The @supports duplicate of the safe-area inset that used to sit here is
+   gone: the base rule at the top of this file already applies it, and the
+   768px rule below deliberately removes it on phones. Three declarations of
+   one property, two of them dead. */
+
+/* Dan 2026-08-24: "THE FOOTER NEEDS TO ACTUALLY BE ATTACHED TO THE BOTTOM,
+   WITH NO PADDING." The safe-area inset was reserving ~34px of empty bar
+   under the labels on a home-indicator iPhone. The bar's own background still
+   runs to the physical edge; only the reserved strip goes. The 74px min-height
+   keeps the labels themselves clear of the indicator. */
+@media (max-width: 768px) {
+  .bottomNav {
+    padding-bottom: 0;
   }
 }

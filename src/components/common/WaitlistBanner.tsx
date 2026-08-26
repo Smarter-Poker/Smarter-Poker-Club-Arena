@@ -76,7 +76,7 @@ export default function WaitlistBanner() {
             gap: 12,
             boxShadow:
               '0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 212, 255, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
-            animation: `waitlistSlideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) ${index * 100}ms both`,
+            animation: `animationsWaitlistSlideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) ${index * 100}ms both`,
             minWidth: 260,
           }}
         >
@@ -88,7 +88,7 @@ export default function WaitlistBanner() {
               borderRadius: '50%',
               background: '#00d4ff',
               boxShadow: '0 0 8px rgba(0, 212, 255, 0.6)',
-              animation: 'waitlistPulse 1.5s ease-in-out infinite',
+              animation: 'animationsWaitlistPulse 1.5s ease-in-out infinite',
               flexShrink: 0,
             }}
           />

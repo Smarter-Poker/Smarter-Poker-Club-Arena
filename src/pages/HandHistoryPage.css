@@ -8,7 +8,10 @@
 .hand-history-page {
   max-width: 680px;
   margin: 0 auto;
-  padding-bottom: 70px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  padding-bottom: var(--bottom-nav-clearance, 74px);
   color: #e2e8f0;
   font-family: 'Rajdhani', 'Rajdhani', 'Exo 2', sans-serif;
   min-height: 100dvh;
@@ -113,6 +116,10 @@
   padding: 1rem;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.hh-filters::-webkit-scrollbar {
+  display: none;
 }
 
 .filter-btn {
@@ -302,8 +309,19 @@
 }
 
 .analyze-btn {
-  background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%);
-  box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+  /* Dan, verbatim: "REMOVE THE YELLOW AND PURPLE." This was
+     `linear-gradient(135deg, #a855f7 0%, #7e22ce 100%)` — the last live purple
+     left in the hand-history surfaces after the 2026-08-23 sweep, which
+     corrected the panel and the detail modal but never reached this page.
+     Replaced with the house blue the rest of the platform uses (--fb-blue
+     #1877f2 -> #0d5dc7), kept as a gradient so the button still reads as the
+     primary action beside the plain REPLAY button next to it. */
+  background: linear-gradient(135deg, #1877f2 0%, #0d5dc7 100%);
+  /* The GLOW was purple too — rgba(168, 85, 247) is #a855f7 written the other
+     way, which is why a hex sweep for the colour missed it and left the button
+     ringed in the exact shade the background had just stopped being. Any
+     future colour sweep has to read rgb()/rgba() as well as hex. */
+  box-shadow: 0 0 10px rgba(24, 119, 242, 0.5);
 }
 
 .share-btn {
@@ -356,9 +374,10 @@
   right: 1rem;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
   border: 2px solid #3a4a5a;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
+  touch-action: manipulation;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -387,6 +406,7 @@
   border: 3px solid #3d4f5f;
   border-radius: 12px;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.1),
     inset 0 -1px 0 rgba(0, 0, 0, 0.3),
@@ -541,6 +561,15 @@
   .replay-btn {
     padding: 0.25rem 0.5rem;
     font-size: 0.8rem;
+  }
+  .replay-btn,
+  .analyze-btn,
+  .share-btn,
+  .filter-btn,
+  .hh-filter-chip,
+  .export-btn {
+    min-height: 44px;
+    touch-action: manipulation;
   }
 }
 

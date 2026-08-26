@@ -8,6 +8,16 @@
   padding: 16px;
   max-width: 800px;
   margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  /* Dan 2026-08-25: was max(70px, env(safe-area-inset-bottom)). The bar is
+     74px PLUS the home-indicator inset (additive), and max() picks one or
+     the other - so this reserved 70px on every phone and hid the last row
+     of content under the footer, by 4px on a flat screen and ~38px on a
+     notched one. --bottom-nav-clearance is the token the bar itself is
+     pinned to. */
+  padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
 }
 
 /* Header */
@@ -39,6 +49,10 @@
   margin-bottom: 16px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.dispute-tabs::-webkit-scrollbar {
+  display: none;
 }
 .tab-btn {
   padding: 8px 14px;
@@ -54,6 +68,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  touch-action: manipulation;
 }
 .tab-btn.active {
   background: rgba(24, 119, 242, 0.15);
@@ -193,6 +208,7 @@
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s;
+  touch-action: manipulation;
 }
 .action-btn.review {
   background: rgba(24, 119, 242, 0.15);
@@ -283,6 +299,8 @@
 @media (max-width: 480px) {
   .dispute-management-page {
     padding: 16px 12px;
+    /* the shorthand above resets padding-bottom; restate the footer clearance */
+    padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
   }
 
   .dm-header h2 {
@@ -290,7 +308,7 @@
   }
 
   .tab-btn {
-    min-height: 36px;
+    min-height: 44px;
     padding: 8px 14px;
     font-size: 0.78rem;
   }
@@ -300,7 +318,7 @@
   }
 
   .action-btn {
-    min-height: 36px;
+    min-height: 44px;
     padding: 6px 12px;
   }
 

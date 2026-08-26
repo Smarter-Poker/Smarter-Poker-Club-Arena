@@ -53,6 +53,19 @@ export async function logHandHistory(params: {
     potIndex?: number;
     hand?: { name: string; ranking: number };
   }[];
+  /**
+   * POT-LEVEL SETTLEMENT (Dan section 29, 2026-08-25).
+   *
+   * `winners[].potIndex` has been persisted since Bible V8 §2.7 and has been
+   * uninterpretable the whole time, because nothing recorded what the pots
+   * WERE. This is that record: one entry per pot in pot order, with the
+   * players who were entitled to contest it.
+   *
+   * Optional so every other caller of logHandHistory is unaffected, and
+   * written as NULL when empty so the two million historical rows and a
+   * fold-around hand look the same to a reader.
+   */
+  pots?: { index: number; amount: number; eligible: string[] }[];
   players: { userId: string; username: string; seat: number; stack: number; cards: string[] }[];
   actions: {
     seat: number;
@@ -101,6 +114,23 @@ export async function logHandHistory(params: {
   holeCardsAll?: Map<string, { seat: number; cards: unknown }>;
   /** Seat roster with horse flags. Only humans get fact rows. */
   roster?: Array<{ userId: string; isHorse: boolean }>;
+  /**
+   * SHOWDOWN POLISH 2026-08-25: what the table actually SAW at showdown —
+   * one entry per showdown participant with reveal order and the muck
+   * ruling. Revealed entries carry the hand identity; mucked entries
+   * deliberately do NOT (participants can read this row back, and a mucked
+   * range stays private — the 2026-08-17 leak rule). Written to the
+   * `showdown` jsonb column (migration 20260825_hand_history_showdown_reveal).
+   * Replays and dispute review render the reveal sequence from this.
+   */
+  showdownReveal?: Array<{
+    user_id: string;
+    seat: number;
+    reveal_order: number;
+    mucked: boolean;
+    hand_name?: string;
+    hand_description?: string;
+  }>;
 }): Promise<{ handId: string | null }> {
   // Round 38 fix: stamp started_at/ended_at + RETURNING id so the caller
   // can FK rake_records.hand_id back to this hand_history row.
@@ -149,11 +179,19 @@ export async function logHandHistory(params: {
     started_at: startedAtIso,
     ended_at: endedAtIso,
     winners: params.winners,
+    // Dan section 29. NULL rather than [] on a hand with no recorded
+    // breakdown, so "this hand predates the column" and "this hand had one
+    // uncontested pot" are not the same value to attributeKnockout().
+    pots: params.pots?.length ? params.pots : null,
     players: params.players,
     actions: params.actions,
     hole_cards: holeCardsPayload,
     board: boardPayload,
     button_seat: params.buttonSeat ?? null,
+    // SHOWDOWN POLISH 2026-08-25: null (not []) on a hand with no showdown,
+    // so "predates the column" and "no showdown happened" read the same as
+    // every other nullable jsonb here.
+    showdown: params.showdownReveal?.length ? params.showdownReveal : null,
     // RETENTION FIX 2026-08-21: has_human has existed since the retention work
     // and NOTHING has ever set it — it was NULL on all 1,509,240 rows. It is
     // the flag sp_prune_hand_history() uses to spare hands with a human in

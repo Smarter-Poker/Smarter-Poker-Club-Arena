@@ -132,6 +132,19 @@
   }
 }
 
+/* Mobile: a thinner strip. 34px reads fine on desktop; on a phone it eats a
+   meaningful slice of a small viewport, and Dan called it out ("the ticker is
+   way too thick on mobile"). 26px still clears the 0.72rem message line. */
+@media (max-width: 768px) {
+  .mtt-ticker {
+    height: 26px;
+  }
+  .mtt-ticker__close {
+    width: 28px;
+    font-size: 15px;
+  }
+}
+
 @media (max-width: 420px) {
   .mtt-ticker__flag {
     font-size: 0.58rem;

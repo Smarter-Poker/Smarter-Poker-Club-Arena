@@ -24,10 +24,39 @@ import {
   spinBlindsForLevel,
 } from '../config/spinSpec.js';
 import { reportError } from '../services/errorReporter.js';
+import { clampSeatsForVariant } from '../config/tableSeating.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
+import { effectivePrizePool } from './startRules.js';
+import {
+  DEFAULT_TOP_BOUNTY_PERCENT,
+  resolveMysteryBountyProfile,
+} from '../config/mysteryBountySpec.js';
+import { buildInventory, poolCentsFromNumeric } from './mysteryBountyPool.js';
+import { shuffleChests } from './mysteryBountyDraw.js';
+import {
+  mysteryPoolCents,
+  shouldActivateMysteryBounty,
+  type MysteryBountyActivationMode,
+  type MysteryBountyStage,
+} from './mysteryBountyActivation.js';
+import { mayTakeSeat } from './seatClaim.js';
 import type { GameServer } from '../GameServer.js';
+
+/** How many places this payout structure pays, whichever shape it arrived in. */
+function countPaidPlaces(structure: unknown): number {
+  if (Array.isArray(structure)) return structure.length;
+  if (typeof structure === 'string') {
+    try {
+      const parsed = JSON.parse(structure);
+      return Array.isArray(parsed) ? parsed.length : 0;
+    } catch {
+      return 0;
+    }
+  }
+  return 0;
+}
 
 export abstract class TournamentManagerBase {
   protected tournamentId: string;
@@ -70,13 +99,69 @@ export abstract class TournamentManagerBase {
    * wedged in a pause is still rebuilt instead of freezing forever.
    */
   static readonly MAX_HEALTHY_PAUSE_MS = 10 * 60 * 1000;
+  /**
+   * The platform-wide break, MIRRORED from GameServer.BREAK_DURATION_MS.
+   *
+   * It cannot be imported: GameServer imports TournamentManager, so a value
+   * import here would close a module cycle (the existing GameServer import in
+   * this file is deliberately `import type`). TournamentFixes.guard.test.ts
+   * asserts the two literals still agree, so the mirror cannot drift.
+   *
+   * Used by resume() to reconstruct how much of a break is left when the row
+   * carries no end time yet -- see the break-recovery block there.
+   */
+  static readonly BREAK_DURATION_MS = 5 * 60 * 1000;
   protected savedBlindTimerRemaining: number = 0;
   protected blindTimerStartedAt: number = 0;
+  /**
+   * True once beginBreakCountdown has stamped an end time on THIS break.
+   *
+   * GameServer calls beginBreakCountdown from two places -- once per break in
+   * triggerSynchronizedBreak, and again from holdIfBreakIsRunning for any
+   * tournament that starts while a break is live. pauseForBreak already
+   * no-ops for a tournament that is on break; this did not, so the second call
+   * re-stamped break_ends_at further into the future and EXTENDED a break the
+   * lobby had already told players would end. A countdown, once started, is
+   * never restarted. Cleared by pauseForBreak (a new break) and by
+   * resumeFromBreak (this one is over).
+   */
+  protected breakCountdownStarted: boolean = false;
   // Hand-for-hand sync
   protected handForHandSyncInterval: NodeJS.Timeout | null = null;
   protected handForHandRePauseTimer: NodeJS.Timeout | null = null;
   // Late reg finalization
   protected prizePoolFinalized: boolean = false;
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  NOBODY BUSTS BEFORE THE CHIPS ARRIVE (2026-08-23)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * Wall-clock instant before which the elimination sweep must not bust
+   * anybody, because their stacks have not been written yet.
+   *
+   * A Spin seats its field as RESERVATIONS at zero chips and defers the credit
+   * until the wheel stops — `spinRevealToDealMs()` later, about eighteen
+   * seconds. The elimination checker, however, starts immediately and fires
+   * every five. So at t+5s it synced `table_seats.stack` (still 0) into
+   * `tournament_players.chips`, saw the ENTIRE field at `chips <= 0`, busted
+   * everyone but an arbitrary "top" stack, and paid that player first prize —
+   * before a single card had been dealt.
+   *
+   * Measured in production 2026-08-23: 276 of the last 278 completed Spins
+   * finished with ZERO rows in hand_history. Every one collected buy-ins and
+   * paid a prize for a game that was never played.
+   *
+   * This is the cause fix — no sweep may bust while a credit is still pending.
+   * TournamentManagerEliminations carries the independent invariant as well:
+   * a whole field at zero chips is never a result, because chips are conserved
+   * in poker, so it can only ever mean an uncredited table.
+   */
+  protected bustingArmedAt: number = 0;
+  /**
+   * How often the elimination sweep runs. Named because `bustingArmedAt` is
+   * sized in terms of it — a literal in two files is how the two drift apart.
+   */
+  static readonly ELIMINATION_SWEEP_MS = 5000;
   // Tournament metadata cache
   protected tournamentCache: any = null;
   // FIX 151: ChipRaceEngine for denomination removal on level-up
@@ -134,30 +219,92 @@ export abstract class TournamentManagerBase {
     }
   }
 
+  /**
+   * Stop the level clock and remember how much of the level was left, so
+   * resumeFromBreak can give back exactly that much and no more.
+   *
+   * Shared by BOTH ways a tournament enters a break, because they used to
+   * disagree:
+   *
+   *   - pauseForBreak, the :55 path, measured and cleared the timer here;
+   *   - resume(), restarting INTO a live break, set onBreak = true and paused
+   *     the tables but left the blind timer it had armed seconds earlier
+   *     running. The level clock therefore ticked through the whole break, and
+   *     when resumeFromBreak fired it found savedBlindTimerRemaining at 0 and
+   *     handed out a FRESH FULL LEVEL. One restart during a break both burned
+   *     a level's worth of clock and then reset it.
+   *
+   * Every entry into a break now goes through this.
+   */
+  protected suspendLevelClock(): void {
+    /**
+     * DEAD LEVEL CLOCK (2026-08-23). This measurement used to live entirely
+     * inside `if (this.blindTimer)`, so a break that landed while no timer was
+     * armed left `savedBlindTimerRemaining` at whatever it happened to hold —
+     * 0 on the first break of a tournament. resumeFromBreak read that 0 as
+     * "arm nothing", and the tournament played out the rest of its life at one
+     * blind level.
+     *
+     * blindTimer is legitimately null for seconds at a time: advanceBlindLevel
+     * consumes it on fire and does not re-arm until it has awaited a blind
+     * write per table, the current_level persist, the level_up broadcast and
+     * possibly a prize-pool finalization. A :55 break inside that window is
+     * exactly the case that killed the clock.
+     *
+     * Every path now leaves a usable remaining time, and resumeFromBreak arms
+     * unconditionally.
+     */
+    const structureAtPause = this.tournamentCache?.blind_structure || [];
+    const pausedLevelData =
+      structureAtPause.length > 0
+        ? structureAtPause[Math.min(this.currentLevel, structureAtPause.length - 1)]
+        : null;
+    const pausedLevelTotalMs = pausedLevelData ? this.levelDurationMs(pausedLevelData) : 0;
+    if (this.blindTimer) {
+      const elapsed = Date.now() - this.blindTimerStartedAt;
+      clearTimeout(this.blindTimer);
+      this.blindTimer = null;
+      this.savedBlindTimerRemaining =
+        pausedLevelTotalMs > 0 ? Math.max(pausedLevelTotalMs - elapsed, 1000) : 0;
+    } else {
+      // No armed clock to measure — a level transition is most likely still in
+      // flight. Hand resumeFromBreak a full level so it can never come back
+      // from the break with no clock at all.
+      this.savedBlindTimerRemaining = pausedLevelTotalMs;
+    }
+  }
+
   /** Synchronized break: pause blind timer and broadcast break event */
   async pauseForBreak(breakDurationMs: number): Promise<void> {
     if (!this.running || this.onBreak) return;
     this.onBreak = true;
+    // A NEW break: its countdown has not started yet, so beginBreakCountdown
+    // is allowed to stamp an end time exactly once. See breakCountdownStarted.
+    this.breakCountdownStarted = false;
 
     // Save remaining blind timer time
     // TOURNEY-AUDIT 2026-07-24 (sweep 4): the empty-structure guard used to
     // `return` AFTER setting onBreak=true but BEFORE clearing the timer —
     // leaving the level clock running through the "break" with onBreak stuck
     // true. The timer is now always cleared once the break begins.
-    if (this.blindTimer) {
-      const elapsed = Date.now() - this.blindTimerStartedAt;
-      clearTimeout(this.blindTimer);
-      this.blindTimer = null;
-      const blindStructure = this.tournamentCache?.blind_structure || [];
-      if (blindStructure && blindStructure.length > 0) {
-        const currentLevelData =
-          blindStructure[Math.min(this.currentLevel, blindStructure.length - 1)];
-        const totalMs = this.levelDurationMs(currentLevelData);
-        this.savedBlindTimerRemaining = Math.max(totalMs - elapsed, 1000);
-      } else {
-        this.savedBlindTimerRemaining = 0;
-      }
-    }
+    /**
+     * DEAD LEVEL CLOCK (2026-08-23). This measurement used to live entirely
+     * inside `if (this.blindTimer)`, so a break that landed while no timer was
+     * armed left `savedBlindTimerRemaining` at whatever it happened to hold —
+     * 0 on the first break of a tournament. resumeFromBreak read that 0 as
+     * "arm nothing", and the tournament played out the rest of its life at one
+     * blind level.
+     *
+     * blindTimer is legitimately null for seconds at a time: advanceBlindLevel
+     * consumes it on fire and does not re-arm until it has awaited a blind
+     * write per table, the current_level persist, the level_up broadcast and
+     * possibly a prize-pool finalization. A :55 break inside that window is
+     * exactly the case that killed the clock.
+     *
+     * Every path now leaves a usable remaining time, and resumeFromBreak arms
+     * unconditionally.
+     */
+    this.suspendLevelClock();
 
     console.log(
       `[Tournament:${this.tournamentId.slice(0, 8)}] SYNCHRONIZED BREAK — ${Math.round(breakDurationMs / 60000)} minutes`
@@ -253,6 +400,21 @@ export abstract class TournamentManagerBase {
    */
   async beginBreakCountdown(breakDurationMs: number): Promise<void> {
     if (!this.onBreak) return;
+    /**
+     * ONCE STARTED, A COUNTDOWN IS NOT RESTARTED (2026-08-25).
+     *
+     * GameServer calls this twice for the same break whenever a tournament
+     * starts while one is live: triggerSynchronizedBreak stamps every engine,
+     * and holdIfBreakIsRunning then calls pauseForBreak + beginBreakCountdown
+     * on the newcomer -- but its `toResume` sweep and the shared resume timer
+     * mean an already-parked tournament can reach this a second time too.
+     * pauseForBreak defends itself with `if (this.onBreak) return`; this had
+     * no such guard, so the second call re-stamped break_ends_at further into
+     * the future and quietly EXTENDED a break whose end time players had
+     * already been shown.
+     */
+    if (this.breakCountdownStarted) return;
+    this.breakCountdownStarted = true;
     const endsAt = new Date(Date.now() + breakDurationMs).toISOString();
     try {
       await supabase
@@ -269,14 +431,12 @@ export abstract class TournamentManagerBase {
     });
   }
 
-  /** Resume from synchronized break: restart blind timer with remaining time */
-  async resumeFromBreak(): Promise<void> {
-    if (!this.running || !this.onBreak) return;
-    this.onBreak = false;
-
-    console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED — resuming play`);
-
-    // Clear the persisted break state (see pauseForBreak).
+  /**
+   * Clear the persisted break flags. Split out of resumeFromBreak because a
+   * tournament that ENDS on a break has to come off it too, and that path does
+   * not resume anything.
+   */
+  protected async clearPersistedBreak(): Promise<void> {
     try {
       await supabase
         .from('tournaments')
@@ -285,6 +445,33 @@ export abstract class TournamentManagerBase {
     } catch (err) {
       reportError(err, 'TournamentManagerBase.resumeFromBreak_persist');
     }
+  }
+
+  /** Resume from synchronized break: restart blind timer with remaining time */
+  async resumeFromBreak(): Promise<void> {
+    if (!this.onBreak) return;
+    this.onBreak = false;
+    this.breakCountdownStarted = false;
+
+    /**
+     * A TOURNAMENT THAT ENDS ON A BREAK STILL HAS TO COME OFF IT (2026-08-25).
+     *
+     * The guard here was `if (!this.running || !this.onBreak) return` — a
+     * single early return that fired BEFORE the persisted flags were cleared.
+     * stop() sets running = false, so a tournament whose final hand landed
+     * during a break (or one torn down by a redeploy) left `on_break = true`
+     * on its row with nothing left alive that would ever clear it. Measured
+     * 2026-08-25: 7 tournaments carry on_break = true against no live break,
+     * the oldest stamped 2026-08-22 09:55 and still true 70 hours later.
+     *
+     * The database is cleared unconditionally now; only the RESUMING half —
+     * broadcasting, un-pausing engines, re-arming the level clock — is skipped
+     * when the tournament is no longer running.
+     */
+    await this.clearPersistedBreak();
+    if (!this.running) return;
+
+    console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED — resuming play`);
 
     await this.broadcast('break_ended', { level: this.currentLevel });
 
@@ -307,12 +494,33 @@ export abstract class TournamentManagerBase {
     // blinds to tables, emits level_up, chip race, late-reg/add-on) instead of
     // a bare currentLevel++ that left table blinds unchanged and could freeze
     // escalation.
-    if (this.savedBlindTimerRemaining > 0) {
+    /**
+     * DRIFTING LEVEL CLOCK (2026-08-23). This used to hand-roll its own
+     * setTimeout and set `blindTimerStartedAt = Date.now()` while the level's
+     * nominal duration stayed the FULL level. pauseForBreak measures remaining
+     * as `fullDuration - (now - blindTimerStartedAt)`, so a SECOND break in
+     * the same level gave the level back every minute it had already played —
+     * a level with one minute left returned from the break with ten. Across an
+     * hourly break cadence that is how a level stops going up.
+     *
+     * startBlindTimer already solves this: it clamps the override to the level
+     * duration and BACK-DATES blindTimerStartedAt by the difference, so the
+     * next pause measures the true remaining time. Routing through it also
+     * re-persists level_started_at, so a restart mid-level resumes correctly,
+     * and wraps advanceBlindLevel in the catch that keeps a throw from
+     * silently ending escalation.
+     *
+     * Arming is unconditional. A zero here used to mean "no clock at all"
+     * (see pauseForBreak); startBlindTimer with no override grants a fresh
+     * full level, which is the safe direction to be wrong in.
+     */
+    {
       const blindStructure = this.tournamentCache?.blind_structure || [];
-      this.blindTimerStartedAt = Date.now();
-      this.blindTimer = setTimeout(() => {
-        void this.advanceBlindLevel(blindStructure);
-      }, this.savedBlindTimerRemaining);
+      const remaining = this.savedBlindTimerRemaining;
+      // Cleared before arming: a stale value from a previous level must never
+      // be readable by a later break that cannot measure the clock.
+      this.savedBlindTimerRemaining = 0;
+      this.startBlindTimer(blindStructure, remaining > 0 ? remaining : undefined);
     }
 
     // If add-on period was deferred due to break, trigger it now
@@ -345,6 +553,185 @@ export abstract class TournamentManagerBase {
     if (this.prizePoolFinalized) return true;
     const cap = this.tournamentCache?.late_reg_levels ?? this.tournamentCache?.rebuy_levels ?? 0;
     return cap > 0 && this.currentLevel >= cap;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  MYSTERY BOUNTY — ACTIVATION
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** Local mirror of `tournaments.mystery_bounty_stage`, so the sweep below is
+   *  free until the phase is genuinely eligible. Refreshed from the seed RPC's
+   *  own answer, which is the only thing allowed to change it. */
+  protected mysteryBountyStage: MysteryBountyStage = 'pending';
+  /** Guard against two sweeps overlapping across an await. */
+  private mysteryBountySeeding = false;
+
+  /** True only when NO table in this event has a hand in progress. */
+  protected allTablesBetweenHands(): boolean {
+    for (const engine of this.tableEngines.values()) {
+      try {
+        if (!engine.isBetweenHands()) return false;
+      } catch {
+        // An engine that cannot answer is an engine we cannot vouch for.
+        // Refusing to activate costs a few seconds; activating over a live
+        // hand changes the value of a decision already made.
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Open the mystery phase, if this is the moment.
+   *
+   * Called from the elimination sweep, which already runs between hands and
+   * already knows how many players are left. Everything expensive is behind
+   * the cheap `stage !== 'pending'` test, so a non-mystery event pays one
+   * boolean per sweep.
+   *
+   * The INVENTORY is built here, in TypeScript, from the one tier ladder in
+   * `config/mysteryBountySpec.ts`, and shuffled with the CSPRNG before it goes
+   * anywhere near the database. `fn_mystery_bounty_seed` refuses to invent
+   * chests of its own precisely so a second ladder cannot come into existence
+   * — three of them already had, and none agreed.
+   */
+  protected async maybeActivateMysteryBounty(playersRemaining: number): Promise<void> {
+    if (this.mysteryBountyStage !== 'pending') return;
+    const t = this.tournamentCache;
+    if (!t?.is_mystery_bounty) return;
+    if (this.mysteryBountySeeding) return;
+
+    // The bounty pool grows with every late entry, so read it fresh rather
+    // than from the cache: the cached row was loaded at start().
+    // `as any` on the row, not on the query: the generated Supabase types were
+    // last regenerated before the mystery_bounty_* columns existed, so the
+    // typed client resolves a select naming them to GenericStringError and
+    // every field access below is an error. The columns are real — they are
+    // created by 20260825410000 and CHECK 17 verifies that against the live
+    // schema on every branch.
+    const { data: freshRow } = await supabase
+      .from('tournaments')
+      .select(
+        'bounty_pool, prize_pool_finalized, mystery_bounty_stage, mystery_bounty_pool_percent, ' +
+          'mystery_bounty_regular_pool_percent, mystery_bounty_profile, mystery_bounty_activation, ' +
+          'mystery_bounty_activation_value, payout_structure, current_players'
+      )
+      .eq('id', this.tournamentId)
+      .maybeSingle();
+    const fresh = freshRow as any;
+    if (!fresh) return;
+
+    if (fresh.mystery_bounty_stage && fresh.mystery_bounty_stage !== 'pending') {
+      // Another process (a previous incarnation of this manager, most likely)
+      // already opened it. Adopt its answer rather than racing it.
+      this.mysteryBountyStage = fresh.mystery_bounty_stage as MysteryBountyStage;
+      return;
+    }
+
+    let poolCents = 0;
+    try {
+      poolCents = mysteryPoolCents(
+        poolCentsFromNumeric(fresh.bounty_pool),
+        fresh.mystery_bounty_pool_percent,
+        fresh.mystery_bounty_regular_pool_percent
+      );
+    } catch (err) {
+      // A bounty pool that is not a whole number of cents means something
+      // upstream started writing fractions of a cent. Seeding an inventory
+      // from it would put the event permanently out of balance.
+      reportError(err, 'Tournament.mystery_bounty_pool_not_in_cents');
+      return;
+    }
+
+    // `payout_structure` is jsonb, and the client reads it back as an array in
+    // most rows and as a JSON STRING in some — old rows written before the
+    // column was jsonb. Reading only the array form would leave those events
+    // with zero paid places, and the default activation mode (at the money)
+    // would then never fire for them: the chests would sit unopened for the
+    // whole tournament and every knockout would keep paying the flat bounty.
+    const paidPlaces =
+      countPaidPlaces(t?.payout_structure) || countPaidPlaces(fresh.payout_structure);
+
+    const decision = shouldActivateMysteryBounty({
+      isMysteryBounty: true,
+      stage: 'pending',
+      entryClosed: Boolean(fresh.prize_pool_finalized) || this.prizePoolFinalized,
+      allTablesBetweenHands: this.allTablesBetweenHands(),
+      playersRemaining,
+      totalEntries: Number(fresh.current_players) || playersRemaining,
+      paidPlaces,
+      mode: (fresh.mystery_bounty_activation || 'at_the_money') as MysteryBountyActivationMode,
+      modeValue: fresh.mystery_bounty_activation_value,
+      mysteryPoolCents: poolCents,
+    });
+    if (!decision.activate) return;
+
+    this.mysteryBountySeeding = true;
+    try {
+      const profile = resolveMysteryBountyProfile(fresh.mystery_bounty_profile);
+      /* The stored top-bounty percentage DECIDES the jackpot, it does not just
+         describe it. The lobby advertises this number before a chest is
+         opened, so the generator has to be built from the same figure or the
+         advertisement is a guess. Defaults to 20 - spec section 10 - which is
+         what CLASSIC already carries, so a default event is unchanged. */
+      const topPercent =
+        fresh.mystery_bounty_top_percent == null
+          ? DEFAULT_TOP_BOUNTY_PERCENT
+          : Number(fresh.mystery_bounty_top_percent);
+      const chests = shuffleChests(
+        buildInventory(poolCents, decision.drawCount, profile, topPercent)
+      ).map((c) => ({ tier: c.tier, amount_cents: c.amountCents, seq: c.seq }));
+
+      const { data: seeded, error: seedErr } = await supabase.rpc('fn_mystery_bounty_seed', {
+        p_tournament_id: this.tournamentId,
+        /* PLAYERS REMAINING, not the chest count. The RPC derives the chest
+           count from it (players - 1) and also records it as
+           mystery_bounty_activated_players, which is the figure the audit
+           trail prints as "Mystery Stage Activated: 150 Players Remaining".
+           Sending drawCount here would log 149 for a 150-player field. */
+        p_players_remaining: playersRemaining,
+        p_chests: chests,
+      });
+
+      if (seedErr) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty seed FAILED (${seedErr.message}) — chests never opened, knockouts keep paying the flat bounty`
+          ),
+          'Tournament.mystery_bounty_seed_failed'
+        );
+        return;
+      }
+      const res = (seeded ?? {}) as { ok?: boolean; reason?: string; pool_cents?: number };
+      if (!res.ok) {
+        // `entry_still_open` is the ordinary "not yet" and is not worth an
+        // error report; anything else means the engine and the database
+        // disagree about the event, which is.
+        if (res.reason !== 'entry_still_open') {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] mystery bounty seed refused: ${res.reason}`
+            ),
+            'Tournament.mystery_bounty_seed_refused'
+          );
+        }
+        return;
+      }
+
+      this.mysteryBountyStage = 'active';
+      await this.broadcast('mystery_bounty_activated', {
+        poolCents: Number(res.pool_cents) || poolCents,
+        chests: decision.drawCount,
+        profile,
+      });
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY BOUNTY OPEN — ${decision.drawCount} chests, ${poolCents}c, profile ${profile}`
+      );
+    } catch (err) {
+      reportError(err, 'Tournament.mystery_bounty_activation_threw');
+    } finally {
+      this.mysteryBountySeeding = false;
+    }
   }
 
   /** Check if this is an MTT or XMTT (eligible for synchronized breaks) */
@@ -437,9 +824,29 @@ export abstract class TournamentManagerBase {
 
       this.tournamentCache = tournament;
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
+      // Adopt whatever the row says the mystery phase is. A redeploy
+      // mid-tournament must not re-seed an inventory that already exists.
+      this.mysteryBountyStage =
+        (tournament.mystery_bounty_stage as typeof this.mysteryBountyStage) || 'pending';
 
       /**
-       * Enforce minimum 3 players.
+       * Enforce a minimum field of three -- OR EVERY SEAT, WHEN THERE ARE
+       * FEWER THAN THREE OF THEM.
+       *
+       * FIX 2026-08-23 [P0]: the floor was the literal 3, which a HEADS-UP
+       * game (max_players = 2) can never reach. It is not short of players --
+       * it is FULL. Every heads-up game on the platform therefore stood down
+       * on every discovery pass and never dealt a hand: 17 of them sat
+       * REGISTERING for FIFTY HOURS with two paid entrants each and zero
+       * tables ever created, while the top-up loop was asked, every five
+       * seconds, to find a third player for a two-seat game.
+       *
+       * The rule Dan set is about a Spin ("spins can NEVER START until 3
+       * players are registered AND HAVE PAID") and a Spin has three seats, so
+       * capping the floor at max_players leaves that rule bit-for-bit intact
+       * and changes behaviour ONLY for the formats the literal broke -- the
+       * ones with fewer than three seats. An MTT is unaffected: its floor is
+       * min(3, 50) = 3, exactly as before.
        *
        * FIX 2026-08-20 [P0]: this counted `status = 'registered'` ONLY, which
        * made any tournament that got PART WAY through starting permanently
@@ -469,7 +876,15 @@ export abstract class TournamentManagerBase {
         .eq('tournament_id', this.tournamentId)
         .in('status', ['registered', 'playing']);
 
-      if ((regCount || 0) < 3) {
+      /**
+       * Never more than the table holds, never fewer than two -- a game of
+       * one is not a game. `max_players` is read defensively because a null
+       * or 0 here must not silently lower the Spin floor.
+       */
+      const seatsAvailable = Number(tournament.max_players) || 0;
+      const requiredField = seatsAvailable > 0 ? Math.max(2, Math.min(3, seatsAvailable)) : 3;
+
+      if ((regCount || 0) < requiredField) {
         /**
          * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
          *
@@ -481,7 +896,7 @@ export abstract class TournamentManagerBase {
          * scheduled game disappears from the lobby.
          */
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Only ${regCount} player(s) — standing down so the field can be filled (NOT cancelling)`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Only ${regCount} of ${requiredField} player(s) — standing down so the field can be filled (NOT cancelling)`
         );
         this.running = false;
         return;
@@ -613,50 +1028,96 @@ export abstract class TournamentManagerBase {
           // unfundable tier is excluded from the draw rather than drawn and
           // refused, which is what makes an unpayable jackpot structurally
           // impossible.
-          try {
-            const { data: draw } = await supabase.rpc('fn_spin_draw_multiplier', {
-              p_club_id: tournament.club_id,
-              p_buy_in: tournament.buy_in_amount || 0,
-              p_tiers: SPIN_TIERS.map((t) => ({
-                multiplier: t.multiplier,
-                freq: t.freq,
-                reserveThresholdX: t.reserveThresholdX,
-              })),
-              p_rake_rate: spinRakeRate(tournament.buy_in_amount || 0),
-              p_seats: tournament.current_players || SPEC_SPIN_SEATS,
-            });
-            spinMultiplier = Number(draw?.multiplier) || 0;
-            if (Array.isArray(draw?.locked)) {
-              redrawnLockedTiers = draw.locked
-                .map((l: any) => ({
-                  multiplier: Number(l?.multiplier),
-                  reason: l?.reason ? String(l.reason) : undefined,
-                  unlocksAt: Number.isFinite(Number(l?.unlocksAt))
-                    ? Number(l.unlocksAt)
-                    : undefined,
-                }))
-                .filter((l: { multiplier: number }) => Number.isFinite(l.multiplier));
+          //
+          // D5 (2026-08-25) — A DRAW THAT COULD NOT BE READ IS NOT A DRAW.
+          //
+          // This call used to destructure `{ data: draw }` and throw the
+          // `error` away, sitting inside a `try { } catch { }` whose body was
+          // the comment "handled below". "Below" then read the still-zero
+          // multiplier and resolved it DOWN to SPIN_TIERS[0] — 2x — as though
+          // that were a merciful default. It is not a default, it is an
+          // invented result: three players watched a genuine-looking wheel
+          // chase five laps and land on a tier the database was never able to
+          // tell us it had drawn, and fn_spin_settle_game then moved real
+          // money against that number. A money-facing lie.
+          //
+          // The house rule is the one already applied to the elimination count
+          // (see 'remaining_count_unavailable' in TournamentManagerEliminations):
+          // an unreadable result is UNKNOWN, never a value. There is no honest
+          // multiplier to substitute, so the failure is made explicit and
+          // RETRYABLE instead — three attempts here, then the start stands
+          // down exactly like the short-field and unpaid-seat gates above.
+          // Nothing irreversible has happened at this point: the
+          // registrations are still 'registered', no table exists, no ledger
+          // row has been written, so standing down costs nothing and the
+          // discovery loop calls start() again on its next pass. The player
+          // sees a game that has not started yet, which is true, rather than a
+          // wheel telling him something that is false.
+          let drawFailure: string | null = null;
+          for (
+            let attempt = 1;
+            attempt <= 3 && (!spinMultiplier || spinMultiplier <= 0);
+            attempt++
+          ) {
+            try {
+              const { data: draw, error: drawErr } = await supabase.rpc('fn_spin_draw_multiplier', {
+                p_club_id: tournament.club_id,
+                p_buy_in: tournament.buy_in_amount || 0,
+                p_tiers: SPIN_TIERS.map((t) => ({
+                  multiplier: t.multiplier,
+                  freq: t.freq,
+                  reserveThresholdX: t.reserveThresholdX,
+                })),
+                p_rake_rate: spinRakeRate(tournament.buy_in_amount || 0),
+                p_seats: tournament.current_players || SPEC_SPIN_SEATS,
+              });
+              // The error is READ now. It was the whole defect.
+              if (drawErr) throw new Error(drawErr.message || 'draw_rpc_error');
+              const drawn = Number(draw?.multiplier);
+              // A response we cannot read a positive multiplier out of is a
+              // failure too, not a licence to pick one.
+              if (!Number.isFinite(drawn) || drawn <= 0) {
+                throw new Error(
+                  `draw returned no usable multiplier (${JSON.stringify(draw ?? null).slice(0, 160)})`
+                );
+              }
+              spinMultiplier = drawn;
+              drawFailure = null;
+              if (Array.isArray(draw?.locked)) {
+                redrawnLockedTiers = draw.locked
+                  .map((l: any) => ({
+                    multiplier: Number(l?.multiplier),
+                    reason: l?.reason ? String(l.reason) : undefined,
+                    unlocksAt: Number.isFinite(Number(l?.unlocksAt))
+                      ? Number(l.unlocksAt)
+                      : undefined,
+                  }))
+                  .filter((l: { multiplier: number }) => Number.isFinite(l.multiplier));
+              }
+            } catch (err: any) {
+              drawFailure = err?.message ? String(err.message) : String(err);
+              // Same short backoff the settlement and row-write loops below
+              // use; lock contention on a busy club's reserve pool is the
+              // expected cause and it clears in well under a second.
+              if (attempt < 3) await new Promise((r) => setTimeout(r, 250 * attempt));
             }
-          } catch {
-            /* handled below */
           }
           if (!spinMultiplier || spinMultiplier <= 0) {
-            // Draw RPC unreachable. Resolve DOWN to the SMALLEST tier, never
-            // up and never a local roll: a database hiccup must not be able
-            // to hand out a jackpot the pool was never asked about, and a 2x
-            // is the one prize every funded pool can always cover.
-            spinMultiplier = SPIN_TIERS[0].multiplier;
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw RPC unreachable at start — resolved down to ${spinMultiplier}x`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw UNAVAILABLE after 3 attempts (${drawFailure ?? 'no multiplier returned'}) — standing down; NO multiplier is invented and NO wheel is shown`
               ),
-              'Tournament.spin_draw_rpc_down'
+              'Tournament.spin_draw_unavailable'
             );
-          } else {
-            console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw: ${spinMultiplier}x through the reserve gate`
+            console.error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw unavailable — standing down so the start can be retried (NOT cancelling, NOT defaulting to a tier)`
             );
+            this.running = false;
+            return; // discovery calls start() again once the RPC answers
           }
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw: ${spinMultiplier}x through the reserve gate`
+          );
         }
 
         const buyIn = tournament.buy_in_amount || 0;
@@ -743,27 +1204,41 @@ export abstract class TournamentManagerBase {
         // and 78181713 were found in on 2026-08-21 — three games that ran with
         // no draw, which `fn_spin_sweep_unbooked` then skipped forever because
         // it required `spin_multiplier > 0`.
+        //
+        // D5 (2026-08-25): the payload is hoisted into a named constant so the
+        // SELF-HEALING repair below can re-apply the identical write. Three
+        // attempts inside one start() is a thin defence against a failure that
+        // outlives them: the game then runs with spin_multiplier NULL, and
+        // every client gate for the wheel requires `> 0`, so the wheel can
+        // never fire for ANYONE on that game — not the three players at the
+        // table, not a spectator, not a reconnect. `fn_spin_sweep_unbooked`
+        // skips it for the same reason. One transient write error was enough
+        // to lose the whole feature for a game, permanently, and nothing ever
+        // came back for it.
+        const spinRowPatch = {
+          prize_pool: prizePool,
+          spin_multiplier: spinMultiplier,
+          is_premium_spin: spinMultiplier >= 100,
+          starting_chips: tier?.startingStack ?? tournament.starting_chips,
+          blind_structure: spinBlinds,
+          payout_structure: (tier?.payouts ?? [1]).map((pct, i) => ({
+            place: i + 1,
+            percentage: Math.round(pct * 10000) / 100,
+          })),
+          ...(redrawnLockedTiers ? { spin_locked_tiers: redrawnLockedTiers } : {}),
+        };
         let spinRowWritten = false;
+        let spinRowLastError = '';
         for (let attempt = 1; attempt <= 3 && !spinRowWritten; attempt++) {
           const { error: spinRowErr } = await supabase
             .from('tournaments')
-            .update({
-              prize_pool: prizePool,
-              spin_multiplier: spinMultiplier,
-              is_premium_spin: spinMultiplier >= 100,
-              starting_chips: tier?.startingStack ?? tournament.starting_chips,
-              blind_structure: spinBlinds,
-              payout_structure: (tier?.payouts ?? [1]).map((pct, i) => ({
-                place: i + 1,
-                percentage: Math.round(pct * 10000) / 100,
-              })),
-              ...(redrawnLockedTiers ? { spin_locked_tiers: redrawnLockedTiers } : {}),
-            })
+            .update(spinRowPatch)
             .eq('id', this.tournamentId);
           if (!spinRowErr) {
             spinRowWritten = true;
             break;
           }
+          spinRowLastError = spinRowErr.message;
           if (attempt === 3) {
             // The game still starts — Dan 2026-08-19, tournaments run, they do
             // not cancel — but it starts on the placeholder structure, so this
@@ -771,13 +1246,22 @@ export abstract class TournamentManagerBase {
             // the multiplier from the prize actually paid on the next sweep.
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw row write FAILED after 3 attempts (${spinRowErr.message}) — ${spinMultiplier}x was drawn but the row still reads NULL; this game will run on the placeholder structure`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw row write FAILED after 3 attempts (${spinRowErr.message}) — ${spinMultiplier}x was drawn but the row still reads NULL; this game will run on the placeholder structure and NO client can show the wheel until the row is repaired`
               ),
               'Tournament.spin_draw_row_write_failed'
             );
           } else {
             await new Promise((r) => setTimeout(r, 250 * attempt));
           }
+        }
+        if (!spinRowWritten) {
+          console.error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ROW NOT WRITTEN (${spinRowLastError}) — ${spinMultiplier}x drawn, starting background repair`
+          );
+          // Safe to keep trying: the repair only ever writes the value THIS
+          // start already drew and settled against, and only while the column
+          // is still empty. See scheduleSpinRowRepair.
+          this.scheduleSpinRowRepair(spinRowPatch, spinMultiplier);
         }
 
         tournament.prize_pool = prizePool;
@@ -837,6 +1321,16 @@ export abstract class TournamentManagerBase {
        */
       if (!(await this.deferStacksForSpinReveal(tournament))) {
         await this.creditSeatStacks(tournament);
+      } else {
+        /**
+         * The credit is now in the future, so the bust sweep must be too.
+         * Armed to the same instant the engine is allowed to deal, plus one
+         * sweep interval of slack, so the first sweep that can ever bust
+         * anybody runs against stacks that exist. Without this the sweep at
+         * t+5s reads the reservation zeroes and ends the game.
+         */
+        this.bustingArmedAt =
+          Date.now() + spinRevealToDealMs() + TournamentManagerBase.ELIMINATION_SWEEP_MS;
       }
 
       // Create tables and seat players
@@ -890,6 +1384,17 @@ export abstract class TournamentManagerBase {
               reveal_at: revealAt,
               prize_pool: Number(tournament.prize_pool) || 0,
               timestamp: revealAt,
+              /**
+               * D3 (2026-08-25): ask the hub to HOLD this event until the
+               * first card may legally be dealt, so a client that is
+               * mid-reconnect at this exact instant still receives it when it
+               * subscribes or resyncs. It used to be a single un-replayed
+               * packet — miss the one emission and the reveal was gone for
+               * good, because the SNAPSHOT a resync returns carries no
+               * multiplier. Past `holdUntil` the wheel is meaningless (cards
+               * are out), so the hub drops it on its own; there is no log.
+               */
+              replay_until: holdUntil,
             });
           } catch (err) {
             // The reveal is theatre; it must never stop a game from starting.
@@ -902,13 +1407,88 @@ export abstract class TournamentManagerBase {
         );
       }
 
+      // ── GUARANTEE, no-late-reg case (2026-08-23) ──
+      // An event with no late registration takes its last entry before this
+      // line, so the pool it holds now is the pool it dies with — apply the
+      // advertised guarantee here and finalize. Events WITH late reg are
+      // bumped at finalization instead, where the pool truly stops moving.
+      // Scheduler-spawned events accrue per-entry through the register RPCs
+      // and nothing else ever applied guaranteed_prize (the old recurring
+      // service pre-applied it at creation, which is why this was never seen
+      // before the 2026-08-22 data-driven schedules).
+      {
+        const lateRegCap = Number(tournament.late_reg_levels ?? tournament.rebuy_levels ?? 0);
+        const gtd = Number(tournament.guaranteed_prize) || 0;
+        if (lateRegCap <= 0 && gtd > 0 && !this.prizePoolFinalized) {
+          const { data: poolRow } = await supabase
+            .from('tournaments')
+            .select('prize_pool')
+            .eq('id', this.tournamentId)
+            .maybeSingle(); // FIX 168
+          const poolNow = Number(poolRow?.prize_pool) || 0;
+          const finalPool = effectivePrizePool(poolNow, gtd);
+          if (finalPool > poolNow) {
+            await supabase
+              .from('tournaments')
+              .update({ prize_pool: finalPool, prize_pool_finalized: true } as any)
+              .eq('id', this.tournamentId);
+            tournament.prize_pool = finalPool;
+            if (this.tournamentCache) this.tournamentCache.prize_pool = finalPool;
+            this.prizePoolFinalized = true;
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Guarantee applied at start: pool ${poolNow} -> ${finalPool}`
+            );
+          }
+        }
+      }
+
       // Set tournament to RUNNING
       // Guard: only transition REGISTERING → RUNNING (prevents re-starting)
-      await supabase
-        .from('tournaments')
-        .update({ status: 'RUNNING', started_at: new Date().toISOString() })
-        .eq('id', this.tournamentId)
-        .eq('status', 'REGISTERING');
+      //
+      // RETRIED AND VERIFIED (2026-08-23). This was fire-and-forget: no error
+      // check, no retry, no confirmation. When it failed — and it did, during
+      // the DB-starvation window that was timing statements out — the game
+      // went right on dealing from memory while its row still read
+      // REGISTERING. Nothing downstream heals that: the stuck-COMPLETING
+      // watchdog only reads COMPLETING, the decided-but-stalled watchdog only
+      // reads RUNNING, and fn_final_table_deal requires RUNNING. Eleven
+      // tournaments were found in exactly that state, 22-33 hours old, having
+      // played to a finish with 570 chips debited and 48 paid out — 522 owed
+      // to players who never got a result.
+      //
+      // The flip is now retried and then CONFIRMED by reading the row back.
+      // A row that reads RUNNING (or any later status) is success, including
+      // when another process won the race.
+      let runningFlipped = false;
+      for (let attempt = 1; attempt <= 3 && !runningFlipped; attempt++) {
+        const { error: flipErr } = await supabase
+          .from('tournaments')
+          .update({ status: 'RUNNING', started_at: new Date().toISOString() })
+          .eq('id', this.tournamentId)
+          .eq('status', 'REGISTERING');
+        const { data: confirmRow } = await supabase
+          .from('tournaments')
+          .select('status')
+          .eq('id', this.tournamentId)
+          .maybeSingle(); // FIX 168
+        const confirmed = String(confirmRow?.status ?? '');
+        if (!flipErr && confirmed !== 'REGISTERING' && confirmed !== '') {
+          runningFlipped = true;
+          break;
+        }
+        if (attempt < 3) await new Promise((r) => setTimeout(r, 250 * attempt));
+      }
+      if (!runningFlipped) {
+        // Loud, because the game is about to deal against a row that does not
+        // know it. The REGISTERING-but-played watchdog in GameServer is the
+        // safety net that settles it if this never lands.
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] RUNNING flip FAILED after 3 attempts — the game is starting with its row still REGISTERING`
+          ),
+          'Tournament.running_flip_failed'
+        );
+      }
 
       // LIVE E2E FIX 2026-08-15: tournamentCache was captured while status was
       // still REGISTERING and never refreshed after this transition — so
@@ -1034,6 +1614,10 @@ export abstract class TournamentManagerBase {
 
       this.tournamentCache = tournament;
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
+      // Adopt whatever the row says the mystery phase is. A redeploy
+      // mid-tournament must not re-seed an inventory that already exists.
+      this.mysteryBountyStage =
+        (tournament.mystery_bounty_stage as typeof this.mysteryBountyStage) || 'pending';
 
       // Find existing tables
       const { data: tables } = await supabase
@@ -1062,7 +1646,26 @@ export abstract class TournamentManagerBase {
           console.warn(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Resuming with NO open tables — rebuilding for ${liveEntrants} entrant(s) instead of abandoning the tournament`
           );
-          await this.createTablesAndSeatPlayers(tournament);
+          /**
+           * NON-FATAL (2026-08-25). createTablesAndSeatPlayers throws
+           * `No players` when nothing is in status 'playing' — which is exactly
+           * the state a tournament is in when its whole roster is still
+           * 'registered' (start() does that migration; resume() does not). The
+           * throw escaped to resume()'s outer catch, so the level clock, the
+           * elimination checker and the table-liveness sweep were ALL skipped
+           * and `running` was set back to false. A tournament that merely could
+           * not be re-seated was left RUNNING in the database with nothing
+           * ticking above it, and no path back.
+           *
+           * The rebuild is best-effort now: it is reported and the rest of
+           * resume() proceeds, so the every-5s sweeps get their chance to seat
+           * the field and finish the event.
+           */
+          try {
+            await this.createTablesAndSeatPlayers(tournament);
+          } catch (rebuildErr) {
+            reportError(rebuildErr, 'Tournament.resume_table_rebuild_failed');
+          }
         }
       } else {
         for (const table of tables) {
@@ -1075,6 +1678,21 @@ export abstract class TournamentManagerBase {
             .catch((err) => reportError(err, 'TournamentthistournamentIdslic.Resume_table_error'));
         }
       }
+
+      /**
+       * A RESTART MUST NOT LEAVE THE FIELD ON ZERO CHIPS (2026-08-23).
+       *
+       * start() defers the Spin credit to a timer roughly eighteen seconds
+       * out. A process restart inside that window threw the timer away, and
+       * resume() never credited anything — so both `table_seats.stack` and
+       * `tournament_players.chips` stayed at zero with no code path left that
+       * would ever raise them. The table could not deal (no stacks) and, until
+       * the guards added alongside this, the bust sweep ended the game.
+       *
+       * creditSeatStacks is idempotent and strictly raises, so calling it here
+       * costs one query on a healthy resume and rescues the stranded case.
+       */
+      await this.creditSeatStacks(tournament);
 
       // Restore blind level
       this.currentLevel = tournament.current_level || 0;
@@ -1124,10 +1742,61 @@ export abstract class TournamentManagerBase {
        * Re-pause for whatever is left of the break and re-arm the resume, so
        * the break survives a deploy the same way its persisted state does.
        */
-      if (tournament.on_break && tournament.break_ends_at) {
-        const remainingMs = new Date(tournament.break_ends_at).getTime() - Date.now();
+      /**
+       * A BREAK WHOSE COUNTDOWN NEVER STARTED IS STILL A BREAK (2026-08-25).
+       *
+       * This block used to be gated on `tournament.on_break && break_ends_at`,
+       * and pauseForBreak deliberately writes break_ends_at as NULL: at :55
+       * only the LAST HAND is announced, and beginBreakCountdown fills the end
+       * time in once every table on the platform has parked — up to
+       * LAST_HAND_GRACE_MS (two minutes) later. So a restart anywhere inside
+       * that window skipped the whole recovery:
+       *
+       *   - `this.onBreak` stayed FALSE while the row said true, so the brand
+       *     new engines were never re-paused and the tournament dealt straight
+       *     through the remainder of its own break. That is exactly the defect
+       *     this block was added to prevent, on the two minutes it did not
+       *     cover;
+       *   - reviveDeadTableEngines lost its `onBreak` skip, so it was free to
+       *     tear down and REPLACE paused tables mid-break — and a fresh engine
+       *     is not paused;
+       *   - resumeFromBreak() early-returns on `!this.onBreak`, so nothing
+       *     ever cleared `on_break` again.
+       *
+       * Measured 2026-08-25: 7 tournaments carry `on_break = true` with no
+       * live break; 5 of them have `break_ends_at` NULL — Daily Freeroll,
+       * Sunday Freeroll Special, Sunday Kickoff and Blitz Bounty all stamped
+       * within 2026-08-23 14:55:00–14:56:39 and still true 41 hours later.
+       *
+       * A NULL end time is now read for what it means — the countdown had not
+       * started yet — and the outside edge of the break is reconstructed from
+       * break_started_at: the last-hand grace plus the break itself, i.e. the
+       * same worst case GameServer.triggerSynchronizedBreak claims at :55. A
+       * row with neither timestamp yields a negative remainder and falls to
+       * the clear branch below, which is how the stale flags above heal.
+       */
+      if (tournament.on_break) {
+        const breakStartedAt = tournament.break_started_at
+          ? new Date(tournament.break_started_at).getTime()
+          : 0;
+        const breakEndsAt = tournament.break_ends_at
+          ? new Date(tournament.break_ends_at).getTime()
+          : breakStartedAt > 0
+            ? breakStartedAt +
+              TournamentManagerBase.LAST_HAND_GRACE_MS +
+              TournamentManagerBase.BREAK_DURATION_MS
+            : 0;
+        const remainingMs = breakEndsAt - Date.now();
         if (remainingMs > 1000) {
           this.onBreak = true;
+          // The end time is already fixed for this break — whether it came off
+          // the row or was reconstructed above — so nothing may re-stamp it.
+          this.breakCountdownStarted = true;
+          // The level clock was armed moments ago, a few lines above. Suspend
+          // it for the rest of the break exactly as the :55 path does —
+          // without this it ran straight through the break and resumeFromBreak
+          // then granted a fresh full level on top. See suspendLevelClock.
+          this.suspendLevelClock();
           console.log(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed DURING a break — re-pausing for the remaining ${Math.round(remainingMs / 1000)}s`
           );
@@ -1138,21 +1807,21 @@ export abstract class TournamentManagerBase {
               reportError(err, 'TournamentManagerBase.resume_rebreak_pause');
             }
           }
-          setTimeout(() => {
+          const rebreakTimer = setTimeout(() => {
             void this.resumeFromBreak();
           }, remainingMs);
+          // Never hold the process open for the tail of a break, the same rule
+          // every other timer in this file follows.
+          if (typeof (rebreakTimer as any)?.unref === 'function') {
+            (rebreakTimer as any).unref();
+          }
         } else {
           // The break already expired while we were down — clear the flag so
-          // the lobby does not show a phantom break.
+          // the lobby does not show a phantom break. This is also what heals
+          // a row stranded by the two defects described above.
           this.onBreak = false;
-          try {
-            await supabase
-              .from('tournaments')
-              .update({ on_break: false, break_ends_at: null })
-              .eq('id', this.tournamentId);
-          } catch (err) {
-            reportError(err, 'TournamentManagerBase.resume_clear_stale_break');
-          }
+          this.breakCountdownStarted = false;
+          await this.clearPersistedBreak();
         }
       }
 
@@ -1286,6 +1955,94 @@ export abstract class TournamentManagerBase {
   }
 
   /**
+   * D5 (2026-08-25) — SELF-HEALING for the draw row that would not land.
+   *
+   * `spin_multiplier` is not decoration. Both client gates for the wheel
+   * require `> 0`, and `fn_spin_sweep_unbooked` requires it too, so a game
+   * whose row write failed three times at start runs with the column NULL and
+   * NOBODY can ever see the wheel on it — while the money has already been
+   * settled against a multiplier that exists only in this process's memory.
+   * Before this, that was terminal: three attempts, a report, and the value
+   * was gone the moment the process restarted.
+   *
+   * Why re-writing is safe rather than a second source of truth:
+   *
+   *   - it writes ONLY the patch this start already computed, so it cannot
+   *     introduce a multiplier that was never drawn;
+   *   - it is guarded on the column still being empty (`is null` or `0`), so
+   *     a value that arrived by any other route — a later start, the sweep,
+   *     an operator — is never overwritten;
+   *   - it re-reads and confirms, so "no error" is not mistaken for "landed"
+   *     when the guard matched no rows;
+   *   - it is bounded (12 passes, 5s apart, ~1 minute) and every timer is
+   *     unref'd, so a wedged database cannot hold the process open.
+   *
+   * Exhausting the budget is reported, not swallowed: at that point the row
+   * genuinely needs `fn_spin_repair_missing_multiplier` or a human.
+   */
+  private scheduleSpinRowRepair(patch: Record<string, unknown>, drawnMultiplier: number): void {
+    const MAX_PASSES = 12;
+    const INTERVAL_MS = 5000;
+    const tag = this.tournamentId.slice(0, 8);
+    let pass = 0;
+
+    const soon = (fn: () => Promise<void>) => {
+      const timer = setTimeout(() => {
+        void fn().catch((err) => reportError(err, 'Tournament.' + tag + '.spin_row_repair'));
+      }, INTERVAL_MS);
+      // Never hold the process open for a repair.
+      if (typeof (timer as any)?.unref === 'function') (timer as any).unref();
+    };
+
+    const attempt = async (): Promise<void> => {
+      pass++;
+      const { data: before } = await supabase
+        .from('tournaments')
+        .select('spin_multiplier')
+        .eq('id', this.tournamentId)
+        .maybeSingle();
+      if (Number(before?.spin_multiplier) > 0) {
+        console.warn(
+          `[Tournament:${tag}] Spin row repair: multiplier already present (${before?.spin_multiplier}x) after ${pass} pass(es) — nothing to do`
+        );
+        return;
+      }
+
+      await supabase
+        .from('tournaments')
+        .update(patch as any)
+        .eq('id', this.tournamentId)
+        // Only ever fills a hole. Never overwrites a real value.
+        .or('spin_multiplier.is.null,spin_multiplier.eq.0');
+
+      const { data: after } = await supabase
+        .from('tournaments')
+        .select('spin_multiplier')
+        .eq('id', this.tournamentId)
+        .maybeSingle();
+      if (Number(after?.spin_multiplier) > 0) {
+        console.warn(
+          `[Tournament:${tag}] Spin row repair SUCCEEDED on pass ${pass} — ${drawnMultiplier}x is on the row; the wheel can fire again`
+        );
+        return;
+      }
+
+      if (pass >= MAX_PASSES) {
+        reportError(
+          new Error(
+            `[Tournament:${tag}] Spin row repair EXHAUSTED after ${MAX_PASSES} passes — ${drawnMultiplier}x was drawn and settled but spin_multiplier is still empty; no client can show the wheel for this game`
+          ),
+          'Tournament.spin_row_repair_exhausted'
+        );
+        return;
+      }
+      soon(attempt);
+    };
+
+    soon(attempt);
+  }
+
+  /**
    * THE ORDER AFTER THE WHEEL (Dan 2026-08-21).
    *
    *   "AFTER THE SPIN COMPLETES, CHIP STACKS GET ADDED, BUTTON RANDOMLY
@@ -1306,6 +2063,14 @@ export abstract class TournamentManagerBase {
     const chipsAt = revealAt + spinRevealTotalMs();
     const buttonAt = chipsAt + SPIN_REVEAL.CHIP_DROP_MS;
     const stillLive = () => this.isRunning() && this.tableEngines.size > 0;
+    /**
+     * D3: the same instant start() holds dealing until. Beats 1 and 2 are part
+     * of the reveal, so they get the same short hub retention the wheel does —
+     * a client that reconnects between the chips and the button still sees the
+     * sequence rather than discovering it in a state diff. After this instant
+     * the felt itself tells the story and the hub drops both.
+     */
+    const replayUntil = revealAt + spinRevealToDealMs();
 
     const later = (whenMs: number, fn: () => Promise<void>) => {
       const delay = Math.max(0, whenMs - Date.now());
@@ -1332,6 +2097,7 @@ export abstract class TournamentManagerBase {
             starting_stack: stack,
             seats_credited: credited,
             timestamp: Date.now(),
+            replay_until: replayUntil, // D3
           });
         } catch {
           /* theatre */
@@ -1359,14 +2125,12 @@ export abstract class TournamentManagerBase {
             tournament_id: this.tournamentId,
             dealer_seat: seat,
             timestamp: Date.now(),
+            replay_until: replayUntil, // D3
           });
         } catch (err) {
           // A missing button draw is survivable: the engine falls back to its
           // normal rotation. A throw here is not.
-          reportError(
-            err,
-            'Tournament.' + this.tournamentId.slice(0, 8) + '.spin_button_draw'
-          );
+          reportError(err, 'Tournament.' + this.tournamentId.slice(0, 8) + '.spin_button_draw');
         }
       }
     });
@@ -1395,9 +2159,14 @@ export abstract class TournamentManagerBase {
     if (!players || players.length === 0) throw new Error('No players');
 
     // What this tournament ALREADY has.
+    // max_players is read too: an ADOPTED table keeps the capacity it was
+    // built with, which need not match the maxPerTable computed below (the
+    // config may have changed, or the deck clamp may have lowered it). The
+    // seating loop honours each table's own ceiling — see the capacity note
+    // there.
     const { data: existingTables } = await supabase
       .from('tables')
-      .select('id')
+      .select('id, max_players')
       .eq('tournament_id', this.tournamentId)
       .in('status', ['running', 'waiting'])
       .order('created_at', { ascending: true });
@@ -1447,9 +2216,74 @@ export abstract class TournamentManagerBase {
       // Clamped to the same 2-10 range fn_create_tournament enforces.
       maxPerTable = Math.min(10, Math.max(2, Number(tournament.table_size) || 9));
     }
-    const numTables = Math.ceil(players.length / maxPerTable);
+
+    /**
+     * THE DECK HAS TO BE ABLE TO SERVE THE TABLE (2026-08-25).
+     *
+     * Cash tables have run through clampSeatsForVariant since the seat law was
+     * written. Tournament tables never did - they took table_size verbatim, and
+     * table_size knows nothing about how many hole cards the game deals.
+     *
+     * A 9-handed PLO6 table needs 9 x 6 = 54 hole cards plus a 5-card board
+     * from a 52-card deck. It cannot be dealt, ever. ServerTableEngineDealing
+     * refuses at deal time, sleeps 30s and returns WITHOUT dealing, so the
+     * table sits at loopPhase 'dealing' having never dealt a card, the watchdog
+     * eventually kills the engine, the reaper rebuilds it, and the new engine
+     * refuses in exactly the same way. Permanent.
+     *
+     * Measured live 2026-08-25 before this fix: 58 of 70 PLO6 tournament tables
+     * were seated beyond what their deck could serve (10 seated against a
+     * ceiling of 7), and never-dealt rates were PLO6 36.5% / PLO5 35.9% against
+     * NLH 22.3%. The whole 5-and-6-card excess is this one line.
+     *
+     * Clamped LAST so it wins over every branch above, including spin and sng.
+     */
+    const seatVariant = (tournament.game_type || '').toLowerCase();
+    const deckSafe = clampSeatsForVariant(seatVariant, maxPerTable);
+    if (deckSafe !== maxPerTable) {
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] ${seatVariant || 'nlh'} seats ${maxPerTable} -> ${deckSafe} (deck cannot serve more)`
+      );
+      maxPerTable = deckSafe;
+    }
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A TABLE COUNT THAT IGNORES HOW FULL THE TABLES ARE (2026-08-25)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * This was `ceil(players.length / maxPerTable) - existingTables.length`,
+     * which assumes every adopted table is EMPTY. Adoption exists precisely
+     * because they are not.
+     *
+     * Worked example, and it is the live one: a tournament with one adopted
+     * table already holding 9 of its 9 seats and 10 entrants asks for
+     * ceil(10 / 9) = 2 tables, already has 1, and creates 1. Two table ids.
+     * The round-robin below then hands entrant #10 to index 0 — the FULL
+     * table — and the old seat scan, `while (taken.has(n)) n++` with no
+     * ceiling at all, dutifully returned seat 10.
+     *
+     * Measured live 2026-08-25 07:41-07:42: "Turbo Tuesday Graveyard" tables
+     * 44 through 56 each carry a live seat at seat_number 10 on max_players 9,
+     * one of them with 10 live seats; 54 such seats across 53 tournament
+     * tables platform-wide. A seat past the table's own ceiling is not
+     * cosmetic — it is the deck-exhaustion deadlock (#782) reopened through a
+     * different door, because clampSeatsForVariant clamps `max_players` and
+     * this loop then walked straight past it.
+     *
+     * The shortfall is now measured in SEATS, against the real free capacity
+     * of the tables the tournament already has.
+     */
     const alreadyHave = (existingTables ?? []).length;
-    const tablesToCreate = Math.max(0, numTables - alreadyHave);
+    const toSeatCount = players.filter((p: any) => !alreadySeated.has(p.user_id)).length;
+    let freeSeatsNow = 0;
+    for (const t of existingTables ?? []) {
+      const cap = Math.max(0, Number((t as any).max_players) || maxPerTable);
+      const used = occupiedSeats.get(t.id)?.size ?? 0;
+      freeSeatsNow += Math.max(0, cap - used);
+    }
+    const seatShortfall = Math.max(0, toSeatCount - freeSeatsNow);
+    const tablesToCreate = Math.ceil(seatShortfall / maxPerTable);
 
     for (let i = alreadyHave; i < alreadyHave + tablesToCreate; i++) {
       const blindStructure = tournament.blind_structure || [];
@@ -1478,6 +2312,13 @@ export abstract class TournamentManagerBase {
           action_time_seconds: tournament.action_time_seconds || 15,
           big_blind_ante_enabled: tournament.big_blind_ante === true,
           all_in_or_fold: tournament.all_in_or_fold === true,
+          // 2026-08-25: rabbit hunt is gated on tables.allow_rabbit_hunt, which
+          // a cash host sets at table creation. Tournament tables never set it,
+          // so every MTT, Spin and Heads Up table inherited the column default
+          // and a tournament host had no way to turn the feature off — a
+          // setting that cannot be changed is not a setting. Carried from the
+          // tournament's own toggle, defaulting ON so nothing in flight changes.
+          allow_rabbit_hunt: tournament.allow_rabbit_hunt !== false,
         })
         .select()
         .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
@@ -1502,13 +2343,97 @@ export abstract class TournamentManagerBase {
         `[Tournament:${this.tournamentId.slice(0, 8)}] ${players.length - toSeat.length} player(s) already seated — seating the remaining ${toSeat.length}`
       );
     }
+    /**
+     * Every table's own ceiling. An adopted table keeps the max_players it was
+     * built with; a table created moments ago holds maxPerTable. Nothing below
+     * may write a seat number above the value here — that is the whole point
+     * (see the table-count note above for the 54 live seats that proves it).
+     */
+    const capacityOf = new Map<string, number>();
+    for (const t of existingTables ?? []) {
+      capacityOf.set(t.id, Math.max(1, Number((t as any).max_players) || maxPerTable));
+    }
+    for (const id of tableIds) {
+      if (!capacityOf.has(id)) capacityOf.set(id, maxPerTable);
+    }
+
+    // Round-robin CURSOR rather than `i % tableIds.length`: the modulo hands a
+    // player to a fixed table whether or not that table has a seat left, which
+    // is how a full adopted table was handed an eleventh player.
+    let cursor = 0;
     for (let i = 0; i < toSeat.length; i++) {
-      const tableId = tableIds[i % tableIds.length];
-      // Lowest free seat on that table, so a new seat can never collide with
-      // one an adopted table is already using.
+      /**
+       * THE SNAPSHOT IS NOT THE CHECK (2026-08-25).
+       *
+       * `alreadySeated` is read ONCE, above, and this loop then writes one
+       * seat per statement for the whole field — five minutes on a 497-entrant
+       * freeroll. A second pass over the same tournament (a re-entered start,
+       * a resume, a second engine instance) takes its own snapshot inside that
+       * window, sees every not-yet-written player as unseated, and seats them
+       * again at a different table. `idx_unique_active_user_per_table` is
+       * scoped to ONE table, so it cannot object.
+       *
+       * Live footprint on `bae46dbf` 2026-08-25: 72 players holding 144 live
+       * seats, 46 of the pairs exactly 14 tables apart — two round-robin
+       * cursors, this loop, running twice. Both seats were dealt and both
+       * stacks diverged.
+       *
+       * So the seat is claimed against the DATABASE, immediately before the
+       * write. A player who has acquired a seat since the snapshot is skipped,
+       * and an unreadable answer skips too: the 5s seat sweep will seat them
+       * on a later pass, and a guess here is a double stack.
+       */
+      const claim = await mayTakeSeat(supabase, this.tournamentId, toSeat[i].user_id);
+      if (!claim.allowed) {
+        if (claim.unknown) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Not seating ${toSeat[i].user_id.slice(0, 8)} — ${claim.reason}. Leaving them to the 5s seat sweep rather than risking a second live seat.`
+            ),
+            'Tournament.seat_claim_unreadable'
+          );
+        }
+        continue;
+      }
+
+      // Next table, from the cursor, that has a genuinely free seat number
+      // within its own capacity.
+      let tableId: string | null = null;
+      let seatNumber = 0;
+      for (let probe = 0; probe < tableIds.length; probe++) {
+        const candidate = tableIds[(cursor + probe) % tableIds.length];
+        const cap = capacityOf.get(candidate) ?? maxPerTable;
+        const taken = occupiedSeats.get(candidate) ?? new Set<number>();
+        let n = 1;
+        while (n <= cap && taken.has(n)) n++;
+        if (n <= cap) {
+          tableId = candidate;
+          seatNumber = n;
+          cursor = (cursor + probe + 1) % tableIds.length;
+          break;
+        }
+      }
+
+      if (!tableId) {
+        /**
+         * Every table is genuinely full. The seat sizing above is meant to make
+         * this unreachable, so it means a table INSERT failed and was skipped
+         * (see the `continue` in the creation loop). LEAVING THE PLAYER
+         * UNSEATED IS DELIBERATE: the alternative is the seat past the table's
+         * ceiling that this whole block exists to stop. ensureLateRegSeated
+         * runs every five seconds and seats them the moment a seat exists, and
+         * checkDynamicTableExpansion builds one; both respect the ceiling.
+         */
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] No seat within capacity for ${toSeat.length - i} player(s) across ${tableIds.length} table(s) — leaving them unseated for the 5s seat sweep rather than writing a seat past a table's max_players`
+          ),
+          'Tournament.seating_capacity_exhausted'
+        );
+        break;
+      }
+
       const taken = occupiedSeats.get(tableId) ?? new Set<number>();
-      let seatNumber = 1;
-      while (taken.has(seatNumber)) seatNumber++;
       taken.add(seatNumber);
       occupiedSeats.set(tableId, taken);
 
@@ -1525,6 +2450,36 @@ export abstract class TournamentManagerBase {
             `[Tournament:${this.tournamentId.slice(0, 8)}] Failed to seat ${toSeat[i].user_id.slice(0, 8)}: ${seatErr.message}`
           ),
           'TournamentthistournamentIdslic.Failed_to_seat_playersiuser_id'
+        );
+        continue;
+      }
+
+      /**
+       * THE ROSTER MUST KNOW WHERE THE PLAYER IS SITTING (2026-08-24).
+       *
+       * This wrote the table_seats row and stopped, leaving
+       * tournament_players.table_id NULL for the entire start-seated field.
+       * Only ensureLateRegSeated and the table-move path ever set it, so the
+       * column was a lie for anyone who entered before the cards were in the
+       * air: measured in production, 166 of 297 live entrants, every one of
+       * them genuinely seated. Everything that navigates by that column was
+       * broken for more than half the field, including TournamentDetails'
+       * "go to my table" links, which resolved to /table/undefined.
+       *
+       * Written after the seat and skipped when the seat insert failed, so the
+       * roster can never claim a seat the player does not hold.
+       */
+      const { error: rosterErr } = await supabase
+        .from('tournament_players')
+        .update({ table_id: tableId, seat_number: seatNumber })
+        .eq('tournament_id', this.tournamentId)
+        .eq('user_id', toSeat[i].user_id);
+      if (rosterErr) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] seated ${toSeat[i].user_id.slice(0, 8)} but could not record the table on the roster: ${rosterErr.message}`
+          ),
+          'Tournament.roster_table_id_write_failed'
         );
       }
     }
@@ -1675,6 +2630,15 @@ export abstract class TournamentManagerBase {
 
   protected startBlindTimer(blindStructure: any[], remainingOverrideMs?: number): void {
     if (blindStructure.length === 0) return;
+    // Never leave two level clocks running for the same tournament. Callers
+    // normally arrive with blindTimer already null (it has just fired, or
+    // pauseForBreak cleared it), but a double-arm doubles the escalation rate
+    // for the rest of the tournament and is invisible until the blinds run
+    // away, so it is worth one clearTimeout to make it impossible.
+    if (this.blindTimer) {
+      clearTimeout(this.blindTimer);
+      this.blindTimer = null;
+    }
     const currentLevelData = blindStructure[this.currentLevel] || blindStructure[0];
     const durationMs = this.levelDurationMs(currentLevelData);
     const armMs =
@@ -1728,14 +2692,101 @@ export abstract class TournamentManagerBase {
     {
       {
         if (!this.running) return;
+
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  NO LEVEL ADVANCES DURING A BREAK (2026-08-25)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * A break is supposed to stop the level clock, and the only mechanism
+         * that did so was pauseForBreak clearing `blindTimer`. That covers a
+         * timer already armed. It does NOT cover a timer armed AFTER the break
+         * began — and the tail of this very method arms one unconditionally.
+         *
+         * suspendLevelClock already documents the window: `blindTimer is
+         * legitimately null for seconds at a time: advanceBlindLevel consumes
+         * it on fire and does not re-arm until it has awaited a blind write per
+         * table, the current_level persist, the level_up broadcast and possibly
+         * a prize-pool finalization. A :55 break inside that window is exactly
+         * the case that killed the clock.` That fix taught suspendLevelClock to
+         * save a full level rather than 0. It left the other half open: the
+         * in-flight transition then went on to arm a LIVE full-length timer,
+         * which ran through the entire break.
+         *
+         * A break is five minutes plus up to two minutes of last-hand grace.
+         * Every turbo, hyper-turbo and Spin level is shorter than that, so the
+         * armed timer FIRES mid-break: the blinds jump while the field is
+         * behind the break overlay, this method arms yet another timer, and the
+         * level can advance TWICE inside one break. resumeFromBreak then hands
+         * the level that just advanced the full duration saved at :55, so the
+         * clock is reset on top of it.
+         *
+         * Two guards, one at each end:
+         *
+         *   HERE — a level that comes due during a break is not advanced. It is
+         *   owed, so 1 s is handed to resumeFromBreak (startBlindTimer clamps
+         *   the override to at least 1000 ms) and the level goes up the instant
+         *   play resumes, rather than during the break or not at all.
+         *
+         *   AT THE TAIL — if a break began while this transition was in flight,
+         *   the next level's full duration is handed to resumeFromBreak instead
+         *   of being armed as a live timer.
+         */
+        if (this.onBreak) {
+          this.savedBlindTimerRemaining = 1000;
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Level was due during a break — holding it until play resumes`
+          );
+          return;
+        }
+
         const prevLevel = this.currentLevel;
         this.currentLevel++;
+
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  STRUCTURE BREAK ROWS ARE STEPPED OVER, NOT SAT ON (2026-08-23)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * Dan: breaks are the :55 of the hour and nothing else.
+         *
+         * Every default structure nonetheless carries isBreak rows — hyperTurbo
+         * at indices 7, 13, 19 and 25, turbo and the rest on the same cadence —
+         * and this used to be handled further down as:
+         *
+         *     if (level.isBreak) { this.startBlindTimer(blindStructure); return; }
+         *
+         * which was the worst of both worlds. It armed a timer for the break
+         * row's five minutes and returned, so for those five minutes: no table
+         * was paused and no break screen was shown (players simply kept
+         * playing), the blinds stayed at the PREVIOUS level, `current_level`
+         * was never persisted — so the SQL late-registration gate read a stale
+         * level for the whole window — and the late-reg close and add-on
+         * trigger below were skipped entirely. A break row sitting on the
+         * cutoff level could swallow the add-on window for good.
+         *
+         * Break rows are now consumed with no time cost: step past them to the
+         * next playable level and run one complete transition. This runs
+         * BEFORE the auto-escalation check so that walking off the end through
+         * trailing break rows escalates normally instead of clamping.
+         */
+        while (
+          this.currentLevel < blindStructure.length &&
+          blindStructure[this.currentLevel]?.isBreak
+        ) {
+          this.currentLevel++;
+        }
 
         if (this.currentLevel >= blindStructure.length) {
           // Auto-escalate: double the last level's blinds
           // FIX: Cap at 10M to prevent numeric field overflow in DECIMAL(10,2) columns
           const MAX_BLIND_VALUE = 10_000_000;
-          const lastLevel = blindStructure[blindStructure.length - 1];
+          // Escalate from the last PLAYABLE level. A structure whose final row
+          // is a break row (smallBlind 0) would otherwise double zero forever
+          // and freeze the blinds at nothing.
+          let lastIdx = blindStructure.length - 1;
+          while (lastIdx > 0 && blindStructure[lastIdx]?.isBreak) lastIdx--;
+          const lastLevel = blindStructure[lastIdx];
           const escalationFactor = Math.pow(2, this.currentLevel - blindStructure.length + 1);
           const autoLevel = {
             level: this.currentLevel + 1,
@@ -1753,12 +2804,6 @@ export abstract class TournamentManagerBase {
 
         const level = blindStructure[Math.min(this.currentLevel, blindStructure.length - 1)];
 
-        // Skip any break entries that might still be in old blind structures
-        if (level.isBreak) {
-          this.startBlindTimer(blindStructure);
-          return;
-        }
-
         console.log(
           `[Tournament:${this.tournamentId.slice(0, 8)}] Level ${this.currentLevel}: ${level.smallBlind}/${level.bigBlind} ante ${level.ante || 0}`
         );
@@ -1775,6 +2820,20 @@ export abstract class TournamentManagerBase {
               small_blind: safeSmallBlind,
               big_blind: safeBigBlind,
               ante: safeAnte,
+              /**
+               * KEEP `stakes` HONEST (2026-08-23).
+               *
+               * createTablesAndSeatPlayers writes `stakes` once, as the level-1
+               * blinds, and this update never touched it — so the denormalised
+               * string stayed frozen at the opening level for the life of the
+               * tournament while the numeric columns advanced beside it.
+               * Measured on "Prime Time Main Event (NLH) - Table 4": stakes
+               * '25/50' against small_blind 750 / big_blind 1500. Every reader
+               * that trusts `stakes` (the table masthead, the lobby rows, and
+               * therefore every seat's BB depth badge) was reporting the wrong
+               * level's blinds, and stack depths thirty times too deep.
+               */
+              stakes: `${safeSmallBlind}/${safeBigBlind}`,
             })
             .eq('id', tableId);
           if (blindErr) {
@@ -1904,24 +2963,31 @@ export abstract class TournamentManagerBase {
             this.prizePoolFinalized = true;
             const { data: freshT } = await supabase
               .from('tournaments')
-              .select('prize_pool')
+              .select('prize_pool, guaranteed_prize')
               .eq('id', this.tournamentId)
               .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
+            // GUARANTEE (2026-08-23): the pool stops moving here, so this is
+            // where the advertised guarantee becomes real money. Writing the
+            // max back to prize_pool keeps every reader — payouts, lobby,
+            // fn_tournament_payout_reconcile — agreeing on one number.
+            const finalPool = freshT
+              ? effectivePrizePool(freshT.prize_pool, freshT.guaranteed_prize)
+              : 0;
             if (freshT) {
               await supabase
                 .from('tournaments')
                 .update({
-                  prize_pool: freshT.prize_pool,
+                  prize_pool: finalPool,
                   prize_pool_finalized: true,
                 } as any)
                 .eq('id', this.tournamentId);
               console.log(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Late reg/rebuy closed at level ${this.currentLevel} — prize pool finalized: ${freshT.prize_pool}`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Late reg/rebuy closed at level ${this.currentLevel} — prize pool finalized: ${finalPool}`
               );
             }
-            await this.broadcast('late_reg_closed', { prizePool: freshT?.prize_pool || 0 });
+            await this.broadcast('late_reg_closed', { prizePool: finalPool });
             if (freshT) {
-              await this.recalculateEliminatedPrizes(freshT.prize_pool);
+              await this.recalculateEliminatedPrizes(finalPool);
             }
           }
         }
@@ -1931,7 +2997,25 @@ export abstract class TournamentManagerBase {
         if (this.tournamentCache?.add_on_available && !this.addOnPeriodTriggered) {
           const rebuyLevelCap =
             this.tournamentCache.late_reg_levels ?? this.tournamentCache.rebuy_levels ?? 8;
-          if (prevLevel < rebuyLevelCap && this.currentLevel >= rebuyLevelCap) {
+          /**
+           * LEVEL-BASED, NOT EDGE-BASED (2026-08-23). This was
+           * `prevLevel < cap && this.currentLevel >= cap` — an edge, and an
+           * edge is a single instant that is easy to miss and impossible to
+           * recover:
+           *
+           *   - resume() restores currentLevel straight from the database. A
+           *     redeploy while the tournament was already past the cutoff put
+           *     prevLevel past it too, so the edge never came again and the
+           *     add-on window never opened for the life of the tournament.
+           *   - the old isBreak early-return skipped this check entirely, so a
+           *     break row on the cutoff level consumed the only crossing.
+           *
+           * The late-reg finalization block directly above has always been
+           * level-based (`>= cap`) for the same reason. Idempotency does not
+           * depend on the edge: addOnPeriodTriggered guards the outer `if`,
+           * and triggerAddOnPeriod re-checks and persists it.
+           */
+          if (this.currentLevel >= rebuyLevelCap) {
             // Broadcast late_reg_closed first
             await this.broadcast('late_reg_closed', {});
             // If currently on break, defer the add-on trigger until break resumes
@@ -1954,8 +3038,16 @@ export abstract class TournamentManagerBase {
           }
         }
 
-        // Schedule the next level (waits the new level's duration, then advances)
-        this.startBlindTimer(blindStructure);
+        // Schedule the next level (waits the new level's duration, then
+        // advances) — unless a break began while this transition was in flight,
+        // in which case the clock belongs to resumeFromBreak. Arming a live
+        // timer here is what let a level advance during a break; see the guard
+        // at the top of this method for the full defect.
+        if (this.onBreak) {
+          this.savedBlindTimerRemaining = this.levelDurationMs(level);
+        } else {
+          this.startBlindTimer(blindStructure);
+        }
       }
     }
   }
@@ -2150,19 +3242,22 @@ export abstract class TournamentManagerBase {
     this.prizePoolFinalized = true;
     const { data: freshT } = await supabase
       .from('tournaments')
-      .select('prize_pool')
+      .select('prize_pool, guaranteed_prize')
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
     if (freshT) {
+      // GUARANTEE (2026-08-23): same rule as the late-reg-close site — the
+      // pool is final now, so the advertised guarantee is applied here.
+      const finalPool = effectivePrizePool(freshT.prize_pool, freshT.guaranteed_prize);
       await supabase
         .from('tournaments')
         .update({
-          prize_pool: freshT.prize_pool,
+          prize_pool: finalPool,
           prize_pool_finalized: true,
         } as any)
         .eq('id', this.tournamentId);
 
-      await this.recalculateEliminatedPrizes(freshT.prize_pool);
+      await this.recalculateEliminatedPrizes(finalPool);
     }
 
     await this.broadcast('ADDON_PERIOD_END', {});

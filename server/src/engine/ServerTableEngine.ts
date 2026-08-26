@@ -25,6 +25,8 @@
 
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { ServerTableEngineHandEvents } from './ServerTableEngineHandEvents.js';
+import { bettingStructureFor, fixedLimitBetSize, isFixedLimitCapped } from './BettingStructure.js';
+import type { GameState } from '../types.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVER TABLE ENGINE
@@ -55,18 +57,118 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       players: state.players.map((p) => ({
         seat: p.seat,
         user_id: p.user_id,
-        username: p.username,
+        ...this.seatIdentity(p),
         stack: p.stack,
         bet: p.bet,
         is_folded: p.is_folded,
         is_all_in: p.is_all_in,
         position: p.position,
         // Bible V8 §6.15: Only show cards if table allows AND it's showdown
-        cards: showCards && state.stage === 'showdown' ? p.cards : [],
+        // SHOWDOWN SYSTEM 2026-08-25: mucked hands stay private from
+        // observers too — same gate as the player-facing surfaces.
+        cards:
+          showCards &&
+          state.stage === 'showdown' &&
+          !p.is_folded &&
+          !this.isMuckedAtShowdown(p.user_id)
+            ? p.cards
+            : [],
       })),
       is_observer: true,
       admin_paused: this.adminPauseLock,
       maintenance_lock: this.maintenanceLock,
+    };
+  }
+
+  /**
+   * The betting-structure fields every broadcast carries (2026-08-23).
+   *
+   * The client used to decide this for itself with
+   * `gameType.startsWith('plo')`, which treats everything that is not PLO as
+   * no-limit — so a fixed-limit table would have rendered a no-limit bet slider
+   * and had every drag rejected by the server. And `wagers_capped` is not
+   * derivable client-side at all: the cap counts FULL raises, and
+   * `action_history` is broadcast with its `isFullRaise` flag stripped.
+   *
+   * No-limit and pot-limit tables carry `fixed_bet_size`/`wagers_capped` as
+   * undefined, which JSON drops.
+   */
+
+  /**
+   * ── ANONYMOUS TABLE (Dan 2026-08-25) ────────────────────────────────────
+   *
+   * `is_anonymous` has been a toggle on the creation screen since February,
+   * read by nothing. Seat names shipped as real usernames with no branch that
+   * could hide them.
+   *
+   * The identity a seat carries is exactly two fields: `username` and
+   * `avatar_url`. `user_id` MUST survive — the client keys the hero seat,
+   * `current_player`, `winner_ids`, `disconnect_states` and
+   * `waiting_for_bb_user_ids` off it, and scrubbing it would break the table
+   * rather than anonymise it. A user id is not a name on screen.
+   *
+   * UNIFORM, not per-viewer, and that is deliberate: broadcastCurrentState
+   * publishes ONE payload through TableStateHub to every subscriber
+   * ("public-scrubbed shape - so there is nothing per-subscriber to
+   * serialize"). Making the hero an exception would mean a payload per seat.
+   * At an anonymous table nobody's name is shown, including your own, and you
+   * find yourself by seat exactly as you would at a live table.
+   *
+   * Called by all FOUR serializers. They are byte-identical seat maps and the
+   * file already carries a comment about a reveal gate that was missed in one
+   * of them; one helper is what stops that happening again.
+   */
+  protected seatIdentity(p: {
+    seat?: number;
+    seat_number?: number;
+    username?: string;
+    avatar_url?: string;
+    equipped_frame?: string;
+    equipped_aura?: string;
+  }): {
+    username: string;
+    avatar_url: string;
+    equipped_frame: string;
+    equipped_aura: string;
+  } {
+    /* COSMETICS ARE IDENTITY (2026-08-25). The equipped frame and aura are
+       returned here rather than beside the call sites precisely because of the
+       anonymous-table rule above: they are worn ON the avatar, they are rare,
+       and they are stable across sessions. A table where every name reads
+       "Player 4" but exactly one seat burns with `frame-hellfire` every night
+       is not anonymous - it has one anonymous player and one signature. They
+       are scrubbed with the name and the picture, on the same branch, so a
+       future field cannot be added to one and forgotten in the other. */
+    if (!this.tableInfo?.is_anonymous) {
+      return {
+        username: p.username ?? '',
+        avatar_url: p.avatar_url ?? '',
+        equipped_frame: p.equipped_frame ?? '',
+        equipped_aura: p.equipped_aura ?? '',
+      };
+    }
+    const seat = p.seat ?? p.seat_number ?? 0;
+    return {
+      username: seat > 0 ? `Player ${seat}` : 'Player',
+      avatar_url: '',
+      equipped_frame: '',
+      equipped_aura: '',
+    };
+  }
+
+  private bettingStructureFields(state: GameState): {
+    betting_structure: 'no_limit' | 'pot_limit' | 'fixed_limit';
+    fixed_bet_size?: number;
+    wagers_capped?: boolean;
+  } {
+    const variant = this.tableInfo?.game_variant;
+    const structure = bettingStructureFor(variant);
+    if (structure !== 'fixed_limit') return { betting_structure: structure };
+    const stage = state.stage ?? 'preflop';
+    return {
+      betting_structure: structure,
+      fixed_bet_size: fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, stage),
+      wagers_capped: isFixedLimitCapped(state.actionHistory ?? [], stage),
     };
   }
 
@@ -95,6 +197,11 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       stage: state.stage ?? 'preflop',
       min_raise: state.minRaise ?? 0,
       last_raise: state.lastRaise ?? 0,
+      // 2026-08-23: publish the betting structure rather than leaving the
+      // client to guess it from the variant string. `wagers_capped` in
+      // particular is NOT derivable client-side — the cap counts full raises,
+      // and action_history is broadcast without its isFullRaise flag.
+      ...this.bettingStructureFields(state),
       // Bible V8 §2.4: Timer fields required for client-side countdown
       turn_start_time_ms: this.playerTurnStartTime,
       turn_duration_ms: this.playerTurnDuration * 1000, // Convert seconds → milliseconds
@@ -130,7 +237,11 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
           let showCards = false;
           if (p.user_id === requestingUserId) {
             showCards = true;
-          } else if (state.stage === 'showdown' && !p.is_folded) {
+          } else if (
+            state.stage === 'showdown' &&
+            !p.is_folded &&
+            !this.isMuckedAtShowdown(p.user_id)
+          ) {
             // ── Dan 2026-08-18: the THIRD reveal gate, found on re-audit ──
             //
             // broadcastCurrentState was changed to turn every showdown hand
@@ -142,12 +253,16 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             //
             // Same guard, same safety: `!p.is_folded` above means a folded
             // hand is still never exposed.
+            //
+            // SHOWDOWN SYSTEM 2026-08-25: the muck gate applies on resync
+            // too, or a reconnecting client would see cards the rest of the
+            // table was never shown.
             showCards = true;
           }
           return {
             seat: p.seat,
             user_id: p.user_id,
-            username: p.username,
+            ...this.seatIdentity(p),
             stack: p.stack,
             bet: p.bet ?? 0,
             totalInvested: p.totalInvested ?? 0,
@@ -155,11 +270,13 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             is_folded: p.is_folded ?? false,
             is_all_in: p.is_all_in ?? false,
             is_sitting_out: p.is_sitting_out ?? false,
+            // SHOWDOWN SYSTEM 2026-08-25: resync parity with the broadcast.
+            is_mucked:
+              state.stage === 'showdown' && !p.is_folded && this.isMuckedAtShowdown(p.user_id),
             is_disconnected: !this.disconnectEngine.isConnected(this.tableId, p.user_id),
             time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
             time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
             position: positionLabels.get(p.seat) ?? '',
-            avatar_url: p.avatar_url ?? '', // Bible V8 §2.3
             is_horse: p.is_horse ?? false, // Bible V8 §2.3
           };
         });
@@ -224,11 +341,38 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       stage: state.stage ?? 'preflop',
       // Bible V8 §5.1: Winner IDs for client-side winner highlighting + sound
       winner_ids: this.currentHandWinnerIds.length > 0 ? this.currentHandWinnerIds : [],
-      // Bible V8 §2.7: Winner amounts for pot distribution display
-      winners: this.currentHandWinners.length > 0 ? this.currentHandWinners : [],
+      // Bible V8 §2.7: Winner amounts for pot distribution display.
+      //
+      // AUDIT FIX 2026-08-25: the raw currentHandWinners entries key the user
+      // as `userId`, but the documented client contract (EnginePublishedState
+      // in mapEngineSnapshot.ts) reads `user_id` — so every mapped winner had
+      // userId undefined and seat 0, and everything keyed off it (the per-seat
+      // "+N" net float, the muck loser-mask second source, the spec-21 stack
+      // hold) silently never matched a real player. Emit the snake_case key
+      // the client reads, keep `userId` for any internal consumer, and stop
+      // shipping the evaluated hand's full card list in every snapshot — the
+      // clients that need the winning cards get them from pot_win.
+      // SHOWDOWN POLISH 2026-08-25 (hygiene): the transitional `userId`
+      // duplicate is gone. Every first-party consumer reads `user_id` (the
+      // documented contract), the mapper accepts both spellings for skew,
+      // and pre-fix clients also read `user_id` — nothing ever consumed the
+      // duplicate.
+      winners:
+        this.currentHandWinners.length > 0
+          ? this.currentHandWinners.map((w) => ({
+              user_id: w.userId,
+              amount: w.amount,
+              pot_index: w.potIndex ?? 0,
+            }))
+          : [],
       // Bible V8 §2.4: Required betting state fields
       min_raise: state.minRaise ?? 0,
       last_raise: state.lastRaise ?? 0,
+      // 2026-08-23: publish the betting structure rather than leaving the
+      // client to guess it from the variant string. `wagers_capped` in
+      // particular is NOT derivable client-side — the cap counts full raises,
+      // and action_history is broadcast without its isFullRaise flag.
+      ...this.bettingStructureFields(state),
       turn_start_time_ms: this.playerTurnStartTime,
       turn_duration_ms: this.playerTurnDuration * 1000, // Convert seconds → milliseconds
       // ── Dan 2026-08-18: "make sure the yellow countdown actually takes 15
@@ -248,6 +392,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
         this.playerTurnStartTime > 0
           ? this.playerTurnStartTime + this.playerTurnDuration * 1000
           : 0,
+      time_bank_active: this.timeBankActivatedThisTurn,
       // Phase 1.2 PR-F: per-user disconnect FSM map for client UI toasts
       // (MISSING / DISCONNECTED). Same shape the DB stores.
       disconnect_states: this.disconnectEngine.getFsmStatesForTable(this.tableId),
@@ -305,7 +450,17 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
           // (runoutRevealActive) — betting is complete, hands are tabled, and
           // the paced runout is unwatchable with the cards still face down.
           // The `!p.is_folded` guard stays: a fold is never exposed.
-          const showCards = (state.stage === 'showdown' || this.runoutRevealActive) && !p.is_folded;
+          //
+          // SHOWDOWN SYSTEM 2026-08-25 (Dan spec section 4): a hand the
+          // engine ruled muckable stays face-down in the public snapshot too
+          // — this is the path that actually puts cards on the felt, so
+          // without this gate the muck was decoration. Voluntary shows
+          // override (isMuckedAtShowdown returns false for them). All-in
+          // showdowns never produce mucked=true, so runout reveals are
+          // untouched.
+          const muckedHere = this.isMuckedAtShowdown(p.user_id);
+          const showCards =
+            (state.stage === 'showdown' || this.runoutRevealActive) && !p.is_folded && !muckedHere;
 
           // ── Dan 2026-08-18: per-card voluntary reveal ──
           //
@@ -336,7 +491,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
           return {
             seat: p.seat,
             user_id: p.user_id,
-            username: p.username,
+            ...this.seatIdentity(p),
             stack: p.stack,
             bet: p.bet ?? 0,
             totalInvested: p.totalInvested ?? 0, // Bible V8 §2.3
@@ -348,7 +503,6 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id), // Bible V8 §2.3
             time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id), // Bible V8 §2.3
             position: positionLabels.get(p.seat) ?? '', // Bible V8 §2.3, Appendix B
-            avatar_url: p.avatar_url ?? '', // Bible V8 §2.3
             is_horse: p.is_horse ?? false, // Bible V8 §2.3
             // Bible V8 §4.2 — Wait-for-BB flag exposed to clients so the
             // post-BB UI button can render. Walkthrough Step 4 fix
@@ -356,6 +510,10 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             // never published it; frontend had no way to know the player was
             // waiting and no way to call POST /post-bb to skip the wait.
             is_waiting_for_bb: this.waitingForBB.has(p.user_id),
+            // SHOWDOWN SYSTEM 2026-08-25: engine-decided muck flag. The seat
+            // renders a MUCKED label instead of cards; the hole cards and the
+            // hand identity are withheld from every public surface.
+            is_mucked: state.stage === 'showdown' && !p.is_folded && muckedHere,
             // Bible V8 §5.1 + §2.7: Hand name at showdown for winner label display
             hand_name: showCards
               ? (this.currentHandShowdownResults.find((r) => r.userId === p.user_id)?.handName ??
@@ -409,6 +567,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       turn_duration_ms: 0,
       server_time_ms: Date.now(),
       turn_deadline_ms: 0,
+      time_bank_active: false,
       disconnect_states: this.disconnectEngine.getFsmStatesForTable(this.tableId),
       waiting_for_bb_user_ids: Array.from(this.waitingForBB),
       pots: [],
@@ -416,7 +575,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       players: (this.seatedPlayers ?? []).map((p) => ({
         seat: p.seat_number,
         user_id: p.user_id,
-        username: p.username,
+        ...this.seatIdentity(p),
         stack: p.stack,
         bet: 0,
         totalInvested: 0,
@@ -428,7 +587,6 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
         time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
         time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
         position: '',
-        avatar_url: p.avatar_url ?? '',
         is_horse: p.is_horse ?? false,
         is_waiting_for_bb: this.waitingForBB.has(p.user_id),
         hand_name: '',

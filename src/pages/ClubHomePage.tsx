@@ -3445,7 +3445,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                       fontStyle: 'italic',
                     }}
                   >
-                    Plays inside the <strong style={{ color: '#ffffff' }}>{unionName}</strong>
+                    Plays Inside The <strong style={{ color: '#ffffff' }}>{unionName}</strong>
                   </div>
                 )}
 

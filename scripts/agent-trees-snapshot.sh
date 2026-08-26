@@ -75,18 +75,50 @@ fi
 # ref for every distinct (worktree, tree) pair and every branch-* ref, so no
 # distinct content is ever dropped. Safe to run at any time; use it once after
 # adopting the dedupe above to clear a namespace that already exploded.
+#
+# ONE PASS, added 2026-08-26 the same day the first version shipped. That
+# version ran `git rev-parse` once per ref inside a while-read loop. At the
+# 9,661 refs one clone was carrying, that is 9,661 process spawns and it does
+# not finish in any useful time - the tool meant to clean up an exploded
+# namespace could not be used on one. Everything below is four processes total,
+# whatever the ref count: for-each-ref, cat-file --batch-check, sort, awk.
 if [ "$MODE" = "--dedupe" ]; then
+  BEFORE=$(git -C "$ROOT" for-each-ref --format='%(refname)' refs/wip/ | wc -l | tr -d ' ')
+  TMP=$(mktemp -d) || { echo "could not create a temp dir" >&2; exit 1; }
+  trap 'rm -rf "$TMP"' EXIT
+
+  # branch-* refs point at HEAD commits, not stash commits, and are never dropped.
   git -C "$ROOT" for-each-ref --format='%(refname) %(objectname)' refs/wip/ \
-  | awk '$1 !~ /\/branch-/' \
-  | while read -r ref obj; do
-      tree=$(git -C "$ROOT" rev-parse -q --verify "${obj}^{tree}" 2>/dev/null) || continue
-      name=$(printf '%s' "$ref" | cut -d/ -f3)
-      printf '%s\t%s\t%s\n' "$name/$tree" "$ref" "$ref"
-    done \
-  | sort -r \
-  | awk -F'\t' 'seen[$1]++ { print "delete " $2 }' \
-  | git -C "$ROOT" update-ref --stdin
-  echo "deduped. refs/wip now holds $(git -C "$ROOT" for-each-ref --format='%(refname)' refs/wip/ | wc -l | tr -d ' ') ref(s)."
+    | grep -v '/branch-' > "$TMP/refs" || true
+
+  if [ ! -s "$TMP/refs" ]; then
+    echo "nothing to dedupe. refs/wip holds ${BEFORE} ref(s)."
+    exit 0
+  fi
+
+  # Resolve every commit to its tree in a single batch process.
+  cut -d' ' -f2 "$TMP/refs" | sed 's/$/^{tree}/' \
+    | git -C "$ROOT" cat-file --batch-check='%(objectname)' > "$TMP/trees"
+
+  # A mismatch means cat-file skipped or added a line (a missing object prints
+  # "<input> missing"). Deleting refs against misaligned trees would drop
+  # distinct snapshots, so refuse rather than guess.
+  if [ "$(wc -l < "$TMP/refs")" -ne "$(wc -l < "$TMP/trees")" ] \
+     || grep -q ' missing$' "$TMP/trees"; then
+    echo "refusing to dedupe: could not resolve every snapshot to a tree" >&2
+    exit 1
+  fi
+
+  # key = <worktree>/<tree>. Sorting descending puts the newest refname first
+  # in each group (refnames end in an ISO-8601 stamp), and awk deletes the rest.
+  paste -d' ' "$TMP/refs" "$TMP/trees" \
+    | awk '{ split($1, p, "/"); print p[3] "/" $3 "\t" $1 }' \
+    | sort -r \
+    | awk -F'\t' 'seen[$1]++ { print "delete " $2 }' \
+    | git -C "$ROOT" update-ref --stdin
+
+  AFTER=$(git -C "$ROOT" for-each-ref --format='%(refname)' refs/wip/ | wc -l | tr -d ' ')
+  echo "deduped ${BEFORE} -> ${AFTER} ref(s); every distinct snapshot kept."
   exit 0
 fi
 

@@ -1510,6 +1510,52 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * their own turn (the disconnect countdown was cancelled with no replacement
    * timer). No-op unless a hand is live and it's genuinely this player's turn.
    */
+  /**
+   * If a player's socket drops MID-TURN (not during grace, but fully timed out
+   * out of grace), they must not sit there bleeding their entire time bank
+   * to death while disconnected. Cancel the normal turn clocks and hand them
+   * over to DisconnectEngine to start the short auto-fold countdown.
+   */
+  protected handlePlayerDisconnectedMidTurn(userId: string): void {
+    if (!this.handController) return;
+    const state = this.handController.getState();
+    const player = state.players.find((p) => p.user_id === userId);
+    if (!player || player.seat !== state.currentPlayerSeat) return;
+    if (player.is_folded || player.is_all_in || player.is_sitting_out) return;
+
+    console.log(
+      `[ServerTableEngine:${this.tableId}] Player ${userId} disconnected mid-turn. Canceling turn clocks and starting disconnect countdown.`
+    );
+
+    // Cancel the primary turn timer
+    this.preciseTimer.cancelTimer(this.tableId, userId);
+
+    // Cancel the time bank timer if they had manually activated it
+    this.preciseTimer.cancelTimer(this.tableId, `timebank:${userId}`);
+
+    // Cancel any horse think timer if they were a horse
+    if (this.horseActionTimer) {
+      clearTimeout(this.horseActionTimer);
+      this.horseActionTimer = null;
+    }
+
+    // Determine check vs fold and delegate to DisconnectEngine
+    const amountToCall = Math.max(0, state.currentBet - (player.bet ?? 0));
+    const canCheck = amountToCall === 0;
+
+    // onPlayerTurn will return false because they are now disconnected,
+    // and it will internally start the disconnect countdown.
+    this.disconnectEngine.onPlayerTurn(this.tableId, userId, canCheck);
+
+    // Update the snapshot so other players see the 30s timer
+    const config = (this.disconnectEngine as any).tableConfigs?.get(this.tableId) || {
+      disconnectTimeoutSeconds: 30,
+    };
+    this.playerTurnStartTime = Date.now();
+    this.playerTurnDuration = config.disconnectTimeoutSeconds;
+    this.requestSnapshot();
+  }
+
   protected rearmTurnTimerIfCurrent(userId: string): void {
     if (!this.handController) return;
     const state = this.handController.getState();

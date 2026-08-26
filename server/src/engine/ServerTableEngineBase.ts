@@ -831,6 +831,9 @@ export abstract class ServerTableEngineBase {
             reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_persist_threw');
           });
       }
+      if (event.type === 'PLAYER_DISCONNECTED') {
+        this.handlePlayerDisconnectedMidTurn(event.playerId);
+      }
       if (event.type === 'PLAYER_RECONNECTED') {
         // ── ADDITIVE observability (#5): WS reconnect counter ──
         try {
@@ -2835,6 +2838,7 @@ export abstract class ServerTableEngineBase {
   // ── Implemented by ServerTableEngineTurns (layer 3/8) ──
   protected abstract clearTurnTimer(): void;
   protected abstract rearmTurnTimerIfCurrent(userId: string): void;
+  protected abstract handlePlayerDisconnectedMidTurn(userId: string): void;
 
   // ── Implemented by ServerTableEngineDealing (layer 5/8) ──
   protected abstract dealingLoop(): Promise<void>;

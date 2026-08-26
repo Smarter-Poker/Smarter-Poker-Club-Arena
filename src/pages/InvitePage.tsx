@@ -150,7 +150,7 @@ export default function InvitePage() {
   // Generate invite URL and simple QR code when club loads
   useEffect(() => {
     if (club?.id) {
-      const url = `${window.location.origin}/invite/${club.id}`;
+      const url = `${window.location.origin}/hub/club-arena/invite/${club.id}`;
       setInviteUrl(url);
 
       // Draw a simple QR-like grid on canvas

@@ -294,10 +294,14 @@ export default function TournamentRankingCard({
         share?: (d: { title?: string; text?: string; url?: string }) => Promise<void>;
       };
       if (typeof nav.share === 'function') {
-        await nav.share({ title: 'Smarter.Poker', text, url: window.location.origin });
+        await nav.share({
+          title: 'Smarter.Poker',
+          text,
+          url: `${window.location.origin}/hub/club-arena`,
+        });
         return;
       }
-      await navigator.clipboard.writeText(`${text} ${window.location.origin}`);
+      await navigator.clipboard.writeText(`${text} ${window.location.origin}/hub/club-arena`);
       setShared(true);
       window.setTimeout(() => setShared(false), 2000);
     } catch {

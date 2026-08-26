@@ -1520,12 +1520,31 @@ export default function PlayerStatsPage() {
         role="tablist"
         aria-label="Statistics Sections"
         onKeyDown={(e) => {
-          if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+          /* A ROVING TABINDEX MUST ACTUALLY MOVE FOCUS.
+             Each tab is `tabIndex={category === cat ? 0 : -1}`, so selecting a
+             new one drops the OLD button to -1. Without the focus() below, focus
+             stayed on that old button - now removed from the tab order - so a
+             keyboard user got no announcement of the new tab, and their next Tab
+             press jumped somewhere unrelated. The ARIA tablist pattern requires
+             focus to follow selection; selection alone is only half of it.
+
+             focus() is safe to call before React re-renders: programmatic focus
+             works on a tabIndex={-1} element, and the attribute updates to 0 in
+             the same commit. */
+          const KEYS = ['ArrowRight', 'ArrowLeft', 'Home', 'End'];
+          if (!KEYS.includes(e.key)) return;
           e.preventDefault();
           const i = TABS.indexOf(category);
           const next =
-            e.key === 'ArrowRight' ? (i + 1) % TABS.length : (i - 1 + TABS.length) % TABS.length;
-          setCategory(TABS[next]);
+            e.key === 'Home'
+              ? TABS[0]
+              : e.key === 'End'
+                ? TABS[TABS.length - 1]
+                : e.key === 'ArrowRight'
+                  ? TABS[(i + 1) % TABS.length]
+                  : TABS[(i - 1 + TABS.length) % TABS.length];
+          setCategory(next);
+          document.getElementById(`stats-tab-${next}`)?.focus();
         }}
       >
         {TABS.map((cat) => (

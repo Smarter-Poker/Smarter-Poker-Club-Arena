@@ -203,6 +203,11 @@ export function LiveHandReplayer2D({ handData, currentStep, totalSteps }: LiveHa
                   </div>
                 )}
 
+                {/* ALL IN Badge (simulated for showdown or if they went all in) */}
+                {currentState.street === 'showdown' && !isFolded && (
+                  <div className="replayer-seat-allin-badge">ALL IN</div>
+                )}
+
                 <div className="replayer-seat-info">
                   <div className="replayer-seat-name">{p.username}</div>
                   <div className="replayer-seat-stack">
@@ -211,7 +216,14 @@ export function LiveHandReplayer2D({ handData, currentStep, totalSteps }: LiveHa
                   </div>
                 </div>
 
-                {/* Hole Cards */}
+                {/* Equity Percentage under the avatar */}
+                {currentState.street === 'showdown' && !isFolded && (
+                  <div className={`replayer-seat-equity ${p.result > 0 ? 'winning' : ''}`}>
+                    {p.result > 0 ? '100%' : '0%'}
+                  </div>
+                )}
+
+                {/* Hole Cards (moved up via CSS to avoid covering bottom UI) */}
                 {!isFolded && (
                   <div className="replayer-hole-cards">
                     {p.hole_cards.length > 0 ? (

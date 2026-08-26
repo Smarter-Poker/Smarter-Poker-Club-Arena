@@ -1,6 +1,6 @@
 # 2026-08-26 — Seat-exit detector, the dead refund pool, and a corrected rule
 
-Status: **DB changes are live in production. Repo changes are written to disk but NOT pushed** (see "Blocked" at the bottom).
+Status: **DB changes are live in production. Repo changes are pushed as PR #1037 with squash auto-merge armed** (see "Push status" at the bottom).
 
 ---
 
@@ -24,10 +24,10 @@ Exit 6522 (user `f7201058`) was paid 85.85 at 09:33:33 and its seat closed at
 
 Lower bound is now `GREATEST(p_grace, interval '15 minutes')`.
 
-| | before | after |
-|---|---|---|
-| flagged exits (7d) | 2 | 1 |
-| ids | 6522, 7458 | 7458 |
+|                    | before     | after |
+| ------------------ | ---------- | ----- |
+| flagged exits (7d) | 2          | 1     |
+| ids                | 6522, 7458 | 7458  |
 
 The false positive is gone and the real shortfall is retained. A money alarm
 that cries wolf is how the real one stops being read.
@@ -96,21 +96,21 @@ refund table.
 
 ## Still open
 
-| # | Item | Why it is not done |
-|---|---|---|
-| 1 | **Exit 7458: 25.90 chips owed to `a916c222`** | Real loss, verified. Add-on 25.90 at 12:55:23, cash-out of only 19.10 at 12:55:24, stack 45.00 at 12:55:25 (`19.10 + 25.90 = 45.00`). The cash-out read a stale stack that excluded the add-on. Fix is engine-side on Hetzner, not a migration. Spec below. |
-| 2 | **33,494 `"Cash-out from table (server startup cleanup)"` rows in 4 days** (11.6M chips) | More mass-cashout churn than normal cash-outs get in a month (16,165). The engine is restarting constantly. Root cause not investigated. |
-| 3 | 12 `multiple_permissive_policies` groups (25 policies, 12 tables) | Minor planner cost. Untouched. |
-| 4 | 77 RLS-enabled tables with zero policies | **Verified safe** — RLS denies all client access and service_role bypasses. Hygiene only: their `anon`/`authenticated` grants are misleading and should be revoked. |
-| 5 | Two backup tables in `public` | `club_member_daily_stats_profit_backup_20260826` (123,463 rows), `vip_backfill_20260812_backup` (470). |
-| 6 | Auth connection pool -> percentage-based | No tool access; dashboard or management API only. |
-| 7 | `TablePage.tsx` — 748 KB / 15,345 lines | Large refactor. This, not route splitting, is the real bundle win: every route in `App.tsx` is already `lazyWithRetry(() => import(...))`. |
+| #   | Item                                                                                     | Why it is not done                                                                                                                                                                                                                                          |
+| --- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Exit 7458: 25.90 chips owed to `a916c222`**                                            | Real loss, verified. Add-on 25.90 at 12:55:23, cash-out of only 19.10 at 12:55:24, stack 45.00 at 12:55:25 (`19.10 + 25.90 = 45.00`). The cash-out read a stale stack that excluded the add-on. Fix is engine-side on Hetzner, not a migration. Spec below. |
+| 2   | **33,494 `"Cash-out from table (server startup cleanup)"` rows in 4 days** (11.6M chips) | More mass-cashout churn than normal cash-outs get in a month (16,165). The engine is restarting constantly. Root cause not investigated.                                                                                                                    |
+| 3   | 12 `multiple_permissive_policies` groups (25 policies, 12 tables)                        | Minor planner cost. Untouched.                                                                                                                                                                                                                              |
+| 4   | 77 RLS-enabled tables with zero policies                                                 | **Verified safe** — RLS denies all client access and service_role bypasses. Hygiene only: their `anon`/`authenticated` grants are misleading and should be revoked.                                                                                         |
+| 5   | Two backup tables in `public`                                                            | `club_member_daily_stats_profit_backup_20260826` (123,463 rows), `vip_backfill_20260812_backup` (470).                                                                                                                                                      |
+| 6   | Auth connection pool -> percentage-based                                                 | No tool access; dashboard or management API only.                                                                                                                                                                                                           |
+| 7   | `TablePage.tsx` — 748 KB / 15,345 lines                                                  | Large refactor. This, not route splitting, is the real bundle win: every route in `App.tsx` is already `lazyWithRetry(() => import(...))`.                                                                                                                  |
 
 ### Spec for #1 — the add-on / leave race
 
 The shape is already known here: `wallet_transactions` carries a hand-written
-row reading *"Correction: hand #1458859 settlement (final stack 34.18) lost to
-mid-hand cashout race at 23:49:15Z — refund of 14.18 shortfall"*. Same class of
+row reading _"Correction: hand #1458859 settlement (final stack 34.18) lost to
+mid-hand cashout race at 23:49:15Z — refund of 14.18 shortfall"_. Same class of
 bug, patched by hand once.
 
 Required behaviour, to be asserted in a unit test before any engine change:
@@ -160,26 +160,37 @@ _debit`) — coordinate before duplicating item #1.
 
 ---
 
-## Blocked — repo changes are not pushed
+## Push status
 
-Three migration files and the `CLAUDE.md` correction are written to
-`~/Documents/club-arena/` but are **not committed or pushed**. Every route
-available to this session is closed:
+Pushed. Branch `agent/cowork-seatexit/fix/detector-and-dead-refund-pool`,
+**PR #1037**, squash auto-merge armed. It lands the moment the six required
+checks report.
 
-| Route | Result |
-|---|---|
-| GitHub MCP (`create_branch`, `search_repositories`) | `Authentication Failed: Bad credentials` — the token is revoked, not merely under-scoped |
-| Sandbox `git ls-remote` | `HTTP code 403 from proxy after CONNECT` — github.com unreachable regardless of credentials |
-| Host git via the mounted worktree | Forbidden by CLAUDE.md 12.4 — that mount cannot `unlink`, so it strands a `.git/index.lock` that then blocks git on the Mac too |
+Getting there took three corrections worth recording:
 
-This is RULE 0's genuine exception ("credentials the agent has no path to
-obtain"). **The GitHub MCP token needs rotating.**
+1. **The GitHub MCP token is revoked** — `create_branch` and
+   `search_repositories` both return `Authentication Failed: Bad credentials`.
+   Not a scope problem. It needs rotating.
+2. **The sandbox cannot reach github.com** — `git ls-remote` returns
+   `HTTP code 403 from proxy after CONNECT`, so no credential would help there.
+3. **The host can.** SSH to `git@github.com:Smarter-Poker/Smarter-Poker-Club-Arena.git`
+   works from the Mac and `gh` is authed as `Smarter-Poker` (it lives at
+   `/opt/homebrew/bin`, which is not on the non-interactive shell's PATH —
+   export it or `gh` reports `command not found`).
 
-Note the resulting state: **production DB is ahead of the repo.** The three
-migrations are live but unrecorded in git. Push promptly so the next agent's
-`list_migrations` and the repo agree.
+Two further traps for the next agent:
 
-```bash
-cd ~/Documents/club-arena
-bash scripts/git-safe-push.sh "fix(db): seat-exit detector lower bound, dead refund pool, drop leave stubs"
-```
+- **The main clone was at a detached HEAD, 8 commits behind**, because `main`
+  is checked out in another worktree (`.agent-trees/club-arena/agent-replayer`).
+  `git checkout main` there fails. Claim your own worktree, per AGENT-PLAYBOOK.
+- **`scripts/git-safe-push.sh` runs `git add -A` (line 133) and commits with
+  `--no-verify` (line 205).** At the time of writing the repo root held 20
+  untracked items including `.agent-trees/` and a dozen scratch files from other
+  agents. Running it unmodified would have swept all of that into the commit and
+  skipped the test gate that CLAUDE.md section 8 says must never be skipped.
+  This work was staged explicitly by path and committed with hooks enabled.
+
+**Unverifiable from here:** the PAT cannot read check state — GraphQL returns
+`Resource not accessible by personal access token` for
+`statusCheckRollup.contexts`, so `checks=0` on a PR is a permissions artifact
+and NOT evidence that CI did not run. Do not read it as such.

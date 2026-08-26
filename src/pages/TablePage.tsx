@@ -46,12 +46,30 @@
  * file, and each of their stylesheets was checked class by class against the
  * rest of src/ before removal: none shares a selector with anything rendered.
  *
- * DELIBERATELY LEFT: BankrollWidget, PositionStatsPopup, SessionTimer,
- * SessionTrajectoryMini, StreakBadge and StreamerMode are dead here too, but
- * this file is their ONLY importer anywhere in src/. Dropping them would take
- * their CSS out of the bundle as well, and TablePage.css is being reworked in
- * a separate pass this round — so that is one file's decision, not this one's.
- * They are components that were built and never mounted; see the audit report.
+ * DELETED 2026-08-26: PositionStatsPopup, SessionTrajectoryMini and PremiumPot,
+ * with their stylesheets. Each was built, never mounted, and every class its
+ * stylesheet defined was either defined somewhere else as well or rendered by
+ * nothing at all - so removing them cannot change a pixel on any screen.
+ *
+ * DELIBERATELY LEFT, and this is a defect rather than a preference:
+ * BankrollWidget, SessionTimer, StreakBadge, StreamerMode and CardReveal are
+ * also mounted nowhere and this file is their only importer in src/ - but each
+ * of their stylesheets declares a BARE, UNSCOPED class that another component
+ * on another page renders and that NOTHING ELSE DEFINES:
+ *
+ *   BankrollWidget.css  .stack-value   <- RebuyModal, AddOnModal
+ *   SessionTimer.css    .timer-value   <- TournamentClock
+ *   StreakBadge.css     .streak-badge  <- LeaderboardPage
+ *   StreamerMode.css    .option        <- PrivacySettings, TableConfigPage +5
+ *   CardReveal.css      .cards         <- 20 files, table and non-table
+ *
+ * So those screens are styled today only because this page imports a component
+ * it never renders. Deleting the import unstyles them, silently, somewhere
+ * nobody would think to look. The fix is to move each orphaned rule into the
+ * stylesheet of the component that actually renders it - which touches the
+ * leaderboard, the tournament clock and the rebuy modal, none of which is the
+ * table. That is a deliberate follow-up, not a thing to do quietly inside a
+ * table pass. Do not simply drop these imports.
  */
 
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
@@ -264,9 +282,7 @@ import { playerStyleClassifier } from '../services/PlayerStyleClassifier';
 // Phase 9: Previously unwired table components
 import { StreamerMode } from '../components/table/StreamerMode';
 import { BankrollWidget } from '../components/table/BankrollWidget';
-import PositionStatsPopup from '../components/table/PositionStatsPopup';
 import IdentityModal from '../components/table/IdentityModal';
-import { SessionTrajectoryMini } from '../components/table/SessionTrajectoryMini';
 import { StreakBadge } from '../components/table/StreakBadge';
 
 import { useIsMounted } from '../hooks/useIsMounted';

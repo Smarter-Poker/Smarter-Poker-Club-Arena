@@ -1362,6 +1362,31 @@
   z-index: 14;
 }
 
+/* The reveal GROWS instead of snapping: the size/position deltas between the
+   resting cluster and the 1.6x reveal tween over 200ms, timed with the flip.
+   Scoped to the cards and the container's box only — transform and opacity
+   are deliberately excluded so the deal/fold/flip keyframes stay untouched,
+   and the base .seat__card transitions (transform, box-shadow) are restated
+   so this higher-specificity rule does not silently drop them. */
+.seat__cards--opponent,
+.seat__cards--opponent .seat__card {
+  transition:
+    width 0.2s ease,
+    height 0.2s ease,
+    left 0.2s ease,
+    right 0.2s ease,
+    top 0.2s ease,
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seat__cards--opponent,
+  .seat__cards--opponent .seat__card {
+    transition: none;
+  }
+}
+
 /* The acting player's highlight includes the fan — the hand must sit INSIDE
    the glow, not next to it looking detached. Winner glow, same idea in gold. */
 .seat--active .seat__cards--opponent {

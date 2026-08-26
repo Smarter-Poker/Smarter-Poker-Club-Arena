@@ -33,7 +33,8 @@ export type WalletRowKey =
   | 'promo_wallet'
   | 'club_bank'
   | 'rake_treasury'
-  | 'spins_wallet';
+  | 'spins_wallet'
+  | 'backup_bbj';
 
 /** The four roles that may see, open and spend from the Club Bank. */
 export const CLUB_BANK_ROLES: ClubRole[] = ['owner', 'co_owner', 'admin', 'super_agent'];
@@ -84,7 +85,10 @@ export function clubWalletRows(
 
   if (canSeeClubBank(r)) {
     rows.push('club_bank');
-    if (opts.standalone) rows.push('rake_treasury');
+    if (opts.standalone) {
+      rows.push('rake_treasury');
+      rows.push('backup_bbj');
+    }
     /**
      * The Spins wallet, under exactly the law above.
      *

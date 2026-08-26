@@ -3054,7 +3054,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 // INSIDE that cashier - there is no mint button out here any
                 // more, and no mint at all once the club is in a union.
                 onOpenPlayerWallet={() => setShowPlayerWallet(true)}
-                onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
+                onOpenPromoWallet={(balance) => {
+                  setUnionWalletModal({
+                    key: 'promo',
+                    label: 'Promo Wallet',
+                    balance: balance || 0,
+                  });
+                }}
                 onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
                 onOpenClubBank={() => setActiveCashier('club_bank')}
                 onOpenBBJ={() => {
@@ -3064,17 +3070,20 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 onOpenUnionRake={() => setUnionTreasuryModal('rake')}
                 onOpenUnionBackupBBJ={() => setUnionTreasuryModal('backup')}
                 onOpenUnionPromo={(balance) => {
-                  if (club?.is_union) {
-                    setUnionWalletModal({ key: 'promo', label: 'Promo Wallet', balance });
-                  }
+                  setUnionWalletModal({ key: 'promo', label: 'Promo Wallet', balance });
                 }}
                 onOpenUnionSpins={(balance) => {
-                  if (club?.is_union) {
-                    setUnionWalletModal({ key: 'spin_reserve', label: 'Spins Treasury', balance });
-                  }
+                  setUnionWalletModal({ key: 'spin_reserve', label: 'Spins Treasury', balance });
                 }}
-                onOpenClubRake={() => setStandaloneRakeModal(true)}
-                onOpenClubSpins={() => setStandaloneSpinsModal(true)}
+                onOpenClubRake={() => setUnionTreasuryModal('rake')}
+                onOpenClubSpins={(balance) =>
+                  setUnionWalletModal({
+                    key: 'spin_reserve',
+                    label: 'Spins Treasury',
+                    balance: balance || 0,
+                  })
+                }
+                onOpenClubBackupBBJ={() => setUnionTreasuryModal('backup')}
               />
             </div>
           )}

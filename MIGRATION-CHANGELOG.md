@@ -7,6 +7,92 @@
 
 ---
 
+## Cowork session 2026-08-26 — HORSE BRAIN V15 + THE 20BB REVIEW SYSTEM
+
+Dan: "massive improvement and optimization to the decision making... I watched
+horses check-shoving small flushes... a horse call off 800 chips with a 9-high
+flush in PLO6 where your opponent always has a bigger flush when raised...
+every hand where a horse wins or loses 20bb needs to be flagged and reviewed."
+
+### PR #1001 — V15 Omaha nut discipline (MERGED, deployed, verified on engine)
+
+Full audit of the decision pipeline (HorseLogic / HorseEval / HorsePreflop /
+HorseMind / scheduleHorseAction). Root causes of the small-flush payoffs:
+
+1. **The equity model could not see that a PLO raiser has a flush.** V12
+   board-contact conditioning was NLH-only; PLO opponents were sampled from
+   preflop bands, so a nine-high flush priced itself ~75-85% against a range
+   that is really bigger flushes. Omaha aggressors now get cheap structural
+   contact conditioning (bounded redraws, wide-band pots only).
+2. **No concept of flush rank.** cat 6 was cat 6. New `omahaNutStatus()`
+   counts live higher flushes / detects nut straights. Dominated hands facing
+   a raise play against a CAPPED equity, never value-raise on any street
+   unless near-lock, and call rather than jam when committed.
+3. **plo5/plo6 preflop scores inflated by hole count** — measured median plo6
+   hand scored 0.53 (above the 0.52 call-a-raise bar) vs plo4's 0.24. Fixed
+   with measured median-shift normalization (-4.7 / -8.8 pts).
+4. **No small ball**: non-nut value sizing damped (x0.86 plo5, x0.78 plo6),
+   dominated flush multiway checks 60%, multiway tightening scales with hole
+   count.
+
+League now deals variants: playHand is variant-generic and a nightly
+`plo6_v15_discipline` matchup measures v15 on/off (the NLH matchups cannot
+see it by construction). Verified deployed: engine container restarted 14:46
+UTC, `grep -c omahaNutStatus /app/dist/engine/*.js` returns hits.
+HorseOmahaDiscipline.test.ts pins Dan's exact hands. Honest scope note: v15
+shipped on correctness + scenario tests; first league numbers arrive with the
+next nightly run — compare against the 2026-08-23 baseline only.
+
+### PR #1002 — 20bb hand flag + review capture (this PR)
+
+`recordHorseHandReviews()` beside writeHandFacts at settlement: any horse at
+|net| >= 20bb gets a row in `horse_hand_reviews` (exact in-memory nets, NOT
+the action-log reconstruction that fails chip conservation in 38% of hands).
+Leak tags at write time: nonnut_flush_stackoff, second_nut_flush_stackoff,
+dominated_straight_stackoff, big_bet_fold, preflop_stackoff, river_aggr_lost.
+Permanent per-horse/day rollup via `fn_hhr_rollup_add`; raw rows prune at 30
+days. Migration `20260826144505_horse_hand_reviews.sql` APPLIED to production
+(tables + RLS + admin RPCs `ca_horse_hand_reviews`, `ca_horse_review_summary`
+gated on `fn_is_horse_admin()`); schema manifest regenerated. Measured volume
+first: 485k hands/day, 3.3% reach 40bb pots -> 15-30k rows/day.
+
+### Daily audit loop (added same session, Dan follow-up)
+
+`horse_daily_audit` (migration `20260826151309`, APPLIED): one row per day
+with machine-computed findings — leak-tag spikes vs the trailing week, horses
+bleeding 400bb+ in flagged pots, league layers resolving significant-negative,
+illegal league actions, capture-coverage gaps (a variant dealing big pots but
+writing zero review rows), missing evidence payloads, net outliers, untagged
+losses — each finding carrying severity, category (schema/logic/gto),
+evidence, and a recommendation. Computation lives in SQL
+(`fn_run_horse_daily_audit`); the engine's `HorseDailyAudit.ts` is a thin
+scheduler (06:00-09:00 UTC window, boot check, catch-up, `horse_job_runs`
+claim key `daily_audit` — all the 2026-08-23 nightly-job lessons). The daily
+Claude analysis writes into `agent_analysis` via
+`fn_horse_audit_set_agent_analysis`; a scheduled Cowork task runs it every
+day. Self-test on live data: the very first run correctly flagged 7
+capture-coverage criticals because the capture PR had not yet deployed.
+
+### World Hub PR #781 — /horses/hand-reviews admin dashboard
+
+Fleet summary (per-horse big wins/losses, net bb, leak counts, clickable
+filters) + flagged-hand browser with expandable street-by-street detail.
+FOLLOW-UP: pages/horses/index.js has 26 pre-existing argument-less
+getSession() calls, so any edit to it is blocked by pre-commit CHECK C — the
+nav button for hand-reviews cannot land until that file gets the authUtils
+refactor. Page is reachable directly at /horses/hand-reviews.
+
+### Also verified this session (before the brain work)
+
+club-arena Vercel project (`prj_tmZtfoqDmUFwusuOiPivr2nM52QM`) is a DEAD
+duplicate: link severed, one ERROR deploy ever (the "services" framework
+misconfig), nothing serves from it; the real pipeline (build-for-world-hub ->
+hub-vanguard) is healthy. Recommend Dan deletes the project in the dashboard.
+Commander's CANCELED deploys are the Ignored Build Step skip rule working on
+docs-only commits, not a failure. estate-integrity: 0 problems across all 7.
+
+---
+
 ## Cowork session 2026-08-25 (part 3) — THE CLUB PAGE, LINE BY LINE
 
 Dan: "go through it all line by line, check for any bugs, stubs, gaps, errors,
@@ -14976,3 +15062,142 @@ sends -1 defaults) and applies reveal_order for reconnecting clients.
 
 Scheduled task verify-showdown-review-fix-landing independently re-verifies
 both tiers and reports.
+
+## Cowork session 2026-08-23 (18) — THE SCOPE RULE, WRITTEN ONCE
+
+Dan, after the Shark Club / Club JAQK fix: "HOW ELSE CAN THIS IMPROVE? THIS CAN
+NEVER BREAK. ANY TIME THE UNION CREATES NEW TABLES, THEY MUST BE DISPLAYED
+INSIDE THEIR ATTACHED CLUBS RIGHT AWAY."
+
+Fixing the missing clause was the symptom. One sentence — _a union club sees the
+union's games plus its own private ones_ — was written **six times in three
+languages**:
+
+| #    | Where                                            | Form                 |
+| ---- | ------------------------------------------------ | -------------------- |
+| 1, 2 | `get_club_home` tables + tournaments             | SQL                  |
+| 3    | cash-table fetch                                 | PostgREST `.or`      |
+| 4    | tournament fetch                                 | two separate queries |
+| 5, 6 | `belongsInTableList` / `belongsInTournamentList` | JS predicates        |
+
+Copy 2 had drifted. The realtime rules even carried a comment saying they "MUST
+mirror the fetch queries" — which _is_ the disease: a rule six places must
+remember is a rule that drifts, and this one drifted twice.
+
+**Now there are two shapes of one rule, in one file.** `src/utils/clubScope.ts`
+exports `inClubScope` (the predicate realtime judges a live row by) and
+`clubScopeOrExpression` / `applyClubScope` (what the database is filtered with).
+A test walks the **full matrix** of `union_id × club_id × is_private` and holds
+both to the same answer — so "the live list and the fetched list agree" is a
+fact, not a comment. Further tests fail if a seventh copy appears: no
+hand-written union scope may survive in the page.
+
+**Tournaments are now fetched in ONE query, the same shape as tables.** They
+used to be two — the club's private games, plus a conditional union query,
+merged and deduped. That asymmetry is precisely what hid both bugs: the
+tournament path looked different enough that a fix to the table path did not
+obviously apply. It was also the worse failure mode — when the union query
+timed out (which it did repeatedly today) the club query quietly succeeded with
+nothing and every tournament tab emptied.
+
+**And a dropped socket can no longer leave a club stale.** The subscribe
+callback set a flag and logged; nothing re-read the lists. Realtime gives no
+backlog on resubscribe, so every game the union opened while the connection was
+down — and `CHANNEL_ERROR` and `TIMED_OUT` are both handled there, so it does go
+down — stayed invisible until the player happened to reload. It now refetches on
+re-subscribe, with a `firstSubscribe` guard so the initial connect does not
+double-fetch on top of the load already in flight.
+
+Realtime subscriptions were checked and were already correct: dual-channel on
+`club_id` **and** `union_id`, so union rows do arrive live. Without that filter
+the admission rule would never even run.
+
+Two tests were updated in this commit because they pinned the two-query shape
+this deliberately replaces — the list-cap guard (3 → 2 capped queries) and my
+own `variant` assertion from earlier today.
+
+15 new tests. 295 files / 3,638 green.
+
+**Noted, not fixed:** `tests/unit/POYService.test.ts` failed twice in a full
+parallel run and passes in isolation on both this branch and a clean main. That
+is a flake — probably cross-test pollution — and it is worth someone chasing
+before it masks a real failure.
+
+---
+
+## 2026-08-26 — Run It Twice: PokerBros parity pass (offer panel, live consent, per-run pot ships, split pots)
+
+Reference: three screen recordings from Dan (RIT accepted HU, RIT declined,
+RIT multi-way with split pots), watched frame-by-frame. Full behavioral
+contract in `docs/rit-pokerbros-parity.md`.
+
+**Server** (`ServerTableEngineRunout.ts`, `ServerTableEngineBase.ts`,
+`ServerTableEngineHandEvents.ts`, `RunItTwiceEngine.ts`, `handFacts.ts`,
+`types.ts`):
+
+- One shared 25s offer countdown (was: hardcoded 10 on the wire, 10 in the
+  engine, 5/10 on the client — three clocks for one question). `rit_offer`
+  and `rit_chooser_decided` now carry `deadline_ts` + `timeoutSeconds` from
+  the engine config; the wait's safety timeout follows the config.
+- NEW `rit_response_update` broadcast on every accept (live green checkmarks
+  in the consent panel) and NEW `rit_all_accepted` on unanimity (the accept
+  banner). Both named in `RIT_EVENT_TYPES` for telemetry.
+- `dealAndResolveRIT` now collects `determineWinners`' UNMERGED perPotOut
+  per board and publishes it through `currentHandPerPotAwards` /
+  `currentHandWinnersByBoard` with the RUN index as the board axis (types
+  widened 1|2 → number). `pot_win.pot_awards` therefore sequences run 1 →
+  run N, main pot → side pots, splits per winner — the client's existing
+  award-group animation plays them as separate beats. Money math untouched:
+  settlement is byte-identical, display shares are scaled to the net pot.
+- Fixed: WINNERS handler unconditionally wiped `currentHandWinnersByBoard`
+  on the RIT path's empty emit (pre-set per-run labels died a tick before
+  pot_win read them).
+- `rit_result` carries `base_board_count` for the client reveal timeline.
+
+**Client** (`TablePage.tsx`, `RunItTwice.tsx/.css`, `TableModalsLayer.tsx`,
+`showdownPresentation.ts`, `handHistoryShape.ts`):
+
+- `RunItTwicePrompt` rebuilt as the consent panel: board preview with
+  face-down slots for undealt streets, pot, live shared countdown, one row
+  per all-in player (hole cards, equity when broadcast, live checkmark),
+  Decline/Accept pills. Opens for EVERY participant at `rit_offer` —
+  responders can accept before the chooser picks (the engine records it).
+  Accepting keeps the panel open in a waiting state; ANY decline closes it
+  instantly for everyone (`rit_single_run`) with the decliner named.
+- Reveal timeline: `rit_result` no longer slams finished boards onto the
+  felt. Each run deals street by street (flop → turn → river) at the paced
+  runout cadence, run by run; winner ribbons, card highlights and share
+  labels appear only after the last river; the pot ship holds until the
+  timeline ends, then plays board-by-board, pot-by-pot, split fans with
+  per-winner floats.
+- `handHistoryShape` now lifts board 3 as well (`extraBoards`); a 3-run
+  hand no longer loses its third board in replay.
+
+**Tests:** new `server/src/engine/RunItTwice.parity.test.ts` (wire countdown,
+consent broadcasts, per-run unmerged awards, 3-run board axis) + extended
+`tests/hand-history-shape.test.ts` (board-3 lift). `hand-history-shape`
+updated for the new `extraBoards` field in the same commit that adds it.
+
+### Round 2 (same session) — measured timings, felt banners, pot counter, hold fix
+
+Re-cut the recordings at 10fps and timestamped every card land and chip ship
+via inter-frame difference spikes. Then closed the gaps the measurements and a
+line-by-line re-read exposed:
+
+- **CRITICAL: the post-hand hold was shorter than the RIT reveal timeline**
+  (max ~7.9s vs ~12s for a 2-run preflop hand) — the next hand would deal
+  over a board still turning its river. `handCompletionSpec` (both mirrors,
+  byte-identical, test-pinned) gained RIT_REVEAL_LEAD_MS / RIT_STREET_MS /
+  RIT_RUN_GAP_MS / RIT_RIBBON_MS and `handCompletionHoldMs` a
+  `ritRuns`/`ritStreetsPerRun` branch; Dealing passes both from the new
+  `currentHandRitBaseBoardCount`. The client timeline now reads the SAME
+  constants — change them once, both sides move.
+- RIT status is a **felt strip, not a toast** (reference behavior): waiting
+  persists for everyone incl. spectators, outcome banners (decliner named)
+  replace it; the consent panel slides in a beat (~1.5s) after the strip.
+- **POT counter decrements per shipped pot** in any sequenced award — splits,
+  side pots, every RIT board (potShipRemaining override on PotDisplay).
+- Runs 2+ **dim the shared base cards** so re-dealt streets read as new.
+- Cadence retuned to measurements: POT_AWARD_STAGGER_MS 600 → 900, RIT run
+  gap 1500 → 1800.
+- New hold-math pins in tests/unit/handCompletionLaw.test.ts.

@@ -73,10 +73,7 @@ describe('surplus identification', () => {
   });
 
   it('does not sweep a DIFFERENT config into the family', () => {
-    const tables: Table[] = [
-      ...mk(4, 'NLH 1.00/2.00'),
-      ...mk(4, 'NLH 2.00/5.00'),
-    ];
+    const tables: Table[] = [...mk(4, 'NLH 1.00/2.00'), ...mk(4, 'NLH 2.00/5.00')];
     // Each family is capped independently: 1 surplus each, not 5.
     expect(surplusOf(tables, ['NLH 1.00/2.00', 'NLH 2.00/5.00'], 3).size).toBe(2);
   });
@@ -84,11 +81,7 @@ describe('surplus identification', () => {
 
 describe('retirement safety', () => {
   /** The filter retireSurplusTables applies before closing anything. */
-  const retirable = (
-    tables: Table[],
-    surplus: Set<string>,
-    seats: Array<{ table_id: string }>
-  ) => {
+  const retirable = (tables: Table[], surplus: Set<string>, seats: Array<{ table_id: string }>) => {
     const occupied = new Set(seats.map((s) => s.table_id));
     return tables.filter(
       (t) => surplus.has(t.id) && !occupied.has(t.id) && Number(t.current_players ?? 0) === 0
@@ -140,7 +133,7 @@ describe('the shipped wiring', () => {
   });
 
   it('closes rather than deletes, and only cash tables', () => {
-    const m = /private async retireSurplusTables[\s\S]*?\n  }\n/.exec(SRC);
+    const m = /private async retireSurplusTables[\s\S]*?\n {2}}\n/.exec(SRC);
     expect(m).not.toBeNull();
     expect(m![0]).toContain("status: 'closed'");
     expect(m![0]).toContain("is('tournament_id', null)");

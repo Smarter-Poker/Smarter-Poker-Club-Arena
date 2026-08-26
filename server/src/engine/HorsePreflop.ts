@@ -88,6 +88,11 @@ export interface PreflopCtx {
    *  credit: the horse defends wider and fights back with more re-raises,
    *  which is exactly what makes the hunt unprofitable. */
   targeted?: number;
+  /** V16 DEEP READS: the current raiser's observed fold-to-3-bet frequency
+   *  (0..1), or null/undefined without a qualifying sample. A raiser who
+   *  folds 70% to 3-bets gets 3-bet-bluffed relentlessly; one who never
+   *  folds gets bluffed at all only with real equity. */
+  raiserFoldTo3Bet?: number | null;
   /** PRNG supplied by the caller (fast xorshift) */
   rand: () => number;
 }
@@ -376,7 +381,13 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     // V7 3-BET BLUFF: no callers, right position, mid-strength hands.
     // Wider vs late opens and from the blinds (re-steal).
     const bluffFloor = blindVsSteal ? 0.48 : 0.55;
-    const bluffFreqHere = (blindVsSteal ? 0.5 : vs === 'late' ? 0.45 : 0.3) * bluffBudget;
+    // V16: scale the bluff 3-bet by what THIS raiser actually does against
+    // 3-bets. 0.6 + f3b maps a 70% folder to x1.3 and a 20% folder to x0.8,
+    // clamped so a read can reshape but never zero out the mix.
+    const f3bRead = ctx.raiserFoldTo3Bet;
+    const f3bScale = typeof f3bRead === 'number' ? Math.max(0.7, Math.min(1.45, 0.6 + f3bRead)) : 1;
+    const bluffFreqHere =
+      (blindVsSteal ? 0.5 : vs === 'late' ? 0.45 : 0.3) * bluffBudget * f3bScale;
     if (
       callers === 0 &&
       strength >= t(bluffFloor) &&

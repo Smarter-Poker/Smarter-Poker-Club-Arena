@@ -49,6 +49,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { canHoldAgentWallet } from '../src/components/wallet/walletRows';
+import { coercesToAgentWallet, cashierDestinations } from '../src/components/wallet/cashierModes';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
@@ -113,8 +114,47 @@ describe('the cashier does not offer a destination the server will overrule', ()
      * agent would otherwise leave the selection on a value the list no longer
      * contains. The send would still be corrected server-side; the sentence
      * above the button would be lying about it.
+     *
+     * UPDATED 2026-08-25. This used to pin `recipientHoldsFloat` alone, and
+     * that turned out to be the bug rather than the rule: the narrowing applied
+     * to EVERY cashier and BOTH tabs, so the Club Bank could no longer fund an
+     * agent's promo wallet, could not credit a player-wallet balance to anyone
+     * holding a float, and its Claim Back could only ever pull from a float -
+     * though fn_club_bank_send and fn_club_bank_claim_back take all three
+     * destinations and honour what they are given. "Agent to agent" is
+     * fn_agent_wallet_send; the condition now says so, and coercesToAgentWallet
+     * below pins it as a function rather than as a line of JSX.
      */
-    expect(MODAL).toMatch(/if \(recipientHoldsFloat && destination !== 'agent_wallet'\)/);
+    expect(MODAL).toMatch(/if \(coerceToAgentWallet && destination !== 'agent_wallet'\)/);
+    expect(MODAL).toContain('coercesToAgentWallet(walletType, tab, recipientHoldsFloat)');
+  });
+
+  it('coerces on the agent wallet send tab and nowhere else', () => {
+    // The whole point of hoisting the rule out of the JSX: it is now checkable.
+    expect(coercesToAgentWallet('agent_wallet', 'send', true)).toBe(true);
+    expect(coercesToAgentWallet('agent_wallet', 'send', false)).toBe(false);
+    // The agent wallet's Claim Back tab picks a SEND, not a destination.
+    expect(coercesToAgentWallet('agent_wallet', 'claim', true)).toBe(false);
+    // The Club Bank is not agent-to-agent. It funds floats, promo wallets and
+    // player balances, and claims back from all three.
+    expect(coercesToAgentWallet('club_bank', 'send', true)).toBe(false);
+    expect(coercesToAgentWallet('club_bank', 'claim', true)).toBe(false);
+    // fn_promo_wallet_send honours its own destination argument too.
+    expect(coercesToAgentWallet('promo_wallet', 'send', true)).toBe(false);
+  });
+
+  it('leaves every Club Bank destination on the list', () => {
+    /**
+     * The regression this exists to stop: an owner picks an agent to fund and
+     * the Promo Wallet and Player Wallet buttons vanish, with no error and no
+     * explanation, because the agent-to-agent rule was being applied to the
+     * club treasury.
+     */
+    expect(cashierDestinations('club_bank')).toEqual([
+      'agent_wallet',
+      'promo_wallet',
+      'player_wallet',
+    ]);
   });
 });
 

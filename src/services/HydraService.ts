@@ -688,15 +688,17 @@ export const HydraService = {
     const remainingStack = seatData.stack || 0;
 
     // 2. Remove ALL seat rows for this horse at this table (active + departed)
-    const { error: deleteErr } = await retryAsync(
-      () => supabase.from('table_seats').delete().eq('table_id', tableId).eq('user_id', horseId),
+    // FIX: Using atomic_table_cashout instead of direct delete so chips are returned
+    // to the wallet ledger and the tf_table_seats_audit trigger is satisfied.
+    const { error: cashoutErr } = await retryAsync(
+      () => supabase.rpc('atomic_table_cashout', { p_user_id: horseId, p_table_id: tableId }),
       3
     );
 
-    if (deleteErr) {
+    if (cashoutErr) {
       console.debug(
-        `[HydraService] table_seats DELETE FAILED for horse ${horseId}:`,
-        deleteErr.message
+        `[HydraService] atomic_table_cashout FAILED for horse ${horseId}:`,
+        cashoutErr.message
       );
       return false;
     }
@@ -709,6 +711,7 @@ export const HydraService = {
         `[HydraService] Credited ${returnedChips} chips to horse ${horseId} Player Wallet`
       );
 
+      // Note: This is a no-op client-side, but the RPC already did the actual wallet update!
       await WalletService.logTransaction(
         horseId,
         'PLAYER',

@@ -9,7 +9,11 @@
  * key and profiles.settings, and the table read neither.
  */
 import type { TableUserSettings } from '../hooks/useTableSettings';
-import { normalizeCardBack, SELECTABLE_CARD_BACK_IDS } from '../components/table/CardImage';
+import {
+  normalizeCardBack,
+  SELECTABLE_CARD_BACK_IDS,
+  CARD_BACK_CATALOG,
+} from '../components/table/CardImage';
 
 /**
  * 2026-08-18 — this page used to persist ~30 settings to localStorage and to
@@ -125,20 +129,28 @@ export function validateSettings(raw: unknown): UserSettings {
 // data-felt-theme CSS understood, so four of its five options changed nothing
 // and the fifth was already the default. It was removed rather than reskinned.
 
-// These ids must match the .card-back--<id> rules in
-// src/components/table/CardImage.css. The previous list
-// ('classic' | 'modern' | 'minimal' | 'premium') matched none of them, so every
-// option rendered the same unstyled back.
-export const CARD_BACKS = [
-  { id: 'classic_blue', name: 'Classic Blue' },
-  { id: 'classic_red', name: 'Classic Red' },
-  { id: 'diamond', name: 'Diamond' },
-  { id: 'gold', name: 'Gold' },
-  { id: 'dragon', name: 'Dragon' },
-  { id: 'neon', name: 'Neon' },
-  { id: 'galaxy', name: 'Galaxy' },
-  { id: 'royal', name: 'Royal' },
-];
+/**
+ * The card backs the /settings dropdown may offer.
+ *
+ * DERIVED from the one catalogue (CARD_BACK_CATALOG in CardImage.tsx) rather
+ * than hand-listed. 2026-08-26: the hand-written list had drifted twice over.
+ * It carried EIGHT ids against the shipped twelve — so four owned designs
+ * were unreachable from this page — and, worse, five of the eight were PAID
+ * (`diamond` 100, `dragon` 125, `gold` 150, `neon` 75, `galaxy` 75) and this
+ * was the only card-back picker in the app that never called
+ * `isCardBackUnlocked`. A player could equip a 150-diamond design from a
+ * plain dropdown while the store charged everyone else for it.
+ *
+ * Restricted to the FREE tier for exactly that reason: a `<select>` has
+ * nowhere to show a lock, a price or a purchase flow. Paid designs are sold
+ * by CardBackSelector and the theme modal, both of which gate on ownership.
+ * Deriving means a design added to the catalogue appears here automatically
+ * if it is free, and can never appear here by accident if it is not.
+ */
+export const CARD_BACKS = CARD_BACK_CATALOG.filter((d) => d.tier === 'standard').map((d) => ({
+  id: d.id as string,
+  name: d.name,
+}));
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENTS

@@ -2082,3 +2082,88 @@
   outline: 2px solid #4169e1;
   outline-offset: 2px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   STREAK BADGE — Migrated from StreakBadge.css (dead component cleanup 2026-08-26).
+   Scoped here so LeaderboardPage controls its own badge styles.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.leaderboard-page .streak-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 16px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  pointer-events: none;
+  animation: streakPulse 2s ease-in-out infinite;
+  backdrop-filter: blur(8px);
+}
+
+.leaderboard-page .streak-badge__icon {
+  font-size: 0.85rem;
+  animation: streakFlicker 0.8s ease-in-out infinite alternate;
+}
+
+.leaderboard-page .streak-badge__count {
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard-page .streak-badge__label {
+  opacity: 0.75;
+  font-size: 0.6rem;
+}
+
+/* Tiers */
+.leaderboard-page .streak-badge--warm {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.leaderboard-page .streak-badge--hot {
+  background: rgba(249, 115, 22, 0.2);
+  color: #f97316;
+  border: 1px solid rgba(249, 115, 22, 0.4);
+  box-shadow: 0 0 12px rgba(249, 115, 22, 0.25);
+}
+
+.leaderboard-page .streak-badge--epic {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.3);
+}
+
+.leaderboard-page .streak-badge--legendary {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(168, 85, 247, 0.25));
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  box-shadow:
+    0 0 20px rgba(245, 158, 11, 0.4),
+    0 0 40px rgba(168, 85, 247, 0.15);
+}
+
+@keyframes streakPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes streakFlicker {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}

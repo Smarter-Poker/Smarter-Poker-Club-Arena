@@ -1411,9 +1411,47 @@ class TournamentService {
       current_level?: number | null;
       level_started_at?: string | null;
     };
+    /**
+     * =========================================================================
+     *  `tournaments.current_level` IS A 0-BASED ARRAY INDEX (verified 2026-08-25)
+     * =========================================================================
+     *
+     * Three independent confirmations, so nobody has to re-derive it:
+     *
+     *  1. The authoritative writer is the engine. TournamentManagerBase holds
+     *     `this.currentLevel` as an array index (`blindStructure[this.currentLevel]`)
+     *     and persists exactly that: `.update({ current_level: this.currentLevel })`.
+     *     Its auto-escalated row is labelled `level: this.currentLevel + 1`.
+     *  2. Production agrees. For every RUNNING event with a uniform structure,
+     *     `current_level == floor(elapsed_seconds / level_duration_seconds)`,
+     *     and `blind_structure[current_level].level == current_level + 1`.
+     *  3. The SQL gate agrees. `process_tournament_rebuy` reads the column into
+     *     `v_level` and closes on `v_level >= v_cap`, the same comparison this
+     *     file makes against `levelIndex`.
+     *
+     * So `levelIndex` below is an honest 0-based index, the array lookup is
+     * direct, and every caller that renders `levelIndex + 1` is correct.
+     *
+     * TWO EDGE CASES ARE HANDLED EXPLICITLY:
+     *
+     *  - NOT YET PERSISTED. A null/absent column (a select that omitted it)
+     *    falls through to the wall-clock derivation. A value of 0 does NOT -
+     *    0 is a real level, the opening one, and is read from the array.
+     *  - AUTO-ESCALATED. Past the end of the structure the engine keeps
+     *    incrementing and doubles the last playable level's blinds in memory,
+     *    so `current_level` legitimately exceeds `blind_structure.length`
+     *    (3079 rows in production as this was written). The array cannot
+     *    describe those levels, so the LOOKUP clamps to the last row while
+     *    `levelIndex` keeps the TRUE level - because that is the number the
+     *    rebuy / re-entry / add-on gates and the SQL RPC both compare against.
+     *    This used to fall through to wall-clock, which capped the reported
+     *    level at `length - 1` and could hold a money window open that the
+     *    database had already closed.
+     */
     const serverLevel = serverT.current_level;
-    if (typeof serverLevel === 'number' && serverLevel >= 0 && serverLevel < blinds.length) {
-      const level = blinds[serverLevel];
+    if (typeof serverLevel === 'number' && Number.isFinite(serverLevel) && serverLevel >= 0) {
+      const lookupIndex = Math.min(serverLevel, blinds.length - 1);
+      const level = blinds[lookupIndex];
       const durationSec = (level?.durationMinutes || 10) * 60;
       // TOURNEY-AUDIT 2026-07-24 (sweep 5): precise remaining time from the
       // server-persisted level clock (tournaments.level_started_at) — the

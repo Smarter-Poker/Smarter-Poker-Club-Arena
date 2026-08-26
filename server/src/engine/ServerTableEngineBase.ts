@@ -402,9 +402,13 @@ export abstract class ServerTableEngineBase {
    * Round 2: per-board winner breakdown from the WINNERS event (double board
    * only). Amounts are PRE-rake shares — clients use board + handName for
    * labeling; the shipped amounts come from the merged winners list.
+   *
+   * POKERBROS PARITY 2026-08-26: `board` widened from 1|2 to number — a
+   * run-it-twice/three-times hand populates this with the RUN index (1..3),
+   * the same axis the double-board bomb pot uses for its two boards.
    */
   protected currentHandWinnersByBoard: Array<{
-    board: 1 | 2;
+    board: number;
     userId: string;
     amount: number;
     handName?: string;
@@ -421,7 +425,8 @@ export abstract class ServerTableEngineBase {
     low: boolean;
     amount: number;
     hand?: { name?: string; ranking?: number; cards?: Array<{ rank?: string; suit?: string }> };
-    board?: 1 | 2;
+    /** 1|2 on double-board bomb pots; RUN index 1..3 on run-it-twice hands. */
+    board?: number;
     /** Review fix 2026-08-25: this entry's own engine-generated description. */
     handDescription?: string;
   }> = [];
@@ -526,6 +531,14 @@ export abstract class ServerTableEngineBase {
    * fix invariant).
    */
   protected currentHandRitBoards = 0;
+  /**
+   * POKERBROS PARITY 2026-08-26: community cards already on the felt when the
+   * RIT all-in locked (0 preflop, 3 flop, 4 turn). The hand-completion hold
+   * derives the reveal-timeline length from it (streets per board = the
+   * streets still to deal), so the next hand waits for the client's
+   * street-by-street reveal to finish. Reset with currentHandRitBoards.
+   */
+  protected currentHandRitBaseBoardCount = 0;
   protected currentHandShowdownResults: Array<{
     userId: string;
     handRanking: number;
@@ -1137,10 +1150,16 @@ export abstract class ServerTableEngineBase {
               : ritMode === 'player_choice'
                 ? 'player_choice'
                 : 'none',
-        autoDeclineTimeout: 10,
+        // POKERBROS PARITY 2026-08-26 (Dan's reference recordings): one shared
+        // 25-second countdown covers the chooser AND every responder — the
+        // reference panel shows "Countdown: 25s" ticking for the whole
+        // decision, not 5s + 10s phases. The engine's DeadlineScheduler
+        // auto-declines at this same deadline, and the wire events now carry
+        // it (deadline_ts) so every client renders the same clock.
+        autoDeclineTimeout: 25,
         maxRuns: 3, // Support up to 3 boards (Dan's rules: player can choose 1/2/3)
-        chooserTimeout: 5,
-        responderTimeout: 10,
+        chooserTimeout: 25,
+        responderTimeout: 25,
       });
 
       // Bible V8 §4.19: Configure Insurance engine

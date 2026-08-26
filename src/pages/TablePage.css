@@ -2533,16 +2533,16 @@
   }
 
   .table-scaler {
-    max-width: none;
-    max-height: 100%;
-    /* Landscape keeps the OLD width-then-clamp sizing on purpose. The portrait
-       formula derives width from --sp-table-h, and that budget is built for a
-       page whose action bar spans the bottom — here the bar is a 44%-wide
-       column beside the felt (see .action-panel-wrapper above), so the bottom
-       reserve does not apply and the subtraction can go small or negative.
-       Restoring `width: 100%` leaves this orientation exactly as it was rather
-       than feeding it a number that was never measured for it. */
-    width: 100%;
+    /* Portrait's --sp-table-h pattern extended to landscape.
+       The action panel is a 44% column beside the felt, so
+       the felt area is ~56vw minus 8px left padding.
+       Both constraints are set; aspect-ratio picks the binding one. */
+    --sp-ls-table-w: calc(56vw - 8px);
+    --sp-ls-table-h: calc(100svh - 40px - env(safe-area-inset-bottom, 0px));
+    max-width: var(--sp-ls-table-w);
+    max-height: var(--sp-ls-table-h);
+    width: auto;
+    /* aspect-ratio on .table-scaler now holds by construction */
   }
 
   /* Smaller community cards in landscape */
@@ -3367,18 +3367,40 @@ body.ca-raising .bankroll-widget {
        (0,2,1, at the foot of this file) still collapses it for a spectator,
        who has neither a hero plate nor a time-bank tile. */
     --sp-hero-clear: 88px;
-    /* Measured on production after #685: the 12px side gutters held the
-       scaler at 360px, so the 374px cap never engaged. 4px gutters give the
-       oval its full 374px — ~23px longer at the same 605/1000 aspect, so
-       every seat stays on the painted rail. */
-    padding-left: 4px;
-    padding-right: 4px;
+    /* 2026-08-26: gutters removed per Dan — edge-to-edge felt at 375px
+       measures 375x619.8 (up from 367x606.6 with 4px gutters). Side-seat
+       overhang at narrow viewports is addressed by the max-width: 340px
+       safeguard in SeatSlot.css. */
   }
 
   .table-scaler {
-    /* Dan 2026-08-24: "table is still too small." With 4px gutters the cap
-       is now the viewport itself. */
-    max-width: calc(100% - 6px);
+    /* Dan 2026-08-26: "make the felt genuinely wider." The `- 6px` here was
+       the last thing standing between the oval and its container, and it was
+       pure loss - the container already pays 4px gutters on each side, so this
+       took a second bite out of the same axis for no stated reason.
+
+       MEASURED in Chromium at three phone widths, shipped vs this rule:
+         375x812   361.0 x 596.7  ->  367.0 x 606.6
+         393x852   379.0 x 626.4  ->  385.0 x 636.4
+         430x932   416.0 x 687.6  ->  422.0 x 697.7
+       Aspect stays 0.605 in every case, and the taller box still fits: at
+       375px the container offers 642px of height and the oval asks for 606.6.
+
+       It also makes the side seats fit BETTER, which is the opposite of what
+       you would expect from a bigger table. A seat plate is a fixed 96px wide
+       and is centred on its ring position, so its left edge sits at
+       `gutter + 0.105 * W - 48`. Growing W moves the centre outboard faster
+       than the plate grows, so the overhang against the page edge goes from
+       6.1px to 5.5px.
+
+       NOT taken to `100%` with the gutters removed, which measures 375x619.8
+       and is the largest the oval can be at this width. That costs the 4px
+       gutters, and by the formula above the side plates then overhang by
+       8.6px instead of 5.5px - a real regression in the one place this table
+       is already tight. 8px of extra felt is not worth 3px more of a clipped
+       name plate. If that trade is ever wanted, narrow the side seats' plate
+       in the same commit, or the names pay for the felt. */
+    max-width: 100%;
   }
 
   .spectator-footer-bar {
@@ -3408,4 +3430,59 @@ body.ca-raising .bankroll-widget {
    reads it. Specificity 0,2,1 vs .table-container's 0,1,0. */
 .table-page[data-hero='false'] .table-container {
   --sp-hero-clear: 6px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RIT STATUS STRIP (2026-08-26, parity pass)
+   A wide dark strip across the felt while a Run It Multiple Times question
+   is open, and for the accepted/rejected outcome. Not a toast: it rides the
+   table like the ALL IN banner, visible to players AND spectators.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.rit-felt-banner {
+  position: absolute;
+  top: 58%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(92%, 420px);
+  z-index: 58;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(18, 22, 44, 0.92), rgba(12, 15, 32, 0.92));
+  border: 1px solid rgba(120, 150, 255, 0.22);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  animation: ritFeltBannerIn calc(0.3s * var(--animation-speed, 1)) ease-out;
+}
+
+.rit-felt-banner__text {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #dbe3f0;
+  text-align: center;
+  line-height: 1.4;
+}
+
+@keyframes ritFeltBannerIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* Runs 2+ re-deal only the streets past the shared base board: the shared
+   prefix renders dimmed on those rows so the re-dealt cards read as the new
+   information. base-count can only be 0 (preflop), 3 (flop) or 4 (turn). */
+.community-area__run--extra[data-base-count='3'] .community-cards__card:nth-child(-n + 3),
+.community-area__run--extra[data-base-count='4'] .community-cards__card:nth-child(-n + 4) {
+  opacity: 0.45;
+  filter: saturate(0.6);
 }

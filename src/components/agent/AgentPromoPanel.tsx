@@ -442,7 +442,7 @@ export default function AgentPromoPanel({
                   type="number"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  placeholder="Enter promo chip amount"
+                  placeholder="Enter Promo Chip Amount"
                   min="1"
                   max={promoBalance}
                   style={{

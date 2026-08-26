@@ -14,6 +14,7 @@ import { Virtuoso } from 'react-virtuoso';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
+
 import type { LeaderboardSettings, LeaderboardPayout } from '../services/LeaderboardService';
 import { LeaderboardService } from '../services/LeaderboardService';
 import type {

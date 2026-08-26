@@ -106,7 +106,7 @@ export default function TransactionLedgerView({
   }, [loadLedger]);
 
   // Auto-refresh on new transactions
-  useMasterBusSubscriptions(['BALANCE_UPDATED', 'TRANSACTION_LOGGED' as any], () => loadLedger(), {
+  useMasterBusSubscriptions(['BALANCE_UPDATED', 'TRANSACTION_LOGGED'], () => loadLedger(), {
     debounce: 2000,
   });
 

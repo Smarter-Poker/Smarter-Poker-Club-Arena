@@ -10,6 +10,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { haptic } from '../../services/SoundService';
+import { resolveAvatarDisplay } from '../../utils/avatarUtils';
 import './SpectatorOverlay.css';
 
 export interface SpectatorInfo {
@@ -102,7 +103,7 @@ export function SpectatorOverlay({
                     loading="lazy"
                     decoding="async"
                     className="so-viewer__avatar"
-                    src={spec.avatarUrl || '/avatars/default-player.png'}
+                    src={resolveAvatarDisplay(spec.avatarUrl, spec.userId)}
                     alt={spec.displayName}
                   />
                   <span className="so-viewer__name">{spec.displayName}</span>

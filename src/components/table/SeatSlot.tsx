@@ -26,6 +26,11 @@ import type { PlayerStyleResult } from '../../services/PlayerStyleClassifier';
 import { ChipPhysics } from './ChipPhysics';
 import { getAvatarWithFallback } from '../../utils/avatarGenerator';
 import { soundService, haptic } from '../../services/SoundService';
+import {
+  useActionClockProgress,
+  useActionClockSeconds,
+  type ActionClockStore,
+} from '../../hooks/actionClockStore';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import RiveAvatar from './RiveAvatar';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
@@ -198,7 +203,25 @@ export interface SeatSlotProps {
   isActive: boolean;
   lastAction: LastAction;
   lastBetAmount?: number;
-  timerProgress?: number; // 0-100 (100 = full time, 0 = out of time)
+  /**
+   * 0-100 (100 = full time, 0 = out of time).
+   *
+   * PERF 2026-08-25: TablePage no longer passes this. Handing the acting seat's
+   * countdown DOWN as a prop is what forced the page to hold the countdown in
+   * its own state and re-render — page, nine seats, board, pot, HUD — once a
+   * second for the whole of anybody's turn. The seat subscribes to `actionClock`
+   * itself now, and only while it is the seat actually on the clock.
+   *
+   * Still honoured when supplied, so a harness that has a number and no store
+   * (SimPage) keeps working unchanged. An explicit prop wins over the store.
+   */
+  timerProgress?: number;
+  /**
+   * The table's action clock. Supplied by TablePage; absent everywhere else, in
+   * which case the seat subscribes to an idle store that never publishes and the
+   * two props above are the only source, exactly as before.
+   */
+  actionClock?: ActionClockStore;
   bigBlind?: number;
   isTournament?: boolean;
   bountyValue?: number;
@@ -254,7 +277,12 @@ export interface SeatSlotProps {
   hudStats?: MiniHUDStats | null; // Opponent VPIP/PFR stats
   showHUD?: boolean; // Whether to show the HUD overlay
   playerStyle?: PlayerStyleResult | null; // Auto-classified player archetype
-  secondsLeft?: number; // Actual seconds remaining (for countdown overlay)
+  /**
+   * Actual seconds remaining, for the disconnected-player countdown overlay.
+   * Same story as `timerProgress`: TablePage stopped passing it on 2026-08-25
+   * and the seat reads the store instead. An explicit prop still wins.
+   */
+  secondsLeft?: number;
   deckStyle?: '4color' | '2color';
   cardBack?: string; // Card back design ID (e.g. 'classic_red', 'black', 'clubs_gold')
   /**
@@ -469,6 +497,40 @@ function getActionLabel(action: LastAction, amount?: number): string {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
+ * THE VILLAIN CLUSTER TUNING — Dan 2026-08-26, corrected same day against the
+ * PokerBros close-ups: "THE FANNING WAS ONLY EVER SUPPOSED TO BE DONE FOR THE
+ * HERO'S SEAT." A villain's face-down hand is a SMALL rotational cluster —
+ * card size fixed at ~0.52 x avatar in CSS — and these two numbers are the
+ * ONLY thing that changes with card count:
+ *
+ *   step  horizontal slide per card, as a fraction of card width. A pair
+ *         sits side-by-side (0.42); bigger hands nest their bottoms tighter
+ *         because the ROTATION is what separates them.
+ *   rot   degrees of splay per card, pivoting about a point below the card's
+ *         bottom edge, symmetric around the cluster centre. 7deg keeps a
+ *         hold'em pair nearly parallel like the reference; 12deg gives 4-6
+ *         cards the full rosette.
+ *
+ * Applied as CSS custom properties on the cluster container (never as inline
+ * pixel values), so the geometry stays inspectable in devtools and the
+ * responsive system retunes it through --seat-avatar-size alone.
+ *
+ * 3 is not a live variant; it falls between 2 and 4 so a malformed count
+ * clamped into the sane band still renders sensibly.
+ */
+const VILLAIN_FAN: Record<number, { step: number; rot: number }> = {
+  /* Dan 2026-08-26 round 3: "more tightly compacted together, not so spread
+     out" — the slide per card came down across the board; the rotation is
+     what separates the backs, exactly like the reference crops. */
+  1: { step: 0.3, rot: 0 },
+  2: { step: 0.3, rot: 7 },
+  3: { step: 0.18, rot: 10 },
+  4: { step: 0.14, rot: 12 },
+  5: { step: 0.13, rot: 12 },
+  6: { step: 0.12, rot: 12 },
+};
+
+/**
  * One card in a seat's row.
  *
  * `index` was accepted here and never read - the body branches only on
@@ -492,6 +554,7 @@ function HoleCard({
   deckStyle,
   cardBack = 'classic_blue',
   eager = false,
+  fanIndex,
 }: {
   card?: Card | null;
   hidden?: boolean;
@@ -500,18 +563,31 @@ function HoleCard({
   deckStyle?: '4color' | '2color';
   cardBack?: string;
   eager?: boolean;
+  /**
+   * VILLAIN FAN 2026-08-26: this card's position in the fan, innermost
+   * (nearest the avatar) = 0. Handed to CSS as `--vh-i`, from which the
+   * stylesheet derives the card's offset, its rotation and its z-order —
+   * an index, not a pixel value, so the geometry itself stays in CSS.
+   * Undefined for hero cards, whose row derives its index via nth-child.
+   */
+  fanIndex?: number;
 }) {
   const size = isHero ? 'md' : 'sm';
+  const fanStyle =
+    fanIndex !== undefined ? ({ '--vh-i': fanIndex } as React.CSSProperties) : undefined;
 
   if (hidden || !card) {
     return (
-      <div className="seat__card seat__card--back">
+      <div className="seat__card seat__card--back" style={fanStyle}>
         <CardBack size={size} style={cardBack} />
       </div>
     );
   }
   return (
-    <div className={`seat__card seat__card--face${isWinner ? ' seat__card--winner' : ''}`}>
+    <div
+      className={`seat__card seat__card--face${isWinner ? ' seat__card--winner' : ''}`}
+      style={fanStyle}
+    >
       <CardImage
         card={card}
         deckStyle={deckStyle}
@@ -575,7 +651,8 @@ export const SeatSlot = memo(
       isActive,
       lastAction,
       lastBetAmount,
-      timerProgress,
+      timerProgress: timerProgressProp,
+      actionClock,
       bigBlind = 2,
       // isTournament is deliberately NOT destructured any more. Nothing inside
       // this component may branch a VISUAL on tournament-ness: doing so is what
@@ -593,7 +670,7 @@ export const SeatSlot = memo(
       hudStats,
       showHUD = false,
       playerStyle,
-      secondsLeft,
+      secondsLeft: secondsLeftProp,
       deckStyle,
       cardBack = 'classic_blue',
       holeCardCount = 2,
@@ -678,6 +755,44 @@ export const SeatSlot = memo(
      */
     const hasFolded = !!player && (lastAction === 'fold' || player.status === 'folded');
     const isActingNow = isActive && !hasFolded;
+
+    /**
+     * PERF 2026-08-25 — THE COUNTDOWN COMES IN SIDEWAYS, NOT FROM ABOVE.
+     *
+     * These two values used to arrive as props from TablePage, which meant
+     * TablePage had to hold the countdown in state and re-render the entire
+     * table once a second for the whole of anybody's turn to deliver them.
+     *
+     * The seat subscribes to the store directly instead. `isActingNow` gates the
+     * subscription, so the eight seats that are NOT on the clock read
+     * `undefined` on every publication, React compares it with `Object.is`, and
+     * they do not render at all. Only the acting seat wakes — which is the only
+     * seat that has ever done anything with either number.
+     *
+     * An explicitly supplied prop still wins, so SimPage and any other harness
+     * that passes a number and no store behaves exactly as it did.
+     *
+     * NOTE the ring itself is not involved: it has been a pure-CSS animation off
+     * the engine's absolute deadline (`--sp-timer-duration` / `--sp-timer-delay`
+     * below) since 2026-04-15 and no React render has ever driven it.
+     */
+    const liveTimerProgress = useActionClockProgress(
+      actionClock,
+      isActingNow && timerProgressProp === undefined
+    );
+    /* `secondsLeft` has exactly one reader — the DISCONNECTED overlay's
+       countdown — so the subscription is gated on that state as well. The old
+       prop arrived whenever this seat was the current one, and was then ignored
+       for every seat that was not disconnected; subscribing on the same terms it
+       is read on means an ordinary acting seat is not woken once a second for a
+       number it will not render. `isActive` rather than `isActingNow`, to keep
+       the condition identical to the prop it replaces. */
+    const liveSecondsLeft = useActionClockSeconds(
+      actionClock,
+      isActive && player?.status === 'disconnected' && secondsLeftProp === undefined
+    );
+    const timerProgress = timerProgressProp ?? liveTimerProgress;
+    const secondsLeft = secondsLeftProp ?? liveSecondsLeft;
 
     /**
      * Dan 2026-08-23: "when the cards get shown down they need to be straight
@@ -1409,14 +1524,12 @@ export const SeatSlot = memo(
       !isMucking;
 
     /**
-     * How many cards a VILLAIN's row is about to draw, and therefore whether
-     * this is a 2-card variant.
+     * How many cards a VILLAIN's fan is about to draw.
      *
-     * Dan 2026-08-25 round 2, item 10: "for holdem, every player should have
-     * their cards displayed exactly as the hero has theirs." A hold'em villain
-     * now gets the hero's card size and the hero's spacing; PLO4/PLO5/PLO6 keep
-     * the compact face-down treatment, because six full-size cards beside a
-     * villain do not fit at 375px.
+     * Dan 2026-08-26 rebuild: this number is the ONLY thing game type changes
+     * about a villain's hand. 2, 4, 5 and 6 all render through the same fan
+     * geometry (see VILLAIN_FAN above and `.seat__cards--opponent` in
+     * SeatSlot.css); the old per-game-type layout branch was the bug.
      *
      * Counted from what will actually be RENDERED rather than from
      * holeCardCount alone, because the two branches below disagree by design:
@@ -1424,8 +1537,8 @@ export const SeatSlot = memo(
      * backs. Both are the variant's count for a villain — an opponent's
      * holeCards array is empty precisely because the hand is hidden, never
      * short — so either branch answers the same question, and reading the one
-     * that is about to render means the class can never disagree with the row
-     * it is describing.
+     * that is about to render means the fan's variables can never disagree
+     * with the row they describe.
      */
     const opponentCardCount =
       player.holeCards && player.holeCards.length > 0
@@ -1625,12 +1738,28 @@ export const SeatSlot = memo(
           </div>
         ) : null}
 
-        {/* Hole Cards — opponents: show card backs for active/all-in players, reveal at showdown.
-            Also render during isFolding so the fly-out animation can play before unmount. */}
+        {/* Hole Cards — opponents: ONE small rotational cluster for every hand
+            size (Dan 2026-08-26, PokerBros reference). The count comes from
+            the variant, the geometry from CSS; there is deliberately NO
+            game-type layout branch here — that branch (the old `--twocard`
+            hold'em treatment) was the second renderer this rebuild deleted.
+            Also renders during isFolding so the fly-out animation can play
+            before unmount; the pod itself never reflows when the cluster
+            goes, because it is absolutely positioned. */}
         {!player.isHero &&
           (player.status === 'active' || player.status === 'all_in' || isFolding || isMucking) && (
             <div
-              className={`seat__cards seat__cards--opponent${opponentCardCount === 2 ? ' seat__cards--twocard' : ''}${player.showCards && player.holeCards?.length && !revealHeld ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
+              className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length && !revealHeld ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
+              style={
+                {
+                  '--vh-n': opponentCardCount,
+                  '--vh-rot-step': `${(VILLAIN_FAN[opponentCardCount] ?? VILLAIN_FAN[2]).rot}deg`,
+                  /* -base, not --vh-step-f itself: the showdown reveal widens
+                     the step to 0.55 via a class rule, and an inline value
+                     would beat it. */
+                  '--vh-step-f-base': (VILLAIN_FAN[opponentCardCount] ?? VILLAIN_FAN[2]).step,
+                } as React.CSSProperties
+              }
             >
               {player.holeCards && player.holeCards.length > 0
                 ? displayHoleCards.map((card, i) => (
@@ -1653,6 +1782,7 @@ export const SeatSlot = memo(
                          showdown is the one moment a card face has to be on
                          screen the instant it flips. */
                       eager={player.showCards}
+                      fanIndex={i}
                     />
                   ))
                 : /* Dan 2026-08-23: this used to be exactly two hard-coded backs,
@@ -1662,11 +1792,15 @@ export const SeatSlot = memo(
                    empty BECAUSE the hand is hidden. `opponentCardCount` above
                    applies the sane-band clamp so a malformed variant string
                    cannot render 0 cards (a live player who looks like they
-                   folded) or a hundred - and so the row's own 2-card class is
-                   derived from the same number that decides how many backs are
-                   drawn, rather than from a second copy of this expression. */
+                   folded) or a hundred. */
                   Array.from({ length: opponentCardCount }, (_, i) => (
-                    <HoleCard key={i} hidden={true} deckStyle={deckStyle} cardBack={cardBack} />
+                    <HoleCard
+                      key={i}
+                      hidden={true}
+                      deckStyle={deckStyle}
+                      cardBack={cardBack}
+                      fanIndex={i}
+                    />
                   ))}
             </div>
           )}
@@ -2216,6 +2350,13 @@ export const SeatSlot = memo(
     // Return true if props are equal (skip re-render)
     if (prev.seatNumber !== next.seatNumber) return false;
     if (prev.timerProgress !== next.timerProgress) return false;
+    /* PERF 2026-08-25: the store instance is stable for the life of a table, so
+       in practice this never differs — but a table SWITCH inside MultiTablePage
+       reuses seat nodes across two different tables' clocks, and a seat left
+       subscribed to the previous table's store would count down the wrong turn.
+       Compared for that case, not for the countdown: the countdown does not
+       travel through props any more. */
+    if (prev.actionClock !== next.actionClock) return false;
     if (prev.isActive !== next.isActive) return false;
     if (prev.canSit !== next.canSit) return false;
     /**

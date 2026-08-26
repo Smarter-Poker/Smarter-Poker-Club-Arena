@@ -52,8 +52,13 @@ export const TABLE_ALIAS_MAX = 20;
  * plate, and a tab or a newline there is a broken plate.
  */
 export function normalizeAlias(raw: string): string {
-  // eslint-disable-next-line no-control-regex
-  return raw.replace(/[\u0000-\u001F\u007F]/g, '').replace(/\s+/g, ' ').trim();
+  return (
+    raw
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u001F\u007F]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
 }
 
 interface IdentityModalProps {
@@ -203,7 +208,7 @@ export function IdentityModal({
                   commit();
                 }
               }}
-              placeholder="Enter your alias"
+              placeholder="Enter Your Alias"
               maxLength={TABLE_ALIAS_MAX}
               autoComplete="off"
               spellCheck={false}

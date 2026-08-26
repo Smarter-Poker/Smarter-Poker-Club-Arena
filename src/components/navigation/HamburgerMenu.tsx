@@ -18,6 +18,7 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { STORAGE_KEYS } from '../../lib/storage';
+import { applyTableAppearance } from '../../lib/applyTableAppearance';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { preloadRoute } from '../../utils/ChunkPreloader';
 import { useUserTableSettings } from '../../hooks/useUserTableSettings';
@@ -48,6 +49,60 @@ const colors = {
   success: 'var(--success)', // #31A24C
   danger: 'var(--danger)', // #F02849
 };
+
+/*
+ * CANONICAL TOGGLE (Dan, 2026-08-25: "EVERY TOGGLE INSIDE THE CLUB ARENA ...
+ * AND EVERY SINGLE HAMBURGER MENU.")
+ *
+ * PR #927 restyled every CLASS-BASED toggle through a global block in
+ * styles/club-engine.css, and edited HamburgerMenu.module.css in place because
+ * CSS Modules hash their class names. Neither reached these three switches:
+ * HamburgerMenu.tsx never imports HamburgerMenu.module.css (that file is dead —
+ * nothing in src imports it, and the build emits no CSS asset for it), and these
+ * buttons carry INLINE styles, which no stylesheet can override. So Sounds,
+ * Vibrations and Use Real Name were still the old 52x28 green pill in
+ * production while everything around them was blue. Verified against the live
+ * bundle: assets/HamburgerMenu-DzPe1C0c-v6.js contained #22c55e three times and
+ * #1877f2 zero times.
+ *
+ * Same geometry and colours as the global block: 51x31 track, 27px thumb,
+ * 20px travel, #1877F2 on / #39393D off. Behaviour, aria and handlers untouched.
+ */
+const CANONICAL_TOGGLE_ON = '#1877f2';
+const CANONICAL_TOGGLE_OFF = '#39393d';
+
+function canonicalToggleTrackStyle(on: boolean): React.CSSProperties {
+  return {
+    width: 51,
+    height: 31,
+    borderRadius: 999,
+    border: 'none',
+    padding: 2,
+    cursor: 'pointer',
+    backgroundColor: on ? CANONICAL_TOGGLE_ON : CANONICAL_TOGGLE_OFF,
+    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.06)',
+    transition: 'background-color 180ms ease',
+    display: 'flex',
+    alignItems: 'center',
+    position: 'relative' as const,
+    flexShrink: 0,
+    boxSizing: 'border-box' as const,
+    WebkitTapHighlightColor: 'transparent',
+  };
+}
+
+function canonicalToggleThumbStyle(on: boolean): React.CSSProperties {
+  return {
+    width: 27,
+    height: 27,
+    borderRadius: '50%',
+    backgroundColor: '#ffffff',
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.28)',
+    /* 51px track - 27px thumb - (2px x 2) = 20px of travel. */
+    transform: on ? 'translateX(20px)' : 'translateX(0)',
+    transition: 'transform 180ms cubic-bezier(0.32, 0.72, 0, 1)',
+  };
+}
 
 export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const navigate = useNavigate();
@@ -367,7 +422,13 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     updateSetting(STORAGE_KEYS.VIBRATIONS, 'vibrations_enabled', newValue, () =>
       setVibrationsEnabled(!newValue)
     );
-    masterBus.emit('SETTINGS_CHANGED', { setting: 'vibrationsEnabled', value: newValue });
+    /* 2026-08-26: the key was `vibrationsEnabled`, which is NOT a field of
+       useTableSettings — the store calls it `isHapticEnabled` — so the
+       whitelist at useTableSettings dropped this event silently and an open
+       table never learned haptics had been turned off. (The localStorage
+       write above still worked, which is why it half-functioned and was easy
+       to miss.) The store's own name is what the bus must carry. */
+    masterBus.emit('SETTINGS_CHANGED', { setting: 'isHapticEnabled', value: newValue });
   };
 
   const handleShowBBToggle = () => {
@@ -968,32 +1029,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onClick={handleSoundsToggle}
             aria-checked={soundsEnabled}
             role="switch"
-            style={{
-              width: 52,
-              height: 28,
-              borderRadius: 14,
-              border: soundsEnabled ? '2px solid #4ade80' : '2px solid #6b7280',
-              padding: 2,
-              cursor: 'pointer',
-              backgroundColor: soundsEnabled ? '#22c55e' : '#374151',
-              transition: 'all 0.25s ease',
-              display: 'flex',
-              alignItems: 'center',
-              position: 'relative' as const,
-              flexShrink: 0,
-            }}
+            style={canonicalToggleTrackStyle(soundsEnabled)}
           >
-            <span
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                backgroundColor: 'white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                transform: soundsEnabled ? 'translateX(24px)' : 'translateX(0)',
-                transition: 'transform 0.25s ease',
-              }}
-            />
+            <span style={canonicalToggleThumbStyle(soundsEnabled)} />
           </button>
         </div>
 
@@ -1004,32 +1042,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onClick={handleVibrationsToggle}
             aria-checked={vibrationsEnabled}
             role="switch"
-            style={{
-              width: 52,
-              height: 28,
-              borderRadius: 14,
-              border: vibrationsEnabled ? '2px solid #4ade80' : '2px solid #6b7280',
-              padding: 2,
-              cursor: 'pointer',
-              backgroundColor: vibrationsEnabled ? '#22c55e' : '#374151',
-              transition: 'all 0.25s ease',
-              display: 'flex',
-              alignItems: 'center',
-              position: 'relative' as const,
-              flexShrink: 0,
-            }}
+            style={canonicalToggleTrackStyle(vibrationsEnabled)}
           >
-            <span
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                backgroundColor: 'white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                transform: vibrationsEnabled ? 'translateX(24px)' : 'translateX(0)',
-                transition: 'transform 0.25s ease',
-              }}
-            />
+            <span style={canonicalToggleThumbStyle(vibrationsEnabled)} />
           </button>
         </div>
 
@@ -1042,32 +1057,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onClick={handleUseRealNameToggle}
             aria-checked={useRealName}
             role="switch"
-            style={{
-              width: 52,
-              height: 28,
-              borderRadius: 14,
-              border: useRealName ? '2px solid #4ade80' : '2px solid #6b7280',
-              padding: 2,
-              cursor: 'pointer',
-              backgroundColor: useRealName ? '#22c55e' : '#374151',
-              transition: 'all 0.25s ease',
-              display: 'flex',
-              alignItems: 'center',
-              position: 'relative' as const,
-              flexShrink: 0,
-            }}
+            style={canonicalToggleTrackStyle(useRealName)}
           >
-            <span
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                backgroundColor: 'white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                transform: useRealName ? 'translateX(24px)' : 'translateX(0)',
-                transition: 'transform 0.25s ease',
-              }}
-            />
+            <span style={canonicalToggleThumbStyle(useRealName)} />
           </button>
         </div>
 
@@ -1226,7 +1218,22 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                     toast.info('That Card Back Is A Premium Design. Unlock It In The Shop.');
                     return;
                   }
+                  /* Remembered so a rejected save can put the highlight back
+                     where it was, rather than leaving the menu ticking a
+                     design the felt is not dealing. */
+                  const previousCardId = selectedCardColor;
                   setSelectedCardColor(preset.id);
+                  /* 2026-08-26: the highlight is persisted HERE now. Its only
+                     writer used to be a `CARD_COLOR_CHANGED` listener on
+                     HomePage, which is unmounted whenever you are at a table —
+                     precisely where this menu lives. So changing a card back
+                     from the felt never wrote the key, and the next time the
+                     menu opened it highlighted the previous design. */
+                  try {
+                    localStorage.setItem(STORAGE_KEYS.CARD_COLOR, preset.id);
+                  } catch {
+                    /* private mode — the highlight is cosmetic, never fatal */
+                  }
                   /**
                    * THE TRANSLATION TABLE OUTLIVED THE IDS IT TRANSLATED.
                    *
@@ -1251,46 +1258,31 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                    */
                   const realCardId = preset.id;
 
-                  masterBus.emit('UI_THEME_CHANGED', {
-                    key: 'ALL',
-                    value: { cards_id: realCardId },
-                  });
                   masterBus.emit('CARD_COLOR_CHANGED', { preset: preset.id });
 
-                  if (!user?.id) {
-                    toast.success('Card Back Applied');
-                  } else {
-                    try {
-                      const { data: currentSettings } = await supabase
-                        .from('user_theme_settings')
-                        .select('*')
-                        .eq('user_id', user.id)
-                        .eq('game_type', 'ALL')
-                        .maybeSingle();
+                  /* 2026-08-26: this used to SELECT '*' and spread the whole
+                     row back into the upsert, re-sending `id`, `created_at`,
+                     `updated_at`, `user_id` and `game_type` to PostgREST —
+                     one generated or immutable column away from failing every
+                     save and reverting the tile for no visible reason. It now
+                     goes through the one canonical writer (lib/
+                     applyTableAppearance), which emits live first, writes ONLY
+                     the column being changed, and puts the felt back if the
+                     write is rejected. */
+                  const result = await applyTableAppearance(
+                    { cards_id: realCardId },
+                    { userId: user?.id, previous: { cards_id: previousCardId } }
+                  );
 
-                      const { error } = await supabase.from('user_theme_settings').upsert(
-                        {
-                          user_id: user.id,
-                          game_type: 'ALL',
-                          ...(currentSettings || {}),
-                          cards_id: realCardId,
-                        },
-                        { onConflict: 'user_id,game_type' }
-                      );
-                      // The success toast used to fire BEFORE this write and
-                      // the error was only ever sent to reportError, so a
-                      // failed save congratulated the player and then quietly
-                      // reverted the next time they opened a table.
-                      if (error) {
-                        reportError(error, 'HamburgerMenu.Card_color_save_failed');
-                        toast.error('Could Not Save That Card Back. Please Try Again.');
-                      } else {
-                        toast.success('Card Back Applied');
-                      }
-                    } catch (err) {
-                      reportError(err, 'HamburgerMenu.Card_color_save_failed');
-                      toast.error('Could Not Save That Card Back. Please Try Again.');
-                    }
+                  if (result.ok) {
+                    toast.success('Card Back Applied');
+                  } else if (!user?.id) {
+                    toast.error('Please Sign In To Save That Card Back.');
+                    setSelectedCardColor(previousCardId);
+                  } else {
+                    reportError(result.error, 'HamburgerMenu.Card_color_save_failed');
+                    toast.error('Could Not Save That Card Back. Please Try Again.');
+                    setSelectedCardColor(previousCardId);
                   }
                 }}
               >

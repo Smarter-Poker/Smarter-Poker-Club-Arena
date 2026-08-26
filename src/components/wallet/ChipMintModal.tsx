@@ -28,7 +28,7 @@
  * "mint inside your Club Bank" would have moved a figure nobody could see.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
@@ -62,9 +62,77 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
   const { user } = useAuthUser();
   const toast = useToast();
   const [diamonds, setDiamonds] = useState('');
+
   const [balance, setBalance] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [target, setTarget] = useState<MintTarget>({ state: 'loading' });
+  /**
+   * BEATS THE DOUBLE TAP THAT LANDS BEFORE `busy` RE-RENDERS.
+   *
+   * `if (!valid || busy) return` reads STATE, and React has not necessarily
+   * re-rendered between the first tap and a second one 80ms later. This
+   * function burns diamonds and creates chips. The ref flips synchronously
+   * inside the handler, which is the only guard that can close the two-taps-
+   * in-one-frame window from the client.
+   */
+  const busyRef = useRef(false);
+
+  /**
+   * The OTHER window is a response lost on the way back: the mint ran, the
+   * client never heard, and the natural retry burns the diamonds again. A ref
+   * guard cannot see that one - only a key the server recognises can.
+   *
+   * fn_mint_chips_from_diamonds now takes p_op_id (migration 20260826), takes
+   * an advisory lock on it BEFORE deducting anything, and returns the original
+   * result with replayed:true if it has seen the key. Proved against
+   * production inside a rolled-back transaction: two calls with one key burned
+   * 1 diamond and created 100 chips, with one ledger row.
+   *
+   * Held across a FAILURE - that is the whole point - and cleared only once a
+   * mint actually succeeds or the amount changes, because either of those
+   * makes the next press a different operation.
+   */
+  const opIdRef = useRef<string | null>(null);
+
+  /**
+   * Editing the amount makes the next press a different operation. Reusing
+   * the key would make the server replay the ORIGINAL amount and report
+   * success for a mint the user did not ask for.
+   */
+  const setDiamondsAndResetKey = (v: string) => {
+    opIdRef.current = null;
+    setDiamonds(v);
+  };
+
+  /** Same unmount guard the cashier uses: setState after await, never blind. */
+  const isMounted = useRef(true);
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  /**
+   * Escape closes and the page behind stops scrolling. Both are what a person
+   * expects of a modal, WalletCashierModal (which is what stacks this one) has
+   * had them since 2026-08-23, and neither was here - so on iOS the lobby
+   * scrolled underneath the mint and a keyboard user had no way out but Cancel.
+   * Guarded on busyRef so Escape can never abandon an in-flight mint.
+   */
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busyRef.current) onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isOpen, onClose]);
 
   useEffect(() => {
     if (!isOpen || !user?.id) return;
@@ -153,13 +221,16 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
   const valid = d > 0 && balance !== null && !overBalance && canMintHere;
 
   const mint = async () => {
-    if (!valid || busy) return;
+    if (!valid || busy || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
+      if (!opIdRef.current) opIdRef.current = crypto.randomUUID();
       const { data, error } = await supabase.rpc('fn_mint_chips_from_diamonds', {
         // Resolved uuid from the pre-flight, never the raw route param.
         p_club_id: canMintHere ? (target as { clubUuid: string }).clubUuid : clubId,
         p_diamonds: d,
+        p_op_id: opIdRef.current,
       });
       if (error) throw error;
       const res = data as {
@@ -170,7 +241,9 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
         diamonds_after?: number;
       } | null;
       if (!res?.success) throw new Error(res?.error || 'Mint Refused');
-      setBalance(Number(res.diamonds_after) || 0);
+      // Landed. The next press is a new mint, so it needs a new key.
+      opIdRef.current = null;
+      if (isMounted.current) setBalance(Number(res.diamonds_after) || 0);
       toast?.success?.(
         `Minted ${fmt(Number(res.chips) || chips)} Chips Into The ${
           res.scope === 'union' ? 'Union Bank' : 'Club Bank'
@@ -183,7 +256,8 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
       reportError(e, 'ChipMintModal.mint');
       toast?.error?.((e as Error).message || 'Mint Failed');
     } finally {
-      setBusy(false);
+      busyRef.current = false;
+      if (isMounted.current) setBusy(false);
     }
   };
 
@@ -191,6 +265,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
     <div
       className="cmm-overlay"
       role="dialog"
+      aria-modal="true"
       aria-label="Chip Mint"
       onClick={() => !busy && onClose()}
     >
@@ -233,7 +308,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
               min={1}
               step={100}
               value={diamonds}
-              onChange={(e) => setDiamonds(e.target.value)}
+              onChange={(e) => setDiamondsAndResetKey(e.target.value)}
               placeholder="Diamonds to convert"
               aria-label="Diamonds to convert"
               autoFocus
@@ -244,7 +319,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
                 <button
                   key={q}
                   disabled={balance !== null && q > balance}
-                  onClick={() => setDiamonds(String(q))}
+                  onClick={() => setDiamondsAndResetKey(String(q))}
                 >
                   {fmt(q)}
                 </button>
@@ -252,7 +327,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
               <button
                 className="cmm-max"
                 disabled={!balance}
-                onClick={() => setDiamonds(String(balance ?? 0))}
+                onClick={() => setDiamondsAndResetKey(String(balance ?? 0))}
               >
                 MAX
               </button>

@@ -75,6 +75,8 @@ import {
   type HiLoSplit,
   omahaDrawQuality,
   type OmahaDrawInfo,
+  omahaNutStatus,
+  type OmahaNutStatus,
   preflopEquity,
   holdemPreflopScore,
   omahaPreflopScore,
@@ -634,6 +636,17 @@ export interface HorseDecideOpts {
   v12?: boolean;
   /** ablation hook (benchmarks only) — defaults to the v12 master flag */
   v12Ranges?: boolean;
+  /** disable the V16 deep-read wiring (2026-08-26): fold-to-c-bet scaled
+   *  c-bets, fold-to-3-bet scaled bluff 3-bets, and big-river-bet sizing
+   *  tells in the call-down (default: enabled; reads ride the mind layer, so
+   *  mind:false disables them too) */
+  v16Reads?: boolean;
+  /** disable the V15 layer (Dan 2026-08-26): Omaha nut discipline — made
+   *  flushes and straights know their RANK, dominated hands stop raising and
+   *  stop stacking off when raised, plo5/plo6 preflop scores are normalized
+   *  per hole count, plo5/plo6 value sizing plays small ball, and PLO
+   *  aggressors are sampled toward board contact (default: enabled) */
+  v15?: boolean;
   /** disable the V12 river-sizing polish: OOP block bets, nut-advantage
    *  overbets + blocker overbet bluffs, extended blocker-aware catches
    *  (defaults to the v12 master flag) */
@@ -894,6 +907,20 @@ export class HorseLogic {
       }
     }
 
+    // V16 DEEP READS: the raiser's observed fold-to-3-bet, when the mind is
+    // live and a qualifying sample exists.
+    let raiserF3b: number | null = null;
+    if (opts.mind !== false && opts.v16Reads !== false && lastRaiserSeat >= 0) {
+      try {
+        const raiser = gs.players.find((p) => p.seat === lastRaiserSeat);
+        if (raiser && raiser.user_id !== player.user_id) {
+          raiserF3b = HorseMind.foldTo3BetOf(raiser.user_id);
+        }
+      } catch {
+        /* reads are best-effort */
+      }
+    }
+
     const intent = decidePreflopV7({
       strength,
       position,
@@ -929,6 +956,7 @@ export class HorseLogic {
       format:
         opts.v12 !== false ? (gs.format ?? (isTournamentMode(gs) ? 'mtt' : 'cash')) : undefined,
       targeted,
+      raiserFoldTo3Bet: raiserF3b,
       v13: opts.v13 !== false,
       rand: fastRandom,
     });
@@ -1229,7 +1257,12 @@ export class HorseLogic {
     // opponent tightens HARDER in PLO — thresholds tuned on NLH gaps overplay
     // Omaha hands multiway.
     const risk = useV7 ? icmRisk(gs, gs.bigBlind > 0 ? stack / gs.bigBlind : 100) : 0;
-    let mw = (oppCount - 1) * (useV8 && vi.isOmaha ? 0.045 : 0.03) + risk;
+    // V15: equities cluster tighter still with 5 and 6 hole cards, so the
+    // per-opponent multiway tightening scales with hole count.
+    const useV15 = opts.v15 !== false;
+    const omahaMwStep =
+      useV8 && vi.isOmaha ? 0.045 + (useV15 ? Math.max(0, vi.holeCount - 4) * 0.005 : 0) : 0.03;
+    let mw = (oppCount - 1) * (useV8 && vi.isOmaha ? omahaMwStep : 0.03) + risk;
 
     // V8 O8 SCOOP/QUARTER AWARENESS — the defining skill of hi-lo poker.
     // A hand that frequently SCOOPS both halves bets and raises harder; a
@@ -1286,6 +1319,71 @@ export class HorseLogic {
     // and a probe/delayed c-bet prints. Turn only (river probes are thinner).
     const prevChecked =
       useHR && street === 'turn' && HorseMind.streetCheckedThrough(gs.actionHistory, 'flop');
+
+    // ═══ V15 OMAHA NUT DISCIPLINE (Dan 2026-08-26) ═══
+    // "I watched a horse call off 800 chips with a 9-high flush in PLO6 —
+    //  when you get raised, your opponent always has a bigger flush."
+    // The made-hand category stops at "flush"; this knows WHICH flush.
+    let nuts15: OmahaNutStatus | null = null;
+    if (useV15 && vi.isOmaha && (cat === 5 || cat === 6)) {
+      try {
+        nuts15 = omahaNutStatus(player.cards, gs.communityCards);
+      } catch {
+        nuts15 = null;
+      }
+    }
+    /** nut-class for raising purposes: full house+, the nut flush, or the nut
+     *  straight — DEMOTED by the board itself (line-by-line sweep, same day):
+     *  a nut straight is not the nuts on a three-flush board, and a flush is
+     *  not the nuts on a paired board. Raises on those boards are flushes and
+     *  boats; the demoted hand check-calls instead of raising, which is the
+     *  small-ball line these spots demand. */
+    let boardMono15 = false;
+    let boardPaired15 = false;
+    if (useV15 && vi.isOmaha && nuts15 != null) {
+      const suitN = new Map<string, number>();
+      const rankN = new Map<string, number>();
+      for (const bc of gs.communityCards) {
+        suitN.set(bc.suit, (suitN.get(bc.suit) || 0) + 1);
+        rankN.set(bc.rank, (rankN.get(bc.rank) || 0) + 1);
+      }
+      for (const n of suitN.values()) if (n >= 3) boardMono15 = true;
+      for (const n of rankN.values()) if (n >= 2) boardPaired15 = true;
+    }
+    const nutClass15 =
+      cat >= 7 ||
+      (nuts15 != null &&
+        ((cat === 6 && nuts15.higherFlushRanks === 0 && !boardPaired15) ||
+          (cat === 5 && nuts15.straightIsNut && !boardMono15)));
+    // Did hero bet/raise THIS street and then get raised? The strongest
+    // possible "they have it" signal, and the exact line Dan flagged.
+    let raisedAfterAggr = false;
+    if (useV15 && facingBet && gs.actionHistory) {
+      const hist = gs.actionHistory;
+      let heroAggrIdx = -1;
+      for (let i = 0; i < hist.length; i++) {
+        const a = hist[i];
+        if (a.stage !== street) continue;
+        if (a.userId === player.user_id && (a.action === 'bet' || a.action === 'raise')) {
+          heroAggrIdx = i;
+        }
+      }
+      if (heroAggrIdx >= 0) {
+        for (let i = heroAggrIdx + 1; i < hist.length; i++) {
+          const a = hist[i];
+          if (a.stage !== street || a.userId === player.user_id) continue;
+          if (a.action === 'raise' || a.action === 'all_in') {
+            raisedAfterAggr = true;
+            break;
+          }
+        }
+      }
+    }
+    // V15 SMALL BALL (plo5/plo6): more hole cards squeeze equities together,
+    // so the value edge per bet shrinks — sizing shrinks with it. Nut-class
+    // hands are exempt (they still build the pot geometrically).
+    const ploDamp =
+      useV15 && vi.isOmaha && vi.holeCount >= 5 ? (vi.holeCount >= 6 ? 0.78 : 0.86) : 1;
 
     // Vulnerable made hand: real hand today, wet board, cards to come — bet for
     // protection, never slowplay. (Strong two pair / trips / weak straight.)
@@ -1397,10 +1495,14 @@ export class HorseLogic {
         ) {
           return this.betSize(pot, 1.3 + fastRandom() * 0.3, player, gs, vi, params, useSizing);
         }
-        const monsterFrac =
+        let monsterFrac =
           geomFrac > 0
             ? Math.max(sizeBase + 0.2, geomFrac) + fastRandom() * 0.1
             : sizeBase + 0.3 + fastRandom() * 0.2;
+        // V15: a "monster" by MC equity that is NOT nut-class (a dominated
+        // flush multiway reads over 0.8 more often than it should) sizes
+        // down in plo5/plo6 — small ball until the hand really is the nuts.
+        if (!nutClass15 && vi.isOmaha) monsterFrac *= ploDamp;
         return this.betSize(pot, monsterFrac, player, gs, vi, params, useSizing);
       }
       // Strong value. V4: a vulnerable made hand sizes UP and never checks
@@ -1409,10 +1511,25 @@ export class HorseLogic {
         if (dangered && fastRandom() < 0.55) {
           return { action: 'check', thinkTime: 0 };
         }
+        // V15: a dominated flush MULTIWAY checks most of the time — the
+        // hands that continue against a bet on a three-flush board are
+        // exactly the ones that beat it. Check-call is the line Dan asked
+        // for; the facing-bet discipline below handles the rest of it.
+        if (
+          useV15 &&
+          vi.isOmaha &&
+          nuts15 != null &&
+          cat === 6 &&
+          nuts15.higherFlushRanks >= 2 &&
+          oppCount >= 2 &&
+          fastRandom() < 0.6
+        ) {
+          return { action: 'check', thinkTime: 0 };
+        }
         const protection = vulnerable ? 0.1 : 0;
         return this.betSize(
           pot,
-          sizeBase + 0.12 + protection + fastRandom() * 0.15,
+          (sizeBase + 0.12 + protection + fastRandom() * 0.15) * ploDamp,
           player,
           gs,
           vi,
@@ -1461,7 +1578,7 @@ export class HorseLogic {
         if (vulnerable || fastRandom() < thinFreq) {
           return this.betSize(
             pot,
-            sizeBase + fastRandom() * 0.12,
+            (sizeBase + fastRandom() * 0.12) * ploDamp,
             player,
             gs,
             vi,
@@ -1509,7 +1626,20 @@ export class HorseLogic {
       // V10: on a range-advantage board fire the whole range more often at a
       // smaller size (the classic high-freq small c-bet); otherwise keep the
       // V4 dry-board stab.
-      const cbetFreqMult = boardFavorsAggressor ? 1.35 : 1.0;
+      let cbetFreqMult = boardFavorsAggressor ? 1.35 : 1.0;
+      // V16 DEEP READS: heads-up, c-bet the player in front of you, not the
+      // population average. 0.6 + ftc maps a 75% folder to x1.35 and a 30%
+      // station to x0.9, clamped to keep the read a reshaping, not a switch.
+      if (useMind && opts.v16Reads !== false && oppCount === 1) {
+        try {
+          const ftc = HorseMind.foldToCbetOf(opponents[0].user_id);
+          if (ftc !== null) {
+            cbetFreqMult *= Math.max(0.75, Math.min(1.4, 0.6 + ftc));
+          }
+        } catch {
+          /* reads are best-effort */
+        }
+      }
       const cbetSize = boardFavorsAggressor ? 0.28 + fastRandom() * 0.06 : 0.3 + fastRandom() * 0.1;
       if (
         (initiative === 'hero' || prevChecked) &&
@@ -1548,7 +1678,7 @@ export class HorseLogic {
         planBarrel(equity);
         return this.betSize(
           pot,
-          sizeBase + 0.2 + fastRandom() * 0.15,
+          (sizeBase + 0.2 + fastRandom() * 0.15) * ploDamp,
           player,
           gs,
           vi,
@@ -1616,17 +1746,75 @@ export class HorseLogic {
         }
       }
     }
+    // ═══ V15 OMAHA DOMINATION (the "small flush pays off" leak) ═══
+    // The MC prices PLO opponents by preflop range; it cannot see that a big
+    // bet or a raise on a three-flush board IS a bigger flush most of the
+    // time. A non-nut flush (or non-nut straight) facing serious aggression
+    // pays an explicit equity premium — the Omaha mirror of the V11 QQ-on-AKx
+    // fix above, scaled by how many bigger flushes are live, by bet size, by
+    // the raise-after-we-bet line, and by the multiway raiser's extra
+    // nuttedness. Feeds the commit branch, the call margin, and the value-
+    // raise bar below, exactly as the NLH penalty does.
+    if (useV15 && vi.isOmaha && nuts15 != null && (betRatio >= 0.5 || raisedAfterAggr)) {
+      let pen = 0;
+      if (cat === 6) {
+        const hf = nuts15.higherFlushRanks;
+        pen = hf >= 4 ? 0.14 : hf >= 2 ? 0.1 : hf === 1 ? 0.05 : 0;
+      } else if (cat === 5 && !nuts15.straightIsNut) {
+        pen = 0.07;
+      }
+      if (pen > 0) {
+        if (betRatio >= 0.9) pen *= 1.35;
+        if (raisedAfterAggr) pen *= 1.3;
+        if (oppCount >= 2) pen *= 1.15;
+        dominationPenalty += Math.min(pen, 0.26);
+      }
+    }
+    // ═══ V15 EQUITY CAP — a subtraction cannot fix a 50-point lie ═══
+    // Against a RANDOM plo6 hand a nine-high flush on a three-flush river
+    // reads ~80% — the MC has no way to know the raiser's range is bigger
+    // flushes and boats, where its true equity is close to zero. When the
+    // read is structural (we bet, they raised; or a big river bet arrives),
+    // the equity USED for the decision is capped by how dominated the hand
+    // is. Nut hands and full houses are untouched; before the river a
+    // dominated flush keeps a little extra (it can still improve or be
+    // splitting more often).
+    let eq15 = equity;
+    if (useV15 && vi.isOmaha && nuts15 != null && !nutClass15 && (cat === 5 || cat === 6)) {
+      let cap = Infinity;
+      const hf = cat === 6 ? nuts15.higherFlushRanks : 0;
+      if (raisedAfterAggr) {
+        if (cat === 6) cap = hf >= 4 ? 0.25 : hf >= 2 ? 0.35 : 0.55;
+        else cap = 0.4; // dominated straight, raised
+      } else if (isRiver && betRatio >= 0.8) {
+        // Big river bet into us: "check-calling, or check-folding to big
+        // bets" — the bigger the bet, the more nutted the range.
+        if (cat === 6 && hf >= 2) cap = betRatio >= 1.2 ? 0.32 : 0.42;
+        else if (cat === 5) cap = betRatio >= 1.2 ? 0.38 : 0.48;
+      }
+      if (cap !== Infinity) {
+        if (!isRiver) cap += 0.1; // redraws + protection before the river
+        if (oppCount >= 2) cap -= 0.05; // a raise INTO A FIELD is more nutted
+        eq15 = Math.min(equity, Math.max(0.05, cap));
+      }
+    }
 
     // Low-SPR commitment: with the money effectively in, play equity directly.
     const committed = spr < 1.2 || toCall >= stack;
     if (committed) {
       const required = potOdds + 0.02 + dominationPenalty * 0.5;
-      if (equity >= Math.max(required, 0.42 + mw + dominationPenalty * 0.5)) {
-        return toCall >= stack
+      if (eq15 >= Math.max(required, 0.42 + mw + dominationPenalty * 0.5)) {
+        // V15: a dominated flush/straight that still clears the (penalized)
+        // bar CALLS rather than jams — shoving it has zero fold equity
+        // against the range that just raised, and the raise-shove line with
+        // a nine-high flush is the exact hand Dan watched. Sets and boats
+        // keep the jam.
+        const preferFlat15 = useV15 && vi.isOmaha && nuts15 != null && !nutClass15;
+        return toCall >= stack || preferFlat15
           ? { action: 'call', amount: toCall, thinkTime: 0 }
           : { action: 'all_in', thinkTime: 0 };
       }
-      if (equity >= required) return { action: 'call', amount: toCall, thinkTime: 0 };
+      if (eq15 >= required) return { action: 'call', amount: toCall, thinkTime: 0 };
       return { action: 'fold', thinkTime: 0 };
     }
 
@@ -1643,13 +1831,26 @@ export class HorseLogic {
     // (QQ on AKx was sailing straight into this branch off inflated
     // no-reads equity and calling/raising the barrel off).
     const valueRaiseThresh = 0.68 + mw + (isRiver ? 0.04 : 0) + sprAdj + dominationPenalty;
-    if (equity >= valueRaiseThresh) {
+    if (eq15 >= valueRaiseThresh) {
       // V8 O8: never raise into a likely quarter — flat and see the split.
       if (quartered) return { action: 'call', amount: toCall, thinkTime: 0 };
       // V8 PLO: raising the river without a nut-class hand is the classic
       // Omaha punt — big made hands below flush strength flat unless the MC
       // says they are near-locks.
       if (useDraws && isRiver && cat < 6 && equity < 0.85) {
+        return { action: 'call', amount: toCall, thinkTime: 0 };
+      }
+      // V15: the V8 gate above let ANY flush through ("cat < 6") and only
+      // guarded the river. A dominated flush or straight now never raises on
+      // any street unless the penalized equity still reads as a near-lock —
+      // it check-calls, which is the small-ball line these variants demand.
+      if (
+        useV15 &&
+        vi.isOmaha &&
+        (cat === 5 || cat === 6) &&
+        !nutClass15 &&
+        eq15 - dominationPenalty < 0.85
+      ) {
         return { action: 'call', amount: toCall, thinkTime: 0 };
       }
       const oopBoost = useIQ && !ip ? params.checkRaiseFreq * 0.6 : 0;
@@ -1749,6 +1950,17 @@ export class HorseLogic {
         if (bettorId) {
           const hunted = HorseMind.targetingOf(player.user_id, bettorId);
           if (hunted > 0) respect -= 0.25 * hunted;
+          // V16 DEEP READS: a big river bet from a player whose big bets
+          // have SHOWN DOWN as value gets real respect; one who bombs with
+          // air gets called down. Only on the river, only on big sizings —
+          // exactly where the tell was observed.
+          if (opts.v16Reads !== false && isRiver && betRatio >= 0.75) {
+            const tell = HorseMind.bigBetValueTendency(bettorId);
+            if (tell !== null) {
+              if (tell >= 0.75) respect += 0.12;
+              else if (tell <= 0.4) respect -= 0.1;
+            }
+          }
         }
       } catch {
         /* targeting is best-effort */
@@ -1771,7 +1983,7 @@ export class HorseLogic {
     const posEdge = useIQ ? (ip ? -0.012 : 0.008 * (useNlhX ? 1 + 0.3 * (oppCount - 1) : 1)) : 0;
     const sizingPenalty = (Math.min(0.06, betRatio * 0.04) + mw * 0.5) * respect;
     if (
-      equity + impliedBonus >=
+      eq15 + impliedBonus >=
       potOdds + 0.03 * respect + sizingPenalty + posEdge + dominationPenalty
     ) {
       return { action: 'call', amount: toCall, thinkTime: 0 };
@@ -1785,7 +1997,7 @@ export class HorseLogic {
       isRiver &&
       oppCount === 1 &&
       betRatio <= 0.4 &&
-      equity >= potOdds - 0.04 &&
+      eq15 >= potOdds - 0.04 &&
       fastRandom() < catchScale * exploit.callDownMod
     ) {
       return { action: 'call', amount: toCall, thinkTime: 0 };
@@ -2186,7 +2398,7 @@ export class HorseLogic {
     // Mode weights. They shift with the spot: a fold facing no bet is nearly
     // always instant; a big river call almost never is.
     let wSnap = 0.34 + (simple ? 0.3 : 0) + (stage === 'preflop' ? 0.14 : 0);
-    let wBeat = 0.52;
+    const wBeat = 0.52;
     let wTank = 0.12 + (difficulty > 0 ? difficulty * 0.28 : 0) + (aggressive ? 0.05 : 0);
     let wBank = 0.012 + (bigRiverCall ? 0.04 : 0) + (difficulty > 0.6 ? 0.02 : 0);
     if (bigRiverCall) wSnap *= 0.25;
@@ -2280,6 +2492,8 @@ export class HorseLogic {
     rakeDrag,
     // V12 tournament internals
     icmRisk,
+    // V15 Omaha nut discipline internals
+    omahaNutStatus,
   };
 
   /** Exposed for tests: variant-aware Monte Carlo equity (0..1). */

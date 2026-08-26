@@ -53,10 +53,22 @@ const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
   ],
 
   // Cashier — two screens that both got the downline wrong, opposite ways.
+  //
+  // 2026-08-25: re-anchored from ca_club_my_downline, for the same reason the
+  // trade grid was, plus a worse one. `ca_club_my_downline` RETURNS TABLE
+  // (agent_id, path, depth, username, ...) - one row per downline AGENT. This
+  // page cast it to `{ scoped, user_ids }` and read two fields it has never
+  // had, so the recipient filter collapsed to the viewer's own id and every
+  // super agent, agent and sub agent found exactly one recipient on the Send
+  // tab: themselves, which fn_agent_wallet_send refuses as a self-send.
+  //
+  // The sentinel also PASSED throughout, because the string survived in a
+  // comment. A capability sentinel that a comment can satisfy is not a
+  // sentinel; this one now names the call the send actually refuses on.
   [
     'src/pages/CashierPage.tsx',
-    'ca_club_my_downline',
-    'a super agent sees their downline, not the whole club',
+    "supabase.rpc('fn_club_cashier_members'",
+    'a super agent sees their downline, not the whole club and not just themselves',
   ],
   // 2026-08-25: re-anchored from ca_club_my_downline to fn_club_cashier_members.
   // The CAPABILITY pinned here is "the trade grid offers only the downline", and
@@ -115,6 +127,33 @@ const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
     'src/services/LeaderboardService.ts',
     "rpc('fn_club_tournament_stats',",
     'the club tournament leaderboard is aggregated in the database, not from a capped page of rows',
+  ],
+  // 2026-08-26: club_chat RLS was requiring status='active' while production
+  // holds 1480 'approved' and only 20 'active' — club chat was silent for
+  // 98.7% of members. The migration widens both INSERT and SELECT to
+  // ANY(['active','approved']). Guard: the migration must exist on disk so it
+  // cannot be silently deleted. Checked via MUST_NOT_EXIST below.
+  // 2026-08-26: /avatars/default-player.png does not exist in either repo.
+  // SpectatorOverlay and SettingsPanel both referenced it. Now both use
+  // resolveAvatarDisplay from avatarUtils, which falls back to DiceBear.
+  // This pin catches anyone re-introducing the broken path.
+  [
+    'src/components/table/SpectatorOverlay.tsx',
+    'resolveAvatarDisplay',
+    'SpectatorOverlay must not reference the non-existent /avatars/default-player.png',
+  ],
+  [
+    'src/components/table/SettingsPanel.tsx',
+    'resolveAvatarDisplay',
+    'SettingsPanel must not reference the non-existent /avatars/default-player.png',
+  ],
+  // 2026-08-26: PremiumCard.css declared a global .card-back { rotateY(180deg) }
+  // which collided with CardReveal.css and CommunityCards.css. Scoped to
+  // .premium-card .card-back so only cards inside a PremiumCard container flip.
+  [
+    'src/components/table/PremiumCard.css',
+    '.premium-card .card-back',
+    'PremiumCard card-back rule must be scoped to avoid colliding with CardReveal and CommunityCards',
   ],
 ];
 
@@ -336,6 +375,36 @@ describe('shipped functionality is still here', () => {
       'no longer checks that required checks exist'
     ).toBe(true);
     expect(sh.includes('SHARED_FILES'), 'no longer compares the shared guards').toBe(true);
+  });
+
+  /* Dan 2026-08-26 (villain-card rebuild, four rounds in one day): every
+     villain hand renders through ONE geometry — the small PokerBros-style
+     rotational cluster on `.seat__cards--opponent`, driven by --vh-* tokens,
+     where game type changes only the card count. The bug it replaced was a
+     SECOND renderer: a hold'em-only `--twocard` branch plus an Omaha
+     sliver-overlap treatment, which drifted apart for weeks. A second layout
+     branch reappearing is the regression, and it would be silent — each
+     branch looks fine alone. Anchored on the selectors and tokens, not
+     phrasing. */
+  it('the villain hand has exactly ONE renderer — the cluster, no game-type branch', () => {
+    const css = read('src/components/table/SeatSlot.css');
+    const tsx = read('src/components/table/SeatSlot.tsx');
+    // The cluster geometry is present and CSS-token driven.
+    expect(css.includes('--vh-card-h'), 'cluster sizing tokens are gone').toBe(true);
+    expect(css.includes('--vh-rot-step'), 'cluster splay tokens are gone').toBe(true);
+    expect(css.includes('--sp-wrap-overlap'), 'the shared plate-overlap token is gone').toBe(true);
+    // The deleted second renderer stays deleted.
+    expect(
+      css.includes('.seat__cards--opponent.seat__cards--twocard'),
+      'the hold-em twocard layout branch came back'
+    ).toBe(false);
+    expect(
+      tsx.includes("seat__cards--twocard'"),
+      'SeatSlot emits the deleted twocard class again'
+    ).toBe(false);
+    expect(css.includes('--sp-opp-overlap'), 'the Omaha sliver-overlap renderer came back').toBe(
+      false
+    );
   });
 
   it('the sentinel list is not empty or trivially passing', () => {

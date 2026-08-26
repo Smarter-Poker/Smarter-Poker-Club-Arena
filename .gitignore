@@ -157,3 +157,10 @@ _to_delete/
 /test_db*.mjs
 /patch_*.cjs
 /patch_*.js
+.git-msg-*.txt
+
+# Agent worktrees created by scripts/agent-workspace.sh. These are live git
+# worktrees, not build output: they must never be committed, and leaving them
+# untracked makes the shared clone read dirty forever, which is how a clone
+# ends up stranded on a rescue branch with real work mixed into the noise.
+.agent-trees/

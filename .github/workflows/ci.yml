@@ -14,9 +14,30 @@ on:
     - cron: '17 */2 * * *'
 
 
-# Cancel previous runs on the same branch/PR
+# ═══════════════════════════════════════════════════════════════════════════
+# THE GROUP IS KEYED ON THE HEAD SHA, NOT THE BRANCH — changed 2026-08-26.
+#
+# It used to be `ci-${{ github.ref }}` with cancel-in-progress, so a new push
+# cancelled the run for the previous sha. That is the normal, sensible setup
+# and it is also how six pull requests ended up permanently unmergeable:
+# #1073, #1083, #1088, #1103, #1117 and #1130 each had CANCELLED as the newest
+# ci.yml conclusion on their HEAD sha. A required check that reports
+# `cancelled` never reports again on its own. Autopilot cannot merge past it,
+# the branch is not conflicted so nothing flags it as stuck, and the pull
+# request simply sits there looking fine. All six were re-run by hand today;
+# without this change the seventh is only a matter of time.
+#
+# Keying the group on the head sha means a cancel can only ever remove a
+# DUPLICATE run of the very same commit — two events for one sha, which is the
+# only case where cancelling was ever safe. A run for the sha the check is
+# actually evaluated against can no longer be killed by a newer push.
+#
+# The cost is that a superseded sha's run finishes instead of dying early.
+# That is a few runner-minutes. The thing it buys is that no pull request can
+# be stranded by a check that will never speak again, which cost six of them.
+# ═══════════════════════════════════════════════════════════════════════════
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -109,6 +130,29 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 1: TypeScript compilation check (fast — ~40s)
   # ─────────────────────────────────────────────────────────────────────────────
+
+  stub_gate:
+    if: github.event_name == 'pull_request'
+    name: Stub Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.3.1
+
+      - name: No bare stubs — TODO and FIXME must have issue references
+        run: |
+          # Finds TODO or FIXME that do NOT have a (#1234) issue reference.
+          found=$(grep -rn --include="*.ts" --include="*.tsx" \
+            -E '\b(TODO|FIXME)\b' \
+            src/ server/src/ 2>/dev/null | grep -v -E '\b(TODO|FIXME)\(#[0-9]+\)' || true)
+          
+          if [ -n "$found" ]; then
+            echo "::error::Bare stub markers found! Use TODO(#1234) with an issue reference, or resolve the stub."
+            echo "$found"
+            exit 1
+          fi
+          echo "No bare TODO or FIXME markers found."
+
   typecheck:
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
@@ -210,6 +254,8 @@ jobs:
       - name: Monitoring Invariant — every alert rule is loaded, mounted, and routed
         run: node scripts/ci/check-monitoring-drift.mjs
 
+
+
       - name: Report Typecheck Time
         if: always()
         run: |
@@ -218,6 +264,7 @@ jobs:
           echo "## ⏱️ Typecheck Duration: ${ELAPSED}s" >> $GITHUB_STEP_SUMMARY
 
       # ── Commit Message Lint ──────────────────────────────────────────────
+
       - name: Commit Message Lint
         if: github.event_name == 'push'
         continue-on-error: true

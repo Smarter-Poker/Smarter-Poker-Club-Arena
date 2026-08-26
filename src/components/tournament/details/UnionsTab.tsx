@@ -264,8 +264,12 @@ const ClubCard = React.memo(function ClubCard({
         type="button"
         className="un-card__head"
         onClick={() => onToggle(key)}
-        aria-expanded={open}
-        aria-controls={panelId}
+        /* Both attributes are dropped for a club with nobody in it: there is
+           nothing to expand, so claiming a collapsed panel and pointing
+           `aria-controls` at an element that is never rendered is a lie a
+           screen reader repeats out loud. */
+        aria-expanded={count > 0 ? open : undefined}
+        aria-controls={count > 0 && open ? panelId : undefined}
         disabled={count === 0}
       >
         <ClubLogo club={club} />
@@ -513,7 +517,14 @@ export default function UnionsTab({ tournament, entries, currentUserId }: Tourna
 
     const buckets = new Map<string, TournamentEntry[]>();
     for (const entry of entries) {
-      const clubId = data.clubByUser.get(entry.user_id) || '';
+      /* A club id whose row we could not LOAD is not a club we can name, and a
+         card with no name renders as "Unaffiliated". Two of those side by side,
+         each with its own count, is not a roster - it is a puzzle. So an
+         unloadable club id collapses into the one Unaffiliated bucket here,
+         where it belongs, rather than surviving as a distinct key and drawing a
+         second nameless card (2026-08-26 audit). */
+      const resolved = data.clubByUser.get(entry.user_id) || '';
+      const clubId = resolved && data.clubsById.has(resolved) ? resolved : '';
       const list = buckets.get(clubId) || [];
       list.push(entry);
       buckets.set(clubId, list);
@@ -530,9 +541,6 @@ export default function UnionsTab({ tournament, entries, currentUserId }: Tourna
       const club = clubId ? data.clubsById.get(clubId) || null : null;
       built.push({
         key: clubId || 'unaffiliated',
-        // A club id we could not load a row for is still a real, distinct club;
-        // it just has no name to show, so it reads as Unaffiliated rather than
-        // as a blank card.
         club,
         players,
         inferredOnly:

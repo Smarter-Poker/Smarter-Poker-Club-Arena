@@ -56,8 +56,8 @@
  */
 
 import { useEffect, useMemo, useRef } from 'react';
-import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import { masterBus } from '../core/MasterBus';
 
 export interface SeatedProfileChange {
   userId: string;
@@ -111,44 +111,32 @@ export function useSeatedProfileSync(
     const safeIds = ids.filter((id) => UUID.test(id));
     if (safeIds.length === 0) return undefined;
 
-    const channel = supabase
-      .channel(`table-profiles-live:${tableId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'profiles',
-          filter: `id=in.(${safeIds.join(',')})`,
-        },
-        (payload: { new?: Record<string, unknown> }) => {
-          const row = payload?.new;
-          const userId = typeof row?.['id'] === 'string' ? (row['id'] as string) : '';
-          if (!userId) return;
+    const unsub = masterBus.subscribe('TABLE_PROFILES_UPDATE', (event) => {
+      const row = event.payload.newRow;
+      const userId = typeof row?.['id'] === 'string' ? (row['id'] as string) : '';
+      if (!userId || !safeIds.includes(userId)) return;
 
-          const rawAvatar = row?.['arena_avatar_url'];
-          const rawFrame = row?.['equipped_frame'];
-          const rawAura = row?.['equipped_aura'];
+      const rawAvatar = row?.['arena_avatar_url'];
+      const rawFrame = row?.['equipped_frame'];
+      const rawAura = row?.['equipped_aura'];
 
-          try {
-            onChangeRef.current({
-              userId,
-              /* Undefined, not '', when the column is absent or empty. The
-                 merge treats undefined as "no news" and keeps whatever the
-                 snapshot already put on the seat; '' would blank a face. */
-              avatar: typeof rawAvatar === 'string' && rawAvatar ? rawAvatar : undefined,
-              frame: typeof rawFrame === 'string' && rawFrame ? rawFrame : null,
-              aura: typeof rawAura === 'string' && rawAura ? rawAura : null,
-            });
-          } catch (err) {
-            reportError(err, 'useSeatedProfileSync.onChange');
-          }
-        }
-      )
-      .subscribe();
+      try {
+        onChangeRef.current({
+          userId,
+          /* Undefined, not '', when the column is absent or empty. The
+             merge treats undefined as "no news" and keeps whatever the
+             snapshot already put on the seat; '' would blank a face. */
+          avatar: typeof rawAvatar === 'string' && rawAvatar ? rawAvatar : undefined,
+          frame: typeof rawFrame === 'string' && rawFrame ? rawFrame : null,
+          aura: typeof rawAura === 'string' && rawAura ? rawAura : null,
+        });
+      } catch (err) {
+        reportError(err, 'useSeatedProfileSync.onChange');
+      }
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      unsub();
     };
   }, [tableId, idKey]);
 }

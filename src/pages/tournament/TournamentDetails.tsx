@@ -105,6 +105,8 @@ export default function TournamentDetails({
    * anything to start.
    */
   const [activeTab, setActiveTab] = useState<TabId>(() => normaliseTabId(searchParams.get('tab')));
+  /** One element per tab, so the roving-focus arrow keys can move focus. */
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [entries, setEntries] = useState<TournamentEntry[]>([]);
   const [isRegistered, setIsRegistered] = useState(false);
   /** Fires the auto-open-my-table navigation exactly once per tournament. */
@@ -673,7 +675,7 @@ export default function TournamentDetails({
             playersData.map((e: Record<string, unknown>): TournamentEntry => {
               // PostgREST returns an embedded row as an object, but types it as
               // an array in some shapes. Accept both rather than guess - this
-              // exact shape bit LiveChipCounts (see its line 88).
+              // exact shape caused bugs in the past.
               const rawProfile = e.profile as
                 | { player_number?: string | null; avatar_url?: string | null }
                 | { player_number?: string | null; avatar_url?: string | null }[]
@@ -1033,8 +1035,6 @@ export default function TournamentDetails({
     });
   }, [tournament?.blind_structure]);
 
-  const isRunning = tournament?.status === 'RUNNING';
-
   /**
    * The tab contract, built once. Every tab takes exactly this and nothing
    * else, so switching tabs is a render, not a refetch.
@@ -1069,7 +1069,13 @@ export default function TournamentDetails({
       blindLevels,
       user?.id,
       isRegistered,
-      isRunning,
+      /* `isWatchable`, not `isRunning`: the BODY reads isWatchable (LATE_REG
+         counts as watchable, RUNNING alone does not cover it), so listing the
+         other one here is a stale-closure waiting to happen. Not currently
+         exploitable only because the `tournament` object identity changes on
+         any status transition and re-runs this anyway - which is luck, not a
+         guarantee. Depend on what you read. */
+      isWatchable,
       watchTable,
       isMysteryBountyEvent,
       mysteryBounty,
@@ -1110,15 +1116,39 @@ export default function TournamentDetails({
         </div>
 
         {/* Tabs */}
+        {/* A tablist is a ROVING focus widget, not seven tab stops. Declaring
+            role="tablist" without implementing that is worse than plain
+            buttons: a screen reader announces "tab, 3 of 7" and then the arrow
+            keys the announcement just promised do nothing. So: exactly one tab
+            is tabbable, Left/Right move (wrapping), Home/End jump, and each
+            tab owns the panel by id. */}
         <div className="details-tabs" role="tablist" aria-label="Tournament sections">
-          {TABS.map((tab) => (
+          {TABS.map((tab, i) => (
             <button
               key={tab.id}
+              id={`tl-tab-${tab.id}`}
               type="button"
               role="tab"
               aria-selected={activeTab === tab.id}
+              aria-controls="tl-tabpanel"
+              tabIndex={activeTab === tab.id ? 0 : -1}
+              ref={(el) => {
+                tabRefs.current[i] = el;
+              }}
               className={`tab ${activeTab === tab.id ? 'active' : ''}`}
               onClick={() => setActiveTab(tab.id)}
+              onKeyDown={(e) => {
+                const last = TABS.length - 1;
+                let next = -1;
+                if (e.key === 'ArrowRight') next = i === last ? 0 : i + 1;
+                else if (e.key === 'ArrowLeft') next = i === 0 ? last : i - 1;
+                else if (e.key === 'Home') next = 0;
+                else if (e.key === 'End') next = last;
+                if (next === -1) return;
+                e.preventDefault();
+                setActiveTab(TABS[next].id);
+                tabRefs.current[next]?.focus();
+              }}
             >
               {tab.label}
             </button>
@@ -1160,7 +1190,16 @@ export default function TournamentDetails({
         {/* The only part of the shell that grows. Each tab scrolls inside
             itself via the shared `.tl-scroll`, so the page keeps exactly one
             scrollbar and the footer never moves. */}
-        <div className="details-content" role="tabpanel">
+        <div
+          className="details-content"
+          role="tabpanel"
+          id="tl-tabpanel"
+          /* Named by whichever tab is selected, so the panel announces what it
+             is instead of "tab panel". Focusable at -1 so the arrow-key move
+             above has somewhere to send focus next. */
+          aria-labelledby={`tl-tab-${activeTab}`}
+          tabIndex={-1}
+        >
           {activeTab === 'detail' && <DetailOverviewTab {...tabProps} />}
           {activeTab === 'blinds' && <BlindsTab {...tabProps} />}
           {activeTab === 'ranking' && <RankingTab {...tabProps} />}

@@ -33,7 +33,7 @@ const read = (p: string) => readFileSync(path.join(process.cwd(), p), 'utf8');
 // ── Behavioral: the strike/auto-sit-out machinery itself ─────────────────────
 
 function mkEngine() {
-  let now = 2_000_000;
+  const now = 2_000_000;
   const sched = new DeadlineScheduler({
     tickMs: 100,
     now: () => now,

@@ -109,7 +109,7 @@ const Step1Basics = ({
         <input
           type="text"
           className={styles.textInput}
-          placeholder="Enter club name..."
+          placeholder="Enter Club Name..."
           value={form.name}
           onChange={(e) => updateForm({ name: e.target.value })}
           maxLength={30}
@@ -212,7 +212,7 @@ const Step1Basics = ({
         <label>Description</label>
         <textarea
           className={styles.textArea}
-          placeholder="Describe your club..."
+          placeholder="Describe Your Club..."
           value={form.description}
           onChange={(e) => updateForm({ description: e.target.value })}
           rows={4}

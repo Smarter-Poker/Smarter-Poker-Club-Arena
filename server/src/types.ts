@@ -564,7 +564,8 @@ export interface PerPotAward {
   low: boolean;
   amount: number;
   hand?: EvaluatedHand;
-  board?: 1 | 2;
+  /** 1|2 on double-board bomb pots; RUN index 1..3 on run-it-twice hands. */
+  board?: number;
   /**
    * Review fix 2026-08-25: the engine-generated description of THIS entry's
    * hand ("Kings Full Of Nines" / the low's name for low halves). Computed

@@ -66,7 +66,6 @@
     0 2px 8px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
     inset 0 -1px 0 rgba(0, 0, 0, 0.2);
-  cursor: pointer;
   position: relative;
   overflow: hidden;
   transition:
@@ -74,7 +73,18 @@
     box-shadow 0.2s ease;
 }
 
-.dw__bbj:hover {
+/* Only the CLICKABLE banner looks and behaves clickable. `onOpenBBJ` is
+   optional and the component already withholds role/tabIndex without it (see
+   `bbjClickable`), but the CSS gave every copy a pointer cursor and a lift on
+   hover - the last remaining piece of the affordance that promised a control
+   the surface does not have. 44px because this is the panel's headline tap
+   target on a 375px screen; at 6px padding it was ~30px. */
+.dw__bbj[role='button'] {
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.dw__bbj[role='button']:hover {
   transform: translateY(-1px);
   box-shadow:
     0 4px 12px rgba(0, 0, 0, 0.5),
@@ -105,7 +115,10 @@
 }
 
 .dw__bbj-label {
-  font-family: 'Oswald', 'Impact', sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    sans-serif;
   font-size: 0.65rem;
   font-weight: 700;
   letter-spacing: 1px;
@@ -118,7 +131,10 @@
 }
 
 .dw__bbj-amount {
-  font-family: 'Oswald', 'Impact', sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    sans-serif;
   font-size: 0.95rem;
   font-weight: 700;
   color: #ffffff;
@@ -257,6 +273,15 @@
   cursor: pointer;
   border-color: rgba(0, 180, 230, 0.28);
   background: linear-gradient(180deg, rgba(34, 48, 70, 0.85) 0%, rgba(19, 27, 40, 0.85) 100%);
+  /* 2026-08-25, 375px-first: a row is 5px padding around a 20px icon, so an
+     ACTIONABLE row - Player Wallet, Club Bank, Rake Treasury, Spins - was a
+     ~30px tap target. `.dw__plus` next to it already carries a transparent
+     44px overlay for exactly this reason (see its ::after); the rows that open
+     a cashier or a statement were left at two-thirds of the guideline. They
+     cannot use the overlay trick - they are full-width, so the miss is
+     vertical - so they take the height directly. Non-actionable rows are pure
+     readout and stay compact, which is what keeps the panel short. */
+  min-height: 44px;
 }
 
 .dw__row--actionable:hover {
@@ -401,6 +426,10 @@
   font-weight: 600;
   letter-spacing: 0.3px;
   cursor: pointer;
+  /* The only way back from a failed read. It was a 22px target at the top of a
+     money panel; the type stays small so the badge stays quiet, the box grows
+     so a thumb can actually reach it. */
+  min-height: 44px;
   transition:
     background 0.2s ease,
     border-color 0.2s ease;

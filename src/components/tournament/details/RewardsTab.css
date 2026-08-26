@@ -241,62 +241,12 @@
   color: var(--tl-text-dim);
 }
 
-.rw-top {
-  margin-top: 14px;
-}
-
-.rw-top__list {
-  gap: 6px;
-}
-
-.rw-toprow {
-  grid-template-columns: 34px 1fr auto;
-  min-height: 54px;
-}
-
-.rw-toprank {
-  min-width: 0;
-  text-align: left;
-  font-size: 13px;
-}
-
-.rw-toprow__mid {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.rw-topamount {
-  font-size: 16px;
-  font-variant-numeric: tabular-nums;
-  color: var(--tl-accent);
-  text-shadow: 0 0 12px rgba(111, 220, 255, 0.35);
-}
-
-/* A prize still in the pool glows. A pulled one goes flat and steps back. */
-.rw-toprow--open {
-  border-color: rgba(111, 220, 255, 0.35);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.58),
-    0 6px 16px rgba(0, 0, 0, 0.44),
-    0 0 14px rgba(111, 220, 255, 0.18);
-}
-
-.rw-toprow--gone {
-  opacity: 0.58;
-  filter: saturate(0.55);
-  box-shadow: inset 0 2px 7px rgba(0, 0, 0, 0.55);
-}
-.rw-toprow--gone .rw-topamount {
-  color: var(--tl-text-dim);
-  text-shadow: none;
-}
-
-.rw-topstate {
-  flex: 0 0 auto;
-}
+/* The `.rw-top*` ladder rules that sat here are gone (2026-08-26 audit). They
+   styled the "top rungs" list this tab built by grouping `current_bounty`, and
+   that list was removed when the chest inventory shipped - `MysteryBountyPanel`
+   renders the real ladder now. Nothing in the tab has carried these class names
+   since, so they were 50 lines of stylesheet shipped to every player for markup
+   that no longer exists. */
 
 /* ─────────────────────────────────────────────────────────────────────────
    RESPONSIVE — 375px is the design target, wider screens get more air
@@ -331,8 +281,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rw-row,
-  .rw-toprow {
+  .rw-row {
     transition: none;
   }
 }

@@ -32,6 +32,8 @@ import { reportError } from '../utils/errorReporter';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export type BusEventType =
+  | 'TABLE_CHAT_INSERT'
+  | 'TABLE_PROFILES_UPDATE'
   | 'AUTH_STATE_CHANGED'
   | 'USER_PROFILE_LOADED'
   | 'CLUB_JOINED'
@@ -47,6 +49,10 @@ export type BusEventType =
   | 'OPEN_OBSERVE_TABLE'
   | 'TABLE_CAP_BLOCKED'
   | 'BALANCE_UPDATED'
+  // Had a payload in BusPayloadMap but was missing from this union, so five
+  // subscribe sites carried `as any` to compile - which switches OFF payload
+  // checking on a ledger event, the one place a wrong shape is money.
+  | 'TRANSACTION_LOGGED'
   | 'VIP_POINTS_UPDATED'
   | 'WALLET_REFRESHED'
   | 'REALTIME_CONNECTED'
@@ -342,6 +348,8 @@ export type BusEventType =
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
+  TABLE_CHAT_INSERT: { tableId: string; newRow: Record<string, unknown> };
+  TABLE_PROFILES_UPDATE: { newRow: Record<string, unknown> };
   AUTH_STATE_CHANGED: AuthStatePayload;
   USER_PROFILE_LOADED: { avatarUrl?: string; displayName?: string; userId?: string };
   CLUB_JOINED: ClubEventPayload;
@@ -453,6 +461,13 @@ export interface BusPayloadMap {
     bigBlind: number;
     winnerName: string;
     amount: number;
+    /* 2026-08-26: the hit's own identity and emission time, so the receiver
+       de-duplicates on WHICH hit this is rather than on when it arrived —
+       the fix for the jackpot re-announcing on every page refresh. Optional
+       because a producer without a hand number still de-duplicates by table;
+       see lib/bbjHitOnce. */
+    handNumber?: number;
+    emittedAt?: number;
   };
   // Tournament lifecycle events
   PLAYER_ELIMINATED: {
@@ -731,7 +746,18 @@ export interface BusPayloadMap {
     equityPercent: number;
   };
   // Phase 6: Card Back Store payloads
-  SETTINGS_CHANGED: { setting: string; value: string | number | boolean };
+  SETTINGS_CHANGED: {
+    setting: string;
+    value: string | number | boolean;
+    /**
+     * Which hook instance emitted this, so a receiver can ignore its OWN echo
+     * without a stateful latch. See useTableSettings: the previous
+     * `localOriginRef` boolean got permanently stuck whenever the bus
+     * suppressed a duplicate emit, and silently swallowed the next real
+     * cross-component update.
+     */
+    origin?: string;
+  };
   DIAMOND_SPENT: { amount: number; item: string; category: string };
   // Gamification engagement events (Session Build)
   SETTLEMENT_RECEIPT_COPIED: { receiptId: string };

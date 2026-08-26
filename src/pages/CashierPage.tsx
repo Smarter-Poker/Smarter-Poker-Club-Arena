@@ -19,7 +19,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { isClubStaff, type ClubRole } from '../types/clubRoles';
+import { isClubStaff, isAgentRole } from '../types/clubRoles';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
@@ -29,7 +29,6 @@ import {
 } from '../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../stores/useWalletStore';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { ChipFlowService } from '../services/ChipFlowService';
 import { cashoutService } from '../services/CashoutService';
 import { supabase } from '../lib/supabase';
 import ClubBottomNav from '../components/club/ClubBottomNav';
@@ -53,6 +52,7 @@ import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
 import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
+import { canHoldAgentWallet } from '../components/wallet/walletRows';
 import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './CashierPage.module.css';
@@ -109,6 +109,25 @@ export function parseChipAmount(
     return { ok: false, error: 'Amount exceeds the maximum transfer limit' };
   }
   return { ok: true, value };
+}
+
+/**
+ * crypto.randomUUID is not in every embedded webview, and fn_agent_wallet_send
+ * takes `p_op_id uuid` - so the fallback must still BE a uuid or the one call
+ * that moves the chips fails with a 22P02 on exactly the browsers that lack it.
+ * Same shim as WalletCashierModal and CashierTradePage.
+ */
+function newOpId(): string {
+  try {
+    const c = globalThis.crypto as Crypto | undefined;
+    if (c?.randomUUID) return c.randomUUID();
+  } catch {
+    /* fall through to the shim */
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+    const r = (Math.random() * 16) | 0;
+    return (ch === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -177,7 +196,14 @@ export default function CashierPage() {
 
   const { user } = useAuthUser();
 
-  const { balances, mintChips, loadBalances } = useWalletStore();
+  /* `balances` is deliberately NOT destructured any more. It is the GLOBAL
+     player wallet, and the last three things on this page that read it were all
+     quoting the wrong account: the Send guard, the Send preview and the Max
+     preset. Every chip figure here is now either the per-club balance
+     (myClubChips, what a cashout debits) or the agent wallet (myAgentWallet,
+     what a send debits). Leaving it destructured is an invitation to reach for
+     it again. */
+  const { mintChips, loadBalances } = useWalletStore();
   const toast = useToast();
 
   const [action, setAction] = useState<CashierAction>('send');
@@ -280,6 +306,17 @@ export default function CashierPage() {
   const [isInUnion, setIsInUnion] = useState(false);
   const [isUnionOwner, setIsUnionOwner] = useState(false);
   const [clubName, setClubName] = useState('');
+  /**
+   * agents.agent_wallet_balance for the viewer IN THIS CLUB - the account the
+   * Send tab actually spends (see handleAction's 'send' branch).
+   *
+   * Null while unknown, never 0: a figure we could not read must not refuse a
+   * send the server would have allowed, and must not authorise one it will
+   * refuse. The Send preview and the Max preset both read this, because
+   * balances.PLAYER.available is the GLOBAL wallet and has nothing to do with
+   * the chips this action moves.
+   */
+  const [myAgentWallet, setMyAgentWallet] = useState<number | null>(null);
 
   // Send chips state
   const [recipients, setRecipients] = useState<Recipient[]>([]);
@@ -385,6 +422,9 @@ export default function CashierPage() {
     setMyClubChips(null);
     setRecipients([]);
     setClubName('');
+    // Chips are per club, and so is the float. Carrying the previous club's
+    // agent wallet across a switch would quote a balance this club cannot spend.
+    setMyAgentWallet(null);
   }, [clubId]);
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -455,7 +495,7 @@ export default function CashierPage() {
       if (!isMounted.current || stale()) return;
 
       // PERF: Parallelize role + club data queries (was 4 sequential, now 2 parallel)
-      const [memberResult, clubResult] = await Promise.all([
+      const [memberResult, clubResult, floatResult] = await Promise.all([
         // Query 1: user role
         retryFetch(
           () =>
@@ -479,12 +519,36 @@ export default function CashierPage() {
               .then((r) => r),
           { maxRetries: 2, isMountedRef: isMounted }
         ),
+        // Query 3: the agent wallet the Send tab spends. Staff hold one too -
+        // the Club Bank funds it, and fn_agent_wallet_send refuses every caller
+        // who has not been funded, owners included.
+        retryFetch(
+          () =>
+            supabase
+              .from('agents')
+              .select('agent_wallet_balance')
+              .eq('club_id', resolvedId)
+              .eq('user_id', user.id)
+              .maybeSingle()
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        ),
       ]);
       if (!isMounted.current || stale()) return;
 
       const role = memberResult?.data?.role || 'member';
       setUserRole(role);
       setClubName(clubResult?.data?.name || '');
+      // A row that does not exist is a float of zero. A row we could not READ
+      // is unknown, and stays null so the pre-flight check below cannot refuse
+      // a send the server would have allowed.
+      setMyAgentWallet(
+        floatResult?.error
+          ? null
+          : floatResult?.data
+            ? Number(floatResult.data.agent_wallet_balance) || 0
+            : 0
+      );
 
       // Union check — derived from combined query above
       const detectedUnionId = clubResult?.data?.union_id;
@@ -577,64 +641,99 @@ export default function CashierPage() {
         return;
       }
 
-      // Fetch members — role-based visibility:
-      // Union/Club owners + admins: see everyone
-      // Agents/sub-agents: see only their downline (filtered by agent_id) + themselves
+      /**
+       * ── WHO THIS PAGE MAY SEND TO (Dan 2026-08-25, binding) ───────────────
+       *
+       * "Super Agents, Agents, and Sub Agents should ONLY EVER SEE their
+       *  downlines, and their downline agents' downlines. Nobody else. Owners,
+       *  Co Owners and Admins should see everyone."
+       *
+       * The agent-scoped branch here was BROKEN, not merely divergent.
+       * `ca_club_my_downline` returns a TABLE - one row per downline AGENT,
+       * with columns (agent_id, path, depth, username, ...). This code read the
+       * response as an object and asked it for `.scoped` and `.user_ids`, which
+       * are not fields it has ever had. Both came back undefined, so
+       * `downlineIds` became `[]`, `effectiveDownline` became `[user.id]`, and
+       * the query filtered the whole club down to the viewer themselves.
+       *
+       * Net effect in production: every super agent, agent and sub agent opened
+       * the Send tab and found exactly one recipient - their own name - which
+       * fn_agent_wallet_send then refuses as a self-send. The tab was unusable
+       * for the three roles it exists for, and looked like an empty club.
+       *
+       * fn_club_cashier_members answers the question in the database, walking
+       * the same recursive club_members.agent_id edge that
+       * fn_club_cashier_can_transact refuses on - and it is the SAME source the
+       * Cashier Trade grid and the Wallet Cashier modal already read, so all
+       * three surfaces and the server now agree by construction rather than by
+       * three separate hand-rolled attempts.
+       *
+       * Staff keep the paged club_members read: fn_club_cashier_scope returns
+       * 'all' for owner/co_owner/admin, which is the same set, and a union
+       * owner who is not a club member has no club_members row at all and would
+       * be handed an empty list by the RPC.
+       */
       const agentScoped = ['super_agent', 'agent', 'sub_agent'].includes(userRole);
-      let downlineIds: string[] | null = null;
-      if (agentScoped) {
-        const { data: dl } = await retryFetch(
-          () => supabase.rpc('ca_club_my_downline', { p_club_id: resolvedId }).then((r) => r),
-          { maxRetries: 2, isMountedRef: isMounted }
-        );
-        if (!isMounted.current || stale()) return;
-        const scope = dl as { scoped?: boolean; user_ids?: string[] | null } | null;
-        downlineIds = scope?.scoped === false ? null : (scope?.user_ids ?? []);
-      }
 
-      // PostgREST caps a response at 1,000 rows and .limit(500) capped it lower
-      // still, with no ORDER BY - so on a 588-member club, 88 people vanished
-      // in whatever order Postgres happened to return, and the most recently
-      // added members are exactly the ones that fall off the end. Pages through
-      // in a deterministic order instead.
-      const PAGE = 500;
-      const MAX_RECIPIENTS = 10000;
-      const collected: Array<Record<string, unknown>> = [];
-      for (let from = 0; from < MAX_RECIPIENTS; from += PAGE) {
-        let query = supabase
-          .from('club_members')
-          .select('user_id, role, display_name, nickname, chip_balance, agent_id')
-          .eq('club_id', resolvedId)
-          .in('role', roleFilter)
-          .in('status', ['active', 'approved'])
-          .order('joined_at', { ascending: true })
-          .order('user_id', { ascending: true })
-          .range(from, from + PAGE - 1);
-        if (agentScoped && downlineIds !== null) {
-          const effectiveDownline = downlineIds.includes(user.id)
-            ? downlineIds
-            : [...downlineIds, user.id];
-          query = query.in('user_id', effectiveDownline);
-        }
-
-        const { data: page } = await retryFetch(() => query.then((r) => r), {
-          maxRetries: 2,
-          isMountedRef: isMounted,
-        });
-        if (!isMounted.current || stale()) return;
-        collected.push(...((page || []) as Array<Record<string, unknown>>));
-        if (!page || page.length < PAGE) break;
-      }
-      const data = collected;
-
-      // Map recipients — use display_name/nickname from club_members directly
-      const members = (data || []) as Array<{
+      type RecipientRow = {
         user_id: string;
         role: string;
         display_name: string | null;
         nickname: string | null;
         chip_balance: number | null;
-      }>;
+      };
+      let members: RecipientRow[] = [];
+
+      if (agentScoped) {
+        const { data: scoped, error: scopedErr } = await retryFetch(
+          () => supabase.rpc('fn_club_cashier_members', { p_club_id: resolvedId }).then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        );
+        if (!isMounted.current || stale()) return;
+        // A read that failed is not an empty downline. Say so rather than
+        // rendering "no recipients" over a network error.
+        if (scopedErr) throw scopedErr;
+        members = ((scoped || []) as Array<Record<string, unknown>>)
+          // The viewer is never in their own downline walk, but guard anyway:
+          // fn_agent_wallet_send refuses a self-send outright.
+          .filter((m) => String(m.user_id) !== user.id)
+          .map((m) => ({
+            user_id: String(m.user_id),
+            role: String(m.role || 'player'),
+            display_name: (m.name as string) || null,
+            nickname: (m.username as string) || null,
+            chip_balance: Number(m.chip_balance) || 0,
+          }));
+      } else {
+        // PostgREST caps a response at 1,000 rows and .limit(500) capped it
+        // lower still, with no ORDER BY - so on a 588-member club, 88 people
+        // vanished in whatever order Postgres happened to return, and the most
+        // recently added members are exactly the ones that fall off the end.
+        // Pages through in a deterministic order instead.
+        const PAGE = 500;
+        const MAX_RECIPIENTS = 10000;
+        const collected: Array<Record<string, unknown>> = [];
+        for (let from = 0; from < MAX_RECIPIENTS; from += PAGE) {
+          const query = supabase
+            .from('club_members')
+            .select('user_id, role, display_name, nickname, chip_balance, agent_id')
+            .eq('club_id', resolvedId)
+            .in('role', roleFilter)
+            .in('status', ['active', 'approved'])
+            .order('joined_at', { ascending: true })
+            .order('user_id', { ascending: true })
+            .range(from, from + PAGE - 1);
+
+          const { data: page } = await retryFetch(() => query.then((r) => r), {
+            maxRetries: 2,
+            isMountedRef: isMounted,
+          });
+          if (!isMounted.current || stale()) return;
+          collected.push(...((page || []) as Array<Record<string, unknown>>));
+          if (!page || page.length < PAGE) break;
+        }
+        members = collected as unknown as RecipientRow[];
+      }
 
       // Batch-fetch display names from profiles for members without display_name
       // PERF 2026-08-23: both lookups below derive from `members` and neither
@@ -1010,7 +1109,7 @@ export default function CashierPage() {
 
   // Live transaction updates — refresh history when new ledger entries arrive
   useMasterBusSubscriptions(
-    ['TRANSACTION_LOGGED' as any],
+    ['TRANSACTION_LOGGED'],
     () => {
       loadTransactions();
     },
@@ -1135,12 +1234,16 @@ export default function CashierPage() {
   // DETERMINE AVAILABLE TABS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  const canSend =
-    userRole === 'owner' ||
-    isUnionOwner ||
-    userRole === 'agent' ||
-    userRole === 'super_agent' ||
-    userRole === 'sub_agent';
+  /**
+   * co_owner and admin were MISSING from this list while being present in
+   * every other rule around it: loadRecipients hands them the whole club
+   * (isClubStaff), the Financial quick links render on `canSend`, and
+   * fn_agent_wallet_send admits both roles outright. So two roles were given a
+   * recipient list, a funded agent wallet and a server that would accept the
+   * send, and no Send tab to do it from. Asked through the one helper that
+   * knows what "runs the club" means, exactly as canMint already does.
+   */
+  const canSend = isClubStaff(userRole) || isAgentRole(userRole) || isUnionOwner;
   // Mirrors fn_mint_chips_from_diamonds: a STANDALONE club's owner, co-owner
   // or admin, or a union owner minting into the union bank. co_owner and admin
   // were missing here while the RPC has always admitted them, so two roles saw
@@ -1295,58 +1398,80 @@ export default function CashierPage() {
         // Stamp the rate limiter only once the submission is actually valid,
         // so a rejected attempt does not lock out the corrected retry.
         lastActionRef.current = now;
-        if (balances.PLAYER.available < value) {
+
+        const recipient = recipients.find((r) => r.id === recipientIdForAction);
+
+        /**
+         * ── SENDS COME OUT OF THE AGENT WALLET (Dan 2026-08-25, binding) ────
+         *
+         * "Any chips sent or claimed back transact from the Agent Wallet."
+         *
+         * This branch used to be a THIRD money path, and not one that obeyed
+         * that sentence:
+         *
+         *   - it checked `balances.PLAYER.available`, the viewer's GLOBAL
+         *     wallet, which has nothing to do with this club's chips;
+         *   - ChipFlowService.agentToPlayer moved the agent's own PLAYER
+         *     wallet, not agents.agent_wallet_balance (its own doc comment says
+         *     so: "from their own PLAYER wallet");
+         *   - ChipFlowService.clubToAgent moved the OWNER'S personal wallet,
+         *     not clubs.chip_treasury, despite being named for the club bank;
+         *   - none of the three carried an idempotency key, so a response lost
+         *     on the way back was indistinguishable from a send that never
+         *     happened, and the obvious retry sent a second time;
+         *   - none of them asked whether the recipient was in the caller's
+         *     downline, so the only scoping was the (broken) recipient list.
+         *
+         * It is now the same one call the Trade grid and the Wallet Cashier
+         * make: fn_agent_wallet_send. One transaction, one chip_transactions
+         * row, one op_id, a downline check before any money moves, and a ten
+         * minute clawback window the Claim Back surfaces can act on.
+         *
+         * `p_destination` follows the RECIPIENT's role - chips to an agent land
+         * in the float they distribute from, chips to a player land in the
+         * balance they buy in with - and the database derives it again from the
+         * recipient regardless of what is sent here.
+         */
+        if (myAgentWallet !== null && myAgentWallet < value) {
           if (isMounted.current)
             setMessage({
               type: 'error',
-              text: `Insufficient balance. Available: ${balances.PLAYER.available.toLocaleString()}`,
+              text: `Insufficient chips in your agent wallet. Available: ${myAgentWallet.toLocaleString()}`,
             });
           if (isMounted.current) setIsProcessing(false);
           return;
         }
 
-        const recipient = recipients.find((r) => r.id === recipientIdForAction);
-        const recipientIsAgent = recipient?.role === 'agent' || recipient?.role === 'super_agent';
-
-        if (userRole === 'owner' && recipientIsAgent) {
-          // clubId here may be the 6-digit club code rather than the UUID.
-          // Every other DB call on this page resolves first; this one passed
-          // the raw param into a uuid argument, so an owner arriving on
-          // /clubs/25450/cashier got `invalid input syntax for type uuid`.
-          const resolvedForTransfer = (await resolveClubUUID(clubId!)) || clubId!;
-          await ChipFlowService.clubToAgent(
-            user.id,
-            recipientIdForAction,
-            resolvedForTransfer,
-            value,
-            recipient?.username || 'Agent',
-            clubName
-          );
-        } else if (userRole === 'owner' || isUnionOwner) {
-          await ChipFlowService.clubToPlayer(
-            user.id,
-            recipientIdForAction,
-            value,
-            recipient?.username || 'Player',
-            clubName
-          );
-        } else {
-          await ChipFlowService.agentToPlayer(
-            user.id,
-            recipientIdForAction,
-            value,
-            user.username || 'Agent',
-            recipient?.username || 'Player',
-            clubName
-          );
+        const resolvedForTransfer = (await resolveClubUUID(clubId!)) || clubId!;
+        const { data: sendData, error: sendError } = await supabase.rpc('fn_agent_wallet_send', {
+          p_club_id: resolvedForTransfer,
+          p_to_user_id: recipientIdForAction,
+          p_amount: value,
+          p_destination: canHoldAgentWallet(recipient?.role) ? 'agent_wallet' : 'player_wallet',
+          p_reason: `Cashier Send To ${recipient?.username || 'Member'}`,
+          p_op_id: newOpId(),
+        });
+        if (sendError) throw sendError;
+        const sendRes = (Array.isArray(sendData) ? sendData[0] : sendData) as {
+          success?: boolean;
+          error?: string;
+          replayed?: boolean;
+        } | null;
+        // The RPC reports a refusal as { success: false, error }. The old path
+        // had no result check at all, so a refusal printed "Sent 500 chips".
+        if (!sendRes?.success) {
+          throw new Error(sendRes?.error || 'The Cashier Refused That Send');
         }
 
         if (isMounted.current)
           setMessage({
             type: 'success',
-            text: `Sent ${value.toLocaleString()} chips to ${recipient?.username}`,
+            text: sendRes.replayed
+              ? `That send had already gone through. ${value.toLocaleString()} chips are with ${recipient?.username || 'them'}`
+              : `Sent ${value.toLocaleString()} chips to ${recipient?.username || 'them'} from your agent wallet`,
           });
         loadBalances(user.id);
+        loadUserContext(); // the agent wallet figure on screen just changed
         loadRecipients(true); // Force refresh — a send just changed recipient balances; skip the 60s cache
         setSelectedRecipient('');
         notifyWalletChange(user.id, value);
@@ -1860,13 +1985,17 @@ export default function CashierPage() {
             <span className={styles.cardTitleIcon}>↗</span>Send Chips
           </h2>
           <div className={styles.cardBody}>
+            {/* Names the ACCOUNT and the SCOPE, both of which this line used to
+                get wrong: it said "your wallet" (it is the agent wallet) and it
+                described the recipients by role when the real rule is the
+                downline. Staff see everyone; the three agent roles see their
+                downline and their downline agents' downlines, nobody else. */}
             <div className={`${styles.message} ${styles.messageInfo}`}>
-              Send Chips From Your Wallet To{' '}
-              {userRole === 'owner'
-                ? 'agents, sub-agents, and players'
-                : userRole === 'agent' || userRole === 'super_agent'
-                  ? 'sub-agents and players'
-                  : 'players'}
+              Send Chips From Your Agent Wallet To{' '}
+              {isClubStaff(userRole) || isUnionOwner
+                ? 'Anyone In This Club'
+                : 'Your Downline, And Their Downlines'}
+              . You Can Claim A Send Back For Ten Minutes.
             </div>
 
             {/* Recipient Select */}
@@ -1953,33 +2082,51 @@ export default function CashierPage() {
                   {val.toLocaleString()}
                 </button>
               ))}
+              {/* Max is the AGENT WALLET, because that is the account
+                  fn_agent_wallet_send debits. It used to prefill the global
+                  player wallet, which for most staff is a completely different
+                  (usually larger) number, so Max produced an amount the server
+                  refused every time. Disabled until the figure is known rather
+                  than offering a confident 0. */}
               <button
                 className={styles.presetBtn}
-                onClick={() => setAmount(String(balances.PLAYER.available))}
+                disabled={myAgentWallet === null}
+                onClick={() => setAmount(String(Math.floor(myAgentWallet ?? 0)))}
               >
                 Max
               </button>
             </div>
 
-            {/* Preview */}
-            {selectedRecipientData && amount && parseFloat(amount) > 0 && (
-              <div className={styles.transferPreview}>
-                <div className={styles.previewRow}>
-                  <span>You</span>
-                  <span>
-                    {balances.PLAYER.available.toLocaleString()} →{' '}
-                    {Math.max(0, balances.PLAYER.available - parseFloat(amount)).toLocaleString()}
-                  </span>
+            {/* Preview. The "before" figure is the AGENT WALLET, the account
+                this send debits - it quoted the global player wallet, so the
+                two lines described a movement between two accounts neither of
+                which was involved. Suppressed entirely while the float is
+                unknown rather than projecting a subtraction from nothing. */}
+            {selectedRecipientData &&
+              amount &&
+              parseFloat(amount) > 0 &&
+              myAgentWallet !== null && (
+                <div className={styles.transferPreview}>
+                  <div className={styles.previewRow}>
+                    <span>Your Agent Wallet</span>
+                    <span>
+                      {myAgentWallet.toLocaleString()} →{' '}
+                      {Math.max(0, myAgentWallet - parseFloat(amount)).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className={styles.previewRow}>
+                    <span>{selectedRecipientData.username}</span>
+                    <span>
+                      {selectedRecipientData.balance.toLocaleString()} →{' '}
+                      {(selectedRecipientData.balance + parseFloat(amount)).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className={styles.previewRow}>
+                    <span>Claim Back Window</span>
+                    <span>Ten Minutes</span>
+                  </div>
                 </div>
-                <div className={styles.previewRow}>
-                  <span>{selectedRecipientData.username}</span>
-                  <span>
-                    {selectedRecipientData.balance.toLocaleString()} →{' '}
-                    {(selectedRecipientData.balance + parseFloat(amount)).toLocaleString()}
-                  </span>
-                </div>
-              </div>
-            )}
+              )}
 
             {message && (
               <div
@@ -2074,7 +2221,7 @@ export default function CashierPage() {
                 id="cashier-distribute-amount"
                 className={styles.input}
                 type="number"
-                placeholder="Enter chip amount"
+                placeholder="Enter Chip Amount"
                 value={amount}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
                 min={1}

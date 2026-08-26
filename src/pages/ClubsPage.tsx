@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { ClubsService } from '../services/ClubsService';
@@ -65,12 +65,31 @@ export default function ClubsPage() {
   }, []);
 
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const toast = useToast();
   useVisibilityRefresh(() => loadMyClubs());
-  const [activeTab, setActiveTab] = useState<Tab>('my-clubs');
-  const [joinClubId, setJoinClubId] = useState('');
+
+  const initialJoinCode = searchParams.get('c') || '';
+  const initialReferralCode = searchParams.get('ref') || '';
+  const initialTab =
+    searchParams.get('join') === 'true' || initialJoinCode ? 'discover' : 'my-clubs';
+
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab as Tab);
+  const [joinClubId, setJoinClubId] = useState(initialJoinCode);
+  const [joinReferralCode, setJoinReferralCode] = useState(initialReferralCode);
   const [isJoining, setIsJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+
+  // Clear params from URL without reloading if they exist
+  useEffect(() => {
+    if (searchParams.has('c') || searchParams.has('join') || searchParams.has('ref')) {
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('c');
+      newParams.delete('ref');
+      newParams.delete('join');
+      setSearchParams(newParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   // Intro video state - only show once per session
   // DISABLED — intro video turned off. To re-enable, restore the original useState initializer.
@@ -276,11 +295,20 @@ export default function ClubsPage() {
         return;
       }
 
+      if (joinReferralCode.trim()) {
+        ClubsService.rememberInviteCode(club.id, joinReferralCode.trim());
+      }
+
+      // join() redeems that code and hands back the membership AS IT STANDS
+      // AFTERWARDS, so the 'pending' branch below now only fires for someone
+      // who really is waiting on an owner — not for an invited player the
+      // redemption has already admitted.
       const membership = await ClubsService.join(club.id);
 
       // Refresh both clubs AND unions (joined club might belong to a union)
       await loadMyClubs();
       setJoinClubId('');
+      setJoinReferralCode('');
       if (membership?.status === 'pending') {
         // Approval-gated club — the request is queued, the user is not yet a member.
         toast.success('Request submitted - pending owner approval.');
@@ -389,13 +417,13 @@ export default function ClubsPage() {
           {activeTab === 'discover' && (
             <div className={styles.discoverTab}>
               <section className={styles.joinSection}>
-                <h3>JOIN A CLUB</h3>
+                <h3>Join A Club</h3>
                 <p>Enter A 6-Digit Club Code To Join An Existing Club.</p>
 
                 {joinError && <div className={styles.errorText}>{joinError}</div>}
 
                 <div className={styles.formGroup}>
-                  <label className={styles.label}>ENTER CLUB CODE:</label>
+                  <label className={styles.label}>Enter Club Code:</label>
                   <input
                     className={styles.joinInput}
                     placeholder="482913"
@@ -405,6 +433,18 @@ export default function ClubsPage() {
                       setJoinError(null);
                     }}
                     maxLength={6}
+                  />
+                </div>
+
+                <div className={styles.formGroup}>
+                  <label className={styles.label}>Referral Code (Optional):</label>
+                  <input
+                    className={styles.joinInput}
+                    placeholder="Referral Code"
+                    value={joinReferralCode}
+                    onChange={(e) => {
+                      setJoinReferralCode(e.target.value.trim());
+                    }}
                   />
                 </div>
 
@@ -638,7 +678,7 @@ export default function ClubsPage() {
                   <label className={styles.label}>CLUB NAME:</label>
                   <input
                     className={styles.input}
-                    placeholder="Enter club name"
+                    placeholder="Enter Club Name"
                     value={clubName}
                     onChange={(e) => {
                       setClubName(e.target.value);
@@ -651,7 +691,7 @@ export default function ClubsPage() {
                   <label className={styles.label}>DESCRIPTION:</label>
                   <textarea
                     className={styles.textarea}
-                    placeholder="Describe your club..."
+                    placeholder="Describe Your Club..."
                     rows={3}
                     maxLength={500}
                     value={clubDescription}

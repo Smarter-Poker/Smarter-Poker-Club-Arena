@@ -125,6 +125,25 @@ export default function GlobalWaitlistListener() {
       }
     );
 
+    // ── SEAT GRANTED ── when hero is INSERTed into a seat on a waited table,
+    // emit WAITLIST_CHANGED so ClubHomePage re-queries and clears the badge.
+    // Previously only DELETE was watched, so badges stuck when the engine seated
+    // someone via INSERT (no preceding DELETE on a fresh seat slot).
+    channel.on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'table_seats',
+        filter: `table_id=in.(${watched.join(',')})`,
+      },
+      (payload) => {
+        if ((payload.new as any)?.user_id === user.id) {
+          masterBus.emit('WAITLIST_CHANGED', undefined as void);
+        }
+      }
+    );
+
     channel.subscribe((status) => {
       if (cleanedUpRef.current) return;
 

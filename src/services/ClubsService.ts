@@ -260,9 +260,110 @@ export async function createClub(clubData: {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
+ * Every localStorage spelling an invite code may be sitting under for one club.
+ *
+ * Callers park the code before they know the club's UUID — InvitePage has a
+ * slug, ClubsPage has the six-digit club_id — so the code can be under either
+ * spelling. Read both, and clear both: leaving the other one behind is how a
+ * code outlives its redemption and re-fires on the next club the user joins.
+ */
+export function inviteCodeKeys(...clubIds: (string | undefined | null)[]): string[] {
+  return Array.from(
+    new Set(clubIds.filter((id): id is string => !!id).map((id) => `referral_${id}`))
+  );
+}
+
+/** Park an invite code until the user is a member and it can be redeemed. */
+export function rememberInviteCode(clubId: string, code: string): void {
+  if (typeof window === 'undefined' || !code) return;
+  try {
+    window.localStorage.setItem(`referral_${clubId}`, code);
+  } catch (e) {
+    reportError(e, 'ClubsService.rememberInviteCode');
+  }
+}
+
+/**
+ * Redeem whatever invite code is parked for this club, and return the
+ * membership AS IT STANDS AFTERWARDS.
+ *
+ * The return value is the whole point. Redemption is what attaches the upline
+ * agent and what admits an invited player into an approval-gated club, so a
+ * caller that keeps the row it read before this ran is holding a row the
+ * database has already replaced.
+ *
+ * Safe to call more than once and safe to call with nothing parked — both are
+ * a no-op that hands back the membership untouched.
+ */
+export async function redeemStoredInviteCode(
+  membership: ClubMember,
+  resolvedId: string,
+  rawClubId: string,
+  userId: string
+): Promise<ClubMember> {
+  if (typeof window === 'undefined') return membership;
+
+  const keys = inviteCodeKeys(resolvedId, rawClubId);
+  let storedCode: string | null = null;
+  for (const key of keys) {
+    if (!storedCode) storedCode = window.localStorage.getItem(key);
+  }
+  if (!storedCode) return membership;
+
+  const forget = () => keys.forEach((key) => window.localStorage.removeItem(key));
+
+  try {
+    const { AgentService } = await import('./AgentService');
+    const res = await AgentService.linkPlayerByReferral(userId, storedCode, resolvedId);
+
+    if (res.success) {
+      forget();
+      // fn_redeem_club_invite_code returns the row it wrote. Prefer it over the
+      // pre-redemption copy in every field it reports on.
+      return {
+        ...membership,
+        status: res.status ?? membership.status,
+        agent_id: res.agentId ?? membership.agent_id,
+      };
+    }
+
+    // 'not_a_member' means the membership row is not visible to the RPC yet —
+    // replica lag, or a join that has not landed. Keep the code so the next
+    // arrival can still spend it; this is the one failure worth retrying.
+    if (res.code === 'not_a_member') return membership;
+
+    // Still pending means redemption did not admit them, so this is a request
+    // an owner can still reject. A platform referral credit is unrecoverable
+    // once spent, so it must not fire here — leave the code parked until the
+    // membership settles. (Guarded since the 2026-08-20 audit; the check moved
+    // here when redemption started deciding the returned status.)
+    if (membership.status === 'pending') return membership;
+
+    forget();
+
+    // The code matched no club invite. It may still be a platform-wide referral
+    // code, which is a different system — try it once, best-effort.
+    const { referralService } = await import('./ReferralService');
+    referralService
+      .redeemCode(userId, storedCode)
+      .catch((e) => reportError(e, 'ClubsService.joinClub_referral_redeem'));
+  } catch (e) {
+    // A thrown error is a transport failure, not a verdict on the code — keep
+    // it parked so the next attempt can redeem it.
+    reportError(e, 'ClubsService.joinClub_referral');
+  }
+
+  return membership;
+}
+
+/**
  * Join a club with role assignment
  */
-export async function joinClub(clubId: string, role: MemberRole = 'member'): Promise<ClubMember> {
+export async function joinClub(
+  clubId: string,
+  role: MemberRole = 'member',
+  knownClubName?: string
+): Promise<ClubMember> {
   const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
 
@@ -304,41 +405,27 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
     throw new Error(error?.message || 'Failed to join club');
   }
 
-  const membership = data as ClubMember;
-
-  // ── Redeem a referral code stored by the Join modal (fire-and-forget) ──
-  // The join flow's "Join with Referral" prompt saves the code under
-  // `referral_<clubUuid>`. Nothing ever redeemed it (audit 2026-08-19), so
-  // the prompt was a stub. Redeem through the canonical platform RPC —
-  // it validates the code, rejects self-referrals, and dedupes server-side.
-  // Never allowed to affect the join result.
-  // Pending joins do NOT redeem: the request can still be rejected, and
-  // crediting a referrer for a membership that never existed is unrecoverable.
-  // The code stays in localStorage so a later successful join redeems it.
-  try {
-    if (typeof window !== 'undefined' && membership?.status !== 'pending') {
-      const referralKey = `referral_${resolvedId}`;
-      const altKey = `referral_${clubId}`;
-      const storedCode =
-        window.localStorage.getItem(referralKey) || window.localStorage.getItem(altKey);
-      if (storedCode) {
-        // Single-shot: clear first so a failing code is never retried forever
-        window.localStorage.removeItem(referralKey);
-        window.localStorage.removeItem(altKey);
-        const { referralService } = await import('./ReferralService');
-        referralService
-          .redeemCode(user.user.id, storedCode)
-          .then((res) => {
-            if (!res.success) {
-              console.warn('[ClubsService] joinClub: referral redemption rejected:', res.error);
-            }
-          })
-          .catch((e) => reportError(e, 'ClubsService.joinClub_referral_redeem'));
-      }
-    }
-  } catch (e) {
-    reportError(e, 'ClubsService.joinClub_referral');
+  if (data && typeof data === 'object' && 'error' in data) {
+    reportError(new Error(data.error), 'ClubsService.Join_club_failed_RPC');
+    throw new Error(data.error);
   }
+
+  // ── Redeem the invite code that brought this user here ───────────────────
+  // fn_redeem_club_invite_code does two things: it attaches the upline agent,
+  // and — for an approval-gated club — it promotes the 'pending' row that
+  // fn_join_club just wrote into a real membership. So `membership` below is
+  // deliberately reassigned from what redemption leaves behind.
+  //
+  // It used to be `const`, and that was the bug the user saw. Every live club
+  // has requires_approval = true, so fn_join_club always returns 'pending'; the
+  // redemption then flipped the database row to 'active' and joinClub returned
+  // the stale pre-redemption object anyway. Both callers branch on
+  // `membership.status === 'pending'` to decide between "welcome, come in" and
+  // an approval wall, so an invited player was parked on "pending owner
+  // approval" forever while the database already had them fully active. One
+  // stale variable, and invite links did not work for anyone.
+  let membership = data as ClubMember;
+  membership = await redeemStoredInviteCode(membership, resolvedId, clubId, user.user.id);
 
   // Emit CLUB_JOINED for cross-page reactivity (lobby, carousel, detail pages).
   // Harmless for pending joins — listeners simply re-fetch memberships.
@@ -353,7 +440,21 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
        listeners leak for the session. ClubHomePage compares it against the
        club it is showing, so a CLUB_UPDATED carrying the other spelling never
        refreshed the lobby. One spelling, everywhere. */
-    masterBus.emit('CLUB_JOINED', { clubId: resolvedId, action: 'member_joined' });
+    // We need the club name for the push notification to display something friendly instead of a UUID
+    let cName = knownClubName || '';
+    if (!cName) {
+      try {
+        const { data: cData } = await supabase
+          .from('clubs')
+          .select('name')
+          .eq('id', resolvedId)
+          .maybeSingle();
+        if (cData?.name) cName = cData.name;
+      } catch (e) {
+        /* ignore */
+      }
+    }
+    masterBus.emit('CLUB_JOINED', { clubId: resolvedId, clubName: cName, action: 'member_joined' });
   } catch (e) {
     console.warn('[ClubsService] joinClub: bus emit failed (non-critical):', e);
   }
@@ -455,9 +556,9 @@ export async function leaveClub(clubId: string): Promise<void> {
     try {
       await supabase
         .from('club_members')
-        .update({ parent_agent_id: null })
+        .update({ agent_id: null })
         .eq('club_id', resolvedId)
-        .eq('parent_agent_id', userId);
+        .eq('agent_id', userId);
     } catch (e: unknown) {
       console.warn('[ClubsService] leaveClub: agent hierarchy cleanup failed (non-critical):', e);
     }
@@ -592,7 +693,7 @@ async function _getUserMembershipsUncached(
     .from('club_members')
     .select(
       `
-      club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
+      club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
       club:clubs(id, club_id, name, slug, description, avatar_url, logo_url, card_image_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, requires_approval, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next)
     `
     )
@@ -655,7 +756,7 @@ export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
   const { data, error } = await supabase
     .from('club_members')
     .select(
-      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
+      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
     )
     .eq('club_id', resolvedId)
     // was .order('reputation_xp'), a column that is 0 on all 1,499 rows in
@@ -738,7 +839,7 @@ export async function getClubLeaderboard(
   const { data, error } = await supabase
     .from('club_members')
     .select(
-      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
+      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
     )
     .eq('club_id', resolvedId)
     // same as above: reputation_xp was always 0, so "top 50" was 50 arbitrary
@@ -1149,6 +1250,8 @@ export const ClubsService = {
   create: createClub,
   update: updateClub,
   join: joinClub,
+  rememberInviteCode,
+  redeemStoredInviteCode,
   leave: leaveClub,
   delete: deleteClub,
   getUserMemberships,

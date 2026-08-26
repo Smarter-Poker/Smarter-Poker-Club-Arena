@@ -33,6 +33,15 @@
 --    policy, decide what a player sees. The window now bounds the set and the
 --    cap only trims what nothing was going to show.
 --
+-- FILENAME VERSION = THE APPLIED VERSION. The Supabase MCP stamps its own
+-- timestamp when it applies a migration, so this file was renamed from
+-- 20260826120000 to match what `supabase_migrations.schema_migrations`
+-- actually records (20260826151459). Leaving them different is not cosmetic:
+-- a later `supabase db push` would not find 20260826120000 in the ledger,
+-- would try to apply this file a second time, and the pre-flight assertion at
+-- the top would abort on `uq_scheduled_tournament_one_live_per_name is
+-- missing` -- correctly, but as a confusing failure rather than a no-op.
+--
 -- SAFETY: both changes are additive to what a player can SEE. No row is
 -- hidden that was visible before -- the new bound is 6 days out, and before
 -- today nothing existed beyond 24 hours to be bounded.

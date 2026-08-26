@@ -531,6 +531,14 @@ export abstract class ServerTableEngineBase {
    * fix invariant).
    */
   protected currentHandRitBoards = 0;
+  /**
+   * POKERBROS PARITY 2026-08-26: community cards already on the felt when the
+   * RIT all-in locked (0 preflop, 3 flop, 4 turn). The hand-completion hold
+   * derives the reveal-timeline length from it (streets per board = the
+   * streets still to deal), so the next hand waits for the client's
+   * street-by-street reveal to finish. Reset with currentHandRitBoards.
+   */
+  protected currentHandRitBaseBoardCount = 0;
   protected currentHandShowdownResults: Array<{
     userId: string;
     handRanking: number;

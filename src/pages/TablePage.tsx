@@ -6354,6 +6354,12 @@ export default function TablePage({
                        the engine just decided, whereas the row may not have
                        been written yet when we read it. */
                     finishPlace: position || full?.finishPlace || null,
+                    winningCards:
+                      position === 1
+                        ? (tableStateRef.current.players[
+                            tableStateRef.current.heroSeat - 1
+                          ]?.holeCards?.filter((c) => c !== null) as Card[])
+                        : undefined,
                     prize: prize || full?.prize || 0,
                   },
                 });

@@ -289,13 +289,39 @@
      A shared variable is the only version of "cannot drift" that survives
      someone adding a term.
 
-     --sp-bust-gain-max is the containment escape hatch. The top rail has the
-     BBJ banner directly above it and needs an upper bound, but it must still
-     be free to shrink an oversized character, so it caps rather than cancels.
-     99 is "no cap" for every other seat. */
-  --sp-bust-effective-scale: calc(
-    var(--sp-bust-scale, 1.45) * min(var(--sp-bust-gain, 1), var(--sp-bust-gain-max, 99))
-  );
+     Containment is NOT done by capping the per-character gain any more — see
+     the note on --sp-bust-effective-scale immediately below. The top row gets
+     its banner clearance from a SMALLER SLOT, which scales every character in
+     the row by the same proportion and so cannot single one out. */
+  /* ── Dan 2026-08-26: "make sure all avatars are DISPLAYED at the same
+        height. Use CSS to ensure all heights are exactly the same." ────────
+
+     THE CLAMP IS GONE. It used to read
+
+         min(var(--sp-bust-gain, 1), var(--sp-bust-gain-max, 99))
+
+     and `--sp-bust-gain-max: 1` is set on the whole top row. `--sp-bust-gain`
+     is the PER-CHARACTER correction that makes every character's subject the
+     same height (gain = library median share / this character's share), so
+     clamping it to 1 does not shrink the row evenly — it shrinks ONLY the
+     characters whose art needed correcting, and by however much each one
+     needed. A character measured at 1.317 rendered 24% shorter in a top seat
+     than in any other seat, while its 0.844 neighbour was untouched. That is
+     the "one avatar is very tall" report, in reverse and per-seat.
+
+     Height containment does not need a clamp anyway: the top row already
+     takes a SMALLER SLOT (--seat-avatar-base: 56px), and because every term
+     here is a multiple of that slot, shrinking the slot shrinks every
+     character in the row by exactly the same proportion. Uniformity survives;
+     the banner still gets its clearance. */
+  --sp-bust-effective-scale: calc(var(--sp-bust-scale, 1.45) * var(--sp-bust-gain, 1));
+
+  /* A `max-height` cap was tried here and REMOVED, because it cannot work and
+     would have read as a guarantee: the gain is applied with `transform:
+     scale()`, and a transform does not participate in layout, so max-height
+     bounds the pre-transform box and the scale multiplies it afterwards
+     regardless. Measured at the time: the cap changed nothing. The real
+     guarantee is the gain itself being correct — see the note above. */
 }
 
 .seat__avatar--bust .seat__avatar-img {
@@ -3031,20 +3057,21 @@
    responsive `.seat` rules (0,1,0) at every width. */
 .seat-wrapper--top .seat {
   --seat-avatar-base: 56px;
-  /* The per-character gain is CAPPED here, not cancelled. This seat has nothing
-     above it but the BBJ banner, so it must never let a character grow into it.
-     But cancelling to exactly 1 also threw away every correction that SHRINKS
-     an oversized character - the one direction that can only ever help a seat
-     whose whole problem is vertical room. It was written when a gain could be
-     2, and a cap is what that actually needed.
-     Now: shrink freely, never grow. */
-  --sp-bust-gain-max: 1;
+  /* `--sp-bust-gain-max: 1` was REMOVED here 2026-08-26. It capped the
+     PER-CHARACTER correction, so it did not shrink this row evenly — it
+     shrank only the characters that needed correcting, each by a different
+     amount, which is precisely how one avatar ends up visibly taller than its
+     neighbours. Banner clearance comes from the smaller slot on the line
+     above, which scales every character in the row by the same proportion.
+     Uniform in, uniform out. */
 }
 
-/* Tournaments have no BBJ banner — top avatars stay standard full size */
+/* Tournaments have no BBJ banner — top avatars stay standard full size.
+   The `--sp-bust-gain-max: 1.45` that sat here was removed with the clamp it
+   belonged to (2026-08-26); restoring the full-size SLOT is what this rule is
+   for, and the slot is what every character now scales from. */
 .table-page--tournament .seat-wrapper--top .seat {
   --seat-avatar-base: var(--seat-avatar-base, 84px);
-  --sp-bust-gain-max: 1.45;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

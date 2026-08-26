@@ -30,7 +30,7 @@ describe('HandReducer — replay of a full example hand', () => {
   it('tracks per-street bet -> pot sweeps correctly at each StreetAdvanced', () => {
     const events = buildExampleHand();
     // Fold up to just after the flop StreetAdvanced (index 6).
-    let state = replay(events.slice(0, 7));
+    const state = replay(events.slice(0, 7));
     // Preflop action: btn 30, SB 5 (dead, folded), BB 30 -> swept -> pot 65.
     expect(state.pot).toBe(65);
     expect(state.seats.every((s) => s.bet === 0)).toBe(true);

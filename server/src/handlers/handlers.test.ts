@@ -34,7 +34,6 @@ const sb = vi.hoisted(() => ({
 vi.mock('../services/supabase.js', () => ({
   supabase: {
     from: (table: string) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const b: any = {
         select: () => b,
         eq: () => b,
@@ -44,7 +43,7 @@ vi.mock('../services/supabase.js', () => ({
             : table === 'club_members'
               ? sb.membersResult
               : { data: null, error: null },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         insert: () => ({ then: (cb: any) => cb({ error: null }) }),
       };
       return b;
@@ -190,7 +189,7 @@ describe.each(POST_CASES)(
       const { res, captured } = mockRes();
       await invoke(mockReq(), res, mockGameServer(engine, 't1'));
       expect(captured.statusCode).toBe(200);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       expect((engine as any)[engineMethod]).toHaveBeenCalled();
     });
   }
@@ -213,7 +212,7 @@ describe('POST /rit — chooser phase sends runs without response', () => {
     const { res, captured } = mockRes();
     await handleRit(mockReq(), res, { gameServer: mockGameServer(engine, 't1') });
     expect(captured.statusCode).toBe(200);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((engine as any).respondToRIT).toHaveBeenCalledWith('u1', undefined, 3);
   });
 
@@ -222,7 +221,7 @@ describe('POST /rit — chooser phase sends runs without response', () => {
     const engine = mockEngine();
     const { res } = mockRes();
     await handleRit(mockReq(), res, { gameServer: mockGameServer(engine, 't1') });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((engine as any).respondToRIT).toHaveBeenCalledWith('u1', 'decline', undefined);
   });
 
@@ -320,7 +319,7 @@ describe.each([
     const { res, captured } = mockRes();
     await invoke(mockReq(), res, mockGameServer(engine, 't1'));
     expect(captured.statusCode).toBe(200);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((engine as any)[engineMethod]).toHaveBeenCalled();
   });
 });
@@ -388,7 +387,7 @@ describe('handleGetActions', () => {
     const { res, captured } = mockRes();
     await handleGetActions(mockReq(), res, 't1', { gameServer: mockGameServer(engine, 't1') });
     expect(captured.statusCode).toBe(200);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((engine as any).getPlayerActions).toHaveBeenCalledWith('auth_user');
   });
 });
@@ -418,7 +417,7 @@ describe('handleGetState', () => {
     const { res, captured } = mockRes();
     await handleGetState(mockReq(), res, 't1', { gameServer: mockGameServer(engine, 't1') });
     expect(captured.statusCode).toBe(200);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((engine as any).getTableState).toHaveBeenCalledWith('u1');
   });
 });

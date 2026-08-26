@@ -430,17 +430,17 @@ THE RULE:
    cost someone real money.** It said the refund path is
    `fn_leave_seat_and_refund`. That function is **tournament-only**: its third
    statement is `IF NOT FOUND OR v_tbl.tournament_id IS NULL THEN RETURN
-   ... 'table_not_found'`. Call it on a **cash** table and it returns
+... 'table_not_found'`. Call it on a **cash** table and it returns
    `{"ok": false, "reason": "table_not_found"}`, refunds nothing, and leaves the
    seat exactly where it was. An agent following the old sentence to "safely"
    release a cash seat would have believed the chips were returned when they
    were not. The refund paths by table type:
 
-   | Seat type | Refund path | Settles into |
-   |---|---|---|
-   | Tournament | `fn_leave_seat_and_refund(table_id)` | `fn_add_chips` -> `club_members.chip_balance` |
-   | Cash, explicit leave | Hetzner engine cash-out (`"Cash-out from table"`) | `club_members.chip_balance` |
-   | Cash, tab close | `player_leave_table(table_id, user_id)` via `sendBeacon` | `club_members.chip_balance` (since `20260826_retire_dead_leave_rpcs_and_fix_tabclose_pool`; it credited the dead `public.wallets` pool before that) |
+   | Seat type            | Refund path                                              | Settles into                                                                                                                                        |
+   | -------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | Tournament           | `fn_leave_seat_and_refund(table_id)`                     | `fn_add_chips` -> `club_members.chip_balance`                                                                                                       |
+   | Cash, explicit leave | Hetzner engine cash-out (`"Cash-out from table"`)        | `club_members.chip_balance`                                                                                                                         |
+   | Cash, tab close      | `player_leave_table(table_id, user_id)` via `sendBeacon` | `club_members.chip_balance` (since `20260826_retire_dead_leave_rpcs_and_fix_tabclose_pool`; it credited the dead `public.wallets` pool before that) |
 
    `public.wallets` is **not** the live chip pool. It has been frozen since
    2026-08-21 with 732,591,994.33 chips stranded in it. Nothing reads it. If you

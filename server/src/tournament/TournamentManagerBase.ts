@@ -213,7 +213,9 @@ export abstract class TournamentManagerBase {
     if (this.broadcastChannel) {
       try {
         await this.broadcastChannel.unsubscribe();
-      } catch {}
+      } catch {
+        /* ignore */
+      }
       this.broadcastChannel = null;
       this.broadcastReady = false;
     }
@@ -1523,7 +1525,7 @@ export abstract class TournamentManagerBase {
               return { ...p, percentage: normalized };
             });
             // Fix rounding remainder — assign to 1st place
-            let remainder = 100 - sumNormalized;
+            const remainder = 100 - sumNormalized;
             if (Math.abs(remainder) > 0.01 && payouts.length > 0) {
               payouts[0].percentage = Math.trunc((payouts[0].percentage + remainder) * 100) / 100;
             }
@@ -1860,7 +1862,9 @@ export abstract class TournamentManagerBase {
     if (this.broadcastChannel) {
       try {
         this.broadcastChannel.unsubscribe();
-      } catch {}
+      } catch {
+        /* ignore */
+      }
       this.broadcastChannel = null;
       this.broadcastReady = false;
     }

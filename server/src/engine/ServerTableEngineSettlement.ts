@@ -739,6 +739,23 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           type: 'bbj_hit',
           table_id: this.tableId,
           hand_number: this.handCount,
+          /* Dan 2026-08-26: "the notification keeps resending anytime you
+             refresh or open a page."
+
+             The hub RETAINS transient events and re-delivers them to a fresh
+             socket (see EngineStateClient: `lastEventSeq` is reset on every
+             reconnect precisely because "a fresh socket legitimately
+             re-receives retained reveal events"). Seq-based de-duplication is
+             therefore connection-scoped by design and cannot survive a
+             refresh - so every reload replayed the jackpot as though it had
+             just happened.
+
+             The wall-clock stamp is what makes a replay identifiable as a
+             replay. The client shows the celebration only for an event that
+             is genuinely NEW (see BBJ_FRESH_MS in TablePage), and pairs it
+             with table_id + hand_number as a stable identity so the same hit
+             can never be shown twice. Additive: an older client ignores it. */
+          emitted_at: Date.now(),
           loser: {
             userId: bbjResult.loserUserId,
             hand: bbjResult.loserHand,
@@ -1463,6 +1480,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             type: 'bbj_payout_complete',
             table_id: this.tableId,
             hand_number: this.handCount,
+            /* The celebration's own trigger, so it carries the same stamp as
+               bbj_hit above - see the note there for why a retained replay is
+               otherwise indistinguishable from a live hit. */
+            emitted_at: Date.now(),
             totalPayout: result.totalPayout,
             loser: { userId: bbjHit.loserUserId, share: result.loserShare },
             winner: { userId: bbjHit.winnerUserId, share: result.winnerShare },

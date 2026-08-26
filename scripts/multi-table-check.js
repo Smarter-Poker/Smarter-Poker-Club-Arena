@@ -82,7 +82,7 @@ function transpile(snippet) {
 function liftHandler(anchor, params) {
   const snippet = extractArrow(SRC, anchor);
   const js = transpile(snippet);
-  // eslint-disable-next-line no-new-func
+   
   return new Function(...params, 'return ' + js + ';');
 }
 

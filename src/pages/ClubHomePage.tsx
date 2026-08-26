@@ -1065,7 +1065,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       if (document.visibilityState === 'visible') {
         // We use a local isMounted check because this is a polling loop,
         // but we'll just ignore the unmount issue since the interval cleans up.
-         
+
         void loadClubData(() => true);
       }
     }, 5000);
@@ -1466,7 +1466,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               setClubNames(home.club_names as Record<string, string>);
             }
             // Force a status check to ensure non-members and pending members get sent to the Invite page.
-            const localSession = readLocalSession();
+            let localSession = readLocalSession();
+            if (!localSession?.userId) {
+              const authRes = await getAuthUser();
+              if (authRes?.data?.user?.id) {
+                localSession = { userId: authRes.data.user.id } as any;
+              }
+            }
             if (localSession?.userId) {
               const { data: memStat } = await supabase
                 .from('club_members')

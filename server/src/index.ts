@@ -39,6 +39,7 @@ import {
 import { startHorseSelfTuner } from './services/HorseSelfTuner.js';
 import { sweepIncompleteHorses } from './services/HorseOnboarding.js';
 import { startHorseLeague } from './benchmark/HorseLeague.js';
+import { startHorseDailyAudit } from './services/HorseDailyAudit.js';
 import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -283,6 +284,9 @@ httpServer.listen(PORT, () => {
   // every strategy layer in bb/100 so tuning is evidence, not vibes. See
   // benchmark/HorseLeague.ts + horse_league_results.
   startHorseLeague();
+  // Daily audit (Dan 2026-08-26): findings over yesterday's 20bb reviews +
+  // league results, written to horse_daily_audit for the /horses admin panel.
+  startHorseDailyAudit();
   // V7 (2026-07-24): humanlike session rhythms — horses stand up after real
   // sessions via the SAME hand-boundary-safe leaveTable() path humans use;
   // the fleet manager reseeds fresh horses within its 30s cycle.

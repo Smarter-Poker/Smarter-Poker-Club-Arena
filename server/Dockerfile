@@ -39,7 +39,15 @@ ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
 # discovery loop has stalled. Three consecutive failures => Docker restarts the
 # container under --restart always. A frozen platform now recovers itself in
 # about a minute with no human involved.
+#
+# 2026-08-23: PROBE 0.0.0.0, NOT 127.0.0.1. `httpServer.listen(PORT)` passes no
+# host, so Node binds the unspecified address and answers on :: in a dual-stack
+# container -- the IPv4 loopback probe was refused every single time. Docker
+# marked the container unhealthy, sp-autoheal (which watches the autoheal=true
+# label) killed it, --restart always brought it back, and it churned on a ~5
+# minute cycle. A healthy engine executed by its own self-healing, voiding every
+# in-flight hand on every restart.
 HEALTHCHECK --interval=20s --timeout=5s --start-period=90s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:8080/health').then(r=>r.json()).then(j=>process.exit(j.liveness==='dead'?1:0)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://0.0.0.0:8080/health').then(r=>r.json()).then(j=>process.exit(j.liveness==='dead'?1:0)).catch(()=>process.exit(1))"
 
 CMD ["node", "dist/index.js"]

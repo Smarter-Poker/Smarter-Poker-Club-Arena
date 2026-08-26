@@ -83,7 +83,14 @@ async function measure(
     const scaler = q('.table-scaler');
     const seat = q('.seat');
     const row = q('.seat__cards--hero');
-    const card = q('.seat__card');
+    /* The card is measured by its LAYOUT box (offsetWidth/Height), not its
+       bounding rect. Since 2026-08-26 a 4+ card hero hand carries the
+       PokerBros held-hand arc — each card is rotated a few degrees — and a
+       rotated element's getBoundingClientRect is its axis-aligned visual
+       bbox, inflated by the rotation. What these beats pin is the TOKEN
+       geometry (w, h, step), which lives in layout; the arc is deliberate
+       art on top of it and must not read as a size change here. */
+    const cardEl = document.querySelector('.seat__card') as HTMLElement;
     return {
       feltLeft: scaler.left,
       feltRight: scaler.right,
@@ -97,8 +104,8 @@ async function measure(
       rowCentreX: row.left + row.width / 2,
       rowCentreY: row.top + row.height / 2,
       rowBottom: row.bottom,
-      cardW: card.width,
-      cardH: card.height,
+      cardW: cardEl.offsetWidth,
+      cardH: cardEl.offsetHeight,
       step: parseFloat(
         getComputedStyle(document.querySelector('.seat__cards--hero')!).getPropertyValue(
           '--sp-hero-card-step'
@@ -150,12 +157,8 @@ for (const bp of BREAKPOINTS) {
           /* Beside means LEVEL with the plate, not floating above it. The row
              is centred on the avatar half of the seat, so its centre must land
              inside the seat's vertical span at every breakpoint. */
-          expect(m.rowCentreY, 'the row sits above the plate').toBeGreaterThanOrEqual(
-            m.seatTop
-          );
-          expect(m.rowCentreY, 'the row sits below the plate').toBeLessThanOrEqual(
-            m.seatBottom
-          );
+          expect(m.rowCentreY, 'the row sits above the plate').toBeGreaterThanOrEqual(m.seatTop);
+          expect(m.rowCentreY, 'the row sits below the plate').toBeLessThanOrEqual(m.seatBottom);
 
           // Never escapes the viewport - every card stays visible on screen.
           expect(m.rowLeft).toBeGreaterThanOrEqual(m.feltLeft);

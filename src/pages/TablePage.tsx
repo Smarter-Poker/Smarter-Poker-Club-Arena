@@ -1,3 +1,5 @@
+import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOverlay';
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ARENA — Premium Poker Table Page
@@ -129,8 +131,11 @@ import { HydraService } from '../services/HydraService';
 import TableChat from '../components/table/TableChat';
 import { ChatBubble, bubbleForSeat, useSeatChatBubbles } from '../components/table/ChatBubble';
 import { holeCardCountFor } from '../lib/holeCardCount';
+import { shouldAnnounceBbjHit } from '../lib/bbjHitOnce';
+import BBJHitNotification from '../components/bbj/BBJHitNotification';
 import { type InsuranceOffer } from '../components/table/InsuranceModal';
 import { ThrowAnimationContainer } from '../components/table/ThrowAnimation';
+import { useTableEnvironment } from '../hooks/useTableEnvironment';
 import { useTabKeepAlive, workerTimeout, cancelWorkerTimeout } from '../hooks/useTabKeepAlive';
 import { STORAGE_KEYS } from '../lib/storage';
 import StraddleToggle from '../components/table/StraddleToggle';
@@ -895,7 +900,13 @@ function buildSpinDrawFromRow(row: SpinDrawRow | null | undefined): SpinWheelDat
 
 // Module-level guards to prevent multiple TablePage instances from cascading BBJ_HIT_GLOBAL
 const _LAST_BBJ_HIT_COUNT: Record<string, number> = {};
-let _LAST_BBJ_TOAST_TIME = 0;
+/* `_LAST_BBJ_TOAST_TIME` was deleted here 2026-08-26. It was a 5-second
+   module-level window, which de-duplicated four mounted tables shouting at
+   once and NOTHING else: a module variable is reinitialised by the page load,
+   so it was blind to the actual reported bug — the hub replaying a retained
+   jackpot event to every fresh socket. `shouldAnnounceBbjHit`
+   (lib/bbjHitOnce) replaces it and covers both, because it keys on the hit's
+   own identity and persists across the reload. */
 
 export default function TablePage({
   embeddedTableId,
@@ -921,107 +932,8 @@ export default function TablePage({
 
   // Prevent Chrome from throttling this tab (keeps horse timers alive)
   useTabKeepAlive();
-
-  // ─── PAGE TITLE ───
-  useEffect(() => {
-    document.title = tableId ? `${tableId} | Smarter Poker` : 'Table | Smarter Poker';
-  }, [tableId]);
-
-  // ─── MOBILE VIEWPORT LOCK — Prevent accidental pinch-zoom during poker play ───
-  useEffect(() => {
-    let newMeta: HTMLMetaElement | null = null;
-    const meta = document.querySelector('meta[name="viewport"]');
-    const originalContent = meta?.getAttribute('content') || '';
-    const pokerViewport =
-      'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
-
-    if (meta) {
-      meta.setAttribute('content', pokerViewport);
-    } else {
-      newMeta = document.createElement('meta');
-      newMeta.name = 'viewport';
-      newMeta.content = pokerViewport;
-      document.head.appendChild(newMeta);
-    }
-
-    // Try to lock orientation to portrait (non-blocking, fails silently on unsupported browsers)
-    try {
-      (screen.orientation as any)?.lock?.('portrait').catch(() => {});
-    } catch {
-      // Orientation lock not supported — ignore
-    }
-
-    return () => {
-      // Restore original viewport when leaving the table
-      if (newMeta) {
-        document.head.removeChild(newMeta);
-      } else {
-        const restoreMeta = document.querySelector('meta[name="viewport"]');
-        if (restoreMeta) {
-          restoreMeta.setAttribute(
-            'content',
-            originalContent || 'width=device-width, initial-scale=1'
-          );
-        }
-      }
-      try {
-        screen.orientation?.unlock?.();
-      } catch {
-        // Ignore
-      }
-    };
-  }, []);
-
-  // ─── SCREEN WAKE LOCK — Prevent screen dimming during active poker play ───
-  useEffect(() => {
-    let wakeLock: WakeLockSentinel | null = null;
-
-    const requestWakeLock = async () => {
-      try {
-        if ('wakeLock' in navigator) {
-          if (wakeLock) await wakeLock.release().catch(() => {});
-          wakeLock = await navigator.wakeLock.request('screen');
-        }
-      } catch {
-        // Wake Lock not supported or denied — ignore
-      }
-    };
-
-    // Reacquire wake lock when tab becomes visible again
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        requestWakeLock();
-      }
-    };
-
-    requestWakeLock();
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      wakeLock?.release().catch(() => {});
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
-
-  // ─── BACKGROUND TAB DETECTION — Pause animations when tab is hidden (saves battery) ───
-  useEffect(() => {
-    const tablePage = document.querySelector('.table-page');
-    if (!tablePage) return;
-
-    const handleVisibility = () => {
-      if (document.visibilityState === 'hidden') {
-        tablePage.classList.add('table-page--backgrounded');
-      } else {
-        tablePage.classList.remove('table-page--backgrounded');
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibility);
-      tablePage.classList.remove('table-page--backgrounded');
-    };
-  }, []);
+  useTableEnvironment(tableId);
+  useTableEnvironment(tableId);
 
   // Get current user
   const [userId, setUserId] = useState<string>('guest');
@@ -3467,6 +3379,18 @@ export default function TablePage({
   // re-date itself on every render (2026-08-18).
   const tableSessionDate = useMemo(() => new Date(), []);
 
+  /* The bottom-right hit notification (Dan 2026-08-26). Null when nothing is
+     celebrating. `key` remounts the card if a second jackpot lands while the
+     first is still up, so the new one plays its own intro instead of
+     inheriting a card mid-outro. */
+  const [bbjHitNotice, setBbjHitNotice] = useState<{
+    key: string;
+    winnerName: string;
+    amount: number;
+    tableName: string;
+    tableId: string;
+  } | null>(null);
+
   // FIX 128: BBJ Celebration overlay state — triggered by server bbj_hit + bbj_payout_complete events
   const [showBBJCelebration, setShowBBJCelebration] = useState(false);
   const bbjHitDataRef = useRef<{
@@ -4057,6 +3981,17 @@ export default function TablePage({
                       bigBlind: hit.big_blind || 0,
                       winnerName: hit.bad_beat_name || 'A player',
                       amount: hit.bad_beat_amount || hit.total_payout || 0,
+                      /* Carried so the receiver can de-duplicate on the hit's
+                         own identity rather than on arrival time. This path
+                         is a postgres UPDATE, which does NOT replay on
+                         refresh — but it reaches the same notification as the
+                         engine path, and two producers feeding one gate must
+                         speak the same shape or the gate silently degrades to
+                         "unknown:0" for one of them. `hit_at` is the ledger's
+                         own timestamp; absent, freshness simply does not
+                         apply and identity still does. */
+                      handNumber: hit.hand_number ?? 0,
+                      emittedAt: hit.hit_at ? new Date(hit.hit_at).getTime() : undefined,
                     });
                   }
                 } catch (err) {
@@ -5663,6 +5598,26 @@ export default function TablePage({
       }
 
       if (eventType === 'bbj_payout_complete') {
+        /* Dan 2026-08-26 — THE REPLAY GATE, and this is the path the bug was
+           actually reported on: refresh the table and the jackpot celebrated
+           again. The hub retains transient events and re-delivers them to
+           every fresh socket (deliberately — a reconnect mid-hand must still
+           get the showdown reveal), and the only de-duplication was
+           `lastEventSeq`, which resets on connect BY DESIGN. So the client
+           had no way to tell a live hit from a replay. `shouldAnnounceBbjHit`
+           gives it one: a stable identity that survives the reload, plus a
+           freshness window for the player whose first sight of the event IS
+           the replay. See lib/bbjHitOnce. */
+        if (
+          !shouldAnnounceBbjHit({
+            tableId: (handState.table_id as string) || tableId,
+            handNumber: handState.hand_number as number,
+            emittedAt: handState.emitted_at as number,
+          })
+        ) {
+          return;
+        }
+
         // FIX 128: BBJ payout calculated — NOW show the celebration.
         // This event arrives from postHandTasks() which runs AFTER the hand is fully complete,
         // AFTER showdown cards are displayed, AFTER winners are shown.
@@ -7743,29 +7698,37 @@ export default function TablePage({
     // Show an in-game pop-up on all cash game tables when BBJ is hit globally.
     // Skip if the hit happened on THIS table — they already saw the massive animation.
     if (payload.tableId === tableId) return;
+    if (tableState.isTournament) return;
 
-    const now = Date.now();
-    if (!tableState.isTournament && now - _LAST_BBJ_TOAST_TIME > 5000) {
-      _LAST_BBJ_TOAST_TIME = now;
-      if (soundService.isEnabled()) soundService.playBadBeatJackpot();
-      /* AUDIT 2026-08-25: this string opened with a siren EMOJI, which
-         CLAUDE.md §5.3 forbids outright in source (it breaks the SWC
-         compiler), and it was the only emoji left in this file. It also read
-         "BBJ HIT! X just won $Y on Z! (Tap to observe)" — sentence case with
-         a parenthetical, against the popup rule that every word is
-         capitalised. The Toast layer's popupStyle transform capitalises for
-         us but cannot strip an emoji or rewrite a parenthetical, so both are
-         fixed at the source. The amount keeps .toLocaleString() (§5.5). */
-      toast?.success?.(
-        `Bad Beat Jackpot Hit. ${payload.winnerName} Won $${payload.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} On ${payload.tableName}. Tap To Observe.`,
-        10000,
-        () =>
-          masterBus.emit('OPEN_OBSERVE_TABLE', {
-            tableId: payload.tableId,
-            tableName: payload.tableName,
-          })
-      );
+    /* Dan 2026-08-26: "it should only display once, and at the actual time it
+       happens." The gate owns both halves — see lib/bbjHitOnce for why a
+       connection-scoped seq could never have covered a page refresh. */
+    if (
+      !shouldAnnounceBbjHit({
+        tableId: payload.tableId,
+        handNumber: payload.handNumber,
+        emittedAt: payload.emittedAt,
+      })
+    ) {
+      return;
     }
+
+    if (soundService.isEnabled()) soundService.playBadBeatJackpot();
+
+    /* Was a 10-second text toast in the shared stack (and before that, one
+       carrying a siren emoji, which CLAUDE.md §5.3 forbids outright). Dan
+       2026-08-26 replaced it: three seconds, bottom-right, exploding. The
+       card is its own fixed-position layer rather than a toast because the
+       toast stack QUEUES — a routine notice could push the rarest event on
+       the platform down the screen. Amount keeps .toLocaleString() (§5.5)
+       and the component capitalises its own labels (§5.7). */
+    setBbjHitNotice({
+      key: `${payload.tableId}:${payload.handNumber ?? 0}:${Date.now()}`,
+      winnerName: payload.winnerName,
+      amount: payload.amount,
+      tableName: payload.tableName,
+      tableId: payload.tableId,
+    });
   });
 
   useMasterBusSubscription('TIME_BANK_ACTIVATED', (payload: any) => {
@@ -12322,105 +12285,12 @@ export default function TablePage({
           top of a fixed-position page. The class names are kept so that
           stylesheet can take it over later without touching this file. */}
       {tableLoadFailure && (
-        <div
-          className="table-load-failure"
-          role="alert"
-          aria-live="assertive"
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 4000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '24px',
-            background: 'rgba(6, 10, 16, 0.88)',
-            backdropFilter: 'blur(4px)',
-          }}
-        >
-          <div
-            className="table-load-failure__card"
-            style={{
-              maxWidth: 340,
-              width: '100%',
-              textAlign: 'center',
-              background: '#141a24',
-              border: '1px solid rgba(255,255,255,0.12)',
-              borderRadius: 14,
-              padding: '22px 20px',
-              color: '#e8edf5',
-              boxShadow: '0 18px 48px rgba(0,0,0,0.55)',
-            }}
-          >
-            <h2
-              className="table-load-failure__title"
-              style={{ margin: '0 0 10px', fontSize: 18, fontWeight: 700 }}
-            >
-              {tableLoadFailure === 'missing' ? 'This Table Has Closed' : 'Cannot Reach This Table'}
-            </h2>
-            <p
-              className="table-load-failure__body"
-              style={{
-                margin: '0 0 18px',
-                fontSize: 14,
-                lineHeight: 1.5,
-                color: 'rgba(232,237,245,0.75)',
-              }}
-            >
-              {/* Title Case to match the rest of this page's card copy (see
-                  the seat-first buy-in sheet). Kept short for the same reason:
-                  long sentences do not survive it. No em dashes anywhere in
-                  player-facing text. */}
-              {tableLoadFailure === 'missing'
-                ? 'That Game Has Finished And The Table Was Taken Down. Nothing Was Charged And No Seat Was Taken.'
-                : 'We Could Not Load This Table After Five Tries. Your Connection May Be Down.'}
-            </p>
-            <div
-              className="table-load-failure__actions"
-              style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}
-            >
-              {tableLoadFailure === 'unreachable' && (
-                <button
-                  type="button"
-                  className="table-load-failure__btn table-load-failure__btn--primary"
-                  onClick={() => window.location.reload()}
-                  style={{
-                    minHeight: 44,
-                    padding: '0 18px',
-                    borderRadius: 10,
-                    border: 'none',
-                    background: '#2f6fed',
-                    color: '#fff',
-                    fontSize: 14,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Try Again
-                </button>
-              )}
-              <button
-                type="button"
-                className="table-load-failure__btn"
-                onClick={() => navigate(exitDestination())}
-                style={{
-                  minHeight: 44,
-                  padding: '0 18px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.22)',
-                  background: 'transparent',
-                  color: '#e8edf5',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Back To Lobby
-              </button>
-            </div>
-          </div>
-        </div>
+        <TableLoadFailureOverlay
+          tableLoadFailure={tableLoadFailure}
+          exitDestination={exitDestination}
+        />
       )}
+
       {/* Phase 1.2 PR-F: hero disconnect banner. Only renders when the
           engine FSM reports MISSING or DISCONNECTED for this user. */}
       {/* ── Bounty knockout (2026-08-20) ───────────────────────────────────
@@ -15340,6 +15210,28 @@ export default function TablePage({
         armed={isHeroOnTheClock}
         soundEnabled={isSoundEnabled && ambientSoundsAllowed}
       />
+
+      {/* BAD BEAT JACKPOT HIT — bottom-right, three seconds, then it leaves on
+          its own (Dan 2026-08-26). Whether it appears at all is decided by
+          `shouldAnnounceBbjHit` at the subscription, never here; this only
+          draws what was already ruled announceable, and clears itself when
+          the card's own outro finishes. */}
+      {bbjHitNotice && (
+        <BBJHitNotification
+          key={bbjHitNotice.key}
+          winnerName={bbjHitNotice.winnerName}
+          amount={bbjHitNotice.amount}
+          tableName={bbjHitNotice.tableName}
+          onObserve={() => {
+            masterBus.emit('OPEN_OBSERVE_TABLE', {
+              tableId: bbjHitNotice.tableId,
+              tableName: bbjHitNotice.tableName,
+            });
+            setBbjHitNotice(null);
+          }}
+          onDone={() => setBbjHitNotice(null)}
+        />
+      )}
     </div>
   );
 }

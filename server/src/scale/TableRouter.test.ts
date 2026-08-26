@@ -75,7 +75,9 @@ describe('TableRouter — distribution', () => {
     const tables = makeTableIds(20_000);
     let big = 0;
     let small = 0;
-    for (const t of tables) r.route(t) === 'big' ? big++ : small++;
+    for (const t of tables)
+      if (r.route(t) === 'big') big++;
+      else small++;
     const ratio = big / small;
     expect(ratio).toBeGreaterThan(2.5);
     expect(ratio).toBeLessThan(3.5);

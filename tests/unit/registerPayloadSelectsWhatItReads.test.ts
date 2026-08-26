@@ -64,14 +64,43 @@ const PAYLOAD_FIELDS = [
  *    mapper is the contract there, and TypeScript checks it because that
  *    interface is declared.
  */
-const SURFACES = ['src/pages/ClubHomePage.tsx'];
+const SURFACES = [
+  'src/pages/ClubHomePage.tsx',
+  /* 2026-08-26, third audit: XMTTPage was NOT here, and it was reading
+     is_bounty / bounty_amount / is_pko / is_mystery_bounty off a row whose
+     query selected none of them — the exact bug this file exists for, on a
+     surface the file excluded. The exclusion note below named only the two
+     surfaces that genuinely cannot be checked; XMTT and UnionGames were simply
+     forgotten, which is why an exclusion list must name its reasons. */
+  'src/pages/XMTTPage.tsx',
+  'src/pages/UnionGamesPage.tsx',
+];
 
-/** Every column named inside any `.select('...')` in the file. */
-function selectedColumns(src: string): Set<string> {
+/**
+ * Every column named inside a `.select('...')` that belongs to a TOURNAMENTS
+ * query.
+ *
+ * 2026-08-26, third audit: this used to union the columns of EVERY select in
+ * the file — `tables`, `union_clubs`, `bbj_pools` and the rest. `status` and
+ * `club_id` are selected by half a dozen non-tournament queries in
+ * ClubHomePage, so those two fields could never fail the check even if the
+ * tournaments query dropped them entirely. Scope it to the table we are
+ * actually reasoning about.
+ *
+ * A select is attributed to `tournaments` when the nearest preceding `.from(...)`
+ * names it. Anything whose table cannot be resolved is SKIPPED rather than
+ * guessed, the same conservative rule check-phantom-columns.mjs uses.
+ */
+function selectedColumns(src: string, table = 'tournaments'): Set<string> {
   const out = new Set<string>();
   // Single- or double-quoted select() arguments. Template literals are dynamic
   // and deliberately skipped, exactly as check-phantom-columns.mjs skips them.
   for (const m of src.matchAll(/\.select\(\s*(['"])([\s\S]*?)\1/g)) {
+    const before = src.slice(0, m.index ?? 0);
+    const lastFrom = before.lastIndexOf('.from(');
+    if (lastFrom === -1) continue;
+    const fromArg = before.slice(lastFrom, lastFrom + 80).match(/\.from\(\s*['"]([^'"]+)['"]/);
+    if (!fromArg || fromArg[1] !== table) continue;
     for (const raw of m[2].split(',')) {
       const col = raw
         .trim()

@@ -1465,7 +1465,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // ═══════════════════════════════════════════════════════════════════════
     await this.broadcastAllInEquity(allInPlayers, result.board, pot);
 
-    const offerTimeout = 15; // Matches InsuranceEngine DEFAULT_CONFIG.offerTimeoutSeconds
+    const offerTimeout = 25; // Matches InsuranceEngine DEFAULT_CONFIG.offerTimeoutSeconds
 
     // ═══════════════════════════════════════════════════════════════════════
     // FIX 103: Insurance is ONLY offered to the player with the BEST HAND.
@@ -1744,6 +1744,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         fullInsuredAmount: o.fullInsuredAmount,
         insuredAmount: o.insuredAmount,
         coveragePercent: o.coveragePercent,
+        // REFERENCE PARITY 2026-08-26: the dialog's Break Even preset returns
+        // exactly the leader's committed chips, and Rate is the payout
+        // multiple on the fee - both derived from these.
+        atRisk: o.atRisk,
+        rate: o.fullPremium > 0 ? Math.round((o.fullInsuredAmount / o.fullPremium) * 10) / 10 : 0,
         timeoutSeconds,
       })),
     });

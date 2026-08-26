@@ -58,23 +58,30 @@ describe('InsuranceEngine.createOffers', () => {
     expect(o.playerId).toBe(LEADER);
     expect(o.equity).toBeCloseTo(84.1, 0);
 
-    // Insured amount = the leader's at-risk chips (capped by pot).
-    expect(o.insuredAmount).toBe(100);
+    // REFERENCE PARITY 2026-08-26: insured amount = the max-insurable slice
+    // of the POT (the winnings), no longer capped at the leader's own stake.
+    // The reference dialog's max insured pot is ~the pot itself.
+    expect(o.insuredAmount).toBe(300);
+    // The leader's committed chips still ride the offer for Break Even.
+    expect(o.atRisk).toBe(100);
 
     // Premium = insured * lossProbability * 1.20 (the 20% house edge).
     const lossProb = 1 - o.equity / 100;
-    const expectedPremium = Math.round(100 * lossProb * 1.2 * 100) / 100;
+    const expectedPremium = Math.round(300 * lossProb * 1.2 * 100) / 100;
     expect(o.premium).toBeCloseTo(expectedPremium, 2);
 
     // Player EV is negative (fair premium would be without the 1.2 margin).
-    const fairPremium = 100 * lossProb;
+    const fairPremium = 300 * lossProb;
     expect(o.premium).toBeGreaterThan(fairPremium);
     expect(o.premium / fairPremium).toBeCloseTo(1.2, 2);
   });
 
-  it('caps the insured amount at the leader at-risk, not the pot', () => {
+  it('insures the pot, not the stake - a short leader can still cover the winnings', () => {
+    // REFERENCE PARITY 2026-08-26: was "caps the insured amount at the leader
+    // at-risk" (40). The reference insures what the leader stands to WIN.
     const offers = offerLeader(e, 40, 300); // leader only has 40 at risk
-    expect(offers[0].insuredAmount).toBe(40);
+    expect(offers[0].insuredAmount).toBe(300);
+    expect(offers[0].atRisk).toBe(40);
   });
 
   it('settlement: leader WINS => premium charged, no payout (house keeps premium)', () => {
@@ -177,11 +184,13 @@ describe('InsuranceEngine pricing — chop-aware (PRICING FIX 2026-08-18)', () =
     );
     expect(offers).toHaveLength(1);
     const premium = offers[0].fullPremium;
-    const expected = Math.round(100 * (r.strictLossPct / (100 - r.pushPct)) * 1.2 * 100) / 100;
+    // REFERENCE PARITY 2026-08-26: insured = the pot (200), not the stake.
+    const expected = Math.round(200 * (r.strictLossPct / (100 - r.pushPct)) * 1.2 * 100) / 100;
     expect(premium).toBeCloseTo(expected, 2);
-    // Symmetric live-suit spot: loss-given-not-push is a coinflip -> ~60.
-    expect(premium).toBeGreaterThan(55);
-    expect(premium).toBeLessThan(65);
+    // Symmetric live-suit spot: loss-given-not-push is a coinflip -> ~120 on
+    // a 200 insured pot.
+    expect(premium).toBeGreaterThan(110);
+    expect(premium).toBeLessThan(130);
   });
 
   it('a leader who cannot strictly lose gets no offer (free premium is not a product)', () => {

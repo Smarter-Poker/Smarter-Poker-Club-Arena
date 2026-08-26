@@ -103,8 +103,8 @@ import { normalizeCardBack } from '../components/table/CardImage';
  */
 
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
-import addScreenIcon from '../assets/icons/icon-addscreen.png';
-import timebankIconPage from '../assets/icons/icon-timebank.jpg';
+import { useButtonImage } from '../hooks/useButtonImage';
+
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { parseBlindStructure } from '../utils/parseBlindStructure';
@@ -916,6 +916,8 @@ export default function TablePage({
   isActive = true,
   muted = false,
 }: TablePageProps = {}) {
+  const addScreenIcon = useButtonImage('icon-addscreen');
+  const timebankIconPage = useButtonImage('icon-timebank');
   const { tableId: routeTableId } = useParams<{ tableId: string }>();
   const tableId = embeddedTableId || routeTableId;
   const navigate = useNavigate();

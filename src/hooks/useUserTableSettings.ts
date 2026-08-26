@@ -46,6 +46,7 @@ export interface UserTableSettings {
   voice_message: boolean;
   text_message: boolean;
   emoji_enabled: boolean;
+  blue_buttons_enabled: boolean;
   /** FIX 173: Bible V8 §10.3 — Skip animations option for speed players */
   skip_animations: boolean;
   /** Use club alias instead of smarter.poker display name */
@@ -83,6 +84,7 @@ export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
   voice_message: true,
   text_message: true,
   emoji_enabled: true,
+  blue_buttons_enabled: false,
   skip_animations: false,
   use_alias: false,
   table_alias: '',
@@ -179,8 +181,21 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
     label: 'Enhanced View',
     description: 'Enable Enhanced Visual Effects And Animations',
   },
-  { key: 'text_message', label: 'Text Message', description: 'Enable Text Chat At Table' },
-  { key: 'emoji_enabled', label: 'Emoji', description: 'Enable Emoji Reactions/Throwables' },
+  {
+    key: 'text_message',
+    label: 'Text Messages',
+    description: 'Enable Text Chat At Table',
+  },
+  {
+    key: 'emoji_enabled',
+    label: 'Emoji Reactions',
+    description: 'Enable Emoji Reactions And Throwables',
+  },
+  {
+    key: 'blue_buttons_enabled',
+    label: 'Blue Table Buttons',
+    description: 'Use the Blue metallic style for table buttons',
+  },
   // Dan 2026-08-18: "remove the skip animations toggle, animations are not
   // optional." This definition list is what renders the switches, so dropping
   // the entry removes the control everywhere it appeared. The column and the
@@ -283,6 +298,8 @@ export function useUserTableSettings(userId: string | null | undefined) {
             voice_message: data.voice_message ?? DEFAULT_USER_TABLE_SETTINGS.voice_message,
             text_message: data.text_message ?? DEFAULT_USER_TABLE_SETTINGS.text_message,
             emoji_enabled: data.emoji_enabled ?? DEFAULT_USER_TABLE_SETTINGS.emoji_enabled,
+            blue_buttons_enabled:
+              data.blue_buttons_enabled ?? DEFAULT_USER_TABLE_SETTINGS.blue_buttons_enabled,
             skip_animations: data.skip_animations ?? DEFAULT_USER_TABLE_SETTINGS.skip_animations,
             use_alias: data.use_alias ?? DEFAULT_USER_TABLE_SETTINGS.use_alias,
             table_alias: data.table_alias ?? DEFAULT_USER_TABLE_SETTINGS.table_alias,

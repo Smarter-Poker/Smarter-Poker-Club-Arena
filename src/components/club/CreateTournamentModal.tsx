@@ -1538,12 +1538,13 @@ export default function CreateTournamentModal({
                       style={{ marginTop: '16px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}
                     >
                       <div className={styles.formGroup} style={{ flex: 1, minWidth: '120px' }}>
-                        <label>Satellites To Create</label>
+                        <label>Number Of Satellites</label>
                         <input
-                          type="number"
+                          type="text"
+                          inputMode="numeric"
                           className={styles.input}
                           value={genSatCount}
-                          onChange={(e) => setGenSatCount(e.target.value)}
+                          onChange={(e) => setGenSatCount(digitsOnly(e.target.value))}
                           min="1"
                           max="10"
                         />
@@ -1551,10 +1552,11 @@ export default function CreateTournamentModal({
                       <div className={styles.formGroup} style={{ flex: 1, minWidth: '120px' }}>
                         <label>Satellite Buy-In</label>
                         <input
-                          type="number"
+                          type="text"
+                          inputMode="numeric"
                           className={styles.input}
                           value={genSatBuyIn}
-                          onChange={(e) => setGenSatBuyIn(e.target.value)}
+                          onChange={(e) => setGenSatBuyIn(digitsOnly(e.target.value))}
                           min="1"
                           placeholder={Math.round(parseInt(buyIn) * 0.1 || 10).toString()}
                         />
@@ -1562,10 +1564,11 @@ export default function CreateTournamentModal({
                       <div className={styles.formGroup} style={{ flex: 1, minWidth: '120px' }}>
                         <label>Seats Awarded</label>
                         <input
-                          type="number"
+                          type="text"
+                          inputMode="numeric"
                           className={styles.input}
                           value={genSatSeats}
-                          onChange={(e) => setGenSatSeats(e.target.value)}
+                          onChange={(e) => setGenSatSeats(digitsOnly(e.target.value))}
                           min="1"
                         />
                       </div>

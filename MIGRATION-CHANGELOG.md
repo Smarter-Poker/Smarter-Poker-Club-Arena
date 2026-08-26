@@ -56,6 +56,23 @@ days. Migration `20260826144505_horse_hand_reviews.sql` APPLIED to production
 gated on `fn_is_horse_admin()`); schema manifest regenerated. Measured volume
 first: 485k hands/day, 3.3% reach 40bb pots -> 15-30k rows/day.
 
+### Daily audit loop (added same session, Dan follow-up)
+
+`horse_daily_audit` (migration `20260826151309`, APPLIED): one row per day
+with machine-computed findings — leak-tag spikes vs the trailing week, horses
+bleeding 400bb+ in flagged pots, league layers resolving significant-negative,
+illegal league actions, capture-coverage gaps (a variant dealing big pots but
+writing zero review rows), missing evidence payloads, net outliers, untagged
+losses — each finding carrying severity, category (schema/logic/gto),
+evidence, and a recommendation. Computation lives in SQL
+(`fn_run_horse_daily_audit`); the engine's `HorseDailyAudit.ts` is a thin
+scheduler (06:00-09:00 UTC window, boot check, catch-up, `horse_job_runs`
+claim key `daily_audit` — all the 2026-08-23 nightly-job lessons). The daily
+Claude analysis writes into `agent_analysis` via
+`fn_horse_audit_set_agent_analysis`; a scheduled Cowork task runs it every
+day. Self-test on live data: the very first run correctly flagged 7
+capture-coverage criticals because the capture PR had not yet deployed.
+
 ### World Hub PR #781 — /horses/hand-reviews admin dashboard
 
 Fleet summary (per-horse big wins/losses, net bb, leak counts, clickable

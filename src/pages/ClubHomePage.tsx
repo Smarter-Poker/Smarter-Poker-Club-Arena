@@ -127,7 +127,27 @@ const VARIANT_GROUP_ORDER: Record<string, number> = {
 // staleCacheReaper only sweeps sessionStorage: reads ignore anything older
 // than the TTL, and a quota failure drops every club-home entry and retries
 // once, so the cache can never wedge itself full.
-const CLUB_HOME_CACHE_VER = 'v2';
+/* v3 (2026-08-26): the cached payload is the whole club object, and the club
+   object carries member_count. Every entry written before the member-count fix
+   holds an RLS-FILTERED count - 0 for someone who had not joined the club, 593
+   for a union admin who should have seen 1,172 - and the TTL below is SEVEN
+   DAYS, so those wrong numbers would have kept painting on mount for a week
+   after the fix shipped.
+
+   It self-corrects once the RPC answers, which is not good enough: if that
+   request drops mid-flight the guard at the await site sees `data == null`,
+   declines to overwrite, and the stale wrong number stays on screen for the
+   whole visit. A fix that needs the network to succeed in order to stop showing
+   a wrong number is not a fix.
+
+   Bumping the version changes the key, so every pre-fix entry becomes
+   unreachable exactly once, for every user, with no migration pass and no
+   cleanup code. The v2 entries expire on their own TTL and are never read.
+
+   The unversioned sessionStorage read below is deliberately left alone: it
+   serves the v2 transition from 2026-08-22, it is tab-scoped rather than
+   persistent, and it dies when the tab closes. */
+const CLUB_HOME_CACHE_VER = 'v3';
 const CLUB_HOME_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function getClubHomeCache(clubId: string) {

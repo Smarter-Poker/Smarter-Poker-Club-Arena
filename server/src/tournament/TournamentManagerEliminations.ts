@@ -18,6 +18,7 @@ import {
 } from '../config/mysteryChestSpec.js';
 import { MYSTERY_BOUNTY_REVEAL_DELAY_MS, formatBountyTier } from '../config/mysteryBountySpec.js';
 import { buildRecipientClaims } from './mysteryBountyDraw.js';
+import { buildPrizeLadder, prizeRankOf, isMysteryCollectMode } from './mysteryPrizeLadder.js';
 import { attributeKnockout } from './knockoutAttribution.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { computePlacePrize } from './payoutMath.js';
@@ -1239,45 +1240,74 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         /* the head falls as an initial — same as every knockout before today */
       }
 
-      await this.broadcast(
-        res.mode === 'mystery' ? 'mystery_bounty_revealed' : 'bounty_collected',
-        {
-          mode: res.mode,
-          amount: res.paid_cash,
-          addedToHead: res.added_to_head,
-          // playerName = whose head was revealed/claimed
-          playerName: nameOf(eliminatedUserId),
-          eliminatedName: nameOf(eliminatedUserId),
-          eliminatedUserId,
-          eliminatedAvatar,
-          knockerName: nameOf(knockerUserId),
-          knockerUserId,
-          avgBounty: tournament?.bounty_amount || undefined,
-          poolRemaining: res.pool_remaining,
-          // Which table this happened at — see the tableId parameter.
-          tableId,
-        }
-      );
+      // The rank is only meaningful for a mystery pull, and it is resolved
+      // BEFORE the broadcast so a slow ladder read delays the banner rather
+      // than sending it without the one number it needs. The helper swallows
+      // its own failures and returns undefined, so this can never cost a
+      // knockout its broadcast.
+      const prizeRank = isMysteryCollectMode(res.mode)
+        ? await this.preMysteryPrizeRank(res.paid_cash)
+        : undefined;
 
-      // HOLD THE DEAL (Dan 2026-08-21): "after it finished and the prize is
-      // awarded, the next hand starts with the dealing animation." The chest
-      // owns the screen for the length of its sequence, so the table must not
-      // deal a hand underneath it. Same mechanism the spin wheel uses; when
-      // the hold expires the dealing loop resumes and the next hand deals in
-      // with its normal shuffle + deal animation.
+      // ── THE EVENT NAME IS A CONSTANT, AND THAT IS THE FIX ────────────────
       //
-      // Only the knockout's own table pauses. A knockout on table 3 must not
-      // stall tables 1 and 2.
-      if (res.mode === 'mystery' && tableId) {
-        const engine = this.tableEngines.get(tableId);
-        if (engine) {
-          try {
-            engine.holdDealingUntil(Date.now() + mysteryChestHoldMs());
-          } catch {
-            /* the hold is presentation; never let it break the payout path */
-          }
-        }
-      }
+      // This used to read:
+      //
+      //     res.mode === 'mystery' ? 'mystery_bounty_revealed' : 'bounty_collected'
+      //
+      // `fn_collect_bounty` never returns 'mystery' — it returns 'pko',
+      // 'mystery_pre' or 'regular' (see mysteryPrizeLadder.ts, which quotes the
+      // live CASE). So the ternary was dead in both directions, and worse: had
+      // it ever fired it would have sent the CHEST event under a payload the
+      // chest cannot read. `mystery_bounty_revealed` belongs to
+      // settleMysteryBountyAward below and carries awardId / amountCents /
+      // tier / recipients; TablePage feeds it straight into the chest queue and
+      // useMysteryBounty refetches the mystery RPCs on it. A pre-phase knockout
+      // has no award and no chest, so borrowing that name would have played a
+      // full-screen reveal for a chest that does not exist.
+      //
+      // The celebration banner accepts `bounty_collected` and gates on the mode
+      // — which is why it works at all today — so this name is the correct one
+      // and the only one this path may send.
+      await this.broadcast('bounty_collected', {
+        mode: res.mode,
+        amount: res.paid_cash,
+        // THE RANK, FROM THE SERVER (Dan 2026-08-25). Which rung of this
+        // event's prize ladder was just pulled, 1 being the largest. Only a
+        // mystery pull gets one: on a pko knockout `paid_cash` is half the
+        // head, and half a head has no rung. Undefined drops off the wire,
+        // and the client falls back to deriving it, exactly as it does today.
+        prizeRank,
+        addedToHead: res.added_to_head,
+        // playerName = whose head was revealed/claimed
+        playerName: nameOf(eliminatedUserId),
+        eliminatedName: nameOf(eliminatedUserId),
+        eliminatedUserId,
+        eliminatedAvatar,
+        knockerName: nameOf(knockerUserId),
+        knockerUserId,
+        avgBounty: tournament?.bounty_amount || undefined,
+        poolRemaining: res.pool_remaining,
+        // Which table this happened at — see the tableId parameter.
+        tableId,
+      });
+
+      // NO DEAL HOLD ON THIS PATH, DELIBERATELY (corrected 2026-08-26).
+      //
+      // A `holdDealingUntil(now + mysteryChestHoldMs())` used to sit here under
+      // `res.mode === 'mystery'`. Like the event name above, that test could
+      // never be true, so the hold never ran — and reviving it for the real
+      // value ('mystery_pre') would have been the wrong fix twice over:
+      //
+      //   - the hold exists so a table does not deal a hand under a live CHEST
+      //     sequence, and there is no chest before the mystery phase opens.
+      //     Pausing every mystery event's tables for the length of an animation
+      //     that never plays is a stall, not a fix;
+      //   - the chest path already holds correctly and by a better mechanism.
+      //     openBountyGate() calls beginBountyReveal() (a COUNT-based gate, so
+      //     three chests in one hand hold for all three) plus holdDealingUntil()
+      //     as the wall-clock failsafe. See ServerTableEngineBase's note on why
+      //     a deadline alone is wrong here.
     } catch {
       /* the reveal broadcast is cosmetic — never block the payout path */
     }
@@ -1663,6 +1693,94 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   }
 
   /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  HOW BIG WAS THAT, COMPARED TO EVERYTHING ELSE IN THE EVENT
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * Two ladders, because a mystery event has two prize pools in sequence and
+   * they are stored in different tables and different units:
+   *
+   *   - BEFORE the mystery phase opens, the prize is the head drawn at
+   *     registration, in whole currency, living on `tournament_players.
+   *     current_bounty` until it is claimed and on `tournament_bounties.
+   *     bounty_amount` afterwards;
+   *   - AFTER it opens, the prize is a chest from the sealed inventory, in
+   *     cents, on `tournament_bounty_chests.amount_cents`.
+   *
+   * Both return `undefined` rather than a number they are not sure of, and
+   * both swallow their own errors: a missing rank costs a celebration, and a
+   * thrown lookup would cost a knockout its broadcast.
+   *
+   * THE TOP SLICE. Each read is ordered largest-first and capped, rather than
+   * pulling a whole field. PostgREST caps an uncapped select at 1,000 rows in
+   * an unspecified order, so a big field could have hidden the largest prize
+   * from a query that looked complete. Ordering makes the slice the TOP of the
+   * ladder by construction, which is the only part any of this decides on: a
+   * prize outside the slice comes back ranked past the end of it, and every
+   * consumer reads that as "not the top three".
+   */
+  private async preMysteryPrizeRank(amount: number | undefined): Promise<number | undefined> {
+    try {
+      const [live, claimed] = await Promise.all([
+        supabase
+          .from('tournament_players')
+          .select('current_bounty')
+          .eq('tournament_id', this.tournamentId)
+          .order('current_bounty', { ascending: false })
+          .limit(200),
+        supabase
+          .from('tournament_bounties')
+          .select('bounty_amount')
+          .eq('tournament_id', this.tournamentId)
+          .order('bounty_amount', { ascending: false })
+          .limit(200),
+      ]);
+
+      // The head just pulled is on this ladder either way: fn_collect_bounty
+      // zeroes `current_bounty` and writes `tournament_bounties` in the same
+      // transaction, which has committed by the time this runs.
+      const ladder = buildPrizeLadder([
+        ...((live.data ?? []) as Array<{ current_bounty: unknown }>).map((r) => r.current_bounty),
+        ...((claimed.data ?? []) as Array<{ bounty_amount: unknown }>).map((r) => r.bounty_amount),
+      ]);
+
+      const rank = prizeRankOf(amount, ladder);
+      return rank > 0 ? rank : undefined;
+    } catch {
+      /* no rank is a quiet celebration; a throw would be a lost knockout */
+      return undefined;
+    }
+  }
+
+  /**
+   * The chest's rung, in CENTS, against the inventory seeded at activation.
+   *
+   * The inventory is immutable once seeded — `fn_mystery_bounty_reserve` only
+   * ever moves a chest's `status` — so this ladder is the same on every call
+   * and is deliberately not cached: a knockout is a rare event, and a cache
+   * that survives a manager restart or a re-seeded event is a wrong answer
+   * that nothing would ever notice.
+   */
+  private async chestPrizeRank(amountCents: number | undefined): Promise<number | undefined> {
+    try {
+      const { data } = await supabase
+        .from('tournament_bounty_chests')
+        .select('amount_cents')
+        .eq('tournament_id', this.tournamentId)
+        .order('amount_cents', { ascending: false })
+        .limit(200);
+
+      const ladder = buildPrizeLadder(
+        ((data ?? []) as Array<{ amount_cents: unknown }>).map((r) => r.amount_cents)
+      );
+      const rank = prizeRankOf(amountCents, ladder);
+      return rank > 0 ? rank : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * FINAL RECONCILIATION (Dan sections 46 and 71).
    *
    * Runs at completion, BEFORE fn_finalize_bounty_pool, on both finish paths
@@ -1777,10 +1895,33 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         ...recipients.map((r) => r.userId),
       ]);
 
+      // THE RANK OF THIS CHEST among the event's sealed inventory. This is the
+      // path Dan's requirement is actually about: the top prizes in a mystery
+      // bounty pool are drawn from the chests, not from the pre-phase heads.
+      const prizeRank = await this.chestPrizeRank(rev.amount_cents);
+
       await this.broadcast('mystery_bounty_revealed', {
         tableId,
         awardId,
         amountCents: rev.amount_cents,
+        /**
+         * THE SAME FIGURE IN WHOLE CURRENCY (added 2026-08-26).
+         *
+         * Every other bounty payload on this channel calls the money `amount`,
+         * and this one carried only `amountCents`. That is the whole reason the
+         * celebration banner could never fire for its intended case: it reads
+         * `amount`, got undefined, and bailed on `amount <= 0` before it ever
+         * looked at the rank. The top prizes in the event are pulled here, so
+         * "the top 3 prizes are pulled" was the one moment it stayed silent.
+         *
+         * Additive, and it cannot disturb anything: TablePage prefers
+         * `amountCents` whenever it is a number and only falls back to `amount`
+         * for engine builds older than 2026-08-25, so the chest reads exactly
+         * what it read before.
+         */
+        amount: Math.round(rev.amount_cents) / 100,
+        /** 1-based rung on the chest ladder, largest first. See the helper. */
+        prizeRank,
         // SECTION 50: the tier is the SERVER'S, from the chest that was drawn.
         // The client used to infer it from `amount / avgBounty`, which meant
         // the same chest could be called a Mega Prize on one screen and a Huge

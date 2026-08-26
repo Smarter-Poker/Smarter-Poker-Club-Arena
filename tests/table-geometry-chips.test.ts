@@ -29,11 +29,15 @@ import {
   chipRestPosition,
   dealerButtonPosition,
   feltCenter,
+  feltEdgeClearanceWidthPct,
   feltRadialFraction,
   isInsideFelt,
   markerGapWidthPct,
+  BUTTON_FELT_DAYLIGHT_WIDTH_PCT,
+  BUTTON_FELT_MARGIN_WIDTH_PCT,
   CHIP_COLLECT_FRACTION,
   CHIP_RAIL_WIDTH_PCT,
+  FELT_MARKER_MARGIN_WIDTH_PCT,
   FELT_WINDOW,
   MARKER_MIN_GAP_WIDTH_PCT,
   type Pos,
@@ -103,6 +107,132 @@ describe('item 11 - the button is always on the felt, never on the rail', () => 
     ]) {
       expect(isInsideFelt(old(seat)), `old ${seat.x},${seat.y}`).toBe(false);
       expect(isInsideFelt(dealerButtonPosition(seat)), `new ${seat.x},${seat.y}`).toBe(true);
+    }
+  });
+});
+
+describe('item 8 - the button stands clear of the rail, not against it', () => {
+  /* Dan 2026-08-25, round two, reading the round-one build back on a phone:
+     "The button is too close to the rail and should be pushed a little farther
+     into the table, so it's 'in front of the player' without touching the rail."
+
+     The suite above asks whether the button is INSIDE the felt. It was inside
+     before this item too - a disc resting flat against the rail is inside - so
+     that question could not see what Dan was looking at. This block measures
+     the DAYLIGHT instead, which is the thing on the screen, and it is the
+     assertion that would have failed on the build he was holding: of these 132
+     seat-and-table combinations, 75 put the button flat on the felt's edge at a
+     clearance of FELT_MARKER_MARGIN_WIDTH_PCT and not a pixel more, and 102
+     were short of the daylight it now keeps.
+
+     It is not an edge case that so many were pinned there. The felt window is
+     x 13.3..86.5, y 8.9..89.2 and the ring puts its side seats at x 10.5/89.5,
+     its caps at y 6 and 82.5 and the hero at y 100 - so EVERY seat stands off
+     the felt, and for every one of them the projection decides the button's
+     position rather than correcting it, on the boundary. */
+  for (const [label, table] of Object.entries(TABLES)) {
+    for (const [size, ring] of Object.entries(RINGS)) {
+      it(`${size}-max on a ${label} table: every button keeps clear felt between itself and the rail`, () => {
+        for (const seat of ring) {
+          const btn = dealerButtonPosition(seat, table);
+          const clearance = feltEdgeClearanceWidthPct(btn, table);
+          expect(
+            clearance,
+            `seat ${JSON.stringify(seat)} -> button ${btn.x.toFixed(2)},${btn.y.toFixed(2)} is ` +
+              `${((clearance * table.w) / 100).toFixed(1)}px from the painted rail`
+          ).toBeGreaterThanOrEqual(BUTTON_FELT_MARGIN_WIDTH_PCT - 1e-6);
+
+          // That clearance is measured to the puck's CENTRE. Take its own radius
+          // off and what is left is the felt a player can actually see between
+          // the disc and the rail - 8.7px on this phone, 15.0 on the tablet,
+          // 18.0 on the desktop, because it is a proportion of the table.
+          expect(
+            clearance - FELT_MARKER_MARGIN_WIDTH_PCT,
+            `seat ${JSON.stringify(seat)} has ` +
+              `${(((clearance - FELT_MARKER_MARGIN_WIDTH_PCT) * table.w) / 100).toFixed(1)}px of daylight`
+          ).toBeGreaterThanOrEqual(BUTTON_FELT_DAYLIGHT_WIDTH_PCT - 1e-6);
+        }
+      });
+    }
+  }
+
+  it('the daylight is half the puck at its largest relative size, not a taste call', () => {
+    /* Without this, the two assertions above are circular: they check that the
+       code honours BUTTON_FELT_DAYLIGHT_WIDTH_PCT, so setting that constant to
+       zero would satisfy them and put the puck straight back on the rail. This
+       one pins the VALUE, and to the same thing the constant's comment derives
+       it from rather than to a repeat of the number.
+
+       --dealer-btn-size (TableVisualHotfix.css) is
+       `clamp(17px, var(--table-w) * 0.04, 28px)`, so the puck is at its widest
+       RELATIVE to the table at the phone floor - 17px on a 347px table, 4.90%.
+       Half of that is its radius, which is the margin that keeps the disc from
+       overhanging; another half is the felt Dan asked to see between the disc
+       and the rail. */
+    const widestPuckWidthPct = (17 / 347) * 100;
+    expect(FELT_MARKER_MARGIN_WIDTH_PCT).toBeGreaterThanOrEqual(widestPuckWidthPct / 2);
+    expect(BUTTON_FELT_DAYLIGHT_WIDTH_PCT).toBeGreaterThanOrEqual(widestPuckWidthPct / 2);
+    expect(BUTTON_FELT_MARGIN_WIDTH_PCT).toBeCloseTo(
+      FELT_MARKER_MARGIN_WIDTH_PCT + BUTTON_FELT_DAYLIGHT_WIDTH_PCT,
+      6
+    );
+  });
+
+  it('CONTROL - the chips still ride the edge, so "inside the felt" really was satisfied by touching it', () => {
+    /* The hero's ring position (y=100) is 10.8% of the table's height below the
+       felt, so both of its markers are placed by the projection. The chips are
+       still put exactly on the boundary - the plain marker margin, to floating
+       point - and that is precisely where the button was standing when Dan
+       raised this. Same seat, same projection, one now carries the daylight and
+       the other does not, which is the whole of item 8. */
+    const hero = RINGS[9][0];
+    for (const [label, table] of Object.entries(TABLES)) {
+      const chips = feltEdgeClearanceWidthPct(chipRestPosition(hero, table), table);
+      expect(chips, `${label}: hero chips`).toBeCloseTo(FELT_MARKER_MARGIN_WIDTH_PCT, 6);
+      expect(
+        feltEdgeClearanceWidthPct(dealerButtonPosition(hero, table), table) - chips,
+        `${label}: hero button, further in than its own chips by`
+      ).toBeGreaterThanOrEqual(BUTTON_FELT_DAYLIGHT_WIDTH_PCT - 1e-6);
+    }
+  });
+
+  it('pushing the button in does not carry it away from the player it belongs to', () => {
+    /* The cost of the daylight, bounded. A button that keeps walking inward
+       stops reading as this seat's and starts reading as the pot's, or as the
+       seat opposite - so both halves of that are asserted rather than assumed.
+
+       0.40 is a stated ceiling with headroom, not the measurement: the furthest
+       any button actually travels is 0.32 of its seat's distance to the middle
+       of the felt (6-max phone, seat 89.5/66 - 53.8px of 168.4px), up from 0.29
+       before the daylight. The ring in tests/unit/chipRail.test.ts, which is
+       deliberately not one of ours, reaches 0.34. If a seat move ever pushes
+       this past 0.40, the number to look at is BUTTON_FELT_DAYLIGHT_WIDTH_PCT
+       and the answer is not to raise the ceiling. */
+    const c = feltCenter();
+    for (const [label, table] of Object.entries(TABLES)) {
+      for (const [size, ring] of Object.entries(RINGS)) {
+        for (const seat of ring) {
+          const btn = dealerButtonPosition(seat, table);
+          const toButton = mag(toPx(seat, btn, table));
+          const toMiddle = mag(toPx(seat, c, table));
+          expect(
+            toButton / toMiddle,
+            `${size}-max ${label}: seat ${JSON.stringify(seat)} button walked ` +
+              `${toButton.toFixed(1)}px of ${toMiddle.toFixed(1)}px to the middle`
+          ).toBeLessThanOrEqual(0.4);
+
+          // And it is still THIS seat's button: no other chair on the ring is
+          // nearer to it than the one it was computed from.
+          for (const other of ring) {
+            if (other === seat) continue;
+            expect(
+              mag(toPx(other, btn, table)),
+              `${size}-max ${label}: seat ${JSON.stringify(seat)}'s button is nearer ` +
+                `${JSON.stringify(other)}`
+            ).toBeGreaterThanOrEqual(toButton - 1e-9);
+          }
+        }
+      }
     }
   });
 });
@@ -217,16 +347,32 @@ describe('item 13 - the chips and the button are never in the same place', () =>
       });
 
       it(`${size}-max on a ${label} table: the button is never deeper in than the chips`, () => {
-        // Player, then button, then chips - Dan 2026-08-19, "chips must always
-        // be in front of the user (in front of the button if they're the
-        // button)". Measured from the middle of the felt rather than from the
-        // seat: the button is deliberately off the chip line, so on a seat whose
-        // markers were both projected onto the felt's edge it can be further
-        // from the seat while still standing nearer the rail, which is what a
-        // player actually reads as "in front".
+        /* Player, then button, then chips - Dan 2026-08-19, "chips must always
+           be in front of the user (in front of the button if they're the
+           button)". Measured from the middle of the felt rather than from the
+           seat: the button is deliberately off the chip line, so on a seat whose
+           markers were both projected onto the felt's edge it can be further
+           from the seat while still standing nearer the rail, which is what a
+           player actually reads as "in front".
+
+           EACH MARKER IS MEASURED AGAINST THE BOUNDARY ITS OWN RULE LETS IT
+           REACH, which is the only reading of this that survives item 8. The
+           button now stops BUTTON_FELT_DAYLIGHT_WIDTH_PCT short of the felt's
+           edge on purpose, so against the chips' boundary it is up to 0.062 of
+           the way behind them - and that is the daylight Dan asked for, not a
+           regression of the ordering. Against its own boundary the ordering
+           holds as tightly as it ever did: the largest deficit across every seat
+           of every ring at every table size is 0.0138, well inside the 0.02 this
+           has always allowed, and the ring in tests/unit/chipRail.test.ts sits
+           at 0.0000. If the daylight ever swallowed the ordering, this number
+           would move; a looser tolerance would have hidden that. */
         for (const seat of ring) {
           const chips = feltRadialFraction(chipRestPosition(seat, table), table);
-          const btn = feltRadialFraction(dealerButtonPosition(seat, table), table);
+          const btn = feltRadialFraction(
+            dealerButtonPosition(seat, table),
+            table,
+            BUTTON_FELT_MARGIN_WIDTH_PCT
+          );
           expect(btn, `seat ${JSON.stringify(seat)}`).toBeGreaterThanOrEqual(chips - 0.02);
         }
       });

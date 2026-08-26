@@ -26,7 +26,7 @@ export async function loadTable(tableId: string) {
       // RAKE-AUDIT 2026-07-24: bbj_percent added — the FIX-A2 BBJ gate reads
       // tableInfo.bbj_percent, but this select never fetched it, so the gate
       // saw `undefined ?? 0` and disabled the BBJ fee on every table.
-      'id, club_id, small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, rake_percent, rake_cap_bb, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, auto_utg_straddle, voluntary_straddle, run_it_twice_enabled, run_it_twice, allow_run_it_twice, insurance_enabled, auto_muck_enabled, show_hand_enabled, allow_rabbit_hunt, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, wait_for_big_blind, seven_deuce_enabled, seven_deuce_amount, name, min_buy_in, max_buy_in, bbj_percent, all_in_or_fold, auto_start_players, run_it_mode, is_anonymous, ban_chat, restrict_observers, cap_enabled, cap_bb, pineapple_holdem'
+      'id, club_id, small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, rake_percent, rake_cap_bb, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, auto_utg_straddle, voluntary_straddle, run_it_twice_enabled, run_it_twice, allow_run_it_twice, insurance_enabled, auto_muck_enabled, show_hand_enabled, allow_rabbit_hunt, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, wait_for_big_blind, seven_deuce_enabled, seven_deuce_amount, name, min_buy_in, max_buy_in, bbj_percent, all_in_or_fold, auto_start_players, run_it_mode, is_anonymous, ban_chat, restrict_observers, cap_enabled, cap_bb, pineapple_holdem, nit_game, maintain_percent_min, maintain_hands, career_percent_min'
     )
     .eq('id', tableId)
     .maybeSingle();
@@ -83,7 +83,7 @@ export async function loadSeatedPlayers(tableId: string) {
        Highest-leverage avatar read in the app - it feeds every seat at every
        table. If it regresses, the felt shows photographs again. */
     .select(
-      'id, display_name, username, is_horse, horse_profile, avatar_url:arena_avatar_url, use_real_name'
+      'id, display_name, username, is_horse, horse_profile, avatar_url:arena_avatar_url, use_real_name, equipped_frame, equipped_aura'
     )
     .in('id', userIds);
   if (profileErr) {
@@ -123,6 +123,13 @@ export async function loadSeatedPlayers(tableId: string) {
         time_bank_uses_remaining: seat.time_bank_uses_remaining || 0,
         is_sitting_out: seat.is_sitting_out === true,
         avatar_url: profile.avatar_url || '',
+        /* Cosmetics ride the avatar's pipeline rather than getting one of their
+           own: same query, same snapshot field group, same client mapper. They
+           are re-read here once per hand alongside the avatar, so a player who
+           equips a frame mid-session is wearing it on everyone's felt by the
+           next deal even if their realtime subscription dropped. */
+        equipped_frame: profile.equipped_frame || '',
+        equipped_aura: profile.equipped_aura || '',
       };
     });
 }

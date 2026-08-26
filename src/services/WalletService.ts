@@ -761,6 +761,30 @@ export const WalletService = {
     userId: string,
     opts?: { clubId?: string | null; tableId?: string | null }
   ): Promise<number> {
+    const r = await this.readPlayerBalance(userId, opts);
+    return r.balance ?? 0;
+  },
+
+  /**
+   * The same read, but it tells you whether it WORKED.
+   *
+   * 2026-08-25 (second audit). `getPlayerBalance` collapses every failure —
+   * RPC error, RLS denial, an unresolvable club id, a dropped connection —
+   * into the number 0, because a `?? 0` is the only sane return type for a
+   * function that must hand back a number. That is fine for a display, and
+   * actively dangerous for a GATE: the buy-in dialog read 0, concluded
+   * "insufficient balance" and DISABLED Confirm for a player who was perfectly
+   * well funded. A read that never happened is not a balance of zero.
+   *
+   * `balance: null` means "we could not find out". Callers that gate on funds
+   * must treat that as unknown and let the server decide — the buy-in RPC
+   * refuses an underfunded entry anyway, so failing open costs nothing and
+   * failing closed locks people out of games they can afford.
+   */
+  async readPlayerBalance(
+    userId: string,
+    opts?: { clubId?: string | null; tableId?: string | null }
+  ): Promise<{ balance: number | null; source: 'rpc' | 'wallet' | 'failed' }> {
     // UNION LAW (Dan 2026-08-20): under club-scoped chips a player spends the
     // chips of the club they entered through, not the global player wallet.
     // fn_player_spendable_balance resolves this with EXACTLY the same rule the
@@ -775,13 +799,27 @@ export const WalletService = {
         p_table_id: opts?.tableId ?? null,
       });
       if (!error && data && typeof (data as any).balance !== 'undefined') {
-        return Number((data as any).balance) || 0;
+        return { balance: Number((data as any).balance) || 0, source: 'rpc' };
       }
     } catch {
       /* fall through to the legacy wallet read */
     }
-    const wallet = await this.getWallet(userId, 'PLAYER');
-    return wallet?.balance ?? 0;
+    /* The legacy read distinguishes its own failure too: `getWallet` returns
+       null both for "no row" and for "query failed", so a missing PLAYER
+       wallet and a refused one look identical. Read it here rather than
+       through getWallet so the two can be told apart. */
+    const { data: w, error: wErr } = await supabase
+      .from('wallets')
+      .select('balance')
+      .eq('user_id', userId)
+      .eq('wallet_type', 'PLAYER')
+      .maybeSingle();
+    if (wErr) {
+      reportError(wErr, 'WalletService.readPlayerBalance', { userId });
+      return { balance: null, source: 'failed' };
+    }
+    // No row is a genuine zero: a provisioned account with no chips.
+    return { balance: Number(w?.balance ?? 0) || 0, source: 'wallet' };
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

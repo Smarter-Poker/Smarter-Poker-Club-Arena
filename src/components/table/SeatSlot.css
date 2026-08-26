@@ -16,6 +16,32 @@
      that overrides --seat-avatar-base on `.seat` is then picked up by this
      substitution, which is not true of a `:root` alias (see the note there). */
   --seat-avatar-size: var(--seat-avatar-base, 84px);
+
+  /* ── THE TWO-CARD HAND SIZE — one declaration, two consumers ──────────────
+     Dan 2026-08-25 round 2, item 10: "for holdem, every player should have
+     their cards displayed exactly as the hero has theirs."
+
+     "Exactly as the hero" is only true if there is one set of numbers, so the
+     2-card size lives HERE, on the seat, and both rows read it:
+
+       .seat__cards--hero                          (the hero's own row)
+       .seat__cards--opponent.seat__cards--twocard (a villain in a 2-card game)
+
+     On `.seat` rather than on either row because that is the element the
+     responsive blocks already retune — they override --seat-avatar-base here,
+     so the card size retunes in the same place and by the same rule, and
+     neither row can be given a size the other did not get.
+
+     Only the TWO-card size is shared. The PLO4/5/6 guards further down still
+     retune the hero row alone: six full-size cards beside a villain do not fit
+     at 375px, and a face-down back carries one bit of information, so the
+     compact overlapped treatment costs those hands nothing.
+
+     Height is round(width x 1.4) — the 2.5:3.5 playing-card ratio, made exact
+     so the card art is never resampled. Keep it exact if these change. */
+  --sp-card2-w: 44px;
+  --sp-card2-h: 62px;
+  --sp-card2-step: 32px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -212,6 +238,21 @@
     border-color var(--duration-normal) var(--ease-out),
     box-shadow var(--duration-normal) var(--ease-out),
     transform var(--duration-fast) var(--ease-out);
+}
+
+/* Equipped frame + aura.
+   AvatarCosmetics sizes itself in `em` so one component fits the 56px seat, the
+   1.33x hero seat, the header orb and a 96px picker tile without four sets of
+   pixel values. This is where the seat says how big an `em` is: 0.22 of the
+   avatar puts the frame's ring at about 2.5px on a 56px seat, matching the
+   plain border it replaces, and scales with --seat-avatar-size on its own.
+
+   `.seat__avatar` is `overflow: hidden`, so the frame's OUTER glow is clipped
+   and only the ring plus its inner glow survive. That is deliberate: an
+   unclipped 15px halo on a nine-handed felt would bleed into the neighbouring
+   seat's cards. */
+.seat__avatar .sp-cosmetic {
+  font-size: calc(var(--seat-avatar-size, 56px) * 0.22);
 }
 
 .seat__avatar-img {
@@ -962,7 +1003,28 @@
   --seat-avatar-size: calc(var(--seat-avatar-base, 84px) * var(--seat-avatar-hero-ratio, 1.3333));
   /* Must clear the wider avatar. 96/84 = 128/112 = 8/7, so deriving keeps the
      name box in the same proportion to the art at every breakpoint. */
-  width: calc(var(--seat-avatar-size) * 8 / 7);
+  width: calc(var(--seat-avatar-size) * 8 / 7) !important;
+}
+
+@media (max-width: 640px) {
+  .seat.seat--hero {
+    --seat-avatar-size: calc(66px * var(--seat-avatar-hero-ratio, 1.3333)) !important;
+    width: calc(66px * var(--seat-avatar-hero-ratio, 1.3333) * 8 / 7) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .seat.seat--hero {
+    --seat-avatar-size: calc(58px * var(--seat-avatar-hero-ratio, 1.3333)) !important;
+    width: calc(58px * var(--seat-avatar-hero-ratio, 1.3333) * 8 / 7) !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .seat.seat--hero {
+    --seat-avatar-size: calc(52px * var(--seat-avatar-hero-ratio, 1.3333)) !important;
+    width: calc(52px * var(--seat-avatar-hero-ratio, 1.3333) * 8 / 7) !important;
+  }
 }
 
 .seat--hero .seat__avatar {
@@ -1210,31 +1272,27 @@
    so the children overlap - the same device the hero row already uses. A back
    carries no information beyond "this player has a hand", so overlapping them
    costs nothing and the count stays countable. */
-/* ── Dan 2026-08-24: UNDER THE PLAYER, NOT OFF TO ONE SIDE ────────────────
-   "the players on the left side of the table should have their cards under
-   them, not on the right."
-
-   Every seat used to anchor its row at `left: calc(100% - 22px)` - the right
-   edge of the seat - whichever side of the table the seat was on. That is one
-   rule producing two different pictures, because a seat's own edge means
-   something different depending on where the seat sits:
-
-     - a LEFT-rail seat (x = 10.5%) threw its cards INWARD, so they detached
-       from the player and drifted toward the middle of the felt;
-     - a RIGHT-rail seat (x = 89.5%) threw the same row OUTWARD, into the
-       darkest felt at the rail, half of it hanging off the table.
-
-   Anchoring on the seat's CENTRE removes the dependence on which side the seat
-   is on: the row is now centred under the name/stack box for every villain, so
-   it reads as that player's hand from any chair. `top: 100%` is the bottom of
-   `.seat`, and `.seat__info` is that column's last child, so this lands
-   directly beneath the plate without needing to know the box's height. */
+/* ── WHERE THE ROW LANDS IS NOT DECIDED HERE ──────────────────────────────
+   Dan 2026-08-24 centred every villain's row UNDER the plate ("the players on
+   the left side of the table should have their cards under them, not on the
+   right"), which is what `top: 100%` / `left: 50%` below still express. Dan
+   2026-08-25 round 2, item 7, moved it again: every face-down row now hangs
+   BESIDE the avatar on the side that points at the felt, and only the showdown
+   reveal is still drawn over the plate. Both of those anchors live in ONE place
+   at the end of this file, where nothing in the three breakpoint blocks between
+   here and there can reach them — read that section, not this rule, for where a
+   row actually goes. What stays here is what a row IS: an absolutely positioned
+   flex line above the avatar, with one drop shadow over the whole group. */
 .seat__cards--opponent {
   /* How much of every card after the first is hidden under the one before it.
-     A token rather than a literal because the top-cap row overrides it: those
-     two seats hang their row OUTBOARD, off the side of the table, so their
-     group has to be the narrowest one on the felt. One name, two values, no
-     second copy of the overlap arithmetic. */
+     A token rather than a literal because a hold'em row overrides it at the end
+     of this file, taking the hero's own spacing (`step - w`) so two villains'
+     cards sit exactly as far apart as the hero's do. One name, one place, no
+     second copy of the overlap arithmetic.
+
+     12px against the 20px top-cap card and the 22-30px base card leaves an
+     8-18px sliver of every card after the first: wide enough to count a
+     six-card hand, narrow enough that six fit where two used to. */
   --sp-opp-overlap: 12px;
   position: absolute;
   top: 100%;
@@ -1349,11 +1407,20 @@
      Previously PLO4 had no `:has()` guard at all, so a 4-card hand fell through
      to the base 44px/-12px pair spacing and produced a 140px row — WIDER than
      both PLO5 and PLO6, and wide enough to run off the felt. That is the other
-     half of the "messy / overlapping" report. */
-  --sp-hero-card-w: 44px;
-  --sp-hero-card-h: 62px;
-  --sp-hero-card-step: 32px;
-  --sp-hero-gap: 8px;
+     half of the "messy / overlapping" report.
+
+     Dan 2026-08-25 round 2, item 10: the two-card values are no longer written
+     here. They are `--sp-card2-*` on `.seat`, because a villain holding a
+     hold'em hand now draws the identical row and "exactly as the hero has
+     theirs" cannot survive two copies of three numbers. The PLO guards below
+     still write literals: they retune the hero row alone, deliberately.
+
+     (`--sp-hero-gap` used to be declared alongside these, at all four
+     breakpoints, and was read by nothing — the row's spacing is entirely
+     `--sp-hero-card-step`. Removed with them.) */
+  --sp-hero-card-w: var(--sp-card2-w, 44px);
+  --sp-hero-card-h: var(--sp-card2-h, 62px);
+  --sp-hero-card-step: var(--sp-card2-step, 32px);
 
   /* Dan 2026-08-15: "the hole cards should be centered with the Hero Avatar."
      The previous anchor (bottom: --sp-hero-box-half + translateY(50%)) centred
@@ -1366,9 +1433,27 @@
      THE HERO, NOT ON TOP OF THE TABLE." The centred-above anchor (2026-08-19)
      floated the row onto the felt. Now that the hero avatar itself sits at
      y:100 of the scaler (barely overlapping the rail), the row hangs off the
-     RIGHT of the seat — the PokerBros look. The -10px tuck slides the first
-     card slightly behind the avatar so a wide PLO6 row still fits inside a
-     375px viewport.
+     RIGHT of the seat — the PokerBros look.
+
+     Dan 2026-08-25 round 2, item 9: "when the hero doesn't have a hand, they
+     should never be covered by anything ever." This anchor was `100% - 10px`,
+     a deliberate tuck that slid the first card BEHIND the avatar to buy 10px
+     of room for a PLO6 row. That tuck is the one part of the seat that draws
+     ON the hero, and it does it at z-index 20 — above every other layer in the
+     seat — in every state the row survives into, and it survives into all of
+     them (see `heroIsOutOfPlay` in SeatSlot.tsx for why the row outlives its
+     hand). `100% + 1px` retires it: 100% is the seat's own right edge and the
+     name plate is capped at the seat's width, so a row starting one pixel past
+     it cannot overlap the avatar OR the plate at any hand size, at any
+     breakpoint, in any hand state. Not a z-index tweak — there is no longer a
+     shared pixel to fight over.
+
+     The 11px it costs is affordable at every breakpoint because the space to
+     the seat's right is backdrop, not felt. Widest case, a PLO6 hand on a
+     375px phone: hero seat 79px wide centred on a 374px scaler, so the row
+     starts at 228px and runs 39 + 5 x 16 = 119px to 347px — 28px inside the
+     viewport. tests/e2e/hero-card-row.spec.ts measures this at all four
+     breakpoints and all four hand sizes.
 
      Dan 2026-08-25 item 14 supplies the vertical half: see the single
      end-of-file anchor rule, which stretches this row across the band between
@@ -1376,7 +1461,7 @@
      are repeated there because that rule is the one that governs every
      breakpoint; they are kept identical here so reading either tells the
      truth. */
-  left: calc(100% - 10px);
+  left: calc(100% + 1px);
   right: auto;
   top: 0;
   bottom: calc(50% - var(--sp-hero-clear, 34px) - env(safe-area-inset-bottom, 0px));
@@ -2535,6 +2620,11 @@
   .seat {
     --seat-avatar-base: 66px; /* Dan 2026-08-24: avatars were too large on phones */
     width: 88px; /* was 72px -- 1.5x avatars */
+    /* The two-card hand at this breakpoint — hero AND every hold'em villain.
+       See the token block on the base `.seat` rule for why they share it. */
+    --sp-card2-w: 42px;
+    --sp-card2-h: 59px;
+    --sp-card2-step: 30px;
   }
 
   .seat__info {
@@ -2558,18 +2648,14 @@
     height: 44px;
   }
   /* tablet — right of the name/chip box, centred on that box (see base rule).
-     Token-only overrides: never restate width/height/margin on .seat__card, or
-     the hard-coded value would beat the tokens the :has() guards below set. */
-  .seat__cards--hero {
-    --sp-hero-card-w: 42px;
-    --sp-hero-card-h: 59px;
-    --sp-hero-card-step: 30px;
-    --sp-hero-gap: 8px;
-    /* Anchor lives in the single end-of-file rule (Dan 2026-08-22): beside
-       the avatar at every breakpoint. Token-only overrides here. */
-  }
+     The two-card size now lives on `.seat` above (Dan 2026-08-25 round 2, item
+     10 — the hero and a hold'em villain must read one set of numbers); the
+     anchor lives in the single end-of-file rule (Dan 2026-08-22). What is left
+     here is the PLO retuning, and it stays token-only: never restate
+     width/height/margin on .seat__card, or the hard-coded value would beat the
+     tokens the :has() guards below set.
 
-  /* PLO4/5/6 at the tablet breakpoint — all land on a ~104px row. */
+     PLO4/5/6 at the tablet breakpoint — all land on a ~104px row. */
   .seat__cards--hero:has(> *:nth-child(4)) {
     --sp-hero-card-w: 57px;
     --sp-hero-card-h: 80px;
@@ -2617,6 +2703,10 @@
   .seat {
     --seat-avatar-base: 58px; /* see the note in the 640px block */
     width: 80px; /* was 66px -- 1.5x avatars */
+    /* Two-card hand: hero AND every hold'em villain. See the base `.seat`. */
+    --sp-card2-w: 36px;
+    --sp-card2-h: 50px;
+    --sp-card2-step: 26px;
   }
 
   /* Only the overlap into the name box is tuned per breakpoint now; the slot
@@ -2648,16 +2738,11 @@
   /* phone — right of the name/chip box, centred on that box (see base rule).
      On a 375px viewport the scaler is capped at 320px wide and the 66px hero
      seat is centred, so the row starts ~200px in and has ~100px of felt to the
-     right of it. Every hand size below is tuned to that 100px budget. */
-  .seat__cards--hero {
-    --sp-hero-card-w: 36px;
-    --sp-hero-card-h: 50px;
-    --sp-hero-card-step: 26px;
-    --sp-hero-gap: 7px;
-    /* Anchor lives in the single end-of-file rule (Dan 2026-08-22). */
-  }
+     right of it. Every hand size below is tuned to that 100px budget. The
+     two-card size lives on `.seat` above; the anchor lives in the single
+     end-of-file rule (Dan 2026-08-22).
 
-  /* PLO4/5/6 at the phone breakpoint — all land on a 100px row. */
+     PLO4/5/6 at the phone breakpoint — all land on a 100px row. */
   .seat__cards--hero:has(> *:nth-child(4)) {
     --sp-hero-card-w: 51px;
     --sp-hero-card-h: 71px;
@@ -2700,6 +2785,10 @@
   .seat {
     --seat-avatar-base: 52px; /* see the note in the 640px block */
     width: 72px; /* was 58px -- 1.5x avatars */
+    /* Two-card hand: hero AND every hold'em villain. See the base `.seat`. */
+    --sp-card2-w: 32px;
+    --sp-card2-h: 45px;
+    --sp-card2-step: 23px;
   }
 
   .seat__avatar-wrap {
@@ -2728,16 +2817,11 @@
     height: 36px;
   }
   /* small phone — right of the name/chip box, centred on it (see base rule).
-     Tightest budget of the four breakpoints: ~90px of felt to the right. */
-  .seat__cards--hero {
-    --sp-hero-card-w: 32px;
-    --sp-hero-card-h: 45px;
-    --sp-hero-card-step: 23px;
-    --sp-hero-gap: 6px;
-    /* Anchor lives in the single end-of-file rule (Dan 2026-08-22). */
-  }
+     Tightest budget of the four breakpoints: ~90px of felt to the right. The
+     two-card size lives on `.seat` above; the anchor lives in the single
+     end-of-file rule (Dan 2026-08-22).
 
-  /* PLO4/5/6 at the small phone breakpoint — all land on a ~90px row. */
+     PLO4/5/6 at the small phone breakpoint — all land on a ~90px row. */
   .seat__cards--hero:has(> *:nth-child(4)) {
     --sp-hero-card-w: 45px;
     --sp-hero-card-h: 63px;
@@ -3123,9 +3207,11 @@
    above, so one rule governs every screen size instead of four copies that
    drift apart. */
 .seat__cards--hero {
-  /* Beside the hero, slightly tucked behind the avatar's right edge — every
-     hand size, every breakpoint. */
-  left: calc(100% - 10px);
+  /* Beside the hero and one pixel clear of the seat's own box — every hand
+     size, every breakpoint. The pixel is what makes "the hero is never covered
+     by anything" (item 9) structural rather than a layering argument; the full
+     derivation is on the matching declaration in the base rule above. */
+  left: calc(100% + 1px);
   right: auto;
   /* The band: hero block top -> action bar top, cards centred inside it. */
   top: 0;
@@ -3288,54 +3374,67 @@
   }
 }
 
-/* ── Dan 2026-08-24: "PLAYER AT THE TOP NEEDS TO HAVE HIS CARDS TO THE RIGHT
-   OF HIM, NOT UNDER HIM" and the bottom-centre seat (hero slot) "AT THE
-   BOTTOM OF THE TABLE WITH CARDS TO THE RIGHT OF THEM." The under-the-player
-   rule stays for the left/right rail seats (his 2026-08-24 morning directive);
-   the top cap and bottom cap seats hang their face-down row BESIDE the avatar
-   instead, where there is open felt. Showdown reveals keep their own placement
-   (the revealed row draws above the plate).
+/* ═══════════════════════════════════════════════════════════════════════════
+   EVERY VILLAIN'S FACE-DOWN ROW HANGS BESIDE THE AVATAR
+   ═══════════════════════════════════════════════════════════════════════════
 
-   ── Dan 2026-08-25, item 7, two corrections to that ─────────────────────────
-   "their cards should appear much closer to the avatar - there is too much of
-   a gap, 1 pixel away from the avatar the cards should appear. The guy on the
-   left, his cards should be on the left."
+   Dan 2026-08-24 asked for the top cap and the bottom-centre seat to hang their
+   row beside the avatar ("PLAYER AT THE TOP NEEDS TO HAVE HIS CARDS TO THE
+   RIGHT OF HIM, NOT UNDER HIM") and for the rail seats to keep theirs UNDER the
+   plate. Dan 2026-08-25 round 2, item 7, replaces that second half:
 
-   1. THE GAP. `left: calc(100% + 4px)` measured from the SEAT's edge, and the
-      seat is a whole name-plate wider than the avatar standing in the middle
-      of it: on a phone that is 12px of empty column plus the 4px, so the row
-      started ~16px clear of the character it belongs to and read as loose
-      cards on the felt. Measuring from the avatar instead — 50% of the seat
-      is the avatar's centre line, so its edge is half the avatar token away —
-      puts the row exactly 1px off the art at every breakpoint, including the
-      compact 56px top row, with no per-breakpoint number to keep in step.
+     "THE VILLAN IN THE POSITION WHERE BARRELBLITZ IS, SHOULD HAVE THEIR CARDS
+      ON THE LEFT SIDE OF THEM. 'AGGRO ANDY' POSITION SHOULD HAVE THEM TO THE
+      RIGHT SIDE OF THE AVATAR, BUT WITH 1 PIXEL OF PADDING BETWEEN WHERE THE
+      CARDS START / END AND THE AVATAR IS."
 
-   2. THE SIDE. One `left` for both top seats sent the top-LEFT player's cards
-      inward, toward the top-right player's, which is how ten cards came to
-      read as one row (item 12). The side is now the OUTBOARD one, chosen from
-      the seat's own x by `outboardCardSide` in lib/tableSeatGeometry.ts and
-      carried in as `seat--cards-left` / `seat--cards-right`. Derived from x
-      rather than from a seat index because an index means a different chair on
-      every ring, while "left of the middle of the table" does not.
+   BarrelBlitz is a RIGHT-rail seat wanting cards on its left; Aggro Andy is the
+   BOTTOM-LEFT seat wanting them on its right. Both are the same instruction —
+   point the cards at the felt — so the placement below is no longer scoped to
+   two wrappers. Every seat hangs its face-down row beside the avatar, and the
+   SIDE is `seatCardSide` in lib/tableSeatGeometry.ts:
+
+     TOP CAP        outboard, away from the middle of the table.
+     EVERY OTHER    inboard, toward it.
+
+   Read that file for the rule; the two bands are named there and must not be
+   confused. In short: the top cap has no felt beneath it, so its row hangs off
+   the SIDE of the table and the only thing outboard buys is separation between
+   the two top hands (item 12 — five and five reading as ten). Everywhere else
+   there IS felt inboard, and outboard is what ran a right-rail PLO hand clean
+   off the edge of a 375px phone, which is what this replaces.
+
+   THE 1px, and why it is measured from the AVATAR rather than from the seat:
+   `left: calc(100% + 4px)` used to measure from the SEAT's edge, and the seat
+   is a whole name-plate wider than the avatar standing in the middle of it —
+   on a phone that is 12px of empty column plus the 4px, so the row started
+   ~16px clear of the character it belongs to and read as loose cards on the
+   felt. 50% of the seat IS the avatar's centre line, so its edge is half the
+   avatar token away: `50% ± (--seat-avatar-size / 2) + 1px` puts the row
+   exactly one pixel off the art at every breakpoint, including the compact
+   56px top row, with no per-breakpoint number to keep in step.
 
    Vertically the row centres on the avatar's own midline rather than the old
-   `top: 22%` of the seat, which drifted with the plate's height. */
-.seat-wrapper--top .seat__cards--opponent:not(.seat__cards--revealed),
-.seat-wrapper--hero .seat__cards--opponent:not(.seat__cards--revealed) {
+   `top: 22%` of the seat, which drifted with the plate's height.
+
+   Specificity: `:not()` makes these 0-2-0 and 0-3-0, so they beat the base
+   `.seat__cards--opponent` (0-1-0) that still owns the flex row, the z-index
+   and the drop shadow. Showdown reveals are excluded throughout and keep their
+   own anchor — the revealed row draws above the plate, see the rule further
+   up this file. */
+.seat__cards--opponent:not(.seat__cards--revealed) {
   top: calc(var(--seat-avatar-size, 84px) / 2);
   bottom: auto;
   margin-top: 0;
   transform: translateY(-50%);
 }
 
-.seat-wrapper--top .seat--cards-right .seat__cards--opponent:not(.seat__cards--revealed),
-.seat-wrapper--hero .seat--cards-right .seat__cards--opponent:not(.seat__cards--revealed) {
+.seat--cards-right .seat__cards--opponent:not(.seat__cards--revealed) {
   left: calc(50% + var(--seat-avatar-size, 84px) / 2 + 1px);
   right: auto;
 }
 
-.seat-wrapper--top .seat--cards-left .seat__cards--opponent:not(.seat__cards--revealed),
-.seat-wrapper--hero .seat--cards-left .seat__cards--opponent:not(.seat__cards--revealed) {
+.seat--cards-left .seat__cards--opponent:not(.seat__cards--revealed) {
   left: auto;
   right: calc(50% + var(--seat-avatar-size, 84px) / 2 + 1px);
 }
@@ -3346,10 +3445,63 @@
    12px overlap leave an 8px sliver each: a five-card group is 20 + 4 x 8 =
    52px, which clears the scaler's edge at 375px on every ring including the
    3-max and 5-max diagonals, the two that sit furthest out. Scoped to the
-   face-down row so a showdown reveal keeps the full-size cards it needs. */
-.seat-wrapper--top .seat__cards--opponent:not(.seat__cards--revealed) .seat__card {
+   face-down row so a showdown reveal keeps the full-size cards it needs.
+
+   This is also why the hold'em treatment below cannot reach the top cap. A
+   2-card hero-size group is 55px on a 375px phone, and the 3-max/5-max top
+   diagonals sit at x 20.5 — 65.6px from the scaler's left edge — so an outboard
+   55px group starting one avatar-half (28px) inside that would begin 16px off
+   the left of the table. The top cap hangs into space; it does not get to spend
+   space it has not got.
+
+   THE `.seat` IN THE SELECTOR IS LOAD-BEARING, not decoration. Without it this
+   is 0-4-0 and so is the hold'em rule below — a tie broken by source order, and
+   the hold'em rule is written later, so it would silently win and put 55px of
+   cards off the side of a 5-max table. `.seat` makes it 0-5-0 and the priority
+   is stated rather than inherited from where someone happened to paste a rule.
+   Same device, same reason, as `.seat-wrapper--top .seat` above. */
+.seat-wrapper--top .seat .seat__cards--opponent:not(.seat__cards--revealed) .seat__card {
   width: 20px;
   height: 28px;
+}
+
+/* ── Dan 2026-08-25 round 2, item 10: HOLD'EM VILLAINS GET THE HERO'S CARDS ──
+   "For holdem, every player should have their cards displayed exactly as the
+   hero has theirs."
+
+   `seat__cards--twocard` is set by SeatSlot.tsx from the count the row is about
+   to draw, so it is on exactly the rows that hold two cards — a hold'em hand,
+   revealed or face down — and never on a PLO4/5/6 row. Scoped to the face-down
+   row here because that is what Dan is looking at: the shrunken overlapped
+   slivers that exist so SIX backs can fit beside a villain. Two do not need
+   that, and a revealed hand already lies flat at its own size with the ranks
+   the whole point (Dan 2026-08-23 — a shown hand is never overlapped).
+
+   Three declarations, all of them reading the hero's own numbers:
+
+     size     --sp-card2-w / -h, the same tokens `.seat__cards--hero` reads.
+     spacing  the overlap the hero row gets from `step - w`, handed to the
+              opponent row's existing `--sp-opp-overlap` so the nth-child rule
+              above does the work. Two cards then sit exactly as far apart as
+              the hero's do, at every breakpoint, with no second copy of the
+              arithmetic to drift.
+     framing  no dark backing plate. That plate groups a five- or six-card
+              fan so two neighbouring hands cannot read as one (item 12); a
+              hero-sized PAIR is already unmistakably one hand, and a dark box
+              around it is the one thing the hero's own row does not have. */
+.seat__cards--opponent.seat__cards--twocard:not(.seat__cards--revealed) {
+  --sp-opp-overlap: calc(var(--sp-card2-w, 44px) - var(--sp-card2-step, 32px));
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.seat__cards--opponent.seat__cards--twocard:not(.seat__cards--revealed) .seat__card {
+  width: var(--sp-card2-w, 44px);
+  height: var(--sp-card2-h, 62px);
+  /* 6px is the hero card's radius; the villain base is 4px, sized for a 22px
+     back. A card drawn at the hero's size gets the hero's corner. */
+  border-radius: 6px;
 }
 
 /* ───────────────────────────────────────────────────────────────────────────

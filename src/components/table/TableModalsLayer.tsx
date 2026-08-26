@@ -376,6 +376,7 @@ export interface TableModalsLayerProps {
   showHandHistory: boolean;
   handHistory: HandRecord[];
   onCloseHandHistory: () => void;
+  onReplay?: (hand: HandRecord) => void;
 
   /* Session Summary props REMOVED (Phase 2 audit 2026-08-22): the in-table
      SessionSummary modal was dead code — `showSessionSummary` was never set
@@ -573,6 +574,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     showHandHistory,
     handHistory,
     onCloseHandHistory,
+    onReplay,
     // Session HUD
     showSessionHUD,
     onCloseSessionHUD,
@@ -692,10 +694,30 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
 
       {/* Hand Replay Modal */}
       {showHandReplay && (
-        <div className="player-notes-overlay" onClick={onCloseHandReplay}>
+        <div
+          className="hand-replay-overlay"
+          onClick={onCloseHandReplay}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1600,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          }}
+        >
           <div
-            className="player-notes-modal hand-replay-modal"
+            className="hand-replay-modal"
             onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              height: '100%',
+              maxWidth: '100vw',
+              maxHeight: '100vh',
+              overflow: 'hidden',
+              position: 'relative',
+            }}
           >
             <button className="modal-close" onClick={onCloseHandReplay}>
               ✕
@@ -1242,6 +1264,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         onClose={onCloseHandHistory}
         hands={handHistory}
         heroId={userId || ''}
+        onReplay={onReplay}
       />
 
       {/* Session Summary modal REMOVED (Phase 2 audit 2026-08-22). It could

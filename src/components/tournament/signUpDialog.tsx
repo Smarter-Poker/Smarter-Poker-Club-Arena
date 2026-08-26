@@ -61,6 +61,14 @@
  *      version used 1000 and the app has ~20 overlays above that, including the
  *      offline banner at 9999 — the sole buy-in confirmation was paintable-over.
  *
+ *  R7  AN UNREADABLE BALANCE IS NOT A BALANCE OF ZERO. The gate reads
+ *      `WalletService.readPlayerBalance`, which returns `balance: null` when
+ *      the read failed. `getPlayerBalance` returns 0 for every failure — RPC
+ *      error, RLS denial, an unresolvable club id — and the first version of
+ *      this file gated on it, so a funded player could be shown "Insufficient
+ *      Balance" and a disabled Confirm because a query did not come back.
+ *      Unknown must always fail OPEN; the server RPC is the real gate.
+ *
  *  R6  THE BALANCE IS CLUB-SCOPED. `getPlayerBalance` defaults to the AMBIENT
  *      club, so a global-lobby or union buy-in read the wrong wallet and could
  *      disable Confirm for a player who is funded in the right one. The club is
@@ -143,9 +151,22 @@ function formatStart(iso?: string | null): string {
 export function SignUpHost() {
   const [queue, setQueue] = useState<SignUpRequest[]>([]);
   const [balance, setBalance] = useState<number | null>(null);
-  /** The queue, readable from an unmount cleanup that must not re-subscribe. */
+  /**
+   * THE QUEUE ITSELF. `queue` state exists only to trigger a render.
+   *
+   * R8 (2026-08-25, second audit): this ref used to be synced DURING RENDER
+   * (`queueRef.current = queue`), which meant it lagged the truth by one
+   * commit. A request enqueued in the same batch as an unmount was therefore
+   * invisible to the cleanup below and its promise hung forever — which is
+   * precisely the R3 failure, surviving R3's fix. It also made `settle` unable
+   * to see a request that had only just been enqueued.
+   *
+   * The ref is now written SYNCHRONOUSLY by `enqueue` and by `settle`, before
+   * any state update, so it is never behind. Writing a ref during render is
+   * also forbidden by React (a discarded speculative render still mutates it),
+   * and this removes the last one in the file.
+   */
   const queueRef = useRef<SignUpRequest[]>([]);
-  queueRef.current = queue;
   /** Ids already answered, so a second settle for the same request is a no-op. */
   const settledRef = useRef<Set<number>>(new Set());
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -153,7 +174,11 @@ export function SignUpHost() {
   const restoreFocusRef = useRef<Element | null>(null);
 
   useEffect(() => {
-    const mine = (req: SignUpRequest) => setQueue((q) => [...q, req]);
+    const mine = (req: SignUpRequest) => {
+      // Ref first, synchronously — see R8. State second, purely to re-render.
+      queueRef.current = [...queueRef.current, req];
+      setQueue(queueRef.current);
+    };
     enqueue = mine;
     return () => {
       // R4: only stand down if this host is still the live one.
@@ -182,8 +207,9 @@ export function SignUpHost() {
     if (settledRef.current.has(id)) return;
     settledRef.current.add(id);
     const req = queueRef.current.find((r) => r.id === id);
+    queueRef.current = queueRef.current.filter((r) => r.id !== id);
     if (req) req.resolve(result);
-    setQueue((q) => q.filter((r) => r.id !== id));
+    setQueue(queueRef.current);
   }, []);
 
   // Read the balance when a request becomes current, not when the host mounts —
@@ -197,14 +223,19 @@ export function SignUpHost() {
     setBalance(null);
     (async () => {
       try {
-        // R6: the club that owns this buy-in, not whichever club is ambient.
-        const b = await WalletService.getPlayerBalance(userId, { clubId });
-        if (alive) setBalance(Number(b) || 0);
+        /* R6: the club that owns this buy-in, not whichever club is ambient.
+           R7: `readPlayerBalance`, NOT `getPlayerBalance` — see that method.
+           getPlayerBalance collapses every failure into the number 0, so a
+           refused RPC, an unresolvable club id or a dropped connection all
+           arrived here as "you have no chips" and DISABLED Confirm for a
+           funded player. `balance: null` means we could not find out, and the
+           gate below treats that as unknown rather than as zero. */
+        const r = await WalletService.readPlayerBalance(userId, { clubId });
+        if (alive) setBalance(r.balance);
       } catch (e) {
-        // A balance we could not read must not silently read as zero, which
-        // would gate a funded player out of a game they can afford. Null keeps
-        // the row honest ("--") and leaves the button enabled; the server RPC
-        // is the real gate and refuses an underfunded entry anyway.
+        // readPlayerBalance already reports its own failures and returns null,
+        // so this only catches something truly unexpected. Same rule: unknown,
+        // never zero.
         reportError(e, 'SignUpHost.balance', { userId });
         if (alive) setBalance(null);
       }
@@ -220,7 +251,13 @@ export function SignUpHost() {
     const id = current.id;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        e.stopPropagation();
+        /* NOT `stopPropagation`. This listener is on `window` in the CAPTURE
+           phase, which is the very first node in the propagation path, so
+           stopping it there blocked Escape for EVERY deeper listener in the app
+           — React's synthetic root included — for as long as this dialog was
+           open. Cancelling the dialog is all that is wanted; nothing else in
+           the tree is above it to conflict with. */
+        e.preventDefault();
         settle(id, false);
         return;
       }
@@ -232,7 +269,20 @@ export function SignUpHost() {
       const first = focusables[0];
       const last = focusables[focusables.length - 1];
       const active = document.activeElement;
-      if (e.shiftKey && (active === first || !cardRef.current.contains(active))) {
+      /* `inside` deliberately EXCLUDES the card element itself. When Confirm is
+         disabled the open-effect focuses the card as a fallback, and
+         `card.contains(card)` is true — so the old test thought focus was
+         already inside a control and trapped nothing, letting Shift+Tab walk
+         out onto the page behind a dialog that takes money. Anything that is
+         not one of the buttons is treated as outside and pulled back in. */
+      const inside =
+        active instanceof Node && active !== cardRef.current
+          ? cardRef.current.contains(active)
+          : false;
+      if (!inside) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && active === first) {
         e.preventDefault();
         last.focus();
       } else if (!e.shiftKey && active === last) {

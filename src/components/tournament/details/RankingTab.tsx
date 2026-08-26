@@ -106,6 +106,12 @@ interface RankRowProps {
   bigBlind: number;
   tableName?: string;
   pulsing: boolean;
+  /**
+   * False for anything that is not RUNNING. Dan 2026-08-25 scoped the
+   * click-through to a live event, and a finished event's `table_id`s point at
+   * closed felts - a row that opens one is worse than a row that does nothing.
+   */
+  eventRunning: boolean;
   onPick: (entry: TournamentEntry) => void;
 }
 
@@ -120,6 +126,7 @@ const RankRow = React.memo(function RankRow({
   bigBlind,
   tableName,
   pulsing,
+  eventRunning,
   onPick,
 }: RankRowProps) {
   const stack = Number(entry.chips) || 0;
@@ -130,7 +137,7 @@ const RankRow = React.memo(function RankRow({
 
   // A player with no seat cannot be watched. Say why on the row rather than
   // opening a dialog whose only outcome is a refusal.
-  const watchable = !out && !!entry.table_id;
+  const watchable = eventRunning && !out && !!entry.table_id;
 
   const className = [
     'tl-row',
@@ -346,6 +353,7 @@ export default function RankingTab({
   tables,
   blindLevels,
   currentUserId,
+  onWatchPlayer,
 }: TournamentTabProps) {
   const navigate = useNavigate();
   const toast = useToast();
@@ -358,6 +366,13 @@ export default function RankingTab({
   const pulseTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const tournamentId = tournament?.id;
+
+  /**
+   * The page hands `onWatchPlayer` over only while the event is RUNNING, which
+   * is the same gate the footer's WATCH button uses. Reading its presence
+   * rather than re-deriving the status keeps one rule in one place.
+   */
+  const eventRunning = Boolean(onWatchPlayer);
 
   const { downlineIds, carriesDownline } = useDownlineIds(currentUserId, tournament?.club_id);
 
@@ -700,6 +715,7 @@ export default function RankingTab({
               bigBlind={bigBlind}
               tableName={entry.table_id ? tableNameById.get(entry.table_id) : undefined}
               pulsing={pulsing.has(entry.user_id)}
+              eventRunning={eventRunning}
               onPick={handlePick}
             />
           );

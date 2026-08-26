@@ -57,6 +57,7 @@ import { parseBlindStructure } from '../utils/parseBlindStructure';
 // it, so flipping the flag is a pure rollout switch.
 import { useEngineTableState } from '../hooks/useEngineTableState';
 import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
+import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
 import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
 
 import { gameCode } from '../utils/gameCode';
@@ -877,6 +878,10 @@ function buildSpinDrawFromRow(row: SpinDrawRow | null | undefined): SpinWheelDat
   };
 }
 
+// Module-level guards to prevent multiple TablePage instances from cascading BBJ_HIT_GLOBAL
+const _LAST_BBJ_HIT_COUNT: Record<string, number> = {};
+let _LAST_BBJ_TOAST_TIME = 0;
+
 export default function TablePage({
   embeddedTableId,
   onTableInfoUpdate,
@@ -1433,11 +1438,57 @@ export default function TablePage({
     (import.meta as unknown as { env: Record<string, string | undefined> }).env
       ?.VITE_USE_ENGINE_WS !== '0';
   const {
-    snapshot: engineSnapshot,
+    snapshot: rawEngineSnapshot,
     status: engineWsStatus,
-    lastEvent: engineLastEvent,
+    lastEvent: rawEngineLastEvent,
     lastError: engineLastError,
   } = useEngineTableState(tableId || undefined, { enabled: USE_ENGINE_WS });
+
+  // RABBIT HUNT FREEZE 2026-08-25
+  const [rabbitHuntFreezeEnd, setRabbitHuntFreezeEnd] = useState<number>(0);
+  const [engineSnapshot, setEngineSnapshot] = useState<any>(null);
+  const [engineLastEvent, setEngineLastEvent] = useState<any>(null);
+  const frozenEventQueueRef = useRef<any[]>([]);
+  const frozenSnapshotRef = useRef<any>(null);
+
+  useEffect(() => {
+    frozenSnapshotRef.current = rawEngineSnapshot;
+    if (rabbitHuntFreezeEnd === 0 || Date.now() >= rabbitHuntFreezeEnd) {
+      setEngineSnapshot(rawEngineSnapshot);
+    }
+  }, [rawEngineSnapshot, rabbitHuntFreezeEnd]);
+
+  useEffect(() => {
+    if (!rawEngineLastEvent) return;
+    if (rabbitHuntFreezeEnd > Date.now()) {
+      frozenEventQueueRef.current.push(rawEngineLastEvent);
+    } else {
+      setEngineLastEvent(rawEngineLastEvent);
+    }
+  }, [rawEngineLastEvent, rabbitHuntFreezeEnd]);
+
+  useEffect(() => {
+    if (rabbitHuntFreezeEnd === 0) return;
+    const msLeft = rabbitHuntFreezeEnd - Date.now();
+    if (msLeft <= 0) return;
+
+    const t = setTimeout(() => {
+      setRabbitHuntFreezeEnd(0);
+      setEngineSnapshot(frozenSnapshotRef.current);
+
+      const playNextEvent = () => {
+        if (frozenEventQueueRef.current.length > 0) {
+          const ev = frozenEventQueueRef.current.shift();
+          setEngineLastEvent(ev);
+          if (frozenEventQueueRef.current.length > 0) {
+            setTimeout(playNextEvent, 50);
+          }
+        }
+      };
+      playNextEvent();
+    }, msLeft);
+    return () => clearTimeout(t);
+  }, [rabbitHuntFreezeEnd]);
   // Phase 1.2 PR-F: disconnect FSM states per userId, surfaced by the
   // engine WS payload. Drives DisconnectToast below.
   const [disconnectStates, setDisconnectStates] = useState<
@@ -1567,8 +1618,25 @@ export default function TablePage({
         if (!p) return null;
         const sp = p as unknown as SeatPlayer;
         if (sp.isHero && (!sp.holeCards || sp.holeCards.length === 0)) {
+          /* Dan 2026-08-25 round 2, item 9: "when the hero doesn't have a hand,
+             they should never be covered by anything ever."
+             The muck view above is only for the hand the hero folded OUT OF.
+             Without this test the substitution has NO HAND BOUNDARY at all - the
+             only condition was "engine says empty and we had some" - so once the
+             hero had been dealt in even once, holeCards was non-empty forever:
+             through the fold, through showdown, through the gap before the next
+             deal, and on through a sit-out. The hero's card row therefore
+             rendered in every state where the hero holds no hand, which is
+             exactly what was covering them. */
+          const stillInThisHand = sp.status === 'folded' || sp.status === 'all_in';
           const prevHero = prev.players[i];
-          if (prevHero && prevHero.isHero && prevHero.holeCards && prevHero.holeCards.length > 0) {
+          if (
+            stillInThisHand &&
+            prevHero &&
+            prevHero.isHero &&
+            prevHero.holeCards &&
+            prevHero.holeCards.length > 0
+          ) {
             return { ...sp, holeCards: prevHero.holeCards };
           }
         }
@@ -2452,8 +2520,35 @@ export default function TablePage({
     hold.pendingExit = null;
     if (pending) {
       goToLobbyWithResultRef.current?.(pending.position, pending.prize, pending.delayMs);
+      return;
     }
+    /* 2026-08-25, second audit: RELEASING WITH NOTHING TO REPLAY USED TO DO
+     * NOTHING AT ALL, and that stranded people.
+     *
+     * `pendingExit` is only set by the `player_eliminated` broadcast. The whole
+     * reason the stack watcher exists is the case where that broadcast never
+     * comes — the hand simply settled and hero's stack is zero. On that path
+     * the hold released and then... nothing: modal gone, hero still seated with
+     * no chips, no result card, no exit. And because `bustPromptFiredRef` was
+     * still true and the stack still zero, the watcher could never re-prompt
+     * either. The player sat at a dead table for the rest of the session.
+     *
+     * `exitIfBusted` is the fallback the manual decline path already had
+     * inline. It only fires when hero really is out of chips, so a release on
+     * a seat that has since been topped up (a successful rebuy) cannot eject
+     * anybody — that path also clears `pendingExit` first, and lands here with
+     * a positive stack. */
+    exitIfBustedRef.current?.();
   }, []);
+
+  /**
+   * Leave the table because hero has no chips left — the last-resort exit.
+   *
+   * A ref so `releaseBustHold` (declared above it, and deliberately dependency
+   * free) can call it without either one having to be re-created when table
+   * state changes.
+   */
+  const exitIfBustedRef = useRef<(() => void) | null>(null);
 
   /**
    * Claim the hold. Returns false when one is already running, so two watchers
@@ -2584,7 +2679,7 @@ export default function TablePage({
         setShowSettings(true);
         break;
       case 'HAND_HISTORY':
-        setShowHandReplay(true);
+        setShowHandHistory(true);
         break;
       case 'HELP':
         setShowGameRules(true);
@@ -2738,6 +2833,32 @@ export default function TablePage({
    * Measure it instead. The panel publishes its own height and both reserves
    * read that, so the table and the HUD get out of the way of whatever the
    * panel actually is right now, at any breakpoint, in any state.
+   *
+   * ─── 2026-08-25 round 2: MEASURE THE BORDER BOX, NOT THE CONTENT BOX ───
+   *
+   * Dan, item 5: "that padding is way too much on the bottom." Part of it was
+   * here, and it was the opposite of a padding — it was a reserve that went
+   * MISSING.
+   *
+   * The first publish used `getBoundingClientRect().height` (border box) but
+   * every later one used `entry.contentRect.height` (content box). The wrapper
+   * carries `padding-bottom: env(safe-area-inset-bottom)` and a 1px top border,
+   * so on a notched iPhone the two differ by 35px, and the second number is the
+   * one that survived: `--sp-action-h` reported 95px for a bar that occupied
+   * 130px. Everything downstream then had to guess the missing strip back.
+   * TableHUD.css and TableChat.css did, by adding `env(safe-area-inset-bottom)`
+   * on top of the variable — which was right only because the variable was
+   * wrong, and became a double count the moment anybody fixed it. TablePage.css
+   * did NOT, and says so in --sp-table-bottom ("the home-indicator strip is
+   * already inside this number"): it wasn't, so the felt sat 34px lower than
+   * that rule believed, over the top of the bar.
+   *
+   * `borderBoxSize` is what both of those comments describe. With it,
+   * --sp-action-h means exactly "how much of the screen the bottom chrome
+   * occupies, home-indicator strip included", one definition, and the
+   * `+ env()` in the two HUD stylesheets is gone in the same change. The
+   * `getBoundingClientRect()` arm is for Safari 14, which fires ResizeObserver
+   * without ever populating borderBoxSize.
    */
   const actionPanelRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -2754,8 +2875,19 @@ export default function TablePage({
     };
     publish(el.getBoundingClientRect().height);
     const ro = new ResizeObserver((entries) => {
-      const r = entries[0]?.contentRect;
-      if (r && r.height > 0) publish(r.height);
+      const entry = entries[0];
+      if (!entry) return;
+      // Spec says borderBoxSize is an array; Firefox shipped it as a bare
+      // object for a while, and Safari 14 omits it entirely.
+      const raw = entry.borderBoxSize as unknown;
+      const box = Array.isArray(raw)
+        ? (raw[0] as ResizeObserverSize | undefined)
+        : (raw as ResizeObserverSize | undefined);
+      const h = box?.blockSize ?? entry.target.getBoundingClientRect().height;
+      // The guard stays. A zero here would strand every consumer of
+      // --sp-action-h on a reserve of nothing, and the wrapper is briefly
+      // unmeasurable while the page is being torn down.
+      if (h > 0) publish(h);
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -3784,7 +3916,46 @@ export default function TablePage({
               table: 'bbj_pools',
               filter: `id=eq.${pool.pool_id}`,
             },
-            (payload) => {
+            async (payload) => {
+              const prevHitCount = (payload.old as any)?.hit_count || 0;
+              const nextHitCount = (payload.new as any)?.hit_count || 0;
+
+              if (
+                nextHitCount > prevHitCount &&
+                nextHitCount > (_LAST_BBJ_HIT_COUNT[pool.pool_id] || 0) &&
+                isMounted.current
+              ) {
+                _LAST_BBJ_HIT_COUNT[pool.pool_id] = nextHitCount;
+                try {
+                  const { data } = await supabase.rpc('fn_bbj_recent_hits', {
+                    p_pool_id: pool.pool_id,
+                    p_limit: 1,
+                  });
+                  if (data && data.length > 0) {
+                    const hit = data[0];
+                    let tName = hit.table_name;
+                    if (!tName && hit.table_id) {
+                      const tRes = await supabase
+                        .from('tables')
+                        .select('name')
+                        .eq('id', hit.table_id)
+                        .maybeSingle();
+                      if (tRes.data) tName = tRes.data.name;
+                    }
+                    masterBus.emit('BBJ_HIT_GLOBAL', {
+                      tableId: hit.table_id || '',
+                      tableName: tName || 'a table',
+                      gameVariant: hit.game_variant || 'Poker',
+                      bigBlind: hit.big_blind || 0,
+                      winnerName: hit.bad_beat_name || 'A player',
+                      amount: hit.bad_beat_amount || hit.total_payout || 0,
+                    });
+                  }
+                } catch (err) {
+                  console.error('Failed to fetch BBJ hit details:', err);
+                }
+              }
+
               const next = (payload.new as { main_balance?: number | string })?.main_balance;
               const parsed = Number(next);
               if (Number.isFinite(parsed) && isMounted.current) setBbjAmount(parsed);
@@ -3817,6 +3988,7 @@ export default function TablePage({
   // pack, then five diamonds) and answers only the caller that paid.
   const [isRabbitAvailable, setIsRabbitAvailable] = useState(false);
   const [rabbitCardsAvailable, setRabbitCardsAvailable] = useState(0);
+  const [rabbitRevealedCards, setRabbitRevealedCards] = useState<Card[]>([]);
   /** Live diamond price from feature_pricing, sent with the offer. */
   const [rabbitDiamondCost, setRabbitDiamondCost] = useState<number | null>(null);
   const rabbitHandNumberRef = useRef<number | null>(null);
@@ -3844,12 +4016,15 @@ export default function TablePage({
       c: 'c',
       s: 's',
     };
+    const parsedCards = result.cards.map((c) => ({
+      rank: String(c.rank) as any,
+      suit: suitMap[String(c.suit)] || 'h',
+    }));
+    setRabbitRevealedCards(parsedCards);
+    setRabbitHuntFreezeEnd(Date.now() + 3000);
     return {
       success: true,
-      cards: result.cards.map((c) => ({
-        rank: String(c.rank),
-        suit: suitMap[String(c.suit)] || 'h',
-      })),
+      cards: parsedCards,
       source: result.source,
       diamondsSpent: result.diamonds_spent,
       // The server counts the VIP monthly pool down on every reveal and has
@@ -4395,6 +4570,41 @@ export default function TablePage({
     showBuyInModal,
   ]);
 
+  /**
+   * `rebuyProcessing` readable from a timer's closure. The 120s backstop must
+   * not cancel a rebuy that is mid-flight — see its use below.
+   */
+  const rebuyProcessingRef = useRef(false);
+  rebuyProcessingRef.current = rebuyProcessing;
+
+  /**
+   * THE LAST-RESORT EXIT (2026-08-25, second audit).
+   *
+   * Called by `releaseBustHold` when the hold ends and there is no deferred
+   * elimination to replay — the ordinary "hand settled, stack is zero, no
+   * broadcast" path. Without this the player was simply left seated with no
+   * chips, no result card and no way for the watcher to re-prompt.
+   *
+   * Deliberately re-checks the stack rather than trusting the caller: a
+   * release that follows a SUCCESSFUL rebuy lands here too, and a player who
+   * has just paid to stay in must never be ejected by it.
+   */
+  useEffect(() => {
+    exitIfBustedRef.current = () => {
+      if (!tableStateRef.current.isTournament) return;
+      const seat = tableStateRef.current.heroSeat;
+      if (seat <= 0) return;
+      const stack = tableStateRef.current.players[seat - 1]?.stack ?? 0;
+      if (stack > 0) return;
+      heroSeatRef.current = 0;
+      setTableState((prev) => ({ ...prev, heroSeat: 0 }));
+      goToLobbyWithResultRef.current?.(0, 0, 1500);
+    };
+    return () => {
+      exitIfBustedRef.current = null;
+    };
+  }, []);
+
   // Tournament bust / rebuy & elimination watcher
   useEffect(() => {
     if (!tableId || !userId || tableState.heroSeat <= 0) return;
@@ -4471,6 +4681,18 @@ export default function TablePage({
             if (hold.deadline) clearTimeout(hold.deadline);
             hold.deadline = setTimeout(() => {
               bustHoldRef.current.deadline = null;
+              /* Not while a rebuy is actually in flight. `processRebuy` is a
+                 server round trip; if it outruns the backstop, cancelling here
+                 would reject a rebuy the player had already paid for. Give it
+                 another full window instead — the confirm handler releases the
+                 hold the moment it returns. */
+              if (rebuyProcessingRef.current) {
+                bustHoldRef.current.deadline = setTimeout(
+                  () => releaseBustHoldRef.current?.(),
+                  BUST_HOLD_MODAL_MS
+                );
+                return;
+              }
               // Unanswered for two minutes is a decline. Close the prompt and
               // tell the server, exactly as the Cancel button would.
               setShowRebuyModal(false);
@@ -5462,9 +5684,9 @@ export default function TablePage({
         // had just sat down, saw a live Rabbit Hunt button whose only possible
         // outcome was the server refusing them.
         const eligibleIds = Array.isArray(handState.eligible_user_ids)
-          ? (handState.eligible_user_ids as string[])
+          ? handState.eligible_user_ids.map(String)
           : null;
-        const heroMayHunt = !eligibleIds || (!!userId && eligibleIds.includes(userId));
+        const heroMayHunt = !eligibleIds || (!!userId && eligibleIds.includes(String(userId)));
         if (available > 0 && heroMayHunt) {
           rabbitHandNumberRef.current = Number(handState.hand_number ?? 0) || null;
           setRabbitCardsAvailable(available);
@@ -6179,6 +6401,12 @@ export default function TablePage({
                        the engine just decided, whereas the row may not have
                        been written yet when we read it. */
                     finishPlace: position || full?.finishPlace || null,
+                    winningCards:
+                      position === 1
+                        ? (tableStateRef.current.players[
+                            tableStateRef.current.heroSeat - 1
+                          ]?.holeCards?.filter((c) => c !== null) as Card[])
+                        : undefined,
                     prize: prize || full?.prize || 0,
                   },
                 });
@@ -7301,6 +7529,27 @@ export default function TablePage({
   // The subscribeToHandState callback handles 'insurance_offers' events.
   // Legacy MasterBus handler removed — server is the single source of truth.
 
+  useMasterBusSubscription('BBJ_HIT_GLOBAL', (payload: any) => {
+    // Show an in-game pop-up on all cash game tables when BBJ is hit globally.
+    // Skip if the hit happened on THIS table — they already saw the massive animation.
+    if (payload.tableId === tableId) return;
+
+    const now = Date.now();
+    if (!tableState.isTournament && now - _LAST_BBJ_TOAST_TIME > 5000) {
+      _LAST_BBJ_TOAST_TIME = now;
+      if (soundService.isEnabled()) soundService.playBadBeatJackpot();
+      toast?.success?.(
+        `🚨 BBJ HIT! ${payload.winnerName} just won $${payload.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} on ${payload.tableName}! (Tap to observe)`,
+        10000,
+        () =>
+          masterBus.emit('OPEN_OBSERVE_TABLE', {
+            tableId: payload.tableId,
+            tableName: payload.tableName,
+          })
+      );
+    }
+  });
+
   useMasterBusSubscription('TIME_BANK_ACTIVATED', (payload: any) => {
     /* Two transports publish this - the supabase channel (camelCase, via
        TableWebSocket) and the engine hub (snake_case). The hub's shape used to
@@ -7862,6 +8111,56 @@ export default function TablePage({
       supabase.removeChannel(channel);
     };
   }, [tableId, userId]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // REALTIME PROFILES — a seated player's avatar or cosmetics changed
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Changing your avatar used to change it on YOUR screen only; everyone else
+  // kept the old face until they reloaded, because identity fields reach other
+  // clients on the engine snapshot and the engine only re-reads `profiles` at
+  // the top of a deal. Between hands, on an idle table, and on a table that is
+  // still filling, nothing re-read anything.
+  //
+  // The engine remains authoritative — this only ever refreshes the three
+  // identity fields, never stack, status, cards or seat. See the hook for why
+  // postgres_changes and not the engine socket or the legacy broadcast channel.
+  const seatedUserIds = useMemo(() => tableState.players.map((p) => p?.id), [tableState.players]);
+
+  const handleSeatedProfileChange = useCallback((change: SeatedProfileChange) => {
+    setTableState((prev) => {
+      const idx = prev.players.findIndex((p) => p?.id === change.userId);
+      if (idx === -1) return prev;
+      const existing = prev.players[idx];
+      if (!existing) return prev;
+
+      const nextAvatar = change.avatar ?? existing.avatar;
+      const nextFrame = change.frame ?? undefined;
+      const nextAura = change.aura ?? undefined;
+
+      /* No-op guard. Realtime echoes the hero's own write back to them, and a
+         `profiles` UPDATE fires for any column — a chip balance, a last-seen
+         stamp — so most deliveries here change nothing. Returning `prev`
+         unchanged is what stops each one re-rendering nine seats. */
+      if (
+        existing.avatar === nextAvatar &&
+        existing.frame === nextFrame &&
+        existing.aura === nextAura
+      ) {
+        return prev;
+      }
+
+      const updatedPlayers = [...prev.players];
+      updatedPlayers[idx] = {
+        ...existing,
+        avatar: nextAvatar,
+        frame: nextFrame,
+        aura: nextAura,
+      };
+      return { ...prev, players: updatedPlayers };
+    });
+  }, []);
+
+  useSeatedProfileSync(tableId, seatedUserIds, handleSeatedProfileChange);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // WAITLIST → HORSE YIELD — When a real player is waiting & table full, remove a horse
@@ -10046,6 +10345,7 @@ export default function TablePage({
       // Rabbit Hunt: Reset for new hand
       setIsRabbitAvailable(false);
       setRabbitCardsAvailable(0);
+      setRabbitRevealedCards([]);
       rabbitHandNumberRef.current = null;
       // The previous hand's expiry timer must die with the offer it belonged to,
       // or it fires mid-next-hand and clears an offer that is not its own.
@@ -12166,7 +12466,7 @@ export default function TablePage({
                         id: 'history',
                         label: 'Hand History',
                         icon: <HandHistoryIcon />,
-                        onClick: () => setShowHandReplay(true),
+                        onClick: () => setShowHandHistory(true),
                       },
                       {
                         id: 'leaderboard',
@@ -12585,7 +12885,7 @@ export default function TablePage({
                           </span>
                         </div>
                         <CommunityCards
-                          cards={board.cards}
+                          cards={[...board.cards, ...rabbitRevealedCards]}
                           stage="river"
                           highlightedIndices={board.highlightedIndices}
                           winningHandName={board.winnerHandName}
@@ -12598,7 +12898,7 @@ export default function TablePage({
                   ) : (
                     <>
                       <CommunityCards
-                        cards={tableState.communityCards}
+                        cards={[...tableState.communityCards, ...rabbitRevealedCards]}
                         stage={
                           bombPotHoldFlop && tableState.boardStage === 'flop'
                             ? 'preflop'
@@ -12629,7 +12929,7 @@ export default function TablePage({
                       {tableState.communityCards2.length > 0 && (
                         <div className="community-area__board2">
                           <CommunityCards
-                            cards={tableState.communityCards2}
+                            cards={[...tableState.communityCards2, ...rabbitRevealedCards]}
                             stage={
                               bombPotHoldFlop && tableState.boardStage === 'flop'
                                 ? 'preflop'
@@ -13951,7 +14251,7 @@ export default function TablePage({
             <button
               className="menu-item"
               onClick={() => {
-                setShowHandReplay(true);
+                setShowHandHistory(true);
                 setIsSideMenuOpen(false);
               }}
             >
@@ -14600,6 +14900,12 @@ export default function TablePage({
         showHandHistory={showHandHistory}
         handHistory={handHistory}
         onCloseHandHistory={() => setShowHandHistory(false)}
+        onReplay={(hand) => {
+          setLastHandId(hand.id);
+          setShowHandDetail(false);
+          setShowHandHistory(false);
+          setShowHandReplay(true);
+        }}
         // Session Summary props removed (Phase 2 2026-08-22): the in-table
         // modal was dead — SessionSummaryHost at the app root owns the card.
         // Session HUD

@@ -54,6 +54,7 @@ import {
   atomicCashout,
   markSeatAsLeft,
 } from '../services/supabase.js';
+import { collectNitEvictions } from '../services/supabase/nitGame.js';
 import { deadlineScheduler } from './DeadlineScheduler.js';
 import type {
   SeatPlayer,
@@ -2591,18 +2592,53 @@ export abstract class ServerTableEngineBase {
     // CASH GAME TABLE, ONCE THEY LOSE ONE BB AND ONE SB THEY MUST BE AUTO
     // REMOVED." Collected together so one pass removes the seat once.
     const blindEvictable = this.disconnectEngine.collectAwayBlindEvictions(this.tableId, seatedIds);
+
+    // Dan 2026-08-25, table-creation parity: NIT GAME. `nit_game` and its three
+    // numbers were columns the creation page wrote and nothing read, while the
+    // toggle's own tooltip promised a "Penalty for tight play".
+    //
+    // The rule is a QUERY (fn_nit_evictions) rather than engine state, because
+    // ca_hand_facts already stores VPIP per player per hand from the same
+    // derivation the player's own HUD shows. A second counter here would be a
+    // second answer, and the two would part company the first time this process
+    // restarted mid-session.
+    //
+    // GATED ON THE COLUMN so the round trip never happens on a table without the
+    // rule — which is every table today. A failure returns an empty list: a
+    // stats query that cannot answer must not throw anyone out of a hand they
+    // were entitled to play.
+    //
+    // Merged into this shared method 2026-08-25: it arrived on main inside the
+    // inline block this method replaced, and it belongs wherever the other two
+    // eviction reasons live — including the start-up wait loop.
+    const nitEvictable: string[] = [];
+    if (this.tableInfo?.nit_game === true) {
+      const nits = await collectNitEvictions(this.tableId);
+      for (const n of nits) {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] nit game: ${n.userId} is at ` +
+            `${n.vpip}% VPIP over ${n.hands} hands, table requires ${n.required}%`
+        );
+        nitEvictable.push(n.userId);
+      }
+    }
+
     const blindEvictSet = new Set(blindEvictable);
-    const evictable = Array.from(new Set([...sitOutEvictable, ...blindEvictable]));
+    const nitEvictSet = new Set(nitEvictable);
+    const evictable = Array.from(new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable]));
     if (evictable.length === 0) return;
 
     for (const userId of evictable) {
       const seated = this.seatedPlayers.find((p) => p.user_id === userId);
       if (!seated) continue;
       const awayBlindEvict = blindEvictSet.has(userId);
+      const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
       console.log(
         awayBlindEvict
           ? `[ServerTableEngine:${this.tableId}] evicting ${userId} — away, already charged one SB and one BB`
-          : `[ServerTableEngine:${this.tableId}] evicting ${userId} — sat out past the 2-orbit / 5-minute limit`
+          : nitEvict
+            ? `[ServerTableEngine:${this.tableId}] evicting ${userId} — below this nit game's VPIP floor`
+            : `[ServerTableEngine:${this.tableId}] evicting ${userId} — sat out past the 2-orbit / 5-minute limit`
       );
       this.hub?.emitEvent(this.tableId, {
         type: 'seat_left',
@@ -2610,7 +2646,7 @@ export abstract class ServerTableEngineBase {
         seat: seated.seat_number,
         user_id: userId,
         mid_hand: false,
-        reason: awayBlindEvict ? 'away_blind_cap' : 'sit_out_timeout',
+        reason: awayBlindEvict ? 'away_blind_cap' : nitEvict ? 'nit_game_vpip' : 'sit_out_timeout',
         timestamp: Date.now(),
       });
       try {

@@ -28,10 +28,14 @@ import {
   chipRestPosition,
   dealerButtonPosition,
   feltCenter,
+  feltEdgeClearanceWidthPct,
   feltRadialFraction,
   isInsideFelt,
   markerGapWidthPct,
+  BUTTON_FELT_DAYLIGHT_WIDTH_PCT,
+  BUTTON_FELT_MARGIN_WIDTH_PCT,
   CHIP_COLLECT_FRACTION,
+  FELT_MARKER_MARGIN_WIDTH_PCT,
   MARKER_MIN_GAP_WIDTH_PCT,
   type Pos,
   type Size,
@@ -58,6 +62,9 @@ const TABLES: Size[] = [
 ];
 
 const dist = (p: Pos) => Math.hypot(p.x, p.y);
+/** Distance between two scaler percentages, in pixels on a given table. */
+const px = (a: Pos, b: Pos, t: Size) =>
+  Math.hypot(((a.x - b.x) * t.w) / 100, ((a.y - b.y) * t.h) / 100);
 
 describe('the chip rail', () => {
   it('walks every seat that has the room the same distance, at every table size', () => {
@@ -94,6 +101,64 @@ describe('the chip rail', () => {
           isInsideFelt(dealerButtonPosition(seat, table), table),
           `button ${seat.x},${seat.y}`
         ).toBe(true);
+      }
+    }
+  });
+
+  it('leaves the button clear felt on all sides, on a ring nobody tuned it against', () => {
+    /* Dan 2026-08-25, round two item 8: "The button is too close to the rail and
+       should be pushed a little farther into the table, so it's 'in front of the
+       player' without touching the rail."
+
+       The test above only asks whether the marker is inside the felt, and a puck
+       resting flat against the rail passes that - which is exactly what Dan was
+       looking at. This asks for the daylight, on seats at x=6 and x=94 that sit
+       further outside the painted felt than any production chair, so the answer
+       comes from the projection rather than from where the seat happened to be.
+
+       Half the daylight is the puck's own radius (it may not overhang) and half
+       is clear felt (it may not touch), which is why the second assertion takes
+       FELT_MARKER_MARGIN_WIDTH_PCT off before comparing. */
+    for (const table of TABLES) {
+      for (const seat of SEATS) {
+        const clearance = feltEdgeClearanceWidthPct(dealerButtonPosition(seat, table), table);
+        expect(
+          clearance,
+          `${table.w}x${table.h} seat ${seat.x},${seat.y}: ` +
+            `${((clearance * table.w) / 100).toFixed(1)}px from the rail`
+        ).toBeGreaterThanOrEqual(BUTTON_FELT_MARGIN_WIDTH_PCT - 1e-6);
+        expect(clearance - FELT_MARKER_MARGIN_WIDTH_PCT).toBeGreaterThanOrEqual(
+          BUTTON_FELT_DAYLIGHT_WIDTH_PCT - 1e-6
+        );
+      }
+    }
+  });
+
+  it('does not push the button so far in that it stops belonging to its seat', () => {
+    /* The daylight is bought by walking the button further from its player, so
+       the walk is bounded. 0.40 of the seat's own distance to the middle of the
+       felt is a stated ceiling with headroom: this ring, which is deliberately
+       wider than ours, peaks at 0.34 (seat 94,55 on the phone - 53.3px of
+       156.8px) and the eight production rings peak at 0.32. The second half is
+       the invariant that matters more than the number - whatever the geometry
+       does, no other chair on the ring ends up nearer to this button than the
+       chair it was computed for. */
+    const c = feltCenter();
+    for (const table of TABLES) {
+      for (const seat of SEATS) {
+        const btn = dealerButtonPosition(seat, table);
+        const walked = px(seat, btn, table);
+        const run = px(seat, c, table);
+        expect(walked / run, `${table.w}x${table.h} seat ${seat.x},${seat.y}`).toBeLessThanOrEqual(
+          0.4
+        );
+        for (const other of SEATS) {
+          if (other === seat) continue;
+          expect(
+            px(other, btn, table),
+            `${table.w}x${table.h} seat ${seat.x},${seat.y}'s button is nearer ${other.x},${other.y}`
+          ).toBeGreaterThanOrEqual(walked - 1e-9);
+        }
       }
     }
   });

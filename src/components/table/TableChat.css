@@ -9,8 +9,16 @@
   right: 8px;
   /* Dan 2026-08-22 item 6: anchored just above the action bar, on the line
      where the background meets the black action box.
-     2026-08-25: that line is THE BOTTOM-EDGE LINE — see .chat-collapsed. */
-  bottom: calc(var(--sp-action-h, 96px) + 8px + env(safe-area-inset-bottom, 0px));
+     2026-08-25: that line is THE BOTTOM-EDGE LINE — see .chat-collapsed, whose
+     rule also explains why the fallback repeats TableHUD.css's expression
+     rather than trusting the property to always resolve. */
+  bottom: var(
+    --sp-hud-line,
+    calc(
+      var(--sp-action-h, calc(var(--sp-bottom-row-h, 52px) + env(safe-area-inset-bottom, 0px))) +
+        8px
+    )
+  );
   /* Phase 4 (2026-08-22): 99, one below the action panel's --z-action-panel
      (100). The 112px line clears the COLLAPSED 3-button bar, but the open
      raise panel is ~270px tall at 375px (measured headlessly) and chat used
@@ -60,22 +68,41 @@
      "The time bank button needs to be lower, same level as the chat button.
      The bottoms of both icons should be equal at the bottom."
 
-     This expression is the line, and it is a byte-for-byte copy of the one that
-     positions the other side: `.table-hud__lower`'s padding-bottom in
-     TableHUD.css. The time-bank chip is the last item of that row's
-     bottom-left stack (`.tbc-widget { order: 1 }`), so its bottom edge and this
-     button's bottom edge are the same number in every state, and they follow
-     the action bar together whenever it changes height.
+     --sp-hud-line is the line, and there is now exactly ONE definition of it:
+     TableHUD.css declares it on `.table-page`, and `.table-hud__lower`'s
+     padding-bottom reads the same property. The bottom-left HUD stack's bottom
+     edge and this button's bottom edge are therefore the same number in every
+     state, and they follow the action bar together whenever it changes height.
 
      They could not before: this side was a hardcoded 112px while the HUD side
      read the MEASURED `--sp-action-h`, and the HUD side also counted the
-     safe-area inset twice. Two anchors, three disagreements.
+     safe-area inset twice. Two anchors, three disagreements. Then both sides
+     carried the same long calc() and a note asking future editors to keep four
+     copies byte-identical, which is a wish, not a mechanism.
 
-     Do not replace `var(--sp-action-h)` with a number here. That variable is
-     published by a ResizeObserver on `.action-panel-wrapper` (TablePage.tsx);
-     a literal is only ever right for one state of one phone, which is the
-     defect this replaces. Keep the 96px fallback in step with TableHUD.css. */
-  bottom: calc(var(--sp-action-h, 96px) + 8px + env(safe-area-inset-bottom, 0px));
+     Do not replace this with a number, and do not inline the calc() back. The
+     line is derived from a ResizeObserver measurement published on
+     `.table-page` (TablePage.tsx); a literal is only ever right for one state
+     of one phone, which is the defect this replaces.
+
+     The fallback is NOT a second answer to "where is the line". It is the
+     last-resort case where `--sp-hud-line` never resolves at all - this button
+     is `position: fixed`, so an unresolved custom property here does not
+     degrade the offset, it DELETES it (`bottom` computes to `auto`) and throws
+     the bubble to the top of the screen. That is not hypothetical: it is what
+     tests/e2e/raise-panel-covers-chat.spec.ts caught on 2026-08-25, because the
+     only declaration of the property lives in another component's stylesheet
+     and any harness or load order without `.table-page` above this element
+     loses it entirely. It deliberately repeats TableHUD.css's expression: a
+     fallback that disagrees with the thing it stands in for is worse than
+     none. */
+  bottom: var(
+    --sp-hud-line,
+    calc(
+      var(--sp-action-h, calc(var(--sp-bottom-row-h, 52px) + env(safe-area-inset-bottom, 0px))) +
+        8px
+    )
+  );
   /* Phase 4 (2026-08-22): 99 for the same reason as .table-chat above — the
      open raise panel (z-100) must cover this button, not sit under it. */
   z-index: 99;
@@ -583,15 +610,37 @@
     left: 8px;
     right: 8px;
     /* Dan 2026-08-22 item 6: same anchor as desktop — just above the bar.
-       Byte-identical to the base rule: a breakpoint that redefines THE
-       BOTTOM-EDGE LINE is a breakpoint on which chat and the time-bank chip
-       drift apart again, and phones are where that was reported. */
-    bottom: calc(var(--sp-action-h, 96px) + 8px + env(safe-area-inset-bottom, 0px));
+       This block only widens the panel on phones; it deliberately no longer
+       restates THE BOTTOM-EDGE LINE, because a breakpoint that redefines the
+       line is a breakpoint on which chat and the bottom-left HUD stack drift
+       apart again, and phones are where that was reported. The base rule's
+       `bottom: var(--sp-hud-line)` still applies here. */
     max-height: 280px;
   }
+}
 
-  .chat-collapsed {
-    right: 8px;
-    bottom: calc(var(--sp-action-h, 96px) + 8px + env(safe-area-inset-bottom, 0px));
-  }
+/* ═══════════════════════════════════════════════════════════════════════════
+   FAILED SEND
+   ═══════════════════════════════════════════════════════════════════════════
+   A message whose insert into `table_chat` was refused. It used to be deleted
+   from the list, so the player watched their own line appear and then vanish
+   with no explanation anywhere. It now dims, says so, and is removed after
+   FAILED_MESSAGE_LINGER_MS. */
+
+.chat-message--failed {
+  opacity: 0.55;
+}
+
+.chat-message--failed .chat-message__bubble {
+  border: 1px solid rgba(248, 81, 73, 0.5);
+}
+
+.chat-message__failed {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #f85149;
+  white-space: nowrap;
 }

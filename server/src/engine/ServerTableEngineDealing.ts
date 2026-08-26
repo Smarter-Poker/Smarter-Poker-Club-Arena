@@ -29,6 +29,7 @@ import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
 import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { handCompletionHoldMs, boardClearMs } from '../config/handCompletionSpec.js';
+import { collectNitEvictions } from '../services/supabase/nitGame.js';
 
 export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -829,6 +830,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // Bible V8 §2.3: Carry through identity fields for broadcast
       is_horse: p.is_horse ?? false,
       avatar_url: p.avatar_url ?? '',
+      equipped_frame: p.equipped_frame ?? '',
+      equipped_aura: p.equipped_aura ?? '',
     }));
 
     // Rotate dealer — AUDIT FIX 2026-07-19: SEAT-based moving button. Advance to

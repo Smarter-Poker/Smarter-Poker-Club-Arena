@@ -82,6 +82,7 @@ describe('club wallet rows by role', () => {
         'promo_wallet',
         'club_bank',
         'rake_treasury',
+        'backup_bbj',
       ]);
     }
   });

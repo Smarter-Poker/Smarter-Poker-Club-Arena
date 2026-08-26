@@ -21,15 +21,25 @@
  *           Those chips must never be in the same position on the table where
  *           the button lands."
  *
+ * Round two of the same pass, after Dan read it back on a real phone:
+ *
+ * Item 8:  "The button is too close to the rail and should be pushed a little
+ *           farther into the table, so it's 'in front of the player' without
+ *           touching the rail."
+ *
  * WHAT THIS NOW GUARANTEES, in order of precedence:
  *
  *   1. ONE RAIL. Every seat's chips rest the SAME number of pixels from that
  *      seat, measured along the line to the middle of the felt. There is no
  *      per-seat term left: no hero extra, no button-holder extra, no shorter
  *      walk for the seats level with the community board.
- *   2. ON THE FELT. Neither marker may sit on the painted rail. Any point that
- *      lands outside the felt window is projected back inside it - a closed
- *      form, exact for every seat of every ring, not a tuned constant.
+ *   2. ON THE FELT, AND THE BUTTON WITH DAYLIGHT. Neither marker may sit on the
+ *      painted rail: any point that lands outside the felt window is projected
+ *      back inside it - a closed form, exact for every seat of every ring, not
+ *      a tuned constant. The BUTTON is projected to a boundary set further in
+ *      still, because "inside the felt" is satisfied by a puck resting flat
+ *      against the rail with nothing between them, and that is what item 8 is
+ *      looking at. See BUTTON_FELT_DAYLIGHT_WIDTH_PCT.
  *   3. VISIBLY APART. The button is placed off the chip line by construction,
  *      and then, if the projection in (2) has pushed the two together, it is
  *      walked around the felt until they are at least MARKER_MIN_GAP_WIDTH_PCT
@@ -154,7 +164,7 @@ export const NOMINAL_SCALER: Size = { w: 605, h: 1000 };
  * constrains. On a hypothetical landscape table the two differ; no breakpoint
  * produces one.
  */
-export const CHIP_RAIL_WIDTH_PCT = 11.5;
+export const CHIP_RAIL_WIDTH_PCT = 12.5;
 
 /**
  * Where a chip finishes when it is collected, as a fraction of seat-to-centre.
@@ -183,7 +193,7 @@ export const CHIP_COLLECT_FRACTION = 0.9;
  * leaving the two markers far enough apart for MARKER_MIN_GAP_WIDTH_PCT to be
  * satisfied by the rotation alone on every unclamped seat.
  */
-export const BUTTON_RAIL_RATIO = 0.78;
+export const BUTTON_RAIL_RATIO = 0.85;
 
 /**
  * How far off the chip line the button starts, in degrees.
@@ -228,6 +238,72 @@ export const MARKER_MIN_GAP_WIDTH_PCT = 6;
  * neither disc can overhang the painted rail at any table size.
  */
 export const FELT_MARKER_MARGIN_WIDTH_PCT = 2.5;
+
+/**
+ * How much CLEAR FELT the button keeps between its own edge and the painted
+ * rail, as a percentage of the table's width.
+ *
+ * Dan 2026-08-25, round two item 8: "The button is too close to the rail and
+ * should be pushed a little farther into the table, so it's 'in front of the
+ * player' without touching the rail."
+ *
+ * FELT_MARKER_MARGIN_WIDTH_PCT keeps the whole disc on the felt, and that is
+ * ALL it does - "inside" is satisfied by a puck resting flat against the rail
+ * with nothing between them. That is not an edge case here, it is the common
+ * case, because EVERY seat on every ring stands outside the painted felt: the
+ * felt window is x 13.3..86.5 and y 8.9..89.2, while the ring puts its side
+ * seats at x 10.5/89.5, its caps at y 6 and 82.5, and the hero at y 100. For
+ * all of them the projection is what DECIDES where the button lands rather than
+ * what corrects it, so it lands exactly on the boundary. Counted over the eight
+ * production rings at the three table sizes the app renders - 132 seats - 75
+ * had their button flat against the rail with zero daylight and 102 had less
+ * than the half-puck below. That is the screen Dan is describing, and no amount
+ * of asking "is it inside" can see it.
+ *
+ * So the button is projected onto a boundary set further in than the one that
+ * merely keeps it on the felt, and this constant is the difference between the
+ * two. 2.5% is HALF THE BUTTON'S OWN WIDTH at its largest relative size (the
+ * puck's 17px mobile floor on a 347px table is 4.9% - see --dealer-btn-size in
+ * TableVisualHotfix.css), so the felt shows a gap you could lay half a puck
+ * into, at every table size:
+ *
+ *     375px phone (347px table)    8.7px of felt between the puck and the rail
+ *     tablet portrait (600px)     15.0px
+ *     desktop (720px)             18.0px
+ *
+ * A proportion rather than a pixel count for the same reason as everything else
+ * on this felt: the table's width is continuous (`--table-w` is
+ * `min(100vw - 28px, 360px)` on a phone), so a pixel constant is correct only
+ * at the one width somebody measured it at.
+ *
+ * ONLY THE BUTTON MOVES. The chips keep the plain marker margin, because they
+ * are the marker with somewhere to be: they walk one derived rail
+ * (CHIP_RAIL_WIDTH_PCT) whose length is set by the community board, and pushing
+ * them in as well would walk every off-felt seat's bet toward the cards that
+ * rail exists to keep them off. Item 8 is about the puck.
+ *
+ * WHAT IT COSTS, stated so nobody has to re-derive it. The button stands
+ * further from its seat. Across all eight production rings at all three table
+ * sizes the furthest any button now travels is 0.32 of that seat's distance to
+ * the middle of the felt (6-max phone, seat 89.5/66: 53.8px of 168.4px),
+ * against 0.29 before. It is still nearer its own seat than any other seat on
+ * the ring, everywhere - that is the invariant that would actually break if
+ * this number grew, and tests/table-geometry-chips.test.ts asserts it rather
+ * than assuming it.
+ */
+export const BUTTON_FELT_DAYLIGHT_WIDTH_PCT = 2.5;
+
+/**
+ * The margin the BUTTON's on-felt projection uses: its own radius, so no part
+ * of the disc overhangs the painted rail, plus the daylight above, so the disc
+ * does not touch it either.
+ *
+ * Derived rather than typed out, so the two numbers it is made of cannot fall
+ * out of step with it - and so `feltEdgeClearanceWidthPct(button) >= this` is
+ * exactly the statement the code makes and the tests check.
+ */
+export const BUTTON_FELT_MARGIN_WIDTH_PCT =
+  FELT_MARKER_MARGIN_WIDTH_PCT + BUTTON_FELT_DAYLIGHT_WIDTH_PCT;
 
 /* ═══════════════════════════════════════════════════════════════════════════
    FELT MATHS
@@ -276,13 +352,44 @@ function feltBoxPx(size: Size, marginWidthPct: number) {
   };
 }
 
-/** True when a point in PIXELS is inside the inset stadium. */
-function insideStadiumPx(px: number, py: number, box: ReturnType<typeof feltBoxPx>): boolean {
-  // Nearest point of the stadium's SPINE - the rectangle left after both caps
-  // are removed. A stadium is every point within r of that spine.
+/**
+ * Distance in PIXELS from a point to the stadium's SPINE - the segment left
+ * after both semicircular caps are removed. A stadium is every point within r
+ * of that spine, so this one number answers both "is it inside" and "how much
+ * felt is left before the rail".
+ */
+function spineDistancePx(px: number, py: number, box: ReturnType<typeof feltBoxPx>): number {
   const sx = Math.min(Math.max(px, box.left + box.r), box.left + box.w - box.r);
   const sy = Math.min(Math.max(py, box.top + box.r), box.top + box.h - box.r);
-  return Math.hypot(px - sx, py - sy) <= box.r + 1e-9;
+  return Math.hypot(px - sx, py - sy);
+}
+
+/** True when a point in PIXELS is inside the inset stadium. */
+function insideStadiumPx(px: number, py: number, box: ReturnType<typeof feltBoxPx>): boolean {
+  return spineDistancePx(px, py, box) <= box.r + 1e-9;
+}
+
+/**
+ * How much felt lies between a marker's centre and the PAINTED rail, as a
+ * percentage of the table's WIDTH. Negative when the point is off the felt.
+ *
+ * The direct measurement of item 8, and the one the tests assert on. A marker
+ * whose clearance is at least its own radius has its whole disc on the felt; a
+ * marker whose clearance is MORE than that has the difference as visible
+ * daylight between the disc and the rail.
+ *
+ * Exact, and cheap, where the on/off test has to bisect: insetting the felt box
+ * by `i` leaves the stadium's spine exactly where it was and shrinks its radius
+ * by exactly `i` (the box loses 2i on both axes, and the width is the shorter
+ * axis at every table size this app renders). That identity is also why
+ * `clampIntoFelt(p, size, m)` and `feltEdgeClearanceWidthPct(p, size) >= m` are
+ * two statements of the same thing, which is what lets a test measure the
+ * daylight rather than take the constant's word for it.
+ */
+export function feltEdgeClearanceWidthPct(p: Pos, size: Size = NOMINAL_SCALER): number {
+  const box = feltBoxPx(size, 0);
+  const d = spineDistancePx((p.x / 100) * size.w, (p.y / 100) * size.h, box);
+  return ((box.r - d) / size.w) * 100;
 }
 
 /**
@@ -439,15 +546,22 @@ export function chipRestPosition(seat: Pos, size: Size = NOMINAL_SCALER): Pos {
  *   1. walk BUTTON_RAIL_RATIO of the rail, along the line to the felt centre
  *      rotated by BUTTON_ANGLE_DEG - nearer the player than the chips, and off
  *      their line;
- *   2. project onto the felt (item 11);
+ *   2. project onto the felt, using the button's own margin, which is its
+ *      radius plus BUTTON_FELT_DAYLIGHT_WIDTH_PCT of clear felt (items 11 and
+ *      8). Step 2 is what places the button for most seats rather than merely
+ *      correcting it - almost every seat on the ring stands off the painted
+ *      felt - so the daylight belongs HERE, in the projection, and not in a
+ *      separate nudge applied afterwards that step 3 could then undo;
  *   3. if step 2 has pushed the two markers together - it can, because a seat
  *      outside the felt has both of its markers projected onto the same arc -
  *      walk the button AROUND the felt until they are MARKER_MIN_GAP_WIDTH_PCT
  *      apart (item 13).
  *
  * Step 3 swings the button about the CENTRE of the felt and then re-applies
- * step 2, so the two guarantees cannot fight each other: whatever the swing
- * does, the result is put back on the felt before it is accepted. It searches
+ * step 2 WITH THE SAME MARGIN - a stadium is not rotation-invariant, so a point
+ * swung along its own arc can end up outside the boundary it started on, and
+ * re-clamping with the plain marker margin would quietly hand the daylight back
+ * on exactly the seats that needed the swing. It searches
  * outward from zero in both directions and takes the first angle that satisfies
  * the gap, so it moves the button as little as the geometry allows and is a
  * no-op on every seat that did not need it.
@@ -478,7 +592,7 @@ export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER): Po
 
   const step = Math.min(CHIP_RAIL_WIDTH_PCT * BUTTON_RAIL_RATIO, len * 0.8);
   const walked = unsq({ x: s.x + rx * step, y: s.y + ry * step }, size);
-  const placed = clampIntoFelt(walked, size);
+  const placed = clampIntoFelt(walked, size, BUTTON_FELT_MARGIN_WIDTH_PCT);
 
   const chips = chipRestPosition(seat, size);
   if (markerGapWidthPct(placed, chips, size) >= MARKER_MIN_GAP_WIDTH_PCT) return placed;
@@ -498,7 +612,8 @@ export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER): Po
       const vy = pv.y - cv.y;
       const cand = clampIntoFelt(
         unsq({ x: cv.x + vx * cosP - vy * sinP, y: cv.y + vx * sinP + vy * cosP }, size),
-        size
+        size,
+        BUTTON_FELT_MARGIN_WIDTH_PCT
       );
       if (markerGapWidthPct(cand, chips, size) >= MARKER_MIN_GAP_WIDTH_PCT) return cand;
     }

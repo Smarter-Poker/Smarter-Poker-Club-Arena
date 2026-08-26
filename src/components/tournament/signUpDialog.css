@@ -136,7 +136,14 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.signup-row:last-of-type {
+/* `:last-of-type` matched nothing: the last `div` child of the card is
+   `.signup-actions`, not a `.signup-row`, so the final row kept a border it was
+   supposed to lose. `:has()` is not safe to rely on here, so the rule is
+   inverted — the border goes on the TOP of each row after the first. */
+.signup-row + .signup-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.signup-row {
   border-bottom: none;
 }
 

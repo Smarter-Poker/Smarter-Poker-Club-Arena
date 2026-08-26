@@ -2306,14 +2306,22 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       return;
     }
     let cancelled = false;
-    waitlistService
-      .myWaitlists()
-      .then((rows) => {
-        if (!cancelled) setWaitlistedTableIds(new Set(rows.map((r) => r.tableId)));
-      })
-      .catch((e) => reportError(e, 'ClubHomePage.loadMyWaitlists'));
+    const load = () => {
+      waitlistService
+        .myWaitlists()
+        .then((rows) => {
+          if (!cancelled) setWaitlistedTableIds(new Set(rows.map((r) => r.tableId)));
+        })
+        .catch((e) => reportError(e, 'ClubHomePage.loadMyWaitlists'));
+    };
+
+    load();
+
+    const unsub = masterBus.subscribeDebounced('WAITLIST_CHANGED', load, 300);
+
     return () => {
       cancelled = true;
+      unsub();
     };
   }, [currentUserId]);
 
@@ -3828,7 +3836,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             spinQuickJoin({ id: t.id, name: t.name, buy_in_amount: t.buy_in_amount }, variant);
           }}
           canDelete={
-            (isOwner || userRole === 'admin') &&
+            (isOwner || userRole === 'admin' || userRole === 'co_owner') &&
             selectedEntry.players === 0 &&
             (!(selectedEntry.raw as any).club_id || (selectedEntry.raw as any).club_id === clubId)
           }

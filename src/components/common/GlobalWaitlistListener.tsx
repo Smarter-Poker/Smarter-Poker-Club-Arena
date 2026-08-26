@@ -224,6 +224,7 @@ export default function GlobalWaitlistListener() {
           },
           () => {
             void refreshWatchedTables();
+            masterBus.emit('WAITLIST_CHANGED', undefined as void);
           }
         )
         .subscribe();

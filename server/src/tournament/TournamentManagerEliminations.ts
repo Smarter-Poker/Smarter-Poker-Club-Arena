@@ -189,7 +189,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         }
 
         // Find ALL busted players (0 chips) in a single query
-        const { data: busted, error: bustedErr } = await supabase
+        // eslint-disable-next-line prefer-const
+        let { data: busted, error: bustedErr } = await supabase
           .from('tournament_players')
           .select('user_id, chips')
           .eq('tournament_id', this.tournamentId)

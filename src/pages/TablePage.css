@@ -1377,8 +1377,9 @@
   justify-content: center;
 }
 
-.table-surface .community-cards__card,
-.table-surface .community-cards__placeholder {
+/* `.community-cards__placeholder` was removed from this selector 2026-08-26
+   with the ghost turn/river slots themselves. */
+.table-surface .community-cards__card {
   width: auto;
   height: auto;
   flex: 1 1 0;

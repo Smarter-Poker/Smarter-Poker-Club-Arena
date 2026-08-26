@@ -831,22 +831,23 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         const tbToCall = tbPlayer ? Math.max(0, tbState.currentBet - (tbPlayer.bet ?? 0)) : 0;
         const tbCanCheck = tbToCall === 0;
 
-        if (tbCanCheck) {
-          try {
-            this.handController!.performAction(player.seat, 'check');
-          } catch {
-            try {
-              this.handController!.performAction(player.seat, 'fold');
-            } catch {
-              /* done */
-            }
-          }
+        // performAction returns FALSE on an illegal action - it does not throw
+        // (see the doc block on forceResolveSeat). The previous try/catch here
+        // therefore never reached its fold fallback: a rejected `check` left the
+        // seat with no action, no re-armed clock and no markProgress, hanging
+        // the hand until the stall watchdog. forceResolveSeat is the path the
+        // AUTO time-bank expiry already uses; this was the last site that had
+        // not been migrated to it.
+        if (this.forceResolveSeat(player.seat, tbCanCheck)) {
+          this.markProgress();
         } else {
-          try {
-            this.handController!.performAction(player.seat, 'fold');
-          } catch {
-            /* done */
-          }
+          reportError(
+            new Error(
+              'Manual time bank auto-action rejected at seat ' + player.seat + ' — re-arming clock'
+            ),
+            'ServerTableEngine.' + this.tableId + '.manual_timebank_auto_action_rejected'
+          );
+          this.forceArmTurnTimer(player.seat, this.tableInfo?.action_time_seconds || 15);
         }
 
         // FIX 149: Wire telemetry — manual time bank expiry

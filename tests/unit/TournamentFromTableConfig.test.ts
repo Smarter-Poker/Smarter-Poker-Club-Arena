@@ -350,7 +350,15 @@ describe('parity fields (2026-08-22)', () => {
     expect(plain.addOnCost).toBe(plain.buyIn);
   });
 
-  it('multi-day, restart, early bird and GTD carry with their clamps', () => {
+  /* 2026-08-26: this test used to assert `isMultiDay: true` and a totalDays
+     clamp of 7. Both were replaced deliberately, not broken. Multi-day has no
+     day end, no Day 2 resume and no flight merge anywhere in the engine, so
+     carrying the flag meant badging an event Multi-Day and then running it as
+     a one-session freezeout. The flag is now refused at the database
+     (trg_tournaments_refuse_unbuilt_multi_day) and never composed here, so
+     what this test pins is the REFUSAL. The clamp assertions for the three
+     features that do work are kept exactly as they were. */
+  it('restart, early bird and GTD carry with their clamps', () => {
     const c = buildTournamentConfig(
       {
         ...base,
@@ -365,8 +373,9 @@ describe('parity fields (2026-08-22)', () => {
       },
       'nlh'
     );
-    expect(c.isMultiDay).toBe(true);
-    expect(c.totalDays).toBe(7); // clamped to the server's 2-7
+    // Multi-day is refused, not carried, however loudly the config asks.
+    expect(c.isMultiDay).toBe(false);
+    expect(c.totalDays).toBeUndefined();
     expect(c.restartEveryMinutes).toBe(5); // clamped to the server's 5-1440
     expect(c.earlyBirdEnabled).toBe(true);
     expect(c.earlyBirdChips).toBe(750);

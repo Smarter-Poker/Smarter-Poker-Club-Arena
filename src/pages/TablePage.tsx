@@ -3008,6 +3008,13 @@ export default function TablePage({
     isChatMuted,
     setIsChatMuted,
     handleSendChatMessage,
+    /* 2026-08-26: the hook has computed this since 2026-08-25 and NOTHING
+       consumed it, so the courtesy it exists for never reached a player. A
+       banned player got a normal composer, typed, pressed send, watched
+       TableChat clear the input, and the hook dropped the message in silence.
+       That is the exact "swallowed message" failure TableChat.handleSend and
+       useTableChat.markFailed both carry comments about. */
+    isChatBanned,
     activeReactions,
     parseIncomingMessage,
     unreadCount,
@@ -14746,9 +14753,15 @@ export default function TablePage({
           tableId={tableId}
           isCollapsed={isChatCollapsed}
           onToggleCollapse={() => setIsChatCollapsed(!isChatCollapsed)}
-          placeholder={canChatAsObserver ? 'Say something...' : 'Observers cannot chat'}
+          placeholder={
+            isChatBanned
+              ? 'Chat Is Off At This Table'
+              : canChatAsObserver
+                ? 'Say something...'
+                : 'Observers cannot chat'
+          }
           isMuted={isChatMuted}
-          isDisabled={!canChatAsObserver}
+          isDisabled={isChatBanned || !canChatAsObserver}
           unreadCount={unreadCount}
         />
       )}

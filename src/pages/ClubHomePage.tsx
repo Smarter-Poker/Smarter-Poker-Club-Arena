@@ -58,6 +58,10 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import UnionWalletModal, { type UnionWalletKey } from '../components/union/UnionWalletModal';
+import UnionTreasuryDetailModal, {
+  type TreasuryDetailMode,
+} from '../components/union/UnionTreasuryDetailModal';
 import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
 import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
@@ -423,6 +427,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   const [activeCashier, setActiveCashier] = useState<
     'club_bank' | 'promo_wallet' | 'agent_wallet' | null
   >(null);
+  const [unionWalletModal, setUnionWalletModal] = useState<{
+    key: UnionWalletKey;
+    label: string;
+    balance: number;
+  } | null>(null);
+  const [unionTreasuryModal, setUnionTreasuryModal] = useState<TreasuryDetailMode | null>(null);
   // Dan 2026-08-24: "PLAYER WALLET NEEDS TO BE FULLY CLICKABLE AND OPEN TO SEE
   // ALL TRANSACTIONS AND OTHER AVAILABLE DATA WHEN CLICKED." The row opens the
   // member's own statement - a read-only view, so it is not an activeCashier.
@@ -3044,6 +3054,23 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                   haptic.medium();
                   setShowBBJInfo(true);
                 }}
+                onOpenUnionRake={() => setUnionTreasuryModal('rake')}
+                onOpenUnionBackupBBJ={() => setUnionTreasuryModal('backup')}
+                onOpenUnionPromo={(balance) => {
+                  if (club?.is_union) {
+                    setUnionWalletModal({ key: 'promo', label: 'Promo Wallet', balance });
+                  }
+                }}
+                onOpenUnionSpins={(balance) => {
+                  if (club?.is_union) {
+                    setUnionWalletModal({ key: 'spin_reserve', label: 'Spins Treasury', balance });
+                  }
+                }}
+                onOpenClubRake={() => setUnionTreasuryModal('rake')}
+                onOpenClubSpins={(balance) => {
+                  // Fallback for standalone club spins
+                  setUnionWalletModal({ key: 'spin_reserve', label: 'Spins Wallet', balance });
+                }}
               />
             </div>
           )}
@@ -3180,6 +3207,38 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         role={isOwner ? 'owner' : userRole}
         walletType={activeCashier || DEFAULT_CASHIER_WALLET}
       />
+      {unionWalletModal && (
+        <UnionWalletModal
+          isOpen={true}
+          onClose={() => setUnionWalletModal(null)}
+          unionId={resolvedClubId || clubId || ''}
+          walletKey={unionWalletModal.key}
+          walletLabel={unionWalletModal.label}
+          balance={unionWalletModal.balance}
+        />
+      )}
+      {unionTreasuryModal && (
+        <UnionTreasuryDetailModal
+          isOpen={true}
+          onClose={() => setUnionTreasuryModal(null)}
+          unionId={resolvedClubId || clubId || ''}
+          mode={unionTreasuryModal}
+          onSendFrom={
+            unionTreasuryModal === 'backup'
+              ? undefined
+              : () => {
+                  const isRake = unionTreasuryModal === 'rake';
+                  setUnionTreasuryModal(null);
+                  setUnionWalletModal({
+                    key: isRake ? 'rake' : 'bbj',
+                    label: isRake ? 'Rake Treasury' : 'BBJ Pool',
+                    // The wallet modal fetches the true balance anyway, so 0 is fine
+                    balance: 0,
+                  });
+                }
+          }
+        />
+      )}
       <PlayerWalletModal
         isOpen={showPlayerWallet}
         onClose={() => setShowPlayerWallet(false)}

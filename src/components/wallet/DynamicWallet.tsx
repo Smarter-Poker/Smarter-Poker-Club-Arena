@@ -1485,13 +1485,23 @@ export default function DynamicWallet({
         ))}
 
         {/* Backup BBJ.
-            Union panel: always (it is a union-level reserve).
-            Club panel: ONLY for a standalone club, where the reserve genuinely
-            belongs to that club. A club inside a union is served the UNION's
-            backup figure by fn_club_money_panel, so rendering it here would
-            put union money back on a club screen through the side door —
-            the same leak as Union Bank, one row further down. */}
-        {!isClubInUnion && data.backupBBJ > 0 && (
+            CLUB PANEL ONLY, and only for a STANDALONE club, where the reserve
+            genuinely belongs to that club. A club inside a union is served the
+            UNION's backup figure by fn_club_money_panel, so rendering it here
+            would put union money back on a club screen through the side door —
+            the same leak as Union Bank, one row further down.
+
+            2026-08-25: `effectiveVariant === 'club'` added. The comment above
+            this block used to claim "Union panel: always", but UNION_ROWS
+            ALREADY carries a `union_backup_bbj` row driven by the very same
+            `animBackupBBJ`. So a union panel pointed at a standalone club
+            (in_union false, which is also the reset value after every club
+            switch and the value a REFUSED panel leaves in place) rendered
+            "BBJ Backup Wallet" and "Backup BBJ" one above the other, same
+            figure, twice. Two live copies of one number on a money surface is
+            the duplication the BBJ banner's own showBBJ opt-out exists to
+            prevent. The union panel keeps its row; this one is the club's. */}
+        {effectiveVariant === 'club' && !isClubInUnion && data.backupBBJ > 0 && (
           <div className="dw__row dw__row--backup-bbj">
             <span className="dw__row-icon" aria-hidden="true">
               <WalletIcon name="reserve" />

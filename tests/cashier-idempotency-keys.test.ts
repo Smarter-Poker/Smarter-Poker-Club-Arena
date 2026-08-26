@@ -192,7 +192,25 @@ describe('the ten minute rule is what the UI offers', () => {
 
   it('a row whose window ran out while the modal was open loses its button', () => {
     expect(PAGE).toMatch(/const stillClaimable = useMemo\(/);
-    expect(PAGE).toMatch(/new Date\(r\.reversible_until\)\.getTime\(\) > nowTick/);
+    /**
+     * UPDATED 2026-08-25, and the old assertion is the reason.
+     *
+     * It pinned `new Date(r.reversible_until).getTime() > nowTick`, which is the
+     * BROWSER WALL CLOCK - the exact thing the comment three lines above it
+     * promised the countdown was not. `seconds_left` was fetched from
+     * fn_agent_wallet_reversible and never read. On a device whose clock is ten
+     * minutes fast that filter emptied the list while live sends were sitting
+     * in it; ten minutes slow, it offered every expired row and each tap
+     * collected a refusal.
+     *
+     * The filter is now the server's own seconds_left minus locally measured
+     * MONOTONIC elapsed time (performance.now, which no clock correction moves),
+     * shared with WalletCashierModal through secondsLeftFromServer.
+     */
+    expect(PAGE).toMatch(/secondsLeftFor\(r\) > 0/);
+    expect(PAGE).toContain('secondsLeftFromServer(row.seconds_left');
+    expect(PAGE).toContain('performance.now()');
+    expect(PAGE).not.toMatch(/new Date\(r\.reversible_until\)\.getTime\(\) > nowTick/);
   });
 
   it('and the empty state says what the player has to do instead', () => {

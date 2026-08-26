@@ -154,7 +154,7 @@ export default function ClubFinancialsPage() {
     const unsubChipsWithdrawn = masterBus.subscribeDebounced('CHIPS_WITHDRAWN', refresh, 500);
     const unsubChipsDistributed = masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', refresh, 1000);
     const unsubClubUpdated = masterBus.subscribeDebounced('CLUB_UPDATED', refresh, 1000);
-    const unsubTxLogged = masterBus.subscribeDebounced('TRANSACTION_LOGGED' as any, refresh, 2000);
+    const unsubTxLogged = masterBus.subscribeDebounced('TRANSACTION_LOGGED', refresh, 2000);
     return () => {
       unsubBalance();
       unsubWallet();

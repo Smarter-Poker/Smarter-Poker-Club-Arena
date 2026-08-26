@@ -47,6 +47,10 @@ export type BusEventType =
   | 'OPEN_OBSERVE_TABLE'
   | 'TABLE_CAP_BLOCKED'
   | 'BALANCE_UPDATED'
+  // Had a payload in BusPayloadMap but was missing from this union, so five
+  // subscribe sites carried `as any` to compile - which switches OFF payload
+  // checking on a ledger event, the one place a wrong shape is money.
+  | 'TRANSACTION_LOGGED'
   | 'VIP_POINTS_UPDATED'
   | 'WALLET_REFRESHED'
   | 'REALTIME_CONNECTED'

@@ -28,7 +28,7 @@
  * "mint inside your Club Bank" would have moved a figure nobody could see.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
@@ -65,6 +65,47 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
   const [balance, setBalance] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [target, setTarget] = useState<MintTarget>({ state: 'loading' });
+  /**
+   * BEATS THE DOUBLE TAP THAT LANDS BEFORE `busy` RE-RENDERS.
+   *
+   * `if (!valid || busy) return` reads STATE, and React has not necessarily
+   * re-rendered between the first tap and a second one 80ms later. This
+   * function burns diamonds and creates chips, and fn_mint_chips_from_diamonds
+   * takes no idempotency key at all - so a double delivery is a second real
+   * mint, not a replay. The ref flips synchronously inside the handler, which
+   * is the only guard that can close that window from the client. See the
+   * server-side note in the audit report: this RPC should carry a p_op_id.
+   */
+  const busyRef = useRef(false);
+  /** Same unmount guard the cashier uses: setState after await, never blind. */
+  const isMounted = useRef(true);
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  /**
+   * Escape closes and the page behind stops scrolling. Both are what a person
+   * expects of a modal, WalletCashierModal (which is what stacks this one) has
+   * had them since 2026-08-23, and neither was here - so on iOS the lobby
+   * scrolled underneath the mint and a keyboard user had no way out but Cancel.
+   * Guarded on busyRef so Escape can never abandon an in-flight mint.
+   */
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busyRef.current) onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isOpen, onClose]);
 
   useEffect(() => {
     if (!isOpen || !user?.id) return;
@@ -153,7 +194,8 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
   const valid = d > 0 && balance !== null && !overBalance && canMintHere;
 
   const mint = async () => {
-    if (!valid || busy) return;
+    if (!valid || busy || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       const { data, error } = await supabase.rpc('fn_mint_chips_from_diamonds', {
@@ -170,7 +212,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
         diamonds_after?: number;
       } | null;
       if (!res?.success) throw new Error(res?.error || 'Mint Refused');
-      setBalance(Number(res.diamonds_after) || 0);
+      if (isMounted.current) setBalance(Number(res.diamonds_after) || 0);
       toast?.success?.(
         `Minted ${fmt(Number(res.chips) || chips)} Chips Into The ${
           res.scope === 'union' ? 'Union Bank' : 'Club Bank'
@@ -183,7 +225,8 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
       reportError(e, 'ChipMintModal.mint');
       toast?.error?.((e as Error).message || 'Mint Failed');
     } finally {
-      setBusy(false);
+      busyRef.current = false;
+      if (isMounted.current) setBusy(false);
     }
   };
 
@@ -191,6 +234,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
     <div
       className="cmm-overlay"
       role="dialog"
+      aria-modal="true"
       aria-label="Chip Mint"
       onClick={() => !busy && onClose()}
     >

@@ -97,9 +97,26 @@ describe('the client asks for a claim it is allowed to make', () => {
 
   it('offers only what the server says is still claimable', () => {
     expect(SRC).toContain("supabase.rpc('fn_agent_wallet_reversible'");
-    // And re-filters as the modal sits open, so a row that ages out loses its
-    // button rather than failing on tap.
-    expect(SRC).toMatch(/new Date\(r\.reversible_until\)\.getTime\(\) > nowTick/);
+    /**
+     * UPDATED 2026-08-25, and the old assertion is exactly the defect.
+     *
+     * It pinned `new Date(r.reversible_until).getTime() > nowTick`, where
+     * nowTick is `Date.now()` - the BROWSER WALL CLOCK. The title of this test
+     * says "what the SERVER says", and `seconds_left` (which the server
+     * computes for precisely this) was selected, typed on ReversibleSend, and
+     * never read on either cashier surface. A device ten minutes fast emptied
+     * the list while live sends sat in it; ten minutes slow offered every
+     * expired row and each tap collected a refusal.
+     *
+     * It now re-filters against the server's own seconds_left minus locally
+     * measured MONOTONIC elapsed time (performance.now, which no clock
+     * correction or DST jump can move), shared with WalletCashierModal through
+     * secondsLeftFromServer in cashierModes.
+     */
+    expect(SRC).toMatch(/secondsLeftFor\(r\) > 0/);
+    expect(SRC).toContain('secondsLeftFromServer(row.seconds_left');
+    expect(SRC).toContain('performance.now()');
+    expect(SRC).not.toMatch(/new Date\(r\.reversible_until\)\.getTime\(\) > nowTick/);
   });
 
   it('cannot fire twice from one tap, or from two', () => {

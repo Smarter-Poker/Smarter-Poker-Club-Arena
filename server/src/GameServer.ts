@@ -2163,7 +2163,7 @@ export class GameServer {
         const { data: registering, error: registeringErr } = await supabase
           .from('tournaments')
           .select(
-            'id, name, start_time, current_players, min_players, max_players, variant, tournament_type, buy_in_amount, buy_in_fee, guaranteed_prize'
+            'id, name, start_time, current_players, min_players, max_players, variant, tournament_type, buy_in_amount, buy_in_fee, guaranteed_prize, prize_pool'
           )
           .eq('status', 'REGISTERING');
         if (registeringErr) {
@@ -2363,6 +2363,13 @@ export class GameServer {
                 maxPlayers: tournament.max_players ?? 0,
                 variant: String(tournament.variant ?? ''),
                 currentPlayers: tournament.current_players ?? 0,
+                /* A GUARANTEED event ramps to whatever covers it, not to the
+                   default 24. These three columns were already being selected
+                   here and simply not used. buy_in_amount is the PRIZE side:
+                   the fee is rake and never reaches the pool. */
+                guaranteedPrize: Number(tournament.guaranteed_prize) || 0,
+                prizePool: Number((tournament as { prize_pool?: unknown }).prize_pool) || 0,
+                buyInPrizeShare: Number(tournament.buy_in_amount) || 0,
               });
               if (rampTarget > 0) {
                 this.lastMttRampAt.set(tournament.id, now);

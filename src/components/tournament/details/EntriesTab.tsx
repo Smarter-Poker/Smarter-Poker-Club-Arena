@@ -65,6 +65,7 @@ interface EntryDetail {
   avatarUrl: string | null;
   rebuys: number;
   addOn: boolean;
+  isSatelliteQualifier?: boolean;
 }
 
 /**
@@ -125,7 +126,7 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
         const { data, error } = await supabase
           .from('tournament_players')
           .select(
-            'id, user_id, registered_at, rebuys, add_on, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
+            'id, user_id, registered_at, rebuys, add_on, is_satellite_qualifier, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
           )
           .eq('tournament_id', tournamentId)
           .order('registered_at', { ascending: true });
@@ -156,6 +157,7 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
             avatarUrl: profile?.avatar_url || null,
             rebuys: Number(row.rebuys) || 0,
             addOn: row.add_on === true,
+            isSatelliteQualifier: Boolean(row.is_satellite_qualifier),
           };
         }
         setDetails(next);
@@ -328,6 +330,7 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
           const addOn = detail?.addOn || (entry.add_ons ?? 0) > 0;
           const avatarUrl = detail?.avatarUrl || entry.avatar_url;
           const isReentry = reentryIds.has(entry.id);
+          const isSatellite = detail?.isSatelliteQualifier || false;
 
           /* Dan 2026-08-25: "see any player and be redirected to that table
              directly." `table_id` has always been on these rows and was never
@@ -361,6 +364,11 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
               </span>
 
               <span className="et-marks">
+                {isSatellite && (
+                  <span className="tl-badge tl-badge--sat" title="Satellite Qualifier" style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', borderColor: 'rgba(59, 130, 246, 0.4)' }}>
+                    SAT
+                  </span>
+                )}
                 {isReentry && (
                   <span className="tl-badge tl-badge--action" title="Re-entry">
                     RE

@@ -1162,13 +1162,17 @@ export abstract class ServerTableEngineBase {
         (((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
           (this.tableInfo.run_it_twice_enabled ?? false));
       const insuranceEnabled = this.tableInfo.insurance_enabled ?? false;
-      const ritEffective = ritEnabled && !insuranceEnabled; // Insurance takes priority
-
-      if (ritEnabled && insuranceEnabled) {
-        console.warn(
-          `[ServerTableEngine:${this.tableId}] MUTUAL EXCLUSION: Both RIT and Insurance enabled — disabling RIT. These features cannot coexist.`
-        );
-      }
+      // SEQUENCING 2026-08-26 (Dan's leader-seat recording): FIX 92 used to
+      // force-disable RIT here whenever insurance was on ("insurance takes
+      // priority"). The reference table runs BOTH: the run-it-multi-times
+      // question comes FIRST, and insurance engages only when the hand
+      // resolves to a single run ("THE INSURANCE PART PICKED UP ON THE TURN.
+      // AFTER THE RUN IT TWICE WAS DECLINED"). Per-HAND exclusivity still
+      // holds - a hand that deals extra boards never carries an insurance
+      // contract, and an insured hand always runs exactly once - it is now
+      // enforced by the runout dispatch (handleAllInRunout), not by turning
+      // the feature off.
+      const ritEffective = ritEnabled;
 
       // Bible V8 §4.20 + FIX 98: Configure Run It Twice engine
       // Chooser gets 5s, responders get 10s — per Dan's rules
@@ -2690,9 +2694,24 @@ export abstract class ServerTableEngineBase {
     const evictable = Array.from(new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable]));
     if (evictable.length === 0) return;
 
+    // Dan 2026-08-26, binding: "a player can never leave the table while they
+    // are all in. they must wait for the hand to be finished." An eviction is
+    // still a departure, and this one cashes the seat out. Both call sites are
+    // between hands today, so this should never fire - which is the point: the
+    // safety was call-site placement rather than a check, and a future caller
+    // would not know that. leaveTable() refuses the same case explicitly.
+    const evictHand = this.handController?.getState();
+
     for (const userId of evictable) {
       const seated = this.seatedPlayers.find((p) => p.user_id === userId);
       if (!seated) continue;
+      const evictSelf = evictHand?.players.find((p) => p.user_id === userId);
+      if (evictSelf?.is_all_in && !evictSelf.is_folded) {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] NOT evicting ${userId} — all-in in a live hand`
+        );
+        continue;
+      }
       const awayBlindEvict = blindEvictSet.has(userId);
       const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
       console.log(

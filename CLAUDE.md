@@ -387,7 +387,8 @@ ask Dan for a manual handoff again:
 On 2026-08-25 an agent verified a new `atomic_table_buyin` guard by CALLING IT
 against production. Two buy-ins succeeded (8.00 and 40.00), the probe's cleanup
 then deleted the seat rows directly rather than leaving through
-`fn_leave_seat_and_refund` — which is the only path that refunds — and 48 chips
+`fn_leave_seat_and_refund` — the refunding path for that seat type; see the
+correction under rule 3 below, it is NOT the cash-game path — and 48 chips
 left a member wallet and landed nowhere. They were returned to the club
 treasury by migration `20260825_return_agent_probe_chips_to_treasury_v2`.
 
@@ -421,9 +422,29 @@ THE RULE:
    and for the right reason. `GET STACKED DIAGNOSTICS` gives you that, and it
    survives a rollback. The side effects are the part nobody wants.
 
-3. **Never DELETE a `table_seats` row to clean up.** Leaving a seat refunds
-   through `fn_leave_seat_and_refund`; deleting one skips it and destroys the
-   chips. If a probe created a seat, the rollback removes it.
+3. **Never DELETE a `table_seats` row to clean up.** Deleting one skips the
+   refund and destroys the chips. If a probe created a seat, the rollback
+   removes it.
+
+   **Corrected 2026-08-26 — the original wording here was wrong and would have
+   cost someone real money.** It said the refund path is
+   `fn_leave_seat_and_refund`. That function is **tournament-only**: its third
+   statement is `IF NOT FOUND OR v_tbl.tournament_id IS NULL THEN RETURN
+   ... 'table_not_found'`. Call it on a **cash** table and it returns
+   `{"ok": false, "reason": "table_not_found"}`, refunds nothing, and leaves the
+   seat exactly where it was. An agent following the old sentence to "safely"
+   release a cash seat would have believed the chips were returned when they
+   were not. The refund paths by table type:
+
+   | Seat type | Refund path | Settles into |
+   |---|---|---|
+   | Tournament | `fn_leave_seat_and_refund(table_id)` | `fn_add_chips` -> `club_members.chip_balance` |
+   | Cash, explicit leave | Hetzner engine cash-out (`"Cash-out from table"`) | `club_members.chip_balance` |
+   | Cash, tab close | `player_leave_table(table_id, user_id)` via `sendBeacon` | `club_members.chip_balance` (since `20260826_retire_dead_leave_rpcs_and_fix_tabclose_pool`; it credited the dead `public.wallets` pool before that) |
+
+   `public.wallets` is **not** the live chip pool. It has been frozen since
+   2026-08-21 with 732,591,994.33 chips stranded in it. Nothing reads it. If you
+   find a money path writing to it, that path is broken.
 
 4. **Helper functions go in `pg_temp`, never `public`.** The same incident left
    three `zz_probe*` functions in the public schema that needed a second

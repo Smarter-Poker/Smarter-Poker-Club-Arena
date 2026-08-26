@@ -32,7 +32,18 @@ import { useAnimationQueue } from '../hooks/useAnimationQueue';
 // a payout list and nothing else, no clock, no standings, no tables. All three
 // components already existed and worked; two were rendered nowhere in the app.
 import { TournamentClock } from '../components/tournament/TournamentClock';
-import TournamentStandings from '../components/tournament/TournamentStandings';
+/* RANKING (2026-08-26). The live pane used to mount `TournamentStandings`, a
+   second component that fetched its own copy of `tournament_players` and drew
+   them as cards. It has been retired: the lobby's Ranking tab is the one board,
+   it renders from props, and mounting it here means this pane and the full
+   tournament lobby can no longer print two different chip counts for the same
+   player. The rows this pane never had - a hero position, the average-stack
+   marker, the distance to the money, the click-through to a player's table -
+   come with it. */
+import RankingTab from '../components/tournament/details/RankingTab';
+import type { NormalisedBlindLevel, TournamentTable } from '../components/tournament/details/types';
+import { useTournamentEntries } from '../hooks/useTournamentEntries';
+import { blindLevelMinutes } from '../components/lobby/tournamentFigures';
 import { reportError } from '../utils/errorReporter';
 import { openTableAsObserver } from '../utils/observeTable';
 import { spinMultiplierLabel } from '../utils/spinReveal';
@@ -113,6 +124,7 @@ export default function TournamentPage() {
     Array<{
       id: string;
       name: string | null;
+      status: string | null;
       current_players: number | null;
       max_players: number | null;
       small_blind: number | null;
@@ -720,8 +732,8 @@ export default function TournamentPage() {
    *
    * Dan 2026-08-21 (item 3): the header said REGISTERING / 19-of-60 while the
    * live pane directly below it showed a running clock and real chip counts.
-   * Two different data paths: `TournamentClock` and `TournamentStandings` query
-   * their tournament by id, but the header renders `selectedTournament`, which
+   * Two different data paths: the clock and the ranking board read the field
+   * by tournament id, but the header renders `selectedTournament`, which
    * is only ever refreshed as a side effect of the whole-list refetch —
    * `data.find(...)` inside handlers that can miss, race, or (for a union-hosted
    * tournament viewed from a club) not be subscribed to that row at all.
@@ -1022,7 +1034,7 @@ export default function TournamentPage() {
       try {
         const { data, error } = await supabase
           .from('tables')
-          .select('id, name, current_players, max_players, small_blind, big_blind')
+          .select('id, name, status, current_players, max_players, small_blind, big_blind')
           .eq('tournament_id', t.id)
           .order('name', { ascending: true });
         if (error) throw error;
@@ -1040,6 +1052,87 @@ export default function TournamentPage() {
       clearInterval(iv);
     };
   }, [selectedTournament]);
+
+  /* ═══════════════════════════════════════════════════════════════════════════
+     THE LIVE PANE'S RANKING BOARD
+     ═══════════════════════════════════════════════════════════════════════════
+
+     `RankingTab` renders from props and issues no query for the field, so the
+     three things it needs are assembled here: the entries, the tables in the
+     shape the tab contract names, and the blind structure normalised to
+     minutes. Everything else it derives itself. */
+
+  const selectedIsRunning = selectedTournament?.status === 'RUNNING';
+
+  const {
+    entries: liveEntries,
+    loading: entriesLoading,
+    loadFailed: entriesFailed,
+  } = useTournamentEntries(
+    selectedTournament?.id ?? null,
+    Boolean(selectedIsRunning),
+    Number(selectedTournament?.starting_chips) || 0
+  );
+
+  const rankingTables = useMemo<TournamentTable[]>(
+    () =>
+      tourneyTables.map((t) => ({
+        id: t.id,
+        name: t.name || 'Table',
+        status: t.status || 'active',
+        max_players: t.max_players ?? 9,
+        current_players: t.current_players ?? 0,
+        small_blind: t.small_blind ?? 0,
+        big_blind: t.big_blind ?? 0,
+      })),
+    [tourneyTables]
+  );
+
+  /**
+   * The stored structure spells the level length three ways, and `duration`
+   * holds SECONDS while `durationMinutes` holds minutes - reading the wrong one
+   * first draws a three minute Spin level as three hours. `blindLevelMinutes`
+   * is the one reader that gets the precedence right, which is why the whole
+   * normalisation goes through it here exactly as it does in the lobby.
+   */
+  const rankingBlindLevels = useMemo<NormalisedBlindLevel[]>(() => {
+    const raw =
+      typeof selectedTournament?.blind_structure === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(selectedTournament.blind_structure as string);
+            } catch {
+              return [];
+            }
+          })()
+        : selectedTournament?.blind_structure || [];
+    if (!Array.isArray(raw)) return [];
+    const rows = raw as Parameters<typeof blindLevelMinutes>[0];
+    return raw.map((row: Record<string, unknown>, i: number) => {
+      const level = Number(row.level ?? i + 1);
+      return {
+        level,
+        smallBlind: Number(row.smallBlind ?? row.small_blind ?? 0),
+        bigBlind: Number(row.bigBlind ?? row.big_blind ?? 0),
+        ante: Number(row.ante ?? 0),
+        duration: blindLevelMinutes(rows, level),
+        isBreak: Boolean(row.isBreak ?? row.is_break ?? false),
+      };
+    });
+  }, [selectedTournament?.blind_structure]);
+
+  /**
+   * Open one player's table as a spectator. Handed to the tab only while the
+   * pane itself is being drawn, which is RUNNING only - a finished event's
+   * `table_id`s point at closed felts, and the tab renders no link at all when
+   * it receives no handler.
+   */
+  const watchPlayerTable = useCallback(
+    (tableId: string) => {
+      openTableAsObserver(navigate, { tableId });
+    },
+    [navigate]
+  );
 
   if (isLoading) {
     return (
@@ -1338,23 +1431,43 @@ export default function TournamentPage() {
               {/* Live pane, RUNNING only. Until now, opening a tournament
                   that was actually in progress showed exactly what an
                   unstarted one showed: a static blind chart and a payout
-                  list. No clock, no standings, no idea which tables were
-                  running or how many players were left. All three components
-                  below were ALREADY BUILT and working: TournamentClock was
-                  rendered only on the separate mobile details route, and
-                  TournamentStandings only behind a tab there, so the lobby
-                  was the one place you could not see the tournament you were
-                  actually playing. */}
+                  list. No clock, no ranking, no idea which tables were
+                  running or how many players were left. */}
               {selectedTournament.status === 'RUNNING' && (
                 <div className="tourney-live-pane">
                   <TournamentClock tournamentId={selectedTournament.id} compact />
 
                   <div className="tourney-live-section">
-                    <h3>Chip Counts</h3>
-                    <TournamentStandings
-                      tournamentId={selectedTournament.id}
-                      totalPlayers={selectedTournament.current_players || 0}
-                    />
+                    <h3>Ranking</h3>
+                    {/* THREE STATES, NOT TWO. `RankingTab` prints "No Players
+                        Yet" for an empty list, which is a claim about the
+                        tournament - so an unanswered query must never reach it
+                        as an empty array. It is held back until the first read
+                        settles, and a read that failed says so instead. */}
+                    {entriesLoading && liveEntries.length === 0 ? (
+                      <p className="tourney-live-empty">Loading The Ranking.</p>
+                    ) : entriesFailed && liveEntries.length === 0 ? (
+                      <p className="tourney-live-empty" role="status">
+                        The Ranking Is Unavailable Right Now. Retrying.
+                      </p>
+                    ) : (
+                      <>
+                        {entriesFailed && (
+                          <p className="tourney-live-empty" role="status">
+                            The Ranking Has Stopped Updating. Retrying.
+                          </p>
+                        )}
+                        <RankingTab
+                          tournament={selectedTournament}
+                          entries={liveEntries}
+                          tables={rankingTables}
+                          blindLevels={rankingBlindLevels}
+                          currentUserId={user?.id}
+                          isRegistered={isRegistered}
+                          onWatchPlayer={watchPlayerTable}
+                        />
+                      </>
+                    )}
                   </div>
 
                   <div className="tourney-live-section">

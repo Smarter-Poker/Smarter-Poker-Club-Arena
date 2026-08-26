@@ -20,13 +20,13 @@ Five components under `src/components/table/` are mounted **nowhere** in `src/`,
 because each stylesheet declares a **bare, unscoped** class that another page renders
 and that **no other stylesheet defines**:
 
-| stylesheet | orphan class | who actually renders it |
-|---|---|---|
-| `BankrollWidget.css` | `.stack-value` | `RebuyModal.tsx`, `AddOnModal.tsx` |
-| `SessionTimer.css` | `.timer-value` | `TournamentClock.tsx` |
-| `StreakBadge.css` | `.streak-badge` | `LeaderboardPage.tsx` |
-| `StreamerMode.css` | `.option` | `PrivacySettings`, `TableConfigPage`, +5 |
-| `CardReveal.css` | `.cards` | 20 files, table and non-table |
+| stylesheet           | orphan class    | who actually renders it                  |
+| -------------------- | --------------- | ---------------------------------------- |
+| `BankrollWidget.css` | `.stack-value`  | `RebuyModal.tsx`, `AddOnModal.tsx`       |
+| `SessionTimer.css`   | `.timer-value`  | `TournamentClock.tsx`                    |
+| `StreakBadge.css`    | `.streak-badge` | `LeaderboardPage.tsx`                    |
+| `StreamerMode.css`   | `.option`       | `PrivacySettings`, `TableConfigPage`, +5 |
+| `CardReveal.css`     | `.cards`        | 20 files, table and non-table            |
 
 So the leaderboard, the tournament clock and the rebuy modal are styled today **only
 because the poker table imports a component it never renders.** Dropping the import
@@ -47,7 +47,7 @@ add-on modal before and after. The reasoning is already written at the top of
 and `src/hooks/useTableModals.ts` (its only importer was removed in #936).
 
 **Related ownership bug:** `TablePage.tsx` imports `components/table/ChipStack.css`
-*directly* — it is the only reachable definition of `.chip--partial`, `.pot-label`
+_directly_ — it is the only reachable definition of `.chip--partial`, `.pot-label`
 and `.pot-value`, which `PotDisplay` and `ChipPhysics` paint on the live felt. That
 stylesheet should belong to `PotDisplay`, or become a shared sheet. Do not remove the
 direct import until it does. (`PremiumPot`, its other consumer, was deleted in #942.)
@@ -125,7 +125,7 @@ by ~2px and is clipped by `.table-page { overflow: hidden }`. Marginal, but real
 committed used to revert the seat and tell the player "Buy-in Failed. Please Try Again",
 inviting a second charge against a wallet that had already paid.
 
-**The general case is still open.** A network timeout *after* the RPC commits still
+**The general case is still open.** A network timeout _after_ the RPC commits still
 reverts the seat and invites a retry. The real fix is a server-side idempotency key on
 `atomic_table_buyin` so a repeated call with the same key returns the first result
 instead of charging again.

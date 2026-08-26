@@ -242,6 +242,7 @@
   flex-direction: column;
   gap: 8px;
   align-items: stretch;
+  text-align: center;
   padding: 12px 14px;
   border-radius: 10px;
 
@@ -260,16 +261,19 @@
   font-weight: 700;
   letter-spacing: 0.2em;
   color: #8f959e;
+  text-align: center;
 }
 .cplaque__join-figures {
   display: flex;
   gap: 14px;
   align-items: baseline;
+  justify-content: center;
   flex-wrap: wrap;
 }
 .cplaque__join-figure {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 1px;
 }
 .cplaque__join-figure b {
@@ -289,6 +293,7 @@
 .cplaque__seats {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 4px;
 }
 .cplaque__seats-num {
@@ -412,17 +417,7 @@
     justify-self: center;
     width: 100%;
     max-width: 320px;
-    /* Dan 2026-08-24 (screenshot): the Buy-In Min/Max figures and the seat
-       count sat left-justified inside the centered panel — they now center
-       over the Join Table button like the rest of the column. */
-    align-items: center;
-    text-align: center;
-  }
-  .cplaque__join-figures {
-    justify-content: center;
-  }
-  .cplaque__seats {
-    align-items: center;
+    align-items: stretch;
   }
   .cplaque__medallion {
     width: 64px;

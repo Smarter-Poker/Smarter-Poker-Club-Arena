@@ -1524,10 +1524,7 @@ export default function CreateTournamentModal({
                   className={styles.formGroup}
                   style={{ borderTop: '1px solid #334155', paddingTop: '16px', marginTop: '8px' }}
                 >
-                  <label
-                    className={styles.checkboxLabel}
-                    style={{ fontWeight: 700, color: '#60a5fa' }}
-                  >
+                  <label style={{ fontWeight: 700, color: '#60a5fa' }}>
                     <input
                       type="checkbox"
                       checked={generateSatellites}

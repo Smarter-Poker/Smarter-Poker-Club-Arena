@@ -577,6 +577,55 @@ class AgentServiceClass {
   }
 
   /**
+   * Attach a player to an agent's downline, creating the membership if the
+   * player is not in the club yet.
+   *
+   * This is what the "Add Player" button behind an agent row calls. It used to
+   * be a direct `club_members` insert carrying `referrer_id: agentId` --
+   * `club_members` HAS NO referrer_id column, so PostgREST rejected the whole
+   * statement (PGRST204) and the button had never once succeeded. It also never
+   * wrote `agent_id`, which is the column the hierarchy is actually built from,
+   * and it was handed the `agents` table primary key where a user id belonged.
+   *
+   * The RPC does the permission check server-side: an agent may claim a player
+   * nobody has, club staff may move one, and nobody else may do either. The new
+   * membership is created with zero chips by the BEFORE INSERT guard on
+   * club_members -- there is no path here that can mint a balance.
+   *
+   * @param agentUserId the agent's USER id (Agent.userId), not Agent.id.
+   */
+  async attachPlayerToAgent(
+    clubId: string,
+    agentUserId: string,
+    playerId: string
+  ): Promise<{ success: boolean; code?: string; error?: string }> {
+    const resolvedClubId = await resolveClubUUID(clubId);
+
+    const { data, error } = await supabase.rpc('fn_agent_attach_player', {
+      p_club_id: resolvedClubId,
+      p_agent_user_id: agentUserId,
+      p_player_id: playerId,
+    });
+
+    if (error || !data?.success) {
+      reportError(
+        error || new Error(data?.error || 'attach failed'),
+        'AgentService.attachPlayerToAgent',
+        {
+          clubId: resolvedClubId,
+          agentUserId,
+          playerId,
+          reason: data?.code ?? error?.code ?? 'unknown',
+        }
+      );
+      return { success: false, code: data?.code, error: data?.error ?? error?.message };
+    }
+
+    masterBus.emit('CLUB_UPDATED', { clubId: resolvedClubId });
+    return { success: true };
+  }
+
+  /**
    * Assign a player directly under an agent by user IDs.
    * Used for bulk assignment or admin-level linking without referral codes.
    */

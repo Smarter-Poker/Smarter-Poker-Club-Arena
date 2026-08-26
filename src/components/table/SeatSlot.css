@@ -48,127 +48,67 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   EMPTY SEAT — "EMPTY" text like PokerBros
+   EMPTY SEAT — Coin button images (2026-08-26)
+   ─────────────────────────────────────────────────────────────────────────────
+   The seat container is now borderless and transparent — the coin art is the
+   entire visual. Two images are used:
+     sit-button.png   — "+SIT" coin, shown when the user has not yet sat down
+     empty-button.png — "EMPTY" coin, shown when the user is already seated
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-/* Dan 2026-08-15: once hero is seated, every other open seat reads "EMPTY"
-   and is inert — a user must never be able to sit at two seats. Driven by the
-   `canSit={false}` prop, which also strips onClick/role/tabIndex in the TSX. */
-.seat--empty.seat--empty-locked {
-  cursor: default;
-  border-style: solid;
-  border-color: rgba(255, 255, 255, 0.07);
-  background: rgba(255, 255, 255, 0.015);
-}
-
-.seat--empty.seat--empty-locked::before {
-  animation: none;
-  border-color: transparent;
-}
-
-.seat--empty.seat--empty-locked .seat__empty-label {
-  color: rgba(255, 255, 255, 0.3);
-  letter-spacing: 0.14em;
-}
-
-/* Dan 2026-08-18: ONE dotted circle, no square. The container used to be a
-   60x42 dashed rounded-RECT while the label carried its own dashed pill
-   (TableVisualHotfix rule 11) — that stacked "a square over the circle".
-   The container is now the single circular target; the label is bare. */
+/* Outer container: transparent, no border, no background.
+   Size matches the coin image so the click target fills it exactly. */
 .seat--empty {
-  width: 56px;
-  height: 56px;
+  width: 64px;
+  height: 64px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
   cursor: pointer;
   border-radius: 50%;
-  border: 2px dashed rgba(255, 255, 255, 0.35);
-  background: rgba(0, 0, 0, 0.35);
-  transition: all 0.25s var(--ease-spring);
+  border: none;
+  background: transparent;
   position: relative;
   overflow: visible;
+  transition: transform 0.2s var(--ease-spring, ease-out);
 }
 
-/* Subtle breathing pulse to attract attention to empty seats */
-.seat--empty::before {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(34, 197, 94, 0);
-  animation: emptyPulse 3s ease-in-out infinite;
+/* The coin image — fills the container, no crop, transparent background. */
+.seat__empty-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
   pointer-events: none;
+  user-select: none;
 }
 
-@keyframes emptyPulse {
-  0%,
-  100% {
-    border-color: rgba(34, 197, 94, 0);
-    transform: scale(1);
-  }
-  50% {
-    border-color: rgba(34, 197, 94, 0.2);
-    transform: scale(1.04);
-  }
+/* Clickable SIT variant: scale-up on hover/active for tactile feel. */
+.seat--empty:hover .seat__empty-img--sit {
+  filter: brightness(1.15);
 }
-
 .seat--empty:hover {
-  border-color: rgba(34, 197, 94, 0.5);
-  background: rgba(34, 197, 94, 0.08);
-  transform: scale(1.08);
-  box-shadow:
-    0 4px 20px rgba(34, 197, 94, 0.15),
-    0 2px 8px rgba(0, 0, 0, 0.3);
+  transform: scale(1.1);
 }
-
-.seat--empty:hover::before {
-  animation: none;
-  border-color: rgba(34, 197, 94, 0.3);
-  transform: scale(1.08);
-}
-
 .seat--empty:active {
-  transform: scale(0.95);
+  transform: scale(0.94);
 }
 
-.seat__empty-label {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  line-height: 1;
-  font-size: 0.625rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.75);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  transition:
-    color 0.2s ease,
-    transform 0.2s ease;
+/* Locked / EMPTY variant: no interaction, dimmed so it reads as inert. */
+.seat--empty.seat--empty-locked {
+  cursor: default;
+}
+.seat--empty.seat--empty-locked .seat__empty-img {
+  opacity: 0.45;
+  filter: grayscale(30%);
 }
 
-.seat--empty:hover .seat__empty-label {
-  color: rgba(34, 197, 94, 0.9);
-  transform: scale(1.05);
+/* Remove pseudo-element pulse ring — no longer needed. */
+.seat--empty::before {
+  content: none;
 }
 
-/* Dan 2026-08-18: the "+" is its own centered line above SIT. The trailing
-   letter-spacing on an uppercase run pushes the glyph off-centre, so it is
-   cancelled here (and on the word, whose own tracking is applied evenly). */
-.seat__empty-plus {
-  font-size: 0.85rem;
-  font-weight: 800;
-  line-height: 1;
-  letter-spacing: 0;
-}
-.seat__empty-word {
-  line-height: 1;
-  /* even tracking: half the gap lands after the last letter, so pad-left
-     the same amount to keep the word optically centred */
-  padding-left: 0.12em;
-}
+
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    AVATAR — Large circle, sits ON TOP of info box
@@ -2694,8 +2634,8 @@
     padding: 0 3px;
   }
   .seat--empty {
-    width: 54px;
-    min-height: 44px;
+    width: 52px;
+    height: 52px;
   }
   .seat__hand-name {
     font-size: 0.6875rem;
@@ -2783,9 +2723,7 @@
   }
   .seat--empty {
     width: 48px;
-  }
-  .seat__empty-label {
-    font-size: 0.5625rem;
+    height: 48px;
   }
   .seat__hand-name {
     font-size: 0.625rem;
@@ -2853,11 +2791,8 @@
     padding: 0 2px;
   }
   .seat--empty {
-    width: 48px;
-    min-height: 44px;
-  }
-  .seat__empty-label {
-    font-size: 0.5rem;
+    width: 44px;
+    height: 44px;
   }
   .seat__hand-name {
     font-size: 0.5625rem;

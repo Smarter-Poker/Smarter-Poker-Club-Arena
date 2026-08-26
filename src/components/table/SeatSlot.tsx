@@ -1418,15 +1418,19 @@ export const SeatSlot = memo(
           <div
             className={`${containerClasses} seat--empty-locked`}
             data-seat-num={seatNumber}
-            /* The label used to say "empty" for both branches, so the hero's
-               own reserved seat announced itself as an empty chair while the
-               screen read YOUR SEAT. A screen-reader user looking for where
-               they are about to appear was told the opposite. */
+            /* 2026-08-26: replaced text label with the EMPTY coin image.
+               Interaction model unchanged — no onClick, no tabIndex, no role:
+               the seat is removed from the interaction model entirely. */
             aria-label={
               isHeroReservedSeat ? `Seat ${seatNumber}: your seat` : `Seat ${seatNumber}: empty`
             }
           >
-            <span className="seat__empty-label">{isHeroReservedSeat ? 'YOUR SEAT' : 'EMPTY'}</span>
+            <img
+              src="/images/icons/empty-button.png"
+              alt={isHeroReservedSeat ? 'Your reserved seat' : 'Empty seat'}
+              className="seat__empty-img"
+              draggable={false}
+            />
           </div>
         );
       }
@@ -1447,12 +1451,13 @@ export const SeatSlot = memo(
           tabIndex={0}
           aria-label={`Seat ${seatNumber}: open - click to sit`}
         >
-          {/* Dan 2026-08-18: "+" stacked ABOVE "SIT" and centered, not
-              inline where it read as left-offset. */}
-          <span className="seat__empty-label">
-            <span className="seat__empty-plus">+</span>
-            <span className="seat__empty-word">SIT</span>
-          </span>
+          {/* 2026-08-26: replaced +/SIT text stack with the SIT coin image. */}
+          <img
+            src="/images/icons/sit-button.png"
+            alt="Sit down"
+            className="seat__empty-img seat__empty-img--sit"
+            draggable={false}
+          />
         </div>
       );
     }

@@ -55,7 +55,7 @@ beforeEach(() => {
   catalogRows.error = null;
 });
 
-const clickRedeem = () => fireEvent.click(screen.getByRole('button', { name: /^Redeem$/ }));
+const clickRedeem = () => fireEvent.click(screen.getAllByRole('button', { name: /^Redeem$/ })[0]);
 
 describe('RewardsMarketplace redemption', () => {
   it('says nothing about success on its own — the handler owns the outcome', async () => {
@@ -95,7 +95,9 @@ describe('RewardsMarketplace redemption', () => {
     // While the server has not answered, the button stays busy.
     await waitFor(() => expect(screen.getByRole('button', { name: '...' })).toBeTruthy());
     release();
-    await waitFor(() => expect(screen.getByRole('button', { name: /^Redeem$/ })).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: /^Redeem$/ })[0]).toBeTruthy()
+    );
   });
 
   it('surfaces a thrown redemption as an error, not a success', async () => {

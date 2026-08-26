@@ -1632,10 +1632,18 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     if (activeBank?.isActive) return;
 
     const timeBankAlreadyUsedThisTurn = this.timeBankActivatedThisTurn;
-    this.handleTurnChange(
+    // handleTurnChange is async. Calling it bare left a rejection unhandled and
+    // - worse - left this seat with no clock at all, which is the precise hang
+    // this method was added to prevent. The other call site
+    // (ServerTableEngineHandEvents, "void this.handleTurnChange(...).catch")
+    // has had the guard since it went async; this one never got it.
+    void this.handleTurnChange(
       { type: 'TURN_CHANGE', seat: player.seat, availableActions: [] } as HandEvent,
       this.seatedPlayers
-    );
+    ).catch((err) => {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.rearm_turn_change_threw');
+      this.forceArmTurnTimer(player.seat, this.tableInfo?.action_time_seconds || 15);
+    });
 
     this.timeBankActivatedThisTurn = timeBankAlreadyUsedThisTurn;
   }

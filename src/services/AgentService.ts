@@ -502,7 +502,10 @@ class AgentServiceClass {
     referralCode: string | number,
     clubId: string
   ): Promise<{ success: boolean; agentName?: string }> {
-    // 1. Find the agent by player_number (referral code)
+    const resolvedClubId = await resolveClubUUID(clubId);
+
+    // 1. Fetch the agent's name first just for the UI toast
+    let agentName: string | undefined;
     let agentProfileQuery = supabase.from('profiles').select('id, username');
     if (typeof referralCode === 'string' && referralCode.includes('-')) {
       agentProfileQuery = agentProfileQuery.eq('id', referralCode);
@@ -513,56 +516,28 @@ class AgentServiceClass {
       );
     }
     const { data: agentProfile } = await agentProfileQuery.maybeSingle();
-
-    if (!agentProfile) {
-      return { success: false };
+    if (agentProfile) {
+      agentName = agentProfile.username;
     }
 
-    // 2. Verify this user is an agent in the specified club
-    const resolvedClubId = await resolveClubUUID(clubId);
-    const { data: agentRecord } = await supabase
-      .from('agents')
-      .select('id, user_id')
-      .eq('user_id', agentProfile.id)
-      .eq('club_id', resolvedClubId)
-      .maybeSingle();
+    // 2. Run the secure RPC that links them and bypasses the gate
+    const { data, error } = await supabase.rpc('fn_redeem_club_invite_code', {
+      p_club_id: resolvedClubId,
+      p_user_id: playerId,
+      p_referral_code: String(referralCode),
+    });
 
-    if (!agentRecord) {
-      return { success: false };
-    }
-
-    // 3. Update the player's club_members record to link under this agent
-    const { error } = await supabase
-      .from('club_members')
-      .update({ agent_id: agentProfile.id })
-      .eq('user_id', playerId)
-      .eq('club_id', resolvedClubId);
-
-    if (error) {
-      reportError(error, 'AgentService.linkPlayerByReferral', {
+    if (error || !data?.success) {
+      reportError(error || new Error(data?.error), 'AgentService.linkPlayerByReferral', {
         playerId,
-        agentUsername: agentProfile.username,
+        referralCode,
       });
       return { success: false };
     }
 
-    // 4. Increment agent player count
-    const { error: countErr } = await supabase
-      .from('agents')
-      .update({
-        total_players: (agentRecord as any).total_players + 1,
-        active_player_count: (agentRecord as any).active_player_count + 1,
-      })
-      .eq('id', agentRecord.id);
-    if (countErr) reportError(countErr, 'AgentService.updatePlayerCount');
-
-    console.debug(
-      `[AgentService] Linked player ${playerId} under agent ${agentProfile.username} via referral code ${referralCode}`
-    );
-
+    console.debug(`[AgentService] Linked player ${playerId} via referral code ${referralCode}`);
     masterBus.emit('CLUB_UPDATED', { clubId });
-
-    return { success: true, agentName: agentProfile.username };
+    return { success: true, agentName };
   }
 
   /**

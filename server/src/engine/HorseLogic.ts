@@ -636,6 +636,11 @@ export interface HorseDecideOpts {
   v12?: boolean;
   /** ablation hook (benchmarks only) — defaults to the v12 master flag */
   v12Ranges?: boolean;
+  /** disable the V16 deep-read wiring (2026-08-26): fold-to-c-bet scaled
+   *  c-bets, fold-to-3-bet scaled bluff 3-bets, and big-river-bet sizing
+   *  tells in the call-down (default: enabled; reads ride the mind layer, so
+   *  mind:false disables them too) */
+  v16Reads?: boolean;
   /** disable the V15 layer (Dan 2026-08-26): Omaha nut discipline — made
    *  flushes and straights know their RANK, dominated hands stop raising and
    *  stop stacking off when raised, plo5/plo6 preflop scores are normalized
@@ -902,6 +907,20 @@ export class HorseLogic {
       }
     }
 
+    // V16 DEEP READS: the raiser's observed fold-to-3-bet, when the mind is
+    // live and a qualifying sample exists.
+    let raiserF3b: number | null = null;
+    if (opts.mind !== false && opts.v16Reads !== false && lastRaiserSeat >= 0) {
+      try {
+        const raiser = gs.players.find((p) => p.seat === lastRaiserSeat);
+        if (raiser && raiser.user_id !== player.user_id) {
+          raiserF3b = HorseMind.foldTo3BetOf(raiser.user_id);
+        }
+      } catch {
+        /* reads are best-effort */
+      }
+    }
+
     const intent = decidePreflopV7({
       strength,
       position,
@@ -937,6 +956,7 @@ export class HorseLogic {
       format:
         opts.v12 !== false ? (gs.format ?? (isTournamentMode(gs) ? 'mtt' : 'cash')) : undefined,
       targeted,
+      raiserFoldTo3Bet: raiserF3b,
       v13: opts.v13 !== false,
       rand: fastRandom,
     });
@@ -1606,7 +1626,20 @@ export class HorseLogic {
       // V10: on a range-advantage board fire the whole range more often at a
       // smaller size (the classic high-freq small c-bet); otherwise keep the
       // V4 dry-board stab.
-      const cbetFreqMult = boardFavorsAggressor ? 1.35 : 1.0;
+      let cbetFreqMult = boardFavorsAggressor ? 1.35 : 1.0;
+      // V16 DEEP READS: heads-up, c-bet the player in front of you, not the
+      // population average. 0.6 + ftc maps a 75% folder to x1.35 and a 30%
+      // station to x0.9, clamped to keep the read a reshaping, not a switch.
+      if (useMind && opts.v16Reads !== false && oppCount === 1) {
+        try {
+          const ftc = HorseMind.foldToCbetOf(opponents[0].user_id);
+          if (ftc !== null) {
+            cbetFreqMult *= Math.max(0.75, Math.min(1.4, 0.6 + ftc));
+          }
+        } catch {
+          /* reads are best-effort */
+        }
+      }
       const cbetSize = boardFavorsAggressor ? 0.28 + fastRandom() * 0.06 : 0.3 + fastRandom() * 0.1;
       if (
         (initiative === 'hero' || prevChecked) &&
@@ -1917,6 +1950,17 @@ export class HorseLogic {
         if (bettorId) {
           const hunted = HorseMind.targetingOf(player.user_id, bettorId);
           if (hunted > 0) respect -= 0.25 * hunted;
+          // V16 DEEP READS: a big river bet from a player whose big bets
+          // have SHOWN DOWN as value gets real respect; one who bombs with
+          // air gets called down. Only on the river, only on big sizings —
+          // exactly where the tell was observed.
+          if (opts.v16Reads !== false && isRiver && betRatio >= 0.75) {
+            const tell = HorseMind.bigBetValueTendency(bettorId);
+            if (tell !== null) {
+              if (tell >= 0.75) respect += 0.12;
+              else if (tell <= 0.4) respect -= 0.1;
+            }
+          }
         }
       } catch {
         /* targeting is best-effort */

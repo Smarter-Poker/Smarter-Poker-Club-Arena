@@ -104,7 +104,7 @@ export default function UnionAgentStatements({ unionId = MIDWAY_UNION_ID }: { un
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Filter by agent or club…"
+          placeholder="Filter By Agent Or Club…"
           style={{
             flex: '1 1 220px',
             padding: '8px 12px',

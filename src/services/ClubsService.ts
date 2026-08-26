@@ -304,6 +304,11 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
     throw new Error(error?.message || 'Failed to join club');
   }
 
+  if (data && typeof data === 'object' && 'error' in data) {
+    reportError(new Error(data.error), 'ClubsService.Join_club_failed_RPC');
+    throw new Error(data.error);
+  }
+
   const membership = data as ClubMember;
 
   // ── Auto-assign Agent Downline if Referral Code matches a player ──

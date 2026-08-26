@@ -280,7 +280,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
               setSelectedIndex(0);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Type a command or search..."
+            placeholder="Type A Command Or Search..."
             style={{
               flex: 1,
               background: 'none',

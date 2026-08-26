@@ -59,8 +59,16 @@ describe('list caps are visible, never silently wrong', () => {
 
   it('caps every list query, not just the tables one', () => {
     const limits = src.match(/\.limit\(QUERY_LIMITS\.LIST\)/g) || [];
-    // tables + club tournaments + union/XMTT tournaments
-    expect(limits.length).toBeGreaterThanOrEqual(3);
+    // tables + tournaments.
+    //
+    // Was 3: tables, the club's tournaments, and a separate union/XMTT
+    // tournament query. That third query is gone as of 2026-08-23 - one
+    // applyClubScope call now returns union-owned games AND the club's private
+    // ones in a single round trip, the same shape the table query already
+    // used. Two queries meant two failure modes, and the one that mattered
+    // (the union query timing out) emptied every tournament tab while the
+    // club query quietly succeeded with nothing.
+    expect(limits.length).toBeGreaterThanOrEqual(2);
   });
 });
 

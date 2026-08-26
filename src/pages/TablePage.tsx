@@ -15044,6 +15044,7 @@ export default function TablePage({
                   p_seat_number: selectedSeat,
                   p_amount: amount,
                   p_auto_rebuy: autoRebuy || false,
+                  p_idempotency_key: crypto.randomUUID(),
                   // UNION LAW (Dan 2026-08-20): the club the player entered
                   // through. Chips come out of THAT club's wallet and the rake
                   // is earned for that club only — club wallets are never

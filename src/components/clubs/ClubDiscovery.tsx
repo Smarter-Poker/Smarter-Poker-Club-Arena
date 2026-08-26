@@ -178,7 +178,7 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
         <span className="search-icon">⌕</span>
         <input
           type="text"
-          placeholder="Search clubs by name, game, or tag..."
+          placeholder="Search Clubs By Name, Game, Or Tag..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />

@@ -212,22 +212,7 @@ class TournamentTimerServiceClass {
     const { currentLevel } = levelState;
     const displayLevel = newLevel + 1;
 
-    // 1. Update database with new level (0-based, matching the engine)
-    await supabase
-      .from('tournaments')
-      .update({
-        current_level: newLevel,
-      })
-      .eq('id', tournament.id);
-
-    // 2. Update all tournament tables with new blinds
-    await supabase
-      .from('tables')
-      .update({
-        small_blind: currentLevel.smallBlind,
-        big_blind: currentLevel.bigBlind,
-      })
-      .eq('tournament_id', tournament.id);
+    // Client no longer writes to the database (engine is authoritative).
 
     // 3. Broadcast level change to all clients
     await this.broadcastLevelChange(tournament.id, {
@@ -416,22 +401,6 @@ class TournamentTimerServiceClass {
       });
     } catch (error: unknown) {
       reportError(error, 'TournamentTimerService.Broadcast_error');
-    }
-  }
-
-  /**
-   * Start timers for all running tournaments (called on app init)
-   */
-  async initializeAllTimers(): Promise<void> {
-    const { data: runningTournaments } = await supabase
-      .from('tournaments')
-      .select('id')
-      .eq('status', 'RUNNING');
-
-    if (runningTournaments) {
-      for (const t of runningTournaments) {
-        this.startTimer(t.id);
-      }
     }
   }
 

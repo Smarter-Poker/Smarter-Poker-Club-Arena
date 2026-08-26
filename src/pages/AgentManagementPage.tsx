@@ -1398,7 +1398,7 @@ export default function AgentManagementPage() {
                     type="number"
                     min="0"
                     step="1000"
-                    placeholder="Enter credit limit"
+                    placeholder="Enter Credit Limit"
                     value={newAgentForm.creditLimit || ''}
                     onChange={(e) =>
                       setNewAgentForm({ ...newAgentForm, creditLimit: Number(e.target.value) })

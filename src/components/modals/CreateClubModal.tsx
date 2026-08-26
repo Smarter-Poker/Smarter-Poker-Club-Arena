@@ -671,7 +671,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
             {/* Textarea positioned over the grid area */}
             <textarea
               className={styles.descriptionTextarea}
-              placeholder="e.g., A fierce shark with glowing eyes, cyberpunk style..."
+              placeholder="E.g., A Fierce Shark With Glowing Eyes, Cyberpunk Style..."
               value={logoDescription}
               onChange={(e) => setLogoDescription(e.target.value)}
               style={{ display: isGenerating || previewUrl ? 'none' : 'block' }}

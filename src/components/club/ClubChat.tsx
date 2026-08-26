@@ -369,7 +369,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
                 if (e.key === 'Enter' && text.trim()) sendMessage();
               }}
               placeholder={
-                isBannedFromChat ? 'You Cannot Post In This Club Chat' : 'Type a message...'
+                isBannedFromChat ? 'You Cannot Post In This Club Chat' : 'Type A Message...'
               }
               maxLength={500}
               style={{

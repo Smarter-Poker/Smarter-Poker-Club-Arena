@@ -57,6 +57,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
     };
   }, []);
+
   const loadMembers = useCallback(async () => {
     setLoading(true);
     try {

@@ -158,7 +158,7 @@ export default function DistributionHistory({ userId, clubId }: DistributionHist
       <input
         type="text"
         className="dh-search"
-        placeholder="Search by player name..."
+        placeholder="Search By Player Name..."
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
       />

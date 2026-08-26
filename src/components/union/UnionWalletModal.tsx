@@ -368,7 +368,7 @@ export function UnionWalletModal({
             <input
               className="admin-input"
               style={{ width: '100%', marginBottom: 8 }}
-              placeholder="Search members by name or club…"
+              placeholder="Search Members By Name Or Club…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />

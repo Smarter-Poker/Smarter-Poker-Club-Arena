@@ -154,7 +154,7 @@ export default function UnionClubGovernance({ unionId, clubId, clubName, onExpel
             <input
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Reason (recorded in the audit log)"
+              placeholder="Reason (Recorded In The Audit Log)"
               style={{
                 width: '100%',
                 padding: '9px 12px',

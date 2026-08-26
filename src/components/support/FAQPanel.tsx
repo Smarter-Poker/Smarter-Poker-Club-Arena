@@ -71,7 +71,7 @@ export function FAQPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
         <div className="faq-search">
           <span className="search-icon">⌕</span>
           <input
-            placeholder="Search for answers..."
+            placeholder="Search For Answers..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />

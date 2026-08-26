@@ -675,7 +675,7 @@ export default function TournamentDetails({
             playersData.map((e: Record<string, unknown>): TournamentEntry => {
               // PostgREST returns an embedded row as an object, but types it as
               // an array in some shapes. Accept both rather than guess - this
-              // exact shape bit LiveChipCounts (see its line 88).
+              // exact shape caused bugs in the past.
               const rawProfile = e.profile as
                 | { player_number?: string | null; avatar_url?: string | null }
                 | { player_number?: string | null; avatar_url?: string | null }[]

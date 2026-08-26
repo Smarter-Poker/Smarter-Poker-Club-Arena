@@ -247,6 +247,54 @@ describe('the nut flush still plays like the nuts', () => {
   });
 });
 
+/** Board demotions (line-by-line sweep): a nut straight is not the nuts on a
+ *  three-flush board, and a flush is not the nuts on a paired board. When
+ *  raised there, both take the check-call line - never the raise. */
+describe('board demotes the nuts', () => {
+  function playRaised(seed: number, hole: Card[], board: Card[], variant: string) {
+    seedFastRandom(seed);
+    const history: ActionRecord[] = [
+      { seat: 1, userId: 'hero', action: 'bet', amount: 60, timestamp: 1, stage: 'river' },
+      { seat: 3, userId: 'opp3', action: 'raise', amount: 240, timestamp: 2, stage: 'river' },
+    ] as ActionRecord[];
+    const hero = mkPlayer({ cards: hole, bet: 60, stack: 740 });
+    const gs: HorseGameStateV2 = {
+      players: [hero, opp(3, { bet: 240, stack: 500 })],
+      communityCards: board,
+      pot: 420,
+      currentBet: 240,
+      minRaise: 180,
+      lastRaise: 180,
+      stage: 'river',
+      gameVariant: variant,
+      bigBlind: 2,
+      dealerSeat: 3,
+      actionHistory: history,
+      gameMode: 'cash',
+      format: 'cash',
+    } as HorseGameStateV2;
+    return HorseLogic.decide(hero, gs, 'balanced', {}, { mind: false });
+  }
+
+  it('nut straight on a three-flush board never raises the raise', () => {
+    const board = [c('9', h), c('T', h), c('J', h), c('2', cl), c('3', d)];
+    const hole = [c('K', s), c('Q', d), c('7', cl), c('4', s)];
+    for (let seed = 1; seed <= 150; seed++) {
+      const dec = playRaised(seed * 7013, hole, board, 'plo4');
+      expect(['fold', 'call']).toContain(dec.action);
+    }
+  });
+
+  it('nut flush on a paired board never raises the raise', () => {
+    const board = [c('K', s), c('T', s), c('4', s), c('4', d), c('2', h)];
+    const hole = [c('A', s), c('6', s), c('Q', d), c('J', cl)];
+    for (let seed = 1; seed <= 150; seed++) {
+      const dec = playRaised(seed * 9109, hole, board, 'plo4');
+      expect(['fold', 'call']).toContain(dec.action);
+    }
+  });
+});
+
 /** plo6 league smoke: the variant-generic playHand deals 6 cards, enforces
  *  pot-limit, and conserves chips with zero illegal actions. */
 describe('plo6 league hands are legal and conserve chips', () => {

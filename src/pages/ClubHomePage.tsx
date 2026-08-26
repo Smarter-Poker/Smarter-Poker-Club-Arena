@@ -3412,7 +3412,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 <textarea
                   value={noticeDraft}
                   onChange={(e) => setNoticeDraft(e.target.value)}
-                  placeholder="Welcome to the Shark Club, all fish of all shapes and sizes are welcome!"
+                  placeholder="Welcome To The Shark Club, All Fish Of All Shapes And Sizes Are Welcome!"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Escape') setIsEditingNotice(false);

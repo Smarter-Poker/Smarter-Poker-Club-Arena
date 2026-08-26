@@ -235,7 +235,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
         <input
           className="arena-ledger__search"
           type="text"
-          placeholder="Search ledger..."
+          placeholder="Search Ledger..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />

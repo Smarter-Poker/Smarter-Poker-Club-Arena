@@ -1263,7 +1263,7 @@ export default function TableConfigPage() {
       <div className="config-name">
         <input
           type="text"
-          placeholder="Enter table name here..."
+          placeholder="Enter Table Name Here..."
           value={config.name}
           onChange={(e) => updateConfig('name', e.target.value)}
         />
@@ -1626,7 +1626,7 @@ export default function TableConfigPage() {
               <textarea
                 className="config-textarea-input"
                 maxLength={200}
-                placeholder="Optional line shown on the tournament page..."
+                placeholder="Optional Line Shown On The Tournament Page..."
                 value={config.shortDescription}
                 onChange={(e) => updateConfig('shortDescription', e.target.value)}
               />

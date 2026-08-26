@@ -610,7 +610,7 @@ export default function UnionStatementsPage() {
                           step="0.01"
                           value={payAmount}
                           onChange={(e) => setPayAmount(e.target.value)}
-                          placeholder="Amount received"
+                          placeholder="Amount Received"
                           aria-label={`Payment received from ${c.club_name}`}
                         />
                         <button

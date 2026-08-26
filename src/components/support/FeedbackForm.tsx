@@ -165,7 +165,7 @@ export function FeedbackForm({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           <textarea
             required
             rows={5}
-            placeholder="Tell us what happened or what you'd like to see..."
+            placeholder="Tell Us What Happened Or What You'd Like To See..."
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />

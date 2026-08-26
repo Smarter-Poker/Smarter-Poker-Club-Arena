@@ -203,7 +203,7 @@ export function IdentityModal({
                   commit();
                 }
               }}
-              placeholder="Enter your alias"
+              placeholder="Enter Your Alias"
               maxLength={TABLE_ALIAS_MAX}
               autoComplete="off"
               spellCheck={false}

@@ -77,10 +77,15 @@ export const TIMED_WINDOW_PAST_MS = 5 * 60 * 1000;
  *
  * A day's look-ahead publishes the whole card the way a real room does:
  * tomorrow's events are on the board tonight, with their buy-ins, guarantees
- * and start times, and a player can register whenever they like. The lobby's
- * own display window is 72 hours, so 24 fits inside what the UI already
- * shows, and `spawnAheadMinutes` still overrides per schedule (the Sunday
- * Major uses a week so its satellites can resolve it all week).
+ * and start times, and a player can register whenever they like.
+ *
+ * (That paragraph used to end "and `spawnAheadMinutes` still OVERRIDES per
+ * schedule". It does not, any more, and leaving the sentence here would be an
+ * invitation to restore the exact bug documented under spawnAheadMsFor below:
+ * every live schedule carries 1440, so an override that wins outright pins the
+ * whole platform to a 24-hour board no matter what this constant says. It
+ * raises the floor now. The Sunday Major's week still wins because a week is
+ * LONGER, which was always the only case that mattered.)
  *
  * NOW 48 HOURS (Dan 2026-08-26: "IT SHOULD BE DISPLAYING ALL EVENTS THAT ARE
  * SCHEDULED OVER THE NEXT 48 HOURS"). The lobby cannot list a row that does

@@ -603,6 +603,11 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'shortdeck_v8_layer', variant: 'short_deck', pairs: 6000, a: {}, b: { v8: false } },
   { name: 'nlh_40bb_preflop', stackBB: 40, pairs: 6000, a: {}, b: { v7Preflop: false } },
   { name: 'hu_mind_layer', seats: 2, pairs: 6000, a: {}, b: { mind: false } },
+  // ── V16 strategy matchups (2026-08-26) ──
+  { name: 'hu_v16_overlay', seats: 2, pairs: 6000, a: {}, b: { v16Hu: false } },
+  { name: 'v16_ratio_rescale', pairs: 6000, a: { v16Ratio: true }, b: {} },
+  { name: 'v16_sizecond', pairs: 6000, a: {}, b: { v16SizeCond: false } },
+  { name: 'plo4_v16_polarity', variant: 'plo4', pairs: 6000, a: {}, b: { v16PloPolar: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
   { name: 'mind_layer', a: {}, b: { mind: false } },
@@ -622,6 +627,11 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v12: false,
       v15: false,
       v16Reads: false,
+      v16Icm: false,
+      v16Hu: false,
+      v16Blockers: false,
+      v16SizeCond: false,
+      v16PloPolar: false,
       mind: false,
       streetIQ: false,
       handReading: false,

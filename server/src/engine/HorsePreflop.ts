@@ -93,6 +93,10 @@ export interface PreflopCtx {
    *  folds 70% to 3-bets gets 3-bet-bluffed relentlessly; one who never
    *  folds gets bluffed at all only with real equity. */
   raiserFoldTo3Bet?: number | null;
+  /** V16 PLO POLARITY: hero holds a pair of aces (undefined = layer off).
+   *  AAxx 3-bets below the generic percentile bar; a speculative rundown
+   *  WITHOUT it flats at the margin instead of bloating the pot OOP. */
+  omahaAA?: boolean;
   /** PRNG supplied by the caller (fast xorshift) */
   rand: () => number;
 }
@@ -357,7 +361,23 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     const bbDiscount = position === 'bb' ? 0.06 : 0;
     const priceOK = toCall <= Math.max(bb * 12, stack * 0.12);
 
-    if (strength >= threeBetThresh) {
+    // V16 PLO POLARITY: percentile strength double-counts pretty side cards;
+    // real PLO 3-bet ranges are anchored on AAxx. With the layer on, AA
+    // 3-bets from 0.04 under the generic bar, and a non-AA hand at the exact
+    // margin (within 0.05 over the bar) FLATS instead — rundowns want
+    // multiway flops in position, not bloated pots against the one range
+    // that dominates them.
+    let effThreeBetThresh = threeBetThresh;
+    if (ctx.isOmaha && ctx.omahaAA === true) effThreeBetThresh = threeBetThresh - 0.04;
+    if (strength >= effThreeBetThresh) {
+      if (
+        ctx.isOmaha &&
+        ctx.omahaAA === false &&
+        strength < threeBetThresh + 0.05 &&
+        toCall <= ctx.stack * 0.08
+      ) {
+        return { a: 'call' }; // speculative rundown: take the flop instead
+      }
       if (strength > 0.95 && rand() < ctx.slowplayFreq * 0.5 && callers === 0) {
         return { a: 'call' }; // trap
       }

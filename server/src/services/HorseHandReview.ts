@@ -328,9 +328,7 @@ export function accumulateHorseNets(input: HorseReviewInput): void {
 }
 
 /** Drain up to `max` accumulated keys into RPC row shapes (exported for tests). */
-export function drainHorseNets(
-  max: number = NET_BATCH_MAX
-): Array<{
+export function drainHorseNets(max: number = NET_BATCH_MAX): Array<{
   horse_user_id: string;
   day: string;
   game_variant: string;

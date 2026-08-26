@@ -1718,6 +1718,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         spotsPaid: tctx.spotsPaid,
         avgStackChips: tctx.avgStackChips,
         bountyFactor: tctx.bountyFactor,
+        // V16 ICM: the payout curve + live stack distribution feed the real
+        // Malmuth-Harville pressure model in HorseLogic.icmRisk.
+        stacks: tctx.stacks,
+        payoutPct: tctx.payoutPct,
       },
     };
   }

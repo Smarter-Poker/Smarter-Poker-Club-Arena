@@ -675,7 +675,7 @@ export class HorseMind {
     board: Card[] | null = null,
     /** V12 out-param: postflop aggression weight + checked-street count for
      *  board-contact conditioning (see HorseEval.simulateEquity). */
-    readOut?: { aggrW: number; checked: number }
+    readOut?: { aggrW: number; checked: number; bigBet?: boolean }
   ): [number, number] | null {
     if (!history || history.length === 0) return null;
     const postStagesActed = new Set<string>();
@@ -833,6 +833,24 @@ export class HorseMind {
       let checked = 0;
       for (const st of postStagesActed) if (!streetWeight.has(st)) checked++;
       readOut.checked = checked;
+      // V16 SIZE-CONDITIONED SAMPLING: did this opponent fire a BIG bet
+      // (>= 20bb) on the newest street in the history? A pot-sized-plus
+      // barrel is strength-heavier than a stab, and the sampler can use it.
+      if (history && history.length > 0) {
+        const lastStage = history[history.length - 1].stage;
+        for (let i = history.length - 1; i >= 0; i--) {
+          const a = history[i];
+          if (a.stage !== lastStage) break;
+          if (
+            a.userId === userId &&
+            (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in') &&
+            (a.amount ?? 0) >= 20 * (bigBlind > 0 ? bigBlind : 1)
+          ) {
+            readOut.bigBet = true;
+            break;
+          }
+        }
+      }
     }
 
     lo = Math.max(0, Math.min(0.9, lo));
@@ -1059,7 +1077,7 @@ export class HorseMind {
     board: Card[] | null = null,
     /** V12 out-param: parallel per-opponent postflop reads (same order as
      *  the returned bands) for board-contact conditioning. */
-    readsOut?: Array<{ aggrW: number; checked: number } | null>
+    readsOut?: Array<{ aggrW: number; checked: number; bigBet?: boolean } | null>
   ): Array<[number, number] | null> {
     const bands: Array<[number, number] | null> = [];
     for (const p of players) {

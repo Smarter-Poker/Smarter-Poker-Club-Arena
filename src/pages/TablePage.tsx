@@ -2629,7 +2629,7 @@ export default function TablePage({
         setShowSettings(true);
         break;
       case 'HAND_HISTORY':
-        setShowHandReplay(true);
+        setShowHandHistory(true);
         break;
       case 'HELP':
         setShowGameRules(true);
@@ -12345,7 +12345,7 @@ export default function TablePage({
                         id: 'history',
                         label: 'Hand History',
                         icon: <HandHistoryIcon />,
-                        onClick: () => setShowHandReplay(true),
+                        onClick: () => setShowHandHistory(true),
                       },
                       {
                         id: 'leaderboard',
@@ -14130,7 +14130,7 @@ export default function TablePage({
             <button
               className="menu-item"
               onClick={() => {
-                setShowHandReplay(true);
+                setShowHandHistory(true);
                 setIsSideMenuOpen(false);
               }}
             >

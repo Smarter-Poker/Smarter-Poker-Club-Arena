@@ -33,6 +33,7 @@ interface ClubInfo {
   description?: string;
   member_count: number;
   avatar_url?: string;
+  logo_url?: string;
   is_public: boolean;
 }
 
@@ -86,7 +87,7 @@ export default function InvitePage() {
     try {
       let clubQuery = supabase
         .from('clubs')
-        .select('id, slug, name, description, member_count, avatar_url, is_public');
+        .select('id, slug, name, description, member_count, avatar_url, logo_url, is_public');
 
       if (inviteCode) {
         clubQuery = clubQuery.eq('invite_code', inviteCode);
@@ -293,8 +294,12 @@ export default function InvitePage() {
     <div className="invite-page">
       <div className="invite-card" style={inviteStepAnimationStyle}>
         <div className="club-avatar">
-          {club.avatar_url ? (
-            <img src={sizedStorageUrl(club.avatar_url, 96)} alt={club.name} loading="lazy" />
+          {club.logo_url || club.avatar_url ? (
+            <img
+              src={sizedStorageUrl(club.logo_url || club.avatar_url || '', 96)}
+              alt={club.name}
+              loading="lazy"
+            />
           ) : (
             <span>{club.name[0]?.toUpperCase()}</span>
           )}
@@ -311,7 +316,11 @@ export default function InvitePage() {
           </div>
         </div>
 
-        <p className="invite-message">You've Been Invited To Join This Poker Club!</p>
+        <p className="invite-message">
+          YOU'VE BEEN INVITED...
+          <br />
+          TO JOIN THIS POKER CLUB
+        </p>
 
         {pendingApproval ? (
           <div className="already-member">

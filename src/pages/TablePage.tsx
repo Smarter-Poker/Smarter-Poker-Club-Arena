@@ -5600,11 +5600,21 @@ export default function TablePage({
             opponentStack: 0,
             yourCards: mapCards(heroOffer.holeCards),
             opponentCards: mapCards(heroOffer.opponents?.[0]?.holeCards),
+            opponents: Array.isArray(heroOffer.opponents)
+              ? heroOffer.opponents.map((opp: any) => ({
+                  username: typeof opp?.username === 'string' ? opp.username : undefined,
+                  cards: mapCards(opp?.holeCards),
+                }))
+              : undefined,
             board: mapCards(handState.board),
             outs: mapCards(handState.outs),
+            outPct: Number(handState.outPct) || undefined,
             timeoutSeconds: insSecs,
           });
           setShowInsurance(true);
+          // The offer is a timed financial decision — same attention cue as
+          // "your turn" so a multi-tabling leader looks over in time.
+          playTurnAlert();
           setInsuranceWaitingOn(null);
           setDecisionDeadline({ kind: 'insurance', at: Date.now() + insSecs * 1000 });
         } else {

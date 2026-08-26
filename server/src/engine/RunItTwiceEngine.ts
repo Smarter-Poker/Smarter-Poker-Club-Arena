@@ -135,6 +135,16 @@ export class RunItTwiceEngine {
     return this.tableConfigs.get(tableId)?.enabled ?? false;
   }
 
+  /**
+   * POKERBROS PARITY 2026-08-26: the offer window in seconds, as configured.
+   * The wire events (`rit_offer`, `rit_chooser_decided`) used to hardcode 10
+   * while the engine's own expiry read the config — two clocks for one
+   * countdown. Everything now reads this.
+   */
+  offerTimeoutSeconds(tableId: string): number {
+    return this.tableConfigs.get(tableId)?.autoDeclineTimeout || 10;
+  }
+
   /** The run count this table forces, or 0 when the players decide. */
   mandatoryRuns(tableId: string): 0 | 2 | 3 {
     const config = this.tableConfigs.get(tableId);

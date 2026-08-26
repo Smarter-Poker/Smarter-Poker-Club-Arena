@@ -18,7 +18,7 @@ import SitOutModal from './SitOutModal';
 import WaitListModal from './WaitListModal';
 import { waitlistService } from '../../services/WaitlistService';
 import InsuranceModal, { type InsuranceOffer } from './InsuranceModal';
-import { RunItTwicePrompt, type RitResultData } from './RunItTwice';
+import { RunItTwicePrompt, type RitPanelPlayer, type RitResultData } from './RunItTwice';
 import BadBeatJackpot from './BadBeatJackpot';
 import { getBBJQualifyingInfo, getBBJPayoutPercentForBB } from '../../config/RakeConfig';
 import BBJInfoModal from '../bbj/BBJInfoModal';
@@ -200,6 +200,14 @@ export interface TableModalsLayerProps {
   ritChosenRuns: 2 | 3;
   ritMaxRuns: 2 | 3;
   ritPlayerCount: number;
+  /** POKERBROS PARITY 2026-08-26: consent-panel data (all optional so older
+   *  call sites and fixtures keep working — the panel degrades gracefully). */
+  ritBoardCards?: Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>;
+  ritPotAmount?: number | null;
+  ritPanelPlayers?: RitPanelPlayer[];
+  ritTotalSeconds?: number;
+  ritHeroAccepted?: boolean;
+  ritChooserHasDecided?: boolean;
   onRITChooserDecide: (runs: 1 | 2 | 3) => Promise<void>;
   onRITAccept: () => Promise<void>;
   onRITDecline: () => Promise<void>;
@@ -500,6 +508,12 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     ritChosenRuns,
     ritMaxRuns,
     ritPlayerCount,
+    ritBoardCards = [],
+    ritPotAmount = null,
+    ritPanelPlayers = [],
+    ritTotalSeconds = 25,
+    ritHeroAccepted = false,
+    ritChooserHasDecided = true,
     onRITChooserDecide,
     onRITAccept,
     onRITDecline,
@@ -942,10 +956,15 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         onAccept={onRITAccept}
         onDecline={onRITDecline}
         timeRemaining={ritTimer}
-        chosenRuns={ritChosenRuns}
+        chosenRuns={ritChooserHasDecided ? ritChosenRuns : undefined}
         maxRuns={ritMaxRuns}
         playerCount={ritPlayerCount}
         opponentName={_ritOpponent}
+        boardCards={ritBoardCards}
+        potAmount={ritPotAmount ?? undefined}
+        players={ritPanelPlayers}
+        totalSeconds={ritTotalSeconds}
+        heroAccepted={ritHeroAccepted}
       />
 
       {/* Bad Beat Jackpot Display — per-variant qualifying rule (2026-08-18).

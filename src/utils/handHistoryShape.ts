@@ -41,6 +41,12 @@
  */
 
 export const RIT_PREFIX = 'rit_board_2:';
+/**
+ * POKERBROS PARITY 2026-08-26: a hand can run THREE times. Boards 2..N are
+ * stored as `rit_board_N:<cards>` pseudo-actions; the old parser read only
+ * board 2, so a 3-run hand lost its third board in replay.
+ */
+export const RIT_ANY_PREFIX = /^rit_board_(\d+):/;
 
 /** Community cards revealed by the end of each stage. */
 export const CARDS_VISIBLE_AT_STAGE: Record<string, number> = {
@@ -106,6 +112,12 @@ export interface NormalisedHand {
   winners: ReplayWinner[];
   /** Run-it-twice second board, empty when the hand did not run twice. */
   secondBoard: string[];
+  /**
+   * Every extra run-it-twice board in run order (board 2 first, board 3
+   * after it when the hand ran three times). `secondBoard` stays as the
+   * first entry for existing consumers.
+   */
+  extraBoards: string[][];
 }
 
 const num = (v: unknown, fallback = 0): number => {
@@ -166,20 +178,30 @@ export function normaliseStoredHand(
 
   const verbOf = (a: StoredAction): string => (typeof a.action === 'string' ? a.action : '');
 
-  const secondBoard: string[] = actionsIn
-    .filter((a) => verbOf(a).startsWith(RIT_PREFIX))
-    .flatMap((a) =>
-      verbOf(a)
-        .slice(RIT_PREFIX.length)
-        .split(',')
-        .map((c) => c.trim())
-        .filter(Boolean)
-    );
+  // Boards 2..N in run order. A 3-run hand stores rit_board_2 AND rit_board_3.
+  const extraBoards: string[][] = actionsIn
+    .map((a) => {
+      const v = verbOf(a);
+      const m = RIT_ANY_PREFIX.exec(v);
+      if (!m) return null;
+      return {
+        run: Number(m[1]),
+        cards: v
+          .slice(m[0].length)
+          .split(',')
+          .map((c) => c.trim())
+          .filter(Boolean),
+      };
+    })
+    .filter((b): b is { run: number; cards: string[] } => b !== null && b.cards.length > 0)
+    .sort((x, y) => x.run - y.run)
+    .map((b) => b.cards);
+  const secondBoard: string[] = extraBoards[0] ?? [];
 
   const actions: ReplayAction[] = actionsIn
     .filter((a) => {
       const v = verbOf(a);
-      return v !== '' && !v.startsWith(RIT_PREFIX);
+      return v !== '' && !RIT_ANY_PREFIX.test(v);
     })
     .map((a) => {
       const userId = a.userId == null ? '' : String(a.userId);
@@ -204,7 +226,7 @@ export function normaliseStoredHand(
     };
   });
 
-  return { players, actions, winners, secondBoard };
+  return { players, actions, winners, secondBoard, extraBoards };
 }
 
 /** How many community cards are face up once `stage` has been reached. */

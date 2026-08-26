@@ -27,7 +27,6 @@ const refused = {
   error: null,
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let exitSpy: any;
 
 beforeEach(() => {
@@ -237,7 +236,6 @@ describe('losing leadership while holding it', () => {
   });
 });
 
-
 /**
  * A LEADER THAT DOES NOTHING (2026-08-24).
  *
@@ -290,7 +288,6 @@ describe('a promoted standby restarts instead of leading in name only', () => {
   });
 });
 
-
 /**
  * THE RESTART LOOP THE RESTART CREATED (2026-08-24, same day).
  *
@@ -319,7 +316,6 @@ describe('a restarting standby hands the lease back on its way out', () => {
     expect(body).toMatch(/setTimeout\(\(\) => process\.exit\(0\), 5000\)/);
   });
 });
-
 
 /**
  * The promotion restart must fire once, not once per renewal (2026-08-24).

@@ -105,7 +105,7 @@ export function mockEngine(overrides: Record<string, unknown> = {}): unknown {
  * without per-test casts. Only used in tests — production `createRouter`
  * ties to the real (typed) `GameServer` class.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 export function mockGameServer(engine: unknown, tableId = 't1'): any {
   return {
     getTableEngine(id: string) {

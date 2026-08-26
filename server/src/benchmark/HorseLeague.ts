@@ -273,7 +273,7 @@ export function playHand(
       // Validate against the engine's own rules; downgrade an illegal action
       // to the safe fallback and count it (the conservation test asserts 0).
       let action = d.action as string;
-      let amount = d.amount ?? 0;
+      const amount = d.amount ?? 0;
       if (action === 'check' && toCall > 0) action = 'fold';
       if (action === 'call' && toCall === 0) action = 'check';
       if (action === 'bet' && currentBet > 0) action = 'raise';

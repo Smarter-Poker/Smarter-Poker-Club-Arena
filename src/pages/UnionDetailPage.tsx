@@ -141,7 +141,6 @@ export default function UnionDetailPage() {
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, unionId]);
 
   const handleScheduleActiveToggle = async (row: TournamentScheduleRow, nextActive: boolean) => {
@@ -149,9 +148,7 @@ export default function UnionDetailPage() {
     setScheduleBusyId(row.id);
     try {
       await tournamentScheduleService.setActive(row.id, nextActive);
-      setSchedules((prev) =>
-        prev.map((s) => (s.id === row.id ? { ...s, active: nextActive } : s))
-      );
+      setSchedules((prev) => prev.map((s) => (s.id === row.id ? { ...s, active: nextActive } : s)));
       toast.success(nextActive ? 'Schedule activated.' : 'Schedule deactivated.');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not update the schedule.');
@@ -1309,7 +1306,10 @@ export default function UnionDetailPage() {
                     <div className={styles.tableCardDetails}>
                       {/* hide_club_name (2026-08-22): never leak the hosting
                           club's name when the owner chose to hide it. */}
-                      <span> {union?.name || (t.hide_club_name ? 'Union' : t.clubs?.name) || 'Union'}</span>
+                      <span>
+                        {' '}
+                        {union?.name || (t.hide_club_name ? 'Union' : t.clubs?.name) || 'Union'}
+                      </span>
                       {/* The advertised buy-in is the TOTAL (prize + fee), in
                           whole chips - never the prize half on its own. */}
                       <span> {formatBuyInShort(t.buy_in_amount || 0, t.buy_in_fee)}</span>
@@ -1337,10 +1337,16 @@ export default function UnionDetailPage() {
                 <h3 style={{ margin: '2rem 0 1rem' }}>Recurring Schedules</h3>
                 <div className={styles.tablesGrid}>
                   {schedules.map((s) => (
-                    <div key={s.id} className={styles.tableCard} style={!s.active ? { opacity: 0.55 } : undefined}>
+                    <div
+                      key={s.id}
+                      className={styles.tableCard}
+                      style={!s.active ? { opacity: 0.55 } : undefined}
+                    >
                       <div className={styles.tableCardHeader}>
                         <h4>{s.name}</h4>
-                        <span className={`${styles.statusBadge} ${s.active ? styles.paid : styles.overdue}`}>
+                        <span
+                          className={`${styles.statusBadge} ${s.active ? styles.paid : styles.overdue}`}
+                        >
                           {s.active ? 'ACTIVE' : 'OFF'}
                         </span>
                       </div>

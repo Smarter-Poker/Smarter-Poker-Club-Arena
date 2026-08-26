@@ -253,6 +253,131 @@ export function buildReviewRows(input: HorseReviewInput): HorseReviewRow[] {
 /** Kill switch: HORSE_HAND_REVIEW_ENABLED=false disables all writes. */
 const enabled = (): boolean => process.env.HORSE_HAND_REVIEW_ENABLED !== 'false';
 
+// ═══════════════════════════════════════════════════════════════════════════
+// V16 REAL NETS (2026-08-26) — per-horse daily aggregate, EVERY hand
+// ═══════════════════════════════════════════════════════════════════════════
+// The self-tuner's bb100 rule was disabled because action-log reconstruction
+// fails chip conservation in 38% of hands. This is the fix the 2026-08-23
+// audit called for: the EXACT settlement nets, aggregated per
+// horse/day/variant/format in memory and flushed additively every minute.
+// Losing one flush window on a crash costs at most ~60s of aggregate — noise
+// against a 7-day tuning window — and the additive upsert makes every flush
+// idempotent-safe to retry.
+
+interface NetAcc {
+  hands: number;
+  netBB: number;
+}
+
+const netAcc = new Map<string, NetAcc>();
+const NET_FLUSH_MS = 60_000;
+const NET_BATCH_MAX = 500;
+/** Bounded during outages: beyond this, oldest keys are dropped (reported). */
+const NET_ACC_MAX_KEYS = 8000;
+let netFlushTimer: NodeJS.Timeout | null = null;
+
+const netsEnabled = (): boolean => process.env.HORSE_NET_ROLLUP_ENABLED !== 'false';
+
+/** Accumulate one settled hand's exact nets for every horse dealt in. */
+export function accumulateHorseNets(input: HorseReviewInput): void {
+  try {
+    if (!netsEnabled() || !input.handId) return;
+    const bb = input.bigBlind > 0 ? input.bigBlind : 1;
+    const day = input.playedAt.slice(0, 10);
+    const dealtCount = input.holeCardsAll.size || input.roster.length;
+    const format = input.tournamentId ? 'tournament' : dealtCount === 2 ? 'hu_cash' : 'cash';
+    const returnedBy = new Map<string, number>();
+    for (const w of input.winners ?? []) {
+      if (!w?.userId) continue;
+      returnedBy.set(w.userId, (returnedBy.get(w.userId) ?? 0) + (w.amount ?? 0));
+    }
+    for (const p of input.roster) {
+      if (!p.isHorse || !p.userId) continue;
+      const invested = input.contributions.get(p.userId) ?? 0;
+      const returned = returnedBy.get(p.userId) ?? 0;
+      if (invested === 0 && returned === 0) continue; // dealt in but never posted
+      const key = `${p.userId}|${day}|${input.gameVariant}|${format}`;
+      const acc = netAcc.get(key) ?? { hands: 0, netBB: 0 };
+      acc.hands += 1;
+      acc.netBB += (returned - invested) / bb;
+      netAcc.set(key, acc);
+    }
+    if (netAcc.size > NET_ACC_MAX_KEYS) {
+      // An outage has backed us up far beyond a realistic key space
+      // (584 horses x variants x formats x a few days). Drop oldest-first
+      // and SAY SO — silent loss is the house failure mode.
+      let toDrop = netAcc.size - NET_ACC_MAX_KEYS;
+      for (const k of netAcc.keys()) {
+        if (toDrop-- <= 0) break;
+        netAcc.delete(k);
+      }
+      reportError(
+        new Error(`net accumulator overflow - dropped oldest keys (cap ${NET_ACC_MAX_KEYS})`),
+        'HorseHandReview.netOverflow'
+      );
+    }
+    if (!netFlushTimer) {
+      netFlushTimer = setInterval(() => {
+        void flushHorseNets().catch((err: unknown) => reportError(err, 'HorseHandReview.netFlush'));
+      }, NET_FLUSH_MS);
+      netFlushTimer.unref?.();
+    }
+  } catch (err) {
+    reportError(err, 'HorseHandReview.accumulateNets');
+  }
+}
+
+/** Drain up to `max` accumulated keys into RPC row shapes (exported for tests). */
+export function drainHorseNets(max: number = NET_BATCH_MAX): Array<{
+  horse_user_id: string;
+  day: string;
+  game_variant: string;
+  format: string;
+  hands: number;
+  net_bb: number;
+}> {
+  const rows: Array<{
+    horse_user_id: string;
+    day: string;
+    game_variant: string;
+    format: string;
+    hands: number;
+    net_bb: number;
+  }> = [];
+  for (const [key, acc] of netAcc) {
+    if (rows.length >= max) break;
+    const [horse, day, variant, format] = key.split('|');
+    rows.push({
+      horse_user_id: horse,
+      day,
+      game_variant: variant,
+      format,
+      hands: acc.hands,
+      net_bb: r2(acc.netBB),
+    });
+    netAcc.delete(key);
+  }
+  return rows;
+}
+
+async function flushHorseNets(): Promise<void> {
+  const rows = drainHorseNets();
+  if (rows.length === 0) return;
+  const { error } = await supabase.rpc('fn_horse_daily_nets_add', { p_rows: rows });
+  if (error) {
+    reportError(new Error(error.message), 'HorseHandReview.netFlushRpc');
+    // Merge the batch back so a transient outage loses nothing; the additive
+    // upsert makes the eventual retry safe.
+    for (const row of rows) {
+      const key = `${row.horse_user_id}|${row.day}|${row.game_variant}|${row.format}`;
+      const acc = netAcc.get(key) ?? { hands: 0, netBB: 0 };
+      acc.hands += row.hands;
+      acc.netBB += row.net_bb;
+      netAcc.set(key, acc);
+    }
+  }
+}
+
 let pruneArmed = false;
 
 /**
@@ -260,6 +385,9 @@ let pruneArmed = false;
  */
 export async function recordHorseHandReviews(input: HorseReviewInput): Promise<void> {
   try {
+    // V16: the real-nets aggregate sees EVERY hand, not just the 20bb flags,
+    // and has its own kill switch (HORSE_NET_ROLLUP_ENABLED).
+    accumulateHorseNets(input);
     if (!enabled() || !input.handId) return;
     const rows = buildReviewRows(input);
     if (rows.length === 0) return;

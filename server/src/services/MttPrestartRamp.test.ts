@@ -45,9 +45,13 @@ const curveOnly = (msUntilStart: number, maxPlayers = 60) => {
 };
 
 describe('mttPrestartHorseTarget — the window', () => {
-  it('is silent more than an hour out', () => {
-    expect(mtt(61 * MIN)).toBe(0);
-    expect(mtt(24 * 60 * MIN)).toBe(0);
+  it('is silent outside the build window', () => {
+    /* WAS "more than an hour out". The window is 72 hours since 2026-08-26,
+       because at one hour the board was 36 empty events out of 37 and only
+       ever showed a field in the final hour of each. The rule now matches the
+       lobby's own publish horizon: if it is on the board, it looks real. */
+    expect(mtt(73 * 60 * MIN)).toBe(0);
+    expect(mtt(7 * 24 * 60 * MIN)).toBe(0);
   });
 
   it('is silent at or past the start time — that is the top-up’s job', () => {
@@ -77,13 +81,25 @@ describe('mttPrestartHorseTarget — the curve', () => {
   });
 
   it('is slow early and steep late, so the field looks like it is filling', () => {
-    const atFiftyMins = curveOnly(50 * MIN);
-    const atThirtyMins = curveOnly(30 * MIN);
-    const atFiveMins = curveOnly(5 * MIN);
-    expect(atFiftyMins).toBeLessThan(atThirtyMins);
-    expect(atThirtyMins).toBeLessThan(atFiveMins);
-    // Quadratic: the first half of the hour delivers under a third of the field.
-    expect(atThirtyMins).toBeLessThan(curveOnly(MIN) / 3);
+    /* Rescaled to the 72-hour window. The shape is the point and it is
+       unchanged: a squared curve, so an event days out shows a couple of
+       entrants and the field arrives as the gun approaches. */
+    const atSixtyHours = curveOnly(60 * 60 * MIN);
+    const atThirtySixHours = curveOnly(36 * 60 * MIN);
+    const atOneHour = curveOnly(60 * MIN);
+    expect(atSixtyHours).toBeLessThan(atThirtySixHours);
+    expect(atThirtySixHours).toBeLessThan(atOneHour);
+    // Quadratic: the first half of the window delivers under a third of it.
+    expect(atThirtySixHours).toBeLessThan(curveOnly(MIN) / 3);
+  });
+
+  it('EVERY event on the board carries a field, however far out', () => {
+    /* The floor that fixes the dead board: `Math.max(1, ...)` inside the
+       window. Measured before this change: 36 of 37 registering MTTs had a
+       field of exactly zero. A lobby of empty games is not one anybody joins. */
+    for (const hoursOut of [1, 6, 24, 48, 71]) {
+      expect(curveOnly(hoursOut * 60 * MIN), `${hoursOut}h out`).toBeGreaterThanOrEqual(1);
+    }
   });
 });
 

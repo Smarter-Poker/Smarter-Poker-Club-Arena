@@ -715,14 +715,15 @@ export function isSeatFirstFormat(variant: string, maxPlayers: number): boolean 
  *  1. It never targets more than `maxPlayers - 1`, so the ramp can NEVER trip
  *     the `maxReached` start gate in discoverTournaments and begin an event
  *     ahead of its own clock. There is always a seat for a human.
- *  2. It is capped at MTT_PRESTART_MAX_HORSES regardless of field size. The
- *     pool is finite (584 horses, most of them already dealing cash or in
- *     another event) and every registration is a REAL buy-in through
- *     fn_register_horse_for_tournament - real wallet debit, real rake, real
- *     prize-pool contribution. A 200-seat event must not swallow the pool or
- *     inflate a prize pool with a hundred horse buy-ins an hour early. Filling
- *     the rest is the existing past-start top-up's job, on the clock, when it
- *     is actually needed.
+ *  2. It is capped at MTT_PRESTART_MAX_HORSES regardless of field size,
+ *     UNLESS the event carries a guarantee - see the guarantee block in the
+ *     function. Every registration is a REAL buy-in through
+ *     fn_register_horse_for_tournament (real wallet debit, real rake, real
+ *     prize-pool contribution), so an uncapped ramp on a 1,000-seat event
+ *     would spend the club's chips on a field nobody asked for. A guarantee
+ *     is the one case where the club has ALREADY promised that money, so
+ *     covering it with entries is strictly better than paying it as overlay.
+ *     Filling the rest is the past-start top-up's job, on the clock.
  *  3. Seat-first games (Spin, heads-up) return 0 and are left completely
  *     alone. Their binding rule is that they start when seats are BOUGHT, and
  *     registrations are not seats.
@@ -730,7 +731,46 @@ export function isSeatFirstFormat(variant: string, maxPlayers: number): boolean 
  * Returns the number of registered entrants the field SHOULD have right now.
  * The caller tops up toward it and never removes anybody.
  */
-export const MTT_PRESTART_RAMP_MS = 60 * 60 * 1000;
+/**
+ * How far ahead of the gun the field starts building.
+ *
+ * WAS ONE HOUR, AND THAT IS WHY THE BOARD WAS DEAD (Dan 2026-08-26: "horses
+ * should be registering and playing the tournaments anyways").
+ *
+ * Measured on production the day this changed: of 37 REGISTERING MTTs, THIRTY
+ * SIX had a field of exactly ZERO, and the nearest one to the gun was 86
+ * minutes out - just outside the window. So the entire tournament board read
+ * "0 entered" at every moment except the final hour of each event. A lobby
+ * full of empty games is not a lobby anybody joins; the one thing that makes a
+ * player enter a tournament is other players already in it.
+ *
+ * 72 hours matches the lobby's own publish window exactly
+ * (tournamentScheduleWindow). The rule is now simply: IF IT IS ON THE BOARD,
+ * IT LOOKS LIKE A REAL EVENT. Nothing is announced that is not also populated.
+ *
+ * WHY THIS IS AFFORDABLE, measured rather than assumed. The old note below
+ * said the pool was finite and "most of them already dealing cash". That was
+ * true when a seated horse was invisible to every tournament; it stopped being
+ * true when horses learned to multi-table. Live at the time of writing:
+ *
+ *   584 horses x 4 games each   = 2,336 slots
+ *   in use (seats + pre-starts) =   664
+ *   FREE                        = 1,672
+ *   this change costs           =   296  (17.7% of what is free)
+ *
+ * and 209 horses are completely idle. The squared curve does the shaping: an
+ * event three days out gets the `Math.max(1, ...)` floor of one entrant, and
+ * the field builds toward MTT_PRESTART_MAX_HORSES as the gun approaches. Far
+ * events look started, near events look busy, which is what a real room looks
+ * like.
+ *
+ * NOTE THIS IS NO LONGER TIED TO HORSE_SEED_WITHIN_MS. Those two were aligned
+ * on 2026-08-23 when both meant "about to start". They now mean different
+ * things: this is the whole build, that is the head start given at SPAWN, and
+ * a spawn-time seed three days early would put chips in a pool for an event
+ * nobody can see yet. See the note on HORSE_SEED_WITHIN_MS.
+ */
+export const MTT_PRESTART_RAMP_MS = 72 * 60 * 60 * 1000;
 export const MTT_PRESTART_MAX_HORSES = 24;
 /**
  * Most entrants the ramp will add in a single tick.

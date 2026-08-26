@@ -1588,7 +1588,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands'
         );
       if (unionId) {
         // Union governance (2026-08-19): union clubs see the UNION's tables
@@ -1631,7 +1631,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       const clubTournamentQuery = supabase
         .from('tournaments')
         .select(
-          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
+          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name'
         )
         // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
         // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
@@ -1681,7 +1681,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               supabase
                 .from('tournaments')
                 .select(
-                  'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, union_id, variant, table_size, is_xmtt, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
+                  'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, union_id, variant, table_size, is_xmtt, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name'
                 )
                 // Union governance (2026-08-19): ALL union-owned tournaments
                 // (XMTT and union-stamped recurring games), not just XMTT.
@@ -1820,14 +1820,30 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       // Session dedup: only fire the RPC once per session per club to avoid waste
       let effectiveLevel = clubData.level || 1;
       const levelRecomputeKey = `level_recomputed_${resolvedId}`;
-      if (effectiveLevel <= 1 && !sessionStorage.getItem(levelRecomputeKey)) {
+      /* Safari private mode and a sandboxed frame THROW on storage access
+         rather than returning null (the four cache helpers at the top of this
+         file all say so and all wrap). These two did not, and the throw landed
+         in the outer catch - which fires a red error toast over a lobby whose
+         tables and tournaments had already been set two hundred lines above. */
+      const levelRecomputeDone = (() => {
+        try {
+          return sessionStorage.getItem(levelRecomputeKey) != null;
+        } catch {
+          return false;
+        }
+      })();
+      if (effectiveLevel <= 1 && !levelRecomputeDone) {
         try {
           // Trigger server-side recompute (updates clubs.level in DB)
           const { error: rpcErr } = await supabase.rpc('recompute_club_levels', {
             p_club_id: resolvedId,
           });
           if (!rpcErr) {
-            sessionStorage.setItem(levelRecomputeKey, '1');
+            try {
+              sessionStorage.setItem(levelRecomputeKey, '1');
+            } catch {
+              /* Dedupe is an optimisation; losing it costs one extra RPC. */
+            }
             // Re-read the updated level from DB
             const { data: refreshedClub } = await supabase
               .from('clubs')
@@ -1884,7 +1900,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       setClubLevel(levelInfo);
     } catch (error: any) {
       reportError(error, 'ClubHomePage.Error_loading_club_data');
-      toast.error(error.message || 'Failed to load club data');
+      /* error.message on a PostgREST failure is text like "JSON object
+         requested, multiple (or no) rows returned" - Title-Cased by the toast
+         layer and shown to a player. The raw text is on the reportError above,
+         which is where it is useful. */
+      toast.error('Failed to load club data');
     } finally {
       loadingRef.current = false;
       if (!getIsMounted || getIsMounted()) setLoading(false);
@@ -2616,7 +2636,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       stable(t as unknown as LobbyTableRow, (r) => cashEntry(r, waitlistCounts.get(r.id) ?? 0))
     );
     entryCacheRef.current = next;
-    if (favoritesOnly) cash = cash.filter((e) => favoriteTableIds.has(e.id));
+    /* The Favorites chip lives in the quick-prefs row, which ALL does not
+       render - so leaving the filter applied there stripped the board to two
+       tables with no control anywhere on screen to undo it, and only a reload
+       cleared it. A filter with no switch is not a filter, it is a fault. */
+    if (favoritesOnly && gameType !== 'ALL') cash = cash.filter((e) => favoriteTableIds.has(e.id));
 
     /* ── WHAT "ALL" MEANS (Dan, 2026-08-25) ────────────────────────────────
        "WE DON'T HAVE MIXED CASH GAMES, AND THE CAP IS 10 FOR MTT ONLY.
@@ -3481,9 +3505,14 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       {/* ═══════════════════════════════════════════════════════════════════
           CLUB / UNION AD STRIP — directly under the action bar
       ═══════════════════════════════════════════════════════════════════ */}
-      {filtersOpen && resolvedClubId && (
+      {/* `club.id` is the fallback, not a second source of truth: this markup
+          only renders past the `if (!club) return` guard, so it is always
+          present, while resolvedClubId stays null forever if the slug lookup
+          missed. Without it, Filters and Create Game set state, played a
+          haptic and opened nothing, with no error to explain why. */}
+      {filtersOpen && (resolvedClubId || club?.id) && (
         <AdvancedFilters
-          clubId={resolvedClubId}
+          clubId={resolvedClubId || club!.id}
           initialType={gameType as FilterGameType}
           onClose={() => setFiltersOpen(false)}
           onApply={setAdvFilters}
@@ -3614,11 +3643,30 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
             return (
               <div className="empty-tables">
-                {!narrowed || totalHere === 0 ? (
+                {totalHere === 0 ? (
                   <>
                     <p>{showTournaments ? 'No Tournaments Yet' : 'No Tables Yet'}</p>
                     <p className="empty-hint">
                       Nothing Is Running Here Right Now. New Games Open All The Time.
+                    </p>
+                  </>
+                ) : !narrowed ? (
+                  <>
+                    {/* ALL IS A SCOPE, NOT EVERYTHING (2026-08-26). The ALL tab
+                        deliberately carries cash and joinable MTTs only - never
+                        a Spin, never a Heads Up, never a tournament that has
+                        stopped registering. With no search and no filter set,
+                        `narrowed` is false, so a club running five Spins and
+                        three running MTTs was told "Nothing Is Running Here
+                        Right Now" with eight live games one tab away. The count
+                        is the proof it was wrong, so the count is what it
+                        says. */}
+                    <p>Nothing On This Tab Right Now</p>
+                    <p className="empty-hint">
+                      {totalHere.toLocaleString()}
+                      {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In This
+                      Club. Spins And Heads Up Have Their Own Tabs, And So Do Tournaments Already
+                      Under Way.
                     </p>
                   </>
                 ) : !filtered && !searching ? (
@@ -3795,9 +3843,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         onCancel={() => setDeleteTableConfirm({ show: false, tableId: null, tableName: null })}
       />
 
-      {showCreateTournament && resolvedClubId && (
+      {showCreateTournament && (resolvedClubId || club?.id) && (
         <CreateTournamentModal
-          clubId={resolvedClubId}
+          clubId={resolvedClubId || club!.id}
           unionId={unionIdForCreate}
           initialFormat={
             gameType === 'SPIN' ? 'spin' : gameType === 'SNG' ? 'sng' : 'mtt_freezeout'

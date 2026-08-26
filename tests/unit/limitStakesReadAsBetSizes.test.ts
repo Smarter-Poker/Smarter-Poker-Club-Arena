@@ -63,10 +63,22 @@ describe('the lobby posts a limit table by its bet sizes', () => {
     expect(cashEntry(row({ game_variant: 'short_deck' })).stakesLabel).toBe('1/2');
   });
 
-  it('survives a row with missing blinds rather than rendering NaN', () => {
-    // Lobby rows come straight from the database and a legacy row can be null.
-    const e = cashEntry(row({ game_variant: 'flh', small_blind: 0, big_blind: 0 }));
-    expect(e.stakesLabel).not.toMatch(/NaN|undefined|null/);
+  it('says nothing rather than claiming a row with missing blinds is 0/0', () => {
+    /* Lobby rows come straight from the database and a legacy row can be null.
+       `|| 0` used to turn "we do not know" into a STATEMENT: stakesLabelFor
+       has no unknown branch, so the board printed "0/0" and CasinoPlaque
+       rendered "Blinds 0/0". stakesLabel is `string | null` for exactly this,
+       and every renderer already falls back when it is null. */
+    for (const variant of ['flh', 'nlh', 'plo4']) {
+      const e = cashEntry(row({ game_variant: variant, small_blind: 0, big_blind: 0 }));
+      expect(e.stakesLabel, `${variant} invented a stake`).toBeNull();
+    }
+    // A null column, not merely a zero, is the shape that actually ships.
+    const nulled = cashEntry(
+      row({ game_variant: 'nlh', small_blind: null, big_blind: null } as never)
+    );
+    expect(nulled.stakesLabel).toBeNull();
+    expect(nulled.stakesValue).toBe(0);
   });
 
   it('sorts on the big blind, which the label change must not touch', () => {

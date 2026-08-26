@@ -109,6 +109,14 @@ export default function LobbyAdStrip({
 
         if (cancelled) return;
 
+        /* PostgREST resolves a query-level failure (RLS refusal, bad column, a
+           malformed .or) as { data: null, error } rather than rejecting, so
+           neither of these ever reached the catch below. The strip rendered
+           empty, which is indistinguishable from "this club has no
+           announcements" - the exact silence that catch exists to break. */
+        if (clubRes.error) reportError(clubRes.error, 'LobbyAdStrip.loadClubAds');
+        if (unionRes.error) reportError(unionRes.error, 'LobbyAdStrip.loadUnionAds');
+
         const clubAds: LobbyAd[] = (clubRes.data || [])
           .map((r: any) => ({
             id: `club:${r.id}`,

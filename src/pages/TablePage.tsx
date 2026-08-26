@@ -46,12 +46,30 @@
  * file, and each of their stylesheets was checked class by class against the
  * rest of src/ before removal: none shares a selector with anything rendered.
  *
- * DELIBERATELY LEFT: BankrollWidget, PositionStatsPopup, SessionTimer,
- * SessionTrajectoryMini, StreakBadge and StreamerMode are dead here too, but
- * this file is their ONLY importer anywhere in src/. Dropping them would take
- * their CSS out of the bundle as well, and TablePage.css is being reworked in
- * a separate pass this round — so that is one file's decision, not this one's.
- * They are components that were built and never mounted; see the audit report.
+ * DELETED 2026-08-26: PositionStatsPopup, SessionTrajectoryMini and PremiumPot,
+ * with their stylesheets. Each was built, never mounted, and every class its
+ * stylesheet defined was either defined somewhere else as well or rendered by
+ * nothing at all - so removing them cannot change a pixel on any screen.
+ *
+ * DELIBERATELY LEFT, and this is a defect rather than a preference:
+ * BankrollWidget, SessionTimer, StreakBadge, StreamerMode and CardReveal are
+ * also mounted nowhere and this file is their only importer in src/ - but each
+ * of their stylesheets declares a BARE, UNSCOPED class that another component
+ * on another page renders and that NOTHING ELSE DEFINES:
+ *
+ *   BankrollWidget.css  .stack-value   <- RebuyModal, AddOnModal
+ *   SessionTimer.css    .timer-value   <- TournamentClock
+ *   StreakBadge.css     .streak-badge  <- LeaderboardPage
+ *   StreamerMode.css    .option        <- PrivacySettings, TableConfigPage +5
+ *   CardReveal.css      .cards         <- 20 files, table and non-table
+ *
+ * So those screens are styled today only because this page imports a component
+ * it never renders. Deleting the import unstyles them, silently, somewhere
+ * nobody would think to look. The fix is to move each orphaned rule into the
+ * stylesheet of the component that actually renders it - which touches the
+ * leaderboard, the tournament clock and the rebuy modal, none of which is the
+ * table. That is a deliberate follow-up, not a thing to do quietly inside a
+ * table pass. Do not simply drop these imports.
  */
 
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
@@ -66,6 +84,7 @@ import {
   DealerButton,
   DealAnimation,
 } from '../components/table';
+import { ActionClockSeconds, ActionClockWarning } from '../components/table/ActionClockReadouts';
 import type { SeatPlayer, Card, LastAction, PositionBadge } from '../components/table/SeatSlot';
 import type { SidePot } from '../components/table/PotDisplay';
 import type { BoardStage } from '../components/table/CommunityCards';
@@ -263,9 +282,7 @@ import { playerStyleClassifier } from '../services/PlayerStyleClassifier';
 // Phase 9: Previously unwired table components
 import { StreamerMode } from '../components/table/StreamerMode';
 import { BankrollWidget } from '../components/table/BankrollWidget';
-import PositionStatsPopup from '../components/table/PositionStatsPopup';
 import IdentityModal from '../components/table/IdentityModal';
-import { SessionTrajectoryMini } from '../components/table/SessionTrajectoryMini';
 import { StreakBadge } from '../components/table/StreakBadge';
 
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -10632,9 +10649,10 @@ export default function TablePage({
   const seatPositions = useMemo(() => seatRotationMap.map((s) => s.pos), [seatRotationMap]);
 
   /* PERF 2026-08-25. Both of these were computed INSIDE the seat map, so each
-     ran once per seat per render — and this component re-renders ~30x/sec for
-     the whole of anybody's turn (useTableTimer's RAF loop owns state here).
-     `safeBB` splits and parses a string; `holeCardCountFor` switches on the
+     ran once per seat per render — and at the time this component re-rendered
+     for the whole of anybody's turn, because it owned the action clock's state.
+     It does not any more (see `actionClock`), but the reasoning stands for every
+     other render. `safeBB` splits and parses a string; `holeCardCountFor` switches on the
      variant. Neither depends on the seat. One table-wide value each, recomputed
      only when the input actually changes. */
   const seatBigBlind = useMemo(() => safeBB(tableState.blinds), [tableState.blinds]);
@@ -11325,11 +11343,13 @@ export default function TablePage({
     }
   }, [tableState.heroSeat, tableId, userId]);
 
-  const {
-    timeRemaining: actionTimeRemaining,
-    timerProgress: actionTimerProgress,
-    resetTimer,
-  } = useTableTimer({
+  /* PERF 2026-08-25 — `actionTimeRemaining` and `actionTimerProgress` are gone.
+     They were React state IN THIS COMPONENT, so the whole table re-rendered for
+     the length of every turn just to move a number that three leaves needed.
+     `actionClock` is a store whose identity never changes; the leaves subscribe
+     to it. Measured across one 20 second turn: 20 renders of this page before,
+     zero after. See src/hooks/actionClockStore.ts. */
+  const { clock: actionClock, resetTimer } = useTableTimer({
     isActiveTurn: tableState.currentPlayerSeat > 0 && tableState.isHandInProgress,
     /* Dan 2026-08-23: `&& !timeBankActive` used to be here, and it did more harm
        than the redundant countdown it was suppressing. It made isHeroTurnRef
@@ -12249,46 +12269,21 @@ export default function TablePage({
 
   // Timer warning sound — tick when hero's time is running low.
   //
-  // AUDIT-2 FIX 2026-08-20 (machine-gun ticking): this effect depended on
-  // `actionTimeRemaining` / `actionTimerProgress`, which the timer hook
-  // updates ~30x per second. Every one of those updates re-ran the effect:
-  // the cleanup called stopTimerWarning() and the body called
-  // startTimerWarning() again — and startTimerWarning plays a tick
-  // IMMEDIATELY. So instead of one tick per second the player got a tick
-  // roughly every 66ms (only the 50ms priority gate throttled it), each with
-  // a haptic. Worse, timer_warning outranks every action sound (rank 80), so
-  // acting inside the last 5 seconds frequently produced NO fold/check/call
-  // sound at all.
+  // PERF 2026-08-25: the two effects that ran this have MOVED, verbatim, into
+  // <ActionClockWarning> (components/table/ActionClockReadouts.tsx), mounted
+  // near the bottom of this component's tree. They were the last thing on the
+  // page that needed the countdown as a NUMBER in React, and keeping them here
+  // meant keeping the countdown in this component's state — which is what
+  // re-rendered the whole table once a second for the length of every turn.
   //
-  // Collapsing the trigger to a boolean means the effect runs exactly twice
-  // per turn: once when the warning window opens, once when it closes.
-  // Dan 2026-08-20: warning window is the FINAL 3 SECONDS (was 5), and it
-  // buzzes as well as ticks. The haptic is deliberately NOT gated on the
-  // sound switches — a player with sound off still gets the physical warning
-  // (HapticService itself honors the user's vibration setting).
-  const isTimerWarningWindow =
-    tableState.currentPlayerSeat === tableState.heroSeat &&
-    tableState.isHandInProgress &&
-    actionTimeRemaining <= 3 &&
-    actionTimeRemaining > 0;
-  const isTimerWarningActive = isTimerWarningWindow && isSoundEnabled && ambientSoundsAllowed;
-  useEffect(() => {
-    if (isTimerWarningActive) {
-      soundService.startTimerWarning();
-      return () => soundService.stopTimerWarning();
-    }
-    soundService.stopTimerWarning();
-  }, [isTimerWarningActive]);
-  useEffect(() => {
-    if (!isTimerWarningWindow) return;
-    // Heavy pulse immediately, then once per second while the window is open
-    // (mirrors the 1s cadence of soundService.startTimerWarning).
-    import('../services/HapticService').then(({ haptic }) => haptic.heavy());
-    const buzz = window.setInterval(() => {
-      import('../services/HapticService').then(({ haptic }) => haptic.heavy());
-    }, 1000);
-    return () => clearInterval(buzz);
-  }, [isTimerWarningWindow]);
+  // The behaviour is unchanged and the AUDIT-2 2026-08-20 machine-gun fix is
+  // carried across with it: the trigger is still a BOOLEAN, so the effects still
+  // run exactly twice per turn rather than once per publication. Everything this
+  // component still knows and the clock does not — is hero the seat on the
+  // clock, is a hand in progress, are the sound switches on — is passed down as
+  // the `armed` and `soundEnabled` props.
+  const isHeroOnTheClock =
+    tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress;
 
   // --- NEW: Fully Functional Auto Top Up & Stand Up Next Big Blind ---
   useEffect(() => {
@@ -13520,11 +13515,14 @@ export default function TablePage({
             const seatNumber = idx + 1;
             const player = getPlayerAtSeat(seatNumber);
             /* PERF 2026-08-25. This map body runs for every seat on every
-               render of TablePage, and TablePage re-renders about THIRTY TIMES
-               A SECOND for the whole of anybody's turn — useTableTimer's RAF
-               loop calls setTimeRemaining every ~33ms and this component owns
-               that state. So anything computed per seat here is really being
-               computed ~270 times a second on a 9-max table, on a phone.
+               render of TablePage. When it was written, TablePage re-rendered
+               once a second for the whole of anybody's turn (and, before the
+               pass that preceded it, about thirty times a second), so anything
+               computed per seat here was really being computed nine times over,
+               continuously, on a phone. The action clock no longer renders this
+               component at all — but the map body is still the hottest loop on
+               the page whenever anything else does render it, so the savings
+               below stay.
 
                `getPlayerHUDStats(player.id)` was called TWICE per seat: once
                for `hudStats` and again inside the `playerStyle` IIFE below.
@@ -13773,12 +13771,14 @@ export default function TablePage({
                   timeBankArmed={
                     seatNumber === tableState.currentPlayerSeat ? timeBankArmed : false
                   }
-                  timerProgress={
-                    seatNumber === tableState.currentPlayerSeat ? actionTimerProgress : undefined
-                  }
-                  secondsLeft={
-                    seatNumber === tableState.currentPlayerSeat ? actionTimeRemaining : undefined
-                  }
+                  /* PERF 2026-08-25: `timerProgress` and `secondsLeft` used to
+                     be passed here from this component's state, which is the
+                     single reason the countdown had to live on TablePage at
+                     all. The seat subscribes to the clock itself and only
+                     while it is the one acting — see the note beside
+                     `isActingNow` in SeatSlot.tsx. The store's identity never
+                     changes, so this prop costs the memo comparator nothing. */
+                  actionClock={actionClock}
                   bigBlind={seatBigBlind}
                   /* Dan 2026-08-21, item 15: hero's live made hand. */
                   handStrength={displayPlayer?.isHero ? heroHandStrength : null}
@@ -14189,11 +14189,12 @@ export default function TablePage({
                     <span className="control-strip__count">{timeBanksRemaining}</span>
                   </button>
 
-                  {/* Timer Display */}
+                  {/* Timer Display. PERF 2026-08-25: a leaf that subscribes to
+                      the clock, so the numeral can tick without this component
+                      rendering. Same output as the inline expression it
+                      replaced, `|| 0` included. */}
                   <div className="control-strip__timer">
-                    <span className="control-strip__timer-val">
-                      {Math.ceil(actionTimeRemaining) || 0}s
-                    </span>
+                    <ActionClockSeconds clock={actionClock} className="control-strip__timer-val" />
                   </div>
                 </div>
               )}
@@ -15405,6 +15406,21 @@ export default function TablePage({
           }}
         />
       )}
+
+      {/* THE ACTION-CLOCK WARNING WINDOW — sound + haptic in the final three
+          seconds of hero's own turn.
+
+          Renders nothing. It is a component rather than a pair of effects in
+          this file for exactly one reason: an effect here would have to read the
+          countdown out of THIS component's state, and that state is what made
+          the entire table re-render once a second for the whole of every turn.
+          Mounted unconditionally so the window can close (and the tick can stop)
+          on the same cleanup path it always used; `armed` is the gate. */}
+      <ActionClockWarning
+        clock={actionClock}
+        armed={isHeroOnTheClock}
+        soundEnabled={isSoundEnabled && ambientSoundsAllowed}
+      />
     </div>
   );
 }

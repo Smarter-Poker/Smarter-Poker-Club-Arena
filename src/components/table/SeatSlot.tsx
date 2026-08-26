@@ -26,6 +26,11 @@ import type { PlayerStyleResult } from '../../services/PlayerStyleClassifier';
 import { ChipPhysics } from './ChipPhysics';
 import { getAvatarWithFallback } from '../../utils/avatarGenerator';
 import { soundService, haptic } from '../../services/SoundService';
+import {
+  useActionClockProgress,
+  useActionClockSeconds,
+  type ActionClockStore,
+} from '../../hooks/actionClockStore';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import RiveAvatar from './RiveAvatar';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
@@ -198,7 +203,25 @@ export interface SeatSlotProps {
   isActive: boolean;
   lastAction: LastAction;
   lastBetAmount?: number;
-  timerProgress?: number; // 0-100 (100 = full time, 0 = out of time)
+  /**
+   * 0-100 (100 = full time, 0 = out of time).
+   *
+   * PERF 2026-08-25: TablePage no longer passes this. Handing the acting seat's
+   * countdown DOWN as a prop is what forced the page to hold the countdown in
+   * its own state and re-render — page, nine seats, board, pot, HUD — once a
+   * second for the whole of anybody's turn. The seat subscribes to `actionClock`
+   * itself now, and only while it is the seat actually on the clock.
+   *
+   * Still honoured when supplied, so a harness that has a number and no store
+   * (SimPage) keeps working unchanged. An explicit prop wins over the store.
+   */
+  timerProgress?: number;
+  /**
+   * The table's action clock. Supplied by TablePage; absent everywhere else, in
+   * which case the seat subscribes to an idle store that never publishes and the
+   * two props above are the only source, exactly as before.
+   */
+  actionClock?: ActionClockStore;
   bigBlind?: number;
   isTournament?: boolean;
   bountyValue?: number;
@@ -254,7 +277,12 @@ export interface SeatSlotProps {
   hudStats?: MiniHUDStats | null; // Opponent VPIP/PFR stats
   showHUD?: boolean; // Whether to show the HUD overlay
   playerStyle?: PlayerStyleResult | null; // Auto-classified player archetype
-  secondsLeft?: number; // Actual seconds remaining (for countdown overlay)
+  /**
+   * Actual seconds remaining, for the disconnected-player countdown overlay.
+   * Same story as `timerProgress`: TablePage stopped passing it on 2026-08-25
+   * and the seat reads the store instead. An explicit prop still wins.
+   */
+  secondsLeft?: number;
   deckStyle?: '4color' | '2color';
   cardBack?: string; // Card back design ID (e.g. 'classic_red', 'black', 'clubs_gold')
   /**
@@ -575,7 +603,8 @@ export const SeatSlot = memo(
       isActive,
       lastAction,
       lastBetAmount,
-      timerProgress,
+      timerProgress: timerProgressProp,
+      actionClock,
       bigBlind = 2,
       // isTournament is deliberately NOT destructured any more. Nothing inside
       // this component may branch a VISUAL on tournament-ness: doing so is what
@@ -593,7 +622,7 @@ export const SeatSlot = memo(
       hudStats,
       showHUD = false,
       playerStyle,
-      secondsLeft,
+      secondsLeft: secondsLeftProp,
       deckStyle,
       cardBack = 'classic_blue',
       holeCardCount = 2,
@@ -678,6 +707,44 @@ export const SeatSlot = memo(
      */
     const hasFolded = !!player && (lastAction === 'fold' || player.status === 'folded');
     const isActingNow = isActive && !hasFolded;
+
+    /**
+     * PERF 2026-08-25 — THE COUNTDOWN COMES IN SIDEWAYS, NOT FROM ABOVE.
+     *
+     * These two values used to arrive as props from TablePage, which meant
+     * TablePage had to hold the countdown in state and re-render the entire
+     * table once a second for the whole of anybody's turn to deliver them.
+     *
+     * The seat subscribes to the store directly instead. `isActingNow` gates the
+     * subscription, so the eight seats that are NOT on the clock read
+     * `undefined` on every publication, React compares it with `Object.is`, and
+     * they do not render at all. Only the acting seat wakes — which is the only
+     * seat that has ever done anything with either number.
+     *
+     * An explicitly supplied prop still wins, so SimPage and any other harness
+     * that passes a number and no store behaves exactly as it did.
+     *
+     * NOTE the ring itself is not involved: it has been a pure-CSS animation off
+     * the engine's absolute deadline (`--sp-timer-duration` / `--sp-timer-delay`
+     * below) since 2026-04-15 and no React render has ever driven it.
+     */
+    const liveTimerProgress = useActionClockProgress(
+      actionClock,
+      isActingNow && timerProgressProp === undefined
+    );
+    /* `secondsLeft` has exactly one reader — the DISCONNECTED overlay's
+       countdown — so the subscription is gated on that state as well. The old
+       prop arrived whenever this seat was the current one, and was then ignored
+       for every seat that was not disconnected; subscribing on the same terms it
+       is read on means an ordinary acting seat is not woken once a second for a
+       number it will not render. `isActive` rather than `isActingNow`, to keep
+       the condition identical to the prop it replaces. */
+    const liveSecondsLeft = useActionClockSeconds(
+      actionClock,
+      isActive && player?.status === 'disconnected' && secondsLeftProp === undefined
+    );
+    const timerProgress = timerProgressProp ?? liveTimerProgress;
+    const secondsLeft = secondsLeftProp ?? liveSecondsLeft;
 
     /**
      * Dan 2026-08-23: "when the cards get shown down they need to be straight
@@ -2216,6 +2283,13 @@ export const SeatSlot = memo(
     // Return true if props are equal (skip re-render)
     if (prev.seatNumber !== next.seatNumber) return false;
     if (prev.timerProgress !== next.timerProgress) return false;
+    /* PERF 2026-08-25: the store instance is stable for the life of a table, so
+       in practice this never differs — but a table SWITCH inside MultiTablePage
+       reuses seat nodes across two different tables' clocks, and a seat left
+       subscribed to the previous table's store would count down the wrong turn.
+       Compared for that case, not for the countdown: the countdown does not
+       travel through props any more. */
+    if (prev.actionClock !== next.actionClock) return false;
     if (prev.isActive !== next.isActive) return false;
     if (prev.canSit !== next.canSit) return false;
     /**

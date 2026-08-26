@@ -1,6 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  THE ACTION CLOCK — derived from the deadline, published once a second
+ *  THE ACTION CLOCK — derived from the deadline, published once a second,
+ *  and NOT through the page's state
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * `useTableTimer` used to INTEGRATE the countdown from requestAnimationFrame
@@ -11,8 +12,11 @@
  * whether to spend a time bank.
  *
  * The countdown is now `(deadline - serverNow()) / 1000`, evaluated by two
- * drivers (RAF while visible, a plain interval always) and published to React
- * only when the WHOLE SECOND changes.
+ * drivers (RAF while visible, a plain interval always) and published only when
+ * the WHOLE SECOND changes — into an external store, NOT into React state, so
+ * the caller does not render for it at all. (The render count that proves that
+ * lives in actionClockDoesNotRenderTheTable.test.tsx; what is pinned here is
+ * that the readings themselves did not change.)
  *
  * These tests pin the three things that must stay true:
  *
@@ -21,7 +25,7 @@
  *   2. it still expires, and it still fires the hero timeout exactly once per
  *      turn — from the interval alone, with no animation frames at all, which
  *      is precisely the hidden-tab case that used to freeze;
- *   3. it does NOT render the caller thirty times a second.
+ *   3. it does NOT publish thirty times a second.
  *
  * requestAnimationFrame is stubbed to never call back, on purpose: everything
  * below is driven by the watchdog interval, so a pass here is a pass for a
@@ -30,11 +34,14 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useTableTimer } from '../../src/hooks/useTableTimer';
+import { useTableTimer, type UseTableTimerReturn } from '../../src/hooks/useTableTimer';
 
 /** No animation frames anywhere in this file — the tab is "hidden". */
 let rafSpy: ReturnType<typeof vi.spyOn>;
 let cafSpy: ReturnType<typeof vi.spyOn>;
+
+/** The published reading. It is on the store now, not on the hook's return. */
+const read = (r: { current: UseTableTimerReturn }) => r.current.clock.getSnapshot();
 
 beforeEach(() => {
   // Fake timers FIRST — they install their own requestAnimationFrame, and the
@@ -63,21 +70,21 @@ describe('the action clock reads the deadline', () => {
       })
     );
 
-    expect(result.current.timeRemaining).toBe(15);
-    expect(result.current.timerProgress).toBeCloseTo(100, 5);
+    expect(read(result).seconds).toBe(15);
+    expect(read(result).progress).toBeCloseTo(100, 5);
 
     act(() => void vi.advanceTimersByTime(1000));
-    expect(result.current.timeRemaining).toBe(14);
+    expect(read(result).seconds).toBe(14);
 
     act(() => void vi.advanceTimersByTime(9000));
-    expect(result.current.timeRemaining).toBe(5);
+    expect(read(result).seconds).toBe(5);
     // Urgency is the last five seconds of the hero's clock.
-    expect(result.current.isUrgent).toBe(true);
+    expect(read(result).isUrgent).toBe(true);
 
     act(() => void vi.advanceTimersByTime(5000));
-    expect(result.current.timeRemaining).toBe(0);
-    expect(result.current.isUrgent).toBe(false);
-    expect(result.current.timerProgress).toBe(0);
+    expect(read(result).seconds).toBe(0);
+    expect(read(result).isUrgent).toBe(false);
+    expect(read(result).progress).toBe(0);
   });
 
   it('seeds ZERO when the deadline has already passed, never a fresh full turn', () => {
@@ -92,25 +99,26 @@ describe('the action clock reads the deadline', () => {
         activeSeatKey: 2,
       })
     );
-    expect(result.current.timeRemaining).toBe(0);
+    expect(read(result).seconds).toBe(0);
   });
 
   it('restarts from the new deadline when the turn changes', () => {
     const now = Date.now();
-    const { result, rerender } = renderHook((props: Parameters<typeof useTableTimer>[0]) =>
-      useTableTimer(props)
-    , {
-      initialProps: {
-        isActiveTurn: true,
-        isHeroTurn: false,
-        onTimeout: vi.fn(),
-        turnDeadlineMs: now + 15_000,
-        activeSeatKey: 1,
-      },
-    });
+    const { result, rerender } = renderHook(
+      (props: Parameters<typeof useTableTimer>[0]) => useTableTimer(props),
+      {
+        initialProps: {
+          isActiveTurn: true,
+          isHeroTurn: false,
+          onTimeout: vi.fn(),
+          turnDeadlineMs: now + 15_000,
+          activeSeatKey: 1,
+        },
+      }
+    );
 
     act(() => void vi.advanceTimersByTime(12_000));
-    expect(result.current.timeRemaining).toBe(3);
+    expect(read(result).seconds).toBe(3);
 
     // Next seat's turn opens.
     const later = Date.now();
@@ -121,7 +129,7 @@ describe('the action clock reads the deadline', () => {
       turnDeadlineMs: later + 15_000,
       activeSeatKey: 2,
     });
-    expect(result.current.timeRemaining).toBe(15);
+    expect(read(result).seconds).toBe(15);
   });
 
   it('a time bank RESETS the clock rather than nudging a display value', () => {
@@ -137,15 +145,47 @@ describe('the action clock reads the deadline', () => {
     );
 
     act(() => void vi.advanceTimersByTime(13_000));
-    expect(result.current.timeRemaining).toBe(2);
+    expect(read(result).seconds).toBe(2);
 
     act(() => result.current.resetTimer(20));
-    expect(result.current.timeRemaining).toBe(20);
+    expect(read(result).seconds).toBe(20);
 
     // And the reset holds: the next evaluation agrees with it instead of
     // snapping back to the stale engine deadline.
     act(() => void vi.advanceTimersByTime(1000));
-    expect(result.current.timeRemaining).toBe(19);
+    expect(read(result).seconds).toBe(19);
+  });
+
+  it('re-publishes urgency when hero takes over the clock mid-second', () => {
+    /* Urgency depends on the clock AND on whose turn it is. It used to be
+       derived on the caller's render path, which tracked `isHeroTurn` for free;
+       now it is published, so a change of turn between two whole seconds has to
+       force a publication of its own. */
+    const now = Date.now();
+    const { result, rerender } = renderHook(
+      (props: Parameters<typeof useTableTimer>[0]) => useTableTimer(props),
+      {
+        initialProps: {
+          isActiveTurn: true,
+          isHeroTurn: false,
+          onTimeout: vi.fn(),
+          turnDeadlineMs: now + 4000,
+          activeSeatKey: 8,
+        },
+      }
+    );
+
+    expect(read(result).seconds).toBe(4);
+    expect(read(result).isUrgent).toBe(false);
+
+    rerender({
+      isActiveTurn: true,
+      isHeroTurn: true,
+      onTimeout: vi.fn(),
+      turnDeadlineMs: now + 4000,
+      activeSeatKey: 8,
+    });
+    expect(read(result).isUrgent).toBe(true);
   });
 });
 
@@ -208,36 +248,34 @@ describe('the hero timeout', () => {
   });
 });
 
-describe('the clock does not re-render the table thirty times a second', () => {
-  it('renders the caller once per whole second, not once per evaluation', () => {
-    let renders = 0;
+describe('the clock does not publish thirty times a second', () => {
+  it('publishes once per whole second, not once per evaluation', () => {
+    let publications = 0;
     const now = Date.now();
-    renderHook(() => {
-      renders += 1;
-      return useTableTimer({
+    const { result } = renderHook(() =>
+      useTableTimer({
         isActiveTurn: true,
         isHeroTurn: true,
         onTimeout: vi.fn(),
         turnDeadlineMs: now + 15_000,
         activeSeatKey: 7,
-      });
+      })
+    );
+
+    const unsubscribe = result.current.clock.subscribe(() => {
+      publications += 1;
     });
 
-    const afterMount = renders;
-    /* One `act` per 100ms so every batch React would coalesce is flushed on its
-       own — advancing the whole turn inside a single act would hide 450 updates
-       behind one render and the measurement would be worthless. The clock is
-       evaluated 150 times across this loop (the watchdog runs every 500ms and
-       the throttle admits one evaluation per 50ms); it must RENDER about
-       fifteen. */
+    /* The clock is evaluated 150 times across this loop (the watchdog runs
+       every 500ms and the throttle admits one evaluation per 50ms); it must
+       PUBLISH about fifteen. The old integrating loop pushed state every ~33ms
+       — roughly 450 across the same turn. */
     for (let i = 0; i < 150; i += 1) {
       act(() => void vi.advanceTimersByTime(100));
     }
-    const during = renders - afterMount;
+    unsubscribe();
 
-    // 15 whole-second transitions. The old integrating loop pushed state every
-    // ~33ms — roughly 450 renders across the same turn.
-    expect(during).toBeGreaterThanOrEqual(14);
-    expect(during).toBeLessThanOrEqual(18);
+    expect(publications).toBeGreaterThanOrEqual(14);
+    expect(publications).toBeLessThanOrEqual(18);
   });
 });

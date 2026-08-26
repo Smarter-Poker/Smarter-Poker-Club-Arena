@@ -67,24 +67,69 @@
  * All five component files (TSX + CSS) and useTableModals.ts are deleted.
  */
 
-import { OfflineQueueService } from '../services/OfflineQueueService';
-import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
-import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
-import { setShownCards } from '../services/ShowCardsService';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { formatGameTitle } from '../utils/formatGameTitle';
-import {
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* OfflineQueueService } from '../services/OfflineQueueService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* setShownCards } from '../services/ShowCardsService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useParams, useNavigate, useLocation } from 'react-router-dom';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* formatGameTitle } from '../utils/formatGameTitle';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/*
   SeatSlot,
   PotDisplay,
   CommunityCards,
   DealerButton,
   DealAnimation,
-} from '../components/table';
-import { ActionClockSeconds, ActionClockWarning } from '../components/table/ActionClockReadouts';
+*/
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* ActionClockSeconds, ActionClockWarning } from '../components/table/ActionClockReadouts';
 import type { SeatPlayer, Card, LastAction, PositionBadge } from '../components/table/SeatSlot';
 import type { SidePot } from '../components/table/PotDisplay';
 import type { BoardStage } from '../components/table/CommunityCards';
-import { normalizeCardBack } from '../components/table/CardImage';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* normalizeCardBack } from '../components/table/CardImage';
 // (The rabbit-hunt artwork note that used to sit here moved to RabbitHunt.tsx,
 // which is where the image is now actually imported and rendered. It had been
 // stranded above the table-skin registry for weeks, describing an import that
@@ -104,37 +149,147 @@ import { normalizeCardBack } from '../components/table/CardImage';
  */
 
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
-import { useTableWebSocket } from '../services/TableWebSocket';
-import { supabase, getAuthUser } from '../lib/supabase';
-import { parseBlindStructure } from '../utils/parseBlindStructure';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useTableWebSocket } from '../services/TableWebSocket';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* supabase, getAuthUser } from '../lib/supabase';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* parseBlindStructure } from '../utils/parseBlindStructure';
 // Phase 1.1 PR-3: authoritative engine WS state. Mounted always; becomes the
 // source of truth for game-state fields when VITE_USE_ENGINE_WS=1. The old
 // Supabase Realtime game-state path stays wired in parallel until PR-5 deletes
 // it, so flipping the flag is a pure rollout switch.
-import { useEngineTableState } from '../hooks/useEngineTableState';
-import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
-import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
-import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useEngineTableState } from '../hooks/useEngineTableState';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* mapEngineSnapshot } from '../utils/mapEngineSnapshot';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
 
-import { gameCode } from '../utils/gameCode';
-import { masterBus } from '../core/MasterBus';
-import {
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* gameCode } from '../utils/gameCode';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* masterBus } from '../core/MasterBus';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/*
   useMasterBusSubscription,
   useMasterBusSubscriptions,
 } from '../hooks/useMasterBusSubscription';
-import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
-import { playerStatusService } from '../services/PlayerStatusService';
-import { avatarService } from '../services/AvatarService';
-import { waitlistService } from '../services/WaitlistService';
-import { roomService, type RoomMessage } from '../services/RoomService';
-import { HydraService } from '../services/HydraService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useMasterBusChannel } from '../hooks/useMasterBusChannel';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* playerStatusService } from '../services/PlayerStatusService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* avatarService } from '../services/AvatarService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* waitlistService } from '../services/WaitlistService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* roomService, type RoomMessage } from '../services/RoomService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* HydraService } from '../services/HydraService';
 import TableChat from '../components/table/TableChat';
-import { ChatBubble, bubbleForSeat, useSeatChatBubbles } from '../components/table/ChatBubble';
-import { holeCardCountFor } from '../lib/holeCardCount';
-import { type InsuranceOffer } from '../components/table/InsuranceModal';
-import { ThrowAnimationContainer } from '../components/table/ThrowAnimation';
-import { useTabKeepAlive, workerTimeout, cancelWorkerTimeout } from '../hooks/useTabKeepAlive';
-import { STORAGE_KEYS } from '../lib/storage';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* ChatBubble, bubbleForSeat, useSeatChatBubbles } from '../components/table/ChatBubble';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* holeCardCountFor } from '../lib/holeCardCount';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* type InsuranceOffer } from '../components/table/InsuranceModal';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* ThrowAnimationContainer } from '../components/table/ThrowAnimation';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useTabKeepAlive, workerTimeout, cancelWorkerTimeout } from '../hooks/useTabKeepAlive';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* STORAGE_KEYS } from '../lib/storage';
 import StraddleToggle from '../components/table/StraddleToggle';
 /* TimeBank (the floating countdown panel) is no longer mounted - see the note
    at the Player Seats block. The hero's own seat ring carries the countdown;
@@ -150,37 +305,122 @@ import FoldProtectionDialog from '../components/table/FoldProtectionDialog';
 import TimebankCounter from '../components/table/TimebankCounter';
 // Dan 2026-08-21, item 3: buy more time banks with diamonds (1/10/25/100/500).
 import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
-import { sessionStatsService } from '../services/SessionStatsService';
-import { soundService, haptic } from '../services/SoundService';
-import {
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* sessionStatsService } from '../services/SessionStatsService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* soundService, haptic } from '../services/SoundService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/*
   ChipAnimationManager,
   createChipToPotEvent,
   createPotToWinnerEvent,
   type ChipAnimationEvent,
 } from '../components/table/ChipAnimation';
 // PotOddsDisplay intentionally NOT used on live tables — available for practice/training mode only
-import { type HandRecord } from '../components/table/HandHistoryPanel';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* type HandRecord } from '../components/table/HandHistoryPanel';
 // [MIGRATION] timeBankEngine removed — server-authoritative (Step 5). Time bank via GameServerAPI + DB.
-import { usePlayerStats } from '../hooks/usePlayerStats';
-import { useTableSettings } from '../hooks/useTableSettings';
-import { useTableTimer } from '../hooks/useTableTimer';
-import { useTableChat } from '../hooks/useTableChat';
-import { useTableTournament } from '../hooks/useTableTournament';
-import { useTableAnimations } from '../hooks/useTableAnimations';
-import { useTableSound } from '../hooks/useTableSound';
-import { useTableSession } from '../hooks/useTableSession';
-import { tableService } from '../services/TableService';
-import { WalletService } from '../services/WalletService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* usePlayerStats } from '../hooks/usePlayerStats';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useTableSettings } from '../hooks/useTableSettings';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useTableTimer } from '../hooks/useTableTimer';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useTableChat } from '../hooks/useTableChat';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useTableTournament } from '../hooks/useTableTournament';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useTableAnimations } from '../hooks/useTableAnimations';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useTableSound } from '../hooks/useTableSound';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useTableSession } from '../hooks/useTableSession';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* tableService } from '../services/TableService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* WalletService } from '../services/WalletService';
 import ActionPanel from '../components/table/ActionPanel';
-import { potSizedRaiseTo } from '../components/table/ActionPanel';
-import { betChipOffsetPx, chipCollectOffsetPx } from '../components/table/tableGeometry';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* potSizedRaiseTo } from '../components/table/ActionPanel';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* betChipOffsetPx, chipCollectOffsetPx } from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
 // The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
 // default import this line used to carry was unused. TablePage builds the
 // payload, so it needs the types.
 import type { ShareableHand, ShareableCard, ShareableAction } from '../components/table/ShareHand';
 import TableMenu from '../components/table/TableMenu';
-import {
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/*
   SitOutIcon,
   RebuyIcon,
   AddOnIcon,
@@ -191,42 +431,117 @@ import {
   HelpIcon,
   LeaveTableIcon,
 } from '../components/table/TableMenuIcons';
-import { useToast } from '../components/common/Toast';
-import { isVibrationAllowed, setVibrationAllowed } from '../utils/vibrationGate';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useToast } from '../components/common/Toast';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* isVibrationAllowed, setVibrationAllowed } from '../utils/vibrationGate';
 import KnockoutAnimation, { type KnockoutData } from '../components/tournament/KnockoutAnimation';
 import MysteryBountyChest, {
   formatBountyTierLabel,
   type MysteryChestData,
 } from '../components/tournament/MysteryBountyChest';
-import { useAnimationQueue } from '../hooks/useAnimationQueue';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useAnimationQueue } from '../hooks/useAnimationQueue';
 import SpinWheel, {
   DEFAULT_SPIN_TIERS,
   parseLockedTiers,
   type SpinWheelData,
 } from '../components/tournament/SpinWheel';
-import { spinRevealTotalMs } from '../config/spinSpec';
-import { isSpinTournament, type SpinRevealSubject } from '../utils/spinReveal';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* spinRevealTotalMs } from '../config/spinSpec';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* isSpinTournament, type SpinRevealSubject } from '../utils/spinReveal';
 // RealtimeChannelService imported if needed for future use
-import { tournamentService } from '../services/TournamentService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* tournamentService } from '../services/TournamentService';
 // [MIGRATION] All engine imports removed — server-authoritative (Steps 1-7 complete)
-import { handHistoryService } from '../services/HandHistoryService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* handHistoryService } from '../services/HandHistoryService';
 // Dan 2026-08-15: the real rake schedule (byte-identical mirror of the
 // server's), used so the Game Rules modal states the rake actually taken.
-import { resolveDisplayRake } from '../lib/rakeOverride';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* resolveDisplayRake } from '../lib/rakeOverride';
 // Dan 2026-08-15: two distinct HandRecord shapes exist — the snake_case
 // Supabase row from the service, and the camelCase view-model the panel
 // renders. Alias both so adaptServiceHandToPanel below reads unambiguously.
-import { LeaderboardService } from '../services/LeaderboardService';
-import { achievementTriggerService } from '../services/AchievementTriggerService';
-import { dailyChallengeService } from '../services/DailyChallengeService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* LeaderboardService } from '../services/LeaderboardService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* achievementTriggerService } from '../services/AchievementTriggerService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* dailyChallengeService } from '../services/DailyChallengeService';
 // REPLACE_ME from '../services/AchievementTriggerService';
-import { notificationService } from '../services/NotificationService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* notificationService } from '../services/NotificationService';
 import SpectatorBadge from '../components/table/SpectatorBadge';
 // FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay
 // import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
-import { horseBugReporter } from '../services/HorseBugReporter';
-import { useUserTableSettings } from '../hooks/useUserTableSettings';
-import { useUserThemeSettings } from '../hooks/useUserThemeSettings';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* horseBugReporter } from '../services/HorseBugReporter';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useUserTableSettings } from '../hooks/useUserTableSettings';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useUserThemeSettings } from '../hooks/useUserThemeSettings';
 import PineappleDiscard from '../components/table/PineappleDiscard';
 import GameServerAPI, {
   submitAction,
@@ -249,41 +564,136 @@ import GameServerAPI, {
 import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
 //monteCarloEquity import removed — server-authoritative
 import './TablePage.css';
-import { ConnectionHUD } from '../components/table/ConnectionHUD';
-import { TableErrorBoundary } from '../components/common/TableErrorBoundary';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* ConnectionHUD } from '../components/table/ConnectionHUD';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* TableErrorBoundary } from '../components/common/TableErrorBoundary';
 // Phase 8-9 Premium Components
-import { TableReactions } from '../components/table/TableReactions';
-import { useTableKeyboard } from '../hooks/useTableKeyboard';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* TableReactions } from '../components/table/TableReactions';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useTableKeyboard } from '../hooks/useTableKeyboard';
 
-import { TablePerfMonitor } from '../components/table/TablePerfMonitor';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* TablePerfMonitor } from '../components/table/TablePerfMonitor';
 // IMPROVEMENT PASS 2026-08-19: PremiumCard, PlayerCard, HoleCardReveal and
 // createChipToPotEvent imports removed — imported for years, never rendered
 // or called (dead weight in the TablePage chunk).
-import { playerStyleClassifier } from '../services/PlayerStyleClassifier';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* playerStyleClassifier } from '../services/PlayerStyleClassifier';
 import IdentityModal from '../components/table/IdentityModal';
 
-import { useIsMounted } from '../hooks/useIsMounted';
-import { useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useIsMounted } from '../hooks/useIsMounted';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';
 // Bible V8 §11: 4-Corner Table HUD Components
-import { TableHUD } from '../components/table/TableHUD';
-import { MiniStatsCard } from '../components/table/MiniStatsCard';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* TableHUD } from '../components/table/TableHUD';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* MiniStatsCard } from '../components/table/MiniStatsCard';
 import TournamentInfoPanel from '../components/tournament/TournamentInfoPanel';
-import { TournamentHUD } from '../components/tournament/TournamentHUD';
-import { PreviousHandCard } from '../components/table/PreviousHandCard';
-import { HandDetailModal } from '../components/table/HandDetailModal';
-import { reportError } from '../utils/errorReporter';
-import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage';
-import { serverNow } from '../utils/serverClock';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* TournamentHUD } from '../components/tournament/TournamentHUD';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* PreviousHandCard } from '../components/table/PreviousHandCard';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* HandDetailModal } from '../components/table/HandDetailModal';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* reportError } from '../utils/errorReporter';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* serverNow } from '../utils/serverClock';
 // Dan 2026-08-21, item 15: hero's live hand strength under their seat box.
-import { bestFive, cardKey } from '../utils/handEvaluator';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* bestFive, cardKey } from '../utils/handEvaluator';
 // Dan 2026-08-21, items 11 + 16: the client's post-hand hold comes from the
 // same animation spec the engine derives its own hold from, so the table can
 // never clear the winner before the pot has finished travelling to them.
-import { handCompletionHoldMs, HAND_COMPLETION } from '../config/handCompletionSpec';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* handCompletionHoldMs, HAND_COMPLETION } from '../config/handCompletionSpec';
 // SHOWDOWN POLISH 2026-08-25: pure, unit-tested presentation logic — award
 // sequencing, hi-lo board labels, and the spec-21 stack hold — extracted so
 // the beats are testable outside this 13k-line component.
-import {
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/*
   buildAwardGroups,
   boardLabelFromAwards,
   pendingStackHold,
@@ -324,11 +734,36 @@ const RANK_WORD = (r: string): string =>
     K: 'King',
     A: 'Ace',
   })[String(r).toUpperCase()] ?? String(r).toUpperCase();
-import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
-import { getAnimationSpeed } from '../utils/animationSpeed';
-import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
-import { TableModalsLayer } from '../components/table/TableModalsLayer';
-import { MysteryBountyService, playerTotalsFromAwards } from '../services/MysteryBountyService';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* getAnimationSpeed } from '../utils/animationSpeed';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* TableModalsLayer } from '../components/table/TableModalsLayer';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* MysteryBountyService, playerTotalsFromAwards } from '../services/MysteryBountyService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TOURNAMENT RESULT — what the Session Complete popup shows instead of chips
@@ -577,18 +1012,38 @@ interface TableState {
 
 // HORSE AVATARS — Use deterministic SVG generator (no external DiceBear dependency)
 // Each horse gets a unique colorful avatar derived from their name
-import { generateAvatarSvg } from '../utils/avatarGenerator';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* generateAvatarSvg } from '../utils/avatarGenerator';
 // 2026-08-19: pure card + seat helpers now live in their own modules. They used
 // to sit inline in this file; the seat rings in particular carry measured rail
 // positions that must not be casually rewritten. See those files for why.
-import { ENGINE_SUIT_MAP, sortCardsByRank, getGameVariantLabel } from '../lib/tableCardDisplay';
-import {
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* ENGINE_SUIT_MAP, sortCardsByRank, getGameVariantLabel } from '../lib/tableCardDisplay';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/*
   seatLayoutFor,
   createEmptySeats,
   rotateSeatsForHero,
   seatPixelMap,
 } from '../lib/tableSeatGeometry';
-import {
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/*
   resolveSkin,
   resolveBackgroundLayers,
   DEFAULT_TABLE_BACKDROP_COLOR,
@@ -596,10 +1051,30 @@ import {
   TABLE_BACKGROUND_POSITION,
   TABLE_BACKGROUND_REPEAT,
 } from '../lib/tableTheme';
-import { adaptServiceHandToPanel, panelHandToShareable } from '../lib/handHistoryAdapter';
-import { useUserStore } from '../stores/useUserStore';
-import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
-import { relayTournamentEvent } from '../services/tournamentEventBridge';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* adaptServiceHandToPanel, panelHandToShareable } from '../lib/handHistoryAdapter';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* useUserStore } from '../stores/useUserStore';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
+/* relayTournamentEvent } from '../services/tournamentEventBridge';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WINDOW-LEVEL LOCKS — TRUE singletons that survive module reloads, lazy-load

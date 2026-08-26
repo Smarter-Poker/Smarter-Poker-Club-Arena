@@ -339,7 +339,7 @@ export default function InvitePage() {
               alt={club.name}
               loading="lazy"
             />
-          ) : Number(club.club_id) === SHARK_CLUB_ID ? (
+          ) : club.name?.toUpperCase().includes('SHARK') ? (
             <img src={`${MEDIA_BASE}images/shark-club-logo.jpg`} alt={club.name} loading="lazy" />
           ) : (
             <span>{club.name[0]?.toUpperCase()}</span>

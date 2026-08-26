@@ -37,6 +37,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { readLocalSession } from '../../lib/authUtils';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { CardImage } from '../table/CardImage';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import type { TournamentResult } from '../../services/pendingSessionSummary';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
@@ -310,7 +311,7 @@ export default function TournamentRankingCard({
       return;
     }
     onDismiss();
-    navigate('/tournaments');
+    navigate(result.isSpin ? '/tournaments?type=spin' : '/tournaments');
   };
 
   return createPortal(
@@ -394,6 +395,18 @@ export default function TournamentRankingCard({
             <span className="trc2__reward-value">{formatMoney(totalWon)}</span>
           </div>
         </div>
+
+        {/* ── Winning hand (if applicable) ── */}
+        {result.winningCards && result.winningCards.length > 0 && (
+          <div className="trc2__winning-hand">
+            <span className="trc2__winning-hand-label">Winning Hand</span>
+            <div className="trc2__winning-cards">
+              {result.winningCards.map((c, i) => (
+                <CardImage key={i} card={c} size="md" className="trc2__winning-card" />
+              ))}
+            </div>
+          </div>
+        )}
 
         {result.bountyWinnings > 0 && (
           <div className="trc2__payout-split">

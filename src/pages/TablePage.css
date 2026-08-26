@@ -1789,6 +1789,48 @@
   text-shadow: 0 0 6px rgba(255, 215, 0, 0.3);
 }
 
+/* Icon-image variant: no default padding; the img fills the button */
+.control-strip__btn--icon-img {
+  padding: 0;
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+}
+
+/* Wrapper for image + count overlay */
+.control-strip__icon-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.control-strip__timebank-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  display: block;
+}
+
+/* White count overlaid on the image */
+.control-strip__count-overlay {
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(0, 0, 0, 0.7);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
 .control-strip__timer {
   padding: 4px 10px;
   background: linear-gradient(135deg, rgba(255, 215, 0, 0.12) 0%, rgba(255, 180, 0, 0.08) 100%);
@@ -2833,6 +2875,14 @@
 .add-chips-icon-btn:active {
   transform: scale(0.95);
   background: rgba(255, 255, 255, 0.25);
+}
+/* Custom add-screen icon image */
+.add-chips-icon-btn__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: inherit;
+  display: block;
 }
 
 .floating-im-back,

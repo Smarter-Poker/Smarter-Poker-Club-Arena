@@ -555,6 +555,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             wentToShowdown,
             showdownHands,
             bbjHit: !!this.currentHandBBJHit?.hit,
+            // POKERBROS PARITY 2026-08-26: a run-it-twice hand's boards are
+            // revealed street by street CLIENT-side after settlement — the
+            // hold covers that whole timeline (spec RIT_* constants) so the
+            // next hand can never deal over a board still turning its river.
+            ritRuns: this.currentHandRitBoards,
+            // Streets each board still deals: flop at 3 cards, turn at 4,
+            // river at 5 — count the stops past the shared base board.
+            ritStreetsPerRun: [3, 4, 5].filter((n) => n > this.currentHandRitBaseBoardCount).length,
           });
 
           // Phase 1: the completion sequence actually plays out.
@@ -741,6 +749,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // billed twice: exactly the failure the lock was added to prevent. The
     // `finally` is what bounds this set, on every path including a throw.
     this.currentHandRitBoards = 0; // RIT VERIFIER FIX 2026-08-21: new hand, no boards
+    this.currentHandRitBaseBoardCount = 0;
     this.timeBankActivatedThisTurn = false; // Bible V8 §6.2: Reset time bank flag for new hand
     this.showHandPlayers = null; // Reset voluntary show-hand set for new hand
     // Dan 2026-08-18: per-card reveal picks are per-hand intent too. If this

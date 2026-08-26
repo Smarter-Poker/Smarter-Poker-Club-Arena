@@ -3106,6 +3106,32 @@ export default function TablePage({
   const [ritHeroAccepted, setRitHeroAccepted] = useState(false);
   const [ritChooserHasDecided, setRitChooserHasDecided] = useState(false);
   const ritDeadlineRef = useRef(0);
+  // Reference behavior: a wide status strip rides the felt through the RIT
+  // question — "waiting" persists while the offer is open (spectators and
+  // folded players see it too), the accepted/rejected outcome replaces it for
+  // a few seconds. NOT a toast: the reference renders it over the table.
+  const [ritFeltBanner, setRitFeltBanner] = useState<string | null>(null);
+  const ritFeltBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showRitFeltBanner = useCallback((text: string, ms?: number) => {
+    if (ritFeltBannerTimerRef.current) {
+      clearTimeout(ritFeltBannerTimerRef.current);
+      ritFeltBannerTimerRef.current = null;
+    }
+    setRitFeltBanner(text);
+    if (ms && ms > 0) {
+      ritFeltBannerTimerRef.current = setTimeout(() => {
+        ritFeltBannerTimerRef.current = null;
+        setRitFeltBanner(null);
+      }, ms);
+    }
+  }, []);
+  // Reference behavior: the panel slides in a beat AFTER the table settles
+  // into "waiting" — not in the same frame as the all-in.
+  const ritPanelOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Reference behavior: the POT counter decrements as each pot leaves the
+  // middle (every game — splits, side pots, RIT boards). When non-null this
+  // overrides the snapshot pot during the award sequence.
+  const [potShipRemaining, setPotShipRemaining] = useState<number | null>(null);
   // Reveal timeline: how many cards of each RIT board are face up right now.
   // rit_result arrives with the full boards; the reference client deals them
   // street by street (flop → pause → turn → pause → river, board by board),
@@ -3130,6 +3156,16 @@ export default function TablePage({
     setRitRevealDone(false);
     ritDeadlineRef.current = 0;
     ritTimelineEndsAtRef.current = 0;
+    if (ritPanelOpenTimerRef.current) {
+      clearTimeout(ritPanelOpenTimerRef.current);
+      ritPanelOpenTimerRef.current = null;
+    }
+    if (ritFeltBannerTimerRef.current) {
+      clearTimeout(ritFeltBannerTimerRef.current);
+      ritFeltBannerTimerRef.current = null;
+    }
+    setRitFeltBanner(null);
+    setPotShipRemaining(null);
   }, []);
   // One shared countdown, ticking against the engine's wall-clock deadline.
   useEffect(() => {
@@ -3797,6 +3833,8 @@ export default function TablePage({
       // the page — a street reveal firing into an unmounted table is a leak.
       for (const t of ritRevealTimersRef.current) clearTimeout(t);
       if (ritResultTimerRef.current) clearTimeout(ritResultTimerRef.current);
+      if (ritPanelOpenTimerRef.current) clearTimeout(ritPanelOpenTimerRef.current);
+      if (ritFeltBannerTimerRef.current) clearTimeout(ritFeltBannerTimerRef.current);
     };
   }, []);
 
@@ -5510,7 +5548,12 @@ export default function TablePage({
         const timeoutSeconds = Number(handState.timeoutSeconds) || 25;
         const deadlineTs = Number(handState.deadline_ts) || Date.now() + timeoutSeconds * 1000;
 
-        // Only show to all-in players involved in the RIT offer
+        // The waiting strip rides the felt for EVERYONE — spectators and
+        // folded players watch the question hang exactly like the reference,
+        // and it stays up until an outcome event replaces or clears it.
+        showRitFeltBanner('Waiting For Players To Run It Multiple Times.');
+
+        // Only the all-in players get the consent panel itself.
         if (!userId || !allPlayerIds?.includes(userId)) return;
 
         setRitAllPlayerIds(allPlayerIds);
@@ -5528,8 +5571,14 @@ export default function TablePage({
           tableStateRef.current?.players?.find((pp) => pp?.id === chooserId)?.name || 'Player'
         );
         setRitTimer(Math.max(0, Math.ceil((deadlineTs - Date.now()) / 1000)));
-        setShowRIT(true);
         setDecisionDeadline({ kind: 'rit', at: deadlineTs });
+        // Reference cadence: the table settles into "waiting" for a beat,
+        // THEN the panel slides in. rit_single_run cancels a pending open.
+        if (ritPanelOpenTimerRef.current) clearTimeout(ritPanelOpenTimerRef.current);
+        ritPanelOpenTimerRef.current = setTimeout(() => {
+          ritPanelOpenTimerRef.current = null;
+          setShowRIT(true);
+        }, 1500 * getAnimationSpeed());
         return;
       }
 
@@ -5574,14 +5623,20 @@ export default function TablePage({
       // everyone at once and the accept banner rides over the felt while the
       // first board starts dealing (toast layer enforces the popup style).
       if (eventType === 'rit_all_accepted') {
+        // The panel closes for everyone at once and a pending pre-open beat
+        // is cancelled; the accept strip rides the felt while board 1 deals.
+        if (ritPanelOpenTimerRef.current) {
+          clearTimeout(ritPanelOpenTimerRef.current);
+          ritPanelOpenTimerRef.current = null;
+        }
         setShowRIT(false);
         setRitHeroAccepted(false);
         const runs = (handState.runs as number) || 2;
-        toast.info(
+        showRitFeltBanner(
           runs === 3
             ? 'Players Have Accepted Running It 3 Times.'
             : 'Players Have Accepted Running It Twice.',
-          4000
+          4500
         );
         return;
       }
@@ -5590,9 +5645,9 @@ export default function TablePage({
       // just the announcement.
       if (eventType === 'rit_mandatory') {
         const runs = (handState.runs as number) || 2;
-        toast.info(
+        showRitFeltBanner(
           runs === 3 ? 'Mandatory Run It 3 Times This Hand.' : 'Mandatory Run It Twice This Hand.',
-          4000
+          4500
         );
         return;
       }
@@ -5628,7 +5683,11 @@ export default function TablePage({
             : reason === 'player_declined'
               ? `Running It Once. ${name} Declined.`
               : 'Running It Once. Not Everyone Agreed In Time.';
-        toast.info(message, 4000);
+        // Felt strip, not a toast — the reference rides the rejection over
+        // the table and leaves it up through the start of the single runout.
+        // (resetRitPanelState above cleared the waiting strip; this replaces
+        // it in the same commit of state.)
+        showRitFeltBanner(message, 5500);
         return;
       }
 
@@ -5649,6 +5708,10 @@ export default function TablePage({
             distribution,
             perBoardWinners: (handState.per_board_winners as string[][]) || undefined,
             potTotal: pots.reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
+            baseBoardCount: Math.min(
+              5,
+              Math.max(0, Number(handState.base_board_count as number) || 0)
+            ),
           });
           setTableState((prev) => ({
             ...prev,
@@ -5669,16 +5732,19 @@ export default function TablePage({
             Math.max(0, Number(handState.base_board_count as number) || 0)
           );
           const speed = getAnimationSpeed();
-          const STREET_MS = 1400 * speed; // matches server allInStreetPauseMs
-          const RUN_GAP_MS = 1500 * speed; // beat between boards
-          const RIBBON_MS = 900 * speed; // last river → winner ribbons
+          // The engine's post-hand hold derives from the SAME constants
+          // (handCompletionSpec RIT_*), so the next hand always waits for
+          // exactly this timeline. Change them there, both sides move.
+          const STREET_MS = HAND_COMPLETION.RIT_STREET_MS * speed;
+          const RUN_GAP_MS = HAND_COMPLETION.RIT_RUN_GAP_MS * speed;
+          const RIBBON_MS = HAND_COMPLETION.RIT_RIBBON_MS * speed;
           const counts = boards.map(() => baseCount);
           setRitRevealCounts([...counts]);
           setRitRevealDone(false);
           // Streets still to deal from the base board: 3-card flop counts as
           // one street beat, then turn, then river — same as the live deal.
           const streetStops = [3, 4, 5].filter((n) => n > baseCount);
-          let at = 600 * speed; // small settle after the panel closes
+          let at = HAND_COMPLETION.RIT_REVEAL_LEAD_MS * speed; // settle after the panel closes
           for (let bi = 0; bi < boards.length; bi++) {
             for (const stop of streetStops) {
               const t = window.setTimeout(() => {
@@ -10249,6 +10315,13 @@ export default function TablePage({
             return anim;
           });
           if (awardGroups.some((g) => g.events.length > 0)) {
+            // Reference behavior (2026-08-26): when pots leave the middle as
+            // a SEQUENCE, the POT counter drops as each one departs — the
+            // number over the felt always says what is still in the middle.
+            // Only engaged for multi-beat sequences; a single ship keeps
+            // PotDisplay's own slide-and-fade.
+            const sequenced = awardGroups.length > 1;
+            if (sequenced) setPotShipRemaining(potAmount);
             const fireGroup = (g: AwardGroupAnim) => {
               if (g.events.length === 0) return;
               setChipAnimations((prev) => [...prev, ...g.events]);
@@ -10256,6 +10329,12 @@ export default function TablePage({
               // frame as their chip fan so the number travels WITH the pot.
               for (const plan of g.floats) {
                 spawnPotWinFloat(plan.fromX, plan.fromY, plan.toX, plan.toY, plan.amount);
+              }
+              if (sequenced) {
+                const groupTotal = g.floats.reduce((s, f) => s + (f.amount || 0), 0);
+                setPotShipRemaining((prev) =>
+                  prev == null ? prev : Math.max(0, Math.round((prev - groupTotal) * 100) / 100)
+                );
               }
               // Bible V8 §5.3: pot collect sweep sound — synced with chip animation
               // #175 gated for multi-table: only play on the active tab
@@ -13221,8 +13300,18 @@ export default function TablePage({
                   {ritBoardsView.length >= 2 ? (
                     ritBoardsView.map((board) => (
                       <div
-                        className={`community-area__run community-area__run--board-${board.boardIndex + 1}`}
+                        className={`community-area__run community-area__run--board-${board.boardIndex + 1}${
+                          board.boardIndex > 0 ? ' community-area__run--extra' : ''
+                        }`}
                         key={`rit-run-${board.boardIndex + 1}`}
+                        /* Runs 2+ re-deal only the streets past the shared
+                           base board — the shared prefix renders dimmed on
+                           those rows (CSS keys off data-base-count), so the
+                           re-dealt cards read as the new information, like
+                           the reference. */
+                        data-base-count={
+                          board.boardIndex > 0 ? (ritResult?.baseBoardCount ?? 0) : 0
+                        }
                         style={
                           {
                             '--rit-run-delay': `${board.boardIndex * 0.4}s`,
@@ -13488,11 +13577,23 @@ export default function TablePage({
             </div>
           )}
 
+          {/* POKERBROS PARITY 2026-08-26: the RIT status strip — "waiting"
+              persists while the offer hangs (spectators see it too), the
+              accepted/rejected outcome replaces it for a few seconds. */}
+          {ritFeltBanner && (
+            <div className="rit-felt-banner" role="status" aria-live="polite">
+              <span className="rit-felt-banner__text">{ritFeltBanner}</span>
+            </div>
+          )}
+
           {/* Pot Display — click to toggle chips/BB */}
           <div className="pot-area">
             <PotDisplay
-              mainPot={tableState.pot}
-              sidePots={tableState.sidePots}
+              /* Reference behavior (2026-08-26): during a sequenced award the
+                 POT counter names what is STILL in the middle, dropping as
+                 each pot ships (splits, side pots, every RIT board). */
+              mainPot={potShipRemaining ?? tableState.pot}
+              sidePots={potShipRemaining != null ? [] : tableState.sidePots}
               bigBlind={safeBB(tableState.blinds, 0)}
               displayMode={v8Settings.show_stack_in_bb ? 'bb' : 'chips'}
               onToggleDisplayMode={() => toggleV8Setting('show_stack_in_bb')}

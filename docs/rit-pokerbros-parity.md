@@ -108,6 +108,50 @@ result events (which is also how the reference client behaves).
   with the decliner named in the banner, and the single runout proceeds
   (already server-paced).
 
+## 2b. Round 2 (same day) — measured timings and the remaining gaps
+
+The three recordings were re-cut at 10fps and inter-frame difference spikes
+were used to timestamp every card land and chip ship. Measured: streets
+~1.3-1.4s apart, ~1.8s between boards, winner ribbons ~0.9s after the last
+river, pot ships ~0.9-1.2s apart, next hand ~2.5s after the last ship, and a
+multi-second "waiting" lead-in before the panel.
+
+Closed in round 2:
+
+- **The engine's post-hand hold now covers the reveal timeline.** A RIT hand
+  settles synchronously server-side while the client deals the boards street
+  by street — the old hold (max ~7.9s) was shorter than a 2-run preflop
+  timeline (~12s), so the next hand dealt over a board still turning its
+  river. `handCompletionSpec` gained RIT\_\* constants (single source, mirrored
+  byte-identical client/server, pinned by test) and
+  `handCompletionHoldMs({ritRuns, ritStreetsPerRun})` extends the hold by
+  exactly the client timeline. The client timeline reads the SAME constants.
+- **Felt status strip instead of toasts.** "Waiting" rides the felt for
+  everyone — spectators and folded players included — while the offer hangs;
+  the accepted/rejected outcome (decliner named) replaces it for ~5s, exactly
+  like the reference. The panel itself slides in a beat (~1.5s) after the
+  strip appears, matching the reference lead-in.
+- **The POT counter decrements as each pot leaves the middle** during any
+  sequenced award (splits, side pots, every RIT board) — the number over the
+  felt always says what is still in the middle. Single-pot hands keep the
+  existing slide-and-fade.
+- **Runs 2+ dim the shared base cards** (flop/turn all-ins) so the re-dealt
+  streets read as the new information, like the reference's offset cards.
+- **Ship cadence retuned**: POT_AWARD_STAGGER_MS 600 → 900 (measured
+  0.9-1.2s), run gap 1500 → 1800 (measured ~1.8s).
+
+Known deliberate divergences (documented, not accidental):
+
+- The reference's "risk control" phase is their compliance backend; our
+  single waiting strip covers the same beat without pretending to a check we
+  do not run.
+- On a turn all-in the reference draws run 2 as one offset river card; we
+  draw a full second row with the shared prefix dimmed — same information,
+  same pacing, layout adapted to our stacked-board system (which must also
+  fit run 3).
+- Banner/panel wording follows the house popup law (Title Case, no em
+  dashes) rather than the reference's literal strings.
+
 ## 3. Explicitly out of scope
 
 - No PokerBros assets, artwork or text is copied; visual layout is our own.

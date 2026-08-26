@@ -158,7 +158,7 @@ export default function InvitePage() {
   // Generate invite URL and simple QR code when club loads
   useEffect(() => {
     if (club?.id) {
-      const baseUrl = `${window.location.origin}/hub/club-arena/invite/${club.id}`;
+      const baseUrl = `${window.location.origin}/hub/club-arena/invite/${club.slug || club.id}`;
       if (user?.id) {
         supabase
           .from('profiles')

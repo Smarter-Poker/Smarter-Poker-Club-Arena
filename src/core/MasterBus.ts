@@ -461,6 +461,13 @@ export interface BusPayloadMap {
     bigBlind: number;
     winnerName: string;
     amount: number;
+    /* 2026-08-26: the hit's own identity and emission time, so the receiver
+       de-duplicates on WHICH hit this is rather than on when it arrived —
+       the fix for the jackpot re-announcing on every page refresh. Optional
+       because a producer without a hand number still de-duplicates by table;
+       see lib/bbjHitOnce. */
+    handNumber?: number;
+    emittedAt?: number;
   };
   // Tournament lifecycle events
   PLAYER_ELIMINATED: {

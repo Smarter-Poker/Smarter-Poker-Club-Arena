@@ -156,13 +156,15 @@ describe('hero hole-card row geometry', () => {
   });
 
   /**
-   * Dan 2026-08-25 round 2, item 10: "for holdem, every player should have
-   * their cards displayed exactly as the hero has theirs."
+   * The hero row's 2-card baseline lives on `.seat` as --sp-card2-* and the
+   * row reads it via var() rather than restating literals — that indirection
+   * is what lets the breakpoint blocks retune one place.
    *
-   * "Exactly" only survives if there is ONE set of numbers. They live on
-   * `.seat` as --sp-card2-*, and both rows read them — the hero's row here and
-   * `.seat__cards--opponent.seat__cards--twocard` at the end of the file. A
-   * literal creeping back into either is the drift this pins.
+   * HISTORY 2026-08-26: these tokens used to have a second consumer, the
+   * hold'em villain row (`--twocard`), deleted with the second villain
+   * renderer — villains now derive from the avatar token instead (see the
+   * cluster in SeatSlot.css, pinned by shipped-invariants). The tokens are
+   * hero-only again; this test pins the indirection either way.
    */
   it('reads the shared two-card size rather than restating it', () => {
     const heroTokens = rulesFor('.seat__cards--hero')
@@ -171,7 +173,7 @@ describe('hero hole-card row geometry', () => {
 
     expect(heroTokens.length, 'the hero row must set all three size tokens').toBe(3);
     for (const value of heroTokens) {
-      expect(value, 'the two-card size is shared with hold-em villains').toMatch(
+      expect(value, 'the hero row must read the --sp-card2-* tokens, not literals').toMatch(
         /^var\(--sp-card2-(w|h|step),/
       );
     }

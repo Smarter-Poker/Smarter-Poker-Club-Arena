@@ -29,7 +29,6 @@ import {
   seatPixelMap,
   isTopCapSeat,
   outboardCardSide,
-  inboardCardSide,
   seatCardSide,
 } from '../../src/lib/tableSeatGeometry';
 
@@ -98,32 +97,27 @@ describe('no seat escapes the frame', () => {
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
- * WHICH SIDE A SEAT HANGS ITS CARDS OFF (Dan 2026-08-25 round 2, item 7).
+ * WHICH SIDE A SEAT HANGS ITS CARD FAN OFF (Dan 2026-08-26 villain-fan rebuild,
+ * spec section 3b).
  *
- * There are two rules and they are opposites, which is exactly why they need
- * pinning: the top cap goes OUTBOARD (away from the middle of the table,
- * because it has no felt beneath it and its only problem is the neighbouring
- * top hand), and every other seat goes INBOARD (toward the felt, because
- * outboard is what ran a right-rail PLO hand off the edge of a 375px phone).
+ * ONE rule, every seat, every ring: the fan is MIRRORED OUTWARD, away from the
+ * middle of the table. Left-half seats fan left, right-half seats fan right,
+ * and dead centre (or unmeasurable) defaults right. This keeps the betting
+ * lane between pod and pot clear — chips render inboard, cards outboard.
  *
- * Swapping them looks fine in review and is immediately wrong on a phone, in
- * opposite directions on the two halves of the table.
+ * This deliberately replaced the 2026-08-25 two-band rule (outboard at the
+ * top cap, inboard elsewhere). Reintroducing a per-band or per-seat-index
+ * branch is the regression these tests exist to catch.
  * ─────────────────────────────────────────────────────────────────────────────
  */
-describe('which side a seat hangs its cards off', () => {
-  it('the top cap goes outboard — away from the middle of the table', () => {
+describe('which side a seat hangs its card fan off', () => {
+  it('every left-half seat fans left, every right-half seat fans right', () => {
     expect(seatCardSide(27, 6), '9-max top-left').toBe('left');
     expect(seatCardSide(73, 6), '9-max top-right').toBe('right');
-    expect(seatCardSide(20.5, 6), '3/5-max top-left diagonal').toBe('left');
-    expect(seatCardSide(79.5, 6), '3/5-max top-right diagonal').toBe('right');
-  });
-
-  it('side and bottom seats go inboard — toward the felt', () => {
-    // Dan's own two examples, verbatim: "the villan in the position where
-    // BarrelBlitz is should have their cards on the LEFT side of them. 'Aggro
-    // Andy' position should have them to the RIGHT side of the avatar."
-    expect(seatCardSide(89.5, 58), 'BarrelBlitz — a right-rail seat').toBe('left');
-    expect(seatCardSide(10.5, 82.5), 'Aggro Andy — the bottom-left cap').toBe('right');
+    expect(seatCardSide(10.5, 58), 'left rail').toBe('left');
+    expect(seatCardSide(89.5, 58), 'right rail').toBe('right');
+    expect(seatCardSide(10.5, 82.5), 'bottom-left cap').toBe('left');
+    expect(seatCardSide(89.5, 82.5), 'bottom-right cap').toBe('right');
   });
 
   it('a seat with no side (x exactly 50) keeps the long-standing right', () => {
@@ -138,18 +132,18 @@ describe('which side a seat hangs its cards off', () => {
     expect(seatCardSide(NaN, 6)).toBe('right');
   });
 
-  it('the two rules are genuine opposites everywhere except dead centre', () => {
+  it('the side is a function of x alone — y can never flip it', () => {
     for (const x of [0, 10.5, 20.5, 27, 49.9, 50.1, 73, 79.5, 89.5, 100]) {
-      expect(outboardCardSide(x), `x ${x}`).not.toBe(inboardCardSide(x));
+      for (const y of [5, 6, 30, 58, 82.5, 100, NaN]) {
+        expect(seatCardSide(x, y), `x ${x} y ${y}`).toBe(outboardCardSide(x));
+      }
     }
-    expect(outboardCardSide(50)).toBe('right');
-    expect(inboardCardSide(50)).toBe('right');
   });
 
-  it('applies the right rule to every seat of every ring', () => {
+  it('applies the outward rule to every seat of every ring', () => {
     for (const n of SIZES) {
       for (const seat of seatLayoutFor(n)) {
-        const expected = isTopCapSeat(seat.y) ? outboardCardSide(seat.x) : inboardCardSide(seat.x);
+        const expected = seat.x < 50 ? 'left' : 'right';
         expect(seatCardSide(seat.x, seat.y), `${n}-max seat ${seat.x},${seat.y}`).toBe(expected);
       }
     }

@@ -377,6 +377,36 @@ describe('shipped functionality is still here', () => {
     expect(sh.includes('SHARED_FILES'), 'no longer compares the shared guards').toBe(true);
   });
 
+  /* Dan 2026-08-26 (villain-card rebuild, four rounds in one day): every
+     villain hand renders through ONE geometry — the small PokerBros-style
+     rotational cluster on `.seat__cards--opponent`, driven by --vh-* tokens,
+     where game type changes only the card count. The bug it replaced was a
+     SECOND renderer: a hold'em-only `--twocard` branch plus an Omaha
+     sliver-overlap treatment, which drifted apart for weeks. A second layout
+     branch reappearing is the regression, and it would be silent — each
+     branch looks fine alone. Anchored on the selectors and tokens, not
+     phrasing. */
+  it('the villain hand has exactly ONE renderer — the cluster, no game-type branch', () => {
+    const css = read('src/components/table/SeatSlot.css');
+    const tsx = read('src/components/table/SeatSlot.tsx');
+    // The cluster geometry is present and CSS-token driven.
+    expect(css.includes('--vh-card-h'), 'cluster sizing tokens are gone').toBe(true);
+    expect(css.includes('--vh-rot-step'), 'cluster splay tokens are gone').toBe(true);
+    expect(css.includes('--sp-wrap-overlap'), 'the shared plate-overlap token is gone').toBe(true);
+    // The deleted second renderer stays deleted.
+    expect(
+      css.includes('.seat__cards--opponent.seat__cards--twocard'),
+      'the hold-em twocard layout branch came back'
+    ).toBe(false);
+    expect(
+      tsx.includes("seat__cards--twocard'"),
+      'SeatSlot emits the deleted twocard class again'
+    ).toBe(false);
+    expect(css.includes('--sp-opp-overlap'), 'the Omaha sliver-overlap renderer came back').toBe(
+      false
+    );
+  });
+
   it('the sentinel list is not empty or trivially passing', () => {
     // A guard that checks nothing passes forever. If someone empties the list
     // to make a build go green, this fails instead.

@@ -182,82 +182,66 @@ export const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   WHICH SIDE OF A SEAT ITS HOLE CARDS HANG OFF
+   WHICH SIDE OF A SEAT ITS HOLE-CARD FAN HANGS OFF
    ═══════════════════════════════════════════════════════════════════════════
 
-   There are TWO rules, not one, and confusing them is what this section is
-   named and commented to prevent. Both are derived from the seat's measured
-   position on the ring — never from a seat INDEX, because an index means a
-   different chair at every table size (index 4 is the top-left diagonal at
-   9-max and the top CENTRE at 8-max) while "left of the middle of the table"
-   means the same thing on every ring from 2-max to 9-max.
+   Dan 2026-08-26 villain-fan rebuild, spec section 3b: ONE rule, everywhere.
+   The fan is MIRRORED OUTWARD — away from the middle of the table. Left-half
+   seats fan left, right-half seats fan right. This keeps the betting lane
+   (between pod and pot) clear: chips render on the pod's inward side, cards
+   on its outward side, so the two can never collide.
 
-   OUTBOARD — away from the middle of the table. TOP-CAP SEATS ONLY.
-     Dan 2026-08-25, item 7: "The guy on the left, his cards should be on the
-     left." A top-cap seat has no felt under it (only the banner), so its row
-     hangs off the SIDE of the table; sending both top seats' rows to the same
-     side is what made five and five read as one unbroken row of ten (item 12).
-     Outboard puts the two groups at opposite edges with the whole felt between
-     them.
+   This deliberately replaces the 2026-08-25 two-band rule (outboard at the
+   top cap, inboard everywhere else). Inboard put a rail seat's cards in its
+   own betting lane, which is exactly what the rebuild's reference screenshots
+   flagged. The overflow concern that motivated inboard — an outboard PLO hand
+   running off a 375px phone — is retired by the fan geometry itself: the fan
+   is tucked 0.32 x card width under the avatar, capped at 2.5 card widths for
+   six cards, and scales with the avatar token, so it is a fraction of the old
+   row's width.
 
-   INBOARD — toward the middle of the table. EVERY OTHER SEAT.
-     Dan 2026-08-25 round 2, item 7: "the villan in the position where
-     BarrelBlitz is should have their cards on the LEFT side of them. 'Aggro
-     Andy' position should have them to the RIGHT side of the avatar." Those
-     two are a RIGHT-rail seat and a BOTTOM-LEFT seat, so both requests are the
-     same rule: cards point at the felt. Outboard was tried on these seats
-     first and is what ran a right-rail PLO hand off the edge of the phone —
-     the felt is the only direction with room in it.
+   Derived from the seat's measured position on the ring — never from a seat
+   INDEX, because an index means a different chair at every table size, while
+   "left of the middle of the table" means the same thing on every ring from
+   2-max to 9-max.
 
-   x exactly 50 (the top-centre and hero slots) has no side, so both rules
-   answer 'right': that is where those two have always hung their cards, and
-   where the hero's own row goes. NaN answers 'right' for the same reason —
-   see `seatWrapperPercent` in SeatSlot.tsx, which returns NaN when it cannot
-   measure and must degrade to the long-standing default rather than to a
-   coin flip.
+   x exactly 50 (the top-centre and hero slots) has no side and defaults to
+   'right'. NaN answers 'right' for the same reason — see `seatWrapperPercent`
+   in SeatSlot.tsx, which returns NaN when it cannot measure and must degrade
+   to the long-standing default rather than to a coin flip.
 
-   Pure and position-only so the rules can be applied to a percentage read off
+   Pure and position-only so the rule can be applied to a percentage read off
    a ring above or to one measured from the DOM; SeatSlot does the latter,
    since a seat is handed its number but never its position. */
 export type CardSide = 'left' | 'right';
 
 /**
  * Above this share of the frame a seat is a TOP-CAP seat — the row of seats
- * with the BBJ banner rather than felt above them.
- *
- * 20 is the same threshold TablePage applies when it tags a wrapper
- * `.seat-wrapper--top`, and the two must agree: that class is what puts the
- * card row beside the avatar in the first place, and the outboard rule only
- * has anything to act on where it applies. Every ring's cap sits at y 5 or 6
- * and the next seat down is at 23 or higher, so the threshold has 3 points of
- * clearance on either side of it.
+ * with the BBJ banner rather than felt above them. Kept because TablePage's
+ * `.seat-wrapper--top` tagging (pos.y < 20) and the compact top-row avatar
+ * treatment still key off this band; the fan side no longer does.
  */
 export const TOP_CAP_Y_MAX = 20;
 
-/** True for the top row of seats — the only seats whose cards hang outboard. */
+/** True for the top row of seats — the compact-avatar band under the banner. */
 export function isTopCapSeat(yPercent: number): boolean {
   return Number.isFinite(yPercent) && yPercent < TOP_CAP_Y_MAX;
 }
 
-/** AWAY from the middle of the table. Top-cap seats only — see the note above. */
+/** AWAY from the middle of the table — the one rule, every seat. */
 export function outboardCardSide(xPercent: number): CardSide {
   return Number.isFinite(xPercent) && xPercent < 50 ? 'left' : 'right';
 }
 
-/** TOWARD the middle of the table. Side and bottom seats — see the note above. */
-export function inboardCardSide(xPercent: number): CardSide {
-  return Number.isFinite(xPercent) && xPercent > 50 ? 'left' : 'right';
-}
-
 /**
- * THE rule: outboard at the top cap, inboard everywhere else.
+ * THE rule: outward mirroring at every seat, on every ring.
  *
- * One entry point so no caller has to remember which band takes which rule —
- * the mistake the two-named-functions layout above exists to make visible and
- * this function exists to make unnecessary.
+ * `yPercent` is accepted (and ignored) so every existing call site — which
+ * measures both coordinates anyway — keeps compiling; the side is a function
+ * of x alone now that the two-band rule is gone.
  */
-export function seatCardSide(xPercent: number, yPercent: number): CardSide {
-  return isTopCapSeat(yPercent) ? outboardCardSide(xPercent) : inboardCardSide(xPercent);
+export function seatCardSide(xPercent: number, _yPercent: number): CardSide {
+  return outboardCardSide(xPercent);
 }
 
 /** Ring for a table size; clamps to [2, 9] so unknown sizes never crash. */

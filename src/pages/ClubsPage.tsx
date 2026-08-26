@@ -26,6 +26,7 @@ import styles from './ClubsPage.module.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { STORAGE_KEYS } from '../lib/storage';
 import { reportError } from '../utils/errorReporter';
+import { isJoinableClubCode } from '../utils/clubCode';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 type Tab = 'discover' | 'my-clubs' | 'create';
@@ -277,7 +278,14 @@ export default function ClubsPage() {
 
   // Join club by ID
   const handleJoinClub = async () => {
-    if (joinClubId.length !== 6) return;
+    // 5 OR 6 DIGITS. Every club that exists has a FIVE-digit club_id -- 25450,
+    // 55555, 77777 -- because all three client paths generate
+    // Math.floor(10000 + Math.random() * 90000). This gate demanded exactly six,
+    // so typing a real club code left JOIN CLUB greyed out forever and set no
+    // error to explain it. HomePage's own join modal has always accepted 5-6;
+    // this screen simply disagreed with it. The column default in Postgres is
+    // six digits, so both lengths have to be accepted.
+    if (!isJoinableClubCode(joinClubId)) return;
 
     setIsJoining(true);
     setJoinError(null);
@@ -418,7 +426,7 @@ export default function ClubsPage() {
             <div className={styles.discoverTab}>
               <section className={styles.joinSection}>
                 <h3>Join A Club</h3>
-                <p>Enter A 6-Digit Club Code To Join An Existing Club.</p>
+                <p>Enter A 5 Or 6 Digit Club Code To Join An Existing Club.</p>
 
                 {joinError && <div className={styles.errorText}>{joinError}</div>}
 
@@ -450,7 +458,7 @@ export default function ClubsPage() {
 
                 <button
                   className={styles.btnPrimary}
-                  disabled={joinClubId.length !== 6 || isJoining}
+                  disabled={!isJoinableClubCode(joinClubId) || isJoining}
                   onClick={() => {
                     haptic.medium();
                     handleJoinClub();

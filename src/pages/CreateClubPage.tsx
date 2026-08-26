@@ -330,7 +330,7 @@ const Step2Preview = ({
         <span className={styles.bonusIcon}>◈</span>
         <p>
           If This Is The First Club That You Are Creating You Will Receive A Bonus Of{' '}
-          <strong>10,000 Club Chips</strong>. Congratulations!
+          <strong>100,000 Club Chips</strong>. Congratulations!
         </p>
       </div>
 
@@ -496,7 +496,21 @@ export default function CreateClubPage() {
         .eq('user_id', user.id)
         .in('status', ['active', 'approved']);
 
-      if (!countError && count !== null && count >= 4) {
+      // FAIL CLOSED. This read `if (!countError && ...)`, so a transient error
+      // on the count skipped the guard entirely and let a fifth club through --
+      // and nothing on the server re-checks it: both creation paths INSERT into
+      // club_members directly rather than going through fn_join_club, whose own
+      // limit check lives in the non-owner branch. The client guard is the only
+      // limit there is on this path, so it cannot be the one that shrugs.
+      if (countError) {
+        reportError(countError, 'CreateClubPage.club_limit_check_failed');
+        if (isMounted.current) {
+          setError('We could not check how many clubs you are in. Please try again.');
+          setCreating(false);
+        }
+        return;
+      }
+      if (count !== null && count >= 4) {
         if (isMounted.current) {
           setError('You can only be a member of up to 4 clubs. Leave a club to create a new one.');
           setCreating(false);
@@ -505,7 +519,11 @@ export default function CreateClubPage() {
       }
     } catch (e) {
       reportError(e, 'CreateClubPage');
-      // Non-blocking — proceed even if check fails
+      if (isMounted.current) {
+        setError('We could not check how many clubs you are in. Please try again.');
+        setCreating(false);
+      }
+      return;
     }
 
     // ── Check for duplicate club name ──
@@ -618,7 +636,16 @@ export default function CreateClubPage() {
       if (customLogoFile && form.iconId === 'custom') {
         try {
           const fileExt = customLogoFile.name.split('.').pop() || 'png';
-          const fileName = `${data.id}/logo-${Date.now()}.${fileExt}`;
+          // MUST start with `club-logos/`. The only INSERT policies that admit
+          // bucket_id = 'club-assets' are `club logos authenticated insert`
+          // (name LIKE 'club-logos/%') and `club cards authenticated insert`
+          // (name LIKE 'club-cards/%'); the generic allowlist policy does not
+          // include this bucket at all. A path of `<club-uuid>/logo-...` matched
+          // neither, so every custom logo upload from this page was refused by
+          // RLS -- and the failure is non-fatal below, so the club was created
+          // with logo, logo_url and avatar_url all NULL and the user was never
+          // told. CreateClubModal has always used the correct prefix.
+          const fileName = `club-logos/${data.id}-${Date.now()}.${fileExt}`;
 
           const { data: uploadData, error: uploadError } = await supabase.storage
             .from('club-assets')

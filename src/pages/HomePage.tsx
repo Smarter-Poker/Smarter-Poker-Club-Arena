@@ -47,6 +47,7 @@ import {
 } from '../utils/clubQuickLink';
 import CarouselSection from '../components/home/CarouselSection';
 import { getClubLevelFromMembers } from '../utils/clubLevels';
+import { parseClubCode } from '../utils/clubCode';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import type { UserClub, ClubStats } from '../components/home/CarouselSection';
 import { useFocusTrap } from '../hooks/useFocusTrap';
@@ -729,9 +730,9 @@ function HomePageInner() {
     // Canonical codes are 5-digit, but 6-digit codes exist from a legacy
     // generation bug — accept both so those clubs remain joinable.
     const sanitized = sanitizeInput(clubCode.trim());
-    const numericCode = parseInt(sanitized, 10);
-    if (isNaN(numericCode) || numericCode < 10000 || numericCode > 999999) {
-      toast.error('Club code must be a 5-digit number');
+    const numericCode = parseClubCode(sanitized);
+    if (numericCode === null) {
+      toast.error('Club code must be a 5 or 6 digit number');
       return;
     }
 
@@ -1536,7 +1537,7 @@ function HomePageInner() {
                     pattern="[0-9]{5,6}"
                     maxLength={6}
                     className={styles.clubCodeInput}
-                    placeholder="Enter 5-Digit Club Code"
+                    placeholder="Enter 5 Or 6 Digit Club Code"
                     value={clubCode}
                     onChange={(e) => {
                       const val = e.target.value;

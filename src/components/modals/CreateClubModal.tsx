@@ -154,7 +154,18 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         .eq('user_id', user.id)
         .in('status', ['active', 'approved']);
 
-      if (!countError && count !== null && count >= 4) {
+      // FAIL CLOSED - see the note in CreateClubPage. Nothing on the server
+      // re-checks the 4-club limit on the create path, so a skipped guard is
+      // the whole guard.
+      if (countError) {
+        reportError(countError, 'CreateClubModal.club_limit_check_failed');
+        if (isMounted.current) {
+          toast.error('We Could Not Check How Many Clubs You Are In. Please Try Again.');
+          setIsCreating(false);
+        }
+        return;
+      }
+      if (count !== null && count >= 4) {
         if (isMounted.current) {
           toast.error(
             'You can only be a member of up to 4 clubs. Leave a club to create a new one.'
@@ -165,7 +176,11 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       }
     } catch (e) {
       reportError(e, 'CreateClubModal');
-      // Non-blocking
+      if (isMounted.current) {
+        toast.error('We Could Not Check How Many Clubs You Are In. Please Try Again.');
+        setIsCreating(false);
+      }
+      return;
     }
 
     try {

@@ -1102,7 +1102,20 @@ export default function ClubSettingsPage() {
               type="button"
               className="btn btn--primary"
               onClick={() => {
-                const url = `${window.location.origin}/clubs?join=true&c=${clubNumericId}&ref=${playerNumber}`;
+                // The canonical invite link, the same one InvitePage and the
+                // agent modal hand out. What was here before was dead three
+                // separate ways and had never carried a single person into a
+                // club:
+                //   1. it omitted the router basename, so `origin + '/clubs'`
+                //      landed outside the SPA entirely;
+                //   2. `/clubs` is `<Navigate to="/" replace />` in App.tsx and
+                //      Navigate carries no search string, so `c` and `ref` were
+                //      destroyed even at the right path (the real list page is
+                //      `/clubs-list`);
+                //   3. `?c=` fed a five-digit code to a form that demanded six.
+                // Corroboration: club_members has 1502 rows and exactly ONE
+                // non-null invited_by.
+                const url = `${window.location.origin}/hub/club-arena/invite/${clubId}?ref=${playerNumber}`;
                 navigator.clipboard.writeText(url);
                 toast.success('Invite Link Copied To Clipboard!');
               }}

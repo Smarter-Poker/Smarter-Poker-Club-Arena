@@ -14976,6 +14976,7 @@ sends -1 defaults) and applies reveal_order for reconnecting clients.
 
 Scheduled task verify-showdown-review-fix-landing independently re-verifies
 both tiers and reports.
+
 ## Cowork session 2026-08-23 (18) — THE SCOPE RULE, WRITTEN ONCE
 
 Dan, after the Shark Club / Club JAQK fix: "HOW ELSE CAN THIS IMPROVE? THIS CAN

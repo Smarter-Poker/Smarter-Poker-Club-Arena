@@ -32,9 +32,7 @@ import { resolve } from 'path';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
-const GUARD = read(
-  'supabase/migrations/20260826030000_profit_reconcile_must_conserve_chips.sql'
-);
+const GUARD = read('supabase/migrations/20260826030000_profit_reconcile_must_conserve_chips.sql');
 
 describe('The reconciler proves the number before it writes it', () => {
   it('checks SUM(profit) + rake + bbj against zero', () => {

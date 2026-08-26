@@ -309,7 +309,6 @@ export default function LeaderboardPage() {
     };
   }, [selectedClubId, userClubs]);
 
-
   // 2026-08-24: a useMasterBusChannel({ table: 'tournament_players',
   // filter: null }) used to sit here. It NEVER SUBSCRIBED - the hook
   // early-returns on `if (!enabled || !channelName || !filter)`

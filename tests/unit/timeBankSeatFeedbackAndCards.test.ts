@@ -162,7 +162,36 @@ describe('the time bank counter tracks the engine instead of drifting', () => {
 
   it('reads the count straight off the snapshot', () => {
     expect(TABLE_PAGE).toMatch(/time_bank_uses_remaining/);
-    expect(TABLE_PAGE).toMatch(/setTimeBanksRemaining\(\(prev\) => Math\.max\(prev, uses\)\)/);
+    /* Was `Math.max(prev, uses)`. Dan 2026-08-26: "the time bank defaults to
+       4, even though I have 481." That floor was half of why — it can only
+       ever RAISE the number, so:
+         - the stale seed could never be corrected downward, and
+         - `TimeBankEngine.getUsesRemaining` answers 0 for a player it has not
+           initialised (it only initialises in the DEALING path), so a seated
+           player who had not yet been dealt in reported 0 and `max(4, 0)`
+           held the wrong 4 on screen;
+         - a bank the player SPENDS could never be reflected either.
+       The engine is authoritative about the seat, so its number is taken. */
+    expect(TABLE_PAGE, 'the snapshot count must be assigned, not floored').toMatch(
+      /setTimeBanksRemaining\(uses\)/
+    );
+    expect(TABLE_PAGE, 'the Math.max floor is back').not.toMatch(
+      /setTimeBanksRemaining\(\(prev\) => Math\.max\(/
+    );
+  });
+
+  it('never seeds a fabricated count, and reads the ledger that owns the real one', () => {
+    /* The seed was `useState(4)` — a placeholder that looks like data. The
+       true balance is account-scoped (SUM of feature_purchases.uses_remaining,
+       exposed by fn_time_bank_allowance), not the seat column that also
+       DEFAULTS to 4. */
+    expect(TABLE_PAGE, 'the hardcoded seed is back').not.toMatch(
+      /useState\(4\)[\s\S]{0,40}timeBanksRemaining|timeBanksRemaining[^\n]*useState\(4\)/
+    );
+    expect(TABLE_PAGE, 'null means "not loaded yet", not "you have none"').toMatch(
+      /useState<number \| null>\(null\)/
+    );
+    expect(TABLE_PAGE, 'nothing reads the purchase ledger').toMatch(/fn_time_bank_allowance/);
   });
 
   it('treats a snapshot with no figure as no news, not as zero', () => {

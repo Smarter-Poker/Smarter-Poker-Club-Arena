@@ -27,12 +27,24 @@
  *           farther into the table, so it's 'in front of the player' without
  *           touching the rail."
  *
+ * Round three, 2026-08-26, both reported off a 390px phone:
+ *
+ * "The chips put in the pot by the hero and the villains need to be moved
+ *  farther in front of them. They are either on the rail, or overlapping the
+ *  avatar, or the action box. Chips should be on the table only and never
+ *  overlapping any aspect or feature on the table."
+ *
+ * "The avatar on the left middle who has the button - the button should be
+ *  moved up some in that position so it doesn't overlap the date."
+ *
  * WHAT THIS NOW GUARANTEES, in order of precedence:
  *
  *   1. ONE RAIL. Every seat's chips rest the SAME number of pixels from that
  *      seat, measured along the line to the middle of the felt. There is no
  *      per-seat term left: no hero extra, no button-holder extra, no shorter
- *      walk for the seats level with the community board.
+ *      walk for the seats level with the community board. The rail is a FLOOR
+ *      that nothing below may take away, which is the part that matters - see
+ *      (4), which can only ever lengthen a walk.
  *   2. ON THE FELT, AND THE BUTTON WITH DAYLIGHT. Neither marker may sit on the
  *      painted rail: any point that lands outside the felt window is projected
  *      back inside it - a closed form, exact for every seat of every ring, not
@@ -44,9 +56,18 @@
  *      and then, if the projection in (2) has pushed the two together, it is
  *      walked around the felt until they are at least MARKER_MIN_GAP_WIDTH_PCT
  *      of the table's width apart. Two markers, never one blob.
+ *   4. NOTHING ON THE FURNITURE. Three rectangles are keep-outs, and all three
+ *      are ONE shape measured against every seat identically, never a term
+ *      handed to a named chair: a seat's own PLAYER POD (avatar + name plate),
+ *      which the chips are walked out of; the COMMUNITY BOARD, which caps that
+ *      walk and wins whenever the two cannot both be had; and the printed FELT
+ *      MASTHEAD, which the dealer button is walked around. See SEAT_POD_LADDER,
+ *      BOARD_WINDOW and FELT_TEXT_BAND - all three are mirrors of a stylesheet,
+ *      like FELT_WINDOW, and all three have to move in the same commit as the
+ *      rule they mirror.
  *
- * (1) is the rule; (2) and (3) are guarantees that apply identically to every
- * seat. They move a seat's chips only where the seat's own ring position sits
+ * (1) is the rule; (2), (3) and (4) are guarantees that apply identically to
+ * every seat. They move a seat's chips only where the seat's own ring position sits
  * OUTSIDE the painted felt - the hero at y=100 is 10.8% of the table's height
  * below the felt's bottom edge, and the bottom and top cap seats are outside it
  * too. Those seats get a longer walk than the common rail because the first
@@ -184,6 +205,269 @@ export const CHIP_RAIL_WIDTH_PCT = 12.5;
  * pile around the pot rather than all landing on the same pixel.
  */
 export const CHIP_COLLECT_FRACTION = 0.9;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE PLAYER POD - WHY ONE PERCENTAGE RAIL IS NOT ENOUGH
+   ═══════════════════════════════════════════════════════════════════════════
+   Dan 2026-08-26, on a 390px phone: "The chips put in the pot by the hero and
+   the villains need to be moved farther in front of them. They are either on
+   the rail, or overlapping the avatar, or the action box. Chips should be on
+   the table only and never overlapping any aspect or feature on the table."
+
+   THE ARITHMETIC OF THE DEFECT. CHIP_RAIL_WIDTH_PCT is a percentage of the
+   TABLE. The thing it has to clear is not: a seat's pod - avatar stacked on
+   name plate - is sized in PIXELS off `--seat-avatar-base` in SeatSlot.css
+   (84px desktop, 66 at 640, 58 at 480, 52 at 380), and those pixels do not
+   shrink when the table does. So the pod eats a bigger share of a smaller
+   table, and a rail that clears it on a 720px desktop felt does not clear it
+   on a phone:
+
+       table   villain pod   pod half-width   rail (12.5%)   chip radius
+       385px   80 x 88       40px             48.1px         6.9px
+       404px   96 x 122      48px             50.5px         7.3px
+       646px   96 x 122      48px             80.8px         11.6px
+
+   At 385 a side seat's chips come to rest 48px out with 7px of chip on either
+   side of that point, against a plate that reaches 40px - one pixel of felt
+   between them, and none at all once the walk is diagonal, because a pod is a
+   RECTANGLE and the diagonal exit from a rectangle is longer than either half.
+   Measured over the eight production rings at nine table sizes before this was
+   written, EVERY size had at least one seat whose chips overlapped its own pod,
+   worst case 21px of overlap. It is not one bad seat; it is the unit mismatch.
+
+   WHY NOT SIMPLY A BIGGER PERCENTAGE. The rail's own derivation above says what
+   12.5 is: the longest rail that keeps a board-level side seat's chips off the
+   community cards. Raising the constant to cover the worst pod (about 14.9% of
+   the table) puts a 4-max middle seat's chips 6px onto the flop. The rail
+   cannot be both.
+
+   WHAT IS DONE INSTEAD, and why it is not the exception that was deleted. The
+   pod is declared here as a keep-out RECTANGLE - one shape, the same shape for
+   every seat - and the walk is lengthened only as far as leaving that rectangle
+   requires. That is the same kind of thing as `clampIntoFelt`: a region every
+   seat is measured against identically, not a term handed to a named seat.
+   CHIP_RAIL_SCALE_BOARD_LEVEL was the opposite - a seat SHORTENED because of
+   which chair it was - and nothing here shortens anything: the common rail is a
+   floor, so no seat ever walks less than it did.
+
+   It also happens to fit the board, and not by luck. The seats the board
+   constrains are the ones walking almost horizontally at it, and a horizontal
+   exit from the pod is the SHORTEST one - the same 385px table needs 47px for a
+   board-level seat and 58px for a diagonal one. The two constraints bind on
+   different seats. Where they do collide (a 404px table carrying 96 x 122px
+   desktop pods, which is what a 1440x900 laptop renders) BOARD_CHIP_GAP wins
+   and the pod loses: see `chipStepWidthPct`. Chips on a plate are ugly; chips
+   on the 9d have been a real bug report. */
+
+/**
+ * The player pod, in PIXELS, at each of SeatSlot.css's four breakpoints.
+ *
+ * A MIRROR OF SeatSlot.css, exactly as FELT_WINDOW is a mirror of
+ * `.table-surface`. IF THE AVATAR TOKEN OR THE SEAT WIDTH MOVES, MOVE THESE IN
+ * THE SAME COMMIT - this module cannot read a stylesheet, and the failure is
+ * silent: chips settle back onto the plate and nothing throws.
+ *
+ * `w` is `.seat`'s own declared width, which is the widest the pod can paint
+ * (the name plate is `max-width: 100%` of it and the avatar is narrower).
+ * `h` is the avatar slot plus the name plate less `--sp-wrap-overlap`, the
+ * negative margin that tucks the avatar into the plate:
+ *
+ *     <=380   52 + 31 - 4  =  79      seat width 72     hero 79 x 96
+ *     <=480   58 + 35 - 5  =  88      seat width 80     hero 88 x 108
+ *     <=640   66 + 39 - 6  =  99      seat width 88     hero 101 x 121
+ *     else    84 + 44 - 6  = 122      seat width 96     hero 128 x 150
+ *
+ * The hero column is the same sum with the avatar at `--seat-avatar-hero-ratio`
+ * (4/3) and the seat at 8/7 of THAT, which is what `.seat--hero` declares.
+ *
+ * NOT MODELLED, deliberately: the action label, the position chip and the
+ * hand-name pill. All three are transient, all three are drawn ABOVE or BESIDE
+ * the plate rather than between it and the pot, and including them would push
+ * every seat's chips out for a badge that is on screen for two seconds. The
+ * timer ring is the plate's own border and is inside these numbers already.
+ */
+export const SEAT_POD_LADDER: ReadonlyArray<{
+  readonly maxViewportWidthPx: number;
+  readonly villain: Size;
+  readonly hero: Size;
+}> = [
+  { maxViewportWidthPx: 380, villain: { w: 72, h: 79 }, hero: { w: 79, h: 96 } },
+  { maxViewportWidthPx: 480, villain: { w: 80, h: 88 }, hero: { w: 88, h: 108 } },
+  { maxViewportWidthPx: 640, villain: { w: 88, h: 99 }, hero: { w: 101, h: 121 } },
+  { maxViewportWidthPx: Infinity, villain: { w: 96, h: 122 }, hero: { w: 128, h: 150 } },
+];
+
+/**
+ * The pod a seat paints at this viewport width, in pixels.
+ *
+ * VIEWPORT width, not table width, because that is what the CSS ladder keys off
+ * and the two are not interchangeable: a 381px table is what a 480px phone
+ * renders (58px avatars) AND what a 1440x900 laptop renders (84px avatars), so
+ * a table-width lookup would hand the phone the desktop pod and push its chips
+ * onto the board. The caller has the viewport; this module does not.
+ *
+ * Callers get the pod from the seat's own POSITION - hero is the seat on the
+ * scaler's bottom edge - never from a seat index, for the reason
+ * `outboardCardSide` gives in tableSeatGeometry.ts: an index means a different
+ * chair on every ring.
+ */
+export function seatPodPx(viewportWidthPx: number, isHero: boolean): Size {
+  const rung =
+    SEAT_POD_LADDER.find((r) => viewportWidthPx <= r.maxViewportWidthPx) ??
+    SEAT_POD_LADDER[SEAT_POD_LADDER.length - 1];
+  return isHero ? rung.hero : rung.villain;
+}
+
+/**
+ * Clear felt between a chip's edge and its own pod, as a percentage of the
+ * table's width.
+ *
+ * 0.6% is 2.3px on a 385px phone and 3.9px on a 646px desktop. Small on
+ * purpose: every pixel here is a pixel further from the player who bet, and the
+ * point of the exercise is that the chip is not TOUCHING the plate, not that it
+ * is somewhere else entirely. A proportion rather than a pixel count for the
+ * same reason as everything else on this felt.
+ */
+export const CHIP_POD_GAP_WIDTH_PCT = 0.6;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE MARKERS' OWN SIZES
+   ═══════════════════════════════════════════════════════════════════════════
+   Both are declared in TableVisualHotfix.css section 4 as a proportion of
+   `--table-w` with a pixel floor and ceiling, and both numbers were already
+   quoted - as prose - in the comments on CHIP_RAIL_WIDTH_PCT and
+   MARKER_MIN_GAP_WIDTH_PCT. They are constants now because the pod and board
+   keep-outs have to INFLATE by a marker's radius rather than merely be
+   described in a comment, and a second hand-copied "3.6%" is exactly how the
+   rail's derivation came to disagree with the rail. */
+
+/** `--cp-chip-size: clamp(10px, calc(var(--table-w) * 0.036), 26px)`. */
+export const CHIP_WIDTH_PCT = 3.6;
+export const CHIP_MIN_PX = 10;
+export const CHIP_MAX_PX = 26;
+
+/** `--dealer-btn-size: clamp(17px, calc(var(--table-w) * 0.04), 28px)`. */
+export const BUTTON_WIDTH_PCT = 4;
+export const BUTTON_MIN_PX = 17;
+export const BUTTON_MAX_PX = 28;
+
+const clampPx = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/** Half a bet chip, as a percentage of the table's width. */
+export function chipRadiusWidthPct(size: Size = NOMINAL_SCALER): number {
+  return (clampPx((CHIP_WIDTH_PCT / 100) * size.w, CHIP_MIN_PX, CHIP_MAX_PX) / 2 / size.w) * 100;
+}
+
+/** Half a dealer puck, as a percentage of the table's width. */
+export function buttonRadiusWidthPct(size: Size = NOMINAL_SCALER): number {
+  return (
+    (clampPx((BUTTON_WIDTH_PCT / 100) * size.w, BUTTON_MIN_PX, BUTTON_MAX_PX) / 2 / size.w) * 100
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE TWO THINGS PRINTED ON THE FELT
+   ═══════════════════════════════════════════════════════════════════════════
+   Both are mirrors of TablePage.css in the same sense as FELT_WINDOW, and both
+   carry the same warning: IF THE RULE MOVES, MOVE THE NUMBERS HERE IN THE SAME
+   COMMIT. Neither has a DOM this module can measure. */
+
+/**
+ * The community board, as a keep-out region.
+ *
+ * `.table-surface .community-area { width: 68% }` and `.community-area { top:
+ * 43.5%; transform: translate(-50%, -50%) }`, both percentages of the FELT. The
+ * five cards are `flex: 1 1 0` with `aspect-ratio: 64 / 92`, so the row's width
+ * decides the card's height.
+ *
+ * The card width is taken as row/5 with the inter-card gaps IGNORED, which
+ * over-states the height by about 9%. That is the safe direction for a keep-out
+ * and it removes the one number here that would otherwise have to be read out
+ * of CommunityCards.css as well.
+ */
+export const BOARD_WINDOW = {
+  widthOfFeltPct: 68,
+  centerOfFeltYPct: 43.5,
+  cardAspect: 92 / 64,
+} as const;
+
+/** Clear felt between a chip's edge and the nearest card. The 0.2% the rail's own derivation spends. */
+export const BOARD_CHIP_GAP_WIDTH_PCT = 0.2;
+
+/**
+ * The felt masthead - the wordmark with the date, club, union and stakes
+ * printed under it - as a keep-out region for the DEALER BUTTON.
+ *
+ * Dan 2026-08-26: "The avatar on the left middle who has the button - the
+ * button should be moved up some in that position so it doesn't overlap the
+ * date."
+ *
+ * `.table-brand` in TablePage.css: `width: 62%` of the felt capped at 260px,
+ * centred on `top: 58%` of the felt, holding a 900x116 wordmark at full width,
+ * a 6px gap, and two `.table-brand__line` rows at 0.48rem.
+ *
+ * ── WHY 62 IS THE RIGHT NUMBER, AND WHY IT WAS NOT ─────────────────────────
+ * The width of the BOX is 62%, and until 2026-08-26 the PRINTING was wider than
+ * it - which is the whole of Dan's report, and the reason a keep-out written
+ * off the box alone would have looked correct and changed nothing.
+ *
+ * `.table-brand__line` carries `white-space: nowrap` with `max-width: 100%`,
+ * and the 2026-08-24 note beside it says it therefore "ellipsizes at the
+ * masthead's edge". It did not. `.table-brand__meta` is a flex item in a column
+ * container with `align-items: center`, so its cross size is `fit-content` =
+ * min(max-content, max(min-content, available)) - and for a nowrap line
+ * min-content EQUALS max-content, so that expression returns the TEXT'S own
+ * width whenever the text is wider than the box. The line's `max-width: 100%`
+ * then resolved against a parent that was already as wide as the line, and
+ * clamped nothing.
+ *
+ * Measured on a 393px phone (felt 281.8px, brand box 175px): line 1 reading
+ * "AUG 26, 2026 . SHARK CLUB . MIDWAY UNION" is 40 characters of 0.48rem
+ * uppercase with 0.1em tracking, about 221px, so it hung 23px past the box on
+ * each side and reached x 21.3% of the scaler. The left-middle seat's puck
+ * stands at 20.4% with a 2.2% radius - it reaches 22.6% - and that is the puck
+ * sitting on the date.
+ *
+ * `.table-brand__meta` is given `width: 100%; min-width: 0` in the same commit
+ * as this constant, which is what makes the ellipsis rule true and this number
+ * exact. WIDENING THE BAND INSTEAD WAS TRIED AND REJECTED: at the masthead's
+ * own stated cap of 82% of the felt (`.table-brand`'s first `max-width`, which
+ * is dead - `max-width: 260px` overrides it eleven lines below) the puck has to
+ * swing so far up the arc to escape that a 5-max side seat's button ends up
+ * 0.47 of the way to the middle of the felt, past the 0.40 ceiling
+ * tests/table-geometry-chips.test.ts states, and short of the daylight item 8
+ * asks for. The text is the thing that had left its declared box; the puck was
+ * exactly where the geometry meant to put it.
+ *
+ * The <=380px block narrows the box to 56% with a 4px gap and 0.44rem type,
+ * which shortens the text as well; that variant is a STRICT SUBSET of these
+ * numbers, so this module carries no breakpoint of its own. A keep-out that is
+ * too big costs a degree of rotation. One that is too small costs the defect.
+ *
+ * `lineHeightPx` is 11 because `.table-brand__line` declares no line-height:
+ * 0.48rem is 7.68px at a 16px root and `normal` resolves to about 1.35 of that
+ * for this face, rounded up. It is the one number here that is a measurement of
+ * type rather than a copy of a declaration, which is why the band also carries
+ * MARKER_FELT_TEXT_GAP_WIDTH_PCT on top.
+ */
+export const FELT_TEXT_BAND = {
+  widthOfFeltPct: 62,
+  maxWidthPx: 260,
+  centerOfFeltYPct: 58,
+  logoAspect: 900 / 116,
+  logoToMetaGapPx: 6,
+  lineHeightPx: 11,
+  lines: 2,
+  lineGapPx: 1,
+} as const;
+
+/**
+ * Clear felt between the puck's edge and the printing, as a percentage of the
+ * table's width. 1.9px on a phone - enough that "moved up some" reads as moved
+ * rather than as touching, without spending a rotation the geometry has to buy
+ * somewhere else.
+ */
+export const MARKER_FELT_TEXT_GAP_WIDTH_PCT = 0.5;
 
 /* ═══════════════════════════════════════════════════════════════════════════
    THE BUTTON
@@ -518,6 +802,142 @@ export function clampIntoFelt(
 const sq = (p: Pos, size: Size): Pos => ({ x: p.x, y: (p.y * size.h) / size.w });
 const unsq = (p: Pos, size: Size): Pos => ({ x: p.x, y: (p.y * size.w) / size.h });
 
+/* ── KEEP-OUTS, IN SQUARE SPACE ─────────────────────────────────────────────
+   All three regions below are axis-aligned rectangles expressed in the same
+   units the rail is: one unit is size.w / 100 pixels on BOTH axes. A pixel
+   height therefore divides by that unit and NOT by the aspect, which is the
+   one place this is easy to get wrong - a pod 122px tall is 122 / (size.w/100)
+   units, the same conversion its 96px width gets. */
+
+interface RectSq {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+}
+
+/** Percent of the table's width -> square-space units (they are the same thing). */
+const unitPx = (size: Size) => size.w / 100;
+
+/** The community board. See BOARD_WINDOW. */
+function boardRectSq(size: Size): RectSq {
+  const feltWidthPx = (FELT_WINDOW.width / 100) * size.w;
+  const rowPx = (BOARD_WINDOW.widthOfFeltPct / 100) * feltWidthPx;
+  const cardHeightPx = (rowPx / 5) * BOARD_WINDOW.cardAspect;
+  const u = unitPx(size);
+  const centreYPct = FELT_WINDOW.top + (BOARD_WINDOW.centerOfFeltYPct / 100) * FELT_WINDOW.height;
+  const centreYSq = ((centreYPct / 100) * size.h) / u;
+  return {
+    x0: feltCenter().x - rowPx / 2 / u,
+    x1: feltCenter().x + rowPx / 2 / u,
+    y0: centreYSq - cardHeightPx / 2 / u,
+    y1: centreYSq + cardHeightPx / 2 / u,
+  };
+}
+
+/** The felt masthead. See FELT_TEXT_BAND. */
+function feltTextRectSq(size: Size): RectSq {
+  const feltWidthPx = (FELT_WINDOW.width / 100) * size.w;
+  const brandPx = Math.min(
+    (FELT_TEXT_BAND.widthOfFeltPct / 100) * feltWidthPx,
+    FELT_TEXT_BAND.maxWidthPx
+  );
+  const metaPx =
+    FELT_TEXT_BAND.lines * FELT_TEXT_BAND.lineHeightPx +
+    (FELT_TEXT_BAND.lines - 1) * FELT_TEXT_BAND.lineGapPx;
+  const heightPx = brandPx / FELT_TEXT_BAND.logoAspect + FELT_TEXT_BAND.logoToMetaGapPx + metaPx;
+  const u = unitPx(size);
+  const centreYPct = FELT_WINDOW.top + (FELT_TEXT_BAND.centerOfFeltYPct / 100) * FELT_WINDOW.height;
+  const centreYSq = ((centreYPct / 100) * size.h) / u;
+  return {
+    x0: feltCenter().x - brandPx / 2 / u,
+    x1: feltCenter().x + brandPx / 2 / u,
+    y0: centreYSq - heightPx / 2 / u,
+    y1: centreYSq + heightPx / 2 / u,
+  };
+}
+
+/**
+ * True when a marker of this radius would sit on the felt masthead - the
+ * wordmark and the date / club / union / stakes lines printed under it.
+ *
+ * The direct measurement of Dan's second report, and what the tests assert on.
+ * `markerRadiusWidthPct` is the marker's own radius, so the answer is about the
+ * whole disc rather than its centre, exactly as `isInsideFelt` is.
+ */
+export function isOnFeltText(
+  p: Pos,
+  size: Size = NOMINAL_SCALER,
+  markerRadiusWidthPct: number = 0
+): boolean {
+  const r = feltTextRectSq(size);
+  const q = sq(p, size);
+  const pad = markerRadiusWidthPct + MARKER_FELT_TEXT_GAP_WIDTH_PCT;
+  return q.x > r.x0 - pad && q.x < r.x1 + pad && q.y > r.y0 - pad && q.y < r.y1 + pad;
+}
+
+/**
+ * How far along a ray a point may travel before its disc would touch a
+ * rectangle, in square-space units. Infinity when the ray misses it entirely.
+ *
+ * The slab method against the rectangle INFLATED by the disc's radius plus the
+ * clear air asked for. Inflating an axis-aligned box rather than offsetting its
+ * true rounded outline errs on the safe side everywhere (at an inflated corner
+ * the real separation is sqrt(2) times the pad, never less), and a keep-out
+ * that is slightly too generous costs a couple of pixels of walk.
+ */
+function rayEntryDistanceSq(
+  from: Pos,
+  ux: number,
+  uy: number,
+  rect: RectSq,
+  padWidthPct: number
+): number {
+  const bounds: Array<[number, number, number, number]> = [
+    [from.x, ux, rect.x0 - padWidthPct, rect.x1 + padWidthPct],
+    [from.y, uy, rect.y0 - padWidthPct, rect.y1 + padWidthPct],
+  ];
+  let tMin = -Infinity;
+  let tMax = Infinity;
+  for (const [origin, dir, lo, hi] of bounds) {
+    if (Math.abs(dir) < 1e-12) {
+      // Parallel to this pair of slabs: either always between them or never in.
+      if (origin < lo || origin > hi) return Infinity;
+      continue;
+    }
+    const a = (lo - origin) / dir;
+    const b = (hi - origin) / dir;
+    tMin = Math.max(tMin, Math.min(a, b));
+    tMax = Math.min(tMax, Math.max(a, b));
+  }
+  if (tMax < tMin || tMax < 0) return Infinity;
+  return Math.max(0, tMin);
+}
+
+/**
+ * How far a seat has to walk to get its chips off its OWN pod, in square-space
+ * units - which is percent of the table's width, the unit the rail is in.
+ *
+ * The pod is a rectangle centred on the seat (`.seat-wrapper` is
+ * `translate(-50%, -50%)`, so the ring position is the centre of the avatar +
+ * plate stack), inflated by half a chip and CHIP_POD_GAP_WIDTH_PCT. The exit
+ * distance is the smaller of the two axis crossings, which is why a seat
+ * walking straight at the middle needs less than one walking on the diagonal -
+ * and why this does not fight the board.
+ *
+ * Zero when the caller supplies no pod. See `chipStepWidthPct`.
+ */
+function podExitDistanceSq(ux: number, uy: number, size: Size, pod?: Size): number {
+  if (!pod) return 0;
+  const u = unitPx(size);
+  const pad = chipRadiusWidthPct(size) + CHIP_POD_GAP_WIDTH_PCT;
+  const halfW = pod.w / 2 / u + pad;
+  const halfH = pod.h / 2 / u + pad;
+  const tx = Math.abs(ux) < 1e-9 ? Infinity : halfW / Math.abs(ux);
+  const ty = Math.abs(uy) < 1e-9 ? Infinity : halfH / Math.abs(uy);
+  return Math.min(tx, ty);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    THE TWO MARKERS
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -529,16 +949,19 @@ const unsq = (p: Pos, size: Size): Pos => ({ x: p.x, y: (p.y * size.w) / size.h 
  * centre of the FELT - not the centre of the scaler, which is a different point
  * by about 1% of the table's height and is not where the pot is.
  *
- * The `Math.min(rail, len * 0.8)` is a degeneracy guard and nothing more: a
- * seat sitting almost on top of the felt centre has no room to walk a full
- * rail, and without it the chips would step past the middle and end up on the
- * far side of the table from the player who bet them. The closest seat on any
- * production ring is 40 units from the centre against a rail of 11.5, so it
- * cannot bind on a real table - which is the point. Its predecessor was applied
- * to seats it COULD bind on, where it silently equalised two seats that were
- * supposed to differ.
+ * How far it walks is `chipStepWidthPct` - the common rail, lengthened only as
+ * far as clearing this seat's own pod requires and capped so it can never reach
+ * the community cards. Read that function for the order of precedence; the
+ * `len * 0.8` degeneracy guard lives there too.
+ *
+ * `pod` is the seat's avatar-and-plate box IN PIXELS, from `seatPodPx`. It is
+ * optional because this module cannot see the DOM and the ladder it comes from
+ * keys off the VIEWPORT, which only the caller has. Omitted, the chips walk the
+ * plain rail and land exactly where they landed before 2026-08-26 - which is
+ * what a consumer that draws no seat pod wants, and what every geometry test
+ * that is about the rail itself rather than about the furniture passes.
  */
-export function chipRestPosition(seat: Pos, size: Size = NOMINAL_SCALER): Pos {
+export function chipRestPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod?: Size): Pos {
   const c = feltCenter();
   const s = sq(seat, size);
   const t = sq(c, size);
@@ -547,9 +970,61 @@ export function chipRestPosition(seat: Pos, size: Size = NOMINAL_SCALER): Pos {
   const len = Math.hypot(dx, dy);
   if (!Number.isFinite(len) || len < 1e-6) return { x: seat.x, y: seat.y };
 
-  const step = Math.min(CHIP_RAIL_WIDTH_PCT, len * 0.8);
+  const step = chipStepWidthPct(seat, size, pod);
   const walked = unsq({ x: s.x + (dx / len) * step, y: s.y + (dy / len) * step }, size);
   return clampIntoFelt(walked, size);
+}
+
+/**
+ * HOW FAR THIS SEAT'S CHIPS WALK, as a percentage of the table's width.
+ *
+ * One expression, three terms, in strict order of precedence:
+ *
+ *   1. CHIP_RAIL_WIDTH_PCT is the FLOOR. Every seat walks at least the common
+ *      rail, so nothing here can ever hand a seat a shorter walk than its
+ *      neighbour - which is the whole of what CHIP_RAIL_SCALE_BOARD_LEVEL did
+ *      wrong and the reason it was deleted.
+ *   2. The POD is a floor on top of it: the walk is lengthened as far as
+ *      leaving the seat's own avatar-and-plate rectangle requires, and not one
+ *      unit further. A no-op for any seat with the room, which on a 646px
+ *      desktop felt is most of them.
+ *   3. The BOARD is the CEILING, and it wins. If a seat cannot have both, its
+ *      chips stay off the community cards and accept the plate: on the one
+ *      configuration where the two collide - a 404px table carrying 96 x 122px
+ *      desktop pods, i.e. a 1440x900 laptop - the 4-max middle seats come up
+ *      4.7px short of clearing their plate. That is a stated cost, not an
+ *      oversight. The ceiling is itself floored at the common rail, so it can
+ *      only ever claw back the extra the pod asked for.
+ *
+ * `len * 0.8` is the same degeneracy guard `chipRestPosition` has always
+ * carried: a seat sitting on the middle of the felt has no room to walk a full
+ * rail. No production ring comes near it.
+ *
+ * Exported because it is the number a person wants when a bet looks wrong, and
+ * because the tests measure it directly rather than inferring it from a
+ * position that two projections have already touched.
+ */
+export function chipStepWidthPct(seat: Pos, size: Size = NOMINAL_SCALER, pod?: Size): number {
+  const c = feltCenter();
+  const s = sq(seat, size);
+  const t = sq(c, size);
+  const dx = t.x - s.x;
+  const dy = t.y - s.y;
+  const len = Math.hypot(dx, dy);
+  if (!Number.isFinite(len) || len < 1e-6) return 0;
+
+  const ux = dx / len;
+  const uy = dy / len;
+  const wanted = Math.max(CHIP_RAIL_WIDTH_PCT, podExitDistanceSq(ux, uy, size, pod));
+  const board = rayEntryDistanceSq(
+    s,
+    ux,
+    uy,
+    boardRectSq(size),
+    chipRadiusWidthPct(size) + BOARD_CHIP_GAP_WIDTH_PCT
+  );
+  const ceiling = Math.max(CHIP_RAIL_WIDTH_PCT, board);
+  return Math.min(wanted, ceiling, len * 0.8);
 }
 
 /**
@@ -570,8 +1045,12 @@ export function chipRestPosition(seat: Pos, size: Size = NOMINAL_SCALER): Pos {
  *      separate nudge applied afterwards that step 3 could then undo;
  *   3. if step 2 has pushed the two markers together - it can, because a seat
  *      outside the felt has both of its markers projected onto the same arc -
- *      walk the button AROUND the felt until they are MARKER_MIN_GAP_WIDTH_PCT
- *      apart (item 13).
+ *      OR the puck has landed on the printed masthead, walk the button AROUND
+ *      the felt until BOTH are satisfied: MARKER_MIN_GAP_WIDTH_PCT of daylight
+ *      from its own chips (item 13), and off FELT_TEXT_BAND (Dan 2026-08-26,
+ *      "the button should be moved up some ... so it doesn't overlap the
+ *      date"). The button is the marker with somewhere else to be, so it is the
+ *      one that moves; the chips are not touched to solve either.
  *
  * Step 3 swings the button about the CENTRE of the felt and then re-applies
  * step 2 WITH THE SAME MARGIN - a stadium is not rotation-invariant, so a point
@@ -587,7 +1066,7 @@ export function chipRestPosition(seat: Pos, size: Size = NOMINAL_SCALER): Pos {
  * result is in percentages), and TablePage.css locks that aspect at every
  * breakpoint, so the default is exact in production rather than approximate.
  */
-export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER): Pos {
+export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod?: Size): Pos {
   const c = feltCenter();
   const s = sq(seat, size);
   const t = sq(c, size);
@@ -606,17 +1085,42 @@ export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER): Po
   const rx = ux * cosA - uy * sinA;
   const ry = ux * sinA + uy * cosA;
 
+  // THE COMMON RAIL, NOT THIS SEAT'S. `chipStepWidthPct` can be longer than
+  // CHIP_RAIL_WIDTH_PCT where a pod needs clearing, and scaling the button with
+  // it was TRIED AND REJECTED: on a 404px table the 9-max bottom-cap puck ended
+  // up 94px from its own chair and 82px from the chair above it, and the walk
+  // reached 0.40 of the seat's run to the middle - the ceiling the geometry
+  // tests state. The button has no plate to clear (it stands at 0.85 of the
+  // rail, inside the pod, and the on-felt projection then decides where it
+  // actually lands for almost every seat), and pushing the CHIPS out only ever
+  // increases the daylight between the two markers. So the puck stays put and
+  // the chips walk past it, which is also the reading order Dan asked for:
+  // player, button, chips.
   const step = Math.min(CHIP_RAIL_WIDTH_PCT * BUTTON_RAIL_RATIO, len * 0.8);
   const walked = unsq({ x: s.x + rx * step, y: s.y + ry * step }, size);
   const placed = clampIntoFelt(walked, size, BUTTON_FELT_MARGIN_WIDTH_PCT);
 
-  const chips = chipRestPosition(seat, size);
-  if (markerGapWidthPct(placed, chips, size) >= MARKER_MIN_GAP_WIDTH_PCT) return placed;
+  // The chips this puck has to stay clear of are the REAL ones, so the pod is
+  // passed through: judging against a shorter walk than the chips actually take
+  // would rotate the button to dodge a stack that is not there any more.
+  const chips = chipRestPosition(seat, size, pod);
+  const puck = buttonRadiusWidthPct(size);
+  const clear = (p: Pos) =>
+    markerGapWidthPct(p, chips, size) >= MARKER_MIN_GAP_WIDTH_PCT && !isOnFeltText(p, size, puck);
+  if (clear(placed)) return placed;
 
   // Swing it around the middle of the felt, 1.5 degrees at a time, out to a
   // quarter turn - far more than any seat on any ring has ever needed. The
   // swing happens in square space so the angle is the angle a person sees, and
   // every candidate is put back on the felt before it is judged.
+  //
+  // TWO conditions travel together here now (Dan 2026-08-26, second report):
+  // the puck must be clear of its own chips AND off the printed masthead. They
+  // have to be satisfied by the SAME candidate - solving them one after the
+  // other lets the second rotation walk the puck back into the first's
+  // problem, which is the trap the "re-clamp with the same margin" note below
+  // is about. `dir` is tried +1 first, which for a seat left of the middle
+  // swings the puck UP, and that is the direction Dan named.
   const pv = sq(placed, size);
   const cv = sq(c, size);
   for (let i = 1; i <= 60; i++) {
@@ -631,7 +1135,7 @@ export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER): Po
         size,
         BUTTON_FELT_MARGIN_WIDTH_PCT
       );
-      if (markerGapWidthPct(cand, chips, size) >= MARKER_MIN_GAP_WIDTH_PCT) return cand;
+      if (clear(cand)) return cand;
     }
   }
   return placed;
@@ -659,6 +1163,10 @@ export function markerGapWidthPct(a: Pos, b: Pos, size: Size = NOMINAL_SCALER): 
  * Kept as a named export because it is the number a person wants when a bet
  * looks wrong, and because it is the thing the tests measure.
  *
+ * THE COMMON RAIL, which is the FLOOR every seat walks - not necessarily what a
+ * given seat walks. A seat whose own pod reaches past it walks further (guarantee
+ * 4); `chipStepWidthPct(seat, size, pod)` is that seat's answer.
+ *
  * ── THE `isDealer` ARGUMENT IS GONE (audit 2026-08-25) ──────────────────────
  * These three functions used to take a third `_isDealer` parameter that the
  * body ignored. It once added CHIP_RAIL_DEALER_EXTRA_PX so the button holder's
@@ -670,6 +1178,17 @@ export function markerGapWidthPct(a: Pos, b: Pos, size: Size = NOMINAL_SCALER): 
  * `false` to prove they were the same, which is a test of a parameter that
  * should not exist. The call sites in TablePage.tsx already pass two
  * arguments; the parameter is now dropped here to match.
+ *
+ * ── AND IT IS NOT COMING BACK AS `pod` (2026-08-26) ─────────────────────────
+ * The chip functions do take a third argument again, and it is a different KIND
+ * of thing: `pod` is the size of the avatar-and-plate box every seat paints, so
+ * the chips can be walked off it. It is not a property of the player - the
+ * dealer's pod is the same box as everyone else's - and passing it cannot give
+ * one seat a longer rail than another seat with the same pod and the same
+ * angle. It is declared with a DEFAULT rather than as `pod?`, so
+ * `betChipOffsetPx.length` is still 2: two required arguments, which is the
+ * thing tests/unit/chipRail.test.ts is really pinning. A boolean in that slot
+ * is a type error, which is the other half.
  */
 export function chipRailInset(size: Size): number {
   return (CHIP_RAIL_WIDTH_PCT / 100) * size.w;
@@ -681,8 +1200,8 @@ export function chipRailInset(size: Size): number {
  * Pixels because the caller positions with translate(). See `chipRestPosition`
  * for the rule.
  */
-export function betChipOffsetPx(seat: Pos, size: Size): Pos {
-  const p = chipRestPosition(seat, size);
+export function betChipOffsetPx(seat: Pos, size: Size, pod: Size | undefined = undefined): Pos {
+  const p = chipRestPosition(seat, size, pod);
   return {
     x: Math.round(((p.x - seat.x) * size.w) / 100),
     y: Math.round(((p.y - seat.y) * size.h) / 100),
@@ -696,11 +1215,11 @@ export function betChipOffsetPx(seat: Pos, size: Size): Pos {
  * by this again. Expressed as the remainder to a common endpoint so every seat's
  * chips converge on the same place regardless of where they started.
  */
-export function chipCollectOffsetPx(seat: Pos, size: Size): Pos {
+export function chipCollectOffsetPx(seat: Pos, size: Size, pod: Size | undefined = undefined): Pos {
   const c = feltCenter();
   const dxPx = ((c.x - seat.x) * size.w) / 100;
   const dyPx = ((c.y - seat.y) * size.h) / 100;
-  const rest = betChipOffsetPx(seat, size);
+  const rest = betChipOffsetPx(seat, size, pod);
   return {
     x: Math.round(dxPx * CHIP_COLLECT_FRACTION - rest.x),
     y: Math.round(dyPx * CHIP_COLLECT_FRACTION - rest.y),

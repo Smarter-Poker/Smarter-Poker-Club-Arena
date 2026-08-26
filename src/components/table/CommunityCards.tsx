@@ -188,19 +188,9 @@ function CardFace({
   );
 }
 
-interface PlaceholderCardProps {
-  index: number;
-  cardBack?: string;
-}
-
-function PlaceholderCard({ index, cardBack }: PlaceholderCardProps) {
-  return (
-    <div className="community-cards__placeholder" style={{ animationDelay: `${index * 100}ms` }}>
-      {/* Was hardcoded 'classic_red' — see the cardBack note on the props. */}
-      <CardBack size="lg" style={cardBack} />
-    </div>
-  );
-}
+/* `PlaceholderCard` was deleted 2026-08-26 with the ghost turn/river slots it
+   drew (Dan: "remove the ghost place holders for the turn and river that
+   appear after the flop"). Nothing rendered it afterwards. */
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -413,13 +403,23 @@ function CommunityCardsComponent({
               cardBack={cardBack}
               highlightPop={highlightPop}
             />
-          ) : // Phase 2 T1-07 — per POKERBROS_CLONE_SPEC.md line 485:
-          //   "Preflop: cards exist but are hidden/not displayed"
-          // Suppress placeholder card backs during preflop. Post-flop we
-          // still show placeholders for not-yet-dealt slots (turn/river).
-          stage === 'preflop' ? null : (
-            <PlaceholderCard key={`placeholder-${i}`} index={i} cardBack={cardBack} />
-          )
+          ) : /* Dan 2026-08-26: "remove the ghost placeholders for the turn
+                 and river that appear after the flop."
+
+                 An undealt slot now renders NOTHING at any stage. The dashed
+                 outlines were meant to keep the board visually centred before
+                 the turn and river land, but the row is centred by its own
+                 flex layout, so they bought nothing and read as two empty
+                 card-shaped holes sitting on the felt — on a phone, where the
+                 board is already small, they were the loudest thing on it.
+
+                 The preflop suppression this replaces (Phase 2 T1-07) was the
+                 same instinct applied to one street; this is it applied to
+                 all of them. `PlaceholderCard` and its `.community-cards__
+                 placeholder` styles were deleted with it rather than left
+                 behind — a component nothing renders is how a stylesheet ends
+                 up full of rules for markup that no longer exists. */
+          null
         )}
       </div>
 

@@ -290,10 +290,31 @@ describe('item 13 - one rail, equal for every seat', () => {
     // by 20px so they could clear their own puck. That is one seat at a
     // different distance from its player than everyone else, which is the thing
     // item 13 forbids - the puck moves now instead. See dealerButtonPosition.
+    //
+    // CORRECTED 2026-08-26. This used to read
+    //     betChipOffsetPx(seat, table, true) === betChipOffsetPx(seat, table, false)
+    // which was already the wrong shape when the audit of 2026-08-25 deleted the
+    // `isDealer` parameter it was passing - the note on `chipRailInset` says so
+    // in as many words, and tests/unit/chipRail.test.ts replaced its copy with
+    // the structural check below on the same day. This one was missed, and it
+    // did not merely go stale: the third slot now carries the seat's POD, so
+    // `true` was being read as a box with no width and every offset came back
+    // NaN. A test that survives by being ignored is a test that will one day be
+    // obeyed.
+    //
+    // The property is structural now: there is no boolean to pass. Two required
+    // arguments, and a third that is a Size - the pod every seat paints, which
+    // the dealer's seat has exactly like everyone else's.
+    expect(betChipOffsetPx).toHaveLength(2);
+    expect(chipCollectOffsetPx).toHaveLength(2);
+    expect(chipRailInset).toHaveLength(1);
+
+    // And the rail itself is still one number for the whole table, with no way
+    // in for a per-player term.
     for (const table of Object.values(TABLES)) {
       for (const ring of Object.values(RINGS)) {
         for (const seat of ring) {
-          expect(betChipOffsetPx(seat, table, true)).toEqual(betChipOffsetPx(seat, table, false));
+          expect(betChipOffsetPx(seat, table)).toEqual(betChipOffsetPx(seat, table));
         }
       }
     }

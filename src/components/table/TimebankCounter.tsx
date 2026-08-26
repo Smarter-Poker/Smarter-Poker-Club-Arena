@@ -35,7 +35,13 @@ import React from 'react';
 import './TimebankCounter.css';
 
 interface TimebankCounterProps {
-  count: number;
+  /**
+   * How many banks the player holds. `null` = not loaded yet, and renders as
+   * a dash. Dan 2026-08-26: the tile used to be seeded with a hard 4 and
+   * showed it confidently to a player holding 481 — a placeholder that looks
+   * like data is worse than one that looks like a placeholder.
+   */
+  count: number | null;
   onClick?: () => void;
   /** Optional: when true, widget renders in "low" state (warning tint). */
   low?: boolean;
@@ -59,8 +65,16 @@ export const TimebankCounter: React.FC<TimebankCounterProps> = ({
       type="button"
       className={`tbc-widget${low ? ' tbc-widget--low' : ''}`}
       onClick={onClick}
-      aria-label={`Time banks remaining: ${count}, ${bankSeconds} seconds each`}
-      title={`${count} time bank${count === 1 ? '' : 's'} remaining (${bankSeconds}s each)`}
+      aria-label={
+        count === null
+          ? 'Time banks remaining: loading'
+          : `Time banks remaining: ${count}, ${bankSeconds} seconds each`
+      }
+      title={
+        count === null
+          ? 'Loading Your Time Banks'
+          : `${count} time bank${count === 1 ? '' : 's'} remaining (${bankSeconds}s each)`
+      }
     >
       {/* One monochrome outline glyph: a clock face with two small winder stems,
           enough to read as "shot clock" at 16px without any of the alarm
@@ -83,7 +97,7 @@ export const TimebankCounter: React.FC<TimebankCounterProps> = ({
           />
         </svg>
       </span>
-      <span className="tbc-count">{count}</span>
+      <span className="tbc-count">{count === null ? '-' : count}</span>
     </button>
   );
 };

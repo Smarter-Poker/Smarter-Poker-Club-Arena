@@ -929,12 +929,53 @@
   filter: drop-shadow(0 2px 7px rgba(0, 0, 0, 0.7));
 }
 
+/* Dan 2026-08-26: "the button should be moved up some in that position so it
+   doesn't overlap the date."
+
+   The button was where it belongs. THE DATE WAS NOT: it was hanging 23px out
+   of this box on each side, into the lane the left-middle and right-middle
+   seats' dealer pucks stand in.
+
+   The two declarations below are the whole fix, and they are here rather than
+   on `.table-brand__line` because the line was never the problem. That rule
+   already carries `white-space: nowrap`, `overflow: hidden`,
+   `text-overflow: ellipsis` and `max-width: 100%`, and the note on it (Dan
+   2026-08-24, "the line was bleeding past the rail. It ellipsizes at the
+   masthead's edge instead") describes exactly what was wanted. It just did not
+   happen, because of what THIS element resolves to:
+
+     `.table-brand` is `flex-direction: column; align-items: center`, so this
+     box is a flex item whose cross size is not stretched. That makes its width
+     `fit-content`, which is
+         min(max-content, max(min-content, available))
+     and for a `white-space: nowrap` child min-content EQUALS max-content. So
+     whenever the text is wider than the 62% box, that expression returns the
+     TEXT's width, not the box's - and the child's `max-width: 100%` then
+     resolves against a parent that is already as wide as the child, clamping
+     nothing at all. The ellipsis could never fire.
+
+   `width: 100%` makes this box the masthead's width instead of the text's, and
+   `min-width: 0` stops the flex layout re-growing it back to min-content (a
+   flex item's automatic minimum size is its content, and a nowrap line's
+   content minimum is the whole line - the other half of the same trap).
+
+   WHAT IT COSTS: on a 393px phone the box is 175px, and a date + club + union
+   line longer than about 31 characters now ends in an ellipsis rather than
+   crossing the felt. That is the trade the 2026-08-24 rule already declared;
+   it simply was not being collected.
+
+   Two things read the resulting extent and have to move with it: the
+   `.table-brand` width above, and FELT_TEXT_BAND in
+   src/components/table/tableGeometry.ts, which keeps the dealer button off
+   this printing by construction. Change one, change both. */
 .table-brand__meta {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 1px;
   text-align: center;
+  width: 100%;
+  min-width: 0;
 }
 
 /* Dan 2026-08-25, item 10: "the display on the table (date, club, union) needs
@@ -3366,7 +3407,24 @@ body.ca-raising .bankroll-widget {
        Specificity 0,1,0, so `.table-page[data-hero='false'] .table-container`
        (0,2,1, at the foot of this file) still collapses it for a spectator,
        who has neither a hero plate nor a time-bank tile. */
-    --sp-hero-clear: 88px;
+    /* ── Dan 2026-08-26: "the table can be moved down some, as now there is
+          too much space for the hero, not enough for the top players." ──
+
+       88 -> 68. This reserve is the strip UNDER the felt, so shrinking it
+       moves the whole oval DOWN and hands the difference to the top of the
+       table, which is exactly the trade being asked for.
+
+       IT COSTS THE FELT NOTHING, for the reason the note above already
+       establishes: at 375 and 393 the oval is WIDTH-bound and stays that way
+       until this reserve passes 90px (375) / 100px (393). At 88 it was 2px
+       and 12px from binding; at 68 it is nowhere near. The table does not
+       shrink, it relocates.
+
+       THE FLOOR IT MUST NOT CROSS is half a hero seat, or the name plate
+       carrying the stack goes back under the action bar — the 2026-08-23 bug.
+       Measured half-heights: 49px @380, 54px @480, 60px @640. 68 clears the
+       largest of those by 8px, which is why it is not 60. */
+    --sp-hero-clear: 68px;
     /* 2026-08-26: gutters removed per Dan — edge-to-edge felt at 375px
        measures 375x619.8 (up from 367x606.6 with 4px gutters). Side-seat
        overhang at narrow viewports is addressed by the max-width: 340px

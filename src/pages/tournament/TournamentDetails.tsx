@@ -1035,8 +1035,6 @@ export default function TournamentDetails({
     });
   }, [tournament?.blind_structure]);
 
-  const isRunning = tournament?.status === 'RUNNING';
-
   /**
    * The tab contract, built once. Every tab takes exactly this and nothing
    * else, so switching tabs is a render, not a refetch.

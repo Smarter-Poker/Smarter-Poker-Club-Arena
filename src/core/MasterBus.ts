@@ -32,6 +32,8 @@ import { reportError } from '../utils/errorReporter';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export type BusEventType =
+  | 'TABLE_CHAT_INSERT'
+  | 'TABLE_PROFILES_UPDATE'
   | 'AUTH_STATE_CHANGED'
   | 'USER_PROFILE_LOADED'
   | 'CLUB_JOINED'
@@ -346,6 +348,8 @@ export type BusEventType =
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
+  TABLE_CHAT_INSERT: { tableId: string; newRow: Record<string, unknown> };
+  TABLE_PROFILES_UPDATE: { newRow: Record<string, unknown> };
   AUTH_STATE_CHANGED: AuthStatePayload;
   USER_PROFILE_LOADED: { avatarUrl?: string; displayName?: string; userId?: string };
   CLUB_JOINED: ClubEventPayload;

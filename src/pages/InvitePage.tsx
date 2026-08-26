@@ -404,7 +404,7 @@ export default function InvitePage() {
           </>
         ) : (
           <button className="btn btn-primary join-btn" onClick={handleJoin} disabled={joining}>
-            {joining ? 'Joining...' : 'Accept Invitation'}
+            {joining ? 'Joining...' : 'Join Club'}
           </button>
         )}
       </div>

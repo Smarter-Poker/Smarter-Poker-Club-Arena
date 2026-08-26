@@ -287,14 +287,36 @@ describe('who is offered a hunt, and for how many cards', () => {
     expect(TABLE_PAGE).not.toMatch(/\.\.\.rabbitRevealedCards/);
   });
 
-  it('the reveal panel positions itself instead of falling out of the layout', () => {
-    // It renders into a `position: fixed; height: 100dvh; overflow: hidden`
-    // flex column as an unpositioned flex item, so it could sit out of view
-    // entirely — the player pays and sees nothing.
+  it('the button lives in a positioned slot rather than falling out of the layout', () => {
+    // ORIGINALLY: it rendered into a `position: fixed; height: 100dvh;
+    // overflow: hidden` flex column as an unpositioned flex item, so it could
+    // sit out of view entirely - the player pays and sees nothing. The fix was
+    // to give `.rabbit-hunt` its own `position: fixed; left; bottom: 22vh`.
+    //
+    // UPDATED 2026-08-26. Dan: "THAT ALSO THE EXACT POSITION THAT THE RABBIT
+    // HUNT BUTTON SHOULD APPEAR WHEN THE HAND IS OVER" - the position being the
+    // bottom-left HUD slot the time bank tile uses while the hero is on the
+    // clock. So it is no longer self-positioned; it renders inside
+    // `.hud-ul-column--stack`, which sits in `.table-hud` (itself
+    // `position: fixed; inset: 0`). The original failure - an unpositioned item
+    // in a clipped column - is still impossible, by a different route.
     const css = read('src/components/table/RabbitHunt.css');
     const at = css.indexOf('.rabbit-hunt {');
     expect(at).toBeGreaterThan(-1);
-    expect(css.slice(at, at + 260)).toMatch(/position: fixed/);
+    const rootRule = css.slice(at, css.indexOf('}', at));
+
+    // It must NOT re-acquire its own coordinate system.
+    expect(rootRule).not.toMatch(/position:\s*fixed/);
+    // And it must opt back into pointer events, because .table-hud sets
+    // pointer-events: none and an unclickable button is the same bug wearing a
+    // different hat.
+    expect(rootRule).toMatch(/pointer-events:\s*auto/);
+
+    // It renders in the HUD stack, next to the time bank tile.
+    const at2 = TABLE_PAGE.indexOf('<TimebankCounter');
+    const rabbitAt = TABLE_PAGE.indexOf('<RabbitHunt', at2);
+    expect(rabbitAt).toBeGreaterThan(-1);
+    expect(rabbitAt).toBeLessThan(TABLE_PAGE.indexOf('<PreviousHandCard', at2));
   });
 
   it('a VIP is told how many free hunts are left', () => {
@@ -332,8 +354,17 @@ describe('who is offered a hunt, and for how many cards', () => {
 
   it('there is exactly one rabbit hunt button', () => {
     // A second button in the control strip called the reveal directly and threw
-    // the result away: it spent the reveal, and now the diamonds, showing nothing.
+    // the result away: it spent the reveal, and now the diamonds, showing
+    // nothing. That must stay impossible.
     expect((TABLE_PAGE.match(/onClick=\{handleRabbitReveal\}/g) || []).length).toBe(0);
-    expect(TABLE_PAGE).toMatch(/onRabbitReveal=\{handleRabbitReveal\}/);
+
+    // UPDATED 2026-08-26: the component moved out of TableModalsLayer and into
+    // the HUD stack, so the reveal handler is passed on RabbitHunt's own
+    // `onReveal` prop rather than forwarded through the layer as
+    // `onRabbitReveal`. Still exactly one wiring of it.
+    expect((TABLE_PAGE.match(/onReveal=\{handleRabbitReveal\}/g) || []).length).toBe(1);
+    expect(TABLE_PAGE).not.toMatch(/onRabbitReveal=/);
+    // And the layer no longer renders one at all.
+    expect(read('src/components/table/TableModalsLayer.tsx')).not.toMatch(/<RabbitHunt/);
   });
 });

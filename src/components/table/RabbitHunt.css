@@ -16,30 +16,27 @@
  *     the cards moved to the CommunityCards board.
  */
 
-/* The panel positions ITSELF. It renders from TableModalsLayer, which returns a
-   bare fragment mounted as a direct child of `.table-page` — a
-   `position: fixed; inset: 0; display: flex; flex-direction: column;
-   height: 100dvh; overflow: hidden` column. As an unpositioned flex item it was
-   appended below the felt, inside a clipped viewport-height box, so on a phone
-   the button could sit entirely out of view. Every other overlay in that layer
-   is fixed; this one was not. */
+/* Dan 2026-08-26: "THAT ALSO THE EXACT POSITION THAT THE RABBIT HUNT BUTTON
+   SHOULD APPEAR WHEN THE HAND IS OVER" — the position being the bottom-left HUD
+   slot the time bank tile occupies while the hero is on the clock. The two are
+   mutually exclusive by construction (one needs a hand in progress, the other
+   needs no hand), so one slot holds both.
+
+   So this no longer positions itself. It used to be `position: fixed; left:
+   12px; bottom: 22vh` with a 480px override — its own coordinate system, chosen
+   to approximate the bottom-left corner, and drifting from the HUD's real
+   bottom line (`--sp-hud-line`) whenever the action panel changed height. It
+   renders inside `.hud-ul-column--stack` now and takes its place from the stack,
+   the same way the tile and the previous-hand card do.
+
+   `pointer-events: auto` stays and is load-bearing: `.table-hud` sets
+   `pointer-events: none` so the felt underneath stays touchable, and every
+   interactive child has to opt back in. */
 .rabbit-hunt {
-  position: fixed;
-  left: 12px;
-  bottom: 22vh;
-  z-index: 900;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   pointer-events: auto;
-}
-
-@media (max-width: 480px) {
-  .rabbit-hunt {
-    /* Clear of the action buttons on a 375px phone. */
-    left: 8px;
-    bottom: 28vh;
-  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

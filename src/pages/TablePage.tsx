@@ -250,6 +250,7 @@ import GameServerAPI, {
   postBBToEnter as serverPostBBToEnter,
   requestRabbitHunt,
 } from '../services/GameServerAPI';
+import RabbitHunt from '../components/table/RabbitHunt';
 import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
 //monteCarloEquity import removed — server-authoritative
 import './TablePage.css';
@@ -13480,8 +13481,28 @@ export default function TablePage({
           <div className="hud-ul-column hud-ul-column--stack">
             {/* Dan 2026-08-21: "the previous hand should be in the bottom left
                 corner, the time bank icon should be on top of it." Stacked in
-                that exact order — alarm clock above, previous-hand card below. */}
-            {tableState.heroSeat > 0 && (
+                that exact order — alarm clock above, previous-hand card below.
+
+                Dan 2026-08-26, two rules about THIS slot:
+
+                  "TIME BANK ICON SHOULD ONLY APPEAR WHEN ITS THE USERS TURN TO
+                   ACT, IT SHOULDN'T BE DISPLAYED THERE ALL THE TIME."
+
+                  "THAT ALSO THE EXACT POSITION THAT THE RABBIT HUNT BUTTON
+                   SHOULD APPEAR WHEN THE HAND IS OVER."
+
+                So the slot holds exactly one control at a time and the two
+                conditions cannot overlap: the time bank while the hero is on
+                the clock, Rabbit Hunt once the hand is over. The tile used to
+                render on `heroSeat > 0` alone — present for every hand, every
+                orbit, whether or not it could be used.
+
+                Rabbit Hunt moved here out of TableModalsLayer, where it was
+                `position: fixed; left: 50%; bottom: 22vh` in its own coordinate
+                system. Its fixed positioning is dropped in RabbitHunt.css so it
+                flows in this stack; it keeps its own `pointer-events: auto`,
+                which it needs because `.table-hud` sets `pointer-events: none`. */}
+            {isHeroTurnContext && (
               <TimebankCounter
                 /* null = not loaded yet. The tile renders a dash rather
                    than asserting a number, which is what showed a wrong 4. */
@@ -13509,6 +13530,17 @@ export default function TablePage({
                    the store, where the balance is shown and more can be
                    bought. */
                 onClick={() => setShowTimeBankStore(true)}
+              />
+            )}
+            {/* The same slot, once the hand is over. Mutually exclusive with
+                the tile above by construction: that one needs a hand in
+                progress and the hero on the clock, this one needs no hand. */}
+            {!tableState.isHandInProgress && isRabbitAvailable && (
+              <RabbitHunt
+                isAvailable={isRabbitAvailable}
+                cardsAvailable={rabbitCardsAvailable}
+                rabbitDiamondCost={rabbitDiamondCost}
+                onReveal={handleRabbitReveal}
               />
             )}
             <PreviousHandCard
@@ -15841,10 +15873,6 @@ export default function TablePage({
           }
         }}
         // Rabbit Hunt
-        isRabbitAvailable={isRabbitAvailable}
-        rabbitCardsAvailable={rabbitCardsAvailable}
-        rabbitDiamondCost={rabbitDiamondCost}
-        onRabbitReveal={handleRabbitReveal}
         // Leaderboard
         showLeaderboard={showLeaderboard}
         leaderboardPlayers={leaderboardPlayers}

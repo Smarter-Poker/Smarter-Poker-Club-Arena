@@ -1124,10 +1124,13 @@
   border-radius: 10px;
   font-size: 1.05rem;
   font-weight: 800;
-  color: #ffde5c;
+  /* Measured off the reference +6.95 frames: stroke core rgb(255,255,119),
+     body mean rgb(229,209,84) — a brighter, purer yellow than the banner
+     gold. */
+  color: #ffe94a;
   text-shadow:
     0 1px 0 rgba(0, 0, 0, 0.65),
-    0 0 12px rgba(255, 222, 92, 0.55);
+    0 0 12px rgba(255, 233, 74, 0.55);
   letter-spacing: 0.02em;
   white-space: nowrap;
   z-index: 40;
@@ -1143,6 +1146,84 @@
 .seat__net-win--loss {
   color: #ff8a7a;
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.75);
+}
+
+/* ─── WIN SPARKLES — reference four-point stars over the winner's cards ───
+   POKERBROS PARITY 2026-08-26 (round 3). Four gold stars: one large on the
+   cards, three smaller scattered, each twinkling on its own phase while the
+   whole field lives exactly as long as the +N float (2.5s), then fades. */
+.seat__win-sparkles {
+  position: absolute;
+  top: -52px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  z-index: 41;
+  pointer-events: none;
+  animation: seatWinSparklesLife 2500ms ease-out forwards;
+}
+
+.seat__win-sparkle {
+  position: absolute;
+  background: radial-gradient(circle at 50% 45%, #fff7cf 0%, #ffe94a 45%, #eab308 100%);
+  clip-path: polygon(50% 0%, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0% 50%, 39% 39%);
+  filter: drop-shadow(0 0 4px rgba(255, 233, 74, 0.8));
+  animation: seatWinSparkleTwinkle 1.1s ease-in-out infinite;
+}
+
+.seat__win-sparkle:nth-child(1) {
+  width: 26px;
+  height: 26px;
+  left: -18px;
+  top: 26px;
+}
+.seat__win-sparkle:nth-child(2) {
+  width: 13px;
+  height: 13px;
+  left: 30px;
+  top: 8px;
+  animation-delay: 0.28s;
+}
+.seat__win-sparkle:nth-child(3) {
+  width: 10px;
+  height: 10px;
+  left: -46px;
+  top: 44px;
+  animation-delay: 0.55s;
+}
+.seat__win-sparkle:nth-child(4) {
+  width: 15px;
+  height: 15px;
+  left: 40px;
+  top: 52px;
+  animation-delay: 0.8s;
+}
+
+@keyframes seatWinSparklesLife {
+  0% {
+    opacity: 0;
+  }
+  6% {
+    opacity: 1;
+  }
+  82% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes seatWinSparkleTwinkle {
+  0%,
+  100% {
+    transform: scale(0.45) rotate(0deg);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1) rotate(12deg);
+    opacity: 1;
+  }
 }
 
 @keyframes seat-net-win-float {
@@ -1728,7 +1809,14 @@
    seat's card rows are excluded here because the cards carry their own
    states: winning cards full, all other face-up cards at 0.28. No
    transition: the reference onset is a one-frame cut. */
-.table-page--winner-flash .seat > :not([class*='seat__cards']) {
+/* The +N float and its sparkles (and a BBJ credit) ride ABOVE the dim —
+   in the reference the bright-yellow amount and the stars are the only
+   things at full brightness besides the winning cards and the banner. */
+.table-page--winner-flash
+  .seat
+  > :not([class*='seat__cards']):not(.seat__net-win):not(.seat__win-sparkles):not(
+    .seat__bbj-credit
+  ) {
   filter: brightness(0.73);
 }
 
@@ -2286,6 +2374,16 @@
 @media (prefers-reduced-motion: reduce) {
   .seat__bounty {
     animation: none;
+  }
+
+  .seat__win-sparkles,
+  .seat__win-sparkle {
+    animation: none;
+  }
+
+  .seat__win-sparkle {
+    opacity: 0.8;
+    transform: scale(0.8);
   }
 }
 

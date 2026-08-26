@@ -2334,6 +2334,20 @@ export const SeatSlot = memo(
           </div>
         )}
 
+        {/* POKERBROS PARITY 2026-08-26 (round 3): the reference scatters
+            four-point gold star sparkles over the winner's cards while the
+            +N float shows — measured off the 30.5-31.1s frames (one large
+            star on the cards, smaller ones twinkling around them). Positive
+            wins only: a rake-negative chop gets information, not confetti. */}
+        {isWinner && typeof netWinAmount === 'number' && netWinAmount > 0 && (
+          <div className="seat__win-sparkles" aria-hidden="true" key={`spark-${netWinAmount}`}>
+            <span className="seat__win-sparkle" />
+            <span className="seat__win-sparkle" />
+            <span className="seat__win-sparkle" />
+            <span className="seat__win-sparkle" />
+          </div>
+        )}
+
         {/* BBJ credit float — gold, distinct from the pot-win +N (2026-08-18) */}
         {typeof bbjCreditAmount === 'number' && bbjCreditAmount > 0 && (
           <div className="seat__bbj-credit" key={`bbj-${bbjCreditAmount}`}>

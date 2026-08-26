@@ -587,6 +587,32 @@
   opacity: 0;
 }
 
+/* POKERBROS PARITY 2026-08-26 (round 3): the reference's winning cards are
+   perfectly still — no specular sweep glides across them while they are
+   lit. The sheen loop pauses on highlighted cards too. */
+.community-cards__card--highlighted::after {
+  animation: none;
+  opacity: 0;
+}
+
+/* And the hover lift must not break the tableau while the winner state is
+   painted: a lifted losing card or a bobbing winner is motion the reference
+   does not have. The highlighted rule re-states its steady shadow because
+   the base :hover rule would otherwise swap it for the lift shadow. */
+.community-cards__card--dimmed:hover {
+  transform: none;
+}
+
+.community-cards__card--highlighted:hover {
+  transform: none;
+  box-shadow:
+    0 0 0 2px #e9b355,
+    0 0 10px rgba(240, 180, 80, 0.8),
+    0 0 22px rgba(235, 165, 50, 0.45),
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    inset 0 0 14px rgba(235, 170, 60, 0.18);
+}
+
 /* =================================================================================
    SHOWDOWN MODE -- Entire board gets golden ambient
    ================================================================================= */

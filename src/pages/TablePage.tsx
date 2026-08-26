@@ -3375,6 +3375,29 @@ export default function TablePage({
     ritRevealedRuns,
   ]);
 
+  // POKERBROS PARITY 2026-08-26 (round 3): the double-board bomb pot's
+  // SECOND board never highlighted its winning five — the engine's
+  // card_indices describe board 1, so board 2 rendered every card at full
+  // brightness while board 1 dimmed around its winners. Same client-side
+  // derivation the RIT boards use: first winner with visible hole cards,
+  // bestFive against board 2, map the played five back to board indices.
+  const board2HighlightedIndices = useMemo(() => {
+    if (tableState.communityCards2.length < 5 || winnerInfo.playerIds.length === 0) return [];
+    for (const wid of winnerInfo.playerIds) {
+      const winnerPlayer = tableState.players.find((p) => p?.id === wid);
+      const hole = (winnerPlayer?.holeCards ?? []).filter((c): c is Card => c != null);
+      if (hole.length === 0) continue;
+      const evalResult = bestFive(hole, tableState.communityCards2, tableState.gameType);
+      if (evalResult) {
+        const playedKeySet = new Set(evalResult.cards.map(cardKey));
+        return tableState.communityCards2
+          .map((c, idx) => (playedKeySet.has(cardKey(c)) ? idx : -1))
+          .filter((idx) => idx >= 0);
+      }
+    }
+    return [];
+  }, [tableState.communityCards2, winnerInfo.playerIds, tableState.players, tableState.gameType]);
+
   // ─── Multi-table info reporting ─────────────────────────────────────
   // When embedded in MultiTablePage, report table name/pot/turn status
   //
@@ -13842,6 +13865,9 @@ export default function TablePage({
                                 : tableState.boardStage
                             }
                             winningHandName={winnerInfo.boardHandNames?.[1] || undefined}
+                            /* POKERBROS PARITY 2026-08-26 (round 3): board 2
+                               dims and lights exactly like board 1. */
+                            highlightedIndices={board2HighlightedIndices}
                             deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                             cardBack={activeCardBack}
                             playSounds={false}

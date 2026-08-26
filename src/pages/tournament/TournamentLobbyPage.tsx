@@ -24,6 +24,7 @@ import { reportError } from '../../utils/errorReporter';
 import { totalBuyIn } from '../../utils/buyIn';
 import { relayTournamentEvent } from '../../services/tournamentEventBridge';
 import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
+import { isWithinLobbyWindow, lobbyQueryHorizonIso } from '../../utils/tournamentScheduleWindow';
 
 type TournamentStatus = 'all' | 'upcoming' | 'REGISTERING' | 'RUNNING' | 'COMPLETED';
 type TournamentTypeFilter = 'all' | 'mtt' | 'sng' | 'spin' | 'bounty' | 'pko' | 'mystery';
@@ -345,9 +346,20 @@ export default function TournamentLobbyPage() {
                     clubs!club_id(name)
                 `;
 
-      // 72-hour display window: only show tournaments starting within 72h (or already running)
+      /* THE DISPLAY WINDOW IS ONE RULE, SHARED WITH THE CLUB LOBBY
+         (Dan 2026-08-26). This page hard-coded its own 72 hours while
+         ClubHomePage published 48, so the same tournament could be on one
+         board and missing from the other — and neither number was written
+         down anywhere the other could see it. Both now read
+         src/utils/tournamentScheduleWindow.ts, where 72 hours is the standard
+         window and anything from a 200 buy-in upward gets 6 days.
+
+         The bound below is the LONGER of the two, because it is a database
+         filter and cannot know each row's buy-in before fetching it. The
+         precise per-row split is applied by isWithinLobbyWindow after the
+         rows are in hand, exactly as the club lobby does it. */
       const now = new Date();
-      const seventyTwoHoursOut = new Date(now.getTime() + 72 * 60 * 60 * 1000).toISOString();
+      const seventyTwoHoursOut = lobbyQueryHorizonIso(now.getTime());
 
       let activeQuery = supabase
         .from('tournaments')
@@ -433,7 +445,22 @@ export default function TournamentLobbyPage() {
           completedQuery,
         ]);
         error = activeRes.error || pinnedRes.error || completedRes.error;
-        const active = activeRes.data || [];
+        /* THE PER-ROW HALF OF THE SHARED RULE. The query above bounds the
+           fetch by the LONGEST window (6 days) because a database filter
+           cannot know each row's buy-in first; this narrows it to the real
+           rule — 72 hours normally, 6 days from a 200 buy-in upward. Running
+           and overdue events pass for free (their start time is in the past),
+           and a row whose start_time will not parse is kept rather than
+           hidden, so a bad timestamp is visible instead of silently costing
+           a tournament its listing.
+
+           PINNED IS DELIBERATELY EXEMPT. An operator who pins an event has
+           said "show this regardless"; the pinned query exists precisely to
+           reach past the window and it would be pointless to filter it back
+           out here. */
+        const active = (activeRes.data || []).filter((t: { start_time?: string }) =>
+          isWithinLobbyWindow(t as Parameters<typeof isWithinLobbyWindow>[0])
+        );
         const pinned = pinnedRes.data || [];
         const completed = statusFilter === 'upcoming' ? [] : completedRes.data || [];
         // Merge pinned (beyond 72h) with active, deduplicate by id

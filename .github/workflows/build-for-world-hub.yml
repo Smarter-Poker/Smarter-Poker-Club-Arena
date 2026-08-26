@@ -4,6 +4,27 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # CATCH-UP, because `push` alone is not a guarantee that main publishes.
+    #
+    # The concurrency rule below is right and deliberate, but it has one
+    # consequence worth naming: when a new push arrives, GitHub cancels the
+    # run that was PENDING in the group. That is what makes each wave converge
+    # on the newest main instead of publishing nothing. It also means the
+    # publish of a given commit can be cancelled and then never re-attempted,
+    # because the only thing that ever starts this workflow is another push.
+    # If the pushes stop right after a cancellation - the end of a merge
+    # train, the end of a working day - main and production stay diverged
+    # until somebody pushes again.
+    #
+    # publish-watchdog.yml notices within 30 minutes and re-dispatches once.
+    # This makes the common case self-correct without waiting for the alarm,
+    # and it mirrors auto-deploy-hetzner.yml, which has had a catch-up
+    # schedule for exactly this reason.
+    #
+    # The dedupe step below exits in seconds when production already serves
+    # main, so an up-to-date cycle costs one checkout and one curl.
+    - cron: '*/20 * * * *'
 
 # 2026-08-21: was cancel-in-progress: true, which deadlocked publishing.
 # This build takes about 4 minutes. With several agents pushing to main every
@@ -23,6 +44,10 @@ concurrency:
 jobs:
   build-and-store:
     runs-on: ubuntu-latest
+    # The second job runs on a DIFFERENT runner and cannot see this job's
+    # step outputs, so the decision has to leave the job explicitly.
+    outputs:
+      skip: ${{ steps.dedupe.outputs.skip }}
     permissions:
       # read is enough now: this job uploads an artifact instead of pushing a
       # branch, so it no longer writes to the repository at all.
@@ -33,6 +58,37 @@ jobs:
     steps:
       - name: Checkout Club Arena
         uses: actions/checkout@v4
+
+      # ── DO NOTHING IF PRODUCTION ALREADY SERVES THIS COMMIT ─────────────
+      # The entire cost of the catch-up schedule above lives or dies here. A
+      # scheduled cycle on an up-to-date repo must not install dependencies,
+      # run the suite and build a bundle that is already published - that
+      # turns a safety net into the largest line on the CI bill.
+      #
+      # Only the SCHEDULE is deduped. A push always builds (it is by
+      # definition new work) and so does a manual dispatch (a human running
+      # this is usually forcing a republish of something that looks stuck).
+      - name: Skip a scheduled run when production is already current
+        id: dedupe
+        if: github.event_name == 'schedule'
+        run: |
+          LIVE=$(curl -fsS --max-time 20 \
+            https://smarter.poker/hub/club-arena/build-info.json 2>/dev/null \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ca_sha",""))' \
+            2>/dev/null || echo "")
+          HEAD_SHA="${{ github.sha }}"
+          if [ -z "$LIVE" ]; then
+            # Unreadable is NOT up to date. Fail open and publish: a stale CDN
+            # or a broken build-info is exactly when this needs to run.
+            echo "::notice::build-info.json unreadable - publishing rather than assuming."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          elif [ "$LIVE" = "$HEAD_SHA" ]; then
+            echo "::notice::Production already serves ${HEAD_SHA:0:7} - nothing to publish."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Production serves ${LIVE:0:7}, main is ${HEAD_SHA:0:7} - publishing."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
 
       # STAGE MARKERS REMOVED (2026-08-21).
       #
@@ -54,12 +110,14 @@ jobs:
       # every one of them a permanent ref that `actions/checkout` and every
       # `git ls-remote` pays for. Deleted here so it stops growing.
       - name: Setup Node.js
+        if: steps.dedupe.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
+        if: steps.dedupe.outputs.skip != 'true'
         run: npm ci
 
       # ═══════════════════════════════════════════════════════════════════
@@ -76,9 +134,11 @@ jobs:
       # The whole suite is ~15s; a superseding push re-tests its own commit.
       # ═══════════════════════════════════════════════════════════════════
       - name: Client tests must pass before the bundle ships
+        if: steps.dedupe.outputs.skip != 'true'
         run: npx vitest run tests/
 
       - name: Build Club Arena
+        if: steps.dedupe.outputs.skip != 'true'
         env:
           NODE_ENV: production
           VITE_ANTIGRAVITY_ENABLED: 'true'
@@ -98,6 +158,7 @@ jobs:
       #   curl -s https://smarter.poker/hub/club-arena/build-info.json
       # answers "what is actually live" without grepping minified chunks.
       - name: Stamp build provenance
+        if: steps.dedupe.outputs.skip != 'true'
         run: |
           cat > dist/build-info.json <<JSON
           {
@@ -133,6 +194,7 @@ jobs:
       # up when the run succeeds (nine were still lying around), and the
       # GITHUB_TOKEN write permission this job needed purely to create them.
       - name: Upload dist for the sync job
+        if: steps.dedupe.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: club-arena-dist-${{ github.sha }}
@@ -147,6 +209,7 @@ jobs:
       # discovering it is missing halfway through the rsync. Kept from the
       # branch version, which checked the same file for the same reason.
       - name: Verify dist is complete
+        if: steps.dedupe.outputs.skip != 'true'
         run: |
           if [ ! -f dist/index.html ]; then
             echo "::error::dist/index.html is missing — refusing to continue."
@@ -155,6 +218,7 @@ jobs:
           echo "dist/index.html present ($(du -sh dist | cut -f1) total)"
 
       - name: Build summary
+        if: steps.dedupe.outputs.skip != 'true'
         run: |
           echo "### Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "dist uploaded as artifact \`club-arena-dist-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
@@ -162,6 +226,10 @@ jobs:
 
   sync-to-world-hub:
     needs: build-and-store
+    # A deduped scheduled run produces NO artifact, so this job must not run
+    # at all - it would fail trying to download a dist that was never built.
+    # Job level, reading the job output: step outputs do not cross runners.
+    if: needs.build-and-store.outputs.skip != 'true'
     runs-on: ubuntu-latest
     # Needed by the sync-branch cleanup at the end of this job. build-and-store
     # already declares this because it PUSHES the branch; without it here the

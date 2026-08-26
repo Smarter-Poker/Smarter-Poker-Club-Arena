@@ -28,16 +28,29 @@
  * stays on the board at the bottom of the MTT tab until it finishes.
  */
 
-/** Events start within this many hours of now are always on the board. */
-export const LOBBY_WINDOW_HOURS = 48;
+/**
+ * Events starting within this many hours of now are always on the board.
+ *
+ * 48 -> 72 (Dan 2026-08-26, second pass: "USE 72H/6 DAY FOR $200 BUY IN OR
+ * MORE"). 72 was already the number the TOURNAMENT lobby used, so this is the
+ * two surfaces agreeing rather than a new figure: a player who checks the
+ * club board and the tournament board should not be told two different things
+ * about how far ahead this room publishes.
+ */
+export const LOBBY_WINDOW_HOURS = 72;
 
 /** Bigger events publish this many days ahead instead. */
 export const LOBBY_FEATURE_WINDOW_DAYS = 6;
 
 /**
- * Total buy-in (prize + fee, in chips) ABOVE which an event gets the longer
- * window. Strictly greater than: "more then 200" — a flat 200 chip event is a
- * 48-hour event.
+ * Total buy-in (prize + fee, in chips) AT OR ABOVE which an event gets the
+ * longer window.
+ *
+ * INCLUSIVE, and it did not start that way. The first pass read "more then
+ * 200" and implemented `> 200`, so a flat 200 event — the exact price of the
+ * Sunday Deep Stack this room now runs — fell on the short window. Dan's
+ * second pass says "$200 BUY IN OR MORE", which settles it: 200 is a feature
+ * event.
  */
 export const FEATURE_BUYIN_THRESHOLD = 200;
 
@@ -58,7 +71,7 @@ export function totalBuyIn(t: WindowedTournament): number {
 
 /** How far ahead an event of this price is published. */
 export function scheduleWindowMsFor(total: number): number {
-  return total > FEATURE_BUYIN_THRESHOLD ? LOBBY_FEATURE_WINDOW_MS : LOBBY_WINDOW_MS;
+  return total >= FEATURE_BUYIN_THRESHOLD ? LOBBY_FEATURE_WINDOW_MS : LOBBY_WINDOW_MS;
 }
 
 /**

@@ -1240,7 +1240,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         /* the head falls as an initial — same as every knockout before today */
       }
 
-      // TO-DO: When an event is both PKO and mystery, `fn_collect_bounty` returns
+      // NOTE: When an event is both PKO and mystery, `fn_collect_bounty` returns
+
       // 'pko'. In that case `res.paid_cash` is half a head, so ranking it against
       // the mystery ladder would report a rung nobody pulled. Ask Dan what "top 3 pull"
       // means in a hybrid format, or if such an event will ever be configured.

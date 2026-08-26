@@ -35,7 +35,7 @@ import type { UseMysteryBountyResult } from '../../../hooks/useMysteryBounty';
  * bounty pool", which is the same question, so the ladder renders inside
  * Rewards. See RewardsTab.
  */
-export type TabId = 'detail' | 'blinds' | 'ranking' | 'entries' | 'unions' | 'tables' | 'rewards';
+export type TabId = 'detail' | 'blinds' | 'ranking' | 'entries' | 'unions' | 'tables' | 'rewards' | 'satellites';
 
 export const TAB_IDS: readonly TabId[] = [
   'detail',
@@ -45,8 +45,16 @@ export const TAB_IDS: readonly TabId[] = [
   'unions',
   'tables',
   'rewards',
+  'satellites',
 ];
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  TAB CONFIGURATION
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * Dan 2026-08-25: 'Detail' is the overview tab, 'Rewards' is payouts/bounties.
+ * 'Blinds' is structure.
+ */
 export const TABS: readonly { id: TabId; label: string }[] = [
   { id: 'detail', label: 'Detail' },
   { id: 'blinds', label: 'Blinds' },
@@ -55,6 +63,7 @@ export const TABS: readonly { id: TabId; label: string }[] = [
   { id: 'unions', label: 'Unions' },
   { id: 'tables', label: 'Tables' },
   { id: 'rewards', label: 'Rewards' },
+  { id: 'satellites', label: 'Satellites' },
 ];
 
 /**

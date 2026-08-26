@@ -171,9 +171,14 @@
   align-items: center;
   justify-content: center;
   background: rgba(65, 105, 225, 0.15);
-  color: var(--club-blue-light, #5b83e8);
-  font-size: 0.625rem;
-  font-weight: 700;
+}
+.glp__wl-name {
+  color: var(--text-primary, #ffffff);
+}
+.glp__wl-time {
+  margin-left: auto;
+  opacity: 0.5;
+  font-size: 0.85em;
 }
 
 /* Tournament tabs */

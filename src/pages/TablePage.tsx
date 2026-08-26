@@ -1765,6 +1765,7 @@ export default function TablePage({
         actionTimerDeadline: mapped.actionTimerDeadline,
         actionTimerStartTime: mapped.actionTimerStartTime,
         actionTimerPlayerId: mapped.actionTimerPlayerId,
+        isTimeBankActive: mapped.isTimeBankActive,
         isHandInProgress:
           mapped.boardStage !== 'waiting' &&
           (mapped.handNumber > 0 || mapped.players.some((p) => p !== null)),

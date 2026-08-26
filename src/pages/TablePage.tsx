@@ -14779,6 +14779,12 @@ export default function TablePage({
         showHandHistory={showHandHistory}
         handHistory={handHistory}
         onCloseHandHistory={() => setShowHandHistory(false)}
+        onReplay={(hand) => {
+          setLastHandId(hand.id);
+          setShowHandDetail(false);
+          setShowHandHistory(false);
+          setShowHandReplay(true);
+        }}
         // Session Summary props removed (Phase 2 2026-08-22): the in-table
         // modal was dead — SessionSummaryHost at the app root owns the card.
         // Session HUD

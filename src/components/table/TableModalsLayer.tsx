@@ -376,6 +376,7 @@ export interface TableModalsLayerProps {
   showHandHistory: boolean;
   handHistory: HandRecord[];
   onCloseHandHistory: () => void;
+  onReplay?: (hand: HandRecord) => void;
 
   /* Session Summary props REMOVED (Phase 2 audit 2026-08-22): the in-table
      SessionSummary modal was dead code — `showSessionSummary` was never set
@@ -573,6 +574,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     showHandHistory,
     handHistory,
     onCloseHandHistory,
+    onReplay,
     // Session HUD
     showSessionHUD,
     onCloseSessionHUD,
@@ -1242,6 +1244,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         onClose={onCloseHandHistory}
         hands={handHistory}
         heroId={userId || ''}
+        onReplay={onReplay}
       />
 
       {/* Session Summary modal REMOVED (Phase 2 audit 2026-08-22). It could

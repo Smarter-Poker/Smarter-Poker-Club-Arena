@@ -67,6 +67,7 @@ export interface HandHistoryPanelProps {
   onClose: () => void;
   hands: HandRecord[];
   heroId: string;
+  onReplay?: (hand: HandRecord) => void;
 }
 
 function formatTime(ts: number): string {
@@ -220,6 +221,7 @@ function HandEntry({
   heroId: string;
   isExpanded: boolean;
   onToggle: () => void;
+  onReplay?: (hand: HandRecord) => void;
 }) {
   const resultColor = hand.heroResult > 0 ? '#22c55e' : hand.heroResult < 0 ? '#ef4444' : '#9ca3af';
 

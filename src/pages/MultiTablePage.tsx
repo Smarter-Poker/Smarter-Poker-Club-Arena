@@ -831,6 +831,12 @@ export default function MultiTablePage() {
           folded: t.folded,
           handResult: t.handResult,
           sittingOut: t.sittingOut,
+          /* OBSERVING vs PLAYING. The bar goes quiet on a table the hero holds
+             no seat at (Dan 2026-08-26). `seated` is the only server-truth
+             answer to that question -- it is set by TABLE_SEATED and by the
+             rebuild that reads table_seats WHERE left_at IS NULL, and by
+             nothing else. */
+          seated: t.seated,
           // TablePage's value is authoritative; until it lands, recover what
           // the table NAME says so the box is never unlabeled.
           gameCode: t.gameCode || gameCodeFromName(t.name),

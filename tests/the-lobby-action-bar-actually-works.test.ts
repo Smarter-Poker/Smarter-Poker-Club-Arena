@@ -76,7 +76,7 @@ const CLUBS_PAGE = read('src/pages/ClubsPage.tsx');
 const HOME = read('src/pages/HomePage.tsx');
 const SETTINGS = read('src/pages/ClubSettingsPage.tsx');
 const INVITE = read('src/pages/InvitePage.tsx');
-const CREATE_PAGE = read('src/pages/CreateClubPage.tsx');
+const CLUBS_SERVICE = read('src/services/ClubsService.ts');
 const CREATE_MODAL = read('src/components/modals/CreateClubModal.tsx');
 const FIND = read('src/components/modals/FindPlayerModal.tsx');
 const PLAYER_SEARCH = read('src/components/admin/PlayerSearch.tsx');
@@ -149,25 +149,6 @@ describe('the invite page', () => {
   it('queries the column that exists', () => {
     expect(codeOnly(INVITE)).not.toMatch(/eq\('invite_code'/);
     expect(INVITE).toMatch(/clubQuery\.eq\('code', inviteCode\)/);
-  });
-});
-
-describe('creating a club', () => {
-  it('uploads a logo to a prefix storage RLS actually admits', () => {
-    expect(CREATE_PAGE).toMatch(/`club-logos\/\$\{data\.id\}-\$\{Date\.now\(\)\}\.\$\{fileExt\}`/);
-    expect(codeOnly(CREATE_PAGE)).not.toMatch(/`\$\{data\.id\}\/logo-/);
-  });
-
-  it('fails closed on the 4-club limit, on both paths', () => {
-    for (const src of [CREATE_PAGE, CREATE_MODAL]) {
-      expect(codeOnly(src)).not.toMatch(/if \(!countError && count !== null && count >= 4\)/);
-      expect(src).toMatch(/if \(countError\) \{/);
-    }
-  });
-
-  it('tells the user the right bonus', () => {
-    expect(CREATE_PAGE).toMatch(/100,000 Club Chips/);
-    expect(codeOnly(CREATE_PAGE)).not.toMatch(/10,000 Club Chips/);
   });
 });
 

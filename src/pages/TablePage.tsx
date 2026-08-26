@@ -69,7 +69,6 @@ import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOve
  * All five component files (TSX + CSS) and useTableModals.ts are deleted.
  */
 
-import { OfflineQueueService } from '../services/OfflineQueueService';
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { setShownCards } from '../services/ShowCardsService';
@@ -4825,14 +4824,11 @@ export default function TablePage({
         const { error } = await supabase.rpc('atomic_table_rebuy', payload);
         if (error) {
           if (error.message?.includes('FetchError') || !navigator.onLine) {
-            OfflineQueueService.enqueue({
-              action: 'TABLE_REBUY',
-              payload,
-              operationId: idempotencyKey,
-            });
-            toast.success('Offline: Rebuy queued for retry.');
-            setBustRebuyOpen(false);
-            bustPromptFiredRef.current = true;
+            // A rebuy is a debit against a live wallet. It is not queued for
+            // later: nothing on the client can prove, at replay time, that the
+            // player still wants it or that the seat still exists. Fail here,
+            // honestly, while the player is watching.
+            toast?.error('You Are Offline. Rebuy When Your Connection Returns.');
           } else {
             toast?.error(error.message || 'Rebuy failed');
           }
@@ -14831,16 +14827,18 @@ export default function TablePage({
                 if (rpcErr) {
                   reportError(rpcErr, 'TablePage.atomic_table_buyin_FAILED');
                   if (rpcErr.message?.includes('FetchError') || !navigator.onLine) {
-                    OfflineQueueService.enqueue({
-                      action: 'TABLE_BUYIN',
-                      payload,
-                      // operationId matches the key stored in the DB — so the
-                      // offline queue replay is idempotent at the server too.
-                      operationId: stableIdempotencyKey,
-                    });
-                    toast.success('Offline: Buy-in queued for retry.');
-                    // Don't throw, let the optimistic UI hold the seat.
-                    // Key stays in ref so any subsequent retry reuses it.
+                    // The buy-in is NOT queued for replay. A queued buy-in is a
+                    // debit that fires at a moment nobody chose, against a seat
+                    // that may be gone; the queue cannot check freshness with
+                    // anything but the device's own clock. Release the
+                    // optimistic seat and say so. stableIdempotencyKey stays in
+                    // its ref, so an immediate retry is still de-duplicated by
+                    // transaction_idempotency_keys on the server.
+                    revertSeat();
+                    setShowBuyInModal(false);
+                    toast?.error(
+                      'You Are Offline. Try The Buy-In Again When Your Connection Returns.'
+                    );
                     return;
                   }
                   throw new Error('Failed to buy-in: ' + rpcErr.message);

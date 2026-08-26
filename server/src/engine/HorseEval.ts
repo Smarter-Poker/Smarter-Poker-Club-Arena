@@ -501,6 +501,115 @@ export function omahaDrawQuality(hole: Card[], board: Card[]): OmahaDrawInfo {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// V15 OMAHA MADE-HAND NUT STATUS (Dan 2026-08-26)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The made-hand classifier stops at CATEGORY: a 9-high flush and the nut flush
+// are both "6". In Omaha that distinction is most of the game — when a bet gets
+// raised on a three-flush board, the raiser has a flush too, and the only
+// question that matters is WHOSE IS BIGGER. This answers it directly:
+// for a made flush, how many ranks of the flush suit that beat hero's best
+// suited hole card are still live (not on the board, not in hero's hand); for
+// a made straight, whether any two hole cards could make a bigger one on this
+// board. Cheap (no simulation), called lazily only for cat 5/6 Omaha hands.
+
+export interface OmahaNutStatus {
+  /** made category from scoreOmahaHiPartial (0 when unknown) */
+  category: number;
+  /** made flush only: count of LIVE ranks in the flush suit above hero's best
+   *  suited hole card. 0 = nut flush; 1 = second nut; 2+ = dominated. */
+  higherFlushRanks: number;
+  /** made straight only: no two hole cards make a bigger straight here */
+  straightIsNut: boolean;
+}
+
+const NO_NUT_STATUS: OmahaNutStatus = { category: 0, higherFlushRanks: 0, straightIsNut: true };
+
+export function omahaNutStatus(hole: Card[], board: Card[]): OmahaNutStatus {
+  if (!hole || hole.length < 2 || !board || board.length < 3) return NO_NUT_STATUS;
+  try {
+    const score = scoreOmahaHiPartial(hole, board);
+    const cat = Math.floor(score / 0x100000);
+    const out: OmahaNutStatus = { category: cat, higherFlushRanks: 0, straightIsNut: true };
+
+    if (cat === 6) {
+      // The flush suit: >= 3 on the board (Omaha uses exactly 3 board cards)
+      // where hero holds >= 2 (exactly 2 hole cards must play).
+      for (const suit of SUITS) {
+        const onBoard = board.filter((c) => c.suit === suit);
+        if (onBoard.length < 3) continue;
+        const heroSuited = hole.filter((c) => c.suit === suit);
+        if (heroSuited.length < 2) continue;
+        let heroTop = 0;
+        for (const c of heroSuited) heroTop = Math.max(heroTop, RANK_VALUES[c.rank]);
+        const seen = new Set<number>();
+        for (const c of onBoard) seen.add(RANK_VALUES[c.rank]);
+        for (const c of heroSuited) seen.add(RANK_VALUES[c.rank]);
+        let higher = 0;
+        for (let r = heroTop + 1; r <= 14; r++) if (!seen.has(r)) higher++;
+        out.higherFlushRanks = higher;
+        break;
+      }
+    } else if (cat === 5) {
+      // Best straight ANY two hole cards could make: a 5-rank window holding
+      // at least 3 distinct board ranks is fillable (the opponent supplies
+      // the at-most-2 missing ranks from their hole).
+      const boardRankSet = new Set<number>();
+      for (const c of board) boardRankSet.add(RANK_VALUES[c.rank]);
+      const heroTop = score & 0xfffff;
+      let bestTop = 0;
+      for (let top = 14; top >= 5 && bestTop === 0; top--) {
+        let onBoard = 0;
+        for (let k = 0; k < 5; k++) {
+          const r = top - k === 1 ? 14 : top - k; // wheel: the 5-high straight uses the ace
+          if (boardRankSet.has(r)) onBoard++;
+        }
+        if (onBoard >= 3) bestTop = top;
+      }
+      out.straightIsNut = bestTop <= heroTop;
+    }
+    return out;
+  } catch {
+    return NO_NUT_STATUS;
+  }
+}
+
+/**
+ * V15: cheap Omaha board-contact test for the MC sampler — no hand scoring.
+ * Pair-or-better contact (a hole rank on the board, or a pocket pair), a
+ * two-card flush holding in a two-suited/monotone board suit, or two hole
+ * cards coordinating with the board's straight window.
+ */
+export function omahaConnectsBoard(hole: Card[], board: Card[]): boolean {
+  const boardRanks = new Set<number>();
+  for (const c of board) boardRanks.add(RANK_VALUES[c.rank]);
+  const holeRankCount = new Map<number, number>();
+  for (const c of hole) {
+    const r = RANK_VALUES[c.rank];
+    if (boardRanks.has(r)) return true; // paired the board
+    holeRankCount.set(r, (holeRankCount.get(r) || 0) + 1);
+  }
+  for (const n of holeRankCount.values()) if (n >= 2) return true; // pocket pair
+  // Flush contact: board suit with >= 2 and two suited hole cards.
+  const boardSuit = new Map<string, number>();
+  for (const c of board) boardSuit.set(c.suit, (boardSuit.get(c.suit) || 0) + 1);
+  for (const [suit, n] of boardSuit) {
+    if (n >= 2 && hole.filter((c) => c.suit === suit).length >= 2) return true;
+  }
+  // Straight-ish contact: two distinct hole ranks each within 2 of a board rank.
+  let near = 0;
+  for (const r of holeRankCount.keys()) {
+    for (const b of boardRanks) {
+      if (Math.abs(r - b) <= 2) {
+        near++;
+        break;
+      }
+    }
+  }
+  return near >= 2;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MONTE CARLO EQUITY — variant-aware, opponent-count-aware, draw-aware
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -900,6 +1009,36 @@ export function simulateEquity(
       // probability scaled by how hard they have been betting; a passive
       // checked line gets its monsters down-sampled (capped stays capped).
       const read = oppReads ? oppReads[o] : null;
+      // ═══ V15 OMAHA BOARD-CONTACT CONDITIONING (Dan 2026-08-26) ═══
+      // The V12 conditioning below was NLH-only, so a PLO opponent RAISING on
+      // a three-flush board was still sampled from his preflop band — mostly
+      // hands with no flush — and a 9-high flush priced itself as a 75-85%
+      // favourite against a range that in reality is full of bigger flushes.
+      // This is the equity overstatement behind every "called off with the
+      // small flush" hand. Omaha aggressors are now pushed toward hands that
+      // CONTACT the board, using a cheap structural test (no scoring) and at
+      // most two redraws so the MC budget is untouched. Tight bands skip it:
+      // the Omaha band redraw cannot re-test the band (the V13 NLH collapse),
+      // so conditioning there would trade one bias for another — the explicit
+      // nut-discipline penalty in HorseLogic covers those pots instead.
+      if (read && vi.isOmaha && boardCards.length >= 3 && read.aggrW > 0) {
+        const bandWidth = band ? band[1] - band[0] : 1;
+        if (bandWidth >= 0.45) {
+          const pConnect = Math.min(0.85, 0.4 + read.aggrW * 2.0);
+          for (let t = 0; t < 2; t++) {
+            if (omahaConnectsBoard(oppCards, boardCards)) break;
+            if (fastRandom() >= pConnect) break; // some of the range IS air
+            for (let i = 0; i < oppHole; i++) {
+              const slot = windowStart + i;
+              const j = slot + Math.floor(fastRandom() * (n - slot));
+              const tmp = deck[slot];
+              deck[slot] = deck[j];
+              deck[j] = tmp;
+              oppCards[i] = deck[slot];
+            }
+          }
+        }
+      }
       if (read && !vi.isOmaha && boardCards.length >= 3) {
         // V13: the redraw must STAY IN THE READ. It used to draw uniformly
         // from the whole remaining deck and never re-test the band, so any
@@ -1224,7 +1363,19 @@ export function omahaPreflopScore(cards: Card[], isHiLo: boolean): number {
   }
 
   // Normalize: premium AAKK-ds style hands land around 28-32 points.
-  return clamp01(pts / 30);
+  //
+  // V15 (Dan 2026-08-26): the raw point sum grows with every extra hole card
+  // (more pairs, more suits, more connections exist in 5 and 6 cards), and a
+  // single /30 divisor let that growth masquerade as hand strength. Measured
+  // over 200k random hands per variant: the MEDIAN plo6 hand scored 0.53 and
+  // the median plo5 hand 0.40 against plo4's 0.24 — above the facing-a-raise
+  // call threshold (0.52) on a completely average holding, which is why the
+  // plo5/plo6 fleets played far too many hands far too hard. Subtracting the
+  // measured median shift aligns the distributions almost exactly (p85 within
+  // 0.2 points, p95 within 1.4 points of plo4's curve), so a percentile
+  // threshold now selects the same QUALITY of hand in every Omaha variant.
+  const holeShift = cards.length >= 6 ? 8.8 : cards.length === 5 ? 4.7 : 0;
+  return clamp01((pts - holeShift) / 30);
 }
 
 /** Pineapple (3-card) preflop: best 2-card combo + backup potential. */

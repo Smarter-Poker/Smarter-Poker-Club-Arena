@@ -68,8 +68,8 @@ import SpinActivationPanel from '../components/club/SpinActivationPanel';
 import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
 import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
-import { reportError } from '../utils/errorReporter';
 import { readLocalSession } from '../lib/authUtils';
+import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
 import { matchesVariant } from '../utils/tournamentFilters';
 import { useUserStore } from '../stores/useUserStore';
@@ -1334,12 +1334,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
               setClubNames(home.club_names as Record<string, string>);
             }
             // Force a status check to ensure non-members and pending members get sent to the Invite page.
-            if (authUser?.id) {
+            const localSession = readLocalSession();
+            if (localSession?.userId) {
               const { data: memStat } = await supabase
                 .from('club_members')
                 .select('status')
                 .eq('club_id', home.club.id)
-                .eq('user_id', authUser.id)
+                .eq('user_id', localSession.userId)
                 .maybeSingle();
               if (!memStat || !['active', 'approved'].includes(memStat.status)) {
                 navigate(`/invite/${clubId}`);
@@ -1444,6 +1445,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
          Data" toast. */
       const authRes = await getAuthUser();
       const authUser = authRes?.data?.user ?? null;
+      if (!authUser) {
+        if (getIsMounted && !getIsMounted()) return;
+        navigate(`/invite/${clubId}`);
+        return;
+      }
       if (authUser) {
         if (getIsMounted && !getIsMounted()) return;
         setCurrentUserId(authUser.id);
@@ -1456,7 +1462,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
            whose answer went straight into the bin. */
         const memberResult = await supabase
           .from('club_members')
-          .select('role')
+          .select('role, status')
           .eq('club_id', resolvedId)
           .eq('user_id', authUser.id)
           .maybeSingle();

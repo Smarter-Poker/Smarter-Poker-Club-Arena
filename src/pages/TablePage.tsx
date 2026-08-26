@@ -67,6 +67,7 @@
  * All five component files (TSX + CSS) and useTableModals.ts are deleted.
  */
 
+import { OfflineQueueService } from '../services/OfflineQueueService';
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { setShownCards } from '../services/ShowCardsService';
@@ -4835,10 +4836,12 @@ export default function TablePage({
       if (!tableId || !userId) return;
       setBustRebuyProcessing(true);
       try {
+        const idempotencyKey = crypto.randomUUID();
         const { error } = await supabase.rpc('atomic_table_rebuy', {
           p_user_id: userId,
           p_table_id: tableId,
           p_amount: amount,
+          p_idempotency_key: idempotencyKey,
         });
         if (error) {
           toast?.error(error.message || 'Rebuy failed');
@@ -15038,21 +15041,32 @@ export default function TablePage({
                   setShowBuyInModal(false);
                   return;
                 }
-                const { data: rpcData, error: rpcErr } = await supabase.rpc('atomic_table_buyin', {
+                const idempotencyKey = crypto.randomUUID();
+                const payload = {
                   p_user_id: userId,
                   p_table_id: tableId,
                   p_seat_number: selectedSeat,
                   p_amount: amount,
                   p_auto_rebuy: autoRebuy || false,
-                  p_idempotency_key: crypto.randomUUID(),
-                  // UNION LAW (Dan 2026-08-20): the club the player entered
-                  // through. Chips come out of THAT club's wallet and the rake
-                  // is earned for that club only — club wallets are never
-                  // commingled. Ignored while union.club_scoped_chips is off.
+                  p_idempotency_key: idempotencyKey,
                   p_club_id: useUserStore.getState().currentClubId ?? null,
-                });
+                };
+                const { data: rpcData, error: rpcErr } = await supabase.rpc(
+                  'atomic_table_buyin',
+                  payload
+                );
                 if (rpcErr) {
                   reportError(rpcErr, 'TablePage.atomic_table_buyin_FAILED');
+                  if (rpcErr.message?.includes('FetchError') || !navigator.onLine) {
+                    OfflineQueueService.enqueue({
+                      action: 'TABLE_BUYIN',
+                      payload,
+                      operationId: idempotencyKey,
+                    });
+                    toast.success('Offline: Buy-in queued for retry.');
+                    // Don't throw, let the optimistic UI hold the seat
+                    return;
+                  }
                   throw new Error('Failed to buy-in: ' + rpcErr.message);
                 }
                 /* AUDIT 2026-08-25 — A BARE JSON.parse ON A MONEY PATH.

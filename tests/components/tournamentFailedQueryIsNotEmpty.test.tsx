@@ -24,7 +24,7 @@
 
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, waitFor, cleanup } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 // ─── Supabase: one chainable thenable per table, result set per test ─────────
@@ -91,8 +91,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
   return { ...actual, useNavigate: () => navigateMock };
 });
 
-import TournamentStandings from '@/components/tournament/TournamentStandings';
-import { LiveChipCounts } from '@/components/tournament/LiveChipCounts';
+import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import TournamentInfoPanel from '@/components/tournament/TournamentInfoPanel';
 import TournamentLobbyCard, {
   isStartingSoon,
@@ -113,56 +112,103 @@ afterEach(() => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-describe('TournamentStandings — failure and emptiness are different sentences', () => {
-  it('does NOT draw a board of zeros when the standings query fails', async () => {
+/**
+ * RE-POINTED 2026-08-26.
+ *
+ * Two of the components pinned here were `TournamentStandings` ("Still In (0)")
+ * and `LiveChipCounts` ("No Players Found"): two separate boards, each fetching
+ * its own copy of `tournament_players`, each free to turn a refused query into
+ * a confident sentence about a running event. Both have been retired in favour
+ * of the lobby's one `RankingTab`, which renders from PROPS and issues no query
+ * of its own - so it has no failed query to distinguish, and the defect this
+ * file exists to prevent moved up to whoever does the reading.
+ *
+ * That is `useTournamentEntries`, and the coverage moved with it. The two
+ * halves are unchanged, and they are still both asserted:
+ *
+ *   query FAILS       -> `loadFailed`, and NO rows handed downstream, so the
+ *                        caller can never render the "none" copy off it;
+ *   query returns []  -> not failed, and an empty list, because that is true.
+ *
+ * A third case is pinned here that neither retired component could express: a
+ * REFRESH that fails must keep the last good field on screen rather than
+ * blanking a board that was correct a second ago.
+ */
+describe('useTournamentEntries - failure and emptiness are different sentences', () => {
+  it('does NOT hand back an empty field when the entry query fails', async () => {
     setResult('tournament_players', DB_DOWN);
-    render(<TournamentStandings tournamentId="t1" totalPlayers={9} />);
+    const { result } = renderHook(() => useTournamentEntries('t1', true));
 
-    await waitFor(() => expect(screen.getByText(/Unavailable Right Now/i)).toBeTruthy());
+    await waitFor(() => expect(result.current.loading).toBe(false));
 
-    // The exact false claims this component used to make.
-    expect(screen.queryByText(/Still In \(0\)/i)).toBeNull();
-    expect(screen.queryByText(/Remaining/i)).toBeNull();
+    expect(result.current.loadFailed).toBe(true);
+    expect(result.current.entries).toEqual([]);
+    // The caller must be able to tell these apart, which is the whole point:
+    // failed-with-nothing is never the same value as answered-with-nothing.
     expect(reportErrorMock).toHaveBeenCalled();
   });
 
   it('DOES report an empty field when the query genuinely returns no rows', async () => {
     setResult('tournament_players', NO_ROWS);
-    render(<TournamentStandings tournamentId="t1" totalPlayers={9} />);
+    const { result } = renderHook(() => useTournamentEntries('t1', true));
 
-    await waitFor(() => expect(screen.getByText(/Still In \(0\)/i)).toBeTruthy());
-    expect(screen.queryByText(/Unavailable Right Now/i)).toBeNull();
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.loadFailed).toBe(false);
+    expect(result.current.entries).toEqual([]);
   });
 
-  it('prints whole chips, not a two-decimal money figure', async () => {
+  it('keeps the last good field when a REFRESH fails, and says it stopped', async () => {
     setResult('tournament_players', {
-      data: [{ user_id: 'u1', username: 'Kingfish', chips: 10000, status: 'playing' }],
+      data: [{ id: 'e1', user_id: 'u1', username: 'Kingfish', chips: 10000, status: 'playing' }],
       error: null,
     });
-    render(<TournamentStandings tournamentId="t1" totalPlayers={9} />);
+    const { result } = renderHook(() => useTournamentEntries('t1', true));
 
-    await waitFor(() => expect(screen.getByText('10,000')).toBeTruthy());
-    expect(screen.queryByText('10,000.00')).toBeNull();
-  });
-});
+    await waitFor(() => expect(result.current.entries.length).toBe(1));
 
-// ═══════════════════════════════════════════════════════════════════════════
-describe('LiveChipCounts — "No Players Found" is a claim about the tournament', () => {
-  it('says the feed stalled instead of claiming the field is empty', async () => {
     setResult('tournament_players', DB_DOWN);
-    render(<LiveChipCounts tournamentId="t1" currentBigBlind={100} />);
+    act(() => result.current.refresh());
 
-    await waitFor(() => expect(screen.getByText(/Not Updating/i)).toBeTruthy());
-    expect(screen.queryByText(/No Players Found/i)).toBeNull();
-    expect(reportErrorMock).toHaveBeenCalled();
+    await waitFor(() => expect(result.current.loadFailed).toBe(true));
+    // Still there. A board that was right a second ago does not become a lie
+    // because the next poll was refused.
+    expect(result.current.entries.length).toBe(1);
+    expect(result.current.entries[0].username).toBe('Kingfish');
   });
 
-  it('still says "No Players Found" when the query really returns nothing', async () => {
-    setResult('tournament_players', NO_ROWS);
-    render(<LiveChipCounts tournamentId="t1" currentBigBlind={100} />);
+  it('asks for nothing at all while the tournament is not live', async () => {
+    setResult('tournament_players', DB_DOWN);
+    const { result } = renderHook(() => useTournamentEntries('t1', false));
 
-    await waitFor(() => expect(screen.getByText(/No Players Found/i)).toBeTruthy());
-    expect(screen.queryByText(/Not Updating/i)).toBeNull();
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.entries).toEqual([]);
+    expect(result.current.loadFailed).toBe(false);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('carries the chip count and the table id onto every entry', async () => {
+    setResult('tournament_players', {
+      data: [
+        {
+          id: 'e1',
+          user_id: 'u1',
+          username: 'Kingfish',
+          chips: 10000,
+          status: 'playing',
+          table_id: 'tbl-7',
+        },
+      ],
+      error: null,
+    });
+    const { result } = renderHook(() => useTournamentEntries('t1', true));
+
+    await waitFor(() => expect(result.current.entries.length).toBe(1));
+    expect(result.current.entries[0].chips).toBe(10000);
+    // The click-through to a player's table is only possible because this
+    // column survives the mapper - it is the bit that used to be missing.
+    expect(result.current.entries[0].table_id).toBe('tbl-7');
   });
 });
 

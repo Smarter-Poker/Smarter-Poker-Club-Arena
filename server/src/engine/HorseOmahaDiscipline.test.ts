@@ -297,8 +297,8 @@ describe('board demotes the nuts', () => {
 
 /** plo6 league smoke: the variant-generic playHand deals 6 cards, enforces
  *  pot-limit, and conserves chips with zero illegal actions. */
-describe('plo6 league hands are legal and conserve chips', () => {
-  it('100 hands, zero illegal, chips conserved', async () => {
+describe('league hands are legal and conserve chips across every V16 configuration', () => {
+  it('plo6 6-max 100bb: 100 hands, zero illegal, chips conserved', async () => {
     const { playHand } = await import('../benchmark/HorseLeague.js');
     const counters = { illegal: 0, truncated: 0 };
     for (let hnd = 0; hnd < 100; hnd++) {
@@ -314,5 +314,35 @@ describe('plo6 league hands are legal and conserve chips', () => {
       expect(Math.abs(sum)).toBeLessThan(1e-6);
     }
     expect(counters.illegal).toBe(0);
+  });
+
+  it('heads-up, 40bb, plo8 and short_deck deals all stay legal and conserved', async () => {
+    const { playHand } = await import('../benchmark/HorseLeague.js');
+    const configs: Array<{ variant: string; seats: number; stackBB: number }> = [
+      { variant: 'nlh', seats: 2, stackBB: 100 },
+      { variant: 'nlh', seats: 6, stackBB: 40 },
+      { variant: 'plo8', seats: 6, stackBB: 100 },
+      { variant: 'short_deck', seats: 6, stackBB: 100 },
+      { variant: 'plo4', seats: 2, stackBB: 60 },
+    ];
+    for (const cfg of configs) {
+      const counters = { illegal: 0, truncated: 0 };
+      for (let hnd = 0; hnd < 60; hnd++) {
+        const net = playHand(
+          9000 + hnd * 6151,
+          (hnd % cfg.seats) + 1,
+          () => ({}),
+          counters,
+          undefined,
+          cfg.variant,
+          cfg.seats,
+          cfg.stackBB
+        );
+        expect(net).toHaveLength(cfg.seats);
+        const sum = net.reduce((a, b) => a + b, 0);
+        expect(Math.abs(sum)).toBeLessThan(1e-6);
+      }
+      expect(counters.illegal).toBe(0);
+    }
   });
 });

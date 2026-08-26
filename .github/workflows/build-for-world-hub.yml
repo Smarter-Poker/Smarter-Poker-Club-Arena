@@ -8,22 +8,21 @@ on:
     # CATCH-UP, because `push` alone is not a guarantee that main publishes.
     #
     # The concurrency rule below is right and deliberate, but it has one
-    # consequence worth naming: when a new push arrives, GitHub cancels the
-    # run that was PENDING in the group. That is what makes each wave converge
-    # on the newest main instead of publishing nothing. It also means the
-    # publish of a given commit can be cancelled and then never re-attempted,
-    # because the only thing that ever starts this workflow is another push.
-    # If the pushes stop right after a cancellation - the end of a merge
-    # train, the end of a working day - main and production stay diverged
-    # until somebody pushes again.
+    # consequence worth naming: when a new push arrives, GitHub cancels the run
+    # that was PENDING in the group. That is what makes each wave converge on
+    # the newest main instead of publishing nothing. It also means the publish
+    # of a given commit can be cancelled and then never re-attempted, because
+    # the only thing that ever starts this workflow is another push. If the
+    # pushes stop right after a cancellation - the end of a merge train, the
+    # end of a working day - main and production stay diverged until somebody
+    # pushes again.
     #
     # publish-watchdog.yml notices within 30 minutes and re-dispatches once.
     # This makes the common case self-correct without waiting for the alarm,
-    # and it mirrors auto-deploy-hetzner.yml, which has had a catch-up
-    # schedule for exactly this reason.
+    # and it mirrors auto-deploy-hetzner.yml, which has had a catch-up schedule
+    # for exactly this reason.
     #
-    # The dedupe step below exits in seconds when production already serves
-    # main, so an up-to-date cycle costs one checkout and one curl.
+    # `publish-needed` below keeps an up-to-date cycle down to one curl.
     - cron: '*/20 * * * *'
 
 # 2026-08-21: was cancel-in-progress: true, which deadlocked publishing.
@@ -42,12 +41,105 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-and-store:
+  # ── IS THERE ANYTHING TO PUBLISH AT ALL? ──────────────────────────────────
+  # A job rather than a step, because the work this guards is spread across
+  # TWO jobs that run in parallel (`client-tests` and `build-and-store`), and
+  # a step output cannot cross a runner. Putting the check inside
+  # build-and-store would have let the whole test suite run anyway on a cycle
+  # that had nothing to publish, which is most of the cost it is meant to save.
+  #
+  # Only the SCHEDULE is deduped. A push is by definition new work, and a human
+  # dispatching this by hand is usually forcing a republish of something that
+  # looks stuck - deduping either would be the publish bug this exists to
+  # prevent.
+  publish-needed:
     runs-on: ubuntu-latest
-    # The second job runs on a DIFFERENT runner and cannot see this job's
-    # step outputs, so the decision has to leave the job explicitly.
+    permissions:
+      contents: read
     outputs:
       skip: ${{ steps.dedupe.outputs.skip }}
+    steps:
+      - name: Compare production against this commit
+        id: dedupe
+        if: github.event_name == 'schedule'
+        run: |
+          LIVE=$(curl -fsS --max-time 20 \
+            https://smarter.poker/hub/club-arena/build-info.json 2>/dev/null \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ca_sha",""))' \
+            2>/dev/null || echo "")
+          HEAD_SHA="${{ github.sha }}"
+          if [ -z "$LIVE" ]; then
+            # Unreadable is NOT up to date. FAIL OPEN and publish: a stale CDN
+            # or a broken build-info is exactly when this needs to run, and
+            # reading "cannot tell" as "current" would make the safety net
+            # silently useless.
+            echo "::notice::build-info.json unreadable - publishing rather than assuming."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          elif [ "$LIVE" = "$HEAD_SHA" ]; then
+            echo "::notice::Production already serves ${HEAD_SHA:0:7} - nothing to publish."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Production serves ${LIVE:0:7}, main is ${HEAD_SHA:0:7} - publishing."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # CLIENT TESTS GATE THE BUNDLE, BUT NO LONGER DELAY IT — split out 2026-08-26.
+  #
+  # This suite used to run as step 5 of build-and-store, IN FRONT of the build.
+  # Measured on run 32993261791, the critical path was:
+  #
+  #     Client tests          5m19s
+  #     Build Club Arena      1m59s
+  #     Checkout World Hub    3m36s
+  #     everything else       ~1m
+  #     ------------------------------
+  #     publish              ~12m
+  #
+  # Pushes land on main every two to three minutes. A twelve minute pipeline
+  # under a two to three minute arrival rate can only ever publish a sha that
+  # is already twelve minutes stale, and every push in between is cancelled
+  # while PENDING by `cancel-in-progress: false` — which is that setting
+  # working correctly, not failing. Production was fourteen commits behind
+  # while every one of those cancels looked like a broken deploy.
+  #
+  # The tests are 13s on a developer machine and 5m19s here because a GitHub
+  # runner has two cores and the suite is ~285s of aggregate work across 429
+  # files. Nothing is misconfigured; it is simply serialised.
+  #
+  # So it runs BESIDE the build instead of in front of it. The gate is exactly
+  # as strong: sync-to-world-hub needs BOTH jobs, so a red test still stops the
+  # bundle from shipping. It just stops adding its five minutes to the build's
+  # two.
+  # ═════════════════════════════════════════════════════════════════════════
+  client-tests:
+    needs: publish-needed
+    if: needs.publish-needed.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      HUSKY: '0'
+    steps:
+      - name: Checkout Club Arena
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Client tests must pass before the bundle ships
+        run: npx vitest run tests/
+
+  build-and-store:
+    needs: publish-needed
+    if: needs.publish-needed.outputs.skip != 'true'
+    runs-on: ubuntu-latest
     permissions:
       # read is enough now: this job uploads an artifact instead of pushing a
       # branch, so it no longer writes to the repository at all.
@@ -58,37 +150,6 @@ jobs:
     steps:
       - name: Checkout Club Arena
         uses: actions/checkout@v4
-
-      # ── DO NOTHING IF PRODUCTION ALREADY SERVES THIS COMMIT ─────────────
-      # The entire cost of the catch-up schedule above lives or dies here. A
-      # scheduled cycle on an up-to-date repo must not install dependencies,
-      # run the suite and build a bundle that is already published - that
-      # turns a safety net into the largest line on the CI bill.
-      #
-      # Only the SCHEDULE is deduped. A push always builds (it is by
-      # definition new work) and so does a manual dispatch (a human running
-      # this is usually forcing a republish of something that looks stuck).
-      - name: Skip a scheduled run when production is already current
-        id: dedupe
-        if: github.event_name == 'schedule'
-        run: |
-          LIVE=$(curl -fsS --max-time 20 \
-            https://smarter.poker/hub/club-arena/build-info.json 2>/dev/null \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ca_sha",""))' \
-            2>/dev/null || echo "")
-          HEAD_SHA="${{ github.sha }}"
-          if [ -z "$LIVE" ]; then
-            # Unreadable is NOT up to date. Fail open and publish: a stale CDN
-            # or a broken build-info is exactly when this needs to run.
-            echo "::notice::build-info.json unreadable - publishing rather than assuming."
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          elif [ "$LIVE" = "$HEAD_SHA" ]; then
-            echo "::notice::Production already serves ${HEAD_SHA:0:7} - nothing to publish."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Production serves ${LIVE:0:7}, main is ${HEAD_SHA:0:7} - publishing."
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
 
       # STAGE MARKERS REMOVED (2026-08-21).
       #
@@ -110,35 +171,15 @@ jobs:
       # every one of them a permanent ref that `actions/checkout` and every
       # `git ls-remote` pays for. Deleted here so it stops growing.
       - name: Setup Node.js
-        if: steps.dedupe.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
-        if: steps.dedupe.outputs.skip != 'true'
         run: npm ci
 
-      # ═══════════════════════════════════════════════════════════════════
-      # CLIENT TESTS GATE THE BUNDLE — added 2026-08-21.
-      #
-      # ci.yml's unit job exists but NEVER COMPLETES on main: pushes land
-      # faster than the ~6-minute CI and cancel-in-progress kills every run,
-      # while this workflow ships the bundle on push regardless. Proven live:
-      # a format pass mangled the em-dash classes in popupStyle.ts (Dan's
-      # BINDING popup rule) and 19 client tests sat red on main while the
-      # broken bundle served production. Same philosophy as the engine's
-      # "Server tests must pass before anything is deployed": the suite runs
-      # HERE, in the workflow that publishes, so a red suite means no sync.
-      # The whole suite is ~15s; a superseding push re-tests its own commit.
-      # ═══════════════════════════════════════════════════════════════════
-      - name: Client tests must pass before the bundle ships
-        if: steps.dedupe.outputs.skip != 'true'
-        run: npx vitest run tests/
-
       - name: Build Club Arena
-        if: steps.dedupe.outputs.skip != 'true'
         env:
           NODE_ENV: production
           VITE_ANTIGRAVITY_ENABLED: 'true'
@@ -158,7 +199,6 @@ jobs:
       #   curl -s https://smarter.poker/hub/club-arena/build-info.json
       # answers "what is actually live" without grepping minified chunks.
       - name: Stamp build provenance
-        if: steps.dedupe.outputs.skip != 'true'
         run: |
           cat > dist/build-info.json <<JSON
           {
@@ -194,7 +234,6 @@ jobs:
       # up when the run succeeds (nine were still lying around), and the
       # GITHUB_TOKEN write permission this job needed purely to create them.
       - name: Upload dist for the sync job
-        if: steps.dedupe.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: club-arena-dist-${{ github.sha }}
@@ -209,7 +248,6 @@ jobs:
       # discovering it is missing halfway through the rsync. Kept from the
       # branch version, which checked the same file for the same reason.
       - name: Verify dist is complete
-        if: steps.dedupe.outputs.skip != 'true'
         run: |
           if [ ! -f dist/index.html ]; then
             echo "::error::dist/index.html is missing — refusing to continue."
@@ -218,18 +256,14 @@ jobs:
           echo "dist/index.html present ($(du -sh dist | cut -f1) total)"
 
       - name: Build summary
-        if: steps.dedupe.outputs.skip != 'true'
         run: |
           echo "### Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "dist uploaded as artifact \`club-arena-dist-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "Proceeding to sync directly to World Hub..." >> $GITHUB_STEP_SUMMARY
 
   sync-to-world-hub:
-    needs: build-and-store
-    # A deduped scheduled run produces NO artifact, so this job must not run
-    # at all - it would fail trying to download a dist that was never built.
-    # Job level, reading the job output: step outputs do not cross runners.
-    if: needs.build-and-store.outputs.skip != 'true'
+    # BOTH: the bundle, and the tests that say it may ship.
+    needs: [build-and-store, client-tests]
     runs-on: ubuntu-latest
     # Needed by the sync-branch cleanup at the end of this job. build-and-store
     # already declares this because it PUSHES the branch; without it here the
@@ -280,6 +314,20 @@ jobs:
           # rejected, and the publish watchdog is what will say so out loud.
           token: ${{ steps.wh-token.outputs.token || secrets.WORLD_HUB_SYNC_TOKEN }}
           path: world-hub
+          # 3m36s on run 32993261791, materialising an entire Next.js app to
+          # write one directory inside it. This job reads nothing outside
+          # public/hub/club-arena and writes nothing outside it either: the
+          # rsync below targets exactly that path and the commit that follows
+          # stages exactly that path. Cone-mode sparse checkout gives us that
+          # directory and the git metadata to commit it, and skips the rest.
+          #
+          # fetch-depth: 1 is already the action's default; it is written out
+          # because the cost here was never history, it was tree size, and the
+          # next person to look at a slow checkout should not have to re-derive
+          # which of the two it was.
+          sparse-checkout: public/hub/club-arena
+          sparse-checkout-cone-mode: true
+          fetch-depth: 1
 
       - name: Sync dist/ to World Hub public/hub/club-arena/
         run: |

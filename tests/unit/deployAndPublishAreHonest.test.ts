@@ -87,9 +87,28 @@ describe('the publish path cannot be left waiting on a push that never comes', (
   it('a scheduled cycle costs nothing when production is already current', () => {
     // Without this the catch-up would install, test and build a bundle that is
     // already published, every cycle, forever.
+    expect(SYNC).toMatch(/publish-needed:/);
     expect(SYNC).toMatch(/id: dedupe/);
     expect(SYNC).toMatch(/if: github\.event_name == 'schedule'/);
     expect(SYNC).toMatch(/build-info\.json/);
+  });
+
+  it('the check is a JOB, so the TEST SUITE skips with the build', () => {
+    /* The work this guards lives in TWO parallel jobs. A step output cannot
+       cross a runner, so a dedupe living inside build-and-store would have let
+       `client-tests` run the whole suite anyway on a cycle with nothing to
+       publish - most of the cost it exists to save. */
+    expect(SYNC).toMatch(/publish-needed:\s*\n\s*runs-on:/);
+    expect(SYNC).toMatch(/outputs:\s*\n\s*skip: \$\{\{ steps\.dedupe\.outputs\.skip \}\}/);
+    for (const job of ['client-tests', 'build-and-store']) {
+      const block = SYNC.slice(SYNC.indexOf(`  ${job}:`));
+      expect(block.slice(0, 260), `${job} must wait on publish-needed`).toMatch(
+        /needs: publish-needed/
+      );
+      expect(block.slice(0, 260), `${job} must skip with it`).toMatch(
+        /if: needs\.publish-needed\.outputs\.skip != 'true'/
+      );
+    }
   });
 
   it('a push and a manual dispatch are NEVER deduped', () => {
@@ -107,13 +126,13 @@ describe('the publish path cannot be left waiting on a push that never comes', (
     expect(SYNC).toMatch(/unreadable - publishing rather than assuming/);
   });
 
-  it('the sync job is gated at JOB level, on the JOB output', () => {
-    /* The second job runs on a different runner and cannot see the first
-       job's step outputs. Gating its STEPS on `steps.dedupe...` would silently
-       evaluate against an empty value, so every step would run and the job
-       would then fail trying to download a dist that a deduped run never
-       built. Job level, job output. */
-    expect(SYNC).toMatch(/if: needs\.build-and-store\.outputs\.skip != 'true'/);
-    expect(SYNC).toMatch(/outputs:\s*\n\s*skip: \$\{\{ steps\.dedupe\.outputs\.skip \}\}/);
+  it('the publisher cannot run without both the bundle and the tests', () => {
+    /* sync-to-world-hub needs BOTH heavy jobs, so a deduped cycle skips it for
+       free: GitHub skips a job whose dependencies were skipped. That is also
+       what stops it failing on a dist that was never built - no `always()`
+       anywhere near it. */
+    expect(SYNC).toMatch(/needs: \[build-and-store, client-tests\]/);
+    const sync = SYNC.slice(SYNC.indexOf('  sync-to-world-hub:'));
+    expect(sync.slice(0, 400)).not.toMatch(/if: always\(\)/);
   });
 });

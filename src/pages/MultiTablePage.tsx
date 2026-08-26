@@ -1329,6 +1329,16 @@ export default function MultiTablePage() {
   const QUICK_JOIN_TIMEOUT_MS = 6000;
 
   /**
+   * How many of the club's open cash tables Quick Join reads before ranking.
+   *
+   * Was 30, with no ORDER BY — see the note at the query. The lobby fetches 200
+   * for the same board; this matches it so the sheet and the lobby cannot
+   * disagree about what exists, and it is still one indexed read
+   * (idx_tables_open_by_club, 0.38ms).
+   */
+  const QUICK_JOIN_CANDIDATE_LIMIT = 200;
+
+  /**
    * Resolve to `null` rather than hanging. Deliberately does not reject: the
    * callers treat null as "no data", which is the same path a failed query
    * already takes.
@@ -1403,8 +1413,8 @@ export default function MultiTablePage() {
      * club to pick from.
      */
     let club = homeClubIdRef.current;
-    if (!club) {
-      let tableClubId: string | null = null;
+    let tableClubId: string | null = null;
+    {
       const active = tablesRef.current.filter((t) => !isLobbyTab(t));
       const cached = active.map((t) => clubLookupCacheRef.current.get(t.id)).find(Boolean);
       if (cached) {
@@ -1433,9 +1443,9 @@ export default function MultiTablePage() {
       }
       // UNION LAW: the table's club_id is the UNION on any union game, so it is
       // a candidate here, never the answer. See commitHomeClub.
-      club = await commitHomeClub(tableClubId);
+      if (!club) club = await commitHomeClub(tableClubId);
     }
-    if (!club) {
+    if (!club && !tableClubId) {
       // Genuinely nothing to pick from — no club behind any open table.
       // Dan 2026-08-15: was `navigate('/?returnToMulti=true')` (dead param,
       // container unmounted). The lobby TAB keeps every game mounted.
@@ -1457,6 +1467,31 @@ export default function MultiTablePage() {
          empty must only cost you the ORDER - never leave you looking at
          "Finding Games..." forever, which is the failure this sheet already had
          once (#526). A null here degrades to an unfavourited ranking. */
+      /* ── THE SCOPE BUG THAT EMPTIED THIS SHEET (Dan 2026-08-26) ───────────
+         "WHEN YOU CLICK THE + BUTTON ON THE GAME PAGE, AND GET THE QUICK JOIN
+          POP UP, THATS NOT WORKING."
+
+         It said "No Open Seats Right Now" while the club had 44 open cash
+         tables and 25 of them had a free seat, including three other 1/2 PLO5
+         games — the exact match the player was asking for.
+
+         The cause is that this query scoped to `club`, which is
+         `commitHomeClub`'s answer: deliberately NEVER a union, because sending
+         a player into the union hub's lobby would show them the union treasury
+         (UNION LAW, above). That rule is right for NAVIGATION and wrong as a
+         DATA SCOPE. Every one of Midway's tables carries
+         `club_id = <Midway Union>`, so filtering on the player's entry club
+         matched nothing at all, every time, for every union player. An empty
+         result and "there are no seats" are not the same sentence, and this
+         sheet has been saying the second one on behalf of the first.
+
+         Scoping to BOTH ids fixes it without touching UNION LAW: the union hub
+         (from `tables.club_id`) is where the games live, the entry club is
+         where a standalone club's games live, and RLS still decides what this
+         viewer may see either way. `club` continues to be the navigation
+         answer and is not used for scoping any more. */
+      const scopeClubIds = Array.from(new Set([tableClubId, club].filter(Boolean) as string[]));
+
       const [res, favIds] = await Promise.all([
         withTimeout(
           supabase
@@ -1464,13 +1499,26 @@ export default function MultiTablePage() {
             .select(
               'id, name, game_variant, game_type, small_blind, big_blind, max_players, current_players, status'
             )
-            .eq('club_id', club)
+            .in('club_id', scopeClubIds)
             .is('tournament_id', null)
             .neq('status', 'closed')
             // Audit round 3: soft-deleted tables kept their status and listed as
             // joinable. NULL must count as not-deleted, hence NOT IS TRUE.
             .not('is_deleted', 'is', true)
-            .limit(30)
+            /* ORDERED, AND NOT THIRTY. `.limit(30)` with no `.order()` is a
+               lottery: PostgREST returns whatever rows the scan reaches first,
+               so on this 44-table club fourteen tables were invisible to Quick
+               Join at random — and if the ones it missed were the player's own
+               stakes, the sheet reported them as not existing. It also lost the
+               ACTIVE table's row often enough to matter, and without that row
+               `currentTable.variant` is null, which files every candidate under
+               'other' and quietly disables the entire same-game ranking.
+               Ordering by seats free first, then by table id for determinism,
+               and lifting the cap to the lobby's own 200 makes the fetch cover
+               a real club instead of sampling it. */
+            .order('current_players', { ascending: false })
+            .order('id', { ascending: true })
+            .limit(QUICK_JOIN_CANDIDATE_LIMIT)
         ),
         withTimeout(fetchFavoriteTableIds(user?.id)).catch(() => null),
       ]);
@@ -1496,18 +1544,29 @@ export default function MultiTablePage() {
             : bigBlindFromStakesLabel(activeStakes),
       };
 
+      /* A MISSING SEAT CAP IS NOT A FULL TABLE. This read
+         `current_players < (max_players || 0)`, so any row whose `max_players`
+         was null or 0 evaluated `0 < 0` and was dropped as though it were
+         full — a data gap presenting as "no seats". Unknown capacity now keeps
+         the row: the seat is validated on join anyway, and offering a table
+         that turns out to be full is recoverable in one tap, while hiding a
+         table that has seats is the bug being fixed here. */
+      const hasRoom = (r: { current_players?: unknown; max_players?: unknown }) => {
+        const cap = Number(r.max_players);
+        if (!Number.isFinite(cap) || cap <= 0) return true;
+        return (Number(r.current_players) || 0) < cap;
+      };
+
       const ranked = rankQuickJoinTables(
-        all
-          .filter((r) => (Number(r.current_players) || 0) < (Number(r.max_players) || 0))
-          .map((r) => ({
-            id: r.id as string,
-            name: formatGameTitle(r.name as string) || 'Table',
-            variant: (r.game_variant as string | undefined) ?? null,
-            smallBlind: r.small_blind != null ? Number(r.small_blind) : null,
-            bigBlind: r.big_blind != null ? Number(r.big_blind) : null,
-            players: Number(r.current_players) || 0,
-            maxPlayers: Number(r.max_players) || 0,
-          })),
+        all.filter(hasRoom).map((r) => ({
+          id: r.id as string,
+          name: formatGameTitle(r.name as string) || 'Table',
+          variant: (r.game_variant as string | undefined) ?? null,
+          smallBlind: r.small_blind != null ? Number(r.small_blind) : null,
+          bigBlind: r.big_blind != null ? Number(r.big_blind) : null,
+          players: Number(r.current_players) || 0,
+          maxPlayers: Number(r.max_players) || 0,
+        })),
         {
           favoriteTableIds: favIds ?? [],
           currentTable,
@@ -2620,18 +2679,18 @@ export default function MultiTablePage() {
                         componentName={`TablePage(${table.id})`}
                         fallback={tableCrashFallback(table.name)}
                       >
-                      <TablePage
-                        key={table.id}
-                        embeddedTableId={table.id}
-                        onTableInfoUpdate={getTableInfoCb(table.id)}
-                        muted={mutedIds.includes(table.id)}
-                        // Dan 2026-08-19: while hidden on another route no tab is
-                        // "active" — ambient table sounds must not follow the
-                        // player into the cashier (isMultiTable true when hidden
-                        // so single-table mode is muted too).
-                        isMultiTable={tables.length > 1 || hidden}
-                        isActive={idx === activeIndex && !hidden}
-                      />
+                        <TablePage
+                          key={table.id}
+                          embeddedTableId={table.id}
+                          onTableInfoUpdate={getTableInfoCb(table.id)}
+                          muted={mutedIds.includes(table.id)}
+                          // Dan 2026-08-19: while hidden on another route no tab is
+                          // "active" — ambient table sounds must not follow the
+                          // player into the cashier (isMultiTable true when hidden
+                          // so single-table mode is muted too).
+                          isMultiTable={tables.length > 1 || hidden}
+                          isActive={idx === activeIndex && !hidden}
+                        />
                       </TableErrorBoundary>
                     )}
                   </Suspense>

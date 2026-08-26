@@ -52,6 +52,7 @@ import {
   intervalSpawnKey,
   TIMED_WINDOW_AHEAD_MS,
   TIMED_WINDOW_PAST_MS,
+  spawnAheadMsFor,
 } from '../../server/src/services/ScheduledTournamentService';
 
 // 2026-01-04 is a Sunday (UTC day 0); 2026-01-05 a Monday (day 1).
@@ -79,11 +80,41 @@ describe('timedSpawnsDue — day/time matching and the spawn window', () => {
     // hour before it started, so with 38 live schedules the lobby still read
     // as empty — two joinable MTTs at any given moment. Publishing the card a
     // day ahead is what makes the board look like a real room's.
-    const twoDaysOut = new Date(SUNDAY(12, 0).getTime() + 48 * 60 * 60 * 1000);
-    expect(timedSpawnsDue(sched([twoDaysOut.getUTCDay()], ['12:45']), SUNDAY(12, 0))).toHaveLength(
-      0
-    );
-    expect(TIMED_WINDOW_AHEAD_MS).toBe(24 * 60 * 60 * 1000);
+    //
+    // 2026-08-26: widened again to 48 hours, because the LOBBY publishes 48
+    // hours (Dan: "it should be displaying all events that are scheduled over
+    // the next 48 hours") and it cannot list a row the spawner never created.
+    // So the out-of-window case moves out with it: three days is now the first
+    // clock that is genuinely too far for an ordinary event.
+    const threeDaysOut = new Date(SUNDAY(12, 0).getTime() + 72 * 60 * 60 * 1000);
+    expect(
+      timedSpawnsDue(sched([threeDaysOut.getUTCDay()], ['12:45']), SUNDAY(12, 0))
+    ).toHaveLength(0);
+    expect(TIMED_WINDOW_AHEAD_MS).toBe(48 * 60 * 60 * 1000);
+  });
+
+  it('publishes two days of a daily schedule, not one (Dan 2026-08-26)', () => {
+    // The 48-hour board, measured on the shape that proves it: an event that
+    // runs every day is due TWICE inside the window, and both editions must be
+    // computed with different spawn keys so the dedupe cannot collapse them.
+    const due = timedSpawnsDue(sched([0, 1, 2, 3, 4, 5, 6], ['12:45']), SUNDAY(12, 0));
+    expect(due.length).toBe(2);
+    expect(new Set(due.map((d) => d.spawnKey)).size).toBe(2);
+  });
+
+  it('a 6 day look-ahead is reserved for buy-ins above 200', () => {
+    // "ANY TOURNAMENT WITH A BUY IN OF MORE THEN 200 THAT IS ON THE SCHEDULE
+    //  CAN BE SHOWN 6 DAYS OUT." Strictly greater than, so a flat 200 stays on
+    // the 48-hour board.
+    expect(spawnAheadMsFor({ buyIn: 200 })).toBe(48 * 60 * 60 * 1000);
+    expect(spawnAheadMsFor({ buyIn: 201 })).toBe(6 * 24 * 60 * 60 * 1000);
+    expect(spawnAheadMsFor({})).toBe(48 * 60 * 60 * 1000);
+    // An explicit per-schedule override still wins over both (the flagship
+    // that opens a week early so its satellites can resolve it).
+    expect(spawnAheadMsFor({ buyIn: 5, spawnAheadMinutes: 10080 })).toBe(10080 * 60_000);
+    // Out-of-range overrides are ignored rather than honoured.
+    expect(spawnAheadMsFor({ buyIn: 5, spawnAheadMinutes: 1 })).toBe(48 * 60 * 60 * 1000);
+    expect(spawnAheadMsFor({ buyIn: 5, spawnAheadMinutes: 99999 })).toBe(48 * 60 * 60 * 1000);
   });
 
   it("tomorrow's daily event is already on the board (the empty-lobby fix)", () => {
@@ -104,8 +135,12 @@ describe('timedSpawnsDue — day/time matching and the spawn window', () => {
   });
 
   it('does not spawn on a day the schedule does not include', () => {
-    // Sunday check against a Monday-only schedule.
-    expect(timedSpawnsDue(sched([1], ['12:15']), SUNDAY(12, 0))).toHaveLength(0);
+    // Sunday check against a THURSDAY-only schedule. This used to say Monday,
+    // which stopped being a valid example on 2026-08-26: at a 48-hour
+    // look-ahead Monday lunchtime is INSIDE the window when it is Sunday
+    // lunchtime, so the assertion was measuring the window rather than the
+    // day filter. Thursday is four days out and cannot be confused for either.
+    expect(timedSpawnsDue(sched([4], ['12:15']), SUNDAY(12, 0))).toHaveLength(0);
   });
 
   it("crosses midnight forward: Sunday 23:50 sees Monday's 00:10", () => {

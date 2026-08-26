@@ -21,10 +21,10 @@ import { describe, it, expect } from 'vitest';
 import {
   rankQuickJoinTables,
   isSameVariant,
-  isNearStakes,
   bigBlindFromStakesLabel,
   variantKey,
-  STAKES_SIMILARITY_RATIO,
+  stakeLadderFor,
+  rungOffset,
   type QuickJoinCandidate,
 } from '../src/lib/quickJoinRanking';
 
@@ -66,27 +66,65 @@ describe('variant comparison', () => {
   });
 });
 
-describe('stakes comparison', () => {
-  it('accepts the neighbouring rungs of the stakes ladder', () => {
-    expect(isNearStakes(2, 1)).toBe(true); // 1/2 next to 0.50/1
-    expect(isNearStakes(2, 5)).toBe(true); // 1/2 next to 2/5
+describe('the stakes ladder', () => {
+  /**
+   * Dan 2026-08-26: "ALSO SHOW ANY GAMES THAT ARE ONE STAKES LEVEL LOWER, AND
+   * ONE HIGHER."
+   *
+   * The rungs are the ones the CLUB is running, taken from the candidate set,
+   * not from a canonical ladder constant. The blinds below are Midway's real
+   * PLO ladder as it stood on the day this was written.
+   */
+  const midwayPlo = [
+    { id: 'a', name: 'a', variant: 'plo', bigBlind: 0.5 },
+    { id: 'b', name: 'b', variant: 'plo', bigBlind: 1 },
+    { id: 'c', name: 'c', variant: 'plo', bigBlind: 2 },
+    { id: 'd', name: 'd', variant: 'plo', bigBlind: 4 },
+    { id: 'e', name: 'e', variant: 'plo', bigBlind: 10 },
+    { id: 'x', name: 'x', variant: 'nlh', bigBlind: 3 }, // a different game
+  ];
+
+  it('is built from the rungs this club actually runs, for this game only', () => {
+    // 3 is a Hold'em blind here, so it is NOT a rung on the PLO ladder — that
+    // is the whole reason the ladder is per variant.
+    expect(stakeLadderFor(midwayPlo, 'plo', 2)).toEqual([0.5, 1, 2, 4, 10]);
   });
 
-  it('rejects a jump that is a different bankroll decision', () => {
-    expect(isNearStakes(2, 10)).toBe(false); // 1/2 vs 5/10
-    expect(isNearStakes(0.1, 2)).toBe(false);
+  it('always contains the stake the player is sitting at, even if unique', () => {
+    expect(stakeLadderFor(midwayPlo, 'plo', 7)).toEqual([0.5, 1, 2, 4, 7, 10]);
   });
 
-  it('is symmetric and honours the documented ratio exactly', () => {
-    expect(isNearStakes(1, STAKES_SIMILARITY_RATIO)).toBe(true);
-    expect(isNearStakes(STAKES_SIMILARITY_RATIO, 1)).toBe(true);
-    expect(isNearStakes(1, STAKES_SIMILARITY_RATIO + 0.01)).toBe(false);
+  it('counts one level lower and one level higher, whatever the ratio', () => {
+    const ladder = stakeLadderFor(midwayPlo, 'plo', 2);
+    expect(rungOffset(ladder, 2, 1)).toBe(-1); // 1/2 down to 0.50/1
+    expect(rungOffset(ladder, 2, 4)).toBe(1); // 1/2 up to 2/4
+    expect(rungOffset(ladder, 2, 2)).toBe(0);
+    // 5/10 is TWO rungs up from 1/2 on this ladder. The old 2.5x ratio band
+    // called it near; a ladder does not.
+    expect(rungOffset(ladder, 2, 10)).toBe(2);
   });
 
-  it('treats missing or nonsense stakes as not comparable rather than as zero', () => {
-    expect(isNearStakes(null, 2)).toBe(false);
-    expect(isNearStakes(0, 2)).toBe(false);
-    expect(isNearStakes(Number.NaN, 2)).toBe(false);
+  it('is symmetric', () => {
+    const ladder = stakeLadderFor(midwayPlo, 'plo', 2);
+    expect(rungOffset(ladder, 4, 2)).toBe(-1);
+    expect(rungOffset(ladder, 2, 4)).toBe(1);
+  });
+
+  it('treats missing or nonsense stakes as off the ladder, never as the same rung', () => {
+    const ladder = stakeLadderFor(midwayPlo, 'plo', 2);
+    expect(rungOffset(ladder, null, 2)).toBeNull();
+    expect(rungOffset(ladder, 0, 2)).toBeNull();
+    expect(rungOffset(ladder, Number.NaN, 2)).toBeNull();
+    expect(rungOffset(ladder, 2, 99)).toBeNull(); // not a rung here
+  });
+
+  it('matches rungs at whatever precision the row carries', () => {
+    // 0.50 and 0.5 are one rung, not two: the ladder is keyed on the value.
+    const rows = [
+      { id: 'p', name: 'p', variant: 'plo', bigBlind: 0.5 },
+      { id: 'q', name: 'q', variant: 'plo', bigBlind: 0.5 },
+    ];
+    expect(stakeLadderFor(rows, 'plo', 0.5)).toEqual([0.5]);
   });
 
   it('reads the big blind out of a stakes label whatever its precision', () => {
@@ -128,23 +166,54 @@ describe('rankQuickJoinTables', () => {
     );
 
     expect(rows.map((r) => r.id)).toEqual(['plo-one-rung-up', 'holdem-same-stake']);
-    expect(rows[0].tier).toBe('similar');
+    expect(rows[0].tier).toBe('adjacent');
     expect(rows[1].tier).toBe('other');
   });
 
-  it('orders the full tier ladder: favourite, similar, same game, everything else', () => {
+  it('puts the SAME stakes above one rung away (Dan 2026-08-26)', () => {
+    // "FIND ANY OTHER 1/2 PLO GAMES, BUT ALSO SHOW ANY GAMES THAT ARE ONE
+    //  STAKES LEVEL LOWER, AND ONE HIGHER." Exact first, then the neighbours,
+    // and the neighbours say which way they are.
+    const rows = rankQuickJoinTables(
+      [
+        table({ id: 'one-up', variant: 'plo', bigBlind: 4, players: 9, maxPlayers: 9 }),
+        table({ id: 'one-down', variant: 'plo', bigBlind: 1, players: 9, maxPlayers: 9 }),
+        table({ id: 'exact-match', variant: 'plo', bigBlind: 2, players: 3, maxPlayers: 9 }),
+      ],
+      { currentTable: playingPlo12 }
+    );
+
+    expect(rows.map((r) => r.id)).toEqual(['exact-match', 'one-down', 'one-up']);
+    expect(rows.map((r) => r.tier)).toEqual(['exact', 'adjacent', 'adjacent']);
+    expect(rows.map((r) => r.reason)).toEqual(['Same Stakes', 'One Level Down', 'One Level Up']);
+  });
+
+  it('orders the full tier ladder: favourite, same stakes, one level away, same game, the rest', () => {
     const rows = rankQuickJoinTables(
       [
         table({ id: 'other', variant: 'nlh', bigBlind: 2 }),
         table({ id: 'same-game-far-stake', variant: 'plo', bigBlind: 25 }),
-        table({ id: 'similar', variant: 'omaha', bigBlind: 5 }),
+        table({ id: 'one-level', variant: 'omaha', bigBlind: 5 }),
+        table({ id: 'exact', variant: 'plo', bigBlind: 2 }),
         table({ id: 'fav', variant: 'plo6', bigBlind: 100 }),
       ],
       { favoriteTableIds: ['fav'], currentTable: playingPlo12 }
     );
 
-    expect(rows.map((r) => r.id)).toEqual(['fav', 'similar', 'same-game-far-stake', 'other']);
-    expect(rows.map((r) => r.tier)).toEqual(['favorite', 'similar', 'same-game', 'other']);
+    expect(rows.map((r) => r.id)).toEqual([
+      'fav',
+      'exact',
+      'one-level',
+      'same-game-far-stake',
+      'other',
+    ]);
+    expect(rows.map((r) => r.tier)).toEqual([
+      'favorite',
+      'exact',
+      'adjacent',
+      'same-game',
+      'other',
+    ]);
   });
 
   it('matches stakes numerically, so 0.50/1.00 and 0.5/1 are one game', () => {
@@ -158,7 +227,7 @@ describe('rankQuickJoinTables', () => {
       { currentTable: { id: 'seated', variant: 'plo', bigBlind: 1 } }
     );
 
-    expect(rows.every((r) => r.tier === 'similar')).toBe(true);
+    expect(rows.every((r) => r.tier === 'exact')).toBe(true);
   });
 
   describe('tie-breaking inside a tier', () => {
@@ -189,15 +258,21 @@ describe('rankQuickJoinTables', () => {
     });
 
     it('prefers the closer stake when seat counts are equal', () => {
+      // Both of these are the same game two or more rungs away, so they share
+      // the 'same-game' tier and only the distance separates them. Picking two
+      // rows from ONE tier is the point: a tier difference would decide this
+      // before the tie-breaker was ever consulted.
       const rows = rankQuickJoinTables(
         [
-          table({ id: 'two-rungs', variant: 'plo', bigBlind: 5, players: 5 }),
-          table({ id: 'one-rung', variant: 'plo', bigBlind: 2, players: 5 }),
+          table({ id: 'three-rungs', variant: 'plo', bigBlind: 50, players: 5 }),
+          table({ id: 'two-rungs', variant: 'plo', bigBlind: 10, players: 5 }),
+          table({ id: 'one-rung', variant: 'plo', bigBlind: 5, players: 5 }),
         ],
         { currentTable: { id: 'seated', variant: 'plo', bigBlind: 2 } }
       );
 
-      expect(rows.map((r) => r.id)).toEqual(['one-rung', 'two-rungs']);
+      expect(rows.map((r) => r.tier)).toEqual(['adjacent', 'same-game', 'same-game']);
+      expect(rows.map((r) => r.id)).toEqual(['one-rung', 'two-rungs', 'three-rungs']);
     });
   });
 
@@ -260,7 +335,7 @@ describe('rankQuickJoinTables', () => {
     const rows = rankQuickJoinTables(
       [
         table({ id: 'fav', variant: 'plo', bigBlind: 2 }),
-        table({ id: 'similar', variant: 'plo', bigBlind: 5 }),
+        table({ id: 'adjacent', variant: 'plo', bigBlind: 5 }),
         table({ id: 'same', variant: 'plo', bigBlind: 50 }),
         table({ id: 'other', variant: 'nlh', bigBlind: 2 }),
       ],
@@ -269,7 +344,7 @@ describe('rankQuickJoinTables', () => {
 
     expect(rows.map((r) => r.reason)).toEqual([
       'Favourite',
-      'Similar Game',
+      'One Level Up',
       'Same Game',
       'Open Seats',
     ]);

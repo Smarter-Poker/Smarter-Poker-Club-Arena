@@ -81,8 +81,46 @@ export const TIMED_WINDOW_PAST_MS = 5 * 60 * 1000;
  * own display window is 72 hours, so 24 fits inside what the UI already
  * shows, and `spawnAheadMinutes` still overrides per schedule (the Sunday
  * Major uses a week so its satellites can resolve it all week).
+ *
+ * NOW 48 HOURS (Dan 2026-08-26: "IT SHOULD BE DISPLAYING ALL EVENTS THAT ARE
+ * SCHEDULED OVER THE NEXT 48 HOURS"). The lobby cannot list a row that does
+ * not exist, so every client-side attempt to widen the board was capped by
+ * THIS constant -- with 60 active schedules the board carried one day of card
+ * and looked, correctly, like a room with almost nothing on tomorrow.
+ *
+ * PARITY: `src/utils/tournamentScheduleWindow.ts` holds the same two numbers
+ * for the client, and `tests/unit/scheduleWindowParity.test.ts` fails if they
+ * drift. They are duplicated rather than imported because `server/` compiles
+ * standalone -- the same arrangement RakeConfig has.
  */
-export const TIMED_WINDOW_AHEAD_MS = 24 * 60 * 60 * 1000;
+export const TIMED_WINDOW_AHEAD_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * Total buy-in ABOVE which a schedule publishes on the long window instead.
+ *
+ * Dan 2026-08-26: "ANY TOURNAMENT WITH A BUY IN OF MORE THEN 200 THAT IS ON
+ * THE SCHEDULE CAN BE SHOWN 6 DAYS OUT." Strictly greater than, so a flat 200
+ * chip event is a 48-hour event. Measured on the TOTAL a player pays, which
+ * for a schedule is `cfg.buyIn` before the prize/fee split -- the two columns
+ * the lobby adds back together.
+ */
+export const FEATURE_BUYIN_THRESHOLD = 200;
+export const FEATURE_WINDOW_AHEAD_MS = 6 * 24 * 60 * 60 * 1000;
+
+/**
+ * The look-ahead for one schedule: an explicit `spawnAheadMinutes` always
+ * wins (flagships open registration a week early so their satellites can
+ * resolve them), otherwise the buy-in decides.
+ */
+export function spawnAheadMsFor(cfg: Record<string, unknown>): number {
+  const explicit = Number(cfg.spawnAheadMinutes);
+  if (Number.isFinite(explicit) && explicit >= 30 && explicit <= 10_080) {
+    return Math.round(explicit) * 60_000;
+  }
+  return wholeChips(cfg.buyIn) > FEATURE_BUYIN_THRESHOLD
+    ? FEATURE_WINDOW_AHEAD_MS
+    : TIMED_WINDOW_AHEAD_MS;
+}
 /**
  * Horses are seeded at SPAWN only when the start is this close.
  *
@@ -429,15 +467,9 @@ export class ScheduledTournamentService {
     schedule: TournamentScheduleRow,
     cfg: Record<string, unknown>
   ): Promise<void> {
-    // Optional per-schedule look-ahead (minutes, 30 min .. 7 days). Flagship
-    // events set this to several days so they exist in the lobby early and
-    // satellite schedules can resolve them by name all week.
-    const aheadRaw = Number(cfg.spawnAheadMinutes);
-    const aheadMs =
-      Number.isFinite(aheadRaw) && aheadRaw >= 30 && aheadRaw <= 10_080
-        ? Math.round(aheadRaw) * 60_000
-        : TIMED_WINDOW_AHEAD_MS;
-    const due = timedSpawnsDue(schedule, new Date(), aheadMs);
+    // Optional per-schedule look-ahead (minutes, 30 min .. 7 days), else the
+    // buy-in decides: 48 hours, or 6 days above 200. See spawnAheadMsFor.
+    const due = timedSpawnsDue(schedule, new Date(), spawnAheadMsFor(cfg));
     for (const spawn of due) {
       await this.spawnInstance(schedule, cfg, spawn.spawnKey, spawn.startTime);
     }

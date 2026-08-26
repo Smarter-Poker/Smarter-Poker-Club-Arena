@@ -60,10 +60,54 @@ describe('the add-table button does not lose a race with its own lookup', () => 
   it('does not strand the picker open when it bails to the lobby', () => {
     // The on-demand lookup opens the sheet in its loading state; the bail-out
     // path has to close it again or the player is left on a dead spinner.
+    //
+    // The guard reads `if (!club && !tableClubId)` since 2026-08-26: there are
+    // now TWO ways to know where the games are, and having either one is
+    // enough to show a sheet. See the union-scope test below.
     const tail = HANDLER.slice(
-      HANDLER.indexOf('if (!club) {', HANDLER.indexOf('clubLookupCacheRef'))
+      HANDLER.indexOf('if (!club && !tableClubId) {', HANDLER.indexOf('clubLookupCacheRef'))
     );
     expect(tail).toMatch(/setQuickJoin\(\{ open: false/);
+  });
+
+  it('UNION SCOPE: the candidate query is not narrowed to the navigation club', () => {
+    /* Dan 2026-08-26: "when you click the + button on the game page, and get
+       the QUICK JOIN pop up, thats not working."
+
+       It reported "No Open Seats Right Now" on a club with 44 open cash tables
+       and 25 free seats. `commitHomeClub` deliberately never returns a union
+       (UNION LAW, pinned above) because navigating a player into the union hub
+       would show them the union treasury — but every Midway table carries
+       `club_id = <Midway Union>`, so using that same answer to SCOPE THE QUERY
+       matched literally nothing, for every union player, every time.
+
+       Navigation and data scope are two different questions. The query asks
+       both ids; `commitHomeClub` still answers the navigation one alone. */
+    expect(HANDLER).toMatch(/scopeClubIds[\s\S]{0,200}tableClubId/);
+    expect(HANDLER).toMatch(/\.in\('club_id', scopeClubIds\)/);
+    // The old single-club scope must not come back.
+    expect(HANDLER).not.toMatch(/\.eq\('club_id', club\)/);
+  });
+
+  it('reads a whole club rather than sampling it, in a defined order', () => {
+    /* `.limit(30)` with no `.order()` returns whichever rows the scan reaches
+       first. On a 44-table club that hid fourteen tables at random — and when
+       the hidden ones were the player's own stakes, the sheet reported them as
+       not existing. It also dropped the ACTIVE table's row often enough to
+       matter, and without that row the current variant is unknown, which
+       silently disables the entire same-game ranking. */
+    expect(HANDLER).toMatch(/\.order\('current_players', \{ ascending: false \}\)/);
+    // Deliberately no `not.toMatch(/\.limit\(30\)/)`: the note above the query
+    // NAMES the old limit to explain what it broke, and a test that forbids a
+    // string forbids the comment that records why it was wrong.
+    expect(HANDLER).toMatch(/\.limit\(QUICK_JOIN_CANDIDATE_LIMIT\)/);
+  });
+
+  it('a missing seat cap is not read as a full table', () => {
+    // `current_players < (max_players || 0)` evaluates 0 < 0 for any row with
+    // no recorded capacity, so a data gap presented as "no seats".
+    expect(HANDLER).toMatch(/const hasRoom =/);
+    expect(HANDLER).not.toMatch(/Number\(r\.max_players\) \|\| 0\)/);
   });
 
   it('caches what it resolved, so the next press is instant', () => {

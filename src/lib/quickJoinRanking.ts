@@ -22,12 +22,14 @@
  *      game and never matched, because the label is built by interpolation from
  *      whatever precision the row happens to carry.
  *
- * THE ORDER. Favourites, then near-identical games, then the same game at any
- * stake, then everything else. Inside every tier: a table with a seat beats one
- * without, a busier table beats a quieter one (a two-hander is not a game), and
- * closer stakes beat further ones. Fully deterministic — no Math.random, no
- * dependence on the order the database returned rows in — so the same club
- * state always produces the same sheet and the tests can pin it.
+ * THE ORDER (rewritten 2026-08-26). Favourites, then the SAME GAME AT THE SAME
+ * STAKES, then ONE RUNG UP OR DOWN on the ladder the club is actually running,
+ * then the same game at any stake, then everything else. Inside every tier: a
+ * table with a seat beats one without, a busier table beats a quieter one (a
+ * two-hander is not a game), and closer stakes beat further ones. Fully
+ * deterministic — no Math.random, no dependence on the order the database
+ * returned rows in — so the same club state always produces the same sheet and
+ * the tests can pin it.
  *
  * Pure on purpose: no Supabase, no React, no clock. The caller fetches, this
  * decides.
@@ -60,7 +62,22 @@ export interface QuickJoinCurrentTable {
   bigBlind?: number | null;
 }
 
-export type QuickJoinTier = 'favorite' | 'similar' | 'same-game' | 'other';
+/**
+ * ONE RUNG EITHER WAY (Dan 2026-08-26).
+ *
+ * "IT SHOULD SHOW YOU IF THERE ARE ANY OTHER GAMES THAT ARE EXACTLY LIKE THE
+ *  GAME YOU ARE CURRENTLY ON, IN THIS CASE 1/2 PLO, AND FIND ANY OTHER 1/2 PLO
+ *  GAMES, BUT ALSO SHOW ANY GAMES THAT ARE ONE STAKES LEVEL LOWER, AND ONE
+ *  HIGHER."
+ *
+ * `similar` is gone and two tiers stand where it did: `exact` (the same game at
+ * the same stakes) and `adjacent` (one rung up or one rung down). The old tier
+ * was a 2.5x ratio band, which is not a rung — it swept up the same game two
+ * rungs away on a tight ladder and missed the genuine neighbour on a loose one,
+ * and it could never say WHICH direction a table was, so no row could carry the
+ * label Dan is asking for here.
+ */
+export type QuickJoinTier = 'favorite' | 'exact' | 'adjacent' | 'same-game' | 'other';
 
 export interface RankedQuickJoinTable extends QuickJoinCandidate {
   tier: QuickJoinTier;
@@ -76,7 +93,7 @@ export interface RankedQuickJoinTable extends QuickJoinCandidate {
 export interface RankQuickJoinOptions {
   /** `favorite_tables.table_id` for this user. Order within it is ignored. */
   favoriteTableIds?: ReadonlyArray<string> | null;
-  /** The active tab's table, used for the "similar" tier. */
+  /** The active tab's table: the game and rung every tier is measured from. */
   currentTable?: QuickJoinCurrentTable | null;
   /** Tables already open in another tab, plus anything else to hide. */
   excludeIds?: ReadonlyArray<string> | null;
@@ -89,17 +106,21 @@ export interface RankQuickJoinOptions {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * How far the big blind may drift and still count as "comparable stakes".
+ * STAKES_SIMILARITY_RATIO AND isNearStakes ARE GONE (Dan 2026-08-26).
  *
- * 2.5x either way, measured as a RATIO rather than a difference, because stakes
- * are geometric: the ladder a club actually runs is 0.05/0.10, 0.10/0.25,
- * 0.25/0.50, 0.50/1, 1/2, 2/5, 5/10. From 1/2 that admits 0.50/1 below and 2/5
- * above — the neighbours a player would genuinely take a seat at — and excludes
- * 5/10, which is a different bankroll decision. A fixed plus-or-minus window
- * cannot do this: 2 either way would be everything at the bottom of the ladder
- * and nothing at the top.
+ * They defined "comparable stakes" as a 2.5x band around the current big
+ * blind, on the reasoning that a club's ladder is roughly geometric so a fixed
+ * ratio approximates its neighbours. It approximates them; it does not find
+ * them. On the ladder this platform actually runs (0.10/0.20, 0.25/0.50,
+ * 0.50/1, 1/2, 2/4, 3/6, 5/10, 10/25, 25/50) a 2.5x band around 1/2 catches
+ * 2/4 AND 5/10 — two rungs up — while calling neither of them a rung, so the
+ * sheet could not tell a player which direction anything was.
+ *
+ * `stakeLadderFor` + `rungOffset` below answer the question that was actually
+ * being asked, against the rungs the club is running right now.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
  */
-export const STAKES_SIMILARITY_RATIO = 2.5;
 
 /**
  * The comparable-game token for a table. Delegates to `gameCode` so this file
@@ -123,15 +144,6 @@ export function isSameVariant(a?: string | null, b?: string | null): boolean {
   // mapper could not identify are not evidence they are the same game.
   if (ka === 'UNKNOWN' || kb === 'UNKNOWN') return false;
   return ka === kb;
-}
-
-/** Stakes are within STAKES_SIMILARITY_RATIO of each other. */
-export function isNearStakes(bigBlindA?: number | null, bigBlindB?: number | null): boolean {
-  const a = Number(bigBlindA);
-  const b = Number(bigBlindB);
-  if (!Number.isFinite(a) || !Number.isFinite(b) || a <= 0 || b <= 0) return false;
-  const ratio = a > b ? a / b : b / a;
-  return ratio <= STAKES_SIMILARITY_RATIO;
 }
 
 /**
@@ -171,27 +183,102 @@ export function stakesDistance(bigBlindA?: number | null, bigBlindB?: number | n
 
 const TIER_ORDER: Record<QuickJoinTier, number> = {
   favorite: 0,
-  similar: 1,
-  'same-game': 2,
-  other: 3,
+  exact: 1,
+  adjacent: 2,
+  'same-game': 3,
+  other: 4,
 };
 
 const TIER_REASON: Record<QuickJoinTier, string> = {
   favorite: 'Favourite',
-  similar: 'Similar Game',
+  exact: 'Same Stakes',
+  adjacent: 'One Level Away',
   'same-game': 'Same Game',
   other: 'Open Seats',
 };
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// THE STAKES LADDER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Blinds are decimals; compare them at a fixed precision, never as floats. */
+function bbKey(bb: number): number {
+  return Math.round(bb * 10000) / 10000;
+}
+
+/**
+ * The rungs this club actually runs for one game, ascending.
+ *
+ * DERIVED FROM THE CLUB, NOT FROM A CONSTANT. A hard-coded ladder
+ * (0.05/0.10, 0.10/0.25, 0.25/0.50 ...) is a guess about somebody else's room:
+ * "one level lower" has to mean the next stake a player can actually sit down
+ * at HERE, and a club that runs 1/2 and 5/10 with nothing between them has 5/10
+ * as the neighbour of 1/2 whatever a canonical ladder says. Building it from
+ * the candidate set makes the answer true by construction and needs no
+ * maintenance when a club adds a rung.
+ *
+ * The current table's own big blind is included even when no other table shares
+ * it, so the player always has a position on their own ladder.
+ */
+export function stakeLadderFor(
+  candidates: ReadonlyArray<QuickJoinCandidate>,
+  variant?: string | null,
+  currentBigBlind?: number | null
+): number[] {
+  const rungs = new Set<number>();
+  const cur = Number(currentBigBlind);
+  if (Number.isFinite(cur) && cur > 0) rungs.add(bbKey(cur));
+  for (const c of candidates || []) {
+    if (!c) continue;
+    if (variant != null && !isSameVariant(c.variant, variant)) continue;
+    const bb = Number(c.bigBlind);
+    if (Number.isFinite(bb) && bb > 0) rungs.add(bbKey(bb));
+  }
+  return Array.from(rungs).sort((a, b) => a - b);
+}
+
+/**
+ * How many rungs `to` sits above `from` on this ladder. Negative is lower,
+ * positive is higher, null when either stake is not on the ladder at all
+ * (unknown or unparseable blinds — which must not be read as "the same rung").
+ */
+export function rungOffset(
+  ladder: ReadonlyArray<number>,
+  from?: number | null,
+  to?: number | null
+): number | null {
+  const a = Number(from);
+  const b = Number(to);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a <= 0 || b <= 0) return null;
+  const ia = ladder.indexOf(bbKey(a));
+  const ib = ladder.indexOf(bbKey(b));
+  if (ia < 0 || ib < 0) return null;
+  return ib - ia;
+}
+
 export function tierFor(
   candidate: QuickJoinCandidate,
   favorites: ReadonlySet<string>,
-  currentTable?: QuickJoinCurrentTable | null
+  currentTable?: QuickJoinCurrentTable | null,
+  ladder: ReadonlyArray<number> = []
 ): QuickJoinTier {
   if (favorites.has(candidate.id)) return 'favorite';
   if (!currentTable) return 'other';
   if (!isSameVariant(candidate.variant, currentTable.variant)) return 'other';
-  return isNearStakes(candidate.bigBlind, currentTable.bigBlind) ? 'similar' : 'same-game';
+
+  const offset = rungOffset(ladder, currentTable.bigBlind, candidate.bigBlind);
+  // Unreadable blinds on the right game are still the right game — they fall
+  // to 'same-game' rather than being promoted or thrown out.
+  if (offset === null) return 'same-game';
+  if (offset === 0) return 'exact';
+  if (offset === 1 || offset === -1) return 'adjacent';
+  return 'same-game';
+}
+
+/** The label a row carries, including which way an adjacent table sits. */
+function reasonFor(tier: QuickJoinTier, offset: number | null): string {
+  if (tier !== 'adjacent') return TIER_REASON[tier];
+  return offset === 1 ? 'One Level Up' : 'One Level Down';
 }
 
 function seatsOpenOf(candidate: QuickJoinCandidate): number {
@@ -224,15 +311,21 @@ export function rankQuickJoinTables(
   // when the caller forgot to exclude it.
   if (currentTable?.id) excluded.add(currentTable.id);
 
-  const ranked = (candidates || [])
-    .filter((c) => c && c.id && !excluded.has(c.id))
-    .map<RankedQuickJoinTable>((c) => {
-      const tier = tierFor(c, favorites, currentTable);
-      return { ...c, tier, reason: TIER_REASON[tier], seatsOpen: seatsOpenOf(c) };
-    });
+  /* The ladder is built from the candidates that SURVIVE exclusion, so a table
+     already open in another tab does not invent a rung the player cannot go
+     to -- otherwise "one level up" could point at a game they are sitting in. */
+  const eligible = (candidates || []).filter((c) => c && c.id && !excluded.has(c.id));
+  const ladder = stakeLadderFor(eligible, currentTable?.variant, currentTable?.bigBlind);
+
+  const ranked = eligible.map<RankedQuickJoinTable>((c) => {
+    const tier = tierFor(c, favorites, currentTable, ladder);
+    const offset = currentTable ? rungOffset(ladder, currentTable.bigBlind, c.bigBlind) : null;
+    return { ...c, tier, reason: reasonFor(tier, offset), seatsOpen: seatsOpenOf(c) };
+  });
 
   ranked.sort((a, b) => {
-    // 1. Tier: favourites, then similar, then same game, then the rest.
+    // 1. Tier: favourites, then the same game at the same stakes, then one
+    //    rung either way, then the same game anywhere, then the rest.
     const tierDelta = TIER_ORDER[a.tier] - TIER_ORDER[b.tier];
     if (tierDelta !== 0) return tierDelta;
 

@@ -694,10 +694,30 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
 
       {/* Hand Replay Modal */}
       {showHandReplay && (
-        <div className="player-notes-overlay" onClick={onCloseHandReplay}>
+        <div
+          className="hand-replay-overlay"
+          onClick={onCloseHandReplay}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1600,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          }}
+        >
           <div
-            className="player-notes-modal hand-replay-modal"
+            className="hand-replay-modal"
             onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              height: '100%',
+              maxWidth: '100vw',
+              maxHeight: '100vh',
+              overflow: 'hidden',
+              position: 'relative',
+            }}
           >
             <button className="modal-close" onClick={onCloseHandReplay}>
               ✕

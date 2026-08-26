@@ -53,16 +53,49 @@ const COMMIT_HOME_CLUB = MULTI.slice(
 
 describe('the MTT ticker opens the event, not a club list', () => {
   it('navigates to the tournament registration page', () => {
-    // /tournaments/:tournamentId is TournamentDetails — the page that owns the
-    // Register button via useTournamentRegistration.
-    expect(TICKER_CLICK).toMatch(/navigate\(`\/tournaments\/\$\{primary\.id\}`\)/);
+    /* /tournaments/:tournamentId is TournamentDetails — the page that owns the
+       Register button via useTournamentRegistration.
+
+       2026-08-26: the strip now carries OVERLAY announcements as well as
+       starting-soon ones, so the click target is resolved once into
+       `targetId` rather than reading `primary.id` inline. The rule is
+       unchanged and the assertion below is what keeps it: whatever owns the
+       bar, the id in the URL is a TOURNAMENT id. */
+    expect(TICKER_CLICK).toMatch(/navigate\(`\/tournaments\/\$\{targetId\}`\)/);
+  });
+
+  it('the click target is only ever a tournament id, from either source', () => {
+    /* Both sources of that id, pinned at their definition. If a future edit
+       resolves targetId from anything club-shaped this fails, which is the
+       whole point of this file. */
+    const TARGET_DECL = TICKER.slice(
+      TICKER.indexOf('const targetId ='),
+      TICKER.indexOf('const targetName =')
+    );
+    expect(TARGET_DECL).toMatch(/primaryOverlay\.id/);
+    expect(TARGET_DECL).toMatch(/primary\?\.id/);
+    expect(TARGET_DECL).not.toMatch(/club/i);
   });
 
   it('never routes through a club id again', () => {
     // The regression, verbatim: `/clubs/${primary.clubId}/tournaments`. On a
     // union game primary.clubId IS the union hub club.
     expect(TICKER_CLICK).not.toContain('primary.clubId');
+    expect(TICKER_CLICK).not.toContain('clubId');
     expect(TICKER_CLICK).not.toMatch(/\/clubs\//);
+  });
+
+  it('the overlay query is scoped to the clubs the player belongs to', () => {
+    /* An overlay announcement is an invitation to enter. A player must never
+       be shown money they cannot go and win, and the club scope is what
+       guarantees that - the same rule the starting-soon query follows. */
+    const OVERLAY_Q = TICKER.slice(
+      TICKER.indexOf('const overlayPromise ='),
+      TICKER.indexOf('const [{ data, error }, myRegs, overlayRes]')
+    );
+    expect(OVERLAY_Q).toMatch(/\.in\('club_id', clubIds\)/);
+    expect(OVERLAY_Q).toMatch(/\.eq\('tournament_type', 'MTT'\)/);
+    expect(OVERLAY_Q).toMatch(/\.gt\('guaranteed_prize', 0\)/);
   });
 
   it('falls back to the GLOBAL lobby, which is never union-scoped', () => {

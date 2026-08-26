@@ -2,6 +2,37 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-08-26 (evening) — INSURANCE REFERENCE PARITY (pass 6)
+
+Dan supplied the missing reference: a leader-seat recording (INSURANCE.MOV)
+plus stills of the actual dialog. Frame-by-frame findings drove three changes:
+
+1. **The dialog is FEE-first.** Rebuilt: All-In Insurance title, outs count +
+   pot strip, board row, player rows (leader named + equity, opponents with
+   cards), Insurance Fee / Rate / Insured Pot readouts, a fee slider (insured
+   = fee x rate) with the range printed at both ends, Break Even and Constant
+   Profit presets, "For Winning / For Losing" outcome readouts, No / Insure.
+   Coverage now caps at the POT (the winnings), not the leader's stake — the
+   reference max insured is ~the pot. `atRisk` rides the offer for Break
+   Even. Countdown is 25s to match.
+2. **Three table moments.** A shield INSURANCE banner sweeps the felt for
+   every seat when the offer opens; after a purchase the fee sits beside the
+   pot as its own chip pill until the hand resolves; when insurance pays, a
+   chip fan + "+N" float flies from the pot to the insured seat with a toast.
+3. **Sequencing (supersedes FIX 92) + offer-before-deal.** The reference asks
+   the run-it-multi-times question FIRST; insurance engages only when the
+   hand resolves to a single run. The engine no longer force-disables RIT on
+   insurance tables — the runout dispatch runs RIT first and chains into the
+   insurance flow on a single-run resolution. Per-hand exclusivity is kept: a
+   multi-board hand never carries insurance. The per-street flow also now
+   offers on the STANDING board before dealing (a turn all-in used to deal
+   the river instantly and never receive an offer at all).
+
+InsuranceRitExclusivity.test.ts rewritten to pin the sequencing (5 tests);
+64 server tests green across the insurance/RIT/pacing suites.
+
+---
+
 **Started:** 2026-03-24
 **Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (226 fixes, 99% verified)
 

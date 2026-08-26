@@ -73,7 +73,11 @@ export default function InvitePage() {
           );
 
         if (inviteCode) {
-          clubQuery = clubQuery.eq('invite_code', inviteCode);
+          // `code`, not `invite_code`. clubs has never had an invite_code
+          // column, so this branch returned PostgREST 42703 and the catch below
+          // reported it as "Club not found or invitation expired" - a database
+          // error wearing a plausible business message, on a public route.
+          clubQuery = clubQuery.eq('code', inviteCode);
         } else if (clubId) {
           const { column, value } = resolveClubIdFilter(clubId);
           clubQuery = clubQuery.eq(column, value);
@@ -209,7 +213,10 @@ export default function InvitePage() {
           .from('profiles')
           .select('player_number')
           .eq('id', user.id)
-          .single()
+          // .maybeSingle(), never .single(): on zero rows .single() resolves
+          // with a PGRST116 error and null data, so the invite link quietly
+          // fell back to the raw user uuid instead of the player number.
+          .maybeSingle()
           .then(({ data }) => {
             const r = data?.player_number || user.id;
             setInviteUrl(`${baseUrl}?ref=${r}`);
@@ -308,7 +315,7 @@ export default function InvitePage() {
           <span className="error-icon"></span>
           <h2>Oops!</h2>
           <p>{error || 'Invalid invitation'}</p>
-          <button className="btn btn-primary" onClick={() => navigate('/clubs')}>
+          <button className="btn btn-primary" onClick={() => navigate('/clubs-list')}>
             Browse Clubs
           </button>
         </div>
@@ -356,7 +363,7 @@ export default function InvitePage() {
             <p style={{ color: '#aaa', fontSize: '0.85rem', margin: '8px 0 12px' }}>
               This Club Requires Owner Approval. You'll Gain Access Once Your Request Is Reviewed.
             </p>
-            <button className="btn btn-primary" onClick={() => navigate('/clubs')}>
+            <button className="btn btn-primary" onClick={() => navigate('/clubs-list')}>
               Browse Clubs
             </button>
           </div>

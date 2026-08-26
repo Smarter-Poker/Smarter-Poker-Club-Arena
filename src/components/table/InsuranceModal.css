@@ -171,6 +171,152 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
+   REFERENCE PARITY 2026-08-26 — info strip, player rows, readouts, outcomes
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.insurance-modal__info-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 20px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #b8bcc8;
+}
+
+.insurance-modal__board-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #b8bcc8;
+  margin-right: 6px;
+  align-self: center;
+}
+
+.insurance-modal__players {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 20px;
+}
+
+.insurance-modal__player-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.insurance-modal__player-row--hero {
+  background: rgba(255, 184, 0, 0.08);
+  border: 1px solid rgba(255, 184, 0, 0.25);
+}
+
+.insurance-modal__player-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #e4e6eb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insurance-modal__player-row--hero .insurance-modal__player-name {
+  color: #ffb800;
+}
+
+.insurance-modal__player-equity {
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: #b8bcc8;
+}
+
+.insurance-modal__player-cards {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.insurance-modal__readouts {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 20px 4px;
+}
+
+.insurance-modal__readout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+}
+
+.insurance-modal__readout-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #8a8fa3;
+}
+
+.insurance-modal__readout-value {
+  font-size: 1rem;
+  font-weight: 800;
+  font-family: 'JetBrains Mono', monospace;
+  color: #e4e6eb;
+}
+
+.insurance-modal__readout-value--fee {
+  color: #ffb800;
+}
+
+.insurance-modal__readout-value--insured {
+  color: #4ade80;
+}
+
+.insurance-modal__slider-range {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #8a8fa3;
+  font-family: 'JetBrains Mono', monospace;
+  margin-top: 2px;
+}
+
+.insurance-modal__outcomes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 20px;
+}
+
+.insurance-modal__outcomes-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #8a8fa3;
+}
+
+.insurance-modal__outcomes-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.insurance-modal__outcome {
+  font-size: 0.8125rem;
+  color: #b8bcc8;
+}
+
+.insurance-modal__outcome strong {
+  color: #e4e6eb;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
    CARDS DISPLAY
    ═══════════════════════════════════════════════════════════════════════════════ */
 

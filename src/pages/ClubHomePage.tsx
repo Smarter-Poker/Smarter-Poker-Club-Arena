@@ -628,6 +628,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null);
   const [isInUnion, setIsInUnion] = useState(false);
+  const [unionName, setUnionName] = useState<string | null>(null);
   /** Live seat count from get_club_home. Null until it answers; see the note
       where it is set - the stale clubs.online_count is never used. */
   const [playersPlaying, setPlayersPlaying] = useState<number | null>(null);
@@ -650,6 +651,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   // cache was unreachable (keys embed the user id), and the panel sat on a
   // skeleton for a full roundtrip it did not need. The store survives route
   // changes; the async path below still confirms it.
+  const currentUser = useUserStore((state) => state.user);
   const [currentUserId, setCurrentUserId] = useState<string | null>(
     () => useUserStore.getState().user?.id ?? null
   );
@@ -708,6 +710,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     setIsOwner(false);
     setUserRole('player');
     setIsInUnion(false);
+    setUnionName(null);
     setDeletingTableId(null);
     setDeleteTableConfirm({ show: false, tableId: null, tableName: null });
     setClubLevel(null);
@@ -1840,12 +1843,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           cacheUnion(ucRow.union_id);
 
           // Get ALL club IDs in this union + member count in parallel
-          const [allUcResult, memberCountResult] = await Promise.all([
+          const [allUcResult, memberCountResult, unionResult] = await Promise.all([
             supabase.from('union_clubs').select('club_id').eq('union_id', unionId),
             // A CLUB's own count. Unions re-query below. Same RPC as the
             // standalone path above, for the same two reasons: a direct count
             // is RLS-filtered (0 for a non-member) and ~370x slower.
             supabase.rpc('fn_get_club_member_count', { p_club_id: resolvedId }),
+            supabase.from('unions').select('name').eq('id', unionId).maybeSingle(),
           ]);
 
           if (allUcResult.data && allUcResult.data.length > 0) {
@@ -3392,6 +3396,24 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   {(club.member_count || 0).toLocaleString()}
                 </span>
               </div>
+              <div
+                className="lobby-club__meta"
+                style={{
+                  marginTop: '2px',
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                  gap: '2px',
+                }}
+              >
+                {currentUser?.player_number && (
+                  <span className="lobby-club__id" style={{ userSelect: 'all' }}>
+                    Player {currentUser.player_number}
+                  </span>
+                )}
+                <span className="lobby-club__id" style={{ userSelect: 'all', color: '#9aa5b6' }}>
+                  {club.name}
+                </span>
+              </div>
 
               <div
                 style={{
@@ -3411,6 +3433,19 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                       <span className="club-level-badge__number">Level {clubLevel.level}</span>
                       <span className="club-level-badge__tier">{clubLevel.tierLabel}</span>
                     </span>
+                  </div>
+                )}
+
+                {unionName && (
+                  <div
+                    style={{
+                      marginTop: '6px',
+                      fontSize: '0.85rem',
+                      color: '#9aa5b6',
+                      fontStyle: 'italic',
+                    }}
+                  >
+                    Plays Inside The <strong style={{ color: '#ffffff' }}>{unionName}</strong>
                   </div>
                 )}
 
@@ -3465,11 +3500,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                         if (navigator.share) {
                           await navigator.share({
                             title: club.name,
-                            text: `Join ${club.name} on Smarter Poker!`,
+                            text: `${currentUser?.display_name || 'A player'} invited you to join ${club.name}`,
                             url: shareUrl,
                           });
                         } else {
-                          await navigator.clipboard.writeText(shareUrl);
+                          await navigator.clipboard.writeText(
+                            `${currentUser?.display_name || 'A player'} invited you to join ${club.name}\n\n${shareUrl}`
+                          );
                           toast.success('Club link copied!');
                         }
                       } catch (e) {

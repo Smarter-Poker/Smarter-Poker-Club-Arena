@@ -48,126 +48,64 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   EMPTY SEAT — "EMPTY" text like PokerBros
+   EMPTY SEAT — Coin button images (2026-08-26)
+   ─────────────────────────────────────────────────────────────────────────────
+   The seat container is now borderless and transparent — the coin art is the
+   entire visual. Two images are used:
+     sit-button.png   — "+SIT" coin, shown when the user has not yet sat down
+     empty-button.png — "EMPTY" coin, shown when the user is already seated
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-/* Dan 2026-08-15: once hero is seated, every other open seat reads "EMPTY"
-   and is inert — a user must never be able to sit at two seats. Driven by the
-   `canSit={false}` prop, which also strips onClick/role/tabIndex in the TSX. */
-.seat--empty.seat--empty-locked {
-  cursor: default;
-  border-style: solid;
-  border-color: rgba(255, 255, 255, 0.07);
-  background: rgba(255, 255, 255, 0.015);
-}
-
-.seat--empty.seat--empty-locked::before {
-  animation: none;
-  border-color: transparent;
-}
-
-.seat--empty.seat--empty-locked .seat__empty-label {
-  color: rgba(255, 255, 255, 0.3);
-  letter-spacing: 0.14em;
-}
-
-/* Dan 2026-08-18: ONE dotted circle, no square. The container used to be a
-   60x42 dashed rounded-RECT while the label carried its own dashed pill
-   (TableVisualHotfix rule 11) — that stacked "a square over the circle".
-   The container is now the single circular target; the label is bare. */
+/* Outer container: transparent, no border, no background.
+   Size matches the coin image so the click target fills it exactly. */
 .seat--empty {
-  width: 56px;
-  height: 56px;
+  width: 64px;
+  height: 64px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
   cursor: pointer;
   border-radius: 50%;
-  border: 2px dashed rgba(255, 255, 255, 0.35);
-  background: rgba(0, 0, 0, 0.35);
-  transition: all 0.25s var(--ease-spring);
+  border: none;
+  background: transparent;
   position: relative;
   overflow: visible;
+  transition: transform 0.2s var(--ease-spring, ease-out);
 }
 
-/* Subtle breathing pulse to attract attention to empty seats */
-.seat--empty::before {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(34, 197, 94, 0);
-  animation: emptyPulse 3s ease-in-out infinite;
+/* The coin image — fills the container, no crop, transparent background. */
+.seat__empty-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
   pointer-events: none;
+  user-select: none;
 }
 
-@keyframes emptyPulse {
-  0%,
-  100% {
-    border-color: rgba(34, 197, 94, 0);
-    transform: scale(1);
-  }
-  50% {
-    border-color: rgba(34, 197, 94, 0.2);
-    transform: scale(1.04);
-  }
+/* Clickable SIT variant: scale-up on hover/active for tactile feel. */
+.seat--empty:hover .seat__empty-img--sit {
+  filter: brightness(1.15);
 }
-
 .seat--empty:hover {
-  border-color: rgba(34, 197, 94, 0.5);
-  background: rgba(34, 197, 94, 0.08);
-  transform: scale(1.08);
-  box-shadow:
-    0 4px 20px rgba(34, 197, 94, 0.15),
-    0 2px 8px rgba(0, 0, 0, 0.3);
+  transform: scale(1.1);
 }
-
-.seat--empty:hover::before {
-  animation: none;
-  border-color: rgba(34, 197, 94, 0.3);
-  transform: scale(1.08);
-}
-
 .seat--empty:active {
-  transform: scale(0.95);
+  transform: scale(0.94);
 }
 
-.seat__empty-label {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  line-height: 1;
-  font-size: 0.625rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.75);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  transition:
-    color 0.2s ease,
-    transform 0.2s ease;
+/* Locked / EMPTY variant: no interaction, dimmed so it reads as inert. */
+.seat--empty.seat--empty-locked {
+  cursor: default;
+}
+.seat--empty.seat--empty-locked .seat__empty-img {
+  opacity: 0.45;
+  filter: grayscale(30%);
 }
 
-.seat--empty:hover .seat__empty-label {
-  color: rgba(34, 197, 94, 0.9);
-  transform: scale(1.05);
-}
-
-/* Dan 2026-08-18: the "+" is its own centered line above SIT. The trailing
-   letter-spacing on an uppercase run pushes the glyph off-centre, so it is
-   cancelled here (and on the word, whose own tracking is applied evenly). */
-.seat__empty-plus {
-  font-size: 0.85rem;
-  font-weight: 800;
-  line-height: 1;
-  letter-spacing: 0;
-}
-.seat__empty-word {
-  line-height: 1;
-  /* even tracking: half the gap lands after the last letter, so pad-left
-     the same amount to keep the word optically centred */
-  padding-left: 0.12em;
+/* Remove pseudo-element pulse ring — no longer needed. */
+.seat--empty::before {
+  content: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -351,13 +289,39 @@
      A shared variable is the only version of "cannot drift" that survives
      someone adding a term.
 
-     --sp-bust-gain-max is the containment escape hatch. The top rail has the
-     BBJ banner directly above it and needs an upper bound, but it must still
-     be free to shrink an oversized character, so it caps rather than cancels.
-     99 is "no cap" for every other seat. */
-  --sp-bust-effective-scale: calc(
-    var(--sp-bust-scale, 1.45) * min(var(--sp-bust-gain, 1), var(--sp-bust-gain-max, 99))
-  );
+     Containment is NOT done by capping the per-character gain any more — see
+     the note on --sp-bust-effective-scale immediately below. The top row gets
+     its banner clearance from a SMALLER SLOT, which scales every character in
+     the row by the same proportion and so cannot single one out. */
+  /* ── Dan 2026-08-26: "make sure all avatars are DISPLAYED at the same
+        height. Use CSS to ensure all heights are exactly the same." ────────
+
+     THE CLAMP IS GONE. It used to read
+
+         min(var(--sp-bust-gain, 1), var(--sp-bust-gain-max, 99))
+
+     and `--sp-bust-gain-max: 1` is set on the whole top row. `--sp-bust-gain`
+     is the PER-CHARACTER correction that makes every character's subject the
+     same height (gain = library median share / this character's share), so
+     clamping it to 1 does not shrink the row evenly — it shrinks ONLY the
+     characters whose art needed correcting, and by however much each one
+     needed. A character measured at 1.317 rendered 24% shorter in a top seat
+     than in any other seat, while its 0.844 neighbour was untouched. That is
+     the "one avatar is very tall" report, in reverse and per-seat.
+
+     Height containment does not need a clamp anyway: the top row already
+     takes a SMALLER SLOT (--seat-avatar-base: 56px), and because every term
+     here is a multiple of that slot, shrinking the slot shrinks every
+     character in the row by exactly the same proportion. Uniformity survives;
+     the banner still gets its clearance. */
+  --sp-bust-effective-scale: calc(var(--sp-bust-scale, 1.45) * var(--sp-bust-gain, 1));
+
+  /* A `max-height` cap was tried here and REMOVED, because it cannot work and
+     would have read as a guarantee: the gain is applied with `transform:
+     scale()`, and a transform does not participate in layout, so max-height
+     bounds the pre-transform box and the scale multiplies it afterwards
+     regardless. Measured at the time: the cap changed nothing. The real
+     guarantee is the gain itself being correct — see the note above. */
 }
 
 .seat__avatar--bust .seat__avatar-img {
@@ -1160,10 +1124,13 @@
   border-radius: 10px;
   font-size: 1.05rem;
   font-weight: 800;
-  color: #ffde5c;
+  /* Measured off the reference +6.95 frames: stroke core rgb(255,255,119),
+     body mean rgb(229,209,84) — a brighter, purer yellow than the banner
+     gold. */
+  color: #ffe94a;
   text-shadow:
     0 1px 0 rgba(0, 0, 0, 0.65),
-    0 0 12px rgba(255, 222, 92, 0.55);
+    0 0 12px rgba(255, 233, 74, 0.55);
   letter-spacing: 0.02em;
   white-space: nowrap;
   z-index: 40;
@@ -1179,6 +1146,84 @@
 .seat__net-win--loss {
   color: #ff8a7a;
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.75);
+}
+
+/* ─── WIN SPARKLES — reference four-point stars over the winner's cards ───
+   POKERBROS PARITY 2026-08-26 (round 3). Four gold stars: one large on the
+   cards, three smaller scattered, each twinkling on its own phase while the
+   whole field lives exactly as long as the +N float (2.5s), then fades. */
+.seat__win-sparkles {
+  position: absolute;
+  top: -52px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  z-index: 41;
+  pointer-events: none;
+  animation: seatWinSparklesLife 2500ms ease-out forwards;
+}
+
+.seat__win-sparkle {
+  position: absolute;
+  background: radial-gradient(circle at 50% 45%, #fff7cf 0%, #ffe94a 45%, #eab308 100%);
+  clip-path: polygon(50% 0%, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0% 50%, 39% 39%);
+  filter: drop-shadow(0 0 4px rgba(255, 233, 74, 0.8));
+  animation: seatWinSparkleTwinkle 1.1s ease-in-out infinite;
+}
+
+.seat__win-sparkle:nth-child(1) {
+  width: 26px;
+  height: 26px;
+  left: -18px;
+  top: 26px;
+}
+.seat__win-sparkle:nth-child(2) {
+  width: 13px;
+  height: 13px;
+  left: 30px;
+  top: 8px;
+  animation-delay: 0.28s;
+}
+.seat__win-sparkle:nth-child(3) {
+  width: 10px;
+  height: 10px;
+  left: -46px;
+  top: 44px;
+  animation-delay: 0.55s;
+}
+.seat__win-sparkle:nth-child(4) {
+  width: 15px;
+  height: 15px;
+  left: 40px;
+  top: 52px;
+  animation-delay: 0.8s;
+}
+
+@keyframes seatWinSparklesLife {
+  0% {
+    opacity: 0;
+  }
+  6% {
+    opacity: 1;
+  }
+  82% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes seatWinSparkleTwinkle {
+  0%,
+  100% {
+    transform: scale(0.45) rotate(0deg);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1) rotate(12deg);
+    opacity: 1;
+  }
 }
 
 @keyframes seat-net-win-float {
@@ -1352,16 +1397,50 @@
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
 
-/* SHOWDOWN REVEAL — same anchor, grown and laid flat so the ranks read.
-   The cluster's base size is deliberately tiny, so the reveal scales 1.6x,
-   widens the slide to a readable 0.55 step, flattens the splay to a third
-   (--vh-rot-scale) and lifts ABOVE the nameplate (z 14 clears the plate's 3
-   and the badges' 5-6) for the duration. Back to normal next hand. */
+/* ═══ SHOWDOWN REVEAL — FLAT, SEPARATED, AND NEVER BEHIND THE BANNER ═══════
+   Dan 2026-08-26 (mobile pass, items 1 and 6):
+     "when all cards are shown down they need to be shown down, FLAT and not
+      overlapped"
+     "when the player on the top showed down their hand it was hidden behind
+      the BBJ. Player at the top should reveal their hand BELOW them."
+
+   Three things change at showdown, and only at showdown:
+
+   FLAT      --vh-rot-scale: 0 kills the splay outright. It was 0.33, which
+             still left every card visibly tilted — fine for a face-down
+             cluster that only has to say "this player has a hand", wrong for
+             the one moment the ranks have to be read.
+   SEPARATED --vh-step-f: 1.12 is a full card width plus a 12% gap, so no
+             card covers any part of another. It was 0.55, i.e. each card
+             still hid nearly half of its neighbour.
+   IN FRONT  z 14 clears the plate (3) and the badges (5-6).
+
+   The container also stops being width-constrained by the resting fan: at
+   1.12 step the row is genuinely (n x 1.12) card widths wide, which is what
+   --vh-fan-w already computes. */
 .seat__cards--opponent.seat__cards--revealed {
   --vh-reveal: 1.6;
-  --vh-step-f: 0.55;
-  --vh-rot-scale: 0.33;
+  --vh-step-f: 1.12;
+  --vh-rot-scale: 0;
   z-index: 14;
+}
+
+/* THE TOP ROW REVEALS DOWNWARD.
+   A top-cap seat sits under the Bad Beat Jackpot banner with no felt above
+   it, so a reveal anchored beside/above the avatar is drawn straight into
+   the banner — which is exactly the screenshot. These seats drop their
+   revealed hand BELOW the nameplate instead, onto the felt, where there is
+   nothing to collide with. Centred on the pod rather than mirrored, because
+   a centred row under a top seat cannot reach either neighbour.
+
+   Scoped to `.seat-wrapper--top .seat` (0-3-0 with the class pair below) so
+   it beats the generic left/right anchors without touching any other seat. */
+.seat-wrapper--top .seat .seat__cards--opponent.seat__cards--revealed {
+  top: auto;
+  bottom: calc(-1 * var(--vh-card-h) - 6px);
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
 }
 
 /* The reveal GROWS instead of snapping: the size/position deltas between the
@@ -1696,31 +1775,49 @@
 
 /* ─── WINNER CARD GLOW — Golden highlight like PokerBros showdown ─── */
 
+/* POKERBROS PARITY 2026-08-26 — rebuilt from a frame-by-frame pass over the
+   reference recording: a winning hole card gets the SAME steady thin
+   warm-gold border and amber halo as the winning board cards, full
+   brightness, and holds it — the reference never pulses. The old 1.5s
+   winnerCardPulse loop is gone for that reason. */
 .seat__card--winner {
   box-shadow:
-    0 0 0 2px rgba(255, 215, 0, 0.7),
-    0 0 16px rgba(255, 215, 0, 0.5),
-    0 0 32px rgba(255, 215, 0, 0.25),
-    0 4px 12px rgba(0, 0, 0, 0.4);
-  animation: winnerCardPulse 1.5s ease-in-out infinite;
+    0 0 0 2px #e9b355,
+    0 0 10px rgba(240, 180, 80, 0.8),
+    0 0 22px rgba(235, 165, 50, 0.45),
+    0 4px 12px rgba(0, 0, 0, 0.4),
+    inset 0 0 14px rgba(235, 170, 60, 0.18);
 }
 
-@keyframes winnerCardPulse {
-  0%,
-  100% {
-    box-shadow:
-      0 0 0 2px rgba(255, 215, 0, 0.7),
-      0 0 16px rgba(255, 215, 0, 0.5),
-      0 0 32px rgba(255, 215, 0, 0.25),
-      0 4px 12px rgba(0, 0, 0, 0.4);
-  }
-  50% {
-    box-shadow:
-      0 0 0 3px rgba(255, 215, 0, 0.9),
-      0 0 24px rgba(255, 215, 0, 0.7),
-      0 0 48px rgba(255, 215, 0, 0.35),
-      0 6px 16px rgba(0, 0, 0, 0.4);
-  }
+/* POKERBROS PARITY 2026-08-26: while the winning five are lit, every OTHER
+   face-up hole card on the table drops to ~50% brightness in the same beat —
+   the winner's own unused cards and any losing shown hand alike. Applied by
+   HoleCard, never to card backs. The 120ms transition matches the board's
+   (a hard cut in the reference; four frames is the closest polish-safe
+   equivalent). */
+.seat__card--dimmed {
+  /* Measured off the reference frames: 0.28 of pre-showdown brightness,
+     channel-neutral — same as the board's losing cards. */
+  filter: brightness(0.28);
+  transition: filter 0.09s ease-out;
+}
+
+/* POKERBROS PARITY 2026-08-26 (audit round 2, measured): while a winner is
+   on display the reference dims the ENTIRE scene ~27% — every name plate
+   (the winner's included, measured 0.67-0.72), every avatar, every badge —
+   and only the winning cards and the banner stay at full brightness. The
+   seat's card rows are excluded here because the cards carry their own
+   states: winning cards full, all other face-up cards at 0.28. No
+   transition: the reference onset is a one-frame cut. */
+/* The +N float and its sparkles (and a BBJ credit) ride ABOVE the dim —
+   in the reference the bright-yellow amount and the stars are the only
+   things at full brightness besides the winning cards and the banner. */
+.table-page--winner-flash
+  .seat
+  > :not([class*='seat__cards']):not(.seat__net-win):not(.seat__win-sparkles):not(
+    .seat__bbj-credit
+  ) {
+  filter: brightness(0.73);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -1979,25 +2076,23 @@
 
 /* ─── WINNING HAND NAME — "Straight", "Full House" etc. ────────── */
 
+/* POKERBROS PARITY 2026-08-26 (audit round 2): the reference renders the
+   seat-level hand name as PLAIN small text under the player's info — no
+   gold pill, no border, no italic, no sheen. The banner over the felt is
+   the loud element; this line is quiet confirmation. */
 .seat__hand-name {
   position: relative;
   text-align: center;
-  padding: 2px 12px;
+  padding: 1px 6px;
   margin-top: 2px;
-  background: linear-gradient(135deg, rgba(255, 215, 0, 0.2) 0%, rgba(255, 180, 0, 0.15) 100%);
-  border: 1px solid rgba(255, 215, 0, 0.5);
-  border-radius: 8px;
-  font-size: 0.75rem;
-  font-weight: 800;
-  color: #ffd700;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
-  letter-spacing: 0.03em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgba(233, 233, 238, 0.92);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  letter-spacing: 0.04em;
   white-space: nowrap;
   z-index: 25;
   animation: handNameAppear 0.5s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  font-style: italic;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(255, 215, 0, 0.15);
 }
 
 /* SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the engine ruled this hand
@@ -2022,27 +2117,8 @@
   animation: handNameAppear 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.seat__hand-name::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 60%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
-  animation: handNameSheen 2s ease-in-out 0.5s infinite;
-  pointer-events: none;
-}
-
-@keyframes handNameSheen {
-  0%,
-  100% {
-    left: -100%;
-  }
-  50% {
-    left: 150%;
-  }
-}
+/* The pill's sliding sheen went with the pill (see the parity note above).
+   handNameAppear below is shared with the MUCKED label and stays. */
 
 @keyframes handNameAppear {
   0% {
@@ -2298,6 +2374,16 @@
 @media (prefers-reduced-motion: reduce) {
   .seat__bounty {
     animation: none;
+  }
+
+  .seat__win-sparkles,
+  .seat__win-sparkle {
+    animation: none;
+  }
+
+  .seat__win-sparkle {
+    opacity: 0.8;
+    transform: scale(0.8);
   }
 }
 
@@ -2696,8 +2782,8 @@
     padding: 0 3px;
   }
   .seat--empty {
-    width: 54px;
-    min-height: 44px;
+    width: 52px;
+    height: 52px;
   }
   .seat__hand-name {
     font-size: 0.6875rem;
@@ -2785,9 +2871,7 @@
   }
   .seat--empty {
     width: 48px;
-  }
-  .seat__empty-label {
-    font-size: 0.5625rem;
+    height: 48px;
   }
   .seat__hand-name {
     font-size: 0.625rem;
@@ -2855,11 +2939,8 @@
     padding: 0 2px;
   }
   .seat--empty {
-    width: 48px;
-    min-height: 44px;
-  }
-  .seat__empty-label {
-    font-size: 0.5rem;
+    width: 44px;
+    height: 44px;
   }
   .seat__hand-name {
     font-size: 0.5625rem;
@@ -3074,20 +3155,21 @@
    responsive `.seat` rules (0,1,0) at every width. */
 .seat-wrapper--top .seat {
   --seat-avatar-base: 56px;
-  /* The per-character gain is CAPPED here, not cancelled. This seat has nothing
-     above it but the BBJ banner, so it must never let a character grow into it.
-     But cancelling to exactly 1 also threw away every correction that SHRINKS
-     an oversized character - the one direction that can only ever help a seat
-     whose whole problem is vertical room. It was written when a gain could be
-     2, and a cap is what that actually needed.
-     Now: shrink freely, never grow. */
-  --sp-bust-gain-max: 1;
+  /* `--sp-bust-gain-max: 1` was REMOVED here 2026-08-26. It capped the
+     PER-CHARACTER correction, so it did not shrink this row evenly — it
+     shrank only the characters that needed correcting, each by a different
+     amount, which is precisely how one avatar ends up visibly taller than its
+     neighbours. Banner clearance comes from the smaller slot on the line
+     above, which scales every character in the row by the same proportion.
+     Uniform in, uniform out. */
 }
 
-/* Tournaments have no BBJ banner — top avatars stay standard full size */
+/* Tournaments have no BBJ banner — top avatars stay standard full size.
+   The `--sp-bust-gain-max: 1.45` that sat here was removed with the clamp it
+   belonged to (2026-08-26); restoring the full-size SLOT is what this rule is
+   for, and the slot is what every character now scales from. */
 .table-page--tournament .seat-wrapper--top .seat {
   --seat-avatar-base: var(--seat-avatar-base, 84px);
-  --sp-bust-gain-max: 1.45;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -3421,6 +3503,16 @@
 .seat--cards-left .seat__cards--opponent .seat__card {
   left: auto;
   right: calc(var(--vh-i, 0) * var(--vh-step));
+}
+
+/* The top row's REVEALED hand is centred under the pod (see the reveal rule
+   further up), so it must lay its cards left-to-right regardless of which
+   half of the table the seat sits on — a mirrored row would run out of the
+   centred container. 0-4-0, so it wins over the `.seat--cards-left` pair
+   above without disturbing the face-down cluster, which keeps its mirroring. */
+.seat-wrapper--top .seat .seat__cards--revealed .seat__card {
+  left: calc(var(--vh-i, 0) * var(--vh-step));
+  right: auto;
 }
 
 /* ───────────────────────────────────────────────────────────────────────────

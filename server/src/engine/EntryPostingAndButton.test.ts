@@ -1,32 +1,41 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  SITTING DOWN IS FREE, AND A NEW PLAYER NEVER GETS THE BUTTON
+ *  ENTERING A CASH GAME: WAIT FOR THE BIG BLIND OR POST IT
+ *  AND A NEW PLAYER NEVER GETS THE BUTTON
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Dan 2026-08-25, from live play, verbatim:
+ * Dan 2026-08-26, binding, correcting his own instruction from the night
+ * before, verbatim:
  *
- *   "In cash games you don't have to POST when you first come to a table, you
- *    only have to post if you are in the BB. If a player is coming in behind
- *    the button, those hands should be DEALT TO THEM FOR FREE without posting.
- *    They only need to post if they were sitting out and missed blinds."
+ *   "i also made a mistake the other night, when I said that a player doesn't
+ *    have to post when they are new to a cash game table... Every single player
+ *    needs to either wait for the BB or post when entering a cash game... no
+ *    free hands or coming in behind the blinds."
  *
- *   "New players never get the button when sitting down — it skips over them
- *    and moves to the correct person. Even if they take the seat of a person
- *    who would have been the button, they must wait one hand before being
- *    dealt in."
+ * THE RULE THIS REPLACES, and why the file reads like a reversal
  *
- * WHAT WAS ACTUALLY HAPPENING
+ * On 2026-08-25 Dan said the opposite - "you don't have to POST when you first
+ * come to a table... coming in behind the button, those hands should be DEALT
+ * TO THEM FOR FREE" - and the dealing loop was changed to release every waiter
+ * on the next tick at no charge. That lasted a day. The free release is now
+ * gone and `waitingForBB` means what its name says again: a player stays in it
+ * until the big blind reaches their seat, or until they call POST /post-bb and
+ * pay a live big blind to come in immediately.
  *
- * Every new joiner was force-converted into `postingBBToEnter` on the next
- * dealing-loop tick, which bills a live big blind through the bbOnlyPosts path.
- * The only positional exemption was the small blind. So a player who sat down
- * in the cutoff — behind the button, owing nothing, with their blinds still
- * ahead of them — paid a full big blind for the privilege.
+ * The history is kept in the comments on purpose. A rule that flipped once can
+ * flip back by accident, and "no free hands" is worth real money at a raked
+ * table.
  *
- * And the button was chosen off the raw deal roster with no notion of who had
- * played before, so a player's very first hand at a table could be on the
- * button: they would post nothing, act last, and then be gone before the
- * blinds ever reached them.
+ * WHAT DID NOT CHANGE
+ *
+ *   - MISSED BLINDS ARE A DIFFERENT DEBT. A player returning from sit-out goes
+ *     through returningFromSitout and owes a dead small blind plus a live big
+ *     blind. A new joiner never owed those; they simply have not entered yet.
+ *   - "CASH GAME PLAYERS CAN NEVER BE DEALT INTO THE SMALL BLIND" and "NEW
+ *     PLAYERS NEVER GET THE BUTTON WHEN SITTING DOWN" both still hold, and
+ *     posting cannot buy past either. Posting skips the wait, not a house rule.
+ *   - The button is still chosen off players who have actually been dealt in,
+ *     so a player's first hand can never be on the button.
  *
  * These are source-text guards in the house style (see afkSitOutGuard.test.ts).
  * They pin the SHAPE of the rules, which is what regressed, rather than
@@ -42,45 +51,63 @@ const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8'
 const DEALING = strip(read('src/engine/ServerTableEngineDealing.ts'));
 const BASE = strip(read('src/engine/ServerTableEngineBase.ts'));
 
-describe('coming in behind the button costs nothing', () => {
-  it('a released new joiner is NOT pushed into postingBBToEnter', () => {
-    // The whole bug in one line. `postingBBToEnter` is the set that bills a
-    // live BB via bbOnlyPosts. The wait-for-BB release block must never add to
-    // it — the only remaining writer is the explicit opt-in API below.
-    const at = DEALING.indexOf('this.waitingForBB.delete(userId)');
-    expect(at, 'wait-for-BB release block not found').toBeGreaterThan(-1);
-    const releaseBlock = DEALING.slice(at, at + 400);
-    expect(releaseBlock).not.toMatch(/postingBBToEnter\.add/);
+describe('a cash entrant either waits for the big blind or posts it', () => {
+  /**
+   * Dan 2026-08-26, binding, correcting his own instruction of the night
+   * before:
+   *
+   *   "i also made a mistake the other night, when I said that a player
+   *    doesn't have to post when they are new to a cash game table... Every
+   *    single player needs to either wait for the BB or post when entering a
+   *    cash game... no free hands or coming in behind the blinds."
+   *
+   * This block used to be called "coming in behind the button costs nothing"
+   * and pinned the opposite rule. It is rewritten rather than deleted so the
+   * reversal is legible: the free-entry release existed for one day, and these
+   * assertions are what stop it coming back by accident.
+   */
+
+  it('the dealing loop no longer releases a waiter for free', () => {
+    // This is the whole reversal. The loop used to walk waitingForBB and
+    // delete every entry on the tick, logging "free entry for". A waiter is
+    // now released in exactly two places, neither of them here.
+    expect(DEALING).not.toMatch(/free entry for/);
+    expect(DEALING).not.toMatch(/no post owed/);
   });
 
-  it('the only writer left to postingBBToEnter is the explicit POST /post-bb opt-in', () => {
+  it('the natural big blind is still what releases a waiter on the wait path', () => {
+    // The "wait" half. When the BB reaches their seat they come out of the set
+    // and post it because it is genuinely their blind.
+    expect(DEALING).toMatch(/bbSeatIndex\s*=\s*this\.getBBSeatIndex\(\)/);
+    expect(DEALING).toMatch(/p\.seat_number === bbSeatIndex/);
+  });
+
+  it('the only other way out of the set is posting, and it bills a live BB', () => {
     const seating = strip(read('src/engine/ServerTableEngineSeating.ts'));
     expect(seating).toMatch(/postingBBToEnter\.add/);
+    // The dealing loop must never write to the billing set itself.
     expect((DEALING.match(/postingBBToEnter\.add/g) || []).length).toBe(0);
   });
 
-  it('missed blinds are still owed — returningFromSitout is untouched', () => {
-    // Dan carved this out explicitly: "they only need to post if they were
-    // sitting out and missed blinds." That path must keep billing dead SB + BB.
+  it('posting is offered in the product, not just on the server', () => {
+    // A rule that says "wait or post" with no way to post is a rule that says
+    // "wait". The overlay calls it.
+    const tablePage = strip(read('../src/pages/TablePage.tsx'));
+    expect(tablePage).toMatch(/serverPostBBToEnter\(/);
+  });
+
+  it('missed blinds are a different debt and still owe the dead small blind', () => {
+    // A player returning from sit-out MISSED blinds; a new joiner never owed
+    // them. returningFromSitout keeps billing dead SB + live BB.
     expect(DEALING).toMatch(/deadBlinds:/);
     expect(DEALING).toMatch(/returningFromSitout\.has\(p\.user_id\)/);
   });
 
-  it('a new joiner is still never dealt into the small blind', () => {
-    // Pre-existing binding rule, and the free-entry change must not erase it.
-    expect(DEALING).toMatch(
-      /sbSeatIndex\s*=\s*this\.isTournamentTable\(\)\s*\?\s*-1\s*:\s*this\.getSBSeatIndex\(\)/
-    );
-    expect(DEALING).toMatch(/seatedWaiter\.seat_number === sbSeatIndex/);
-  });
-
-  it('a table setting cannot switch off the small-blind rule', () => {
-    // registerWaitForBB used to be gated on tableInfo.wait_for_big_blind, and
-    // that set is what the SB and button hold-outs read. So a host who turned
-    // the setting off skipped registration, skipped the hold-out, and had brand
-    // new players dealt straight into the small blind on their first hand.
-    // The set no longer gates a WAIT — entry is free and released next tick —
-    // it only gates the two positional hold-outs, one of which is a house rule.
+  it('a table setting cannot switch off the wait, or the small-blind rule', () => {
+    // registerWaitForBB used to be gated on tableInfo.wait_for_big_blind, so a
+    // host who turned it off skipped registration entirely - which skipped the
+    // wait AND the hold-out enforcing "CASH GAME PLAYERS CAN NEVER BE DEALT
+    // INTO THE SMALL BLIND".
     const seating = strip(read('src/engine/ServerTableEngineSeating.ts'));
     const at = seating.indexOf('public registerWaitForBB');
     expect(at).toBeGreaterThan(-1);
@@ -89,11 +116,8 @@ describe('coming in behind the button costs nothing', () => {
     expect(body).toMatch(/if \(!this\.isTournamentTable\(\)\)/);
   });
 
-  it('POST /post-bb cannot buy its way into the small blind', () => {
-    // Once entry became free, the only players still waiting are the two the
-    // engine holds out for a hand. So this endpoint stopped being a shortcut
-    // past a long wait and became the one way to pay a live big blind for the
-    // privilege of being dealt into the small blind.
+  it('posting cannot buy its way into the small blind or the button', () => {
+    // Posting skips the WAIT. It does not skip a house rule.
     const seating = strip(read('src/engine/ServerTableEngineSeating.ts'));
     const at = seating.indexOf('public postBBToEnter');
     expect(at).toBeGreaterThan(-1);
@@ -103,19 +127,14 @@ describe('coming in behind the button costs nothing', () => {
     expect(guard, 'no small-blind guard on postBBToEnter').toBeGreaterThan(-1);
     // The refusal must come BEFORE the player is released and billed.
     expect(guard).toBeLessThan(release);
-    // BOTH hold-outs, not just the small blind. A player held out because they
-    // took the seat the button is about to reach could still pay a live big
-    // blind for a hand they were about to get free — the same asymmetry, left
-    // open on the other half of the rule.
     expect(body).toMatch(/getButtonSeatIndex/);
     expect(body).toMatch(/seat\.seat_number === buttonSeatIndex/);
   });
 
-  it('nothing in the product calls POST /post-bb any more', () => {
-    // Every remaining path through it is a refusal, so a UI that offers it is
-    // offering the player a charge they cannot complete and would not want.
-    const tablePage = strip(read('../src/pages/TablePage.tsx'));
-    expect(tablePage).not.toMatch(/serverPostBBToEnter\(/);
+  it('none of this touches tournaments', () => {
+    const seating = strip(read('src/engine/ServerTableEngineSeating.ts'));
+    const at = seating.indexOf('public registerWaitForBB');
+    expect(seating.slice(at, at + 300)).toMatch(/isTournamentTable\(\)/);
   });
 });
 
@@ -165,11 +184,26 @@ describe('a new player never receives the button', () => {
     expect(BASE.slice(at, at + 400)).toMatch(/veterans\.length > 0 \? veterans : roster/);
   });
 
-  it('taking the seat the button is about to reach holds the joiner out one hand', () => {
-    expect(DEALING).toMatch(
-      /buttonSeatIndex\s*=\s*this\.isTournamentTable\(\)\s*\?\s*-1\s*:\s*this\.getButtonSeatIndex\(\)/
-    );
-    expect(DEALING).toMatch(/seatedWaiter\.seat_number === buttonSeatIndex/);
+  it('taking the seat the button is about to reach cannot hand it to a new player', () => {
+    // This used to be a positional hold-out inside the dealing loop's release
+    // block, and that block is gone: since 2026-08-26 a cash entrant waits for
+    // the big blind or posts, so a new joiner is held out by DEFAULT and never
+    // reaches a deal to be given the button in the first place.
+    //
+    // The rule is now enforced by eligibility rather than by seat number, which
+    // is strictly stronger - a waiter is not in activePlayers, so is never
+    // dealt, so never enters dealtInUserIds, so buttonEligible() can never
+    // return them however they got there.
+    expect(BASE).toMatch(/dealtInUserIds/);
+    expect(DEALING).toMatch(/buttonEligible/);
+
+    // And on the one path that DOES skip the wait - posting - the seat check
+    // survives, because posting must not buy past the rule either.
+    const seating = strip(read('src/engine/ServerTableEngineSeating.ts'));
+    const at = seating.indexOf('public postBBToEnter');
+    const body = seating.slice(at, at + 900);
+    expect(body).toMatch(/getButtonSeatIndex/);
+    expect(body).toMatch(/seat\.seat_number === buttonSeatIndex/);
   });
 
   it('every predictor of the next button shares one definition', () => {

@@ -24,8 +24,14 @@ const read = (p: string) => fs.readFileSync(path.join(root, p), 'utf8');
 
 const DESIGN_TOKENS = read('src/styles/design-tokens.css');
 const GLOBALS = read('src/styles/globals.css');
-const TABLE_THEME_SELECTOR = read('src/components/table/ThemeSelector.tsx');
-const CUSTOMIZATION_SELECTOR = read('src/components/customization/ThemeSelector.tsx');
+/* 2026-08-26 sweep: both ThemeSelector components were DELETED — each was a
+   complete picker with no call site, reachable only through barrels that
+   nothing imported. The theme list players can actually reach is the one in
+   the table's SettingsPanel, so that is what this file now reads. The old
+   `customization/ThemeSelector` duplicate-list test went with the file it
+   guarded; `tests/unit/noUnreachableSettingsUi.test.ts` pins that neither
+   comes back. */
+const TABLE_THEME_SELECTOR = read('src/components/table/SettingsPanel.tsx');
 const TABLE_ASSETS = read('src/assets/tableAssets.ts');
 const THEME_MODAL = read('src/components/table/ThemeSettingsModal.tsx');
 
@@ -39,9 +45,12 @@ function idsWithThemeTokens(): Set<string> {
 
 /** The ids the one shared theme list offers. */
 function tableThemeIds(): string[] {
-  const block = TABLE_THEME_SELECTOR.match(/TABLE_THEMES: ThemeOption\[\] = \[([\s\S]*?)\n\];/);
-  expect(block, 'TABLE_THEMES not found in table/ThemeSelector.tsx').toBeTruthy();
-  const ids = [...block![1].matchAll(/id: '([a-z0-9_-]+)'/g)].map((m) => m[1]);
+  const block = TABLE_THEME_SELECTOR.match(/TABLE_THEMES(?::\s*\w+\[\])? = \[([\s\S]*?)\n\];/);
+  expect(block, 'TABLE_THEMES not found in table/SettingsPanel.tsx').toBeTruthy();
+  /* SettingsPanel's list is `{ value, label }` — the deleted ThemeSelector's
+     was `{ id, ... }`. Accept either key so this reads the shape that is
+     actually mounted rather than the one that was removed. */
+  const ids = [...block![1].matchAll(/(?:id|value): '([a-z0-9_-]+)'/g)].map((m) => m[1]);
   expect(ids.length, 'TABLE_THEMES parsed empty').toBeGreaterThan(0);
   return ids;
 }
@@ -72,19 +81,15 @@ describe('a theme you can pick is a theme that exists', () => {
       expect(real.has(invented), `${invented} still has no tokens, so nothing may offer it`).toBe(
         false
       );
+      /* The second half of this check used to read
+         customization/ThemeSelector, which was deleted in the 2026-08-26
+         sweep (no call site). The surviving, MOUNTED list is the one to ask —
+         if a dead id creeps back into a picker, that is where it will be. */
       expect(
-        CUSTOMIZATION_SELECTOR.includes(`id: '${invented}'`),
-        `customization/ThemeSelector offers the dead id ${invented} again`
+        tableThemeIds().includes(invented),
+        `the mounted theme picker offers the dead id ${invented} again`
       ).toBe(false);
     }
-  });
-
-  it('the customization picker renders the shared list, not a second copy', () => {
-    // A duplicated catalogue is how the card-back bug survived five days after
-    // it was "fixed": one copy got the fix, the other kept shipping dead ids.
-    expect(CUSTOMIZATION_SELECTOR).toContain('TABLE_THEMES');
-    const ownList = CUSTOMIZATION_SELECTOR.match(/previewColors/);
-    expect(ownList, 'customization/ThemeSelector is carrying its own theme list again').toBeNull();
   });
 });
 

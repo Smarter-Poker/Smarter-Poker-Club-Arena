@@ -26,7 +26,6 @@ import {
 } from './services/TournamentRecurringService.js';
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
-import { AutoRebuyService } from './services/AutoRebuyService.js';
 import { DealRateVerifier } from './services/DealRateVerifier.js';
 import {
   renewLeadership,
@@ -190,7 +189,6 @@ export class GameServer {
   // hardcoded recurring blocks, acting only on rows written into the database.
   private scheduledTournaments = new ScheduledTournamentService();
   private lifecycle = new HorseLifecycleManager();
-  private autoRebuy = new AutoRebuyService();
 
   /**
    * Liveness the engine cannot fake — see services/DealRateVerifier.ts.
@@ -388,7 +386,6 @@ export class GameServer {
       this.lifecycle.start();
 
       // Step 5: Start server-side auto-rebuy wallet funder
-      this.autoRebuy.start();
 
       // Step 5a: the only liveness check that does not ask this process
       // whether it is alive. See services/DealRateVerifier.ts.
@@ -478,7 +475,6 @@ export class GameServer {
     this.tournamentRecurring.stop();
     this.scheduledTournaments.stop();
     this.lifecycle.stop();
-    this.autoRebuy.stop();
     this.dealRateVerifier.stop();
     this.rakebackSettler.stop();
     if (this.breakTimer) {
@@ -2167,7 +2163,7 @@ export class GameServer {
         const { data: registering, error: registeringErr } = await supabase
           .from('tournaments')
           .select(
-            'id, name, start_time, current_players, min_players, max_players, variant, tournament_type, buy_in_amount, buy_in_fee, guaranteed_prize'
+            'id, name, start_time, current_players, min_players, max_players, variant, tournament_type, buy_in_amount, buy_in_fee, guaranteed_prize, prize_pool'
           )
           .eq('status', 'REGISTERING');
         if (registeringErr) {
@@ -2367,6 +2363,13 @@ export class GameServer {
                 maxPlayers: tournament.max_players ?? 0,
                 variant: String(tournament.variant ?? ''),
                 currentPlayers: tournament.current_players ?? 0,
+                /* A GUARANTEED event ramps to whatever covers it, not to the
+                   default 24. These three columns were already being selected
+                   here and simply not used. buy_in_amount is the PRIZE side:
+                   the fee is rake and never reaches the pool. */
+                guaranteedPrize: Number(tournament.guaranteed_prize) || 0,
+                prizePool: Number((tournament as { prize_pool?: unknown }).prize_pool) || 0,
+                buyInPrizeShare: Number(tournament.buy_in_amount) || 0,
               });
               if (rampTarget > 0) {
                 this.lastMttRampAt.set(tournament.id, now);

@@ -300,6 +300,35 @@
   margin: 0 auto;
 }
 
+/* ═══ THE THREE BUTTONS STAND DOWN WHILE THE SLIDER IS OPEN ════════════════
+   Dan 2026-08-26: "the 3 buttons on the bottom of the action tab need to
+   DISAPPEAR when you click Raise. Only the new action bar with the slider
+   should be there."
+
+   This reverses his 2026-08-25 item 5, which asked for the opposite (the row
+   staying put while the overlay floats above it). Latest instruction wins.
+
+   HIDDEN, NOT REMOVED, and the distinction is load-bearing. `--sp-action-h`
+   is MEASURED from this panel's real height by a ResizeObserver in
+   TablePage, and every other stylesheet reserves felt against it. `display:
+   none` would shrink the panel mid-raise, the reserve would shrink with it,
+   and the whole table would resize and reflow underneath the player while
+   they are dragging a bet — the one moment nothing on screen should move.
+   `visibility: hidden` keeps the box exactly as tall as it was, so the felt
+   does not budge and the slider stays where the thumb already is.
+
+   `pointer-events: none` matters too: an invisible button that still takes
+   taps is worse than a visible one. The overlay's own Back button remains
+   the way out, so nothing depends on tapping through this row.
+
+   The five things the 2026-08-25 note lists as depending on the row still
+   work: it is in the DOM, it still has its measured height, `aria-expanded`
+   still reports honestly, and the close branch is reachable via Back. */
+.action-panel--raise .action-row {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .action-panel .action-btn {
   flex: 1;
   display: flex;
@@ -378,7 +407,7 @@
 /* ─── FOLD (Red) ──────────────────────────────────────────── */
 /* ─── FOLD ─────────────────────────────────────────────────── */
 .action-panel .action-btn--fold {
-  background: linear-gradient(180deg, #1587F8 0%, #0078FF 40%, #003A9E 100%);
+  background: linear-gradient(180deg, #1587f8 0%, #0078ff 40%, #003a9e 100%);
   box-shadow:
     0 4px 0 #002070,
     0 6px 20px rgba(21, 135, 248, 0.35),
@@ -397,7 +426,7 @@
 
 /* ─── CHECK ────────────────────────────────────────────────── */
 .action-panel .action-btn--check {
-  background: linear-gradient(180deg, #1587F8 0%, #0078FF 40%, #003A9E 100%);
+  background: linear-gradient(180deg, #1587f8 0%, #0078ff 40%, #003a9e 100%);
   box-shadow:
     0 4px 0 #002070,
     0 6px 20px rgba(21, 135, 248, 0.35),
@@ -416,7 +445,7 @@
 
 /* ─── CALL ─────────────────────────────────────────────────── */
 .action-panel .action-btn--call {
-  background: linear-gradient(180deg, #1587F8 0%, #0078FF 40%, #003A9E 100%);
+  background: linear-gradient(180deg, #1587f8 0%, #0078ff 40%, #003a9e 100%);
   box-shadow:
     0 4px 0 #002070,
     0 6px 20px rgba(21, 135, 248, 0.35),
@@ -435,7 +464,7 @@
 
 /* ─── RAISE ────────────────────────────────────────────────── */
 .action-panel .action-btn--raise {
-  background: linear-gradient(180deg, #1587F8 0%, #0078FF 40%, #003A9E 100%);
+  background: linear-gradient(180deg, #1587f8 0%, #0078ff 40%, #003a9e 100%);
   box-shadow:
     0 4px 0 #002070,
     0 6px 20px rgba(21, 135, 248, 0.35),
@@ -467,7 +496,7 @@
 
 /* ─── ALL-IN — The big play ────────────────────────────────── */
 .action-panel .action-btn--allin {
-  background: linear-gradient(180deg, #1587F8 0%, #0078FF 40%, #003A9E 100%);
+  background: linear-gradient(180deg, #1587f8 0%, #0078ff 40%, #003a9e 100%);
   box-shadow:
     0 4px 0 #002070,
     0 6px 20px rgba(21, 135, 248, 0.4),
@@ -502,7 +531,6 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
 }
-
 
 /* ═══════════════════════════════════════════════════════════════
    RAISE MODE
@@ -1000,10 +1028,10 @@
   padding: 0 2px;
   white-space: nowrap;
   height: 44px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(21, 135, 248, 0.22) 0%, rgba(0, 58, 158, 0.22) 100%);
+  border: 1px solid rgba(21, 135, 248, 0.35);
   border-radius: 10px;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.95);
   font-size: 0.8125rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -1019,20 +1047,20 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, transparent 50%);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, transparent 50%);
   pointer-events: none;
 }
 
 .raise-preset:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: linear-gradient(180deg, rgba(21, 135, 248, 0.45) 0%, rgba(0, 58, 158, 0.45) 100%);
+  border-color: rgba(21, 135, 248, 0.65);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 12px rgba(21, 135, 248, 0.3);
 }
 
 .raise-preset:active:not(:disabled) {
   transform: scale(0.95) translateY(0);
-  background: rgba(255, 255, 255, 0.16);
+  background: linear-gradient(180deg, rgba(21, 135, 248, 0.55) 0%, rgba(0, 58, 158, 0.55) 100%);
 }
 
 .raise-preset:disabled {
@@ -1041,8 +1069,7 @@
 }
 
 .raise-preset--allin {
-  /* Dan: "CHANGE THE PURPLE ALL IN TO RED". Purple belonged to no part of the
-     Smarter.Poker palette; red is what every other all-in affordance uses. */
+  /* All-In keeps a red tint so it visually reads as the most dangerous action */
   background: linear-gradient(180deg, rgba(239, 68, 68, 0.28) 0%, rgba(185, 28, 28, 0.28) 100%);
   border-color: rgba(239, 68, 68, 0.5);
   color: #fca5a5;

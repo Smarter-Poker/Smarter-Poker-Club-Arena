@@ -401,6 +401,47 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * If between hands, mark seat as left immediately.
    */
   public leaveTable(userId: string): { success: boolean; error?: string; immediate: boolean } {
+    // ═══════════════════════════════════════════════════════════════════════
+    // NOBODY LEAVES WHILE THEY ARE ALL-IN. CASH OR TOURNAMENT.
+    //
+    // Dan 2026-08-26, binding: "in cash games or tournaments, a player can
+    // never leave the table while they are all in. they must wait for the hand
+    // to be finished."
+    //
+    // This is FIRST, before the roster lookup and before the cash/tournament
+    // split, because `leaveTable` is the single chokepoint every real departure
+    // goes through: HTTP /leave, the admin kick, and the horse rotator. One
+    // refusal here closes all three for both table types.
+    //
+    // What it used to do instead, on both branches:
+    //
+    //     if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in)
+    //
+    // -- it read is_all_in only to SKIP THE AUTO-FOLD, and then carried on
+    // leaving. So an all-in player was marked sitting_out in a live pot and the
+    // client navigated them away mid-runout, off the hand they still had every
+    // chip in.
+    //
+    // `is_all_in` is engine memory, not a table_seats column, so the check has
+    // to live here. It is set in HandController the moment a stack reaches zero
+    // and is only cleared when the next hand builds a fresh player array, which
+    // is exactly the window this rule is about.
+    //
+    // A folded player is free to go: their chips are no longer in the pot.
+    // ═══════════════════════════════════════════════════════════════════════
+    const liveHand = this.handController?.getState();
+    const liveSelf = liveHand?.players.find((p) => p.user_id === userId);
+    if (liveSelf?.is_all_in && !liveSelf.is_folded) {
+      console.log(
+        `[ServerTableEngine:${this.tableId}] refusing leave for ${userId} — all-in in a live hand`
+      );
+      return {
+        success: false,
+        error: 'You Are All In. You Cannot Leave Until The Hand Is Finished.',
+        immediate: false,
+      };
+    }
+
     const player = this.seatedPlayers.find((p) => p.user_id === userId);
     if (!player) {
       // Dan 2026-08-20 (leave-stuck fix): `seatedPlayers` is the HAND roster,
@@ -565,7 +606,15 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           })
           .catch((err) => {
             console.warn(`[ServerTableEngine:${this.tableId}] atomicCashout on leave failed:`, err);
-            markSeatAsLeft(this.tableId, userId, player.seat_number);
+            // markSeatAsLeft is async. Called bare, a rejection on this path -
+            // the last-resort fallback that only runs because the cash-out
+            // ALREADY failed - was an unhandled promise rejection nobody saw.
+            void markSeatAsLeft(this.tableId, userId, player.seat_number).catch((mErr) => {
+              console.error(
+                `[ServerTableEngine:${this.tableId}] markSeatAsLeft fallback ALSO failed for ${userId} - seat may still be occupied:`,
+                mErr
+              );
+            });
             this.disconnectEngine.unregisterPlayer(this.tableId, userId);
             this.timeBankEngine.removePlayer(this.tableId, userId);
             this.straddleEngine.removePlayer(this.tableId, userId);
@@ -644,20 +693,21 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * The player cannot play until the BB position rotates to their seat.
    */
   public registerWaitForBB(userId: string): void {
-    // Dan 2026-08-25: every cash new-joiner is registered now, whatever
-    // `wait_for_big_blind` says.
+    // Dan 2026-08-26, binding: "Every single player needs to either wait for
+    // the BB or post when entering a cash game... no free hands or coming in
+    // behind the blinds."
     //
-    // The flag used to mean "make this player wait for the big blind before
-    // they can play", and turning it off skipped this set entirely. Since entry
-    // became free, this set no longer gates a WAIT — a joiner is released on the
-    // very next loop tick at no cost. All it still gates are the two positional
-    // hold-outs, and one of those enforces a BINDING rule: "CASH GAME PLAYERS
-    // CAN NEVER BE DEALT INTO THE SMALL BLIND."
+    // So this set means what its name says again. A player registered here is
+    // NOT dealt in until either the big blind reaches their seat or they call
+    // POST /post-bb and pay it. Between 2026-08-25 and 2026-08-26 it meant
+    // almost nothing - the dealing loop released every waiter on the next tick,
+    // free - and that is the behaviour being reversed.
     //
-    // With the old gate, a host who set wait_for_big_blind = false skipped
-    // registration, which skipped the hold-out check, which dealt a brand-new
-    // player straight into the small blind on their first hand. A table setting
-    // must not be able to switch off a house rule, so the rule wins.
+    // EVERY cash new-joiner is registered, whatever `wait_for_big_blind` says.
+    // The flag used to gate this call, so a host who set it false skipped
+    // registration entirely, which skipped the wait AND the hold-out that
+    // enforces "CASH GAME PLAYERS CAN NEVER BE DEALT INTO THE SMALL BLIND". A
+    // table setting must not be able to switch off a house rule.
     if (!this.isTournamentTable()) {
       this.waitingForBB.add(userId);
     }
@@ -666,41 +716,44 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   /**
    * Bible V8 §4.2: Player opts to "Post BB" to enter immediately.
    *
-   * Dan 2026-08-25: THIS NO LONGER HAS A CALLER IN THE PRODUCT, deliberately.
-   * Sitting down is free and a new joiner is dealt in on the next loop tick, so
-   * the only players left in `waitingForBB` are the two being held out for one
-   * hand for positional reasons — and paying a live big blind to skip either is
-   * paying for something that is one hand away and free. Both are refused
-   * below. The endpoint and the bbOnlyPosts path it feeds stay for the fuzzer
-   * and for any future opt-in that has a real wait to skip.
+   * Dan 2026-08-26, binding: a cash entrant either waits for the big blind or
+   * posts. This is the POST half, and it is a real product path again - the
+   * overlay on TablePage offers it. It bills a LIVE BIG BLIND ONLY, via
+   * postingBBToEnter -> bbOnlyPosts. No dead small blind: that is owed by a
+   * player returning from sit-out who MISSED blinds, which is a different debt
+   * and a different set (returningFromSitout).
+   *
+   * Two refusals stay, and neither may be bought:
+   *   - the seat the small blind is about to reach ("CASH GAME PLAYERS CAN
+   *     NEVER BE DEALT INTO THE SMALL BLIND")
+   *   - the seat the button is about to reach ("NEW PLAYERS NEVER GET THE
+   *     BUTTON WHEN SITTING DOWN")
+   * Posting is a way past the WAIT, not past a house rule.
    */
   public postBBToEnter(userId: string): { success: boolean; error?: string } {
     if (!this.waitingForBB.has(userId)) {
       return { success: false, error: 'Player is not waiting for BB' };
     }
-    // Dan 2026-08-25: this endpoint may NOT buy its way past the small-blind
-    // rule. Since entry became free, the only reason a player is still waiting
-    // is one of the two positional hold-outs — so this call, which used to be a
-    // fair way to skip a long natural-BB wait, had become the one way to pay a
-    // live big blind for the privilege of being dealt into the small blind,
-    // which "CASH GAME PLAYERS CAN NEVER BE DEALT INTO THE SMALL BLIND"
-    // forbids outright. The wait it is offering to skip is now one hand, free.
+    // This endpoint may NOT buy its way past either positional rule. Posting
+    // skips the WAIT; it does not skip "CASH GAME PLAYERS CAN NEVER BE DEALT
+    // INTO THE SMALL BLIND" or "NEW PLAYERS NEVER GET THE BUTTON WHEN SITTING
+    // DOWN". A player refused here is not being charged and not being dealt in:
+    // they stay in waitingForBB and the big blind will reach them shortly, at
+    // which point they post it as their own blind.
     const seat = this.seatedPlayers.find((p) => p.user_id === userId);
     if (seat && !this.isTournamentTable()) {
       const sbSeatIndex = this.getSBSeatIndex();
       const buttonSeatIndex = this.getButtonSeatIndex();
-      // BOTH hold-outs, not just the small blind. A player held out because they
-      // took the seat the button is about to reach was still able to call this
-      // and pay a live big blind for a hand the dealing loop would have dealt
-      // them free on the very next tick — the same asymmetry the SB guard
-      // exists to prevent, left open on the other half of the rule.
+      // BOTH hold-outs, not just the small blind. Otherwise a player could post
+      // their way into the button on their first hand, which is the rule the
+      // button hold-out exists to enforce.
       if (
         (sbSeatIndex > 0 && seat.seat_number === sbSeatIndex) ||
         (buttonSeatIndex > 0 && seat.seat_number === buttonSeatIndex)
       ) {
         return {
           success: false,
-          error: 'You Will Be Dealt In Free Next Hand, The Button Has To Pass Your Seat First',
+          error: 'You Cannot Post From This Seat. The Button Has To Pass You First.',
         };
       }
     }

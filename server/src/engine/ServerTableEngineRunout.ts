@@ -478,27 +478,38 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       void this.broadcastAllInEquity(allInPlayers, board, pot);
     }
     const insuranceEnabled = this.insuranceEngine.isEnabled(this.tableId) && !doubleBoardHand;
+    // SEQUENCING 2026-08-26 (Dan's leader-seat recording): when BOTH features
+    // are on, the run-it-multi-times question comes FIRST and insurance
+    // engages only if the hand resolves to a single run ("THE INSURANCE PART
+    // PICKED UP ON THE TURN. AFTER THE RUN IT TWICE WAS DECLINED"). Per-hand
+    // exclusivity is preserved: a hand dealing extra boards never carries an
+    // insurance contract, and an insured hand always runs exactly once.
+    const ritFirst = this.runItTwiceEngine.isEnabled(this.tableId) && !doubleBoardHand;
 
-    if (insuranceEnabled && board.length < 5 && allInPlayers.length >= 2) {
-      // ═══════════════════════════════════════════════════════════════════════
-      // INSURANCE TABLE: Per-street pause flow
-      // Deal one street at a time, pause for insurance offers, then deal next.
-      // Each street recalculates equity and re-offers to eligible players.
-      // ═══════════════════════════════════════════════════════════════════════
+    // Shared entry into the per-street insurance flow (offer on the standing
+    // board, then deal). Used directly on insurance-only tables and as the
+    // single-run continuation on tables that ask the RIT question first.
+    const startInsuranceFlow = () => {
       const offerPlayers = allInPlayers.map((p) => ({
         playerId: p.user_id,
         holeCards: p.cards || [],
       }));
-
       // runInsurancePerStreetFlow has no try/catch of its own and ends in
       // finalizeRunout()/continueRunout(). An unhandled rejection therefore
       // left the hand parked forever with no clock of any kind, because
       // HandController.advanceStage returns without setting currentPlayerSeat
       // while it waits for this callback to come back.
-      this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot).catch((err) => {
+      this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot, board).catch((err) => {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.insurance_flow_rejected');
         this.safeContinueRunout('insurance_flow_rejected');
       });
+    };
+
+    if (!ritFirst && insuranceEnabled && board.length < 5 && allInPlayers.length >= 2) {
+      // ═══════════════════════════════════════════════════════════════════════
+      // INSURANCE-ONLY TABLE: straight to the per-street pause flow.
+      // ═══════════════════════════════════════════════════════════════════════
+      startInsuranceFlow();
     } else {
       // ═══════════════════════════════════════════════════════════════════════
       // FIX 94: RIT (Run It Twice) offer — N-player support.
@@ -510,8 +521,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       // - RIT and Insurance are mutually exclusive (FIX 92).
       // - Multiple side pots are handled: each pot evaluated per board.
       // ═══════════════════════════════════════════════════════════════════════
-      const ritEnabled = this.runItTwiceEngine.isEnabled(this.tableId) && !doubleBoardHand;
-      if (ritEnabled && allInPlayers.length >= 2 && board.length < 5) {
+      if (ritFirst && allInPlayers.length >= 2 && board.length < 5) {
         // Determine the chooser: player with the BEST ACTUAL HAND right now
         const variant = this.tableInfo?.game_variant || 'nlh';
         // Review fix 2026-08-25: isOmahaVariant, not startsWith('plo') —
@@ -663,9 +673,16 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
             // ═══════════════════════════════════════════════════════════════
             this.dealAndResolveRIT(allInPlayers);
           } else if (this.handController) {
-            // Declined or unanswered — normal single runout, paced (Dan item 16).
+            // Declined or unanswered — the hand runs ONCE.
             this.emitRitSingleRun('no_agreement');
-            void this.pacedAllInRunout(allInPlayers, pot);
+            // SEQUENCING 2026-08-26: on a single run, insurance now gets its
+            // turn (the reference's exact order). No insurance on this table:
+            // normal paced runout (Dan item 16).
+            if (insuranceEnabled && allInPlayers.length >= 2) {
+              startInsuranceFlow();
+            } else {
+              void this.pacedAllInRunout(allInPlayers, pot);
+            }
           }
         });
       } else {
@@ -1478,30 +1495,50 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   protected async runInsurancePerStreetFlow(
     offerPlayers: Array<{ playerId: string; holeCards: import('../types.js').Card[] }>,
     allInPlayers: import('../types.js').SeatPlayer[],
-    pot: number
+    pot: number,
+    // OFFER-BEFORE-DEAL 2026-08-26: the board as it stands RIGHT NOW. The
+    // flow used to deal the next street first and only then offer - so a
+    // turn all-in dealt the river immediately and never offered river
+    // insurance at all, and a flop all-in was never offered two-street
+    // coverage. The reference offers on the STANDING board (all-in on the
+    // flop -> RIT declined -> turn dealt -> offer with the river to come),
+    // which this order now reproduces exactly: offer on the current board,
+    // wait for the decision, then deal.
+    board: import('../types.js').Card[]
   ): Promise<void> {
     if (!this.handController) return;
 
-    // ANIMATION AUDIT 2026-08-19: give the CURRENT board + percentages a
-    // readable beat before the next card lands. The insurance flow used to
-    // rely entirely on the 15s offer window for pacing — but when no offer is
-    // created (tied hands) or the horse leader answers in ~1s, streets fired
-    // back-to-back with no gap at all.
-    await this.sleep(this.allInStreetPauseMs);
-    if (!this.handController) return;
+    const offerTimeout = 25; // Matches InsuranceEngine DEFAULT_CONFIG.offerTimeoutSeconds
+    const result = { board, complete: board.length >= 5 };
 
-    // Deal the next street
-    const result = this.handController.dealNextStreet();
-    this.broadcastCurrentState();
+    // Continuation once this street's offer window resolves: if anyone can
+    // still be offered on a later street the pause survives; otherwise the
+    // rest of the board runs out paced.
+    const continueAfterResponses = () => {
+      if (!this.insurancePauseStillLive(offerPlayers)) {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] All players declined insurance for hand — switching to paced runout`
+        );
+        if (this.handController) {
+          void this.pacedAllInRunout(allInPlayers, pot);
+        }
+        return;
+      }
+      void this.dealNextInsuranceStreet(offerPlayers, allInPlayers, pot);
+    };
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // RE-BROADCAST EQUITY: Update on-screen equity percentages per street.
-    // All players and observers see updated equity as each card is dealt.
-    // Uses the original allInPlayers (SeatPlayer[]) for proper username/seat data.
-    // ═══════════════════════════════════════════════════════════════════════
-    await this.broadcastAllInEquity(allInPlayers, result.board, pot);
-
-    const offerTimeout = 15; // Matches InsuranceEngine DEFAULT_CONFIG.offerTimeoutSeconds
+    // Preflop all-in: no offer before the flop — deal up to the flop first.
+    if (board.length < 3) {
+      continueAfterResponses();
+      return;
+    }
+    if (result.complete) {
+      // Board already full — nothing left to insure; finish the hand.
+      this.waitForInsuranceResponses(() => {
+        if (this.handController) this.handController.finalizeRunout();
+      });
+      return;
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // FIX 103: Insurance is ONLY offered to the player with the BEST HAND.
@@ -1645,55 +1682,49 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       }
     }
 
-    // If all 5 cards are dealt, finalize after insurance responses
+    // The offer (or the no-offer beat on a tie) stands on the CURRENT board.
+    // Once every offer resolves — accept, final decline, or timeout — the
+    // continuation checks eligibility (FIX 88 / Dan: all-declined voids the
+    // pause) and deals the next street.
+    this.waitForInsuranceResponses(continueAfterResponses);
+  }
+
+  /**
+   * OFFER-BEFORE-DEAL 2026-08-26: the dealing half of the per-street flow.
+   * A readable beat, one street dealt, equity re-broadcast — then either the
+   * hand finalizes (river landed) or the flow re-enters on the new board to
+   * evaluate the fresh leader and offer again.
+   */
+  protected async dealNextInsuranceStreet(
+    offerPlayers: Array<{ playerId: string; holeCards: import('../types.js').Card[] }>,
+    allInPlayers: import('../types.js').SeatPlayer[],
+    pot: number
+  ): Promise<void> {
+    // ANIMATION AUDIT 2026-08-19: give the CURRENT board + percentages a
+    // readable beat before the next card lands.
+    await this.sleep(this.allInStreetPauseMs);
+    if (!this.handController) return;
+
+    const result = this.handController.dealNextStreet();
+    this.broadcastCurrentState();
+
+    // RE-BROADCAST EQUITY: all players and observers see updated percentages
+    // as each card is dealt.
+    await this.broadcastAllInEquity(allInPlayers, result.board, pot);
+
     if (result.complete) {
-      // Wait for any pending offers then finalize
-      this.waitForInsuranceResponses(() => {
-        if (this.handController) {
-          this.handController.finalizeRunout();
-        }
-      });
-    } else {
-      // More streets to come — wait for responses, then check eligibility
-      this.waitForInsuranceResponses(() => {
-        // ═══════════════════════════════════════════════════════════════════
-        // FIX 88: Check if per-street pause should continue or revert to
-        // instant runout. If ALL players have declined for the entire hand,
-        // the per-street pause is VOID — run out remaining streets instantly.
-        // If at least one player hasn't declined for hand, continue pausing.
-        //
-        // Dan's rule: "THIS IS VOID IF THE PLAYER DECLINES INSURANCE FOR
-        // HAND OPTION. IT WILL RUN OUT NORMAL, UNLESS THAT PLAYER IS NOT
-        // 'BEHIND' — INSURANCE WILL BE OFFERED TO THE PLAYER THAT IS
-        // 'AHEAD' IF ANY STREETS ARE STILL PENDING."
-        // ═══════════════════════════════════════════════════════════════════
-        if (!this.insurancePauseStillLive(offerPlayers)) {
-          // ALL players declined for hand — per-street pause is void.
-          // Deal remaining streets instantly and finalize.
-          console.log(
-            `[ServerTableEngine:${this.tableId}] All players declined insurance for hand — switching to paced runout`
-          );
-          // ANIMATION AUDIT 2026-08-19: was continueRunout() — the INSTANT
-          // synchronous loop. Declining insurance must not also skip the
-          // watchable street-by-street runout with equity updates; the paced
-          // path finishes with safeContinueRunout itself.
-          if (this.handController) {
-            void this.pacedAllInRunout(allInPlayers, pot);
-          }
-        } else {
-          // At least one player eligible — continue per-street pause
-          // runInsurancePerStreetFlow has no try/catch of its own and ends in
-          // finalizeRunout()/continueRunout(). An unhandled rejection therefore
-          // left the hand parked forever with no clock of any kind, because
-          // HandController.advanceStage returns without setting currentPlayerSeat
-          // while it waits for this callback to come back.
-          this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot).catch((err) => {
-            reportError(err, 'ServerTableEngine.' + this.tableId + '.insurance_flow_rejected');
-            this.safeContinueRunout('insurance_flow_rejected');
-          });
-        }
-      });
+      // River is down — settle (insurance included) via the normal finalize.
+      this.handController.finalizeRunout();
+      return;
     }
+
+    // More cards to come — re-enter the flow on the new board (fresh leader
+    // evaluation, fresh offer). The catch mirrors handleAllInRunout's: an
+    // unhandled rejection must never leave the hand parked without a clock.
+    this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot, result.board).catch((err) => {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.insurance_flow_rejected');
+      this.safeContinueRunout('insurance_flow_rejected');
+    });
   }
 
   /**
@@ -1780,6 +1811,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         fullInsuredAmount: o.fullInsuredAmount,
         insuredAmount: o.insuredAmount,
         coveragePercent: o.coveragePercent,
+        // REFERENCE PARITY 2026-08-26: the dialog's Break Even preset returns
+        // exactly the leader's committed chips, and Rate is the payout
+        // multiple on the fee - both derived from these.
+        atRisk: o.atRisk,
+        rate: o.fullPremium > 0 ? Math.round((o.fullInsuredAmount / o.fullPremium) * 10) / 10 : 0,
         timeoutSeconds,
       })),
     });

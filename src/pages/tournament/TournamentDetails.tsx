@@ -56,6 +56,8 @@ import EntriesTab from '../../components/tournament/details/EntriesTab';
 import UnionsTab from '../../components/tournament/details/UnionsTab';
 import TablesTab from '../../components/tournament/details/TablesTab';
 import RewardsTab from '../../components/tournament/details/RewardsTab';
+import SatellitesTab from '../../components/tournament/details/SatellitesTab';
+import { chipsCompact } from '../../components/tournament/details/types';
 import type {
   NormalisedBlindLevel,
   TabId,
@@ -365,6 +367,7 @@ export default function TournamentDetails({
               registered_at?: string | null;
               rebuys?: number | null;
               add_on?: boolean | null;
+              is_satellite_qualifier?: boolean | null;
             };
             setEntries((prev) => {
               /**
@@ -405,6 +408,7 @@ export default function TournamentDetails({
                   created_at: newPlayer.registered_at ?? null,
                   rebuys: Number(newPlayer.rebuys) || 0,
                   add_ons: newPlayer.add_on ? 1 : 0,
+                  is_satellite_qualifier: Boolean(newPlayer.is_satellite_qualifier),
                 },
               ];
             });
@@ -422,6 +426,7 @@ export default function TournamentDetails({
               table_id?: string | null;
               rebuys?: number | null;
               add_on?: boolean | null;
+              is_satellite_qualifier?: boolean | null;
             };
             setEntries((prev) =>
               prev.map((e) =>
@@ -437,6 +442,11 @@ export default function TournamentDetails({
                         updatedPlayer.rebuys !== undefined && updatedPlayer.rebuys !== null
                           ? Number(updatedPlayer.rebuys) || 0
                           : e.rebuys,
+                      is_satellite_qualifier:
+                        updatedPlayer.is_satellite_qualifier !== undefined &&
+                        updatedPlayer.is_satellite_qualifier !== null
+                          ? Boolean(updatedPlayer.is_satellite_qualifier)
+                          : e.is_satellite_qualifier,
                       add_ons:
                         updatedPlayer.add_on !== undefined && updatedPlayer.add_on !== null
                           ? updatedPlayer.add_on
@@ -663,7 +673,7 @@ export default function TournamentDetails({
         const { data: playersData, error } = await supabase
           .from('tournament_players')
           .select(
-            'id, user_id, username, chips, status, position, table_id, registered_at, rebuys, add_on, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
+            'id, user_id, username, chips, status, position, table_id, registered_at, rebuys, add_on, is_satellite_qualifier, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
           )
           .eq('tournament_id', data.id)
           .order('registered_at', { ascending: true });
@@ -702,6 +712,7 @@ export default function TournamentDetails({
                 created_at: (e.registered_at as string | null) ?? null,
                 rebuys: Number(e.rebuys) || 0,
                 add_ons: e.add_on ? 1 : 0,
+                is_satellite_qualifier: Boolean(e.is_satellite_qualifier),
               };
             })
           );
@@ -1123,7 +1134,13 @@ export default function TournamentDetails({
             is tabbable, Left/Right move (wrapping), Home/End jump, and each
             tab owns the panel by id. */}
         <div className="details-tabs" role="tablist" aria-label="Tournament sections">
-          {TABS.map((tab, i) => (
+          {TABS.filter((tab) => {
+            if (tab.id === 'satellites') {
+              const isMtt = tournament.tournament_type === 'mtt' || tournament.type === 'mtt';
+              return isMtt && tournament.buy_in_amount >= 50;
+            }
+            return true;
+          }).map((tab, i, visibleTabs) => (
             <button
               key={tab.id}
               id={`tl-tab-${tab.id}`}
@@ -1138,7 +1155,7 @@ export default function TournamentDetails({
               className={`tab ${activeTab === tab.id ? 'active' : ''}`}
               onClick={() => setActiveTab(tab.id)}
               onKeyDown={(e) => {
-                const last = TABS.length - 1;
+                const last = visibleTabs.length - 1;
                 let next = -1;
                 if (e.key === 'ArrowRight') next = i === last ? 0 : i + 1;
                 else if (e.key === 'ArrowLeft') next = i === 0 ? last : i - 1;
@@ -1146,7 +1163,7 @@ export default function TournamentDetails({
                 else if (e.key === 'End') next = last;
                 if (next === -1) return;
                 e.preventDefault();
-                setActiveTab(TABS[next].id);
+                setActiveTab(visibleTabs[next].id);
                 tabRefs.current[next]?.focus();
               }}
             >
@@ -1163,7 +1180,10 @@ export default function TournamentDetails({
             about 120px of the one screen this page is supposed to fit in. */}
         <div className="details-title">
           <div className="tournament-title">
-            <h2>{tournament.name}</h2>
+            <h2>
+              {tournament.guaranteed_prize && tournament.guaranteed_prize > 0 ? `${chipsCompact(tournament.guaranteed_prize)} GTD ` : ''}
+              {tournament.name}
+            </h2>
             <span className="tournament-id">ID:{tournament.id.slice(0, 8)}</span>
             <button
               className="qr-btn"
@@ -1207,6 +1227,7 @@ export default function TournamentDetails({
           {activeTab === 'unions' && <UnionsTab {...tabProps} />}
           {activeTab === 'tables' && <TablesTab {...tabProps} />}
           {activeTab === 'rewards' && <RewardsTab {...tabProps} />}
+          {activeTab === 'satellites' && <SatellitesTab {...tabProps} />}
         </div>
 
         {/* Footer Actions. A flex child of the shell, NOT `position: fixed`:

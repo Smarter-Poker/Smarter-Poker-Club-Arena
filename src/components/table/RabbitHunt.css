@@ -2,65 +2,81 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * RABBIT HUNT — Styles
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * POKERBROS PARITY 2026-08-26 — rebuilt from a frame-by-frame pass over the
+ * reference recording (RABBIT HUNT.MOV):
+ *   - The reference button is a COMPACT ICON at the bottom-LEFT of the table,
+ *     sitting above the toolbar, not a labelled pill in the middle of the felt.
+ *     It FADES IN (~250ms) once the pot has shipped, waits through the
+ *     inter-hand pause, and vanishes on the tap.
+ *   - The reveal itself no longer lives in this file at all: the cards flip on
+ *     the board. See CommunityCards.css (ccRabbitFlip) for the reveal timing,
+ *     which is where the old cardReveal/`.rabbit-hunt__reveal` block went. That
+ *     block was dead here — the component stopped emitting those classes when
+ *     the cards moved to the CommunityCards board.
  */
 
-/* The panel positions ITSELF. It renders from TableModalsLayer, which returns a
-   bare fragment mounted as a direct child of `.table-page` — a
-   `position: fixed; inset: 0; display: flex; flex-direction: column;
-   height: 100dvh; overflow: hidden` column. As an unpositioned flex item it was
-   appended below the felt, inside a clipped viewport-height box, so on a phone
-   the reveal could sit entirely out of view: the player paid and saw nothing.
-   Every other overlay in that layer is fixed; this one was not. */
+/* Dan 2026-08-26: "THAT ALSO THE EXACT POSITION THAT THE RABBIT HUNT BUTTON
+   SHOULD APPEAR WHEN THE HAND IS OVER" — the position being the bottom-left HUD
+   slot the time bank tile occupies while the hero is on the clock. The two are
+   mutually exclusive by construction (one needs a hand in progress, the other
+   needs no hand), so one slot holds both.
+
+   So this no longer positions itself. It used to be `position: fixed; left:
+   12px; bottom: 22vh` with a 480px override — its own coordinate system, chosen
+   to approximate the bottom-left corner, and drifting from the HUD's real
+   bottom line (`--sp-hud-line`) whenever the action panel changed height. It
+   renders inside `.hud-ul-column--stack` now and takes its place from the stack,
+   the same way the tile and the previous-hand card do.
+
+   `pointer-events: auto` stays and is load-bearing: `.table-hud` sets
+   `pointer-events: none` so the felt underneath stays touchable, and every
+   interactive child has to opt back in. */
 .rabbit-hunt {
-  position: fixed;
-  left: 50%;
-  bottom: 22vh;
-  transform: translateX(-50%);
-  z-index: 900;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 12px;
+  align-items: flex-start;
   pointer-events: auto;
 }
 
-@media (max-width: 480px) {
-  .rabbit-hunt {
-    /* Clear of the action buttons on a 375px phone. */
-    bottom: 28vh;
-  }
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
-   BUTTON
+   BUTTON — compact icon, reference-style
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .rabbit-hunt__button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  font-size: 0.875rem;
-  font-weight: 600;
-  background: linear-gradient(135deg, rgba(255, 184, 0, 0.2) 0%, rgba(255, 138, 0, 0.2) 100%);
-  border: 1px solid rgba(255, 184, 0, 0.4);
-  border-radius: 20px;
-  color: #ffb800;
+  position: relative;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  background: transparent;
+  border: none;
   cursor: pointer;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  /* The reference button fades in over ~250ms with a slight grow — it does
+     not pop. `backwards` holds the invisible first frame if paint lags. */
+  animation: rabbitBtnIn 0.25s ease backwards;
+  transition: transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+@keyframes rabbitBtnIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .rabbit-hunt__button:hover:not(:disabled) {
-  background: linear-gradient(135deg, rgba(255, 184, 0, 0.3) 0%, rgba(255, 138, 0, 0.3) 100%);
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 8px 16px rgba(255, 184, 0, 0.4);
+  transform: translateY(-2px) scale(1.05);
+}
+
+.rabbit-hunt__button:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .rabbit-hunt__button:disabled {
-  opacity: 0.6;
   cursor: not-allowed;
 }
 
@@ -79,145 +95,93 @@
   }
 }
 
-.rabbit-hunt__icon {
-  font-size: 1.25rem;
-}
-
+/* The artwork IS the button — the asset is already a rounded-square badge
+   with the feature's name on it, so no chrome around it. */
 .rabbit-hunt__icon-img {
-  width: 22px;
-  height: 22px;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
-  flex: 0 0 auto;
+  border-radius: 14px;
   user-select: none;
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.5),
+    0 1px 3px rgba(0, 0, 0, 0.4);
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
 }
 
-.rabbit-hunt__label {
+/* Hunts-left count, sitting in the artwork's empty lower band — styled to the
+   icon's blue-neon metal rather than the gold of the price pill, so the two
+   never read as the same number. */
+.rabbit-hunt__remaining {
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
   white-space: nowrap;
+  color: #cfe4ff;
+  text-shadow:
+    0 0 6px rgba(64, 140, 255, 0.9),
+    0 1px 2px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
 }
 
+/* Corner price pill. The reference has no billing, we do — the price must be
+   on screen before the tap. */
 .rabbit-hunt__cost {
-  padding: 4px 8px;
-  font-size: 0.75rem;
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 22px;
+  padding: 2px 6px;
+  font-size: 0.7rem;
   font-weight: 700;
-  background: rgba(0, 0, 0, 0.3);
+  text-align: center;
+  color: #ffb800;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(255, 184, 0, 0.5);
   border-radius: 10px;
+  pointer-events: none;
 }
 
 /* Both of these classes were applied by the component and defined nowhere, so a
    VIP's "FREE" pill rendered identically to a paid "5" pill and the VIP button
    was indistinguishable from the standard one. */
 .rabbit-hunt__cost--free {
-  background: rgba(255, 215, 0, 0.18);
+  background: rgba(40, 26, 0, 0.85);
   color: #ffd700;
+  border-color: rgba(255, 215, 0, 0.6);
   letter-spacing: 0.04em;
 }
 
-.rabbit-hunt__button--vip {
-  border-color: rgba(255, 215, 0, 0.45);
-  box-shadow: 0 0 14px rgba(255, 215, 0, 0.18);
+.rabbit-hunt__button--vip .rabbit-hunt__icon-img {
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.5),
+    0 0 14px rgba(255, 215, 0, 0.25);
 }
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   REVEAL
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.rabbit-hunt__reveal {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 16px 20px;
-  background: linear-gradient(135deg, rgba(255, 184, 0, 0.1) 0%, rgba(255, 138, 0, 0.05) 100%);
-  border: 1px solid rgba(255, 184, 0, 0.2);
-  border-radius: 12px;
-  animation: rabbitFadeIn 0.3s ease;
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-@keyframes rabbitFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.rabbit-hunt__reveal-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #ffb800;
-}
-
-.rabbit-hunt__cards {
-  display: flex;
-  gap: 8px;
-}
-
-.rabbit-hunt__card {
-  width: 48px;
-  height: 64px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(180deg, #ffffff 0%, #f0f0f0 100%);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  /* `backwards` is load-bearing. The component sets an inline animationDelay to
-     stagger the cards; without a fill mode each card paints in its DEFAULT
-     state during its delay (opaque, unrotated) and then snaps back to the 0%
-     keyframe when the delay expires. So all five appeared at once, blinked out,
-     and re-animated. `backwards` holds the 0% frame through the delay. */
-  animation: cardReveal 0.5s ease backwards;
-}
-
-@keyframes cardReveal {
-  0% {
-    transform: rotateY(90deg) scale(0.8);
-    opacity: 0;
-  }
-
-  50% {
-    transform: rotateY(0deg) scale(1.05);
-  }
-
-  100% {
-    transform: rotateY(0deg) scale(1);
-    opacity: 1;
-  }
-}
-
-/* `.rabbit-hunt__rank` and `.rabbit-hunt__suit` removed 2026-08-25: the
-   component renders <CardImage> and has not emitted either class since. Their
-   responsive overrides went with them. */
-
-.rabbit-hunt__card--pending {
-  background: linear-gradient(180deg, #2d333b 0%, #1c2128 100%);
-  border: 1px dashed rgba(255, 255, 255, 0.2);
-  box-shadow: none;
-  animation: none;
-}
-
-.rabbit-hunt__pending-icon {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #6e7681;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   RESPONSIVE
-   ═══════════════════════════════════════════════════════════════════════════════ */
 
 @media (max-width: 480px) {
-  .rabbit-hunt__card {
-    width: 40px;
-    height: 56px;
+  .rabbit-hunt__button {
+    width: 54px;
+    height: 54px;
+  }
+
+  .rabbit-hunt__icon-img {
+    border-radius: 12px;
+  }
+
+  .rabbit-hunt__remaining {
+    font-size: 0.56rem;
+    bottom: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rabbit-hunt__button,
+  .rabbit-hunt__button--loading {
+    animation: none !important;
+    transition: none !important;
   }
 }

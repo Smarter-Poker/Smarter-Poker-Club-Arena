@@ -128,6 +128,9 @@ export interface TableModalsLayerProps {
     fourColorDeck: boolean;
     confirmAllIn: boolean;
     theme: string;
+    /* Added 2026-08-26. Its absence here is why the panel was fed a
+       hard-coded `true` and the toggle could never render as off. */
+    showBetSizePresets: boolean;
   };
   isSoundEnabled: boolean;
   sitOutNextHand: boolean;
@@ -287,6 +290,8 @@ export interface TableModalsLayerProps {
   showBuyInModal: boolean;
   selectedSeat: number | null;
   heroAvatarUrl: string;
+  /** Hero picked a new avatar from inside the settings panel. */
+  onAvatarChanged?: (url: string) => void;
   onCloseBuyInModal: () => void;
   onConfirmBuyIn: (amount: number, autoRebuy?: boolean) => Promise<void>;
 
@@ -343,6 +348,10 @@ export interface TableModalsLayerProps {
       animationSpeed: 'slow' | 'normal' | 'fast';
       fourColorDeck: boolean;
       showStackInBB: boolean;
+      /* Added 2026-08-26 — the toggle existed in the panel and its value had
+         nowhere to travel, so TablePage's handler could not have a branch for
+         it even if someone had written one. */
+      showBetSizePresets: boolean;
       confirmAllIn: boolean;
       sitOutNextHand: boolean;
       tableTheme: string;
@@ -548,6 +557,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     showBuyInModal,
     selectedSeat,
     heroAvatarUrl,
+    onAvatarChanged,
     onCloseBuyInModal,
     onConfirmBuyIn,
     // Rabbit Hunt
@@ -1196,19 +1206,37 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           soundVolume: userSettings.soundVolume,
           hapticEnabled: userSettings.isHapticEnabled,
           showPotOdds: userSettings.showPotOdds,
+          /* --animation-speed is a DURATION MULTIPLIER: bigger = slower
+             (utils/animationSpeed.ts, and `calc(0.4s * var(--animation-speed))`
+             throughout the stylesheets). This read-back had it INVERTED —
+             0.5 was shown as "slow" and 1.5 as "fast" — matching an equally
+             inverted write in TablePage. The pair was self-consistent and
+             backwards: picking "Slow" halved every duration, and /settings,
+             which maps it correctly, then displayed the opposite word for the
+             same stored value. Both ends corrected 2026-08-26. */
           animationSpeed:
-            userSettings.animationSpeed === 0.5
+            userSettings.animationSpeed >= 1.5
               ? 'slow'
-              : userSettings.animationSpeed === 1.5 || userSettings.animationSpeed === 2
+              : userSettings.animationSpeed <= 0.5
                 ? 'fast'
                 : 'normal',
           fourColorDeck: userSettings.fourColorDeck,
           showStackInBB: v8Settings.show_stack_in_bb,
-          showBetSizePresets: true,
+          /* Was a hard-coded `true`, so the toggle could never render as off
+             and flipping it changed nothing. It reads the stored setting now,
+             and TablePage's handler has a branch for it. */
+          showBetSizePresets: userSettings.showBetSizePresets,
           confirmAllIn: userSettings.confirmAllIn,
           sitOutNextHand,
           tableTheme: userSettings.theme,
         }}
+        /* The avatar row in this panel rendered a generated stand-in and told
+           nobody when the picture changed, because neither prop was passed.
+           Now it shows what the hero is actually wearing, and a change from
+           inside the panel repaints the felt through the same path the
+           gallery uses everywhere else. */
+        currentAvatarUrl={heroAvatarUrl}
+        onAvatarChanged={onAvatarChanged}
         onSettingsChange={onSettingsChange}
         userId={userId}
         userDiamonds={localDiamonds}

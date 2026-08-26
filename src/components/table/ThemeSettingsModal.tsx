@@ -570,7 +570,25 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
    */
   const handleSave = useCallback(
     async (overrideSelection?: Partial<ThemeSelection>) => {
-      if (!userId) return;
+      /* Dan 2026-08-26: "if a user changes their avatar, deck color, table,
+         background, button or anything else, it needs to change, save and
+         update in real time."
+
+         This used to be a bare `if (!userId) return;` — the single worst
+         shape a guard can have here. HamburgerMenu mounts this modal with
+         `userId={user?.id || ''}` (its own line 1532), so before auth
+         resolves every tile tap set local state, drew a tick, emitted
+         NOTHING and saved NOTHING, and said nothing about it. The player saw
+         their pick land and the felt never moved — indistinguishable from
+         the feature being broken.
+
+         Now it tells them, and it does not paint a tick it cannot honour.
+         The caller (`handleAssetSelect`) reverts its optimistic state on a
+         false return. */
+      if (!userId) {
+        toast.error('Please Sign In To Save Your Theme.');
+        return false;
+      }
       const previous = selectionRef.current;
       const currentToSave = { ...previous, ...(overrideSelection || {}) };
       setSaving(true);
@@ -595,13 +613,16 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           toast.success('Theme Applied');
           // No longer closing modal on auto-save
         }
+        setSaving(false);
+        return !error;
       } catch (err) {
         setSelection(previous);
         masterBus.emit('UI_THEME_CHANGED', { key: gameType, value: previous });
         toast.error('Could Not Save Your Theme. Please Try Again.');
         reportError(err, 'ThemeSettingsModal.Unexpected_save_error');
+        setSaving(false);
+        return false;
       }
-      setSaving(false);
     },
     [userId, gameType, toast]
   );
@@ -622,8 +643,15 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
         newSel = { [field]: assetId };
       }
 
+      /* Optimistic, then honest: if the save could not happen at all (no
+         signed-in user), put the tick back where it was rather than leaving
+         the player looking at a selection the server never received. A
+         FAILED write already restores `previous` inside handleSave. */
+      const before = selectionRef.current;
       setSelection((prev) => ({ ...prev, ...newSel }));
-      handleSave(newSel);
+      void handleSave(newSel).then((ok) => {
+        if (ok === false) setSelection(before);
+      });
     },
     [isVip, ownedCardBacks, handleSave]
   );

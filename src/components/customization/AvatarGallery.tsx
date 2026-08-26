@@ -350,6 +350,19 @@ export function AvatarGallery({
     setNotice('Finish your new avatar in the Hub window, then reopen this to pick it.');
   }, []);
 
+  /**
+   * 2026-08-26: this was a close button wearing a commit label.
+   *
+   * Avatars save on tile TAP (`handleSelect` -> `saveAvatar`), so by the time
+   * "Apply Avatar" is reachable the work is already done — and its handler
+   * was a bare `onClose()`. That is fine mechanically and dishonest in the
+   * UI: a player who taps a tile and then closes WITHOUT pressing the button
+   * has still changed their avatar, while the button implies the opposite
+   * (that nothing counts until you press it). The `disabled={unchanged}`
+   * state reinforces the lie by looking like a pending commit.
+   *
+   * It now says what it does. The save path is untouched.
+   */
   const handleApply = useCallback(() => {
     onClose();
   }, [onClose]);
@@ -701,7 +714,7 @@ export function AvatarGallery({
               onClick={handleApply}
               disabled={saving || unchanged}
             >
-              {saving ? 'Saving...' : 'Apply Avatar'}
+              {saving ? 'Saving...' : 'Done'}
             </button>
           )}
         </div>

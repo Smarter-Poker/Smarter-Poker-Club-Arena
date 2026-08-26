@@ -32,6 +32,8 @@ import styles from './SettingsPage.module.css';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { useToast } from '../components/common/Toast';
 import { reportError } from '../utils/errorReporter';
+import { applyTableAppearance } from '../lib/applyTableAppearance';
+import { normalizeCardBack } from '../components/table/CardImage';
 
 const settingsSectionAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -530,17 +532,48 @@ export default function SettingsPage() {
       // table already on screen picks these up without a reload.
       updateTableSettings(toTableSettings(settings));
 
-      // Sync theme to Zustand store so Shell.tsx applies it immediately
-      const { setTheme, toggleSound, toggleFourColorDeck, toggleNotifications } =
-        useSettingsStore.getState();
+      /* Sync theme to Zustand store so Shell.tsx applies it immediately.
+         2026-08-26: "Auto (System)" was offered in the dropdown, accepted by
+         validation, saved, and then DROPPED here by an
+         `if (dark || light)` guard — the page said "Settings saved!" and the
+         app kept whatever theme it already had. Auto now resolves against the
+         OS preference at save time, which is what the label promises. */
+      const { setTheme } = useSettingsStore.getState();
       if (settings.theme === 'dark' || settings.theme === 'light') {
         setTheme(settings.theme);
+      } else if (settings.theme === 'auto') {
+        const prefersLight =
+          typeof window !== 'undefined' &&
+          typeof window.matchMedia === 'function' &&
+          window.matchMedia('(prefers-color-scheme: light)').matches;
+        setTheme(prefersLight ? 'light' : 'dark');
       }
 
       // Sync to Supabase profiles table
       const {
         data: { user },
       } = await getAuthUser();
+
+      /* ── Dan 2026-08-26: THIS DROPDOWN USED TO DO NOTHING TO THE FELT ──
+         "Card Back Style" wrote `useTableSettings.cardBack`, and the table
+         reads `v8Theme.cards_id || userSettings.cardBack`. `cards_id` is
+         never falsy — `toSelection()` fills it from DEFAULT_THEME — so the
+         right-hand side was unreachable and this control was decorative: it
+         persisted, said "Settings saved!", and the felt kept dealing the old
+         design forever.
+
+         It now writes the same column every other card-back picker writes,
+         through the one canonical writer, so the change is live on any open
+         table before this function returns. Deliberately AFTER the profile
+         fetch because it needs the user id, and deliberately non-fatal: a
+         failed appearance write must not fail the whole settings save. */
+      const appearance = await applyTableAppearance(
+        { cards_id: normalizeCardBack(settings.cardBack) },
+        { userId: user?.id }
+      );
+      if (!appearance.ok && user?.id) {
+        reportError(appearance.error, 'SettingsPage.cardBackSaveFailed');
+      }
       if (user) {
         const { error: profileErr } = await supabase
           .from('profiles')

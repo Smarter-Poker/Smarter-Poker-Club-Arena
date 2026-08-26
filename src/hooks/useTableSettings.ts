@@ -144,15 +144,30 @@ export function useTableSettings() {
     }
   }, [settings.isHapticEnabled]);
 
-  // Listen for SETTINGS_CHANGED bus events (cross-tab / cross-component sync)
-  const localOriginRef = useRef(false);
+  /**
+   * WHO EMITTED THIS — an identity, not a latch.
+   *
+   * Dan 2026-08-26 (settings audit). This used to be `localOriginRef =
+   * useRef(false)`: set true immediately before `masterBus.emit`, and cleared
+   * by this instance's own subscriber when the echo came back. That is a
+   * one-shot latch which depends on the echo ALWAYS arriving, and it does not:
+   * MasterBus drops a duplicate `{type, payload}` fingerprint inside 500ms
+   * (SETTINGS_CHANGED is not in DEDUP_BYPASS). Set a setting to the value it
+   * already has, or tap Reset twice, and the emit is suppressed — the echo
+   * never comes, the flag stays TRUE, and the very next genuine change from
+   * ANOTHER component or tab is silently swallowed. The symptom is the one
+   * being fixed across this whole pass: a setting that stops updating live,
+   * intermittently, with nothing in the console.
+   *
+   * A per-instance id has no state to get stuck in. Every emit says who sent
+   * it; every receiver ignores only its own. A suppressed emit now costs
+   * nothing at all.
+   */
+  const originIdRef = useRef<string>(`ts-${Math.random().toString(36).slice(2)}`);
   useEffect(() => {
     const unsub = masterBus.subscribe('SETTINGS_CHANGED', (event) => {
-      // Skip if this instance emitted the event (prevent redundant setSettings)
-      if (localOriginRef.current) {
-        localOriginRef.current = false;
-        return;
-      }
+      // Skip only OUR OWN echo (prevent redundant setSettings).
+      if (event.payload?.origin === originIdRef.current) return;
       const { setting, value } = event.payload;
       if (setting && setting in DEFAULT_SETTINGS) {
         setSettings((prev) => ({
@@ -179,10 +194,10 @@ export function useTableSettings() {
         ...(key === 'autoMuck' ? { autoMuckExplicit: true } : {}),
       }));
       // Broadcast for cross-tab / cross-component sync
-      localOriginRef.current = true;
       masterBus.emit('SETTINGS_CHANGED', {
         setting: key,
         value: value as string | number | boolean,
+        origin: originIdRef.current,
       });
     },
     []
@@ -193,10 +208,10 @@ export function useTableSettings() {
     setSettings(DEFAULT_SETTINGS);
     // Broadcast each default for cross-tab sync
     for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
-      localOriginRef.current = true; // Must set before EACH synchronous emit
       masterBus.emit('SETTINGS_CHANGED', {
         setting: key,
         value: value as string | number | boolean,
+        origin: originIdRef.current,
       });
     }
   }, []);
@@ -212,10 +227,10 @@ export function useTableSettings() {
     }));
     // Broadcast each change for cross-tab sync
     for (const [key, value] of Object.entries(updates)) {
-      localOriginRef.current = true; // Must set before EACH synchronous emit
       masterBus.emit('SETTINGS_CHANGED', {
         setting: key,
         value: value as string | number | boolean,
+        origin: originIdRef.current,
       });
     }
   }, []);

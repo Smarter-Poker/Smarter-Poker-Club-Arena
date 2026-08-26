@@ -232,67 +232,47 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           }
         }
 
-        // Dan 2026-08-20 (live repro): "Seat Reserved, You'll Be Dealt In Next
-        // Hand" must be TRUE. A probe seat sat through 6 straight hands still
-        // gated by wait-for-BB — on slow tables the natural BB rotation takes
-        // MINUTES to reach a new seat, and nothing on screen explains the wait.
+        // ═══════════════════════════════════════════════════════════════════
+        // A CASH ENTRANT WAITS FOR THE BIG BLIND, OR POSTS. THERE IS NO THIRD
+        // OPTION.
         //
-        // That was first solved by billing every waiter a live big blind and
-        // dealing them in. Dan 2026-08-25 replaced the price with nothing:
-        // "you don't have to post when you first come to a table." Every
-        // remaining waiter is released FREE on this tick, so the promise on
-        // screen is kept and it costs them a blind less than it used to.
-        if (this.waitingForBB.size > 0) {
-          // Dan 2026-08-21, BINDING: "CASH GAME PLAYERS CAN NEVER BE DEALT
-          // INTO THE SMALL BLIND. THEY MUST WAIT FOR THE BUTTON TO PASS."
-          const sbSeatIndex = this.isTournamentTable() ? -1 : this.getSBSeatIndex();
-          // Dan 2026-08-25, BINDING: "NEW PLAYERS NEVER GET THE BUTTON WHEN
-          // SITTING DOWN... even if they take the seat of a person who would
-          // have been the button they must wait one hand before being dealt
-          // in." Same hold-out mechanism as the SB rule: stay in waitingForBB
-          // for exactly one hand, which excludes them from activePlayers, so
-          // the rotation below lands on the next seat instead.
-          const buttonSeatIndex = this.isTournamentTable() ? -1 : this.getButtonSeatIndex();
-          for (const userId of Array.from(this.waitingForBB)) {
-            const seatedWaiter = this.seatedPlayers.find((s2) => s2.user_id === userId);
-            if (seatedWaiter && sbSeatIndex > 0 && seatedWaiter.seat_number === sbSeatIndex) {
-              console.log(
-                `[ServerTableEngine:${this.tableId}] holding ${userId} out one hand — would have been dealt into the SB`
-              );
-              continue;
-            }
-            if (
-              seatedWaiter &&
-              buttonSeatIndex > 0 &&
-              seatedWaiter.seat_number === buttonSeatIndex
-            ) {
-              console.log(
-                `[ServerTableEngine:${this.tableId}] holding ${userId} out one hand — took the seat the button is about to reach`
-              );
-              continue;
-            }
-            // Dan 2026-08-25, BINDING: "YOU DON'T HAVE TO POST WHEN YOU FIRST
-            // COME TO A TABLE. You only have to post if you are in the BB. If
-            // a player is coming in behind the button those hands should be
-            // DEALT TO THEM FOR FREE without posting. They only need to post
-            // if they were sitting out and missed blinds."
-            //
-            // So a new joiner is simply released — no postingBBToEnter, no
-            // charge. The three positions that are not free are all still
-            // handled, and none of them are a "post":
-            //   - the BB seat  → released above by the natural-BB check, and
-            //                    posts the big blind because it IS their blind
-            //   - the SB seat  → held out one hand (never dealt into the SB)
-            //   - the button   → held out one hand (rule immediately above)
-            // A player returning from sit-out never reaches this loop: they go
-            // into returningFromSitout at sitOut() and owe the dead SB + live
-            // BB, which is the "missed blinds" case Dan carved out.
-            this.waitingForBB.delete(userId);
-            console.log(
-              `[ServerTableEngine:${this.tableId}] free entry for ${userId} — coming in behind the button, no post owed`
-            );
-          }
-        }
+        // Dan 2026-08-26, binding, correcting himself:
+        //
+        //   "i also made a mistake the other night, when I said that a player
+        //    doesn't have to post when they are new to a cash game table...
+        //    Every single player needs to either wait for the BB or post when
+        //    entering a cash game... no free hands or coming in behind the
+        //    blinds."
+        //
+        // What used to be here released EVERY waiter on this tick, free. That
+        // was the 2026-08-25 rule ("you don't have to post when you first come
+        // to a table"), and it is the rule being reversed. A new joiner was
+        // dealt in immediately, behind the blinds, having paid nothing - which
+        // is a free hand, and free hands are worth real money at a raked table.
+        //
+        // So the release block is GONE, deliberately, rather than narrowed. A
+        // player put into waitingForBB now stays there until one of exactly two
+        // things happens:
+        //
+        //   1. THE BIG BLIND REACHES THEIR SEAT. Handled above, before this
+        //      point: they are removed from the set and post the big blind
+        //      because it is genuinely their blind. That is the "wait" half.
+        //
+        //   2. THEY POST. `postBBToEnter` (POST /post-bb) removes them and adds
+        //      them to postingBBToEnter, which bills a live big blind through
+        //      bbOnlyPosts. That is the "post" half, and it is a real product
+        //      path again - TablePage offers the button.
+        //
+        // The two positional hold-outs that used to live in this block are not
+        // reimplemented here because they no longer need to be: a waiter is
+        // held out by default now, so "never dealt into the small blind" and
+        // "a new player never gets the button" hold for free on the wait path.
+        // They are still enforced on the POST path, in postBBToEnter, because
+        // that is now the only way past the wait and neither rule may be bought.
+        //
+        // returningFromSitout is untouched and still owes a dead SB plus a live
+        // BB. Missing blinds and never having posted them are different debts.
+        // ═══════════════════════════════════════════════════════════════════
 
         // Dan 2026-08-19, bug list item 17: "when hero busts and adds chips
         // they're never dealt in - stuck on 'Seat Reserved, You'll Be Dealt In

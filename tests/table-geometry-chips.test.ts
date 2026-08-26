@@ -37,6 +37,7 @@ import {
   BUTTON_FELT_MARGIN_WIDTH_PCT,
   CHIP_COLLECT_FRACTION,
   CHIP_RAIL_WIDTH_PCT,
+  MARKER_INSET_PX,
   FELT_MARKER_MARGIN_WIDTH_PCT,
   FELT_WINDOW,
   MARKER_MIN_GAP_WIDTH_PCT,
@@ -249,12 +250,30 @@ describe('item 13 - one rail, equal for every seat', () => {
           const walked = mag(chips);
 
           if (feltRadialFraction(rest, table) < 0.999) {
-            // The common rail, to the pixel. Each axis is rounded on its own, so
-            // the magnitude of the vector can land up to ~0.71px either side.
+            /* The common rail, to the pixel. Each axis is rounded on its own,
+               so the magnitude can land up to ~0.71px either side.
+
+               THE SECOND TOLERANCE, added 2026-08-26 with MARKER_INSET_PX.
+               Dan asked for every marker to move 3px further onto the felt.
+               Most seats take it; a seat level with the community board
+               CANNOT, and that is arithmetic rather than preference:
+               CHIP_RAIL_WIDTH_PCT was derived as the LONGEST rail that keeps
+               a board-level seat's chips off the cards, and the derivation
+               leaves 0.2% of the table's width in hand while 3px is ~0.8%.
+               `chipStepWidthPct` therefore withdraws the inset for exactly
+               those seats, so they sit one inset SHORT of the nominal rail.
+
+               Allowing [rail - inset, rail] keeps the real guarantee — no
+               seat gets a rail of its own, every seat lands on one of two
+               known values, and which one is decided by the board, not by
+               whose seat it is. Anything outside that band is the drift this
+               test exists to catch. */
+            const inset = MARKER_INSET_PX;
+            const shortfall = rail - walked;
             expect(
-              Math.abs(walked - rail),
+              shortfall >= -1 && shortfall <= inset + 1,
               `seat ${JSON.stringify(seat)} walked ${walked.toFixed(2)} of ${rail.toFixed(2)}`
-            ).toBeLessThanOrEqual(1);
+            ).toBe(true);
           } else {
             /* The ONLY thing that lengthens a walk: this seat's own ring
                position is outside the painted felt, so the first part of its
@@ -290,10 +309,31 @@ describe('item 13 - one rail, equal for every seat', () => {
     // by 20px so they could clear their own puck. That is one seat at a
     // different distance from its player than everyone else, which is the thing
     // item 13 forbids - the puck moves now instead. See dealerButtonPosition.
+    //
+    // CORRECTED 2026-08-26. This used to read
+    //     betChipOffsetPx(seat, table, true) === betChipOffsetPx(seat, table, false)
+    // which was already the wrong shape when the audit of 2026-08-25 deleted the
+    // `isDealer` parameter it was passing - the note on `chipRailInset` says so
+    // in as many words, and tests/unit/chipRail.test.ts replaced its copy with
+    // the structural check below on the same day. This one was missed, and it
+    // did not merely go stale: the third slot now carries the seat's POD, so
+    // `true` was being read as a box with no width and every offset came back
+    // NaN. A test that survives by being ignored is a test that will one day be
+    // obeyed.
+    //
+    // The property is structural now: there is no boolean to pass. Two required
+    // arguments, and a third that is a Size - the pod every seat paints, which
+    // the dealer's seat has exactly like everyone else's.
+    expect(betChipOffsetPx).toHaveLength(2);
+    expect(chipCollectOffsetPx).toHaveLength(2);
+    expect(chipRailInset).toHaveLength(1);
+
+    // And the rail itself is still one number for the whole table, with no way
+    // in for a per-player term.
     for (const table of Object.values(TABLES)) {
       for (const ring of Object.values(RINGS)) {
         for (const seat of ring) {
-          expect(betChipOffsetPx(seat, table, true)).toEqual(betChipOffsetPx(seat, table, false));
+          expect(betChipOffsetPx(seat, table)).toEqual(betChipOffsetPx(seat, table));
         }
       }
     }
@@ -404,7 +444,10 @@ describe('chip collect - every seat converges on the pot', () => {
 
 describe('the rail itself', () => {
   it('is one number, and it scales with the table', () => {
-    expect(chipRailInset(TABLES['phone 375px'])).toBeCloseTo((CHIP_RAIL_WIDTH_PCT * 347) / 100, 6);
+    expect(chipRailInset(TABLES['phone 375px'])).toBeCloseTo(
+      (CHIP_RAIL_WIDTH_PCT * 347) / 100 + MARKER_INSET_PX,
+      6
+    );
     expect(chipRailInset(TABLES.desktop)).toBeGreaterThan(chipRailInset(TABLES['phone 375px']));
   });
 

@@ -110,7 +110,15 @@ async function getUserSearchScope(userId: string): Promise<SearchScope> {
         const r = (m as any).role as string;
         if (r === 'owner' && result.role !== 'union') {
           result.role = 'owner';
-        } else if (r === 'admin' && result.role !== 'owner' && result.role !== 'union') {
+        } else if (
+          (r === 'admin' || r === 'co_owner') &&
+          result.role !== 'owner' &&
+          result.role !== 'union'
+        ) {
+          // co_owner is a first-class role in club_members_role_check and an
+          // owner can grant it, but this ladder never tested for it, so a
+          // co-owner fell through to 'player' and was silently demoted to
+          // searching their friends list.
           result.role = 'admin';
         } else if (
           (r === 'agent' || r === 'super_agent' || r === 'sub_agent') &&
@@ -322,14 +330,42 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
 
     setIsSuggesting(true);
     try {
-      // Search within the first 200 searchable IDs (fast path)
-      const batch = scope.searchableUserIds.slice(0, 200);
-      const { data: players } = await supabase
-        .from('profiles')
-        .select('id, username, display_name, avatar_url:arena_avatar_url')
-        .in('id', batch)
-        .or(`username.ilike.%${safeQuery}%,display_name.ilike.%${safeQuery}%`)
-        .limit(6);
+      // WALK THE WHOLE ROSTER, not the first 200 ids of it.
+      //
+      // This used to be `slice(0, 200)` in arbitrary database order while the
+      // GO button walked every batch. For an owner with 1502 memberships that
+      // is 13% coverage: typing a real member's name produced no dropdown, and
+      // then pressing GO found them. It read as random breakage.
+      //
+      // Batched at 200 because that is a filter list a PostgREST URL comfortably
+      // carries, and stopped as soon as six suggestions exist - for a matching
+      // name that is almost always the first batch, so the common case costs
+      // exactly what it did before.
+      const BATCH = 200;
+      const players: Array<{
+        id: string;
+        username: string | null;
+        display_name: string | null;
+        avatar_url: string | null;
+      }> = [];
+
+      for (let i = 0; i < scope.searchableUserIds.length && players.length < 6; i += BATCH) {
+        const batch = scope.searchableUserIds.slice(i, i + BATCH);
+        const { data: page, error: pageError } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url:arena_avatar_url')
+          .in('id', batch)
+          .or(`username.ilike.%${safeQuery}%,display_name.ilike.%${safeQuery}%`)
+          .limit(6 - players.length);
+
+        // Report it. A dropped error here is why a failing typeahead was
+        // indistinguishable from a roster with nobody in it.
+        if (pageError) {
+          reportError(pageError, 'FindPlayerModal.fetchSuggestions');
+          break;
+        }
+        if (page?.length) players.push(...page);
+      }
 
       if (!isMountedRef.current) return;
 
@@ -497,7 +533,12 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                   status: string;
                   clubs: { name: string } | { name: string }[] | null;
                 } | null;
-                if (table && (table.status === 'active' || table.status === 'running')) {
+                // 'active' is not a value tables.status holds (running / waiting
+                // / closed). Compared case-insensitively so a future casing
+                // change cannot silently empty this list the way it did for
+                // tournaments above.
+                const tableStatus = (table?.status || '').toLowerCase();
+                if (table && (tableStatus === 'running' || tableStatus === 'waiting')) {
                   const clubName = Array.isArray(table.clubs)
                     ? table.clubs[0]?.name
                     : table.clubs?.name;
@@ -543,9 +584,18 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                     buy_in_amount: number;
                     clubs: { name: string } | { name: string }[] | null;
                   } | null;
+                  // CASE-INSENSITIVE, and 'REGISTERING' not 'late_reg'.
+                  // tournaments.status is stored UPPERCASE - COMPLETED,
+                  // CANCELLED, RUNNING, REGISTERING - and 'late_reg' is not a
+                  // value the column has ever held. Both comparisons were
+                  // therefore always false, so the entire tournament half of
+                  // this feature was dead: 356 live registrations were being
+                  // fetched and then silently discarded, and a player sitting
+                  // in an MTT showed as "Not Currently Playing".
+                  const tourneyStatus = (tournament?.status || '').toUpperCase();
                   if (
                     tournament &&
-                    (tournament.status === 'running' || tournament.status === 'late_reg')
+                    (tourneyStatus === 'RUNNING' || tourneyStatus === 'REGISTERING')
                   ) {
                     const clubName = Array.isArray(tournament.clubs)
                       ? tournament.clubs[0]?.name

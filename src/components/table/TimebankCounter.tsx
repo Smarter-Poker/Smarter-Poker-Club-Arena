@@ -36,7 +36,13 @@ import './TimebankCounter.css';
 import timebankIcon from '../../assets/icons/icon-timebank.jpg';
 
 interface TimebankCounterProps {
-  count: number;
+  /**
+   * How many banks the player holds. `null` = not loaded yet, and renders as
+   * a dash. Dan 2026-08-26: the tile used to be seeded with a hard 4 and
+   * showed it confidently to a player holding 481 — a placeholder that looks
+   * like data is worse than one that looks like a placeholder.
+   */
+  count: number | null;
   onClick?: () => void;
   /** Optional: when true, widget renders in "low" state (warning tint). */
   low?: boolean;
@@ -58,19 +64,28 @@ export const TimebankCounter: React.FC<TimebankCounterProps> = ({
       type="button"
       className={`tbc-widget${low ? ' tbc-widget--low' : ''}`}
       onClick={onClick}
-      aria-label={`Time banks remaining: ${count}, ${bankSeconds} seconds each`}
-      title={`${count} time bank${count === 1 ? '' : 's'} remaining (${bankSeconds}s each)`}
+      aria-label={
+        count === null
+          ? 'Time banks remaining: loading'
+          : `Time banks remaining: ${count}, ${bankSeconds} seconds each`
+      }
+      title={
+        count === null
+          ? 'Loading Your Time Banks'
+          : `${count} time bank${count === 1 ? '' : 's'} remaining (${bankSeconds}s each)`
+      }
     >
+      {/* Resolved 2026-08-26: main replaced the outline glyph with the
+          stopwatch image + overlay, and that newer design is kept. The only
+          thing carried across from this branch is the null case: `count` is
+          null until the TRUE balance loads, and must render as a dash rather
+          than a fabricated number (it used to be seeded with a hard 4 and
+          shown to a player holding 481). */}
       {/* Custom stopwatch icon with time-bank count overlaid in white bold text */}
       <div className="tbc-img-wrap" aria-hidden="true">
-        <img
-          src={timebankIcon}
-          className="tbc-icon-img"
-          alt=""
-          draggable={false}
-        />
+        <img src={timebankIcon} className="tbc-icon-img" alt="" draggable={false} />
         <span className={`tbc-count-overlay${low ? ' tbc-count-overlay--low' : ''}`}>
-          {count}
+          {count === null ? '-' : count}
         </span>
       </div>
     </button>

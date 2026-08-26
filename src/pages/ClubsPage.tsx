@@ -16,6 +16,8 @@ import { unionService } from '../services/UnionService';
 import type { Union } from '../services/UnionService';
 import { LoadingState, NoClubsEmpty } from '../components/common/EmptyState';
 import { CardSkeleton } from '../components/skeletons/CardSkeleton';
+import CreateClubModal from '../components/modals/CreateClubModal';
+import JoinClubModal from '../components/modals/JoinClubModal';
 import { useToast } from '../components/common/Toast';
 import IntroVideo from '../components/IntroVideo';
 import haptic from '../services/HapticService';
@@ -26,6 +28,7 @@ import styles from './ClubsPage.module.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { STORAGE_KEYS } from '../lib/storage';
 import { reportError } from '../utils/errorReporter';
+import { isJoinableClubCode } from '../utils/clubCode';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 type Tab = 'discover' | 'my-clubs' | 'create';
@@ -138,6 +141,8 @@ export default function ClubsPage() {
   const [isPublic, setIsPublic] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
   const [visibleClubCards, setVisibleClubCards] = useState(new Set<number>());
 
   // #3: Request deduplication — prevent concurrent loadMyClubs() from stacking
@@ -277,7 +282,14 @@ export default function ClubsPage() {
 
   // Join club by ID
   const handleJoinClub = async () => {
-    if (joinClubId.length !== 6) return;
+    // 5 OR 6 DIGITS. Every club that exists has a FIVE-digit club_id -- 25450,
+    // 55555, 77777 -- because all three client paths generate
+    // Math.floor(10000 + Math.random() * 90000). This gate demanded exactly six,
+    // so typing a real club code left JOIN CLUB greyed out forever and set no
+    // error to explain it. HomePage's own join modal has always accepted 5-6;
+    // this screen simply disagreed with it. The column default in Postgres is
+    // six digits, so both lengths have to be accepted.
+    if (!isJoinableClubCode(joinClubId)) return;
 
     setIsJoining(true);
     setJoinError(null);
@@ -400,15 +412,6 @@ export default function ClubsPage() {
           >
             My Clubs
           </button>
-          <button
-            className={`${styles.tab} ${activeTab === 'create' ? styles.active : ''}`}
-            onClick={() => {
-              haptic.selection();
-              setActiveTab('create');
-            }}
-          >
-            Create Club
-          </button>
         </div>
 
         {/* Tab Content */}
@@ -416,47 +419,32 @@ export default function ClubsPage() {
           {/* Discover Tab */}
           {activeTab === 'discover' && (
             <div className={styles.discoverTab}>
-              <section className={styles.joinSection}>
-                <h3>Join A Club</h3>
-                <p>Enter A 6-Digit Club Code To Join An Existing Club.</p>
-
-                {joinError && <div className={styles.errorText}>{joinError}</div>}
-
-                <div className={styles.formGroup}>
-                  <label className={styles.label}>Enter Club Code:</label>
-                  <input
-                    className={styles.joinInput}
-                    placeholder="482913"
-                    value={joinClubId}
-                    onChange={(e) => {
-                      setJoinClubId(e.target.value.replace(/\D/g, ''));
-                      setJoinError(null);
-                    }}
-                    maxLength={6}
-                  />
-                </div>
-
-                <div className={styles.formGroup}>
-                  <label className={styles.label}>Referral Code (Optional):</label>
-                  <input
-                    className={styles.joinInput}
-                    placeholder="Referral Code"
-                    value={joinReferralCode}
-                    onChange={(e) => {
-                      setJoinReferralCode(e.target.value.trim());
-                    }}
-                  />
-                </div>
-
+              <section
+                className={styles.joinSection}
+                style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}
+              >
                 <button
                   className={styles.btnPrimary}
-                  disabled={joinClubId.length !== 6 || isJoining}
                   onClick={() => {
-                    haptic.medium();
-                    handleJoinClub();
+                    haptic.selection();
+                    setShowJoinModal(true);
                   }}
                 >
-                  {isJoining ? 'Joining...' : 'JOIN CLUB'}
+                  JOIN WITH CODE
+                </button>
+                <button
+                  className={styles.btnSecondary}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    color: '#fff',
+                  }}
+                  onClick={() => {
+                    haptic.selection();
+                    setShowCreateModal(true);
+                  }}
+                >
+                  CREATE CLUB
                 </button>
               </section>
 
@@ -664,85 +652,16 @@ export default function ClubsPage() {
               )}
             </div>
           )}
-
-          {/* Create Club Tab */}
-          {activeTab === 'create' && (
-            <div className={styles.createTab}>
-              <div className={styles.createForm}>
-                <h3>CREATE A CLUB</h3>
-                <p>Start Your Own Private Poker Community.</p>
-
-                {createError && <div className={styles.errorText}>{createError}</div>}
-
-                <div className={styles.formGroup}>
-                  <label className={styles.label}>CLUB NAME:</label>
-                  <input
-                    className={styles.input}
-                    placeholder="Enter Club Name"
-                    value={clubName}
-                    onChange={(e) => {
-                      setClubName(e.target.value);
-                      setCreateError(null);
-                    }}
-                  />
-                </div>
-
-                <div className={styles.formGroup}>
-                  <label className={styles.label}>DESCRIPTION:</label>
-                  <textarea
-                    className={styles.textarea}
-                    placeholder="Describe Your Club..."
-                    rows={3}
-                    maxLength={500}
-                    value={clubDescription}
-                    onChange={(e) => setClubDescription(e.target.value)}
-                  />
-                </div>
-
-                <div className={styles.visibilityCard}>
-                  <div className={styles.checkboxGroup}>
-                    <label className={styles.checkbox}>
-                      <input
-                        type="radio"
-                        name="club-visibility"
-                        checked={isPublic}
-                        onChange={() => {
-                          haptic.selection();
-                          setIsPublic(true);
-                        }}
-                      />
-                      <span>Public (Anyone Can Find And Join)</span>
-                    </label>
-                    <label className={styles.checkbox}>
-                      <input
-                        type="radio"
-                        name="club-visibility"
-                        checked={!isPublic}
-                        onChange={() => {
-                          haptic.selection();
-                          setIsPublic(false);
-                        }}
-                      />
-                      <span>Private (Invite Only, Requires Approval)</span>
-                    </label>
-                  </div>
-                </div>
-
-                <button
-                  className={styles.btnPrimary}
-                  onClick={() => {
-                    haptic.success();
-                    handleCreateClub();
-                  }}
-                  disabled={isCreating || !clubName.trim()}
-                >
-                  {isCreating ? 'Creating...' : 'CREATE CLUB'}
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
+
+      <CreateClubModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSuccess={(id) => navigate(`/clubs/${id}`)}
+      />
+      <JoinClubModal isOpen={showJoinModal} onClose={() => setShowJoinModal(false)} />
     </>
   );
 }
+// Trigger CI Wed Aug 26 18:13:36 CDT 2026

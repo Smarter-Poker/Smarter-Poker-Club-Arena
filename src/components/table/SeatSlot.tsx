@@ -242,6 +242,15 @@ export interface SeatSlotProps {
    */
   winningHoleCardIndexes?: readonly number[];
   /**
+   * POKERBROS PARITY 2026-08-26 (frame-by-frame of the reference recording):
+   * true while ANY seat's winning hand is being displayed table-wide. While
+   * true, every face-up hole card at this seat that is not part of the
+   * winning five dims to ~50% brightness — a losing shown hand dims
+   * entirely, and the winner's own unused cards dim around the lit ones.
+   * Card backs never dim. TablePage derives it from winnerInfo.
+   */
+  winnerDisplayActive?: boolean;
+  /**
    * SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the ENGINE ruled this hand
    * muckable at showdown — its cards were never revealed, and the seat
    * renders a MUCKED label instead. Distinct from isMucking, which is the
@@ -551,6 +560,7 @@ function HoleCard({
   hidden = false,
   isHero = false,
   isWinner = false,
+  isDimmed = false,
   deckStyle,
   cardBack = 'classic_blue',
   eager = false,
@@ -560,6 +570,13 @@ function HoleCard({
   hidden?: boolean;
   isHero?: boolean;
   isWinner?: boolean;
+  /**
+   * POKERBROS PARITY 2026-08-26 (frame-by-frame of the reference recording):
+   * while the winning five are lit, every face-up card that is NOT one of
+   * them — the winner's own unused cards included — drops to ~50% brightness
+   * in the same beat the gold borders appear. Never applied to card backs.
+   */
+  isDimmed?: boolean;
   deckStyle?: '4color' | '2color';
   cardBack?: string;
   eager?: boolean;
@@ -585,7 +602,7 @@ function HoleCard({
   }
   return (
     <div
-      className={`seat__card seat__card--face${isWinner ? ' seat__card--winner' : ''}`}
+      className={`seat__card seat__card--face${isWinner ? ' seat__card--winner' : ''}${isDimmed ? ' seat__card--dimmed' : ''}`}
       style={fanStyle}
     >
       <CardImage
@@ -687,6 +704,7 @@ export const SeatSlot = memo(
       isDealing = false,
       isMucking = false,
       winningHoleCardIndexes,
+      winnerDisplayActive = false,
       isMuckedShowdown = false,
       showdownRevealDelayMs = 0,
       cardSqueezeActive = false,
@@ -1426,7 +1444,7 @@ export const SeatSlot = memo(
             }
           >
             <img
-              src="/images/icons/empty-button.png"
+              src={`${import.meta.env.BASE_URL}images/icons/empty-button.png`}
               alt={isHeroReservedSeat ? 'Your reserved seat' : 'Empty seat'}
               className="seat__empty-img"
               draggable={false}
@@ -1453,7 +1471,7 @@ export const SeatSlot = memo(
         >
           {/* 2026-08-26: replaced +/SIT text stack with the SIT coin image. */}
           <img
-            src="/images/icons/sit-button.png"
+            src={`${import.meta.env.BASE_URL}images/icons/sit-button.png`}
             alt="Sit down"
             className="seat__empty-img seat__empty-img--sit"
             draggable={false}
@@ -1577,7 +1595,25 @@ export const SeatSlot = memo(
      * still in the hand until the engine folds them, and erasing their cards
      * would be erasing a live holding.
      */
-    const heroIsOutOfPlay = player.status === 'sitting_out' || player.status === 'away';
+    /* ── HOLDING CARDS BEATS EVERY OTHER SIGNAL ────────────────────────────
+       Dan 2026-08-26: "hero can NEVER EVER EVER lose access to seeing their
+       hole cards."
+
+       This suppression exists so a STALE holding cannot be drawn over a hero
+       who has no hand — which is a real problem and stays solved, because the
+       merge upstream now expires the holding at the hand boundary. But as a
+       standalone status test it was also capable of hiding a hand the hero
+       genuinely HOLDS: a resync can re-stamp the hero 'sitting_out' from a
+       stale ref, and a frame where the engine roster omits the hero's seat
+       substitutes a placeholder with that status. Either one blanked a live
+       hand for as long as it lasted.
+
+       Cards present is now the stronger signal. If the hero is holding
+       something, it is drawn, whatever the status line says; the suppression
+       only applies when there is nothing to show anyway. */
+    const heroHoldsCards = !!player.holeCards && player.holeCards.length > 0;
+    const heroIsOutOfPlay =
+      !heroHoldsCards && (player.status === 'sitting_out' || player.status === 'away');
 
     // 2026-04-15 Bible V8 §6.1 — pure-CSS ring countdown. Set animation
     // duration + a negative animation-delay so the ring animates from the
@@ -1780,6 +1816,17 @@ export const SeatSlot = memo(
                       isWinner={
                         isWinner &&
                         (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
+                      }
+                      /* POKERBROS PARITY 2026-08-26: while a winner is on
+                         display, every face-up card outside the winning five
+                         dims — a losing shown hand dims whole, a winner's
+                         unused cards dim around the lit ones. */
+                      isDimmed={
+                        winnerDisplayActive &&
+                        !(
+                          isWinner &&
+                          (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
+                        )
                       }
                       deckStyle={deckStyle}
                       cardBack={cardBack}
@@ -2235,6 +2282,16 @@ export const SeatSlot = memo(
                       isWinner &&
                       (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
                     }
+                    /* POKERBROS PARITY 2026-08-26: same rule as the villain
+                       row — during winner display, only the winning cards
+                       stay lit; the hero's other cards dim with the rest. */
+                    isDimmed={
+                      winnerDisplayActive &&
+                      !(
+                        isWinner &&
+                        (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
+                      )
+                    }
                     deckStyle={deckStyle}
                     cardBack={cardBack}
                     /* The hero's own hand is on screen for the whole hand and is
@@ -2292,6 +2349,20 @@ export const SeatSlot = memo(
           >
             {netWinAmount > 0 ? '+' : '-'}
             {formatStack(Math.abs(netWinAmount))}
+          </div>
+        )}
+
+        {/* POKERBROS PARITY 2026-08-26 (round 3): the reference scatters
+            four-point gold star sparkles over the winner's cards while the
+            +N float shows — measured off the 30.5-31.1s frames (one large
+            star on the cards, smaller ones twinkling around them). Positive
+            wins only: a rake-negative chop gets information, not confetti. */}
+        {isWinner && typeof netWinAmount === 'number' && netWinAmount > 0 && (
+          <div className="seat__win-sparkles" aria-hidden="true" key={`spark-${netWinAmount}`}>
+            <span className="seat__win-sparkle" />
+            <span className="seat__win-sparkle" />
+            <span className="seat__win-sparkle" />
+            <span className="seat__win-sparkle" />
           </div>
         )}
 
@@ -2409,6 +2480,10 @@ export const SeatSlot = memo(
     // each must break the memo or the feature is invisible.
     if (prev.isMuckedShowdown !== next.isMuckedShowdown) return false;
     if (prev.showdownRevealDelayMs !== next.showdownRevealDelayMs) return false;
+    // POKERBROS PARITY 2026-08-26: the table-wide dim flag flips on every
+    // seat at once when a winner is named — it must break the memo or losing
+    // seats keep full-brightness cards while the winner's are lit.
+    if (prev.winnerDisplayActive !== next.winnerDisplayActive) return false;
     {
       const a = prev.winningHoleCardIndexes;
       const b = next.winningHoleCardIndexes;

@@ -131,12 +131,28 @@ describe('the menus no longer keep their own copies', () => {
     expect(THEME_MODAL).toMatch(/table: TABLE_ASSETS/);
   });
 
-  it('the felt picker sells the felt catalogue too', () => {
-    const felt = read('src/components/customization/TableFeltSelector.tsx');
-    expect(felt).toMatch(/TABLE_FELT_CATALOG\.map/);
-    // The eight flat colours it used to offer, six of which were not skins.
+  /* 2026-08-26 sweep: this used to read `customization/TableFeltSelector.tsx`,
+     which was DELETED — it was a complete, correct felt picker with no call
+     site anywhere, reachable only through a barrel that nothing imported. A
+     test asserting the quality of a component nobody can open is measuring
+     the wrong thing: it passes while the feature is, in practice, absent.
+
+     The property it was really guarding — "the felt picker offers the
+     CATALOGUE, not a hand-typed list of colours that are not skins" — still
+     matters, and now belongs to the picker players can actually reach: the
+     Theme modal's Table tab, asserted directly above. This keeps the second
+     half of the old test (the dead flat-colour ids must not come back) and
+     points it at the live surface. */
+  it('the felt catalogue holds no flat colours that were never skins', () => {
+    /* Asserted against the CATALOGUE, not against the modal's source. First
+       attempt at this port checked the whole modal and failed on
+       `background_id: 'midnight'` — a perfectly real BACKGROUND id. The dead
+       ids were flat FELT colours, so the felt catalogue is the thing to ask,
+       and asking it directly cannot be confused by a neighbouring field. */
+    const felt = read('src/lib/tableTheme.ts');
+    const catalogue = felt.slice(felt.indexOf('TABLE_FELT_CATALOG'));
     for (const dead of ["id: 'charcoal'", "id: 'purple'", "id: 'midnight'"]) {
-      expect(felt).not.toContain(dead);
+      expect(catalogue, `${dead} is not a felt skin`).not.toContain(dead);
     }
   });
 });

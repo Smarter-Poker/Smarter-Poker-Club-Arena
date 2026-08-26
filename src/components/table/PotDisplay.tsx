@@ -82,6 +82,13 @@ export interface PotDisplayProps {
    * The offset is in pixels from the pot's own centre toward that seat.
    */
   collectTo?: { dx: number; dy: number } | null;
+  /**
+   * What the engine says was won, from POT_WIN. Used ONLY as the last resort
+   * for the push label on a hand where the running total was never non-zero
+   * — a fold-around, where the blinds sit in front of the seats all hand and
+   * `mainPot === streetBets` throughout. Without it that push showed 0.
+   */
+  awardedPot?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -212,6 +219,7 @@ function PotDisplayComponent({
   onToggleDisplayMode,
   streetBets = 0,
   collectTo = null,
+  awardedPot = 0,
   handNumber = 0,
   showChipAnimation = true,
 }: PotDisplayProps) {
@@ -265,7 +273,20 @@ function PotDisplayComponent({
     carriedHandRef.current = handNumber;
     lastNonZeroPotRef.current = 0;
   }
-  const displayPot = collectedPot > 0 ? collectedPot : collectTo ? lastNonZeroPotRef.current : 0;
+  /* Dan 2026-08-26: the push must show what was actually won, on EVERY hand.
+     The reset above is right — the previous hand's 5,000 must never ride
+     along — but it left the commonest hand with nothing at all to show: on a
+     fold-around, `mainPot === streetBets` for the whole hand, so
+     `collectedPot` is 0 throughout, the ref is never assigned, and the pill
+     slid a ZERO to the winner.
+
+     `awardedPot` is the amount the engine says was won (POT_WIN's own pot
+     figure, handed down by TablePage). It is the correct number precisely in
+     the case the running total cannot see, so it is the last resort before
+     zero rather than a competing source: a live pot still wins while the
+     hand is being played. */
+  const displayPot =
+    collectedPot > 0 ? collectedPot : collectTo ? lastNonZeroPotRef.current || awardedPot || 0 : 0;
   useEffect(() => {
     if (collectedPot > 0) lastNonZeroPotRef.current = collectedPot;
   }, [collectedPot]);

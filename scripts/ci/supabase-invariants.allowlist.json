@@ -13,6 +13,7 @@
     "clawback_audit_log": "agent clawback audit — unbuilt (AgentAnalyticsDashboard degrades to empty)",
     "club_activity": "club activity feed — unbuilt (ClubActivityFeed degrades to empty)",
     "club_challenges": "club challenges — unbuilt",
+    "club_invites": "club invites — unbuilt",
     "gto_solutions": "GTO solver storage — unbuilt (GTOQueryService)",
     "gto_solve_queue": "GTO solve queue — unbuilt (GTOQueryService)",
     "hand_results": "legacy hand-results read — superseded by hand_history (HorseOrchestrator)",

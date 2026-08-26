@@ -67,7 +67,60 @@ describe('the engine PUBLISHES the showdown sequence and muck ruling', () => {
 
 describe('the client RENDERS the sequence, the muck, and the description', () => {
   it('the hand-complete reset holds for the computed holdMs, never a bare 3000', () => {
-    expect(TABLE_PAGE).toMatch(/\}, holdMs\);/);
+    /* 2026-08-26: this used to assert the literal `}, holdMs);` — the exact
+       punctuation of one call site. The reset became EXTENDABLE (the callback
+       is captured in a ref so POT_WIN can re-arm it once the award sequence's
+       true length is known), so the shape changed while the property being
+       guarded did not. Assert the property: the timer is armed with the
+       COMPUTED hold, not a hardcoded number. */
+    expect(TABLE_PAGE).toMatch(/window\.setTimeout\([\s\S]{0,120}?holdMs\s*\)/);
+    /* Scoped to the RESET's own timer. An earlier draft of this line matched
+       any `}, 3000);` in the file and caught the BBJ celebration's unrelated
+       3s delay — a test that fails on correct code teaches people to delete
+       tests. What must never come back is the reset itself being armed with a
+       literal. */
+    expect(TABLE_PAGE, 'the hand-complete reset is armed with a literal again').not.toMatch(
+      /handCompleteTimerRef\.current = window\.setTimeout\([\s\S]{0,160}?,\s*\d{3,}\s*\)/
+    );
+  });
+
+  /**
+   * Dan 2026-08-26: "the board never displayed the winning hand, or played the
+   * push pot and total animation to the winner. This needs to happen 100% of
+   * the time after every single hand."
+   *
+   * The hold was scheduled once from HAND_COMPLETE, which the engine emits
+   * ~3s BEFORE pot_win — so the code that tried to stretch it read the
+   * PREVIOUS hand's animation-end stamp and did nothing. On a slow animation
+   * setting the winner label and the pot push were wiped mid-flight.
+   */
+  it('POT_WIN can extend the reset, and only ever later', () => {
+    expect(TABLE_PAGE, 'the reset callback must be re-armable').toMatch(/handCompleteResetFnRef/);
+    expect(TABLE_PAGE, 'the due time must be tracked to compare against').toMatch(
+      /handCompleteResetAtRef/
+    );
+    // The guard that makes it one-directional.
+    expect(TABLE_PAGE, 'the extension must refuse to pull the reset earlier').toMatch(
+      /wantResetAt > handCompleteResetAtRef\.current/
+    );
+  });
+
+  it('a fold-around win still names a winner and pushes a real pot', () => {
+    /* An uncontested win has no showdown, so the engine ships hand_name
+       undefined by construction and every `{winningHandName && ...}` consumer
+       rendered nothing — silence on the commonest hand in poker. */
+    expect(TABLE_PAGE, 'no fallback label for an uncontested win').toMatch(/'Wins The Pot'/);
+    /* And the pot pill had no non-zero total to carry on that hand, because
+       mainPot === streetBets all the way through it. */
+    expect(TABLE_PAGE, 'the push carries no awarded amount').toMatch(/awardedPot=\{/);
+  });
+
+  it('the pot push is not restricted to a single winner', () => {
+    /* A chop used to get no push at all ("no one seat to push to"); it now
+       pushes to the midpoint of the winning seats. */
+    expect(TABLE_PAGE, 'the single-winner gate on the pot push is back').not.toMatch(
+      /if \(winnerIds\.length === 1\) \{/
+    );
   });
 
   it('the seat accepts the MUCKED ruling and the reveal stagger', () => {

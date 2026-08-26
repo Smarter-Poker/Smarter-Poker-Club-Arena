@@ -25,7 +25,12 @@ export interface PotAwardWinnerWire {
 
 export interface PotAwardGroupWire {
   pot_index: number;
-  board?: 1 | 2;
+  /**
+   * POKERBROS PARITY 2026-08-26: 1|2 on double-board bomb pots, RUN index
+   * 1..3 on run-it-twice hands. Ordering by this axis is what makes RIT pots
+   * ship board by board.
+   */
+  board?: number;
   low?: boolean;
   winners: PotAwardWinnerWire[];
 }
@@ -42,7 +47,8 @@ export interface FlatWinnerWire {
 /** One sequenced award beat: every winner in it animates together. */
 export interface AwardGroup {
   potIndex: number;
-  board: 1 | 2;
+  /** 1|2 on double-board bomb pots; RUN index 1..3 on run-it-twice hands. */
+  board: number;
   low: boolean;
   winners: Array<{ userId: string; amount: number }>;
   /**
@@ -78,7 +84,7 @@ export function buildAwardGroups(
     return potAwards
       .map((g) => ({
         potIndex: g.pot_index ?? 0,
-        board: (g.board === 2 ? 2 : 1) as 1 | 2,
+        board: typeof g.board === 'number' && g.board >= 1 ? g.board : 1,
         low: g.low === true,
         winners: (g.winners ?? [])
           .filter((w) => w && typeof w.user_id === 'string')

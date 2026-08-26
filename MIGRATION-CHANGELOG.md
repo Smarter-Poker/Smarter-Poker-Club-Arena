@@ -15036,3 +15036,58 @@ own `variant` assertion from earlier today.
 parallel run and passes in isolation on both this branch and a clean main. That
 is a flake — probably cross-test pollution — and it is worth someone chasing
 before it masks a real failure.
+
+---
+
+## 2026-08-26 — Run It Twice: PokerBros parity pass (offer panel, live consent, per-run pot ships, split pots)
+
+Reference: three screen recordings from Dan (RIT accepted HU, RIT declined,
+RIT multi-way with split pots), watched frame-by-frame. Full behavioral
+contract in `docs/rit-pokerbros-parity.md`.
+
+**Server** (`ServerTableEngineRunout.ts`, `ServerTableEngineBase.ts`,
+`ServerTableEngineHandEvents.ts`, `RunItTwiceEngine.ts`, `handFacts.ts`,
+`types.ts`):
+
+- One shared 25s offer countdown (was: hardcoded 10 on the wire, 10 in the
+  engine, 5/10 on the client — three clocks for one question). `rit_offer`
+  and `rit_chooser_decided` now carry `deadline_ts` + `timeoutSeconds` from
+  the engine config; the wait's safety timeout follows the config.
+- NEW `rit_response_update` broadcast on every accept (live green checkmarks
+  in the consent panel) and NEW `rit_all_accepted` on unanimity (the accept
+  banner). Both named in `RIT_EVENT_TYPES` for telemetry.
+- `dealAndResolveRIT` now collects `determineWinners`' UNMERGED perPotOut
+  per board and publishes it through `currentHandPerPotAwards` /
+  `currentHandWinnersByBoard` with the RUN index as the board axis (types
+  widened 1|2 → number). `pot_win.pot_awards` therefore sequences run 1 →
+  run N, main pot → side pots, splits per winner — the client's existing
+  award-group animation plays them as separate beats. Money math untouched:
+  settlement is byte-identical, display shares are scaled to the net pot.
+- Fixed: WINNERS handler unconditionally wiped `currentHandWinnersByBoard`
+  on the RIT path's empty emit (pre-set per-run labels died a tick before
+  pot_win read them).
+- `rit_result` carries `base_board_count` for the client reveal timeline.
+
+**Client** (`TablePage.tsx`, `RunItTwice.tsx/.css`, `TableModalsLayer.tsx`,
+`showdownPresentation.ts`, `handHistoryShape.ts`):
+
+- `RunItTwicePrompt` rebuilt as the consent panel: board preview with
+  face-down slots for undealt streets, pot, live shared countdown, one row
+  per all-in player (hole cards, equity when broadcast, live checkmark),
+  Decline/Accept pills. Opens for EVERY participant at `rit_offer` —
+  responders can accept before the chooser picks (the engine records it).
+  Accepting keeps the panel open in a waiting state; ANY decline closes it
+  instantly for everyone (`rit_single_run`) with the decliner named.
+- Reveal timeline: `rit_result` no longer slams finished boards onto the
+  felt. Each run deals street by street (flop → turn → river) at the paced
+  runout cadence, run by run; winner ribbons, card highlights and share
+  labels appear only after the last river; the pot ship holds until the
+  timeline ends, then plays board-by-board, pot-by-pot, split fans with
+  per-winner floats.
+- `handHistoryShape` now lifts board 3 as well (`extraBoards`); a 3-run
+  hand no longer loses its third board in replay.
+
+**Tests:** new `server/src/engine/RunItTwice.parity.test.ts` (wire countdown,
+consent broadcasts, per-run unmerged awards, 3-run board axis) + extended
+`tests/hand-history-shape.test.ts` (board-3 lift). `hand-history-shape`
+updated for the new `extraBoards` field in the same commit that adds it.

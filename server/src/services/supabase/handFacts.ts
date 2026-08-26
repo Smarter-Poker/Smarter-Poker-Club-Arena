@@ -204,6 +204,13 @@ const RIT_EVENT_TYPES = new Set([
   // outcome used to be indistinguishable, in the data as well as on screen,
   // from a Run It Twice offer that never resolved at all.
   'rit_single_run',
+  // POKERBROS PARITY 2026-08-26: consent progress on the wire. Every accept
+  // broadcasts rit_response_update (live checkmarks in the Risk Management
+  // panel), and unanimous consent broadcasts rit_all_accepted (the "players
+  // have accepted running multi-times" banner). Named here the day they were
+  // added so RitTelemetryNames keeps its every-emitted-name-is-captured law.
+  'rit_response_update',
+  'rit_all_accepted',
   'insurance_offers',
 ]);
 

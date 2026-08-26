@@ -212,6 +212,40 @@ describe('the wiring that carries that result to the screen', () => {
   });
 });
 
+describe('the share links themselves point somewhere that exists', () => {
+  // Comments are stripped before matching: these assertions are about what the
+  // page BUILDS, and the comments deliberately quote the dead link they
+  // replaced so the next reader knows what not to put back.
+  const codeOnly = (src: string) =>
+    src
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('//') && !line.trim().startsWith('*'))
+      .join('\n');
+
+  const PROMOTIONS = codeOnly(read('src/pages/PromotionsPage.tsx'));
+  const REFERRAL_MODAL = read('src/components/social/ReferralModal.tsx');
+
+  it('the Invite and Earn modal no longer hands out a dead domain', () => {
+    // It advertised `https://clubarena.poker/join?ref=<uuid>`: not the
+    // production domain, and `/join` is not a route in this router. Following
+    // it could not land anywhere.
+    expect(PROMOTIONS).not.toMatch(/clubarena\.poker\/join/);
+    expect(PROMOTIONS).toMatch(/\/hub\/club-arena\/invite\/\$\{clubId\}\?ref=\$\{referralCode\}/);
+  });
+
+  it('and no longer invents a referral code that matches no player', () => {
+    // `user.id.slice(0, 8).toUpperCase()` is not anybody's code, so redemption
+    // could only ever answer 'unknown_inviter'.
+    expect(PROMOTIONS).not.toMatch(/slice\(0, 8\)\.toUpperCase\(\)/);
+    expect(PROMOTIONS).toMatch(/select\('player_number'\)/);
+  });
+
+  it('will not report "Copied!" for a link it has not built yet', () => {
+    expect(REFERRAL_MODAL).toMatch(/if \(!referralLink\) return;/);
+    expect(REFERRAL_MODAL).toMatch(/disabled=\{!referralLink\}/);
+  });
+});
+
 describe('the migration that made the RPC executable at all', () => {
   const MIGRATION = read('supabase/migrations/20260826_invite_redemption_never_ran.sql');
 

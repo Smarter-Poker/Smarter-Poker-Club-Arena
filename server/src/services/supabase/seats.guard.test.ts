@@ -87,7 +87,27 @@ describe('seats.ts - chips cannot leave the felt uncredited', () => {
   it('atomicCashout keeps the guard it has had since SWEEP #4 P0-3', () => {
     expect(atomicCashout).toContain('safeToClearSeat');
     const catchIdx = atomicCashout.lastIndexOf('} catch (');
-    expect(atomicCashout.slice(catchIdx)).toContain('if (safeToClearSeat)');
+    // Matched to the open paren, not 'if (safeToClearSeat)': 2026-08-26 the
+    // condition was widened to '&& exitingSeatNumber !== null' so the fallback
+    // cannot vacate a seat it never read. The guard must still be the thing
+    // that gates the vacate - this fails if anyone removes it - but it is
+    // allowed to be stricter than it was.
+    expect(atomicCashout.slice(catchIdx)).toContain('if (safeToClearSeat');
+  });
+
+  it('every left_at write in atomicCashout is scoped to the seat it credited', () => {
+    // The rule markSeatAsLeft got on 2026-08-26 and atomicCashout did not.
+    // atomicCashout SELECTs by seat_number when the caller supplies one, but
+    // both of its writes were scoped only by table_id + user_id - so a player
+    // holding two active seats had BOTH vacated while one stack was credited,
+    // and the other was destroyed.
+    const writes = atomicCashout.split('left_at: new Date().toISOString()');
+    for (let i = 1; i < writes.length; i++) {
+      const chain = writes[i].slice(0, 400);
+      expect(chain, `left_at write #${i} in atomicCashout is not scoped to seat_number`).toContain(
+        "eq('seat_number'"
+      );
+    }
   });
 
   it('both cash-out paths still dedupe on the same idempotency key', () => {

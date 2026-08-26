@@ -52,8 +52,28 @@
 
 import { isInLateRegistration } from './tournamentFilters';
 
-/** How close to the start an event has to be before a gap is worth saying. */
-export const ANNOUNCE_WITHIN_MS = 12 * 60 * 60 * 1000;
+/**
+ * How close to the start an event has to be before a gap is worth saying.
+ *
+ * WAS 12 HOURS. Dan 2026-08-26, overruling that: "IT SHOULD BE ANNOUNCING
+ * OVERLAY ALERTS FOR ANY TOURNAMENT THAT DOESN'T APPEAR TO BE MEETING THE
+ * GUARANTEE."
+ *
+ * Twelve hours was my caution about crying wolf - every guaranteed event is
+ * "short" the moment it is created, so a wide window risks a permanent flag
+ * nobody reads. Dan's call is the commercial one and he is right that a
+ * shortfall a player could still fix is worth saying out loud. Seven days
+ * covers the whole publish window (6 days for a 200+ buy-in), so an event
+ * announces for as long as it is on the board and enterable.
+ *
+ * The wolf-crying guard did not go away, it moved: MIN_OVERLAY_FRACTION and
+ * MIN_OVERLAY_CHIPS still gate on the shortfall being MATERIAL, and the copy
+ * says POTENTIAL while the field can still close it. What stops a flag being
+ * permanent now is the horse ramp - mttPrestartHorseTarget fills a guaranteed
+ * event to whatever covers it in the last hour, so an announcement is a live
+ * window that genuinely closes rather than a standing complaint.
+ */
+export const ANNOUNCE_WITHIN_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * The smallest shortfall worth announcing, as a fraction of the guarantee.

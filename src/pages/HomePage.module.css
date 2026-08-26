@@ -941,6 +941,7 @@
    transform is additionally reset because a transform here would make this a
    containing block for the cards' absolute positioning. */
 .carouselScrollFade {
+  overflow: hidden;
   width: 100%;
   max-width: 1360px;
   margin-left: auto;

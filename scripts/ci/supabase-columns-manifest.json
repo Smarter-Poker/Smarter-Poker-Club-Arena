@@ -1555,6 +1555,20 @@
       "updated_at",
       "user_id"
     ],
+    "club_profit_reconcile_log": [
+      "id",
+      "ran_at",
+      "stat_date",
+      "club_id",
+      "exact_profit_sum",
+      "house_cut",
+      "exact_drift",
+      "dashboard_drift_before",
+      "tolerance",
+      "applied",
+      "reason",
+      "rows_updated"
+    ],
     "club_rake_daily_user": [
       "club_id",
       "computed_at",
@@ -8787,6 +8801,12 @@
       "key",
       "table_id",
       "user_id"
+    ],
+    "table_buyin_idempotency_keys": [
+      "key",
+      "user_id",
+      "amount",
+      "created_at"
     ],
     "table_cashout_history": [
       "cashed_out_at",

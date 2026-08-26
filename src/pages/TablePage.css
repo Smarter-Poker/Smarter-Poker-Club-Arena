@@ -3376,9 +3376,33 @@ body.ca-raising .bankroll-widget {
   }
 
   .table-scaler {
-    /* Dan 2026-08-24: "table is still too small." With 4px gutters the cap
-       is now the viewport itself. */
-    max-width: calc(100% - 6px);
+    /* Dan 2026-08-26: "make the felt genuinely wider." The `- 6px` here was
+       the last thing standing between the oval and its container, and it was
+       pure loss - the container already pays 4px gutters on each side, so this
+       took a second bite out of the same axis for no stated reason.
+
+       MEASURED in Chromium at three phone widths, shipped vs this rule:
+         375x812   361.0 x 596.7  ->  367.0 x 606.6
+         393x852   379.0 x 626.4  ->  385.0 x 636.4
+         430x932   416.0 x 687.6  ->  422.0 x 697.7
+       Aspect stays 0.605 in every case, and the taller box still fits: at
+       375px the container offers 642px of height and the oval asks for 606.6.
+
+       It also makes the side seats fit BETTER, which is the opposite of what
+       you would expect from a bigger table. A seat plate is a fixed 96px wide
+       and is centred on its ring position, so its left edge sits at
+       `gutter + 0.105 * W - 48`. Growing W moves the centre outboard faster
+       than the plate grows, so the overhang against the page edge goes from
+       6.1px to 5.5px.
+
+       NOT taken to `100%` with the gutters removed, which measures 375x619.8
+       and is the largest the oval can be at this width. That costs the 4px
+       gutters, and by the formula above the side plates then overhang by
+       8.6px instead of 5.5px - a real regression in the one place this table
+       is already tight. 8px of extra felt is not worth 3px more of a clipped
+       name plate. If that trade is ever wanted, narrow the side seats' plate
+       in the same commit, or the names pay for the felt. */
+    max-width: 100%;
   }
 
   .spectator-footer-bar {

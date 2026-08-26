@@ -10990,6 +10990,7 @@
       "club_id",
       "can_draw_100x"
     ],
+
     "v_system_health_cron": [
       "jobid",
       "jobname",

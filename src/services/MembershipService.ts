@@ -437,10 +437,12 @@ export const MembershipService = {
       const total = row?.total == null ? 0 : Number(row.total);
       const active = row?.active == null ? 0 : Number(row.active);
       const pending = row?.pending == null ? 0 : Number(row.pending);
+
+      let online = 0;
       // Estimate online count — creating a channel just to check presenceState()
       // on an unsubscribed channel always returned 0 and caused side-effect churn.
       // Real online tracking should come from a dedicated presence subscription.
-      const online = Math.floor((active || 0) * 0.15);
+      online = Math.floor((active || 0) * 0.15);
 
       return {
         total: total || 0,

@@ -1360,8 +1360,21 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
       this.clearTurnTimer();
       this.preciseTimer.cancelTimer(this.tableId, userId); // Step 4: Cancel precise deadline
-      // Bible V8 §6.2: If time bank was active, notify engine to deduct used time from pool
-      if (this.timeBankActivatedThisTurn) {
+      // Bible V8 §6.2: If time bank was active, notify engine to deduct used time from pool.
+      //
+      // 2026-08-26: this was gated on timeBankActivatedThisTurn ALONE. The
+      // ARM-ONLY branch of activateTimeBank returns early - with the message
+      // "Time Bank Armed. It Starts When Your Clock Runs Out" - and never sets
+      // that flag, because nothing has been spent yet. So a player who pressed
+      // the button early and then acted inside their ordinary clock left
+      // bank.armed = true behind them. On any LATER turn in the same street,
+      // onPrimaryTimerExpired sees that stale intent and spends a use they did
+      // not ask for; only resetStreetActivations cleared it, a whole street
+      // later. playerActed is the thing that clears bank.armed, and
+      // TimeBankEngine.manualcountdown.test.ts already pins that contract
+      // ("player acted in time; the intent dies with it"). The engine was
+      // right; this caller simply never reached it.
+      if (this.timeBankActivatedThisTurn || this.timeBankEngine.isArmed(this.tableId, userId)) {
         this.timeBankEngine.playerActed(this.tableId, userId);
       }
       const actionApplied = this.handController.performAction(

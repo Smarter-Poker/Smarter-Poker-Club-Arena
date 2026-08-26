@@ -1084,19 +1084,20 @@ export async function getLiveMemberCount(clubId: string): Promise<number> {
     /* fall through */
   }
 
-  // ── Source C: Direct count (only correct when RLS permits full visibility) ──
-  try {
-    const { count, error } = await supabase
-      .from('club_members')
-      .select('*', { count: 'exact', head: true })
-      .eq('club_id', resolvedId)
-      .in('status', ['active', 'approved']);
-    if (!error && typeof count === 'number') {
-      candidates.push(count);
-    }
-  } catch (e) {
-    console.warn('[ClubsService] getLiveMemberCount direct count failed:', e);
-  }
+  /* Source C (a direct count) REMOVED 2026-08-26.
+   *
+   * Its own comment said "only correct when RLS permits full visibility", and
+   * that is the whole argument against keeping it. RLS can only REMOVE rows, so
+   * this count is always <= the true count. Source A is now genuinely SECURITY
+   * DEFINER (it was declared as such in a comment but was not, until
+   * 20260825460000) and returns the true count. Since the function below returns
+   * Math.max(...candidates), source C could never once have been selected - it
+   * was a 204 ms scan whose result was arithmetically guaranteed to lose.
+   *
+   * Measured, as the club owner who can see all 588 rows:
+   *   direct count ................. 204.61 ms
+   *   fn_get_club_member_count ......  0.55 ms
+   */
 
   if (candidates.length === 0) {
     reportError(new Error('getLiveMemberCount: no source returned a count'), 'ClubsService');

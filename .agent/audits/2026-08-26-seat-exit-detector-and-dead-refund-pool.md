@@ -106,49 +106,52 @@ refund table.
 | 6   | Auth connection pool -> percentage-based                                     | No tool access; dashboard or management API only.                                                                                                                                                                                                           |
 | 7   | `TablePage.tsx` — 748 KB / 15,345 lines                                      | Large refactor. This, not route splitting, is the real bundle win: every route in `App.tsx` is already `lazyWithRetry(() => import(...))`.                                                                                                                  |
 
-### #2 — every engine deploy dumps every player at every table
+### #2 — engine restart churn — CORRECTED 2026-08-26, I overstated this
 
-`"Cash-out from table (server startup cleanup)"` is not background noise. Over
-the last four days:
+**The original version of this section was wrong in its most alarming claim and
+is replaced here. Read the correction, not the headline it replaced.**
+
+What I first wrote was that the engine "force-cashes out every seated player
+roughly every 33 minutes". The measurements behind it were right; the conclusion
+drawn from them was not, because I never checked WHO was being cashed out.
 
 ```
-restart bursts .................. 168
-forced cash-outs ................ 33,760      (11.6M chips)
-average players dumped/restart .. 201
-average interval ................ 32.9 minutes
+distinct users in startup-cleanup cash-outs (4d) .. 584
+of those, profiles.is_horse = true ................ 584   (100%)
+of those, human ...................................   0
+rows attributable to horses ....................... 35,331  (100%)
 ```
 
-For comparison, ordinary voluntary cash-outs numbered 16,165 over a _month_.
-The platform force-cashes out more players every four days than leave on their
-own in thirty.
+**Every single one is a horse. Not one human player has been affected.**
 
-**The cause is deploys.** GitHub Actions ran `auto-deploy-hetzner.yml`
-**198 times** in the same window (187 success, 7 failure) against **168**
-observed restart bursts. Every merge touching `server/**` cold-restarts the
-engine, and the new leader's startup sweep closes every open seat. Confirmed
-against `engine_leader`: `acquired_at` was `15:57:14` and the last cash-out
-burst began at `15:57:20`, six seconds later.
+The reason is a guard that was already there and that I failed to read before
+drawing a conclusion. `auto-deploy-hetzner.yml` has carried a **drain gate**
+since 2026-08-24 that reads `humansSeatedTotal` from `/health` and DEFERS the
+restart while any human is seated, rather than kicking them. It is paired with
+`MIN_RESTART_SPACING_SEC` (20 minutes) coalescing and a matching 20-minute
+catch-up schedule — which is also the real explanation for the ~33 minute
+average interval I measured and mistook for a fault.
 
-The interval distribution rules out a lease timeout. It is not periodic: gaps
-run from 3.5 to 475 minutes, and 59 of the 168 restarts (35%) came within ten
-minutes of the previous one. That is the shape of a merge queue, not a timer.
-This repo merges roughly nineteen times an hour.
+So the deploy cadence is not harming players. Cashing horses out on a cold start
+and reseating them is the intended behaviour.
 
-`engine_recovery_events` shows the engine is also unhealthy independently of
-deploys: **1,891 `watchdog_kill_rebuild`** events in four days, 228 of them
-`start_failed:start_load_table` in the last two. The table loader is failing at
-startup and the watchdog is killing and rebuilding.
+**Two things from the original finding do still stand:**
 
-**Why this matters beyond the disruption:** every one of those 33,760 forced
-cash-outs runs the same cash-out path that lost 25.90 on exit 7458 and 14.18 on
-hand #1458859. The add-on race in #1 is not a rare edge case, it is being rolled
-33,760 times per four days. Fixing #1 and fixing #2 are the same piece of work
-in two places.
+- `engine_recovery_events` holds **1,891 `watchdog_kill_rebuild`** events over
+  four days, 228 of them `start_failed:start_load_table` in the last two. That
+  is the table loader failing at startup and the watchdog rebuilding around it.
+  It is unrelated to the drain gate and is not explained by deploys.
+- 198 runs of `auto-deploy-hetzner.yml` in four days is a lot of engine
+  restarts. It costs runner minutes and it churns horse seats. Worth a look as
+  an efficiency question — **not** as a player-harm one.
 
-Do not "fix" this by making the startup sweep quieter. The sweep is correct for
-a cold start; the bug is that a cold start happens fifty times a day. Either
-drain and hand over to a standby leader, or stop redeploying the engine on every
-server-touching merge.
+**And the claim it was used to support is withdrawn.** I wrote that the add-on
+race was "being rolled 33,760 times per four days". It is not. Those 33,760
+cash-outs are horses. The add-on race is evidenced by exactly two incidents:
+exit 7458 (25.90, repaid by
+`20260826_repay_seat_exit_7458_addon_shortfall`) and the hand-written correction
+for hand #1458859 (14.18). It is a real bug and worth fixing — it is not
+happening at that volume.
 
 ### Spec for #1 — the add-on / leave race
 

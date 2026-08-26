@@ -38,6 +38,24 @@ import {
   scoreOmahaHi,
   variantInfo,
 } from '../engine/HorseEval.js';
+
+// V16 DEEP-READS HARNESS: hand-category names matching the engine's showdown
+// vocabulary, so sandboxed league play can feed observeHandComplete and the
+// v16_deep_reads matchup measures a layer that otherwise only learns in
+// production.
+const CAT_NAMES = [
+  '',
+  'High Card',
+  'Pair',
+  'Two Pair',
+  'Three of a Kind',
+  'Straight',
+  'Flush',
+  'Full House',
+  'Four of a Kind',
+  'Straight Flush',
+  'Royal Flush',
+];
 import { SUITS, RANKS, validateAction, calculateBettingState } from '../engine/PokerEngine.js';
 import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
@@ -474,6 +492,38 @@ export function playHand(
     }
   }
 
+  // ═══ V16 DEEP-READS HARNESS (2026-08-26) ═══
+  // Production learns fold-to-c-bet / fold-to-3-bet / sizing tells from
+  // COMPLETED hands at settlement. The league sandbox never ran settlement,
+  // so those reads stayed empty and the layer was unmeasurable (stated
+  // plainly in the deep-reads PR). Feed the same observation here, inside
+  // the SANDBOX so nothing synthetic touches live memory. Showdown identity
+  // comes from the same evaluators that settled the pot.
+  if (sandbox) {
+    try {
+      const showdown: Array<{ user_id: string; mucked: boolean; hand_name?: string }> = [];
+      const liveSeats = seats.filter((s) => !s.player.is_folded);
+      if (liveSeats.length >= 2) {
+        for (const s of liveSeats) {
+          const score = vi.isOmaha
+            ? scoreOmahaHi(s.player.cards, board)
+            : scoreHoldem(s.player.cards.concat(board), s.player.cards.length + 5, vi.isShortDeck);
+          const cat = Math.floor(score / 0x100000);
+          showdown.push({
+            user_id: s.player.user_id,
+            mucked: false,
+            hand_name: CAT_NAMES[cat] ?? '',
+          });
+        }
+      }
+      HorseMind.runInSandbox(sandbox, () =>
+        HorseMind.observeHandComplete(`league:${ts}`, history, BB, showdown)
+      );
+    } catch {
+      /* the harness is measurement plumbing — never let it break a deal */
+    }
+  }
+
   return seats.map((s, i) => winnings[i] - s.contributed);
 }
 
@@ -603,6 +653,18 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'shortdeck_v8_layer', variant: 'short_deck', pairs: 6000, a: {}, b: { v8: false } },
   { name: 'nlh_40bb_preflop', stackBB: 40, pairs: 6000, a: {}, b: { v7Preflop: false } },
   { name: 'hu_mind_layer', seats: 2, pairs: 6000, a: {}, b: { mind: false } },
+  // ── V16 strategy matchups (2026-08-26) ──
+  { name: 'hu_v16_overlay', seats: 2, pairs: 6000, a: {}, b: { v16Hu: false } },
+  { name: 'v16_ratio_rescale', pairs: 6000, a: { v16Ratio: true }, b: {} },
+  { name: 'v16_sizecond', pairs: 6000, a: {}, b: { v16SizeCond: false } },
+  { name: 'plo4_v16_polarity', variant: 'plo4', pairs: 6000, a: {}, b: { v16PloPolar: false } },
+  // Measurable because playHand's sandbox settlement now feeds
+  // observeHandComplete — the reads accumulate inside each pass's sandbox.
+  { name: 'v16_deep_reads', pairs: 6000, a: {}, b: { v16Reads: false } },
+  // ── V17 (2026-08-26) ──
+  { name: 'v17_positional', pairs: 6000, a: {}, b: { v17Pos: false } },
+  { name: 'v17_river_probe', pairs: 6000, a: {}, b: { v17RiverProbe: false } },
+  { name: 'shortdeck_v17', variant: 'short_deck', pairs: 6000, a: {}, b: { v17ShortDeck: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
   { name: 'mind_layer', a: {}, b: { mind: false } },
@@ -622,6 +684,15 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v12: false,
       v15: false,
       v16Reads: false,
+      v16Icm: false,
+      v16Hu: false,
+      v16Blockers: false,
+      v16SizeCond: false,
+      v16PloPolar: false,
+      v17Pos: false,
+      v17RiverProbe: false,
+      v17CatchBlock: false,
+      v17ShortDeck: false,
       mind: false,
       streetIQ: false,
       handReading: false,

@@ -14,7 +14,7 @@ import { InsuranceEngine } from './InsuranceEngine.js';
 import { monteCarloEquity } from './MonteCarloEquity.js';
 import { getEquityPool } from './equity/EquityWorkerPool.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
-import { insuranceEquity } from './InsuranceEquity.js';
+import { insuranceEquity, leaderOuts } from './InsuranceEquity.js';
 import {
   evaluateHand,
   evaluateOmahaHand,
@@ -258,14 +258,17 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * Bible V8 §4.19: Respond to an insurance offer.
    * @param coveragePercent — Optional partial coverage (1-100%). Default = 100% (full insurance).
    *   Player uses a slider UI to adjust. e.g., 75 = "75% insurance" = 75% of the payout/cost.
-   * @param declineForHand — If declining, true = "Decline for Hand" (never re-offer),
-   *   false = "Decline Now" (may re-offer on next street if equity shifts).
+   * @param declineForHand — Accepted for API compatibility but IGNORED since
+   *   2026-08-26: every decline is final for the hand (see below).
    */
   public respondToInsurance(
     userId: string,
     response: 'accept' | 'decline',
     coveragePercent: number = 100,
-    declineForHand: boolean = false
+    // POKERBROS PARITY 2026-08-26 (Dan): "IF A PLAYER DECLINES, THEY DON'T GET
+    // OFFERED AGAIN." There is no street-only decline any more. The parameter
+    // stays so older clients don't 400, but the value is not consulted.
+    _declineForHand: boolean = false
   ): {
     success: boolean;
     error?: string;
@@ -295,9 +298,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         insuredAmount: accepted_offer?.insuredAmount,
       };
     } else {
-      // Two decline modes: "Decline Now" (this street) or "Decline for Hand" (all streets)
-      this.insuranceEngine.decline(this.tableId, userId, declineForHand);
-      return { success: true, status: declineForHand ? 'declined_for_hand' : 'declined' };
+      // POKERBROS PARITY 2026-08-26 (Dan): every decline is final for the hand.
+      this.insuranceEngine.decline(this.tableId, userId, true);
+      return { success: true, status: 'declined_for_hand' };
     }
   }
 
@@ -1536,7 +1539,19 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         );
 
         if (offers.length > 0) {
-          this.broadcastInsuranceOffers(offers, pot, offerTimeout);
+          this.broadcastInsuranceOffers(offers, pot, offerTimeout, {
+            board: result.board,
+            allInPlayers,
+            outs: leaderOuts(
+              bestHandPlayer.holeCards,
+              allInForOffer
+                .filter((p) => p.playerId !== bestHandPlayer.playerId)
+                .map((p) => p.holeCards),
+              result.board,
+              variant,
+              isShortDeckInsurance
+            ),
+          });
           this.scheduleHorseInsuranceResponse(bestHandPlayer.playerId);
         }
       } else {
@@ -1571,7 +1586,19 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           );
 
           if (offers.length > 0) {
-            this.broadcastInsuranceOffers(offers, pot, offerTimeout);
+            this.broadcastInsuranceOffers(offers, pot, offerTimeout, {
+              board: result.board,
+              allInPlayers,
+              outs: leaderOuts(
+                bestHandPlayer.holeCards,
+                allInForOffer
+                  .filter((p) => p.playerId !== bestHandPlayer.playerId)
+                  .map((p) => p.holeCards),
+                result.board,
+                variant,
+                isShortDeckInsurance
+              ),
+            });
             this.scheduleHorseInsuranceResponse(bestHandPlayer.playerId);
           }
         }
@@ -1604,7 +1631,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         // 'BEHIND' — INSURANCE WILL BE OFFERED TO THE PLAYER THAT IS
         // 'AHEAD' IF ANY STREETS ARE STILL PENDING."
         // ═══════════════════════════════════════════════════════════════════
-        if (!this.insuranceEngine.anyEligibleForInsurance(this.tableId)) {
+        if (!this.insurancePauseStillLive(offerPlayers)) {
           // ALL players declined for hand — per-street pause is void.
           // Deal remaining streets instantly and finalize.
           console.log(
@@ -1634,21 +1661,83 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   }
 
   /**
+   * ELIGIBILITY FIX 2026-08-26: does the per-street insurance pause continue?
+   *
+   * anyEligibleForInsurance() only looks at players who already RECEIVED an
+   * offer. With two all-in players, the leader declining left the offers list
+   * holding only that one declined entry, the check returned false, and the
+   * flow gave up per-street pacing - so when the OTHER player took the lead
+   * on the next street (Dan: "IF HERO HAS THE BEST HAND ON THE FLOP ... THEN
+   * THE VILLAIN HAS THE BEST HAND ON THE TURN, THEY GET TO ACCEPT OR
+   * DECLINE") they were never offered anything. Eligibility is over ALL
+   * all-in players: anyone without a final decline on record can still be
+   * offered, so the pause must survive them.
+   */
+  protected insurancePauseStillLive(offerPlayers: Array<{ playerId: string }>): boolean {
+    const declinedIds = new Set(
+      this.insuranceEngine
+        .getOffers(this.tableId)
+        .filter((o) => o.declinedForHand)
+        .map((o) => o.playerId)
+    );
+    return offerPlayers.some((p) => !declinedIds.has(p.playerId));
+  }
+
+  /**
    * Broadcast insurance offers to clients via Supabase Realtime.
    * Includes all fields needed for the InsurancePanel slider UI.
    */
   protected broadcastInsuranceOffers(
     offers: import('./InsuranceEngine.js').InsuranceOffer[],
     pot: number,
-    timeoutSeconds: number
+    timeoutSeconds: number,
+    // POKERBROS PARITY 2026-08-26: the popup shows the leader's cards, the
+    // opponent's cards, the live board and the OUTS that beat the leader -
+    // and everyone ELSE at the table shows a "waiting on <name>" bar. All of
+    // that context now rides the offer event instead of arriving empty.
+    context?: {
+      board: import('../types.js').Card[];
+      allInPlayers: import('../types.js').SeatPlayer[];
+      outs: import('../types.js').Card[];
+    }
   ): void {
+    const nameOf = (playerId: string): string =>
+      context?.allInPlayers.find((p) => p.user_id === playerId)?.username ||
+      this.seatedPlayers.find((p) => p.user_id === playerId)?.username ||
+      'Player';
+    const street = !context ? '' : context.board.length === 3 ? 'flop' : 'turn';
+    // Outs as a probability of the NEXT card: outs / unseen cards. The popup
+    // renders it next to the count ("10 Outs - 22.7%").
+    let outPct = 0;
+    if (context && context.outs.length > 0) {
+      const known =
+        context.board.length + context.allInPlayers.reduce((n, p) => n + (p.cards?.length ?? 0), 0);
+      const deckSize = this.tableInfo?.game_variant === 'short_deck' ? 36 : 52;
+      const unseen = Math.max(1, deckSize - known);
+      outPct = Math.round((context.outs.length / unseen) * 1000) / 10;
+    }
     this.hub?.emitEvent(this.tableId, {
       type: 'insurance_offers',
       table_id: this.tableId,
       hand_number: this.handCount,
       pot,
+      street,
+      board: context?.board ?? [],
+      outs: context?.outs ?? [],
+      outCount: context?.outs.length ?? 0,
+      outPct,
       offers: offers.map((o) => ({
         playerId: o.playerId,
+        username: nameOf(o.playerId),
+        holeCards: o.holeCards,
+        opponents:
+          context?.allInPlayers
+            .filter((p) => p.user_id !== o.playerId)
+            .map((p) => ({
+              playerId: p.user_id,
+              username: p.username || 'Player',
+              holeCards: p.cards || [],
+            })) ?? [],
         equity: o.equity,
         fullPremium: o.fullPremium,
         premium: o.premium,

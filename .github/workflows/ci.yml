@@ -197,6 +197,23 @@ jobs:
       - name: ESM Invariant — no CommonJS require() in server runtime code
         run: node scripts/ci/check-esm-require.mjs
 
+      # Data invariant. CLAUDE.md section 5 rule 1 has banned .single() since
+      # this repo had rules, and the World Hub enforces it in CHECK 1 of its
+      # build-safety-gate. Club Arena enforced it nowhere, so on 2026-08-26 a
+      # sweep found three live violations sitting on main — two reading
+      # profiles.player_number, and one in ServerTableEngineDealing that
+      # decided whether a busted player gets the five second rebuy pause.
+      #
+      # None of them crashed. PostgREST answers zero rows with PGRST116 and
+      # supabase-js resolves { data: null, error } rather than throwing, so a
+      # call site reading only `data` degrades in silence: the settings page
+      # never showed a player number, the invite link pasted a raw uuid, and a
+      # player in a rebuy tournament lost their window to buy back in while the
+      # engine's own try/catch sat there never firing. A rule that only lives
+      # in a document gets re-broken; this one now fails the build.
+      - name: Data Invariant — .maybeSingle() never .single()
+        run: node scripts/ci/check-maybe-single.mjs
+
       # Copy invariant. Dan 2026-08-20: "forbid the use of em bars anywhere."
       # A style rule that lives only in someone's head gets re-broken by the
       # next person who writes a label — 444 of them had accumulated by the

@@ -117,28 +117,37 @@ export async function markSeatAsLeft(
         console.warn(
           `[markSeatAsLeft] Seat ${seat.id} was already credited under the legacy cash-out key — skipping credit`
         );
-        return;
-      }
-      const { error: creditErr } = await supabase.rpc('atomic_credit_wallet_and_log', {
-        p_user_id: userId,
-        p_amount: stack,
-        p_category: 'cashout',
-        p_description: 'Cash-out from table',
-        p_table_id: tableId,
-        p_hand_id: null,
-        p_related_entity_id: null,
-        // P1-2 FIX: keyed on the seat OCCUPANCY (see cashoutKey), IDENTICAL to
-        // the key atomicCashout writes, so a committed-but-timed-out credit here
-        // is a DB-side no-op on retry (no double-credit), and a seat cashed out
-        // by either path dedupes against the other.
-        p_idempotency_key: cashoutKey(seat),
-      });
-      if (creditErr) {
-        console.error(
-          `[markSeatAsLeft] cash-out credit failed for ${userId} — leaving seat occupied to avoid chip loss:`,
-          creditErr.message
-        );
-        return;
+        // AUDIT 2026-08-26 (second pass): this used to `return`, which skipped
+        // BOTH `safeToClearSeat = true` AND the soft-delete below. The legacy
+        // key is proof the wallet already holds these chips, so returning here
+        // left the seat occupied with a stack that is ALSO in the wallet -
+        // counted twice by fn_club_chip_circulation - and, because every retry
+        // re-enters this branch, the seat could never be vacated at all.
+        // atomicCashout's own legacy-key guard sets safeToClearSeat and falls
+        // through; the two functions are supposed to mirror each other.
+        // Skip only the CREDIT, never the seat exit.
+      } else {
+        const { error: creditErr } = await supabase.rpc('atomic_credit_wallet_and_log', {
+          p_user_id: userId,
+          p_amount: stack,
+          p_category: 'cashout',
+          p_description: 'Cash-out from table',
+          p_table_id: tableId,
+          p_hand_id: null,
+          p_related_entity_id: null,
+          // P1-2 FIX: keyed on the seat OCCUPANCY (see cashoutKey), IDENTICAL to
+          // the key atomicCashout writes, so a committed-but-timed-out credit here
+          // is a DB-side no-op on retry (no double-credit), and a seat cashed out
+          // by either path dedupes against the other.
+          p_idempotency_key: cashoutKey(seat),
+        });
+        if (creditErr) {
+          console.error(
+            `[markSeatAsLeft] cash-out credit failed for ${userId} — leaving seat occupied to avoid chip loss:`,
+            creditErr.message
+          );
+          return;
+        }
       }
     }
 
@@ -204,6 +213,11 @@ export async function atomicCashout(
   // was nothing to credit). If we throw before that, deleting the seat would
   // destroy the stack, so the fallback must preserve it instead.
   let safeToClearSeat = false;
+  // AUDIT 2026-08-26 (second pass): the seat this call actually read and
+  // credited. `seat` itself is scoped to the try, so the catch fallback below
+  // cannot see it, and without this the fallback's write was unscoped - it
+  // vacated every active seat the player held at this table.
+  let exitingSeatNumber: number | null = null;
   try {
     // 1. Find active seat
     let query = supabase
@@ -219,6 +233,7 @@ export async function atomicCashout(
 
     const { data: seat } = await query.maybeSingle();
     if (!seat) return 0;
+    exitingSeatNumber = seat.seat_number;
 
     const stack = seat.stack ?? 0;
     if (stack <= 0) safeToClearSeat = true; // nothing at risk if there is no stack
@@ -283,11 +298,18 @@ export async function atomicCashout(
     }
 
     // 3. Soft-delete seat
+    // AUDIT 2026-08-26 (second pass): scoped to the seat actually read and
+    // credited above. Unscoped, this vacated EVERY active seat the player held
+    // at this table while crediting only one of them - destroying the other
+    // stack. Same defect, same day, already fixed in markSeatAsLeft; it was
+    // never applied to this sibling. seat.seat_number comes from the SELECT,
+    // so this is right even when the caller supplied no seatNumber.
     await supabase
       .from('table_seats')
       .update({ left_at: new Date().toISOString(), leave_pending: false })
       .eq('table_id', tableId)
       .eq('user_id', userId)
+      .eq('seat_number', seat.seat_number)
       .is('left_at', null);
 
     // 4. Update player count
@@ -310,12 +332,16 @@ export async function atomicCashout(
     // SWEEP #4 P0-3 FIX: only soft-delete on exception if the credit already
     // committed (or there was no stack). Otherwise preserve the seat so the
     // stack is not destroyed on a transient failure — it will be retried.
-    if (safeToClearSeat) {
+    // Scoped for the same reason as the soft-delete above. If we threw before
+    // even reading a seat there is nothing to clear, and an unscoped write here
+    // would vacate seats this call never looked at.
+    if (safeToClearSeat && exitingSeatNumber !== null) {
       await supabase
         .from('table_seats')
         .update({ left_at: new Date().toISOString() })
         .eq('table_id', tableId)
         .eq('user_id', userId)
+        .eq('seat_number', exitingSeatNumber)
         .is('left_at', null);
     } else {
       console.warn(

@@ -590,11 +590,16 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      never did, which is why the lobby read as "nothing was remembered" even
      while the filters underneath were intact. See lobbyViewPrefs.ts. */
   const [viewPrefs, setViewPrefs] = useState<LobbyViewPrefs>(EMPTY_VIEW_PREFS);
-  /* One hydration per club, and never over a choice the player has already
-     made. resolvedClubId arrives after first paint, so without this a tab
-     tapped during those few hundred milliseconds would be silently undone by
-     the restore that follows it. */
-  const viewPrefsHydratedFor = useRef<string | null>(null);
+  /* WHICH CLUB THE PREFS IN STATE BELONG TO. Not a hydration marker: an
+     OWNERSHIP marker, because `viewPrefs` and `resolvedClubId` update on
+     different ticks and the gap between them is a cross-club leak (see the
+     persistence effect). */
+  const viewPrefsOwner = useRef<string | null>(null);
+  /* Has the player changed anything since the prefs in state were loaded.
+     resolvedClubId arrives after first paint, so without this a tab tapped
+     during those few hundred milliseconds would be silently undone by the
+     restore that follows it. Reset on a club switch: a choice made in one club
+     is not a choice in the next one. */
   const viewPrefsTouched = useRef(false);
   // LOBBY V2: show only starred cash tables. Declared here (not with the rest
   // of the V2 state) because `narrowing` and `clearAllNarrowing` read it.
@@ -1212,8 +1217,17 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      whatever the last visit left behind. */
   useEffect(() => {
     if (!resolvedClubId) return;
-    if (viewPrefsHydratedFor.current === resolvedClubId) return;
-    viewPrefsHydratedFor.current = resolvedClubId;
+    if (viewPrefsOwner.current === resolvedClubId) return;
+
+    /* A SWITCH IS NOT A FIRST LOAD. Going from club A to club B must clear
+       "the player already chose" -- that choice was about A. Leaving it set
+       would (a) suppress B's own saved view and (b) leave A's values in state
+       looking like B's, which is what the persistence effect below would then
+       write into B's key. On a FIRST load there is no previous club, so the
+       flag survives and a tab tapped before resolution still wins. */
+    const switchingClubs = viewPrefsOwner.current !== null;
+    viewPrefsOwner.current = resolvedClubId;
+    if (switchingClubs) viewPrefsTouched.current = false;
 
     const saved = loadViewPrefs(resolvedClubId);
     setViewPrefs(saved);
@@ -1247,11 +1261,27 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     }));
   }, []);
 
-  /* One writer, watching the value. `viewPrefsTouched` keeps a hydration from
-     immediately writing back what it just read -- harmless, but it would put a
-     storage write on every club visit for no reason. */
+  /**
+   * One writer, watching the value.
+   *
+   * THE ORDERING HAZARD THIS GUARDS. `resolvedClubId` and `viewPrefs` change
+   * on different ticks. When the player moves from club A to club B, this
+   * effect runs in the SAME commit as the hydration above -- and at that
+   * moment `resolvedClubId` is already B while `viewPrefs` still holds A's
+   * values, because `setViewPrefs` has not landed yet. Writing there would put
+   * club A's tab, sort and Favorites into club B's storage key: exactly the
+   * cross-club leak `lobbyViewPrefs` is keyed per club to prevent, reintroduced
+   * one layer up.
+   *
+   * Two conditions close it. `viewPrefsOwner` proves the prefs in hand belong
+   * to the club being written to, and `viewPrefsTouched` (cleared on a switch)
+   * proves the player actually changed something rather than this being a
+   * hydration echoing back what it just read.
+   */
   useEffect(() => {
-    if (!resolvedClubId || !viewPrefsTouched.current) return;
+    if (!resolvedClubId) return;
+    if (viewPrefsOwner.current !== resolvedClubId) return;
+    if (!viewPrefsTouched.current) return;
     saveViewPrefs(resolvedClubId, viewPrefs);
   }, [resolvedClubId, viewPrefs]);
 

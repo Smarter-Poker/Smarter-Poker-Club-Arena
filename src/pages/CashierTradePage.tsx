@@ -241,6 +241,7 @@ export default function CashierTradePage() {
   const [groupByRole, setGroupByRole] = useState(false);
   const [sortKey, setSortKey] = useState<'balance' | 'name'>('balance');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [visibleCount, setVisibleCount] = useState(25);
 
   const [records, setRecords] = useState<TradeRecordRow[]>([]);
   // Dan 2026-08-21: the three tabs/buttons that used to say "coming soon" are
@@ -1561,7 +1562,7 @@ export default function CashierTradePage() {
             */}
             {!loading &&
               !loadError &&
-              list.map((r) => (
+              list.slice(0, visibleCount).map((r) => (
                 <div
                   key={r.userId}
                   className={`${styles.row} ${selected.has(r.userId) ? styles.rowSelected : ''}`}
@@ -1602,6 +1603,15 @@ export default function CashierTradePage() {
                   />
                 </div>
               ))}
+            {!loading && !loadError && visibleCount < list.length && (
+              <button
+                className={styles.classicLink}
+                style={{ marginBottom: '1rem' }}
+                onClick={() => setVisibleCount((c) => c + 25)}
+              >
+                Load More ({list.length - visibleCount} Hidden)
+              </button>
+            )}
             <button
               className={styles.classicLink}
               onClick={() => navigate(`/clubs/${clubParam}/cashier-classic`)}

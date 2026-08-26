@@ -104,7 +104,11 @@ export default function ChipAnimation({
   denomValue,
 }: ChipAnimationProps) {
   const [position, setPosition] = useState(from);
-  const [opacity, setOpacity] = useState(1);
+  // AUDIT 2026-08-25: there was an `opacity` state here whose setter was never
+  // called on any path, so it was 1 for the whole life of every chip and was
+  // written into the inline style on every rAF frame. Removed: a state that
+  // cannot change is not a fade, it is a promise of one, and the flight's fade
+  // is done by `.chipContainer` in ChipAnimation.module.css.
   const [scale, setScale] = useState(1);
   const [isVisible, setIsVisible] = useState(true);
   const animRef = useRef<number>(0);
@@ -214,7 +218,6 @@ export default function ChipAnimation({
       className={styles.chipContainer}
       style={{
         transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
-        opacity,
       }}
     >
       {/* Stack of chips */}
@@ -331,6 +334,35 @@ function fanDenominations(amount: number, count: number): ChipDenomination[] {
   return Array.from({ length: count }, (_, i) => expanded[i % expanded.length]);
 }
 
+/**
+ * A monotonic counter for flight ids.
+ *
+ * AUDIT 2026-08-25 — THE IDS COLLIDED, AND THEY COLLIDED ON EVERY HAND.
+ *
+ * Both helpers below built their ids as `<kind>-${Date.now()}-${i}`, where `i`
+ * is the index WITHIN one fan. Two fans created in the same millisecond
+ * therefore produce the same ids, and both callers create fans in a loop
+ * inside a single tick:
+ *
+ *   - TablePage's blind-posting handler pushes a fan per post, so the small
+ *     blind's chip 0 and the big blind's chip 0 are the same id on every hand
+ *     that is dealt;
+ *   - the pot-award handler pushes a fan per winner, so a split pot collides
+ *     the same way.
+ *
+ * The consequences are both visible. The manager renders the list with
+ * `key={anim.id}`, so React warns and reconciles two different flights onto
+ * one element; and TablePage reaps a finished flight with
+ * `prev.filter((a) => a.id !== id)`, so the FIRST chip to land deletes the
+ * other seat's chip mid-air. The blinds' flights are the ones users see, and
+ * "one blind's chips vanish on the way to the pot" is exactly what that looks
+ * like.
+ *
+ * A counter rather than a UUID: the ids also want to be short and stable in
+ * test snapshots, and nothing outside this module parses them.
+ */
+let flightSeq = 0;
+
 /** Create a chip-to-pot animation event (2-4 staggered chips from seat to pot center) */
 export function createChipToPotEvent(
   seatPos: Position,
@@ -341,7 +373,7 @@ export function createChipToPotEvent(
   const fan = fanDenominations(amount, chipCount);
 
   return fan.map((denom, i) => ({
-    id: `chip-to-pot-${Date.now()}-${i}`,
+    id: `chip-to-pot-${Date.now()}-${i}-${++flightSeq}`,
     from: {
       x: seatPos.x + (Math.random() - 0.5) * 10,
       y: seatPos.y + (Math.random() - 0.5) * 10,
@@ -370,7 +402,7 @@ export function createPotToWinnerEvent(
   const fan = fanDenominations(amount, chipCount);
 
   return fan.map((denom, i) => ({
-    id: `pot-to-winner-${Date.now()}-${i}`,
+    id: `pot-to-winner-${Date.now()}-${i}-${++flightSeq}`,
     from: {
       x: potPos.x + (Math.random() - 0.5) * 20,
       y: potPos.y + (Math.random() - 0.5) * 10,
@@ -407,6 +439,15 @@ function getChipCount(amount: number): number {
 }
 
 function formatAmount(amount: number): string {
+  // AUDIT 2026-08-25: the K branch had no ceiling, so a 1,000,000 pot flew to
+  // its winner labelled "1000.0K" and a 5M pot "5000.0K". Every other money
+  // label on this table (formatStack in SeatSlot, formatChipAmount in
+  // ChipPhysics, the pot pill) switches to M at a million; the one label that
+  // appears at the moment a player wins the biggest pot of their session did
+  // not.
+  if (amount >= 1000000) {
+    return `${(amount / 1000000).toFixed(1)}M`;
+  }
   if (amount >= 1000) {
     return `${(amount / 1000).toFixed(1)}K`;
   }

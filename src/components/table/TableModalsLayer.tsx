@@ -98,7 +98,19 @@ export interface TableModalsLayerProps {
   rakeCap: number | undefined;
   runItTwice: boolean | undefined;
   isHandInProgress: boolean;
+  /**
+   * ─── ACCEPTED AND IGNORED (audit 2026-08-25) ──────────────────────────────
+   * `boardStage`, `handNumber` and `buyInProcessingRef` below are declared
+   * here, passed by TablePage on every render, and read by NOTHING in this
+   * file — they are not in the destructuring block at the top of the
+   * component. They are left declared rather than deleted because removing a
+   * prop from this interface while TablePage still passes it is a TS2322 at
+   * the call site, and TablePage belongs to another pass. The report for this
+   * audit carries the verbatim removals for both files.
+   * @deprecated unused by this layer
+   */
   boardStage: string;
+  /** @deprecated unused by this layer — see the note on boardStage */
   handNumber: number | undefined;
 
   // V8 Settings
@@ -243,6 +255,7 @@ export interface TableModalsLayerProps {
   showCashier: boolean;
   accountBalance: number;
   cashoutMinBuyIn: number;
+  /** @deprecated unused by this layer — see the note on boardStage */
   buyInProcessingRef: React.MutableRefObject<boolean>;
   onCloseCashier: () => void;
   /** Must report whether the chips actually moved — see CashierModal.onAddChips. */
@@ -252,6 +265,17 @@ export interface TableModalsLayerProps {
   // Bust Rebuy
   bustRebuyOpen: boolean;
   bustWalletBalance: number | null;
+  /**
+   * Audit 2026-08-25: also unread here, but for a different reason than the
+   * three above — this one has real work to do and nowhere to do it. The bust
+   * rebuy renders through BuyInModal, and BuyInModal has no `isProcessing`
+   * prop at all (RebuyModal does, and gets one). So the confirm button on a
+   * bust rebuy stays live while the buy-in is in flight and can be pressed
+   * twice. The server's `atomic_table_buyin` is the guard that actually stops
+   * a double buy-in; what the player loses is the feedback, not the chips.
+   * Fixing it means adding `isProcessing` to BuyInModal, which is another
+   * agent's file this pass — carried in the report instead.
+   */
   bustRebuyProcessing: boolean;
   onCancelBustRebuy: () => void;
   onConfirmBustRebuy: (amount: number) => Promise<void>;
@@ -592,13 +616,23 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     if (!userId) return;
     let mounted = true;
 
-    // Fetch exact diamond balance directly
+    /* Audit 2026-08-25: both of these discarded `error`. A failed diamonds read
+       leaves the balance at its initial 0 and SettingsPanel then tells the
+       player they cannot afford a card back they CAN afford; a failed
+       feature_purchases read leaves `ownedCardBacks` empty and offers to sell
+       them a design they already own. Neither is recoverable from the UI, and
+       neither left a trace anywhere. They still degrade rather than block — the
+       panel is usable — but the failure is now reported. */
     supabase
       .from('profiles')
       .select('diamonds')
       .eq('id', userId)
       .maybeSingle()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) {
+          reportError(error, 'TableModalsLayer.diamondBalanceFetchFailed');
+          return;
+        }
         if (mounted && data) setLocalDiamonds(Number(data.diamonds) || 0);
       });
 
@@ -608,7 +642,11 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
       .select('feature')
       .eq('user_id', userId)
       .like('feature', 'card_back_%')
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) {
+          reportError(error, 'TableModalsLayer.ownedCardBacksFetchFailed');
+          return;
+        }
         if (mounted && data) {
           setOwnedCardBacks(data.map((r: any) => r.feature.replace('card_back_', '')));
         }
@@ -664,6 +702,33 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
   // club default -> published schedule). Only queried while the Game Rules
   // modal is open, since this layer is mounted for the whole session.
   const effectiveRake = useEffectiveRake(tableId, blinds, gameType, showGameRules);
+
+  /**
+   * ─── LEAVE NOTICE: THROUGH THE TOAST LAYER (audit 2026-08-25) ─────────────
+   *
+   * This used to be a hand-rolled `position: fixed` div with inline styles and
+   * an OK button, rendered at the bottom of this layer. Two problems, one of
+   * them a binding house rule (CLAUDE.md section 5.7): popup text renders with
+   * The First Letter Of Every Word Capitalized and em dashes are forbidden,
+   * enforced centrally in utils/popupStyle via the Toast provider — and the
+   * rule ends "never bypass the Toast layer with a hand-rolled popup". This
+   * was the bypass. TablePage's messages ("Error leaving table. Please try
+   * again.") therefore reached the player in raw sentence case.
+   *
+   * The second problem is multi-table: `position: fixed` at `bottom: 80` with
+   * `z-index: 9999`, rendered by whichever of up to four mounted TablePages
+   * raised it. A hidden table's slot is `display: none` so it did not actually
+   * paint, but the toast is the honest surface either way — it is deduped,
+   * dismisses itself, and stacks with everything else the table says.
+   *
+   * `onDismissLeaveNotice` is still called, immediately, because the notice has
+   * been handed off; leaving `leaveNotice` set would re-fire on every render.
+   */
+  React.useEffect(() => {
+    if (!leaveNotice) return;
+    toast.error(leaveNotice, 6000);
+    onDismissLeaveNotice();
+  }, [leaveNotice, toast, onDismissLeaveNotice]);
 
   // Per-variant BBJ qualifying rule for the table widget (2026-08-18).
   const bbjInfo = getBBJQualifyingInfo(gameType);
@@ -928,6 +993,12 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           tablePlayerCount={bbjCelebrationData.tablePlayerCount}
           qualifyingLabel={bbjCelebrationData.qualifyingLabel}
           heroShare={bbjCelebrationData.heroShare}
+          /* Audit 2026-08-25 (multi-table): a BBJ hit at a BACKGROUND table fired
+             a 10-second fanfare plus a reveal sting over whatever table the
+             player was actually looking at. `display: none` hides the overlay;
+             it does not silence the Web Audio API. Same gate BombPotOverlay
+             already uses. */
+          soundsAllowed={ambientSoundsAllowed}
           onComplete={onBBJCelebrationComplete}
         />
       )}
@@ -997,45 +1068,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         onComplete={onParticleComplete}
       />
 
-      {/* Tip Dealer Modal */}
-
-      {/* Leave Table Notice */}
-      {leaveNotice && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: 80,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: '#1a1a2e',
-            border: '1px solid #e74c3c',
-            borderRadius: 8,
-            padding: '12px 20px',
-            color: '#fff',
-            fontSize: 14,
-            zIndex: 9999,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            maxWidth: '90vw',
-          }}
-        >
-          <span>{leaveNotice}</span>
-          <button
-            onClick={onDismissLeaveNotice}
-            style={{
-              background: '#e74c3c',
-              border: 'none',
-              color: '#fff',
-              borderRadius: 4,
-              padding: '4px 12px',
-              cursor: 'pointer',
-            }}
-          >
-            OK
-          </button>
-        </div>
-      )}
+      {/* Leave Table Notice — see the effect above; it is a toast now. */}
 
       {/* Diamond Wallet Modal */}
       <DiamondWalletModal isOpen={showDiamondWallet} onClose={onCloseDiamondWallet} />

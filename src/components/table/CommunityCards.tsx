@@ -68,6 +68,20 @@ export interface CommunityCardsProps {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * The default for `highlightedIndices`, hoisted to module scope on purpose.
+ *
+ * AUDIT 2026-08-25: this was an inline `= []` in the parameter list, which
+ * builds a NEW array on every render. Two things read its identity - the
+ * highlight-pop effect's dependency list, and the `slots` useMemo - so both ran
+ * on every single render of the board, at every table, for the entire session.
+ * The effect then compared JSON and (correctly) did nothing, and the memo
+ * rebuilt five slot objects it did not need to; neither was a visible bug, and
+ * that is exactly why it survived. One frozen constant makes the identity
+ * stable, so "no highlight" costs nothing.
+ */
+const NO_HIGHLIGHTS: readonly number[] = Object.freeze([]);
+
 function getVisibleCardCount(stage: BoardStage): number {
   switch (stage) {
     case 'preflop':
@@ -153,7 +167,16 @@ function CardFace({
             <CardBack size="lg" style={cardBack} />
           </div>
           <div className="community-cards__flip-face community-cards__flip-face--front">
-            <CardImage card={card} deckStyle={deckStyle} size="lg" isHighlighted={isHighlighted} />
+            <CardImage
+              card={card}
+              deckStyle={deckStyle}
+              size="lg"
+              isHighlighted={isHighlighted}
+              /* The board is the most-read thing on the felt and is never
+                 off-screen. See CardImage's `loading` note - lazy cost a beat
+                 of empty boxes when a MultiTablePage tab was brought forward. */
+              loading="eager"
+            />
           </div>
         </div>
       ) : (
@@ -186,7 +209,7 @@ function PlaceholderCard({ index, cardBack }: PlaceholderCardProps) {
 function CommunityCardsComponent({
   cards,
   stage,
-  highlightedIndices = [],
+  highlightedIndices = NO_HIGHLIGHTS as number[],
   winningHandName,
   winningHandDescription,
   lowWinnerLabel,

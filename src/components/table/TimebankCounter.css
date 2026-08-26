@@ -60,6 +60,37 @@
     background 0.2s ease;
 }
 
+/* ═══ 36px PAINTED, 44px TOUCHED (audit 2026-08-25) ═══
+   Dan asked for a small flat tile and the tile stays small — but 36px is under
+   the 44px minimum touch target, and this is a control a player reaches for
+   with a hand in progress. A transparent pseudo-element grows the target
+   without moving a single pixel of the layout the last two rounds settled.
+
+   The numbers are not symmetric on purpose. Sideways there is nothing to
+   collide with: this tile hugs the left edge of the screen inside a corner
+   that is `pointer-events: auto` over dead rail. Vertically it is stacked 8px
+   above `.prev-hand-card` (`.hud-ul-column--stack`), so 3px each leaves 2px of
+   dead zone between two controls that do entirely different things — grow it
+   to 4px and the two hit areas touch, and a tap on the seam becomes a coin
+   flip between the time-bank store and the hand history. */
+@media (max-width: 1023px) {
+  .tbc-widget {
+    /* `relative`, not the base rule's `static`. That `static` exists to undo an
+       old `position: fixed` (see the comment on the base rule) and `relative`
+       undoes it just as completely: the tile stays in the stack's flow and is
+       laid out identically. All it adds is a containing block for the ::after
+       below. Do NOT change it back to `static` without also removing that
+       pseudo, or the hit area escapes to the page. */
+    position: relative;
+  }
+
+  .tbc-widget::after {
+    content: '';
+    position: absolute;
+    inset: -3px -4px;
+  }
+}
+
 .tbc-widget:hover {
   background: rgba(20, 24, 34, 0.85);
 }

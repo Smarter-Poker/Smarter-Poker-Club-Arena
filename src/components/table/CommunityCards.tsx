@@ -29,6 +29,17 @@ export type BoardStage = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
 export interface CommunityCardsProps {
   cards: Card[];
   stage: BoardStage;
+  /**
+   * RABBIT HUNT 2026-08-26: the paid post-hand reveal, rendered into the
+   * undealt slots AFTER the stage-derived board. An EXPLICIT prop on purpose:
+   * TablePage used to append these into `cards`, and since the visible count
+   * derives from the STAGE, a preflop fold (count 0) hid the entire paid
+   * reveal. Inferring "trailing cards are rabbit cards" instead would break
+   * the double-board bomb pot's hold-flop gate, which deliberately passes
+   * dealt cards with stage forced to 'preflop' to keep them hidden. Only this
+   * prop ever animates the reference's rabbit flip.
+   */
+  rabbitCards?: Card[];
   highlightedIndices?: number[];
   winningHandName?: string; // e.g. "Straight" — shown as overlay at showdown
   /**
@@ -88,6 +99,9 @@ export interface CommunityCardsProps {
  * stable, so "no highlight" costs nothing.
  */
 const NO_HIGHLIGHTS: readonly number[] = Object.freeze([]);
+
+/** Stable no-rabbit default — same identity rule as NO_HIGHLIGHTS above. */
+const NO_RABBIT_CARDS: Card[] = Object.freeze([]) as unknown as Card[];
 
 function getVisibleCardCount(stage: BoardStage): number {
   switch (stage) {
@@ -204,6 +218,50 @@ function CardFace({
   );
 }
 
+interface RabbitCardProps {
+  card: Card;
+  index: number;
+  deckStyle?: '4color' | '2color';
+  cardBack?: string;
+}
+
+/**
+ * RABBIT HUNT REVEAL — POKERBROS PARITY 2026-08-26, from a frame-by-frame pass
+ * over the reference recording (RABBIT HUNT.MOV, 26-Aug PLO5 preflop fold):
+ *
+ *   frame 0        every undealt slot shows a card BACK, full size, in a hard
+ *                  cut — no slide, no scale-in, no stagger. All backs land in
+ *                  the same video frame the tap registers.
+ *   ~120ms hold    the backs sit face down (about 4 frames at 30fps).
+ *   ~170ms flip    ALL cards turn over TOGETHER — a horizontal edge-on flip
+ *                  (rotateY), never one-by-one. There is no dealing animation
+ *                  and no winner highlight; the hand ended on a fold.
+ *   ~70ms settle   the faces overshoot slightly larger and settle.
+ *
+ * The revealed board then simply stays until the next hand clears it.
+ *
+ * Two real surfaces (back + face) on a preserve-3d box, exactly like the flop
+ * flip above — a one-sided element would show a mirrored face mid-turn. The
+ * resting transform is FACE UP so reduced-motion players just see the cards.
+ */
+function RabbitCard({ card, index, deckStyle, cardBack }: RabbitCardProps) {
+  return (
+    <div
+      className="community-cards__card community-cards__card--rabbit"
+      style={{ '--card-index': index } as React.CSSProperties}
+    >
+      <div className="community-cards__rabbit-flip">
+        <div className="community-cards__flip-face community-cards__flip-face--back">
+          <CardBack size="lg" style={cardBack} />
+        </div>
+        <div className="community-cards__flip-face community-cards__flip-face--front">
+          <CardImage card={card} deckStyle={deckStyle} size="lg" loading="eager" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* `PlaceholderCard` was deleted 2026-08-26 with the ghost turn/river slots it
    drew (Dan: "remove the ghost place holders for the turn and river that
    appear after the flop"). Nothing rendered it afterwards. */
@@ -215,6 +273,7 @@ function CardFace({
 function CommunityCardsComponent({
   cards,
   stage,
+  rabbitCards = NO_RABBIT_CARDS,
   highlightedIndices = NO_HIGHLIGHTS as number[],
   winningHandName,
   winningHandDescription,
@@ -225,6 +284,13 @@ function CommunityCardsComponent({
   slowReveal = false,
 }: CommunityCardsProps) {
   const visibleCount = useMemo(() => getVisibleCardCount(stage), [stage]);
+  /**
+   * RABBIT HUNT 2026-08-26: how many reveal cards fit in the undealt slots.
+   * Before the explicit prop, the reveal was appended into `cards` — and since
+   * the visible count derives from the STAGE, a preflop fold (count 0) hid the
+   * entire paid reveal: the player paid and saw nothing.
+   */
+  const rabbitCount = Math.max(0, Math.min(rabbitCards.length, 5 - visibleCount));
   const prevStageRef = useRef(stage);
   const prevCardCountRef = useRef(cards.length);
   const prevVisibleCountRef = useRef(visibleCount);
@@ -359,6 +425,20 @@ function CommunityCardsComponent({
     }
   }, [stage]);
 
+  // RABBIT HUNT 2026-08-26: one snap + a light haptic when the reveal lands.
+  // ONE beat, not per-card — the reference turns all cards over in the same
+  // frame, so five staggered snaps would invent a deal that never happened.
+  const prevRabbitCountRef = useRef(0);
+  useEffect(() => {
+    if (rabbitCount > 0 && prevRabbitCountRef.current === 0) {
+      if (playSounds) {
+        haptic.light();
+        if (soundService.isEnabled()) soundService.playCommunityCard();
+      }
+    }
+    prevRabbitCountRef.current = rabbitCount;
+  }, [rabbitCount, playSounds]);
+
   // Highlight pop animation — when highlightedIndices changes
   useEffect(() => {
     const highlightStr = JSON.stringify(highlightedIndices);
@@ -386,16 +466,24 @@ function CommunityCardsComponent({
           isNewlyDealt: newlyDealtIndices.has(i),
         };
       }
+      // RABBIT HUNT 2026-08-26: the paid reveal fills the undealt slots.
+      if (i < visibleCount + rabbitCount && rabbitCards[i - visibleCount]) {
+        return {
+          type: 'rabbit' as const,
+          card: rabbitCards[i - visibleCount],
+          isNewlyDealt: false,
+        };
+      }
       return { type: 'placeholder' as const, isNewlyDealt: false };
     });
-  }, [cards, visibleCount, highlightedIndices, newlyDealtIndices]);
+  }, [cards, visibleCount, rabbitCards, rabbitCount, highlightedIndices, newlyDealtIndices]);
 
   return (
     <div
       ref={containerRef}
       className={`community-cards ${showdownMode ? 'community-cards--showdown' : ''}`}
       role="region"
-      aria-label={`Community cards: ${cards.length > 0 ? cards.map((c) => `${c.rank} of ${c.suit}`).join(', ') : 'none dealt'}${winningHandName ? ` - ${winningHandName}` : ''}`}
+      aria-label={`Community cards: ${cards.length > 0 ? cards.map((c) => `${c.rank} of ${c.suit}`).join(', ') : 'none dealt'}${rabbitCount > 0 ? `; rabbit hunt: ${rabbitCards.map((c) => `${c.rank} of ${c.suit}`).join(', ')}` : ''}${winningHandName ? ` - ${winningHandName}` : ''}`}
     >
       {/* Bible V8 §5.1: Stage label (FLOP/TURN/RIVER) — fades in briefly when cards are dealt */}
       {stageLabel && (
@@ -412,7 +500,19 @@ function CommunityCardsComponent({
           was written for. */}
       <div className="community-cards__container">
         {slots.map((slot, i) =>
-          slot.type === 'card' ? (
+          slot.type === 'rabbit' ? (
+            // RABBIT HUNT 2026-08-26: renders even at stage 'preflop' — the
+            // reveal exists precisely because the hand ended before these
+            // cards were dealt, so the preflop placeholder suppression below
+            // must not apply to it.
+            <RabbitCard
+              key={`rabbit-${i}`}
+              card={slot.card}
+              index={i}
+              deckStyle={deckStyle}
+              cardBack={cardBack}
+            />
+          ) : slot.type === 'card' ? (
             <CardFace
               key={`card-${i}`}
               card={slot.card}
@@ -505,6 +605,10 @@ export const CommunityCards = memo(CommunityCardsComponent, (prev, next) => {
   // until some unrelated prop happened to change.
   if (prev.cardBack !== next.cardBack) return false;
   if (JSON.stringify(prev.cards) !== JSON.stringify(next.cards)) return false;
+  // RABBIT HUNT 2026-08-26: the reveal arrives as its own prop; without this
+  // compare the memo swallowed the reveal and the paid cards never painted.
+  if (JSON.stringify(prev.rabbitCards ?? []) !== JSON.stringify(next.rabbitCards ?? []))
+    return false;
   if (JSON.stringify(prev.highlightedIndices) !== JSON.stringify(next.highlightedIndices))
     return false;
   return true;

@@ -52,6 +52,29 @@ New binding rules from Dan, and what changed:
 Tests: 96 server tests pass including new pins — timed-out offer is a final
 decline; leaderOuts counts 7 live clubs (not 9) in the set-vs-flush-draw spot.
 
+**Pass 2 (same day, PR #1232 — merged):**
+
+7. **The handoff rule is pinned by deterministic tests.**
+   `InsuranceLeaderHandoff.test.ts` builds a real lead-change spot (top set vs
+   nut flush draw; the flush arrives on the turn) and proves: a decline by one
+   player never blocks the other's later offer; the per-street pause SURVIVES
+   a leader decline (the exact pre-fix failure); accepted coverage rides to
+   settlement untouched; only all-players-declined collapses to the paced
+   runout. The eligibility rule was extracted into
+   `insurancePauseStillLive()` so it is directly testable.
+8. **Multiway popups.** A 3-way all-in now shows EVERY opponent's hand under
+   their username, not just the first one.
+9. **Odds next to the outs.** The offer carries `outPct` (outs / unseen next
+   cards, short-deck aware) and the popup renders "Outs Against You (10 •
+   22.7%)".
+10. **Attention parity.** The leader hears the your-turn bell when the offer
+    arrives, so a multi-tabling player looks over inside the window.
+
+Deploy verified per section 11: PR #1229's engine deploy finished 19:25:27Z;
+`hand_history` per-minute counts show the restart dip (54 at 19:25) and
+recovery above baseline (411 at 19:27). World Hub sync green. Three running
+production tables have `insurance_enabled=true`, so the flow is reachable.
+
 ---
 
 ## Cowork session 2026-08-26 — HORSE BRAIN V15 + THE 20BB REVIEW SYSTEM

@@ -333,6 +333,9 @@ describe('who is offered a hunt, and for how many cards', () => {
     // never non-null while the label was on screen and the 101st hunt still
     // read FREE. checkVIPStatus already returns monthlyLimits; read it there.
     expect(COMPONENT).toMatch(/monthlyLimits\?\.rabbitHunts/);
+    // Dan 2026-08-26: the count renders on the button itself, in the icon's
+    // empty lower band — not only inside a toast after the money is spent.
+    expect(COMPONENT).toMatch(/rabbit-hunt__remaining/);
   });
 
   it('the reveal cannot be torn down mid-animation', () => {

@@ -175,8 +175,23 @@
    transition: the measured onset is a hard cut between two 30fps frames. */
 .table-page--winner-flash .table-art,
 .table-page--winner-flash .table-brand,
-.table-page--winner-flash .pot-area {
+.table-page--winner-flash .pot-area,
+.table-page--winner-flash .dealer-button {
   filter: brightness(0.73);
+}
+
+/* The page's own painted backdrop (the area around the table) dims with the
+   scene — measured 0.72-0.78 in the reference outside the rail. The page
+   paints its background on itself, so a ::before veil at z-index 0 sits
+   above that background and below .table-container (z-index: 1) and the
+   header (z-index: 100): backdrop only, nothing else. */
+.table-page--winner-flash::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.27);
+  z-index: 0;
+  pointer-events: none;
 }
 
 /* The top bar dims more gently in the reference (~0.85-0.89). */

@@ -163,6 +163,37 @@ export interface TournamentTabProps {
   onOpenTab?: (tab: TabId) => void;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   WHO IS STILL IN — one predicate, because four tabs print this number
+   ═══════════════════════════════════════════════════════════════════════════
+
+   The 2026-08-26 audit found four different answers to the same question, on
+   four tabs of the same screen:
+
+     Ranking   !(eliminated | finished)                  counts a winner
+     Tables    !(eliminated | finished)                  counts a winner
+     Detail    playing | registered                      does NOT count a winner
+     Rewards   registered | playing                      does NOT count a winner
+
+   So "Remaining", "Average Stack" and "Total Chips" could differ between Detail
+   and Ranking by a whole player, and Rewards' money bubble could be counted off
+   a different field size than the one Ranking now prints "To The Money" from.
+   Two tabs disagreeing about the same number is worse than either being wrong.
+
+   The rule: a player is OUT when they can no longer be watched playing, which
+   is `eliminated` or `finished`. A `winner` has not gone out - they have won,
+   and they are the last player standing, which is a different sentence. */
+
+/** True once this player can no longer be watched playing. */
+export function isPlayerOut(entry: Pick<TournamentEntry, 'status'>): boolean {
+  return entry.status === 'eliminated' || entry.status === 'finished';
+}
+
+/** True while this player still holds a stack in the event. */
+export function isPlayerLive(entry: Pick<TournamentEntry, 'status'>): boolean {
+  return !isPlayerOut(entry);
+}
+
 /** Chips, always whole, always grouped. Never `padStart`. */
 export function chips(n: number | null | undefined): string {
   const v = Number(n);
@@ -180,11 +211,20 @@ export function chipsCompact(n: number | null | undefined): string {
   return String(Math.round(v));
 }
 
-/** 1st, 2nd, 3rd, 4th... */
-export function ordinal(n: number): string {
+/**
+ * 1st, 2nd, 3rd, 4th...
+ *
+ * Guarded, because every caller feeds this a `position` off a row where the
+ * column is nullable and the type is `any`. Unguarded it produced the literal
+ * string "NaNth" and put it on screen (2026-08-26 audit).
+ */
+export function ordinal(n: number | null | undefined): string {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v < 1) return '-';
+  const i = Math.floor(v);
   const s = ['th', 'st', 'nd', 'rd'];
-  const v = n % 100;
-  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+  const mod = i % 100;
+  return `${i.toLocaleString()}${s[(mod - 20) % 10] || s[mod] || s[0]}`;
 }
 
 /** Seconds -> H:MM:SS (or M:SS under an hour). Negative clamps to zero. */
@@ -196,6 +236,130 @@ export function clockText(totalSeconds: number): string {
   const mm = String(m).padStart(2, '0');
   const ss = String(sec).padStart(2, '0');
   return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE PAYOUT STRUCTURE — parsed in ONE place
+   ═══════════════════════════════════════════════════════════════════════════
+
+   `tournaments.payout_structure` is a TEXT column holding JSON, written by four
+   generations of builder, and until the 2026-08-26 audit it was parsed THREE
+   separate ways: RewardsTab expanded range rows into one entry per place,
+   DetailOverviewTab did a shallow `Array.isArray` cast, and the bubble count fed
+   to HandForHandBanner came off that shallow cast.
+
+   That divergence was not cosmetic. A structure written as
+   `[{place:1,percentage:50},{from:2,to:9,percentage:6.25}]` pays NINE places.
+   Detail counted it as TWO, so the hand-for-hand banner said the bubble was 2nd,
+   and its podium prize lookup (`p.place === position`) found nothing for 2nd or
+   3rd and printed a dash where a real prize existed.
+
+   One parser, one answer, every tab. */
+
+/** One paid finishing position, expanded from whatever shape the column held. */
+export interface PayoutPlace {
+  place: number;
+  percentage: number;
+}
+
+/** Coerce anything the column might hold into a finite number. */
+function finite(v: unknown): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Parse `payout_structure` into ONE ENTRY PER PLACE.
+ *
+ * Accepts the per-place shape ({ place | position | rank, percentage }) and the
+ * two range shapes builders have emitted ({ from, to } and place: "4-6").
+ *
+ * Returns null — not an empty array — when the column is unusable, so a caller
+ * can tell "no structure published" from "a structure that pays nobody".
+ */
+export function parsePayoutStructure(raw: unknown): PayoutPlace[] | null {
+  let value: unknown = raw;
+  if (typeof value === 'string') {
+    if (!value.trim()) return null;
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(value) || value.length === 0) return null;
+
+  const places: PayoutPlace[] = [];
+  for (const row of value as Record<string, unknown>[]) {
+    if (!row || typeof row !== 'object') continue;
+    const percentage = finite(row.percentage ?? row.percent ?? row.pct);
+    if (percentage <= 0) continue;
+
+    // Range shapes first, because a range row also carries a `place`.
+    const from = finite(row.from ?? row.fromPlace ?? row.start);
+    const to = finite(row.to ?? row.toPlace ?? row.end);
+    if (from >= 1 && to >= from && to - from < 5000) {
+      for (let p = from; p <= to; p++) places.push({ place: p, percentage });
+      continue;
+    }
+
+    const rawPlace = row.place ?? row.position ?? row.rank;
+    if (typeof rawPlace === 'string' && rawPlace.includes('-')) {
+      const [a, b] = rawPlace.split('-').map((s) => finite(s.trim()));
+      if (a >= 1 && b >= a && b - a < 5000) {
+        for (let p = a; p <= b; p++) places.push({ place: p, percentage });
+        continue;
+      }
+    }
+
+    const place = finite(rawPlace);
+    if (place >= 1) places.push({ place, percentage });
+  }
+
+  if (places.length === 0) return null;
+
+  // De-duplicate on place (last write wins) and order the field.
+  const byPlace = new Map<number, number>();
+  for (const p of places) byPlace.set(p.place, p.percentage);
+  return [...byPlace.entries()]
+    .map(([place, percentage]) => ({ place, percentage }))
+    .sort((a, b) => a.place - b.place);
+}
+
+/** How many places this event pays. Zero when no structure is published. */
+export function paidPlaceCount(raw: unknown): number {
+  return parsePayoutStructure(raw)?.length ?? 0;
+}
+
+/**
+ * What one place is paid.
+ *
+ * The same arithmetic as TournamentService.calculatePayout (multiply, truncate,
+ * divide) so the lobby and the money agree to the cent. A rounding difference
+ * reads to a player as the site quietly shaving their prize — and two tabs
+ * rounding differently is worse still, which is why this lives here.
+ */
+export function placePrize(pool: number, percentage: number): number {
+  const p = Number(pool);
+  const pct = Number(percentage);
+  if (!Number.isFinite(p) || !Number.isFinite(pct) || p <= 0 || pct <= 0) return 0;
+  return Math.trunc(p * pct) / 100;
+}
+
+/**
+ * The advertised prize pool: the collected pool, floored by the guarantee.
+ *
+ * Detail's podium used the raw `prize_pool` while Rewards used this, so on any
+ * guaranteed event with an overlay the two tabs printed different money for
+ * first place. One rule, one number (2026-08-26 audit).
+ */
+export function effectivePrizePool(
+  poolValue: number | null | undefined,
+  guaranteeValue: number | null | undefined
+): number {
+  const pool = finite(poolValue);
+  const guarantee = finite(guaranteeValue);
+  return guarantee > 0 ? Math.max(pool, guarantee) : pool;
 }
 
 /** Two initials for an avatar that has no image. */

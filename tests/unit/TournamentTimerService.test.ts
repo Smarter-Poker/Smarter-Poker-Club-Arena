@@ -12,16 +12,27 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// Records every `.update()` payload so the level actually written to
+// `tournaments.current_level` can be asserted, not just inferred.
+const { writes } = vi.hoisted(() => ({
+  writes: [] as { table: string; payload: Record<string, unknown> }[],
+}));
+
 // ─── Mock dependencies ────────────────────────────────────────────────────
 
 vi.mock('../../src/lib/supabase', () => {
-  const buildChain = (): any => {
+  const buildChain = (table: string): any => {
     const handler: ProxyHandler<any> = {
       get: (_target, prop) => {
         if (prop === 'maybeSingle' || prop === 'single')
           return () => Promise.resolve({ data: null, error: null });
         if (prop === 'then')
           return (resolve: (v: any) => void) => resolve({ data: null, error: null });
+        if (prop === 'update')
+          return (payload: Record<string, unknown>) => {
+            writes.push({ table, payload });
+            return new Proxy({}, handler);
+          };
         return vi.fn().mockReturnValue(new Proxy({}, handler));
       },
     };
@@ -29,7 +40,7 @@ vi.mock('../../src/lib/supabase', () => {
   };
   return {
     supabase: {
-      from: () => buildChain(),
+      from: (table: string) => buildChain(table),
       rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
     },
   };
@@ -48,15 +59,15 @@ vi.mock('../../src/core/MasterBus', () => ({
   },
 }));
 
+const { mockGetTournament, mockGetCurrentLevelState } = vi.hoisted(() => ({
+  mockGetTournament: vi.fn(),
+  mockGetCurrentLevelState: vi.fn(),
+}));
+
 vi.mock('../../src/services/TournamentService', () => ({
   tournamentService: {
-    getTournament: vi.fn().mockResolvedValue(null), // No tournament = stops timer
-    getCurrentLevelState: vi.fn().mockReturnValue({
-      levelIndex: 0,
-      currentLevel: { smallBlind: 25, bigBlind: 50, ante: 0 },
-      nextLevel: { smallBlind: 50, bigBlind: 100, ante: 10 },
-      timeRemainingSeconds: 600,
-    }),
+    getTournament: mockGetTournament,
+    getCurrentLevelState: mockGetCurrentLevelState,
   },
 }));
 
@@ -68,6 +79,15 @@ describe('TournamentTimerService', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    writes.length = 0;
+    // Default: no tournament, so a tick stops the timer without writing.
+    mockGetTournament.mockResolvedValue(null);
+    mockGetCurrentLevelState.mockReturnValue({
+      levelIndex: 0,
+      currentLevel: { smallBlind: 25, bigBlind: 50, ante: 0 },
+      nextLevel: { smallBlind: 50, bigBlind: 100, ante: 10 },
+      timeRemainingSeconds: 600,
+    });
   });
 
   afterEach(() => {
@@ -135,7 +155,12 @@ describe('TournamentTimerService', () => {
       expect(state).not.toBeNull();
       expect(state!.tournamentId).toBe('t1');
       expect(state!.isPaused).toBe(false);
-      expect(state!.currentLevel).toBe(0); // Not yet ticked
+      // UPDATED 2026-08-25 (was `toBe(0)`): `currentLevel` is a 0-BASED index
+      // now, so 0 is a real level - the opening one. A timer that starts at 0
+      // would treat the opening level as "already seen" and skip the first
+      // transition entirely (no blind write to the tables, no broadcast). The
+      // sentinel has to sit outside the value range.
+      expect(state!.currentLevel).toBe(-1); // Not yet ticked
     });
 
     it('should return null for unknown tournament', () => {
@@ -173,6 +198,67 @@ describe('TournamentTimerService', () => {
   // ─────────────────────────────────────────────────────────────────────────
   // STOP ALL TIMERS
   // ─────────────────────────────────────────────────────────────────────────
+
+  // ---------------------------------------------------------------------------
+  // WHAT REACHES `tournaments.current_level`
+  // ---------------------------------------------------------------------------
+  //
+  // The defect: `const newLevel = levelState.levelIndex + 1; // 1-indexed for
+  // display`, written straight into the column by handleLevelChange. The
+  // column is a 0-BASED ARRAY INDEX - the engine persists its own
+  // `blindStructure[this.currentLevel]` index into it, and
+  // process_tournament_rebuy compares that column against the rebuy cap.
+  //
+  // Worse than a one-off: the reader feeds this loop its own previous output,
+  // so it read N, wrote N+1, read N+1, wrote N+2 - once per second.
+
+  describe('current_level is written 0-based', () => {
+    const runningTournament = {
+      id: 't-write',
+      status: 'RUNNING',
+      blind_structure: [],
+    };
+
+    const tickOnce = async (levelIndex: number) => {
+      mockGetTournament.mockResolvedValue(runningTournament as never);
+      mockGetCurrentLevelState.mockReturnValue({
+        levelIndex,
+        currentLevel: { smallBlind: 25, bigBlind: 50, ante: 0 },
+        nextLevel: { smallBlind: 50, bigBlind: 100, ante: 10 },
+        timeRemainingSeconds: 600,
+      });
+      tournamentTimerService.startTimer('t-write');
+      // startTimer fires an immediate tick; let its promise chain settle.
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0);
+    };
+
+    const levelsWritten = () =>
+      writes
+        .filter((w) => w.table === 'tournaments' && 'current_level' in w.payload)
+        .map((w) => w.payload.current_level);
+
+    it('writes the index unchanged, never index + 1', async () => {
+      await tickOnce(3);
+      expect(levelsWritten()).toContain(3);
+      expect(levelsWritten()).not.toContain(4);
+    });
+
+    it('writes 0 for the opening level rather than skipping it', async () => {
+      await tickOnce(0);
+      expect(levelsWritten()).toEqual([0]);
+    });
+
+    it('does not advance the level on a second tick at the same level', async () => {
+      // The compounding failure: with the +1 in place, every tick wrote a
+      // number one higher than the one it had just read, forever.
+      await tickOnce(5);
+      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(levelsWritten()).toEqual([5]);
+      expect(tournamentTimerService.getTimerState('t-write')!.currentLevel).toBe(5);
+    });
+  });
 
   describe('stopAllTimers', () => {
     it('should clean up all active timers', () => {

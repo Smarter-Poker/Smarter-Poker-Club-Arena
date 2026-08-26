@@ -46,7 +46,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { TournamentTabProps, NormalisedBlindLevel } from './types';
-import { chips, chipsCompact, clockText, ordinal } from './types';
+import {
+  chips,
+  chipsCompact,
+  clockText,
+  effectivePrizePool,
+  isPlayerLive,
+  ordinal,
+  paidPlaceCount,
+  parsePayoutStructure,
+  placePrize,
+} from './types';
 import { tournamentService } from '../../../services/TournamentService';
 import { supabase } from '../../../lib/supabase';
 import { reportError } from '../../../utils/errorReporter';
@@ -113,21 +123,13 @@ function shortDate(value: string | null | undefined): string {
   });
 }
 
-/** Payout structure is JSONB and sometimes arrives as a string. */
-function payoutRows(
-  raw: unknown
-): Array<{ place?: number; position?: number; percentage: number }> {
-  if (Array.isArray(raw)) return raw as Array<{ place?: number; percentage: number }>;
-  if (typeof raw === 'string' && raw.length > 0) {
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
+/* The local `payoutRows()` that used to sit here is gone (2026-08-26 audit). It
+   returned the stored rows verbatim, so a structure written as one RANGE row -
+   `{from: 2, to: 9, percentage: 6.25}` - counted as ONE paid place. That number
+   was handed to HandForHandBanner as `paidPositions`, which put the money bubble
+   nine places too early, and the podium's `p.place === position` lookup found
+   nothing for 2nd or 3rd and printed a dash over a real prize. `types.ts` now
+   owns the one parser, and Rewards reads the same one. */
 
 interface StatTile {
   key: string;
@@ -245,16 +247,21 @@ export default function DetailOverviewTab({
     }
   }, [currentUserId, tournament?.id, votingDeal, toast]);
 
-  /* ── Field figures. ── */
+  /* ── Field figures. ──
+        Counted with the SHARED predicate. This block used to define "still in"
+        as `playing | registered` while Ranking used `not out`, so a completed
+        event's winner was counted by one tab and not the other, and Total Chips
+        summed only the `playing` rows while Ranking summed everyone still in.
+        Two tabs of one screen quoting two figures for one number
+        (2026-08-26 audit). */
   const field = useMemo(() => {
     const list = Array.isArray(entries) ? entries : [];
-    const playing = list.filter((e) => e.status === 'playing');
-    const alive = list.filter((e) => e.status === 'playing' || e.status === 'registered');
-    const eliminated = list.filter((e) => e.status === 'eliminated').length;
-    const totalChips = playing.reduce((sum, e) => sum + (Number(e.chips) || 0), 0);
+    const alive = list.filter(isPlayerLive);
+    const eliminated = list.length - alive.length;
+    const totalChips = alive.reduce((sum, e) => sum + (Number(e.chips) || 0), 0);
     const avgStack =
-      playing.length > 0
-        ? Math.trunc(totalChips / playing.length)
+      alive.length > 0 && totalChips > 0
+        ? Math.trunc(totalChips / alive.length)
         : Number(tournament?.starting_chips) || 0;
     return {
       entries: list.length,
@@ -311,14 +318,13 @@ export default function DetailOverviewTab({
   }, [startAtMs, tick]);
 
   /* ── Prize pool: the stored pool is authoritative, the guarantee is a floor. ── */
-  const prize = useMemo(() => {
-    const guarantee = Number(tournament?.guaranteed_prize) || 0;
-    const pool = Number(tournament?.prize_pool) || 0;
-    return {
-      effective: guarantee > 0 ? Math.max(pool, guarantee) : pool,
-      guarantee,
-    };
-  }, [tournament?.guaranteed_prize, tournament?.prize_pool]);
+  const prize = useMemo(
+    () => ({
+      effective: effectivePrizePool(tournament?.prize_pool, tournament?.guaranteed_prize),
+      guarantee: Number(tournament?.guaranteed_prize) || 0,
+    }),
+    [tournament?.guaranteed_prize, tournament?.prize_pool]
+  );
 
   const lateRegText = useMemo(() => {
     const levels = Number(tournament?.late_reg_levels) || 0;
@@ -526,22 +532,31 @@ export default function DetailOverviewTab({
   /* ── Podium, for a finished event. ── */
   const podium = useMemo(() => {
     if (!isCompleted) return [];
-    const structure = payoutRows(tournament?.payout_structure);
-    const pool = Number(tournament?.prize_pool) || 0;
+    const structure = parsePayoutStructure(tournament?.payout_structure) ?? [];
+    /* The EFFECTIVE pool, not the raw one. Rewards prints first place off the
+       guarantee-floored figure; printing the raw `prize_pool` here made the two
+       tabs quote different money for the same finish on any overlay event. */
+    const pool = prize.effective;
     return (Array.isArray(entries) ? entries : [])
       .filter((e) => typeof e.position === 'number' && (e.position as number) <= 3)
       .sort((a, b) => (a.position || 99) - (b.position || 99))
       .map((player) => {
-        const row = structure.find((p) => (p.place ?? p.position) === player.position);
-        const prizeValue = row ? Math.trunc(pool * (Number(row.percentage) || 0)) / 100 : 0;
-        return { player, prizeValue };
+        const row = structure.find((p) => p.place === player.position);
+        return { player, prizeValue: row ? placePrize(pool, row.percentage) : 0 };
       });
-  }, [isCompleted, entries, tournament?.payout_structure, tournament?.prize_pool]);
+  }, [isCompleted, entries, tournament?.payout_structure, prize.effective]);
 
+  /**
+   * The runners-up list under the podium.
+   *
+   * It used to start at 1st, so the top three appeared twice on the same panel
+   * - once as a podium card and again as the first three list rows. It starts
+   * below the podium now, and it is only rendered when there is somebody there.
+   */
   const finishers = useMemo(() => {
     if (!isCompleted) return [];
     return (Array.isArray(entries) ? entries : [])
-      .filter((e) => typeof e.position === 'number')
+      .filter((e) => typeof e.position === 'number' && (e.position as number) > 3)
       .sort((a, b) => (a.position || 999) - (b.position || 999))
       .slice(0, 10);
   }, [isCompleted, entries]);
@@ -558,7 +573,7 @@ export default function DetailOverviewTab({
   }, [dealEnabled, tournament?.table_size, field.alive, entries, currentUserId]);
 
   const paidPositions = useMemo(
-    () => payoutRows(tournament?.payout_structure).length,
+    () => paidPlaceCount(tournament?.payout_structure),
     [tournament?.payout_structure]
   );
 
@@ -621,24 +636,30 @@ export default function DetailOverviewTab({
                   key={player.user_id}
                   className={`dov-podium__card dov-podium__card--p${player.position}`}
                 >
-                  <span className="dov-podium__place">{ordinal(player.position || 0)}</span>
+                  <span className="dov-podium__place">{ordinal(player.position)}</span>
                   <span className="dov-podium__name">{player.username}</span>
                   <span className="dov-podium__prize">
-                    {prizeValue > 0 ? `${chipsCompact(prizeValue)} chips` : '-'}
+                    {prizeValue > 0 ? `${chipsCompact(prizeValue)} Chips` : '-'}
                   </span>
                 </div>
               ))}
             </div>
           )}
           {finishers.length > 0 && (
-            <ul className="dov-finishers tl-scroll">
-              {finishers.map((player) => (
-                <li key={player.user_id} className="dov-finisher">
-                  <span className="dov-finisher__pos">{ordinal(player.position || 0)}</span>
-                  <span className="dov-finisher__name">{player.username}</span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <span className="dov-finishers__label">In The Money Behind Them</span>
+              <ul
+                className="dov-finishers tl-scroll"
+                aria-label="Finishing positions below the podium"
+              >
+                {finishers.map((player) => (
+                  <li key={player.user_id} className="dov-finisher">
+                    <span className="dov-finisher__pos">{ordinal(player.position)}</span>
+                    <span className="dov-finisher__name">{player.username}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </div>
       ) : (

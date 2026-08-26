@@ -69,6 +69,12 @@ export async function markSeatAsLeft(
   userId: string,
   seatNumber: number
 ): Promise<void> {
+  // AUDIT 2026-08-26: mirrors the `safeToClearSeat` guard atomicCashout has had
+  // since SWEEP #4 P0-3. Without it the catch block below vacated the seat
+  // unconditionally, so any throw after the seat was read - a transport error on
+  // the credit RPC, a timeout - destroyed the stack. That is seat exit 6522:
+  // 85.85 chips, exit_kind 'left', no matching wallet credit.
+  let safeToClearSeat = false;
   try {
     // 1. Get the active seat and its stack
     const { data: seat } = await supabase
@@ -81,12 +87,16 @@ export async function markSeatAsLeft(
       .maybeSingle();
 
     if (!seat) {
-      // Seat already gone — just update if stale
+      // Seat already gone — just update if stale.
+      // AUDIT 2026-08-26: scoped to seat_number. Without it this vacated EVERY
+      // active seat this player held at the table, including one still holding
+      // a stack that this call never read and therefore never credited.
       await supabase
         .from('table_seats')
         .update({ left_at: new Date().toISOString() })
         .eq('table_id', tableId)
         .eq('user_id', userId)
+        .eq('seat_number', seatNumber)
         .is('left_at', null);
       return;
     }
@@ -132,6 +142,10 @@ export async function markSeatAsLeft(
       }
     }
 
+    // Every failure path above returns, so reaching here means the credit
+    // committed or there was no stack to credit. Only now may the seat be cleared.
+    safeToClearSeat = true;
+
     // 3. Soft-delete the seat
     await supabase
       .from('table_seats')
@@ -153,14 +167,25 @@ export async function markSeatAsLeft(
       .update({ current_players: count ?? 0 })
       .eq('id', tableId);
   } catch (err: any) {
-    console.warn(`[DB] Failed to cash-out horse ${userId} at ${tableId}:`, err.message);
-    // Fallback: just mark as left
-    await supabase
-      .from('table_seats')
-      .update({ left_at: new Date().toISOString() })
-      .eq('table_id', tableId)
-      .eq('user_id', userId)
-      .is('left_at', null);
+    // AUDIT 2026-08-26: this used to vacate the seat unconditionally. A throw
+    // between reading the stack and crediting it therefore erased the stack -
+    // the wallet was never credited and the chips existed nowhere afterwards.
+    // atomicCashout has guarded this since SWEEP #4 P0-3; this path had not.
+    if (safeToClearSeat) {
+      console.warn(`[DB] Failed to cash-out horse ${userId} at ${tableId}:`, err?.message);
+      await supabase
+        .from('table_seats')
+        .update({ left_at: new Date().toISOString() })
+        .eq('table_id', tableId)
+        .eq('user_id', userId)
+        .eq('seat_number', seatNumber)
+        .is('left_at', null);
+    } else {
+      console.error(
+        `[markSeatAsLeft] Exception before the cash-out credit committed for ${userId} at ${tableId} - preserving the seat so the stack is not destroyed:`,
+        err?.message
+      );
+    }
   }
 }
 

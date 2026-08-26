@@ -1155,7 +1155,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       const loadToken = ++loadTokenRef.current;
       const stale = () => loadToken !== loadTokenRef.current;
       Promise.resolve(supabase.rpc('get_club_home', { p_club_key: clubId }))
-        .then(({ data: home, error: homeErr }) => {
+        .then(async ({ data: home, error: homeErr }) => {
           if (homeErr || !home || home.found !== true) return;
           if (stale() || (getIsMounted && !getIsMounted())) return;
 
@@ -1204,6 +1204,23 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             if (home.club_names && typeof home.club_names === 'object') {
               setClubNames(home.club_names as Record<string, string>);
             }
+            // Force a status check to ensure non-members and pending members get sent to the Invite page.
+            if (authUser?.id) {
+              const { data: memStat } = await supabase
+                .from('club_members')
+                .select('status')
+                .eq('club_id', home.club.id)
+                .eq('user_id', authUser.id)
+                .maybeSingle();
+              if (!memStat || !['active', 'approved'].includes(memStat.status)) {
+                navigate(`/invite/${clubId}`);
+                return;
+              }
+            } else {
+              navigate(`/invite/${clubId}`);
+              return;
+            }
+
             if (home.membership) {
               setUserRole((home.membership.role as ClubRole) || 'player');
             }
@@ -1314,6 +1331,15 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           .eq('club_id', resolvedId)
           .eq('user_id', authUser.id)
           .maybeSingle();
+
+        if (
+          !memberResult.data ||
+          !['active', 'approved'].includes((memberResult.data as any).status)
+        ) {
+          if (getIsMounted && !getIsMounted()) return;
+          navigate(`/invite/${clubId}`);
+          return;
+        }
 
         if (memberResult.data) {
           if (getIsMounted && !getIsMounted()) return;
@@ -2982,7 +3008,27 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                     title="Share"
                     onClick={async () => {
                       haptic.medium();
-                      const shareUrl = `${window.location.origin}/hub/club-arena/clubs/${club.slug || clubId}`;
+                      let refQuery = '';
+                      try {
+                        const {
+                          data: { user },
+                        } = await supabase.auth.getUser();
+                        if (user) {
+                          const { data: prof } = await supabase
+                            .from('profiles')
+                            .select('player_number')
+                            .eq('id', user.id)
+                            .single();
+                          if (prof?.player_number) {
+                            refQuery = `?ref=${prof.player_number}`;
+                          } else {
+                            refQuery = `?ref=${user.id}`;
+                          }
+                        }
+                      } catch (e) {
+                        // ignore
+                      }
+                      const shareUrl = `${window.location.origin}/hub/club-arena/invite/${club.id}${refQuery}`;
                       try {
                         if (navigator.share) {
                           await navigator.share({

@@ -76,6 +76,23 @@ describe('InsuranceEngine.createOffers', () => {
     expect(o.premium / fairPremium).toBeCloseTo(1.2, 2);
   });
 
+  it('a premium that rounds to 0.00 is uninsurable - no free contracts (FINAL AUDIT 2026-08-26)', () => {
+    // Dust pot: insured 0.01, premium rounds to 0.00 - without the guard the
+    // union bank would fund a payout it never collected a cent for.
+    const offers = offerLeader(e, 0.01, 0.01);
+    expect(offers).toHaveLength(0);
+  });
+
+  it('acceptPartial keeps hundredths-of-a-percent precision (fee shown = fee charged)', () => {
+    const offers = offerLeader(e, 100, 300);
+    const full = offers[0].fullPremium;
+    expect(e.acceptPartial('t1', LEADER, 77.77)).toBe(true);
+    const accepted = e.getOffers('t1')[0];
+    expect(accepted.coveragePercent).toBe(77.77);
+    expect(accepted.premium).toBe(Math.round(full * 0.7777 * 100) / 100);
+    expect(accepted.insuredAmount).toBe(Math.round(300 * 0.7777 * 100) / 100);
+  });
+
   it('insures the pot, not the stake - a short leader can still cover the winnings', () => {
     // REFERENCE PARITY 2026-08-26: was "caps the insured amount at the leader
     // at-risk" (40). The reference insures what the leader stands to WIN.

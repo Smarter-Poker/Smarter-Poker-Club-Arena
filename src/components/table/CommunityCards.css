@@ -704,41 +704,77 @@
    ================================================================================= */
 
 .community-cards__hand-name {
-  margin-top: var(--space-sm, 8px);
-  padding: var(--space-xs, 4px) var(--space-lg, 20px);
-  font-size: var(--font-xl, 1.1rem);
-  font-weight: var(--weight-extrabold, 800);
-  font-style: italic;
-  color: var(--cc-gold);
-  text-align: center;
-  white-space: nowrap;
-  position: relative;
-  overflow: hidden;
-  letter-spacing: 0.08em;
-
-  background: linear-gradient(
-    135deg,
-    rgba(255, 215, 0, 0.15) 0%,
-    rgba(255, 180, 0, 0.08) 40%,
-    rgba(255, 215, 0, 0.12) 100%
-  );
-  border: 1px solid rgba(255, 215, 0, 0.3);
-  border-radius: var(--radius-pill, 999px);
-
-  backdrop-filter: blur(8px) saturate(1.3);
-  -webkit-backdrop-filter: blur(8px) saturate(1.3);
-
+  position: absolute;
+  bottom: 115%; /* User explicitly requested this to be ABOVE the board */
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 20;
+  font-size: 2.5rem;
+  font-weight: 900;
+  color: #e2e8f0;
   text-shadow:
-    0 0 16px rgba(255, 215, 0, 0.7),
-    0 0 32px rgba(255, 215, 0, 0.3),
-    0 2px 4px rgba(0, 0, 0, 0.8);
+    0 2px 4px rgba(0, 0, 0, 0.8),
+    0 0 16px rgba(14, 165, 233, 0.8),
+    0 0 30px rgba(14, 165, 233, 0.4);
+  white-space: nowrap;
+  letter-spacing: 0.05em;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
 
+/* SHOWDOWN SYSTEM 2026-08-25 (spec section 14): the descriptive secondary
+   line — "Kings Full Of Nines" — rendered smaller, directly under the
+   primary classification. Inherits position from its parent label. */
+.community-cards__hand-description {
+  font-size: 0.42em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(226, 232, 240, 0.85);
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.8),
+    0 0 10px rgba(14, 165, 233, 0.5);
+  text-align: center;
+  margin-top: 0.1em;
+}
+
+/* SHOWDOWN POLISH 2026-08-25 (spec 33): the hi-lo LOW WINNER line — third
+   tier of the label stack, visually distinct from the high hand's gold. */
+.community-cards__low-winner {
+  font-size: 0.34em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(147, 197, 253, 0.9);
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.8),
+    0 0 10px rgba(59, 130, 246, 0.5);
+  text-align: center;
+  margin-top: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Bright horizontal flare behind the text */
+.community-cards__hand-name::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: -20%;
+  right: -20%;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(14, 165, 233, 0.4) 20%,
+    rgba(226, 232, 240, 0.9) 50%,
+    rgba(14, 165, 233, 0.4) 80%,
+    transparent 100%
+  );
   box-shadow:
-    0 4px 20px rgba(255, 215, 0, 0.15),
-    0 0 40px rgba(255, 215, 0, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-
-  animation: ccHandNameIn 0.65s var(--cc-ease-spring);
+    0 0 10px rgba(14, 165, 233, 0.8),
+    0 0 20px rgba(14, 165, 233, 0.4);
+  transform: translateY(-50%);
+  z-index: -1;
 }
 
 /* Shimmer sweep across hand name */
@@ -752,9 +788,9 @@
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 215, 0, 0.15) 40%,
-    rgba(255, 255, 255, 0.12) 50%,
-    rgba(255, 215, 0, 0.15) 60%,
+    rgba(226, 232, 240, 0.15) 40%,
+    rgba(255, 255, 255, 0.2) 50%,
+    rgba(226, 232, 240, 0.15) 60%,
     transparent 100%
   );
   animation: ccHandNameShimmer 2.5s 0.5s ease-in-out infinite;
@@ -855,15 +891,6 @@
   .community-cards__center-suit {
     font-size: 1.25rem;
   }
-
-  .community-cards__hand-name {
-    font-size: 0.9rem;
-    padding: 2px 12px;
-    margin-top: 4px;
-    max-width: 200px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
 }
 
 @media (max-width: 380px) {
@@ -882,12 +909,6 @@
   }
   .community-cards__center-suit {
     font-size: 1.1rem;
-  }
-
-  .community-cards__hand-name {
-    font-size: 0.5rem;
-    padding: 2px 8px;
-    max-width: 180px;
   }
 
   .community-cards__stage-label {
@@ -944,11 +965,22 @@
 
   .community-cards__hand-name {
     opacity: 1;
-    transform: none;
     filter: none;
   }
 
   .community-cards__card::after {
     display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .community-cards__hand-name {
+    font-size: 1.8rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .community-cards__hand-name {
+    font-size: 1.5rem;
   }
 }

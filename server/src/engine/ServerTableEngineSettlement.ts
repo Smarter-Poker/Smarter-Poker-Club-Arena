@@ -39,7 +39,176 @@ import { queueUnbankedFee } from '../services/FeeReconciler.js';
 import { selectRevealedShowdownResults } from './revealedShowdown.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 
+/**
+ * How long a finished hand stays purchasable. A rabbit hunt is an impulse, and
+ * the only other bound is "the map holds the last two hands" — which stops
+ * bounding anything the moment a table stops dealing (an idle cash table, a
+ * tournament on break, the last two players standing up), leaving an offer from
+ * hours ago still buyable.
+ */
+const RABBIT_HUNT_OFFER_TTL_MS = 90_000;
+
 export abstract class ServerTableEngineSettlement extends ServerTableEngineDealing {
+  /**
+   * RABBIT HUNT — the paid reveal. Dan 2026-08-25.
+   *
+   * "The rabbit hunt should pop up when the action is completed, no matter if
+   *  it's pre flop, on the flop, on the turn, or on the river... these should
+   *  ONLY APPEAR TO THE PLAYER WHO CLICKED the rabbit hunt. VIP members get 100
+   *  rabbit hunts a month for free, and they cost 5 diamonds each after that."
+   *
+   * Every one of those words is enforced HERE rather than on the client, because
+   * the previous implementation enforced none of them anywhere: the five cards
+   * went out in a room-wide broadcast the instant the hand ended, and the client
+   * decided on its own whether to bill. The cards were free to anyone who opened
+   * devtools, and visible to every opponent.
+   *
+   * Order matters: every free check runs BEFORE the charge, so a request that
+   * was never going to be honoured cannot take a player's diamonds. Payment is
+   * the last gate, and the cards are returned only on its success.
+   */
+  public async revealRabbitHunt(
+    userId: string,
+    handNumber?: number
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    cards?: import('../types.js').Card[];
+    board_length?: number;
+    source?: string;
+    diamonds_spent?: number;
+    diamonds_remaining?: number | null;
+    vip_remaining?: number | null;
+    uses_remaining?: number | null;
+  }> {
+    const hand = handNumber ?? this.handCount;
+    const offer = this.rabbitHuntOffers.get(hand);
+
+    if (!offer) {
+      return { success: false, error: 'Rabbit Hunt Is No Longer Available For That Hand' };
+    }
+    // A rabbit hunt is an impulse, not a standing option. The only other bound
+    // is "the map holds the last two hands", which stops bounding anything the
+    // moment a table stops dealing — an idle cash table, a tournament on break,
+    // the last two players standing up — and an offer from hours ago stays
+    // purchasable. offeredAt was captured for exactly this and was never read.
+    if (Date.now() - offer.offeredAt > RABBIT_HUNT_OFFER_TTL_MS) {
+      return { success: false, error: 'That Hand Is Too Old To Rabbit Hunt' };
+    }
+    if ((this.tableInfo as { allow_rabbit_hunt?: boolean })?.allow_rabbit_hunt === false) {
+      return { success: false, error: 'Rabbit Hunt Is Disabled At This Table' };
+    }
+    if (offer.boardLength >= 5) {
+      // The whole board already ran out; there is nothing unseen to sell.
+      return { success: false, error: 'The Board Already Ran Out' };
+    }
+    if (!offer.eligible.has(userId)) {
+      return { success: false, error: 'You Were Not Dealt Into That Hand' };
+    }
+
+    const cards = offer.cards.slice(0, Math.max(0, 5 - offer.boardLength));
+    if (cards.length === 0) {
+      return { success: false, error: 'No Cards Remain To Reveal' };
+    }
+
+    // Already bought this hand: return the same cards, charge nothing. A dropped
+    // response or a double tap must never bill twice for one reveal.
+    if (offer.revealed.has(userId)) {
+      return { success: true, cards, board_length: offer.boardLength, source: 'already_revealed' };
+    }
+    if (this.rabbitHuntInFlight.has(userId)) {
+      // Two taps that race the RPC would both pass the `revealed` check above,
+      // because that set is only written after the charge returns. The advisory
+      // lock in fn_consume_rabbit_hunt serialises them, so they would not
+      // corrupt the pool — they would just both succeed, and bill twice.
+      return { success: false, error: 'Rabbit Hunt Is Already Loading' };
+    }
+    this.rabbitHuntInFlight.add(userId);
+
+    // VIP monthly pool -> purchased packs -> 5 diamonds. Engine-only RPC: a
+    // player's own JWT cannot execute it, which is what stops a client from
+    // simply not calling it.
+    let charge: Record<string, unknown> | null = null;
+    try {
+      const { data, error } = await supabase.rpc('fn_consume_rabbit_hunt', {
+        p_user_id: userId,
+      });
+      if (error) throw error;
+      charge = (data ?? null) as Record<string, unknown> | null;
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.rabbit_hunt_charge_error');
+      return { success: false, error: 'Could Not Complete Purchase' };
+    } finally {
+      // Released on EVERY path, including the throw above. Leaving it held would
+      // lock this player out of rabbit hunt for the life of the engine.
+      this.rabbitHuntInFlight.delete(userId);
+    }
+
+    if (!charge || charge.success !== true) {
+      // Name the reason. "Could Not Complete Purchase" for every refusal left
+      // the player unable to tell a shortfall from an outage, and support
+      // unable to tell either from a broken RPC.
+      const reason = String(charge?.error ?? '');
+      const message =
+        reason === 'insufficient_diamonds'
+          ? 'Not Enough Diamonds'
+          : reason === 'unknown user'
+            ? 'Your Account Could Not Be Verified'
+            : 'Could Not Complete Purchase';
+      return {
+        success: false,
+        error: message,
+        diamonds_remaining:
+          charge?.diamonds_remaining != null ? Number(charge.diamonds_remaining) : null,
+      };
+    }
+
+    offer.revealed.add(userId);
+    return {
+      success: true,
+      cards,
+      board_length: offer.boardLength,
+      source: String(charge.source ?? ''),
+      diamonds_spent: Number(charge.diamonds_spent ?? 0),
+      diamonds_remaining:
+        charge.diamonds_remaining != null ? Number(charge.diamonds_remaining) : null,
+      vip_remaining: charge.vip_remaining != null ? Number(charge.vip_remaining) : null,
+      // A purchased-pack reveal spends neither diamonds nor a VIP use, so
+      // without this the player burned one of a pack they paid for and the UI
+      // said nothing at all. The RPC has always returned it.
+      uses_remaining: charge.uses_remaining != null ? Number(charge.uses_remaining) : null,
+    };
+  }
+
+  /**
+   * What a rabbit hunt costs in diamonds, read from `feature_pricing` so a
+   * repricing in the dashboard reaches the button without a deploy — which is
+   * the promise the migration makes and the client was not keeping: it rendered
+   * a hardcoded 5 from FEATURE_PRICING while the charge came from the table.
+   *
+   * Cached for the life of the engine. A price change reaches players as tables
+   * turn over, and the CHARGE is always the live row regardless of this value,
+   * so the worst case is a stale label on a long-running table, never a
+   * mischarge.
+   */
+  protected async getRabbitHuntCost(): Promise<number> {
+    if (this.rabbitHuntCostCache != null) return this.rabbitHuntCostCache;
+    try {
+      const { data } = await supabase
+        .from('feature_pricing')
+        .select('diamond_cost')
+        .eq('feature', 'rabbit_hunt')
+        .maybeSingle();
+      const cost = Number((data as { diamond_cost?: number } | null)?.diamond_cost);
+      this.rabbitHuntCostCache = Number.isFinite(cost) && cost > 0 ? cost : 5;
+    } catch {
+      // Never let a pricing lookup stop the hand-complete path. The fallback
+      // matches the migration's own v_default_cost.
+      this.rabbitHuntCostCache = 5;
+    }
+    return this.rabbitHuntCostCache;
+  }
+
   /**
    * Bible V8 §1.9 settlement pipeline. Extracted verbatim (2026-08-08 file
    * split) from the `HAND_COMPLETE` case of `handleHandEvent`. The body is
@@ -99,20 +268,79 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       winner_ids: this.currentHandWinnerIds,
       timestamp: Date.now(),
     });
-    // Rabbit Hunt: Capture remaining deck cards BEFORE handController is nulled
-    if (this.handController) {
+    // Rabbit Hunt: Capture remaining deck cards BEFORE handController is nulled.
+    //
+    // Dan 2026-08-25: the cards are NEVER broadcast. They are held here and
+    // handed to one player, once, by revealRabbitHunt() after that player has
+    // actually paid. Everything needed to police the request is captured in the
+    // same breath as the cards, while the controller is still alive:
+    //   - boardLength, because the broadcast below used to re-read the board
+    //     through an optional chain that returns [] once the controller is
+    //     nulled, which reads as "board length 0" and would offer a rabbit hunt
+    //     on a hand that had already run to the river;
+    //   - who was dealt in, so a spectator cannot buy a look at a hand they
+    //     were never part of.
+    // RUN IT TWICE IS NEVER OFFERED A RABBIT HUNT.
+    //
+    // On a RIT hand `communityCards` holds only the shared pre-all-in prefix —
+    // 0 cards for a pre-flop all-in — because each board is dealt into
+    // dealAndResolveRIT's own arrays. So the board-length gate reads 0, decides
+    // the hand ended pre-flop, and offers five cards. But RIT has already burned
+    // two or three run-outs off this deck: what is left is not "what would have
+    // come", it is noise the player would be charged five diamonds for. There is
+    // also nothing to rabbit hunt on a hand that ran out twice to showdown.
+    const ranItTwice = (this.currentHandRitBoards ?? 0) >= 2;
+    if (this.handController && !ranItTwice) {
       try {
+        const state = this.handController.getState();
         const remainingDeck = this.handController.getRemainingDeck();
-        // Only take the next 5 cards max (enough for any board completion)
-        this.currentHandRabbitCards = remainingDeck.slice(0, 5);
-      } catch {
-        this.currentHandRabbitCards = [];
+        // A local, not an instance field. This was `this.currentHandRabbitCards`,
+        // which nothing else read — and because the SAME array reference is
+        // stored into the offer below, the only thing keeping the previous
+        // hand's offer intact was that the per-hand reset reassigned the field
+        // rather than emptying it in place.
+        const rabbitCards = remainingDeck.slice(0, 5);
+        this.rabbitHuntOffers.set(this.handCount, {
+          cards: rabbitCards,
+          boardLength: (state?.communityCards ?? []).length,
+          eligible: new Set(
+            (state?.players ?? [])
+              .map((p: { user_id?: string }) => p?.user_id)
+              .filter((id): id is string => !!id)
+          ),
+          revealed: new Set<string>(),
+          offeredAt: Date.now(),
+        });
+        // Keep the two most recent offers, by INSERTION ORDER. Trimming on
+        // `handNumber < handCount - 1` looked equivalent and was not: hand
+        // numbers come from allocateGlobalHandNumber and are global to the
+        // server, so they jump by arbitrary amounts and `handCount - 1` is
+        // almost never the previous hand at this table. That silently kept one
+        // entry instead of two, cutting the grace period for a late click in
+        // half. Map iterates in insertion order, so this is exact.
+        while (this.rabbitHuntOffers.size > 2) {
+          const oldest = this.rabbitHuntOffers.keys().next().value;
+          if (oldest === undefined) break;
+          this.rabbitHuntOffers.delete(oldest);
+        }
+      } catch (err) {
+        // Never silent. A throw here means no offer, no event, and a rabbit hunt
+        // that has quietly stopped working on this table with nothing to explain
+        // why — which is precisely the blind spot that would hide a bug like the
+        // RIT one above.
+        reportError(err, 'ServerTableEngine.rabbit_hunt_capture_error');
       }
     }
 
     // SETTLEMENT STEP 8 (partial): Mark hand snapshot as complete
     // FIX 137: Bible V8 §7.17
-    completeHandSnapshot(this.tableId, this.handCount).catch(() => {});
+    // Reported, not swallowed. A snapshot that never completes leaves the hand
+    // marked in-flight in the recovery path, and `.catch(() => {})` meant the
+    // only way to learn that was to go looking for it. It still must not throw
+    // into settlement — the hand is over and the money is already moved.
+    completeHandSnapshot(this.tableId, this.handCount).catch((err) =>
+      reportError(err, 'ServerTableEngine.complete_hand_snapshot_error')
+    );
 
     // SETTLEMENT STEP 5: Capture rake and BBJ fee (calculated in HandController)
     if ((event as any).rake !== undefined) {
@@ -599,24 +827,70 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // cards revealed (full showdown), there's nothing to "see" — the
     // event would just confuse the UI by offering a paid reveal of cards
     // the player already saw. Round 65: gate on board.length < 5.
-    const board = this.handController?.getState()?.communityCards ?? [];
-    const handReachedRiver = board.length >= 5;
+    // Read the board length CAPTURED above, not the live controller: by the
+    // time this runs the controller may already be nulled, and an optional
+    // chain onto a null controller yields [], i.e. "board length 0", which
+    // offers a rabbit hunt on a hand that ran all the way to the river.
+    // Captured, not re-read. `this.handCount` is a live field reassigned by
+    // allocateGlobalHandNumber() at the next deal, and the emit below runs in a
+    // .then(). Reading it there could stamp the NEXT hand's number onto THIS
+    // hand's cards and eligibility set — the client posts that number back, the
+    // lookup misses, and the player is told the hand is no longer available for
+    // a hand they are still looking at.
+    const handNumber = this.handCount;
+    const offer = this.rabbitHuntOffers.get(handNumber);
+    const boardLength = offer?.boardLength ?? 5;
+    const handReachedRiver = boardLength >= 5;
     // FIX-D3 2026-07-19 (Bible V8 §11): honor the table's rabbit-hunt toggle.
     // The event was emitted unconditionally, offering rabbit hunt even where
     // the host disabled it. Default allowed unless explicitly off.
     const rabbitAllowed =
       (this.tableInfo as { allow_rabbit_hunt?: boolean })?.allow_rabbit_hunt !== false;
-    if (this.currentHandRabbitCards.length > 0 && !handReachedRiver && rabbitAllowed) {
-      this.hub?.emitEvent(this.tableId, {
-        type: 'rabbit_hunt_available',
-        table_id: this.tableId,
-        hand_number: this.handCount,
-        rabbit_cards: this.currentHandRabbitCards,
-        // Round 65: include current board length so client can slice the
-        // right number of additional cards (e.g. flop-fold → show turn+river,
-        // turn-fold → show river only, preflop-fold → show full 5).
-        current_board_length: board.length,
-      });
+    if (offer && offer.cards.length > 0 && !handReachedRiver && rabbitAllowed) {
+      // Dan 2026-08-25: this is an AVAILABILITY SIGNAL, not the cards.
+      //
+      // It used to carry `rabbit_cards` — the five real remaining cards — in a
+      // room-wide broadcast to every socket at the table, before anyone had
+      // paid anything. The paywall was a client-side `if`. Anyone watching the
+      // websocket read the run-out for free, and so did every opponent.
+      //
+      // The cards now leave the server only through revealRabbitHunt(), one
+      // authenticated player at a time, after fn_consume_rabbit_hunt has taken
+      // a VIP monthly use, a purchased use, or five diamonds.
+      //
+      // It is still a ROOM-WIDE broadcast, so it carries who may act on it
+      // rather than assuming everyone who receives it can. Without that, a
+      // spectator — or a player who had just sat down and was not dealt in —
+      // got a live Rabbit Hunt button whose only possible outcome was the
+      // server refusing them. The eligibility set is already held here; it
+      // simply was not being sent.
+      void this.getRabbitHuntCost()
+        .then((diamondCost) => {
+          this.hub?.emitEvent(this.tableId, {
+            type: 'rabbit_hunt_available',
+            table_id: this.tableId,
+            hand_number: handNumber,
+            // How many cards a reveal would show: flop-fold → turn+river, turn-fold
+            // → river only, preflop-fold → the full five.
+            current_board_length: boardLength,
+            cards_available: Math.min(offer.cards.length, 5 - boardLength),
+            // Only these players were dealt into the hand.
+            eligible_user_ids: Array.from(offer.eligible),
+            // The LIVE price from feature_pricing. The button used to render a
+            // hardcoded 5 from the client's FEATURE_PRICING while the charge came
+            // from the table, so a repricing in the dashboard made the label lie.
+            diamond_cost: diamondCost,
+            // Offers expire, so the client can stop showing a button that would
+            // now be refused.
+            expires_at: offer.offeredAt + RABBIT_HUNT_OFFER_TTL_MS,
+          });
+        })
+        .catch((err) =>
+          // Fire-and-forget off the settlement path, so it must carry its own
+          // catch: an unhandled rejection here would take the process down over
+          // a decoration. The player simply gets no rabbit-hunt offer.
+          reportError(err, 'ServerTableEngine.rabbit_hunt_offer_emit_error')
+        );
     }
 
     // ── ADDITIVE event-sourcing shadow (#1): replay + chip-conservation verify at hand end ──
@@ -766,12 +1040,68 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // losing holdings in one hour) stays closed - those players never
         // enter the array to begin with.
         const winnerIds = new Set(this.currentHandWinners.map((w) => w.userId));
+        // SHOWDOWN SYSTEM 2026-08-25: the module's rule is "a holding may be
+        // exposed only if the table already showed it" — and a hand the engine
+        // ruled muckable was never shown. Filter mucked hands here (voluntary
+        // shows override via isMuckedAtShowdown) so the participant-readable
+        // hand_history matches what the table displayed. The full dealt-card
+        // record for audit/integrity still rides the separate holeCardsAll
+        // capture, exactly as before.
         const revealedShowdownResults = selectRevealedShowdownResults(
-          this.currentHandShowdownResults,
+          this.currentHandShowdownResults.filter((r) => !this.isMuckedAtShowdown(r.userId)),
           winnerIds,
           this.showHandPlayers,
           false
         );
+
+        // ── MUCKED-WINNER INVARIANT (2026-08-25) ────────────────────────────
+        // A hand the reveal system withheld can NEVER be a hand that was paid:
+        // applyShowdownRevealRules auto-tables every hand that wins or ties.
+        // If this ever fires, the muck ruling and the payout disagreed — a
+        // money/privacy consistency break worth a page, not a log line. It
+        // runs per hand, in the settlement path, so it can't be missed by a
+        // sampling job. RIT hands pass trivially (all hands force-revealed).
+        if (this.currentHandShowdownResults.length >= 2) {
+          const revealedIds = new Set(revealedShowdownResults.map((r) => r.userId));
+          const paidButHidden = [...winnerIds].filter(
+            (id) =>
+              !revealedIds.has(id) && this.currentHandShowdownResults.some((r) => r.userId === id)
+          );
+          if (paidButHidden.length > 0) {
+            await raiseFinancialAlert(
+              'critical',
+              'ServerTableEngine.mucked_winner_invariant',
+              `Hand ${this.handCount} on table ${this.tableId}: winner(s) ${paidButHidden.join(
+                ','
+              )} were withheld from the reveal set - the muck ruling and the payout disagree`,
+              { tableId: this.tableId, handNumber: this.handCount, userIds: paidButHidden }
+            );
+          }
+        }
+
+        // SHOWDOWN POLISH 2026-08-25 (persistence): what the table actually
+        // SAW, for replays and dispute review — reveal order, muck ruling,
+        // and hand identity for revealed hands only. A mucked entry carries
+        // no hand name, description, or cards: participants can read this
+        // row back, and a mucked range stays private (2026-08-17 leak rule).
+        const showdownReveal = this.currentHandShowdownResults.map((r) => {
+          const mucked = this.isMuckedAtShowdown(r.userId);
+          return mucked
+            ? {
+                user_id: r.userId,
+                seat: r.seat ?? -1,
+                reveal_order: r.revealOrder ?? 0,
+                mucked: true,
+              }
+            : {
+                user_id: r.userId,
+                seat: r.seat ?? -1,
+                reveal_order: r.revealOrder ?? 0,
+                mucked: false,
+                hand_name: r.handName,
+                hand_description: r.handDescription ?? '',
+              };
+        });
 
         const result = await logHandHistory({
           tableId: this.tableId,
@@ -788,6 +1118,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           startedAt: this.currentHandStartedAt || Date.now(),
           endedAt: Date.now(),
           winners: this.currentHandWinners,
+          // POT-LEVEL SETTLEMENT (Dan section 29). Captured at WINNERS, when
+          // the breakdown still exists. `winners` already carry `potIndex`;
+          // this is the other half of that pair, and without it the number is
+          // an index into an array nobody stored. Together they let the
+          // elimination sweep credit a knockout to the winner(s) of the pot
+          // that held the busted player's last chips.
+          pots: this.currentHandPots,
           players: players.map((p) => ({
             userId: p.user_id,
             username: p.username,
@@ -813,6 +1150,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // positional leak at all.
           showdownResults: revealedShowdownResults,
           buttonSeat: this.currentHandDealerSeat,
+          showdownReveal,
         });
         v_handHistoryId = result.handId;
 
@@ -1227,7 +1565,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // seat-based from the current button. Next hand's button is the next
         // occupied seat clockwise from lastButtonSeat; BB is one seat past SB
         // (HU: BB is the non-button, i.e. one seat past the button).
-        const nextButtonSeat = this.getNextSeat(this.lastButtonSeat, players);
+        // Uses the SAME predictButtonSeat as getSBSeatIndex, getBBSeatIndex and
+        // the rotation itself. This was a fourth, independent walk over the raw
+        // roster, so once new players stopped being button-eligible it could
+        // name a different next button than the deal actually uses — and this
+        // one decides when a horse stands up to dodge the big blind, so
+        // disagreeing means it leaves on the wrong hand.
+        const nextButtonSeat = this.predictButtonSeat(players);
         const nextSbSeat =
           players.length === 2 ? nextButtonSeat : this.getNextSeat(nextButtonSeat, players);
         const nextBbSeat = this.getNextSeat(nextSbSeat, players);

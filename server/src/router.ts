@@ -26,11 +26,14 @@ import { sendJSON, CORS_HEADERS } from './http/respond.js';
 import { handleHealth, handleWsMetrics, handleMetrics } from './handlers/health.js';
 import { handleAction } from './handlers/action.js';
 import { handleTimebank } from './handlers/timebank.js';
+import { handleRabbitHunt } from './handlers/rabbithunt.js';
 import { handleHeartbeat } from './handlers/heartbeat.js';
+import { handleAway } from './handlers/away.js';
 import { handlePreaction } from './handlers/preaction.js';
 import { handleAddchips } from './handlers/addchips.js';
 import { handleWithdrawchips } from './handlers/withdrawchips.js';
 import { handleLeave } from './handlers/leave.js';
+import { handleRejectRebuy } from './handlers/reject_rebuy.js';
 import { handleSitout } from './handlers/sitout.js';
 import { handleStraddle } from './handlers/straddle.js';
 import { handleRit } from './handlers/rit.js';
@@ -58,7 +61,9 @@ const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
  */
 type AnyGameServer = Parameters<typeof handleAction>[2]['gameServer'] &
   Parameters<typeof handleTimebank>[2]['gameServer'] &
+  Parameters<typeof handleRabbitHunt>[2]['gameServer'] &
   Parameters<typeof handleHeartbeat>[2]['gameServer'] &
+  Parameters<typeof handleAway>[2]['gameServer'] &
   Parameters<typeof handlePreaction>[2]['gameServer'] &
   Parameters<typeof handleAddchips>[2]['gameServer'] &
   Parameters<typeof handleWithdrawchips>[2]['gameServer'] &
@@ -160,7 +165,9 @@ export function createRouter(
     // ─────────────────────────────────────────────────────────────────────────
     if (url === '/health' || url === '/') return handleHealth(res, { gameServer });
     if (url === '/ws-metrics' && method === 'GET')
-      return handleWsMetrics(res, { tableStateHub, engineWs });
+      // 2026-08-24: channelHub added — the wallet/tournament/club/lobby
+      // transport had zero metrics visibility before this.
+      return handleWsMetrics(res, { tableStateHub, engineWs, channelHub });
     if (url === '/metrics' && method === 'GET') return handleMetrics(res, { gameServer });
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -168,7 +175,14 @@ export function createRouter(
     // ─────────────────────────────────────────────────────────────────────────
     if (method === 'POST' && url === '/action') return handleAction(req, res, { gameServer });
     if (method === 'POST' && url === '/timebank') return handleTimebank(req, res, { gameServer });
+    // The rabbit-hunt paywall. The cards are not in any broadcast; this is the
+    // only way they leave the server, and it charges before it answers.
+    if (method === 'POST' && url === '/rabbit-hunt')
+      return handleRabbitHunt(req, res, { gameServer });
     if (method === 'POST' && url === '/heartbeat') return handleHeartbeat(req, res, { gameServer });
+    // Dan 2026-08-23: pagehide/app-freeze beacon. Marks the player AWAY (blind
+    // cap armed) without removing them — see handlers/away.ts.
+    if (method === 'POST' && url === '/away') return handleAway(req, res, { gameServer });
     if (method === 'POST' && url === '/preaction') return handlePreaction(req, res, { gameServer });
     if (method === 'POST' && url === '/addchips') return handleAddchips(req, res, { gameServer });
     if (method === 'POST' && url === '/withdrawchips')

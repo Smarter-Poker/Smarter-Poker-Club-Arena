@@ -23,13 +23,58 @@ export interface HealthDeps {
 }
 
 export interface WsMetricsDeps {
-  tableStateHub: { totalSubscribers(): number };
-  engineWs: { connectionCount(): number };
+  tableStateHub: {
+    totalSubscribers(): number;
+    /** Optional — B12 backpressure counters. Climbing softDropped = clients
+     *  cannot keep up; any hardDropped = a socket was evicted mid-session. */
+    backpressureStats?(): { softDropped: number; hardDropped: number };
+  };
+  engineWs: {
+    connectionCount(): number;
+    /** Optional so the structural typing above stays minimal, per this file's
+     *  design note — a transport without it simply reports zeroes. */
+    muxStats?(): {
+      muxSockets: number;
+      singleSockets: number;
+      muxSubscriptions: number;
+      maxSubsOnOneSocket: number;
+    };
+  };
+  /**
+   * 2026-08-24: the /ws/channel side — wallet FINANCIAL_UPDATEs, tournament
+   * events, club events, lobby updates. This transport was completely
+   * invisible in metrics, which is how "the server kills every channel
+   * socket at 60s" (see ChannelWebSocketServer heartbeat fix) ran in
+   * production with nothing measuring it. channelSockets counts live
+   * sockets (a user with 2 tabs counts 2); channelUsers counts distinct
+   * users; a healthy platform shows sockets >= users.
+   */
+  channelHub?: {
+    connectionCount(): number;
+    userCount(): number;
+    lobbySubscriberCount(): number;
+  };
 }
 
 /** `GET /health` and `GET /` — Hetzner VPS health probe + SHA/status report. */
 export function handleHealth(res: ServerResponse, deps: HealthDeps): void {
-  sendJSON(res, 200, deps.gameServer.getStatus());
+  const status = deps.gameServer.getStatus() as { liveness?: string };
+  /**
+   * A STANDBY ANSWERS 503, ON PURPOSE (2026-08-23).
+   *
+   * Two different consumers read this endpoint and need different answers:
+   *
+   *   Caddy   an active health check expects 2xx. 503 marks this upstream
+   *           down, so every request goes to the leader. That is the whole
+   *           failover mechanism -- no routing table, no proxy.
+   *   Docker  the container HEALTHCHECK exits non-zero only when liveness is
+   *           'dead'. 'standby' is not 'dead', so the container stays healthy
+   *           and alive, which it must be in order to take over.
+   *
+   * The body is unchanged either way, so anything reading the payload (the
+   * deploy verifier, /metrics scrapers, an operator) sees the same fields.
+   */
+  sendJSON(res, status?.liveness === 'standby' ? 503 : 200, status);
 }
 
 /**
@@ -39,9 +84,29 @@ export function handleHealth(res: ServerResponse, deps: HealthDeps): void {
  * Prometheus + Grafana to track the authoritative WebSocket transport.
  */
 export function handleWsMetrics(res: ServerResponse, deps: WsMetricsDeps): void {
+  // 2026-08-23: the mux breakdown. Without it these two numbers cannot tell a
+  // client holding four per-table sockets from one holding a single mux socket
+  // with four subscriptions, which is the only thing the ca_ws_mux beta
+  // changes — so the beta could never be soaked on evidence.
+  const mux = deps.engineWs.muxStats?.() ?? {
+    muxSockets: 0,
+    singleSockets: 0,
+    muxSubscriptions: 0,
+    maxSubsOnOneSocket: 0,
+  };
+  const backpressure = deps.tableStateHub.backpressureStats?.() ?? {
+    softDropped: 0,
+    hardDropped: 0,
+  };
   sendJSON(res, 200, {
     totalSubscribers: deps.tableStateHub.totalSubscribers(),
     activeConnections: deps.engineWs.connectionCount(),
+    ...mux,
+    ...backpressure,
+    // 2026-08-24: channel transport visibility — see WsMetricsDeps.channelHub.
+    channelSockets: deps.channelHub?.connectionCount() ?? 0,
+    channelUsers: deps.channelHub?.userCount() ?? 0,
+    lobbySubscribers: deps.channelHub?.lobbySubscriberCount() ?? 0,
   });
 }
 

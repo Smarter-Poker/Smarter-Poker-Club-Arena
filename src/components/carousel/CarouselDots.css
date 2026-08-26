@@ -52,7 +52,7 @@
       rgba(0, 0, 0, 0.05) 2px
     ),
     /* the tone ramp across the pill's height */
-      linear-gradient(180deg, #eef1f4 0%, #c6ccd2 42%, #969da4 58%, #d8dde1 100%);
+    linear-gradient(180deg, #eef1f4 0%, #c6ccd2 42%, #969da4 58%, #d8dde1 100%);
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.45),
     inset 0 1px 0 rgba(255, 255, 255, 0.85),

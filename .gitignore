@@ -1,5 +1,11 @@
 # Dependencies
 node_modules
+# npm writes a temporary `.node_modules-<hash>` symlink during install and
+# leaves it behind if the install is interrupted. The name does not match the
+# `node_modules` pattern above, so it is NOT ignored -- and `git add -A` will
+# happily commit a broken symlink into the repo. Nearly shipped one on
+# 2026-08-23.
+.node_modules-*
 
 # Build
 dist
@@ -129,3 +135,26 @@ public/cards/4color/*.webp
 *.orig
 *.rej
 *.bak
+
+# Agent scratch. Never shipped; kept out of the tree so a `git add -A`
+# cannot sweep a probe file or a staging directory into main (it did, twice:
+# 19 files were tracked on main by 2026-08-23).
+_agent_tmp/
+
+# More of the same, found untracked in the working tree on 2026-08-23 while
+# preparing a push. scripts/git-safe-push.sh runs `git add -A`, so anything
+# sitting here unignored is one push away from being source. These are all
+# one-off probes and staging dirs, not code:
+#   _to_delete/      quarantine for files the sandbox mount cannot unlink
+#   .cowork-trees/   per-agent worktrees
+#   test_db*.mjs     ad-hoc Supabase connectivity checks
+#   patch_*.cjs/.js  single-use codemods that have already been applied
+_to_delete/
+.cowork-trees/
+/check-locks.cjs
+/workspace-cmd.sh
+/test-query.cjs
+/test_db*.mjs
+/patch_*.cjs
+/patch_*.js
+.git-msg-*.txt

@@ -14,7 +14,7 @@ import { Virtuoso } from 'react-virtuoso';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
-import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
+
 import type { LeaderboardSettings, LeaderboardPayout } from '../services/LeaderboardService';
 import { LeaderboardService } from '../services/LeaderboardService';
 import type {
@@ -55,7 +55,7 @@ function setCachedEntries(key: string, data: LeaderboardEntry[]) {
 const podiumAnimationStyle = {
   opacity: 0,
   transform: 'translateY(16px)',
-  animation: 'fadeInUp 0.7s ease-out forwards',
+  animation: 'animationsFadeInUp 0.7s ease-out forwards',
 };
 
 const rankingRowAnimationStyle = (index: number) =>
@@ -64,7 +64,7 @@ const rankingRowAnimationStyle = (index: number) =>
     : {
         opacity: 0,
         transform: 'translateY(8px)',
-        animation: `fadeInUp 0.5s ease-out ${index * 60}ms forwards`,
+        animation: `animationsFadeInUp 0.5s ease-out ${index * 60}ms forwards`,
       };
 
 type LeaderboardScope = 'my-clubs' | 'global';
@@ -309,20 +309,19 @@ export default function LeaderboardPage() {
     };
   }, [selectedClubId, userClubs]);
 
-  // Callback for tournament updates
-  const handleTournamentLeaderboardUpdate = useCallback(() => {
-    if (activeTabRef.current === 'tournaments')
-      loadTournamentStatsRef.current(() => isMountedRef.current);
-  }, []);
-
-  useMasterBusChannel({
-    channelName: 'tournament-leaderboard-updates',
-    table: 'tournament_players',
-    filter: null,
-    event: '*',
-    onPayload: handleTournamentLeaderboardUpdate,
-    enabled: true,
-  });
+  // 2026-08-24: a useMasterBusChannel({ table: 'tournament_players',
+  // filter: null }) used to sit here. It NEVER SUBSCRIBED - the hook
+  // early-returns on `if (!enabled || !channelName || !filter)`
+  // (useMasterBusChannel.ts:93), so a null filter silently means "do nothing".
+  // It read as live realtime coverage and was not; the 30s poll below has been
+  // the only refresh mechanism this page ever had.
+  //
+  // Deleted rather than repaired, because repairing it means subscribing to
+  // tournament_players with NO filter - every chip update, elimination and
+  // registration for every tournament on the platform delivered to every
+  // client viewing a leaderboard. A leaderboard is aggregate, non-actionable
+  // data; a poll is the right mechanism for it and the wrong thing to replace
+  // with a firehose.
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
@@ -1155,7 +1154,7 @@ export default function LeaderboardPage() {
             )}
           </>
         ) : activeTab === 'tournaments' && tournamentStats.length > 0 ? (
-          <>
+          <div className="tournament-stats-scroll">
             {/* Tournament Stats Header */}
             <div className="tournament-stats-header">
               <div className="stats-column-header">Player</div>
@@ -1206,7 +1205,7 @@ export default function LeaderboardPage() {
                 </div>
               )}
             />
-          </>
+          </div>
         ) : null}
       </div>
 

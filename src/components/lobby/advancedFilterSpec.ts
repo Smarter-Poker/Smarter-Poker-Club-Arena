@@ -69,51 +69,69 @@ export interface GameFilterSpec {
   features: FeatureOption[];
 }
 
-/** Cash-game feature grid. Keys match tables.settings flags. */
+/**
+ * Cash-game feature grid.
+ *
+ * ── EVERY KEY HERE MUST BE A COLUMN THE LOBBY QUERY SELECTS ────────────────
+ * 2026-08-25: fourteen of these twenty chips could never match anything. The
+ * matcher reads `settings[k] ?? row[k]`, `settings` is `{}` on all 46 live
+ * tables, and `row` is exactly the column list in ClubHomePage — so a chip
+ * naming a key outside that list evaluated false for every row. Ticking it as
+ * MUST-HAVE emptied the tab with the filter dot lit; ticking it as HIDE was a
+ * silent no-op.
+ *
+ * That is the same defect this file has already recorded removing twice: the
+ * FLH chip and the "OMAHA High" chip, both deleted for exactly this reason.
+ * The rule is now explicit rather than folklore, and a test asserts it.
+ *
+ * The removed chips are not lost work — they are features the engine does not
+ * enforce (Kill Pot, CallTime, VPIP, NIT Game, PC Emulator) or columns the
+ * lobby does not fetch. They come back with the feature, together.
+ */
 const CASH_FEATURES: FeatureOption[] = [
-  { key: 'double_board', label: 'Double Board', match: ['double_board', 'doubleBoard'] },
-  { key: 'triple_board', label: 'Triple Board', match: ['triple_board', 'tripleBoard'] },
-  { key: 'jackpot', label: 'Jackpot', match: ['bbj_enabled', 'jackpot_enabled'] },
-  { key: 'kill_pot', label: 'Kill Pot', match: ['kill_pot', 'killPot'] },
-  { key: 'call_time', label: 'CallTime', match: ['call_time_enabled', 'callTime'] },
-  { key: 'anonymous', label: 'Anonymous', match: ['anonymous', 'anonymous_tables'] },
   { key: 'ante', label: 'Ante', match: ['ante', 'ante_enabled'] },
-  { key: 'vpip', label: 'VPIP', match: ['vpip_required', 'vpip'] },
-  { key: 'straddle', label: 'Straddle', match: ['straddle_enabled', 'straddle'] },
-  { key: 'insurance', label: 'Insurance', match: ['insurance_enabled', 'allInInsurance'] },
-  { key: 'rit_multi', label: 'Run It Multi-Times', match: ['run_it_multi', 'runItMulti'] },
-  { key: 'rit_choice', label: "Run It Player's Choice", match: ['run_it_twice', 'runItTwice'] },
+  { key: 'straddle', label: 'Straddle', match: ['straddle_enabled'] },
+  { key: 'auto_straddle', label: 'Auto Straddle', match: ['auto_utg_straddle'] },
+  { key: 'insurance', label: 'Insurance', match: ['insurance_enabled'] },
   {
-    key: 'rit_mandatory',
-    label: 'Mandatory Run It',
-    match: ['mandatory_run_it', 'mandatoryRunIt'],
+    key: 'rit_choice',
+    label: 'Run It Twice',
+    match: ['run_it_twice', 'run_it_twice_enabled', 'allow_run_it_twice'],
   },
-  { key: 'vip', label: 'VIP', match: ['vip_only', 'vipOnly'] },
-  { key: 'pineapple', label: 'Pineapple', match: ['pineapple'] },
-  { key: 'bomb_pot', label: 'BombPot', match: ['bomb_pot_enabled', 'bombPot'] },
-  { key: 'seven_deuce', label: 'Seven-Deuce', match: ['seven_deuce', 'sevenDeuce'] },
-  { key: 'nit_game', label: 'NIT Game', match: ['nit_game', 'nitGame'] },
-  { key: 'cap', label: 'CAP', match: ['cap_enabled', 'cap'] },
-  { key: 'pc_emulator', label: 'PC Emulator Restriction', match: ['block_emulator', 'pcRestrict'] },
+  { key: 'bomb_pot', label: 'BombPot', match: ['bomb_pot_enabled'] },
+  /* seven_deuce_enabled is the column; the old key was `seven_deuce`, off by a
+     suffix, so the chip never matched the table it names. */
+  { key: 'seven_deuce', label: 'Seven-Deuce', match: ['seven_deuce_enabled'] },
+  { key: 'time_bank', label: 'Time Bank', match: ['time_bank_enabled'] },
+  { key: 'all_in_or_fold', label: 'All-in or Fold', match: ['all_in_or_fold'] },
 ];
 
 /**
- * Omaha drops Pineapple (a Hold'em-family variant) and Seven-Deuce (a
- * two-card-hand prop) exactly as the reference screen does, and reorders the
- * tail. Same keys, so a preference saved on one tab still means the same thing.
+ * Omaha drops Seven-Deuce, and now for a reason the engine agrees with rather
+ * than a reference screen: ServerTableEngineSettlement gates the bounty to
+ * Hold'em ("meaningless in PLO; short-deck has no deuces"), so the chip could
+ * only ever match zero Omaha rows. Same keys as the cash grid, so a preference
+ * saved on one tab still means the same thing on another.
  */
 const OMAHA_FEATURES: FeatureOption[] = CASH_FEATURES.filter(
-  (f) => !['pineapple', 'seven_deuce'].includes(f.key)
+  (f) => !['seven_deuce'].includes(f.key)
 );
 
-/** MTT has five, all tournament-level. */
-const MTT_FEATURES: FeatureOption[] = [
-  { key: 'all_in_or_fold', label: 'All-in or Fold', match: ['all_in_or_fold'] },
-  { key: 'private_mtt', label: 'Private MTT', match: ['is_private'] },
-  { key: 'bounty', label: 'Bounty', match: ['is_bounty', 'is_pko', 'is_mystery_bounty'] },
-  { key: 'vip', label: 'VIP', match: ['vip_only'] },
-  { key: 'pc_emulator', label: 'PC Emulator Restriction', match: ['block_emulator'] },
-];
+/**
+ * MTT features.
+ *
+ * All FIVE of the old entries were inert: the tournament path passes
+ * `settings: {}` explicitly and none of `all_in_or_fold`, `is_private`,
+ * `is_bounty`, `is_pko`, `is_mystery_bounty`, `vip_only` or `block_emulator`
+ * is in the tournament select list. Selecting any of them emptied the MTT tab.
+ *
+ * The grid is empty rather than wrong. A tournament's traits are already
+ * visible as medallions on its card (PKO, MYSTERY BOUNTY, REBUY, GUARANTEED,
+ * LATE REG) and those are computed from columns the query really does fetch;
+ * turning them into filters means fetching the columns first, which is a
+ * change to the query and not to this table.
+ */
+const MTT_FEATURES: FeatureOption[] = [];
 
 /** Blind tiers, matching BBJRulesPanel's published ladder. */
 const BLIND_RANGE: RangeSpec = {
@@ -151,7 +169,16 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
   HOLDEM: {
     games: [
       { key: 'nlh', label: 'NLH' },
-      { key: 'flh', label: 'FLH' },
+      /* Pineapple is a Hold'em-family variant and cashKind routes it here, so
+         without a chip of its own every Pineapple table vanished the moment a
+         player ticked NLH. Five of them run in production. */
+      { key: 'pineapple', label: 'Pineapple' },
+      // 2026-08-23: the FLH chip used to live here and could never match a
+      // single row. ClubHomePage.cashKind() routes every fixed-limit variant to
+      // the LIMIT tab, so an FLH table is by construction absent from the
+      // HOLDEM list — ticking the chip narrowed HOLDEM to nothing and read as
+      // "there are no Hold'em games". Limit games are filtered on the LIMIT
+      // tab, which deliberately carries no sub-variant chips.
       { key: 'short_deck', label: '6+' },
     ],
     range: BLIND_RANGE,
@@ -161,8 +188,26 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
     features: CASH_FEATURES,
   },
   OMAHA: {
-    // No "Games:" row on the Omaha reference screen - the Omaha tab already IS
-    // the variant selection, and the lobby has no sub-variant chips for it.
+    /* Dan 2026-08-25: "PLO ... HAS 5 VARIATIONS. INSIDE THE FILTERS, USERS
+       SHOULD BE ABLE TO SELECT WHAT PLO GAMES THEY WANT DISPLAYED, AND THEY
+       SHOULD BE DISPLAYED IN ORDER."
+
+       The old note here said the Omaha tab "already IS the variant selection".
+       It is not: it is four games in one list. PLO4 and PLO6 are different
+       games with different bankroll requirements and the tab mixed them at
+       every stake, so a player who only plays 4-card had to read every row.
+
+       Every key below is one `variantKey` already returns — the precedent
+       this file records twice (the removed FLH and 'OMAHA High' chips) is that
+       a chip whose key can never be produced silently empties the tab. PLO8 is
+       matched before PLO6/5/4 in variantKey, so hi-lo does not fall into the
+       4-card bucket. */
+    games: [
+      { key: 'plo4', label: 'PLO 4c' },
+      { key: 'plo5', label: 'PLO 5c' },
+      { key: 'plo6', label: 'PLO 6c' },
+      { key: 'plo8', label: 'PLO Hi/Lo' },
+    ],
     range: BLIND_RANGE,
     statuses: CASH_STATUSES,
     seats: { min: 2, max: 9 },
@@ -170,10 +215,16 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
     features: OMAHA_FEATURES,
   },
   LIMIT: {
-    // No "Games:" row - like Omaha, the Limit tab already IS the variant
-    // selection (cashKind routes FLH and every fixed/mixed-limit variant
-    // here), and inventing sub-variant chips without a reference screen
-    // risks hiding real tables behind keys variantKey has not learnt.
+    // 2026-08-24: this row was withheld because "inventing sub-variant chips
+    // risks hiding real tables behind keys variantKey has not learnt". That
+    // precondition is now met: variantKey learnt `flh` and `flo8` (and the
+    // legacy `limit_holdem` / `limit_omaha` spellings, which fold into the same
+    // two keys) when the limit games shipped. There are exactly two limit
+    // variants, both creatable, so the tab has something to sub-divide.
+    games: [
+      { key: 'flh', label: 'FLH' },
+      { key: 'flo8', label: 'FLO8' },
+    ],
     range: BLIND_RANGE,
     statuses: CASH_STATUSES,
     seats: { min: 2, max: 9 },
@@ -188,7 +239,19 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
       { key: 'plo6', label: 'OMAHA 6c' },
       { key: 'short_deck', label: '6+' },
       { key: 'plo8', label: 'OMAHA Hi/Lo' },
-      { key: 'plo_high', label: 'OMAHA High' },
+      /* Pineapple has a chip because the census below lists OFC_PINEAPPLE and
+         variantKey now maps it (lobbyEntries.TOURNEY_VARIANT_KEYS). A
+         producible variant with no chip is deleted by the games filter the
+         moment a player ticks any other chip - the same shape as the FLH and
+         'OMAHA High' defects recorded here, in the opposite direction. */
+      { key: 'pineapple', label: 'Pineapple' },
+      /* 'OMAHA High' removed 2026-08-25. `variantKey` can only ever return
+         `plo_high` for an input that is literally that string, and no variant
+         in the database is: game_type across 23,116 tournaments is NLH, PLO4,
+         PLO5, PLO6, PLO8, SHORT_DECK and OFC_PINEAPPLE. Selecting the chip
+         therefore matched zero rows and emptied the MTT tab - the same defect
+         already removed once for the FLH chip above. Plain PLO is covered by
+         the plo4/5/6 chips. */
     ],
     range: BUYIN_RANGE,
     statuses: [
@@ -242,6 +305,7 @@ export interface GameFilterValue {
   format: string[];
   rangeMin: number;
   rangeMax: number;
+  selectedRanges?: string[];
   statuses: string[];
   seatMin: number;
   seatMax: number;
@@ -257,6 +321,7 @@ export function emptyFilterValue(spec: GameFilterSpec): GameFilterValue {
     format: [],
     rangeMin: spec.range.min,
     rangeMax: spec.range.max,
+    selectedRanges: [],
     statuses: [],
     seatMin: spec.seats?.min ?? 3,
     seatMax: spec.seats?.max ?? 3,
@@ -327,7 +392,16 @@ export interface FilterableRow {
   variant?: string | null;
   /** Cash: big_blind. Tournament: total buy-in (prize + fee). */
   price?: number | null;
+  /** Cash: max_players. Tournament: max_players, i.e. the FIELD cap. */
   seats?: number | null;
+  /**
+   * Seats at ONE table, when the row knows it -- tournaments.table_size.
+   * The "Table Size" slider reads this, never `seats`: a 500-runner MTT seats
+   * nine at a table and comparing 500 to a 2-9 range deletes it. Pass the key
+   * with a null value rather than omitting it when the size is unknown; that
+   * skips the range instead of falling back to the field cap.
+   */
+  tableSeats?: number | null;
   seatsTaken?: number | null;
   /** Tournament status, for the MTT running / open-registration chips. */
   status?: string | null;
@@ -339,15 +413,33 @@ export interface FilterableRow {
 }
 
 /** Normalise a variant string to the keys used by the spec's `games` chips. */
-function variantKey(raw: string | null | undefined): string {
+/**
+ * Exported since 2026-08-25 so the lobby can GROUP by the same key it filters
+ * by. A second copy of this ladder in ClubHomePage would be a second place for
+ * `plo8` to stop being tested before `plo6`.
+ */
+export function variantKey(raw: string | null | undefined): string {
   const v = String(raw ?? '').toLowerCase();
   if (!v) return '';
+  // Fixed-limit Omaha Hi-Lo first: `flo8` contains neither "plo8" nor "hilo",
+  // and every other hi-lo test below would otherwise fold it into plo8 or drop
+  // it through unrecognised. Legacy rows spell it `limit_omaha` (2026-08-23).
+  if (v === 'flo8' || v.includes('flo8') || v.includes('limit_omaha') || v.includes('limit omaha'))
+    return 'flo8';
   if (v.includes('plo8') || v.includes('hi/lo') || v.includes('hilo')) return 'plo8';
+
   if (v.includes('plo6')) return 'plo6';
   if (v.includes('plo5')) return 'plo5';
   if (v.includes('plo4') || v === 'plo') return 'plo4';
   if (v.includes('short') || v === '6+') return 'short_deck';
-  if (v.includes('flh') || v.includes('limit holdem')) return 'flh';
+  if (v.includes('flh') || v.includes('limit holdem') || v.includes('limit_holdem')) return 'flh';
+  /* `ofc_pineapple` is what tournaments.game_type actually stores, and it
+     passed through unchanged - a non-empty key matching no chip, which the
+     rule below then filtered the row out on. Both spellings normalise to the
+     one key the HOLDEM and MTT chips already use. Kept above the holdem tests
+     so a future "pineapple holdem" spelling cannot be swallowed by them. */
+  if (v.includes('pineapple')) return 'pineapple';
+
   if (v.includes('nlh') || v.includes('holdem') || v.includes("hold'em")) return 'nlh';
   return v;
 }
@@ -366,16 +458,31 @@ export function rowPassesFilter(
   // ── Games chips ─────────────────────────────────────────────────────────
   if (v.games.length > 0) {
     const key = variantKey(r.variant);
-    // An UNRECOGNISED variant passes. The alternative is hiding a real table
-    // because this function has not learnt its name yet, which is the same
-    // "absence of evidence" trap the feature matcher above avoids.
+    /**
+     * An unrecognised variant passes — only an EMPTY key qualifies, because
+     * variantKey returns its input unchanged when it recognises nothing.
+     *
+     * That is the correct narrowing rule and it is deliberately unchanged.
+     * The real defect it exposed on 2026-08-25 was elsewhere: `pineapple` IS
+     * recognised, cashKind routes Pineapple tables to the HOLDEM tab, and
+     * HOLDEM offered no chip for it — so ticking "NLH" made five real
+     * production tables disappear. The fix is a chip, not a looser matcher;
+     * loosening this would stop every chip from narrowing anything.
+     */
     if (key && !v.games.includes(key)) return false;
   }
 
   // ── Format chips (SN only: satellite vs regular) ─────────────────────────
   if (v.format.length > 0) {
     const name = String(r.name ?? '').toLowerCase();
-    const isSat = name.includes('sat') || r.row.is_satellite === true;
+    /* `includes('sat')` matched Saturday, Satchel and anything else with those
+       three letters, so "Regular SNG" hid real games. Word-boundary match on
+       the actual word, plus the column when the query ever fetches it. */
+    /* `includes('sat')` matched Saturday, Satchel and anything else carrying
+       those three letters, so "Regular SNG" hid real games. A WORD match keeps
+       "Sat To Main" and "Satellite" and rejects "Saturday", because there is no
+       word boundary after the "Sat" in Saturday. */
+    const isSat = /\bsat(ellite)?\b/i.test(name) || r.row.is_satellite === true;
     const wantsSat = v.format.includes('sats');
     const wantsReg = v.format.includes('regular');
     // Both selected is the same as neither: no opinion.
@@ -386,18 +493,63 @@ export function rowPassesFilter(
   }
 
   // ── Price range (blinds for cash, total buy-in for tournaments) ──────────
-  const price = Number(r.price);
-  if (Number.isFinite(price) && price > 0) {
-    if (price < v.rangeMin || price > v.rangeMax) return false;
+  /* `> 0` used to be part of this guard, which exempted every FREEROLL from
+     the buy-in filter: a 0 buy-in passed even with only the High tier
+     selected. Zero is a real price here - BUYIN_RANGE's micro preset starts
+     at 0 - so only an absent or unparseable price counts as unknown. */
+  const price = r.price == null ? NaN : Number(r.price);
+  if (Number.isFinite(price)) {
+    if (v.selectedRanges && v.selectedRanges.length > 0) {
+      const matchesPreset = spec.range.presets.some((p) => {
+        if (!v.selectedRanges!.includes(p.key)) return false;
+        return price >= p.min && price <= p.max;
+      });
+      if (!matchesPreset) return false;
+    } else {
+      /* RULE 1 OF THE SEAT BLOCK BELOW, WHICH THIS BRANCH NEVER GOT. A range
+         sitting at its default is not a filter. isFilterActive() says the same
+         (it compares both ends against the spec), so without this guard the
+         two functions disagreed - the chip read "no filters" while this line
+         quietly deleted rows. It bites hardest on a table whose big_blind is
+         null or 0: callers pass `Number(table.big_blind) || 0`, and 0 is below
+         BLIND_RANGE.min (0.02), so an untouched slider hid every one of them
+         and the empty state offered nothing to clear. */
+      const atDefault = v.rangeMin === spec.range.min && v.rangeMax === spec.range.max;
+      if (!atDefault && (price < v.rangeMin || price > v.rangeMax)) return false;
+    }
   }
 
   // ── Seat range ───────────────────────────────────────────────────────────
   // Applies to EVERY format whose spec declares a slider, not just cash. The
   // MTT and SNG sliders were previously inert.
+  //
+  // TWO RULES LEARNED THE HARD WAY ON 2026-08-23, both from the same report:
+  // "THE MTT, SPINS AND HEADS UP TABLES AND EVENTS ARE NOT BEING DISPLAYED."
+  // Shark Club and Midway showed Spins and Heads Up but an EMPTY MTT tab,
+  // while Club JAQK -- identical union, identical games -- showed all 24.
+  //
+  //   1. A RANGE SITTING AT ITS DEFAULT IS NOT A FILTER. The only difference
+  //      between those clubs was that Shark and Midway had a saved filter
+  //      value at all, untouched at its default 2-9. isFilterActive() calls
+  //      that inactive, so the empty state read "Nothing Here On This Tab" and
+  //      offered no filter to clear -- while this function quietly deleted
+  //      every row. Two functions disagreeing about whether a filter is set is
+  //      the whole bug; they now share one answer.
+  //
+  //   2. "TABLE SIZE" MEANS SEATS AT A TABLE. For a tournament r.seats is
+  //      max_players, the FIELD cap -- 150, 300, 1000 -- so comparing it to a
+  //      2-9 slider rejects every MTT that has ever existed. The seats at one
+  //      table is table_size, which callers pass as tableSeats. When the row
+  //      carries the key but has no value, the range is skipped: not knowing a
+  //      table's size is never a reason to hide the game.
   if (spec.seats) {
-    const seats = Number(r.seats);
-    if (Number.isFinite(seats) && seats > 0) {
-      if (seats < v.seatMin || seats > v.seatMax) return false;
+    const atDefault = v.seatMin === spec.seats.min && v.seatMax === spec.seats.max;
+    if (!atDefault) {
+      const raw = 'tableSeats' in r ? r.tableSeats : r.seats;
+      const seats = Number(raw);
+      if (Number.isFinite(seats) && seats > 0) {
+        if (seats < v.seatMin || seats > v.seatMax) return false;
+      }
     }
   }
 
@@ -454,6 +606,7 @@ export function isFilterActive(spec: GameFilterSpec, v: GameFilterValue): boolea
     v.statuses.length > 0 ||
     v.mustHave.length > 0 ||
     v.hide.length > 0 ||
+    (v.selectedRanges && v.selectedRanges.length > 0) ||
     v.rangeMin !== spec.range.min ||
     v.rangeMax !== spec.range.max ||
     (spec.seats ? v.seatMin !== spec.seats.min || v.seatMax !== spec.seats.max : false)

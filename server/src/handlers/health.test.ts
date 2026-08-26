@@ -22,13 +22,72 @@ describe('handleHealth', () => {
 });
 
 describe('handleWsMetrics', () => {
-  it('returns 200 with transport counters', () => {
+  it('returns 200 with transport counters and the mux breakdown', () => {
     const { res, captured } = mockRes();
     const tableStateHub = { totalSubscribers: vi.fn().mockReturnValue(12) };
-    const engineWs = { connectionCount: vi.fn().mockReturnValue(7) };
+    const engineWs = {
+      connectionCount: vi.fn().mockReturnValue(7),
+      muxStats: vi.fn().mockReturnValue({
+        muxSockets: 2,
+        singleSockets: 5,
+        muxSubscriptions: 6,
+        maxSubsOnOneSocket: 4,
+      }),
+    };
+    // 2026-08-24: channel transport + backpressure counters are new — the
+    // wallet/tournament/club/lobby socket had zero metrics visibility, which
+    // is how the 60s heartbeat kill loop ran unmeasured in production.
+    (tableStateHub as Record<string, unknown>).backpressureStats = vi
+      .fn()
+      .mockReturnValue({ softDropped: 9, hardDropped: 1 });
+    const channelHub = {
+      connectionCount: vi.fn().mockReturnValue(3),
+      userCount: vi.fn().mockReturnValue(2),
+      lobbySubscriberCount: vi.fn().mockReturnValue(1),
+    };
+    handleWsMetrics(res, { tableStateHub, engineWs, channelHub });
+    expect(captured.statusCode).toBe(200);
+    // 2026-08-23: the mux fields are new. The two original counters cannot
+    // tell a client holding four per-table sockets from one holding a single
+    // mux socket with four subscriptions, which is the only thing the
+    // ca_ws_mux beta changes -- so the beta could never be soaked on evidence.
+    expect(parseJson(captured)).toEqual({
+      totalSubscribers: 12,
+      activeConnections: 7,
+      muxSockets: 2,
+      singleSockets: 5,
+      muxSubscriptions: 6,
+      maxSubsOnOneSocket: 4,
+      softDropped: 9,
+      hardDropped: 1,
+      channelSockets: 3,
+      channelUsers: 2,
+      lobbySubscribers: 1,
+    });
+  });
+
+  it('still answers when the transport has no muxStats at all', () => {
+    // WsMetricsDeps keeps muxStats optional so the structural typing stays
+    // minimal, per this handler's design note. A transport without it must
+    // report zeroes, never crash the endpoint Prometheus scrapes.
+    const { res, captured } = mockRes();
+    const tableStateHub = { totalSubscribers: vi.fn().mockReturnValue(1) };
+    const engineWs = { connectionCount: vi.fn().mockReturnValue(1) };
     handleWsMetrics(res, { tableStateHub, engineWs });
     expect(captured.statusCode).toBe(200);
-    expect(parseJson(captured)).toEqual({ totalSubscribers: 12, activeConnections: 7 });
+    expect(parseJson(captured)).toEqual({
+      totalSubscribers: 1,
+      activeConnections: 1,
+      muxSockets: 0,
+      singleSockets: 0,
+      muxSubscriptions: 0,
+      maxSubsOnOneSocket: 0,
+      softDropped: 0,
+      hardDropped: 0,
+      channelSockets: 0,
+      channelUsers: 0,
+      lobbySubscribers: 0,
+    });
   });
 });
 

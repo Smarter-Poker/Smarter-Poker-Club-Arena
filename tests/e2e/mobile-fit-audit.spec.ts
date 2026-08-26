@@ -235,11 +235,7 @@ test('no Club Arena route scrolls horizontally at 375px', async ({ page }) => {
 
   console.log(
     'MOBILE_FIT_AUDIT ' +
-      JSON.stringify(
-        { violations, skipped, unreachable, routesChecked: ROUTES.length },
-        null,
-        1
-      )
+      JSON.stringify({ violations, skipped, unreachable, routesChecked: ROUTES.length }, null, 1)
   );
 
   if (process.env.MOBILE_FIT_STRICT || process.env.CI) {

@@ -13,11 +13,12 @@ import { useEffectiveRake } from '../../hooks/useEffectiveRake';
 import PlayerNotesPanel from '../gameplay/PlayerNotesPanel';
 import HandReplay from '../replay/HandReplay';
 import { GameRulesModal } from './GameRulesModal';
+import { ClubProfileModal } from './ClubProfileModal';
 import SitOutModal from './SitOutModal';
 import WaitListModal from './WaitListModal';
 import { waitlistService } from '../../services/WaitlistService';
 import InsuranceModal, { type InsuranceOffer } from './InsuranceModal';
-import { RunItTwicePrompt, RunItTwiceResult, type RitResultData } from './RunItTwice';
+import { RunItTwicePrompt, type RitResultData } from './RunItTwice';
 import BadBeatJackpot from './BadBeatJackpot';
 import { getBBJQualifyingInfo, getBBJPayoutPercentForBB } from '../../config/RakeConfig';
 import BBJInfoModal from '../bbj/BBJInfoModal';
@@ -28,6 +29,7 @@ import DiamondWalletModal from '../wallet/DiamondWalletModal';
 import CashierModal from './CashierModal';
 import BuyInModal from './BuyInModal';
 import RabbitHunt from './RabbitHunt';
+import type { RabbitHuntRevealResult } from './RabbitHunt';
 import LeaderboardPanel from './LeaderboardPanel';
 import LeaveTableConfirm from './LeaveTableConfirm';
 import { SessionHUD } from './SessionHUD';
@@ -49,6 +51,7 @@ import TournamentWinnerOverlay from './TournamentWinnerOverlay';
 import HandHistoryPanel, { type HandRecord } from './HandHistoryPanel';
 import { ConfettiCanvas } from './ConfettiCanvas';
 import { ParticleSystem } from './ParticleSystem';
+import { useWallet } from '../../hooks';
 // ChipAnimationManager is inline in TablePage — imported via parent
 import { HandReveal } from './HandReveal';
 import { BombPotOverlay } from './BombPotOverlay';
@@ -67,6 +70,10 @@ import type { SeatPlayer } from './SeatSlot';
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 export interface TableModalsLayerProps {
+  currentCardBack?: string;
+  /* May be async and may reject: CardBackSelector only reports success once
+     this has resolved, so a failed write cannot render as a success. */
+  onCardBackChanged?: (id: string) => void | Promise<unknown>;
   // Core context
   tableId: string | undefined;
   userId: string;
@@ -91,7 +98,19 @@ export interface TableModalsLayerProps {
   rakeCap: number | undefined;
   runItTwice: boolean | undefined;
   isHandInProgress: boolean;
+  /**
+   * ─── ACCEPTED AND IGNORED (audit 2026-08-25) ──────────────────────────────
+   * `boardStage`, `handNumber` and `buyInProcessingRef` below are declared
+   * here, passed by TablePage on every render, and read by NOTHING in this
+   * file — they are not in the destructuring block at the top of the
+   * component. They are left declared rather than deleted because removing a
+   * prop from this interface while TablePage still passes it is a TS2322 at
+   * the call site, and TablePage belongs to another pass. The report for this
+   * audit carries the verbatim removals for both files.
+   * @deprecated unused by this layer
+   */
   boardStage: string;
+  /** @deprecated unused by this layer — see the note on boardStage */
   handNumber: number | undefined;
 
   // V8 Settings
@@ -236,6 +255,7 @@ export interface TableModalsLayerProps {
   showCashier: boolean;
   accountBalance: number;
   cashoutMinBuyIn: number;
+  /** @deprecated unused by this layer — see the note on boardStage */
   buyInProcessingRef: React.MutableRefObject<boolean>;
   onCloseCashier: () => void;
   /** Must report whether the chips actually moved — see CashierModal.onAddChips. */
@@ -245,10 +265,24 @@ export interface TableModalsLayerProps {
   // Bust Rebuy
   bustRebuyOpen: boolean;
   bustWalletBalance: number | null;
+  /**
+   * Audit 2026-08-25: also unread here, but for a different reason than the
+   * three above — this one has real work to do and nowhere to do it. The bust
+   * rebuy renders through BuyInModal, and BuyInModal has no `isProcessing`
+   * prop at all (RebuyModal does, and gets one). So the confirm button on a
+   * bust rebuy stays live while the buy-in is in flight and can be pressed
+   * twice. The server's `atomic_table_buyin` is the guard that actually stops
+   * a double buy-in; what the player loses is the feedback, not the chips.
+   * Fixing it means adding `isProcessing` to BuyInModal, which is another
+   * agent's file this pass — carried in the report instead.
+   */
   bustRebuyProcessing: boolean;
   onCancelBustRebuy: () => void;
   onConfirmBustRebuy: (amount: number) => Promise<void>;
 
+  showProfileModal: boolean;
+  onCloseProfileModal: () => void;
+  clubName?: string;
   // Buy-In Modal
   showBuyInModal: boolean;
   selectedSeat: number | null;
@@ -258,8 +292,18 @@ export interface TableModalsLayerProps {
 
   // Rabbit Hunt
   isRabbitAvailable: boolean;
-  currentBoard: Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>;
-  onRabbitReveal: () => Promise<Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>>;
+  /**
+   * Cards a reveal will show, as counted by the SERVER. Replaces the old
+   * `currentBoard` prop, which was only ever passed [] — so every reveal
+   * claimed five cards regardless of the street the hand actually ended on.
+   */
+  rabbitCardsAvailable: number;
+  /** Live diamond price from feature_pricing, delivered with the offer. */
+  rabbitDiamondCost?: number | null;
+  // One contract, declared once, in the component that consumes it. This shape
+  // was written out inline here AND in TablePage AND in RabbitHunt — three
+  // copies of the same object, which is three chances for them to drift.
+  onRabbitReveal: () => Promise<RabbitHuntRevealResult>;
 
   // Leaderboard
   showLeaderboard: boolean;
@@ -356,6 +400,7 @@ export interface TableModalsLayerProps {
   showHandHistory: boolean;
   handHistory: HandRecord[];
   onCloseHandHistory: () => void;
+  onReplay?: (hand: HandRecord) => void;
 
   /* Session Summary props REMOVED (Phase 2 audit 2026-08-22): the in-table
      SessionSummary modal was dead code — `showSessionSummary` was never set
@@ -374,11 +419,17 @@ export interface TableModalsLayerProps {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 import React from 'react';
+import { supabase } from '../../lib/supabase';
+import { useToast } from '../common/Toast';
 
 export function TableModalsLayer(props: TableModalsLayerProps) {
+  const { diamonds } = useWallet();
   const {
+    currentCardBack,
+    onCardBackChanged,
     tableId,
     userId,
+    username,
     ambientSoundsAllowed = true,
     tableName,
     blinds,
@@ -490,13 +541,19 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     bustWalletBalance,
     onCancelBustRebuy,
     onConfirmBustRebuy,
+    showProfileModal,
+    onCloseProfileModal,
+    clubName,
     // Buy-In
     showBuyInModal,
+    selectedSeat,
+    heroAvatarUrl,
     onCloseBuyInModal,
     onConfirmBuyIn,
     // Rabbit Hunt
     isRabbitAvailable,
-    currentBoard,
+    rabbitCardsAvailable,
+    rabbitDiamondCost,
     onRabbitReveal,
     // Leaderboard
     showLeaderboard,
@@ -541,6 +598,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     showHandHistory,
     handHistory,
     onCloseHandHistory,
+    onReplay,
     // Session HUD
     showSessionHUD,
     onCloseSessionHUD,
@@ -549,10 +607,128 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     getPlayerHUDStats,
   } = props;
 
+  const toast = useToast();
+  // We use local state for diamonds listening directly to MasterBus because useWalletStore is cached.
+  const [localDiamonds, setLocalDiamonds] = React.useState(0);
+  const [ownedCardBacks, setOwnedCardBacks] = React.useState<string[]>([]);
+
+  React.useEffect(() => {
+    if (!userId) return;
+    let mounted = true;
+
+    /* Audit 2026-08-25: both of these discarded `error`. A failed diamonds read
+       leaves the balance at its initial 0 and SettingsPanel then tells the
+       player they cannot afford a card back they CAN afford; a failed
+       feature_purchases read leaves `ownedCardBacks` empty and offers to sell
+       them a design they already own. Neither is recoverable from the UI, and
+       neither left a trace anywhere. They still degrade rather than block — the
+       panel is usable — but the failure is now reported. */
+    supabase
+      .from('profiles')
+      .select('diamonds')
+      .eq('id', userId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) {
+          reportError(error, 'TableModalsLayer.diamondBalanceFetchFailed');
+          return;
+        }
+        if (mounted && data) setLocalDiamonds(Number(data.diamonds) || 0);
+      });
+
+    // Fetch owned card backs from feature_purchases
+    supabase
+      .from('feature_purchases')
+      .select('feature')
+      .eq('user_id', userId)
+      .like('feature', 'card_back_%')
+      .then(({ data, error }) => {
+        if (error) {
+          reportError(error, 'TableModalsLayer.ownedCardBacksFetchFailed');
+          return;
+        }
+        if (mounted && data) {
+          setOwnedCardBacks(data.map((r: any) => r.feature.replace('card_back_', '')));
+        }
+      });
+
+    // Listen to real-time diamond balance updates
+    const off = masterBus.subscribe('DIAMOND_BALANCE_CHANGED', (e) => {
+      const balance = (e as any).payload?.balance;
+      if (typeof balance === 'number' && mounted) {
+        setLocalDiamonds(balance);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      off();
+    };
+  }, [userId]);
+
+  const handleCardBackPurchase = React.useCallback(
+    async (id: string, price: number) => {
+      if (!userId) return;
+
+      const { data, error } = await supabase.rpc('fn_purchase_feature', {
+        p_user_id: userId,
+        p_feature: `card_back_${id}`,
+        p_cost: price,
+      });
+
+      if (error || (data as any)?.success === false) {
+        // THROW, do not just return. The store awaits this call to decide
+        // whether to equip the design and congratulate the player; a silent
+        // return let a FAILED purchase equip a card back the player does not
+        // own and report it as bought.
+        reportError(
+          error || new Error('fn_purchase_feature returned success:false'),
+          'TableModalsLayer.cardBackPurchaseFailed'
+        );
+        throw error || new Error('Card back purchase failed');
+      }
+
+      setLocalDiamonds((prev: number) => Math.max(0, prev - price));
+      setOwnedCardBacks((prev: string[]) => [...prev, id]);
+      // The equip toast comes from the store once the change has landed, so
+      // this one only reports the purchase itself.
+      toast.success('Card Back Purchased');
+      await onCardBackChanged?.(id);
+    },
+    [userId, toast, onCardBackChanged]
+  );
+
   // The rake the engine will actually take at this table (table override ->
   // club default -> published schedule). Only queried while the Game Rules
   // modal is open, since this layer is mounted for the whole session.
   const effectiveRake = useEffectiveRake(tableId, blinds, gameType, showGameRules);
+
+  /**
+   * ─── LEAVE NOTICE: THROUGH THE TOAST LAYER (audit 2026-08-25) ─────────────
+   *
+   * This used to be a hand-rolled `position: fixed` div with inline styles and
+   * an OK button, rendered at the bottom of this layer. Two problems, one of
+   * them a binding house rule (CLAUDE.md section 5.7): popup text renders with
+   * The First Letter Of Every Word Capitalized and em dashes are forbidden,
+   * enforced centrally in utils/popupStyle via the Toast provider — and the
+   * rule ends "never bypass the Toast layer with a hand-rolled popup". This
+   * was the bypass. TablePage's messages ("Error leaving table. Please try
+   * again.") therefore reached the player in raw sentence case.
+   *
+   * The second problem is multi-table: `position: fixed` at `bottom: 80` with
+   * `z-index: 9999`, rendered by whichever of up to four mounted TablePages
+   * raised it. A hidden table's slot is `display: none` so it did not actually
+   * paint, but the toast is the honest surface either way — it is deduped,
+   * dismisses itself, and stacks with everything else the table says.
+   *
+   * `onDismissLeaveNotice` is still called, immediately, because the notice has
+   * been handed off; leaving `leaveNotice` set would re-fire on every render.
+   */
+  React.useEffect(() => {
+    if (!leaveNotice) return;
+    toast.error(leaveNotice, 6000);
+    onDismissLeaveNotice();
+  }, [leaveNotice, toast, onDismissLeaveNotice]);
 
   // Per-variant BBJ qualifying rule for the table widget (2026-08-18).
   const bbjInfo = getBBJQualifyingInfo(gameType);
@@ -583,10 +759,30 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
 
       {/* Hand Replay Modal */}
       {showHandReplay && (
-        <div className="player-notes-overlay" onClick={onCloseHandReplay}>
+        <div
+          className="hand-replay-overlay"
+          onClick={onCloseHandReplay}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1600,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          }}
+        >
           <div
-            className="player-notes-modal hand-replay-modal"
+            className="hand-replay-modal"
             onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              height: '100%',
+              maxWidth: '100vw',
+              maxHeight: '100vh',
+              overflow: 'hidden',
+              position: 'relative',
+            }}
           >
             <button className="modal-close" onClick={onCloseHandReplay}>
               ✕
@@ -752,27 +948,26 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         opponentName={_ritOpponent}
       />
 
-      {/* Run It Twice result — the boards and payouts (2026-08-18) */}
-      <RunItTwiceResult
-        isOpen={ritResult !== null}
-        data={ritResult}
-        resolveName={ritResolveName}
-        onClose={onRitResultClose}
-      />
-
       {/* Bad Beat Jackpot Display — per-variant qualifying rule (2026-08-18).
-          Hidden entirely for variants the server never pays (PLO6, Short Deck):
-          advertising a jackpot that cannot hit is worse than no banner. */}
-      {bbjInfo.eligible && (
-        <BadBeatJackpot
-          amount={bbjAmount}
-          qualifyingHand={bbjInfo.shortLabel}
-          subText={bbjInfo.subLabel}
-          payoutPercent={getBBJPayoutPercentForBB(safeBB(blinds))}
-          isHit={showBBJ}
-          onOpenDetails={() => setShowBBJDetails(true)}
-        />
-      )}
+          Hidden entirely for variants the server never pays (PLO6, Short Deck),
+          and never displayed during MTT, Spins, or Heads-Up games. */}
+      {bbjInfo.eligible &&
+        !isTournament &&
+        !tournamentId &&
+        maxPlayers > 2 &&
+        gameType !== 'heads_up' &&
+        gameType !== 'hu' &&
+        gameType !== 'spin' &&
+        gameType !== 'spins' && (
+          <BadBeatJackpot
+            amount={bbjAmount}
+            qualifyingHand={bbjInfo.shortLabel}
+            subText={bbjInfo.subLabel}
+            payoutPercent={getBBJPayoutPercentForBB(safeBB(blinds))}
+            isHit={showBBJ}
+            onOpenDetails={() => setShowBBJDetails(true)}
+          />
+        )}
 
       {/* Last 5 jackpots + what this table pays */}
       <BBJInfoModal
@@ -798,6 +993,12 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           tablePlayerCount={bbjCelebrationData.tablePlayerCount}
           qualifyingLabel={bbjCelebrationData.qualifyingLabel}
           heroShare={bbjCelebrationData.heroShare}
+          /* Audit 2026-08-25 (multi-table): a BBJ hit at a BACKGROUND table fired
+             a 10-second fanfare plus a reveal sting over whatever table the
+             player was actually looking at. `display: none` hides the overlay;
+             it does not silence the Web Audio API. Same gate BombPotOverlay
+             already uses. */
+          soundsAllowed={ambientSoundsAllowed}
           onComplete={onBBJCelebrationComplete}
         />
       )}
@@ -867,45 +1068,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         onComplete={onParticleComplete}
       />
 
-      {/* Tip Dealer Modal */}
-
-      {/* Leave Table Notice */}
-      {leaveNotice && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: 80,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: '#1a1a2e',
-            border: '1px solid #e74c3c',
-            borderRadius: 8,
-            padding: '12px 20px',
-            color: '#fff',
-            fontSize: 14,
-            zIndex: 9999,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            maxWidth: '90vw',
-          }}
-        >
-          <span>{leaveNotice}</span>
-          <button
-            onClick={onDismissLeaveNotice}
-            style={{
-              background: '#e74c3c',
-              border: 'none',
-              color: '#fff',
-              borderRadius: 4,
-              padding: '4px 12px',
-              cursor: 'pointer',
-            }}
-          >
-            OK
-          </button>
-        </div>
-      )}
+      {/* Leave Table Notice — see the effect above; it is a toast now. */}
 
       {/* Diamond Wallet Modal */}
       <DiamondWalletModal isOpen={showDiamondWallet} onClose={onCloseDiamondWallet} />
@@ -963,8 +1126,9 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
       {!isHandInProgress && isRabbitAvailable && (
         <RabbitHunt
           isAvailable={isRabbitAvailable}
+          cardsAvailable={rabbitCardsAvailable}
+          rabbitDiamondCost={rabbitDiamondCost}
           onReveal={onRabbitReveal}
-          currentBoard={currentBoard}
         />
       )}
 
@@ -983,6 +1147,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         isOpen={showLeaveConfirm}
         currentStack={heroStack}
         tableName={tableName || 'this table'}
+        isTournament={isTournament}
         onConfirm={() => {
           onCloseLeaveConfirm();
           onConfirmLeaveTable();
@@ -1045,6 +1210,12 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           tableTheme: userSettings.theme,
         }}
         onSettingsChange={onSettingsChange}
+        userId={userId}
+        userDiamonds={localDiamonds}
+        ownedCardBacks={ownedCardBacks}
+        onCardBackPurchase={handleCardBackPurchase}
+        currentCardBack={currentCardBack}
+        onCardBackChanged={onCardBackChanged}
       />
 
       {/* Share Hand */}
@@ -1126,6 +1297,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         onClose={onCloseHandHistory}
         hands={handHistory}
         heroId={userId || ''}
+        onReplay={onReplay}
       />
 
       {/* Session Summary modal REMOVED (Phase 2 audit 2026-08-22). It could
@@ -1146,6 +1318,16 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           />
         </TableErrorBoundary>
       )}
+
+      {/* Club Profile Modal */}
+      <ClubProfileModal
+        isOpen={showProfileModal}
+        onClose={onCloseProfileModal}
+        userId={userId}
+        username={username}
+        avatarUrl={heroAvatarUrl}
+        clubName={clubName}
+      />
     </>
   );
 }

@@ -58,6 +58,34 @@
   overscroll-behavior: none;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   EMBEDDED IN MULTI-TABLE (Dan 2026-08-23: "+ does not create the action box")
+   ─────────────────────────────────────────────────────────────────────────────
+   As a ROUTE this page is the whole screen, which is what `position: fixed;
+   inset: 0; z-index: 1100` above says. Inside MultiTablePage it is not: it is
+   one slot in a flex column whose first row is the tab bar carrying every
+   table's status and the "+" button.
+
+   Fixed positioning took each embedded instance out of that column and
+   stretched it back across the entire viewport, on top of the tab bar. The bar
+   still LOOKED right — the table paints its own background further in — so the
+   only symptom was that pressing "+" did nothing at all.
+
+   Measured on a live table before this: elementFromPoint at the centre of the
+   "+" returned .table-page, Playwright refused the click as not-actionable,
+   and no query ever left the browser. Nobody could open a second table.
+
+   Must come AFTER .table-page: both selectors are one class, so source order
+   is what decides. .multi-table-page__table-slot is position: relative, so
+   inset: 0 fills exactly the slot. */
+.table-page--embedded {
+  position: absolute;
+  inset: 0;
+  /* Back inside the multi-table stacking context instead of over its chrome. */
+  z-index: auto;
+  height: 100%;
+}
+
 /* Dan 2026-08-18: the blurred-skin .table-backdrop layer is GONE ("remove
    the weird images around the table"). The page background is a designed,
    interchangeable image set inline by TablePage (TABLE_BACKGROUNDS). */
@@ -376,6 +404,99 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .table-container {
+  /* How much of the hero's seat lives OUTSIDE the scaler.
+
+     Declared here rather than left to a var() fallback: an unassigned custom
+     property still resolves to its fallback, so the layout was correct but the
+     number was invisible - it read as tunable while living in three separate
+     fallback slots. One declaration, one place to change it. */
+
+  /* Half the hero block hangs below the scaler: the hero's CENTRE is on the
+     scaler's bottom edge (ring y:100, and SeatSlot.css retires the lift that
+     used to pull it up onto the felt), so this strip has to be at least half a
+     hero seat or the name plate goes back under the action bar. Measured half-
+     heights: 49px at 380, 54px at 480, 60px at 640, 73px at desktop. It is
+     also the band the hero's hole cards are centred in (see .seat__cards--hero
+     in SeatSlot.css), so it is what "spaced perfectly between the avatar and
+     the action bar" resolves to.
+
+     This is the DESKTOP value and it is the half-seat floor and nothing more:
+     desktop has a 720px-wide table and no bottom-corner HUD stack crowding it.
+     Phones need more than the floor and get it from the <=768px block near the
+     end of this file - see the derivation there, and change it there. */
+  --sp-hero-clear: 60px;
+
+  /* ─── THE TABLE'S VERTICAL BUDGET, in ONE place ────────────────────────────
+     Dan 2026-08-25, item 3: "the entire table needs to be moved up and the
+     table should be longer. It appears to have shrunk in size going from
+     desktop to mobile."
+
+     It had shrunk, and not because of the width cap — on a phone the 605/1000
+     scaler is HEIGHT-bound long before it is width-bound, so every pixel of
+     chrome reserved here comes straight off the length of the oval. Three
+     separate rules were each reserving the same pixels twice:
+
+       - `max-height: calc(100dvh - 60px)` (removed below);
+       - `env(safe-area-inset-bottom)` added on top of --sp-action-h, which
+         is the MEASURED height of a panel whose own padding-bottom already
+         contains that inset;
+       - a top reserve sized for a full-height BBJ plaque that is now a 22px
+         nameplate (borders included, published as --sp-bbj-h on :root by
+         BadBeatJackpot.css at <=768px).
+
+     Naming the three parts makes the arithmetic checkable and lets the
+     responsive blocks change ONE number (--sp-table-top) instead of restating
+     a padding shorthand that then disagrees with this rule. */
+
+  /* How much of the notch THIS box has to clear itself. As a route the page
+     starts at the top of the screen, so that is the whole inset. Embedded it
+     is zero, because the tab bar above the slot has already paid it - see
+     `.table-page--embedded .table-container` below, which is the one place
+     that changes, so every breakpoint's --sp-table-top can read this and stay
+     correct in both contexts without a specificity fight. */
+  --sp-page-inset-top: env(safe-area-inset-top, 0px);
+
+  /* Top chrome to clear. Desktop keeps its historical 76px band. */
+  --sp-table-top: calc(76px + var(--sp-page-inset-top));
+
+  /* Bottom chrome to clear: the fixed action bar, plus the hero strip that
+     hangs below the scaler.
+
+     THE HOME-INDICATOR STRIP IS INSIDE THIS NUMBER ALREADY, so there is no
+     env(safe-area-inset-bottom) term of its own here and adding one is always
+     a double-count. --sp-action-h is the BORDER-BOX height of
+     .action-panel-wrapper, measured by the ResizeObserver in TablePage.tsx,
+     and that wrapper's own `padding-bottom: env(safe-area-inset-bottom)` is
+     part of the box it measures. (Until 2026-08-25 the observer reported the
+     content box, which under-stated the bar by exactly that inset - the
+     opposite error, and the reason three stylesheets used to add env() back on
+     top of it.) The FALLBACK still carries the inset, because a browser with
+     no ResizeObserver never receives the measurement and has to reserve the
+     same truth from the parts: the bar's own floor plus the strip under it.
+     --sp-bottom-row-h is that floor, declared in ActionPanel.css - 96px on
+     desktop, 52px at <=640px. */
+  --sp-table-bottom: calc(
+    var(--sp-action-h, calc(var(--sp-bottom-row-h, 52px) + env(safe-area-inset-bottom, 0px))) +
+      var(--sp-hero-clear)
+  );
+
+  /* What is left for the felt. Read by .table-scaler to derive its WIDTH, so
+     the 605/1000 aspect is honoured by construction instead of being left to
+     a max-height clamp.
+
+     --sp-page-h is the height of the box .table-page actually occupies. As a
+     ROUTE that is the viewport, so 100dvh is the right default. Embedded it is
+     NOT (see the override on .table-page--embedded below) and the difference
+     is not cosmetic: this value is what guarantees the aspect ratio survives.
+     The scaler takes `width = --sp-table-h * 0.605` and `aspect-ratio:
+     605/1000`, so its laid-out height comes back to exactly --sp-table-h -
+     which fits the space only while --sp-table-h IS the space. Over-state it
+     and `max-height: 100%` clamps the height while the width stays put, and a
+     clamped box is a box whose ratio is no longer 605/1000: every seat
+     percentage is then measured against a frame that is not the painted one. */
+  --sp-page-h: 100dvh;
+  --sp-table-h: calc(var(--sp-page-h) - var(--sp-table-top) - var(--sp-table-bottom));
+
   flex: 1;
   position: relative;
   display: flex;
@@ -387,10 +508,74 @@
   /* Dan 2026-08-22 mobile audit item 1: top padding must clear the notch
      (safe-area-inset-top) so nothing is cut off, and the bottom reserve was
      too deep — trimmed so the table sits lower on the screen. */
-  padding: calc(76px + env(safe-area-inset-top, 0px)) 12px
-    calc(104px + env(safe-area-inset-bottom, 0));
+  /* Dan 2026-08-23: the bottom reserve is MEASURED now, not guessed. It was a
+     flat 104px, while the HUD reserved 112px for the same bar - and the bar is
+     only that short when collapsed. --sp-action-h is published by the panel
+     itself (see TablePage.tsx), so this follows it open or closed.
+
+     --sp-hero-clear is on top of it because the hero's plate is not inside the
+     scaler: the hero avatar's CENTRE sits on the scaler's bottom edge, so half
+     the avatar plus the whole name-and-stack box hangs below it. Reserving only
+     the panel's height would still slide that box under the bar, which is
+     exactly what Dan reported. */
+  padding: var(--sp-table-top) 12px var(--sp-table-bottom);
   overflow: visible;
-  max-height: calc(100dvh - 60px);
+  /* `max-height: calc(100dvh - 60px)` used to live here. The 60px was the
+     .table-header strip, and that element has been `display: none !important`
+     since the Phase 3 refinements further down this file — so the cap was
+     reserving a bar that no longer renders and simply left 60px of empty page
+     under the felt. It is also the wrong tool: the fixed action bar is already
+     reserved by --sp-table-bottom, and stacking a viewport cap on top of a
+     padding reserve is exactly the double-count this rule now avoids. Giving
+     it back is most of the length Dan asked for. Do not reintroduce it. */
+}
+
+/* ─── EMBEDDED: THE PAGE IS THE SLOT, NOT THE VIEWPORT ──────────────────────
+   Dan 2026-08-25 round 2, item 3. In production TablePage is ALWAYS embedded:
+   App.tsx's /table:tableId route renders a surface, and PersistentTableLayer
+   mounts MultiTablePage once, which draws every table into a
+   `.multi-table-page__table-slot`. That slot is the flex row BELOW
+   `.table-tab-bar`, so `.table-page--embedded` is shorter than 100dvh by the
+   whole bar - 42px min-height plus its own `env(safe-area-inset-top)` pad.
+
+   --sp-table-h did not know that, and the error was not academic. At 375x812
+   in an installed app the scaler asked for 596.7px of height inside 495px of
+   container: `max-height: 100%` clamped the height, the width did not move,
+   and the box rendered at ratio 0.72 instead of 0.605 - the exact distortion
+   the aspect lock exists to prevent, on the exact device Dan reviews on.
+
+   Two independent corrections, and both are needed:
+
+     --sp-page-h   the box really is the slot. Subtract the bar.
+     --sp-table-top  the notch is NOT in this box. `.table-tab-bar` already
+                   pads itself by the full inset (TableTabBar.css), the slot
+                   begins under it, and BadBeatJackpot.css dropped its own
+                   env() term for this same reason in this same pass ("the
+                   notch is handled once, by the bar"). Counting it again here
+                   pushed the felt a further ~47px down the screen, which is
+                   most of what "the entire table needs to be moved up" was
+                   pointing at.
+
+   --sp-tabbar-h is a READ, not a restatement: TableTabBar.css should declare
+   it on :root next to the min-heights it comes from, and then both fallbacks
+   below can go. Until it does, the fallback is that bar's own sum written out,
+   and it has the bar's own breakpoint because the bar does:
+
+     481px and up   36px pill + 6px top pad + 6px bottom pad + 1px border = 49
+     <= 480px       34px pill + 4px top pad + 4px bottom pad + 1px border = 43
+
+   (min-height 48 / 42 sits under both sums, so the sum is what wins.) Erring
+   LARGE is the safe direction - it under-states the space available, and
+   under-stating only makes the oval smaller, never off-ratio. */
+.table-page--embedded .table-container {
+  --sp-page-h: calc(100dvh - var(--sp-tabbar-h, calc(49px + env(safe-area-inset-top, 0px))));
+  --sp-page-inset-top: 0px;
+}
+
+@media (max-width: 480px) {
+  .table-page--embedded .table-container {
+    --sp-page-h: calc(100dvh - var(--sp-tabbar-h, calc(43px + env(safe-area-inset-top, 0px))));
+  }
 }
 
 /* Phase A (Dan 2026-04-17, flipped): PokerBros is a VERTICAL portrait oval —
@@ -399,7 +584,24 @@
    let the table fill vertically up to the available dvh minus header, BBJ,
    hero cards, and action bar. */
 .table-scaler {
-  width: 100%;
+  /* Dan 2026-08-25, item 3. This was `width: 100%`, and on a phone that is the
+     wrong axis to size from: 100% of the container is ~367px at 375, the
+     605/1000 ratio then asks for ~607px of height, and only ~520px exists. The
+     box was therefore always resolved by the max-height clamp below — i.e. by
+     whichever rule the browser applies to an over-tall aspect-ratio box, which
+     is precisely the thing that must never decide where the painted felt
+     window lands.
+
+     Deriving the width from the height it is ALLOWED to have makes the ratio
+     hold by construction: height = width / (605/1000) <= --sp-table-h, so the
+     clamp can never engage and the seat ring stays measured against a box of
+     the shape it was measured on. It also means the oval automatically takes
+     every pixel the budget above frees, which is what "the table should be
+     longer" resolves to — the width cap is NOT what was holding it back.
+
+     max(200px, ...) is the floor: on a viewport too short to satisfy the
+     budget the felt degrades to small-but-visible rather than to zero. */
+  width: min(100%, max(200px, calc(var(--sp-table-h, 100dvh) * 605 / 1000)));
   /* Dan 2026-08-17 (audit): 320px read small once the backdrop stopped
      faking a giant table. 360px lets the painted rail span nearly the full
      375px viewport, PokerBros-style. */
@@ -461,101 +663,27 @@
 
 /* Wood grain + leather stitching removed — the artwork paints both. */
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   FELT COLOR THEMES — Apply via data-felt-theme attribute on .table-page
-   ═══════════════════════════════════════════════════════════════════════════════ */
+/* FELT COLOUR THEMES — DELETED 2026-08-25.
 
-/* Classic Green */
-.table-page[data-felt-theme='green'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a7a4a 0%, #0f5132 50%, #0a3d24 100%);
-}
+   Seventeen rules keyed on [data-felt-theme] used to sit here, setting
+   --felt-gradient (17 declarations), --bg-gradient (5) and --rail-gradient (1).
+   Across this file and design-tokens.css those three properties were defined
+   37 times and read by `var()` ZERO times. The felt has been an
+   <img class="table-art"> painted by resolveSkin since 2026-08-17 and the page
+   behind it is a designed background image, so the whole section was left over
+   from the gradient-painted table that replaced it: it looked like a working
+   theme system and painted nothing.
 
-/* Default (Dan 2026-07-28): Commander charcoal — matches the near-black felt
-   in the /commander/table-tablets artwork. Named themes below still apply. */
-.table-page:not([data-felt-theme]) {
-  --felt-gradient: radial-gradient(ellipse at 50% 42%, #151b1f 0%, #0e1316 55%, #090d10 100%);
-  --rail-gradient: linear-gradient(
-    180deg,
-    #5a4232 0%,
-    #4a3728 20%,
-    #3a2a1e 50%,
-    #4a3728 80%,
-    #5a4232 100%
-  );
-}
-
-/* Blue Royale */
-.table-page[data-felt-theme='blue'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a4a7a 0%, #0f3252 50%, #0a243d 100%);
-}
-
-/* Burgundy */
-.table-page[data-felt-theme='burgundy'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #7a1a3a 0%, #52102a 50%, #3d0a20 100%);
-}
-
-/* Midnight Black */
-.table-page[data-felt-theme='black'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #2a2a2e 0%, #1a1a1e 50%, #0e0e12 100%);
-}
-
-/* Tournament Purple */
-.table-page[data-felt-theme='purple'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #4a1a7a 0%, #321052 50%, #240a3d 100%);
-}
-
-/* Gold VIP */
-.table-page[data-felt-theme='gold'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #7a6a1a 0%, #524a0f 50%, #3d380a 100%);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   FIX 222: BIBLE V8 §11.2 THEME IDS — Tab 1 (Themes) + Tab 2 (Table Felt)
-   Maps ThemeSettingsModal asset IDs to --felt-gradient CSS custom property
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-/* Tab 1: Themes (presets) */
-.table-page[data-felt-theme='default-dark'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a1a2e 0%, #16213e 50%, #0e0e18 100%);
-  --bg-gradient: radial-gradient(ellipse at 50% 50%, #1a1a2e 0%, #0e0f1a 100%);
-}
-.table-page[data-felt-theme='classic-brown'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #5d4037 0%, #3e2723 50%, #2c1a14 100%);
-  --bg-gradient: radial-gradient(ellipse at 50% 50%, #3e2723 0%, #1a0f0a 100%);
-}
-.table-page[data-felt-theme='neon-blue'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1565c0 0%, #0d47a1 50%, #062f6e 100%);
-  --bg-gradient: radial-gradient(ellipse at 50% 50%, #0d47a1 0%, #05204f 100%);
-}
-.table-page[data-felt-theme='rustic-wood'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #795548 0%, #4e342e 50%, #321e18 100%);
-  --bg-gradient: radial-gradient(ellipse at 50% 50%, #4e342e 0%, #1a0f0a 100%);
-}
-.table-page[data-felt-theme='casino-green'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #2e7d32 0%, #1b5e20 50%, #0d3a10 100%);
-  --bg-gradient: radial-gradient(ellipse at 50% 50%, #1b5e20 0%, #0a2d0a 100%);
-}
-
-/* Tab 2: Table Felt (specific surface) */
-.table-page[data-felt-theme='dark-felt'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a1a2e 0%, #0f0f1a 50%, #08080f 100%);
-}
-.table-page[data-felt-theme='brown-felt'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #4e342e 0%, #3e2723 50%, #2a1812 100%);
-}
-.table-page[data-felt-theme='neon-blue-felt'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a237e 0%, #0d47a1 50%, #062c70 100%);
-}
-.table-page[data-felt-theme='red-leather'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #c62828 0%, #b71c1c 50%, #7f0000 100%);
-}
-.table-page[data-felt-theme='green-casino'] {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #388e3c 0%, #1b5e20 50%, #0d3a10 100%);
-}
+   Five of those rules were the Themes tab's presets — default-dark,
+   classic-brown, neon-blue, rustic-wood, casino-green — which is why all five
+   presets produced an identical table. They now paint five different tables
+   through THEME_PRESET_SKINS in src/lib/tableTheme.ts.
+   tests/config/themePresetsPaintDistinctTables.test.ts fails if a `-gradient`
+   token comes back with nothing reading it. */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    FIX 222: BIBLE V8 §11.2 — Tab 4 (Background Themes)
-   Applied to .table-page via --bg-gradient and background
+   Applied to .table-page via the `background` shorthand
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .table-page[data-background-theme='diamond-pattern'] {
@@ -771,6 +899,8 @@
 
 .table-brand {
   position: absolute;
+  /* Cap the masthead inside the felt so no line can ever cross the rail. */
+  max-width: 82%;
   /* Dan 2026-08-17 (audit round 2): at 38% the wordmark + date/club line sat
      BEHIND the board cards (text peeked between cards). 58% parks the whole
      masthead in the clear felt below the board, PokerBros-watermark style. */
@@ -807,14 +937,37 @@
   text-align: center;
 }
 
+/* Dan 2026-08-25, item 10: "the display on the table (date, club, union) needs
+   to scale down, and the 2nd line under it (PLO5 1/2 - Hand #2338126) too.
+   They are too large for the table."
+
+   0.58rem is 9.3px, which is UI type, and it was printed on a felt only 277px
+   wide at 393 — line 1 carries a date, a club, a union and a game code, so it
+   was running the full width of the masthead and ellipsizing. 0.48rem is
+   7.7px: still ~23 device pixels on a 3x phone, and at the 0.42 alpha this
+   colour already carries it reads as printing ON the felt rather than as a
+   label sitting over it, which is the whole point of the masthead.
+
+   One declaration covers BOTH of Dan's lines: --hand (the hand number) and
+   --level (the tournament clock row) are modifiers of this class and inherit
+   the size, so they cannot drift apart from line 1.
+
+   It also buys item 9 some room. Two lines at 0.58rem are ~27px of the brand
+   block; at 0.48rem they are ~22px, and because .table-brand is centred on its
+   `top`, losing 5px of height drops its top edge ~2.5px away from the board. */
 .table-brand__line {
-  font-size: 0.58rem;
+  font-size: 0.48rem;
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: rgba(198, 210, 228, 0.42);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
   white-space: nowrap;
+  /* Dan 2026-08-24: the line was bleeding past the rail. It ellipsizes at the
+     masthead's edge instead — the masthead itself is capped below. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .table-brand__line--club {
@@ -864,8 +1017,13 @@
     gap: 4px;
   }
 
+  /* 375px is the narrowest phone this ships to and the masthead is only 56% of
+     an already-narrower felt here, so line 1 has the least room of anywhere:
+     0.44rem (7.0px) keeps the date + club + union + game on ONE row instead of
+     ellipsizing it. It holds the same ~8% step down from the base size that
+     0.52 held from 0.58, so the two breakpoints still read as one type scale. */
   .table-brand__line {
-    font-size: 0.52rem;
+    font-size: 0.44rem;
   }
 }
 
@@ -930,55 +1088,66 @@
  * Total duration 1.4s (150ms in + 850ms hold + 400ms out) so the label is
  * readable without being in the way of the next hand.
  */
-.pot-hand-strength {
-  position: absolute;
-  top: -32px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 6px 16px;
-  border-radius: 14px;
-  background: linear-gradient(180deg, rgba(20, 20, 24, 0.95), rgba(32, 32, 40, 0.95));
-  border: 1.5px solid rgba(255, 222, 92, 0.5);
-  color: #ffde5c;
-  font-size: 0.95rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  z-index: 25;
-  pointer-events: none;
-  box-shadow:
-    0 6px 18px rgba(0, 0, 0, 0.55),
-    0 0 16px rgba(255, 222, 92, 0.25);
-  animation: pot-hand-strength-show 1400ms cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
+15% {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0) scale(1.1);
 }
-
-@keyframes pot-hand-strength-show {
-  0% {
-    opacity: 0;
-    transform: translateX(-50%) translateY(6px) scale(0.85);
-  }
-  15% {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1.1);
-  }
-  25% {
-    transform: translateX(-50%) translateY(0) scale(1);
-  }
-  70% {
-    opacity: 1;
-    transform: translateX(-50%) translateY(-2px) scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: translateX(-50%) translateY(-8px) scale(0.97);
-  }
+25% {
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+70% {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-2px) scale(1);
+}
+100% {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-8px) scale(0.97);
 }
 
 /* Community Cards Area */
+/* Dan 2026-08-25, item 9: "the board cards are slightly cutting off
+   Smarter.Poker and need to be raised up slightly."
+
+   THIS rule is what positions the board vertically, not CommunityCards.css.
+   That stylesheet gives `.community-cards` `position: relative` with no offset
+   at all — it owns card SIZE (--cc-card-w/h per breakpoint) and nothing else,
+   and on the felt even the size is taken off it by
+   `.table-surface .community-cards__card { flex: 1 1 0 }` further down. The
+   board's y is this percentage of .table-surface, full stop.
+
+   The arithmetic, in FELT coordinates on a 393x852 phone. Before the item-3
+   budget change the felt was 242 x 438; after it is 252 x 457, and the numbers
+   below are the "after" ones because that is what ships:
+
+     board    5 flex cards in a 68%-wide row = 31px wide, 44.6px tall,
+              centred on this percentage
+     brand    logo 900x116 at 62% of felt = 20px, + 6px gap + two masthead
+              lines = ~49px tall, centred on 58% of felt = 265px, so its TOP
+              edge is at 241px
+
+   At 45% the board sat 176 -> 219 on the OLD felt against a brand top of 228:
+   9px of air. The cards carry `0 4px 16px` of shadow, which crosses those 9px
+   and lands on the lettering. That is the "slightly cutting off" — not the
+   cards, their shadow.
+
+   43.5% moves the board up 1.5% of the felt, ~6.9px here. Together with item
+   10 (the two masthead lines shrink, so the centred brand block loses ~4px of
+   height and its top edge drops ~2px) the wordmark ends up with ~20px of clean
+   felt above it, which clears the shadow and not merely the card.
+
+   There is room to go up: TableVisualHotfix.css forces `.pot-area` to
+   `top: 19%` of the SCALER, which is 12.6% of the felt — the pot's underside
+   sits around 82px, ~95px clear of the board's new top edge. "Slightly" is
+   therefore a choice, not a limit: the board belongs in the middle of the felt
+   between the two, and this is the smallest move that gets the wordmark clean.
+
+   The percentage is proportional, so desktop gets the same relief without a
+   breakpoint of its own. The [data-boards] overrides below (40% / 36%) are
+   untouched — a multi-board stack already sits higher and moves the masthead
+   to 72% / 84% to get out of its way. */
 .community-area {
   position: absolute;
-  top: 45%;
+  top: 43.5%;
   left: 50%;
   transform: translate(-50%, -50%);
 }
@@ -989,19 +1158,70 @@
    never cover the date / club / game / hand line. The stack is anchored
    from its top so board 1 keeps its usual position. */
 .table-page[data-boards] .community-area {
-  top: 42%;
-  transform: translate(-50%, -42%);
+  top: 40%;
+  transform: translate(-50%, -40%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+}
+.table-page[data-boards='3'] .community-area {
+  top: 36%;
+  transform: translate(-50%, -36%);
+  gap: 4px;
 }
 .community-area__run {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   width: 100%;
+}
+.community-area__run-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 8px;
+  background: rgba(10, 14, 22, 0.88);
+  border: 1px solid rgba(255, 215, 0, 0.35);
+  border-radius: 6px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-sizing: border-box;
+}
+.community-area__run-badge {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffd700;
+  background: rgba(255, 215, 0, 0.16);
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.community-area__run-winner {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  flex: 1 1 auto;
+}
+.community-area__run-equity {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #4ade80;
+  font-family: 'JetBrains Mono', monospace, sans-serif;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* ── Bomb pot countdown pill (round 3, 2026-08-20) ───────────────────────
@@ -1083,6 +1303,9 @@
 }
 /* Run 3 (a second extra board) waits for run 2's cards to land. */
 .community-area__run + .community-area__run {
+  --rit-run-delay: 0.5s;
+}
+.community-area__run + .community-area__run + .community-area__run {
   --rit-run-delay: 1s;
 }
 @keyframes ritRunCardIn {
@@ -1210,20 +1433,76 @@
   z-index: 10;
 }
 
+/* HERO LIFT — the HOOK survives; the values are retired (Dan 2026-08-25 r2).
+
+   Hero is the only seat at y:100 (see SEAT_LAYOUTS in lib/tableSeatGeometry.ts),
+   which puts the AVATAR'S CENTRE on the scaler's bottom edge. Combined with
+   .seat-wrapper's translate(-50%,-50%), the whole bottom half of the hero block
+   - and the info box carrying the stack size IS the bottom half - hangs below
+   the scaler. On 2026-08-23 that half was under the action bar, and the fix was
+   a 78px lift here (62px under 700px of viewport, 50px under 600px).
+
+   THAT WAS THE WRONG LEVER AND THE THREE NUMBERS ARE GONE. Lifting the hero
+   moved it off the rail and onto the playing surface, which is Dan's item 4 of
+   2026-08-25 ("they should be on the rail, not on the table"); SeatSlot.css
+   answered it with `.seat-wrapper.seat-wrapper--hero { --hero-lift: 0px }`, a
+   0,2,0 selector that outranks this rule AND both of its short-viewport
+   variants, so 78/62/50 have been unreachable dead values ever since. Deleted
+   rather than kept as a "fallback", because a fallback that cannot apply is
+   not a fallback - it is a number the next reader will size --sp-hero-clear
+   against, and getting that reserve wrong is precisely the bug being fixed.
+   The right lever is the reserve: --sp-hero-clear on .table-container, which
+   keeps the bar off the plate without moving the hero at all.
+
+   The DECLARATION below stays, with an explicit 0px default, for two reasons:
+   the geometry is now "hero sits exactly on the ring position", which 0 states
+   truthfully; and SeatSlot.css can still re-introduce a lift by declaring the
+   variable, without this rule having to know.
+
+   The transform is also where the hero's vertical placement lives at all, so
+   it cannot simply be dropped. z-index is handled separately below and
+   deliberately NOT set on this rule: SeatSlot.css ships
+   `.seat-wrapper--showing { z-index: 30 }` at the same specificity, and a hero
+   showing cards at showdown carries both classes. Whichever stylesheet loaded
+   last would win, which is a coin-flip that could silently undo the 2026-08-23
+   showdown-layering fix. */
+.seat-wrapper--hero {
+  transform: translate(-50%, calc(-50% - var(--hero-lift, 0px)));
+}
+
+/* One above the other wrappers so the hero is never painted into by a
+   neighbour's revealed card row (drawn above its own plate, into adjacent
+   airspace). `:not(.seat-wrapper--showing)` makes the yield to showdown
+   explicit and wins on specificity rather than on file order. */
+.seat-wrapper--hero:not(.seat-wrapper--showing) {
+  z-index: 11;
+}
+
+/* The two `@media (max-height: 700px|600px)` blocks that used to sit here held
+   nothing but --hero-lift: 62px and 50px. They went with the lift itself (see
+   the note above) — a short viewport now gets its relief from --sp-table-h,
+   which already shrinks the oval, rather than from sliding the hero across a
+   felt that has itself moved. */
+
 /* Dealer Button — Premium 3D puck */
 /* FIX-D4 2026-07-19 (Bible V8 §11.2 Tab 3): consume the per-theme button tokens
    set by [data-button-theme] so the host's dealer-button selection actually
    renders. Falls back to the classic white puck when no theme token is set. */
+/* Dan 2026-08-25 (item 8): the puck's SIZE is not set here any more. It is a
+   proportion of the table's measured width - `--dealer-btn-size` in
+   TableVisualHotfix.css section 4, fed by --table-w which TablePage.tsx
+   publishes from the scaler's ResizeObserver. A hardcoded 28px here plus a
+   hardcoded 24px in the mobile query below was two answers to "how big is the
+   puck", and on a phone-sized table both of them were too big, which is the
+   defect. Everything else about the puck - the paint, the drop shadow, the
+   theme tokens, the entry animation - still lives in this rule. */
 .dealer-button {
   position: absolute;
-  width: 28px;
-  height: 28px;
   background: var(--dealer-btn-bg, linear-gradient(145deg, #ffffff 0%, #e8e8e8 50%, #d0d0d0 100%));
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.6875rem;
   font-weight: 900;
   color: var(--dealer-btn-color, #111);
   box-shadow:
@@ -1281,8 +1560,24 @@
     rgba(8, 10, 16, 0.99) 40%,
     rgba(8, 10, 16, 1) 100%
   );
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
-  min-height: calc(96px + env(safe-area-inset-bottom, 0px));
+  /* Dan 2026-08-25 (item 5): flush. env() alone - the home-indicator strip is
+     not wasted space, the 8px that used to sit on top of it was. The two rows
+     that live here (ActionPanel, PreActionBar) are position:fixed and already
+     flush; this padding is what the spectator / Show Hand / control-strip rows
+     sit on, and .spectator-footer-bar adds its own safe-area pad, so the inset
+     was being counted twice underneath it.
+
+     THE MIN-HEIGHT FLOOR IS STILL LOAD-BEARING - IT JUST NO LONGER LIVES HERE.
+     Both bottom rows are position:fixed, so this box has no flow content while
+     it is the hero's turn; with no floor at all --sp-action-h collapses, the
+     bar covers the hero plate again, and that is exactly the 2026-08-23
+     regression. The floor is now `--sp-bottom-row-h` in ActionPanel.css,
+     applied by `.table-page .action-panel-wrapper` in that same file, because
+     the number has to agree with the two rows ActionPanel owns and it changes
+     with the breakpoint. A second copy here could only ever disagree with
+     them - which is what it was doing, at the 96px of a bar that no longer
+     exists on a phone. Read --sp-bottom-row-h; do not restate it. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   justify-content: flex-end;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -1697,18 +1992,29 @@
     /* Dan 2026-04-17 (v3): lowered table so top doesn't clip BBJ. Extra 24px
        from the top edge; align-start pins scaler to top padding baseline. */
     align-items: flex-start;
-    /* Dan 2026-08-22 item 1: + notch clearance on top, less dead space at
-       the bottom. */
-    padding: calc(80px + env(safe-area-inset-top, 0px)) 10px
-      calc(108px + env(safe-area-inset-bottom, 0));
+    /* The `padding: calc(80px + inset) 10px calc(108px + inset)` shorthand that
+       used to sit here is GONE (Dan 2026-08-25, item 3). Two things were wrong
+       with it beyond the numbers. It restated the whole box, so the 108px
+       bottom silently replaced the MEASURED --sp-action-h reserve on every
+       phone between 381 and 768px — the exact regression
+       tests/unit/bottomBarReserve.test.ts exists to catch, reintroduced through
+       a shorthand instead of a longhand. And its top/side values were already
+       dead: the 2026-08-24 block at the foot of this file overrides
+       padding-top, padding-left and padding-right at this same breakpoint, so
+       the only value here that still reached the page was the one that did
+       harm. The mobile top reserve is now a single --sp-table-top override in
+       that later block; the base rule's shorthand supplies the rest. */
   }
 
   .table-scaler {
-    max-width: min(calc(100% - 8px), 360px);
     /* Dan 2026-08-17: must stay locked to the skin crop's 605/1000 aspect at
        every breakpoint, or the painted felt window drifts out from under
        .table-surface and the seat ring leaves the rail. */
     aspect-ratio: 605 / 1000;
+    /* The 360px max-width that used to sit here was dead in the same way: the
+       2026-08-24 block below raises the cap to calc(100% - 6px) at this exact
+       breakpoint. Restating a superseded cap here only makes the file argue
+       with itself about which number is the real one. */
   }
 
   .table-rail {
@@ -1734,11 +2040,11 @@
     max-width: 320px;
   }
 
-  .dealer-button {
-    width: 24px;
-    height: 24px;
-    font-size: 0.625rem;
-  }
+  /* Dan 2026-08-25 (item 8): the mobile .dealer-button block is gone. A puck
+     sized per BREAKPOINT is wrong for the same reason it was wrong per file -
+     one 24px answer covered every table from a 281px phone felt to a 768px
+     tablet felt. It is now a proportion of the table's measured width, in
+     TableVisualHotfix.css section 4. */
 
   .table-header {
     padding: 8px 10px;
@@ -1752,7 +2058,14 @@
   .control-strip__btn {
     padding: 4px 8px;
     font-size: 0.6875rem;
-    min-height: 36px;
+    /* 2026-08-23 mobile pass: 36px was under the 44px tap minimum */
+    min-height: 44px;
+  }
+
+  /* Floating HUD button (absolute-positioned — enlarging cannot reflow the felt) */
+  .add-chips-icon-btn {
+    width: 44px;
+    height: 44px;
   }
 }
 
@@ -1784,12 +2097,16 @@
 }
 
 @media (max-width: 380px) {
-  .table-container {
-    /* Phase A (Dan 2026-04-17): narrow-phone landscape racetrack. Tighter side
-       gutters keep the table wide; top/bottom padding still covers chrome. */
-    padding: calc(48px + env(safe-area-inset-top, 0px)) 6px
-      calc(104px + env(safe-area-inset-bottom, 0));
-  }
+  /* The `.table-container` padding shorthand that used to sit here is gone
+     (Dan 2026-08-25, item 3). Its 48px top and 6px gutters were both already
+     dead: the 2026-08-24 block at the foot of this file set padding-top,
+     padding-left and padding-right as LONGHANDS at <=768px, and a longhand
+     later in the file beats an earlier shorthand at the same specificity — so
+     the narrowest phones were running 46px and 4px, not 48px and 6px, and
+     nothing in this block said so. The top reserve is a --sp-table-top
+     override in that block now, and the bottom reserve is the base rule's,
+     which every breakpoint inherits. One reserve, one place; a media query
+     that restates the whole box is how the two drifted apart. */
 
   .table-header {
     padding: 4px 6px;
@@ -1800,8 +2117,9 @@
   }
 
   .control-strip__btn {
-    min-height: 36px;
-    min-width: 36px;
+    /* 2026-08-23 mobile pass: 36px was under the 44px tap minimum */
+    min-height: 44px;
+    min-width: 44px;
   }
 }
 
@@ -1941,7 +2259,8 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 .equity-overlay {
   position: absolute;
-  top: -24px;
+  top: auto;
+  bottom: -40px; /* Dan 2026-08-25: winning percentage must be under the avatars, not over the cards */
   left: 50%;
   transform: translateX(-50%);
   font-size: 24px;
@@ -2214,8 +2533,16 @@
   }
 
   .table-scaler {
-    max-width: none;
-    max-height: 100%;
+    /* Portrait's --sp-table-h pattern extended to landscape.
+       The action panel is a 44% column beside the felt, so
+       the felt area is ~56vw minus 8px left padding.
+       Both constraints are set; aspect-ratio picks the binding one. */
+    --sp-ls-table-w: calc(56vw - 8px);
+    --sp-ls-table-h: calc(100svh - 40px - env(safe-area-inset-bottom, 0px));
+    max-width: var(--sp-ls-table-w);
+    max-height: var(--sp-ls-table-h);
+    width: auto;
+    /* aspect-ratio on .table-scaler now holds by construction */
   }
 
   /* Smaller community cards in landscape */
@@ -2502,7 +2829,9 @@
   left: auto !important;
   top: 0 !important;
   bottom: 0 !important;
-  width: 350px !important;
+  /* 2026-08-23 mobile pass: hard 350px overflowed 320px phones; clamp to
+     the viewport. Horizontal-overflow fix only — layout untouched. */
+  width: min(350px, 100vw) !important;
   height: 100% !important;
   background: rgba(15, 23, 42, 0.85) !important;
   backdrop-filter: blur(8px) !important;
@@ -2523,14 +2852,42 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   POST-BB-TO-ENTER OVERLAY (Bible V8 §4.2)
-   Walkthrough Step 4 fix 2026-04-29 — small fixed-position pill button
-   shown to the hero only when their userId is in the engine's
-   waitingForBBUserIds list. Tapping it calls POST /post-bb on the engine.
+   SEAT-RESERVED OVERLAY (Bible V8 §4.2)
+   Was "Post BB To Enter" — a pill BUTTON that called POST /post-bb. Dan
+   2026-08-25: cash entry is free, so the only players still waiting are the two
+   the engine holds out for one hand (the seat the small blind is about to
+   reach, and the seat the button is about to reach), and it refuses that call
+   for both. It is a notice now, so the interactive affordances below are
+   confined to the --button modifier and the notice gets none of them: a div
+   that pulses, lifts on hover and shows a pointer cursor is a lie about what
+   tapping it will do.
    ═══════════════════════════════════════════════════════════════════════════ */
 .post-bb-overlay-button {
   position: fixed;
-  bottom: 96px;
+  /* 96px used to be written here, and it was the action bar's old min-height:
+     the pill's bottom edge rested exactly on the bar's top edge. The bar is
+     52px + safe-area on a phone now, so that literal left this pill floating
+     44px up into the hero's strip, over the plate the strip exists to protect.
+
+     Dan 2026-08-25 round 2, item 9: "when the hero doesn't have a hand, they
+     should never be covered by anything ever." --sp-hud-line was the next
+     answer tried and it is still wrong, because that line is 8px above the
+     action bar - INSIDE the strip the hero's name plate hangs in. The HUD's
+     bottom-corner widgets sit on that line and get away with it only because
+     they are in the CORNERS and the hero is centred. This pill is centred too,
+     and it renders at exactly the moment the hero has no hand, so it was
+     landing on the one player it must never touch (measured: hero plate
+     40.5-88px above the bar, pill 8-64px, a 24px overlap). position:fixed puts
+     it outside the layout, so no reserve can protect the hero from it.
+
+     Clearing the WHOLE strip is the fix: --sp-action-h + --sp-hero-clear is
+     precisely the reserve .table-container makes for the hero, so adding 8px
+     of air puts this pill above the hero instead of on them, at every
+     viewport, and it follows the bar open or closed. */
+  bottom: calc(
+    var(--sp-action-h, calc(var(--sp-bottom-row-h, 52px) + env(safe-area-inset-bottom, 0px))) +
+      var(--sp-hero-clear, 60px) + 8px
+  );
   left: 50%;
   transform: translateX(-50%);
   z-index: 50;
@@ -2539,20 +2896,34 @@
   align-items: center;
   gap: 2px;
   padding: 10px 24px;
-  border: 2px solid #ffd54a;
+  border: 2px solid #00d4ff;
   border-radius: 24px;
   background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
-  color: #ffde5c;
+  color: #00d4ff;
   font-family: inherit;
   font-weight: 700;
-  cursor: pointer;
   box-shadow:
-    0 0 18px rgba(255, 213, 74, 0.45),
+    0 0 18px rgba(0, 212, 255, 0.45),
     0 4px 14px rgba(0, 0, 0, 0.5);
+}
+/* Interactive affordances live here, on the button form only. */
+button.post-bb-overlay-button {
+  cursor: pointer;
   animation: post-bb-pulse 1.6s ease-in-out infinite alternate;
 }
-.post-bb-overlay-button:hover {
+button.post-bb-overlay-button:hover {
   background: linear-gradient(180deg, #374151 0%, #1f2937 100%);
+}
+/* The notice: informational, not tappable. Calmer than the old pulsing pill,
+   because nothing is being asked of the player — they are already seated and
+   will be dealt in free. */
+.post-bb-overlay-button--notice {
+  cursor: default;
+  animation: none;
+  border-color: rgba(0, 212, 255, 0.55);
+  box-shadow:
+    0 0 12px rgba(0, 212, 255, 0.22),
+    0 4px 14px rgba(0, 0, 0, 0.5);
 }
 .post-bb-overlay-button__title {
   font-size: 14px;
@@ -2566,60 +2937,22 @@
 @keyframes post-bb-pulse {
   from {
     box-shadow:
-      0 0 18px rgba(255, 213, 74, 0.45),
+      0 0 18px rgba(0, 212, 255, 0.45),
       0 4px 14px rgba(0, 0, 0, 0.5);
   }
   to {
     box-shadow:
-      0 0 28px rgba(255, 213, 74, 0.85),
+      0 0 28px rgba(0, 212, 255, 0.85),
       0 4px 14px rgba(0, 0, 0, 0.5);
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   RABBIT HUNT SQUARE — mockup v3: small square button above the Fold button
-   ═══════════════════════════════════════════════════════════════════════════════ */
-.action-secondary-row {
-  display: flex;
-  justify-content: flex-start;
-  align-items: center;
-  gap: 10px;
-  padding: 0 2px 8px;
-}
-
-.rabbit-hunt-square {
-  width: 46px;
-  height: 46px;
-  border-radius: 12px;
-  padding: 0;
-  overflow: hidden;
-  background: #1b2430;
-  border: 1px solid #f2c14e;
-  box-shadow: 0 0 10px rgba(242, 193, 78, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition:
-    transform 0.15s ease,
-    box-shadow 0.2s ease;
-}
-
-.rabbit-hunt-square:hover {
-  box-shadow: 0 0 16px rgba(242, 193, 78, 0.7);
-}
-
-.rabbit-hunt-square:active {
-  transform: scale(0.94);
-}
-
-.rabbit-hunt-square img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 11px;
-}
+/* RABBIT HUNT SQUARE — removed 2026-08-25. `.action-secondary-row`,
+   `.rabbit-hunt-square` and its hover/active/img rules styled the small square
+   button that used to sit above Fold. That button called the reveal directly
+   and threw the cards away; it was deleted along with its twin in the control
+   strip, and no TSX in the repo has referenced any of these class names since.
+   The rabbit hunt renders through <RabbitHunt> in TableModalsLayer. */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    TABLE EGG — clip-path defs + gold rim overlay (Dan-approved v10 mockup)
@@ -2764,7 +3097,7 @@ body.ca-raising .bankroll-widget {
   font-size: 1.05rem;
   font-weight: 800;
   letter-spacing: 0.01em;
-  color: #ffd54a;
+  color: #00d4ff;
   -webkit-text-stroke: 0.5px rgba(0, 0, 0, 0.55);
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.85),
@@ -2832,4 +3165,269 @@ body.ca-raising .bankroll-widget {
 .spectator-footer-bar__cta--leave:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SEAT-FIRST BUY-IN CONFIRMATION (Dan 2026-08-23)
+   "you should sit down, then confirm 'buy in amount'. once the user confirms,
+   chips taken from player [wallet] and seat access granted."
+   A tap on an open Spin / Heads-Up seat used to spend money on the spot. This
+   sheet is the gate between the tap and the debit, and it names the price.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.seat-buyin-confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.seat-buyin-confirm__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(3px);
+}
+.seat-buyin-confirm__card {
+  position: relative;
+  width: min(340px, 100%);
+  padding: 26px 22px 20px;
+  border-radius: 18px;
+  text-align: center;
+  background: linear-gradient(180deg, #1b1e24 0%, #121419 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  animation: seatBuyInConfirmIn 0.18s ease-out;
+}
+@keyframes seatBuyInConfirmIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.seat-buyin-confirm__eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+.seat-buyin-confirm__title {
+  margin-top: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.82);
+}
+.seat-buyin-confirm__amount {
+  margin-top: 2px;
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #ffd479;
+  text-shadow: 0 2px 14px rgba(255, 190, 80, 0.28);
+}
+.seat-buyin-confirm__meta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.62);
+}
+.seat-buyin-confirm__note {
+  margin-top: 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.45);
+}
+.seat-buyin-confirm__actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+}
+.seat-buyin-confirm__btn {
+  flex: 1;
+  min-height: 46px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition:
+    transform 0.08s ease,
+    opacity 0.12s ease;
+}
+.seat-buyin-confirm__btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.seat-buyin-confirm__btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.seat-buyin-confirm__btn--ghost {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.85);
+}
+.seat-buyin-confirm__btn--go {
+  flex: 1.4;
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+/* ── Dan 2026-08-24 (iPhone screenshots), table proportions on phones ──────
+   1. The 76px top reserve assumed the old full-size BBJ plaque; it is a slim
+      strip now, so the felt starts higher and runs longer.
+   2. The scaler cap rises 360 → 374: the oval gets genuinely longer (and
+      wider) on a 390px phone while keeping the sacred 605/1000 aspect, so
+      every seat stays on the painted rail.
+   3. The spectator footer was a 64px slab with 12px pads — nearly a third of
+      the "way too much padding on the bottom" he pointed at. Slimmed.
+   4. --sp-hero-clear reserves room for the hero plate that hangs below the
+      scaler — but a SPECTATOR has no hero plate, and the reserve was applied
+      anyway. TablePage now stamps data-hero on the page root; without a hero
+      the clear collapses and the felt takes the space back. */
+@media (max-width: 768px) {
+  .table-container {
+    /* Dan 2026-08-25 round 2, item 3: "THE TABLE NEEDS TO BE RAISED UP AS HIGH
+       AS POSSIBLE WITHOUT OVERLAPPING THE BBJ DISPLAY."
+       This is the ONE number that moves it, and it is a variable rather than a
+       padding longhand so --sp-table-h follows it (see the base rule).
+
+       What is actually above the felt, measured inside .table-page:
+
+         0 -> --sp-bbj-h   the BBJ nameplate. BadBeatJackpot.css pins it to
+                      `top: 0` at <=768px and lays it out as ONE landscape row
+                      of a DECLARED height - 22px today, borders included,
+                      published as --sp-bbj-h on :root inside that file's
+                      <=768px block. Read it; do not re-measure the plate and
+                      do not write 22 here. That is the whole point of it being
+                      a variable: the plate can change and this follows.
+         nothing else. The tab bar is NOT in this box — in MultiTablePage it is
+                      a static row ABOVE .table-page--embedded's slot, so it
+                      reserves its own height and its own notch inset (which is
+                      also why --sp-page-inset-top is 0 when embedded).
+         .table-header is `display: none !important`.
+
+       So the reserve is the plate plus ONE clear band, and 8px is that band:
+       "as high as possible without overlapping" is a stated gap, not zero.
+       8px is what it buys, and it is enough:
+         - the plate's own cast shadow is `0 9px 20px` — it lands on the felt
+           scene, which is what a shadow is for, and reaches no seat;
+         - a top seat is capped to a 56px avatar at y 5-6% of the scaler and
+           stays INSIDE the scaler (tests/e2e/top-rail-seat.spec.ts is the
+           guard) with about 5px of margin, so plate-bottom to seat-top is
+           8 + 5 = 13px of air. Nothing on the felt reaches into the band.
+       If a later pass grows the plate, --sp-bbj-h grows and this follows on
+       its own; only shrink the 8px if Dan asks for it explicitly. */
+    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 8px + var(--sp-page-inset-top));
+
+    /* THE HERO'S STRIP, and why a phone needs more of it than the desktop
+       half-seat floor the base rule declares.
+
+       Dan, same item: "THAT TABLE MUST BE RAISED UP SO THE PREVIOUS HANDS,
+       TIME BANK AND CHAT BUTTONS AREN'T OVERLAPPING OTHER THINGS ON THE
+       TABLE" and "ALLOWING THE HERO MORE ROOM AT THE BOTTOM."
+
+       Those three widgets are not in the HUD's gift to move: `.table-hud__lower`
+       is `align-items: flex-end` resting on --sp-hud-line, which is
+       `--sp-action-h + 8px` (TableHUD.css), and the bottom-left corner then
+       STACKS UPWARD from that line into whatever is above it. So the only way
+       they stop crossing the felt is for the felt's bottom edge to sit above
+       the top of that stack. That is this number.
+
+       The stack, seated, is exactly:
+           36px  .tbc-widget          (--sp-hud-tile-size, TableHUD.css)
+       +    8px  gap                  (.hud-ul-column--stack, this file)
+       +   36px  .prev-hand-card      (same tile size)
+       =   80px, resting on a line 8px above the bar
+       =   88px from the top of the action bar to the top of the stack.
+
+       88px therefore puts the stack's top edge exactly on the scaler's bottom
+       edge: nothing overlaps, and not one pixel is reserved that a widget does
+       not stand in. The chat button in the opposite corner is a single 36px
+       tile on the same line and is cleared with 44px to spare.
+
+       IT IS ALSO ABOVE THE HALF-SEAT FLOOR, which is the other thing this
+       strip has to satisfy — 49px at 380, 54px at 480, 60px at 640 (base rule)
+       — so the hero's name plate cannot go back under the bar. Do not take it
+       below 60px; if the HUD tiles shrink, re-do the sum above rather than
+       assuming the floor is still the binding constraint.
+
+       AND IT COSTS THE TABLE NOTHING at the sizes Dan reviews on. At 375 and
+       393 the oval is WIDTH-bound — `max-width: calc(100% - 6px)` below caps it
+       at 361px and 379px — and it stays width-bound until this reserve passes
+       90px (375) and 100px (393). Everything from 60px to 88px was slack
+       loitering under the felt; this declares it and gives it to the hero.
+
+       Specificity 0,1,0, so `.table-page[data-hero='false'] .table-container`
+       (0,2,1, at the foot of this file) still collapses it for a spectator,
+       who has neither a hero plate nor a time-bank tile. */
+    --sp-hero-clear: 88px;
+    /* 2026-08-26: gutters removed per Dan — edge-to-edge felt at 375px
+       measures 375x619.8 (up from 367x606.6 with 4px gutters). Side-seat
+       overhang at narrow viewports is addressed by the max-width: 340px
+       safeguard in SeatSlot.css. */
+  }
+
+  .table-scaler {
+    /* Dan 2026-08-26: "make the felt genuinely wider." The `- 6px` here was
+       the last thing standing between the oval and its container, and it was
+       pure loss - the container already pays 4px gutters on each side, so this
+       took a second bite out of the same axis for no stated reason.
+
+       MEASURED in Chromium at three phone widths, shipped vs this rule:
+         375x812   361.0 x 596.7  ->  367.0 x 606.6
+         393x852   379.0 x 626.4  ->  385.0 x 636.4
+         430x932   416.0 x 687.6  ->  422.0 x 697.7
+       Aspect stays 0.605 in every case, and the taller box still fits: at
+       375px the container offers 642px of height and the oval asks for 606.6.
+
+       It also makes the side seats fit BETTER, which is the opposite of what
+       you would expect from a bigger table. A seat plate is a fixed 96px wide
+       and is centred on its ring position, so its left edge sits at
+       `gutter + 0.105 * W - 48`. Growing W moves the centre outboard faster
+       than the plate grows, so the overhang against the page edge goes from
+       6.1px to 5.5px.
+
+       NOT taken to `100%` with the gutters removed, which measures 375x619.8
+       and is the largest the oval can be at this width. That costs the 4px
+       gutters, and by the formula above the side plates then overhang by
+       8.6px instead of 5.5px - a real regression in the one place this table
+       is already tight. 8px of extra felt is not worth 3px more of a clipped
+       name plate. If that trade is ever wanted, narrow the side seats' plate
+       in the same commit, or the names pay for the felt. */
+    max-width: 100%;
+  }
+
+  .spectator-footer-bar {
+    min-height: 46px;
+    padding: 8px 12px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0));
+  }
+
+  .spectator-footer-bar__label {
+    font-size: 0.8125rem;
+  }
+}
+
+/* A spectator has no hero plate hanging below the scaler, so the whole
+   --sp-hero-clear strip is dead space and the felt should take it back.
+
+   MUST target .table-container, not .table-page (Dan 2026-08-25). This rule
+   used to sit on the page root and never once fired: .table-container DECLARES
+   --sp-hero-clear on itself, and an element's own declaration always beats an
+   inherited one, so the reserve (34px then, 88px on a phone now) was applied to
+   spectators too and the collapse this rule exists for silently did nothing.
+   It matters more at 88 than it did at 34: a spectator has neither a hero plate
+   nor a time-bank tile, so both of the things that number is sized for are
+   absent. Same shape
+   of bug as the --seat-avatar-size cap SeatSlot.css documents at
+   `.seat-wrapper--top .seat`, and the same fix: declare it on the element that
+   reads it. Specificity 0,2,1 vs .table-container's 0,1,0. */
+.table-page[data-hero='false'] .table-container {
+  --sp-hero-clear: 6px;
 }

@@ -375,6 +375,55 @@ export async function sendHeartbeat(tableId: string): Promise<ActionResult> {
 }
 
 /**
+ * Dan 2026-08-23: tell the server we are leaving the page or the app.
+ *
+ * Fires from `pagehide`, the last event a browser reliably delivers before it
+ * tears the document down (`unload` does not fire on mobile Safari at all,
+ * and an ordinary fetch started there is cancelled with the document).
+ *
+ * Why this exists when the websocket close already tells the server
+ * something: a socket close is ambiguous, so it only opens an 8s grace window
+ * in case the player is still there on the HTTP heartbeat. This is
+ * unambiguous — the server marks them AWAY immediately and the
+ * one-SB-one-BB cap starts counting. Coming back cancels it for free.
+ *
+ * Uses `fetch(..., { keepalive: true })` rather than `navigator.sendBeacon`
+ * deliberately. sendBeacon cannot set an Authorization header, which would
+ * force the JWT into the request body and force the SERVER's shared auth
+ * helper to learn a second way to receive a token — a change to the one
+ * function guarding every money route, for the benefit of the least
+ * important route on the server. Not a trade worth making. A keepalive fetch
+ * carries the normal Bearer header, is owned by the browser's network stack
+ * once dispatched, and outlives the document exactly like a beacon does.
+ *
+ * Best-effort by design: if it fails, the websocket close still reaches the
+ * server, just 8 seconds later via the transport grace window. Nothing is
+ * lost, the player is simply marked away slightly less promptly.
+ *
+ * Takes the token as an argument rather than awaiting `getAuthHeaders()` —
+ * `pagehide` handlers must be synchronous, and an `await` there means the
+ * request is never dispatched at all.
+ */
+export function sendAwayBeacon(tableId: string, accessToken: string | null): void {
+  if (!tableId || !accessToken) return;
+  try {
+    void fetch(`${GAME_SERVER_URL}/away`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ tableId }),
+      keepalive: true,
+    }).catch(() => {
+      /* the page is going away; there is nobody left to tell */
+    });
+  } catch {
+    /* never let a teardown path throw */
+  }
+}
+
+/**
  * Bible V8 §4.15: Set or clear a pre-action (auto-fold, auto-check, etc.)
  * @param action - Pre-action type or 'clear' to remove
  * @param maxCallAmount - Optional max call amount for auto_call
@@ -694,13 +743,33 @@ export async function notifyServerLeave(tableId: string): Promise<ActionResult> 
 }
 
 /**
+ * POST /reject_rebuy — Notify the game server that a player rejected the rebuy modal.
+ */
+export async function notifyServerRejectRebuy(tableId: string): Promise<ActionResult> {
+  try {
+    const headers = await getAuthHeaders();
+    const resp = await fetch(`${GAME_SERVER_URL}/reject_rebuy`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId }),
+    });
+    if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
+    return (await resp.json()) as ActionResult;
+  } catch (err: unknown) {
+    console.warn('[GameServerAPI] notifyServerRejectRebuy failed:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
+/**
  * POST /post-bb — Bible V8 §4.2: Post the BB to enter the next hand
  * immediately, skipping the normal "wait for BB to rotate to your seat" delay.
  *
- * Walkthrough Step 4 fix 2026-04-29: previously the engine accepted this
- * request but the frontend had no way to call it. Now the SeatSlot renders
- * a "Post BB" button when the hero player is in the engine's
- * waiting_for_bb_user_ids list, and that button calls this function.
+ * Dan 2026-08-25: NOTHING IN THE UI CALLS THIS ANY MORE, deliberately. The
+ * overlay that did is a notice now — cash entry is free, and the only players
+ * still waiting are the two the engine holds out for one hand, for both of whom
+ * the engine refuses this call. Kept exported so the endpoint stays reachable
+ * for the fuzzer and any future opt-in with a real wait to skip.
  */
 export async function postBBToEnter(tableId: string): Promise<ActionResult> {
   try {
@@ -714,6 +783,55 @@ export async function postBBToEnter(tableId: string): Promise<ActionResult> {
     return (await resp.json()) as ActionResult;
   } catch (err: unknown) {
     console.warn('[GameServerAPI] postBBToEnter failed:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
+/**
+ * POST /rabbit-hunt — buy the cards that would have come. Dan 2026-08-25.
+ *
+ * This is the ONLY way the rabbit-hunt cards reach a client. They are not in
+ * any broadcast and never have been since this endpoint existed: the engine
+ * used to put all five into the room-wide `rabbit_hunt_available` event, so
+ * every opponent received them in cleartext and the charge was a client-side
+ * `if` anyone could skip.
+ *
+ * The server charges first (VIP monthly pool, then a purchased pack, then five
+ * diamonds) and returns the cards only to the caller that paid. So the response
+ * is the reveal — there is nothing to re-fetch and nothing to bill afterwards.
+ */
+export interface RabbitHuntResult {
+  success: boolean;
+  error?: string;
+  cards?: { rank: string; suit: string }[];
+  board_length?: number;
+  source?: string;
+  diamonds_spent?: number;
+  diamonds_remaining?: number | null;
+  vip_remaining?: number | null;
+  /** Uses left on a purchased rabbit-hunt pack, when a pack paid for this one. */
+  uses_remaining?: number | null;
+}
+
+export async function requestRabbitHunt(
+  tableId: string,
+  handNumber?: number
+): Promise<RabbitHuntResult> {
+  try {
+    const headers = await getAuthHeaders();
+    const resp = await fetch(`${GAME_SERVER_URL}/rabbit-hunt`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId, handNumber }),
+    });
+    // A 400 carries a real, human-readable reason from the engine ("Not Enough
+    // Diamonds", "You Were Not Dealt Into That Hand"), so parse the body rather
+    // than flattening every non-200 into a generic failure.
+    const data = (await resp.json().catch(() => null)) as RabbitHuntResult | null;
+    if (data) return data;
+    return { success: false, error: `Server error (${resp.status})` };
+  } catch (err: unknown) {
+    console.warn('[GameServerAPI] requestRabbitHunt failed:', err);
     return { success: false, error: 'Server unreachable' };
   }
 }
@@ -749,4 +867,10 @@ export default {
   previewInsurance,
   showHand,
   submitDiscard, // FIX 120: Crazy Pineapple
+  notifyServerRejectRebuy,
+  // Was the only member of this module missing from the default export, so
+  // anyone reaching for GameServerAPI.requestRabbitHunt got undefined while
+  // its seventeen siblings resolved.
+  requestRabbitHunt,
+  postBBToEnter,
 };

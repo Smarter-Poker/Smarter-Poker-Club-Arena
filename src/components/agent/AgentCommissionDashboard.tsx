@@ -90,16 +90,13 @@ export function AgentCommissionDashboard() {
         },
         () => loadDataRef.current()
       )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'wallets',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => loadDataRef.current()
-      )
+      // 2026-08-24: the `wallets` (user_id=eq.<uid>) listener that sat here is
+      // gone. PostgresSyncHooks' `global_db_sync:<userId>` channel already
+      // carries that exact listener - same table, same filter - created once at
+      // sign-in and never torn down by navigation, and it emits BALANCE_UPDATED.
+      // The bus subscriber further down already calls loadDataRef.current() on
+      // BALANCE_UPDATED, so the refresh is unchanged and one duplicate
+      // subscription per mount disappears.
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
           if (err)

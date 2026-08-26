@@ -44,6 +44,9 @@ class ErrorBoundary extends Component<Props, State> {
       error.message?.includes('dynamically imported module') ||
       error.message?.includes('Failed to fetch') ||
       error.message?.includes('ChunkLoadError') ||
+      error.message?.includes('Importing a module script failed') ||
+      error.message?.includes('error loading dynamically imported module') ||
+      error.message?.includes('Unable to preload CSS') ||
       error.name === 'ChunkLoadError'
     ) {
       console.warn('[ErrorBoundary] Stale chunk detected, reloading...');

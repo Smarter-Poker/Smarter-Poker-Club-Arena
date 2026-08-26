@@ -6,9 +6,6 @@
  */
 
 .page {
-  min-height: 100vh;
-  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
-  padding: 1.5rem;
   background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
 }
 
@@ -56,6 +53,7 @@
   color: #fff;
   font-weight: 600;
   cursor: pointer;
+  touch-action: manipulation;
   transition: all 0.2s ease;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -297,7 +295,7 @@
   border: 2px solid #2a3a4a;
   border-radius: 8px;
   color: #fff;
-  font-size: 0.875rem;
+  font-size: 16px; /* was 0.875rem; under 16px makes iOS zoom the page on focus */
   cursor: pointer;
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2300d4ff' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
@@ -414,7 +412,6 @@
 
 @media (max-width: 768px) {
   .page {
-    padding: 1rem;
   }
 
   .header {
@@ -441,7 +438,6 @@
 /* ── Mobile ≤480px ── */
 @media (max-width: 480px) {
   .page {
-    padding: 0.75rem;
   }
   .header {
     padding: 0.75rem;
@@ -484,7 +480,7 @@
     min-width: 140px;
   }
   .select {
-    font-size: 0.8rem;
+    font-size: 16px; /* was 0.8rem; under 16px makes iOS zoom the page on focus */
     padding: 0.5rem 2rem 0.5rem 0.75rem;
   }
   .colorOption {
@@ -502,7 +498,6 @@
 /* ── Small phones ≤380px ── */
 @media (max-width: 380px) {
   .page {
-    padding: 0.5rem;
   }
   .header h1 {
     font-size: 1rem;
@@ -593,7 +588,7 @@
   border: 2px solid #2a3a4a;
   border-radius: 8px;
   color: #fff;
-  font-size: 0.875rem;
+  font-size: 16px; /* was 0.875rem; under 16px makes iOS zoom the page on focus */
   transition: border-color 0.2s;
 }
 
@@ -669,4 +664,58 @@
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.04em;
+}
+
+/* Touch target (2026-08-23): measured under 44px at 375px. The control keeps
+   its painted size; an invisible 44px-tall ::after gives the thumb something
+   to hit. Vertical only — these sit in horizontal rows and widening would
+   steal the neighbour's taps. See club-engine.css for the full rationale. */
+@media (pointer: coarse) {
+  .resetButton,
+  .actionButton,
+  .actionButtonSecondary,
+  .dangerButton,
+  .colorOption {
+    position: relative;
+    /* 2026-08-25: `position: relative` alone was not enough and the Reset
+       button failed the live audit at 32px of reach against the 40px the
+       spec requires. `.section` is `position: static`, so nothing here
+       looked like it could paint over the hit area - but it carries a
+       `transform`, and a transform makes an element a stacking context and
+       a containing block whether or not it is positioned. The section
+       therefore paints as if it were positioned at z-index 0, and it comes
+       later in the document, so it won every hit test in the ~5px the
+       44px ::after reaches past the header. Measured on production at
+       375px: 32px of reach before, 40px after this line. */
+    z-index: 1;
+  }
+
+  .resetButton::after,
+  .actionButton::after,
+  .actionButtonSecondary::after,
+  .dangerButton::after,
+  .colorOption::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 44px;
+    background: transparent;
+  }
+}
+
+@media (max-width: 768px) {
+  .page {
+  }
+  .content {
+    gap: 0 !important;
+  }
+  .section {
+    border-radius: 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+    margin-bottom: 0 !important;
+  }
 }

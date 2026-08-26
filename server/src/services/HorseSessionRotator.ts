@@ -41,7 +41,7 @@
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
-import { isActiveNow } from './HorseBehavior.js';
+import { isActiveNow, wantsTableChange } from './HorseBehavior.js';
 
 const CYCLE_MS = 90_000; // examine the floor every 90s
 const GLOBAL_DEPARTURES_PER_CYCLE = 4;
@@ -196,6 +196,31 @@ export class HorseSessionRotator {
               .addChips(seat.user_id, amount)
               .catch((err) => reportError(err, 'HorseSessionRotator.topUp'));
           }
+        }
+
+        // ── V14 TABLE CHANGE (Dan 2026-08-23) ──────────────────────────
+        // "HORSES SHOULD BE RANDOMLY LEAVING GAMES, AND GOING TO OTHERS."
+        //
+        // The hazard below models a SESSION ENDING — the horse is done for
+        // now. That is only half of what a floor looks like. The other half
+        // is a player who is still playing but does not want THIS game: the
+        // table went quiet, or they just fancy a change, so they pick up and
+        // sit somewhere else. Without it the only movement on the floor is
+        // arrivals and quitters, and the same faces sit at the same table
+        // until they log off.
+        //
+        // A table change leaves through the same leaveTable() path as any
+        // other departure, so it is hand-boundary safe and cashes out
+        // properly; the fleet manager then seats them somewhere else on its
+        // next cycle, which is exactly the "and going to others" half.
+        // Short-handed games shed players fastest, which is how a dying
+        // table actually dies.
+        if (
+          minutes >= MIN_SESSION_MINUTES / 2 &&
+          wantsTableChange(seat.user_id, tableId, tableSeats.length, minutes)
+        ) {
+          best = { seat, p: Number.POSITIVE_INFINITY };
+          break;
         }
 
         if (minutes < MIN_SESSION_MINUTES) continue;

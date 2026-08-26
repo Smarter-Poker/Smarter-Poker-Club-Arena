@@ -25,9 +25,11 @@ import { reportError } from '../utils/errorReporter';
 // seated" and "the database is down" must not read as the same event.
 const UNREGISTER_REASON_TEXT: Record<string, string> = {
   tournament_not_found: 'That tournament no longer exists',
-  registration_closed: 'Registration has closed for this tournament',
+  registration_closed:
+    'Registration has closed for this tournament. Tournaments that have started cannot be refunded.',
   too_close_to_start: 'You cannot unregister within a minute of the start time',
-  not_registered_or_seated: 'You are not registered, or you have already been seated at a table',
+  not_registered_or_seated:
+    'You are not registered, or you have already been seated at a table. Tournaments that have started cannot be refunded.',
 };
 
 const REGISTER_REASON_TEXT: Record<string, string> = {
@@ -38,7 +40,13 @@ const REGISTER_REASON_TEXT: Record<string, string> = {
   insufficient_balance: 'Insufficient chips in Player Wallet.',
 };
 
-function registerReasonText(reason: string | undefined): string {
+/**
+ * Exported so every registration surface reads the SAME refusal text.
+ * `fn_register_for_tournament` answers an ordinary refusal with
+ * `{ ok: false, reason }` rather than raising, so any caller that only checks
+ * the PostgREST `error` renders "Insufficient chips" as a successful buy-in.
+ */
+export function registerReasonText(reason: string | undefined): string {
   return REGISTER_REASON_TEXT[reason ?? ''] ?? `Could not register (${reason ?? 'unknown'})`;
 }
 
@@ -82,15 +90,20 @@ export type TournamentType =
 export interface BountyConfig {
   bountyType: 'fixed' | 'mystery' | 'progressive';
   baseBounty: number; // Starting bounty per player
-  mysteryTiers?: MysteryBountyTier[]; // For mystery bounties
   progressiveStartLevel?: number; // When progressive bounties start
 }
 
-export interface MysteryBountyTier {
-  minMultiplier: number;
-  maxMultiplier: number;
-  probability: number; // Percentage chance
-}
+/* DELETED 2026-08-25: `MysteryBountyTier` and `BountyConfig.mysteryTiers`.
+ *
+ * A client-supplied multiplier ladder. It was built by CreateTournamentModal
+ * from a min/max pair, handed to `BountyConfig` — and then dropped: nothing in
+ * `buildRpcConfig` ever sent it, so no tournament ever ran on it. The only
+ * function that read it, `rollMysteryBounty`, had no callers either.
+ *
+ * The ladder is server-side now and there is exactly one of it:
+ * `server/src/config/mysteryBountySpec.ts`. A club chooses BETWEEN ladders
+ * (balanced / classic / jackpot) via `mysteryBountyProfile` below; it does not
+ * hand one in, because a browser must not decide what a chest is worth. */
 
 export interface SpinConfig {
   possibleMultipliers: SpinMultiplier[];
@@ -228,6 +241,22 @@ export interface TournamentConfig {
   /** Mystery bounty advertised range, as MULTIPLIERS of the bounty head. */
   mysteryBountyMin?: number;
   mysteryBountyMax?: number;
+  /**
+   * MYSTERY BOUNTY OPTIONS (Dan section 72). Applied by
+   * `fn_apply_mystery_bounty_config` immediately after creation, not by
+   * `fn_create_tournament` — see the note at the call site.
+   */
+  /** Which tier ladder. 'jackpot' is top-heavy, 'balanced' is flat. */
+  mysteryBountyProfile?: 'balanced' | 'classic' | 'jackpot';
+  /** When the chests open. */
+  mysteryBountyActivation?: 'at_the_money' | 'percent_field' | 'player_count';
+  /** Percent of field for 'percent_field'; an absolute count for 'player_count'. */
+  mysteryBountyActivationValue?: number;
+  /** Percent of the bounty pool held back for chests. The rest funds ordinary
+   *  knockouts before the phase opens. */
+  mysteryBountyPoolPercent?: number;
+  /** Advertised share of the mystery pool sitting on the single top chest. */
+  mysteryBountyTopPercent?: number;
   /** Writes tournaments.is_pinned — pinned/featured in every lobby sort. */
   isFeatured?: boolean;
 }
@@ -303,14 +332,8 @@ export const BOUNTY_PRESETS: Record<string, BountyConfig> = {
   mystery: {
     bountyType: 'mystery',
     baseBounty: 10,
-    mysteryTiers: [
-      { minMultiplier: 1, maxMultiplier: 1, probability: 60 },
-      { minMultiplier: 2, maxMultiplier: 2, probability: 25 },
-      { minMultiplier: 5, maxMultiplier: 5, probability: 10 },
-      { minMultiplier: 10, maxMultiplier: 10, probability: 4 },
-      { minMultiplier: 50, maxMultiplier: 50, probability: 0.9 },
-      { minMultiplier: 500, maxMultiplier: 500, probability: 0.1 },
-    ],
+    // No tier ladder here on purpose — see the note on BountyConfig. The
+    // chests are sized server-side from the funded pool when the phase opens.
   },
 };
 
@@ -368,12 +391,51 @@ class TournamentService {
     // Also fetch XMTT tournaments for the club's union (if any)
     let xmttTournaments: Tournament[] = [];
     try {
-      const { data: unionClub } = await supabase
+      /**
+       * SAME CASCADE, SAME RULE AS ClubHomePage (2026-08-23): a union club
+       * that cannot resolve its union lists only what it owns, which is
+       * almost nothing - the lobby empties while the union's games run one
+       * join away. `.maybeSingle()` returns { data: null } for BOTH "no such
+       * row" and "the query failed", and this call discarded the error, so a
+       * timeout was indistinguishable from a standalone club.
+       *
+       * Resolution order: the union_clubs row, then clubs.union_id, then the
+       * scope cached from the last successful load. Standalone is concluded
+       * only when a read SUCCEEDS and finds nothing everywhere.
+       */
+      const unionCacheKey = `ca_union_of_${resolvedId}`;
+      const { data: unionClubRow, error: unionClubErr } = await supabase
         .from('union_clubs')
         .select('union_id')
         .eq('club_id', resolvedId)
         .limit(1)
         .maybeSingle();
+
+      let resolvedUnionId: string | null = unionClubRow?.union_id ?? null;
+
+      if (!resolvedUnionId) {
+        const { data: clubRow } = await supabase
+          .from('clubs')
+          .select('union_id')
+          .eq('id', resolvedId)
+          .maybeSingle();
+        resolvedUnionId = (clubRow as { union_id?: string | null } | null)?.union_id ?? null;
+      }
+      if (!resolvedUnionId && unionClubErr) {
+        try {
+          resolvedUnionId = sessionStorage.getItem(unionCacheKey);
+        } catch {
+          /* storage unavailable */
+        }
+      }
+      try {
+        if (resolvedUnionId) sessionStorage.setItem(unionCacheKey, resolvedUnionId);
+        else if (!unionClubErr) sessionStorage.removeItem(unionCacheKey);
+      } catch {
+        /* storage unavailable */
+      }
+
+      const unionClub = resolvedUnionId ? { union_id: resolvedUnionId } : null;
 
       if (unionClub?.union_id) {
         // IMPORTANT: Only fetch XMTT if union allows cross-club tournaments
@@ -759,6 +821,38 @@ class TournamentService {
       );
     }
 
+    // MYSTERY BOUNTY OPTIONS (Dan section 72). A second call rather than more
+    // keys on `fn_create_tournament`, which is a 15KB SECURITY DEFINER
+    // function this change has no other reason to touch — and rewriting one
+    // from a dashboard dump to add six columns is how a creation path acquires
+    // a silent regression.
+    //
+    // A failure here is deliberately NOT fatal. The tournament exists and is
+    // valid; it simply runs on the defaults (classic ladder, chests open at
+    // the money, pool split 50/50), which is what most clubs pick anyway. The
+    // alternative — throwing — would leave a paid-for, correctly created event
+    // behind an error message saying it failed.
+    if (config.type === 'mystery_bounty' && result.tournament_id) {
+      const mysteryConfig: Record<string, unknown> = {
+        profile: config.mysteryBountyProfile ?? 'classic',
+        activation: config.mysteryBountyActivation ?? 'at_the_money',
+        activationValue: config.mysteryBountyActivationValue ?? null,
+        topPercent: config.mysteryBountyTopPercent ?? 20,
+        poolPercent: config.mysteryBountyPoolPercent ?? 50,
+        regularPoolPercent: 100 - (config.mysteryBountyPoolPercent ?? 50),
+      };
+      const { data: cfgResult, error: cfgError } = await supabase.rpc(
+        'fn_apply_mystery_bounty_config',
+        { p_tournament_id: result.tournament_id, p_config: mysteryConfig }
+      );
+      const cfg = cfgResult as { ok?: boolean; reason?: string } | null;
+      if (cfgError || !cfg?.ok) {
+        console.warn(
+          `[TournamentService] mystery bounty options not applied (${cfgError?.message ?? cfg?.reason ?? 'unknown'}); the event runs on the defaults`
+        );
+      }
+    }
+
     const { data } = await supabase
       .from('tournaments')
       .select('*')
@@ -844,13 +938,22 @@ class TournamentService {
       (freshTournament.current_players ?? 0) >= freshTournament.max_players &&
       (freshTournament.variant === 'sng' || freshTournament.variant === 'spin')
     ) {
-      try {
-        await supabase
-          .from('tournaments')
-          .update({ start_time: new Date().toISOString() })
-          .eq('id', tournamentId);
-      } catch (autoStartErr) {
-        reportError(autoStartErr, 'TournamentService.SNG_autostart_failed');
+      // DEFECT D7: this was an unchecked `.update()` wrapped in a try/catch.
+      // A PostgREST call RESOLVES with `{ error }` instead of throwing, so the
+      // catch could only ever have caught a transport failure - an RLS denial
+      // on this client-side write (the likely outcome, since `tournaments` is
+      // not player-writable) resolved normally and was discarded. The nudge
+      // silently did nothing and the SNG/Spin sat waiting for a start that the
+      // discovery loop had not been told to bring forward.
+      const { error: autoStartError } = await supabase
+        .from('tournaments')
+        .update({ start_time: new Date().toISOString() })
+        .eq('id', tournamentId);
+      if (autoStartError) {
+        // Reported, not thrown: the player IS registered and paid, and the
+        // server discovery loop still starts the game on its own schedule.
+        // Failing the registration here would be a worse lie than the old one.
+        reportError(autoStartError, 'TournamentService.SNG_autostart_failed', { tournamentId });
       }
     }
 
@@ -970,7 +1073,11 @@ class TournamentService {
         });
       });
     }
-    await supabase
+    // Same defect shape as D7: an unchecked `.update()`. If this one is denied
+    // the refunds have already happened but the row still reads REGISTERING, so
+    // the lobby keeps advertising a tournament nobody is in. Surfaced rather
+    // than thrown - the refund is the part that moved money and it succeeded.
+    const { error: cancelStatusError } = await supabase
       .from('tournaments')
       .update({
         status: 'CANCELLED',
@@ -978,6 +1085,11 @@ class TournamentService {
         prize_pool: 0,
       })
       .eq('id', tournamentId);
+    if (cancelStatusError) {
+      reportError(cancelStatusError, 'TournamentService.cancelTournament_status_update', {
+        tournamentId,
+      });
+    }
 
     console.debug(
       `[TournamentService] Cancelled tournament ${tournament.name}: refunded ${playersRefunded} players, ${refunded} chips`
@@ -1050,12 +1162,20 @@ class TournamentService {
     // "Start" while the server loop fired created DOUBLE tables and DOUBLE
     // seating for the same tournament. Whoever loses the CAS backs off.
     {
-      const { data: claimed } = await supabase
+      // Same defect shape as D7: `error` was dropped here, so a denied or
+      // failed claim produced `claimed === null` and was reported to the owner
+      // as "already starting" - a race that never happened. A real failure has
+      // to read as a real failure, not as the benign branch next to it.
+      const { data: claimed, error: claimError } = await supabase
         .from('tournaments')
         .update({ status: 'RUNNING', started_at: new Date().toISOString() })
         .eq('id', tournamentId)
         .in('status', ['ANNOUNCED', 'REGISTERING'])
         .select('id');
+      if (claimError) {
+        reportError(claimError, 'TournamentService.start_claim', { tournamentId });
+        throw new Error(`Could not start tournament: ${claimError.message}`);
+      }
       if (!claimed || claimed.length === 0) {
         throw new Error('Tournament is already starting (server or another admin claimed it)');
       }
@@ -1066,28 +1186,44 @@ class TournamentService {
     const numTables = Math.ceil(players.length / playersPerTable);
     const createdTables: any[] = [];
 
-    for (let i = 0; i < numTables; i++) {
-      const { data: table } = await supabase
-        .from('tables')
-        .insert({
-          club_id: tournament.club_id,
-          tournament_id: tournament.id,
-          name: `${tournament.name} - Table ${i + 1}`,
-          game_type: 'tournament',
-          game_variant: 'nlh',
-          stakes: 'Tournament',
-          small_blind: parsedBlinds[0].smallBlind,
-          big_blind: parsedBlinds[0].bigBlind,
-          min_buy_in: 0,
-          max_buy_in: 0,
-          max_players: 9,
-          status: 'RUNNING',
-          settings: { auto_muck: true },
-        })
-        .select()
-        .maybeSingle();
+    // PERF 2026-08-24: this was one INSERT per table, awaited in sequence. A
+    // 300-entry MTT is 34 tables, so 34 serial round-trips - and that was only
+    // the first of three such loops in this function (seats and the
+    // current_players update below were the same shape), roughly 368
+    // round-trips in total while every registered player stared at a spinner.
+    // One bulk insert instead.
+    const tablePayload = Array.from({ length: numTables }, (_, i) => ({
+      club_id: tournament.club_id,
+      tournament_id: tournament.id,
+      name: `${tournament.name} - Table ${i + 1}`,
+      game_type: 'tournament',
+      game_variant: 'nlh',
+      stakes: 'Tournament',
+      small_blind: parsedBlinds[0].smallBlind,
+      big_blind: parsedBlinds[0].bigBlind,
+      min_buy_in: 0,
+      max_buy_in: 0,
+      max_players: 9,
+      status: 'RUNNING',
+      settings: { auto_muck: true },
+    }));
 
-      if (table) createdTables.push(table);
+    const { data: insertedTables, error: tablesErr } = await supabase
+      .from('tables')
+      .insert(tablePayload)
+      .select();
+    if (tablesErr) throw tablesErr;
+
+    // Re-order the returned rows to match the payload EXACTLY. Seat assignment
+    // below is `i % numTables`, so table order decides who sits where; relying
+    // on the driver returning rows in insertion order would make seating depend
+    // on an unguaranteed detail. Matching on the name we just generated is
+    // deterministic. (A plain string sort would not be - "Table 10" sorts
+    // before "Table 2".)
+    const byName = new Map((insertedTables || []).map((t: any) => [t.name, t]));
+    for (const payload of tablePayload) {
+      const row = byName.get(payload.name);
+      if (row) createdTables.push(row);
     }
 
     // 3. Seat Players — Fisher-Yates shuffle for unbiased randomization
@@ -1098,11 +1234,19 @@ class TournamentService {
     }
     const tableSeats = createdTables.map((t) => ({ tableId: t.id, nextSeat: 1 }));
 
-    for (let i = 0; i < shuffled.length; i++) {
-      const player = shuffled[i];
+    // PERF 2026-08-24: was one INSERT per player, awaited in sequence - 300
+    // serial round-trips for a 300-entry MTT. The seat assignment arithmetic is
+    // unchanged; only the write is batched.
+    //
+    // This is now atomic rather than best-effort. Previously a failed seat was
+    // logged and the loop carried on, which produces a tournament that has
+    // started with a player missing from the felt - a worse outcome than not
+    // starting. Double-start is already prevented by the CAS claim at the top
+    // of this function, so a conflict here means something is genuinely wrong
+    // and should surface.
+    const seatPayload = shuffled.map((player, i) => {
       const tableAssign = tableSeats[i % numTables];
-
-      const { error: seatErr } = await supabase.from('table_seats').insert({
+      const seat = {
         table_id: tableAssign.tableId,
         seat_number: tableAssign.nextSeat,
         user_id: player.user_id,
@@ -1110,20 +1254,44 @@ class TournamentService {
         // engine reads table_seats.stack, so client-started tournaments seated
         // everyone with a null stack.
         stack: tournament.starting_chips,
-      });
-      if (seatErr) reportError(seatErr, 'TournamentService.Failed_to_seat_player_playeruser_id');
+      };
       tableAssign.nextSeat++;
+      return seat;
+    });
+
+    if (seatPayload.length > 0) {
+      const { error: seatErr } = await supabase.from('table_seats').insert(seatPayload);
+      if (seatErr) {
+        reportError(seatErr, 'TournamentService.Failed_to_seat_players');
+        throw seatErr;
+      }
     }
 
     // TOURNEY-AUDIT 2026-07-24: record each table's seated count — the seat
     // loop never bumped tables.current_players, so every tournament table
     // reported 0 players (breaking balance/merge checks and the Tables tab).
-    for (const ts of tableSeats) {
-      await supabase
-        .from('tables')
-        .update({ current_players: ts.nextSeat - 1 })
-        .eq('id', ts.tableId);
-    }
+    // PERF 2026-08-24: was awaited one table at a time. Each update targets a
+    // different row and carries a different value, so they are independent -
+    // running them together costs the slowest one instead of the sum.
+    // Same defect shape as D7: these updates resolve with `{ error }`, they do
+    // not throw, so a denied seat-count write used to vanish and leave the
+    // lobby showing an empty table that is actually full.
+    const seatCountResults = await Promise.all(
+      tableSeats.map((ts) =>
+        supabase
+          .from('tables')
+          .update({ current_players: ts.nextSeat - 1 })
+          .eq('id', ts.tableId)
+      )
+    );
+    seatCountResults.forEach((r, i) => {
+      if (r.error) {
+        reportError(r.error, 'TournamentService.start_table_seat_count', {
+          tournamentId,
+          tableId: tableSeats[i].tableId,
+        });
+      }
+    });
 
     // 4. Refresh tournament row (status/started_at were already CAS-claimed above)
     const { data, error } = await supabase
@@ -1135,7 +1303,11 @@ class TournamentService {
     if (error) throw error;
 
     // 5. Update Player Stacks
-    await supabase
+    // Same defect shape as D7. This one is not survivable silently: if it is
+    // denied, every player sits at 0 chips with status 'registered' and the
+    // elimination sweep busts the whole field on its next pass. The caller
+    // must not be told the tournament started.
+    const { error: stackError } = await supabase
       .from('tournament_players')
       .update({
         chips: tournament.starting_chips,
@@ -1143,6 +1315,10 @@ class TournamentService {
       })
       .eq('tournament_id', tournamentId)
       .eq('status', 'registered');
+    if (stackError) {
+      reportError(stackError, 'TournamentService.start_player_stacks', { tournamentId });
+      throw stackError;
+    }
 
     masterBus.emit('TOURNAMENT_STARTED', { tournamentId, clubId: tournament.club_id });
 
@@ -1235,9 +1411,47 @@ class TournamentService {
       current_level?: number | null;
       level_started_at?: string | null;
     };
+    /**
+     * =========================================================================
+     *  `tournaments.current_level` IS A 0-BASED ARRAY INDEX (verified 2026-08-25)
+     * =========================================================================
+     *
+     * Three independent confirmations, so nobody has to re-derive it:
+     *
+     *  1. The authoritative writer is the engine. TournamentManagerBase holds
+     *     `this.currentLevel` as an array index (`blindStructure[this.currentLevel]`)
+     *     and persists exactly that: `.update({ current_level: this.currentLevel })`.
+     *     Its auto-escalated row is labelled `level: this.currentLevel + 1`.
+     *  2. Production agrees. For every RUNNING event with a uniform structure,
+     *     `current_level == floor(elapsed_seconds / level_duration_seconds)`,
+     *     and `blind_structure[current_level].level == current_level + 1`.
+     *  3. The SQL gate agrees. `process_tournament_rebuy` reads the column into
+     *     `v_level` and closes on `v_level >= v_cap`, the same comparison this
+     *     file makes against `levelIndex`.
+     *
+     * So `levelIndex` below is an honest 0-based index, the array lookup is
+     * direct, and every caller that renders `levelIndex + 1` is correct.
+     *
+     * TWO EDGE CASES ARE HANDLED EXPLICITLY:
+     *
+     *  - NOT YET PERSISTED. A null/absent column (a select that omitted it)
+     *    falls through to the wall-clock derivation. A value of 0 does NOT -
+     *    0 is a real level, the opening one, and is read from the array.
+     *  - AUTO-ESCALATED. Past the end of the structure the engine keeps
+     *    incrementing and doubles the last playable level's blinds in memory,
+     *    so `current_level` legitimately exceeds `blind_structure.length`
+     *    (3079 rows in production as this was written). The array cannot
+     *    describe those levels, so the LOOKUP clamps to the last row while
+     *    `levelIndex` keeps the TRUE level - because that is the number the
+     *    rebuy / re-entry / add-on gates and the SQL RPC both compare against.
+     *    This used to fall through to wall-clock, which capped the reported
+     *    level at `length - 1` and could hold a money window open that the
+     *    database had already closed.
+     */
     const serverLevel = serverT.current_level;
-    if (typeof serverLevel === 'number' && serverLevel >= 0 && serverLevel < blinds.length) {
-      const level = blinds[serverLevel];
+    if (typeof serverLevel === 'number' && Number.isFinite(serverLevel) && serverLevel >= 0) {
+      const lookupIndex = Math.min(serverLevel, blinds.length - 1);
+      const level = blinds[lookupIndex];
       const durationSec = (level?.durationMinutes || 10) * 60;
       // TOURNEY-AUDIT 2026-07-24 (sweep 5): precise remaining time from the
       // server-persisted level clock (tournaments.level_started_at) — the
@@ -1307,10 +1521,30 @@ class TournamentService {
     if (!rebuyChips || rebuyChips <= 0)
       return { allowed: false, reason: 'Rebuy chips not configured' };
 
-    // Rebuy cutoff = late reg cutoff (always the same)
+    /**
+     * REBUYS STAY OPEN THROUGH THE ADD-ON WINDOW (Dan 2026-08-23, binding).
+     *
+     * "rebuys are open until level 8... but there is an add on period... rebuys
+     * and add on's stay open for that last minute. If there is no add ons and
+     * rebuys stop after level 8, the second level 9 starts, registration is
+     * closed and prizepool is finalized."
+     *
+     * This closed rebuys at the cutoff while canAddOn opened the add-on window
+     * at that same instant, so the add-on period — the one moment a short stack
+     * most wants to reload — was exactly when rebuys became unavailable. It
+     * also disagreed with the engine, which defers prize-pool finalization
+     * until after the add-on window precisely because money is still arriving.
+     *
+     * `levelIndex` is 0-based, so "through level N" is indices 0..N-1 and N is
+     * the cutoff — the same instant TournamentManagerBase.isLateRegClosed uses.
+     * With no add-on configured the window is unchanged.
+     */
     const levelState = this.getCurrentLevelState(tournament);
     const rebuyLevelCap = tournament.late_reg_levels ?? tournament.rebuy_levels ?? 8;
-    if (rebuyLevelCap <= 0 || levelState.levelIndex >= rebuyLevelCap) {
+    const rebuyCloseLevel = tournament.add_on_available
+      ? rebuyLevelCap + (tournament.addon_levels ?? 1)
+      : rebuyLevelCap;
+    if (rebuyLevelCap <= 0 || levelState.levelIndex >= rebuyCloseLevel) {
       return { allowed: false, reason: 'Rebuy/re-entry period has ended' };
     }
 
@@ -1479,10 +1713,18 @@ class TournamentService {
           .eq('id', tournamentId)
           .maybeSingle();
         if (tData) {
-          await supabase
+          // Same defect shape as D7: the catch below cannot see a PostgREST
+          // `{ error }`, so a failed rake counter fallback was invisible and
+          // the club's rake total silently under-reported.
+          const { error: rakeUpdErr } = await supabase
             .from('tournaments')
             .update({ total_rake: (tData.total_rake || 0) + fee })
             .eq('id', tournamentId);
+          if (rakeUpdErr) {
+            reportError(rakeUpdErr, 'TournamentService.recordTournamentFee_total_rake', {
+              tournamentId,
+            });
+          }
         }
       }
     } catch (e: unknown) {
@@ -1498,10 +1740,17 @@ class TournamentService {
           .eq('id', unionId)
           .maybeSingle();
         if (unionData) {
-          await supabase
+          // Same defect shape as D7, on the union ledger this time.
+          const { error: unionUpdErr } = await supabase
             .from('unions')
             .update({ total_rake: (unionData.total_rake || 0) + fee })
             .eq('id', unionId);
+          if (unionUpdErr) {
+            reportError(unionUpdErr, 'TournamentService.recordTournamentFee_union_total_rake', {
+              tournamentId,
+              unionId,
+            });
+          }
         }
       } catch (e: unknown) {
         reportError(e, 'TournamentService.recordTournamentFee_union_total_rake');
@@ -1982,12 +2231,24 @@ class TournamentService {
     const finalPool = guarantee > 0 ? Math.max(calculatedPool, guarantee) : calculatedPool;
 
     // Update tournament
-    await supabase
+    // Same defect shape as D7, and money-facing: an unchecked write here let
+    // the function RETURN a prize pool that was never persisted, so the caller
+    // reported a number the lobby would never show.
+    //
+    // Reported, deliberately NOT thrown. Every caller reaches this line AFTER
+    // the buy-in, rebuy or add-on has already been charged server-side, so
+    // throwing would turn a transaction that really happened into a reported
+    // failure - the same class of lie in the opposite direction. The error is
+    // now visible instead of discarded, which is the fix that was missing.
+    const { error: poolError } = await supabase
       .from('tournaments')
       .update({
         prize_pool: finalPool,
       })
       .eq('id', tournamentId);
+    if (poolError) {
+      reportError(poolError, 'TournamentService.recalculatePrizePool', { tournamentId });
+    }
 
     console.debug(
       `[TournamentService] Prize pool recalculated for ${tournamentId.slice(0, 8)}: ${finalPool} (${entryCount} entries, ${rebuyTotal} rebuys, ${addonTotal} addons, ${guarantee} GTD)`
@@ -2376,33 +2637,25 @@ class TournamentService {
   // It had no callers anywhere outside this file. Deleting it removes a
   // duplicate money path; it removes no function.
 
-  /**
-   * Roll mystery bounty value
-   */
-  rollMysteryBounty(config: BountyConfig): number {
-    // Whole chips only (Dan 2026-08-20): a x0.5 tier on a 5 base would
-    // otherwise hand out a 2.5 head.
-    const base = Math.max(0, Math.round(Number(config.baseBounty) || 0));
-    if (!config.mysteryTiers) return base;
-
-    const random = Math.random() * 100;
-    let cumulative = 0;
-
-    for (const tier of config.mysteryTiers) {
-      cumulative += tier.probability;
-      if (random < cumulative) {
-        // Random value within the tier range
-        const multiplier =
-          tier.minMultiplier === tier.maxMultiplier
-            ? tier.minMultiplier
-            : Math.floor(Math.random() * (tier.maxMultiplier - tier.minMultiplier + 1)) +
-              tier.minMultiplier;
-        return Math.max(0, Math.round(base * multiplier));
-      }
-    }
-
-    return base;
-  }
+  /* DELETED 2026-08-25: `rollMysteryBounty`.
+   *
+   * It rolled a mystery bounty from `Math.random()` against a client-supplied
+   * tier ladder, and it had ZERO callers anywhere in src/ — verified before
+   * deletion. It is removed rather than left "just in case" for the same
+   * reason `collectBounty` above was: a second, unused money path is a live
+   * hazard, and this one decided an amount from the browser.
+   *
+   * What replaces it is not a client function at all. Mystery bounties are now
+   * an INVENTORY: the whole mystery pool is divided into one chest per
+   * surviving player when the phase opens, the order is shuffled with the
+   * server's CSPRNG, and a knockout takes the next chest through
+   * `fn_mystery_bounty_reserve`. The ladder that decides the tier sizes lives
+   * in exactly one place, `server/src/config/mysteryBountySpec.ts`.
+   *
+   * To show a player what is still in the inventory, call
+   * `fn_mystery_bounty_inventory(tournamentId)`; it returns the tiers, their
+   * amounts, and how many of each are left, and it never reveals which chest
+   * is next. */
 
   /**
    * Get total bounties won by a player in a tournament

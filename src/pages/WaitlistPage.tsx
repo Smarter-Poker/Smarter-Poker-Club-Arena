@@ -60,6 +60,11 @@ export default function WaitlistPage() {
             event: '*',
             schema: 'public',
             table: 'table_waitlist',
+            /* DB LOAD PASS 2026-08-24: unfiltered, every waitlist write on the
+               platform reloaded this page's list — a list that only ever shows
+               THIS user's own queue entries (loadWaitlist filters by user_id).
+               Scoped server-side to the same key. Do not widen this. */
+            filter: `user_id=eq.${user.id}`,
           },
           (payload) => {
             loadWaitlistRef.current();

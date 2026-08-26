@@ -361,7 +361,10 @@ export default function HandReplayerPage() {
                       {actionAtStep && (
                         <div
                           className="action-bubble"
-                          style={{ marginTop: '4px', animation: 'fadeInUp 0.3s forwards' }}
+                          style={{
+                            marginTop: '4px',
+                            animation: 'animationsFadeInUp 0.3s forwards',
+                          }}
                         >
                           {actionAtStep.action.toUpperCase()}
                           {actionAtStep.amount ? ` ${actionAtStep.amount}` : ''}

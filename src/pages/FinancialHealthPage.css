@@ -8,6 +8,10 @@
   padding: 16px;
   max-width: 800px;
   margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
 }
 
 .fh-header {
@@ -191,6 +195,7 @@
 .fh-quick-actions {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 .fh-nav-btn {
   flex: 1;
@@ -235,8 +240,9 @@
   }
 
   .fh-refresh-btn {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
+    touch-action: manipulation;
   }
 
   .fh-status-grid {
@@ -253,8 +259,14 @@
   }
 
   .fh-action-btn {
-    min-height: 36px;
+    min-height: 44px;
     padding: 6px 12px;
+    touch-action: manipulation;
+  }
+
+  .fh-nav-btn {
+    min-height: 44px;
+    touch-action: manipulation;
   }
 
   .fh-section-title {

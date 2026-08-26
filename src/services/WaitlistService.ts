@@ -40,7 +40,8 @@ import { supabase } from '../lib/supabase';
 import { readLocalSession } from '../lib/authUtils';
 import { reportError, reportWarning } from '../utils/errorReporter';
 
-export type WaitlistStatus = 'waiting' | 'notified' | 'seated' | 'cancelled' | 'expired';
+// DB constraint: 'waiting'|'notified'|'seated'|'left'|'cleared'|'expired'. 'cancelled' is NOT valid.
+export type WaitlistStatus = 'waiting' | 'notified' | 'seated' | 'left' | 'cleared' | 'expired';
 
 export interface WaitlistEntry {
   id: string;
@@ -227,7 +228,7 @@ export const WaitlistService = {
     }
     const { data, error } = await supabase
       .from('table_waitlist')
-      .update({ status: 'cancelled' })
+      .update({ status: 'left' })
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .in('status', ACTIVE_STATES)
@@ -304,11 +305,43 @@ export const WaitlistService = {
   },
 
   /**
+   * How many players are waiting at EACH of these tables, in one round trip.
+   *
+   * Added 2026-08-25 so the lobby can say "Waitlist 3" instead of "Full".
+   * getTableWaitlist answers for one table and the lobby has up to 46, so
+   * calling it per row would be 46 requests for a badge. This is one `in`
+   * query returning only the ids.
+   *
+   * Returns an empty map on failure rather than throwing: a waitlist count is
+   * an enhancement to a badge, and a table must still list if it cannot be
+   * fetched.
+   */
+  async countsFor(tableIds: string[]): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    if (!tableIds.length) return counts;
+    try {
+      const { data, error } = await supabase
+        .from('table_waitlist')
+        .select('table_id')
+        .in('table_id', tableIds)
+        .eq('status', 'waiting');
+      if (error || !data) return counts;
+      for (const row of data as { table_id: string }[]) {
+        counts.set(row.table_id, (counts.get(row.table_id) ?? 0) + 1);
+      }
+    } catch {
+      /* a badge is not worth an exception */
+    }
+    return counts;
+  },
+
+  /**
    * Every ACTIVE entry on a table, oldest first, each ranked with its 1-based FIFO
    * position. A 'notified' row (being offered a seat right now) ranks 0 and does
    * not consume a position slot. Used by the table page to show who is waiting and
    * to decide whether a horse should yield its seat.
    */
+
   async getTableWaitlist(tableId: string): Promise<WaitlistEntry[]> {
     if (!tableId) return [];
     const { data, error } = await supabase
@@ -409,9 +442,9 @@ export const WaitlistService = {
     if (!tableId) return false;
     const uid = userId ?? (await currentUserId());
     if (!uid) return false;
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('table_waitlist')
-      .update({ status: 'cancelled' })
+      .update({ status: 'left' })
       .eq('table_id', tableId)
       .eq('user_id', uid)
       .in('status', ACTIVE_STATES)
@@ -420,7 +453,9 @@ export const WaitlistService = {
       reportError(error, 'WaitlistService.leave', { tableId, userId: uid });
       return false;
     }
-    return (data?.length ?? 0) > 0;
+    // If data is empty, they were already off the active waitlist (seated, deleted, or cancelled).
+    // The goal is achieved, so return true.
+    return true;
   },
 };
 

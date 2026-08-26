@@ -11,16 +11,50 @@
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
-  background: linear-gradient(180deg, #0a0a0f 0%, #1a1a2e 100%);
+  min-height: 100dvh;
+  background: #000000;
   position: relative;
+  /* CLIP, NOT HIDDEN — this line is load-bearing for the footer.
+     Dan 2026-08-25: "on safari on player accounts, the footer doesn't stay on
+     the footer, it moves around."
+
+     CSS Overflow 3: when one axis is a non-visible value and the other is
+     `visible`, the `visible` one COMPUTES TO `auto`. So `overflow-x: hidden`
+     silently made .club-home a scroll container on BOTH axes. Inside the
+     multi-table lobby tab that made .club-home — not the tab — the nearest
+     scrollport for ClubBottomNav's `position: sticky; bottom: 0`. .club-home
+     is height:auto and never scrolls, so the sticky offset was never applied
+     and the bar rendered at its STATIC flow position part-way down ~3,900px
+     of lobby content: floating over the game cards, exactly as reported.
+
+     `clip` is the one non-visible value the spec exempts from that rule
+     (`visible` stays `visible` when its partner is `clip`), so the horizontal
+     clipping this was always for is kept while .club-home stops being a
+     scrollport. The `hidden` line stays first as the fallback for anything
+     older than Safari 16 / Chrome 90. */
   overflow-x: hidden;
+  overflow-x: clip;
+  width: 100%;
+  max-width: 100vw;
   /* Dan 2026-08-20: was a hardcoded 80px against a bar that measures 74px and
      then ADDS env(safe-area-inset-bottom) on a notched phone — so on an
      iPhone the bar grew past the reservation and covered the last row of game
      cards. Use the token that tracks the component, plus the inset, plus a
      little breathing room. */
   padding-bottom: calc(var(--bottom-nav-clearance, 74px) + 12px);
+}
+
+/* THE RESERVATION MUST MATCH THE BAR THAT IS ACTUALLY THERE.
+   `--bottom-nav-clearance` is `74px + env(safe-area-inset-bottom)`, but Dan
+   2026-08-24 ("THE FOOTER NEEDS TO ACTUALLY BE ATTACHED TO THE BOTTOM, WITH
+   NO PADDING") had the bar drop that inset below 768px - so on a notched
+   iPhone the page reserved ~34px more than the bar occupies and the last game
+   row sat above a black dead band. The bar keeps Dan's flush edge; the page
+   stops paying for padding the bar no longer has. */
+@media (max-width: 768px) {
+  .club-home {
+    padding-bottom: calc(var(--bottom-nav-height, 74px) + 12px);
+  }
 }
 
 .club-home.loading,
@@ -32,118 +66,17 @@
   gap: 1rem;
 }
 
-.club-home .loader {
-  color: #888;
-  font-size: 1.2rem;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    HEADER - Modified Smarter.Poker (No Search)
 ═══════════════════════════════════════════════════════════════════════════════ */
-.club-home__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1rem;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.club-home__user {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.club-home__user-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  overflow: hidden;
-  background: linear-gradient(135deg, #1877f2, #4599ff);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid #3b82f6;
-}
-
-.club-home__user-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.club-home__user-avatar .avatar-placeholder {
-  color: white;
-  font-weight: bold;
-  font-size: 1.2rem;
-}
-
-.club-home__user-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.club-home__username {
-  color: white;
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-
-.club-home__user-id {
-  color: #888;
-  font-size: 0.75rem;
-}
-
-.club-home__header-center {
-  flex: 1;
-  display: flex;
-  justify-content: center;
-}
-
-.club-home__vip-badge {
-  background: linear-gradient(135deg, #2a2a3e, #1a1a2e);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #3b82f6;
-  padding: 0.25rem 0.75rem;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  font-weight: bold;
-  box-shadow: 0 0 10px rgba(255, 255, 255, 0.08);
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.club-home__header-right {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.club-home__diamonds {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  background: rgba(255, 255, 255, 0.1);
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-}
-
-.diamond-icon::before {
-  content: '◆';
-  color: #3b82f6;
-  font-size: 1rem;
-}
-
-.diamond-amount {
-  color: white;
-  font-weight: 600;
-  font-size: 0.9rem;
-}
+/* THE PAGE'S OWN HEADER, USER CHIP, DIAMOND COUNTER, BBJ BANNER AND WALLET
+   ROWS USED TO BE DECLARED HERE - about 250 lines of .club-home__header /
+   __user* / __diamonds / __vip-badge / __bbj / .bbj-* / __wallet / .wallet-*
+   / .gold-icon / .diamond-amount. Every one of them was dead: this page's
+   only <header> is .lobby-top, and the jackpot and the balances have been
+   DynamicWallet's (dw__*) since 2026-08-20. Deleted 2026-08-25 rather than
+   left to be maintained. Two of them were also GLOBAL rules leaking onto
+   other pages - see the note on .diamond-icon further down. */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    LOBBY HEADER — rebuilt 2026-08-20 (Dan)
@@ -163,7 +96,15 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 8px 1rem 10px;
+  /* Dan 2026-08-24: "THE TOP OF WHERE THE CLUB AND BBJ START NEEDS TO BE
+     RAISED UP, SO IT'S 1 PIXEL UNDER WHERE THE TICKER RUNS THROUGH UNDER THE
+     GLOBAL HEADER." The phone got this on 2026-08-24 as a 768px override;
+     desktop kept the original 8px, so the same page had two different answers
+     to the same question and the wide layout — where the gap is most visible,
+     because the ticker spans the full width above it — was the one still
+     showing it. One rule at the base now, no breakpoint override, so the club
+     card and the wallet start directly under the ticker at every width. */
+  padding: 1px 1rem 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.025) 0%, transparent 100%);
 }
@@ -186,7 +127,7 @@
 }
 
 .lobby-top__wallet {
-  flex: 0 1 220px;
+  flex: 0 1 260px;
   min-width: 0;
 }
 
@@ -204,12 +145,12 @@
 }
 
 .lobby-club__avatar {
-  width: 220px;
-  height: 220px;
+  width: 192px;
+  height: 192px;
   flex-shrink: 0;
   border-radius: 12px;
   overflow: hidden;
-  background: linear-gradient(135deg, #2a2a3e, #1a1a2e);
+  background: #000;
   border: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
@@ -230,7 +171,7 @@
 
 .lobby-club__avatar-fallback {
   color: #3b82f6;
-  font-size: 1.5rem;
+  font-size: 4.5rem;
   line-height: 1;
 }
 
@@ -271,23 +212,6 @@
   align-items: center;
   gap: 4px;
   font-variant-numeric: tabular-nums;
-}
-
-.lobby-club__online {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: #34d399;
-  font-variant-numeric: tabular-nums;
-}
-
-.lobby-club__online::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #34d399;
-  box-shadow: 0 0 6px rgba(52, 211, 153, 0.8);
 }
 
 .lobby-club__share {
@@ -336,7 +260,7 @@
   overflow: hidden;
 }
 
-@media (max-width: 420px) {
+@media (max-width: 480px) {
   .lobby-top__main {
     flex-direction: column;
   }
@@ -353,10 +277,7 @@
 }
 
 .bbj-label {
-  background: linear-gradient(90deg, #ef4444, #f59e0b);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-secondary, #c8ccd4);
   font-size: 0.65rem;
   font-weight: bold;
   line-height: 1.2;
@@ -364,14 +285,17 @@
 }
 
 .bbj-amount {
-  background: linear-gradient(180deg, #3a3a4e 0%, #2a2a3e 100%);
+  background: #000;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   padding: 0.3rem 0.65rem;
-  color: #10b981;
+  color: #ffffff;
   font-weight: bold;
   font-size: 1rem;
-  font-family: 'Oswald', 'Impact', monospace;
+  font-family:
+    'Inter',
+    -apple-system,
+    sans-serif;
   letter-spacing: 0.5px;
   position: relative;
   overflow: hidden;
@@ -388,7 +312,7 @@
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 215, 0, 0.12), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
   animation: bbjAmountShimmer 4s ease-in-out infinite;
 }
 
@@ -419,7 +343,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  background: linear-gradient(180deg, #2a2a3e 0%, #1a1a2e 100%);
+  background: #000;
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -486,10 +410,23 @@
   transform: translateY(-2px);
   box-shadow: 0 0 15px rgba(16, 185, 129, 0.5);
 }
-
 /* The .club-home__intro block moved into the header as .lobby-top__notice
    (line-clamped), and the three-row .club-home__filters / .filter-tab stack was
    replaced by the single .game-bar below. Both sets of markup are gone. */
+
+/* ── RULES THAT WERE NEVER THIS PAGE'S, DELETED 2026-08-25 ──────────────────
+   This stylesheet is imported as a GLOBAL sheet, so everything in it applies
+   app-wide once the lobby has been visited once. It still carried the card
+   grid this page replaced with LobbyTable in the V2 rebuild - .table-card*,
+   .tournament-card*, .new-badge, .status-dot, .filter-tab - and none of those
+   class names appear in ClubHomePage.tsx any more. They DO appear elsewhere:
+   .table-card in TournamentDetails, .tournament-card in TournamentPage,
+   .new-badge in PromoCard, .status-dot in InviteToTable and StatusBadge,
+   .filter-tab on three admin pages. So these were not merely dead - they were
+   repainting other people's components from a stylesheet named for this one,
+   including a `.new-badge` that rotated the promo badge -15deg and a
+   `.filter-tab.active::after` that drew a blue underline on three admin
+   filter bars. Those components own their own styling. */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    GAME ACTION BAR — every game type in one flat, scrollable row
@@ -508,34 +445,45 @@
 }
 
 .game-bar__types {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
   display: flex;
+  justify-content: flex-start;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-  /* Fade the right edge so it reads as "more to scroll" rather than as a row
-     that happens to end at the viewport. */
-  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent 100%);
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent 100%);
-}
-
-.game-bar__types::-webkit-scrollbar {
-  display: none;
+  /* ROW-GAP IS A TAP TARGET, NOT DECORATION (2026-08-25).
+     These chips are 32px tall and carry the shared 44px invisible ::after hit
+     area from club-engine.css, so each one reaches 6px past its own box top
+     and bottom. At 375px the seven chips wrap onto three rows, and with the
+     3px row-gap this used to have, every chip on an upper row had its lower
+     half covered by the ::after of the chip directly beneath it — which comes
+     later in the document and therefore wins the hit test. Measured on
+     production: 24px of reach on all six upper-row chips against the 40px the
+     audit requires, and, in plain terms, a thumb aimed just under NLH
+     selecting LIMIT instead.
+     12px is the smallest row-gap that separates the two bands (the overhangs
+     are 6px each). Re-measured after the change: all seven chips at 40px.
+     Column gap stays at 3px — the chips are wide and were never at risk
+     sideways, and widening them there WOULD steal the neighbour's taps. */
+  gap: 12px 3px;
+  overflow: visible;
+  padding-block: 6px;
 }
 
 .game-bar__type {
-  flex-shrink: 0;
-  height: 34px;
-  padding: 0 14px;
-  border-radius: 17px;
+  flex: 1 1 auto;
+  min-width: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 2px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.06);
   color: #9aa5b6;
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 0.65rem;
+  font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
   transition:
@@ -584,6 +532,9 @@
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
+  /* Same clip as .friends-tabs: a horizontal scroll row crops the vertical
+     touch area its chips rely on. See club-engine.css. */
+  padding-block: 6px;
 }
 
 .quickprefs__row::-webkit-scrollbar {
@@ -600,24 +551,18 @@
 }
 
 .quickprefs__chip {
-  flex: 1 1 0;
-  /* min-width:0 so four chips divide 375px instead of overflowing - the same
-     auto-minimum trap that blew out the filter sheet's feature grid. */
-  min-width: 0;
-  min-height: 32px;
-  padding: 0 10px;
-  border-radius: 6px;
+  flex-shrink: 0;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: #0f1420;
-  color: #cfd8e5;
+  background: rgba(255, 255, 255, 0.06);
+  color: #9aa5b6;
+  transition: all 0.2s ease;
   font-size: 0.72rem;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
-  transition:
-    background 0.18s ease,
-    color 0.18s ease,
-    border-color 0.18s ease;
 }
 
 .quickprefs__chip:hover {
@@ -626,10 +571,11 @@
 }
 
 .quickprefs__chip.is-on {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  border-color: #3b82f6;
-  color: #17130a;
+  background: linear-gradient(135deg, #0088ff, #0055ff);
+  border-color: rgba(0, 136, 255, 0.75);
+  color: #ffffff;
   font-weight: 800;
+  box-shadow: 0 0 14px rgba(0, 136, 255, 0.35);
 }
 
 .quickprefs__chip:focus-visible {
@@ -641,19 +587,17 @@
    always reachable no matter how many tier chips the active spec declares. */
 .quickprefs__more {
   flex: 0 0 auto;
-  width: 34px;
+  width: 32px;
   height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.06);
   color: #3b82f6;
+  transition: all 0.2s ease;
   cursor: pointer;
-  transition:
-    border-color 0.18s ease,
-    background 0.18s ease;
 }
 
 .quickprefs__more:hover {
@@ -697,7 +641,7 @@
    last week and comes back to a short list must be able to see WHY. Gold
    fill plus a dot, matching how the sort control signals a non-default. */
 .game-bar__filter-btn.is-set {
-  color: #17130a;
+  color: #ffffff;
   background: linear-gradient(135deg, #3b82f6, #2563eb);
   border-color: #3b82f6;
   font-weight: 800;
@@ -709,99 +653,8 @@
 }
 
 /* ── Sort control ────────────────────────────────────────────────────────── */
-.game-bar__sort {
-  position: relative;
-  flex-shrink: 0;
-}
-
-.game-bar__sort-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 34px;
-  max-width: 132px;
-  padding: 0 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  background: rgba(255, 255, 255, 0.06);
-  color: #9aa5b6;
-  font-size: 0.7rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    color 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.game-bar__sort-btn span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.game-bar__sort-btn:hover {
-  color: #dfe5ee;
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
 /* A non-default sort is a filter-like state the player can forget they set.
    Colour it so an unexpected ordering is explained by the control itself. */
-.game-bar__sort-btn.is-set {
-  color: #00c8ff;
-  border-color: rgba(0, 200, 255, 0.45);
-  background: rgba(0, 200, 255, 0.1);
-}
-
-.game-bar__sort-btn:focus-visible {
-  outline: 2px solid rgba(0, 200, 255, 0.6);
-  outline-offset: 2px;
-}
-
-.game-bar__sort-shield {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-}
-
-.game-bar__sort-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 41;
-  margin: 0;
-  padding: 4px;
-  list-style: none;
-  min-width: 186px;
-  border-radius: 10px;
-  background: linear-gradient(180deg, #262639 0%, #1a1a2c 100%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
-}
-
-.game-bar__sort-menu button {
-  width: 100%;
-  min-height: 36px;
-  padding: 0 10px;
-  border: none;
-  border-radius: 7px;
-  background: transparent;
-  color: #c3cbd8;
-  font-size: 0.75rem;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.game-bar__sort-menu button:hover {
-  background: rgba(255, 255, 255, 0.07);
-}
-
-.game-bar__sort-menu button.is-active {
-  color: #0088ff;
-  background: rgba(0, 136, 255, 0.12);
-  font-weight: 700;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    SUB-FILTERS (Cash: Live/Empty/Full | Tournament: Running/Registering/etc.)
 ═══════════════════════════════════════════════════════════════════════════════ */
@@ -834,32 +687,6 @@
 .lobby-count__text strong {
   color: #e6ebf2;
   font-weight: 700;
-}
-
-.lobby-count__clear {
-  flex: 0 0 auto;
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  padding: 4px 12px;
-  color: #9fb4d0;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  cursor: pointer;
-  transition:
-    color 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.lobby-count__clear:hover {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.lobby-count__clear:focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.2);
-  outline-offset: 2px;
 }
 
 .club-home__games {
@@ -909,24 +736,6 @@
 .lobby-createbtn:hover {
   background: rgba(65, 105, 225, 0.2);
 }
-.lobby-favtoggle {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-secondary, #c8ccd4);
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-.lobby-favtoggle.is-on {
-  border-color: rgba(255, 215, 0, 0.5);
-  background: rgba(255, 215, 0, 0.1);
-  color: var(--warning-gold, #ffd700);
-}
-
 .club-home__games {
   animation: gamesGridFade 0.5s ease-out;
 }
@@ -942,32 +751,18 @@
   }
 }
 
-.new-badge {
-  position: absolute;
-  top: -10px;
-  left: -10px;
-  background: linear-gradient(135deg, #888, #666);
-  color: white;
-  font-size: 0.7rem;
-  font-weight: bold;
-  font-style: italic;
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  transform: rotate(-15deg);
-}
-
-.plus-icon {
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 2rem;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    TABLE CARD
 ═══════════════════════════════════════════════════════════════════════════════ */
+/* (`.status-dot.running,` was stranded here when the table-card and
+   tournament-card blocks were deleted: the dangling comma joined it to the
+   NEXT rule's selector list, so .empty-tables' centred grey padding was being
+   applied to the status dot on every page that renders one. Deleted 2026-08-25
+   in the pass that found it.) */
 .table-card {
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, #2a2a3e 0%, #1a1a2e 100%);
+  background: #000;
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1059,7 +854,7 @@
 .tournament-card {
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, #1a2a3e 0%, #0f1a2e 100%);
+  background: #000;
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
   border: 1px solid rgba(59, 130, 246, 0.2);
@@ -1113,7 +908,7 @@
 }
 
 .tournament-card__status.registering {
-  color: #10b981;
+  color: #ffffff;
 }
 
 .tournament-card__body {
@@ -1140,7 +935,7 @@
 }
 
 .tournament-card__gtd {
-  color: #10b981;
+  color: #ffffff;
   font-weight: 600;
   font-size: 0.75rem;
   margin-top: 0.15rem;
@@ -1162,7 +957,6 @@
   color: #888;
   font-size: 0.7rem;
 }
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    EMPTY STATE
 ═══════════════════════════════════════════════════════════════════════════════ */
@@ -1240,63 +1034,23 @@
   .empty-action:hover {
     transform: none;
   }
+  /* This block covered ONE hover transform. The animations a
+     motion-sensitive player actually meets on this page were all declared
+     after it and untouched: the games grid fades and slides on every filter
+     change, and the spin-join overlay fades in behind a spinner that rotates
+     forever. */
+  .club-home__games,
+  .spin-join-overlay,
+  .spin-join-spinner {
+    animation: none;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    BACKGROUND (Premium Bar Scene)
 ═══════════════════════════════════════════════════════════════════════════════ */
-.club-home__background {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 50vh;
-  background: linear-gradient(
-    180deg,
-    transparent 0%,
-    rgba(13, 79, 60, 0.3) 50%,
-    rgba(13, 79, 60, 0.5) 100%
-  );
-  pointer-events: none;
-  z-index: 0;
-}
 
 /* Table Card Wrapper — contains Link + Delete button */
-.table-card-wrapper {
-  position: relative;
-}
-
-.table-card__delete-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 59, 48, 0.4);
-  background: rgba(255, 59, 48, 0.15);
-  color: #ff3b30;
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.table-card__delete-btn:hover {
-  background: rgba(255, 59, 48, 0.35);
-  border-color: #ff3b30;
-  transform: translateY(-2px);
-  box-shadow: 0 0 10px rgba(255, 59, 48, 0.5);
-}
-
-.table-card__delete-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    RESPONSIVE
 ═══════════════════════════════════════════════════════════════════════════════ */
@@ -1356,298 +1110,21 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 /* P4-1: Ambient Background Particles */
-.club-home::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(1px 1px at 15% 25%, rgba(0, 212, 255, 0.15), transparent),
-    radial-gradient(1px 1px at 45% 65%, rgba(0, 255, 180, 0.1), transparent),
-    radial-gradient(1px 1px at 75% 35%, rgba(0, 180, 255, 0.12), transparent),
-    radial-gradient(1px 1px at 85% 80%, rgba(0, 212, 255, 0.08), transparent),
-    radial-gradient(1px 1px at 30% 90%, rgba(0, 255, 136, 0.1), transparent);
-  animation: ambientDrift 20s ease-in-out infinite alternate;
-}
-
-@keyframes ambientDrift {
-  0% {
-    opacity: 0.3;
-    transform: translateY(0);
-  }
-  100% {
-    opacity: 0.6;
-    transform: translateY(-15px);
-  }
-}
-
 /* P4-2: Level Bar Sparkle at Fill Tip */
-.club-level-progress__fill::before {
-  content: '';
-  position: absolute;
-  right: -2px;
-  top: -1px;
-  width: 6px;
-  height: calc(100% + 2px);
-  background: rgba(255, 255, 255, 0.7);
-  border-radius: 3px;
-  filter: blur(2px);
-  animation: sparkleGlow 2s ease-in-out infinite;
-  z-index: 1;
-}
-
-@keyframes sparkleGlow {
-  0%,
-  100% {
-    opacity: 0.3;
-    box-shadow: 0 0 4px rgba(0, 212, 255, 0.3);
-  }
-  50% {
-    opacity: 1;
-    box-shadow:
-      0 0 12px rgba(0, 212, 255, 0.8),
-      0 0 24px rgba(0, 212, 255, 0.4);
-  }
-}
-
 /* P4-3: Game Card Scanner Sweep on Hover */
-.table-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 50%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.04), transparent);
-  transition: none;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.table-card {
-  position: relative;
-  overflow: hidden;
-}
-
-.table-card:hover::before {
-  animation: cardScanSweep 0.8s ease-out;
-}
-
-@keyframes cardScanSweep {
-  0% {
-    left: -100%;
-  }
-  100% {
-    left: 200%;
-  }
-}
-
-/* P4-4: Bottom Nav Active Tab Glow */
-.club-home__bottom-nav .nav-item.active,
-.club-bottom-nav .nav-btn.active {
-  position: relative;
-}
-
-.club-home__bottom-nav .nav-item.active::after,
-.club-bottom-nav .nav-btn.active::after {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 24px;
-  height: 2px;
-  background: #00d4ff;
-  border-radius: 1px;
-  box-shadow:
-    0 0 8px rgba(0, 212, 255, 0.5),
-    0 0 16px rgba(0, 212, 255, 0.25);
-  animation: navGlowPulse 2s ease-in-out infinite;
-}
-
-@keyframes navGlowPulse {
-  0%,
-  100% {
-    box-shadow: 0 0 6px rgba(0, 212, 255, 0.4);
-    width: 24px;
-  }
-  50% {
-    box-shadow:
-      0 0 14px rgba(0, 212, 255, 0.7),
-      0 0 28px rgba(0, 212, 255, 0.3);
-    width: 30px;
-  }
-}
-
-/* P4-5: Tournament Card Premium Border Glow */
-.tournament-card.live::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: 9px;
-  background: linear-gradient(
-    135deg,
-    rgba(239, 68, 68, 0.3),
-    rgba(255, 100, 50, 0.2),
-    rgba(239, 68, 68, 0.3)
-  );
-  z-index: -1;
-  filter: blur(4px);
-  animation: liveCardGlow 2s ease-in-out infinite;
-}
-
-.tournament-card {
-  position: relative;
-  overflow: visible;
-}
-
-@keyframes liveCardGlow {
-  0%,
-  100% {
-    opacity: 0.5;
-  }
-  50% {
-    opacity: 1;
-  }
-}
+/* (Two `.nav-item.active` selectors were stranded here the same way, and
+   their trailing comma made the parser read `@keyframes liveCardGlow` as part
+   of the SELECTOR LIST - so the at-rule stopped existing and an invalid
+   qualified rule shipped in its place. Both selectors are gone with the rule
+   they belonged to, and liveCardGlow / cardScanSweep went with them: nothing
+   has referenced either since the card grid was replaced.) */
 
 /* P4-6: Club Header Section Depth */
-.club-home__club-section {
-  position: relative;
-}
-
-.club-home__club-section::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 1rem;
-  right: 1rem;
-  height: 1px;
-  background: linear-gradient(90deg, transparent 10%, rgba(0, 212, 255, 0.12), transparent 90%);
-}
-
 /* P4-7: Filter Tab Slide Underline */
-.filter-tab.active::after {
-  content: '';
-  position: absolute;
-  bottom: -2px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 60%;
-  height: 2px;
-  background: linear-gradient(90deg, #3b82f6, #2563eb);
-  border-radius: 1px;
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
-}
-
-.filter-tab {
-  position: relative;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    ANIMATIONS (extracted from inline <style>)
 ═══════════════════════════════════════════════════════════════════════════════ */
-@keyframes clubHomePageSlideInUp {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes clubHomePageSlideInLeft {
-  from {
-    opacity: 0;
-    transform: translateX(-16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-.club-home__stats-animated {
-  animation: clubHomePageSlideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.club-home__games-item-animated {
-  animation: clubHomePageSlideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-  opacity: 0;
-}
-
-@keyframes clubHomePageShimmer {
-  0% {
-    background-position: -1000px 0;
-  }
-  100% {
-    background-position: 1000px 0;
-  }
-}
-
-.club-home__skeleton {
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.1) 25%,
-    rgba(255, 255, 255, 0.2) 50%,
-    rgba(255, 255, 255, 0.1) 75%,
-    rgba(255, 255, 255, 0.1)
-  );
-  background-size: 1000px 100%;
-  animation: clubHomePageShimmer 2s infinite;
-}
-
 /* BBJ lobby ticker spacing (2026-08-18) */
-.club-home__bbj-ticker {
-  padding: 0 12px;
-  margin-bottom: 10px;
-}
-
-@media (max-width: 480px) {
-  .club-home__bbj-ticker {
-    padding: 0 8px;
-    margin-bottom: 8px;
-  }
-}
-
-/* Dan 2026-08-21: real search box under the header bar (the icon used to be
-   a no-op). Filters cash tables + tournament cards by name. */
-.lobby-top__searchbox {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 12px 0;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-}
-
-.lobby-top__searchbox input {
-  flex: 1;
-  background: none;
-  border: none;
-  outline: none;
-  color: #fff;
-  font-size: 0.9rem;
-}
-
-.lobby-top__searchbox input::placeholder {
-  color: rgba(255, 255, 255, 0.4);
-}
-
-.lobby-top__searchclear {
-  background: none;
-  border: none;
-  color: rgba(255, 255, 255, 0.55);
-  cursor: pointer;
-  font-size: 0.85rem;
-  padding: 2px 6px;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
    SPIN QUICK-JOIN OVERLAY (Dan 2026-08-20: no lobby for a spin — tap the
    tile, land on the table). Shown from tap until the seat exists.
@@ -1655,7 +1132,12 @@
 .spin-join-overlay {
   position: fixed;
   inset: 0;
-  z-index: 900;
+  /* ABOVE THE BOTTOM NAV (z-index: 1000). At 900 the nav painted on top of a
+     blocking overlay and stayed tappable, so a player could navigate to the
+     Cashier in the middle of a spin buy-in and leave the pending seat
+     orphaned. Neither element has an ancestor stacking context, so these two
+     values are compared directly. */
+  z-index: 1100;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1672,7 +1154,7 @@
   gap: 10px;
   padding: 28px 34px;
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(20, 28, 40, 0.97), rgba(10, 15, 24, 0.98));
+  background: #000;
   border: 1px solid rgba(80, 220, 130, 0.25);
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
 }
@@ -1730,6 +1212,12 @@
   cursor: pointer;
   transition: background 0.2s;
 }
+/* It is role="button" with tabIndex={0} for staff, so it needs to show focus. */
+.lobby-top__notice--editable:focus-visible {
+  outline: 2px solid rgba(0, 200, 255, 0.6);
+  outline-offset: 2px;
+}
+
 .lobby-top__notice--editable:hover {
   background: rgba(0, 0, 0, 0.5);
 }
@@ -1764,4 +1252,120 @@
 }
 .lobby-top__notice-actions button:last-child {
   background: #0088ff;
+}
+
+/* Two `!important`s used to sit here, zeroing a horizontal padding on
+   .club-home that this stylesheet never sets. The only other global rule for
+   that class is components/club/ClubHome.css, whose component is exported from
+   a barrel that nothing imports - so the sheet never loads and the overrides
+   were winning a fight that had already ended. */
+
+/* E2E 2026-08-23: the level badge row overflowed the club card at <=480px
+   (badge measured right:407 in a 390px viewport). Let the row wrap and the
+   badge shrink instead of clipping. */
+@media (max-width: 480px) {
+  .lobby-club__level {
+    flex-wrap: wrap;
+  }
+  .club-level-badge {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+  .club-level-badge__tier {
+    white-space: normal;
+  }
+}
+
+/* ── Dan 2026-08-24 (iPhone screenshots): the 192px club art left the info
+   column ~150px on a phone — the name truncated to two letters, the level
+   chip clipped off the right edge, and the whole card read as smushed.
+   Smaller art on small screens; the info column gets the width back. Plus a
+   litte top air: the card sat flush against the header. ─────────────────── */
+@media (max-width: 768px) {
+  /* The 1px top is on the base .lobby-top rule now — it is the same at
+     every width, so this breakpoint no longer restates it. */
+
+  .lobby-club__avatar {
+    width: 112px;
+    height: 112px;
+  }
+
+  .lobby-club__avatar-fallback {
+    font-size: 2.6rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .lobby-club__avatar {
+    width: 92px;
+    height: 92px;
+  }
+
+  .lobby-club__name {
+    font-size: 0.95rem;
+  }
+}
+
+/* ── QUICK-PREF CHIPS FIT THE PHONE (Dan 2026-08-24) ────────────────────────
+   "FAVORITES AND THE UP/DOWN ARROW ARE CUT OFF AND YOU NEED TO SLIDE TO SEE
+   THEM." The row is a horizontal scroller, which is the right structure — but
+   a scroller that always overflows is just a hidden control. Six 32px chips
+   at 14px of side padding plus a label and the sheet button measured past
+   390px; at these sizes the same set lands inside it, and the scroller stays
+   as the safety net for a club that declares more tiers than usual. */
+@media (max-width: 768px) {
+  .quickprefs {
+    padding: 0 8px 6px;
+  }
+
+  .quickprefs__row {
+    gap: 4px;
+  }
+
+  .quickprefs__label {
+    font-size: 0.6rem;
+    padding-right: 0;
+  }
+
+  .quickprefs__chip {
+    height: 27px;
+    padding: 0 8px;
+    border-radius: 14px;
+    font-size: 0.64rem;
+  }
+
+  /* 27px CHIPS, 44px TARGETS. These are the stakes and status filters - the
+     controls a player touches most on this page - and 27px is well under the
+     44px minimum on every phone. The pill keeps its compact look and the
+     target is extended by a transparent overlay, the same pattern
+     .lobby-ads__dot and .dw__plus already use. Padding on the scrolling row
+     cannot do this: it does not enlarge a child's hit box. */
+  .quickprefs__chip,
+  .quickprefs__more {
+    position: relative;
+  }
+
+  .quickprefs__chip::after,
+  .quickprefs__more::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+
+  .quickprefs__more {
+    width: 27px;
+    height: 27px;
+    border-radius: 14px;
+  }
+}
+
+@media (max-width: 380px) {
+  .quickprefs__chip {
+    padding: 0 6px;
+    font-size: 0.61rem;
+  }
 }

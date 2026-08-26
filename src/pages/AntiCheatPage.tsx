@@ -709,7 +709,7 @@ export default function AntiCheatPage() {
               <label className={styles.formLabel}>Notes (Optional)</label>
               <input
                 className={styles.formInput}
-                placeholder="Add review notes..."
+                placeholder="Add Review Notes..."
                 value={reviewNotes}
                 onChange={(e) => setReviewNotes(e.target.value)}
               />

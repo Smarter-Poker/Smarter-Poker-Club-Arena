@@ -179,6 +179,8 @@ export const STORAGE_KEYS = {
   // ── Cache ──
   LOBBY_CACHE: 'club_arena_lobby_cache',
   PLAYER_STATS_CACHE: 'club_arena_player_stats',
+  CLUB_STATS_CACHE: 'smp_club_stats_cache',
+  CLUB_STATS_CACHE_TS: 'smp_club_stats_cache_ts',
   CLUBS_CACHE: 'club_arena_clubs_cache', // Cached club list
   CLUBS_CACHE_TS: 'club_arena_clubs_cache_ts', // Cache timestamp
   CLUBS_PAGE_CACHE: 'clubs_page_clubs_cache',

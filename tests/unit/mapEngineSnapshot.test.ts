@@ -47,7 +47,7 @@ describe('mapEngineSnapshot.winners[].netAmount (Phase X6 FE-037 P0)', () => {
     expect(heroWin!.netAmount).toBe(45); // 95 - 50
   });
 
-  it('hero loses → netAmount clamped to 0 (we never show negative float)', () => {
+  it('a losing hero produces no winners row at all, so there is nothing to net', () => {
     const snap = makeSnapshot({
       players: [
         { seat: 1, user_id: 'hero', stack: 950, totalInvested: 50 } as never,
@@ -56,8 +56,11 @@ describe('mapEngineSnapshot.winners[].netAmount (Phase X6 FE-037 P0)', () => {
       winners: [{ user_id: 'opp1', amount: 95 } as never],
     });
     const out = mapEngineSnapshot(snap, 'hero', 9);
-    // Hero is not in winners[], so no row to clamp — but the formula still
-    // applies if a row exists with amount < invested (e.g. split pot loss).
+    // Hero is not in winners[] at all — an outright loser has no row, so the
+    // seat renders no float and nothing needs clamping. The signed formula
+    // only ever bites where a row DOES exist but came back short, which is the
+    // chopped-and-raked case covered by the split-pot test below.
+    expect(out.winners.find((w) => w.userId === 'hero')).toBeUndefined();
     const oppWin = out.winners.find((w) => w.userId === 'opp1');
     expect(oppWin!.netAmount).toBe(45);
   });
@@ -73,9 +76,13 @@ describe('mapEngineSnapshot.winners[].netAmount (Phase X6 FE-037 P0)', () => {
     const out = mapEngineSnapshot(snap, 'hero', 9);
     const a = out.winners.find((w) => w.userId === 'a');
     const b = out.winners.find((w) => w.userId === 'b');
-    // Each invested 50, got 47.5 back (after rake) — small loss, clamped to 0
-    expect(a!.netAmount).toBe(0);
-    expect(b!.netAmount).toBe(0);
+    // Each invested 50 and got 47.5 back after rake. That is a real 2.5 loss on
+    // a pot they "won", and it is the exact case Dan named on 2026-08-23:
+    // "+XXX or -XXX if the pot was chopped and rake was removed". This used to
+    // assert 0 because the mapper clamped with Math.max(0, ...) — which then
+    // also failed the render's `> 0` gate, so the float showed nothing at all.
+    expect(a!.netAmount).toBe(-2.5);
+    expect(b!.netAmount).toBe(-2.5);
   });
 
   it('totalInvested missing → invested treated as 0 (defensive)', () => {
@@ -101,11 +108,24 @@ describe('mapEngineSnapshot.winners[].netAmount (Phase X6 FE-037 P0)', () => {
     const out = mapEngineSnapshot(snap, 'hero', 9);
     const hero = out.winners.find((w) => w.userId === 'hero');
     const opp = out.winners.find((w) => w.userId === 'opp');
-    // Each won one run, contributed 100 total (50 per run). RIT splits invested.
-    // Mapper currently uses player's totalInvested (full), so net = 95 - 100 = -5 → 0.
-    // This is conservative; spec accepts it (PokerBros never shows negative on RIT).
-    expect(hero!.netAmount).toBe(0);
-    expect(opp!.netAmount).toBe(0);
+    // -5 each, and that is CORRECT — charging the full totalInvested against
+    // one run's winnings is the right accounting here, not a rounding error.
+    // Work it through: 100 in from each is a 200 pot, 10 comes off as rake, and
+    // the remaining 190 runs twice at 95. Each player takes one run: 95 back on
+    // 100 in. The two -5s sum to -10, which is the rake, exactly.
+    //
+    // The old assertion was 0, with a comment calling the mapper "conservative"
+    // and citing "PokerBros never shows negative on RIT". Both halves were
+    // wrong. The mapper was already right; Math.max(0, ...) was flattening a
+    // TRUE -5 into a false 0, and the `> 0` render gate then dropped the float
+    // entirely. Split a raked pot any number of ways and somebody is down — the
+    // rake has to come from somewhere, and refusing to display that does not
+    // stop it happening, it just stops the player being told.
+    //
+    // Dan 2026-08-23: "+XXX or -XXX if the pot was chopped and rake was
+    // removed." This is that hand.
+    expect(hero!.netAmount).toBe(-5);
+    expect(opp!.netAmount).toBe(-5);
   });
 });
 

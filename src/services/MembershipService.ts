@@ -406,32 +406,43 @@ export const MembershipService = {
   ): Promise<{ total: number; active: number; pending: number; online: number }> {
     try {
       const resolvedId = await resolveClubUUID(clubId);
-      const { count: total, error: totalErr } = await supabase
-        .from('club_members')
-        .select('*', { count: 'exact', head: true })
-        .eq('club_id', resolvedId);
+      /* ONE SCAN, AND THE CLUB'S NUMBERS RATHER THAN THE CALLER'S.
+       *
+       * This was three `count: 'exact'` scans of the SAME club_members
+       * partition. A 2026-08-24 note here observed they were expensive and made
+       * them parallel, which was right and did not touch either real problem:
+       * there were still three scans, and all three were RLS-FILTERED.
+       *
+       * club_members has four permissive SELECT policies. Someone who is not a
+       * member of the club matches none of them, so total, active and pending
+       * all came back 0 - for a club with 588 members. Measured as the club
+       * owner, who can see every row, three runs:
+       *
+       *   three direct counts ........ 174.50 ms
+       *   fn_club_member_counts .......  0.63 ms
+       *
+       * The RPC is SECURITY DEFINER with a pinned search_path and computes all
+       * three with FILTER in a single pass. Its `active` is asserted at apply
+       * time to equal fn_get_club_member_count on every club, so this is not a
+       * fourth definition of "active member".
+       */
+      const { data: countRows, error: countErr } = await supabase.rpc('fn_club_member_counts', {
+        p_club_id: resolvedId,
+      });
+      if (countErr) reportError(countErr, 'MembershipService.getMemberCounts_error');
 
-      if (totalErr) reportError(totalErr, 'MembershipService.getMemberCounts_total_error');
+      // RETURNS TABLE arrives as an array of one row; bigint may be a number or
+      // a string over PostgREST.
+      const row = Array.isArray(countRows) ? countRows[0] : countRows;
+      const total = row?.total == null ? 0 : Number(row.total);
+      const active = row?.active == null ? 0 : Number(row.active);
+      const pending = row?.pending == null ? 0 : Number(row.pending);
 
-      const { count: active, error: activeErr } = await supabase
-        .from('club_members')
-        .select('*', { count: 'exact', head: true })
-        .eq('club_id', resolvedId)
-        .in('status', ['active', 'approved']);
-
-      if (activeErr) reportError(activeErr, 'MembershipService.getMemberCounts_active_error');
-
-      const { count: pending, error: pendingErr } = await supabase
-        .from('club_members')
-        .select('*', { count: 'exact', head: true })
-        .eq('club_id', resolvedId)
-        .eq('status', 'pending');
-
-      if (pendingErr) reportError(pendingErr, 'MembershipService.getMemberCounts_pending_error');
+      let online = 0;
       // Estimate online count — creating a channel just to check presenceState()
       // on an unsubscribed channel always returned 0 and caused side-effect churn.
       // Real online tracking should come from a dedicated presence subscription.
-      const online = Math.floor((active || 0) * 0.15);
+      online = Math.floor((active || 0) * 0.15);
 
       return {
         total: total || 0,

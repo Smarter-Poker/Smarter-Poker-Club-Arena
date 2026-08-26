@@ -288,7 +288,7 @@ export default function ReportReviewPage() {
                     <textarea
                       value={adminNotes}
                       onChange={(e) => setAdminNotes(e.target.value)}
-                      placeholder="Add notes about your decision..."
+                      placeholder="Add Notes About Your Decision..."
                       rows={3}
                     />
                   </div>

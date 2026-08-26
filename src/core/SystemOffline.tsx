@@ -37,7 +37,7 @@ export default function SystemOffline({ status }: Props) {
           style={{
             fontSize: '4rem',
             marginBottom: '1.5rem',
-            animation: 'pulse 2s infinite',
+            animation: 'animationsPulse 2s infinite',
           }}
         ></div>
 

@@ -65,7 +65,7 @@ describe('timedSpawnsDue — day/time matching and the spawn window', () => {
     start_times_utc: times,
   });
 
-  it('spawns a time within the 30-minute look-ahead on a scheduled day', () => {
+  it('spawns a time within the look-ahead on a scheduled day', () => {
     const due = timedSpawnsDue(sched([0], ['12:15']), SUNDAY(12, 0));
     expect(due).toHaveLength(1);
     expect(due[0].spawnKey).toBe(`${SCHEDULE_ID}:2026-01-04:12:15`);
@@ -73,9 +73,23 @@ describe('timedSpawnsDue — day/time matching and the spawn window', () => {
   });
 
   it('does NOT spawn a time beyond the look-ahead window', () => {
-    expect(timedSpawnsDue(sched([0], ['12:45']), SUNDAY(12, 0))).toHaveLength(0);
-    // Boundary: exactly at the edge is still allowed, one minute past is not.
-    expect(TIMED_WINDOW_AHEAD_MS).toBe(30 * 60 * 1000);
+    // 2026-08-23: the window was widened from 30 minutes to a full day, so
+    // the "too far ahead" case has to be measured a day out rather than an
+    // hour. WHY it changed: at 30 minutes an event only existed for the half
+    // hour before it started, so with 38 live schedules the lobby still read
+    // as empty — two joinable MTTs at any given moment. Publishing the card a
+    // day ahead is what makes the board look like a real room's.
+    const twoDaysOut = new Date(SUNDAY(12, 0).getTime() + 48 * 60 * 60 * 1000);
+    expect(timedSpawnsDue(sched([twoDaysOut.getUTCDay()], ['12:45']), SUNDAY(12, 0))).toHaveLength(
+      0
+    );
+    expect(TIMED_WINDOW_AHEAD_MS).toBe(24 * 60 * 60 * 1000);
+  });
+
+  it("tomorrow's daily event is already on the board (the empty-lobby fix)", () => {
+    // Same schedule, same clock as the old 30-minute case that saw nothing.
+    const due = timedSpawnsDue(sched([0, 1, 2, 3, 4, 5, 6], ['12:45']), SUNDAY(12, 0));
+    expect(due.length).toBeGreaterThan(0);
   });
 
   it('catch-up: a start time up to 5 minutes in the past still spawns', () => {
@@ -131,7 +145,12 @@ describe('intervalRespawnDue — one live instance, respawn after the gap', () =
 
   it('waits out the interval after the previous instance ended', () => {
     expect(
-      intervalRespawnDue({ ...base, hasLive: false, everSpawned: true, lastEndedAt: SUNDAY(11, 30) })
+      intervalRespawnDue({
+        ...base,
+        hasLive: false,
+        everSpawned: true,
+        lastEndedAt: SUNDAY(11, 30),
+      })
     ).toBe(false);
     expect(
       intervalRespawnDue({ ...base, hasLive: false, everSpawned: true, lastEndedAt: SUNDAY(11, 0) })

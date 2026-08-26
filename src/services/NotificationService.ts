@@ -249,10 +249,7 @@ class NotificationServiceClass {
     notification: Omit<Notification, 'id' | 'createdAt' | 'isRead'>
   ): Promise<Notification | null> {
     // Q3: Auto-generate action_url from metadata
-    const actionUrl = NotificationServiceClass.getDeepLinkUrl(
-      notification.type,
-      notification.metadata
-    );
+    const actionUrl = this.getDeepLinkUrl(notification.type, notification.metadata);
 
     const { data, error } = await supabase
       .from('notifications')
@@ -343,7 +340,7 @@ class NotificationServiceClass {
   /**
    * Generate the appropriate deep-link URL based on notification type + metadata
    */
-  static getDeepLinkUrl(
+  public getDeepLinkUrl(
     type: Notification['type'],
     metadata?: Record<string, unknown>
   ): string | undefined {
@@ -355,7 +352,11 @@ class NotificationServiceClass {
       case 'table_invite':
         return metadata.tableId ? `/table/${metadata.tableId}` : '/';
       case 'club_announcement':
-        return metadata.clubId ? `/club/${metadata.clubId}` : '/clubs';
+        return metadata.clubSlug
+          ? `/clubs/${metadata.clubSlug}`
+          : metadata.clubId
+            ? `/clubs/${metadata.clubId}`
+            : '/clubs';
       case 'message':
         return metadata.conversationId
           ? `/messages/${metadata.conversationId}`
@@ -367,7 +368,12 @@ class NotificationServiceClass {
       case 'bonus':
         return '/bonus';
       case 'settlement':
-        return metadata.clubId ? `/club/${metadata.clubId}/financials` : '/wallet';
+        if (metadata.unionId) return `/unions/${metadata.unionId}/settlement`;
+        return metadata.clubSlug
+          ? `/clubs/${metadata.clubSlug}/financials`
+          : metadata.clubId
+            ? `/clubs/${metadata.clubId}/financials`
+            : '/wallet';
       case 'your_turn':
       case 'your_turn_reminder':
       case 'time_bank_active':
@@ -376,9 +382,11 @@ class NotificationServiceClass {
       case 'tournament_starting':
         return metadata.tournamentId
           ? `/tournament/${metadata.tournamentId}`
-          : metadata.clubId
-            ? `/club/${metadata.clubId}/tournaments`
-            : '/tournaments';
+          : metadata.clubSlug
+            ? `/clubs/${metadata.clubSlug}/tournaments`
+            : metadata.clubId
+              ? `/clubs/${metadata.clubId}/tournaments`
+              : '/tournaments';
       case 'system':
       default:
         return undefined;

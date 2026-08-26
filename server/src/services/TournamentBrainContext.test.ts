@@ -9,16 +9,25 @@ import { deriveContext } from './TournamentBrainContext.js';
 import { HorseLogic } from '../engine/HorseLogic.js';
 import { decidePreflopV7 } from '../engine/HorsePreflop.js';
 
-const icmRisk = (HorseLogic.__testables as unknown as {
-  icmRisk: (gs: Record<string, unknown>, stackBB: number) => number;
-}).icmRisk;
+const icmRisk = (
+  HorseLogic.__testables as unknown as {
+    icmRisk: (gs: Record<string, unknown>, stackBB: number) => number;
+  }
+).icmRisk;
 
 const row = (over: Record<string, unknown> = {}) => ({
   tournament_type: 'MTT',
   variant: 'nlh',
   max_players: 100,
   table_size: 9,
-  payout_structure: [{ percentage: 50 }, { percentage: 30 }, { percentage: 20 }],
+  // V13: shaped like production. All 14,280 live rows are arrays carrying an
+  // explicit `place`; the old fixture omitted it, which the canonical
+  // validator (rightly) rejects as an unusable structure.
+  payout_structure: [
+    { place: 1, percentage: 50 },
+    { place: 2, percentage: 30 },
+    { place: 3, percentage: 20 },
+  ],
   prize_pool: 1000,
   bounty_pool: 0,
   is_pko: false,
@@ -28,10 +37,45 @@ const row = (over: Record<string, unknown> = {}) => ({
 
 describe('TournamentBrainContext V12 — derivation', () => {
   it('derives formats: spin, hu_sng, mtt', () => {
-    expect(deriveContext(row({ tournament_type: 'SPIN' }) as never, 3, 3, 3000).format).toBe('spin');
+    expect(deriveContext(row({ tournament_type: 'SPIN' }) as never, 3, 3, 3000).format).toBe(
+      'spin'
+    );
     expect(deriveContext(row({ variant: 'spin' }) as never, 3, 3, 3000).format).toBe('spin');
     expect(deriveContext(row({ table_size: 2 }) as never, 2, 2, 3000).format).toBe('hu_sng');
     expect(deriveContext(row() as never, 40, 60, 100000).format).toBe('mtt');
+  });
+
+  it('rejects a payout structure that is valid JSON but unusable', () => {
+    // The old local parser counted [null, null] as two paid places, and any
+    // array length as the paid count. The canonical validator requires a
+    // place 1 and sane percentages. NOTE: it accepts the ARRAY shape only —
+    // all 14,280 live tournament rows are arrays carrying an explicit place,
+    // so that is the only shape this path has to read.
+    const junk = deriveContext(row({ payout_structure: [null, null] }) as never, 3, 20, 5000);
+    expect(junk.spotsPaid).toBe(0);
+    expect(junk.nearBubble).toBe(false);
+    expect(junk.inMoney).toBe(false);
+
+    const noPlaceOne = deriveContext(
+      row({ payout_structure: [{ place: 2, percentage: 100 }] }) as never,
+      3,
+      20,
+      5000
+    );
+    expect(noPlaceOne.spotsPaid).toBe(0);
+  });
+
+  it('rebuilds a Spin payout from the multiplier when the structure is missing', () => {
+    // A multi-place Spin with no stored structure used to be assumed
+    // winner-take-all, which zeroes the ICM premium outright.
+    const spin = deriveContext(
+      row({ tournament_type: 'SPIN', payout_structure: null, spin_multiplier: 3 }) as never,
+      2,
+      3,
+      3000
+    );
+    expect(spin.format).toBe('spin');
+    expect(spin.spotsPaid).toBeGreaterThanOrEqual(1);
   });
 
   it('computes bubble state from real players-left vs spots-paid', () => {
@@ -44,7 +88,12 @@ describe('TournamentBrainContext V12 — derivation', () => {
   });
 
   it('spins default to winner-take-all when the structure is empty', () => {
-    const c = deriveContext(row({ tournament_type: 'SPIN', payout_structure: [] }) as never, 3, 3, 3000);
+    const c = deriveContext(
+      row({ tournament_type: 'SPIN', payout_structure: [] }) as never,
+      3,
+      3,
+      3000
+    );
     expect(c.spotsPaid).toBe(1);
   });
 
@@ -61,7 +110,10 @@ describe('TournamentBrainContext V12 — derivation', () => {
 });
 
 describe('HorseLogic V12 — icmRisk v2', () => {
-  const gs = (tournament: Record<string, unknown> | undefined, over: Record<string, unknown> = {}) => ({
+  const gs = (
+    tournament: Record<string, unknown> | undefined,
+    over: Record<string, unknown> = {}
+  ) => ({
     bigBlind: 100,
     gameMode: 'tournament',
     tournament,

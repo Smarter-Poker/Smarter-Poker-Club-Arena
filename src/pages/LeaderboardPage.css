@@ -8,7 +8,9 @@
 .leaderboard-page {
   max-width: 680px;
   margin: 0 auto;
-  padding-bottom: 70px;
+  width: 100%;
+  box-sizing: border-box;
+  padding-bottom: var(--bottom-nav-clearance, 74px);
   color: #e2e8f0;
   font-family: 'Rajdhani', 'Rajdhani', 'Exo 2', sans-serif;
   min-height: 100dvh;
@@ -20,6 +22,10 @@
   .leaderboard-page {
     width: 100%;
     max-width: 100%;
+    /* Guard the page against sideways scroll on phones. (Not on desktop —
+       an overflow value there would turn the page into a scroll container
+       and un-pin the sticky tournament-stats header.) */
+    overflow-x: hidden;
   }
 }
 
@@ -181,6 +187,10 @@
   padding: 1rem;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.leaderboard-filters::-webkit-scrollbar {
+  display: none;
 }
 
 .filter-group {
@@ -222,7 +232,7 @@
   border: 2px solid #2a3a4a;
   border-radius: 8px;
   color: #fff;
-  font-size: 0.85rem;
+  font-size: 16px; /* was 0.85rem; under 16px makes iOS zoom the page on focus */
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
@@ -1089,6 +1099,17 @@
   padding: 0.75rem 1rem;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.04) 0%, rgba(100, 100, 100, 0.02) 100%);
   border-bottom: 1px solid #2a3a4a;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.leaderboard-tabs::-webkit-scrollbar {
+  display: none;
+}
+.leaderboard-tabs .tab-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+  touch-action: manipulation;
 }
 
 .tab-btn {
@@ -1258,6 +1279,21 @@
 /* ─────────────────────────────────────────────────────────────────────────────
    TOURNAMENT STATS MOBILE RESPONSIVE
    ───────────────────────────────────────────────────────────────────────────── */
+
+/* Mobile-fit sweep 2026-08-23: 8 fr-columns crushed into a 360px screen was
+   unreadable scrunch. Per the standard, the TABLE scrolls sideways inside its
+   own scroller — the page never does. Desktop keeps overflow visible so the
+   sticky header still pins to the window. */
+@media (max-width: 768px) {
+  .tournament-stats-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tournament-stats-scroll .tournament-stats-header,
+  .tournament-stats-scroll .tournament-stats-entry {
+    min-width: 640px;
+  }
+}
 
 @media (max-width: 768px) {
   .tournament-stats-header {
@@ -1438,6 +1474,7 @@
   cursor: pointer;
   transition: all 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   white-space: nowrap;
+  touch-action: manipulation;
 }
 
 .lb-filter-chip:hover {
@@ -2044,4 +2081,89 @@
 .lb-load-more:focus-visible {
   outline: 2px solid #4169e1;
   outline-offset: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   STREAK BADGE — Migrated from StreakBadge.css (dead component cleanup 2026-08-26).
+   Scoped here so LeaderboardPage controls its own badge styles.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.leaderboard-page .streak-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 16px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  pointer-events: none;
+  animation: streakPulse 2s ease-in-out infinite;
+  backdrop-filter: blur(8px);
+}
+
+.leaderboard-page .streak-badge__icon {
+  font-size: 0.85rem;
+  animation: streakFlicker 0.8s ease-in-out infinite alternate;
+}
+
+.leaderboard-page .streak-badge__count {
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard-page .streak-badge__label {
+  opacity: 0.75;
+  font-size: 0.6rem;
+}
+
+/* Tiers */
+.leaderboard-page .streak-badge--warm {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.leaderboard-page .streak-badge--hot {
+  background: rgba(249, 115, 22, 0.2);
+  color: #f97316;
+  border: 1px solid rgba(249, 115, 22, 0.4);
+  box-shadow: 0 0 12px rgba(249, 115, 22, 0.25);
+}
+
+.leaderboard-page .streak-badge--epic {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.3);
+}
+
+.leaderboard-page .streak-badge--legendary {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(168, 85, 247, 0.25));
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  box-shadow:
+    0 0 20px rgba(245, 158, 11, 0.4),
+    0 0 40px rgba(168, 85, 247, 0.15);
+}
+
+@keyframes streakPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes streakFlicker {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
 }

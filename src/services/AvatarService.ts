@@ -16,6 +16,12 @@
 import { supabase } from '../lib/supabase';
 import { reportError, reportWarning } from '../utils/errorReporter';
 import { generateDefaultAvatar, getAvatarWithFallback } from '../utils/avatarGenerator';
+import {
+  ALL_COSMETICS,
+  isCosmeticOwned,
+  resolveCosmetic,
+  type AvatarCosmetic,
+} from '../cosmetics/avatarCosmetics';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -40,6 +46,22 @@ export interface UserAvatar {
   avatarId: string;
   avatarUrl: string;
   displayName: string;
+}
+
+/**
+ * What `getAvatarLibraryResult` reports back.
+ *
+ * The plain `Avatar[]` this service used to return could not tell an empty
+ * library from a broken one, and the gallery rendered both as the same calm
+ * "No preset avatars available." — a failed query drawn as a successful empty
+ * state. The flags exist so the caller can say which one actually happened.
+ */
+export interface AvatarLibraryResult {
+  avatars: Avatar[];
+  /** The Hub preset API did not answer. Presets and VIP art are UNKNOWN, not absent. */
+  presetsFailed: boolean;
+  /** The user_avatars read failed. "Mine" is UNKNOWN, not empty. */
+  customFailed: boolean;
 }
 
 // Re-export for convenience
@@ -128,6 +150,65 @@ export function isLibraryAvatarUrl(url: string): boolean {
   return false;
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  UNLOCK MATCHING — three id conventions for one ledger
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * `avatar_unlocks.avatar_id` is written by three different producers that never
+ * agreed on a format, which is why the gallery ignoring the table was easy to
+ * miss: nothing would have matched even if it had looked.
+ *
+ *   unlock_free_avatars()   'free_shark'          tier prefix + slug
+ *   fn_redeem_shop_item     'shark'               bare slug (the one live row)
+ *   AVATAR_LIBRARY entry id 'free-animal-004'     library id, hyphenated
+ *
+ * So ownership is decided on a TOKEN SET, not a string compare: an avatar is
+ * owned when any of its identities appears in the player's unlock set. Hyphens
+ * and underscores are the same character here, and a `free_`/`vip_` prefix on a
+ * stored unlock is stripped as well as kept.
+ */
+export function normalizeUnlockToken(raw: string | null | undefined): string {
+  return String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+}
+
+/** Every id under which this avatar could legitimately have been unlocked. */
+export function unlockTokensForAvatar(avatar: {
+  id: string;
+  imageUrl: string;
+  category: Avatar['category'];
+}): string[] {
+  const tokens = new Set<string>();
+  tokens.add(normalizeUnlockToken(avatar.id));
+
+  /* The retina suffix is stripped AFTER the match, not inside it: `[^/.]+` is
+     greedy and swallows `@2x` whole, so an inline `(?:@2x)?` never fires and
+     `/avatars/table/vip_wolf@2x.webp` yielded the slug `vip_wolf@2x` — a token
+     that matches no unlock row anywhere. */
+  const slugMatch = avatar.imageUrl.match(/\/([^/.]+)\.(?:png|jpe?g|webp)$/i);
+  const rawSlug = slugMatch ? slugMatch[1].replace(/@\d+x$/i, '') : '';
+  const slug = normalizeUnlockToken(rawSlug);
+  if (slug) {
+    tokens.add(slug);
+    tokens.add(`${avatar.category === 'vip' ? 'vip' : 'free'}_${slug}`);
+  }
+
+  tokens.delete('');
+  return Array.from(tokens);
+}
+
+/** True when any identity of `avatar` appears in the player's unlock set. */
+export function isAvatarUnlocked(
+  avatar: { id: string; imageUrl: string; category: Avatar['category'] },
+  unlocked: Set<string>
+): boolean {
+  if (unlocked.size === 0) return false;
+  return unlockTokensForAvatar(avatar).some((t) => unlocked.has(t));
+}
+
 class AvatarServiceClass {
   /** In-memory cache to avoid re-fetching storage listings */
   private _presetCache: Avatar[] | null = null;
@@ -154,17 +235,38 @@ class AvatarServiceClass {
    * Returns Avatar[] compatible with AvatarGallery component.
    */
   async getAvatarLibrary(userId?: string): Promise<Avatar[]> {
-    const results: Avatar[] = [];
+    return (await this.getAvatarLibraryResult(userId)).avatars;
+  }
 
-    // ── 1. Fetch ALL preset avatars (Free + VIP) from Hub API ──
-    try {
-      const presets = await this._getPresetAvatars();
-      results.push(...presets);
-    } catch (err) {
-      console.warn('[AvatarService] Failed to load preset avatars:', err);
+  /**
+   * The same library, plus whether each source actually answered.
+   *
+   * `getAvatarLibrary` stays for callers that only want the list; anything that
+   * RENDERS the list should use this instead, so "the API is down" and "there
+   * are none" do not reach the player as the same sentence.
+   */
+  async getAvatarLibraryResult(userId?: string): Promise<AvatarLibraryResult> {
+    const results: Avatar[] = [];
+    let customFailed = false;
+
+    // ── 1. Presets (Free + VIP) from the Hub API, and what this player owns ──
+    const [presetOutcome, unlocked] = await Promise.all([
+      this._getPresetAvatars(),
+      userId ? this.getUnlockedAvatarIds(userId) : Promise.resolve(new Set<string>()),
+    ]);
+
+    for (const preset of presetOutcome.avatars) {
+      /* Free art is owned by everyone. VIP art is owned when the player bought
+         or was granted it — which is what avatar_unlocks records and what this
+         gallery used to ignore entirely, so a redeemed shop avatar stayed
+         locked behind the VIP badge the player had just paid to bypass. */
+      results.push({
+        ...preset,
+        isOwned: preset.category === 'free' || isAvatarUnlocked(preset, unlocked),
+      });
     }
 
-    // ── 3. Fetch user's custom avatars from user_avatars table ──
+    // ── 2. The user's own generated avatars from user_avatars ──
     if (userId) {
       try {
         const { data: userAvatars, error } = await supabase
@@ -173,7 +275,12 @@ class AvatarServiceClass {
           .eq('user_id', userId)
           .order('created_at', { ascending: false });
 
-        if (!error && userAvatars) {
+        if (error) {
+          customFailed = true;
+          reportWarning('user_avatars read failed', 'AvatarService.getAvatarLibraryResult', {
+            code: error.code,
+          });
+        } else if (userAvatars) {
           for (const ua of userAvatars) {
             const imageUrl = ua.custom_image_url || '';
             if (!imageUrl) continue;
@@ -190,20 +297,63 @@ class AvatarServiceClass {
           }
         }
       } catch (err) {
+        customFailed = true;
         console.warn('[AvatarService] Failed to load custom avatars:', err);
       }
     }
 
-    return results;
+    return { avatars: results, presetsFailed: presetOutcome.failed, customFailed };
   }
 
   /**
-   * Fetch preset avatar images from the social-media/avatars storage bucket.
-   * Results are cached for 5 minutes to avoid repeated storage API calls.
+   * Which avatars this player has unlocked, as a normalized token set.
+   *
+   * A read failure returns an EMPTY set and says so in the breadcrumb rather
+   * than pretending everything is owned — failing closed here means at worst a
+   * player sees a lock they should not; failing open would hand VIP art to
+   * everyone the first time the query hiccups.
    */
-  private async _getPresetAvatars(): Promise<Avatar[]> {
+  async getUnlockedAvatarIds(userId: string): Promise<Set<string>> {
+    const out = new Set<string>();
+    if (!userId) return out;
+
+    try {
+      const { data, error } = await supabase
+        .from('avatar_unlocks')
+        .select('avatar_id')
+        .eq('user_id', userId);
+
+      if (error) {
+        reportWarning('avatar_unlocks read failed', 'AvatarService.getUnlockedAvatarIds', {
+          code: error.code,
+        });
+        return out;
+      }
+
+      for (const row of data || []) {
+        const token = normalizeUnlockToken(row?.avatar_id);
+        if (!token) continue;
+        out.add(token);
+        // Stored as 'free_shark' by unlock_free_avatars, as 'shark' by the shop.
+        out.add(token.replace(/^(free|vip)_/, ''));
+      }
+    } catch (err) {
+      reportError(err, 'AvatarService.getUnlockedAvatarIds');
+    }
+
+    return out;
+  }
+
+  /**
+   * Fetch the preset avatar catalog from the Hub's unified avatar API.
+   * Results are cached for 5 minutes to avoid repeated round trips.
+   *
+   * Returns `failed` rather than just an empty list: the caller has to be able
+   * to tell "the Hub said there are none" from "the Hub said nothing".
+   */
+  private async _getPresetAvatars(): Promise<{ avatars: Avatar[]; failed: boolean }> {
     if (this._presetCache && Date.now() - this._presetCacheTs < AvatarServiceClass.CACHE_TTL) {
-      return this._presetCache;
+      return { avatars: this._presetCache, failed: false };
     }
 
     try {
@@ -226,17 +376,22 @@ class AvatarServiceClass {
           imageUrl: entry.image,
           thumbUrl,
           category: tierLower === 'vip' ? 'vip' : 'free',
-          isOwned: true,
+          /* Placeholder. Real ownership is decided per-player in
+             getAvatarLibraryResult against avatar_unlocks; the cache is shared
+             across users so it must not carry anyone's entitlements. */
+          isOwned: false,
         };
       });
 
       this._presetCache = avatars;
       this._presetCacheTs = Date.now();
-      return avatars;
+      return { avatars, failed: false };
     } catch (err) {
       console.warn('[AvatarService] Unified Avatar API fetch failed:', err);
-      if (this._presetCache) return this._presetCache;
-      return [];
+      // A stale cache is a better answer than none, and it is not a failure to
+      // report: the player still sees the real library.
+      if (this._presetCache) return { avatars: this._presetCache, failed: false };
+      return { avatars: [], failed: true };
     }
   }
 
@@ -422,6 +577,215 @@ class AvatarServiceClass {
    */
   getDefaultAvatarUrl(): string {
     return DEFAULT_AVATAR_SVG;
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  //  AVATAR COSMETICS — frames + auras
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /**
+   * What this player currently has equipped.
+   *
+   * `ok` exists for the same reason `AvatarLibraryResult` has `presetsFailed`:
+   * a failed read and "nothing equipped" are both `{frame:null, aura:null}`, and
+   * a picker that draws them identically tells the player their gold frame was
+   * never bought. The caller has to be able to tell the two apart.
+   */
+  async getCosmetics(
+    userId: string
+  ): Promise<{ frame: string | null; aura: string | null; ok: boolean }> {
+    if (!userId) return { frame: null, aura: null, ok: false };
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('equipped_frame, equipped_aura')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (error) {
+        reportWarning('profiles cosmetics read failed', 'AvatarService.getCosmetics', {
+          code: error.code,
+        });
+        return { frame: null, aura: null, ok: false };
+      }
+
+      /* Resolved, not passed through. A row can hold a retired token or one
+         from a build we have not shipped yet; returning it raw would push an
+         unrenderable value into the picker's selected state and the player
+         would see nothing highlighted with no explanation. */
+      return {
+        frame: resolveCosmetic(data?.equipped_frame, 'frame')?.id ?? null,
+        aura: resolveCosmetic(data?.equipped_aura, 'aura')?.id ?? null,
+        ok: true,
+      };
+    } catch (err) {
+      reportError(err, 'AvatarService.getCosmetics');
+      return { frame: null, aura: null, ok: false };
+    }
+  }
+
+  /**
+   * The catalog, annotated with what this player owns.
+   *
+   * `ok:false` means ownership is UNKNOWN. Callers must render that as "we could
+   * not check" and refuse to equip, not as "you own nothing" — the difference
+   * between a lock a player understands and a purchase that appears to have
+   * evaporated.
+   */
+  async getCosmeticCatalog(
+    userId: string
+  ): Promise<{ cosmetics: (AvatarCosmetic & { isOwned: boolean })[]; ok: boolean }> {
+    if (!userId) {
+      return { cosmetics: ALL_COSMETICS.map((c) => ({ ...c, isOwned: false })), ok: false };
+    }
+
+    /* TWO INDEPENDENT SOURCES, TRACKED SEPARATELY.
+       An earlier version of this method ANDed a single `ok` into every
+       `isOwned`, which reads as prudent and is not: a VIP whose unlock-ledger
+       query hiccupped would have been told they own nothing, and the frame they
+       pay for would vanish on a transient error. VIP membership is a complete
+       answer for a vip-tier cosmetic on its own — it does not need the ledger
+       to have answered. So each source contributes only what it actually knows,
+       and `ok` reports whether the picture is complete. */
+    let vipOk = true;
+    let ledgerOk = true;
+
+    const vipPromise = (async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('is_vip')
+        .eq('id', userId)
+        .maybeSingle();
+      if (error) {
+        vipOk = false;
+        reportWarning('is_vip read failed', 'AvatarService.getCosmeticCatalog', {
+          code: error.code,
+        });
+        return false;
+      }
+      return Boolean(data?.is_vip);
+    })();
+
+    const unlockPromise = (async () => {
+      const { data, error } = await supabase
+        .from('avatar_unlocks')
+        .select('avatar_id')
+        .eq('user_id', userId);
+      if (error) {
+        ledgerOk = false;
+        reportWarning('avatar_unlocks read failed', 'AvatarService.getCosmeticCatalog', {
+          code: error.code,
+        });
+        return new Set<string>();
+      }
+      const out = new Set<string>();
+      for (const row of data || []) {
+        const token = normalizeUnlockToken(row?.avatar_id);
+        if (token) out.add(token);
+      }
+      return out;
+    })();
+
+    const [isVip, unlockedTokens] = await Promise.all([vipPromise, unlockPromise]);
+
+    return {
+      cosmetics: ALL_COSMETICS.map((c) => ({
+        ...c,
+        /* Each source contributes only what it actually proved. FAILING CLOSED
+           HAPPENS AT ONE PLACE ONLY - inside each promise above, where an error
+           returns `false` / an empty set. Re-checking `vipOk` / `ledgerOk` here
+           as well was tried and removed: it is unreachable belt-and-braces (the
+           values are already safe by then), so no test could tell it from its
+           own absence, and an untestable guard is indistinguishable from a
+           decorative one. One guard, in one place, with a test that can see it. */
+        isOwned: isCosmeticOwned(c, { isVip, unlockedTokens }),
+      })),
+      ok: vipOk && ledgerOk,
+    };
+  }
+
+  /**
+   * Equip (or clear) a frame and an aura.
+   *
+   * `null` means unequip and is always permitted. Anything else must resolve in
+   * the catalog AND be owned — checked here so the player gets a sentence
+   * instead of a Postgres error, and checked AGAIN by
+   * `trg_profiles_cosmetics_ownership`, which is the actual guard. This method
+   * is the polite half; the trigger is the half that cannot be skipped by
+   * anyone who opens devtools.
+   *
+   * `profiles` is written first and is the source of truth: it is what the seat
+   * query on the engine reads and what every other player's realtime
+   * subscription is watching. `user_avatars` mirrors it for parity with the
+   * World Hub's AvatarContext, and a mirror failure does not fail the equip.
+   */
+  async setCosmetics(
+    userId: string,
+    frame: string | null,
+    aura: string | null
+  ): Promise<{ ok: boolean; reason?: 'not-owned' | 'unknown-cosmetic' | 'write-failed' }> {
+    if (!userId) return { ok: false, reason: 'write-failed' };
+
+    const resolvedFrame = frame ? resolveCosmetic(frame, 'frame') : null;
+    const resolvedAura = aura ? resolveCosmetic(aura, 'aura') : null;
+    if ((frame && !resolvedFrame) || (aura && !resolvedAura)) {
+      return { ok: false, reason: 'unknown-cosmetic' };
+    }
+
+    if (resolvedFrame || resolvedAura) {
+      /* `ok` is deliberately NOT consulted here. Ownership is decided per
+         cosmetic, and a cosmetic that is not in `ownedIds` is refused whether
+         that is because the player does not own it or because the source that
+         would have proved it did not answer. Bailing on `!ok` instead would
+         refuse a VIP their own frame whenever the unrelated unlock-ledger query
+         happened to fail. */
+      const { cosmetics } = await this.getCosmeticCatalog(userId);
+      const ownedIds = new Set(cosmetics.filter((c) => c.isOwned).map((c) => c.id));
+      if (resolvedFrame && !ownedIds.has(resolvedFrame.id)) {
+        return { ok: false, reason: 'not-owned' };
+      }
+      if (resolvedAura && !ownedIds.has(resolvedAura.id)) {
+        return { ok: false, reason: 'not-owned' };
+      }
+    }
+
+    const payload = {
+      equipped_frame: resolvedFrame?.id ?? null,
+      equipped_aura: resolvedAura?.id ?? null,
+    };
+
+    try {
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update(payload)
+        .eq('id', userId);
+
+      if (profileError) {
+        reportError(profileError, 'AvatarService.setCosmetics_profile');
+        /* 23514 is the ownership trigger firing. It reaches here only when the
+           client-side check above passed and the database disagreed, which
+           means the entitlement changed underneath us — report it as
+           not-owned so the player reads the true reason. */
+        return {
+          ok: false,
+          reason: profileError.code === '23514' ? 'not-owned' : 'write-failed',
+        };
+      }
+
+      const { error: mirrorError } = await supabase
+        .from('user_avatars')
+        .update(payload)
+        .eq('user_id', userId);
+
+      if (mirrorError) {
+        console.warn('[AvatarService] Cosmetics mirror write failed:', mirrorError.message);
+      }
+
+      return { ok: true };
+    } catch (err) {
+      reportError(err, 'AvatarService.setCosmetics');
+      return { ok: false, reason: 'write-failed' };
+    }
   }
 }
 

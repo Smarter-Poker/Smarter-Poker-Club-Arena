@@ -19,6 +19,9 @@
 }
 
 .container {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
   padding: 16px 12px 48px;
   color: #e2e8f0;
   text-transform: uppercase;
@@ -696,13 +699,9 @@
    ═══════════════════════════════════════════════════════════════════════ */
 
 .page {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 16px 12px 48px;
   color: #e2e8f0;
   text-transform: capitalize;
   font-family: 'Rajdhani', 'Exo 2', sans-serif;
-  min-height: 100dvh;
   position: relative;
   z-index: 1;
 }
@@ -988,4 +987,58 @@
   background: linear-gradient(90deg, #ff7b00, #ffea00);
   border-radius: 3px;
   box-shadow: 0 0 10px rgba(255, 123, 0, 0.5);
+}
+
+@media (max-width: 768px) {
+  .container {
+    /* StandardContentLayout supplies the 70px bottom clearance, so zeroing
+       the container padding here is safe for the fixed bottom nav. */
+    padding: 0 !important;
+  }
+
+  .tab,
+  .claimButton,
+  .claimAllButton,
+  .rerollButton,
+  .playButton,
+  .celebrateButton {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .card {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .cardGlyph {
+    width: 44px;
+    height: 44px;
+    font-size: 1.4rem;
+  }
+
+  .cardAction {
+    min-width: 64px;
+  }
+
+  .claimButton {
+    padding: 10px 14px;
+    font-size: 0.9rem;
+  }
+
+  .header h1,
+  .title {
+    font-size: 1.25rem;
+  }
+
+  .footer {
+    padding: 16px;
+  }
 }

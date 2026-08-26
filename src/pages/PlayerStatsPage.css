@@ -16,8 +16,15 @@
 .stats-page {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
   background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
-  padding-bottom: 2rem;
+  /* Dan 2026-08-25: the club footer now renders on this page, so the reserve
+     has to be the bar's own token rather than a hand-picked 70px - the bar is
+     74px plus the home-indicator inset, and the old value let it cover the
+     last row of the bottom-most panel. */
+  padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -162,6 +169,13 @@
    PILL TABS — Animated Background Slider
    ───────────────────────────────────────────────────────────────────────────── */
 
+/* SCROLLS (Dan 2026-08-25). An agent on their own profile gets EIGHT tabs, and
+   this was `display:flex` with `flex:1` and `white-space:nowrap` and no
+   overflow. Flex items will not shrink below their content with nowrap, so at
+   375px the row needed ~400px and the Rake tab - the one an agent is paid to
+   look at - was the one pushed off. The swipe handler could then move to a tab
+   the user could not see was selected. .filterRow on Club Data and .tabNav on
+   the Marketplace already do exactly this; Stats was the outlier. */
 .stats-pill-tabs {
   display: flex;
   gap: 6px;
@@ -171,10 +185,20 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
   position: relative;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  justify-content: flex-start;
+}
+
+.stats-pill-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .stats-pill-tabs button {
-  flex: 1;
+  flex: 0 0 auto;
+  scroll-snap-align: center;
   padding: 0.6rem 0.5rem;
   min-height: 44px;
   border: none;
@@ -228,11 +252,6 @@
   font-family: 'Rajdhani', monospace;
   margin: 0;
   font-weight: 600;
-}
-
-.section-icon {
-  font-size: 0.85rem;
-  opacity: 0.9;
 }
 
 /* Stats Grid */
@@ -535,6 +554,14 @@
 
   .chart-container {
     min-height: 180px;
+  }
+
+  /* 44px minimum tap targets on touch widths */
+  .stats-range-row button,
+  .hand-mode-row button,
+  .export-btn {
+    min-height: 44px;
+    touch-action: manipulation;
   }
 }
 
@@ -871,6 +898,30 @@
   text-align: center;
   font-size: 0.72rem;
   color: rgba(255, 255, 255, 0.4);
+}
+
+/* Retry for a FAILED hands read. The empty state and the failure state used to
+   be the same sentence; this one has to be actionable. */
+.hand-retry {
+  margin-left: 6px;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  border-radius: 8px;
+  background: rgba(0, 212, 255, 0.1);
+  color: #00d4ff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hand-retry:hover {
+  background: rgba(0, 212, 255, 0.18);
+}
+
+.hand-retry:focus-visible {
+  outline: 2px solid #00d4ff;
+  outline-offset: 2px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -1297,6 +1348,12 @@
   /* Chrome that means nothing on paper. */
   .stats-pill-tabs,
   .stats-range-row,
+  /* A Suspense fallback must never reach paper. printDossier awaits the three
+     lazy chart chunks before printing, so this should be unreachable - but the
+     failure mode it guards against is a dossier containing the literal words
+     "Loading Charts...", in a document read months later as authoritative.
+     Dan 2026-08-25. */
+  .hand-empty,
   .stats-action-row,
   .export-btn,
   .assistant-export-btn,
@@ -1374,6 +1431,19 @@
      cannot silently miss a class someone adds later. */
   .stats-page :is(p, span, td, th, li, h1, h2, h3, h4, h5, h6, strong, em, div, button, a) {
     color: #1f2937 !important;
+  }
+
+  /* SVG text takes `fill`, not `color`, so the blanket rule above does nothing
+     for it - and the three recharts axes were left at the screen palette's
+     rgba(255,255,255,.5), i.e. white on white, exactly the failure the comment
+     above describes. The radar labels were rescued individually further down;
+     the charts were missed. Dan 2026-08-25. */
+  .stats-page :is(.recharts-text, .recharts-cartesian-axis-tick-value, .recharts-label) {
+    fill: #374151 !important;
+  }
+
+  .stats-page .recharts-cartesian-grid line {
+    stroke: rgba(0, 0, 0, 0.12) !important;
   }
 
   .row-label,

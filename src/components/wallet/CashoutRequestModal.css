@@ -165,6 +165,41 @@
   color: var(--text-secondary, #8a8a9a);
 }
 
+/* The pending list's loading row. `loadingPending` existed in the component for
+   months without ever being rendered, so there was no style for this state
+   either. Deliberately quiet: it is a "hold on" line, not a headline. */
+.pending-loading {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #8a8a9a);
+  text-align: center;
+  padding: 10px 12px;
+  background: var(--surface, #1a1a2e);
+  border-radius: 8px;
+  animation: cashoutPendingPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes cashoutPendingPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cashout-modal {
+    animation: none;
+  }
+  .pending-loading {
+    animation: none;
+  }
+  .step-dot.active {
+    animation: none;
+  }
+}
+
 .pending-status {
   font-size: 0.75rem;
   color: #ffa726;
@@ -277,7 +312,7 @@
   border: none;
   border-radius: 8px;
   padding: 12px;
-  font-size: 0.9rem;
+  font-size: 16px; /* was 0.9rem; under 16px makes iOS zoom the page on focus */
   color: #fff;
   resize: none;
   outline: none;

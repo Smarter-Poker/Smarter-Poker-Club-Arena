@@ -22,10 +22,17 @@ const styles = {
     background: '#0a0a0f',
     color: '#e0e0e0',
     padding: '20px',
+    paddingBottom: 'max(70px, env(safe-area-inset-bottom))',
+    width: '100%',
+    maxWidth: '100vw',
+    overflowX: 'hidden',
+    boxSizing: 'border-box',
     fontFamily: "'Inter', -apple-system, sans-serif",
   } as React.CSSProperties,
   header: {
     display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: '24px',
@@ -40,6 +47,8 @@ const styles = {
     border: '1px solid #333',
     color: '#aaa',
     padding: '8px 16px',
+    minHeight: '44px',
+    touchAction: 'manipulation',
     borderRadius: '6px',
     cursor: 'pointer',
     fontSize: '13px',
@@ -51,8 +60,13 @@ const styles = {
     marginBottom: '16px',
     border: '1px solid #2a2a3e',
   } as React.CSSProperties,
+  tableScroll: {
+    overflowX: 'auto',
+    WebkitOverflowScrolling: 'touch',
+  } as React.CSSProperties,
   table: {
     width: '100%',
+    minWidth: '560px',
     borderCollapse: 'collapse' as const,
     fontSize: '13px',
   },
@@ -75,7 +89,9 @@ const styles = {
     background: '#dc2626',
     color: '#fff',
     border: 'none',
-    padding: '5px 12px',
+    padding: '8px 12px',
+    minHeight: '36px',
+    touchAction: 'manipulation',
     borderRadius: '4px',
     cursor: 'pointer',
     fontSize: '12px',
@@ -86,6 +102,8 @@ const styles = {
     color: '#fff',
     border: 'none',
     padding: '10px 20px',
+    minHeight: '44px',
+    touchAction: 'manipulation',
     borderRadius: '6px',
     cursor: 'pointer',
     fontSize: '14px',
@@ -102,12 +120,14 @@ const styles = {
   } as React.CSSProperties,
   formRow: {
     display: 'flex',
+    flexWrap: 'wrap',
     gap: '12px',
     marginBottom: '12px',
     alignItems: 'flex-end',
   } as React.CSSProperties,
   formGroup: {
-    flex: 1,
+    flex: '1 1 160px',
+    minWidth: 0,
     display: 'flex',
     flexDirection: 'column' as const,
     gap: '4px',
@@ -297,7 +317,7 @@ export default function BlacklistManagerPage() {
               <label style={styles.label}>User ID</label>
               <input
                 style={styles.input}
-                placeholder="Player's user ID"
+                placeholder="Player's User ID"
                 value={newUserId}
                 onChange={(e) => setNewUserId(e.target.value)}
               />
@@ -306,7 +326,7 @@ export default function BlacklistManagerPage() {
               <label style={styles.label}>Reason</label>
               <input
                 style={styles.input}
-                placeholder="Reason for ban"
+                placeholder="Reason For Ban"
                 value={newReason}
                 onChange={(e) => setNewReason(e.target.value)}
               />
@@ -351,56 +371,58 @@ export default function BlacklistManagerPage() {
         ) : entries.length === 0 ? (
           <div style={styles.empty}>No Blacklisted Players. The Blacklist Is Empty.</div>
         ) : (
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>User ID</th>
-                <th style={styles.th}>Reason</th>
-                <th style={styles.th}>Banned</th>
-                <th style={styles.th}>Expires</th>
-                <th style={styles.th}>Status</th>
-                <th style={styles.th}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <tr key={entry.id}>
-                  <td style={styles.td}>
-                    <code style={{ fontSize: '11px', color: '#aaa' }}>
-                      {entry.user_id.slice(0, 12)}...
-                    </code>
-                  </td>
-                  <td style={styles.td}>{entry.reason}</td>
-                  <td style={styles.td}>{formatDate(entry.banned_at)}</td>
-                  <td style={styles.td}>
-                    {entry.expires_at ? formatDate(entry.expires_at) : 'Permanent'}
-                  </td>
-                  <td style={styles.td}>
-                    <span
-                      style={{
-                        ...styles.badge,
-                        ...(isExpired(entry) ? styles.badgeExpired : styles.badgeActive),
-                      }}
-                    >
-                      {isExpired(entry) ? 'Expired' : 'Active'}
-                    </span>
-                  </td>
-                  <td style={styles.td}>
-                    <button
-                      style={{
-                        ...styles.removeBtn,
-                        opacity: removing === entry.id ? 0.5 : 1,
-                      }}
-                      onClick={() => handleRemove(entry.id)}
-                      disabled={removing === entry.id}
-                    >
-                      {removing === entry.id ? 'Removing...' : 'Remove'}
-                    </button>
-                  </td>
+          <div style={styles.tableScroll}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>User ID</th>
+                  <th style={styles.th}>Reason</th>
+                  <th style={styles.th}>Banned</th>
+                  <th style={styles.th}>Expires</th>
+                  <th style={styles.th}>Status</th>
+                  <th style={styles.th}>Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {entries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td style={styles.td}>
+                      <code style={{ fontSize: '11px', color: '#aaa' }}>
+                        {entry.user_id.slice(0, 12)}...
+                      </code>
+                    </td>
+                    <td style={styles.td}>{entry.reason}</td>
+                    <td style={styles.td}>{formatDate(entry.banned_at)}</td>
+                    <td style={styles.td}>
+                      {entry.expires_at ? formatDate(entry.expires_at) : 'Permanent'}
+                    </td>
+                    <td style={styles.td}>
+                      <span
+                        style={{
+                          ...styles.badge,
+                          ...(isExpired(entry) ? styles.badgeExpired : styles.badgeActive),
+                        }}
+                      >
+                        {isExpired(entry) ? 'Expired' : 'Active'}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      <button
+                        style={{
+                          ...styles.removeBtn,
+                          opacity: removing === entry.id ? 0.5 : 1,
+                        }}
+                        onClick={() => handleRemove(entry.id)}
+                        disabled={removing === entry.id}
+                      >
+                        {removing === entry.id ? 'Removing...' : 'Remove'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
         <div
           style={{

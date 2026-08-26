@@ -17,7 +17,7 @@ import './CreateTablePage.css';
 const gameTypeCardAnimationStyle = (index: number) => ({
   opacity: 0,
   transform: 'translateY(10px)',
-  animation: `fadeInUp 0.5s ease-out ${index * 70}ms forwards`,
+  animation: `animationsFadeInUp 0.5s ease-out ${index * 70}ms forwards`,
 });
 
 interface GameType {
@@ -85,6 +85,35 @@ const GAME_TYPES: GameType[] = [
     subtitle: "SHORT DECK HOLD'EM",
     gradient: 'linear-gradient(135deg, #0866FF 0%, #0557d6 50%, #0449b0 100%)',
     icon: '♦',
+    unlockLevel: 1,
+  },
+  // ── LIMIT (2026-08-23, Dan) ───────────────────────────────────────────────
+  // The lobby has always had a LIMIT tab, and ClubHomePage.cashKind() has
+  // always sorted `flh`/`limit_*` tables into it — but FIX 116 deleted the only
+  // two cards that could produce such a table, so the tab was structurally
+  // empty and this screen offered no way to fill it.
+  //
+  // Both games are now played fixed-limit for real (see
+  // server/src/engine/BettingStructure.ts) rather than dealt as limit and bet
+  // as no-limit, which is what a bare card restore would have produced.
+  //
+  // Green on purpose: at a glance a player should be able to tell a limit table
+  // from the blue no-limit and pot-limit ones BEFORE they sit down, because the
+  // betting rules they are agreeing to are completely different.
+  {
+    id: 'flh',
+    name: 'FLH',
+    subtitle: "FIXED LIMIT HOLD'EM",
+    gradient: 'linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%)',
+    icon: '♠',
+    unlockLevel: 1,
+  },
+  {
+    id: 'flo8',
+    name: 'FLO8',
+    subtitle: 'FIXED LIMIT OMAHA HI-LO',
+    gradient: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 50%, #0f766e 100%)',
+    icon: '♣',
     unlockLevel: 1,
   },
 ];

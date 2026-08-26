@@ -19,7 +19,7 @@
  *   2. MTT / SNG — a tournament's format outranks its variant on a tab: the
  *              variant is on the felt, the format is what you are sitting in.
  *   3. HU    — a 2-seat CASH table. Heads-up is the defining fact of the game.
- *   4. variant — NLH / PLO / PLO5 / PLO6 / PLO8 / SHORT / PINE / OFC.
+ *   4. variant — NLH / PLO / PLO5 / PLO6 / PLO8 / SHORT / PINE.
  *
  * Every input is optional and any shape (the enum arrives lowercase from
  * `tables.game_variant`, uppercase from `tableState.gameType`), because this
@@ -43,8 +43,6 @@ const VARIANT_CODES: Record<string, string> = {
   six_plus: 'SHORT',
   pineapple: 'PINE',
   crazy_pineapple: 'PINE',
-  ofc: 'OFC',
-  ofc_pineapple: 'OFC',
 };
 
 export interface GameCodeInput {
@@ -82,7 +80,10 @@ export function gameCode(input: GameCodeInput): string {
   if (VARIANT_CODES[token]) return VARIANT_CODES[token];
   // An unknown variant is still better shown than hidden: uppercase it and
   // keep it short enough for the pill.
-  return token.replace(/[^a-z0-9]+/g, '').toUpperCase().slice(0, 6);
+  return token
+    .replace(/[^a-z0-9]+/g, '')
+    .toUpperCase()
+    .slice(0, 6);
 }
 
 /**

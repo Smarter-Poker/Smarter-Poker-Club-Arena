@@ -57,4 +57,10 @@ describe('resolveClubIdFilter', () => {
     expect(result.column).toBe('club_id');
     expect(result.value).toBe(25450);
   });
+
+  it('should return slug filter for non-uuid non-numeric string', () => {
+    const result = resolveClubIdFilter('midway-union');
+    expect(result.column).toBe('slug');
+    expect(result.value).toBe('midway-union');
+  });
 });

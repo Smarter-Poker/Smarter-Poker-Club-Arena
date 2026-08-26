@@ -254,7 +254,18 @@
        doesn't. overflow-x stays clipped — that part cost nothing and is what
        stops a stray wide child from panning the whole page sideways. */
     padding: var(--space-3);
-    padding-top: calc(51px + var(--space-3));
+    /* MEASURED 2026-08-24 on the live club lobby: .main started at y=41 —
+       exactly the bottom of the global header — and then added another 63px
+       of padding for it, so every Club Arena page carried a header's worth of
+       empty space under the header. The header is position:sticky, which
+       stays IN the flow and is therefore already accounted for; the
+       reservation is a leftover from when it was fixed. Dan, from a phone:
+       "THE CLUB LOGO AND WALLET SHOULD BE RAISED UP SO IT IS ONE PIXEL UNDER
+       THE TICKER."
+
+       4px, not 0: a page whose first element is a full-bleed panel still
+       wants a hairline of separation from the header's bottom border. */
+    padding-top: 4px;
     overflow-x: hidden;
   }
 

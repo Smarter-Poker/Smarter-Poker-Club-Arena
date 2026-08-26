@@ -274,13 +274,46 @@
    REDUCED MOTION
    ================================================================================= */
 
+/*
+ * Dan 2026-08-23: "there MUST BE a deal animation" before any hand.
+ *
+ * This block used to be `animation: none !important; opacity: 0` -- i.e. a
+ * player with Reduce Motion switched on saw NOTHING at all, on every hand,
+ * forever. The deal is not decoration: it is how a player is told a hand has
+ * begun and which seats are in it. Reduce Motion asks for less MOVEMENT, not
+ * less information.
+ *
+ * So the card still appears at its seat, in deal order, on the same stagger --
+ * it simply does not travel, arc, spin or trail. Same duration, so the JS
+ * completion timer in DealAnimation.tsx stays in step either way.
+ */
 @media (prefers-reduced-motion: reduce) {
   .deal-animation__card {
-    animation: none !important;
-    opacity: 0;
+    left: var(--target-x, 50%);
+    top: var(--target-y, 50%);
+    animation: dealAppear var(--da-flight-duration) linear forwards;
+    animation-delay: var(--delay, 0ms);
+    will-change: opacity;
   }
 
   .deal-animation__card::before {
     display: none;
+  }
+}
+
+@keyframes dealAppear {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+    filter: brightness(1);
+  }
+  30%,
+  70% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
   }
 }

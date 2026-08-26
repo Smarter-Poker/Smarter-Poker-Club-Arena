@@ -98,7 +98,15 @@ describe('UnionWalletModal', () => {
         })
       )
     );
-    expect(screen.getByRole('status').textContent).toMatch(/sent 250/i);
+    /* FLAKE, fixed 2026-08-26. This was a SYNCHRONOUS `getByRole('status')`
+       immediately after the waitFor above — but that waitFor settles the moment
+       the RPC has been CALLED, while the banner only renders once the promise
+       resolves and the state update flushes. Locally the microtask always won
+       that race; under CI load it lost, and the run that caught it took a
+       green PR to red with `Unable to find an accessible element with the role
+       "status"`. Await the element itself rather than the call that precedes
+       it. */
+    expect((await screen.findByRole('status')).textContent).toMatch(/sent 250/i);
   });
 
   it('sends diamonds without a source wallet', async () => {

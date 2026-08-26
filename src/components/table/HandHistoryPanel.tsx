@@ -18,7 +18,10 @@ export interface HandHistoryAction {
 }
 
 export interface HandHistoryStreet {
-  name: 'preflop' | 'flop' | 'turn' | 'river';
+  /* `pineapple_discard` is a real street the engine writes. Measured on
+     2026-08-23 over 31 consecutive pineapple hands: it falls after preflop
+     and before the flop in 31 of 31, with no counterexample. */
+  name: 'preflop' | 'pineapple_discard' | 'flop' | 'turn' | 'river';
   cards?: string[]; // Board cards dealt this street
   actions: HandHistoryAction[];
   pot: number;
@@ -37,16 +40,25 @@ export interface HandRecord {
     stack: number;
     position: string; // 'D', 'SB', 'BB', 'UTG', etc.
     holeCards?: string[]; // Only for hero or showdown
+    /** This player's NET for the hand: collected minus invested, as stored.
+        Optional only because a record cached in localStorage by a build older
+        than 2026-08-23 predates the field; every record the adapter produces
+        carries it. */
+    result?: number;
   }>;
   streets: HandHistoryStreet[];
   winners: Array<{
     playerId: string;
     playerName: string;
+    /** GROSS chips pushed from the pot to this winner, NOT their net result.
+        This field held the net until 2026-08-23, which is what let Hand Detail
+        subtract the same investment twice and print a different figure from
+        Hand History for one hand. Net lives in `players[].result`. */
     amount: number;
     hand?: string; // "Full House, Aces over Kings"
   }>;
   heroId: string;
-  heroResult: number; // +/- amount
+  heroResult: number; // +/- amount, the hero's `players[].result`
   potTotal: number;
 }
 
@@ -55,6 +67,7 @@ export interface HandHistoryPanelProps {
   onClose: () => void;
   hands: HandRecord[];
   heroId: string;
+  onReplay?: (hand: HandRecord) => void;
 }
 
 function formatTime(ts: number): string {
@@ -68,31 +81,77 @@ function formatAmount(amount: number): string {
   return amount.toLocaleString();
 }
 
+/**
+ * Dan 2026-08-23, verbatim: "REMOVE THE YELLOW AND PURPLE."
+ *
+ * bet/raise were amber #f59e0b and all-in was violet #7c3aed — two colours that
+ * appear nowhere else on smarter.poker, so the one panel a player opens to
+ * check what just happened looked like a different product from the table
+ * behind it. The replacements are the same chip palette HandDetailModal.css
+ * already uses for the identical actions (house blue for aggression, red for
+ * all-in, grey for the passive ones), so the two hand-history surfaces finally
+ * agree with each other and with the rest of the app.
+ *
+ * Kept as inline colours rather than CSS vars because these are handed to a
+ * `style` prop; `--club-*` tokens are used in the stylesheet beside this.
+ */
+const HOUSE_BLUE = '#1877f2';
+
 function getActionColor(action: string): string {
   switch (action) {
     case 'fold':
-      return '#ef4444';
+      return '#9ca3af';
     case 'check':
       return '#22c55e';
     case 'call':
       return '#22c55e';
     case 'bet':
-      return '#f59e0b';
+      return HOUSE_BLUE;
     case 'raise':
-      return '#f59e0b';
+      return HOUSE_BLUE;
     case 'discard':
       return '#94a3b8';
     case 'allin':
-      return '#7c3aed';
+      return '#ef4444';
     default:
       return '#9ca3af';
   }
+}
+
+const SUIT_GLYPH: Record<string, string> = { s: '♠', h: '♥', d: '♦', c: '♣' };
+
+/**
+ * Render a canonical 2-char card code ("Jd") as rank + suit glyph.
+ *
+ * The Showdown block used to name the winner and the amount and stop there, so
+ * the panel that exists to answer "what did he have?" was the one place that
+ * would not say — even though handToText below has always written the holdings
+ * into the clipboard export. Same data, now on screen.
+ */
+function HoleCards({ cards }: { cards: string[] }) {
+  return (
+    <span className="hh-entry__holecards">
+      {cards.map((c, i) => {
+        const suit = c.slice(-1).toLowerCase();
+        const rank = c.slice(0, -1).toUpperCase().replace('T', '10');
+        const red = suit === 'h' || suit === 'd';
+        return (
+          <span key={i} className={`hh-card${red ? ' hh-card--red' : ''}`}>
+            {rank}
+            {SUIT_GLYPH[suit] || '?'}
+          </span>
+        );
+      })}
+    </span>
+  );
 }
 
 function getStreetLabel(name: string): string {
   switch (name) {
     case 'preflop':
       return 'Pre-Flop';
+    case 'pineapple_discard':
+      return 'Discard';
     case 'flop':
       return 'Flop';
     case 'turn':
@@ -132,10 +191,22 @@ function handToText(hand: HandRecord): string {
   // Winners
   lines.push('*** SUMMARY ***');
   lines.push(`Total pot: ${formatAmount(hand.potTotal)}`);
+  /* "collected N from pot" is the PokerStars wording for the GROSS the pot paid
+     out, which is what `winners[].amount` holds. This line used to read "won"
+     over a figure that was the player's NET, so a tracker importing the file
+     booked the winner's own bets as chips that had never been in the pot. The
+     net is printed on its own line rather than folded into this one, so the
+     two numbers on screen each have a line here that matches them. */
   hand.winners.forEach((w) => {
     const handStr = w.hand ? ` with ${w.hand}` : '';
-    lines.push(`${w.playerName} won ${formatAmount(w.amount)}${handStr}`);
+    lines.push(`${w.playerName} collected ${formatAmount(w.amount)} from pot${handStr}`);
   });
+  const heroName = hand.players.find((p) => p.id === hand.heroId)?.name;
+  if (heroName) {
+    lines.push(
+      `${heroName} net result: ${hand.heroResult > 0 ? '+' : ''}${formatAmount(hand.heroResult)}`
+    );
+  }
 
   return lines.join('\n');
 }
@@ -150,9 +221,32 @@ function HandEntry({
   heroId: string;
   isExpanded: boolean;
   onToggle: () => void;
+  onReplay?: (hand: HandRecord) => void;
 }) {
-  const isWin = hand.heroResult > 0;
   const resultColor = hand.heroResult > 0 ? '#22c55e' : hand.heroResult < 0 ? '#ef4444' : '#9ca3af';
+
+  /* Everyone whose cards the table saw, plus anyone who took a pot. A player
+     is in `holeCards` only because the server persisted a SHOWDOWN-revealed
+     holding (mucked hands are never written), so this list is exactly the set
+     of hands that were public — no client-side guessing about who showed. */
+  const showdownRows = useMemo(() => {
+    const winnerById = new Map(hand.winners.map((w) => [w.playerId, w]));
+    return hand.players
+      .filter((p) => (p.holeCards && p.holeCards.length > 0) || winnerById.has(p.id))
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        cards: p.holeCards || [],
+        /* `collected` is the gross the pot paid this seat; `net` is what they
+           are up or down on the hand. Both are shown, and labelled, because
+           showing only one of them beside the other surface's choice of the
+           other is precisely how Hand History and Hand Detail came to print
+           two different numbers for the same hand. */
+        collected: winnerById.get(p.id)?.amount,
+        net: p.result,
+        handName: winnerById.get(p.id)?.hand,
+      }));
+  }, [hand]);
 
   return (
     <div className={`hh-entry ${isExpanded ? 'hh-entry--expanded' : ''}`}>
@@ -209,17 +303,46 @@ function HandEntry({
           ))}
 
           {/* X6.2g: Showdown section header per spec §10.4 */}
-          {hand.winners.length > 0 && (
+          {showdownRows.length > 0 && (
             <div className="hh-entry__street">
               <div className="hh-entry__street-header">
                 <span className="hh-entry__street-name">Showdown</span>
               </div>
-              <div className="hh-entry__winners">
-                {hand.winners.map((w, i) => (
-                  <span key={i} className="hh-entry__winner">
-                    {w.playerName} Won {formatAmount(w.amount)}
-                    {w.hand && <span className="hh-entry__hand"> - {w.hand}</span>}
-                  </span>
+              <div className="hh-entry__showdown">
+                {showdownRows.map((r) => (
+                  <div
+                    key={r.id}
+                    className={`hh-entry__shown${
+                      r.collected != null ? ' hh-entry__shown--won' : ''
+                    }`}
+                  >
+                    <span className="hh-entry__player-name">{r.name}</span>
+                    {r.cards.length > 0 ? (
+                      <HoleCards cards={r.cards} />
+                    ) : (
+                      /* The row holds nothing for this seat and never will:
+                         only showdown-revealed holdings are persisted. Say so,
+                         because an empty gap here reads as a load failure. */
+                      <span className="hh-entry__notshown">Not Shown</span>
+                    )}
+                    {r.handName && <span className="hh-entry__hand">{r.handName}</span>}
+                    <span className="hh-entry__tail">
+                      {r.collected != null && (
+                        <span className="hh-entry__won">Collected {formatAmount(r.collected)}</span>
+                      )}
+                      {r.net != null && (
+                        <span
+                          className="hh-entry__net"
+                          style={{
+                            color: r.net > 0 ? '#22c55e' : r.net < 0 ? '#ef4444' : '#9ca3af',
+                          }}
+                        >
+                          Net {r.net > 0 ? '+' : ''}
+                          {formatAmount(r.net)}
+                        </span>
+                      )}
+                    </span>
+                  </div>
                 ))}
               </div>
             </div>

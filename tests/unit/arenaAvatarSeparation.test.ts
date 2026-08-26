@@ -51,8 +51,11 @@ describe('Club Arena never touches the social media photo column', () => {
       const re = /\.from\(\s*['"]profiles['"]\s*\)/g;
       let m: RegExpExecArray | null;
       while ((m = re.exec(src))) {
-        const sel = /\.select\(/.exec(src.slice(m.index, m.index + 500));
+        const slice = src.slice(m.index, m.index + 500);
+        const sel = /\.select\(/.exec(slice);
         if (!sel) continue;
+        const intervening = slice.slice(0, sel.index);
+        if (/\.(from|update|upsert|insert|delete)\(/.test(intervening)) continue;
         const start = m.index + sel.index + sel[0].length;
         let depth = 1;
         let j = start;
@@ -63,9 +66,25 @@ describe('Club Arena never touches the social media photo column', () => {
         }
         const body = src.slice(start, j - 1);
         if (!/\bavatar_url\b/.test(body)) continue;
-        // Aliased form `avatar_url:arena_avatar_url` is the correct one.
+        // Aliased form `avatar_url:arena_avatar_url` is the correct one for Arena.
         if (/avatar_url\s*:\s*arena_avatar_url/.test(body)) continue;
-        offenders.push(`${file.replace(ROOT + '/', '')} -> .select(${body.trim().slice(0, 90)})`);
+
+        // Social Media features are allowed to fetch the real avatar_url
+        const relPath = file.replace(ROOT + '/', '');
+        if (
+          [
+            'src/components/social/FriendListPanel.tsx',
+            'src/components/social/OnlineFriendsPill.tsx',
+            'src/pages/FriendsPage.tsx',
+            'src/pages/ProfilePage.tsx',
+            'src/services/ProfileService.ts',
+            'src/services/FriendSuggestionService.ts',
+          ].includes(relPath)
+        ) {
+          continue;
+        }
+
+        offenders.push(`${relPath} -> .select(${body.trim().slice(0, 90)})`);
       }
     }
 

@@ -1,53 +1,121 @@
 .chip-stack {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 180, 0, 0.15));
-    border: 1px solid rgba(255, 215, 0, 0.4);
-    border-radius: 20px;
-    padding: 4px 12px;
-    font-weight: 600;
-    transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-    backdrop-filter: blur(16px) saturate(1.2);
-    -webkit-backdrop-filter: blur(16px) saturate(1.2);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 180, 0, 0.15));
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-weight: 600;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .chip-stack.size-small {
-    font-size: 0.75rem;
-    padding: 2px 8px;
+  font-size: 0.75rem;
+  padding: 2px 8px;
 }
 
 .chip-stack.size-medium {
-    font-size: 0.9rem;
-    padding: 4px 12px;
+  font-size: 0.9rem;
+  padding: 4px 12px;
 }
 
 .chip-stack.size-large {
-    font-size: 1.1rem;
-    padding: 6px 16px;
+  font-size: 1.1rem;
+  padding: 6px 16px;
 }
 
+/* .chip-icon is a GLOBAL class, also styled by Shell.css and design-system.css
+   and used by Shell.tsx and ChipDenominations.tsx. ChipStack no longer renders
+   it (the "◉" glyph became real chips below), but the rule stays: deleting it
+   changes the cascade for those other consumers. */
 .chip-icon {
-    font-size: 1em;
+  font-size: 1em;
+}
+
+/* Real denomination chips beside the number (Dan 2026-08-23).
+   Replaces the "◉" glyph, which was a bullet point, not a chip. Colours and
+   counts come from src/lib/chipDenominations.ts. */
+
+.chip-stack__denoms {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.chip-stack__denom-stack {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column-reverse;
+  align-items: center;
+}
+
+.chip-stack__denom-chip {
+  width: 0.85em;
+  height: 0.85em;
+  margin-top: -0.62em;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  /* Two-tone: the darker rim is what makes a sub-1em disc read as a clay
+       chip rather than a coloured dot. */
+  background:
+    radial-gradient(
+      circle at 50% 50%,
+      var(--denom-color, #f2f3f5) 0%,
+      var(--denom-color, #f2f3f5) 60%,
+      var(--denom-accent, #b3b7c0) 64%,
+      var(--denom-accent, #b3b7c0) 100%
+    ),
+    var(--denom-color, #f2f3f5);
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.4),
+    inset 0 1px 1px rgba(255, 255, 255, 0.3);
+}
+
+.chip-stack__denom-chip:first-of-type {
+  margin-top: 0;
+}
+
+/* A sub-1 residue no chip on Dan's ladder can represent (a 0.5 small blind).
+   Never drawn as a full white 1 chip: that would claim twice its value. */
+.chip-stack__denom-chip--partial {
+  height: 0.45em;
+  opacity: 0.75;
+  border-style: dashed;
+}
+
+/* True count for a stack clamped to fit. The discs are capped; the value is not. */
+.chip-stack__denom-multi {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.55em;
+  font-weight: 800;
+  line-height: 1;
+  color: #ffd700;
+  white-space: nowrap;
 }
 
 .chip-amount {
-    color: #ffd700;
+  color: #ffd700;
 }
 
 .chip-stack.animated {
-    animation: chipPulse 2s ease-in-out infinite;
+  animation: chipPulse 2s ease-in-out infinite;
 }
 
 @keyframes chipPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
 
-    0%,
-    100% {
-        transform: scale(1);
-    }
-
-    50% {
-        transform: scale(1.05);
-    }
+  50% {
+    transform: scale(1.05);
+  }
 }

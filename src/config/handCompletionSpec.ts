@@ -70,6 +70,24 @@ export const HAND_COMPLETION = {
   /** A big multiway showdown must still not stall the table forever. */
   SHOWDOWN_READ_MAX_MS: 4400,
   /**
+   * SHOWDOWN SYSTEM 2026-08-25 (Dan spec section 3): per-seat stagger on the
+   * showdown card flip, in reveal order — the final-street last aggressor
+   * flips first, then clockwise, the way a live table hands in turn. Small
+   * enough that a 4-way showdown finishes flipping well inside the
+   * SHOWDOWN_READ window it must never outrun.
+   */
+  SHOWDOWN_REVEAL_STAGGER_MS: 300,
+  /**
+   * SHOWDOWN SYSTEM follow-up 2026-08-25 (Dan spec sections 16/19/20): when
+   * more than one player is paid — different pots, or a chopped pot — each
+   * winner's award animation (chip fan + "+N" float) starts this long after
+   * the previous one, in pot order: main pot first, then each side pot. The
+   * engine's Winner list is already emitted in that order (determineWinners
+   * iterates pots[0..n] and distributePot appends), so the client only has
+   * to respect the order it was handed. A single winner is unaffected.
+   */
+  POT_AWARD_STAGGER_MS: 600,
+  /**
    * A Bad Beat Jackpot is real money and plays a ~9s full-screen celebration.
    * Nothing about a jackpot is rushed: the table waits for the whole thing.
    */

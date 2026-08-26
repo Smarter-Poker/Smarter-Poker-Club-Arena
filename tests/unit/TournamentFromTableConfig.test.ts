@@ -123,18 +123,32 @@ describe('blind structure', () => {
 });
 
 describe('money', () => {
-  it('the fee is 10% of the buy-in, rounded to whole chips', () => {
-    // Dan 2026-08-20: tournament and SNG buy-ins are whole numbers, so the fee
-    // cut out of one is whole too. A 33 buy-in is 3 fee + 30 prize, not 3.3 -
-    // a fractional fee made the total non-integer and the DB CHECK refused the
-    // INSERT outright.
+  it('the fee is 10% of the buy-in, to the cent', () => {
+    /**
+     * Dan 2026-08-25 SUPERSEDES the whole-chip rule this test used to pin.
+     * "FRACTIONAL FEE'S NEED TO BE ALLOWED, WE HAVE 1 BUY IN, 5 BUY IN'S ETC
+     * THOSE SHOULD BE .10 RAKE AND .50 RAKE PER BUY IN."
+     *
+     * The old note said a fractional fee "made the total non-integer and the DB
+     * CHECK refused the INSERT". Both halves of that are addressed rather than
+     * worked around: the fee is cut OUT of the price, so a 33 buy-in is
+     * 29.70 + 3.30 and the TOTAL is still exactly 33; and the CHECK that
+     * hard-coded floor() to whole chips was relaxed by migration
+     * 20260825_tournament_fees_may_be_fractional, which still refuses anything
+     * over a tenth.
+     */
     expect(buildTournamentConfig({ ...base, buyIn: 50 }, 'nlh').rake).toBe(5);
-    expect(buildTournamentConfig({ ...base, buyIn: 33 }, 'nlh').rake).toBe(3);
+    expect(buildTournamentConfig({ ...base, buyIn: 33 }, 'nlh').rake).toBe(3.3);
+    expect(buildTournamentConfig({ ...base, buyIn: 1 }, 'nlh').rake).toBe(0.1);
+    expect(buildTournamentConfig({ ...base, buyIn: 5 }, 'nlh').rake).toBe(0.5);
     for (const buyIn of [1, 5, 15, 25, 33, 50, 99, 100, 250]) {
       const c = buildTournamentConfig({ ...base, buyIn }, 'nlh');
-      expect(Number.isInteger(c.rake)).toBe(true);
+      // The PRICE stays whole; only the split has cents.
       expect(Number.isInteger(c.buyIn)).toBe(true);
       expect(c.buyIn).toBe(buyIn);
+      expect(c.rake).toBe(Number(c.rake.toFixed(2)));
+      expect(c.rake).toBeGreaterThan(0);
+      expect(c.rake).toBeLessThanOrEqual(buyIn * 0.1 + 1e-9);
     }
   });
 
@@ -249,15 +263,29 @@ describe('parity fields (2026-08-22)', () => {
   });
 
   it('clamps action time and table size to the server ranges', () => {
-    const c = buildTournamentConfig(
-      { ...base, actionTimeSeconds: 999, tableSize: 99 },
-      'nlh'
-    );
+    const c = buildTournamentConfig({ ...base, actionTimeSeconds: 999, tableSize: 99 }, 'nlh');
     expect(c.actionTimeSeconds).toBe(60);
+    // Still 10. The tournament path is bound by the DECK, not by the cash seat
+    // cap — tableSeating's header is explicit that tournaments are exempt from
+    // that law, because it is kept tight for Run It Twice and a tournament
+    // cannot run it twice. Hold'em deals two cards, so ten seats fit easily.
     expect(c.tableSize).toBe(10);
+
     const low = buildTournamentConfig({ ...base, actionTimeSeconds: 1, tableSize: 1 }, 'nlh');
     expect(low.actionTimeSeconds).toBe(5);
     expect(low.tableSize).toBe(2);
+  });
+
+  it('never builds a table the deck cannot deal', () => {
+    // PLO6 deals six cards a seat, so a ten-handed table wants 60 hole cards
+    // plus a board out of 52 and PokerEngine.deal() throws rather than dealing
+    // short. These are the PHYSICAL limits, not the cash seat caps: plo4 is
+    // 8-max for cash but a tournament may seat 10 of them, because the cash cap
+    // exists to leave room for Run It Twice and a tournament cannot run twice.
+    expect(buildTournamentConfig({ ...base, tableSize: 99 }, 'plo6').tableSize).toBe(7);
+    expect(buildTournamentConfig({ ...base, tableSize: 99 }, 'plo5').tableSize).toBe(9);
+    expect(buildTournamentConfig({ ...base, tableSize: 99 }, 'plo4').tableSize).toBe(10);
+    expect(buildTournamentConfig({ ...base, tableSize: 99 }, 'short_deck').tableSize).toBe(10);
   });
 
   it('MTT-only fields never leave an SNG', () => {
@@ -322,7 +350,15 @@ describe('parity fields (2026-08-22)', () => {
     expect(plain.addOnCost).toBe(plain.buyIn);
   });
 
-  it('multi-day, restart, early bird and GTD carry with their clamps', () => {
+  /* 2026-08-26: this test used to assert `isMultiDay: true` and a totalDays
+     clamp of 7. Both were replaced deliberately, not broken. Multi-day has no
+     day end, no Day 2 resume and no flight merge anywhere in the engine, so
+     carrying the flag meant badging an event Multi-Day and then running it as
+     a one-session freezeout. The flag is now refused at the database
+     (trg_tournaments_refuse_unbuilt_multi_day) and never composed here, so
+     what this test pins is the REFUSAL. The clamp assertions for the three
+     features that do work are kept exactly as they were. */
+  it('restart, early bird and GTD carry with their clamps', () => {
     const c = buildTournamentConfig(
       {
         ...base,
@@ -337,8 +373,9 @@ describe('parity fields (2026-08-22)', () => {
       },
       'nlh'
     );
-    expect(c.isMultiDay).toBe(true);
-    expect(c.totalDays).toBe(7); // clamped to the server's 2-7
+    // Multi-day is refused, not carried, however loudly the config asks.
+    expect(c.isMultiDay).toBe(false);
+    expect(c.totalDays).toBeUndefined();
     expect(c.restartEveryMinutes).toBe(5); // clamped to the server's 5-1440
     expect(c.earlyBirdEnabled).toBe(true);
     expect(c.earlyBirdChips).toBe(750);
@@ -368,18 +405,35 @@ describe('parity fields (2026-08-22)', () => {
 });
 
 describe('game variant', () => {
+  /**
+   * 2026-08-24: these two used to assert `canRunAsTournament('plo')` and
+   * `('shortdeck')`. Those are the keys the MAP was written with — they are not
+   * ids the create-table screen has ever emitted, which sends `plo4` and
+   * `short_deck`. So the test agreed with the map, the map disagreed with the
+   * screen, and neither knew: the SNG/MTT tabs were hidden on every game except
+   * Hold'em while production ran 5,634 PLO and Short Deck tournaments made by
+   * the recurring service. A test keyed to the implementation instead of to the
+   * caller cannot catch that. These are now keyed to what the screen emits.
+   */
   it('only offers tournaments for variants the engine can deal', () => {
-    expect(canRunAsTournament('nlh')).toBe(true);
-    expect(canRunAsTournament('plo')).toBe(true);
-    expect(canRunAsTournament('shortdeck')).toBe(true);
-    // HandController maps an unknown variant to 2 cards and a full deck, so
-    // these would silently run Hold'em.
-    for (const v of ['flh', 'flo', 'mixed', 'ofc']) expect(canRunAsTournament(v)).toBe(false);
+    for (const v of ['nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'short_deck']) {
+      expect(canRunAsTournament(v)).toBe(true);
+    }
+    // Pineapple has no tournament path for its discard street; limit escalates
+    // on a bet-size ladder and every blind structure here is a blind ladder.
+    for (const v of ['flh', 'flo8', 'pineapple', 'mixed', 'ofc']) {
+      expect(canRunAsTournament(v)).toBe(false);
+    }
+    // And the dead keys must not answer true, or the bug returns quietly.
+    for (const v of ['plo', 'shortdeck', 'flo']) expect(canRunAsTournament(v)).toBe(false);
   });
 
   it('maps to the engine vocabulary', () => {
-    expect(buildTournamentConfig(base, 'plo').gameVariant).toBe('PLO4');
-    expect(buildTournamentConfig(base, 'shortdeck').gameVariant).toBe('SHORT_DECK');
+    expect(buildTournamentConfig(base, 'plo4').gameVariant).toBe('PLO4');
+    expect(buildTournamentConfig(base, 'plo5').gameVariant).toBe('PLO5');
+    expect(buildTournamentConfig(base, 'plo6').gameVariant).toBe('PLO6');
+    expect(buildTournamentConfig(base, 'plo8').gameVariant).toBe('PLO8');
+    expect(buildTournamentConfig(base, 'short_deck').gameVariant).toBe('SHORT_DECK');
     expect(buildTournamentConfig(base, undefined).gameVariant).toBe('NLH');
   });
 });

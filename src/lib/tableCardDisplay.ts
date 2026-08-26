@@ -60,6 +60,9 @@ export const GAME_VARIANT_LABELS: Record<string, string> = {
   short_deck: 'SHORT DECK 6+',
   FLH: "FIXED LIMIT HOLD'EM",
   flh: "FIXED LIMIT HOLD'EM",
+  FLO8: 'FIXED LIMIT OMAHA HI-LO',
+  flo8: 'FIXED LIMIT OMAHA HI-LO',
+
   FLO: 'FIXED LIMIT OMAHA',
   flo: 'FIXED LIMIT OMAHA',
   MIXED: 'MIXED GAME',

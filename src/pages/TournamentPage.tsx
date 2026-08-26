@@ -32,12 +32,33 @@ import { useAnimationQueue } from '../hooks/useAnimationQueue';
 // a payout list and nothing else, no clock, no standings, no tables. All three
 // components already existed and worked; two were rendered nowhere in the app.
 import { TournamentClock } from '../components/tournament/TournamentClock';
-import TournamentStandings from '../components/tournament/TournamentStandings';
+/* RANKING (2026-08-26). The live pane used to mount `TournamentStandings`, a
+   second component that fetched its own copy of `tournament_players` and drew
+   them as cards. It has been retired: the lobby's Ranking tab is the one board,
+   it renders from props, and mounting it here means this pane and the full
+   tournament lobby can no longer print two different chip counts for the same
+   player. The rows this pane never had - a hero position, the average-stack
+   marker, the distance to the money, the click-through to a player's table -
+   come with it. */
+import RankingTab from '../components/tournament/details/RankingTab';
+import type { NormalisedBlindLevel, TournamentTable } from '../components/tournament/details/types';
+import { useTournamentEntries } from '../hooks/useTournamentEntries';
+import { blindLevelMinutes } from '../components/lobby/tournamentFigures';
 import { reportError } from '../utils/errorReporter';
+import { openTableAsObserver } from '../utils/observeTable';
 import { spinMultiplierLabel } from '../utils/spinReveal';
+import { useMysteryBounty } from '../hooks/useMysteryBounty';
+import MysteryBountyPanel from '../components/tournament/MysteryBountyPanel';
+import {
+  activationStatusLine,
+  formatCents,
+  topBountyCents,
+} from '../services/MysteryBountyService';
 // WHOLE-NUMBER TOURNAMENT MONEY (Dan 2026-08-20). Every buy-in / fee / prize
 // figure on this page renders through these, never as a raw column value.
 import { digitsOnly, formatBuyIn, money, splitBuyIn, totalBuyIn } from '../utils/buyIn';
+import { relayTournamentEvent } from '../services/tournamentEventBridge';
+import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 
 type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
 
@@ -63,7 +84,11 @@ function isLateRegOpen(t: {
 }): boolean {
   if (t.status !== 'RUNNING') return false;
   const levels = Number(t.late_reg_levels ?? 0);
-  if (levels > 0) return Number(t.current_level ?? 0) <= levels;
+  // 0-BASED (2026-08-23): current_level indexes blind_structure directly, so
+  // "through level N" is indices 0..N-1 and N is the cutoff. `<=` here left
+  // the Register button live for a level after the engine had closed late reg
+  // and finalized the pool. Matches TournamentManagerBase.isLateRegClosed.
+  if (levels > 0) return Number(t.current_level ?? 0) < levels;
   const mins = Number(t.late_reg_mins ?? 0);
   if (mins > 0 && t.started_at) {
     return Date.now() - new Date(t.started_at).getTime() <= mins * 60_000;
@@ -75,6 +100,8 @@ function isLateRegOpen(t: {
 const GUEST_USER = { id: 'guest', username: 'Guest' };
 
 export default function TournamentPage() {
+  const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
+
   useEffect(() => {
     document.title = 'Tournaments | Smarter Poker';
   }, []);
@@ -97,6 +124,7 @@ export default function TournamentPage() {
     Array<{
       id: string;
       name: string | null;
+      status: string | null;
       current_players: number | null;
       max_players: number | null;
       small_blind: number | null;
@@ -114,6 +142,14 @@ export default function TournamentPage() {
   const [isProcessingRebuy, setIsProcessingRebuy] = useState(false);
   const selectedTournamentRef = useRef<Tournament | null>(null);
   const [visibleTournaments, setVisibleTournaments] = useState<Set<string>>(new Set());
+
+  /**
+   * MYSTERY BOUNTY (sections 10, 31 to 36, 68, 73) for whichever event is open
+   * in the detail pane. Enabled only for a mystery event, so browsing the lobby
+   * costs nothing for every other format.
+   */
+  const selectedIsMystery = Boolean((selectedTournament as any)?.is_mystery_bounty);
+  const mysteryBounty = useMysteryBounty(selectedTournament?.id ?? null, selectedIsMystery);
   /**
    * Mirror of `visibleTournaments` for the stagger effect below to read without
    * taking a dependency on it — depending on the state it also SETS is how that
@@ -474,60 +510,49 @@ export default function TournamentPage() {
   };
 
   // Register for tournament
-  const handleRegister = async () => {
+  const handleRegister = () => {
     if (!selectedTournament) return;
-    if (currentUser.id === 'guest') {
-      toast.error('You must be logged in to register');
-      return;
-    }
-    try {
-      // NOTE: Do NOT call WalletService.lockForBuyIn here — registerPlayer()
-      // already handles wallet deduction atomically (buy_in + rake).
-      // Calling both would double-deduct the player's chips.
-
-      await tournamentService.registerPlayer(
-        selectedTournament.id,
-        currentUser.id,
-        currentUser.username
-      );
-      setIsRegistered(true);
-
-      // Update tournament in list. Only the PRIZE half of the split feeds the
-      // pool; the fee half is the house cut. Whole chips either way.
-      const prizeContribution = Math.round(Number(selectedTournament.buy_in_amount) || 0);
-      const chargedTotal = totalBuyIn(
-        selectedTournament.buy_in_amount,
-        selectedTournament.buy_in_fee
-      );
-      setTournaments((prev) =>
-        prev.map((t) =>
-          t.id === selectedTournament.id
-            ? {
-                ...t,
-                current_players: t.current_players + 1,
-                prize_pool: t.prize_pool + prizeContribution,
-              }
-            : t
-        )
-      );
-      setSelectedTournament((prev) =>
-        prev
-          ? {
-              ...prev,
-              current_players: prev.current_players + 1,
-              prize_pool: prev.prize_pool + prizeContribution,
-            }
-          : null
-      );
-
-      // The wallet is debited the TOTAL (prize + fee), not the prize half, so
-      // that is the figure the player is told about.
-      notifyWalletChange(chargedTotal, true);
-
-      toast.success(`Registered! ${money(chargedTotal)} chips deducted.`);
-    } catch (error) {
-      toast.error('Registration failed: ' + (error as Error).message);
-    }
+    registerMtt(
+      {
+        id: selectedTournament.id,
+        name: selectedTournament.name,
+        buy_in_amount: selectedTournament.buy_in_amount,
+        buy_in_fee: selectedTournament.buy_in_fee,
+        /* 2026-08-25 audit: same card everywhere means the same ROWS
+           everywhere. Without these the Bounty and Start Time rows silently
+           vanished on this surface only. */
+        bounty_amount: (selectedTournament as any).is_bounty
+          ? (selectedTournament as any).bounty_amount || 0
+          : 0,
+        is_pko: !!(selectedTournament as any).is_pko,
+        is_mystery_bounty: !!(selectedTournament as any).is_mystery_bounty,
+        start_time: (selectedTournament as any).start_time ?? null,
+        club_id: (selectedTournament as any).club_id ?? null,
+        status: selectedTournament.status,
+      },
+      () => {
+        setIsRegistered(true);
+        const prizeContribution = Math.round(Number(selectedTournament.buy_in_amount) || 0);
+        setTournaments((prev) =>
+          prev.map((t) =>
+            t.id === selectedTournament.id
+              ? {
+                  ...t,
+                  current_players: (t.current_players || 0) + 1,
+                  prize_pool: (t.prize_pool || 0) + prizeContribution,
+                }
+              : t
+          )
+        );
+        if (selectedTournament) {
+          setSelectedTournament({
+            ...selectedTournament,
+            current_players: (selectedTournament.current_players || 0) + 1,
+            prize_pool: (selectedTournament.prize_pool || 0) + prizeContribution,
+          });
+        }
+      }
+    );
   };
 
   const handleStart = async () => {
@@ -549,8 +574,21 @@ export default function TournamentPage() {
     try {
       const { data: tables, error: tablesErr } = await supabase
         .from('tables')
-        .select('id')
-        .eq('tournament_id', selectedTournament.id);
+        .select('id, status, current_players')
+        .eq('tournament_id', selectedTournament.id)
+        /* 2026-08-25: soft-deleted tables were eligible to be picked as the
+           "featured" one to watch. The house rule everywhere else that reads
+           this table filters them out (see UnionGamesPage's table query); this
+           one did not, so a deleted row could win the busiest-table sort and
+           the Watch button would open a felt that no longer exists.
+
+           `.not('is_deleted', 'is', true)` rather than `.eq(..., false)`:
+           the column is NULLABLE (verified against production, default false),
+           and `.eq(false)` would silently DROP any row where it is null. There
+           are no such rows today — 81,352 false, 43 true, 0 null — but "exclude
+           what is deleted" is the actual intent, and it is the phrasing that
+           stays correct if a future insert ever omits the column. */
+        .not('is_deleted', 'is', true);
       if (tablesErr) {
         toast.error('Failed to load tables');
         return;
@@ -574,12 +612,29 @@ export default function TournamentPage() {
       }
 
       if (seat) {
-        navigate(`/table/${seat.table_id}`); // FIX: was /clubs/:clubId/table/:tableId which is not a defined route
-      } else {
-        toast.warning(
-          'You are registered but not seated. Please wait for the tournament to start fully.'
-        );
+        // FIX: was /clubs/:clubId/table/:tableId which is not a defined route
+        openTableAsObserver(navigate, { tableId: seat.table_id });
+        return;
       }
+
+      /* Dan 2026-08-25 (binding): a running tournament must be watchable.
+         This branch used to end at a toast — "you are registered but not
+         seated" — which was both a dead end AND wrong for the case that now
+         reaches it most often: somebody who is not in the event at all and
+         simply wants to see it. Fall back to the FEATURED TABLE, defined the
+         same way TournamentDetails defines it: the busiest live table. */
+      const live = (tables as Array<{ id: string; status?: string; current_players?: number }>)
+        .filter((t) => String(t.status || '').toLowerCase() !== 'closed')
+        .sort((a, b) => (b.current_players || 0) - (a.current_players || 0));
+      if (live[0]?.id) {
+        openTableAsObserver(navigate, { tableId: live[0].id });
+        return;
+      }
+      toast.warning(
+        isRegistered
+          ? 'You Are Registered But Not Seated Yet. Your Seat Is Being Assigned.'
+          : 'No Live Tables To Watch Yet.'
+      );
     } catch (e) {
       reportError(e, 'TournamentPage.error');
       toast.error('Failed to join tournament table');
@@ -677,8 +732,8 @@ export default function TournamentPage() {
    *
    * Dan 2026-08-21 (item 3): the header said REGISTERING / 19-of-60 while the
    * live pane directly below it showed a running clock and real chip counts.
-   * Two different data paths: `TournamentClock` and `TournamentStandings` query
-   * their tournament by id, but the header renders `selectedTournament`, which
+   * Two different data paths: the clock and the ranking board read the field
+   * by tournament id, but the header renders `selectedTournament`, which
    * is only ever refreshed as a side effect of the whole-list refetch —
    * `data.find(...)` inside handlers that can miss, race, or (for a union-hosted
    * tournament viewed from a club) not be subscribed to that row at all.
@@ -742,6 +797,12 @@ export default function TournamentPage() {
         const eventType = payload.payload?.type;
         const data = payload.payload?.payload;
 
+        /* Put the break events on MasterBus. TournamentClock and
+           TournamentDetails have always subscribed to them there and nothing
+           ever emitted them, so the clock never flipped to break and the
+           toasts never fired. See tournamentEventBridge. */
+        relayTournamentEvent(selectedTournament.id, payload.payload);
+
         switch (eventType) {
           case 'level_up':
             // Refresh tournament data
@@ -800,24 +861,10 @@ export default function TournamentPage() {
             break;
 
           case 'mystery_bounty_revealed':
-            // TOURNEY-AUDIT 2026-07-24 (sweep 4): relay the server reveal so
-            // the overlay can show it — previously nothing emitted this.
-            // 2026-08-20: feed the chest directly as well. QUEUED, because a
-            // multi-way all-in busts more than one player and the engine
-            // broadcasts once per elimination; a single state slot would drop
-            // all but the last.
-            if (data?.playerName && data?.amount) {
-              masterBus.emit('MYSTERY_BOUNTY_REVEALED', data);
-              lobbyChestQueue.enqueue({
-                knockerUserId: data.knockerUserId || '',
-                knockerName: data.knockerName || 'Player',
-                eliminatedName: data.eliminatedName || data.playerName || 'Player',
-                amount: Number(data.amount) || 0,
-                tierLabel: data.tierLabel,
-                isJackpot: !!data.isJackpot,
-                avgBounty: Number(data.avgBounty) || undefined,
-              });
-            }
+            // Relay the server reveal so the overlay celebration toast can show it.
+            // Note: The lobby chest animation was removed because the table
+            // already plays one, and the gate here was dead anyway.
+            masterBus.emit('MYSTERY_BOUNTY_REVEALED', data);
             break;
 
           case 'ADDON_PERIOD_START':
@@ -973,7 +1020,7 @@ export default function TournamentPage() {
       try {
         const { data, error } = await supabase
           .from('tables')
-          .select('id, name, current_players, max_players, small_blind, big_blind')
+          .select('id, name, status, current_players, max_players, small_blind, big_blind')
           .eq('tournament_id', t.id)
           .order('name', { ascending: true });
         if (error) throw error;
@@ -991,6 +1038,87 @@ export default function TournamentPage() {
       clearInterval(iv);
     };
   }, [selectedTournament]);
+
+  /* ═══════════════════════════════════════════════════════════════════════════
+     THE LIVE PANE'S RANKING BOARD
+     ═══════════════════════════════════════════════════════════════════════════
+
+     `RankingTab` renders from props and issues no query for the field, so the
+     three things it needs are assembled here: the entries, the tables in the
+     shape the tab contract names, and the blind structure normalised to
+     minutes. Everything else it derives itself. */
+
+  const selectedIsRunning = selectedTournament?.status === 'RUNNING';
+
+  const {
+    entries: liveEntries,
+    loading: entriesLoading,
+    loadFailed: entriesFailed,
+  } = useTournamentEntries(
+    selectedTournament?.id ?? null,
+    Boolean(selectedIsRunning),
+    Number(selectedTournament?.starting_chips) || 0
+  );
+
+  const rankingTables = useMemo<TournamentTable[]>(
+    () =>
+      tourneyTables.map((t) => ({
+        id: t.id,
+        name: t.name || 'Table',
+        status: t.status || 'active',
+        max_players: t.max_players ?? 9,
+        current_players: t.current_players ?? 0,
+        small_blind: t.small_blind ?? 0,
+        big_blind: t.big_blind ?? 0,
+      })),
+    [tourneyTables]
+  );
+
+  /**
+   * The stored structure spells the level length three ways, and `duration`
+   * holds SECONDS while `durationMinutes` holds minutes - reading the wrong one
+   * first draws a three minute Spin level as three hours. `blindLevelMinutes`
+   * is the one reader that gets the precedence right, which is why the whole
+   * normalisation goes through it here exactly as it does in the lobby.
+   */
+  const rankingBlindLevels = useMemo<NormalisedBlindLevel[]>(() => {
+    const raw =
+      typeof selectedTournament?.blind_structure === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(selectedTournament.blind_structure as string);
+            } catch {
+              return [];
+            }
+          })()
+        : selectedTournament?.blind_structure || [];
+    if (!Array.isArray(raw)) return [];
+    const rows = raw as Parameters<typeof blindLevelMinutes>[0];
+    return raw.map((row: Record<string, unknown>, i: number) => {
+      const level = Number(row.level ?? i + 1);
+      return {
+        level,
+        smallBlind: Number(row.smallBlind ?? row.small_blind ?? 0),
+        bigBlind: Number(row.bigBlind ?? row.big_blind ?? 0),
+        ante: Number(row.ante ?? 0),
+        duration: blindLevelMinutes(rows, level),
+        isBreak: Boolean(row.isBreak ?? row.is_break ?? false),
+      };
+    });
+  }, [selectedTournament?.blind_structure]);
+
+  /**
+   * Open one player's table as a spectator. Handed to the tab only while the
+   * pane itself is being drawn, which is RUNNING only - a finished event's
+   * `table_id`s point at closed felts, and the tab renders no link at all when
+   * it receives no handler.
+   */
+  const watchPlayerTable = useCallback(
+    (tableId: string) => {
+      openTableAsObserver(navigate, { tableId });
+    },
+    [navigate]
+  );
 
   if (isLoading) {
     return (
@@ -1249,27 +1377,30 @@ export default function TournamentPage() {
                   </div>
                 )}
 
-                {/* Mystery Bounty Info */}
-                {selectedTournament.is_mystery_bounty && (
-                  <div className="stat">
-                    <span className="stat-label">Mystery Bounty Range</span>
-                    {/* MYSTERY RANGE 2026-08-21: currency, not multipliers. The
-                        old "1x - 100x" fallback was invented outright — the
-                        draw table's ceiling is 13x the head. When the range is
-                        not set we say so rather than making one up. */}
-                    <span className="stat-value">
-                      {selectedTournament.mystery_bounty_min &&
-                      selectedTournament.mystery_bounty_max
-                        ? `${Number(selectedTournament.mystery_bounty_min).toLocaleString(
-                            undefined,
-                            { minimumFractionDigits: 2, maximumFractionDigits: 2 }
-                          )} - ${Number(selectedTournament.mystery_bounty_max).toLocaleString(
-                            undefined,
-                            { minimumFractionDigits: 2, maximumFractionDigits: 2 }
-                          )} Per Knockout`
-                        : 'Revealed At Knockout'}
-                    </span>
-                  </div>
+                {/* MYSTERY BOUNTY (sections 10 and 73).
+                    This used to print `mystery_bounty_min` / `mystery_bounty_max`,
+                    a per-head range drawn at REGISTRATION time. The engine no
+                    longer reads either column: the draw happens once, when the
+                    mystery phase opens, and produces an inventory of real
+                    chests. What is advertised now is the biggest chest that
+                    exists, from fn_mystery_bounty_inventory. */}
+                {selectedIsMystery && (
+                  <>
+                    <div className="stat">
+                      <span className="stat-label">Top Mystery Bounty</span>
+                      <span className="stat-value">
+                        {topBountyCents(mysteryBounty.inventory) > 0
+                          ? formatCents(topBountyCents(mysteryBounty.inventory))
+                          : 'Drawn When The Mystery Phase Opens'}
+                      </span>
+                    </div>
+                    <div className="stat">
+                      <span className="stat-label">Mystery Status</span>
+                      <span className="stat-value">
+                        {activationStatusLine(mysteryBounty.inventory)}
+                      </span>
+                    </div>
+                  </>
                 )}
 
                 {/* Spin Info */}
@@ -1286,23 +1417,43 @@ export default function TournamentPage() {
               {/* Live pane, RUNNING only. Until now, opening a tournament
                   that was actually in progress showed exactly what an
                   unstarted one showed: a static blind chart and a payout
-                  list. No clock, no standings, no idea which tables were
-                  running or how many players were left. All three components
-                  below were ALREADY BUILT and working: TournamentClock was
-                  rendered only on the separate mobile details route, and
-                  TournamentStandings only behind a tab there, so the lobby
-                  was the one place you could not see the tournament you were
-                  actually playing. */}
+                  list. No clock, no ranking, no idea which tables were
+                  running or how many players were left. */}
               {selectedTournament.status === 'RUNNING' && (
                 <div className="tourney-live-pane">
                   <TournamentClock tournamentId={selectedTournament.id} compact />
 
                   <div className="tourney-live-section">
-                    <h3>Chip Counts</h3>
-                    <TournamentStandings
-                      tournamentId={selectedTournament.id}
-                      totalPlayers={selectedTournament.current_players || 0}
-                    />
+                    <h3>Ranking</h3>
+                    {/* THREE STATES, NOT TWO. `RankingTab` prints "No Players
+                        Yet" for an empty list, which is a claim about the
+                        tournament - so an unanswered query must never reach it
+                        as an empty array. It is held back until the first read
+                        settles, and a read that failed says so instead. */}
+                    {entriesLoading && liveEntries.length === 0 ? (
+                      <p className="tourney-live-empty">Loading The Ranking.</p>
+                    ) : entriesFailed && liveEntries.length === 0 ? (
+                      <p className="tourney-live-empty" role="status">
+                        The Ranking Is Unavailable Right Now. Retrying.
+                      </p>
+                    ) : (
+                      <>
+                        {entriesFailed && (
+                          <p className="tourney-live-empty" role="status">
+                            The Ranking Has Stopped Updating. Retrying.
+                          </p>
+                        )}
+                        <RankingTab
+                          tournament={selectedTournament}
+                          entries={liveEntries}
+                          tables={rankingTables}
+                          blindLevels={rankingBlindLevels}
+                          currentUserId={user?.id}
+                          isRegistered={isRegistered}
+                          onWatchPlayer={watchPlayerTable}
+                        />
+                      </>
+                    )}
                   </div>
 
                   <div className="tourney-live-section">
@@ -1383,6 +1534,19 @@ export default function TournamentPage() {
                 </table>
               </div>
 
+              {/* MYSTERY BOUNTY (sections 31 to 36, 41). The same three sections
+                  the tournament details page shows, on the other lobby surface,
+                  fed by the same page-level hook. */}
+              {selectedIsMystery && (
+                <MysteryBountyPanel
+                  tournamentId={selectedTournament.id}
+                  isMysteryBounty
+                  data={mysteryBounty}
+                  currentUserId={currentUser.id === 'guest' ? null : currentUser.id}
+                  isCompleted={selectedTournament.status === 'COMPLETED'}
+                />
+              )}
+
               {/* Payout Structure */}
               <div className="payout-structure">
                 <h3>Payouts</h3>
@@ -1438,12 +1602,15 @@ export default function TournamentPage() {
                   )
                 ) : selectedTournament.status === 'RUNNING' ? (
                   <>
-                    <button
-                      className="btn btn-primary btn-block"
-                      disabled={!isRegistered}
-                      onClick={handleJoinTable}
-                    >
-                      {isRegistered ? 'Go to Table' : 'Tournament in Progress'}
+                    {/* Dan 2026-08-25 (binding): a running tournament must be
+                        watchable. This was `disabled={!isRegistered}` with the
+                        label "Tournament in Progress" — a literal greyed-out
+                        dead end, on the one screen a player lands on when they
+                        tap a running game. It is a live button for everyone
+                        now: `handleJoinTable` already falls back to the
+                        tournament's own tables when the viewer holds no seat. */}
+                    <button className="btn btn-primary btn-block" onClick={handleJoinTable}>
+                      {isRegistered ? 'Go to Table' : 'Watch'}
                     </button>
 
                     {/* Rebuy Button */}
@@ -1653,7 +1820,7 @@ function LegacyCreateTournamentModal({ clubId, onClose, onCreate }: CreateModalP
           <label>Tournament Name</label>
           <input
             type="text"
-            placeholder="Enter name..."
+            placeholder="Enter Name..."
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />

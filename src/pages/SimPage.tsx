@@ -24,20 +24,12 @@ import { SeatSlot } from '../components/table/SeatSlot';
 import { CommunityCards } from '../components/table/CommunityCards';
 import { PotDisplay } from '../components/table/PotDisplay';
 import { ALL_SCENARIOS, type Scenario, type SimStep, type SimViewState } from '../sim/scenarios';
+import { SEAT_POSITIONS_6MAX } from '../lib/tableSeatGeometry';
 import './SimPage.css';
 
-// ─────────────────────────────────────────────────────────────────────────
-// Seat geometry — matches TablePage 6-max portrait layout.
-// ─────────────────────────────────────────────────────────────────────────
-
-const SEAT_POSITIONS_6MAX = [
-  { x: 50, y: 94 }, // Seat 1 — bottom center (hero pos)
-  { x: 22, y: 72 }, // Seat 2 — lower-left
-  { x: 22, y: 28 }, // Seat 3 — upper-left
-  { x: 50, y: 6 }, // Seat 4 — top center
-  { x: 78, y: 28 }, // Seat 5 — upper-right
-  { x: 78, y: 72 }, // Seat 6 — lower-right
-];
+// SEAT_POSITIONS_6MAX is imported from src/lib/tableSeatGeometry.ts — the
+// canonical geometry used by TablePage. A local copy here had drifted
+// (x: 22 vs 10.5, y: 94 vs 100) and was removed on 2026-08-26.
 
 // ─────────────────────────────────────────────────────────────────────────
 // Component

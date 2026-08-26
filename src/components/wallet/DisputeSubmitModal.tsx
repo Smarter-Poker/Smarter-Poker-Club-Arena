@@ -4,9 +4,11 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { useToast } from '../common/Toast';
+import { reportError } from '../../utils/errorReporter';
 import { DisputeService, type DisputeTarget } from '../../services/DisputeService';
 
 interface DisputeSubmitModalProps {
@@ -29,6 +31,7 @@ export default function DisputeSubmitModal({
 }: DisputeSubmitModalProps) {
   const { user } = useAuthUser();
   const toast = useToast();
+  const isMounted = useIsMounted();
 
   const [targetType, setTargetType] = useState<DisputeTarget>(
     defaultTargetType || 'agent_settlement'
@@ -38,9 +41,34 @@ export default function DisputeSubmitModal({
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  /** Same synchronous double-tap guard as the cashout sheet. */
+  const submitLockRef = useRef(false);
+
+  /**
+   * THE FORM WAS STICKY ACROSS OPENS.
+   *
+   * These four pieces of state are seeded from props ONCE, at first mount, and
+   * the component is kept mounted between opens (`isOpen` only short-circuits
+   * the render). So launching the dispute sheet from transaction A, closing it,
+   * and launching it from transaction B showed A's reference id and A's amount
+   * over B's dispute - and a successful submit left the old reason sitting in
+   * the box for whatever the player disputed next. Re-seeding on the opening
+   * edge is what makes the props mean what they say.
+   */
+  useEffect(() => {
+    if (!isOpen) return;
+    setTargetType(defaultTargetType || 'agent_settlement');
+    setTargetId(defaultTargetId || '');
+    setAmount(defaultAmount?.toString() || '');
+    setReason('');
+    setSubmitting(false);
+    submitLockRef.current = false;
+  }, [isOpen, defaultTargetType, defaultTargetId, defaultAmount]);
+
   if (!isOpen) return null;
 
   const handleSubmit = async () => {
+    if (submitLockRef.current) return;
     if (!user?.id) {
       toast.error('Please log in to submit a dispute');
       return;
@@ -49,12 +77,13 @@ export default function DisputeSubmitModal({
       toast.error('Please provide a reason for the dispute');
       return;
     }
-    const parsedAmount = parseFloat(amount);
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+    const parsedAmount = Number(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
       toast.error('Please enter a valid amount');
       return;
     }
 
+    submitLockRef.current = true;
     setSubmitting(true);
     try {
       await DisputeService.submitDispute(user.id, {
@@ -67,13 +96,55 @@ export default function DisputeSubmitModal({
       toast.success('Dispute submitted! The club owner will review it.');
       onClose();
     } catch (err) {
+      // The failure used to be swallowed entirely: the player got a friendly
+      // line and nobody, in Sentry or anywhere else, ever learned that disputes
+      // were failing to file.
+      reportError(err, 'DisputeSubmitModal.handleSubmit', { clubId, targetType });
       toast.error('Failed to submit dispute. Please try again.');
     }
-    setSubmitting(false);
+    submitLockRef.current = false;
+    if (isMounted.current) setSubmitting(false);
+  };
+
+  /** Closing mid-submit hides the outcome without stopping it. */
+  const closeIfIdle = () => {
+    if (submitLockRef.current) return;
+    onClose();
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    /**
+     * THE OVERLAY LAYOUT IS PINNED INLINE ON PURPOSE.
+     *
+     * This component imports no stylesheet of its own, so `.modal-overlay`
+     * resolved to whichever definition happened to be in the bundle:
+     * common/Modal.css says `position: absolute` with no centering, because it
+     * is designed to sit inside a `.modal-portal` that this component does not
+     * have; wallet/CashoutRequestModal.css says `position: fixed` with
+     * `align-items: flex-end`, which turns this dialog into a bottom sheet.
+     * Whether a dispute appeared centred, at the bottom, or glued to some
+     * ancestor's box depended on which OTHER component's CSS had been loaded.
+     *
+     * Inline styles beat both, so the layout is now the same every time. The
+     * class name stays for any global z-index or backdrop rule that keys off it.
+     */
+    <div
+      className="modal-overlay"
+      onClick={closeIfIdle}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Submit A Dispute"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px',
+        background: 'rgba(0,0,0,0.72)',
+        zIndex: 1000,
+      }}
+    >
       <div
         className="modal-content dispute-modal"
         onClick={(e) => e.stopPropagation()}
@@ -85,6 +156,12 @@ export default function DisputeSubmitModal({
           maxWidth: '420px',
           width: '92%',
           margin: '0 auto',
+          // Four fields plus a textarea plus two buttons does not fit a 375px
+          // phone in landscape, and the panel had no scroll of its own: the
+          // Submit button simply sat below the fold with nothing to scroll.
+          maxHeight: '90vh',
+          overflowY: 'auto',
+          boxSizing: 'border-box',
         }}
       >
         <h3 style={{ margin: '0 0 16px', fontSize: '1.1rem', color: 'var(--text-primary, #fff)' }}>
@@ -127,7 +204,7 @@ export default function DisputeSubmitModal({
           </label>
           <input
             type="text"
-            placeholder="Transaction or settlement ID"
+            placeholder="Transaction Or Settlement ID"
             value={targetId}
             onChange={(e) => setTargetId(e.target.value)}
             style={{
@@ -176,7 +253,7 @@ export default function DisputeSubmitModal({
             Reason
           </label>
           <textarea
-            placeholder="Describe the issue..."
+            placeholder="Describe The Issue..."
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={3}
@@ -197,7 +274,8 @@ export default function DisputeSubmitModal({
         {/* Buttons */}
         <div style={{ display: 'flex', gap: '8px' }}>
           <button
-            onClick={onClose}
+            onClick={closeIfIdle}
+            disabled={submitting}
             style={{
               flex: 1,
               padding: '10px',

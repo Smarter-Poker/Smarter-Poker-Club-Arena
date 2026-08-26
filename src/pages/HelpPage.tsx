@@ -22,6 +22,11 @@ const FAQ_ITEMS: FAQItem[] = [
       'Click "Sign Up" On The Homepage And Enter Your Email, Username, And Password. You\'ll Receive A Verification Email To Activate Your Account.',
   },
   {
+    question: 'How Do I Join A Club?',
+    answer:
+      'Go To The Clubs Page, Find A Club You Like, And Tap "Join". Some Clubs Require An Invitation Code Or Approval From An Admin.',
+  },
+  {
     question: 'How Do I Customize My Profile?',
     answer:
       'Go To Settings → Account, Then Click "Edit Profile". You Can Update Your Avatar, Bio, And Display Preferences.',
@@ -52,6 +57,11 @@ const FAQ_ITEMS: FAQItem[] = [
       'Game Theory Optimal (GTO) Training Helps You Learn Mathematically Sound Poker Strategies Through Interactive Scenarios And AI-Powered Feedback.',
   },
   {
+    question: 'What Is Fantasyland In OFC?',
+    answer:
+      'In Open Face Chinese Pineapple, Getting QQ+ In Your Front Row Qualifies You For Fantasyland, Where You Get All 14 Cards Dealt At Once.',
+  },
+  {
     question: 'How Do I Join A Tournament?',
     answer:
       'Visit The Tournaments Page, Browse Available Events, And Click "Register" On Any Tournament You Want To Join.',
@@ -60,6 +70,16 @@ const FAQ_ITEMS: FAQItem[] = [
     question: 'What Is The Diamond Arena?',
     answer:
       'The Diamond Arena Is Our Competitive Poker Room Where You Can Play Cash Games And Tournaments With Other Players For Diamonds And XP.',
+  },
+  {
+    question: 'How Do I Become An Agent?',
+    answer:
+      'Contact Your Club Owner To Be Promoted To An Agent Role. Agents Can Recruit Players And Build Their Own Communities.',
+  },
+  {
+    question: 'What Is The Bad Beat Jackpot?',
+    answer:
+      'The BBJ Is A Progressive Jackpot That Triggers When A Strong Hand (Like Quad Eights Or Better) Loses. The Pot Is Split Among The Table.',
   },
   {
     question: 'How Do I Change My Password?',
@@ -75,6 +95,10 @@ const FAQ_ITEMS: FAQItem[] = [
     question: 'How Do I Delete My Account?',
     answer:
       'Go To Settings → Data Export → Danger Zone. Please Note That Account Deletion Is Permanent And Cannot Be Undone.',
+  },
+  {
+    question: 'How Do I Report A Problem?',
+    answer: 'Use The Support Chat Below To Contact Our Team, Or Email Support@ClubArena.Poker.',
   },
 ];
 

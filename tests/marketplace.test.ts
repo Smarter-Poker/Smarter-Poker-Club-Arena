@@ -50,25 +50,27 @@ describe('isOwnedRow — the single definition of "owned"', () => {
 /* ── Grant descriptions ──────────────────────────────────────────────────── */
 
 describe('describeGrant — what the card promises the buyer', () => {
+  // Copy is Title Case per the 2026-08-23 rebuild: The First Letter Of Every
+  // Word On Every Marketplace Page Is Capitalized (Dan, binding).
   it('converts time-bank uses into seconds using the server rate', () => {
-    expect(describeGrant({ type: 'time_bank', qty: 3 })).toBe('+60s table time (3 uses)');
+    expect(describeGrant({ type: 'time_bank', qty: 3 })).toBe('+60s Table Time (3 Uses)');
   });
 
   it('honours a server-supplied seconds-per-use instead of a hard-coded 20', () => {
-    expect(describeGrant({ type: 'time_bank', qty: 2 }, 30)).toBe('+60s table time (2 uses)');
+    expect(describeGrant({ type: 'time_bank', qty: 2 }, 30)).toBe('+60s Table Time (2 Uses)');
   });
 
   it('pluralises correctly', () => {
-    expect(describeGrant({ type: 'time_bank', qty: 1 })).toContain('(1 use)');
-    expect(describeGrant({ type: 'throwable', qty: 1 })).toBe('1 free throw');
-    expect(describeGrant({ type: 'throwable', qty: 5 })).toBe('5 free throws');
+    expect(describeGrant({ type: 'time_bank', qty: 1 })).toContain('(1 Use)');
+    expect(describeGrant({ type: 'throwable', qty: 1 })).toBe('1 Free Throw');
+    expect(describeGrant({ type: 'throwable', qty: 5 })).toBe('5 Free Throws');
   });
 
   it('never renders a fractional or zero quantity', () => {
     // The DB CHECK forbids these, but the renderer must not produce
-    // "+54s table time (2.7 uses)" if one ever slips through.
-    expect(describeGrant({ type: 'time_bank', qty: 2.7 })).toBe('+40s table time (2 uses)');
-    expect(describeGrant({ type: 'time_bank', qty: 0 })).toBe('+20s table time (1 use)');
+    // "+54s Table Time (2.7 Uses)" if one ever slips through.
+    expect(describeGrant({ type: 'time_bank', qty: 2.7 })).toBe('+40s Table Time (2 Uses)');
+    expect(describeGrant({ type: 'time_bank', qty: 0 })).toBe('+20s Table Time (1 Use)');
   });
 
   it('returns null for items that grant nothing, so no badge is shown', () => {

@@ -22,7 +22,6 @@ export { OnlineIndicator } from './OnlineIndicator';
 // Skeleton Loading Components
 export {
   Skeleton,
-  SkeletonAvatar,
   SkeletonText,
   SkeletonButton,
   SkeletonCard,
@@ -54,9 +53,6 @@ export {
   NewBadge,
   ProBadge,
 } from './Badge';
-
-// Avatar Components
-export { Avatar, AvatarGroup, PlayerAvatar } from './Avatar';
 
 // Button Components
 export { Button, IconButton, ButtonGroup, PokerActionButton } from './Button';

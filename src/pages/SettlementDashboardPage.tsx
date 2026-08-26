@@ -323,11 +323,7 @@ export default function SettlementDashboardPage() {
     );
     const unsub4 = masterBus.subscribeDebounced('SETTLEMENT_PAYOUT_FAILED', () => loadData(), 500);
     const unsub5 = masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadData(), 2000);
-    const unsub6 = masterBus.subscribeDebounced(
-      'TRANSACTION_LOGGED' as any,
-      () => loadData(),
-      2000
-    );
+    const unsub6 = masterBus.subscribeDebounced('TRANSACTION_LOGGED', () => loadData(), 2000);
     return () => {
       unsub1();
       unsub2();
@@ -602,7 +598,16 @@ export default function SettlementDashboardPage() {
   }
 
   return (
-    <div style={{ padding: '16px', maxWidth: '900px', margin: '0 auto', paddingBottom: '100px' }}>
+    <div
+      style={{
+        padding: '16px',
+        width: '100%',
+        maxWidth: '900px',
+        margin: '0 auto',
+        paddingBottom: '100px',
+        overflowX: 'hidden',
+      }}
+    >
       {isRefreshing && (
         <div
           style={{
@@ -627,7 +632,9 @@ export default function SettlementDashboardPage() {
             color: '#3b82f6',
             cursor: 'pointer',
             fontSize: '0.85rem',
-            padding: 0,
+            padding: '10px 0',
+            minHeight: 44,
+            touchAction: 'manipulation',
             marginBottom: '4px',
           }}
         >
@@ -667,6 +674,7 @@ export default function SettlementDashboardPage() {
               right: '-10%',
               width: 200,
               height: 200,
+              maxWidth: '100%',
               background: 'radial-gradient(circle, rgba(0,212,255,0.1) 0%, transparent 70%)',
               borderRadius: '50%',
               pointerEvents: 'none',
@@ -848,6 +856,8 @@ export default function SettlementDashboardPage() {
             color: '#10b981',
             fontWeight: 700,
             fontSize: '0.8rem',
+            minHeight: 44,
+            touchAction: 'manipulation',
             cursor: runningCanary ? 'wait' : 'pointer',
             opacity: runningCanary ? 0.5 : 1,
             transition: 'all 0.2s',
@@ -871,6 +881,8 @@ export default function SettlementDashboardPage() {
             color: '#8b5cf6',
             fontWeight: 700,
             fontSize: '0.8rem',
+            minHeight: 44,
+            touchAction: 'manipulation',
             cursor: runningSettlement ? 'wait' : 'pointer',
             opacity: runningSettlement ? 0.5 : 1,
             transition: 'all 0.2s',
@@ -892,6 +904,8 @@ export default function SettlementDashboardPage() {
             color: 'rgba(255,255,255,0.6)',
             fontWeight: 700,
             fontSize: '0.8rem',
+            minHeight: 44,
+            touchAction: 'manipulation',
             cursor: 'pointer',
           }}
         >

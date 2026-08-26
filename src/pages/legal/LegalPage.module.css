@@ -4,11 +4,8 @@
  */
 
 .page {
-  min-height: 100vh;
-  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   color: #ecf0f1;
-  padding: var(--space-6) var(--space-4);
 }
 
 .header {
@@ -127,7 +124,19 @@
 /* Mobile Responsive */
 @media (max-width: 768px) {
   .page {
-    padding: var(--space-4) var(--space-3);
+  }
+
+  /* Tap target: back button was ~37px tall at 0.95rem */
+  .backBtn {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+  }
+
+  /* Long tokens (emails, hand ids) must wrap instead of forcing sideways scroll */
+  .content p,
+  .content ul li {
+    overflow-wrap: anywhere;
   }
 
   .header {

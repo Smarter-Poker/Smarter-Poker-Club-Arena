@@ -73,7 +73,7 @@ export function dotWindow(
   const out: { index: number; isCurrent: boolean }[] = [];
   for (let slot = 0; slot < count; slot++) {
     const offset = slot - centreSlot;
-    const index = ((((current + offset) % total) + total) % total);
+    const index = (((current + offset) % total) + total) % total;
     out.push({ index, isCurrent: slot === centreSlot });
   }
   return out;

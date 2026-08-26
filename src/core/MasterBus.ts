@@ -32,6 +32,8 @@ import { reportError } from '../utils/errorReporter';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export type BusEventType =
+  | 'TABLE_CHAT_INSERT'
+  | 'TABLE_PROFILES_UPDATE'
   | 'AUTH_STATE_CHANGED'
   | 'USER_PROFILE_LOADED'
   | 'CLUB_JOINED'
@@ -41,8 +43,16 @@ export type BusEventType =
   // Dan 2026-08-15: the in-table "+" asks MultiTablePage to open a LOBBY tab
   // alongside the running game, instead of navigating the whole app away.
   | 'OPEN_LOBBY_TAB'
+  // Dan 2026-08-25: the tournament lobby's Ranking and Tables tabs ask
+  // MultiTablePage to open a table as an OBSERVER in a new screen, leaving
+  // every screen already open still live. Cap-guarded like every other tab.
+  | 'OPEN_OBSERVE_TABLE'
   | 'TABLE_CAP_BLOCKED'
   | 'BALANCE_UPDATED'
+  // Had a payload in BusPayloadMap but was missing from this union, so five
+  // subscribe sites carried `as any` to compile - which switches OFF payload
+  // checking on a ledger event, the one place a wrong shape is money.
+  | 'TRANSACTION_LOGGED'
   | 'VIP_POINTS_UPDATED'
   | 'WALLET_REFRESHED'
   | 'REALTIME_CONNECTED'
@@ -52,6 +62,7 @@ export type BusEventType =
   | 'NOTIFICATION_READ'
   | 'WAITLIST_POSITION_CHANGED'
   | 'WAITLIST_PROMOTED'
+  | 'WAITLIST_CHANGED'
   | 'SESSION_SUMMARY_DISMISSED'
   | 'ACHIEVEMENT_UNLOCKED'
   | 'MISSION_PROGRESS'
@@ -88,6 +99,7 @@ export type BusEventType =
   | 'COMMISSION_PAID'
   | 'SETTLEMENT_COMPLETED'
   | 'FINANCIAL_ALERT'
+  | 'BBJ_HIT_GLOBAL'
   // Tournament lifecycle events
   | 'PLAYER_ELIMINATED'
   | 'TABLE_MERGED'
@@ -336,6 +348,8 @@ export type BusEventType =
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
+  TABLE_CHAT_INSERT: { tableId: string; newRow: Record<string, unknown> };
+  TABLE_PROFILES_UPDATE: { newRow: Record<string, unknown> };
   AUTH_STATE_CHANGED: AuthStatePayload;
   USER_PROFILE_LOADED: { avatarUrl?: string; displayName?: string; userId?: string };
   CLUB_JOINED: ClubEventPayload;
@@ -344,6 +358,14 @@ export interface BusPayloadMap {
   TABLE_LEFT: TableEventPayload;
   /** Request that MultiTablePage open a lobby tab beside the running game. */
   OPEN_LOBBY_TAB: { requestedBy?: string };
+  /**
+   * Open a table as an observer in a NEW screen without disturbing the screens
+   * already open. `tableName` is cosmetic (the tab label before the engine
+   * reports the real one). Honours the same MAX_TABLES cap as every other tab:
+   * at the cap this is refused with the standard cap notice, never silently
+   * dropped, and never by closing a screen the player is using.
+   */
+  OPEN_OBSERVE_TABLE: { tableId: string; tableName?: string; stakes?: string };
   /** Dan 2026-08-21: a seat could not be opened because the player is at
    *  the 4-table cap. TournamentAutoSeat turns this into the large popup. */
   TABLE_CAP_BLOCKED: { tableId: string };
@@ -358,6 +380,7 @@ export interface BusPayloadMap {
   NOTIFICATION_READ: { notifId: string | null; allRead: boolean };
   WAITLIST_POSITION_CHANGED: { tableId: string; position: number; tableName: string };
   WAITLIST_PROMOTED: { tableId: string; userId: string; tableName: string };
+  WAITLIST_CHANGED: void;
   SESSION_SUMMARY_DISMISSED: { tableId: string };
   ACHIEVEMENT_UNLOCKED: {
     userId: string;
@@ -430,6 +453,14 @@ export interface BusPayloadMap {
     message: string;
     context: Record<string, unknown>;
     timestamp: string;
+  };
+  BBJ_HIT_GLOBAL: {
+    tableId: string;
+    tableName: string;
+    gameVariant: string;
+    bigBlind: number;
+    winnerName: string;
+    amount: number;
   };
   // Tournament lifecycle events
   PLAYER_ELIMINATED: {
@@ -979,6 +1010,10 @@ export interface BusPayloadMap {
     tableId: string;
     action:
       | 'SIT_OUT'
+      | 'STAND_UP_BB'
+      | 'AUTO_TOP_UP'
+      | 'TOGGLE_SOUNDS'
+      | 'TOGGLE_VIBRATIONS'
       | 'REBUY'
       | 'ADD_ON'
       | 'SESSION_STATS'
@@ -1417,7 +1452,10 @@ class MasterBusCore {
     this.subscribe('DIAMOND_BALANCE_CHANGED', () => {
       const user = useUserStore.getState().user;
       if (user) {
-        useWalletStore.getState().loadDiamonds(user.id);
+        // force: this fires BECAUSE the balance changed. The store's freshness
+        // window is there to make component mounts free, not to suppress an
+        // event that exists to report a change.
+        useWalletStore.getState().loadDiamonds(user.id, { force: true });
       }
     });
 
@@ -1425,7 +1463,9 @@ class MasterBusCore {
     this.subscribe('DIAMOND_SPENT', () => {
       const user = useUserStore.getState().user;
       if (user) {
-        useWalletStore.getState().loadDiamonds(user.id);
+        // force: the player just spent diamonds - the number on screen is known
+        // to be wrong at this instant.
+        useWalletStore.getState().loadDiamonds(user.id, { force: true });
       }
     });
 

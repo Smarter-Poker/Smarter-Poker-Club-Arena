@@ -70,7 +70,44 @@ class PostgresSyncHooksService {
     this.channel = supabase.channel(`global_db_sync:${userId}`);
 
     this.channel
-      // 1. Wallets (Financial integrity) — REMOVED to scoped hook useRealtimeFinancials (2026-04-19)
+      // 1. WALLETS — restored here 2026-08-24, GLOBAL and USER-FILTERED.
+      //
+      // It was moved out to useRealtimeFinancials on 2026-04-19, and that hook
+      // is mounted on exactly two pages (PlayerWalletPage, CashierPage). So for
+      // the whole rest of the app - Home, the lobby, and every table - a balance
+      // changed SERVER-SIDE (agent transfer, admin credit, settlement payout,
+      // rakeback) produced no client update at all. The header simply showed a
+      // stale number until something unrelated happened to trigger a refetch.
+      // useGlobalBalanceSync's comment even asserted this listener lived here;
+      // it did not, so the balance was quietly less live than the code claimed.
+      //
+      // This is NOT a return to the listeners removed for billing in April.
+      // Those were UNFILTERED, table-wide subscriptions (`tables`, `tournaments`,
+      // `clubs`) that fanned every row change on the platform out to every
+      // client - ~80% of 86M realtime messages. This one carries
+      // `user_id=eq.<userId>`, so it delivers only this player's own wallet
+      // rows, exactly like the `profiles` and `club_members` listeners already
+      // in this channel.
+      //
+      // It emits BALANCE_UPDATED rather than pushing a number: useGlobalBalanceSync
+      // (mounted in App.tsx) already subscribes to that event debounced and
+      // refetches the authoritative balance, so bursts collapse into one read.
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'wallets',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          if (payload.eventType === 'DELETE') return;
+          this.debouncedEmit('wallet_balance', 'BALANCE_UPDATED', {
+            source: 'postgres_sync_wallets',
+            userId,
+          });
+        }
+      )
 
       // 2. Profiles (Display names, avatars, diamonds) — NOT debounced (personal data)
       .on(

@@ -59,14 +59,41 @@ describe('list caps are visible, never silently wrong', () => {
 
   it('caps every list query, not just the tables one', () => {
     const limits = src.match(/\.limit\(QUERY_LIMITS\.LIST\)/g) || [];
-    // tables + club tournaments + union/XMTT tournaments
-    expect(limits.length).toBeGreaterThanOrEqual(3);
+    // tables + tournaments.
+    //
+    // Was 3: tables, the club's tournaments, and a separate union/XMTT
+    // tournament query. That third query is gone as of 2026-08-23 - one
+    // applyClubScope call now returns union-owned games AND the club's private
+    // ones in a single round trip, the same shape the table query already
+    // used. Two queries meant two failure modes, and the one that mattered
+    // (the union query timing out) emptied every tournament tab while the
+    // club query quietly succeeded with nothing.
+    expect(limits.length).toBeGreaterThanOrEqual(2);
   });
 });
 
 describe('the fetch and the realtime admission rule agree', () => {
   it('excludes the same dead statuses on both paths', () => {
     // belongsInTableList drops 'closed' AND 'deleted'; so must the query.
-    expect(src).toMatch(/\.not\('status', 'in', '\("closed","deleted"\)'\)/);
+    expect(src).toMatch(/\.not\('status',\s*'in',\s*'\("closed","deleted"\)'\)/);
+  });
+
+  /**
+   * WHY THIS SECOND ASSERTION EXISTS.
+   *
+   * On 2026-08-23 this file asserted the ARRAY form, because the commit that
+   * introduced the array also edited the test to match it ("test: fix regex to
+   * match actual source code"). The array is not a filter PostgREST can read:
+   * `.not(col, 'in', value)` interpolates the value into `not.in.<value>`, so
+   * `['closed','deleted']` becomes `not.in.closed,deleted` and the request
+   * comes back 400 PGRST100. The cash list was null on EVERY club lobby load
+   * for hours, and the green test said the query was right.
+   *
+   * So the rule is now stated twice: the group form must be present, and the
+   * array form must be absent anywhere in the file. A test may only be
+   * relaxed to match the source when the source is the thing that is correct.
+   */
+  it('never passes a JS array where PostgREST wants a group', () => {
+    expect(src).not.toMatch(/\.not\(\s*'[a-z_]+'\s*,\s*'in'\s*,\s*\[/);
   });
 });

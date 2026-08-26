@@ -1270,7 +1270,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder="Content (optional)"
+          placeholder="Content (Optional)"
           rows={3}
           className="admin-input admin-textarea"
         />
@@ -1787,7 +1787,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
             <input
               value={theme.bannerUrl || ''}
               onChange={(e) => setTheme((prev) => ({ ...prev, bannerUrl: e.target.value }))}
-              placeholder="https://example.com/banner.png"
+              placeholder="Https://example.com/banner.png"
               className="admin-input"
             />
           </div>
@@ -1796,7 +1796,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
             <input
               value={theme.welcomeMessage || ''}
               onChange={(e) => setTheme((prev) => ({ ...prev, welcomeMessage: e.target.value }))}
-              placeholder="Welcome to our club!"
+              placeholder="Welcome To Our Club!"
               className="admin-input"
             />
           </div>
@@ -1839,7 +1839,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
         <div style={{ display: 'flex', gap: '8px' }}>
           <input
             id="ownership-target"
-            placeholder="New owner's User ID (UUID)"
+            placeholder="New Owner's User ID (UUID)"
             className="admin-input"
             style={{ flex: 1 }}
           />
@@ -1902,13 +1902,19 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
         // P2-1: union games carry the union container as club_id
         const gamesScope = await clubGamesOrFilter(uuid);
         // Generate recommendations based on club state
-        const [{ data: members }, { data: tables }, { data: annCount }] = await Promise.all([
+        /* `count: 'exact'` removed from both queries 2026-08-26. Neither count was
+           ever destructured - only `data` is - and the code below works off
+           `mems.length` and `anns.length`. An exact count is not free: PostgREST
+           runs a SECOND full scan of the same predicate to produce it, and on
+           club_members that scan goes through four RLS policies. It was paying
+           twice for a number nothing read. */
+        const [{ data: members }, { data: tables }, { data: anns }] = await Promise.all([
           supabase
             .from('club_members')
-            .select('user_id, is_active, role, last_active_at', { count: 'exact' })
+            .select('user_id, is_active, role, last_active_at')
             .eq('club_id', uuid),
           supabase.from('tables').select('id, current_players, status').or(gamesScope),
-          supabase.from('club_announcements').select('id', { count: 'exact' }).eq('club_id', uuid),
+          supabase.from('club_announcements').select('id').eq('club_id', uuid),
         ]);
         const mems = members || [];
         const tbls = tables || [];
@@ -1942,7 +1948,10 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
         }
 
         // Check announcements
-        if ((annCount as any) === 0 || !(annCount as any)?.length) {
+        /* Was `annCount === 0 || !annCount?.length`. The first clause was dead:
+           the variable holds `data`, which is an array or null, never the number
+           0. The length check is the one that was doing the work. */
+        if (!anns || anns.length === 0) {
           recommendations.push({
             icon: '◉',
             severity: 'info',
@@ -2115,24 +2124,32 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                     onClick={async () => {
                       setActionError(null);
                       try {
-                        const uuid = await resolveClubUUID(clubId);
-                        const { data: newTable, error: insErr } = await supabase
-                          .from('tables')
-                          .insert({
-                            club_id: uuid,
-                            name: tmpl.name || 'New Table',
-                            game_type: tmpl.game_type || 'nlh',
-                            small_blind: tmpl.small_blind || 1,
-                            big_blind: tmpl.big_blind || 2,
-                            max_players: tmpl.max_players || 9,
-                            min_buy_in: tmpl.min_buy_in || 40,
-                            max_buy_in: tmpl.max_buy_in || 200,
-                            status: 'active',
-                          })
-                          .select('id')
-                          .maybeSingle();
+                        /**
+                         * LAUNCH COPIES THE WHOLE ROW (2026-08-25).
+                         *
+                         * This used to hand-copy EIGHT fields out of a row with
+                         * over a hundred columns, so every rule the host had
+                         * configured on the template - straddle, bomb pots,
+                         * ante, insurance, run it twice, cap, no-rathole,
+                         * VIP-only, all of it - was silently discarded. A
+                         * launched template was a plain table wearing the
+                         * template's name.
+                         *
+                         * fn_launch_table_from_template copies the row and
+                         * overrides only identity and live state, so a column
+                         * added tomorrow is carried without anyone remembering
+                         * to add it here. It also checks club staff itself,
+                         * which the client-side insert never could.
+                         */
+                        const { data: newId, error: insErr } = await supabase.rpc(
+                          'fn_launch_table_from_template',
+                          { p_template_id: tmpl.id }
+                        );
                         if (insErr) throw insErr;
-                        masterBus.emit('TABLE_CREATED', { tableId: newTable?.id || '', clubId });
+                        masterBus.emit('TABLE_CREATED', {
+                          tableId: (newId as string) || '',
+                          clubId,
+                        });
                       } catch (e: unknown) {
                         setActionError(`Launch failed: ${safeErrorMessage(e)}`);
                       }
@@ -2350,7 +2367,7 @@ function MintChipsTab({ clubId }: { clubId: string }) {
             <input
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Reason for minting..."
+              placeholder="Reason For Minting..."
               className="admin-input"
             />
           </div>

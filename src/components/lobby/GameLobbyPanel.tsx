@@ -15,7 +15,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import CasinoPlaque, { PlaqueSeats } from './CasinoPlaque';
 import type { LobbyEntry, LobbyTableRow, LobbyTournamentRow } from './lobbyEntries';
+import { parseBlindStructure, tournamentBlinds, tournamentLevel } from './tournamentFigures';
 import { parseTableSettings } from './lobbyEntries';
+import { cashBuyInRange } from '../../lib/cashBuyIn';
 import { tournamentService } from '../../services/TournamentService';
 import { waitlistService, type WaitlistEntry } from '../../services/WaitlistService';
 import { tableService } from '../../services/TableService';
@@ -117,6 +119,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   // ── Detail data (read-only enrichment; actions never depend on it) ──
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
+  const [waitlistError, setWaitlistError] = useState(false);
   const [avgPot, setAvgPot] = useState<number | null>(null);
   const [seatMap, setSeatMap] = useState<{ seat_number: number; user_id: string }[] | null>(null);
   const [tab, setTab] = useState<TournTab>('overview');
@@ -126,6 +129,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     let cancelled = false;
     setTournament(null);
     setWaitlist([]);
+    setWaitlistError(false);
     setAvgPot(null);
     setTab('overview');
     setDetailError(false);
@@ -134,15 +138,25 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       waitlistService
         .getTableWaitlist(entry.id)
         .then((rows) => {
-          if (!cancelled) setWaitlist(rows || []);
+          if (!cancelled) {
+            setWaitlist(rows || []);
+            setWaitlistError(false);
+          }
         })
-        .catch((e) => reportError(e, 'GameLobbyPanel.loadWaitlist'));
+        .catch((e) => {
+          /* "Waiting 0" beside a Join Waitlist button is a promise that you
+             are first in line. On a failed read it was a guess, and the seat
+             map one screen up already knew better - it hides itself rather
+             than draw an empty table. */
+          if (!cancelled) setWaitlistError(true);
+          reportError(e, 'GameLobbyPanel.loadWaitlist');
+        });
       tableService
         .getAveragePot(entry.id)
         .then((v: number | null) => {
           if (!cancelled && v != null && Number.isFinite(Number(v))) setAvgPot(Number(v));
         })
-        .catch(() => undefined);
+        .catch((e) => reportError(e, 'GameLobbyPanel.loadAveragePot'));
     } else {
       tournamentService
         .getTournament(entry.id)
@@ -169,14 +183,35 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       return;
     }
     let cancelled = false;
-    supabase
-      .from('table_seats')
-      .select('seat_number, user_id')
-      .eq('table_id', entry.id)
-      .is('left_at', null)
-      .then(({ data, error }) => {
-        if (!cancelled && !error && data) setSeatMap(data);
-      });
+    /* Awaited inside a try, not left as a bare `.then`. A Supabase builder is
+       a PromiseLike that REJECTS on a transport failure - it only resolves
+       with `{ error }` for query-level errors - and a PromiseLike has no
+       `.catch`, so there was nowhere to put the handler and a dropped
+       connection here surfaced as an unhandled rejection. The seat map is a
+       nice-to-have; failing to get it must not raise. */
+    void (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('table_seats')
+          .select('seat_number, user_id')
+          .eq('table_id', entry.id)
+          .is('left_at', null);
+        if (cancelled) return;
+        if (error) {
+          /* `!error && data` swallowed this silently. The seat map is read-only
+             enrichment and correctly stays HIDDEN on failure - it is never drawn
+             as "every seat empty" - but a failure nobody records is a failure
+             nobody can fix. */
+          reportError(error, 'GameLobbyPanel.loadSeatMap');
+          setSeatMap(null);
+          return;
+        }
+        setSeatMap(data ?? []);
+      } catch (err) {
+        /* transport failure - the panel simply shows no seat map */
+        reportError(err, 'GameLobbyPanel.loadSeatMap');
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -301,9 +336,47 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   const ctaDisabled = cta.kind === 'disabled' || busy || (cta.needsAuth === true && !currentUserId);
 
   // ── Right zone of the plaque ──
+  /* The lobby row is the fallback for the two figures the table now prints
+     in columns of their own. When the detail fetch fails the panel used to
+     hide a Starting Stack the card behind it was still showing, and it never
+     showed Current Level at all - so opening a row could tell you LESS than
+     the row did. Both come off `entry.raw` when the fetched tournament has
+     nothing to add. */
+  const tRaw = entry.kind === 'cash' ? null : (entry.raw as LobbyTournamentRow);
+  const panelStartingChips = Number(tournament?.starting_chips ?? tRaw?.starting_chips ?? 0) || 0;
+  const panelLevel = tRaw ? tournamentLevel(tRaw) : 0;
+  const panelBlinds = tRaw ? tournamentBlinds(tRaw) : null;
+
+  /**
+   * ── THE STRUCTURE TAB WAS CRASHING THE PANEL ────────────────────────────
+   *
+   * `tournaments.blind_structure` is a TEXT column holding a JSON array, and
+   * TournamentService.getTournament returns the raw row without parsing — but
+   * the `Tournament` type declares the field as `BlindLevel[]`, so TypeScript
+   * had nothing to say about it. At runtime it is a STRING: `.length` is the
+   * character count, which is truthy, and `.map` is not a function. Opening
+   * Structure on any MTT threw and took the whole panel down.
+   *
+   * Every other consumer already guards — TournamentInfoPanel with asArray,
+   * TablePage and the lobby table through parseBlindStructure. This was the
+   * last one that did not. Array input is passed through so a caller that
+   * ever does parse for us keeps working.
+   */
+  const panelBlindLevels = useMemo<BlindLevel[]>(() => {
+    const raw = tournament?.blind_structure as unknown;
+    if (Array.isArray(raw)) return raw as BlindLevel[];
+    return (parseBlindStructure(typeof raw === 'string' ? raw : null) as BlindLevel[] | null) ?? [];
+  }, [tournament?.blind_structure]);
+
   const cashRaw = isCash ? (entry.raw as LobbyTableRow) : null;
-  const minBuy = cashRaw ? cashRaw.min_buy_in || cashRaw.big_blind * 20 : 0;
-  const maxBuy = cashRaw ? cashRaw.max_buy_in || cashRaw.big_blind * 100 : 0;
+  /* One helper, so the panel and the card behind it cannot quote different
+     buy-ins for the same table — see src/lib/cashBuyIn.ts for why the raw
+     columns were the wrong thing to print. It also coerces before it falls
+     back, which is what stopped the literal text "NaN" appearing on the
+     buy-in plaque when a row carried a null big_blind. */
+  const cashRange = cashRaw ? cashBuyInRange(cashRaw) : null;
+  const minBuy = cashRange ? cashRange.min : 0;
+  const maxBuy = cashRange ? cashRange.max : 0;
 
   const joinZone = (
     <>
@@ -338,7 +411,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         )}
       </div>
       <PlaqueSeats players={entry.players} capacity={entry.capacity} />
-      {cta.link ? (
+      {cta.link && !busy ? (
         <Link
           className={`cplaque__cta${cta.kind !== 'primary' && cta.kind !== 'disabled' ? ` cplaque__cta--${cta.kind}` : ''}`}
           to={cta.link}
@@ -349,6 +422,10 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         <button
           type="button"
           className={`cplaque__cta${cta.kind !== 'primary' && cta.kind !== 'disabled' ? ` cplaque__cta--${cta.kind}` : ''}`}
+          /* When an action is in flight the link CTA renders as this button
+             instead, so "Return To Tournament" cannot be tapped a second time
+             mid-registration and shows the same One Moment state every other
+             CTA shows. */
           disabled={ctaDisabled}
           onClick={() => cta.run?.()}
         >
@@ -359,6 +436,21 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         <span className="cplaque__cta-note">Sign In To Play</span>
       )}
       {cta.note && <span className="cplaque__cta-note">{cta.note}</span>}
+      {isCash && (
+        <Link
+          className="cplaque__observe-link"
+          to={`/table/${entry.id}`}
+          style={{
+            marginTop: '0.5rem',
+            display: 'block',
+            textAlign: 'center',
+            fontSize: '0.9rem',
+            color: 'var(--text-muted)',
+          }}
+        >
+          Observe Table
+        </Link>
+      )}
     </>
   );
 
@@ -415,15 +507,24 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   <div>
                     <dt>Players</dt>
                     <dd className="glp__mono">
-                      {entry.players} / {entry.capacity}
+                      {/* `|| '-'` to match the tournament row below: a table
+                          with no seat count rendered "3 / 0", which reads as a
+                          zero-seat table rather than an unknown one. */}
+                      {entry.players} / {entry.capacity || '-'}
                     </dd>
                   </div>
-                  {settings?.ante_enabled === true && (
+                  {/* COLUMNS, not the settings blob. `settings` is {} on every
+                      live cash table, so this branch never fired while the CARD
+                      showed an ANTE medallion read off the column — the row and
+                      the panel you open by clicking it disagreed about the same
+                      table. Falls back to the blob for a table created through
+                      the older modal, which does write it. */}
+                  {(cashRaw?.ante_enabled === true || settings?.ante_enabled === true) && (
                     <div>
                       <dt>Ante</dt>
                       <dd className="glp__mono">
-                        {Number(settings.ante_amount) > 0
-                          ? Number(settings.ante_amount).toLocaleString()
+                        {Number(cashRaw?.ante ?? settings?.ante_amount) > 0
+                          ? Number(cashRaw?.ante ?? settings?.ante_amount).toLocaleString()
                           : 'On'}
                       </dd>
                     </div>
@@ -436,7 +537,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   )}
                   <div>
                     <dt>Waiting</dt>
-                    <dd className="glp__mono">{waitlist.length}</dd>
+                    <dd className="glp__mono">{waitlistError ? '-' : waitlist.length}</dd>
                   </div>
                   <div>
                     <dt>Status</dt>
@@ -498,6 +599,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                             ? 'You'
                             : 'Player'}
                         </span>
+                        <span className="glp__wl-time">~{(i + 1) * 5}m</span>
                       </li>
                     ))}
                   </ol>
@@ -511,13 +613,35 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
             <>
               {entry.kind === 'mtt' && (
                 <nav className="glp__tabs" role="tablist" aria-label="Tournament details">
-                  {(['overview', 'structure', 'payouts'] as TournTab[]).map((t) => (
+                  {(['overview', 'structure', 'payouts'] as TournTab[]).map((t, i, all) => (
                     <button
                       key={t}
+                      type="button"
+                      id={`glp-tab-${t}`}
                       role="tab"
                       aria-selected={tab === t}
+                      aria-controls={`glp-panel-${t}`}
+                      /* Roving tabindex: a tablist is ONE tab stop, and the
+                         arrows move within it. Three separate tab stops with
+                         dead arrow keys is what this was, which is the exact
+                         anti-pattern LobbyAdStrip documents avoiding. */
+                      tabIndex={tab === t ? 0 : -1}
                       className={`glp__tab${tab === t ? ' is-active' : ''}`}
                       onClick={() => setTab(t)}
+                      onKeyDown={(ev) => {
+                        const step = ev.key === 'ArrowRight' ? 1 : ev.key === 'ArrowLeft' ? -1 : 0;
+                        if (step === 0 && ev.key !== 'Home' && ev.key !== 'End') return;
+                        ev.preventDefault();
+                        const nextIdx =
+                          ev.key === 'Home'
+                            ? 0
+                            : ev.key === 'End'
+                              ? all.length - 1
+                              : (i + step + all.length) % all.length;
+                        const next = all[nextIdx];
+                        setTab(next);
+                        document.getElementById(`glp-tab-${next}`)?.focus();
+                      }}
                     >
                       {t === 'overview' ? 'Overview' : t === 'structure' ? 'Structure' : 'Payouts'}
                     </button>
@@ -526,7 +650,17 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
               )}
 
               {(entry.kind !== 'mtt' || tab === 'overview') && (
-                <section className="glp__section">
+                <section
+                  className="glp__section"
+                  {...(entry.kind === 'mtt'
+                    ? {
+                        id: 'glp-panel-overview',
+                        role: 'tabpanel',
+                        'aria-labelledby': 'glp-tab-overview',
+                        tabIndex: 0,
+                      }
+                    : {})}
+                >
                   <h3 className="glp__h">{entry.kind === 'mtt' ? 'Overview' : 'Details'}</h3>
                   <dl className="glp__grid">
                     <div>
@@ -564,7 +698,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                     <div>
                       <dt>Starts</dt>
                       <dd>
-                        {entry.startTime
+                        {entry.startTime && Number.isFinite(new Date(entry.startTime).getTime())
                           ? new Date(entry.startTime).toLocaleString('en-US', {
                               month: 'short',
                               day: 'numeric',
@@ -574,11 +708,23 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                           : 'When Full'}
                       </dd>
                     </div>
-                    {tournament && Number(tournament.starting_chips) > 0 && (
+                    {/* The lobby row already carries starting_chips, and the
+                        table now prints it in a column of its own - so when
+                        the detail fetch fails this panel was hiding a figure
+                        the card behind it is still showing. Fall back to the
+                        row, the way the note below promises. */}
+                    {panelStartingChips > 0 && (
                       <div>
                         <dt>Starting Stack</dt>
+                        <dd className="glp__mono">{panelStartingChips.toLocaleString()}</dd>
+                      </div>
+                    )}
+                    {panelLevel > 0 && (
+                      <div>
+                        <dt>Current Level</dt>
                         <dd className="glp__mono">
-                          {Number(tournament.starting_chips).toLocaleString()}
+                          {panelLevel}
+                          {panelBlinds ? ` (${panelBlinds})` : ''}
                         </dd>
                       </div>
                     )}
@@ -614,9 +760,15 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
               )}
 
               {entry.kind === 'mtt' && tab === 'structure' && (
-                <section className="glp__section">
+                <section
+                  className="glp__section"
+                  id="glp-panel-structure"
+                  role="tabpanel"
+                  aria-labelledby="glp-tab-structure"
+                  tabIndex={0}
+                >
                   <h3 className="glp__h">Blind Structure</h3>
-                  {tournament?.blind_structure?.length ? (
+                  {panelBlindLevels.length ? (
                     <div className="glp__tablewrap">
                       <table className="glp__table">
                         <thead>
@@ -629,7 +781,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                           </tr>
                         </thead>
                         <tbody>
-                          {tournament.blind_structure.map((l, i) =>
+                          {panelBlindLevels.map((l, i) =>
                             l.isBreak ? (
                               <tr key={i} className="glp__break">
                                 <td colSpan={5}>Break</td>
@@ -649,14 +801,24 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                     </div>
                   ) : (
                     <p className="glp__note">
-                      {tournament ? 'No Structure Published For This Event' : 'Loading Structure'}
+                      {detailError
+                        ? 'The Structure Could Not Be Loaded'
+                        : tournament
+                          ? 'No Structure Published For This Event'
+                          : 'Loading Structure'}
                     </p>
                   )}
                 </section>
               )}
 
               {entry.kind === 'mtt' && tab === 'payouts' && (
-                <section className="glp__section">
+                <section
+                  className="glp__section"
+                  id="glp-panel-payouts"
+                  role="tabpanel"
+                  aria-labelledby="glp-tab-payouts"
+                  tabIndex={0}
+                >
                   <h3 className="glp__h">Payouts</h3>
                   {tournament?.payout_structure?.length ? (
                     <>
@@ -677,7 +839,11 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                                 {Number(tournament.prize_pool) > 0 && (
                                   <td>
                                     {Math.floor(
-                                      (Number(tournament.prize_pool) * p.percentage) / 100
+                                      ((Number(tournament.prize_pool) || 0) *
+                                        (Number.isFinite(Number(p.percentage))
+                                          ? Number(p.percentage)
+                                          : 0)) /
+                                        100
                                     ).toLocaleString()}
                                   </td>
                                 )}
@@ -693,13 +859,23 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                     </>
                   ) : (
                     <p className="glp__note">
-                      {tournament ? 'Payouts Are Set When The Field Closes' : 'Loading Payouts'}
+                      {detailError
+                        ? 'The Payouts Could Not Be Loaded'
+                        : tournament
+                          ? 'Payouts Are Set When The Field Closes'
+                          : 'Loading Payouts'}
                     </p>
                   )}
                 </section>
               )}
 
-              {entry.rules.length > 0 && (entry.kind !== 'mtt' || tab === 'overview') && (
+              {/* NO TAB CONDITION (2026-08-26). The board's Rules column is
+                  gone, so this list is the only place in the app that spells a
+                  game's tags out. Hiding it on Structure and Payouts left the
+                  plaque medallions' `title` as the last explanation, and a
+                  title attribute needs a hover this panel's traffic does not
+                  have. It renders under all three tabs, as the plaque does. */}
+              {entry.rules.length > 0 && (
                 <section className="glp__section">
                   <h3 className="glp__h">Format</h3>
                   <ul className="glp__rules">

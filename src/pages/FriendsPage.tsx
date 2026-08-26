@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { sizedStorageUrl, generateAvatarSvg } from '../utils/avatarGenerator';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
@@ -255,7 +256,7 @@ export default function FriendsPage() {
         try {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, username, avatar_url:arena_avatar_url')
+            .select('id, username, avatar_url')
             .in('id', allProfileIds);
           if (profiles) {
             for (const p of profiles)
@@ -506,7 +507,7 @@ export default function FriendsPage() {
           <div className="friends-search">
             <input
               type="text"
-              placeholder="Search friends..."
+              placeholder="Search Friends..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => setSearchFocused(true)}
@@ -518,6 +519,13 @@ export default function FriendsPage() {
             />
             {filteredFriends.length > 0 && (
               <button
+                /* This button has no class of its own — it is styled inline —
+                   so the 2026-08-23 touch-target pass could not reach it and
+                   the live audit measured it at 24px of thumb reach against
+                   the 40px minimum. `.tap-target` is the opt-in club-engine.css
+                   documents for exactly this case: it paints nothing and only
+                   adds the invisible 44px ::after. */
+                className="tap-target"
                 style={{
                   background: 'rgba(65,105,225,0.15)',
                   color: '#4169E1',
@@ -648,7 +656,18 @@ export default function FriendsPage() {
               >
                 <div className="request-avatar">
                   {request.avatar_url ? (
-                    <img src={request.avatar_url} alt="" loading="lazy" />
+                    <img
+                      src={sizedStorageUrl(request.avatar_url!, 44)}
+                      alt=""
+                      loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = generateAvatarSvg(
+                          request.user_id || request.username,
+                          request.username
+                        );
+                      }}
+                    />
                   ) : (
                     <span>{request.username[0]?.toUpperCase()}</span>
                   )}
@@ -768,7 +787,18 @@ function SwipeableFriendRow({
       >
         <div className="friend-avatar">
           {friend.avatar_url ? (
-            <img src={friend.avatar_url} alt="" loading="lazy" />
+            <img
+              src={sizedStorageUrl(friend.avatar_url!, 44)}
+              alt=""
+              loading="lazy"
+              onError={(e) => {
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = generateAvatarSvg(
+                  friend.user_id || friend.username,
+                  friend.username
+                );
+              }}
+            />
           ) : (
             <span>{friend.username[0]?.toUpperCase()}</span>
           )}

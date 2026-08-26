@@ -162,7 +162,7 @@ describe("The champion's exit", () => {
     expect(realtime).toMatch(/'tournament_winner'/);
   });
 
-  it("eliminatePlayer is still never called with place 1 — that is why this is needed", () => {
+  it('eliminatePlayer is still never called with place 1 — that is why this is needed', () => {
     // If this ever stops being true, the two paths can both fire and the
     // champion gets the card twice (or the elimination toast). The guard above
     // catches the double exit; this catches the cause.
@@ -264,10 +264,26 @@ describe('One card, one carrier', () => {
     // It said SPIN unconditionally, so a 128-runner MTT finished under a Spin
     // badge. Resolved from the tournament row, never from the event name.
     const card = tsCode(read('src/components/tournament/TournamentRankingCard.tsx'));
-    expect(card).toMatch(/result\.isSpin \? 'SPIN' : 'TOURNAMENT'/);
+    /**
+     * Dan 2026-08-23: "remove the 'spin' after SmarterPoker". The badge used
+     * to read `result.isSpin ? 'SPIN' : 'TOURNAMENT'`; on a Spin it repeated
+     * what the event line directly beneath it already said. A Spin now carries
+     * NO badge, and only a real tournament is badged — a stricter version of
+     * what this test has always guarded: the card must never label a game as
+     * something it is not.
+     */
+    expect(card).not.toMatch(/'SPIN'/);
+    expect(card).toMatch(/!result\.isSpin && <span className="trc2__brand-mark">TOURNAMENT/);
     expect(tablePage).toMatch(/isSpin: isSpinTournament\(/);
     // isSpinTournament reads both columns; both must be selected or it is
     // always false.
-    expect(tablePage).toMatch(/select\('name, current_players, variant, tournament_type'\)/);
+    //
+    // 2026-08-25: the same select now also carries `is_mystery_bounty`, which
+    // gates the mystery bounty read that fills the card's chest figures
+    // (Dan section 43). What this test guards is unchanged and is asserted on
+    // the two columns by name rather than on the whole literal, so the next
+    // column added here does not fail a spec about Spin branding.
+    expect(tablePage).toMatch(/select\('name, current_players, variant, tournament_type/);
+    expect(tablePage).toMatch(/select\('name, current_players, variant, tournament_type[^']*'\)/);
   });
 });

@@ -34,9 +34,18 @@ export interface HandDetailModalProps {
   /** Newest-first list of recorded hands (same array HandHistoryPanel gets). */
   hands: HandRecord[];
   heroId: string;
-  /** Open the full animated replay of the hand currently shown. */
+  /**
+   * Open the full animated replay of THE HAND PASSED IN — not "the last hand".
+   *
+   * The argument is the whole point of this prop. TablePage's handler was
+   * declared with no parameter at all and resolved its own subject with
+   * `getPlayerHands(userId, 1)`, so paging back to hand 3 of 7 and pressing
+   * REPLAY played hand 7. TypeScript cannot catch that: a zero-argument
+   * function is assignable to a one-argument type. A handler that ignores
+   * `hand` and looks the subject up again is the bug, not a shortcut.
+   */
   onReplay?: (hand: HandRecord) => void;
-  /** Open the share modal for the hand currently shown. */
+  /** Open the share modal for THE HAND PASSED IN. Same trap as onReplay. */
   onShare?: (hand: HandRecord) => void;
 }
 
@@ -55,12 +64,25 @@ function MiniCard({ card }: { card: string }) {
   );
 }
 
+/**
+ * Card backs plus an explicit reason.
+ *
+ * Dan 2026-08-23: before the mapper fix every villain drew two grey rectangles
+ * here, and the complaint was not "the cards are hidden", it was "this looks
+ * broken". Backs on their own are ambiguous — they read equally as "not
+ * revealed" and as "still loading" or "failed to load". The store now only
+ * withholds cards it genuinely never had (a mucked hand is never persisted, by
+ * design), so say that in words rather than leaving the player to guess.
+ */
 function HiddenCards({ count = 2 }: { count?: number }) {
   return (
-    <span className="hdm-cards">
-      {Array.from({ length: count }).map((_, i) => (
-        <span key={i} className="hdm-card hdm-card--back" />
-      ))}
+    <span className="hdm-hidden">
+      <span className="hdm-cards">
+        {Array.from({ length: count }).map((_, i) => (
+          <span key={i} className="hdm-card hdm-card--back" />
+        ))}
+      </span>
+      <span className="hdm-notshown">Not Shown</span>
     </span>
   );
 }
@@ -71,8 +93,14 @@ function fmt(n: number): string {
   return n.toFixed(2);
 }
 
+/* `pineapple_discard` was missing here, so the street header printed the raw
+   database enum "pineapple_discard" on every pineapple hand while the panel
+   next door printed "Discard" for the same street (HandHistoryPanel's
+   getStreetLabel). Any street name added to HandHistoryStreet must gain a label
+   in both places or one surface starts leaking column names at the player. */
 const STREET_LABEL: Record<string, string> = {
   preflop: 'PreFlop',
+  pineapple_discard: 'Discard',
   flop: 'Flop',
   turn: 'Turn',
   river: 'River',
@@ -104,8 +132,29 @@ export function HandDetailModal({
     return m;
   }, [hand]);
 
-  // Per-player net: winners carry their amount; everyone else shows what the
-  // action log says they put in, as a negative.
+  /* Per-player NET, read from the stored result instead of being rebuilt here.
+   *
+   * This used to subtract every action amount and then ADD `winners[].amount`,
+   * treating that as the gross chips taken from the pot. It was the NET, so a
+   * winner's own investment came off twice: hero posts 2, calls 10 and takes a
+   * 24 pot, Hand History showed +12 (the stored result) and this modal showed
+   * 0 for the same hand. Losers agreed by accident, because with no winner term
+   * the two definitions coincide.
+   *
+   * Correcting the adapter alone would make the old arithmetic land on the
+   * right answer again, because `gross - invested` is how the service defines
+   * result in the first place. It is still read from the row rather than
+   * recomputed here, because recomputing assumes the action log carries every
+   * chip a player put in. The moment a blind, an ante or a returned uncalled
+   * bet is written anywhere but `actions`, that assumption pays out a wrong
+   * number silently, and this modal drifts away from Hand History exactly the
+   * way it just did. One stored net, read in both places.
+   *
+   * The action-log fallback below is a type floor, not a live path: the only
+   * producer of these records is handHistoryAdapter, which always sets
+   * `result`, and the localStorage cache that could hold an older shape has
+   * never been written to by anything.
+   */
   const netOf = useMemo(() => {
     const m = new Map<string, number>();
     if (!hand) return m;
@@ -114,7 +163,9 @@ export function HandDetailModal({
         if (a.amount && a.amount > 0) m.set(a.playerId, (m.get(a.playerId) || 0) - a.amount);
       }
     }
-    for (const w of hand.winners) m.set(w.playerId, (m.get(w.playerId) || 0) + w.amount);
+    for (const p of hand.players) {
+      if (typeof p.result === 'number') m.set(p.id, p.result);
+    }
     return m;
   }, [hand]);
 
@@ -131,6 +182,11 @@ export function HandDetailModal({
         cards: p.holeCards,
         handName: hand.winners.find((w) => w.playerId === p.id)?.hand,
         net: netOf.get(p.id) ?? 0,
+        /* Shown beside the net and labelled, so this modal and Hand History
+           display the identical pair of figures. Showing one surface the gross
+           and the other the net, both unlabelled, is what made the same hand
+           look like two different hands. */
+        collected: hand.winners.find((w) => w.playerId === p.id)?.amount,
         isWinner: winnerIds.has(p.id),
       }));
   }, [hand, netOf]);
@@ -151,12 +207,7 @@ export function HandDetailModal({
           <div className="hdm-header">
             <span className="hdm-title">HAND DETAIL</span>
             <div className="hdm-header__actions">
-              <button
-                type="button"
-                className="hdm-icon-btn"
-                aria-label="Close"
-                onClick={onClose}
-              >
+              <button type="button" className="hdm-icon-btn" aria-label="Close" onClick={onClose}>
                 <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
                   <path
                     d="M5 5l10 10M15 5L5 15"
@@ -169,8 +220,7 @@ export function HandDetailModal({
             </div>
           </div>
           <div className="hdm-empty">
-            No Completed Hands Yet At This Table. Play A Hand To The End And It
-            Will Appear Here.
+            No Completed Hands Yet At This Table. Play A Hand To The End And It Will Appear Here.
           </div>
         </div>
       </div>
@@ -383,6 +433,7 @@ function SummaryRow({
     cards?: string[];
     handName?: string;
     net: number;
+    collected?: number;
     isWinner: boolean;
   };
   heroId: string;
@@ -404,10 +455,15 @@ function SummaryRow({
         ) : (
           <HiddenCards />
         )}
+        {/* Only the winner of a pot carries an evaluated hand name in the row
+            (`winners[].hand.name`). A losing showdown player has none stored,
+            so this stays empty rather than being re-evaluated client side from
+            cards the client cannot verify. */}
         {r.handName && <span className="hdm-handname">{r.handName}</span>}
       </div>
+      {r.collected != null && <span className="hdm-collected">Collected {fmt(r.collected)}</span>}
       <span className={`hdm-net${r.net > 0 ? ' hdm-net--win' : r.net < 0 ? ' hdm-net--loss' : ''}`}>
-        {r.net > 0 ? '+' : ''}
+        Net {r.net > 0 ? '+' : ''}
         {fmt(r.net)}
       </span>
     </div>

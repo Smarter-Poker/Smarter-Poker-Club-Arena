@@ -15,7 +15,6 @@ import {
   useEffect,
   useRef,
   useCallback,
-  lazy,
   Suspense,
   Component,
   useMemo,
@@ -29,10 +28,10 @@ import { ClubsService } from '../services/ClubsService';
 import { backfillClubCards } from '../services/ClubCardBackfill';
 import { useToast } from '../components/common/Toast';
 import GlobalHeader from '../components/navigation/GlobalHeader';
+import FloatingOrbs from '../components/home/FloatingOrbs';
 import haptic from '../services/HapticService';
 
 import PremiumSFX from '../services/PremiumSFX';
-import { masterBus } from '../core/MasterBus';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 
 import ClubContextMenu from '../components/home/ClubContextMenu';
@@ -44,6 +43,7 @@ import {
   resolveTargetClub,
   readLastClubId,
   rememberLastClub,
+  primeUnionFlags,
 } from '../utils/clubQuickLink';
 import CarouselSection from '../components/home/CarouselSection';
 import { getClubLevelFromMembers } from '../utils/clubLevels';
@@ -54,10 +54,11 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { STORAGE_KEYS } from '../lib/storage';
 import styles from './HomePage.module.css';
 import { reportError } from '../utils/errorReporter';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
 
 // Lazy-load heavy components to reduce initial bundle
-const CreateClubModal = lazy(() => import('../components/modals/CreateClubModal'));
-const FindPlayerModal = lazy(() => import('../components/modals/FindPlayerModal'));
+const CreateClubModal = lazyWithRetry(() => import('../components/modals/CreateClubModal'));
+const FindPlayerModal = lazyWithRetry(() => import('../components/modals/FindPlayerModal'));
 
 const SWR_CACHE_TTL = 60 * 60 * 1000; // 1 hour — skip stale cache from old sessions
 
@@ -162,7 +163,15 @@ function HomePageInner() {
       const isFresh = cacheTs && Date.now() - Number(cacheTs) < SWR_CACHE_TTL;
       if (cached && isFresh) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          if (
+            parsed.some(
+              (c: any) => c.slug === undefined && c.id !== 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'
+            )
+          )
+            return [];
+          return parsed;
+        }
       }
     } catch {
       /* ignore corrupt cache */
@@ -177,7 +186,15 @@ function HomePageInner() {
       const isFresh = cacheTs && Date.now() - Number(cacheTs) < SWR_CACHE_TTL;
       if (cached && isFresh) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return false;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          if (
+            parsed.some(
+              (c: any) => c.slug === undefined && c.id !== 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'
+            )
+          )
+            return true;
+          return false;
+        }
       }
     } catch {
       /* */
@@ -186,7 +203,19 @@ function HomePageInner() {
   });
 
   // Per-club stats for featured card rendering
-  const [clubStats, setClubStats] = useState<Record<string, ClubStats>>({});
+  const [clubStats, setClubStats] = useState<Record<string, ClubStats>>(() => {
+    try {
+      const cached = localStorage.getItem(STORAGE_KEYS.CLUB_STATS_CACHE);
+      const cacheTs = localStorage.getItem(STORAGE_KEYS.CLUB_STATS_CACHE_TS);
+      const isFresh = cacheTs && Date.now() - Number(cacheTs) < SWR_CACHE_TTL;
+      if (cached && isFresh) {
+        return JSON.parse(cached);
+      }
+    } catch {
+      /* ignore corrupt cache */
+    }
+    return {};
+  });
   // Guard: prevent welcome toast from firing before first server fetch completes
   const hasFetchedOnceRef = useRef(false);
 
@@ -288,10 +317,12 @@ function HomePageInner() {
     async (skipLoading = false, getIsMounted?: () => boolean) => {
       if (!skipLoading) setIsLoading(true);
 
-      // Safety timeout: never show loading spinner for more than 12 seconds
+      // Safety timeout: never show loading spinner for more than 6 seconds.
+      // Was 12 — on a saturated database that is 12 seconds of dimmed screen;
+      // the SWR cache + retry UI handle the rest.
       const loadingTimeout = setTimeout(() => {
         if (!getIsMounted || getIsMounted()) setIsLoading(false);
-      }, 12_000);
+      }, 6_000);
 
       try {
         if (getIsMounted && !getIsMounted()) {
@@ -303,6 +334,21 @@ function HomePageInner() {
           data: { user: authUser },
         } = await getAuthUser();
         if (authUser) {
+          // PERF 2026-08-23: the card-colour preference needs only
+          // authUser.id, and was sitting behind the membership fetch for no
+          // reason but code order. Started here, awaited unchanged below, so
+          // the two round trips overlap. The rejection handler keeps a
+          // pre-await failure from surfacing as an unhandled rejection.
+          const colorPrefPromise = supabase
+            .from('profiles')
+            .select('preferences')
+            .eq('id', authUser.id)
+            .maybeSingle()
+            .then(
+              (r) => r,
+              (error) => ({ data: null, error })
+            );
+
           const memberships = await ClubsService.getUserMemberships(authUser);
           const clubs =
             memberships?.map(
@@ -340,11 +386,27 @@ function HomePageInner() {
           } catch {
             /* quota */
           }
+          /**
+           * UNION LAW (2026-08-24). These rows came straight from `clubs` with
+           * an authoritative `is_union`, so hand them to the union-flag memo
+           * while we have them. Two reasons, and the second is the real one:
+           *
+           *  - it saves a `clubs.is_union` round trip per candidate the first
+           *    time UnionSkinGuard or resolveLobbyClubId asks about a club;
+           *  - it seeds that memo from the NETWORK rather than from
+           *    localStorage. A legacy cache row carries no union signal at
+           *    all, which is what let a stale cache hand back the union hub as
+           *    a lobby destination (see cachedUnionFlag). Priming here means
+           *    the fresh answer is already in memory before any stale row can
+           *    be consulted.
+           *
+           * Deliberately AFTER the write above: if setItem throws on quota the
+           * priming is still valid, and the flags are the half that matters.
+           */
+          primeUnionFlags(lawFilteredClubs);
 
           // ── Batch: card color sync ──
-          const [colorResult] = await Promise.allSettled([
-            supabase.from('profiles').select('preferences').eq('id', authUser.id).maybeSingle(),
-          ]);
+          const [colorResult] = await Promise.allSettled([colorPrefPromise]);
 
           if (getIsMounted && !getIsMounted()) return;
 
@@ -406,41 +468,24 @@ function HomePageInner() {
     const hasCachedClubs = userClubs.length > 0;
     fetchUserData(hasCachedClubs, () => isMounted);
 
-    let channel: ReturnType<typeof masterBus.getOrCreateChannel> | null = null;
-    let cachedAuthUserId: string | null = null; // Cache for cleanup — avoids async getAuthUser() in teardown
-    const setupRealtimeSubscription = async () => {
-      const {
-        data: { user: authUser },
-      } = await getAuthUser();
-      if (!authUser?.id) return;
-      cachedAuthUserId = authUser.id; // Cache for cleanup
-
-      const channelKey = `home-clubs-${authUser.id}`;
-      channel = masterBus.getOrCreateChannel(channelKey);
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'club_members',
-            filter: `user_id=eq.${authUser.id}`,
-          },
-          () => {
-            if (isMounted) fetchUserData(true, () => isMounted);
-          }
-        )
-        .subscribe((status: string, err?: Error) => {
-          if (status === 'CHANNEL_ERROR') {
-            if (err) reportError(err?.message || err, 'HomePage._Realtime_channel_error');
-          }
-          if (status === 'TIMED_OUT') {
-            console.warn('[HomePage] Realtime channel timed out');
-          }
-        });
-    };
-
-    setupRealtimeSubscription();
+    // ── Club membership changes: handled GLOBALLY, not by this page ──────────
+    //
+    // A `home-clubs-<uid>` channel used to be created here, subscribing to
+    // `club_members` filtered by `user_id=eq.<uid>` and calling fetchUserData on
+    // any event. Removed 2026-08-24: it was a duplicate subscription AND it was
+    // torn down on every navigation away from Home, so returning re-negotiated
+    // it.
+    //
+    // PostgresSyncHooks' `global_db_sync:<userId>` channel already carries the
+    // IDENTICAL subscription - same table, same user_id filter - created once at
+    // sign-in and never torn down by routing. It emits CLUB_UPDATED (debounced,
+    // per club) on INSERT/UPDATE and CLUB_LEFT on DELETE, and this page ALREADY
+    // subscribes to CLUB_JOINED, CLUB_LEFT and CLUB_UPDATED on the bus further
+    // down. So the refresh path is unchanged; only the second, page-scoped
+    // socket subscription is gone.
+    //
+    // Net effect: one fewer realtime subscription per user sitting on Home, and
+    // no re-subscribe when they come back to it.
 
     // ═══════════════════════════════════════════════════════════════════════
     // MASTER BUS LISTENERS — cross-page state sync
@@ -448,14 +493,9 @@ function HomePageInner() {
 
     return () => {
       isMounted = false;
-      if (channel) {
-        channel.unsubscribe();
-      }
-      // Use cached userId from setup — avoids async getAuthUser() call in cleanup
-      // which was fire-and-forget and could leak channels if auth state changed
-      if (cachedAuthUserId) {
-        masterBus.removeRegisteredChannel(`home-clubs-${cachedAuthUserId}`);
-      }
+      // Nothing to unsubscribe here any more: the club_members listener this
+      // effect used to own now lives in PostgresSyncHooks' global channel (see
+      // the note above). `isMounted` still guards the in-flight fetchUserData.
     };
   }, [fetchUserData]);
 
@@ -594,7 +634,7 @@ function HomePageInner() {
           haptic.light();
           PremiumSFX.navigate();
           const target = resolveTargetClub(userClubs);
-          if (target) navigate(`/clubs/${target.id}/cashier`);
+          if (target) navigate(`/clubs/${target.slug || target.id}/cashier`);
           else toast.info('Join a club first to access the cashier');
           break;
         }
@@ -870,6 +910,19 @@ function HomePageInner() {
       const clubIds = displayClubs.map((c) => c.id);
       try {
         // Batch fetch club rows for level info
+        // PERF 2026-08-23: the counts RPC was called with clubRows.map(c => c.id),
+        // which is just clubIds filtered to rows that exist - so it waited a
+        // whole round trip to learn something it already knew. Asking for a
+        // count of a club id that does not exist simply returns nothing for it,
+        // and the lookup below is by id, so a superset is harmless. Both now
+        // fly at once.
+        const activeCountsPromise = supabase
+          .rpc('fn_batch_active_player_counts', { p_club_ids: clubIds })
+          .then(
+            (r) => r,
+            (error) => ({ data: null, error })
+          );
+
         const { data: clubRows } = await supabase
           .from('clubs')
           .select(
@@ -885,9 +938,7 @@ function HomePageInner() {
         // club (was a fan-out on the hottest page).
         const activeCountMap = new Map<string, number>();
         try {
-          const { data: batchCounts } = await supabase.rpc('fn_batch_active_player_counts', {
-            p_club_ids: clubRows.map((c: any) => c.id),
-          });
+          const { data: batchCounts } = await activeCountsPromise;
           for (const r of batchCounts || [])
             activeCountMap.set(r.club_id, Number(r.active_count) || 0);
         } catch (e) {
@@ -1062,6 +1113,8 @@ function HomePageInner() {
 
         if (isMounted) {
           setClubStats(statsMap);
+          localStorage.setItem(STORAGE_KEYS.CLUB_STATS_CACHE, JSON.stringify(statsMap));
+          localStorage.setItem(STORAGE_KEYS.CLUB_STATS_CACHE_TS, String(Date.now()));
 
           // Lazy-backfill baked card images for clubs missing card_image_url
           const backfillTargets = displayClubs
@@ -1083,11 +1136,34 @@ function HomePageInner() {
 
     fetchAllClubStats();
     // BUGFIX 2026-07-24: near-real-time active counts for every visible club card
-    // via a 20s poll (the table_seats realtime listener was removed for write volume).
-    const allStatsPoll = setInterval(fetchAllClubStats, 20000);
+    // via a poll (the table_seats realtime listener was removed for write volume).
+    //
+    // PERF 2026-08-24: this is the Home page - it is mounted for EVERY user, and
+    // each tick runs a multi-query club-stats fetch plus fn_union_active_player_counts
+    // plus a unions select. At 20s with NO visibility gate it kept firing in
+    // background tabs forever, so a player who left Home open in another tab was
+    // billing the database three queries every 20 seconds indefinitely.
+    //
+    // Two changes:
+    //   * 20s -> 45s. These are "players seated" counts on lobby cards, not
+    //     anything the player acts on; 45s is still near-real-time to the eye.
+    //   * skip the tick entirely while the tab is hidden, and fetch once on the
+    //     way back so a returning player never reads a stale card. This is the
+    //     pattern club/ClubDashboard.tsx:238 already uses correctly.
+    const POLL_MS = 45000;
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      fetchAllClubStats();
+    };
+    const allStatsPoll = setInterval(tick, POLL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') fetchAllClubStats();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       isMounted = false;
       clearInterval(allStatsPoll);
+      document.removeEventListener('visibilitychange', onVisible);
     };
     // Stats re-fetch naturally when displayClubIdsKey changes (membership changes)
   }, [displayClubs.length, displayClubIdsKey]);
@@ -1106,7 +1182,7 @@ function HomePageInner() {
       setQuickLinkClubId(club.id);
       haptic.light();
       PremiumSFX.navigate();
-      navigate(`/clubs/${club.id}/cashier`);
+      navigate(`/clubs/${club.slug || club.id}/cashier`);
     },
     [navigate]
   );
@@ -1154,10 +1230,8 @@ function HomePageInner() {
 
       {/* Enhancement #6: Circuit brain background overlay */}
       <div className={styles.circuitOverlay}></div>
-      {/* Enhancement #1: Neuron lights — traveling cyan pulses */}
-      <div className={styles.neuronLights}></div>
-      {/* P4-1: Floating dust particles */}
-      <div className={styles.dustParticles}></div>
+      {/* Enhancement #1 & P4-1: 100% Random Floating Orbs replacing static dust/neurons */}
+      <FloatingOrbs count={20} color="rgba(0, 212, 255, 0.8)" />
 
       {/* GLOBAL HEADER */}
       <GlobalHeader />
@@ -1464,7 +1538,20 @@ function HomePageInner() {
                     className={styles.clubCodeInput}
                     placeholder="Enter 5-Digit Club Code"
                     value={clubCode}
-                    onChange={(e) => setClubCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      // Detect pasted invite link
+                      const match = val.match(/\/invite\/([^/?]+)(?:\?ref=([a-zA-Z0-9]+))?/i);
+                      if (match) {
+                        const [, extractedClubId, extractedRef] = match;
+                        setShowJoinModal(false);
+                        navigate(
+                          `/invite/${extractedClubId}${extractedRef ? `?ref=${extractedRef}` : ''}`
+                        );
+                      } else {
+                        setClubCode(val.replace(/\D/g, '').slice(0, 6));
+                      }
+                    }}
                     onKeyDown={(e) => e.key === 'Enter' && handleJoinClubSubmit()}
                   />
                 </div>

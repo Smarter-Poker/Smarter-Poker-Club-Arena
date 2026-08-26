@@ -15,12 +15,31 @@
   color: #8b949e;
   margin: 0 0 16px;
   font-size: 0.85rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
 }
 
-/* ── Grid ── */
+/* The balance used to render as a bare bullet and a number ("• 0") because the
+   glyph in front of it was an emoji, and emoji are forbidden in source. It is
+   labelled now, so it reads as a balance rather than as a stray digit. */
+.cbs-balance {
+  color: #60a5fa;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ── Grid ──
+   MOBILE FIRST. auto-fill already reflows to two columns inside the 375px
+   settings panel, which is the layout that matters. The min() is the guard for
+   the case auto-fill cannot handle: a container NARROWER than one 100px track
+   (a very small screen, or a future panel with more padding) makes a fixed
+   minmax overflow its parent, and there is no horizontal scroll here to reach
+   what fell off. min(100px, 100%) lets the track shrink instead. */
 .card-backs-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100px, 100%), 1fr));
   gap: 12px;
 }
 
@@ -162,7 +181,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 200;
+  z-index: 9999;
   backdrop-filter: blur(4px);
   animation: cbsFadeIn 0.2s ease;
 }
@@ -181,6 +200,10 @@
   border-radius: 16px;
   padding: 24px;
   width: 280px;
+  /* 280px fits a 375px phone with room to spare; this caps it on anything
+     narrower (320px devices, a split-screen window) where a fixed width would
+     run under the screen edge and take the Cancel button with it. */
+  max-width: calc(100vw - 32px);
   text-align: center;
   animation: cbsSlideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }

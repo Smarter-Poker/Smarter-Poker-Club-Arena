@@ -699,7 +699,7 @@ export default function PlayerSessionsPage() {
           <div className="admin-modal-overlay" onClick={() => setWbTarget(null)}>
             <div
               className="admin-card"
-              style={{ maxWidth: '420px', margin: '60px auto' }}
+              style={{ width: 'calc(100% - 32px)', maxWidth: '420px', margin: '60px auto' }}
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="admin-card-title">Send Welcome-Back Chips</h3>
@@ -740,7 +740,7 @@ export default function PlayerSessionsPage() {
           <div className="admin-modal-overlay" onClick={() => !savingNote && setNoteTarget(null)}>
             <div
               className="admin-card"
-              style={{ maxWidth: '420px', margin: '60px auto' }}
+              style={{ width: 'calc(100% - 32px)', maxWidth: '420px', margin: '60px auto' }}
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="admin-card-title">
@@ -793,7 +793,7 @@ export default function PlayerSessionsPage() {
                 <textarea
                   className="admin-input admin-textarea"
                   rows={4}
-                  placeholder="Add notes about this player..."
+                  placeholder="Add Notes About This Player..."
                   value={noteData.notes}
                   onChange={(e) => setNoteData((d) => ({ ...d, notes: e.target.value }))}
                 />
@@ -939,7 +939,7 @@ export default function PlayerSessionsPage() {
               <input
                 className="admin-input"
                 style={{ flex: '1 1 200px' }}
-                placeholder="Search by name or ID..."
+                placeholder="Search By Name Or ID..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />

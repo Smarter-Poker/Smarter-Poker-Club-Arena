@@ -24,9 +24,24 @@
 name: Agent Open PR
 
 on:
-  push:
-    branches:
-      - 'agent/**'
+  # `create`, NOT `push`. Changed 2026-08-23 for cost.
+  #
+  # This opens a pull request for an agent branch, which needs to happen ONCE,
+  # when the branch first appears. It fired on every push to agent/** instead,
+  # and an agent pushes about 2.1 times per branch - nineteen runs an hour in
+  # this repo, roughly half of them booting a runner to discover the pull
+  # request already existed. GitHub bills a job as a whole minute however short
+  # it is, so those were whole minutes.
+  #
+  # `create` fires exactly once, when the branch is created, so the pull request
+  # still opens within seconds of the first push.
+  #
+  # AND IF THAT ONE FIRING IS MISSED - a transient API error, or a branch that
+  # existed before this workflow - nothing is stranded. agent-autopilot.yml runs
+  # .github/scripts/report-stuck-prs.sh every thirty minutes and that opens a
+  # pull request for any agent/* branch under 24 hours old that has none. That
+  # safety net is why narrowing this trigger is safe rather than a gamble.
+  create:
 
 permissions:
   # contents: write is for the ci-marker result branch below, nothing else.
@@ -39,6 +54,9 @@ concurrency:
 
 jobs:
   open-pr:
+    # `create` fires for tags as well as branches, and for every branch in the
+    # repo - the `on:` block for `create` takes no filters, so it goes here.
+    if: github.event.ref_type == 'branch' && startsWith(github.ref_name, 'agent/')
     name: Open a PR for this agent branch
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -105,4 +123,33 @@ jobs:
           mkdir -p .agent && cp "$LOG" .agent/open-pr-result.txt
           git add .agent/open-pr-result.txt
           git commit -q -m "marker: agent-open-pr result for $BRANCH"
-          git push -f origin HEAD:refs/heads/ci-marker/agent-open-pr-result
+
+          # 2026-08-25: this push FAILED THE WHOLE CHECK on a ref race.
+          #
+          #   ! [remote rejected] HEAD -> ci-marker/agent-open-pr-result
+          #     (cannot lock ref ...: is at <a> but expected <b>)
+          #
+          # Several agents push branches within seconds of each other, so two
+          # runs of this workflow reach this line at once and both try to move
+          # the SAME single marker ref. `-f` does not help: the failure is the
+          # ref LOCK, not a non-fast-forward. The step then exited 1 and the PR
+          # showed a red "Agent Open PR" — after the job had already done its
+          # actual work and logged "a PR is already open, nothing to do".
+          #
+          # Retry a few times (the window is milliseconds), and if it still
+          # will not land, SAY SO AND CARRY ON. This branch is a convenience
+          # log for git-only agents; the PR itself is the real output, and a
+          # missing log must never be reported as a failed check.
+          for attempt in 1 2 3; do
+            if git push -f origin HEAD:refs/heads/ci-marker/agent-open-pr-result 2>&1; then
+              echo "marker published (attempt $attempt)"
+              break
+            fi
+            if [ "$attempt" = 3 ]; then
+              echo "marker ref busy after 3 attempts - another agent's run won the race."
+              echo "This is not a failure: the PR outcome above is the real result."
+            else
+              sleep $((attempt * 3))
+              git fetch origin "+refs/heads/ci-marker/agent-open-pr-result:refs/remotes/origin/ci-marker/agent-open-pr-result" 2>/dev/null || true
+            fi
+          done

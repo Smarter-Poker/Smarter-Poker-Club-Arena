@@ -23,7 +23,7 @@
 
 import { createServer } from 'http';
 import { reportError } from './services/errorReporter.js';
-import { handHistoryQueueDepth } from './services/supabase.js';
+import { handHistoryQueueDepth, supabase } from './services/supabase.js';
 import { tableStateHub } from './transport/TableStateHub.js';
 import { EngineWebSocketServer } from './transport/EngineWebSocketServer.js';
 import { ChannelWebSocketServer } from './transport/ChannelWebSocketServer.js';
@@ -37,6 +37,7 @@ import {
   stopHorseMindPersistence,
 } from './services/HorseMindPersistence.js';
 import { startHorseSelfTuner } from './services/HorseSelfTuner.js';
+import { sweepIncompleteHorses } from './services/HorseOnboarding.js';
 import { startHorseLeague } from './benchmark/HorseLeague.js';
 import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 
@@ -45,6 +46,165 @@ import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MEMBER FEE ROLLUP — background refresh loop (2026-08-23)
+// ═══════════════════════════════════════════════════════════════════════════════
+/**
+ * WHY THIS EXISTS
+ *
+ * The club roster's "Fees" column, the Member Management stats panel and the
+ * Player Statistics page all read `public.member_fee_rollup`. Aggregating those
+ * numbers live out of `hand_history` scans millions of rows and blows past the
+ * Postgres statement timeout, so the pre-aggregated table is the only way those
+ * surfaces can load at all.
+ *
+ * `fn_refresh_member_fee_rollup(p_batch_hands)` folds one batch of hands into
+ * the rollup and advances a forward-only watermark in `member_fee_rollup_state`.
+ * It is additive and idempotent — repeated calls cannot double count — and it
+ * takes a transaction-scoped advisory lock, so a concurrent caller is a no-op
+ * rather than a conflict. Nothing else keeps the rollup current, and this engine
+ * is the one process that already runs 24/7, so the loop lives here.
+ *
+ * TWO SPEEDS. At the time of writing ~1.5M hands are not yet rolled up, so while
+ * the function reports `caught_up: false` we run batches every 2s (backfill).
+ * Once it reports caught up we drop to a 30s tick (steady state).
+ *
+ * BATCH SIZE IS BOUNDED BY THE CLIENT. services/supabase imposes a 15s hard
+ * fetch timeout via AbortController, so that - not the database - is the real
+ * ceiling. Measured against production on 2026-08-23, a batch costs about 23ms
+ * per hand: 250 hands takes 5.7s, and the 2000 originally shipped here needs
+ * about 46 SECONDS. 2000 could therefore never complete, and did not once: the
+ * loop ran from the moment it deployed and rolled up nothing at all, because
+ * every call was aborted and rolled back. 250 is the size that fits with room
+ * to spare when the database is busy.
+ *
+ * There was a second ceiling underneath that one, now removed. PostgREST
+ * connects as `authenticator` (statement_timeout=8s) and `service_role`
+ * inherits it, so even a batch inside the client's 15s was killed server-side
+ * with 57014. Migration 20260823_06 attaches statement_timeout=30s to the
+ * function itself. Testing the RPC over a direct SQL connection hid both
+ * faults - that path runs as `postgres` with a 2min timeout and succeeds every
+ * time. Verify this loop through PostgREST or not at all.
+ *
+ * A timed-out call is safe to retry: the watermark only advances inside the
+ * function's own transaction, so a cancelled batch costs time and nothing
+ * else. That is exactly why the failure was silent.
+ *
+ * It is a self-scheduling setTimeout, NOT a setInterval: a slow batch must never
+ * be able to overlap the next run. Errors are reported and retried after 60s,
+ * never rethrown — a reporting rollup must not be able to take the game engine
+ * down. Kill switch that needs no deploy: MEMBER_FEE_ROLLUP_ENABLED=false.
+ * Anything else (including unset) leaves it ON, so shipping this turns it on.
+ */
+const MEMBER_FEE_ROLLUP_ENABLED = process.env.MEMBER_FEE_ROLLUP_ENABLED !== 'false';
+/**
+ * BATCH SIZE RAISED 250 -> 1000 (2026-08-25), because the reason it had to be
+ * 250 was a query defect, not a real cost.
+ *
+ * Every single-reference CTE inside fn_refresh_member_fee_rollup was being
+ * INLINED and then re-executed per outer row inside nested loops. Migration
+ * 20260825_perf_fee_rollup_materialize_ctes puts AS MATERIALIZED fences back:
+ * a 250-hand batch measured 35,842 ms inlined and 768 ms materialized, for
+ * byte-identical output. End to end the function went ~70 ms/hand -> ~5.7
+ * ms/hand.
+ *
+ * At 5.7 ms/hand a 1000-hand batch is about 5.7s - inside the 15s client
+ * AbortController and the function's own 30s statement_timeout with room to
+ * spare, and it triples drain throughput at the SAME <=50% duty cycle
+ * (1000 per ~11.4s vs 250 per ~7.8s). Do not raise it further without
+ * re-measuring: the 15s client abort, not the database, is still the ceiling.
+ */
+const ROLLUP_BATCH_HANDS = 1000;
+const ROLLUP_BACKFILL_MS = 2_000;
+/**
+ * DUTY CYCLE CAP (2026-08-25). The backfill must never saturate a core.
+ *
+ * Measured on production this day: a 250-hand batch had drifted from the 5.7s
+ * recorded on 2026-08-23 to 15.3s, while the loop still slept only
+ * ROLLUP_BACKFILL_MS (2s) between calls. That is a ~88% duty cycle - on a
+ * 2 vCPU instance this ONE reporting rollup was consuming roughly half the
+ * platform's total query capacity, and pg_stat_statements confirmed it at
+ * 13.7% of all database time with 565,894 hands still to go (about 11 more
+ * hours at that rate).
+ *
+ * A fixed longer delay would be wrong in the other direction: it would waste
+ * genuine idle capacity when the database is quiet. Instead we sleep for at
+ * least as long as the batch just took, so the loop self-tunes to a <=50% duty
+ * cycle - fast when the database is fast, politely backing off exactly when it
+ * is slow, which is precisely when live play needs the core. Backfill wall
+ * time roughly doubles; nobody is watching a reporting rollup, and players are
+ * watching the table.
+ */
+const ROLLUP_MAX_DUTY_CYCLE = 0.5;
+const ROLLUP_STEADY_MS = 30_000;
+const ROLLUP_RETRY_MS = 60_000;
+
+let rollupTimer: NodeJS.Timeout | null = null;
+let rollupStopped = false;
+
+/** Run one batch. Returns the delay before the next run. Throws on RPC failure. */
+async function refreshMemberFeeRollupOnce(): Promise<number> {
+  const startedAt = Date.now();
+  const { data, error } = await supabase.rpc('fn_refresh_member_fee_rollup', {
+    p_batch_hands: ROLLUP_BATCH_HANDS,
+  });
+  const elapsedMs = Date.now() - startedAt;
+  if (error) throw new Error(error.message);
+  const r = (data ?? {}) as { processed?: number; rollup_rows?: number; caught_up?: boolean };
+  if ((r.processed ?? 0) > 0) {
+    console.log(
+      `[FeeRollup] processed ${r.processed} hand(s) into ${r.rollup_rows ?? 0} rollup row(s)` +
+        (r.caught_up ? ' - caught up' : '')
+    );
+  }
+  if (r.caught_up !== false) return ROLLUP_STEADY_MS;
+
+  // Backfilling. Yield for at least as long as the batch itself ran, so the
+  // loop can never exceed ROLLUP_MAX_DUTY_CYCLE of one core. Still floored at
+  // ROLLUP_BACKFILL_MS so a very fast batch does not become a busy loop.
+  const yieldMs = Math.round(elapsedMs * ((1 - ROLLUP_MAX_DUTY_CYCLE) / ROLLUP_MAX_DUTY_CYCLE));
+  return Math.max(ROLLUP_BACKFILL_MS, yieldMs);
+}
+
+function scheduleMemberFeeRollup(delayMs: number): void {
+  if (rollupStopped) return;
+  rollupTimer = setTimeout(() => {
+    void (async () => {
+      let next = ROLLUP_STEADY_MS;
+      try {
+        next = await refreshMemberFeeRollupOnce();
+      } catch (err) {
+        reportError(err, 'MemberFeeRollup.refresh');
+        next = ROLLUP_RETRY_MS;
+      }
+      scheduleMemberFeeRollup(next);
+    })();
+  }, delayMs);
+  // Never hold the process open just to refresh a reporting rollup.
+  rollupTimer.unref?.();
+}
+
+/** Start the loop. Idempotent; call only once the server is listening. */
+function startMemberFeeRollup(): void {
+  if (!MEMBER_FEE_ROLLUP_ENABLED) {
+    console.log('[FeeRollup] disabled (MEMBER_FEE_ROLLUP_ENABLED=false)');
+    return;
+  }
+  if (rollupTimer) return;
+  console.log('[FeeRollup] refresh loop started');
+  scheduleMemberFeeRollup(0);
+}
+
+/** Stop the loop for good (shutdown). Any in-flight batch is safe to abandon:
+ *  the watermark only advances inside the function's own transaction. */
+function stopMemberFeeRollup(): void {
+  rollupStopped = true;
+  if (rollupTimer) {
+    clearTimeout(rollupTimer);
+    rollupTimer = null;
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BOOTSTRAP
@@ -110,6 +270,14 @@ httpServer.listen(PORT, () => {
   // V12 (2026-08-22): nightly per-horse self-study — every horse reviews its
   // own week of play, diagnoses leaks vs winning benchmarks, and nudges its
   // own profile dials. See HorseSelfTuner.ts + horse_self_tune_log.
+  // V14 (Dan 2026-08-23): every horse must be a complete person — real name,
+  // poker alias, player number, lifetime VIP, wired brain, and the ability to
+  // post. Six different seed paths each created a different subset, so 484 of
+  // 584 had no alias, 276 no lifetime VIP, and 177 could not post at all.
+  // Enforcing completeness at boot means a horse created by ANY path, now or
+  // later, converges on being whole instead of depending on which script made
+  // it. Fire-and-forget and fail-safe: it never blocks startup.
+  void sweepIncompleteHorses();
   startHorseSelfTuner();
   // V12 (2026-08-22): nightly duplicate-deal self-play league — measures
   // every strategy layer in bb/100 so tuning is evidence, not vibes. See
@@ -119,6 +287,9 @@ httpServer.listen(PORT, () => {
   // sessions via the SAME hand-boundary-safe leaveTable() path humans use;
   // the fleet manager reseeds fresh horses within its 30s cycle.
   new HorseSessionRotator((tableId) => gameServer.getTableEngine(tableId)).start();
+  // 2026-08-23: keep public.member_fee_rollup current (club roster "Fees",
+  // Member Management stats, Player Statistics). See the block above for why.
+  startMemberFeeRollup();
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -135,6 +306,9 @@ const shutdown = async () => {
   // cannot finish inside Docker's default 10s grace — bound it so we exit
   // cleanly on our own terms instead of being SIGKILLed mid-flush.
   httpServer.close();
+  // Cheap and synchronous - stop the rollup loop before the drain race so it
+  // cannot schedule another batch while we are shutting down.
+  stopMemberFeeRollup();
   await Promise.race([
     // V12: final horse-memory flush rides the same drain window — learned
     // reads from the last few minutes survive the restart.

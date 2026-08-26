@@ -1,11 +1,47 @@
 /* TOURNAMENT AUTO-SEAT — the large "your tournament started" popup
-   (Dan 2026-08-21). Deliberately loud: a player is about to be blinded off. */
+   (Dan 2026-08-21). Deliberately loud: a player is about to be blinded off.
+
+   Dan 2026-08-23: "change this pop up to be smarter.poker color schema...
+   remove all yellow colors and fonts."
+
+   The gold/amber treatment here was the last survivor of the competitor
+   reference palette — the same one already stripped out of FoldProtectionDialog
+   on 2026-08-21. This file now reuses that dialog's exact tokens (house navy
+   body, brushed-nickel frame, brushed-silver primary button) rather than
+   eyeballing a second copy of the metal, so the two popups read as the same
+   product. The urgent variant keeps its RED accent: red is not part of the
+   yellow problem, and "your chips are leaving right now" needs to look
+   different from "your tournament started." */
 
 .tas-overlay {
+  /* Shared smarter.poker dialog tokens — identical to FoldProtectionDialog.css. */
+  --sp-nickel: linear-gradient(
+    145deg,
+    #6f767e 0%,
+    #cdd3d9 14%,
+    #8d949c 30%,
+    #eef1f4 46%,
+    #9aa1a9 62%,
+    #d6dbe0 80%,
+    #70777f 100%
+  );
+  --sp-nickel-inner: linear-gradient(
+    145deg,
+    #8f969e 0%,
+    #e6eaee 25%,
+    #99a0a8 52%,
+    #dfe4e9 76%,
+    #838a92 100%
+  );
+  --sp-dialog-blue: linear-gradient(160deg, #17325c 0%, #12233f 55%, #0d1a2f 100%);
+  --sp-silver: linear-gradient(180deg, #f4f7fa 0%, #cdd4dc 48%, #a9b2bc 100%);
+
   position: fixed;
   inset: 0;
   z-index: 2000;
   background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -27,34 +63,83 @@
   border-radius: 18px;
   padding: 26px 24px;
   text-align: center;
-  background: linear-gradient(165deg, #1d2440 0%, #0c1020 100%);
-  border: 1px solid rgba(245, 197, 66, 0.45);
+  /* Body in the house blue; the 6px brushed-nickel EXTERIOR frame is painted in
+     the border box, exactly as FoldProtectionDialog does it. */
+  background:
+    var(--sp-dialog-blue) padding-box,
+    var(--sp-nickel) border-box;
+  border: 6px solid transparent;
   box-shadow:
     0 30px 70px rgba(0, 0, 0, 0.7),
-    0 0 60px rgba(245, 197, 66, 0.16),
+    0 0 44px rgba(23, 50, 92, 0.45),
     inset 0 1px 0 rgba(255, 255, 255, 0.09);
   color: #e8eaf0;
+  position: relative;
+}
+
+/* 2px brushed-nickel INTERIOR frame, inset from the exterior one, so the panel
+   reads as a milled metal bezel rather than a flat hairline. */
+.tas-panel::before {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border-radius: 12px;
+  padding: 2px;
+  background: var(--sp-nickel-inner);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
 }
 
 .tas-flag {
   display: inline-block;
   padding: 5px 14px;
   border-radius: 999px;
-  background: linear-gradient(180deg, #f8d264 0%, #eab308 100%);
-  color: #1a1a1a;
+  /* Was gold. Brushed silver on dark ink — same accent as the Fold button. */
+  background: var(--sp-silver);
+  color: #16233a;
   font-size: 0.7rem;
   font-weight: 900;
   letter-spacing: 0.14em;
   margin-bottom: 14px;
+  position: relative;
 }
 
+/* TITLE — two lines (Dan 2026-08-23). Event name on top at full weight, table
+   identifier beneath it, smaller and in silver-grey so the eye reads the event
+   first. Flex column rather than a <br> so the gap is a real, tunable value and
+   a single-line fallback (no " - Table N" suffix) still centres correctly. */
 .tas-title {
-  font-size: 1.35rem;
-  font-weight: 900;
-  color: #f5c542;
-  text-shadow: 0 0 18px rgba(245, 197, 66, 0.35);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
   margin-bottom: 10px;
+  position: relative;
+  /* Was #f5c542 with a gold glow. Plain warm white. */
+  color: #eef2f8;
+  font-weight: 900;
   line-height: 1.2;
+  font-size: 1.35rem;
+}
+
+.tas-title__event {
+  font-size: 1.24rem;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  color: #eef2f8;
+  text-wrap: balance;
+}
+
+.tas-title__table {
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #a9b6c8;
 }
 
 .tas-body {
@@ -62,12 +147,14 @@
   line-height: 1.5;
   color: rgba(255, 255, 255, 0.82);
   margin: 0 0 20px;
+  position: relative;
 }
 
 .tas-actions {
   display: flex;
   gap: 12px;
   justify-content: center;
+  position: relative;
 }
 
 .tas-actions button {
@@ -80,24 +167,26 @@
 }
 
 .tas-later {
-  background: none;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  color: #e8eaf0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(173, 190, 214, 0.4);
+  color: #dce4ef;
 }
 
 .tas-go {
   border: none;
-  background: linear-gradient(180deg, #f8d264 0%, #eab308 100%);
-  color: #1a1a1a;
+  /* Was the gold gradient. Brushed silver, dark ink. */
+  background: var(--sp-silver);
+  color: #16233a;
   box-shadow:
-    0 10px 24px rgba(234, 179, 8, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    0 10px 24px rgba(10, 20, 38, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75);
 }
 
 /* Dan 2026-08-21 (item 4): the blinding-off variant. Same panel, red urgency —
-   this one is not news that something good happened, it is chips leaving. */
+   this one is not news that something good happened, it is chips leaving.
+   The red accent SURVIVES the 2026-08-23 palette pass on purpose: it is the
+   only thing distinguishing an urgent popup from a routine one. */
 .tas-panel--urgent {
-  border-color: rgba(240, 40, 73, 0.55);
   box-shadow:
     0 22px 64px rgba(0, 0, 0, 0.62),
     0 0 0 1px rgba(240, 40, 73, 0.35),

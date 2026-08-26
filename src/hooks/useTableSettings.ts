@@ -28,6 +28,18 @@ export interface TableUserSettings {
   showBetSizePresets: boolean;
   confirmAllIn: boolean;
   autoMuck: boolean;
+  /**
+   * SHOWDOWN AUDIT 2026-08-25 (Dan: "ENABLE AUTO MUCK BY DEFAULT, AND MAKE
+   * USERS TURN IT OFF MANUALLY"): true only once the user has personally
+   * toggled autoMuck. The old default was FALSE and this hook persists the
+   * WHOLE settings object on every write, so any player who ever changed any
+   * table setting has autoMuck:false sitting in localStorage without ever
+   * choosing it. Without this marker, flipping the default to true did
+   * nothing for exactly those players — worse, it would auto-SHOW their
+   * losing hands. The loader below forces autoMuck true unless this marker
+   * proves the false was a deliberate choice made AFTER the toggle shipped.
+   */
+  autoMuckExplicit: boolean;
   autoMuckWinners: boolean;
   autoPostBlinds: boolean;
   cardBack: string; // Card back design ID
@@ -46,7 +58,16 @@ const DEFAULT_SETTINGS: TableUserSettings = {
   showPotOdds: false,
   showBetSizePresets: true,
   confirmAllIn: true,
-  autoMuck: false,
+  // SHOWDOWN follow-up 2026-08-25 (Dan spec section 37): AUTO-MUCK LOSING
+  // HANDS, on by default — the engine mucks a beaten hand automatically at
+  // showdown. Switching it OFF means "always table my hand": the client
+  // answers the engine's muck ruling with the existing voluntary-show call
+  // (POST /showhand), so the hand turns face up with NO prompt — prompts
+  // remain forbidden (Dan 2026-08-18, binding). The setting can never muck
+  // a winner (the engine auto-tables winners regardless) and can never hide
+  // an all-in showdown (every live all-in hand is force-exposed).
+  autoMuck: true,
+  autoMuckExplicit: false,
   autoMuckWinners: false,
   autoPostBlinds: true,
   // Dan 2026-08-18: was 'black', which has no `.card-back--black` rule in
@@ -70,10 +91,20 @@ export function useTableSettings() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        return {
+        const merged = {
           ...DEFAULT_SETTINGS,
           ...JSON.parse(saved),
         };
+        // SHOWDOWN AUDIT 2026-08-25 — hostile-state migration. autoMuck's
+        // default used to be false and rode along in every persisted write,
+        // so a stored false proves nothing about what the player wants. Only
+        // a false written by the user's own toggle (autoMuckExplicit) is
+        // honoured; every other stored value is lifted to the new default.
+        // Auto-muck is ON unless the user personally turned it off.
+        if (merged.autoMuckExplicit !== true) {
+          merged.autoMuck = true;
+        }
+        return merged;
       }
       return DEFAULT_SETTINGS;
     } catch (error) {
@@ -124,7 +155,14 @@ export function useTableSettings() {
       }
       const { setting, value } = event.payload;
       if (setting && setting in DEFAULT_SETTINGS) {
-        setSettings((prev) => ({ ...prev, [setting]: value }));
+        setSettings((prev) => ({
+          ...prev,
+          [setting]: value,
+          // SHOWDOWN AUDIT 2026-08-25: cross-tab autoMuck toggles are just as
+          // deliberate as local ones — mark them explicit too, or the other
+          // tab's loader would lift the user's own choice back to true.
+          ...(setting === 'autoMuck' ? { autoMuckExplicit: true } : {}),
+        }));
       }
     });
     return unsub;
@@ -136,6 +174,9 @@ export function useTableSettings() {
       setSettings((prev) => ({
         ...prev,
         [key]: value,
+        // SHOWDOWN AUDIT 2026-08-25: a personal autoMuck toggle is the ONLY
+        // thing that makes a stored false authoritative — see the loader.
+        ...(key === 'autoMuck' ? { autoMuckExplicit: true } : {}),
       }));
       // Broadcast for cross-tab / cross-component sync
       localOriginRef.current = true;
@@ -165,6 +206,9 @@ export function useTableSettings() {
     setSettings((prev) => ({
       ...prev,
       ...updates,
+      // SHOWDOWN AUDIT 2026-08-25: same rule as updateSetting — an autoMuck
+      // value arriving through the bulk path is a user action too.
+      ...('autoMuck' in updates ? { autoMuckExplicit: true } : {}),
     }));
     // Broadcast each change for cross-tab sync
     for (const [key, value] of Object.entries(updates)) {

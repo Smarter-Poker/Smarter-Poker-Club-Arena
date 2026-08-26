@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/dev-freshness-check.mjs",
     "dev": "vite",
     "build": "tsc -b && node scripts/generate-webp-media.mjs && vite build && node scripts/self-host-fonts.mjs && node scripts/optimize-dist-media.mjs && node scripts/stamp-build-provenance.mjs && node -e \"require('fs').copyFileSync('tests/protected-features.json','dist/protected-features.json')\"",
     "preview": "vite preview",
@@ -67,8 +68,8 @@
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.18",
     "globals": "^15.14.0",
+    "happy-dom": "^20.11.6",
     "husky": "^9.1.7",
-    "jsdom": "^28.1.0",
     "lint-staged": "^16.3.3",
     "pg": "^8.20.0",
     "prettier": "^3.8.1",

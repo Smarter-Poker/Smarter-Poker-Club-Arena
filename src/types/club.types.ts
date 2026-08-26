@@ -58,6 +58,10 @@ export interface ClubSettings {
   allow_rakeback: boolean;
   rakeback_percentage: number;
   default_time_bank: number; // seconds
+  bbj_rake_enabled: boolean;
+  spins_enabled: boolean;
+  spins_preseed_amount: number;
+  spins_wallet_funding: string;
 }
 
 export interface ClubWithDistance extends Club {
@@ -120,7 +124,7 @@ export interface ClubMember {
   rank_level?: number;
   sessions_played?: number;
   orange_ball_status?: string | null;
-  parent_agent_id?: string | null;
+  agent_id?: string | null;
   hands_played?: number; // DB column name (was 'total_hands')
   chips_won?: number; // DB column name (was 'total_won')
   chips_lost?: number; // DB column name (was 'total_lost')
@@ -276,7 +280,14 @@ export type TableStatus = 'waiting' | 'running' | 'paused' | 'closed';
 
 export type GameType = 'cash' | 'tournament' | 'sng' | 'spin';
 
-// FIX 116: Dead variants removed — Dan's 9 approved variants only
+// FIX 116: Dead variants removed — Dan's approved variants only.
+//
+// 2026-08-23: `flh` restored and `flo8` added. FIX 116 called them dead because
+// nothing could create one, but the lobby's LIMIT tab and ClubHomePage's
+// cashKind() never stopped classifying on them — so the tab could only ever be
+// empty, which is the bug this change exists to fix. The engine now actually
+// plays them fixed-limit; see server/src/engine/BettingStructure.ts. Keep in
+// lockstep with the identical union in server/src/types.ts.
 export type GameVariant =
   | 'nlh' // No-Limit Hold'em
   | 'plo4' // Pot-Limit Omaha 4-card
@@ -284,7 +295,9 @@ export type GameVariant =
   | 'plo6' // Pot-Limit Omaha 6-card
   | 'plo8' // Omaha Hi-Lo (8 or better)
   | 'pineapple' // Pineapple Hold'em
-  | 'short_deck'; // Short Deck (6+)
+  | 'short_deck' // Short Deck (6+)
+  | 'flh' // Fixed Limit Hold'em
+  | 'flo8'; // Fixed Limit Omaha Hi-Lo
 
 export interface TableSettings {
   // Blinds & Stakes
@@ -1115,6 +1128,49 @@ export interface VariantConfig {
 
 /** Default variant configs for all supported variants */
 export const VARIANT_CONFIGS: Record<GameVariant, VariantConfig> = {
+  // ── LIMIT (2026-08-23) ────────────────────────────────────────────────────
+  // `betting_structure` has carried a 'fixed_limit' member since this interface
+  // was written; there was simply never a variant that used it, because FIX 116
+  // had removed them all. These two deal exactly like nlh and plo8 — only the
+  // BETTING differs, which is what server/src/engine/BettingStructure.ts now
+  // enforces: fixed wager sizes, small bet preflop and flop, big bet turn and
+  // river, capped at one bet and three raises per street.
+  flh: {
+    variant: 'flh',
+    display_name: "Fixed Limit Hold'em",
+    hole_cards: 2,
+    mandatory_hole_card_usage: 'any',
+    board_cards_total: 5,
+    board_reveal_pattern: [3, 1, 1],
+    discard_phase_enabled: false,
+    discard_after_street: null,
+    discard_count: 0,
+    hi_lo_enabled: false,
+    hi_lo_qualifier: null,
+    short_deck: false,
+    short_deck_min_rank: null,
+    betting_structure: 'fixed_limit',
+    min_players: 2,
+    max_players: 9,
+  },
+  flo8: {
+    variant: 'flo8',
+    display_name: 'Fixed Limit Omaha Hi-Lo',
+    hole_cards: 4,
+    mandatory_hole_card_usage: 'exactly_2',
+    board_cards_total: 5,
+    board_reveal_pattern: [3, 1, 1],
+    discard_phase_enabled: false,
+    discard_after_street: null,
+    discard_count: 0,
+    hi_lo_enabled: true,
+    hi_lo_qualifier: 8,
+    short_deck: false,
+    short_deck_min_rank: null,
+    betting_structure: 'fixed_limit',
+    min_players: 2,
+    max_players: 9,
+  },
   nlh: {
     variant: 'nlh',
     display_name: "No-Limit Hold'em",

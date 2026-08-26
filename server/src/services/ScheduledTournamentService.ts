@@ -64,8 +64,46 @@ const LIVE_STATUSES = ['REGISTERING', 'RUNNING', 'COMPLETING'];
 
 /** How far behind `now` a scheduled time still spawns (boot catch-up). */
 export const TIMED_WINDOW_PAST_MS = 5 * 60 * 1000;
-/** How far ahead of `now` an instance is created so it appears in the lobby. */
-export const TIMED_WINDOW_AHEAD_MS = 30 * 60 * 1000;
+/**
+ * How far ahead of `now` an instance is created so it appears in the lobby.
+ *
+ * WAS 30 MINUTES, AND THAT IS WHY THE BOARD LOOKED EMPTY (Dan, 2026-08-23:
+ * "there are currently no mtt's built, scheduled or running"). Thirty-eight
+ * schedules were live and firing exactly on time, but each event only existed
+ * for the half hour before it started — and since a full field starts on the
+ * minute and plays out fast, a player looking at the lobby at any given
+ * moment saw two joinable MTTs out of thirty-eight schedules. The schedule
+ * was real; the LOBBY was empty, which for a player is the same thing.
+ *
+ * A day's look-ahead publishes the whole card the way a real room does:
+ * tomorrow's events are on the board tonight, with their buy-ins, guarantees
+ * and start times, and a player can register whenever they like. The lobby's
+ * own display window is 72 hours, so 24 fits inside what the UI already
+ * shows, and `spawnAheadMinutes` still overrides per schedule (the Sunday
+ * Major uses a week so its satellites can resolve it all week).
+ */
+export const TIMED_WINDOW_AHEAD_MS = 24 * 60 * 60 * 1000;
+/**
+ * Horses are seeded at SPAWN only when the start is this close.
+ *
+ * Seeding at spawn was harmless at a 30-minute look-ahead and is actively
+ * harmful at 24 hours: a horse registered into tomorrow's event is a horse
+ * that cannot deal a cash table or fill a spin today, and the pool is finite.
+ *
+ * Dan 2026-08-23: aligned to the one-hour MTT ramp (MTT_PRESTART_RAMP_MS), so
+ * an event that spawns already inside the hour gets its opening field
+ * immediately instead of waiting up to a ramp tick for it.
+ *
+ * WHAT THIS CONSTANT NO LONGER MEANS. It used to be the whole policy, and the
+ * note here used to say events "open EMPTY and stay genuinely open", with the
+ * past-start top-up as the only filler. That was checked ONCE, at creation, so
+ * a day-ahead event answered "no" and was never asked again - which is how a
+ * 200-seat MTT sat in the lobby for seventeen hours reading 0/200. The field
+ * is now built by the pre-start ramp in GameServer.discoverTournaments, which
+ * re-evaluates every REGISTERING tournament on a timer. This is just the
+ * head start; the ramp is the rule.
+ */
+export const HORSE_SEED_WITHIN_MS = 60 * 60 * 1000;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PURE SCHEDULING LOGIC — exported so the matching rules are testable with no DB
@@ -238,7 +276,10 @@ export const SCHEDULE_BLIND_PRESETS: Record<string, Array<Record<string, number>
 SCHEDULE_BLIND_PRESETS.DEEP = SCHEDULE_BLIND_PRESETS.SLOW;
 
 /** Named payout presets, resolvable as `payoutPreset`. */
-export const SCHEDULE_PAYOUT_PRESETS: Record<string, Array<{ place: number; percentage: number }>> = {
+export const SCHEDULE_PAYOUT_PRESETS: Record<
+  string,
+  Array<{ place: number; percentage: number }>
+> = {
   THREE: [
     { place: 1, percentage: 50 },
     { place: 2, percentage: 30 },
@@ -476,13 +517,48 @@ export class ScheduledTournamentService {
     if (insertErr || !created) {
       const msg = insertErr?.message ?? 'unknown';
       if (insertErr?.code === '23505' || /duplicate key|unique constraint/i.test(msg)) {
-        // uq_scheduled_tournament_one_live_per_name: a same-named pre-start MTT
-        // already exists. Benign — the event the schedule wanted is on the
-        // board. The claimed spawn key stands, which is the dedupe working.
+        // uq_scheduled_tournament_one_live_per_name: a same-named pre-start
+        // event already exists. Benign — the event the schedule wanted is on
+        // the board.
+        //
+        // RELEASE THE CLAIM ANYWAY (2026-08-23). Holding it was right at a
+        // 30-minute look-ahead, where a collision meant "this same instance
+        // is already there". At a 24-hour look-ahead it means something
+        // different: a schedule with two start times (Hot Turbo runs 15:00
+        // AND 21:00) has both instances due in the same poll, and the later
+        // one collides with the earlier one that is still pre-start. Holding
+        // the key would burn the 21:00 game for the day. Releasing lets it be
+        // retried each poll and spawn the moment the earlier instance starts.
         console.log(
-          `[ScheduledTournaments] "${row.name}" already live pre-start — spawn ${spawnKey} skipped`
+          `[ScheduledTournaments] "${row.name}" already live pre-start — spawn ${spawnKey} deferred`
         );
+        await supabase
+          .from('tournament_schedule_spawns')
+          .delete()
+          .eq('spawn_key', spawnKey)
+          .is('tournament_id', null);
         return;
+      }
+      // RELEASE THE CLAIM (2026-08-23). The key is claimed before the
+      // insert so two spawners cannot race — but on a FAILED insert it was
+      // left claimed, which permanently burns that instance: the next poll
+      // sees the key, stands down, and the event simply never happens. Two
+      // orphan rows (tournament_id NULL) were sitting in prod from exactly
+      // this, one of them the Saturday Speedway 21:30. Deleting the claim
+      // hands the slot back to the next poll; if the delete itself fails the
+      // old burn-forever behaviour is what remains, which is no worse.
+      const { error: releaseErr } = await supabase
+        .from('tournament_schedule_spawns')
+        .delete()
+        .eq('spawn_key', spawnKey)
+        .is('tournament_id', null);
+      if (releaseErr) {
+        reportError(
+          new Error(
+            `[ScheduledTournaments] could not release burnt spawn key ${spawnKey}: ${releaseErr.message}`
+          ),
+          'ScheduledTournaments.spawn_release_failed'
+        );
       }
       reportError(
         new Error(`[ScheduledTournaments] insert failed for ${spawnKey}: ${msg}`),
@@ -504,18 +580,27 @@ export class ScheduledTournamentService {
       );
     }
 
-    // Horse seeding — same money-correct path the recurring service uses.
+    // Horse seeding — same money-correct path the recurring service uses,
+    // but ONLY for an event that is about to start. An event published a day
+    // ahead opens empty and stays open: seeding it now would lock horses out
+    // of today's games for a tournament that does not begin until tomorrow,
+    // and would also present a "full" board to the humans it is meant for.
+    // GameServer's past-start top-up fills any short field on the clock.
     const minPlayers = Number(row.min_players) || 3;
     const horsesRaw = Number((cfg as Record<string, unknown>).horsesToRegister);
     const horses =
       Number.isFinite(horsesRaw) && horsesRaw >= 0 ? Math.floor(horsesRaw) : minPlayers;
+    const startsWithinMs = startTime.getTime() - Date.now();
+    const seedNow = horses > 0 && startsWithinMs <= HORSE_SEED_WITHIN_MS;
     let seeded = 0;
-    if (horses > 0) {
+    if (seedNow) {
       seeded = await this.horseSeeder.topUpWithHorses(created.id, horses);
     }
 
     console.log(
-      `[ScheduledTournaments] Spawned "${row.name}" (${spawnKey}) start ${startTime.toISOString()} — ${seeded} horse(s) seeded`
+      `[ScheduledTournaments] Spawned "${row.name}" (${spawnKey}) start ${startTime.toISOString()} — ${
+        seedNow ? `${seeded} horse(s) seeded` : 'open for registration, horses join at start'
+      }`
     );
   }
 
@@ -602,12 +687,14 @@ export class ScheduledTournamentService {
     // full structure arrays in every config blob.
     const blindPreset = SCHEDULE_BLIND_PRESETS[String(cfg.blindPreset ?? '').toUpperCase()];
     const payoutPreset = SCHEDULE_PAYOUT_PRESETS[String(cfg.payoutPreset ?? '').toUpperCase()];
-    const blinds = Array.isArray(cfg.blindStructure) && cfg.blindStructure.length > 0
-      ? cfg.blindStructure
-      : blindPreset ?? [];
-    const payouts = Array.isArray(cfg.payoutStructure) && cfg.payoutStructure.length > 0
-      ? cfg.payoutStructure
-      : payoutPreset ?? [];
+    const blinds =
+      Array.isArray(cfg.blindStructure) && cfg.blindStructure.length > 0
+        ? cfg.blindStructure
+        : (blindPreset ?? []);
+    const payouts =
+      Array.isArray(cfg.payoutStructure) && cfg.payoutStructure.length > 0
+        ? cfg.payoutStructure
+        : (payoutPreset ?? []);
     if (blinds.length === 0 || payouts.length === 0) {
       reportError(
         new Error(
@@ -626,12 +713,8 @@ export class ScheduledTournamentService {
     const buyInAmount = isSpin ? buyIn : split.prize;
     const buyInFee = isSpin ? 0 : split.fee;
 
-    const maxPlayers =
-      clampInt(cfg.maxPlayers, 2, 10000, 0) || (isSpin ? 3 : isSng ? 6 : 100);
-    const minPlayers = Math.min(
-      Math.max(clampInt(cfg.minPlayers, 2, 10000, 3), 2),
-      maxPlayers
-    );
+    const maxPlayers = clampInt(cfg.maxPlayers, 2, 10000, 0) || (isSpin ? 3 : isSng ? 6 : 100);
+    const minPlayers = Math.min(Math.max(clampInt(cfg.minPlayers, 2, 10000, 3), 2), maxPlayers);
 
     // Bounty head: absolute bountyAmount wins; else the recurring service's
     // percent-of-total convention (default 30), never exceeding the prize half.
@@ -642,10 +725,7 @@ export class ScheduledTournamentService {
         bountyAmount = Math.min(split.prize, absolute);
       } else {
         const pct = Number(cfg.bountyPercent) || 30;
-        bountyAmount = Math.min(
-          split.prize,
-          Math.max(0, Math.round((split.total * pct) / 100))
-        );
+        bountyAmount = Math.min(split.prize, Math.max(0, Math.round((split.total * pct) / 100)));
       }
       if (bountyAmount <= 0) {
         reportError(
@@ -659,8 +739,10 @@ export class ScheduledTournamentService {
     }
     // Mystery range: config carries MULTIPLIERS, the columns store MONEY
     // (multiplier x head) — the 2026-08-21 advertised-range convention.
-    const mbMinMult = Number(cfg.mysteryBountyMin) > 0 ? Number(cfg.mysteryBountyMin) : MYSTERY_MIN_MULT;
-    const mbMaxMult = Number(cfg.mysteryBountyMax) > 0 ? Number(cfg.mysteryBountyMax) : MYSTERY_MAX_MULT;
+    const mbMinMult =
+      Number(cfg.mysteryBountyMin) > 0 ? Number(cfg.mysteryBountyMin) : MYSTERY_MIN_MULT;
+    const mbMaxMult =
+      Number(cfg.mysteryBountyMax) > 0 ? Number(cfg.mysteryBountyMax) : MYSTERY_MAX_MULT;
     const mysteryMin =
       type === 'mystery_bounty' ? Math.round(bountyAmount * mbMinMult * 100) / 100 : 0;
     const mysteryMax =
@@ -686,8 +768,7 @@ export class ScheduledTournamentService {
 
     const isRebuy = asBool(cfg.isRebuy) || asBool(cfg.rebuy);
     const addOn = asBool(cfg.addOnAvailable) || asBool(cfg.addOn);
-    const lateRegLevels =
-      isSng || isSpin ? 0 : clampInt(cfg.lateRegistrationLevels, 0, 100, 8);
+    const lateRegLevels = isSng || isSpin ? 0 : clampInt(cfg.lateRegistrationLevels, 0, 100, 8);
 
     const restartEveryRaw = Number(cfg.restartEveryMinutes);
     const restartEvery =
@@ -765,7 +846,8 @@ export class ScheduledTournamentService {
       bubble_protection: asBool(cfg.bubbleProtection),
       final_table_deal_enabled: asBool(cfg.finalTableDealEnabled),
       restart_every_minutes: restartEvery,
-      synchronized_breaks: cfg.synchronizedBreaks === undefined ? true : asBool(cfg.synchronizedBreaks),
+      synchronized_breaks:
+        cfg.synchronizedBreaks === undefined ? true : asBool(cfg.synchronizedBreaks),
       max_rebuys: Number.isFinite(maxRebuysRaw) ? Math.max(0, Math.round(maxRebuysRaw)) : null,
       max_reentries: Number.isFinite(maxReentriesRaw)
         ? Math.max(0, Math.round(maxReentriesRaw))
@@ -946,6 +1028,22 @@ export class ScheduledTournamentService {
     };
     for (const col of ScheduledTournamentService.RESTART_COPY_COLUMNS) {
       if (old[col] !== undefined) row[col] = old[col];
+    }
+
+    // A legacy instance can carry a pre-floor fee split (e.g. 22+3 = 12%)
+    // that tournaments_rake_within_10_pct now rejects on INSERT — the clone
+    // would fail on every poll for 24 hours. Re-cut the fee from the same
+    // player-paid total (floor 10%, splitBuyIn's arithmetic without the
+    // ladder snap — a manual event keeps its price). Compliant splits,
+    // including every spin's fee-free 0, pass through untouched.
+    {
+      const amt = Number(row.buy_in_amount) || 0;
+      const fee = Number(row.buy_in_fee) || 0;
+      const cap = Math.floor((amt + fee) * 0.1 + 1e-9);
+      if (fee > cap) {
+        row.buy_in_amount = amt + fee - cap;
+        row.buy_in_fee = cap;
+      }
     }
 
     const { data: created, error: insertErr } = await supabase

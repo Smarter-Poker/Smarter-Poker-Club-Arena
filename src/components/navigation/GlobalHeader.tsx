@@ -4,9 +4,9 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
-const HamburgerMenu = lazy(() => import('./HamburgerMenu'));
+const HamburgerMenu = lazyWithRetry(() => import('./HamburgerMenu'));
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
@@ -16,6 +16,8 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 
 import styles from './GlobalHeader.module.css';
 import { generateDefaultAvatar, getAvatarWithFallback } from '../../utils/avatarGenerator';
+import AvatarCosmetics from '../avatars/AvatarCosmetics';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 const BASE = MEDIA_BASE;
 
@@ -40,7 +42,8 @@ export default function GlobalHeader() {
   const { loadBalances, loadDiamonds } = useWalletStore();
   const { user: authUser } = useAuthUser();
 
-  const { avatarUrl, notificationCount, unreadMessages, loadOnce } = useHeaderDataStore();
+  const { avatarUrl, equippedFrame, equippedAura, notificationCount, unreadMessages, loadOnce } =
+    useHeaderDataStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [isNavigatingAway, setIsNavigatingAway] = useState(false);
 
@@ -135,10 +138,14 @@ export default function GlobalHeader() {
     loadDiamonds(authUser.id);
   }, [authUser?.id, loadOnce, loadBalances, loadDiamonds]);
 
+  // force: an EVENT says the balance moved, so the freshness window in
+  // useWalletStore (which exists to make MOUNTS free) must not swallow it.
+  // Without this a real change could be up to BALANCE_FRESH_MS stale on screen,
+  // which is worse than the skeleton flash the window removed.
   useMasterBusSubscription(
     'WALLET_REFRESHED',
     () => {
-      if (authUser?.id) loadBalances(authUser.id);
+      if (authUser?.id) loadBalances(authUser.id, { force: true });
     },
     { debounce: 300 }
   );
@@ -150,7 +157,7 @@ export default function GlobalHeader() {
         if (payload?.newBalance !== undefined) {
           useWalletStore.setState({ diamonds: payload.newBalance });
         } else {
-          loadDiamonds(authUser.id);
+          loadDiamonds(authUser.id, { force: true });
         }
       }
     },
@@ -160,7 +167,7 @@ export default function GlobalHeader() {
   useMasterBusSubscription(
     'BALANCE_UPDATED',
     () => {
-      if (authUser?.id) loadDiamonds(authUser.id);
+      if (authUser?.id) loadDiamonds(authUser.id, { force: true });
     },
     { debounce: 500 }
   );
@@ -208,10 +215,10 @@ export default function GlobalHeader() {
   const prefetchMessenger = useCallback(() => {
     if (prefetchedMessenger) return;
     setPrefetchedMessenger(true);
-    import('../../pages/MessagesPage').catch(() => {});
+    import('../../pages/NavigateToMessenger').catch(() => {});
     const link = document.createElement('link');
     link.rel = 'prefetch';
-    link.href = '/hub/messenger?hideHeader=true';
+    link.href = '/hub/messenger';
     document.head.appendChild(link);
   }, [prefetchedMessenger]);
 
@@ -249,7 +256,7 @@ export default function GlobalHeader() {
             <img
               src={`${BASE}images/btn-back.png`}
               alt="Back"
-              style={{ height: '100%', width: '100%', objectFit: 'contain' }}
+              style={{ height: '100%', width: 'auto', objectFit: 'contain' }}
             />
           </button>
           <button
@@ -261,7 +268,7 @@ export default function GlobalHeader() {
             <img
               src={`${BASE}images/btn-hub-v4.png`}
               alt="Hub"
-              style={{ height: '100%', width: '100%', objectFit: 'contain' }}
+              style={{ height: '100%', width: 'auto', objectFit: 'contain' }}
             />
           </button>
         </div>
@@ -307,13 +314,18 @@ export default function GlobalHeader() {
                 decoding="async"
                 onError={() => setAvatarFailed(true)}
               />
+              {/* Equipped frame + aura. `.profileOrb` is the 40px circle and
+                  owns the radius, so the overlay inherits it. The button around
+                  it is `overflow: visible`, which is why the frame's outer glow
+                  survives here and is clipped on the felt. */}
+              <AvatarCosmetics frame={equippedFrame} aura={equippedAura} />
             </div>
           </button>
 
           {/* Diamond Wallet Icon */}
           <button
             className={styles.orbBtn}
-            onClick={() => navigateToHub('/hub/diamond-store')}
+            onClick={() => navigate('/marketplace?tab=diamonds')}
             title="Diamond Wallet"
           >
             <img
@@ -387,18 +399,10 @@ export default function GlobalHeader() {
             />
           </button>
 
-          {/* Live Help */}
-          <button
-            className={styles.orbBtn}
-            onClick={() => navigate('/help')}
-            aria-label="Live Help"
-          >
-            <img
-              src={`${BASE}images/header-help-v4.png`}
-              alt="Live Help"
-              className={styles.orbImg}
-            />
-          </button>
+          {/* Live Help removed 2026-08-24 at Dan's request ("REMOVE THE ?
+              MARK ICON IN THE TOP GLOBAL HEADER"). /help is still routed and
+              reachable from the hamburger menu — only the header orb is gone,
+              which also buys the row 24px of width on a phone. */}
         </div>
       </header>
     </>

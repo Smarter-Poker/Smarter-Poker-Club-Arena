@@ -1,17 +1,23 @@
 /**
- * EVERY SEAT'S CHIPS SIT THE SAME DISTANCE FROM THE PLAYER.
+ * THE CHIP RAIL, ON A RING THAT IS NOT ONE OF OURS.
  * ============================================================================
- * Dan 2026-08-21: "ALL CHIPS FOR ALL PLAYERS NEED TO BE PLACED THE SAME
- * DISTANCE FROM THEM REGARDLESS OF SEAT POSITION. IMAGINE AN IMAGINARY RAIL
- * THAT GOES ALL AROUND THE TABLE EQUALLY."
+ * tests/table-geometry-chips.test.ts walks the eight production rings out of
+ * src/lib/tableSeatGeometry.ts, which is the right suite for "does the table we
+ * ship work". This one exists for the other question: does the geometry hold up
+ * on a ring nobody has tuned it against.
  *
- * The old code scaled each axis by how far the seat was from centre ON THAT
- * AXIS, so a top-centre seat's chips dropped a long way straight down, a side
- * seat's slid a long way straight in, and a corner seat's did some of both -
- * three different distances, which is what the screenshot showed.
+ * The seats below are deliberately NOT a production ring. They are a nine-
+ * handed ellipse with seats at x=6 and x=94 - further out than any real seat -
+ * and an off-centre hero, which is exactly the sort of layout a new skin or a
+ * new table size would introduce. Every rule the module claims is a rule rather
+ * than a tuning has to survive that:
  *
- * A single number is what makes this testable: the distance from a seat to its
- * chips must be the same for all nine of them.
+ *   - one rail, the same distance from every seat that has the room for it;
+ *   - both markers on the felt, whatever the seat is doing;
+ *   - the two markers never on top of each other.
+ *
+ * Dan 2026-08-25, item 13: "all chips must appear equally on that line for all
+ * players at all tables" - at all tables is the part this file is for.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -19,16 +25,25 @@ import {
   betChipOffsetPx,
   chipCollectOffsetPx,
   chipRailInset,
-  isBottomSeat,
-  CHIP_RAIL_BOTTOM_EXTRA_PX,
+  chipRestPosition,
+  dealerButtonPosition,
+  feltCenter,
+  feltEdgeClearanceWidthPct,
+  feltRadialFraction,
+  isInsideFelt,
+  markerGapWidthPct,
+  BUTTON_FELT_DAYLIGHT_WIDTH_PCT,
+  BUTTON_FELT_MARGIN_WIDTH_PCT,
   CHIP_COLLECT_FRACTION,
+  FELT_MARKER_MARGIN_WIDTH_PCT,
+  MARKER_MIN_GAP_WIDTH_PCT,
   type Pos,
   type Size,
 } from '../../src/components/table/tableGeometry';
 
-/** A nine-handed ring on a table far taller than it is wide - the hard case. */
+/** A nine-handed ring that is not ours: wider than the painted rail, hero off centre. */
 const SEATS: Pos[] = [
-  { x: 50, y: 92 }, // hero, bottom centre
+  { x: 47, y: 96 },
   { x: 18, y: 80 },
   { x: 6, y: 55 },
   { x: 12, y: 30 },
@@ -39,137 +54,193 @@ const SEATS: Pos[] = [
   { x: 82, y: 80 },
 ];
 
-const TABLE: Size = { w: 300, h: 462 };
+/** Phone, tablet and desktop, all at the scaler's locked 605/1000. */
+const TABLES: Size[] = [
+  { w: 347, h: 574 },
+  { w: 600, h: 992 },
+  { w: 720, h: 1190 },
+];
+
 const dist = (p: Pos) => Math.hypot(p.x, p.y);
+/** Distance between two scaler percentages, in pixels on a given table. */
+const px = (a: Pos, b: Pos, t: Size) =>
+  Math.hypot(((a.x - b.x) * t.w) / 100, ((a.y - b.y) * t.h) / 100);
 
 describe('the chip rail', () => {
-  it('puts every seat the same distance from its chips', () => {
-    /* AMENDED 2026-08-23. This used to demand ONE distance for every seat
-         without exception. That is the right rule for the seats it was written
-         about and the wrong rule for the bottom rail, so it now excludes it.
-
-         Dan: "chips for the hero need to be pushed out farther in front of
-         them, they are literally on top of the avatar."
-
-         The rail is measured from a seat's CENTRE, and what the chips actually
-         have to clear is that seat's AVATAR. Those are the same number for
-         eight seats and not for the ninth: the hero's box is 1.3333x everyone
-         else's (--seat-avatar-hero-ratio) and its bust art rises well past the
-         box on top of that. A side seat also gets to travel diagonally, while
-         the hero sits at x=50 and can only go straight up into its own face.
-
-         So "equal distance" was never the property worth having - it was a
-         proxy for "equally clear of the player", which is what a person
-         actually sees. Where the two disagree, the proxy loses. The suite
-         already accepts exactly this shape of exception for the button holder
-         (CHIP_RAIL_DEALER_EXTRA_PX), and like that one this is a CONSTANT, not
-         a per-seat fraction - asserted directly below. */
-    const distances = SEATS.filter((s) => !isBottomSeat(s)).map((s) =>
-      dist(betChipOffsetPx(s, TABLE, false))
-    );
-    const min = Math.min(...distances);
-    const max = Math.max(...distances);
-    // Within a pixel: the only slack is Math.round on each axis.
-    expect(max - min, `spread across seats was ${(max - min).toFixed(2)}px`).toBeLessThanOrEqual(
-      1.5
-    );
-  });
-
-  it('holds at every table size, including a wide one', () => {
-    for (const size of [
-      { w: 300, h: 462 },
-      { w: 1200, h: 700 },
-      { w: 380, h: 380 },
-      { w: 240, h: 520 },
-    ] as Size[]) {
-      const d = SEATS.filter((s) => !isBottomSeat(s)).map((s) =>
-        dist(betChipOffsetPx(s, size, false))
-      );
-      expect(Math.max(...d) - Math.min(...d), `${size.w}x${size.h}`).toBeLessThanOrEqual(1.5);
+  it('walks every seat that has the room the same distance, at every table size', () => {
+    for (const table of TABLES) {
+      const rail = chipRailInset(table);
+      for (const seat of SEATS) {
+        const rest = chipRestPosition(seat, table);
+        const walked = dist(betChipOffsetPx(seat, table));
+        if (feltRadialFraction(rest, table) < 0.999) {
+          // Not touched by the on-felt guarantee, so it is on the common rail.
+          // Each axis is rounded on its own, hence a stated 1px window rather
+          // than pretending the arithmetic is exact.
+          expect(
+            Math.abs(walked - rail),
+            `${table.w}x${table.h} seat ${seat.x},${seat.y}`
+          ).toBeLessThanOrEqual(1);
+        } else {
+          // The only thing that ever lengthens a walk: a seat standing off the
+          // felt has to cross the rail before its rail starts.
+          expect(walked).toBeGreaterThan(rail);
+        }
+      }
     }
   });
 
-  it('gives the bottom rail a constant extra step, for its taller avatar', () => {
-    const bottom = { x: 50, y: 100 };
-    const side = { x: 94, y: 55 };
-    const extraBottom =
-      dist(betChipOffsetPx(bottom, TABLE, false)) - dist(betChipOffsetPx(side, TABLE, false));
-    expect(extraBottom).toBeGreaterThan(0);
-    expect(Math.abs(extraBottom - CHIP_RAIL_BOTTOM_EXTRA_PX)).toBeLessThanOrEqual(1.5);
-
-    // Constant, not a fraction: the same extra on a much bigger table.
-    const big: Size = { w: 1200, h: 700 };
-    const extraBig =
-      dist(betChipOffsetPx(bottom, big, false)) - dist(betChipOffsetPx(side, big, false));
-    expect(Math.abs(extraBig - CHIP_RAIL_BOTTOM_EXTRA_PX)).toBeLessThanOrEqual(1.5);
-  });
-
-  it('steps the dealer further out, by the same amount whoever they are', () => {
-    for (const seat of SEATS) {
-      const plain = dist(betChipOffsetPx(seat, TABLE, false));
-      const dealer = dist(betChipOffsetPx(seat, TABLE, true));
-      expect(dealer).toBeGreaterThan(plain);
-      // The extra clearance is a constant, not a per-seat fraction. The offset
-      // is rounded on each axis independently, so the magnitude of the vector
-      // can land up to ~0.71px either side - hence a stated 1.5px window
-      // rather than pretending the arithmetic is exact.
-      const extra = chipRailInset(TABLE, true) - chipRailInset(TABLE, false);
-      expect(Math.abs(dealer - plain - extra)).toBeLessThanOrEqual(1.5);
+  it('never leaves a marker on the painted rail', () => {
+    for (const table of TABLES) {
+      for (const seat of SEATS) {
+        expect(
+          isInsideFelt(chipRestPosition(seat, table), table),
+          `chips ${seat.x},${seat.y}`
+        ).toBe(true);
+        expect(
+          isInsideFelt(dealerButtonPosition(seat, table), table),
+          `button ${seat.x},${seat.y}`
+        ).toBe(true);
+      }
     }
   });
 
-  it('always moves chips toward the middle, never away from it', () => {
-    for (const seat of SEATS) {
-      const off = betChipOffsetPx(seat, TABLE, false);
-      const inwardX = 50 - seat.x;
-      const inwardY = 50 - seat.y;
-      // same sign on each axis as the direction to the centre
-      if (Math.abs(inwardX) > 0.5) expect(Math.sign(off.x)).toBe(Math.sign(inwardX));
-      if (Math.abs(inwardY) > 0.5) expect(Math.sign(off.y)).toBe(Math.sign(inwardY));
+  it('leaves the button clear felt on all sides, on a ring nobody tuned it against', () => {
+    /* Dan 2026-08-25, round two item 8: "The button is too close to the rail and
+       should be pushed a little farther into the table, so it's 'in front of the
+       player' without touching the rail."
+
+       The test above only asks whether the marker is inside the felt, and a puck
+       resting flat against the rail passes that - which is exactly what Dan was
+       looking at. This asks for the daylight, on seats at x=6 and x=94 that sit
+       further outside the painted felt than any production chair, so the answer
+       comes from the projection rather than from where the seat happened to be.
+
+       Half the daylight is the puck's own radius (it may not overhang) and half
+       is clear felt (it may not touch), which is why the second assertion takes
+       FELT_MARKER_MARGIN_WIDTH_PCT off before comparing. */
+    for (const table of TABLES) {
+      for (const seat of SEATS) {
+        const clearance = feltEdgeClearanceWidthPct(dealerButtonPosition(seat, table), table);
+        expect(
+          clearance,
+          `${table.w}x${table.h} seat ${seat.x},${seat.y}: ` +
+            `${((clearance * table.w) / 100).toFixed(1)}px from the rail`
+        ).toBeGreaterThanOrEqual(BUTTON_FELT_MARGIN_WIDTH_PCT - 1e-6);
+        expect(clearance - FELT_MARKER_MARGIN_WIDTH_PCT).toBeGreaterThanOrEqual(
+          BUTTON_FELT_DAYLIGHT_WIDTH_PCT - 1e-6
+        );
+      }
     }
   });
 
-  it('never throws chips past the centre of the table', () => {
-    for (const seat of SEATS) {
-      for (const isDealer of [false, true]) {
-        const off = betChipOffsetPx(seat, TABLE, isDealer);
-        const runX = ((50 - seat.x) * TABLE.w) / 100;
-        const runY = ((50 - seat.y) * TABLE.h) / 100;
-        expect(dist(off)).toBeLessThan(Math.hypot(runX, runY));
+  it('does not push the button so far in that it stops belonging to its seat', () => {
+    /* The daylight is bought by walking the button further from its player, so
+       the walk is bounded. 0.40 of the seat's own distance to the middle of the
+       felt is a stated ceiling with headroom: this ring, which is deliberately
+       wider than ours, peaks at 0.34 (seat 94,55 on the phone - 53.3px of
+       156.8px) and the eight production rings peak at 0.32. The second half is
+       the invariant that matters more than the number - whatever the geometry
+       does, no other chair on the ring ends up nearer to this button than the
+       chair it was computed for. */
+    const c = feltCenter();
+    for (const table of TABLES) {
+      for (const seat of SEATS) {
+        const btn = dealerButtonPosition(seat, table);
+        const walked = px(seat, btn, table);
+        const run = px(seat, c, table);
+        expect(walked / run, `${table.w}x${table.h} seat ${seat.x},${seat.y}`).toBeLessThanOrEqual(
+          0.4
+        );
+        for (const other of SEATS) {
+          if (other === seat) continue;
+          expect(
+            px(other, btn, table),
+            `${table.w}x${table.h} seat ${seat.x},${seat.y}'s button is nearer ${other.x},${other.y}`
+          ).toBeGreaterThanOrEqual(walked - 1e-9);
+        }
+      }
+    }
+  });
+
+  it('keeps the chips and the button visibly apart', () => {
+    for (const table of TABLES) {
+      for (const seat of SEATS) {
+        const gap = markerGapWidthPct(
+          dealerButtonPosition(seat, table),
+          chipRestPosition(seat, table),
+          table
+        );
+        expect(gap, `seat ${seat.x},${seat.y}`).toBeGreaterThanOrEqual(
+          MARKER_MIN_GAP_WIDTH_PCT - 1e-6
+        );
+      }
+    }
+  });
+
+  it('holding the button cannot even be expressed to the chip functions', () => {
+    // CHIP_RAIL_DEALER_EXTRA_PX used to push the button holder's chips 20px
+    // further out so they could clear their own puck. One seat at a different
+    // distance from its player than everyone else is the thing item 13 forbids;
+    // the puck moves instead.
+    //
+    // This used to be `betChipOffsetPx(seat, table, true)` vs `(..., false)`,
+    // which proved the argument was ignored - and kept the argument alive to be
+    // ignored. Audit 2026-08-25 deleted the parameter, so the property is now
+    // structural: there is no third argument for a caller to get wrong.
+    expect(betChipOffsetPx).toHaveLength(2);
+    expect(chipCollectOffsetPx).toHaveLength(2);
+    expect(chipRailInset).toHaveLength(1);
+  });
+
+  it('always moves chips toward the middle of the felt, never away from it', () => {
+    const c = feltCenter();
+    for (const table of TABLES) {
+      for (const seat of SEATS) {
+        const off = betChipOffsetPx(seat, table);
+        if (Math.abs(c.x - seat.x) > 0.5) expect(Math.sign(off.x)).toBe(Math.sign(c.x - seat.x));
+        if (Math.abs(c.y - seat.y) > 0.5) expect(Math.sign(off.y)).toBe(Math.sign(c.y - seat.y));
+      }
+    }
+  });
+
+  it('never throws chips past the middle of the felt', () => {
+    const c = feltCenter();
+    for (const table of TABLES) {
+      for (const seat of SEATS) {
+        const off = betChipOffsetPx(seat, table);
+        const run = Math.hypot(((c.x - seat.x) * table.w) / 100, ((c.y - seat.y) * table.h) / 100);
+        expect(dist(off)).toBeLessThan(run);
       }
     }
   });
 
   it('collects every seat to the same point, wherever its chips started', () => {
-    const endpoints = SEATS.map((seat) => {
-      const rest = betChipOffsetPx(seat, TABLE, false);
-      const travel = chipCollectOffsetPx(seat, TABLE, false);
-      // where the chip lands, relative to the table centre
-      const runX = ((50 - seat.x) * TABLE.w) / 100;
-      const runY = ((50 - seat.y) * TABLE.h) / 100;
-      return {
-        x: rest.x + travel.x - runX,
-        y: rest.y + travel.y - runY,
-      };
-    });
-    // each lands the same fraction short of centre, so the spread of their
-    // distance-from-centre is what matters
-    const d = endpoints.map((p) => dist(p));
-    const expected = SEATS.map(
-      (s) =>
-        Math.hypot(((50 - s.x) * TABLE.w) / 100, ((50 - s.y) * TABLE.h) / 100) *
-        (1 - CHIP_COLLECT_FRACTION)
-    );
-    // Same per-axis rounding slack as above.
-    d.forEach((actual, i) => expect(Math.abs(actual - expected[i])).toBeLessThanOrEqual(1.5));
+    const c = feltCenter();
+    for (const table of TABLES) {
+      for (const seat of SEATS) {
+        const rest = betChipOffsetPx(seat, table);
+        const travel = chipCollectOffsetPx(seat, table);
+        const landed = { x: rest.x + travel.x, y: rest.y + travel.y };
+        const run = Math.hypot(((c.x - seat.x) * table.w) / 100, ((c.y - seat.y) * table.h) / 100);
+        // Both halves are rounded per axis, so the sum can land ~1.4px either
+        // side of the mark it is aimed at.
+        expect(Math.abs(dist(landed) - run * CHIP_COLLECT_FRACTION)).toBeLessThanOrEqual(1.5);
+      }
+    }
   });
 
-  it('does not divide by zero for a seat sitting on the centre', () => {
-    expect(betChipOffsetPx({ x: 50, y: 50 }, TABLE, false)).toEqual({ x: 0, y: 0 });
+  it('does not divide by zero for a seat sitting on the middle of the felt', () => {
+    const c = feltCenter();
+    expect(betChipOffsetPx(c, TABLES[0])).toEqual({ x: 0, y: 0 });
+    expect(dealerButtonPosition(c, TABLES[0])).toEqual(c);
   });
 
-  it('keeps the inset sane on absurd table sizes', () => {
-    expect(chipRailInset({ w: 20, h: 20 }, false)).toBeGreaterThanOrEqual(30);
-    expect(chipRailInset({ w: 4000, h: 4000 }, false)).toBeLessThanOrEqual(64);
+  it('is one number and it follows the table', () => {
+    expect(chipRailInset(TABLES[0])).toBeLessThan(chipRailInset(TABLES[2]));
+    // A table so small it has no felt left still returns something finite
+    // rather than a NaN that would put a chip at translate(NaN, NaN).
+    const tiny = betChipOffsetPx({ x: 10, y: 90 }, { w: 20, h: 33 });
+    expect(Number.isFinite(tiny.x) && Number.isFinite(tiny.y)).toBe(true);
   });
 });

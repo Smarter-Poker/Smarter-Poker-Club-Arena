@@ -9,7 +9,10 @@
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
-  padding-bottom: 2rem;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
 }
 
 .report-content {
@@ -93,6 +96,8 @@
   border-radius: 12px;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.04) 0%, rgba(100, 100, 100, 0.02) 100%);
   cursor: pointer;
+  touch-action: manipulation;
+  min-height: 44px;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
@@ -138,7 +143,7 @@
   border-radius: 8px;
   background: linear-gradient(180deg, #0d1520 0%, #1a2332 100%);
   color: #fff;
-  font-size: 0.875rem;
+  font-size: 16px; /* was 0.875rem; under 16px makes iOS zoom the page on focus */
   resize: vertical;
   transition: all 0.2s ease;
 }
@@ -185,6 +190,7 @@
   font-weight: 700;
   border-radius: 10px;
   cursor: pointer;
+  touch-action: manipulation;
   box-shadow:
     0 0 15px rgba(239, 68, 68, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -235,6 +241,8 @@
 @media (max-width: 640px) {
   .report-page {
     padding: 0.75rem;
+    /* the shorthand above would reset the bottom-nav clearance — keep it */
+    padding-bottom: max(70px, env(safe-area-inset-bottom));
   }
 
   .report-form {
@@ -277,7 +285,7 @@
 
   .report-section textarea,
   .report-section input[type='text'] {
-    font-size: 0.8rem;
+    font-size: 16px; /* was 0.8rem; under 16px makes iOS zoom the page on focus */
     padding: 0.6rem;
   }
 

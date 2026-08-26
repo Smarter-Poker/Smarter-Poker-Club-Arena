@@ -31,6 +31,20 @@ export function useFocusTrap(isActive: boolean) {
     const firstFocusable = focusableElements[0];
     const lastFocusable = focusableElements[focusableElements.length - 1];
 
+    /* FOCUS OUTSIDE THE TRAP IS THE COMMON CASE, NOT AN EDGE ONE.
+       This only ever intervened when focus was sitting on the first or the
+       last focusable element. Tap any non-focusable part of a modal - a
+       heading, a hint paragraph, a section's padding - and activeElement
+       becomes <body>; the next Tab then matched neither branch, so the browser
+       walked on to the first tabbable element in document order, which is the
+       page BEHIND the portal. aria-modal does not stop keyboard focus, so the
+       trap simply leaked. */
+    if (!containerRef.current.contains(document.activeElement)) {
+      e.preventDefault();
+      (e.shiftKey ? lastFocusable : firstFocusable).focus();
+      return;
+    }
+
     if (e.shiftKey) {
       // Shift+Tab: wrap from first → last
       if (document.activeElement === firstFocusable) {

@@ -22,6 +22,8 @@ import './TableConfigPage.css';
 import { reportError } from '../utils/errorReporter';
 import { formatCurrency } from '../lib/utils';
 import { RAKE_INHERIT } from '../config/RakeConfig';
+import { stakesLabel, isFixedLimitVariant } from '../lib/bettingStructure';
+
 import { tournamentService } from '../services/TournamentService';
 import {
   buildTournamentConfig,
@@ -38,6 +40,17 @@ import WeeklyScheduleEditor, {
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 type GameMode = 'regular' | 'sng' | 'mtt';
+/**
+ * The variants a 7-2 bounty can actually pay out on.
+ *
+ * ServerTableEngineSettlement gates the bounty to Hold'em and says why:
+ * "meaningless in PLO; short-deck has no deuces". Holding four cards, a 7 and
+ * a 2 is nearly every hand, and a bounty that always fires is not a bounty.
+ * The engine rule is right; offering the switch on a table that can never
+ * honour it is what was wrong.
+ */
+const SEVEN_DEUCE_VARIANTS = new Set(['nlh', 'nlhe', 'flh', 'limit_holdem', 'pineapple']);
+
 type RunItMode = 'none' | 'player_choice' | 'mandatory_twice' | 'mandatory_three';
 type BlindStructure = 'slow' | 'standard' | 'turbo' | 'hyper_turbo';
 type PayoutStructure = 'payout1' | 'payout2' | 'payout3' | 'winner_take_all';
@@ -194,14 +207,23 @@ interface TableConfig {
   ipRestriction: boolean;
 }
 
+// 2026-08-23: these keys are the route's :gameType, which is the same string as
+// the variant id in CreateTablePage.GAME_TYPES. Four entries here keyed ids that
+// screen has never emitted — `shortdeck` (it sends `short_deck`), `plo`, `flo`,
+// `mixed` — so every PLO, Pineapple and Short Deck config page fell through to
+// the nlh default at `gameInfo` and titled itself "NLH". Keyed correctly now,
+// with the two limit games added. Anything genuinely unknown still falls back.
 const GAME_TYPE_LABELS: Record<string, { name: string; color: string }> = {
   nlh: { name: 'NLH', color: '#dc2626' },
-  flh: { name: 'FLH', color: '#b45309' },
-  shortdeck: { name: '6+', color: '#0d9488' },
-  plo: { name: 'OMAHA', color: '#7c3aed' },
-  flo: { name: 'FLO', color: '#eab308' },
-  mixed: { name: 'MIXED', color: '#db2777' },
-  ofc: { name: 'OFC', color: '#16a34a' },
+  plo4: { name: 'PLO4', color: '#7c3aed' },
+  plo5: { name: 'PLO5', color: '#7c3aed' },
+  plo6: { name: 'PLO6', color: '#7c3aed' },
+  plo8: { name: 'PLO8', color: '#7c3aed' },
+  pineapple: { name: 'PINEAPPLE', color: '#f59e0b' },
+  short_deck: { name: '6+', color: '#0d9488' },
+  // Green, matching the limit cards on the create-table screen.
+  flh: { name: 'FLH', color: '#059669' },
+  flo8: { name: 'FLO8', color: '#0d9488' },
 };
 
 const BLINDS_PRESETS = [
@@ -684,7 +706,11 @@ export default function TableConfigPage() {
 
   // Generate default table name
   useEffect(() => {
-    const blindsLabel = `${config.smallBlind}/${config.bigBlind}`;
+    // 2026-08-23: limit games are named by BET size, not blind size — blinds
+    // 1/2 is a "2/4" limit game. stakesLabel() is the one place that decides,
+    // so the table name, the stakes column and the lobby row all agree.
+    const blindsLabel = stakesLabel(config.smallBlind, config.bigBlind, gameType);
+
     setConfig((prev) => ({
       ...prev,
       name: prev.name || `${gameInfo.name} ${blindsLabel}`,
@@ -794,7 +820,8 @@ export default function TableConfigPage() {
     // Stakes
     small_blind: config.smallBlind,
     big_blind: config.bigBlind,
-    stakes: `${config.smallBlind}/${config.bigBlind}`,
+    // Bet sizes on a limit table ("2/4"), blinds everywhere else ("1/2").
+    stakes: stakesLabel(config.smallBlind, config.bigBlind, gameType),
 
     // Basic settings — union clubs build private club games ONLY (the
     // trg_tables_union_ownership DB trigger enforces this server-side too)
@@ -820,8 +847,34 @@ export default function TableConfigPage() {
     bomb_pot_double_board: config.bombPotEnabled && config.doubleBoard,
     double_board: config.doubleBoard,
     triple_board: config.tripleBoard,
+    /**
+     * 2026-08-25: THE COLUMN HAS A READER NOW.
+     *
+     * The note that stood here said nothing in server/src had ever read this,
+     * and that the control "promised a different game and delivered ordinary
+     * Hold'em". Both were true. The fix was never to delete the switch: the
+     * pineapple VARIANT is fully built — three hole cards, a real discard
+     * street, its own timer — and only the mapping was missing.
+     * ServerTableEngineBase.dealtGameVariant now deals a Hold'em table with
+     * this flag as pineapple, and refuses to apply it to anything else,
+     * because "Pineapple PLO" is not a game.
+     */
     pineapple_holdem: config.pineappleHoldem,
-    seven_deuce_enabled: config.sevenDeuceEnabled,
+    /**
+     * NLH ONLY, and that is the engine's rule, not an oversight.
+     * ServerTableEngineSettlement: "meaningless in PLO; short-deck has no
+     * deuces" — holding four cards, a 7 and a 2 is nearly every hand, and a
+     * bounty that always fires is not a bounty.
+     *
+     * So the SWITCH is what was wrong: the creation screen offered it on PLO
+     * and short-deck tables where it could never pay out once, and said
+     * nothing. It is not offered there now (see the toggle below), and the
+     * column is forced false so a variant change cannot leave a stale true
+     * behind on a table that will never honour it.
+     */
+    seven_deuce_enabled: SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase())
+      ? config.sevenDeuceEnabled
+      : false,
     // 7-2 bounty size in big blinds each other dealt-in player pays a post-flop
     // 7-2 winner. Only meaningful when the toggle is on; default 2 BB.
     seven_deuce_amount: config.sevenDeuceEnabled ? config.sevenDeuceAmountBB : 2,
@@ -837,6 +890,21 @@ export default function TableConfigPage() {
     min_buy_in_bb: config.minBuyInBB,
     max_buy_in_bb: config.maxBuyInBB,
     ante_bb: config.anteBB,
+    /**
+     * THE ANTE SLIDER WAS DEAD ON EVERY TABLE THIS PAGE CREATED.
+     *
+     * `ante_bb` is not in the engine's select list (server/src/services/
+     * supabase/tables.ts) — the engine reads `ante` and `ante_enabled`, and
+     * this page wrote neither. So a host could drag Ante to 2 BB, save, sit
+     * down, and no ante was ever posted. The only path that worked was the
+     * older CreateTableModal, which happens to map to the right columns.
+     *
+     * `ante_bb` is kept because it is the authored unit (big blinds, which
+     * survives a blind change); `ante` is the chip figure the engine actually
+     * posts, derived here so the two cannot drift.
+     */
+    ante_enabled: Number(config.anteBB) > 0,
+    ante: Number(config.anteBB) > 0 ? Number(config.anteBB) * Number(config.bigBlind || 0) : 0,
     career_percent_min: config.careerPercentMin,
     maintain_percent_min: config.maintainPercentMin,
     maintain_hands: config.maintainHands,
@@ -1195,7 +1263,7 @@ export default function TableConfigPage() {
       <div className="config-name">
         <input
           type="text"
-          placeholder="Enter table name here..."
+          placeholder="Enter Table Name Here..."
           value={config.name}
           onChange={(e) => updateConfig('name', e.target.value)}
         />
@@ -1239,29 +1307,26 @@ export default function TableConfigPage() {
               value={config.tripleBoard}
               onChange={(v) => updateConfig('tripleBoard', v)}
             />
-            <Toggle
-              label="Pineapple Hold'em"
-              value={config.pineappleHoldem}
-              onChange={(v) => updateConfig('pineappleHoldem', v)}
-              tooltip="3 hole cards, discard 1"
-            />
-            <Toggle
-              label="Seven-Deuce"
-              value={config.sevenDeuceEnabled}
-              onChange={(v) => updateConfig('sevenDeuceEnabled', v)}
-              tooltip="Winner holding any 7-2 collects a bounty from each other player (post-flop only)"
-            />
-            {config.sevenDeuceEnabled && (
-              <Slider
-                label="7-2 Bounty"
-                value={config.sevenDeuceAmountBB}
-                onChange={(v) => updateConfig('sevenDeuceAmountBB', v)}
-                min={0.5}
-                max={10}
-                step={0.5}
-                suffix=" Big Blind"
+            {SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase()) && (
+              <Toggle
+                label="Seven-Deuce"
+                value={config.sevenDeuceEnabled}
+                onChange={(v) => updateConfig('sevenDeuceEnabled', v)}
+                tooltip="Winner holding any 7-2 collects a bounty from each other player (post-flop only)"
               />
             )}
+            {SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase()) &&
+              config.sevenDeuceEnabled && (
+                <Slider
+                  label="7-2 Bounty"
+                  value={config.sevenDeuceAmountBB}
+                  onChange={(v) => updateConfig('sevenDeuceAmountBB', v)}
+                  min={0.5}
+                  max={10}
+                  step={0.5}
+                  suffix=" Big Blind"
+                />
+              )}
             <Toggle
               label="NIT Game"
               value={config.nitGame}
@@ -1333,7 +1398,18 @@ export default function TableConfigPage() {
             <div className="config-slider">
               <div className="slider-header">
                 <span className="slider-label">
-                  Blinds: {config.smallBlind}/{config.bigBlind}
+                  {isFixedLimitVariant(gameType) ? (
+                    <>
+                      {/* A limit player thinks in bet sizes, but still needs to
+                          know what they are posting — show both. */}
+                      Limits: {stakesLabel(config.smallBlind, config.bigBlind, gameType)} (Blinds{' '}
+                      {config.smallBlind}/{config.bigBlind})
+                    </>
+                  ) : (
+                    <>
+                      Blinds: {config.smallBlind}/{config.bigBlind}
+                    </>
+                  )}
                 </span>
               </div>
               <div className="slider-track-container">
@@ -1426,12 +1502,13 @@ export default function TableConfigPage() {
               label="Auto Extension"
               value={config.autoExtension}
               onChange={(v) => updateConfig('autoExtension', v)}
-              tooltip="Extend table automatically"
+              tooltip="Keep this table open when it empties"
             />
             <Toggle
               label="Auto Restart"
               value={config.autoRestart}
               onChange={(v) => updateConfig('autoRestart', v)}
+              tooltip="Reopen this table if it closes"
             />
             <Toggle
               label="Auto Create Table"
@@ -1549,7 +1626,7 @@ export default function TableConfigPage() {
               <textarea
                 className="config-textarea-input"
                 maxLength={200}
-                placeholder="Optional line shown on the tournament page..."
+                placeholder="Optional Line Shown On The Tournament Page..."
                 value={config.shortDescription}
                 onChange={(e) => updateConfig('shortDescription', e.target.value)}
               />
@@ -1909,20 +1986,31 @@ export default function TableConfigPage() {
                 />
               </>
             )}
-            <Toggle
-              label="Multi-Day MTT"
-              value={config.multiDayMtt}
-              onChange={(v) => updateConfig('multiDayMtt', v)}
-            />
-            {config.multiDayMtt && (
-              <NumberField
-                label="Total Days"
-                value={config.totalDays}
-                onChange={(v) => updateConfig('totalDays', v)}
-                min={2}
-                max={7}
-              />
-            )}
+            {/* MULTI-DAY MTT: A TOGGLE THAT LIED, REPLACED BY THE TRUTH.
+                2026-08-26. This was a working switch over a feature that does
+                not exist. Ticking it set `is_multi_day` and `total_days`,
+                painted a "Multi-Day" tag on the lobby card and a badge in the
+                details tab, and changed nothing about how the event ran: there
+                is no day end, no Day 2 resume, no flight merge, and nothing
+                anywhere writes `flight_end_chips_snapshot`. The tournament
+                played down to one winner in a single session and paid the
+                whole prize pool, with the lobby promising otherwise.
+                `trg_tournaments_refuse_unbuilt_multi_day` now refuses the flag
+                at the database for every caller, so a control here could only
+                produce an error. Restore the Toggle and the Total Days field
+                in the commit that implements Day 2. */}
+            <div className="config-toggle">
+              <span className="toggle-label">
+                Multi-Day MTT
+                <span
+                  className="tooltip-icon"
+                  title="Day 2 resume and flight merging are not built. Setting this would badge the event Multi-Day while it played down to one winner in a single session, so it is refused rather than promised."
+                >
+                  ?
+                </span>
+              </span>
+              <span className="toggle-status off">NOT AVAILABLE YET</span>
+            </div>
             {/* Player Number Range */}
             <div className="config-slider">
               <div className="slider-header">

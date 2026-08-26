@@ -60,7 +60,7 @@ export default function OnlineFriendsPill({ userId, onFriendClick }: OnlineFrien
       // Get profiles for friends
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url:arena_avatar_url, last_seen')
+        .select('id, display_name, avatar_url, last_seen')
         .in('id', friendIds);
 
       if (!profiles) return;

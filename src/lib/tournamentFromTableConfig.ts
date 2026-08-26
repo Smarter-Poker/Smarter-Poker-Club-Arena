@@ -13,19 +13,44 @@ import { BLIND_STRUCTURES, SPIN_BLIND_STRUCTURE } from '../config/blindStructure
 import type { TournamentConfig } from '../services/TournamentService';
 import { payoutEngine } from '../services/PayoutEngine';
 import { splitBuyIn } from '../utils/buyIn';
+import { maxSeatsTheDeckAllows } from '../config/tableSeating';
 
 /**
  * The route's :gameType -> the tournament engine's variant vocabulary.
- * Anything not listed cannot be run as a tournament: HandController defaults an
- * unknown variant to 2 cards and a full deck, so 'flh' or 'mixed' would quietly
- * deal plain Hold'em. Those game types hide the SNG/MTT tabs instead.
+ * Anything not listed cannot be run as a tournament, and hides the SNG/MTT tabs.
+ *
+ * 2026-08-24: THE KEYS WERE WRONG AND HAD ALWAYS BEEN WRONG. This map was keyed
+ * `plo` and `shortdeck`; the create-table screen has only ever emitted `plo4`
+ * and `short_deck`. Neither matched, so `canRunAsTournament` answered false for
+ * every game except Hold'em and the SNG/MTT tabs were hidden on all of them —
+ * while production was already running 3,100 PLO4, 1,548 PLO5, 945 PLO6, 41
+ * PLO8 and a Short Deck tournament, created through the recurring service. The
+ * platform ran the games; only this screen could not make one. (The identical
+ * stale-key bug was in TableConfigPage's GAME_TYPE_LABELS, fixed in #594.)
+ *
+ * The value is written to `tournaments.game_type`, which
+ * TournamentManagerBase lowercases into the table's `game_variant`, so each
+ * entry must be a variant the engine genuinely deals — verified against
+ * server/src/engine/VariantRules.ts and against the live rows above.
+ *
+ * Still absent, deliberately:
+ *  • `pineapple` — its discard street has no tournament timing path, and no
+ *    PINEAPPLE tournament has ever existed.
+ *  • `flh` / `flo8` — a limit tournament raises stakes on a bet-size ladder,
+ *    and every blind structure here is a no-limit/pot-limit blind ladder.
+ *    Offering them would deal limit and escalate it like no-limit.
  */
-const TOURNAMENT_GAME_VARIANTS: Record<string, 'NLH' | 'PLO4' | 'SHORT_DECK'> = {
+const TOURNAMENT_GAME_VARIANTS: Record<
+  string,
+  'NLH' | 'PLO4' | 'PLO5' | 'PLO6' | 'PLO8' | 'SHORT_DECK'
+> = {
   nlh: 'NLH',
-  plo: 'PLO4',
-  shortdeck: 'SHORT_DECK',
+  plo4: 'PLO4',
+  plo5: 'PLO5',
+  plo6: 'PLO6',
+  plo8: 'PLO8',
+  short_deck: 'SHORT_DECK',
 };
-
 
 /** The subset of the create-table form a tournament actually uses. */
 export interface TournamentFormInput {
@@ -86,20 +111,20 @@ export function canRunAsTournament(gameType: string | undefined): boolean {
   return Boolean(TOURNAMENT_GAME_VARIANTS[gameType ?? 'nlh']);
 }
 
-  /**
-   * SNG / MTT tabs -> a real tournament.
-   *
-   * 2026-08-19. Until now these tabs inserted a row into `tables` exactly like
-   * the Regular tab and produced an ordinary CASH GAME with the configured
-   * blinds. Every tournament control on them — buy-in, blind structure,
-   * payouts, starting chips, late registration, rebuys, add-ons, bounties —
-   * wrote a `tables` column that nothing in server/src reads. Real tournaments
-   * live in the `tournaments` table and are run by TournamentManager.
-   *
-   * Only fields the tournament engine actually consumes are mapped here.
-   * Controls it cannot honour are hidden on these tabs rather than left on
-   * screen doing nothing.
-   */
+/**
+ * SNG / MTT tabs -> a real tournament.
+ *
+ * 2026-08-19. Until now these tabs inserted a row into `tables` exactly like
+ * the Regular tab and produced an ordinary CASH GAME with the configured
+ * blinds. Every tournament control on them — buy-in, blind structure,
+ * payouts, starting chips, late registration, rebuys, add-ons, bounties —
+ * wrote a `tables` column that nothing in server/src reads. Real tournaments
+ * live in the `tournaments` table and are run by TournamentManager.
+ *
+ * Only fields the tournament engine actually consumes are mapped here.
+ * Controls it cannot honour are hidden on these tabs rather than left on
+ * screen doing nothing.
+ */
 export function buildTournamentConfig(
   config: TournamentFormInput,
   gameType: string | undefined
@@ -127,13 +152,15 @@ export function buildTournamentConfig(
   const preset = isSpins
     ? SPIN_BLIND_STRUCTURE
     : (BLIND_STRUCTURES[
-      ({
-        slow: 'deepStack',
-        standard: 'regular',
-        turbo: 'turbo',
-        hyper_turbo: 'hyperTurbo',
-      } as const)[config.blindStructure] ?? 'regular'
-    ] as typeof SPIN_BLIND_STRUCTURE);
+        (
+          {
+            slow: 'deepStack',
+            standard: 'regular',
+            turbo: 'turbo',
+            hyper_turbo: 'hyperTurbo',
+          } as const
+        )[config.blindStructure] ?? 'regular'
+      ] as typeof SPIN_BLIND_STRUCTURE);
   const levelMinutes = Math.max(1, config.blindsUpMinutes);
   const blindStructure = preset.map((lvl) =>
     lvl.isBreak ? lvl : { ...lvl, durationMinutes: levelMinutes }
@@ -205,14 +232,14 @@ export function buildTournamentConfig(
     // time in the past would trip the 30-minute auto-cancel immediately — so
     // anything not in the future falls back to the service default.
     startTime:
-    config.gameMode === 'mtt' && config.startTime
-      ? (() => {
-        const when = new Date(config.startTime);
-        return Number.isFinite(when.getTime()) && when.getTime() > Date.now()
-        ? when
-        : undefined;
-      })()
-      : undefined,
+      config.gameMode === 'mtt' && config.startTime
+        ? (() => {
+            const when = new Date(config.startTime);
+            return Number.isFinite(when.getTime()) && when.getTime() > Date.now()
+              ? when
+              : undefined;
+          })()
+        : undefined,
     isRebuy: isMtt && config.numberOfRebuysReentries > 0,
     isReentry: isMtt && config.numberOfRebuysReentries > 0,
     rebuyCost,
@@ -227,9 +254,10 @@ export function buildTournamentConfig(
     spinType: isSpins ? 'standard' : undefined,
     // Half the buy-in as the head, floored to a whole number so the bounty can
     // never be a decimal and can never exceed the prize half of the split.
-    bountyConfig: !isSatellite && config.koBounty
-    ? { baseBounty: Math.min(split.prize, Math.floor(split.total * 0.5)) }
-    : undefined,
+    bountyConfig:
+      !isSatellite && config.koBounty
+        ? { baseBounty: Math.min(split.prize, Math.floor(split.total * 0.5)) }
+        : undefined,
     satelliteTarget: isSatellite
       ? {
           tournamentId: config.satelliteTargetId!,
@@ -250,19 +278,40 @@ export function buildTournamentConfig(
     actionTimeSeconds: clampInt(config.actionTimeSeconds ?? 15, 5, 60),
     // For an SNG the field IS the table (or a fixed multiple of 9), so the
     // table can never seat more than the field itself.
-    tableSize: isSng
-      ? Math.min(clampInt(config.tableSize ?? 9, 2, 10), maxPlayers)
-      : clampInt(config.tableSize ?? 9, 2, 10),
+    // 2026-08-24: clamped by what the DECK can physically deal, and by NOTHING
+    // ELSE. tableSeating's cash cap is deliberately NOT used here: its header
+    // is explicit that "TOURNAMENTS ARE NOT BOUND BY THIS", because the cash
+    // cap is kept tight so Run It Twice has three boards to come out of, and a
+    // tournament cannot run it twice at all. Applying it would shrink 9-handed
+    // MTT tables and turn 3-max Spin & Gos into 8-max — a structural change,
+    // not a seat cap. (I tried it that way first; the seat-law parity guard and
+    // that header are what caught it.)
+    //
+    // Physics still applies. PLO6 deals six cards a seat, so a ten-handed PLO6
+    // table wants 60 hole cards plus a board out of one 52-card deck, and
+    // PokerEngine.deal() THROWS rather than dealing short — the tournament
+    // would start and then sit there. This forbids only the undealable:
+    // Hold'em stays 10, PLO4 and PLO8 stay 10, and only PLO5 (9) and PLO6 (7)
+    // are actually reduced.
+    tableSize: Math.min(
+      isSng
+        ? Math.min(clampInt(config.tableSize ?? 9, 2, 10), maxPlayers)
+        : clampInt(config.tableSize ?? 9, 2, 10),
+      maxSeatsTheDeckAllows(gameType)
+    ),
+
     bigBlindAnte: config.bigBlindAnte ?? false,
     authorizedToRegister: config.authorizedToRegister ?? false,
     synchronizedBreaks: config.synchronizedBreaks ?? true,
     acceleratedMtt: isMtt ? (config.acceleratedMtt ?? false) : false,
-    maxRebuys: isMtt && config.numberOfRebuysReentries > 0
-      ? clampInt(config.numberOfRebuysReentries, 0, 100)
-      : undefined,
-    maxReentries: isMtt && config.numberOfRebuysReentries > 0
-      ? clampInt(config.numberOfRebuysReentries, 0, 100)
-      : undefined,
+    maxRebuys:
+      isMtt && config.numberOfRebuysReentries > 0
+        ? clampInt(config.numberOfRebuysReentries, 0, 100)
+        : undefined,
+    maxReentries:
+      isMtt && config.numberOfRebuysReentries > 0
+        ? clampInt(config.numberOfRebuysReentries, 0, 100)
+        : undefined,
     addonBreakMinutes:
       isMtt && config.addOnMultiplier > 0
         ? clampInt(config.addOnBreakLengthMinutes ?? 1, 1, 10)
@@ -278,8 +327,18 @@ export function buildTournamentConfig(
       isMtt && config.restartTournamentEvery
         ? clampInt(config.restartEveryMinutes ?? 60, 5, 1440)
         : undefined,
-    isMultiDay: isMtt ? (config.multiDayMtt ?? false) : false,
-    totalDays: isMtt && config.multiDayMtt ? clampInt(config.totalDays ?? 2, 2, 7) : undefined,
+    /* MULTI-DAY IS NOT BUILT, SO IT IS NOT SENT (2026-08-26).
+       `is_multi_day` and `total_days` are stored, badged in two places, and
+       read by NOTHING that runs a tournament: there is no day end, no Day 2
+       resume, no flight merge, and nothing has ever written
+       `flight_end_chips_snapshot`. An event with the flag set played down to a
+       single winner in one session while the lobby card said Multi-Day.
+       `trg_tournaments_refuse_unbuilt_multi_day` now refuses the write at the
+       database, for every caller including the engine; this keeps the client
+       from composing a payload that would be refused. 0 of 34,072 production
+       tournaments ever set it, so nothing is taken away.
+       Delete both of these lines in the commit that implements Day 2. */
+    isMultiDay: false,
+    totalDays: undefined,
   } as TournamentConfig;
 }
-

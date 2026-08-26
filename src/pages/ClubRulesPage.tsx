@@ -18,12 +18,13 @@ import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import './ClubRulesPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
+import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { reportError } from '../utils/errorReporter';
 
 const rulesLineAnimationStyle = (index: number) => ({
   opacity: 0,
   transform: 'translateY(4px)',
-  animation: `fadeInUp 0.4s ease-out ${index * 40}ms forwards`,
+  animation: `animationsFadeInUp 0.4s ease-out ${index * 40}ms forwards`,
 });
 
 export default function ClubRulesPage() {
@@ -235,17 +236,17 @@ export default function ClubRulesPage() {
 
   if (loading) {
     return (
-      <div className="club-rules-page">
+      <StandardContentLayout className="club-rules-page" title="Club Rules">
         <div className="loading-state">
           <PageSkeleton variant="settings" />
         </div>
-      </div>
+      </StandardContentLayout>
     );
   }
 
   if (loadError) {
     return (
-      <div className="club-rules-page">
+      <StandardContentLayout className="club-rules-page" title="Club Rules">
         <div style={{ textAlign: 'center', padding: '60px 20px', color: '#aaa' }}>
           <p style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠</p>
           <p style={{ marginBottom: '16px' }}>Failed To Load Club Rules</p>
@@ -264,13 +265,13 @@ export default function ClubRulesPage() {
             Retry
           </button>
         </div>
-        <ClubBottomNav clubId={clubId || ''} userRole={userRole} />
-      </div>
+        <ClubBottomNav clubId={clubId || ''} />
+      </StandardContentLayout>
     );
   }
 
   return (
-    <div className="club-rules-page">
+    <StandardContentLayout className="club-rules-page" title="Club Rules">
       <div className="rules-header">
         <h1>{clubName}</h1>
         <h2>Club Rules & Guidelines</h2>
@@ -282,7 +283,7 @@ export default function ClubRulesPage() {
             <textarea
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
-              placeholder="Enter your club rules and guidelines here...&#10;&#10;Example:&#10;1. Be respectful to all players&#10;2. No slow-rolling&#10;3. Minimum buy-in is 50 BB&#10;4. Seat changes allowed between hands&#10;5. No external software allowed"
+              placeholder="Enter Your Club Rules And Guidelines Here...&#10;&#10;Example:&#10;1. Be Respectful To All Players&#10;2. No Slow-rolling&#10;3. Minimum Buy-in Is 50 BB&#10;4. Seat Changes Allowed Between Hands&#10;5. No External Software Allowed"
               rows={18}
               className="rules-textarea"
             />
@@ -336,7 +337,7 @@ export default function ClubRulesPage() {
         )}
       </div>
 
-      <ClubBottomNav clubId={clubId || ''} userRole={userRole} />
-    </div>
+      <ClubBottomNav clubId={clubId || ''} />
+    </StandardContentLayout>
   );
 }

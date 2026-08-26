@@ -7,7 +7,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -37,14 +37,16 @@ import PromotionsList from '../components/promotions/PromotionsList';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import { useToast } from '../components/common/Toast';
 import { retryFetch } from '../utils/retryFetch';
+import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './ProfilePage.module.css';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { generateDefaultAvatar } from '../utils/avatarGenerator';
 import { reportError } from '../utils/errorReporter';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
 
 // #5: Lazy-load Recharts (387KB) — only imported when History tab is opened
-const LazyProfitChart = lazy(() => import('../components/profile/ProfitChart'));
+const LazyProfitChart = lazyWithRetry(() => import('../components/profile/ProfitChart'));
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -329,13 +331,68 @@ export default function ProfilePage() {
           /* corrupt cache */
         }
 
+        // PERF 2026-08-23: this batch needs only authUser.id - never the
+        // profile row - but sat behind it, so the page paid two round trips
+        // in series where one would do. The query array below is the
+        // original, moved verbatim; only where it is AWAITED changed, so
+        // the order of state updates is untouched.
+        const secondaryDataPromise = Promise.allSettled([
+          // Achievements
+          retryFetch(
+            () =>
+              supabase
+                .from('training_user_achievements')
+                /* `achievement:achievements(*)` 400'd on every profile load,
+                   for every user, since it was written: there is no
+                   `achievements` table in this schema. PostgREST said so in
+                   the response body — PGRST200, "Perhaps you meant
+                   'training_achievement_definitions' instead" — and the FK
+                   confirms it (training_user_achievements.achievement_id ->
+                   training_achievement_definitions). Nothing surfaced it,
+                   because the result is read through Promise.allSettled and a
+                   rejected fetch just renders an empty achievement list, and
+                   retryFetch dutifully retried the impossible query 3x a load.
+
+                   The aliases matter too: the definitions table has `icon_url`
+                   and `threshold`, not `icon` and `max_progress`, so the
+                   consumer below would have rendered a blank icon and an
+                   undefined progress cap even once the embed resolved.
+
+                   Explicit columns rather than `*` for the same reason
+                   `select('*')` was removed from the profile readers in
+                   August: a star-select touching one ungranted column makes
+                   Postgres reject the whole statement. */
+                .select(
+                  'id, achievement_id, user_id, progress, unlocked_at, ' +
+                    'achievement:training_achievement_definitions(' +
+                    'id, name, description, icon:icon_url, max_progress:threshold)'
+                )
+                .eq('user_id', authUser.id)
+                .limit(200)
+                .then((r) => r),
+            { maxRetries: 2, isMountedRef: isMountedRef }
+          ),
+          // Transaction history
+          retryFetch(
+            () =>
+              supabase
+                .from('wallet_transactions')
+                .select('id, type, amount, created_at, description')
+                .eq('user_id', authUser.id)
+                .order('created_at', { ascending: true })
+                .limit(200)
+                .then((r) => r),
+            { maxRetries: 2, isMountedRef: isMountedRef }
+          ),
+        ]);
+
         // Fetch basic profile and stats
         const { data: profile } = await retryFetch(
           () =>
             supabase
               .from('profiles')
               .select(
-                'id, username, display_name, player_number, avatar_url:arena_avatar_url, tier, created_at, diamonds, is_vip, login_streak'
+                'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak'
               )
               .eq('id', authUser.id)
               .maybeSingle()
@@ -392,55 +449,7 @@ export default function ProfilePage() {
         // Challenges are NOT loaded here any more: this page links to
         // /challenges instead of rendering them, so fetching all three tiers on
         // every profile visit was pure waste (9 round trips on a fresh day).
-        const [achievementsResult, transactionsResult] = await Promise.allSettled([
-          // Achievements
-          retryFetch(
-            () =>
-              supabase
-                .from('training_user_achievements')
-                /* `achievement:achievements(*)` 400'd on every profile load,
-                   for every user, since it was written: there is no
-                   `achievements` table in this schema. PostgREST said so in
-                   the response body — PGRST200, "Perhaps you meant
-                   'training_achievement_definitions' instead" — and the FK
-                   confirms it (training_user_achievements.achievement_id ->
-                   training_achievement_definitions). Nothing surfaced it,
-                   because the result is read through Promise.allSettled and a
-                   rejected fetch just renders an empty achievement list, and
-                   retryFetch dutifully retried the impossible query 3x a load.
-
-                   The aliases matter too: the definitions table has `icon_url`
-                   and `threshold`, not `icon` and `max_progress`, so the
-                   consumer below would have rendered a blank icon and an
-                   undefined progress cap even once the embed resolved.
-
-                   Explicit columns rather than `*` for the same reason
-                   `select('*')` was removed from the profile readers in
-                   August: a star-select touching one ungranted column makes
-                   Postgres reject the whole statement. */
-                .select(
-                  'id, achievement_id, user_id, progress, unlocked_at, ' +
-                    'achievement:training_achievement_definitions(' +
-                    'id, name, description, icon:icon_url, max_progress:threshold)'
-                )
-                .eq('user_id', authUser.id)
-                .limit(200)
-                .then((r) => r),
-            { maxRetries: 2, isMountedRef: isMountedRef }
-          ),
-          // Transaction history
-          retryFetch(
-            () =>
-              supabase
-                .from('wallet_transactions')
-                .select('id, type, amount, created_at, description')
-                .eq('user_id', authUser.id)
-                .order('created_at', { ascending: true })
-                .limit(200)
-                .then((r) => r),
-            { maxRetries: 2, isMountedRef: isMountedRef }
-          ),
-        ]);
+        const [achievementsResult, transactionsResult] = await secondaryDataPromise;
 
         if (!isMounted) return;
 
@@ -518,7 +527,7 @@ export default function ProfilePage() {
               supabase
                 .from('profiles')
                 .select(
-                  'id, username, display_name, player_number, avatar_url:arena_avatar_url, tier, created_at, diamonds, is_vip, login_streak'
+                  'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak'
                 )
                 .eq('id', authUser.id)
                 .maybeSingle()
@@ -695,105 +704,22 @@ export default function ProfilePage() {
     };
   }, []);
 
-  // #1+#2: Setup Supabase Realtime via Channel Registry (fixed cleanup leak)
-  useEffect(() => {
-    let isMounted = true;
-    let activeChannelKey: string | null = null;
-
-    async function setupRealtimeSubscription() {
-      try {
-        const {
-          data: { user: authUser },
-        } = await getAuthUser();
-        if (!authUser || !isMounted) return;
-
-        activeChannelKey = `profile-${authUser.id}`;
-
-        // #1: Use Channel Registry for deduplication
-        const channel = masterBus.getOrCreateChannel(activeChannelKey);
-
-        // Subscribe to profile changes
-        channel
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'profiles',
-              filter: `id=eq.${authUser.id}`,
-            },
-            async (payload) => {
-              const { data: updatedProfile } = await supabase
-                .from('profiles')
-                .select(
-                  'id, username, display_name, player_number, avatar_url:arena_avatar_url, tier, created_at, diamonds, is_vip, login_streak'
-                )
-                .eq('id', authUser.id)
-                .maybeSingle();
-
-              if (updatedProfile) {
-                setUser({
-                  id: updatedProfile.id,
-                  username: updatedProfile.username || 'Player',
-                  displayName: updatedProfile.display_name || updatedProfile.username || 'Player',
-                  playerNumber: updatedProfile.player_number || 0,
-                  avatarUrl: updatedProfile.avatar_url || '',
-                  vipLevel: updatedProfile.tier || 'bronze',
-                  memberSince: updatedProfile.created_at,
-                });
-
-                setDiamonds(updatedProfile.diamonds || 0);
-                setIsVIP(updatedProfile.is_vip || false);
-
-                // Stats loaded separately — not in profiles table
-              }
-            }
-          )
-          // Subscribe to wallet changes for diamonds
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'wallets',
-              filter: `user_id=eq.${authUser.id}`,
-            },
-            async (payload) => {
-              const { data: updatedProfile } = await supabase
-                .from('profiles')
-                .select('diamonds, is_vip')
-                .eq('id', authUser.id)
-                .maybeSingle();
-
-              if (updatedProfile) {
-                setDiamonds(updatedProfile.diamonds || 0);
-                setIsVIP(updatedProfile.is_vip || false);
-              }
-            }
-          )
-          .subscribe((status: string, err?: Error) => {
-            if (status === 'CHANNEL_ERROR') {
-              if (err) reportError(err?.message || err, 'ProfilePage._Realtime_channel_error');
-            }
-            if (status === 'TIMED_OUT') {
-              console.warn('[ProfilePage] Realtime channel timed out');
-            }
-          });
-      } catch (err) {
-        reportError(err, 'ProfilePage.Realtime_subscription_failed');
-      }
-    }
-
-    setupRealtimeSubscription();
-
-    // #2: FIX — cleanup is now robust against async race conditions
-    return () => {
-      isMounted = false;
-      if (activeChannelKey) {
-        masterBus.removeRegisteredChannel(activeChannelKey);
-      }
-    };
-  }, []);
+  // Realtime profile/wallet updates: handled GLOBALLY, not by this page.
+  //
+  // 2026-08-24: a `profile-<uid>` channel used to be created here carrying two
+  // listeners - `profiles` (id=eq.<uid>) and `wallets` (user_id=eq.<uid>) - each
+  // of which responded by RE-QUERYING profiles. Both were byte-identical
+  // duplicates of listeners PostgresSyncHooks already carries on
+  // `global_db_sync:<userId>`, created once at sign-in and never torn down by
+  // navigation, and that channel emits PROFILE_UPDATED, BALANCE_UPDATED and
+  // DIAMOND_BALANCE_CHANGED. This page already subscribes to all three on the
+  // bus (see the listeners further up this file), so the refresh path is
+  // unchanged - only the duplicate socket subscription, and the whole effect
+  // that existed to create it, are gone.
+  //
+  // Nothing here drove a connection-status indicator. CashierPage's wallets
+  // channel does (its onSubscriptionError feeds the degraded-connection
+  // banner), which is why that one is deliberately left in place.
 
   if (isLoading) {
     return <LoadingState message="Loading profile..." />;
@@ -801,16 +727,16 @@ export default function ProfilePage() {
 
   if (!user) {
     return (
-      <div className={styles.page}>
+      <StandardContentLayout className={styles.page}>
         <div className={styles.emptyProfile}>
           <p>Profile Not Found</p>
         </div>
-      </div>
+      </StandardContentLayout>
     );
   }
 
   return (
-    <div className={styles.page}>
+    <StandardContentLayout className={styles.page}>
       {/* Profile Header */}
       <section className={styles.profileHeader}>
         <div className={styles.avatarContainer}>
@@ -1034,6 +960,12 @@ export default function ProfilePage() {
                 cursor: 'pointer',
                 padding: '2px 6px',
               }}
+              /* 2026-08-23: 2px of padding made this 18px tall — the smallest
+                 tap target measured anywhere in the app. It has no class of
+                 its own to style, so it opts into the shared touch utility,
+                 which adds an invisible 44px hit area without changing how
+                 the link looks. */
+              className="tap-target"
             >
               View All
             </button>
@@ -1464,6 +1396,6 @@ export default function ProfilePage() {
           }}
         />
       )}
-    </div>
+    </StandardContentLayout>
   );
 }

@@ -31,6 +31,18 @@ export interface CommunityCardsProps {
   stage: BoardStage;
   highlightedIndices?: number[];
   winningHandName?: string; // e.g. "Straight" — shown as overlay at showdown
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25 (spec section 14): descriptive secondary line
+   * rendered under the hand name — "Kings Full Of Nines" under "Full House".
+   * Engine-generated (describeHand), never composed here.
+   */
+  winningHandDescription?: string;
+  /**
+   * SHOWDOWN POLISH 2026-08-25 (spec 33): the low half's own line on a hi-lo
+   * split ("Low: 8-6-4-3-2"), rendered under the high hand's label as
+   * "LOW WINNER" context. Empty/absent when no low was awarded.
+   */
+  lowWinnerLabel?: string;
   deckStyle?: '4color' | '2color';
   /**
    * The player's chosen card-back design.
@@ -55,6 +67,20 @@ export interface CommunityCardsProps {
 // ═══════════════════════════════════════════════════════════════════════════════
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * The default for `highlightedIndices`, hoisted to module scope on purpose.
+ *
+ * AUDIT 2026-08-25: this was an inline `= []` in the parameter list, which
+ * builds a NEW array on every render. Two things read its identity - the
+ * highlight-pop effect's dependency list, and the `slots` useMemo - so both ran
+ * on every single render of the board, at every table, for the entire session.
+ * The effect then compared JSON and (correctly) did nothing, and the memo
+ * rebuilt five slot objects it did not need to; neither was a visible bug, and
+ * that is exactly why it survived. One frozen constant makes the identity
+ * stable, so "no highlight" costs nothing.
+ */
+const NO_HIGHLIGHTS: readonly number[] = Object.freeze([]);
 
 function getVisibleCardCount(stage: BoardStage): number {
   switch (stage) {
@@ -141,7 +167,16 @@ function CardFace({
             <CardBack size="lg" style={cardBack} />
           </div>
           <div className="community-cards__flip-face community-cards__flip-face--front">
-            <CardImage card={card} deckStyle={deckStyle} size="lg" isHighlighted={isHighlighted} />
+            <CardImage
+              card={card}
+              deckStyle={deckStyle}
+              size="lg"
+              isHighlighted={isHighlighted}
+              /* The board is the most-read thing on the felt and is never
+                 off-screen. See CardImage's `loading` note - lazy cost a beat
+                 of empty boxes when a MultiTablePage tab was brought forward. */
+              loading="eager"
+            />
           </div>
         </div>
       ) : (
@@ -174,8 +209,10 @@ function PlaceholderCard({ index, cardBack }: PlaceholderCardProps) {
 function CommunityCardsComponent({
   cards,
   stage,
-  highlightedIndices = [],
+  highlightedIndices = NO_HIGHLIGHTS as number[],
   winningHandName,
+  winningHandDescription,
+  lowWinnerLabel,
   deckStyle,
   cardBack,
   playSounds = true,
@@ -397,7 +434,21 @@ function CommunityCardsComponent({
       )}
 
       {/* Winning Hand Name — premium-style "Straight" label below community cards */}
-      {winningHandName && <div className="community-cards__hand-name">{winningHandName}</div>}
+      {winningHandName && (
+        <div className="community-cards__hand-name">
+          {winningHandName}
+          {/* SHOWDOWN SYSTEM 2026-08-25 (spec section 14): the secondary
+              descriptive line — smaller, under the classification. */}
+          {winningHandDescription && (
+            <div className="community-cards__hand-description">{winningHandDescription}</div>
+          )}
+          {/* SHOWDOWN POLISH 2026-08-25 (spec 33): the hi-lo split's low
+              half gets its own line so HIGH WINNER and LOW WINNER are
+              visually distinguished. The engine's low name is already
+              self-describing ("Low: 8-6-4-3-2"). */}
+          {lowWinnerLabel && <div className="community-cards__low-winner">{lowWinnerLabel}</div>}
+        </div>
+      )}
 
       {/* Gold Spark Burst on Showdown */}
       <ParticleSystem
@@ -417,6 +468,10 @@ export const CommunityCards = memo(CommunityCardsComponent, (prev, next) => {
   // Return true if props are equal (skip re-render)
   if (prev.stage !== next.stage) return false;
   if (prev.winningHandName !== next.winningHandName) return false;
+  // SHOWDOWN SYSTEM 2026-08-25: the secondary description line must re-render.
+  if (prev.winningHandDescription !== next.winningHandDescription) return false;
+  // SHOWDOWN POLISH 2026-08-25: the hi-lo low line must re-render too.
+  if (prev.lowWinnerLabel !== next.lowWinnerLabel) return false;
   if (prev.deckStyle !== next.deckStyle) return false;
   if (prev.playSounds !== next.playSounds) return false;
   // AUDIT-2 FIX 2026-08-20: cardBack was missing — it was added as a prop

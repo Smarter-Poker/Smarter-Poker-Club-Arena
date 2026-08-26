@@ -663,7 +663,7 @@ export default function TournamentDetails({
         const { data: playersData, error } = await supabase
           .from('tournament_players')
           .select(
-            'id, user_id, username, chips, status, position, table_id, registered_at, rebuys, add_on, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
+            'id, user_id, username, chips, status, position, table_id, registered_at, rebuys, add_on, is_satellite_qualifier, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
           )
           .eq('tournament_id', data.id)
           .order('registered_at', { ascending: true });
@@ -702,6 +702,7 @@ export default function TournamentDetails({
                 created_at: (e.registered_at as string | null) ?? null,
                 rebuys: Number(e.rebuys) || 0,
                 add_ons: e.add_on ? 1 : 0,
+                is_satellite_qualifier: Boolean(e.is_satellite_qualifier),
               };
             })
           );

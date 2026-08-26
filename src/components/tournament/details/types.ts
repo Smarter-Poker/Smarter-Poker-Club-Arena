@@ -93,8 +93,8 @@ export interface TournamentEntry {
   created_at?: string | null;
   rebuys?: number;
   add_ons?: number;
-  /** Short public player id shown in Entries. */
   player_code?: string | null;
+  is_satellite_qualifier?: boolean;
 }
 
 /** One table in the event. */

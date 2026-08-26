@@ -96,15 +96,59 @@ refund table.
 
 ## Still open
 
-| #   | Item                                                                                     | Why it is not done                                                                                                                                                                                                                                          |
-| --- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **Exit 7458: 25.90 chips owed to `a916c222`**                                            | Real loss, verified. Add-on 25.90 at 12:55:23, cash-out of only 19.10 at 12:55:24, stack 45.00 at 12:55:25 (`19.10 + 25.90 = 45.00`). The cash-out read a stale stack that excluded the add-on. Fix is engine-side on Hetzner, not a migration. Spec below. |
-| 2   | **33,494 `"Cash-out from table (server startup cleanup)"` rows in 4 days** (11.6M chips) | More mass-cashout churn than normal cash-outs get in a month (16,165). The engine is restarting constantly. Root cause not investigated.                                                                                                                    |
-| 3   | 12 `multiple_permissive_policies` groups (25 policies, 12 tables)                        | Minor planner cost. Untouched.                                                                                                                                                                                                                              |
-| 4   | 77 RLS-enabled tables with zero policies                                                 | **Verified safe** — RLS denies all client access and service_role bypasses. Hygiene only: their `anon`/`authenticated` grants are misleading and should be revoked.                                                                                         |
-| 5   | Two backup tables in `public`                                                            | `club_member_daily_stats_profit_backup_20260826` (123,463 rows), `vip_backfill_20260812_backup` (470).                                                                                                                                                      |
-| 6   | Auth connection pool -> percentage-based                                                 | No tool access; dashboard or management API only.                                                                                                                                                                                                           |
-| 7   | `TablePage.tsx` — 748 KB / 15,345 lines                                                  | Large refactor. This, not route splitting, is the real bundle win: every route in `App.tsx` is already `lazyWithRetry(() => import(...))`.                                                                                                                  |
+| #   | Item                                                                         | Why it is not done                                                                                                                                                                                                                                          |
+| --- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Exit 7458: 25.90 chips owed to `a916c222`**                                | Real loss, verified. Add-on 25.90 at 12:55:23, cash-out of only 19.10 at 12:55:24, stack 45.00 at 12:55:25 (`19.10 + 25.90 = 45.00`). The cash-out read a stale stack that excluded the add-on. Fix is engine-side on Hetzner, not a migration. Spec below. |
+| 2   | **The engine force-cashes out every seated player roughly every 33 minutes** | ROOT CAUSE FOUND, see below. Not fixable from here (no SSH to Hetzner), and `agent/cowork-standby/feat/leader-standby-failover` is already the right fix in flight.                                                                                         |
+| 3   | 12 `multiple_permissive_policies` groups (25 policies, 12 tables)            | Minor planner cost. Untouched.                                                                                                                                                                                                                              |
+| 4   | 77 RLS-enabled tables with zero policies                                     | **Verified safe** — RLS denies all client access and service_role bypasses. Hygiene only: their `anon`/`authenticated` grants are misleading and should be revoked.                                                                                         |
+| 5   | Two backup tables in `public`                                                | `club_member_daily_stats_profit_backup_20260826` (123,463 rows), `vip_backfill_20260812_backup` (470).                                                                                                                                                      |
+| 6   | Auth connection pool -> percentage-based                                     | No tool access; dashboard or management API only.                                                                                                                                                                                                           |
+| 7   | `TablePage.tsx` — 748 KB / 15,345 lines                                      | Large refactor. This, not route splitting, is the real bundle win: every route in `App.tsx` is already `lazyWithRetry(() => import(...))`.                                                                                                                  |
+
+### #2 — every engine deploy dumps every player at every table
+
+`"Cash-out from table (server startup cleanup)"` is not background noise. Over
+the last four days:
+
+```
+restart bursts .................. 168
+forced cash-outs ................ 33,760      (11.6M chips)
+average players dumped/restart .. 201
+average interval ................ 32.9 minutes
+```
+
+For comparison, ordinary voluntary cash-outs numbered 16,165 over a _month_.
+The platform force-cashes out more players every four days than leave on their
+own in thirty.
+
+**The cause is deploys.** GitHub Actions ran `auto-deploy-hetzner.yml`
+**198 times** in the same window (187 success, 7 failure) against **168**
+observed restart bursts. Every merge touching `server/**` cold-restarts the
+engine, and the new leader's startup sweep closes every open seat. Confirmed
+against `engine_leader`: `acquired_at` was `15:57:14` and the last cash-out
+burst began at `15:57:20`, six seconds later.
+
+The interval distribution rules out a lease timeout. It is not periodic: gaps
+run from 3.5 to 475 minutes, and 59 of the 168 restarts (35%) came within ten
+minutes of the previous one. That is the shape of a merge queue, not a timer.
+This repo merges roughly nineteen times an hour.
+
+`engine_recovery_events` shows the engine is also unhealthy independently of
+deploys: **1,891 `watchdog_kill_rebuild`** events in four days, 228 of them
+`start_failed:start_load_table` in the last two. The table loader is failing at
+startup and the watchdog is killing and rebuilding.
+
+**Why this matters beyond the disruption:** every one of those 33,760 forced
+cash-outs runs the same cash-out path that lost 25.90 on exit 7458 and 14.18 on
+hand #1458859. The add-on race in #1 is not a rare edge case, it is being rolled
+33,760 times per four days. Fixing #1 and fixing #2 are the same piece of work
+in two places.
+
+Do not "fix" this by making the startup sweep quieter. The sweep is correct for
+a cold start; the bug is that a cold start happens fifty times a day. Either
+drain and hand over to a standby leader, or stop redeploying the engine on every
+server-touching merge.
 
 ### Spec for #1 — the add-on / leave race
 

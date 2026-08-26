@@ -113,6 +113,14 @@ interface CardFaceProps {
   card: Card;
   index: number;
   isHighlighted: boolean;
+  /**
+   * POKERBROS PARITY 2026-08-26 (frame-by-frame of the reference recording):
+   * the moment the winning five are named, every board card NOT in them drops
+   * to ~50% brightness in a single beat, while the winning cards keep full
+   * brightness behind their gold border. True exactly when a highlight set
+   * exists and this card is not in it.
+   */
+  isDimmed: boolean;
   isNewlyDealt: boolean;
   stage: BoardStage;
   deckStyle?: '4color' | '2color';
@@ -128,6 +136,7 @@ function CardFace({
   card,
   index,
   isHighlighted,
+  isDimmed,
   isNewlyDealt,
   stage,
   deckStyle,
@@ -150,6 +159,7 @@ function CardFace({
       className={[
         'community-cards__card',
         isHighlighted ? 'community-cards__card--highlighted' : '',
+        isDimmed ? 'community-cards__card--dimmed' : '',
         // The pop only means anything on a card that is actually part of the
         // winning hand.
         isHighlighted && highlightPop ? 'community-cards__card--highlight-pop' : '',
@@ -393,6 +403,9 @@ function CommunityCardsComponent({
           type: 'card' as const,
           card: cards[i],
           isHighlighted: highlightedIndices.includes(i),
+          // POKERBROS PARITY 2026-08-26: a highlight set dims every card
+          // outside it — the two states arrive together, in the same frame.
+          isDimmed: highlightedIndices.length > 0 && !highlightedIndices.includes(i),
           isNewlyDealt: newlyDealtIndices.has(i),
         };
       }
@@ -428,6 +441,7 @@ function CommunityCardsComponent({
               card={slot.card}
               index={i}
               isHighlighted={slot.isHighlighted}
+              isDimmed={slot.isDimmed}
               isNewlyDealt={slot.isNewlyDealt}
               stage={stage}
               deckStyle={deckStyle}

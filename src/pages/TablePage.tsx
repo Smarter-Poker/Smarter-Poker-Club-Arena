@@ -13724,7 +13724,6 @@ export default function TablePage({
                   )}
 
                 {/* FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay */}
-
               </div>
             </div>
           </div>
@@ -14174,6 +14173,11 @@ export default function TablePage({
                   }
                   bombPotAnte={bombPotActive}
                   isWinner={player ? winnerInfo.playerIds.includes(player.id) : false}
+                  /* POKERBROS PARITY 2026-08-26: table-wide dim flag — while
+                     any winner is on display, every face-up card outside the
+                     winning five dims to half brightness (losing shown hands
+                     whole, the winner's unused cards around the lit ones). */
+                  winnerDisplayActive={winnerInfo.playerIds.length > 0}
                   winningHandName={
                     player && winnerInfo.playerIds.includes(player.id)
                       ? winnerInfo.handName

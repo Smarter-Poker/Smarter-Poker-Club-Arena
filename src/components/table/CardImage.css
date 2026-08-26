@@ -82,12 +82,13 @@
    STATES
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* POKERBROS PARITY 2026-08-26: the reference never lifts or scales a winning
+   card, and the gold border + amber halo live on the OUTER wrappers
+   (.community-cards__card--highlighted / .seat__card--winner) so they wrap
+   the card edge exactly. The old translateY(-4px) scale(1.05) + own glow
+   here double-styled every winning card and moved it off its slot. The
+   class is kept as a structural marker only. */
 .card-image--highlighted {
-  transform: translateY(-4px) scale(1.05);
-  box-shadow:
-    0 0 24px rgba(255, 215, 0, 0.9),
-    0 0 12px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
   z-index: 10;
 }
 

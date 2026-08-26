@@ -242,6 +242,15 @@ export interface SeatSlotProps {
    */
   winningHoleCardIndexes?: readonly number[];
   /**
+   * POKERBROS PARITY 2026-08-26 (frame-by-frame of the reference recording):
+   * true while ANY seat's winning hand is being displayed table-wide. While
+   * true, every face-up hole card at this seat that is not part of the
+   * winning five dims to ~50% brightness — a losing shown hand dims
+   * entirely, and the winner's own unused cards dim around the lit ones.
+   * Card backs never dim. TablePage derives it from winnerInfo.
+   */
+  winnerDisplayActive?: boolean;
+  /**
    * SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the ENGINE ruled this hand
    * muckable at showdown — its cards were never revealed, and the seat
    * renders a MUCKED label instead. Distinct from isMucking, which is the
@@ -551,6 +560,7 @@ function HoleCard({
   hidden = false,
   isHero = false,
   isWinner = false,
+  isDimmed = false,
   deckStyle,
   cardBack = 'classic_blue',
   eager = false,
@@ -560,6 +570,13 @@ function HoleCard({
   hidden?: boolean;
   isHero?: boolean;
   isWinner?: boolean;
+  /**
+   * POKERBROS PARITY 2026-08-26 (frame-by-frame of the reference recording):
+   * while the winning five are lit, every face-up card that is NOT one of
+   * them — the winner's own unused cards included — drops to ~50% brightness
+   * in the same beat the gold borders appear. Never applied to card backs.
+   */
+  isDimmed?: boolean;
   deckStyle?: '4color' | '2color';
   cardBack?: string;
   eager?: boolean;
@@ -585,7 +602,7 @@ function HoleCard({
   }
   return (
     <div
-      className={`seat__card seat__card--face${isWinner ? ' seat__card--winner' : ''}`}
+      className={`seat__card seat__card--face${isWinner ? ' seat__card--winner' : ''}${isDimmed ? ' seat__card--dimmed' : ''}`}
       style={fanStyle}
     >
       <CardImage
@@ -687,6 +704,7 @@ export const SeatSlot = memo(
       isDealing = false,
       isMucking = false,
       winningHoleCardIndexes,
+      winnerDisplayActive = false,
       isMuckedShowdown = false,
       showdownRevealDelayMs = 0,
       cardSqueezeActive = false,
@@ -1781,6 +1799,17 @@ export const SeatSlot = memo(
                         isWinner &&
                         (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
                       }
+                      /* POKERBROS PARITY 2026-08-26: while a winner is on
+                         display, every face-up card outside the winning five
+                         dims — a losing shown hand dims whole, a winner's
+                         unused cards dim around the lit ones. */
+                      isDimmed={
+                        winnerDisplayActive &&
+                        !(
+                          isWinner &&
+                          (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
+                        )
+                      }
                       deckStyle={deckStyle}
                       cardBack={cardBack}
                       /* A revealed villain hand is being read RIGHT NOW - the
@@ -2235,6 +2264,16 @@ export const SeatSlot = memo(
                       isWinner &&
                       (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
                     }
+                    /* POKERBROS PARITY 2026-08-26: same rule as the villain
+                       row — during winner display, only the winning cards
+                       stay lit; the hero's other cards dim with the rest. */
+                    isDimmed={
+                      winnerDisplayActive &&
+                      !(
+                        isWinner &&
+                        (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
+                      )
+                    }
                     deckStyle={deckStyle}
                     cardBack={cardBack}
                     /* The hero's own hand is on screen for the whole hand and is
@@ -2409,6 +2448,10 @@ export const SeatSlot = memo(
     // each must break the memo or the feature is invisible.
     if (prev.isMuckedShowdown !== next.isMuckedShowdown) return false;
     if (prev.showdownRevealDelayMs !== next.showdownRevealDelayMs) return false;
+    // POKERBROS PARITY 2026-08-26: the table-wide dim flag flips on every
+    // seat at once when a winner is named — it must break the memo or losing
+    // seats keep full-brightness cards while the winner's are lit.
+    if (prev.winnerDisplayActive !== next.winnerDisplayActive) return false;
     {
       const a = prev.winningHoleCardIndexes;
       const b = next.winningHoleCardIndexes;

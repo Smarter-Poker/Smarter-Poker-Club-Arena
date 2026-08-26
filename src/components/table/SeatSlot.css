@@ -108,8 +108,6 @@
   content: none;
 }
 
-
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    AVATAR — Large circle, sits ON TOP of info box
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -1636,31 +1634,28 @@
 
 /* ─── WINNER CARD GLOW — Golden highlight like PokerBros showdown ─── */
 
+/* POKERBROS PARITY 2026-08-26 — rebuilt from a frame-by-frame pass over the
+   reference recording: a winning hole card gets the SAME steady thin
+   warm-gold border and amber halo as the winning board cards, full
+   brightness, and holds it — the reference never pulses. The old 1.5s
+   winnerCardPulse loop is gone for that reason. */
 .seat__card--winner {
   box-shadow:
-    0 0 0 2px rgba(255, 215, 0, 0.7),
-    0 0 16px rgba(255, 215, 0, 0.5),
-    0 0 32px rgba(255, 215, 0, 0.25),
+    0 0 0 2px #e7a93c,
+    0 0 10px rgba(240, 180, 70, 0.75),
+    0 0 22px rgba(235, 165, 50, 0.4),
     0 4px 12px rgba(0, 0, 0, 0.4);
-  animation: winnerCardPulse 1.5s ease-in-out infinite;
 }
 
-@keyframes winnerCardPulse {
-  0%,
-  100% {
-    box-shadow:
-      0 0 0 2px rgba(255, 215, 0, 0.7),
-      0 0 16px rgba(255, 215, 0, 0.5),
-      0 0 32px rgba(255, 215, 0, 0.25),
-      0 4px 12px rgba(0, 0, 0, 0.4);
-  }
-  50% {
-    box-shadow:
-      0 0 0 3px rgba(255, 215, 0, 0.9),
-      0 0 24px rgba(255, 215, 0, 0.7),
-      0 0 48px rgba(255, 215, 0, 0.35),
-      0 6px 16px rgba(0, 0, 0, 0.4);
-  }
+/* POKERBROS PARITY 2026-08-26: while the winning five are lit, every OTHER
+   face-up hole card on the table drops to ~50% brightness in the same beat —
+   the winner's own unused cards and any losing shown hand alike. Applied by
+   HoleCard, never to card backs. The 120ms transition matches the board's
+   (a hard cut in the reference; four frames is the closest polish-safe
+   equivalent). */
+.seat__card--dimmed {
+  filter: brightness(0.5) saturate(0.75);
+  transition: filter 0.12s ease-out;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

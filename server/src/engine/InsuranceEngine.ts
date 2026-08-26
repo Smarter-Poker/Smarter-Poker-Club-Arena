@@ -241,6 +241,10 @@ export class InsuranceEngine {
       Math.round(fullInsuredAmount * lossGivenNotPush * config.houseMargin * 100) / 100;
 
     if (fullInsuredAmount <= 0) return [];
+    // FINAL AUDIT 2026-08-26: at dust stakes the cents-rounded premium can hit
+    // 0.00 while the insured amount is positive - a FREE payout contract the
+    // union bank would fund. Uninsurable at this granularity: no offer.
+    if (fullPremium <= 0) return [];
 
     const offer: InsuranceOffer = {
       tableId,
@@ -317,8 +321,13 @@ export class InsuranceEngine {
     const offer = offers.find((o) => o.playerId === playerId && o.status === 'offered');
     if (!offer) return false;
 
-    // Clamp coverage to valid range
-    const coverage = Math.max(1, Math.min(100, Math.round(coveragePercent)));
+    // Clamp coverage to valid range.
+    // FINAL AUDIT 2026-08-26: hundredths of a percent, no longer whole
+    // percents. The fee-first dialog converts its cents-precision fee to a
+    // percentage; rounding that to an integer here charged up to half a
+    // percent of the full premium more or less than the number the player
+    // was shown. What is displayed is what is bought, to the cent.
+    const coverage = Math.max(0.01, Math.min(100, Math.round(coveragePercent * 100) / 100));
     const coverageMultiplier = coverage / 100;
 
     // Scale insured amount and premium by coverage percentage
@@ -386,7 +395,8 @@ export class InsuranceEngine {
     const offer = offers.find((o) => o.playerId === playerId && o.status === 'offered');
     if (!offer) return null;
 
-    const coverage = Math.max(1, Math.min(100, Math.round(coveragePercent)));
+    // FINAL AUDIT 2026-08-26: same fractional precision as acceptPartial.
+    const coverage = Math.max(0.01, Math.min(100, Math.round(coveragePercent * 100) / 100));
     const coverageMultiplier = coverage / 100;
 
     return {

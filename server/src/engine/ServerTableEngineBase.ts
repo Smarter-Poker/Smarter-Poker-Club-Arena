@@ -877,6 +877,32 @@ export abstract class ServerTableEngineBase {
     });
     this.insuranceEngine = new InsuranceEngine((event) => {
       console.log(`[ServerTableEngine:${tableId}] Insurance: ${event.type}`);
+      // POKERBROS PARITY 2026-08-26: accept/decline/settle used to die in this
+      // console.log (same defect class as the rakeback events below). The
+      // reference flow shows every seat a "waiting" bar while the leader
+      // decides and a table-wide notice when they answer - none of which can
+      // exist if the decision never leaves the process. INSURANCE_OFFERED is
+      // NOT forwarded here: broadcastInsuranceOffers already emits the
+      // context-rich 'insurance_offers' event for it.
+      if (
+        event.type === 'INSURANCE_ACCEPTED' ||
+        event.type === 'INSURANCE_DECLINED' ||
+        event.type === 'INSURANCE_SETTLED'
+      ) {
+        try {
+          const playerId = String((event as Record<string, unknown>).playerId ?? '');
+          const username =
+            this.seatedPlayers.find((p) => p.user_id === playerId)?.username || 'Player';
+          this.hub?.emitEvent(this.tableId, {
+            ...(event as unknown as Record<string, unknown>),
+            type: event.type.toLowerCase(), // insurance_accepted / insurance_declined / insurance_settled
+            username,
+            table_id: this.tableId,
+          });
+        } catch {
+          /* broadcast failure is non-fatal */
+        }
+      }
     });
     /**
      * Dan 2026-08-23: "WHY WOULD YOU LEAVE THIS INSTEAD OF FIXING IT?!"

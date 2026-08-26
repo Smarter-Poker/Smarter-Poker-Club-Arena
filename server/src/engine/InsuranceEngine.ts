@@ -251,7 +251,10 @@ export class InsuranceEngine {
       deadlineMs: Date.now() + config.offerTimeoutSeconds * 1000,
       callback: () => {
         if (offer.status === 'offered') {
-          this.decline(tableId, leader.playerId);
+          // POKERBROS PARITY 2026-08-26 (Dan): a decline is FINAL for the hand.
+          // "IF A PLAYER DECLINES, THEY DON'T GET OFFERED AGAIN." A timeout is
+          // a decline, so it is final too - the player had their window.
+          this.decline(tableId, leader.playerId, true);
         }
       },
     });

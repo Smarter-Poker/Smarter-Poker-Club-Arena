@@ -2393,6 +2393,48 @@
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+   INSURANCE WAITING BAR — POKERBROS PARITY 2026-08-26
+   Quiet full-width status pill under the board while the leader holds an
+   insurance offer. The runout is paused on purpose; this says so, exactly
+   like the reference flow's "waiting" message line.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+.insurance-waiting-bar {
+  position: absolute;
+  top: 58%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 55;
+  pointer-events: none;
+  max-width: 92%;
+  padding: 6px 18px;
+  border-radius: 999px;
+  background: rgba(10, 12, 24, 0.82);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  color: rgba(235, 235, 245, 0.92);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: insuranceWaitingPulse 1.6s ease-in-out infinite;
+}
+@keyframes insuranceWaitingPulse {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .insurance-waiting-bar {
+    animation: none;
+  }
+}
+
 @keyframes equityPop {
   0% {
     transform: translateX(-50%) scale(0.6);

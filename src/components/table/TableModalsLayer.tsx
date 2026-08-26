@@ -932,7 +932,9 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           onDecline={onInsuranceDecline}
           onDeclineForHand={onInsuranceDeclineForHand}
           offer={insuranceOffer}
-          timeRemaining={15}
+          /* POKERBROS PARITY 2026-08-26: the server publishes the offer
+             window with the offer; the modal counts it down live. */
+          timeRemaining={insuranceOffer.timeoutSeconds ?? 15}
         />
       )}
 

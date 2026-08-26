@@ -476,7 +476,17 @@ function tournamentOpenFirst(
  * in-tab lobby fell back to the pre-lobby landing page instead of the actual
  * club lobby the player came from.
  */
+import PageErrorBoundary from '../components/common/PageErrorBoundary';
+
 export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
+  return (
+    <PageErrorBoundary pageName="ClubHomePage">
+      <ClubHomePageContent clubIdOverride={clubIdOverride} />
+    </PageErrorBoundary>
+  );
+}
+
+function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {}) {
   const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
 
   const { clubId: routeClubId } = useParams<{ clubId: string }>();
@@ -753,9 +763,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       return () => {
         isMounted = false;
         // Any answer still in flight belongs to the club being left.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         loadTokenRef.current++;
       };
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId]);
 
   // ── Realtime subscription: live table updates (player counts, status) ──
@@ -1037,6 +1049,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       masterBus.removeChannelFactory(`club-tables-${clubId}`);
       masterBus.removeRegisteredChannel(`club-tables-${clubId}`);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId]);
 
   // ── Realtime subscription: club member count updates ──
@@ -2423,9 +2436,18 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
     const unsub = masterBus.subscribeDebounced('WAITLIST_CHANGED', load, 300);
 
+    // Re-query when tab regains focus — a player seated from the waitlist while
+    // browsing another tab sees stale badges until they switch back. This clears
+    // them the moment the page becomes visible again.
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') load();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     return () => {
       cancelled = true;
       unsub();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [currentUserId]);
 
@@ -2568,6 +2590,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     return () => {
       // Invalidate any in-flight read: its answer belongs to the club we are
       // leaving, not the one we are arriving at.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       gameStatesTokenRef.current++;
     };
   }, [loadMyGameStates]);
@@ -3001,6 +3024,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       handleJoinTable,
       openEntry,
       navigate,
+      handleWaitlistToggle,
+      openTournamentLobby,
     ]
   );
 
@@ -3374,7 +3399,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                   setUnionWalletModal({
                     key: 'spin_reserve',
                     label: 'Spins Treasury',
-                    balance: 0,
+                    balance,
                   })
                 }
               />

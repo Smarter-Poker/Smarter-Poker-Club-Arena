@@ -1765,6 +1765,7 @@ export default function TablePage({
         actionTimerDeadline: mapped.actionTimerDeadline,
         actionTimerStartTime: mapped.actionTimerStartTime,
         actionTimerPlayerId: mapped.actionTimerPlayerId,
+        isTimeBankActive: mapped.isTimeBankActive,
         isHandInProgress:
           mapped.boardStage !== 'waiting' &&
           (mapped.handNumber > 0 || mapped.players.some((p) => p !== null)),
@@ -2275,6 +2276,23 @@ export default function TablePage({
   useEffect(() => {
     if (!tableId || !userId) return;
     const onPageHide = () => {
+      // ── AWAY-BEACON GUARD (2026-08-26) ──────────────────────────────────────
+      // iOS Safari fires `pagehide` on every soft navigation, including the
+      // transition FROM the lobby panel INTO this table. A player who just
+      // bought a seat has no established engine WS yet, so if the beacon fires
+      // within the first 5 s of seat acquisition the engine immediately marks
+      // them AWAY before their first heartbeat can clear it — and they sit stuck
+      // AWAY, never dealt in, until they reload.
+      //
+      // Suppress the beacon when BOTH:
+      //   a) the seat was acquired less than 5 s ago, AND
+      //   b) the engine WS has not yet reported 'connected'
+      const acquiredAt = seatAcquiredAtRef.current;
+      const seatAge = acquiredAt != null ? Date.now() - acquiredAt : Infinity;
+      if (acquiredAt != null && seatAge < 5_000 && engineWsStatus !== 'connected') {
+        return; // spurious iOS pagehide on fresh-join — skip the beacon
+      }
+
       let accessToken: string | null = null;
       try {
         const raw = localStorage.getItem('smarter-poker-auth');
@@ -2288,7 +2306,7 @@ export default function TablePage({
     };
     window.addEventListener('pagehide', onPageHide);
     return () => window.removeEventListener('pagehide', onPageHide);
-  }, [tableId, userId]);
+  }, [tableId, userId, engineWsStatus]);
 
   // ── Dan 2026-08-21: "the games can never freeze or die" — last-resort
   // auto-recovery. EngineStateClient now retries forever, but if the socket
@@ -2778,6 +2796,15 @@ export default function TablePage({
   // FIX 132: Persistent hero seat ref — set IMMEDIATELY on buy-in, never stale
   // Prevents race condition where tableState.heroSeat is 0 during DB query but user tries to sit again
   const heroSeatRef = useRef(0);
+  /**
+   * Timestamp (ms) at which the hero's seat was first acquired this session.
+   * Guards the pagehide away-beacon: iOS Safari fires `pagehide` on every soft
+   * navigation, including the transition FROM the lobby panel INTO the table.
+   * A fresh joiner has no established WS heartbeat yet — suppressing the beacon
+   * for 5 s after seat acquisition prevents the engine from marking them AWAY
+   * before their first heartbeat lands.
+   */
+  const seatAcquiredAtRef = useRef<number | null>(null);
 
   // ── Tournament masthead data (Dan 2026-08-20, from a seat at a live table:
   //    "1st line Date, (game type) Poker Spins, Club Name, Union Name. 2nd
@@ -8115,177 +8142,8 @@ export default function TablePage({
 
     loadHorses();
   }, [tableId, tableState.blinds]);
-
   // ═══════════════════════════════════════════════════════════════════════════
-  // REALTIME TABLE_SEATS — Auto-update UI when new players/horses are seated
-  // ═══════════════════════════════════════════════════════════════════════════
-  useEffect(() => {
-    if (!tableId) return;
 
-    const channel = supabase
-      .channel(`table-seats-live:${tableId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'table_seats',
-          filter: `table_id=eq.${tableId}`,
-        },
-        async (payload) => {
-          const newSeat = payload.new as {
-            user_id: string;
-            seat_number: number;
-            stack: number;
-            left_at: string | null;
-          };
-          if (newSeat.left_at) return; // Already left
-
-          // Don't duplicate the hero player — they're already in state from buy-in flow
-          if (newSeat.user_id === userId) return;
-
-          console.debug('[RealtimeSeats] New seat INSERT:', newSeat.seat_number, newSeat.user_id);
-
-          // FIX 172: Play seat-taken sound when new player sits (Bible V8 §5.1)
-          // #175 gated for multi-table: only play on the active tab
-          if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playSeatTaken();
-
-          // Fetch the player's profile
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select(
-              'id, username, display_name, avatar_url:arena_avatar_url, is_horse, horse_profile'
-            )
-            .eq('id', newSeat.user_id)
-            .maybeSingle();
-
-          setTableState((prev) => {
-            const seatIdx = newSeat.seat_number - 1;
-            if (seatIdx < 0 || seatIdx >= prev.players.length) return prev;
-            if (prev.players[seatIdx]) return prev; // Seat already occupied in state
-
-            const updatedPlayers = [...prev.players];
-
-            // FIX: ONE-SEAT-PER-USER — if this user is already in another seat, remove them first
-            for (let j = 0; j < updatedPlayers.length; j++) {
-              if (updatedPlayers[j]?.id === newSeat.user_id) {
-                console.debug(
-                  '[RealtimeSeats] Removing user',
-                  newSeat.user_id,
-                  'from stale seat',
-                  j + 1,
-                  '(moving to',
-                  newSeat.seat_number,
-                  ')'
-                );
-                updatedPlayers[j] = null as any;
-              }
-            }
-
-            updatedPlayers[seatIdx] = {
-              id: newSeat.user_id,
-              name: profile?.display_name || profile?.username || `Player ${newSeat.seat_number}`,
-              avatar: profile?.avatar_url || '',
-              stack: newSeat.stack || 0,
-              status: 'active' as const,
-              isHero: false,
-              showCards: false,
-              isHorse: profile?.is_horse || false,
-              horseProfile: profile?.horse_profile || undefined,
-            } as any;
-
-            return { ...prev, players: updatedPlayers };
-          });
-
-          // Also update horse map if this is a horse
-          if (profile?.is_horse) {
-            horseMapRef.current.set(newSeat.seat_number, {
-              id: newSeat.user_id,
-              profile: profile.horse_profile || 'reg',
-              name: profile.display_name || profile.username || `Player ${newSeat.seat_number}`,
-              stack: newSeat.stack || 0,
-            });
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'table_seats',
-          filter: `table_id=eq.${tableId}`,
-        },
-        (payload) => {
-          const updated = payload.new as {
-            user_id: string;
-            seat_number: number;
-            stack: number;
-            left_at: string | null;
-            is_sitting_out?: boolean | null;
-          };
-
-          // Player left — remove from state
-          if (updated.left_at) {
-            console.debug('[RealtimeSeats] Player LEFT seat:', updated.seat_number);
-            setTableState((prev) => {
-              const seatIdx = updated.seat_number - 1;
-              if (seatIdx < 0 || seatIdx >= prev.players.length) return prev;
-              if (!prev.players[seatIdx]) return prev;
-
-              const updatedPlayers = [...prev.players];
-              updatedPlayers[seatIdx] = null as any;
-              return { ...prev, players: updatedPlayers };
-            });
-            horseMapRef.current.delete(updated.seat_number);
-          } else {
-            // Stack update (e.g., rebuy)
-            setTableState((prev) => {
-              const seatIdx = updated.seat_number - 1;
-              if (seatIdx < 0 || seatIdx >= prev.players.length) return prev;
-              if (!prev.players[seatIdx]) return prev;
-
-              const updatedPlayers = [...prev.players];
-              const existing = updatedPlayers[seatIdx];
-              if (existing) {
-                // SIT-OUT VISIBILITY 2026-08-21: the engine now persists
-                // is_sitting_out on the seat row. Flip only between
-                // sitting_out and active — never clobber a transient in-hand
-                // status (folded/all_in) the snapshot stream owns.
-                let status = (existing as any).status;
-                if (updated.is_sitting_out === true) {
-                  status = 'sitting_out';
-                  sittingOutIdsRef.current.add(updated.user_id);
-                } else if (updated.is_sitting_out === false) {
-                  sittingOutIdsRef.current.delete(updated.user_id);
-                  if (status === 'sitting_out') status = 'active';
-                }
-                updatedPlayers[seatIdx] = {
-                  ...existing,
-                  stack: updated.stack,
-                  status,
-                } as typeof existing;
-              }
-              return { ...prev, players: updatedPlayers };
-            });
-          }
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'SUBSCRIBED') {
-          console.debug(`[RealtimeSeats] Subscribed to table_seats for ${tableId}`);
-        }
-        if (status === 'CHANNEL_ERROR') {
-          console.debug('[RealtimeSeats] Channel error:', err?.message);
-        }
-      });
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [tableId, userId]);
-
-  // ═══════════════════════════════════════════════════════════════════════════
   // REALTIME PROFILES — a seated player's avatar or cosmetics changed
   // ═══════════════════════════════════════════════════════════════════════════
   // Changing your avatar used to change it on YOUR screen only; everyone else
@@ -10956,6 +10814,7 @@ export default function TablePage({
         // Paid. The seat is ours — paint it and close the sheet.
         const mySeat = res.seat_number ?? seatNumber;
         heroSeatRef.current = mySeat;
+        seatAcquiredAtRef.current = Date.now();
         setPendingSeat(mySeat);
         setTableState((prev) => ({ ...prev, heroSeat: mySeat }));
         setSeatFirstConfirm(null);
@@ -15164,6 +15023,7 @@ export default function TablePage({
                 // The seat + stack were already painted above, before this RPC
                 // was even sent. Nothing to do here but confirm the ref.
                 heroSeatRef.current = selectedSeat;
+                seatAcquiredAtRef.current = Date.now();
                 HydraService.onRealPlayerJoined(tableId, userId);
                 await sendAction('player_seated', {
                   seat: selectedSeat,

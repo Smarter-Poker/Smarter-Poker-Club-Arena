@@ -498,9 +498,9 @@ export default function App() {
                 path="table/:tableId"
                 element={
                   <AuthGuard>
-                    <RouteErrorBoundary>
+                    <PageErrorBoundary pageName="Table">
                       <TableRouteSurface />
-                    </RouteErrorBoundary>
+                    </PageErrorBoundary>
                   </AuthGuard>
                 }
               />

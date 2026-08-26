@@ -1,5 +1,4 @@
 {
-  "_comment": "Live public schema snapshot (tables/views + functions). Source of truth for the phantom-ref CI gate; regenerate with scripts/ci/gen-schema-manifest.mjs. Do NOT hand-edit.",
   "tables": [
     "_audit_horse_avatar_restore_20260815",
     "_audit_phase40_results",

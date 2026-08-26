@@ -7484,11 +7484,15 @@ export default function TablePage({
 
   useMasterBusSubscription('BBJ_HIT_GLOBAL', (payload: any) => {
     // Show an in-game pop-up on all cash game tables when BBJ is hit globally.
+    // Skip if the hit happened on THIS table — they already saw the massive animation.
+    if (payload.tableId === tableId) return;
+
     const now = Date.now();
     if (!tableState.isTournament && now - _LAST_BBJ_TOAST_TIME > 5000) {
       _LAST_BBJ_TOAST_TIME = now;
+      if (soundService.isEnabled()) soundService.playBadBeatJackpot();
       toast?.success?.(
-        `🚨 BBJ HIT on ${payload.tableName} (${payload.gameVariant.toUpperCase()} / ${payload.bigBlind})! ${payload.winnerName} won $${payload.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}!`,
+        `🚨 BBJ HIT! ${payload.winnerName} just won $${payload.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} on ${payload.tableName}! (Tap to observe)`,
         10000,
         () =>
           masterBus.emit('OPEN_OBSERVE_TABLE', {

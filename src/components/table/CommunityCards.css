@@ -528,107 +528,76 @@
    HIGHLIGHTED CARD (WINNING HAND)
    ================================================================================= */
 
+/* POKERBROS PARITY 2026-08-26 — rebuilt from a frame-by-frame pass over the
+   reference recording (26 Aug, PLO5 "Flush" hand):
+   - The winning card keeps FULL brightness and gets a thin warm-gold border
+     with a soft amber halo. The border is STEADY — the reference never
+     pulses, lifts or bobs a winning card. The old 1.8s ccHighlightPulse
+     loop is gone for that reason.
+   - The whole state (border + halo + the dim on every other card + the
+     banner) lands in ONE beat, a hard cut of a single video frame. */
 .community-cards__card--highlighted {
   box-shadow:
-    /* Inner gold ring */
-    0 0 0 3px rgba(255, 215, 0, 0.6),
-    /* Close glow */ 0 0 12px var(--cc-gold-glow),
-    /* Medium glow */ 0 0 24px var(--cc-gold-subtle),
-    /* Far glow */ 0 0 48px rgba(255, 215, 0, 0.15),
-    /* Card elevation shadow */ 0 4px 12px rgba(0, 0, 0, 0.3);
-  border: 2px solid rgba(255, 215, 0, 0.5);
-  animation: ccHighlightPulse 1.8s ease-in-out infinite;
+    /* Thin warm-gold ring, sits just outside the card edge.
+       Measured off the reference frames: ring core samples up to
+       rgb(232,194,115), ring mean rgb(191,154,78). */
+    0 0 0 2px #e9b355,
+    /* Tight amber halo */ 0 0 10px rgba(240, 180, 80, 0.8),
+    /* Soft outer halo */ 0 0 22px rgba(235, 165, 50, 0.45),
+    /* Card elevation shadow */ 0 4px 12px rgba(0, 0, 0, 0.3),
+    /* Slight warm cast over the face — the reference's winning cards read
+       ~5% warm (r 0.95, g 0.91, b 0.83 of their pre-showdown selves) */
+    inset 0 0 14px rgba(235, 170, 60, 0.18);
   z-index: 4;
 }
 
-@keyframes ccHighlightPulse {
-  0%,
-  100% {
-    box-shadow:
-      0 0 0 3px rgba(255, 215, 0, 0.5),
-      0 0 12px var(--cc-gold-glow),
-      0 0 24px var(--cc-gold-subtle),
-      0 0 48px rgba(255, 215, 0, 0.1),
-      0 4px 12px rgba(0, 0, 0, 0.3);
-    transform: translateY(0);
-  }
-  50% {
-    box-shadow:
-      0 0 0 4px rgba(255, 215, 0, 0.7),
-      0 0 16px var(--cc-gold-glow),
-      0 0 32px rgba(255, 215, 0, 0.5),
-      0 0 60px rgba(255, 215, 0, 0.2),
-      0 6px 16px rgba(0, 0, 0, 0.3);
-    transform: translateY(-2px);
-  }
-}
-
+/* POKERBROS PARITY 2026-08-26: steady warm backlight behind a winning card —
+   the reference holds it constant, so the 2s ccGlowPulse loop is gone. */
 .community-cards__highlight-glow {
   position: absolute;
   inset: -6px;
   border-radius: 12px;
   background: radial-gradient(
     circle at center,
-    rgba(255, 215, 0, 0.25) 0%,
-    rgba(255, 215, 0, 0.08) 40%,
+    rgba(240, 180, 70, 0.28) 0%,
+    rgba(240, 180, 70, 0.1) 40%,
     transparent 70%
   );
   pointer-events: none;
   z-index: -1;
-  animation: ccGlowPulse 2s ease-in-out infinite;
 }
 
-@keyframes ccGlowPulse {
-  0%,
-  100% {
-    opacity: 0.6;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.08);
-  }
+/* POKERBROS PARITY 2026-08-26: the dim on every card OUTSIDE the winning
+   five. In the reference the non-winning board cards drop to roughly half
+   brightness with a touch of desaturation, in the same video frame the
+   borders appear — so the transition here is a fast 120ms, not a slow fade.
+   The specular sheen sweep is suppressed while dimmed: a glossy light pass
+   over a card the UI is telling you LOST reads as a glitch. */
+.community-cards__card--dimmed {
+  /* Measured off the reference frames: losing cards drop to 0.28 of their
+     pre-showdown brightness, channel-neutral (r/g/b ratios 0.284/0.282/0.28)
+     — a pure darken, no desaturation. 90ms is under 3 frames at 30fps: the
+     closest polish-safe rendering of the reference's one-frame cut. */
+  filter: brightness(0.28);
+  transition: filter 0.09s ease-out;
+}
+
+.community-cards__card--dimmed::after {
+  animation: none;
+  opacity: 0;
 }
 
 /* =================================================================================
    SHOWDOWN MODE -- Entire board gets golden ambient
    ================================================================================= */
 
-.community-cards--showdown .community-cards__card {
-  box-shadow:
-    0 0 14px rgba(255, 215, 0, 0.25),
-    0 0 4px rgba(255, 215, 0, 0.15),
-    0 3px 10px rgba(0, 0, 0, 0.3);
-  transition: box-shadow 0.5s var(--cc-ease-smooth);
-}
-
-/* Highlight pop for winning hand cards (applied via JS) */
-.community-cards__card--highlight-pop {
-  animation: ccHighlightPop 0.5s var(--cc-ease-overshoot);
-}
-
-@keyframes ccHighlightPop {
-  0% {
-    transform: scale(1);
-    filter: brightness(1);
-  }
-  25% {
-    transform: scale(1.14) translateY(-5px);
-    filter: brightness(1.3);
-  }
-  50% {
-    transform: scale(0.96) translateY(1px);
-    filter: brightness(1.1);
-  }
-  70% {
-    transform: scale(1.03);
-    filter: brightness(1.02);
-  }
-  100% {
-    transform: scale(1);
-    filter: brightness(1);
-  }
-}
+/* POKERBROS PARITY 2026-08-26 (audit round 2): the showdown-wide golden
+   ambient that used to sit on every card here is gone — in the reference the
+   cards look exactly like themselves until the winner cut, and after the cut
+   the only glow anywhere is the winning cards' own halo. The highlight-pop
+   class and its keyframe are gone with it: the measured onset is a
+   single-frame hard cut with zero ramp (band, borders, dim and banner all
+   land between two adjacent 30fps frames). */
 
 /* =================================================================================
    CARD INNER CONTENT -- Rank + suit typography
@@ -769,25 +738,74 @@
    WINNING HAND NAME -- "Straight", "Full House", etc.
    ================================================================================= */
 
+/* POKERBROS PARITY 2026-08-26 — rebuilt as the reference's banner, from the
+   frame-by-frame pass of the recording:
+   - Sits BELOW the board (the reference band hangs just under the community
+     cards), superseding the earlier above-the-board placement: Dan's
+     2026-08-26 instruction is a 1:1 clone of the reference, and the
+     reference puts it below.
+   - A full-width translucent dark band, brightest-dark at center, fading
+     out at both edges, with a hot orange lens-flare streak along its lower
+     edge (see ::before).
+   - The hand name itself is bold gold with a light-to-deep gold vertical
+     gradient, not the old blue-glow white.
+   - Entrance is a hard cut (~1 video frame). The 120ms fade below is four
+     frames at 30fps — the closest a CSS transition gets to the reference
+     without reading as a rendering stutter on slower displays. */
 .community-cards__hand-name {
   position: absolute;
-  bottom: 115%; /* User explicitly requested this to be ABOVE the board */
+  /* Measured: the reference band's top edge sits ~2px under the cards
+     (band rows 468..528 against cards ending at 466, at 64px card scale). */
+  top: calc(100% + 4px);
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   z-index: 20;
-  font-size: 2.5rem;
+  width: max(320px, 150%);
+  /* Band height ~0.94x card height in the reference; the text rides the
+     band's vertical center with the flare along the bottom edge. */
+  padding: 10px 0 14px;
+  text-align: center;
+  /* Measured glyph height ≈ 0.33x card height (21px against 64px cards).
+     Track the card size so every breakpoint keeps the reference ratio. */
+  font-size: clamp(1.1rem, calc(var(--cc-card-h, 91px) * 0.33), 1.9rem);
   font-weight: 900;
-  color: #e2e8f0;
-  text-shadow:
-    0 2px 4px rgba(0, 0, 0, 0.8),
-    0 0 16px rgba(14, 165, 233, 0.8),
-    0 0 30px rgba(14, 165, 233, 0.4);
+  letter-spacing: 0.04em;
   white-space: nowrap;
-  letter-spacing: 0.05em;
-  background: none;
   border: none;
-  padding: 0;
   margin: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(30, 18, 8, 0.55) 18%,
+    rgba(42, 24, 10, 0.72) 50%,
+    rgba(30, 18, 8, 0.55) 82%,
+    transparent 100%
+  );
+  /* Fallback for the description/low children; the name itself is painted
+     by the gradient on .community-cards__hand-name-text. */
+  color: #f5c343;
+  animation: ccBannerCut 0.09s ease-out;
+}
+
+/* The hand name's gold fill — measured stroke core #ffe39c with deeper gold
+   toward the glyph base. background-clip: text needs its own element so it
+   cannot fight the band gradient on the parent; text-shadow does not apply
+   to clipped text, so the outline + glow ride drop-shadow filters. */
+.community-cards__hand-name-text {
+  background: linear-gradient(180deg, #fff2bb 0%, #ffe097 45%, #edbb4e 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 14px rgba(240, 170, 50, 0.45));
+}
+
+@keyframes ccBannerCut {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 /* SHOWDOWN SYSTEM 2026-08-25 (spec section 14): the descriptive secondary
@@ -820,84 +838,54 @@
   text-transform: uppercase;
 }
 
-/* Bright horizontal flare behind the text */
+/* POKERBROS PARITY 2026-08-26: the hot orange lens-flare streak along the
+   band's lower edge — a thin line with a bright hotspot dead center, exactly
+   where the reference puts its flare. Replaces the old blue mid-line. */
 .community-cards__hand-name::before {
   content: '';
   position: absolute;
-  top: 50%;
-  left: -20%;
-  right: -20%;
+  bottom: 2px;
+  left: 6%;
+  right: 6%;
   height: 2px;
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(14, 165, 233, 0.4) 20%,
-    rgba(226, 232, 240, 0.9) 50%,
-    rgba(14, 165, 233, 0.4) 80%,
+    rgba(214, 96, 24, 0.55) 25%,
+    rgba(255, 158, 64, 0.95) 48%,
+    rgba(255, 220, 170, 1) 50%,
+    rgba(255, 158, 64, 0.95) 52%,
+    rgba(214, 96, 24, 0.55) 75%,
     transparent 100%
   );
   box-shadow:
-    0 0 10px rgba(14, 165, 233, 0.8),
-    0 0 20px rgba(14, 165, 233, 0.4);
-  transform: translateY(-50%);
+    0 0 8px rgba(255, 140, 40, 0.9),
+    0 0 22px rgba(255, 120, 30, 0.55),
+    0 0 44px rgba(255, 110, 20, 0.3);
   z-index: -1;
 }
 
-/* Shimmer sweep across hand name */
+/* POKERBROS PARITY 2026-08-26: soft warm underglow bleeding up from the
+   flare into the band, so the streak reads as a light source rather than a
+   painted line. The reference's band is visibly warmer near its lower edge. */
 .community-cards__hand-name::after {
   content: '';
   position: absolute;
-  top: 0;
-  left: -120%;
-  width: 90%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(226, 232, 240, 0.15) 40%,
-    rgba(255, 255, 255, 0.2) 50%,
-    rgba(226, 232, 240, 0.15) 60%,
-    transparent 100%
+  inset: auto 10% 0 10%;
+  height: 60%;
+  background: radial-gradient(
+    ellipse 60% 100% at 50% 100%,
+    rgba(255, 130, 40, 0.28) 0%,
+    rgba(255, 130, 40, 0.1) 45%,
+    transparent 75%
   );
-  animation: ccHandNameShimmer 2.5s 0.5s ease-in-out infinite;
   pointer-events: none;
+  z-index: -1;
 }
 
-@keyframes ccHandNameShimmer {
-  0% {
-    left: -120%;
-  }
-  45%,
-  100% {
-    left: 160%;
-  }
-}
-
-@keyframes ccHandNameIn {
-  0% {
-    opacity: 0;
-    transform: scale(0.6) translateY(15px);
-    filter: blur(6px);
-  }
-  35% {
-    opacity: 1;
-    filter: blur(0);
-  }
-  55% {
-    transform: scale(1.1) translateY(-4px);
-  }
-  72% {
-    transform: scale(0.97) translateY(1px);
-  }
-  85% {
-    transform: scale(1.02);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-    filter: blur(0);
-  }
-}
+/* ccHandNameIn removed 2026-08-26 — it was never referenced by any rule, and
+   the PokerBros-parity banner enters as a hard cut (ccBannerCut), not a
+   scale-blur spring. */
 
 /* =================================================================================
    RESPONSIVE
@@ -998,7 +986,6 @@
   .community-cards__card--slow-reveal,
   .community-cards__card--slow-reveal .community-cards__flip,
   .community-cards__card--highlighted,
-  .community-cards__card--highlight-pop,
   .community-cards__highlight-glow,
   .community-cards__stage-label,
   .community-cards__hand-name,
@@ -1023,9 +1010,13 @@
 
   .community-cards__card--highlighted {
     box-shadow:
-      0 0 0 3px rgba(255, 215, 0, 0.6),
-      0 0 12px var(--cc-gold-glow),
+      0 0 0 2px #e9b355,
+      0 0 10px rgba(240, 180, 80, 0.8),
       0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  .community-cards__card--dimmed {
+    transition: none !important;
   }
 
   .community-cards__stage-label {
@@ -1043,14 +1034,11 @@
   }
 }
 
+/* The banner font derives from --cc-card-h (see the clamp() on the rule
+   above), so the old per-breakpoint font-size overrides are gone: every
+   breakpoint already retargets --cc-card-h and the 0.33 ratio follows. */
 @media (max-width: 480px) {
   .community-cards__hand-name {
-    font-size: 1.8rem;
-  }
-}
-
-@media (max-width: 380px) {
-  .community-cards__hand-name {
-    font-size: 1.5rem;
+    top: calc(100% + 3px);
   }
 }

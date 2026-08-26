@@ -73,13 +73,11 @@ import { publishSessionSummary, type TournamentResult } from '../services/pendin
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { formatGameTitle } from '../utils/formatGameTitle';
-import {
-  SeatSlot,
-  PotDisplay,
-  CommunityCards,
-  DealerButton,
-  DealAnimation,
-} from '../components/table';
+import { SeatSlot } from '../components/table/SeatSlot';
+import { PotDisplay } from '../components/table/PotDisplay';
+import { CommunityCards } from '../components/table/CommunityCards';
+import { DealerButton } from '../components/table/DealerButton';
+import { DealAnimation } from '../components/table/DealAnimation';
 import { ActionClockSeconds, ActionClockWarning } from '../components/table/ActionClockReadouts';
 import type { SeatPlayer, Card, LastAction, PositionBadge } from '../components/table/SeatSlot';
 import type { SidePot } from '../components/table/PotDisplay';

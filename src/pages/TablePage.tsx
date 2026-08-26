@@ -1,3 +1,5 @@
+import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOverlay';
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ARENA — Premium Poker Table Page
@@ -133,6 +135,7 @@ import { shouldAnnounceBbjHit } from '../lib/bbjHitOnce';
 import BBJHitNotification from '../components/bbj/BBJHitNotification';
 import { type InsuranceOffer } from '../components/table/InsuranceModal';
 import { ThrowAnimationContainer } from '../components/table/ThrowAnimation';
+import { useTableEnvironment } from '../hooks/useTableEnvironment';
 import { useTabKeepAlive, workerTimeout, cancelWorkerTimeout } from '../hooks/useTabKeepAlive';
 import { STORAGE_KEYS } from '../lib/storage';
 import StraddleToggle from '../components/table/StraddleToggle';
@@ -929,107 +932,8 @@ export default function TablePage({
 
   // Prevent Chrome from throttling this tab (keeps horse timers alive)
   useTabKeepAlive();
-
-  // ─── PAGE TITLE ───
-  useEffect(() => {
-    document.title = tableId ? `${tableId} | Smarter Poker` : 'Table | Smarter Poker';
-  }, [tableId]);
-
-  // ─── MOBILE VIEWPORT LOCK — Prevent accidental pinch-zoom during poker play ───
-  useEffect(() => {
-    let newMeta: HTMLMetaElement | null = null;
-    const meta = document.querySelector('meta[name="viewport"]');
-    const originalContent = meta?.getAttribute('content') || '';
-    const pokerViewport =
-      'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
-
-    if (meta) {
-      meta.setAttribute('content', pokerViewport);
-    } else {
-      newMeta = document.createElement('meta');
-      newMeta.name = 'viewport';
-      newMeta.content = pokerViewport;
-      document.head.appendChild(newMeta);
-    }
-
-    // Try to lock orientation to portrait (non-blocking, fails silently on unsupported browsers)
-    try {
-      (screen.orientation as any)?.lock?.('portrait').catch(() => {});
-    } catch {
-      // Orientation lock not supported — ignore
-    }
-
-    return () => {
-      // Restore original viewport when leaving the table
-      if (newMeta) {
-        document.head.removeChild(newMeta);
-      } else {
-        const restoreMeta = document.querySelector('meta[name="viewport"]');
-        if (restoreMeta) {
-          restoreMeta.setAttribute(
-            'content',
-            originalContent || 'width=device-width, initial-scale=1'
-          );
-        }
-      }
-      try {
-        screen.orientation?.unlock?.();
-      } catch {
-        // Ignore
-      }
-    };
-  }, []);
-
-  // ─── SCREEN WAKE LOCK — Prevent screen dimming during active poker play ───
-  useEffect(() => {
-    let wakeLock: WakeLockSentinel | null = null;
-
-    const requestWakeLock = async () => {
-      try {
-        if ('wakeLock' in navigator) {
-          if (wakeLock) await wakeLock.release().catch(() => {});
-          wakeLock = await navigator.wakeLock.request('screen');
-        }
-      } catch {
-        // Wake Lock not supported or denied — ignore
-      }
-    };
-
-    // Reacquire wake lock when tab becomes visible again
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        requestWakeLock();
-      }
-    };
-
-    requestWakeLock();
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      wakeLock?.release().catch(() => {});
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
-
-  // ─── BACKGROUND TAB DETECTION — Pause animations when tab is hidden (saves battery) ───
-  useEffect(() => {
-    const tablePage = document.querySelector('.table-page');
-    if (!tablePage) return;
-
-    const handleVisibility = () => {
-      if (document.visibilityState === 'hidden') {
-        tablePage.classList.add('table-page--backgrounded');
-      } else {
-        tablePage.classList.remove('table-page--backgrounded');
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibility);
-      tablePage.classList.remove('table-page--backgrounded');
-    };
-  }, []);
+  useTableEnvironment(tableId);
+  useTableEnvironment(tableId);
 
   // Get current user
   const [userId, setUserId] = useState<string>('guest');
@@ -12381,105 +12285,12 @@ export default function TablePage({
           top of a fixed-position page. The class names are kept so that
           stylesheet can take it over later without touching this file. */}
       {tableLoadFailure && (
-        <div
-          className="table-load-failure"
-          role="alert"
-          aria-live="assertive"
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 4000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '24px',
-            background: 'rgba(6, 10, 16, 0.88)',
-            backdropFilter: 'blur(4px)',
-          }}
-        >
-          <div
-            className="table-load-failure__card"
-            style={{
-              maxWidth: 340,
-              width: '100%',
-              textAlign: 'center',
-              background: '#141a24',
-              border: '1px solid rgba(255,255,255,0.12)',
-              borderRadius: 14,
-              padding: '22px 20px',
-              color: '#e8edf5',
-              boxShadow: '0 18px 48px rgba(0,0,0,0.55)',
-            }}
-          >
-            <h2
-              className="table-load-failure__title"
-              style={{ margin: '0 0 10px', fontSize: 18, fontWeight: 700 }}
-            >
-              {tableLoadFailure === 'missing' ? 'This Table Has Closed' : 'Cannot Reach This Table'}
-            </h2>
-            <p
-              className="table-load-failure__body"
-              style={{
-                margin: '0 0 18px',
-                fontSize: 14,
-                lineHeight: 1.5,
-                color: 'rgba(232,237,245,0.75)',
-              }}
-            >
-              {/* Title Case to match the rest of this page's card copy (see
-                  the seat-first buy-in sheet). Kept short for the same reason:
-                  long sentences do not survive it. No em dashes anywhere in
-                  player-facing text. */}
-              {tableLoadFailure === 'missing'
-                ? 'That Game Has Finished And The Table Was Taken Down. Nothing Was Charged And No Seat Was Taken.'
-                : 'We Could Not Load This Table After Five Tries. Your Connection May Be Down.'}
-            </p>
-            <div
-              className="table-load-failure__actions"
-              style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}
-            >
-              {tableLoadFailure === 'unreachable' && (
-                <button
-                  type="button"
-                  className="table-load-failure__btn table-load-failure__btn--primary"
-                  onClick={() => window.location.reload()}
-                  style={{
-                    minHeight: 44,
-                    padding: '0 18px',
-                    borderRadius: 10,
-                    border: 'none',
-                    background: '#2f6fed',
-                    color: '#fff',
-                    fontSize: 14,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Try Again
-                </button>
-              )}
-              <button
-                type="button"
-                className="table-load-failure__btn"
-                onClick={() => navigate(exitDestination())}
-                style={{
-                  minHeight: 44,
-                  padding: '0 18px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.22)',
-                  background: 'transparent',
-                  color: '#e8edf5',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Back To Lobby
-              </button>
-            </div>
-          </div>
-        </div>
+        <TableLoadFailureOverlay
+          tableLoadFailure={tableLoadFailure}
+          exitDestination={exitDestination}
+        />
       )}
+
       {/* Phase 1.2 PR-F: hero disconnect banner. Only renders when the
           engine FSM reports MISSING or DISCONNECTED for this user. */}
       {/* ── Bounty knockout (2026-08-20) ───────────────────────────────────

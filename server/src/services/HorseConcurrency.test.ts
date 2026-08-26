@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 /**
  * HORSE CONCURRENCY — Dan 2026-08-23: "each horse can play up to 4 tables"
  *
@@ -84,8 +86,8 @@ describe('the double-count rule, which is the one that fails silently', () => {
    * tables without a single test failing anywhere else.
    */
   it('the registration query excludes RUNNING', () => {
-    const src = require('fs').readFileSync(
-      require('path').join(process.cwd(), 'src/services/TournamentRecurringService.ts'),
+    const src = fs.readFileSync(
+      path.join(process.cwd(), 'src/services/TournamentRecurringService.ts'),
       'utf8'
     ) as string;
     const start = src.indexOf('private async horseLoadMap');

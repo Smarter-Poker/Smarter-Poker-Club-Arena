@@ -2354,7 +2354,7 @@ export class HorseLogic {
     // Mode weights. They shift with the spot: a fold facing no bet is nearly
     // always instant; a big river call almost never is.
     let wSnap = 0.34 + (simple ? 0.3 : 0) + (stage === 'preflop' ? 0.14 : 0);
-    let wBeat = 0.52;
+    const wBeat = 0.52;
     let wTank = 0.12 + (difficulty > 0 ? difficulty * 0.28 : 0) + (aggressive ? 0.05 : 0);
     let wBank = 0.012 + (bigRiverCall ? 0.04 : 0) + (difficulty > 0.6 ? 0.02 : 0);
     if (bigRiverCall) wSnap *= 0.25;

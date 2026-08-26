@@ -31,7 +31,7 @@ const SEATS = fs.readFileSync(path.join(process.cwd(), 'src/services/supabase/se
 function fnBody(src: string, name: string): string {
   const start = src.indexOf(`export async function ${name}(`);
   expect(start, `${name} not found in seats.ts`).toBeGreaterThan(-1);
-  let i = src.indexOf('{', start);
+  const i = src.indexOf('{', start);
   let depth = 0;
   for (let j = i; j < src.length; j++) {
     if (src[j] === '{') depth++;
@@ -55,7 +55,9 @@ describe('seats.ts - chips cannot leave the felt uncredited', () => {
     const armed = markSeatAsLeft.indexOf('safeToClearSeat = true');
     const softDelete = markSeatAsLeft.indexOf('leave_pending: false');
     expect(armed, 'safeToClearSeat is never armed').toBeGreaterThan(-1);
-    expect(armed, 'the guard must be armed before the seat is soft-deleted').toBeLessThan(softDelete);
+    expect(armed, 'the guard must be armed before the seat is soft-deleted').toBeLessThan(
+      softDelete
+    );
   });
 
   it('markSeatAsLeft never vacates a seat from its catch block unguarded', () => {

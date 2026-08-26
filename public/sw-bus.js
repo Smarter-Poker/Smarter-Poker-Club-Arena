@@ -15,7 +15,7 @@
  * - HTML/API → Network-first (always fresh)
  */
 
-// eslint-disable-next-line no-restricted-globals
+ 
 const sw = self;
 
 // DEPLOY VERSION — updated by CI/build to bust the service worker cache.

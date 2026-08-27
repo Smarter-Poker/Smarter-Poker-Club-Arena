@@ -96,7 +96,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'wins_10',
     name: 'First Blood',
     description: 'Win 10 hands',
-    icon: '✊',
+    icon: '☆',
     category: 'wins',
     rarity: 'common',
     requirement: 10,

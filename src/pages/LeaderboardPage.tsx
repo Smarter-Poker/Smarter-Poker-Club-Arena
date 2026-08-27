@@ -669,8 +669,8 @@ export default function LeaderboardPage() {
                   display: 'block',
                 }}
               >
-                Paid {payout.payout_currency === 'diamonds' ? '💎' : '🪙'}{' '}
-                {payout.payout_amount.toLocaleString()}
+                Paid {payout.payout_amount.toLocaleString()}{' '}
+                {payout.payout_currency === 'diamonds' ? 'Diamonds' : 'Chips'}
               </span>
             );
           }
@@ -831,7 +831,7 @@ export default function LeaderboardPage() {
                 border: '1px solid rgba(255, 215, 0, 0.5)',
               }}
             >
-              {'💰'} Pay Out
+              Pay Out
             </button>
             <button
               className="lb-filter-chip"
@@ -839,7 +839,7 @@ export default function LeaderboardPage() {
               title="Leaderboard Settings"
               style={{ padding: '0 12px' }}
             >
-              {'⚙️'} Settings
+              Settings
             </button>
           </div>
         )}
@@ -1032,8 +1032,8 @@ export default function LeaderboardPage() {
                           <div
                             style={{ color: '#FFD700', fontSize: '0.75rem', marginBottom: '4px' }}
                           >
-                            Paid {payout.payout_currency === 'diamonds' ? '💎' : '🪙'}{' '}
-                            {payout.payout_amount.toLocaleString()}
+                            Paid {payout.payout_amount.toLocaleString()}{' '}
+                            {payout.payout_currency === 'diamonds' ? 'Diamonds' : 'Chips'}
                           </div>
                         );
                       }
@@ -1093,8 +1093,8 @@ export default function LeaderboardPage() {
                           <div
                             style={{ color: '#FFD700', fontSize: '0.75rem', marginBottom: '4px' }}
                           >
-                            Paid {payout.payout_currency === 'diamonds' ? '💎' : '🪙'}{' '}
-                            {payout.payout_amount.toLocaleString()}
+                            Paid {payout.payout_amount.toLocaleString()}{' '}
+                            {payout.payout_currency === 'diamonds' ? 'Diamonds' : 'Chips'}
                           </div>
                         );
                       }

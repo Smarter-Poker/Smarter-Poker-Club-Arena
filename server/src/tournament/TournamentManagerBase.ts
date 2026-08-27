@@ -28,7 +28,6 @@ import { clampSeatsForVariant } from '../config/tableSeating.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
-import { effectivePrizePool } from './startRules.js';
 import {
   DEFAULT_TOP_BOUNTY_PERCENT,
   resolveMysteryBountyProfile,
@@ -1422,24 +1421,33 @@ export abstract class TournamentManagerBase {
         const lateRegCap = Number(tournament.late_reg_levels ?? tournament.rebuy_levels ?? 0);
         const gtd = Number(tournament.guaranteed_prize) || 0;
         if (lateRegCap <= 0 && gtd > 0 && !this.prizePoolFinalized) {
-          const { data: poolRow } = await supabase
-            .from('tournaments')
-            .select('prize_pool')
-            .eq('id', this.tournamentId)
-            .maybeSingle(); // FIX 168
-          const poolNow = Number(poolRow?.prize_pool) || 0;
-          const finalPool = effectivePrizePool(poolNow, gtd);
-          if (finalPool > poolNow) {
-            await supabase
-              .from('tournaments')
-              .update({ prize_pool: finalPool, prize_pool_finalized: true } as any)
-              .eq('id', this.tournamentId);
+          // OVERLAY FUNDING 2026-08-27: a guarantee becomes real money ONLY
+          // through fn_apply_prize_guarantee, which funds the overlay from
+          // the host club's chip_treasury and records it in
+          // tournament_guarantee_overlays (PK-claimed, so a replayed start
+          // cannot fund twice). Writing max(pool, gtd) from here is how
+          // 265,209 chips were minted in 30 days with no funding source.
+          const { data: gres, error: gerr } = await supabase.rpc('fn_apply_prize_guarantee', {
+            p_tournament_id: this.tournamentId,
+            p_source: 'start_no_late_reg',
+          });
+          if (gerr || !gres?.ok) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Guarantee funding failed at start: ${gerr?.message || gres?.reason} — pool left as accumulated`
+              ),
+              'Tournament.guarantee_funding_failed'
+            );
+          } else {
+            const finalPool = Number(gres.prize_pool) || 0;
             tournament.prize_pool = finalPool;
             if (this.tournamentCache) this.tournamentCache.prize_pool = finalPool;
             this.prizePoolFinalized = true;
-            console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Guarantee applied at start: pool ${poolNow} -> ${finalPool}`
-            );
+            if (Number(gres.overlay) > 0) {
+              console.log(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Guarantee applied at start: pool ${finalPool} (overlay ${gres.overlay} funded by club treasury)`
+              );
+            }
           }
         }
       }
@@ -2965,32 +2973,30 @@ export abstract class TournamentManagerBase {
           // Check if add-on is available — if so, defer finalization until add-on period ends
           if (!this.tournamentCache?.add_on_available) {
             this.prizePoolFinalized = true;
-            const { data: freshT } = await supabase
-              .from('tournaments')
-              .select('prize_pool, guaranteed_prize')
-              .eq('id', this.tournamentId)
-              .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
-            // GUARANTEE (2026-08-23): the pool stops moving here, so this is
-            // where the advertised guarantee becomes real money. Writing the
-            // max back to prize_pool keeps every reader — payouts, lobby,
-            // fn_tournament_payout_reconcile — agreeing on one number.
-            const finalPool = freshT
-              ? effectivePrizePool(freshT.prize_pool, freshT.guaranteed_prize)
-              : 0;
-            if (freshT) {
-              await supabase
-                .from('tournaments')
-                .update({
-                  prize_pool: finalPool,
-                  prize_pool_finalized: true,
-                } as any)
-                .eq('id', this.tournamentId);
+            // OVERLAY FUNDING 2026-08-27: the pool stops moving here, so this
+            // is where the advertised guarantee becomes real money — through
+            // fn_apply_prize_guarantee, which funds the overlay from the host
+            // club treasury (idempotent by the overlays PK) instead of
+            // writing max(pool, gtd) for free.
+            const { data: gres, error: gerr } = await supabase.rpc('fn_apply_prize_guarantee', {
+              p_tournament_id: this.tournamentId,
+              p_source: 'late_reg_close',
+            });
+            const finalPool = Number(gres?.prize_pool) || 0;
+            if (gerr || !gres?.ok) {
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Guarantee funding failed at late-reg close: ${gerr?.message || gres?.reason}`
+                ),
+                'Tournament.guarantee_funding_failed'
+              );
+            } else {
               console.log(
                 `[Tournament:${this.tournamentId.slice(0, 8)}] Late reg/rebuy closed at level ${this.currentLevel} — prize pool finalized: ${finalPool}`
               );
             }
             await this.broadcast('late_reg_closed', { prizePool: finalPool });
-            if (freshT) {
+            if (gres?.ok) {
               await this.recalculateEliminatedPrizes(finalPool);
             }
           }
@@ -3244,24 +3250,23 @@ export abstract class TournamentManagerBase {
     );
 
     this.prizePoolFinalized = true;
-    const { data: freshT } = await supabase
-      .from('tournaments')
-      .select('prize_pool, guaranteed_prize')
-      .eq('id', this.tournamentId)
-      .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
-    if (freshT) {
-      // GUARANTEE (2026-08-23): same rule as the late-reg-close site — the
-      // pool is final now, so the advertised guarantee is applied here.
-      const finalPool = effectivePrizePool(freshT.prize_pool, freshT.guaranteed_prize);
-      await supabase
-        .from('tournaments')
-        .update({
-          prize_pool: finalPool,
-          prize_pool_finalized: true,
-        } as any)
-        .eq('id', this.tournamentId);
-
-      await this.recalculateEliminatedPrizes(finalPool);
+    // OVERLAY FUNDING 2026-08-27: same rule as the late-reg-close site — the
+    // pool is final now, so the guarantee is applied AND FUNDED here through
+    // fn_apply_prize_guarantee (host club treasury, idempotent by the
+    // overlays PK).
+    const { data: gres, error: gerr } = await supabase.rpc('fn_apply_prize_guarantee', {
+      p_tournament_id: this.tournamentId,
+      p_source: 'addon_period_end',
+    });
+    if (gerr || !gres?.ok) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Guarantee funding failed at add-on end: ${gerr?.message || gres?.reason}`
+        ),
+        'Tournament.guarantee_funding_failed'
+      );
+    } else {
+      await this.recalculateEliminatedPrizes(Number(gres.prize_pool) || 0);
     }
 
     await this.broadcast('ADDON_PERIOD_END', {});

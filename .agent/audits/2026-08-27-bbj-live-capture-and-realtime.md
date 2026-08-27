@@ -159,3 +159,104 @@ has not been observed on one hit under today's code. Every link is verified
 individually above; the join itself is proven safe (zero duplicate
 `(table_id, hand_number)` pairs across 1.56M rows), and the five seeded hits
 render the full rundown correctly through `fn_bbj_hand_detail`.
+
+---
+
+# SECOND PASS
+
+Dan: _"this sounds like a real issue, keep auditing, improving, building and
+enhancing this until its perfect and working."_
+
+## The one thing the first pass could not verify is now verified
+
+There has been no real jackpot since 2026-08-19, so the payout path had never
+been observed end to end under current code. It has now, without spending a
+chip: `bbj_atomic_payout_v2` was called against production inside a transaction
+that aborts, per CLAUDE.md §11.5.
+
+```
+applied=t  already=f
+total=80993.61  bad_beat=40496.80  hand_winner=20248.40  table=20248.41  per=6749.47
+recipients=5  sum=80993.61          <- every dealt-in player, summing to the total
+bbj_winners_rows=1
+main 80993.61 -> 18178.97           <- debited main only, then reseeded from backup
+```
+
+Rolled back clean: 29 payouts before, 29 after, `hit_count` unchanged at 45. A
+second probe against a real `hand_history` row confirmed `bbj_payouts.hand_id`
+is now populated with that row's id.
+
+**The money path works.** The 50/25/25 split, the table share reaching every
+dealt-in player, the main-only clamp, the backup reseed, and the `bbj_winners`
+write are all real and all correct.
+
+## Two published rules that the server did not enforce
+
+`BBJ_RULES.excludeDoubleBoard` and `BBJ_RULES.onlyFirstRunout` appeared in
+exactly two places: the constant, and the rules panel that **tells players they
+apply** (`BBJBasicPanel.tsx:266-269`, `BBJRulesPanel.tsx:151`). No code read
+them.
+
+- **excludeDoubleBoard** is now enforced in `detectBBJHit`. A double-board bomb
+  pot deals two boards for one pot, so a beat on one of them is not the hand the
+  jackpot is for — and until now such a hand could pay, which made the rules page
+  wrong rather than the engine.
+- **onlyFirstRunout** turns out to be satisfied by construction, not by
+  omission: `SHOWDOWN` is emitted once per hand (`HandController.ts:1559`) and
+  _before_ the extra runouts are dealt, so `showdownResults` is already board
+  one's evaluation, and settlement passes board one's cards to match. Recorded in
+  a test so nobody re-derives it or "fixes" it by adding a second emit.
+
+## A chopped pot could refuse a real bad beat
+
+Settlement passed `currentHandWinnerIds[0]`, and `detectBBJHit` took a single
+winner. On a split pot exactly one winner was examined against "the winner must
+hold quads or better" — so if the OTHER one held the quads, a genuine bad beat
+was refused and **nothing anywhere recorded that a jackpot had been considered
+and dropped**. All winners are now evaluated and the rule is applied to the
+strongest, mirroring what the loser side has done since 2026-08-18.
+
+## The dead end is gone
+
+24 of 29 jackpots have no hand, and tapping one used to produce a single grey
+sentence. But `bbj_winners` still holds both hand names and both display names
+and the pool at the moment it hit; `bbj_payouts` holds the split;
+`bbj_payout_recipients` holds every player paid and how much. Only the
+street-by-street action is missing.
+
+`fn_bbj_hand_detail` now returns `handAvailable: false` with all of that instead
+of NULL, and the client renders a summary card naming the beat, the hand that
+beat it, the pool, and every payout. NULL is still returned when the payout id
+does not exist, because that is a genuine nothing.
+
+## The money path can no longer leave version control
+
+`scripts/ci/check-bbj-functions-match-production.mjs` prints the normalised
+fingerprint of every watched BBJ function as the REPO defines it — migrations
+applied in filename order, last definition winning, which is what a rebuild
+produces. All five currently match production exactly:
+
+```
+bbj_atomic_payout_v2       e39119537b1b50859af859218e71ef9a   5260
+bbj_credit_one_recipient   adb6f66c538cce69b93ea7f0f565da61    727
+fn_bbj_hand_detail         eed74656f6356b9c4f4d166b49f4e428   4039
+fn_bbj_recent_hits         00a1633bd9a0a07939df521fb79081f2   2594
+sp_prune_hand_history      e708197f2975b88c3ec36a10db6212ac   1879
+```
+
+It exits non-zero if a watched function is defined in no migration at all —
+which is the state the two payout functions were in this morning.
+
+## Still open
+
+1. **`bbj_payouts.hand_id` is not a foreign key.** It is populated now, but
+   `hand_history` rows are pruned: RESTRICT would break the pruner on a jackpot
+   hand and SET NULL would erase the evidence. The prune exemption is what keeps
+   those rows alive; a constraint can follow once it has run without incident.
+2. **`runStep` continues after a failed step.** If the `hand_history` write
+   fails, the payout still lands and `hand_id` stays NULL. The prune fix removes
+   the common cause of an orphan; this failure mode remains.
+3. **Short-deck hand rankings.** `bestFive` scores with standard rankings, and
+   short deck ranks a flush above a full house. 41,153 short-deck hands exist, so
+   the rundown can name their made hands wrongly. Short deck is not BBJ-eligible,
+   so no jackpot depends on it — but the table's own hand detail does.

@@ -53,13 +53,32 @@ interface DetailPlayer {
 interface DetailRecipient {
   userId: string;
   name: string;
+  playerNumber?: string | null;
   amount: number;
   role: 'bad_beat' | 'hand_winner' | 'table';
 }
 
 interface HandDetail {
+  /**
+   * False when the hand itself is gone and only the payout ledger survives.
+   *
+   * 24 of the 29 real jackpots on this platform are in that state: the pruner
+   * deleted their hands before `20260827d_jackpot_hands_are_never_pruned`
+   * stopped it, and `bbj_payouts.hand_id` was NULL so nothing can rebuild
+   * them. They used to render a dead end — "The Full Hand For This Jackpot Is
+   * No Longer Available." — even though we still know both hands, both names,
+   * the pool at the moment it hit, and every player who was paid.
+   */
+  handAvailable?: boolean;
   handNumber: number;
   playedAt: string;
+  /** Summary-only fields, present when handAvailable is false. */
+  badBeatName?: string | null;
+  badBeatHand?: string | null;
+  handWinnerName?: string | null;
+  handWinnerHand?: string | null;
+  poolAtHit?: number | null;
+  tablePlayerCount?: number | null;
   gameVariant: string | null;
   smallBlind: number;
   bigBlind: number;
@@ -87,6 +106,18 @@ interface HandDetail {
     handWinnerUserId: string | null;
     recipients: DetailRecipient[];
   };
+}
+
+/** Absolute timestamp, the way a jackpot board states one. */
+function stamp(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  );
 }
 
 function money(n: number | null | undefined, dp = 2): string {
@@ -151,7 +182,7 @@ export function BBJHandDetail({
   }, [payoutId]);
 
   const model = useMemo(() => {
-    if (!detail) return null;
+    if (!detail || detail.handAvailable === false) return null;
     return buildReplay({
       handNumber: detail.handNumber,
       playedAt: detail.playedAt,
@@ -199,13 +230,13 @@ export function BBJHandDetail({
     );
   }
 
-  if (state !== 'ready' || !detail || !model) {
+  if (state !== 'ready' || !detail) {
     return (
       <div className="bbjhd">
         <Header onBack={onBack} />
         <div className="bbjhd__empty">
           {state === 'missing'
-            ? 'The Full Hand For This Jackpot Is No Longer Available.'
+            ? 'This Jackpot Could Not Be Found.'
             : 'Could Not Load This Hand. Try Again Shortly.'}
         </div>
       </div>
@@ -213,6 +244,81 @@ export function BBJHandDetail({
   }
 
   const recipients = Array.isArray(detail.jackpot?.recipients) ? detail.jackpot.recipients : [];
+
+  const payoutBox = (
+    <section className="hdv__bbjp">
+      <header className="hdv__bbjp-head">BBJP Winners</header>
+      {recipients.map((r, i) => {
+        const you = currentUserId
+          ? r.userId === currentUserId
+          : !!currentUserName && r.name.toLowerCase() === currentUserName.toLowerCase();
+        const id = numberOf.get(r.userId) || r.playerNumber || '';
+        return (
+          <div className="hdv__bbjp-row" key={`${r.userId}-${i}`}>
+            <span className={`hdv__bbjp-name${you ? ' is-you' : ''}`}>{r.name}</span>
+            <span className="hdv__bbjp-id">{id ? `(ID:${id})` : ''}</span>
+            <span className="hdv__bbjp-amt">+{money(r.amount)}</span>
+          </div>
+        );
+      })}
+    </section>
+  );
+
+  /**
+   * THE HAND IS GONE, BUT THE JACKPOT IS NOT.
+   *
+   * This used to be a dead end — one grey sentence and nothing else — and it
+   * is what 24 of the 29 real jackpots on this platform show, because the
+   * pruner deleted their hands before `20260827d` stopped it and
+   * `bbj_payouts.hand_id` was NULL so nothing can rebuild them.
+   *
+   * Everything below is real, stored, and was being withheld for no reason:
+   * both hands, both names, the pool at the moment it hit, and every player
+   * who was paid and how much. The one thing missing is the street-by-street
+   * action, and this says exactly that rather than implying the whole record
+   * is gone.
+   */
+  if (detail.handAvailable === false || !model) {
+    return (
+      <div className="bbjhd">
+        <Header onBack={onBack} />
+
+        <div className="bbjhd__meta">
+          <span className="bbjhd__meta-when">{stamp(detail.playedAt)}</span>
+          {detail.tablePlayerCount ? (
+            <span className="bbjhd__meta-stakes">{detail.tablePlayerCount} Dealt In</span>
+          ) : null}
+          <span className="bbjhd__meta-sn">SN: {detail.handNumber}</span>
+        </div>
+
+        <section className="bbjhd__summary">
+          <div className="bbjhd__summary-row">
+            <span className="bbjhd__summary-label">Bad Beat</span>
+            <span className="bbjhd__summary-name">{detail.badBeatName || 'Player'}</span>
+            <span className="bbjhd__summary-hand">{titleCase(detail.badBeatHand || '')}</span>
+          </div>
+          <div className="bbjhd__summary-row">
+            <span className="bbjhd__summary-label">Beaten By</span>
+            <span className="bbjhd__summary-name">{detail.handWinnerName || 'Player'}</span>
+            <span className="bbjhd__summary-hand">{titleCase(detail.handWinnerHand || '')}</span>
+          </div>
+          {detail.poolAtHit ? (
+            <div className="bbjhd__summary-row">
+              <span className="bbjhd__summary-label">Jackpot</span>
+              <span className="bbjhd__summary-name">Pool At The Hit</span>
+              <span className="bbjhd__summary-hand">{money(detail.poolAtHit)}</span>
+            </div>
+          ) : null}
+        </section>
+
+        {recipients.length > 0 ? payoutBox : null}
+
+        <p className="bbjhd__retention">
+          The Hand Itself Was Not Kept. Jackpot Hands Are Retained From 2026-08-27 Onward.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="bbjhd">
@@ -222,27 +328,7 @@ export function BBJHandDetail({
         currentUserId={currentUserId}
         currentUserName={currentUserName}
         badge={titleCase(detail.gameVariant || '').toUpperCase() || null}
-        footer={
-          recipients.length > 0 ? (
-            <section className="hdv__bbjp">
-              <header className="hdv__bbjp-head">BBJP Winners</header>
-              {recipients.map((r, i) => {
-                const you = currentUserId
-                  ? r.userId === currentUserId
-                  : !!currentUserName && r.name.toLowerCase() === currentUserName.toLowerCase();
-                return (
-                  <div className="hdv__bbjp-row" key={`${r.userId}-${i}`}>
-                    <span className={`hdv__bbjp-name${you ? ' is-you' : ''}`}>{r.name}</span>
-                    <span className="hdv__bbjp-id">
-                      {numberOf.get(r.userId) ? `(ID:${numberOf.get(r.userId)})` : ''}
-                    </span>
-                    <span className="hdv__bbjp-amt">+{money(r.amount)}</span>
-                  </div>
-                );
-              })}
-            </section>
-          ) : null
-        }
+        footer={recipients.length > 0 ? payoutBox : null}
       />
     </div>
   );

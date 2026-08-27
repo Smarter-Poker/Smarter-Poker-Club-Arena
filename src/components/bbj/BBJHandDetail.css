@@ -508,3 +508,57 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* ── The summary card, for a jackpot whose hand was pruned ──────────────────
+   24 of the 29 real jackpots on this platform are in that state. The payout
+   ledger survives in full, so this shows what is real rather than one grey
+   sentence. */
+.bbjhd__summary {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.bbjhd__summary-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 10px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.bbjhd__summary-row + .bbjhd__summary-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.bbjhd__summary-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #f0b90b;
+  white-space: nowrap;
+}
+
+.bbjhd__summary-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #fff;
+}
+
+.bbjhd__summary-hand {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bbjhd__retention {
+  margin: 0;
+  padding: 4px 10px 2px;
+  text-align: center;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+}

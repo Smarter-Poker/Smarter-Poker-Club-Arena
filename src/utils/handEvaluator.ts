@@ -19,8 +19,23 @@
  *              best five freely out of an Omaha holding produces hands that are
  *              not legal in Omaha (four hole cards to a flush, say), which is the
  *              single most common way a hand display lies to a player.
- * Short Deck is not BBJ-eligible, so it is not special-cased; it falls back to
- * the hold'em search, which is right for its two-card holdings anyway.
+ *   Short Deck - a 36-card deck changes what BEATS what. A flush outranks a
+ *              full house, and the lowest straight is A-6-7-8-9 rather than
+ *              A-2-3-4-5.
+ *
+ * SHORT DECK USED TO FALL THROUGH TO THE HOLD'EM SEARCH, and the note here said
+ * that was fine "because short deck is not BBJ-eligible". True of the jackpot
+ * and irrelevant to everything else: this evaluator also names the made hand in
+ * the table's own Previous Hand rundown, and production holds 41,153 short-deck
+ * hands. On those it would pick a full house over a flush as the "best" five —
+ * the losing hand, drawn as the winner — and call the A-6-7-8-9 wheel a high
+ * card.
+ *
+ * The rules below are ported from the engine's own evaluator
+ * (server/src/engine/PokerEngine.ts, evaluate5Cards + checkStraight), because
+ * the engine decides the pot and this only draws it. Two implementations of one
+ * ruleset is already one too many; two that DISAGREE would show a player a hand
+ * that lost the money.
  */
 
 import type { Card as DeckCard } from '../components/table/CardImage';
@@ -103,7 +118,7 @@ export function compareScore(a: HandScore, b: HandScore): number {
  * plays low and nothing else does. Getting that backwards is the classic
  * evaluator bug, and it silently promotes the weakest straight to the strongest.
  */
-export function scoreFive(cards: DeckCard[]): HandScore {
+export function scoreFive(cards: DeckCard[], shortDeck = false): HandScore {
   const vals = cards.map(value).sort((a, b) => b - a);
   const suits = cards.map((c) => c.suit);
   const isFlush = suits.every((s) => s === suits[0]);
@@ -121,20 +136,43 @@ export function scoreFive(cards: DeckCard[]): HandScore {
   let straightHigh = 0;
   if (distinct.length === 5) {
     if (distinct[0] - distinct[4] === 4) straightHigh = distinct[0];
-    else if (distinct[0] === 14 && distinct[1] === 5 && distinct[4] === 2) straightHigh = 5;
+    // THE WHEEL, and it is a different wheel in short deck. A-6-7-8-9 there,
+    // A-2-3-4-5 everywhere else. Both are five-high in the sense that matters:
+    // the ace plays LOW and nothing else does, so the straight is the weakest
+    // one available. Getting this backwards silently promotes the weakest
+    // straight to the strongest.
+    else if (shortDeck && distinct[0] === 14 && distinct[1] === 9 && distinct[4] === 6)
+      straightHigh = 5;
+    else if (!shortDeck && distinct[0] === 14 && distinct[1] === 5 && distinct[4] === 2)
+      straightHigh = 5;
   }
 
   if (isFlush && straightHigh) {
     return { category: CATEGORY.STRAIGHT_FLUSH, tiebreak: [straightHigh] };
   }
   if (shape === '41') return { category: CATEGORY.FOUR_OF_A_KIND, tiebreak: byGroup };
-  if (shape === '32') return { category: CATEGORY.FULL_HOUSE, tiebreak: byGroup };
-  if (isFlush) return { category: CATEGORY.FLUSH, tiebreak: vals };
+
+  // SHORT DECK INVERTS THESE TWO. Bible V8 Appendix D, and the engine does the
+  // same swap in evaluate5Cards. A flush is harder to make with 36 cards than a
+  // full house, so it outranks one.
+  const fullHouse = shortDeck ? CATEGORY.FLUSH : CATEGORY.FULL_HOUSE;
+  const flush = shortDeck ? CATEGORY.FULL_HOUSE : CATEGORY.FLUSH;
+
+  if (shape === '32') return { category: fullHouse, tiebreak: byGroup };
+  if (isFlush) return { category: flush, tiebreak: vals };
   if (straightHigh) return { category: CATEGORY.STRAIGHT, tiebreak: [straightHigh] };
   if (shape === '311') return { category: CATEGORY.THREE_OF_A_KIND, tiebreak: byGroup };
   if (shape === '221') return { category: CATEGORY.TWO_PAIR, tiebreak: byGroup };
   if (shape === '2111') return { category: CATEGORY.PAIR, tiebreak: byGroup };
   return { category: CATEGORY.HIGH_CARD, tiebreak: vals };
+}
+
+/** The 36-card game. Its own straight and its own order of battle. */
+export function isShortDeckVariant(variant: string | null | undefined): boolean {
+  const raw = String(variant || '')
+    .toLowerCase()
+    .trim();
+  return raw === 'short_deck' || raw === 'shortdeck' || raw === 'sixplus' || raw === '6plus';
 }
 
 /** Every k-subset of `arr`. */
@@ -165,10 +203,14 @@ export function isOmahaVariant(variant: string | null | undefined): boolean {
   return raw.startsWith('plo') || raw.startsWith('flo') || raw.includes('omaha');
 }
 
-function nameFor(score: HandScore): string {
+function nameFor(score: HandScore, shortDeck = false): string {
   if (score.category === CATEGORY.STRAIGHT_FLUSH) {
     return score.tiebreak[0] === 14 ? 'Royal Flush' : 'Straight Flush';
   }
+  // In short deck the two slots are swapped, so the NAME has to follow the
+  // swap or a flush would be announced as a full house.
+  if (shortDeck && score.category === CATEGORY.FLUSH) return 'Full House';
+  if (shortDeck && score.category === CATEGORY.FULL_HOUSE) return 'Flush';
   return CATEGORY_NAME[score.category] || 'High Card';
 }
 
@@ -201,11 +243,12 @@ export function bestFive(
     candidates = combinations(all, 5);
   }
 
+  const shortDeck = isShortDeckVariant(variant);
   let best: BestHand | null = null;
   for (const combo of candidates) {
-    const score = scoreFive(combo);
+    const score = scoreFive(combo, shortDeck);
     if (!best || compareScore(score, best) > 0) {
-      best = { ...score, cards: combo, name: nameFor(score) };
+      best = { ...score, cards: combo, name: nameFor(score, shortDeck) };
     }
   }
   if (!best) return null;

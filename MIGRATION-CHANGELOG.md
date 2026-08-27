@@ -2,6 +2,43 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-08-26 (late) — WINNER PRESENTATION, POKERBROS 1:1 (3 passes, measured)
+
+Dan supplied HIGHLIGHT WINNING HAND AND DSIPLAY IT ON SCREEN.MOV (26-Aug PLO5
+"Flush" hand) and asked for a frame-by-frame 1:1 clone of the winner
+presentation. Three passes shipped (PR #1307 rounds 1-2, PR #1330 round 3,
+plus a final-audit PR); pass 2 onward MEASURED the recording per pixel:
+
+1. **The cut.** One-frame hard cut (between two adjacent 30fps frames):
+   winning five get a steady thin warm-gold ring (#e9b355, no pulse, no pop,
+   no lift), every card outside them drops to brightness(0.28)
+   channel-neutral, and the ENTIRE scene dims to ~0.73 — felt art, brand
+   block, pot, page backdrop, dealer button, and every seat's chrome
+   including the winner's own plate (per-group filters; stacking contexts
+   forbid a single overlay). Retired as motion-the-reference-does-not-have:
+   winnerTableFlash, ccHighlightPulse, winnerCardPulse, ccGlowPulse, the
+   highlight-pop state machine, showdown screen shake, the spark burst, the
+   showdown-wide gold ambient, CardImage's highlight lift, the sheen sweep
+   and hover lift on tableau cards.
+2. **The banner.** Below the board (+4px), translucent dark band, orange
+   lens-flare streak on the bottom edge, hand name as gradient-gold
+   background-clip text (measured core #ffe39c) sized at 0.33x card height
+   via clamp(--cc-card-h).
+3. **The sequence.** +N floats and the pot-win ride recolored to the
+   measured yellow (#ffe94a — the ride was cyan and matched nothing);
+   four-point star sparkles over the winner's cards for the life of the
+   float; float/sparkles/BBJ credit excluded from the scene dim; seat
+   hand-name label is plain quiet text (the reference has no gold pill).
+4. **Bug found by the audit:** double-board bomb pots never highlighted or
+   dimmed board 2 (engine card_indices are board-1 only) — board 2 now
+   derives its winning five client-side like the RIT boards do.
+
+Deliberately NOT matched: the reference ships the pot ~2.3s after the cut;
+Dan's 2026-08-21 3-second showdown-read floor (engine-matched) outranks it.
+
+Pinned by tests/unit/pokerbrosWinnerPresentation.test.ts (25 measured
+assertions); tests/e2e/showdown-beats.spec.ts rewritten for the new beats.
+
 ## Cowork session 2026-08-26 (evening) — INSURANCE REFERENCE PARITY (pass 6)
 
 Dan supplied the missing reference: a leader-seat recording (INSURANCE.MOV)

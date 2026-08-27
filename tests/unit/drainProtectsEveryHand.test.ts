@@ -26,7 +26,12 @@ const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
 describe('the engine drains itself before stopping', () => {
   it('GameServer exposes a bounded drainHands()', () => {
     const src = read('server/src/GameServer.ts');
-    expect(src).toMatch(/async drainHands\(maxWaitMs = \d+\)/);
+    // Format-agnostic on purpose: prettier wraps this signature across three
+    // lines on commit, so an exact-spacing regex passes locally and fails in
+    // CI (the trap CLAUDE.md section 11 warns about). Assert the CONTRACT —
+    // the method exists, takes a millisecond budget, and has a default — not
+    // the whitespace prettier happens to choose today.
+    expect(src).toMatch(/async drainHands\(\s*maxWaitMs = \d+/);
     // It must pause every engine after its current hand...
     expect(src).toMatch(/engine\.pauseAfterHand\(\)/);
     // ...and it must be bounded, or a stuck table holds the process open

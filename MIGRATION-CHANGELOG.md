@@ -31,6 +31,18 @@ plus stills of the actual dialog. Frame-by-frame findings drove three changes:
 InsuranceRitExclusivity.test.ts rewritten to pin the sequencing (5 tests);
 64 server tests green across the insurance/RIT/pacing suites.
 
+**Pass 7 (final audit, PR #1334 — merged):** two line-by-line finds, fixed
+and pinned. (1) At dust stakes a cents-rounded premium could hit 0.00 while
+the insured amount stayed positive — a payout contract the union bank funds
+without collecting a cent; createOffers now refuses it. (2) The accept path
+rounded coverage to a whole percent, so the charged premium could differ
+from the dialog's displayed fee by up to half a percent of the full premium;
+coverage now flows at hundredths-of-a-percent precision end to end (client
+accept path, acceptPartial, getPreview) — the fee shown is the fee charged,
+to the cent. Also swept for stubs/dead code and re-verified every client
+piece (banner, waiting bar, fee pill, payout flight, slow reveal, fee-first
+dialog) present and wired on main. 107 server + 50 client tests green.
+
 ---
 
 **Started:** 2026-03-24

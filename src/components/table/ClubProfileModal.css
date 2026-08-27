@@ -203,9 +203,13 @@
   white-space: nowrap;
 }
 
-/* Winning and losing use the status tokens, not a fresh pair of greens. */
+/* Winning and losing use the status tokens, not a fresh pair of greens.
+   The FALLBACK has to be the house green too. --color-success is #3fb950 now,
+   so a fallback of #22c55e is the old scheme lying in wait for the day the
+   token fails to resolve - which is exactly how the three competing greens
+   this phase merged got started. */
 .cpm-stat-value.cpm-up {
-  color: var(--color-success, #22c55e);
+  color: var(--color-success, #3fb950);
 }
 
 .cpm-stat-value.cpm-down {

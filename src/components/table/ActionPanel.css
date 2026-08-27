@@ -466,12 +466,17 @@
   transform: translateY(-1px);
 }
 
-/* ─── RAISE / BET (Green — item 8) ─────────────────────────── */
+/* ─── RAISE / BET (Green — item 8) ───────────────────────────
+   Green is Dan's call (item 8). The RAMP is the house family:
+   #4dc660 light -> #3fb950 base -> #2ea043 deep, the same three greens the
+   Cashier and Sit-Out buttons already wear. It used to ramp
+   #34d374/#16a34a/#0b5426 - a different green from every other green in the
+   app, on the single most-looked-at control in the product. */
 .action-panel .action-btn--raise {
-  background: linear-gradient(180deg, #34d374 0%, #16a34a 40%, #0b5426 100%);
+  background: linear-gradient(180deg, #4dc660 0%, #3fb950 40%, #2ea043 100%);
   box-shadow:
     0 4px 0 #063317,
-    0 6px 20px rgba(22, 163, 74, 0.35),
+    0 6px 20px rgba(63, 185, 80, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.2),
     inset 0 -2px 0 rgba(0, 0, 0, 0.2);
 }
@@ -480,7 +485,7 @@
   filter: brightness(1.15);
   box-shadow:
     0 3px 0 #063317,
-    0 8px 32px rgba(22, 163, 74, 0.55),
+    0 8px 32px rgba(63, 185, 80, 0.55),
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
   transform: translateY(-1px);
 }
@@ -495,15 +500,15 @@
   box-shadow:
     0 0 0 2px rgba(255, 255, 255, 0.5),
     0 2px 0 #063317,
-    0 4px 16px rgba(22, 163, 74, 0.5);
+    0 4px 16px rgba(63, 185, 80, 0.5);
 }
 
 /* ─── ALL-IN — The big play (green family with the bet — item 8) ── */
 .action-panel .action-btn--allin {
-  background: linear-gradient(180deg, #34d374 0%, #16a34a 40%, #0b5426 100%);
+  background: linear-gradient(180deg, #4dc660 0%, #3fb950 40%, #2ea043 100%);
   box-shadow:
     0 4px 0 #063317,
-    0 6px 20px rgba(22, 163, 74, 0.4),
+    0 6px 20px rgba(63, 185, 80, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.2),
     inset 0 -2px 0 rgba(0, 0, 0, 0.2);
   animation: allinPulse 1.8s ease-in-out infinite;
@@ -513,7 +518,7 @@
   filter: brightness(1.15);
   box-shadow:
     0 3px 0 #063317,
-    0 8px 32px rgba(22, 163, 74, 0.6),
+    0 8px 32px rgba(63, 185, 80, 0.6),
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
   transform: translateY(-1px);
 }
@@ -1416,24 +1421,24 @@
 
 @keyframes actionAttentionPulse {
   0% {
-    box-shadow: inset 0 1px 0 rgba(34, 197, 94, 0);
+    box-shadow: inset 0 1px 0 rgba(63, 185, 80, 0);
     border-top-color: var(--border-default);
   }
   30% {
     box-shadow:
-      inset 0 1px 0 rgba(34, 197, 94, 0.5),
-      0 -4px 30px rgba(34, 197, 94, 0.25);
-    border-top-color: rgba(34, 197, 94, 0.6);
+      inset 0 1px 0 rgba(63, 185, 80, 0.5),
+      0 -4px 30px rgba(63, 185, 80, 0.25);
+    border-top-color: rgba(63, 185, 80, 0.6);
   }
   60% {
     box-shadow:
-      inset 0 1px 0 rgba(34, 197, 94, 0.2),
-      0 -2px 15px rgba(34, 197, 94, 0.1);
-    border-top-color: rgba(34, 197, 94, 0.3);
+      inset 0 1px 0 rgba(63, 185, 80, 0.2),
+      0 -2px 15px rgba(63, 185, 80, 0.1);
+    border-top-color: rgba(63, 185, 80, 0.3);
   }
   100% {
-    box-shadow: inset 0 1px 0 rgba(34, 197, 94, 0);
-    border-top-color: rgba(34, 197, 94, 0.3);
+    box-shadow: inset 0 1px 0 rgba(63, 185, 80, 0);
+    border-top-color: rgba(63, 185, 80, 0.3);
   }
 }
 

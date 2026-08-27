@@ -67,7 +67,7 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
       icon: '$',
       title: 'BUBBLE BURST!',
       subtitle: 'Congratulations - all remaining players are in the money!',
-      color: '#10b981',
+      color: '#3fb950',
     },
     final_table: {
       icon: '*',

@@ -30,7 +30,7 @@
 }
 
 .live-tables-bar__dot {
-  color: #00e676;
+  color: #3fb950;
   font-size: 0.7rem;
   animation: liveTablesPulse 1.6s ease-in-out infinite;
 }

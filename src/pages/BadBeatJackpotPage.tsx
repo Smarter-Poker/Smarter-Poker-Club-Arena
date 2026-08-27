@@ -55,6 +55,8 @@ export default function BadBeatJackpotPage() {
   const [loading, setLoading] = useState(true);
   const [openHandPayoutId, setOpenHandPayoutId] = useState<string | null>(null);
   const [justUpdated, setJustUpdated] = useState(false);
+  /** True when the last read threw. Distinct from "this club has no pool". */
+  const [loadFailed, setLoadFailed] = useState(false);
   const [playerContribution, setPlayerContribution] = useState(0);
   // 2026-08-18: real hand count + own-contribution facts, from the ledger.
   const [poolFacts, setPoolFacts] = useState<{ hands: number; chips: number } | null>(null);
@@ -302,15 +304,25 @@ export default function BadBeatJackpotPage() {
             setMyHands(Number(mine.hands_contributed) || 0);
           }
         }
+        if (!getIsMounted || getIsMounted()) setLoadFailed(false);
       } catch (error) {
         reportError(error, 'BadBeatJackpotPage.Failed_to_load_jackpot');
-        if (!getIsMounted || getIsMounted()) toast.error('Failed to load jackpot data.');
+        if (!getIsMounted || getIsMounted()) {
+          setLoadFailed(true);
+          toast.error('Failed to load jackpot data.');
+        }
       } finally {
         loadingRef.current = false;
         if (!getIsMounted || getIsMounted()) setLoading(false);
       }
     },
-    [clubId]
+    // `user?.id` is READ in this body (the fn_bbj_my_contribution block), and
+    // it was not a dependency. On first mount `user` is typically still null,
+    // so that block was skipped - and because the callback was never recreated
+    // when auth resolved, every later caller kept invoking the stale version.
+    // "Your Contribution (90D)" therefore never appeared until the club id
+    // itself changed. `toast` is captured for the same reason.
+    [clubId, user?.id, toast]
   );
 
   // Bus listener: reload jackpot data when a hand completes (BBJ contribution may have been added)
@@ -331,6 +343,39 @@ export default function BadBeatJackpotPage() {
       <div className="bbj-page">
         <div className="loading-state">
           <PageSkeleton variant="stats" />
+        </div>
+        {clubId && <ClubBottomNav clubId={clubId} />}
+      </div>
+    );
+  }
+
+  /**
+   * NO POOL, OR THE READ FAILED.
+   *
+   * This used to fall straight through to the full jackpot screen built
+   * entirely out of zeros - "Main Jackpot 0", "0 Chips", a rules panel priced
+   * off a zero pool, an empty winners list - with a transient toast as the only
+   * signal that anything was wrong. A player cannot tell that from a club whose
+   * jackpot genuinely sits at zero. Say which it is, and give them a way to try
+   * again, because there was none anywhere on this page.
+   */
+  if (loadFailed || !jackpot) {
+    return (
+      <div className="bbj-page">
+        <div className="bbj-page__empty">
+          <h2 className="bbj-page__empty-title">
+            {loadFailed ? 'Could Not Load The Jackpot' : 'No Jackpot Pool For This Club Yet'}
+          </h2>
+          <p className="bbj-page__empty-body">
+            {loadFailed
+              ? 'The Jackpot Could Not Be Read Just Now. Nothing Is Lost - Try Again.'
+              : 'A Pool Starts Building As Soon As Hands Are Dealt With The Jackpot Drop Enabled.'}
+          </p>
+          {loadFailed && (
+            <button type="button" className="bbj-page__retry" onClick={() => loadJackpotData()}>
+              Try Again
+            </button>
+          )}
         </div>
         {clubId && <ClubBottomNav clubId={clubId} />}
       </div>

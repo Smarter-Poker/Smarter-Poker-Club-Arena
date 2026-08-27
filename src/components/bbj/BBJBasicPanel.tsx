@@ -212,6 +212,16 @@ function mapDbTiers(rows: DbTier[]): TierRow[] {
 export function BBJBasicPanel({ poolAmount = 0, highlightBB = null }: BBJBasicPanelProps) {
   const fallback = useMemo(buildFallbackTiers, []);
   const [dbTiers, setDbTiers] = useState<TierRow[] | null>(null);
+  /**
+   * THREE states, because two were not enough to tell the truth.
+   *
+   * `dbTiers === null` meant both "the fetch has not run yet" and "the fetch
+   * failed", and the banner keyed off it — so every player saw
+   * "The Live Table Could Not Be Read" flash on every single open, before the
+   * request had been issued. A claim about a money schedule should not be made
+   * while we are still finding out.
+   */
+  const [loadState, setLoadState] = useState<'loading' | 'live' | 'fallback'>('loading');
 
   useEffect(() => {
     let alive = true;
@@ -224,8 +234,22 @@ export function BBJBasicPanel({ poolAmount = 0, highlightBB = null }: BBJBasicPa
           );
         if (error) throw error;
         const mapped = mapDbTiers((data ?? []) as DbTier[]);
-        if (alive && mapped.length > 0) setDbTiers(mapped);
+        if (!alive) return;
+        if (mapped.length > 0) {
+          setDbTiers(mapped);
+          setLoadState('live');
+        } else {
+          // A successful read that yields no usable tier is not a success. It
+          // used to be indistinguishable from a failure: nothing was reported,
+          // nobody was told, and the panel showed the fallback forever.
+          setLoadState('fallback');
+          reportError(
+            new Error('bbj_stakes_tiers returned no usable rows - showing the published fallback'),
+            'BBJBasicPanel.empty_stakes_tiers'
+          );
+        }
       } catch (err) {
+        if (alive) setLoadState('fallback');
         // Falling back is fine and expected for an observer; it must not be
         // silent, because a permanently-failing read means every player is
         // reading the client's stale ladder without knowing it.
@@ -238,7 +262,6 @@ export function BBJBasicPanel({ poolAmount = 0, highlightBB = null }: BBJBasicPa
   }, []);
 
   const tiers = dbTiers ?? fallback;
-  const isLive = dbTiers !== null;
 
   /* Highlight the player's own row from the SAME window the payout uses. When
      the live tiers are up that is min_bb/max_bb; only the fallback path is
@@ -246,7 +269,7 @@ export function BBJBasicPanel({ poolAmount = 0, highlightBB = null }: BBJBasicPa
      is exactly what disagreed with the engine. */
   const hlPct =
     typeof highlightBB === 'number' && highlightBB > 0
-      ? isLive
+      ? loadState === 'live'
         ? (tiers.find(
             (t) =>
               (t.minBB == null || highlightBB >= t.minBB) &&
@@ -328,7 +351,7 @@ export function BBJBasicPanel({ poolAmount = 0, highlightBB = null }: BBJBasicPa
       {/* A stale ladder that looks authoritative is worse than one that admits
           it. When the live schedule could not be read, say so rather than
           letting the fallback pass for the real thing. */}
-      {!isLive && (
+      {loadState === 'fallback' && (
         <p className="bbj-basic__stale">
           Showing The Published Schedule - The Live Table Could Not Be Read. Payouts Follow The
           Schedule In Force When The Hand Is Dealt.

@@ -329,3 +329,51 @@
   margin: 2px 0 1px;
   overflow-wrap: anywhere;
 }
+
+/* No pool, or the read failed. This page used to render a full jackpot screen
+   made entirely of zeros in both cases, with a transient toast as the only
+   signal - indistinguishable from a club whose jackpot is genuinely at zero. */
+.bbj-page__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 32px 16px;
+  padding: 32px 20px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  text-align: center;
+}
+
+.bbj-page__empty-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.bbj-page__empty-body {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.bbj-page__retry {
+  margin-top: 4px;
+  padding: 9px 22px;
+  border-radius: 10px;
+  border: 1px solid rgba(240, 185, 11, 0.5);
+  background: rgba(240, 185, 11, 0.12);
+  color: #f0b90b;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.bbj-page__retry:focus-visible {
+  outline: 2px solid #f0b90b;
+  outline-offset: 2px;
+}

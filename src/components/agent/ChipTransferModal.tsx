@@ -58,6 +58,8 @@ export default function ChipTransferModal({
   const [amount, setAmount] = useState<string>('');
   const [note, setNote] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
+  // Ref, not isLoading: a same-frame double tap must not run two transfers.
+  const transferInFlightRef = useRef(false);
   const [isLoadingRecipients, setIsLoadingRecipients] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -275,6 +277,8 @@ export default function ChipTransferModal({
       return;
     }
     if (!user?.id) return;
+    if (transferInFlightRef.current) return;
+    transferInFlightRef.current = true;
 
     setIsLoading(true);
     setError(null);
@@ -335,6 +339,7 @@ export default function ChipTransferModal({
       if (isMounted.current) setError(safeErrorMessage(err, 'Transfer failed. Please try again.'));
     }
     setIsLoading(false);
+    transferInFlightRef.current = false;
   };
 
   const handleClose = () => {

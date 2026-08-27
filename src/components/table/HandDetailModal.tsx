@@ -18,14 +18,38 @@
  * through the session's recent hands (newest = rightmost, like PokerBros'
  * "3/3").
  *
- * Data: the same HandRecord list HandHistoryPanel renders (adapted from the
- * hand_history table). Per-street stacks aren't stored, so the right-hand
- * column shows the RUNNING POT — computable and honest — rather than faking
- * a stack figure.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 2026-08-27 — THE DETAIL TAB IS NOW THE SHARED RUNDOWN
+ *
+ * Dan: "make sure that smarter.poker looks and feels like this with all the
+ * same data points and architecture."
+ *
+ * The Hand Detail tab renders `HandDetailView` off `buildReplay()` — the same
+ * component and the same reconstruction the Bad Beat Jackpot rundown uses, fed
+ * by `useHandReplayModel` reading the raw `hand_history` row. That replaces the
+ * hand-rolled street walk that used to live here, which was wrong in two ways
+ * this file could not see from where it sat:
+ *
+ *   - it summed `actions[].amount` for the running pot, and the engine writes
+ *     that field as the raise-TO level for bet/raise/all_in, so every raised
+ *     pot was over-counted (hand 3048511 summed to 392.20 against a real pot
+ *     of 324.20);
+ *   - its position badges came from `HandHistoryService`, which derives the
+ *     button from `players[].isButton` — a field nothing has ever written — so
+ *     it resolved to seat 1 on every hand.
+ *
+ * Both are fixed by reading the row rather than the adapter. The old markup
+ * stays as the fallback for a record whose raw row cannot be read (a cached
+ * hand, an RLS refusal), so the tab never goes blank.
+ *
+ * HAND SUMMARY is unchanged: it reads the stored per-player `result`, which is
+ * deliberate — see the note on `netOf` below.
  */
 
 import React, { useMemo, useState, useEffect } from 'react';
 import type { HandRecord } from './HandHistoryPanel';
+import HandDetailView from '../handdetail/HandDetailView';
+import { useHandReplayModel } from '../../hooks/useHandReplayModel';
 import './HandDetailModal.css';
 
 export interface HandDetailModalProps {
@@ -125,6 +149,9 @@ export function HandDetailModal({
   }, [isOpen]);
 
   const hand = hands[Math.min(index, Math.max(0, hands.length - 1))];
+
+  // The raw row behind the hand on screen, rebuilt by the shared reconstruction.
+  const { model: replay } = useHandReplayModel(isOpen && hand ? hand.id : null);
 
   const positionOf = useMemo(() => {
     const m = new Map<string, string>();
@@ -297,7 +324,9 @@ export function HandDetailModal({
 
         {/* ── Body ── */}
         <div className="hdm-body">
-          {tab === 'detail' ? (
+          {tab === 'detail' && replay ? (
+            <HandDetailView model={replay} currentUserId={heroId} />
+          ) : tab === 'detail' ? (
             <>
               {hand.streets.map((street) => {
                 const streetStartPot = runningPot;

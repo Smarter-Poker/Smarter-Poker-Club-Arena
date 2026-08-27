@@ -279,7 +279,47 @@ console.error(report.join('\n'));
 // ── SQL ────────────────────────────────────────────────────────────────────
 const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
 const jsonLit = (v) => `${q(JSON.stringify(v))}::jsonb`;
-const STAGE_LABEL = { preflop:'PreFlop', flop:'Flop', turn:'Turn', river:'River' };
+
+/**
+ * The hands above are AUTHORED in increments, because that is the only form a
+ * human can check by adding up. The engine does not write that form.
+ *
+ * server/src/engine/HandController.ts:600-724 writes `amount` as the raise-TO
+ * level for bet / raise / all_in and as the chips actually added for call. A
+ * seed that used increments everywhere would be the only rows on the platform
+ * with their own convention, and any shared reader would have to branch on
+ * `source = 'seed'` forever. So the increments are converted here, once.
+ *
+ * Verified against production hand 3048511: `raise 15`, `raise 50`, `raise 156`,
+ * `all_in 159.1`, `call 3.1` are to-levels-then-an-increment, and differencing
+ * them the way src/utils/handReplay.ts does lands on its stored pot_size of
+ * 324.20 to the penny.
+ */
+function toEngineSemantics(acts, blinds) {
+  const committed = new Map();
+  let street = null;
+  const seedStreet = (stage) => {
+    committed.clear();
+    // A blind is already committed before anyone acts, so if the SB or BB is
+    // the one who raises, the raise-TO level has to include it. None of the
+    // five hands below has a blind raise, but authoring one later must not
+    // quietly produce a to-level short by the blind.
+    if (stage === 'preflop') {
+      for (const [seat, amount] of blinds) if (amount > 0) committed.set(seat, amount);
+    }
+  };
+  return acts.map(([seat, stage, action, increment]) => {
+    if (stage !== street) {
+      street = stage;
+      seedStreet(stage);
+    }
+    const before = committed.get(seat) || 0;
+    const after = round2(before + increment);
+    committed.set(seat, after);
+    const isToLevel = action === 'bet' || action === 'raise' || action === 'all_in';
+    return { seat, stage, action, amount: isToLevel ? after : increment };
+  });
+}
 
 const out = [];
 out.push(`-- ============================================================================
@@ -334,8 +374,21 @@ out.push(`-- ===================================================================
 
 `);
 
-// -- 1. the functions
-out.push(`
+/**
+ * THE FUNCTIONS ARE NOT EMITTED HERE ANY MORE.
+ *
+ * They used to be, and that made this file a loaded gun: re-running the
+ * generator after `fn_bbj_hand_detail` had been extended elsewhere would have
+ * silently reverted it to whatever body was frozen in this script. Data and
+ * schema live in separate migrations now:
+ *
+ *   20260827_bbj_full_hand_seed.sql            fn_bbj_recent_hits -> club avatar
+ *   20260827_bbj_hand_detail_full_data_points  showdown / pots / extraBoards
+ *
+ * This generator emits DATA ONLY, and every statement is idempotent.
+ */
+const EMIT_FUNCTIONS = false;
+if (EMIT_FUNCTIONS) out.push(`
 -- ---------------------------------------------------------------------------
 -- 1. Club avatar, not the social media photo.
 -- ---------------------------------------------------------------------------
@@ -424,7 +477,7 @@ $function$;
 GRANT EXECUTE ON FUNCTION public.fn_bbj_recent_hits(uuid, integer) TO anon, authenticated, service_role;
 `);
 
-out.push(`
+if (EMIT_FUNCTIONS) out.push(`
 -- Same correction inside the hand detail: players[].avatarUrl is the club
 -- avatar. Nothing renders it today, but it is the same rule and leaving the
 -- social photo in the payload is how it gets rendered by accident later.
@@ -522,11 +575,26 @@ for (const h of HANDS) {
   const bb = h.seats.find(s => s.badBeat), hw = h.seats.find(s => s.handWinner);
 
   const players = h.seats.map(s => ({ seat:s.seat, userId:s.id, username:s.name, stack:s.stack }));
-  const actions = h.acts.map(([seat, stage, action, amount]) => {
+  const sbSeatOf = Number(Object.keys(pos).find((s) => pos[Number(s)] === 'SB'));
+  const bbSeatOf = Number(Object.keys(pos).find((s) => pos[Number(s)] === 'BB'));
+  const actions = toEngineSemantics(h.acts, [
+    [sbSeatOf, h.sb],
+    [bbSeatOf, h.bb],
+  ]).map(({ seat, stage, action, amount }) => {
     const p = h.seats.find(s => s.seat === seat);
-    return { seat, userId:p.id, action, amount, stage:STAGE_LABEL[stage] };
+    return { seat, userId: p.id, action, amount, stage };
   });
   const holeCards = Object.fromEntries(h.seats.filter(s => s.hole).map(s => [s.id, s.hole]));
+  // The muck ruling, the way the engine records it: only the two who reached
+  // showdown revealed, bad beat first.
+  const showdownReveal = [bb, hw].map((p, i) => ({
+    user_id: p.id,
+    seat: p.seat,
+    mucked: false,
+    reveal_order: i,
+    hand_name: i === 0 ? h.badBeatHand : h.handWinnerHand,
+  }));
+  const pots = [{ index: 0, amount: h.potSize, eligible: [bb.id, hw.id] }];
   const winners = [{ userId:hw.id, amount:h.award, potIndex:0, hand:{ name:h.handWinnerHand } }];
   const summary =
     `${bb.name} (${pos[bb.seat]}) ${h.badBeatHand} beaten by ${hw.name} (${pos[hw.seat]}) ` +
@@ -550,6 +618,8 @@ UPDATE public.hand_history SET
   actions          = ${jsonLit(actions)},
   winners          = ${jsonLit(winners)},
   hole_cards       = ${jsonLit(holeCards)},
+  showdown         = ${jsonLit(showdownReveal)},
+  pots             = ${jsonLit(pots)},
   winner_name      = ${q(hw.name)},
   hand_name        = ${q(h.handWinnerHand)},
   summary          = ${q(summary)},
@@ -603,14 +673,28 @@ out.push(`
 DO $$
 DECLARE
   r record;
+  v_act jsonb;
   v_recon numeric;
+  v_committed jsonb;
+  v_stage text;
+  v_seat text;
+  v_prior numeric;
+  v_inc numeric;
 BEGIN
   FOR r IN
     SELECT p.id, p.hand_number, p.total_amount, p.table_player_count,
            h.pot_size, h.small_blind, h.big_blind, h.button_seat,
-           h.players, h.actions
+           h.players, h.actions, b.sb_seat AS v_sb_seat, b.bb_seat AS v_bb_seat
     FROM public.bbj_payouts p
     JOIN public.hand_history h ON h.table_id = p.table_id AND h.hand_number = p.hand_number
+    JOIN (VALUES
+${HANDS.map((h) => {
+  const pos = positions(h.seats.map((s) => s.seat), h.button);
+  const sb = Object.keys(pos).find((s) => pos[Number(s)] === 'SB');
+  const bb2 = Object.keys(pos).find((s) => pos[Number(s)] === 'BB');
+  return `      (${q(h.payoutId)}::uuid, ${sb}, ${bb2})`;
+}).join(',\n')}
+    ) AS b(payout_id, sb_seat, bb_seat) ON b.payout_id = p.id
     WHERE p.id IN (${HANDS.map(h => q(h.payoutId)).join(', ')})
   LOOP
     -- every recipient share sums to the headline figure
@@ -625,12 +709,41 @@ BEGIN
       RAISE EXCEPTION 'hand %: recipient count does not match the seat count', r.hand_number;
     END IF;
 
-    -- the running pot the client rebuilds must land on pot_size, or it hides
-    -- the column (BBJHandDetail.tsx, potReconciles)
-    SELECT r.small_blind + r.big_blind
-           + COALESCE((SELECT sum((a->>'amount')::numeric)
-                       FROM jsonb_array_elements(r.actions) a), 0)
-      INTO v_recon;
+    -- THE POT MUST REBUILD, by the same rule the client uses.
+    --
+    -- src/utils/handReplay.ts differences a raise-TO level against what that
+    -- seat already had in on the street, because that is what the engine
+    -- writes. If the rebuild misses, HandDetailView withdraws the whole stack
+    -- column, so a seed that does not reconcile silently renders as a
+    -- second-class hand. This walks the action log exactly as the client does.
+    v_recon := r.small_blind + r.big_blind;
+    v_committed := '{}'::jsonb;
+    v_stage := NULL;
+    FOR v_act IN
+      SELECT t.a FROM jsonb_array_elements(r.actions) WITH ORDINALITY t(a, ord) ORDER BY t.ord
+    LOOP
+      IF v_stage IS DISTINCT FROM (v_act->>'stage') THEN
+        v_stage := v_act->>'stage';
+        v_committed := '{}'::jsonb;
+        -- Blinds are committed on preflop before anyone acts.
+        IF v_stage = 'preflop' THEN
+          v_committed := jsonb_build_object(
+            r.v_sb_seat::text, to_jsonb(r.small_blind),
+            r.v_bb_seat::text, to_jsonb(r.big_blind));
+        END IF;
+      END IF;
+
+      v_seat := v_act->>'seat';
+      v_prior := COALESCE((v_committed->>v_seat)::numeric, 0);
+      IF (v_act->>'action') IN ('bet', 'raise', 'all_in') THEN
+        v_inc := GREATEST(0, (v_act->>'amount')::numeric - v_prior);
+      ELSE
+        v_inc := COALESCE((v_act->>'amount')::numeric, 0);
+      END IF;
+      v_recon := v_recon + v_inc;
+      v_committed := jsonb_set(v_committed, ARRAY[v_seat], to_jsonb(v_prior + v_inc), true);
+    END LOOP;
+
     IF abs(v_recon - r.pot_size) >= 0.02 THEN
       RAISE EXCEPTION 'hand %: actions rebuild to % but pot_size is %',
         r.hand_number, v_recon, r.pot_size;

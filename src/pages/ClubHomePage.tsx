@@ -4292,7 +4292,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               const resolvedClubId = club?.id;
               let query = supabase
                 .from('tables')
-                .update({ status: 'deleted', is_active: false, is_deleted: true })
+                /* PHANTOM COLUMN FIX 2026-08-27: `tables` has no `is_active`
+                   column — this write 400'd and the delete always failed. */
+                .update({ status: 'deleted', is_deleted: true })
                 .eq('id', id);
               if (resolvedClubId) {
                 query = bbjScope.unionId

@@ -1638,18 +1638,14 @@ class TournamentService {
     // from a dead table was a false refusal gate on a money action.
     // Process rebuy via ATOMIC RPC
     // (This RPC handles the wallet deduction and logging natively. It rolls back automatically on failure.)
-    const { data, error } = await retryAsync(
-      () =>
-        supabase.rpc('process_tournament_rebuy', {
-          p_tournament_id: tournamentId,
-          p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
-          p_rebuy_type: tournament.is_reentry && !tournament.is_rebuy ? 'reentry' : 'rebuy',
-          p_cost: rebuyTotalCost,
-          p_chips: rebuyChips,
-          p_current_level: this.getCurrentLevelState(tournament).levelIndex,
-        }),
-      3
-    );
+    const { data, error } = await supabase.rpc('process_tournament_rebuy', {
+      p_tournament_id: tournamentId,
+      p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
+      p_rebuy_type: tournament.is_reentry && !tournament.is_rebuy ? 'reentry' : 'rebuy',
+      p_cost: rebuyTotalCost,
+      p_chips: rebuyChips,
+      p_current_level: this.getCurrentLevelState(tournament).levelIndex,
+    });
 
     if (error) {
       reportError(error, 'TournamentService.Rebuy_RPC_failed_No_chips_were_deducted');
@@ -1757,18 +1753,14 @@ class TournamentService {
     // from a dead table was a false refusal gate on a money action.
     // Process addon via ATOMIC RPC
     // (This handles wallet deduction, logging, and rollback natively)
-    const { data, error } = await retryAsync(
-      () =>
-        supabase.rpc('process_tournament_rebuy', {
-          p_tournament_id: tournamentId,
-          p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
-          p_rebuy_type: 'addon',
-          p_cost: addonTotalCost,
-          p_chips: addonChips,
-          p_current_level: this.getCurrentLevelState(tournament).levelIndex,
-        }),
-      3
-    );
+    const { data, error } = await supabase.rpc('process_tournament_rebuy', {
+      p_tournament_id: tournamentId,
+      p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
+      p_rebuy_type: 'addon',
+      p_cost: addonTotalCost,
+      p_chips: addonChips,
+      p_current_level: this.getCurrentLevelState(tournament).levelIndex,
+    });
 
     if (error) {
       reportError(error, 'TournamentService.Addon_process_failed_No_chips_were_deduc');
@@ -1868,18 +1860,14 @@ class TournamentService {
     // insufficient-funds error) ever ran. A "better error message" computed
     // from a dead table was a false refusal gate on a money action.
     // Process re-entry via ATOMIC RPC (same as rebuy/addon, type='reentry')
-    const { data, error } = await retryAsync(
-      () =>
-        supabase.rpc('process_tournament_rebuy', {
-          p_tournament_id: tournamentId,
-          p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
-          p_rebuy_type: 'reentry',
-          p_cost: reentryTotalCost,
-          p_chips: reentryChips,
-          p_current_level: levelState.levelIndex,
-        }),
-      3
-    );
+    const { data, error } = await supabase.rpc('process_tournament_rebuy', {
+      p_tournament_id: tournamentId,
+      p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
+      p_rebuy_type: 'reentry',
+      p_cost: reentryTotalCost,
+      p_chips: reentryChips,
+      p_current_level: levelState.levelIndex,
+    });
 
     if (error) {
       reportError(error, 'TournamentService.Reentry_RPC_failed_No_chips_were_deducte');

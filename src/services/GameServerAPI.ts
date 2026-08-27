@@ -132,6 +132,17 @@ export interface ActionResult {
    * settlement (processLeavePending) — the client must NOT touch the stack.
    */
   immediate?: boolean;
+  /**
+   * Cashier audit 2026-08-27: /addchips replies have ALWAYS carried these two
+   * and the client threw them away. `applied` is what the engine actually
+   * debited after capping to the seat's headroom — ask for 5,000 with 1,200
+   * of room and the wallet moves 1,200, while the client used to subtract
+   * the full 5,000 from every session figure. `queued` means the debit
+   * committed but the chips land at the END of the current hand
+   * (table_pending_addons), not immediately.
+   */
+  applied?: number;
+  queued?: boolean;
 }
 
 export interface PlayerActions {
@@ -474,13 +485,20 @@ export async function setPreAction(
  * @param tableId Table ID
  * @param amount Amount of chips to add
  */
-export async function addChips(tableId: string, amount: number): Promise<ActionResult> {
+export async function addChips(
+  tableId: string,
+  amount: number,
+  /** Caller-held per-attempt id (Cashier audit 2026-08-27, P0-1): hold it
+   *  across retries of the SAME attempt so a re-send after a lost response
+   *  de-duplicates server-side instead of debiting twice. */
+  opId?: string
+): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(`${GAME_SERVER_URL}/addchips`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ tableId, amount }),
+      body: JSON.stringify(opId ? { tableId, amount, opId } : { tableId, amount }),
     });
 
     if (!res.ok) {
@@ -489,10 +507,23 @@ export async function addChips(tableId: string, amount: number): Promise<ActionR
     }
 
     const data = await res.json();
-    return { success: data.success, error: data.error };
+    /* `applied` and `queued` propagate — the engine caps the top-up to the
+       seat's headroom and says what actually moved; discarding that made the
+       client account for the REQUESTED amount (Cashier audit 2026-08-27). */
+    return {
+      success: data.success,
+      error: data.error,
+      applied: typeof data.applied === 'number' ? data.applied : undefined,
+      queued: data.queued === true,
+    };
   } catch (err: any) {
     console.error(`[GameServerAPI] addChips error:`, err);
-    return { success: false, error: err.message || 'Network error' };
+    /* TRANSPORT means the OUTCOME IS UNKNOWN: the request may have reached
+       the engine and committed before the response was lost. Callers must
+       not tell the player "your wallet was not charged" on this path —
+       that claim is only true for a server refusal (Cashier audit
+       2026-08-27, P0-1). */
+    return { success: false, error: err.message || 'Network error', code: 'TRANSPORT' };
   }
 }
 
@@ -522,7 +553,9 @@ export async function removeChips(tableId: string, amount: number): Promise<Acti
     return { success: data.success, error: data.error };
   } catch (err: any) {
     console.error(`[GameServerAPI] removeChips error:`, err);
-    return { success: false, error: err.message || 'Network error' };
+    // Same TRANSPORT contract as addChips: outcome unknown, never claim
+    // "nothing moved" on this path.
+    return { success: false, error: err.message || 'Network error', code: 'TRANSPORT' };
   }
 }
 

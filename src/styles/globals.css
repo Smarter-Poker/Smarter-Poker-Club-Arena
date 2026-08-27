@@ -25,9 +25,10 @@
   --card-surface: #3a3b3c;
 
   /* ─────────────── Semantic Colors ─────────────── */
-  --success: #31a24c;
-  --success-glow: rgba(49, 162, 76, 0.4);
-  --success-dim: rgba(49, 162, 76, 0.15);
+  /* HOUSE GREEN - see club-engine.css --success-green. */
+  --success: #3fb950;
+  --success-glow: rgba(63, 185, 80, 0.4);
+  --success-dim: rgba(63, 185, 80, 0.15);
 
   --danger: #f02849;
   --danger-glow: rgba(240, 40, 73, 0.4);

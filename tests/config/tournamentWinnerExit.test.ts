@@ -166,8 +166,16 @@ describe("The champion's exit", () => {
     // If this ever stops being true, the two paths can both fire and the
     // champion gets the card twice (or the elimination toast). The guard above
     // catches the double exit; this catches the cause.
-    expect(engine).toMatch(/basePosition = Math\.max\(playingCount, bustedOrdered\.length \+ 1\)/);
-    expect(engine).toMatch(/eliminatePlayer\(ordered\[i\]\.user_id, ordered\.length \+ 1 - i\)/);
+    // 2026-08-27: both assignment sites were rewritten to walk the FREE place
+    // set instead of trusting arithmetic over a live (non-monotonic) count —
+    // the old `basePosition = Math.max(playingCount, ...)` and
+    // `ordered.length + 1 - i` expressions this used to pin re-stamped places
+    // that had already been PAID (206 duplicates across 138 tournaments).
+    // The invariant this test actually cares about is unchanged and is now
+    // enforced structurally: neither loop can ever hand out place 1.
+    expect(engine).toMatch(/while \(nextPosition >= 2 && takenPositions\.has\(nextPosition\)\)/);
+    expect(engine).toMatch(/while \(finishNext >= 2 && finishTakenPositions\.has\(finishNext\)\)/);
+    expect(engine).toMatch(/no_free_finishing_place/);
   });
 });
 

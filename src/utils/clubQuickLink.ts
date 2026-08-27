@@ -108,13 +108,20 @@ let balanceCache: { userId: string; ts: number; balances: Map<string, number> } 
 /**
  * Fetch the user's chip balance in every club they belong to, keyed by club
  * UUID. One cheap query, memoized for 30s so opening a popover twice does not
- * refetch. Returns the stale cache (or an empty map) on failure — the popover
- * simply omits balances rather than breaking.
+ * refetch.
+ *
+ * Returns NULL when the read FAILED and there is no cache to fall back on
+ * (Cashier audit 2026-08-27, the named house bug shape): the old empty-map
+ * answer flowed into `map.get(clubId) ?? 0`, so a refused/dropped
+ * club_members read told the cashout modal the player has **0 chips in this
+ * club** — Max prefilled 0, every percent button zeroed, and the local
+ * `amount > balance` check refused a cashout the server would have allowed.
+ * A stale cache still beats both answers, so it is returned when present.
  *
  * Call clearClubChipBalanceCache() after any chip movement to force a refresh;
  * the quick-link surfaces do this off the MasterBus balance events.
  */
-export async function fetchClubChipBalances(userId: string): Promise<Map<string, number>> {
+export async function fetchClubChipBalances(userId: string): Promise<Map<string, number> | null> {
   if (
     balanceCache &&
     balanceCache.userId === userId &&
@@ -130,7 +137,7 @@ export async function fetchClubChipBalances(userId: string): Promise<Map<string,
       .in('status', ACTIVE_MEMBER_STATUSES);
     if (error) {
       reportError(error, 'clubQuickLink.fetchClubChipBalances');
-      return balanceCache?.balances ?? new Map();
+      return balanceCache?.balances ?? null;
     }
     const balances = new Map<string, number>();
     for (const row of data || []) {
@@ -140,7 +147,7 @@ export async function fetchClubChipBalances(userId: string): Promise<Map<string,
     return balances;
   } catch (err) {
     reportError(err, 'clubQuickLink.fetchClubChipBalances');
-    return balanceCache?.balances ?? new Map();
+    return balanceCache?.balances ?? null;
   }
 }
 
@@ -159,6 +166,13 @@ export const CHIP_BALANCE_EVENTS = [
   'CHIPS_DISTRIBUTED',
   'BALANCE_UPDATED',
   'WALLET_REFRESHED',
+  /* Cashier audit 2026-08-27: the TABLE cashier emits these two on top-up and
+     partial cash-out (TablePage handleAddChips/handleWithdrawChips), and they
+     were missing here — so after a table chip move, the Cashier page's Max
+     button kept prefilling the pre-transaction figure for up to the 30s TTL,
+     the exact failure the subscription exists to prevent. */
+  'CHIPS_ADDED',
+  'CHIPS_WITHDRAWN',
 ] as const;
 
 /**

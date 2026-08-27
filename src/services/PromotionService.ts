@@ -404,15 +404,10 @@ class PromotionServiceClass {
     await this.claimPromotion(promo.id, userId);
 
     // Add bonus to promo wallet with audit trail
-    const { error: bonusErr } = await retryAsync(
-      () =>
-        // Round 19: prod sig (p_user_id, p_amount). p_description silently 404'd.
-        supabase.rpc('add_to_promo_wallet', {
-          p_user_id: userId,
-          p_amount: finalBonus,
-        }),
-      3
-    );
+    const { error: bonusErr } = await supabase.rpc('add_to_promo_wallet', {
+      p_user_id: userId,
+      p_amount: finalBonus,
+    });
     if (bonusErr) {
       reportError(bonusErr, 'PromotionService.Deposit_bonus_credit_failed');
       return 0;
@@ -466,15 +461,10 @@ class PromotionServiceClass {
 
     // Award referrer bonus
     const referralBonus = Math.trunc((promo.prizePool || 10) * 100) / 100;
-    const { error: refErr } = await retryAsync(
-      () =>
-        // Round 19: drop p_description (not a prod param).
-        supabase.rpc('add_to_promo_wallet', {
-          p_user_id: referrer.id,
-          p_amount: referralBonus,
-        }),
-      3
-    );
+    const { error: refErr } = await supabase.rpc('add_to_promo_wallet', {
+      p_user_id: referrer.id,
+      p_amount: referralBonus,
+    });
     if (refErr) {
       reportError(refErr, 'PromotionService.Referral_bonus_credit_failed');
       return;

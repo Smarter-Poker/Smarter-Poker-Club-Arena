@@ -235,15 +235,10 @@ export const DiamondService = {
     }
 
     // ── LEGACY / DEV FLOW: Direct RPC credit ──────────────────────────────
-    const { data, error } = await retryAsync(
-      () =>
-        // Round 19: prod sig (p_user_id, p_amount). p_reason silently 404'd.
-        supabase.rpc('fn_add_diamonds', {
-          p_user_id: userId,
-          p_amount: totalDiamonds,
-        }),
-      3
-    );
+    const { data, error } = await supabase.rpc('fn_add_diamonds', {
+      p_user_id: userId,
+      p_amount: totalDiamonds,
+    });
 
     if (error) {
       reportError(error, 'DiamondService.purchaseDiamonds.rpc', { userId, packageId });

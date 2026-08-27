@@ -102,9 +102,9 @@ function getActionColor(action: string): string {
     case 'fold':
       return '#9ca3af';
     case 'check':
-      return '#22c55e';
+      return '#3fb950';
     case 'call':
-      return '#22c55e';
+      return '#3fb950';
     case 'bet':
       return HOUSE_BLUE;
     case 'raise':
@@ -223,7 +223,7 @@ function HandEntry({
   onToggle: () => void;
   onReplay?: (hand: HandRecord) => void;
 }) {
-  const resultColor = hand.heroResult > 0 ? '#22c55e' : hand.heroResult < 0 ? '#ef4444' : '#9ca3af';
+  const resultColor = hand.heroResult > 0 ? '#3fb950' : hand.heroResult < 0 ? '#ef4444' : '#9ca3af';
 
   /* Everyone whose cards the table saw, plus anyone who took a pot. A player
      is in `holeCards` only because the server persisted a SHOWDOWN-revealed
@@ -334,7 +334,7 @@ function HandEntry({
                         <span
                           className="hh-entry__net"
                           style={{
-                            color: r.net > 0 ? '#22c55e' : r.net < 0 ? '#ef4444' : '#9ca3af',
+                            color: r.net > 0 ? '#3fb950' : r.net < 0 ? '#ef4444' : '#9ca3af',
                           }}
                         >
                           Net {r.net > 0 ? '+' : ''}
@@ -456,7 +456,7 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
               style={{
                 color:
                   sessionStats.totalResult > 0
-                    ? '#22c55e'
+                    ? '#3fb950'
                     : sessionStats.totalResult < 0
                       ? '#ef4444'
                       : '#9ca3af',

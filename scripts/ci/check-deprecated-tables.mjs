@@ -47,6 +47,18 @@ const DEPRECATED = {
   // and returns early when it fails, so everything below it is unreachable.
   hands: 'hand_history',
   hand_actions: 'hand_history.actions (jsonb)',
+  // Added 2026-08-27. The global chip pool, FROZEN since 2026-08-21 00:59 UTC
+  // with 732,591,994.33 chips stranded in it (club-arena CLAUDE.md 11.5).
+  // The rule said "nothing reads it"; eleven sites did, and because the table
+  // still HOLDS numbers the reads did not render zeros - they rendered
+  // six-day-stale, plausible, formatted lies. One sampled player read
+  // 3,313,727.73 against a true 34,818.60, and the frozen pool summed to six
+  // times the entire real economy. That is why a comment was not enough and
+  // this line exists: a read is now a build failure.
+  wallets:
+    'club_members.chip_balance / .promo_balance / .locked_chips (club-scoped, live), ' +
+    'agents.agent_wallet_balance for BUSINESS, or the fn_player_spendable_balance RPC ' +
+    'when the question is what a player can SPEND at a table',
 };
 
 /** "<path>:<table>" entries that are deliberately permitted, with a reason. */

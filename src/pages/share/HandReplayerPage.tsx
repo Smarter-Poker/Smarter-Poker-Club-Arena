@@ -262,8 +262,12 @@ export default function HandReplayerPage() {
         <div className="replayer-bg" />
 
         <div className="replayer-header-controls">
-          <button className="sound-toggle" onClick={() => setSoundEnabled(!soundEnabled)}>
-            {soundEnabled ? '🔊' : '🔇'}
+          <button
+            className="sound-toggle"
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            aria-label={soundEnabled ? 'Turn Sound Off' : 'Turn Sound On'}
+          >
+            {soundEnabled ? 'ON' : 'OFF'}
           </button>
           <div className="view-toggle">
             <button

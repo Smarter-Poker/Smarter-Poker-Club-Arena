@@ -4232,7 +4232,7 @@ export default function TablePage({
   // Returns TRUE only when the engine actually credited the stack. The cashier
   // uses this to decide whether to close; before 2026-08-20 it resolved void on
   // every rejection path, so a refused top-up closed the modal looking successful.
-  const handleAddChips = async (amount: number): Promise<boolean> => {
+  const handleAddChips = async (amount: number, opId?: string): Promise<boolean> => {
     if (!userId || userId === 'guest' || !tableId) {
       reportError(
         new Error('Cannot add chips: not authenticated'),
@@ -4251,27 +4251,54 @@ export default function TablePage({
       // so every top-up charged the player twice for a single stack increase.
       // The engine is now the sole authoritative debit; UI/session trackers update
       // only after it acks.
-      const res = await GameServerAPI.addChips(tableId, amount);
+      const res = await GameServerAPI.addChips(tableId, amount, opId);
       if (!res.success) {
         reportError(
           new Error(res.error || 'addChips rejected by engine'),
           'TablePage.addChips_engine_rejected'
         );
-        // atomic_table_addon is atomic: on failure the wallet was NOT charged.
         if (typeof window !== 'undefined') {
-          toast.error(res.error || 'Unable to add chips \u2014 your wallet was not charged.');
+          /* Cashier audit 2026-08-27 (P0-1): "your wallet was not charged"
+             is TRUE for a server refusal and FALSE for a transport failure \u2014
+             the request may have committed before the response was lost, and
+             telling a charged player they were not charged (with the modal
+             open and the amount intact) is the strongest possible invitation
+             to a double top-up. Say which case this is. */
+          if (res.code === 'TRANSPORT') {
+            toast.error(
+              'The Connection Dropped Before The Table Answered. Your Chips May Have Been Added. Check Your Stack Before Trying Again.'
+            );
+          } else {
+            toast.error(res.error || 'Unable to add chips \u2014 your wallet was not charged.');
+          }
         }
         return false;
       }
+      /* Cashier audit 2026-08-27 (P0-2): the engine caps the top-up to the
+         seat's headroom and reports what actually moved as `applied`. The
+         client used to account for the REQUESTED amount everywhere \u2014 ask for
+         5,000 with 1,200 of room and the session figures drifted by 3,800
+         for the rest of the session. Every tracker now uses `applied`. */
+      const applied = typeof res.applied === 'number' ? res.applied : amount;
+      if (typeof window !== 'undefined') {
+        if (applied < amount) {
+          toast.info(
+            `Added ${applied.toLocaleString()} Chips. That Is This Table's Maximum Top-Up Right Now.`
+          );
+        }
+        if (res.queued) {
+          toast.info('Your Chips Land When This Hand Ends.');
+        }
+      }
       // Engine ack'd the single debit -- reflect it locally + in session trackers.
-      setAccountBalance((prev) => Math.max(0, prev - amount));
-      totalBuyInRef.current += amount; // Track for session P/L
+      setAccountBalance((prev) => Math.max(0, prev - applied));
+      totalBuyInRef.current += applied; // Track for session P/L
       totalRebuysRef.current += 1; // Track rebuy count for session summary
       // Dan 2026-08-15: feed the top-up into SessionStatsService too, otherwise
       // its buyInTotal never moves and P&L reads as pure profit after a rebuy.
-      sessionStatsService.recordRebuy(tableId, amount);
+      sessionStatsService.recordRebuy(tableId, applied);
       // Update peak stack if rebuy pushes hero above previous peak
-      const newPeakCandidate = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + amount;
+      const newPeakCandidate = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + applied;
       if (newPeakCandidate > peakStackRef.current) peakStackRef.current = newPeakCandidate;
 
       // We do NOT optimistic update tableState anymore. The next WebSocket broadcast
@@ -4279,8 +4306,13 @@ export default function TablePage({
       // us the authoritative stack size.
 
       // Emit bus event so other pages (Dashboard, Profile) know about the chip change
-      const estimatedNewStack = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + amount;
-      masterBus.emit('CHIPS_ADDED', { tableId, userId, amount, newStack: estimatedNewStack });
+      const estimatedNewStack = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + applied;
+      masterBus.emit('CHIPS_ADDED', {
+        tableId,
+        userId,
+        amount: applied,
+        newStack: estimatedNewStack,
+      });
       return true;
     } catch (error) {
       reportError(error, 'TablePage.Failed_to_add_chips');
@@ -4318,7 +4350,16 @@ export default function TablePage({
           'TablePage.removeChips_engine_rejected'
         );
         if (typeof window !== 'undefined') {
-          toast.error(res.error || 'Unable to cash out chips.');
+          // Same TRANSPORT honesty as handleAddChips (Cashier audit
+          // 2026-08-27): a lost response is not a refusal — the cash-out may
+          // have committed.
+          if (res.code === 'TRANSPORT') {
+            toast.error(
+              'The Connection Dropped Before The Table Answered. Your Cash-Out May Have Gone Through. Check Your Stack And Wallet Before Trying Again.'
+            );
+          } else {
+            toast.error(res.error || 'Unable to cash out chips.');
+          }
         }
         return false;
       }
@@ -5129,9 +5170,17 @@ export default function TablePage({
          for exactly this reason. Same rule here, same table context. */
       try {
         const r = await WalletService.readPlayerBalance(userId, { tableId });
-        setBustWalletBalance(r.balance ?? 0);
+        /* NULL STAYS NULL (2026-08-27). This was `r.balance ?? 0`, which
+           collapsed "we could not find out" back into "you have no chips" —
+           the exact defect the 2026-08-25 audit removed from the tournament
+           sign-up gate, surviving here. The state is already typed
+           `number | null` so the dialog can say "unknown"; the ?? 0 was the
+           only thing stopping it. It matters more now that readPlayerBalance
+           no longer falls back to a frozen table: an unreachable RPC used to
+           answer with a stale number, and now honestly answers null. */
+        setBustWalletBalance(r.balance);
       } catch {
-        setBustWalletBalance(0);
+        setBustWalletBalance(null);
       }
       setBustRebuyOpen(true);
     })();

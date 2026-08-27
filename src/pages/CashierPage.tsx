@@ -371,7 +371,16 @@ export default function CashierPage() {
     (async () => {
       const resolved = (await resolveClubUUID(clubId)) || clubId;
       const map = await fetchClubChipBalances(user.id);
-      if (live && isMounted.current) setMyClubChips(map.get(resolved) ?? 0);
+      /* NULL map = the read FAILED with nothing cached (Cashier audit
+         2026-08-27). Collapsing that into 0 told the cashout modal the
+         player has no chips in this club: Max prefilled 0 and the local
+         amount check refused every cashout without asking the server. The
+         null state ("Still loading your club balance") already renders for
+         exactly this; keep it. A missing membership ROW in a map that DID
+         load is still a real zero. */
+      if (live && isMounted.current) {
+        setMyClubChips(map === null ? null : (map.get(resolved) ?? 0));
+      }
     })();
     return () => {
       live = false;

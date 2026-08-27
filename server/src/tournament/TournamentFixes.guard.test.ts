@@ -63,7 +63,29 @@ describe('finishing places must be distinct', () => {
     // players were stamped place 2 and EACH collected a full 2nd-place prize.
     // The idempotency key dedupes a repeated user, not a repeated PLACE.
     expect(code(ELIM)).not.toMatch(/Math\.max\(\s*2\s*,/);
-    expect(code(ELIM)).toMatch(/basePosition\s*=\s*Math\.max\(\s*playingCount/);
+  });
+
+  it('places are taken from the FREE set, not from a live count (2026-08-27)', () => {
+    // The `basePosition = Math.max(playingCount, n + 1)` arithmetic this test
+    // used to pin made places distinct WITHIN one sweep, but playingCount is
+    // not monotonic — ensureLateRegSeated promotes registered entrants to
+    // playing after eliminations begin — so a later sweep could re-stamp a
+    // place an earlier sweep had already PAID. Confirmed live: 206 duplicated
+    // places across 138 tournaments, worst case 107% of a pool disbursed.
+    // Both assignment sites now read the places already taken and walk down
+    // to a free one, so a collision is impossible by construction.
+    const elim = code(ELIM);
+    // Both sites read the taken places out of the database first...
+    expect(elim.match(/not\('position', 'is', null\)/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    // ...hold them in a set...
+    expect(elim).toMatch(/takenPositions/);
+    expect(elim).toMatch(/finishTakenPositions/);
+    // ...and skip occupied places instead of trusting arithmetic.
+    expect(
+      elim.match(/while \(\w+ >= 2 && \w+\.has\(\w+\)\)/g)?.length ?? 0
+    ).toBeGreaterThanOrEqual(2);
+    // Place 1 is the winner's and is never handed out by either loop.
+    expect(elim).toMatch(/no_free_finishing_place/);
   });
 });
 

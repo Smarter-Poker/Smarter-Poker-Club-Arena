@@ -1016,6 +1016,7 @@
     "ca_roll_hand_stats",
     "ca_roll_hand_stats_forward",
     "ca_touch_member_fee_rollup",
+    "ca_union_insurance_pnl",
     "ca_union_record_presettlement",
     "ca_union_set_statement_paid",
     "ca_union_statement_board",

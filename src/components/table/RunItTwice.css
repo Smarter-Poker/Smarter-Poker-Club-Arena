@@ -384,7 +384,7 @@
   color: #dfe8f0;
 }
 .rit-result__amount {
-  color: #4ade80;
+  color: #3fb950;
   font-weight: 700;
 }
 .rit-result__close {
@@ -425,14 +425,14 @@
 }
 
 .rit-board__run--won .rit-result__board-equity {
-  color: #4ade80;
+  color: #3fb950;
 }
 
 .rit-result__board-winner {
   margin-left: 8px;
   font-size: 11px;
   font-weight: 700;
-  color: #4ade80;
+  color: #3fb950;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

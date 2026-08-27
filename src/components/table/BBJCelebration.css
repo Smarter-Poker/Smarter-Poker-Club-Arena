@@ -228,8 +228,8 @@
 }
 
 .bbj-breakdown-table {
-  border-color: rgba(150, 206, 180, 0.4);
-  background: rgba(150, 206, 180, 0.08);
+  border-color: rgba(63, 185, 80, 0.4);
+  background: rgba(63, 185, 80, 0.08);
 }
 
 @keyframes bbjCardPop {
@@ -286,8 +286,8 @@
 .bbj-breakdown-amount {
   font-size: 20px;
   font-weight: 900;
-  color: #4ade80;
-  text-shadow: 0 0 10px rgba(74, 222, 128, 0.3);
+  color: #4dc660;
+  text-shadow: 0 0 10px rgba(63, 185, 80, 0.3);
 }
 
 .bbj-breakdown-percent {

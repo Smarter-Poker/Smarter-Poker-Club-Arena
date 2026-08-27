@@ -100,7 +100,7 @@
 
 .identity-save-btn {
   margin-top: 8px;
-  background: var(--primary-color, #0f8);
+  background: var(--primary-color, #3fb950);
   color: #000;
   border: none;
   padding: 10px;
@@ -109,7 +109,7 @@
   cursor: pointer;
 }
 .identity-save-btn:hover {
-  background: #3f9;
+  background: #4dc660;
 }
 
 /* ── ALIAS TOGGLE ────────────────────────────────────────────────────────────
@@ -148,8 +148,8 @@
 }
 
 .tsp-toggle--on .tsp-toggle__track {
-  background-color: #22c55e;
-  border: 2px solid #4ade80;
+  background-color: #3fb950;
+  border: 2px solid #4dc660;
 }
 
 .tsp-toggle--off .tsp-toggle__track {

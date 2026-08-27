@@ -55,9 +55,9 @@ function getTypeColor(type: PlayerType): string {
     case 'Rock':
       return '#93c5fd'; // Light blue
     case 'TAG':
-      return '#22c55e'; // Green - solid
+      return '#3fb950'; // Green - solid
     case 'Reg':
-      return '#86efac'; // Light green
+      return '#4dc660'; // Light green
     case 'LAG':
       return '#f59e0b'; // Amber - aggressive
     case 'Maniac':
@@ -82,7 +82,7 @@ function getHeatColor(level: 0 | 1 | 2 | 3): string {
     case 0:
       return '#3b82f6'; // Blue - tight
     case 1:
-      return '#22c55e'; // Green - normal
+      return '#3fb950'; // Green - normal
     case 2:
       return '#f59e0b'; // Amber - loose
     case 3:
@@ -120,7 +120,7 @@ const MiniHUD = memo(
     // Color-code VPIP/PFR values: <20% = tight (blue), 20-40% = normal (green), >40% = loose (orange), >60% = whale (red)
     const getVpipColor = (vpip: number) => {
       if (vpip < 20) return '#3b82f6'; // Blue - tight
-      if (vpip < 40) return '#22c55e'; // Green - normal
+      if (vpip < 40) return '#3fb950'; // Green - normal
       if (vpip < 60) return '#f59e0b'; // Orange - loose
       return '#ef4444'; // Red - whale
     };

@@ -63,7 +63,7 @@ export function MiniStatsCard({
   if (!isSeated && !isTournament) return null;
 
   const pnl = currentStack - totalBuyIn;
-  const pnlColor = pnl >= 0 ? 'var(--success, #31A24C)' : 'var(--danger, #F02849)';
+  const pnlColor = pnl >= 0 ? 'var(--success, #3fb950)' : 'var(--danger, #F02849)';
   const pnlSign = pnl >= 0 ? '+' : '';
   const vpipPct = handsPlayed > 0 ? Math.round((vpipCount / handsPlayed) * 100) : 0;
   /* `winRate` deleted 2026-08-25: computed on every render and read by

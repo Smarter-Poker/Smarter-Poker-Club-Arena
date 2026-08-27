@@ -184,16 +184,19 @@ const railGapPx = (a: { x: number; y: number }, b: { x: number; y: number }) =>
   Math.hypot((a.x - b.x) * 6.05, (a.y - b.y) * 10);
 
 describe('the seats under the top cap are not crowded', () => {
+  /* Dan 2026-08-26 mobile pass, item 3: the side rails moved from x 10.5/89.5
+     to x 8/92 — off the felt, toward the screen edges. The y values these
+     tests pin are unchanged. */
   it('9-max raised the left/right-high pair from 36 to 30', () => {
     const ring = seatLayoutFor(9);
-    expect(ring[3]).toEqual({ x: 10.5, y: 30 });
-    expect(ring[6]).toEqual({ x: 89.5, y: 30 });
+    expect(ring[3]).toEqual({ x: 8, y: 30 });
+    expect(ring[6]).toEqual({ x: 92, y: 30 });
   });
 
   it('8-max had the same crowding and got the same fix, 28 to 23', () => {
     const ring = seatLayoutFor(8);
-    expect(ring[3]).toEqual({ x: 10.5, y: 23 });
-    expect(ring[5]).toEqual({ x: 89.5, y: 23 });
+    expect(ring[3]).toEqual({ x: 8, y: 23 });
+    expect(ring[5]).toEqual({ x: 92, y: 23 });
   });
 
   it('7-max was already even under the cap and is deliberately untouched', () => {
@@ -201,8 +204,8 @@ describe('the seats under the top cap are not crowded', () => {
     // already even. 7-max's uneven leg is the 449px hero-to-first-seat run, and
     // raising these seats would only widen it.
     const ring = seatLayoutFor(7);
-    expect(ring[2]).toEqual({ x: 10.5, y: 33 });
-    expect(ring[5]).toEqual({ x: 89.5, y: 33 });
+    expect(ring[2]).toEqual({ x: 8, y: 33 });
+    expect(ring[5]).toEqual({ x: 92, y: 33 });
   });
 
   it.each([8, 9] as const)(

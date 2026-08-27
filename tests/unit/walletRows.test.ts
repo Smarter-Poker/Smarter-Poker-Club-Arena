@@ -53,12 +53,12 @@ describe('club wallet rows by role', () => {
 
   it('sub agents and agents add an agent wallet and a promo wallet, never the bank', () => {
     for (const r of ['sub_agent', 'agent'] as const) {
-      expect(clubWalletRows(r)).toEqual(['player_wallet', 'agent_wallet', 'promo_wallet']);
+      expect(clubWalletRows(r)).toEqual(['promo_wallet', 'agent_wallet', 'player_wallet']);
       // Standalone makes no difference: no bank means no rake treasury either.
       expect(clubWalletRows(r, { standalone: true })).toEqual([
-        'player_wallet',
-        'agent_wallet',
         'promo_wallet',
+        'agent_wallet',
+        'player_wallet',
       ]);
     }
   });
@@ -66,10 +66,10 @@ describe('club wallet rows by role', () => {
   it('the four bank roles add the Club Bank, in a union', () => {
     for (const r of BANK_ROLES) {
       expect(clubWalletRows(r, { standalone: false })).toEqual([
-        'player_wallet',
-        'agent_wallet',
-        'promo_wallet',
         'club_bank',
+        'promo_wallet',
+        'agent_wallet',
+        'player_wallet',
       ]);
     }
   });
@@ -77,10 +77,10 @@ describe('club wallet rows by role', () => {
   it('a STANDALONE club also shows its own Rake Treasury', () => {
     for (const r of BANK_ROLES) {
       expect(clubWalletRows(r, { standalone: true })).toEqual([
-        'player_wallet',
-        'agent_wallet',
-        'promo_wallet',
         'club_bank',
+        'promo_wallet',
+        'agent_wallet',
+        'player_wallet',
         'rake_treasury',
         'backup_bbj',
       ]);
@@ -94,12 +94,6 @@ describe('club wallet rows by role', () => {
         expect(rows).not.toContain('club_bank');
         expect(rows).not.toContain('rake_treasury');
       }
-    }
-  });
-
-  it('the player wallet leads every stack - it is the wallet you buy in from', () => {
-    for (const r of CLUB_ROLES) {
-      expect(clubWalletRows(r, { standalone: true })[0]).toBe('player_wallet');
     }
   });
 });

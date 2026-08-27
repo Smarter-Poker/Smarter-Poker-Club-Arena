@@ -68,10 +68,14 @@ describe('the balance_after ambiguity is documented, not silently redefined', ()
 });
 
 describe('the two items that were NOT bugs stay unchanged', () => {
-  it('loadPendingCount still depends only on clubUuid — no TDZ to fix', () => {
+  it('loadPendingCount counts only the requests the viewer can act on', () => {
+    // 2026-08-26 cashier audit: fn_respond_chip_request lets agent-tier roles
+    // answer only requests ADDRESSED to them, so the badge now scopes its
+    // count the same way and legitimately depends on myRole and user?.id too.
+    // All three are declared above the callback, so there is still no TDZ.
     const i = CASHIER.indexOf('const loadPendingCount = useCallback');
     expect(i).toBeGreaterThan(-1);
-    expect(CASHIER.slice(i, i + 600)).toMatch(/\}, \[clubUuid\]\);/);
+    expect(CASHIER.slice(i, i + 1400)).toMatch(/\}, \[clubUuid, myRole, user\?\.id\]\);/);
   });
 
   it('the aria-controls targets still exist, so nothing was "fixed" there', () => {

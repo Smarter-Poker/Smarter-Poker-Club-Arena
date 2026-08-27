@@ -8,7 +8,7 @@
  */
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { dealerButtonPosition, type Size } from './tableGeometry';
+import { dealerButtonPosition, seatPodPx, type Size } from './tableGeometry';
 import { soundService } from '../../services/SoundService';
 
 export interface DealerButtonProps {
@@ -109,7 +109,21 @@ export function DealerButton({
   // it belongs beside (item 13). Handed the MEASURED table shape when there is
   // one (see the layout effect above); the module's own 605/1000 default only
   // covers the very first paint, before the element exists to measure from.
-  const { x: btnX, y: btnY } = dealerButtonPosition(pos, scalerSize ?? undefined);
+  // The third argument is NOT the puck's own rail - the puck still stands at
+  // BUTTON_RAIL_RATIO of the common rail. It is the seat's POD, and it reaches
+  // the module for one reason: since 2026-08-26 the bet chips walk far enough
+  // to clear that pod, so the module has to know where the chips really are
+  // before it can judge whether the two markers are far enough apart. Handing
+  // it nothing would have it dodge a stack that is no longer there.
+  // Hero-ness from the ring POSITION, the same test TablePage tags the hero
+  // wrapper with, never from the seat index.
+  const { x: btnX, y: btnY } = dealerButtonPosition(
+    pos,
+    scalerSize ?? undefined,
+    typeof window === 'undefined'
+      ? undefined
+      : seatPodPx(window.innerWidth, pos.y >= 100 && pos.x === 50)
+  );
 
   // Only position is inlined — every other visual property lives on the
   // `.dealer-button` CSS class so theme tokens, drop-in animation, and the

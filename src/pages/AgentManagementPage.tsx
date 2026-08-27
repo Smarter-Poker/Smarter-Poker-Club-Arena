@@ -86,7 +86,9 @@ export default function AgentManagementPage() {
   const [commissionAgentId, setCommissionAgentId] = useState<string | null>(null);
   const [commissionAgentName, setCommissionAgentName] = useState<string>('');
   const [showPlayerInviteModal, setShowPlayerInviteModal] = useState(false);
-  const [playerInviteAgentId, setPlayerInviteAgentId] = useState<string | null>(null);
+  // The agent's USER id, not the agents-table primary key. It used to hold
+  // `agent.id` (the PK) and hand that to writes that wanted a user id.
+  const [playerInviteAgentUserId, setPlayerInviteAgentUserId] = useState<string | null>(null);
 
   // Confirm modal state for destructive actions
   const [confirmAction, setConfirmAction] = useState<{
@@ -775,7 +777,7 @@ export default function AgentManagementPage() {
                         <button
                           className={`${styles.actionBtn}`}
                           onClick={() => {
-                            setPlayerInviteAgentId(agent.id);
+                            setPlayerInviteAgentUserId(agent.userId);
                             setShowPlayerInviteModal(true);
                           }}
                         >
@@ -875,6 +877,11 @@ export default function AgentManagementPage() {
         {activeTab === 'players' && (
           <div className={styles.playersSection}>
             <PlayerSearch
+              /* Scopes the search to THIS club. The prop was declared on
+                 PlayerSearch all along and never passed, so a staff member on
+                 one club's Players tab searched every profile on the platform,
+                 email included. */
+              clubId={clubId}
               onPlayerSelect={(player) => {
                 toast.info(`Selected: ${player.username}`);
               }}
@@ -1489,9 +1496,9 @@ export default function AgentManagementPage() {
         isOpen={showPlayerInviteModal}
         onClose={() => {
           setShowPlayerInviteModal(false);
-          setPlayerInviteAgentId(null);
+          setPlayerInviteAgentUserId(null);
         }}
-        agentId={playerInviteAgentId || ''}
+        agentUserId={playerInviteAgentUserId || ''}
         clubId={clubId || ''}
         onPlayerAdded={() => {
           // Refresh agents

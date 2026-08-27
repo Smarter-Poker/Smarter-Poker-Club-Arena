@@ -39,6 +39,12 @@ import { formatPopupText } from '../../utils/popupStyle';
 import { reportError } from '../../utils/errorReporter';
 import { busToast } from '../../core/MasterBus';
 import { measureTopChromeBottom, TOP_CHROME_SELECTORS } from './topChrome';
+import {
+  rankOverlayAnnouncements,
+  overlayMessage,
+  type OverlayAnnouncement,
+  type OverlayCandidate,
+} from '../../utils/overlayAnnouncements';
 import './TournamentStartingTicker.css';
 
 /** How far ahead an event counts as "about to start". */
@@ -46,6 +52,14 @@ const LEAD_MS = 5 * 60 * 1000;
 /** How often we ask the database. The countdown itself ticks locally. */
 const POLL_MS = 30_000;
 const DISMISS_KEY = 'ca_mtt_ticker_dismissed';
+/* Overlay announcements are dismissed SEPARATELY from starting-soon ones.
+   They are a different claim about a different event and a player who closed
+   "starts in 2:14" has not said anything about "8,400 overlay". */
+const OVERLAY_DISMISS_KEY = 'ca_overlay_ticker_dismissed';
+
+interface OverlayState {
+  items: OverlayAnnouncement[];
+}
 
 interface UpcomingTournament {
   id: string;
@@ -91,6 +105,14 @@ export function TournamentStartingTicker() {
   const [upcoming, setUpcoming] = useState<UpcomingTournament[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [dismissed, setDismissed] = useState<Set<string>>(readDismissed);
+  const [overlays, setOverlays] = useState<OverlayAnnouncement[]>([]);
+  const [overlayDismissed, setOverlayDismissed] = useState<Set<string>>(() => {
+    try {
+      return new Set<string>(JSON.parse(sessionStorage.getItem(OVERLAY_DISMISS_KEY) || '[]'));
+    } catch {
+      return new Set();
+    }
+  });
   const clubIdsRef = useRef<string[] | null>(null);
 
   /* Dan 2026-08-21: "it should play UNDER the global header, not through it."
@@ -260,10 +282,53 @@ export function TournamentStartingTicker() {
           .order('start_time', { ascending: true })
           .limit(5);
 
-        const [{ data, error }, myRegs] = await Promise.all([
+        /* ── OVERLAY ANNOUNCEMENTS (Dan 2026-08-26) ────────────────────────
+           "alerting players if there is an overlay or potential overlay to
+           jump in and play."
+
+           A SEPARATE query, not a widening of the one above, because the two
+           announcements answer different questions on different clocks. The
+           starting-soon strip looks five MINUTES ahead at events that have not
+           started; an overlay speaks only about an event that is already
+           running with late registration still open - a state the query above
+           excludes on purpose. Widening it would have dragged running events
+           into the "starts in 0:00" copy.
+
+           Scoped to the same clubs and the same MTT-only rule: a player is
+           never told about money they cannot go and win. */
+        /* Dan 2026-08-26: overlays are announced ONLY for events currently
+           running — a future event's shortfall is a field that has not
+           arrived, not an overlay. ANNOUNCED/REGISTERING are gone from the
+           status list, and the row now carries blind_structure +
+           level_started_at so overlayFor can place the 75%-of-late-reg
+           gate exactly (it fails closed without them). */
+        const overlayPromise = supabase
+          .from('tournaments')
+          .select(
+            'id, name, status, start_time, guaranteed_prize, prize_pool, current_players, buy_in_amount, late_reg_levels, late_reg_mins, started_at, current_level, max_players, blind_structure, level_started_at'
+          )
+          .in('club_id', clubIds)
+          .eq('tournament_type', 'MTT')
+          .gt('guaranteed_prize', 0)
+          .in('status', ['RUNNING', 'IN_PROGRESS', 'LATE_REG', 'LATE_REGISTRATION'])
+          .order('guaranteed_prize', { ascending: false })
+          .limit(25);
+
+        const [{ data, error }, myRegs, overlayRes] = await Promise.all([
           upcomingPromise,
           registrationsPromise,
+          overlayPromise,
         ]);
+
+        if (!cancelled) {
+          if (overlayRes.error) {
+            // Same rule as the query above: report it rather than let a
+            // permanently broken query look like a quiet schedule.
+            reportError(overlayRes.error, 'TournamentStartingTicker.fetchOverlays');
+          } else {
+            setOverlays(rankOverlayAnnouncements((overlayRes.data ?? []) as OverlayCandidate[]));
+          }
+        }
 
         if (error) {
           // Reported, not swallowed. The bar correctly renders NOTHING on a
@@ -338,6 +403,11 @@ export function TournamentStartingTicker() {
     [upcoming, dismissed, now]
   );
 
+  const liveOverlays = useMemo(
+    () => overlays.filter((o) => !overlayDismissed.has(o.id)),
+    [overlays, overlayDismissed]
+  );
+
   const notifiedRef = useRef<Record<string, { fiveMin: boolean; ninetySec: boolean }>>({});
   const upcomingRef = useRef(upcoming);
   useEffect(() => {
@@ -396,29 +466,64 @@ export function TournamentStartingTicker() {
     });
   }, []);
 
-  if (live.length === 0) return null;
+  /* Dismissed separately from starting-soon. Closing "starts in 2:14" says
+     nothing about whether you want to hear that an event is 8,400 light. */
+  const dismissOverlay = useCallback((id: string) => {
+    setOverlayDismissed((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      try {
+        sessionStorage.setItem(OVERLAY_DISMISS_KEY, JSON.stringify([...next]));
+      } catch {
+        /* a full or disabled sessionStorage must not break the announcement */
+      }
+      return next;
+    });
+  }, []);
+
+  if (live.length === 0 && liveOverlays.length === 0) return null;
 
   // Outside a club there is nothing to announce: /clubs and /table only.
   if (!insideClub) return null;
 
+  /* ONE BAR, AND THE OVERLAY WINS IT.
+     Dan 2026-08-26 asked for overlay announcements "to jump in and play", and
+     an overlay is a strictly stronger reason to act than a countdown: the
+     countdown says an event is about to start, the overlay says there is money
+     on the table that nobody has paid for. Stacking a second strip over the
+     felt was already rejected for starting-soon (see below), and the reasoning
+     has not changed - so when both have something to say, the overlay takes
+     the bar and the countdown waits for the next poll. */
+  const showingOverlay = liveOverlays.length > 0;
+
   // One bar. If two events land in the same window the marquee carries both
   // rather than stacking bars over the felt.
-  const primary = live[0];
+  const primary = showingOverlay ? null : live[0];
+  const primaryOverlay = showingOverlay ? liveOverlays[0] : null;
+
+  /* Whichever source owns the bar, the click target, the title and the close
+     button all have to point at THAT event. Resolving them once here keeps the
+     JSX below from having to branch in five places - and keeps the union rule
+     intact: `/tournaments/:id`, never a club id. */
+  const targetId = primaryOverlay ? primaryOverlay.id : primary?.id;
+  const targetName = primaryOverlay ? primaryOverlay.name : primary?.name || 'Tournament';
 
   // Dan 2026-08-21: house popup rule applies here too - First Letter Of
   // Every Word Capitalized, hyphenated words included ("Buy-In 22").
-  const message = live
-    .map((t) =>
-      formatPopupText(
-        `${formatGameTitle(t.name)} starts in ${countdown(t.startsAt - now)}` +
-          (t.buyIn > 0 ? ` · buy-in ${t.buyIn.toLocaleString()}` : ' · freeroll') +
-          // "entered", not "registered": this is tournaments.current_players,
-          // a registration COUNTER that is incremented on entry and never
-          // decremented, so it is an entry total and not a live head count.
-          ` · ${t.registered.toLocaleString()} entered`
-      )
-    )
-    .join('        •        ');
+  const message = showingOverlay
+    ? liveOverlays.map((o) => formatPopupText(overlayMessage(o))).join('        •        ')
+    : live
+        .map((t) =>
+          formatPopupText(
+            `${formatGameTitle(t.name)} starts in ${countdown(t.startsAt - now)}` +
+              (t.buyIn > 0 ? ` · buy-in ${t.buyIn.toLocaleString()}` : ' · freeroll') +
+              // "entered", not "registered": this is tournaments.current_players,
+              // a registration COUNTER that is incremented on entry and never
+              // decremented, so it is an entry total and not a live head count.
+              ` · ${t.registered.toLocaleString()} entered`
+          )
+        )
+        .join('        •        ');
 
   return (
     <div
@@ -433,7 +538,21 @@ export function TournamentStartingTicker() {
          Only the strip that actually touches top: 0 owes the inset. */
       style={{ top: headerBottom, paddingTop: headerBottom > 0 ? 0 : undefined }}
     >
-      <span className="mtt-ticker__flag">STARTING SOON</span>
+      <span
+        className={
+          primaryOverlay
+            ? `mtt-ticker__flag mtt-ticker__flag--overlay${
+                primaryOverlay.tier === 'live' ? ' mtt-ticker__flag--overlay-live' : ''
+              }`
+            : 'mtt-ticker__flag'
+        }
+      >
+        {primaryOverlay
+          ? primaryOverlay.tier === 'live'
+            ? 'OVERLAY'
+            : 'POTENTIAL OVERLAY'
+          : 'STARTING SOON'}
+      </span>
 
       {/* Dan 2026-08-23: "if you click the ticker for the tournament running,
           it should take you directly to the tournament registration page...
@@ -453,10 +572,10 @@ export function TournamentStartingTicker() {
       <button
         className="mtt-ticker__track"
         onClick={() => {
-          if (primary.id) navigate(`/tournaments/${primary.id}`);
+          if (targetId) navigate(`/tournaments/${targetId}`);
           else navigate('/tournaments');
         }}
-        title={`Register For ${formatGameTitle(primary.name)}`}
+        title={`Register For ${formatGameTitle(targetName)}`}
       >
         {/* Duplicated so the marquee wraps seamlessly rather than snapping
             back to an empty bar. aria-hidden on the copy keeps a screen reader
@@ -471,8 +590,8 @@ export function TournamentStartingTicker() {
 
       <button
         className="mtt-ticker__close"
-        onClick={() => dismiss(primary.id)}
-        aria-label={`Dismiss the announcement for ${primary.name}`}
+        onClick={() => (primaryOverlay ? dismissOverlay(primaryOverlay.id) : dismiss(primary!.id))}
+        aria-label={`Dismiss the announcement for ${targetName}`}
       >
         ×
       </button>

@@ -14,6 +14,7 @@ import { reportError } from '../../utils/errorReporter';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 // Whole-number tournament money (Dan 2026-08-20).
 import { money } from '../../utils/buyIn';
+import { chipsCompact } from './details/types';
 
 interface Tournament {
   id: string;
@@ -439,7 +440,10 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
       </div>
 
       {/* Title */}
-      <h3 className={styles.title}>{formatGameTitle(tournament.name)}</h3>
+      <h3 className={styles.title}>
+        {tournament.guaranteedPrize && tournament.guaranteedPrize > 0 ? `${chipsCompact(tournament.guaranteedPrize)} GTD ` : ''}
+        {formatGameTitle(tournament.name)}
+      </h3>
 
       {/* Info Grid */}
       <div className={styles.info}>

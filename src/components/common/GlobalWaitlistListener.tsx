@@ -92,31 +92,22 @@ export default function GlobalWaitlistListener() {
         const vacatedTableId = (payload.old as any)?.table_id;
         if (!vacatedTableId) return;
 
+        /* Dan 2026-08-26 waitlist fix — this used to AUTO-NAVIGATE whoever
+           read `position === 1` off their own row. That column is NOT NULL
+           DEFAULT 1 and is never renumbered, so effectively EVERYONE was
+           "#1", stale left/seated rows included, and players got yanked to
+           tables they had no claim on. The seat OFFER is now driven by the
+           engine's authoritative claim — the row flipping to 'notified',
+           handled on the watch channel below. This handler only refreshes
+           the queue-position badge, from a real FIFO count. */
         try {
-          // Immediately query if the user is #1 on this table's waitlist
-          const { data, error: waitlistErr } = await supabase
-            .from('table_waitlist')
-            .select('id, position, tables(name)')
-            .eq('user_id', user.id)
-            .eq('table_id', vacatedTableId)
-            .maybeSingle();
-          if (waitlistErr) reportError(waitlistErr, 'GlobalWaitlistListener.Query_failed');
-
-          if (data && data.position === 1) {
-            const tableName = (data.tables as any)?.name || 'the table';
-            toast.success(`Seat available at ${tableName}! Joining in 3s...`);
-            // Auto-navigate to the table where the seat opened
-            setTimeout(() => {
-              navigate(`/table/${vacatedTableId}`);
-            }, 3000);
-          }
-
-          // Emit position change for any waitlist entry
-          if (data) {
+          const { waitlistService } = await import('../../services/WaitlistService');
+          const pos = await waitlistService.getPosition(vacatedTableId);
+          if (pos && pos.status === 'waiting' && pos.position > 0) {
             masterBus.emit('WAITLIST_POSITION_CHANGED', {
               tableId: vacatedTableId,
-              position: data.position,
-              tableName: (data.tables as any)?.name || 'Unknown',
+              position: pos.position,
+              tableName: 'Unknown',
             });
           }
         } catch (err) {
@@ -190,10 +181,14 @@ export default function GlobalWaitlistListener() {
   const refreshWatchedTables = useCallback(async () => {
     if (!user?.id || cleanedUpRef.current) return;
     try {
+      // ACTIVE rows only (2026-08-26): left/seated/cleared/expired rows kept
+      // dead tables in the watched set — and kept "You Are Waitlisted" alive
+      // for queues the player was no longer in.
       const { data, error } = await supabase
         .from('table_waitlist')
         .select('table_id')
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .in('status', ['waiting', 'notified']);
       if (error) {
         reportError(error, 'GlobalWaitlistListener.refreshWatchedTables');
         return;
@@ -241,7 +236,28 @@ export default function GlobalWaitlistListener() {
             table: 'table_waitlist',
             filter: `user_id=eq.${user.id}`,
           },
-          () => {
+          (payload) => {
+            /* ── THE SEAT OFFER (Dan 2026-08-26) ──────────────────────────
+               The engine claims the queue head by flipping the row to
+               'notified' (notifyWaitlistSeatOpen). That UPDATE lands here on
+               the player's own realtime channel — the authoritative "your
+               seat is open" signal. Show a clickable popup that takes them
+               straight to their table; the push notification and the
+               notifications-page row are the out-of-app copies of the same
+               offer. */
+            const newRow = (payload as any).new;
+            const oldRow = (payload as any).old;
+            if (
+              (payload as any).eventType === 'UPDATE' &&
+              newRow?.status === 'notified' &&
+              oldRow?.status !== 'notified' &&
+              newRow?.table_id
+            ) {
+              const offeredTableId = String(newRow.table_id);
+              toast.success('A Seat Just Opened For You. Tap Here To Take It.', 15000, () =>
+                navigate(`/table/${offeredTableId}`)
+              );
+            }
             void refreshWatchedTables();
             masterBus.emit('WAITLIST_CHANGED', undefined as void);
           }

@@ -17,7 +17,7 @@ import { supabase } from './supabase.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
-import { buyInBBFor, isActiveNow, occupancyTargetFor } from './HorseBehavior.js';
+import { buyInBBFor, gameLaneFor, isActiveNow, occupancyTargetFor } from './HorseBehavior.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -243,6 +243,8 @@ export class HorseFleetManager {
       const already = new Set((existing ?? []).map((r) => r.user_id as string));
       const pool = validHorses.filter((h) => {
         if (already.has(h.id)) return false;
+        // Game lanes (Dan 2026-08-26): events-only horses never queue for cash.
+        if (gameLaneFor(h.id) === 'events') return false;
         if (!isActiveNow(h.id, hourUTC)) return false;
         const at = horseTables.get(h.id);
         // Somebody queueing for a game they are already sitting in makes no
@@ -271,6 +273,50 @@ export class HorseFleetManager {
       if (insErr) throw new Error(insErr.message);
     } catch (err) {
       reportError(err, 'HorseFleet.ensureWaitlist');
+    }
+  }
+
+  /**
+   * Dan 2026-08-26: "the 3rd image says there are 54 waiting — fix this bug."
+   *
+   * ensureWaitlist only ever GREW the queue. Nothing removed a horse's row
+   * when the vibe cooled or the table drained, so queues inflated without
+   * bound and a table with open seats could show dozens "waiting" — real DB
+   * rows, all of them horses, none of them ever going to sit. This is the
+   * missing half: horse rows beyond what the current vibe wants are marked
+   * 'cleared'. Human rows are NEVER touched here — a person's place in line
+   * is theirs until they sit, leave, or their seat offer expires.
+   *
+   * `keep` is the TOTAL queue size the table should show; humans count
+   * toward it first, horses fill the remainder.
+   */
+  private async pruneHorseWaitlist(
+    tableId: string,
+    keep: number,
+    horseIdSet: Set<string>
+  ): Promise<void> {
+    try {
+      const { data, error } = await supabase
+        .from('table_waitlist')
+        .select('id, user_id, position, status')
+        .eq('table_id', tableId)
+        .in('status', ['waiting', 'notified']);
+      if (error) throw new Error(error.message);
+      const rows = data ?? [];
+      const humanCount = rows.filter((r) => !horseIdSet.has(r.user_id as string)).length;
+      const horseKeep = Math.max(0, keep - humanCount);
+      const horseRows = rows
+        .filter((r) => horseIdSet.has(r.user_id as string))
+        .sort((a, b) => (Number(a.position) || 0) - (Number(b.position) || 0));
+      if (horseRows.length <= horseKeep) return;
+      const excess = horseRows.slice(horseKeep).map((r) => r.id);
+      const { error: updErr } = await supabase
+        .from('table_waitlist')
+        .update({ status: 'cleared' })
+        .in('id', excess);
+      if (updErr) throw new Error(updErr.message);
+    } catch (err) {
+      reportError(err, 'HorseFleet.pruneHorseWaitlist');
     }
   }
 
@@ -370,6 +416,10 @@ export class HorseFleetManager {
           max_players: clampSeatsForVariant(config.gameVariant, config.maxPlayers),
           current_players: 0,
           status: 'waiting',
+          // ALL-CASH INSURANCE 2026-08-26 (Dan: "publish this for all cash
+          // games") - fleet cash tables are born with insurance on; the
+          // 20260827 migration flipped the existing fleet.
+          insurance_enabled: true,
         });
 
         if (error) {
@@ -554,6 +604,25 @@ export class HorseFleetManager {
 
       let totalSeated = 0;
 
+      // ── FLEET ACTIVITY FLOOR (Dan 2026-08-26: "a minimum of 1 out of 3
+      // horses should be playing") ──────────────────────────────────────────
+      // Measured from live seats, the only truth about where a horse is
+      // (horse_status is never flipped for cash play). Tournament seats are
+      // not in allActiveSeats, so this UNDERCOUNTS "playing" and the floor is
+      // conservative — it can only over-deliver. When the seated fraction
+      // drops under a third, every non-empty table wants one more seat this
+      // cycle, which lifts the floor without thrashing any single game.
+      const seatedHorseCount = new Set(
+        allActiveSeats.filter((s) => horseIdSet.has(s.user_id)).map((s) => s.user_id)
+      ).size;
+      const fleetBoost =
+        validHorses.length > 0 && seatedHorseCount < Math.ceil(validHorses.length / 3);
+      if (fleetBoost) {
+        console.log(
+          `[HorseFleet] Activity floor: ${seatedHorseCount}/${validHorses.length} horses seated (<1/3) — boosting seat targets this cycle`
+        );
+      }
+
       // V8: tables with a short-handed HUMAN seed first (never leave a human
       // stranded); everything else keeps its natural order.
       const humanShort = (t: any): boolean => {
@@ -585,22 +654,35 @@ export class HorseFleetManager {
           // is deterministic in (table, bucket) so it holds still long enough
           // to be read instead of thrashing seats every 30s cycle.
           const humanAtTable = tableOccupiedSeats.some((x) => !horseIdSet.has(x.user_id));
-          const { seatTarget, waitTarget, vibe } = occupancyTargetFor(
-            table.id,
-            table.max_players,
-            humanAtTable
-          );
-          void vibe;
+          const target = occupancyTargetFor(table.id, table.max_players, humanAtTable);
+          const { waitTarget, vibe } = target;
+          let { seatTarget } = target;
+          // Activity floor (see fleetBoost above): held-empty tables stay
+          // empty — the floor is lifted by the tables that are running.
+          if (fleetBoost && vibe !== 'empty') {
+            seatTarget = Math.min(table.max_players, seatTarget + 1);
+          }
 
           // A full table with a vibe that says "hot" grows a WAITING LIST
           // rather than simply being full - that queue is the thing that makes
           // a game look like the game everyone wants.
+          //
+          // Dan 2026-08-26: and ONLY a genuinely full table. A queue behind a
+          // table with open seats is a visible lie ("Waiting 54" beside an
+          // OPEN seat map), so any table that is not at max prunes its horse
+          // rows to zero — including the case where the vibe target is below
+          // max. Humans in the queue are never touched.
           if (currentCount >= seatTarget) {
-            if (waitTarget > 0) {
+            if (waitTarget > 0 && currentCount >= table.max_players) {
+              await this.pruneHorseWaitlist(table.id, waitTarget, horseIdSet);
               await this.ensureWaitlist(table.id, waitTarget, validHorses, horseTables, hourUTC);
+            } else {
+              await this.pruneHorseWaitlist(table.id, 0, horseIdSet);
             }
             continue;
           }
+          // Below target ⇒ the table has open seats ⇒ no horse queues here.
+          await this.pruneHorseWaitlist(table.id, 0, horseIdSet);
           let seatsNeeded = seatTarget - currentCount;
 
           // V8 STAGGERED ARRIVALS: humans trickle in — so do horses. At most
@@ -623,6 +705,9 @@ export class HorseFleetManager {
           // 2. Not exceeding 4 max tables
           const MAX_TABLES_PER_HORSE = 4;
           const candidateHorses = validHorses.filter((h) => {
+            // Dan 2026-08-26 game lanes: a third of the stable plays events
+            // only (tournaments / spins / heads-up) and never sits at cash.
+            if (gameLaneFor(h.id) === 'events') return false;
             const tablesForHorse = horseTables.get(h.id);
             if (!tablesForHorse) return true;
             if (tablesForHorse.size >= MAX_TABLES_PER_HORSE) return false;
@@ -882,6 +967,8 @@ export class HorseFleetManager {
           max_players: clampSeatsForVariant(config.gameVariant, config.maxPlayers),
           current_players: 0,
           status: 'waiting',
+          // ALL-CASH INSURANCE 2026-08-26: overflow cash tables too.
+          insurance_enabled: true,
         });
         if (error) {
           // Unique-name races between cycles are expected and harmless.

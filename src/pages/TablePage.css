@@ -157,30 +157,46 @@
   transition: opacity 0.5s ease;
 }
 
-/* ─── Winner Celebration — golden flash on table ─── */
-.table-page--winner-flash .table-surface {
-  animation: winnerTableFlash calc(1.5s * var(--animation-speed, 1)) ease-out;
+/* ─── Winner display — the whole scene steps back (POKERBROS PARITY
+   2026-08-26, audit round 2, measured off the reference recording) ───
+
+   While a winner is on display the reference dims the ENTIRE scene to
+   roughly 0.73 of itself in a single-frame cut: the felt art, the rail,
+   the center brand block, the pot, every seat (see SeatSlot.css for the
+   per-seat half of this rule). Only the winning cards and the banner hold
+   full brightness. The old winnerTableFlash golden pulse was motion the
+   reference does not have — replaced by this dim.
+
+   Implementation note: this cannot be one overlay div. `.seat-wrapper`
+   (z-index: 10) and `.table-surface` (z-index: 1) are stacking contexts,
+   so no single sheet can sit above a seat's plate but below the same
+   seat's cards. Each chrome group therefore dims itself; the exclusions
+   (cards, banner) simply carry no filter. Filters snap with no
+   transition: the measured onset is a hard cut between two 30fps frames. */
+.table-page--winner-flash .table-art,
+.table-page--winner-flash .table-brand,
+.table-page--winner-flash .pot-area,
+.table-page--winner-flash .dealer-button {
+  filter: brightness(0.73);
 }
 
-@keyframes winnerTableFlash {
-  0% {
-    box-shadow:
-      inset 0 0 120px rgba(255, 215, 0, 0.15),
-      inset 0 4px 12px rgba(255, 255, 255, 0.08),
-      inset 0 -4px 12px rgba(0, 0, 0, 0.4);
-  }
-  50% {
-    box-shadow:
-      inset 0 0 200px rgba(255, 215, 0, 0.08),
-      inset 0 4px 12px rgba(255, 255, 255, 0.08),
-      inset 0 -4px 12px rgba(0, 0, 0, 0.4);
-  }
-  100% {
-    box-shadow:
-      inset 0 4px 12px rgba(255, 255, 255, 0.08),
-      inset 0 -4px 12px rgba(0, 0, 0, 0.4),
-      inset 0 0 80px rgba(0, 0, 0, 0.12);
-  }
+/* The page's own painted backdrop (the area around the table) dims with the
+   scene — measured 0.72-0.78 in the reference outside the rail. The page
+   paints its background on itself, so a ::before veil at z-index 0 sits
+   above that background and below .table-container (z-index: 1) and the
+   header (z-index: 100): backdrop only, nothing else. */
+.table-page--winner-flash::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.27);
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* The top bar dims more gently in the reference (~0.85-0.89). */
+.table-page--winner-flash .table-header {
+  filter: brightness(0.85);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -925,12 +941,53 @@
   filter: drop-shadow(0 2px 7px rgba(0, 0, 0, 0.7));
 }
 
+/* Dan 2026-08-26: "the button should be moved up some in that position so it
+   doesn't overlap the date."
+
+   The button was where it belongs. THE DATE WAS NOT: it was hanging 23px out
+   of this box on each side, into the lane the left-middle and right-middle
+   seats' dealer pucks stand in.
+
+   The two declarations below are the whole fix, and they are here rather than
+   on `.table-brand__line` because the line was never the problem. That rule
+   already carries `white-space: nowrap`, `overflow: hidden`,
+   `text-overflow: ellipsis` and `max-width: 100%`, and the note on it (Dan
+   2026-08-24, "the line was bleeding past the rail. It ellipsizes at the
+   masthead's edge instead") describes exactly what was wanted. It just did not
+   happen, because of what THIS element resolves to:
+
+     `.table-brand` is `flex-direction: column; align-items: center`, so this
+     box is a flex item whose cross size is not stretched. That makes its width
+     `fit-content`, which is
+         min(max-content, max(min-content, available))
+     and for a `white-space: nowrap` child min-content EQUALS max-content. So
+     whenever the text is wider than the 62% box, that expression returns the
+     TEXT's width, not the box's - and the child's `max-width: 100%` then
+     resolves against a parent that is already as wide as the child, clamping
+     nothing at all. The ellipsis could never fire.
+
+   `width: 100%` makes this box the masthead's width instead of the text's, and
+   `min-width: 0` stops the flex layout re-growing it back to min-content (a
+   flex item's automatic minimum size is its content, and a nowrap line's
+   content minimum is the whole line - the other half of the same trap).
+
+   WHAT IT COSTS: on a 393px phone the box is 175px, and a date + club + union
+   line longer than about 31 characters now ends in an ellipsis rather than
+   crossing the felt. That is the trade the 2026-08-24 rule already declared;
+   it simply was not being collected.
+
+   Two things read the resulting extent and have to move with it: the
+   `.table-brand` width above, and FELT_TEXT_BAND in
+   src/components/table/tableGeometry.ts, which keeps the dealer button off
+   this printing by construction. Change one, change both. */
 .table-brand__meta {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 1px;
   text-align: center;
+  width: 100%;
+  min-width: 0;
 }
 
 /* Dan 2026-08-25, item 10: "the display on the table (date, club, union) needs
@@ -982,6 +1039,29 @@
 .table-brand__line--level {
   color: rgba(198, 210, 228, 0.55);
   font-weight: 700;
+}
+
+/* Dan 2026-08-26 mobile pass, item 5: the hand number can NEVER be cut off.
+   Line 2 is a flex row: the game label is the flexible part that ellipsizes,
+   the hand-number span refuses to shrink. */
+.table-brand__line--level {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 3px;
+  max-width: 100%;
+}
+
+.table-brand__game {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-brand__hand {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .table-brand__clock {
@@ -1162,18 +1242,22 @@
   gap: 3px;
   width: 100%;
 }
+/* Dan 2026-08-26 mobile pass, item 4: "remove the weird extra boxes above and
+   below the flop." The boxes were THIS strip's chrome — a full-board-width
+   bordered slab per run, one above each run's cards, so a two-run hand framed
+   the flop with an empty-looking box on both sides. The row keeps its layout
+   job (badge left, winner centre, equity right) but paints nothing itself;
+   the RUN badge below still has its own small gold pill, which is all the
+   labelling the reference shows. */
 .community-area__run-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 6px;
   width: 100%;
-  padding: 2px 8px;
-  background: rgba(10, 14, 22, 0.88);
-  border: 1px solid rgba(255, 215, 0, 0.35);
-  border-radius: 6px;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  padding: 0 4px;
+  background: none;
+  border: none;
   box-sizing: border-box;
 }
 .community-area__run-badge {
@@ -1336,11 +1420,23 @@
   justify-content: center;
 }
 
-.table-surface .community-cards__card,
-.table-surface .community-cards__placeholder {
+/* `.community-cards__placeholder` was removed from this selector 2026-08-26
+   with the ghost turn/river slots themselves.
+
+   Dan 2026-08-26 (same day, from a live flop): "revert back to the normal
+   sized flops, I don't like these oversized boards." Deleting the ghost
+   slots had a second effect nobody priced in: `flex: 1 1 0` sized every card
+   as an EQUAL SHARE OF THE ROW, and with only three cards dealt each share
+   became a third of the 68% board row - a flop half again bigger than the
+   same table's river. The card's basis is now pinned to ONE FIFTH of the row
+   (less its share of the four gaps) whatever the count on the felt, so a
+   flop card is exactly the size it will be when the river lands and the
+   board stops breathing between streets. flex-grow 0 is the fix; flex-shrink
+   1 keeps six-card double boards from overflowing. */
+.table-surface .community-cards__card {
   width: auto;
   height: auto;
-  flex: 1 1 0;
+  flex: 0 1 calc((100% - 4 * var(--cc-card-gap, 6px)) / 5);
   min-width: 0;
   aspect-ratio: 64 / 92;
 }
@@ -2245,6 +2341,56 @@
   transition: background-color 0.4s ease;
   animation: equityPop calc(0.45s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.3, 1.4);
 }
+/* Dan 2026-08-26 mobile pass, item 13: the badge may never block a revealed
+   hand. Villain cards fan OUTBOARD (tableSeatGeometry.seatCardSide), so the
+   badge docks on the seat's INBOARD side — vertically centred on the seat,
+   fully off the card fan's airspace. The hero seat keeps the below-seat
+   position (its cards render in the corner panel, not at the seat). */
+.equity-overlay--inboard-right {
+  bottom: auto;
+  top: 50%;
+  left: calc(100% + 6px);
+  transform: translateY(-50%);
+  font-size: 18px;
+}
+
+.equity-overlay--inboard-left {
+  bottom: auto;
+  top: 50%;
+  left: auto;
+  right: calc(100% + 6px);
+  transform: translateY(-50%);
+  font-size: 18px;
+}
+
+.equity-overlay--inboard-right .equity-overlay__track,
+.equity-overlay--inboard-left .equity-overlay__track {
+  width: 64px;
+}
+
+/* The pop keyframes bake in the below-seat translateX(-50%); the side-docked
+   badges need their own translateY variant or the animation would yank them
+   back under the seat for its first half-second. */
+.equity-overlay--inboard-right,
+.equity-overlay--inboard-left {
+  animation-name: equityPopSide;
+}
+
+@keyframes equityPopSide {
+  0% {
+    transform: translateY(-50%) scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(-50%) scale(1.18);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-50%) scale(1);
+    opacity: 1;
+  }
+}
+
 .equity-overlay--ahead {
   background-color: rgba(46, 204, 113, 0.95);
   box-shadow: 0 0 16px rgba(46, 204, 113, 0.6);
@@ -2402,6 +2548,134 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .insurance-waiting-bar {
+    animation: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   INSURANCE FELT BANNER — REFERENCE PARITY 2026-08-26
+   Shield + wordmark that sweeps across the felt when the insurance phase
+   opens, for every seat and observer. Same lifecycle as .allin-banner
+   (mounted ~1.8s by TablePage, animation-speed aware).
+   ═══════════════════════════════════════════════════════════════════════════════ */
+.insurance-banner {
+  position: absolute;
+  top: 46%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 60;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 26px;
+  border-radius: 10px;
+  background: linear-gradient(
+    90deg,
+    rgba(21, 34, 66, 0),
+    rgba(30, 58, 138, 0.85),
+    rgba(21, 34, 66, 0)
+  );
+  animation: insuranceBannerSweep calc(1.8s * var(--animation-speed, 1)) ease-out forwards;
+  will-change: transform, opacity;
+  overflow: hidden;
+}
+.insurance-banner__shield {
+  font-size: 1.9rem;
+  color: #93c5fd;
+  filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.9));
+}
+.insurance-banner__text {
+  font-size: clamp(1.2rem, 5.5vw, 1.8rem);
+  font-weight: 900;
+  letter-spacing: 0.22em;
+  color: #fff;
+  text-shadow:
+    0 0 14px rgba(59, 130, 246, 0.9),
+    0 0 34px rgba(59, 130, 246, 0.5),
+    0 3px 8px rgba(0, 0, 0, 0.8);
+}
+/* Light beam that rakes across the wordmark once. */
+.insurance-banner::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -60%;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  animation: insuranceBannerBeam calc(1.1s * var(--animation-speed, 1)) ease-out forwards;
+  animation-delay: calc(0.35s * var(--animation-speed, 1));
+}
+@keyframes insuranceBannerSweep {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translateX(-60px) scale(0.7);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(-50%, -50%) translateX(0) scale(1.02);
+  }
+  26% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.06);
+  }
+}
+@keyframes insuranceBannerBeam {
+  0% {
+    left: -60%;
+  }
+  100% {
+    left: 120%;
+  }
+}
+
+/* ── Fee pill beside the pot: the paid premium held out of the middle ── */
+.insurance-premium-chip {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(10, 12, 24, 0.85);
+  border: 1px solid rgba(59, 130, 246, 0.45);
+  white-space: nowrap;
+  animation: insurancePremiumChipIn calc(0.4s * var(--animation-speed, 1)) ease-out backwards;
+}
+.insurance-premium-chip__icon {
+  font-size: 0.8rem;
+  color: #93c5fd;
+}
+.insurance-premium-chip__amount {
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: #e4e6eb;
+}
+@keyframes insurancePremiumChipIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.6);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .insurance-banner,
+  .insurance-banner::after,
+  .insurance-premium-chip {
     animation: none;
   }
 }
@@ -2777,6 +3051,28 @@
   gap: 8px;
 }
 
+/* Dan 2026-08-26 mobile pass, item 6: the bottom-left corner is a ROW now —
+   previous-hand box at the anchor, time-bank tile BESIDE it (only rendered
+   while the action is on the hero). `order` keeps the previous-hand box
+   leftmost regardless of DOM order, so the time-bank tile — and the Rabbit
+   Hunt button that takes its place after the hand (see RabbitHunt.css) —
+   occupy the slot to its right. */
+.hud-bl-row {
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.hud-bl-row .prev-hand-card-wrapper,
+.hud-bl-row .prev-hand-card {
+  order: 0;
+}
+
+.hud-bl-row .tbc-widget,
+.hud-bl-row .rabbit-hunt {
+  order: 1;
+}
+
 .add-chips-icon-btn {
   background: rgba(0, 0, 0, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.18);
@@ -2947,6 +3243,80 @@ button.post-bb-overlay-button:hover {
   font-weight: 500;
   color: rgba(255, 255, 255, 0.75);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   POST OR WAIT FOR BB — the entry-choice dialog shown right after a cash
+   buy-in confirms (Dan 2026-08-26). Mobile-first: full-width sheet at 375px,
+   centered card above that.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.post-or-wait__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.post-or-wait {
+  width: 100%;
+  max-width: 360px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 212, 255, 0.45);
+  background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
+  box-shadow:
+    0 0 18px rgba(0, 212, 255, 0.3),
+    0 8px 28px rgba(0, 0, 0, 0.6);
+  padding: 18px 16px 16px;
+  color: #fff;
+  text-align: center;
+}
+.post-or-wait__title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.post-or-wait__body {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.78);
+}
+.post-or-wait__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.post-or-wait__post,
+.post-or-wait__wait {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+.post-or-wait__post {
+  border: 1px solid rgba(0, 212, 255, 0.7);
+  background: linear-gradient(180deg, #0e7490 0%, #155e75 100%);
+  color: #fff;
+}
+.post-or-wait__post:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.post-or-wait__wait {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+}
+.post-or-wait__wait:hover,
+.post-or-wait__post:not(:disabled):hover {
+  filter: brightness(1.12);
+}
 @keyframes post-bb-pulse {
   from {
     box-shadow:
@@ -3110,11 +3480,16 @@ body.ca-raising .bankroll-widget {
   font-size: 1.05rem;
   font-weight: 800;
   letter-spacing: 0.01em;
-  color: #00d4ff;
+  /* POKERBROS PARITY 2026-08-26 (final audit): the reference's winner amount
+     is bright yellow (measured stroke core rgb(255,255,119)) — the cyan this
+     float shipped with matched nothing in the recording, and its glow was
+     already warm. One color for the whole +N story: this ride, the seat
+     float, and the sparkles. */
+  color: #ffe94a;
   -webkit-text-stroke: 0.5px rgba(0, 0, 0, 0.55);
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.85),
-    0 0 10px rgba(255, 200, 60, 0.45);
+    0 0 10px rgba(255, 233, 74, 0.5);
   transform: translate(calc(var(--pwf-from-x) - 50%), calc(var(--pwf-from-y) - 50%));
   animation: potWinFloatRide 2.2s cubic-bezier(0.25, 0.6, 0.3, 1) forwards;
 }
@@ -3379,7 +3754,24 @@ body.ca-raising .bankroll-widget {
        Specificity 0,1,0, so `.table-page[data-hero='false'] .table-container`
        (0,2,1, at the foot of this file) still collapses it for a spectator,
        who has neither a hero plate nor a time-bank tile. */
-    --sp-hero-clear: 88px;
+    /* ── Dan 2026-08-26: "the table can be moved down some, as now there is
+          too much space for the hero, not enough for the top players." ──
+
+       88 -> 68. This reserve is the strip UNDER the felt, so shrinking it
+       moves the whole oval DOWN and hands the difference to the top of the
+       table, which is exactly the trade being asked for.
+
+       IT COSTS THE FELT NOTHING, for the reason the note above already
+       establishes: at 375 and 393 the oval is WIDTH-bound and stays that way
+       until this reserve passes 90px (375) / 100px (393). At 88 it was 2px
+       and 12px from binding; at 68 it is nowhere near. The table does not
+       shrink, it relocates.
+
+       THE FLOOR IT MUST NOT CROSS is half a hero seat, or the name plate
+       carrying the stack goes back under the action bar — the 2026-08-23 bug.
+       Measured half-heights: 49px @380, 54px @480, 60px @640. 68 clears the
+       largest of those by 8px, which is why it is not 60. */
+    --sp-hero-clear: 68px;
     /* 2026-08-26: gutters removed per Dan — edge-to-edge felt at 375px
        measures 375x619.8 (up from 367x606.6 with 4px gutters). Side-seat
        overhang at narrow viewports is addressed by the max-width: 340px
@@ -3465,8 +3857,8 @@ body.ca-raising .bankroll-widget {
   justify-content: center;
   padding: 8px 14px;
   border-radius: 8px;
-  background: linear-gradient(180deg, rgba(18, 22, 44, 0.92), rgba(12, 15, 32, 0.92));
-  border: 1px solid rgba(120, 150, 255, 0.22);
+  background: linear-gradient(180deg, rgba(28, 33, 40, 0.92), rgba(22, 27, 34, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.15);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
   animation: ritFeltBannerIn calc(0.3s * var(--animation-speed, 1)) ease-out;
 }
@@ -3475,7 +3867,7 @@ body.ca-raising .bankroll-widget {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: #dbe3f0;
+  color: #e4e6eb;
   text-align: center;
   line-height: 1.4;
 }
@@ -3500,4 +3892,22 @@ body.ca-raising .bankroll-widget {
 .community-area__run--extra[data-base-count='3'] .community-cards__card:nth-child(-n + 3),
 .community-area__run--extra[data-base-count='4'] .community-cards__card:nth-child(-n + 4) {
   visibility: hidden;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Dan 2026-08-26: Remove all baked CSS backgrounds/borders on image buttons 
+   since the new 3D assets come with them built-in
+   ═══════════════════════════════════════════════════════════════════════════════ */
+.control-strip__btn--icon-img,
+.add-chips-icon-btn {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.control-strip__btn--icon-img:hover,
+.add-chips-icon-btn:hover {
+  background: transparent !important;
+  filter: brightness(1.1);
 }

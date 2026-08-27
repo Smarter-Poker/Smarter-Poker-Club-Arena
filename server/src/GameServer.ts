@@ -179,6 +179,8 @@ export class GameServer {
    * anything on it.
    */
   private seatFirstFullSince: Map<string, number> = new Map();
+  /** Last fn_sweep_unsettled_tournament_rake pass (2026-08-26 settlement integrity). */
+  private lastRakeSweepAt = 0;
   private running: boolean = false;
   private startTime: number = Date.now();
 
@@ -2163,7 +2165,7 @@ export class GameServer {
         const { data: registering, error: registeringErr } = await supabase
           .from('tournaments')
           .select(
-            'id, name, start_time, current_players, min_players, max_players, variant, tournament_type, buy_in_amount, buy_in_fee, guaranteed_prize'
+            'id, name, start_time, current_players, min_players, max_players, variant, tournament_type, buy_in_amount, buy_in_fee, guaranteed_prize, prize_pool'
           )
           .eq('status', 'REGISTERING');
         if (registeringErr) {
@@ -2363,6 +2365,13 @@ export class GameServer {
                 maxPlayers: tournament.max_players ?? 0,
                 variant: String(tournament.variant ?? ''),
                 currentPlayers: tournament.current_players ?? 0,
+                /* A GUARANTEED event ramps to whatever covers it, not to the
+                   default 24. These three columns were already being selected
+                   here and simply not used. buy_in_amount is the PRIZE side:
+                   the fee is rake and never reaches the pool. */
+                guaranteedPrize: Number(tournament.guaranteed_prize) || 0,
+                prizePool: Number((tournament as { prize_pool?: unknown }).prize_pool) || 0,
+                buyInPrizeShare: Number(tournament.buy_in_amount) || 0,
               });
               if (rampTarget > 0) {
                 this.lastMttRampAt.set(tournament.id, now);
@@ -2630,6 +2639,36 @@ export class GameServer {
               `[GameServer] Recovering stuck COMPLETING tournament: ${stuck.name} (${stuck.id.slice(0, 8)})`
             );
             await recoverStuckCompletingTournaments('discovery-watchdog', stuck.id);
+          }
+        }
+
+        // ── TOURNAMENT RAKE SWEEP (2026-08-26) ──
+        // The last line of the settlement-integrity fix: any terminal
+        // tournament whose fee ledger has no tournament_rake_settlements row
+        // (engine died before settling, wallet credit failed three times,
+        // event completed by a path that predates the settler) is settled by
+        // fn_sweep_unsettled_tournament_rake. Idempotent by PK claim, so it
+        // can never double-pay a tournament something else settled. Every 10
+        // minutes — this is a safety net, not the primary path.
+        if (Date.now() - this.lastRakeSweepAt > 10 * 60 * 1000) {
+          this.lastRakeSweepAt = Date.now();
+          try {
+            const { data: sweep, error: sweepErr } = await supabase.rpc(
+              'fn_sweep_unsettled_tournament_rake',
+              { p_since_days: 60, p_limit: 200 }
+            );
+            if (sweepErr) {
+              reportError(
+                new Error(`[GameServer] tournament rake sweep failed: ${sweepErr.message}`),
+                'GameServer.rake_sweep_failed'
+              );
+            } else if (Number(sweep?.settled) > 0 || Number(sweep?.failed) > 0) {
+              console.log(
+                `[GameServer] Tournament rake sweep: settled ${sweep.settled} event(s), ${sweep.chips} chips (scanned ${sweep.scanned}, failed ${sweep.failed})`
+              );
+            }
+          } catch (sweepEx) {
+            reportError(sweepEx, 'GameServer.rake_sweep_threw');
           }
         }
 

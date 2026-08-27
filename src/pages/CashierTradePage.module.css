@@ -158,24 +158,30 @@
 .tabActive {
   background: linear-gradient(180deg, #00d4ff 0%, #0099ff 100%);
   color: #1a1a1a;
+}
 
-  /* Pending-request count on the Chip Request tab. */
-  .tabBadge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 16px;
-    height: 16px;
-    margin-left: 4px;
-    padding: 0 4px;
-    border-radius: 8px;
-    background: #f02849;
-    color: #fff;
-    font-size: 0.58rem;
-    font-weight: 800;
-    line-height: 1;
-    vertical-align: middle;
-  }
+/* Pending-work count on the Chip Request and Tickets tabs.
+
+   TOP LEVEL ON PURPOSE (audit 2026-08-26). This rule was nested inside
+   .tabActive, which compiles to `.tabActive .tabBadge` - so the badge was
+   styled ONLY on the tab you are already looking at, and rendered as bare
+   unstyled text on every other tab. The badge exists to pull you into a tab
+   you are NOT on; that is exactly where it must look like a badge. */
+.tabBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #f02849;
+  color: #fff;
+  font-size: 0.58rem;
+  font-weight: 800;
+  line-height: 1;
+  vertical-align: middle;
 }
 
 /* ── Balance strip ── */

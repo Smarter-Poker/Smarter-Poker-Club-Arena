@@ -2,6 +2,249 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-08-26 (late night) — HANDOFF CLOSURE + FIRST REAL-BROWSER LOBBY AUDIT
+
+Worked the two 2026-08-26 handoffs and the open guard issue. Much of the
+handoffs' backlog turned out to already be shipped by intervening PRs (#939,
+#950, and the TournamentPage cleanup) — verified each rather than redone:
+
+1. **PRIORITY ONE discharged: the tournament lobby has now been opened in a
+   real browser.** New repeatable probe `e2e-live/tournament-lobby-audit.mjs`
+   (mints a one-time session for the documented test account via the GoTrue
+   admin magic-link flow — no password is stored anywhere on this machine —
+   and runs the handoff's 10-row checklist in headless Chromium against
+   production at 375×812 AND 430×932). Results on "Late Night Grind (PLO4)"
+   (RUNNING): detail fits one screen at both widths; blinds clock ticks
+   3:28 → 3:26 and never reads 0:00; tab arrows WRAP (ArrowLeft from Detail
+   lands on Rewards) and Home jumps back; Entries shows 10 real avatar
+   images; Rewards bands render with no NaN; `?tab=chips` deep-links to
+   Ranking. Screenshots verified by eye. ONE real defect found and fixed:
+2. **Footer was 12px off the bottom at BOTH widths** (footerBottom 800/920 vs
+   viewports 812/932) — the measure subtracted the parent `<main>`'s bottom
+   padding, leaving exactly that band visible under the buttons. The shell now
+   takes the full remaining height and cancels the parent's gutter with a
+   matching negative margin (TournamentDetails.tsx measure()). Same guarded
+   writes, same ResizeObserver convergence.
+3. **ITEM B verified closed** — no client writer of `tournaments.current_level`
+   remains anywhere in src/ (all references are reads); the engine's
+   TournamentManagerBase persist is the sole writer; `initializeAllTimers` is
+   already deleted. Stale comment in TournamentTimerService corrected to say
+   so.
+4. **ITEM A closed for real** — TournamentPage relayed the chest reveal onto
+   masterBus "so the celebration toast can show it", but that bus event had
+   ZERO subscribers (an emit into the void) and MysteryBountyCelebration
+   subscribes to the server's own t-break channel directly (so observers see
+   it). Dead relay + orphan MYSTERY_BOUNTY_REVEALED bus type deleted.
+5. **ITEM D verified closed** — the dead comment pointers cited by the handoff
+   no longer exist; remaining LiveChipCounts/TournamentStandings mentions are
+   legitimate "replaces X" history.
+6. **Table follow-ups: #950 shipped the five dead components, the CSS
+   scoping, and the landscape height budget** (verified in the tree, landscape
+   scaler now uses --sp-ls-table-w/h). Two named orphans it missed are now
+   deleted: `src/components/chips/ChipStack.tsx` + `.css` (barrel-only ref,
+   barrel imported by nothing) and `src/hooks/useTableModals.ts` (importer
+   removed in #936, test deleted in #950).
+7. **Estate integrity #1231** — `scripts/agent-trees-snapshot.sh` re-synced to
+   the canonical version in the three drifted repos via PRs:
+   commander-shared#33, Diamond-Arena#39, PepNationLab#114. The hourly guard
+   closes the issue itself once they land.
+
+Client: 7,202 tests green, tsc clean. Still open from the handoffs, deliberately
+not touched: ITEM C (pko+mystery prizeRank — needs Dan's ruling on whether the
+combo will ever be configured), ITEM E (GameLobbyPanel/lobbyEntries/Spin
+surfaces line-by-line audit), buy-in idempotency general case (server-side
+key), `.bbj-info` desktop hover popover, and the `seat--sitout`/'AWAY' pill
+rename (ships a new visual — Dan's call).
+
+## Cowork session 2026-08-26 (night) — DAN'S 8-POINT LOBBY/ENGINE AUDIT
+
+Dan's punch list (screenshots of Club JAQK lobby + game panels), all eight
+shipped in one branch:
+
+1. **Cash rebuy silently failed, then booted the player (item 6).**
+   `atomic_table_rebuy` was the only function in the buy-in family running
+   SECURITY INVOKER — its first statement died on RLS
+   (`transaction_idempotency_keys`: RLS on, zero policies) for 100% of real
+   players. Recreated SECURITY DEFINER with an `auth.uid() = p_user_id` guard
+   (migration `20260826150000`, applied + probe-verified in rolled-back
+   transactions). Client: bust-rebuy prompt now reads the CLUB wallet through
+   `fn_player_spendable_balance` (it displayed the legacy `wallets` balance the
+   RPC never spends), reports failures to Sentry, and dismissing the prompt no
+   longer force-leaves the table — that was the "boots you" half (BuyInModal's
+   only close affordances backdropped into handleLeaveTable).
+2. **Waitlist end-to-end (item 2).** RLS only let a player read their OWN
+   row, so the queue rendered 'Player'×10 for everyone but admins. New policy
+   `waitlist_public_queue_read` (active rows public), one-time GC of 1,737
+   abandoned horse "atmosphere" rows (migration `20260826151500`). The fleet
+   now PRUNES horse queue rows every cycle (only genuinely full tables keep
+   1-3, humans never touched), the seat-open notifier skips horses, expires
+   3-minute-stale offers, and sends a best-effort OneSignal push. Client:
+   `getTableWaitlist` resolves real display names + real waited-since times;
+   the seat offer (row → 'notified') raises a clickable toast that deep-links
+   to the table; `waitlist_seat_open` notifications deep-link (the engine
+   writes `data`, the client only read `metadata` — now folded); the old
+   `position === 1` auto-navigate (a column that defaults to 1 for everyone)
+   is gone.
+3. **Overlay announcements (item 3, reversing the 7-day window from
+   yesterday).** Future events NEVER announce. Only running events with the
+   registration door open, and only past 75% of the late-reg window
+   (`LATE_REG_ANNOUNCE_FRACTION`, derived through the same `lateRegEndMs` the
+   lobby countdown uses; fails closed when the row can't prove the window).
+4. **Rabbit hunt can never linger (item 4).** The reveal's ONLY clear was the
+   hand-number-changed effect, which never fires on an idle table. Now: hand
+   boundary clears it, an 8s backstop timer always removes it, stale offers
+   (offer hand < current hand) are rejected, and the 3s freeze-replay's
+   duplicate-enqueue and latched-freeze defects are fixed.
+5. **Showdown announcement 100% (item 5).** The settle hold ate its own
+   event: HAND_COMPLETE nulled the controller and cleared winner state while
+   the WINNERS handler slept, so the post-sleep guard broke before emitting —
+   `pot_win`/`pot_distributed` were skipped on EVERY contested showdown
+   (fold-wins worked, hence "intermittent"). Payload is now captured before
+   the sleep; the guard only checks engine-stopped/new-hand. Client keeps
+   opponents' revealed cards on the felt through the post-hand hold (same
+   no-news rule the hero already had).
+6. **15% cash / 33% spin / 50% HU tables held empty (item 1).**
+   `cashTableHeldEmpty` (2h buckets) zeroes occupancy targets; the rotator
+   drains held-empty horse-only tables one seat per cycle; a human sitting
+   releases the hold. Seat-first: `seatFirstHeldEmpty` (hash on tournament id)
+   opens 33% of spins / 50% of HU with zero horses; topUpWithHorses refuses to
+   fill them until a human buys a seat, then fills so the game starts.
+7. **Post or Wait for BB popup (item 7).** The engine already enforced
+   wait-or-post (2026-08-26 reversal); the client now ASKS: a dialog follows
+   the buy-in confirm (Post Big Blind → /post-bb with a one-retry for the
+   registration race; Wait → default), auto-resolves when the hero is dealt
+   in, and the passive pill remains for mid-wait changes of mind.
+8. **Horse lanes + activity floors (item 8).** `gameLaneFor`: 33%
+   events-only / 33% cash-only / 34% both, enforced in cash seeding, waitlist
+   seeding, `pickFreeHorses` and `registerHorses`. MTT floor: at least 2 live
+   MTTs at all times (checkAndLaunchTournaments launches extras from the
+   schedule when short). Fleet activity floor: when seated horses < 1/3 of
+   the stable, seat targets get a one-seat boost per cycle.
+
+Tests: client 7,169 green, server 1,908 green, both tsc clean. Five
+source-pin tests updated to the new anchors in the same commit (per the
+NEVER-PUSH-A-RED-TEST rule). Migrations applied to production via Supabase
+MCP and verified (`list_migrations` + probes).
+
+## Cowork session 2026-08-26 (final) — WINNER DISPLAY ON EVERY BOARD AND EVERY CHOP
+
+Extension of the parity session below to multi-run and multi-winner hands
+(PR #1368 + a post-merge review fix):
+
+1. **Per-winner hand names.** winnerInfo.handNames (per user_id, from the
+   engine's per-winner hand_name; winners_by_board fallback). A hi-lo low
+   winner's seat labels "Low: 8-6-4-3-2", never the high hand's name.
+2. **POT_WIN merges.** The event can fire once per pot; replacing
+   winnerInfo un-lit the main-pot winner when the side pot paid. Events now
+   union (players, hole indices, names) and SUM per-user amounts (the
+   post-merge review caught the spread overwriting a double-pot winner's
+   first share). Fenced by the hand-start resets.
+3. **RIT hole cards per board.** Each run derives which of the winner's
+   hole cards made THAT board's five (unfiltered holeCards positions);
+   seats light the union across runs.
+4. **Stacked boards' banners join the flow.** Under [data-boards] the
+   banner renders compactly under its own board instead of absolutely
+   overlapping the next run — every RIT run and both bomb-pot boards name
+   their winning hand.
+
+Pinned by the parity spec (33 assertions).
+
+## Cowork session 2026-08-26 (late) — WINNER PRESENTATION, POKERBROS 1:1 (3 passes, measured)
+
+Dan supplied HIGHLIGHT WINNING HAND AND DSIPLAY IT ON SCREEN.MOV (26-Aug PLO5
+"Flush" hand) and asked for a frame-by-frame 1:1 clone of the winner
+presentation. Three passes shipped (PR #1307 rounds 1-2, PR #1330 round 3,
+plus a final-audit PR); pass 2 onward MEASURED the recording per pixel:
+
+1. **The cut.** One-frame hard cut (between two adjacent 30fps frames):
+   winning five get a steady thin warm-gold ring (#e9b355, no pulse, no pop,
+   no lift), every card outside them drops to brightness(0.28)
+   channel-neutral, and the ENTIRE scene dims to ~0.73 — felt art, brand
+   block, pot, page backdrop, dealer button, and every seat's chrome
+   including the winner's own plate (per-group filters; stacking contexts
+   forbid a single overlay). Retired as motion-the-reference-does-not-have:
+   winnerTableFlash, ccHighlightPulse, winnerCardPulse, ccGlowPulse, the
+   highlight-pop state machine, showdown screen shake, the spark burst, the
+   showdown-wide gold ambient, CardImage's highlight lift, the sheen sweep
+   and hover lift on tableau cards.
+2. **The banner.** Below the board (+4px), translucent dark band, orange
+   lens-flare streak on the bottom edge, hand name as gradient-gold
+   background-clip text (measured core #ffe39c) sized at 0.33x card height
+   via clamp(--cc-card-h).
+3. **The sequence.** +N floats and the pot-win ride recolored to the
+   measured yellow (#ffe94a — the ride was cyan and matched nothing);
+   four-point star sparkles over the winner's cards for the life of the
+   float; float/sparkles/BBJ credit excluded from the scene dim; seat
+   hand-name label is plain quiet text (the reference has no gold pill).
+4. **Bug found by the audit:** double-board bomb pots never highlighted or
+   dimmed board 2 (engine card_indices are board-1 only) — board 2 now
+   derives its winning five client-side like the RIT boards do.
+
+Deliberately NOT matched: the reference ships the pot ~2.3s after the cut;
+Dan's 2026-08-21 3-second showdown-read floor (engine-matched) outranks it.
+
+Pinned by tests/unit/pokerbrosWinnerPresentation.test.ts (25 measured
+assertions); tests/e2e/showdown-beats.spec.ts rewritten for the new beats.
+
+## Cowork session 2026-08-26 (evening) — INSURANCE REFERENCE PARITY (pass 6)
+
+Dan supplied the missing reference: a leader-seat recording (INSURANCE.MOV)
+plus stills of the actual dialog. Frame-by-frame findings drove three changes:
+
+1. **The dialog is FEE-first.** Rebuilt: All-In Insurance title, outs count +
+   pot strip, board row, player rows (leader named + equity, opponents with
+   cards), Insurance Fee / Rate / Insured Pot readouts, a fee slider (insured
+   = fee x rate) with the range printed at both ends, Break Even and Constant
+   Profit presets, "For Winning / For Losing" outcome readouts, No / Insure.
+   Coverage now caps at the POT (the winnings), not the leader's stake — the
+   reference max insured is ~the pot. `atRisk` rides the offer for Break
+   Even. Countdown is 25s to match.
+2. **Three table moments.** A shield INSURANCE banner sweeps the felt for
+   every seat when the offer opens; after a purchase the fee sits beside the
+   pot as its own chip pill until the hand resolves; when insurance pays, a
+   chip fan + "+N" float flies from the pot to the insured seat with a toast.
+3. **Sequencing (supersedes FIX 92) + offer-before-deal.** The reference asks
+   the run-it-multi-times question FIRST; insurance engages only when the
+   hand resolves to a single run. The engine no longer force-disables RIT on
+   insurance tables — the runout dispatch runs RIT first and chains into the
+   insurance flow on a single-run resolution. Per-hand exclusivity is kept: a
+   multi-board hand never carries insurance. The per-street flow also now
+   offers on the STANDING board before dealing (a turn all-in used to deal
+   the river instantly and never receive an offer at all).
+
+InsuranceRitExclusivity.test.ts rewritten to pin the sequencing (5 tests);
+64 server tests green across the insurance/RIT/pacing suites.
+
+**Pass 7 (final audit, PR #1334 — merged):** two line-by-line finds, fixed
+and pinned. (1) At dust stakes a cents-rounded premium could hit 0.00 while
+the insured amount stayed positive — a payout contract the union bank funds
+without collecting a cent; createOffers now refuses it. (2) The accept path
+rounded coverage to a whole percent, so the charged premium could differ
+from the dialog's displayed fee by up to half a percent of the full premium;
+coverage now flows at hundredths-of-a-percent precision end to end (client
+accept path, acceptPartial, getPreview) — the fee shown is the fee charged,
+to the cent. Also swept for stubs/dead code and re-verified every client
+piece (banner, waiting bar, fee pill, payout flight, slow reveal, fee-first
+dialog) present and wired on main. 107 server + 50 client tests green.
+
+**Pass 8 (publish + P&L, Dan 2026-08-26/27):** migration
+`20260827_insurance_on_for_all_cash_tables` (APPLIED) enabled insurance on
+all 46 live cash tables with zero tournament rows touched; fleet inserts now
+birth cash tables insured; CreateTableModal defaults the toggle ON; the
+engine gained a tournament gate (a stray flag could have moved seat chips
+with no bank ledger). Deploy verified: engine served the exact merge commit.
+Migration `20260827b_insurance_pnl_in_daily_reports` (APPLIED) put insurance
+into the daily P&L where the money actually settles: `ca_club_revenue` gains
+totals.insurance {contracts, premiums, payouts, net, bank} + per-day
+ins_net (bank='union' for affiliated clubs, 'club' for standalone), and NEW
+`ca_union_insurance_pnl(union, days)` reports the union bank's live daily
+insurance P&L (totals, per-day, per-club), oversight-gated, anon revoked.
+ClubDashboard's revenue tab shows the insurance net with honest bank
+attribution; UnionStatementsPage shows the union's 14-day insurance strip
+(net, premiums in, payouts out, contracts).
+
+---
+
 **Started:** 2026-03-24
 **Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (226 fixes, 99% verified)
 
@@ -15289,3 +15532,102 @@ three times, captured from a folded player's seat). Three behaviors adopted:
   ritRunRibbonAtRef). Engine hold formula now
   reveal + runs x RIT_RESULT_RUN_MS + push — spec mirrors updated
   byte-identical, handCompletionLaw pins updated in the same commit.
+
+### Round 4 — completeness pass: RIT boards persisted first-class, replay fixed
+
+- **hand_history.rit_boards** (migration 20260826_hand_history_rit_boards,
+  APPLIED to production via Supabase MCP, verified in list_migrations):
+  boards 2..N in run order, JSONB, NULL on single-run hands. Writer:
+  logHandHistory via new engine field currentHandRitExtraBoards. Reader:
+  HandHistoryService.mapHandHistoryRow, column-first with a pseudo-action
+  fallback for pre-column rows. This closes the 2026-08-21 open item ("RIT
+  boards are never persisted ... NEXT STEP: persist the extra board(s)").
+- rit_board_N pseudo-actions are now FILTERED from the mapped action list
+  (they leaked into every replay's action feed as a bogus system entry).
+- HandReplay renders every RIT board as a labeled RUN row from the river
+  step onward. Fixed along the way: replay board cards rendered as
+  Ace-of-Spades placeholders for ALL hand_history rows, because rows store
+  engine card strings ('8spades') and the converter only handled objects.
+- Dead code: RunItTwiceBoard removed (zero call sites, 2-player-only).
+  Correction to the round-1 audit: the uppercase RIT\_\* masterBus cases DO
+  fire (evt.type is uppercased before the switch) — kept.
+- New pins: server handHistory.test (rit_boards written / NULL when
+  single-run), tests/unit/ritBoardsPersistence.test.ts (column-first,
+  fallback order, action filtering, empty on single-run).
+
+### Round 5 — exactness pass (display pennies, mandatory-mode wiring)
+
+- Wiring audit result: the event pipeline is sound — EngineStateClient
+  already gives every EVENT its own macrotask with order preserved (the
+  Task-56 fix), so showdown / rit_result / pot_win bursts cannot coalesce.
+- Per-player PENNY REPAIR on the RIT display awards: each (run, pot, winner)
+  share was rounded independently, so a player's "+N" floats could sum a
+  cent away from what their stack actually rose, and the decrementing pot
+  counter could park at 0.01. Each player's drift now folds into their
+  largest share — display sums equal credited totals to the cent, pinned
+  per-player in RunItTwice.parity.test.ts.
+- run_it_mode is finally reachable from table CREATION: TableSettings type +
+  TableService column mapping + a mode selector in CreateTableModal
+  (Players Choose / Mandatory Twice / Mandatory 3 Times). Previously only
+  TableConfigPage could set it, so a table created from the modal could
+  never be mandatory — the exact dead-wiring shape FIX-D1 fixed for the
+  other creation settings.
+
+### Round 6 — house palette only, and RIT published to ALL formats (Dan 2026-08-26)
+
+- Every RIT surface added in this work now uses the smarter.poker scheme
+  exclusively (panel gradient #1c2128→#161b22, borders rgba(255,255,255,.15),
+  text #e4e6eb/#8b949e, gold #ffb800, accept green #3fb950 gradient,
+  translucent decline — matching the existing prompt/insurance modals). The
+  slate/amber/orange hexes my consent panel, felt strip and replay badge
+  introduced are gone.
+- THE TOURNAMENT GATE IS LIFTED: RIT now runs on cash, MTTs, Spins and
+  heads-up SNGs. The 2026-08-18 gate existed because fractional per-board
+  splits destroyed INTEGER tournament chips (hand 41627f9a). That failure
+  mode is now impossible: dealAndResolveRIT's tournament branch floors every
+  credited total to whole chips and deals the odd chips clockwise from the
+  dealer (distributePot's own convention); display shares are integerized
+  the same way, so every "+N" float and run label is a whole number.
+  Tournament run labels and the consent panel drop the "$" mark.
+- Pins: tournament offer fires; 2-run and 3-run tournament settlements
+  credit whole chips only, conserve the pot exactly, and display whole
+  chips (multiple randomized trials); source pin that Base's enable formula
+  no longer references tournaments.
+
+### Round 6b — CORRECTION: RIT is CASH-ONLY (Dan, same day)
+
+Dan's ruling, verbatim: "run it twice or 3 times is a cash game only area.
+it should never be in MTT, SPINS OR HEADS UP." The tournament gate lifted
+earlier this round is REINSTATED within the hour:
+
+- Base's enable formula refuses tournaments again (ritIsTournament),
+  documented as a product decision, not merely a numeric limitation.
+- The integer odd-chip tournament branch in dealAndResolveRIT STAYS as
+  defense in depth: unreachable while the gate holds, but if the gate ever
+  regresses it makes the 41627f9a chip-destruction impossible rather than
+  merely unlikely. Its test now drives the resolver directly and says so.
+- Test pins flipped: a tournament all-in gets NO rit_offer and NO
+  rit_mandatory; source pin asserts the gate exists and carries the ruling.
+- Kept from round 6: the house-palette-only restyle of every RIT surface,
+  and the no-currency-mark guards (harmless, and correct if a tournament
+  surface ever renders these labels).
+
+### Round 6c — First Letter Of Every Word, on every RIT display (Dan)
+
+Dan: "MAKE SURE ON ALL DISPLAYS THE FIRST LETTER OF EVERY WORD IS
+CAPITALIZED ... or any other forward facing announcements." The Toast layer
+has enforced this centrally since 2026-08-20 (popupStyle), but the RIT
+surfaces bypass it. All of them now route through the SAME transform:
+
+- The felt status strip: applied at the showRitFeltBanner choke point, so
+  waiting / accepted / declined / mandatory banners are all covered, with
+  player names keeping their interior capitals.
+- The consent panel message and waiting label.
+- Winner ribbons on the board (CommunityCards): the evaluator's data-level
+  names stay untouched ("Three of a Kind"); the SCREEN says "Three Of A
+  Kind" — name, description line, and low-winner line alike. This applies to
+  every showdown platform-wide, exactly as the rule reads.
+- The multi-board run headers ("Name • Two Pair (Chop)").
+- New pins in tests/unit/ritTitleCaseDisplays.test.tsx: rendered ribbon
+  case, panel message case with name capitals preserved, the banner choke
+  point, and the transform's name-preserving behavior.

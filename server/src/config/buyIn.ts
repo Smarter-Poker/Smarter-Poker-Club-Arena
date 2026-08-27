@@ -165,9 +165,12 @@ export function clampRakeToCap(
 ): { prize: number; fee: number } {
   const total = Math.max(0, Math.round(Number(prize || 0) + Number(fee || 0)));
   if (total === 0) return { prize: 0, fee: 0 };
-  const capped = Math.min(
-    Math.max(0, Math.round(Number(fee || 0))),
-    Math.floor(total * rakeRate + 1e-9)
-  );
-  return { prize: total - capped, fee: capped };
+  /* MIRROR FIX 2026-08-26: the client copy (src/utils/buyIn.ts) moved to
+     CENTS on 2026-08-25 with Dan's fractional-fee rule; this copy kept
+     rounding the incoming fee to a whole chip and flooring the cap to whole
+     chips, so every server-side pass through here silently stripped the 0.10
+     fee off a 1-chip game — turning the micro end of the ladder rake-free
+     again through the back door. Byte-for-byte the client's arithmetic now. */
+  const capped = Math.min(Math.max(0, round2(Number(fee || 0))), feeToCents(total, rakeRate));
+  return { prize: round2(total - capped), fee: capped };
 }

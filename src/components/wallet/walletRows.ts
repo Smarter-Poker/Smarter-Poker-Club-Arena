@@ -75,36 +75,28 @@ export function clubWalletRows(
   opts: { standalone?: boolean; spinsActive?: boolean } = {}
 ): WalletRowKey[] {
   const r = normaliseRole(role);
-  const rows: WalletRowKey[] = ['player_wallet'];
+  const rows: WalletRowKey[] = [];
 
-  // An agent wallet is the float an agent carries for their downline. Staff
-  // hold one too - they can be handed chips the same way anyone else can.
-  if (isAgentRole(r) || canSeeClubBank(r)) {
-    rows.push('agent_wallet', 'promo_wallet');
-  }
-
+  // 1. Club Bank
   if (canSeeClubBank(r)) {
     rows.push('club_bank');
+  }
+
+  // 2. Promo Wallet
+  // 3. Agent Wallet
+  if (isAgentRole(r) || canSeeClubBank(r)) {
+    rows.push('promo_wallet', 'agent_wallet');
+  }
+
+  // 4. Player Wallet
+  rows.push('player_wallet');
+
+  // And the rest if applicable
+  if (canSeeClubBank(r)) {
     if (opts.standalone) {
       rows.push('rake_treasury');
       rows.push('backup_bbj');
     }
-    /**
-     * The Spins wallet, under exactly the law above.
-     *
-     * Dan 2026-08-23: "ADD THE SPINS WALLET TO THE UNION, AND CLUBS WHEN THEY
-     * ENABLE SPINS. IF A CLUB JOINS A UNION, THAT WALLET MUST DISAPPEAR."
-     *
-     * `standalone` is doing the disappearing. A club inside a union does not
-     * have a Spins wallet -- fn_spin_reserve_owner resolves the pool to the
-     * UNION -- so showing one on a club surface would be showing union money
-     * in the club's own wallet, the same mistake rake_treasury guards against.
-     * The database enforces the other half: joining a union empties and
-     * switches off the club's pool row in the same transaction as the join.
-     *
-     * `spinsActive` keeps it off the panel of a club that never turned Spins
-     * on, rather than parking a permanent 0.00 next to real balances.
-     */
     if (opts.standalone && opts.spinsActive) rows.push('spins_wallet');
   }
 

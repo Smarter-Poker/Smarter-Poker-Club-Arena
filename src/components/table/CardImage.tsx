@@ -12,6 +12,7 @@ import React, { useState, useEffect } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 import { useDeckStyle } from '../../hooks/useDeckStyle';
 import './CardImage.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -94,19 +95,43 @@ const RANK_MAP: Record<string, string> = {
 };
 
 /**
- * Get the path to the card image
+ * Get the path to the card image, or `null` if this card cannot be read.
+ *
+ * ── THE FELT NEVER SHOWS A CARD THAT IS NOT THE CARD (2026-08-26) ──
+ *
+ * This used to substitute the ACE OF SPADES for anything it could not parse:
+ *
+ *     const safeSuit = suitName || 'spades';
+ *     const safeRank = rankName || 'a';
+ *
+ * That is the most dangerous failure mode in the whole client. Every other
+ * broken thing here degrades to something the player can SEE is broken — a
+ * blank slot, a spinner, a toast. This one degraded to a real, plausible,
+ * PLAYABLE card, indistinguishable from a genuine deal, and the player would
+ * put money in behind it. A malformed river card reading as the ace that
+ * completes their nut flush is not a rendering bug, it is a wrong decision
+ * with their bankroll on it.
+ *
+ * `null` now, and the component paints an unmistakable "unreadable card"
+ * tile. A player who sees it knows not to trust the slot. That is the only
+ * honest thing a card renderer can do when it does not know the card.
+ *
+ * Note the guard fires for *unmapped* values, not merely off-type ones: both
+ * maps deliberately accept several formats (short 'h', full 'hearts', upper
+ * and lower rank), so anything reaching this branch is genuinely unreadable
+ * rather than just an unusual spelling.
  */
-export function getCardImagePath(card: Card, deckStyle: DeckStyle = '2color'): string {
+export function getCardImagePath(card: Card, deckStyle: DeckStyle = '2color'): string | null {
   const suitName = SUIT_MAP[card.suit];
   const rankName = RANK_MAP[card.rank];
 
-  // Safety guard: if lookup failed, warn and fall back to Ace of Spades
   if (!suitName || !rankName) {
-    console.warn(`[CardImage] Unknown card format: rank="${card.rank}" suit="${card.suit}"`);
-    const safeSuit = suitName || 'spades';
-    const safeRank = rankName || 'a';
-    const base = MEDIA_BASE;
-    return `${base}cards/${deckStyle}/${safeSuit}_${safeRank}.webp`;
+    reportError(
+      new Error(`Unreadable card: rank="${card.rank}" suit="${card.suit}"`),
+      'CardImage.unreadable_card',
+      { rank: String(card.rank), suit: String(card.suit), deckStyle }
+    );
+    return null;
   }
 
   // PERF PASS 2026-08-22: serve WebP instead of PNG. The source PNGs are
@@ -195,6 +220,9 @@ export function CardImage({
   const effectiveDeckStyle = deckStyle ?? preferredDeckStyle;
   const imagePath = getCardImagePath(card, effectiveDeckStyle);
   const sizeClass = SIZE_CLASSES[size];
+  /* `null` means the card could not be read at all. See getCardImagePath:
+     showing a guessed card here would be worse than showing nothing. */
+  const unreadable = imagePath === null;
 
   // UI-AUDIT #8: track the broken-image state in React (not via manual DOM
   // mutation) and reset it whenever the image path changes, so a slot that once
@@ -212,17 +240,39 @@ export function CardImage({
   // 404'd. The <img> is still mounted (hidden with display:none so the box keeps
   // its size), so the browser re-requested a URL known to be dead every time the
   // fallback rendered. Once we have moved past the WebP it never comes back.
-  const effectivePath = fallbackStep >= 1 ? imagePath.replace(/\.webp$/, '.png') : imagePath;
+  const effectivePath =
+    imagePath === null ? '' : fallbackStep >= 1 ? imagePath.replace(/\.webp$/, '.png') : imagePath;
 
   const classes = [
     'card-image',
     sizeClass,
     isHighlighted ? 'card-image--highlighted' : '',
     isFolded ? 'card-image--folded' : '',
+    unreadable ? 'card-image--unreadable' : '',
     className,
   ]
     .filter(Boolean)
     .join(' ');
+
+  /* An unreadable card renders NO <img> at all. Emitting one with an empty
+     src makes the browser re-request the page URL as an image, and — worse —
+     leaves a slot that can flash something card-shaped. The tile below is
+     deliberately not card-coloured and carries no rank or suit, because the
+     rank and suit are exactly what we failed to read. */
+  if (unreadable) {
+    return (
+      <div
+        className={classes}
+        role="img"
+        aria-label="Card could not be read"
+        title="This Card Could Not Be Read. Do Not Act On It, Reload The Table."
+      >
+        <div className="card-image__unreadable">
+          <span aria-hidden="true">?</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={classes}>
@@ -234,7 +284,7 @@ export function CardImage({
         className="card-image__img"
         draggable={false}
         style={imgError ? { display: 'none' } : undefined}
-        onError={() => setFallbackStep((s) => (s === 0 && imagePath.endsWith('.webp') ? 1 : 2))}
+        onError={() => setFallbackStep((s) => (s === 0 && effectivePath.endsWith('.webp') ? 1 : 2))}
       />
       {/* Fallback: hide broken image, show colored text indicator */}
       {imgError && (

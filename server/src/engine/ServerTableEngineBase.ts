@@ -539,6 +539,14 @@ export abstract class ServerTableEngineBase {
    * street-by-street reveal to finish. Reset with currentHandRitBoards.
    */
   protected currentHandRitBaseBoardCount = 0;
+  /**
+   * COMPLETENESS PASS 2026-08-26: boards 2..N of a run-it-twice hand, engine
+   * card strings ('Ahearts'), in run order. Persisted first-class to
+   * hand_history.rit_boards at settlement — the changelog's long-standing
+   * "persist the extra board(s)" item. The `rit_board_N:` pseudo-actions
+   * remain for older readers; this column is the canonical record now.
+   */
+  protected currentHandRitExtraBoards: string[][] = [];
   protected currentHandShowdownResults: Array<{
     userId: string;
     handRanking: number;
@@ -1148,27 +1156,43 @@ export abstract class ServerTableEngineBase {
       // of them, and no offer ever fired in live traffic. Owner intent:
       // OFF means at least one user-written column is false; the legacy
       // engine column is honored as an additional ON override.
-      // TOURNAMENT GATE 2026-08-18: RIT is a cash/club-game feature. Running
-      // it twice in a tournament is both non-standard (no major app offers
-      // it in MTTs) and numerically unsound here: per-board splits produce
-      // fractional amounts while tournament_players.chips is INTEGER (the
-      // sync floors, destroying chips - see POSTGRES_INTEGER_CAST_FLOOD).
-      // A live 3-run tournament hand (41627f9a, 02:11 UTC) split 1760.88
-      // into 586.96/1173.92 tournament chips before this gate went in.
+      // TOURNAMENT GATE 2026-08-18 — CONFIRMED CASH-ONLY BY DAN 2026-08-26:
+      // "run it twice or 3 times is a cash game only area. it should never
+      // be in MTT, SPINS OR HEADS UP." The gate was briefly lifted the same
+      // day and reinstated within the hour on that ruling — RIT is a product
+      // decision, cash tables only, not merely a numeric limitation.
+      //
+      // (The original numeric reason still stands as history: per-board
+      // splits produce fractional amounts while tournament_players.chips is
+      // INTEGER — the sync floors, destroying chips; live 3-run tournament
+      // hand 41627f9a split 1760.88 into 586.96/1173.92 before the gate went
+      // in. dealAndResolveRIT now carries an integer-exact tournament branch
+      // as DEFENSE IN DEPTH: unreachable while this gate holds, but if the
+      // gate ever regresses, that branch makes the 41627f9a chip destruction
+      // impossible rather than merely unlikely.)
       const ritIsTournament =
         !!this.tableInfo.tournament_id || this.tableInfo.game_type === 'tournament';
       const ritEnabled =
         !ritIsTournament &&
         (((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
           (this.tableInfo.run_it_twice_enabled ?? false));
-      const insuranceEnabled = this.tableInfo.insurance_enabled ?? false;
-      const ritEffective = ritEnabled && !insuranceEnabled; // Insurance takes priority
-
-      if (ritEnabled && insuranceEnabled) {
-        console.warn(
-          `[ServerTableEngine:${this.tableId}] MUTUAL EXCLUSION: Both RIT and Insurance enabled — disabling RIT. These features cannot coexist.`
-        );
-      }
+      // ALL-CASH INSURANCE 2026-08-26 (Dan): insurance is a CASH feature.
+      // The ledger step was already cash-only (ServerTableEngineSettlement
+      // gates on !isTournamentTable), but the engine itself never refused a
+      // stray insurance_enabled flag on a tournament row - which would have
+      // moved seat chips with NO bank ledger behind them. Same gate as RIT.
+      const insuranceEnabled = (this.tableInfo.insurance_enabled ?? false) && !ritIsTournament;
+      // SEQUENCING 2026-08-26 (Dan's leader-seat recording): FIX 92 used to
+      // force-disable RIT here whenever insurance was on ("insurance takes
+      // priority"). The reference table runs BOTH: the run-it-multi-times
+      // question comes FIRST, and insurance engages only when the hand
+      // resolves to a single run ("THE INSURANCE PART PICKED UP ON THE TURN.
+      // AFTER THE RUN IT TWICE WAS DECLINED"). Per-HAND exclusivity still
+      // holds - a hand that deals extra boards never carries an insurance
+      // contract, and an insured hand always runs exactly once - it is now
+      // enforced by the runout dispatch (handleAllInRunout), not by turning
+      // the feature off.
+      const ritEffective = ritEnabled;
 
       // Bible V8 §4.20 + FIX 98: Configure Run It Twice engine
       // Chooser gets 5s, responders get 10s — per Dan's rules
@@ -2690,9 +2714,24 @@ export abstract class ServerTableEngineBase {
     const evictable = Array.from(new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable]));
     if (evictable.length === 0) return;
 
+    // Dan 2026-08-26, binding: "a player can never leave the table while they
+    // are all in. they must wait for the hand to be finished." An eviction is
+    // still a departure, and this one cashes the seat out. Both call sites are
+    // between hands today, so this should never fire - which is the point: the
+    // safety was call-site placement rather than a check, and a future caller
+    // would not know that. leaveTable() refuses the same case explicitly.
+    const evictHand = this.handController?.getState();
+
     for (const userId of evictable) {
       const seated = this.seatedPlayers.find((p) => p.user_id === userId);
       if (!seated) continue;
+      const evictSelf = evictHand?.players.find((p) => p.user_id === userId);
+      if (evictSelf?.is_all_in && !evictSelf.is_folded) {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] NOT evicting ${userId} — all-in in a live hand`
+        );
+        continue;
+      }
       const awayBlindEvict = blindEvictSet.has(userId);
       const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
       console.log(

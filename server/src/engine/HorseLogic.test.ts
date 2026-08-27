@@ -1892,7 +1892,11 @@ describe('HorseLogic V9 — humanization polish', () => {
       if (d.action === 'bet' && d.amount) {
         bets++;
         const frac = d.amount / (40 * 1.0); // tag sizingMultiplier = 1.0
-        if (Math.min(...FAMILIES.map((f) => Math.abs(frac - f))) <= 0.06) onFamily++;
+        // V18 (2026-08-26): per-horse familyBias deliberately shifts every
+        // family center by up to +/-0.03 as a stable personality signature,
+        // superseding the exact-center pin. Tolerance widens accordingly:
+        // 0.06 jitter half-width + 0.03 bias.
+        if (Math.min(...FAMILIES.map((f) => Math.abs(frac - f))) <= 0.09) onFamily++;
       }
     }
     expect(bets).toBeGreaterThan(50); // the set bets often

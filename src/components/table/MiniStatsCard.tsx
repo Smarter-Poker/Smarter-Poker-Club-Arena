@@ -15,7 +15,7 @@
 
 import React from 'react';
 import './MiniStatsCard.css';
-import statsIcon from '../../assets/icons/icon-stats.jpg';
+import { useButtonImage } from '../../hooks/useButtonImage';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -58,6 +58,7 @@ export function MiniStatsCard({
   onTap,
   isTournament = false,
 }: MiniStatsCardProps) {
+  const statsIcon = useButtonImage('icon-stats');
   // Don't show if not seated (unless in a tournament, where stats/lobby button is always visible)
   if (!isSeated && !isTournament) return null;
 

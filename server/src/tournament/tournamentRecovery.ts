@@ -471,6 +471,34 @@ export async function recoverStuckCompletingTournaments(
           }
         }
 
+        // 3.5 Settle the fee ledger. SETTLEMENT INTEGRITY 2026-08-26: this
+        // path finishes tournaments whose engine died mid-finish — which is
+        // exactly the population whose rake never landed (settleTournamentRake
+        // only ran on the happy path). fn_settle_tournament_rake is
+        // PK-claimed and idempotent, so calling it here can never double-pay
+        // against a finish that already settled; it only closes the hole
+        // where nobody did. Non-fatal: the sweep re-drives any failure.
+        try {
+          const { data: rakeRes, error: rakeErr } = await supabase.rpc(
+            'fn_settle_tournament_rake',
+            { p_tournament_id: t.id, p_source: 'recovery' }
+          );
+          if (rakeErr || !rakeRes?.ok) {
+            reportError(
+              new Error(
+                `[GameServer] recoverStuckCompleting: rake settlement failed for ${t.id.slice(0, 8)}: ${rakeErr?.message || rakeRes?.reason} — sweep will re-drive`
+              ),
+              'GameServer.recoverStuckCompleting_rake_settle_failed'
+            );
+          } else if (!rakeRes.already_settled && Number(rakeRes.amount) > 0) {
+            console.log(
+              `[GameServer] recoverStuckCompleting: rake settled for ${t.id.slice(0, 8)}: ${rakeRes.amount} -> ${rakeRes.destination}`
+            );
+          }
+        } catch (rakeEx) {
+          reportError(rakeEx, 'GameServer.recoverStuckCompleting_rake_settle_threw');
+        }
+
         // 4. Complete (CAS-guarded)
         // PAYOUT-INTEGRITY 2026-08-25: the completion is the claim that
         // everything above landed. A discarded error printed "Recovered ..."

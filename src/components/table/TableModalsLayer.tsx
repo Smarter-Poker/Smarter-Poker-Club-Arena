@@ -28,8 +28,6 @@ import type { ThrowEvent } from '../../services/ThrowableService';
 import DiamondWalletModal from '../wallet/DiamondWalletModal';
 import CashierModal from './CashierModal';
 import BuyInModal from './BuyInModal';
-import RabbitHunt from './RabbitHunt';
-import type { RabbitHuntRevealResult } from './RabbitHunt';
 import LeaderboardPanel from './LeaderboardPanel';
 import LeaveTableConfirm from './LeaveTableConfirm';
 import { SessionHUD } from './SessionHUD';
@@ -303,20 +301,11 @@ export interface TableModalsLayerProps {
   onCloseBuyInModal: () => void;
   onConfirmBuyIn: (amount: number, autoRebuy?: boolean) => Promise<void>;
 
-  // Rabbit Hunt
-  isRabbitAvailable: boolean;
-  /**
-   * Cards a reveal will show, as counted by the SERVER. Replaces the old
-   * `currentBoard` prop, which was only ever passed [] — so every reveal
-   * claimed five cards regardless of the street the hand actually ended on.
-   */
-  rabbitCardsAvailable: number;
-  /** Live diamond price from feature_pricing, delivered with the offer. */
-  rabbitDiamondCost?: number | null;
-  // One contract, declared once, in the component that consumes it. This shape
-  // was written out inline here AND in TablePage AND in RabbitHunt — three
-  // copies of the same object, which is three chances for them to drift.
-  onRabbitReveal: () => Promise<RabbitHuntRevealResult>;
+  // Rabbit Hunt props are GONE from this layer. The button moved to the
+  // bottom-left HUD slot on 2026-08-26 and is rendered from TablePage, which
+  // already owns the state these props were forwarding. Leaving them declared
+  // here would be four props threaded through a component that no longer
+  // renders the thing.
 
   // Leaderboard
   showLeaderboard: boolean;
@@ -574,11 +563,6 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     onAvatarChanged,
     onCloseBuyInModal,
     onConfirmBuyIn,
-    // Rabbit Hunt
-    isRabbitAvailable,
-    rabbitCardsAvailable,
-    rabbitDiamondCost,
-    onRabbitReveal,
     // Leaderboard
     showLeaderboard,
     leaderboardPlayers,
@@ -977,6 +961,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         players={ritPanelPlayers}
         totalSeconds={ritTotalSeconds}
         heroAccepted={ritHeroAccepted}
+        currency={isTournament ? '' : '$'}
       />
 
       {/* Bad Beat Jackpot Display — per-variant qualifying rule (2026-08-18).
@@ -1153,15 +1138,13 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         onTopUp={onTopUpAccount}
       />
 
-      {/* Rabbit Hunt (post-hand) */}
-      {!isHandInProgress && isRabbitAvailable && (
-        <RabbitHunt
-          isAvailable={isRabbitAvailable}
-          cardsAvailable={rabbitCardsAvailable}
-          rabbitDiamondCost={rabbitDiamondCost}
-          onReveal={onRabbitReveal}
-        />
-      )}
+      {/* Rabbit Hunt is NOT rendered here any more.
+          Dan 2026-08-26: it belongs in the bottom-left HUD slot the time bank
+          tile occupies during a hand - "THAT ALSO THE EXACT POSITION THAT THE
+          RABBIT HUNT BUTTON SHOULD APPEAR WHEN THE HAND IS OVER." It renders
+          from TablePage's TableHUD bottomLeft stack now, so the two controls
+          share one slot and one coordinate system instead of the
+          fixed left/bottom-vh pair it used to position itself with. */}
 
       {/* Leaderboard Panel */}
       <LeaderboardPanel

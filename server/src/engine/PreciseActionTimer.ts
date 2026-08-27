@@ -352,7 +352,7 @@ export class PreciseActionTimer {
   dispose(): void {
     // Cancel every entry. We don't stop the shared scheduler because other
     // table engines may still be using it.
-    for (const [key, dl] of this.deadlines) {
+    for (const dl of this.deadlines.values()) {
       this.scheduler.cancel(dl.tableId, this.eventId(dl.playerId));
     }
     this.deadlines.clear();

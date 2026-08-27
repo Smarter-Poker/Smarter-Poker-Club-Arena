@@ -9,9 +9,10 @@
  * - Pot split display
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CardImage } from './CardImage';
 import type { Card as CardImageCard } from './CardImage';
+import { formatPopupText } from '../../utils/popupStyle';
 import './RunItTwice.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -63,18 +64,6 @@ export interface RunItTwicePromptProps {
   totalSeconds?: number;
   /** True once the hero has already accepted (buttons become a waiting line). */
   heroAccepted?: boolean;
-  currency?: string;
-}
-
-export interface RunItTwiceBoardProps {
-  currentBoard: Card[];
-  run1Cards: Card[]; // Additional cards for run 1
-  run2Cards: Card[]; // Additional cards for run 2
-  run1Winner: 'player' | 'opponent' | 'split';
-  run2Winner: 'player' | 'opponent' | 'split';
-  potAmount: number;
-  playerName: string;
-  opponentName: string;
   currency?: string;
 }
 
@@ -212,12 +201,17 @@ export function RunItTwicePrompt({
           </div>
         )}
 
+        {/* HOUSE RULE (Dan 2026-08-26): First Letter Of Every Word — the
+            panel bypasses the Toast layer, so the same central transform
+            applies here. Player names keep their interior capitals. */}
         <p className="rit-panel__message">
-          {isChooserPhase
-            ? 'You Have The Best Hand. Choose How Many Times To Run It.'
-            : chosenRuns
-              ? `${opponentName} Requests To Run It ${runsLabel}.`
-              : `${opponentName} Is Choosing How Many Times To Run It.`}
+          {formatPopupText(
+            isChooserPhase
+              ? 'You Have The Best Hand. Choose How Many Times To Run It.'
+              : chosenRuns
+                ? `${opponentName} Requests To Run It ${runsLabel}.`
+                : `${opponentName} Is Choosing How Many Times To Run It.`
+          )}
         </p>
 
         <div className="rit-panel__actions">
@@ -246,7 +240,9 @@ export function RunItTwicePrompt({
               )}
             </>
           ) : heroAccepted || (isChooser && !!chosenRuns) ? (
-            <span className="rit-panel__waiting">Waiting For Other Players…</span>
+            <span className="rit-panel__waiting">
+              {formatPopupText('Waiting For Other Players…')}
+            </span>
           ) : (
             <>
               <button className="rit-panel__btn rit-panel__btn--decline" onClick={onDecline}>
@@ -263,129 +259,13 @@ export function RunItTwicePrompt({
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// BOARD COMPONENT
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export function RunItTwiceBoard({
-  currentBoard,
-  run1Cards,
-  run2Cards,
-  run1Winner,
-  run2Winner,
-  potAmount,
-  playerName,
-  opponentName,
-  currency = '',
-}: RunItTwiceBoardProps) {
-  // Calculate pot splits
-  const potSplit = useMemo(() => {
-    let playerWins = 0;
-    let opponentWins = 0;
-
-    if (run1Winner === 'player') playerWins++;
-    else if (run1Winner === 'opponent') opponentWins++;
-    else {
-      playerWins += 0.5;
-      opponentWins += 0.5;
-    }
-
-    if (run2Winner === 'player') playerWins++;
-    else if (run2Winner === 'opponent') opponentWins++;
-    else {
-      playerWins += 0.5;
-      opponentWins += 0.5;
-    }
-
-    return {
-      player: Math.trunc(potAmount * (playerWins / 2) * 100) / 100,
-      opponent: Math.trunc(potAmount * (opponentWins / 2) * 100) / 100,
-    };
-  }, [run1Winner, run2Winner, potAmount]);
-
-  return (
-    <div className="rit-board">
-      <div className="rit-board__header">
-        <span className="rit-board__badge"> Run It Twice</span>
-        <span className="rit-board__pot">
-          Pot: {currency}
-          {potAmount.toLocaleString()}
-        </span>
-      </div>
-
-      {/* Run 1 */}
-      <div
-        className={`rit-board__run ${run1Winner === 'player' ? 'rit-board__run--won' : run1Winner === 'opponent' ? 'rit-board__run--lost' : ''}`}
-      >
-        <span className="rit-board__run-label">Run 1</span>
-        <div className="rit-board__cards">
-          {/* Current board (faded) */}
-          {currentBoard.map((card, i) => (
-            <span key={`base-${i}`} className="rit-board__card rit-board__card--base">
-              <CardImage card={toCardImage(card)} size="xs" />
-            </span>
-          ))}
-          {/* Run 1 cards */}
-          {run1Cards.map((card, i) => (
-            <span key={`run1-${i}`} className="rit-board__card rit-board__card--new">
-              <CardImage card={toCardImage(card)} size="xs" />
-            </span>
-          ))}
-        </div>
-        <span className="rit-board__run-result">
-          {run1Winner === 'player' && ` ${playerName} wins`}
-          {run1Winner === 'opponent' && `${opponentName} wins`}
-          {run1Winner === 'split' && 'Split pot'}
-        </span>
-      </div>
-
-      {/* Run 2 */}
-      <div
-        className={`rit-board__run ${run2Winner === 'player' ? 'rit-board__run--won' : run2Winner === 'opponent' ? 'rit-board__run--lost' : ''}`}
-      >
-        <span className="rit-board__run-label">Run 2</span>
-        <div className="rit-board__cards">
-          {/* Current board (faded) */}
-          {currentBoard.map((card, i) => (
-            <span key={`base-${i}`} className="rit-board__card rit-board__card--base">
-              <CardImage card={toCardImage(card)} size="xs" />
-            </span>
-          ))}
-          {/* Run 2 cards */}
-          {run2Cards.map((card, i) => (
-            <span key={`run2-${i}`} className="rit-board__card rit-board__card--new">
-              <CardImage card={toCardImage(card)} size="xs" />
-            </span>
-          ))}
-        </div>
-        <span className="rit-board__run-result">
-          {run2Winner === 'player' && ` ${playerName} wins`}
-          {run2Winner === 'opponent' && `${opponentName} wins`}
-          {run2Winner === 'split' && 'Split pot'}
-        </span>
-      </div>
-
-      {/* Summary */}
-      <div className="rit-board__summary">
-        <div className="rit-board__summary-row">
-          <span className="rit-board__summary-name">{playerName}</span>
-          <span className="rit-board__summary-amount rit-board__summary-amount--positive">
-            +{currency}
-            {potSplit.player.toLocaleString()}
-          </span>
-        </div>
-        <div className="rit-board__summary-row">
-          <span className="rit-board__summary-name">{opponentName}</span>
-          <span className="rit-board__summary-amount">
-            +{currency}
-            {potSplit.opponent.toLocaleString()}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
+/*
+ * COMPLETENESS PASS 2026-08-26: the RunItTwiceBoard component that lived
+ * here was DEAD CODE — zero call sites anywhere in the app — and it was
+ * also wrong: a hardcoded 2-player player/opponent/split model that never
+ * learned about three runs, side pots, or multiway chops. The live
+ * multi-board surface is the felt itself (TablePage ritBoardsView).
+ */
 // ═══════════════════════════════════════════════════════════════════════════════
 // RESULT OVERLAY (2026-08-18)
 //

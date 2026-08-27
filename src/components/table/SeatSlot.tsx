@@ -242,6 +242,15 @@ export interface SeatSlotProps {
    */
   winningHoleCardIndexes?: readonly number[];
   /**
+   * POKERBROS PARITY 2026-08-26 (frame-by-frame of the reference recording):
+   * true while ANY seat's winning hand is being displayed table-wide. While
+   * true, every face-up hole card at this seat that is not part of the
+   * winning five dims to ~50% brightness — a losing shown hand dims
+   * entirely, and the winner's own unused cards dim around the lit ones.
+   * Card backs never dim. TablePage derives it from winnerInfo.
+   */
+  winnerDisplayActive?: boolean;
+  /**
    * SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the ENGINE ruled this hand
    * muckable at showdown — its cards were never revealed, and the seat
    * renders a MUCKED label instead. Distinct from isMucking, which is the
@@ -551,6 +560,7 @@ function HoleCard({
   hidden = false,
   isHero = false,
   isWinner = false,
+  isDimmed = false,
   deckStyle,
   cardBack = 'classic_blue',
   eager = false,
@@ -560,6 +570,13 @@ function HoleCard({
   hidden?: boolean;
   isHero?: boolean;
   isWinner?: boolean;
+  /**
+   * POKERBROS PARITY 2026-08-26 (frame-by-frame of the reference recording):
+   * while the winning five are lit, every face-up card that is NOT one of
+   * them — the winner's own unused cards included — drops to ~50% brightness
+   * in the same beat the gold borders appear. Never applied to card backs.
+   */
+  isDimmed?: boolean;
   deckStyle?: '4color' | '2color';
   cardBack?: string;
   eager?: boolean;
@@ -585,7 +602,7 @@ function HoleCard({
   }
   return (
     <div
-      className={`seat__card seat__card--face${isWinner ? ' seat__card--winner' : ''}`}
+      className={`seat__card seat__card--face${isWinner ? ' seat__card--winner' : ''}${isDimmed ? ' seat__card--dimmed' : ''}`}
       style={fanStyle}
     >
       <CardImage
@@ -687,6 +704,7 @@ export const SeatSlot = memo(
       isDealing = false,
       isMucking = false,
       winningHoleCardIndexes,
+      winnerDisplayActive = false,
       isMuckedShowdown = false,
       showdownRevealDelayMs = 0,
       cardSqueezeActive = false,
@@ -947,6 +965,19 @@ export const SeatSlot = memo(
     // and drive off an isWinner rising edge so the bounce replays every win.
     const winnerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const prevIsWinnerRef = useRef(false);
+
+    /* Dan 2026-08-26 mobile pass, item 10: how much of the turn had already
+       elapsed when THIS CLIENT first painted the turn. The engine stamps
+       turn_start_time_ms when it arms the timer, which is broadcast-latency
+       plus the deal hold BEFORE the seat can render the ring — so the ring
+       used to mount already part-drained and visibly emptied in fewer than 15
+       seconds. Anchoring the animation at first paint makes the ring start
+       FULL and reach empty exactly at the engine's deadline (the fold /
+       time-bank moment), which is what "it must take 15 full seconds to
+       disappear" means on a screen that cannot see the packet in flight.
+       Keyed by the turn's start stamp so re-renders mid-turn reuse the same
+       anchor instead of re-anchoring (which would freeze the ring). */
+    const turnPaintAnchorRef = useRef<{ key: number; baseElapsedMs: number } | null>(null);
     useEffect(() => {
       return () => {
         if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
@@ -1426,7 +1457,7 @@ export const SeatSlot = memo(
             }
           >
             <img
-              src="/images/icons/empty-button.png"
+              src={`${import.meta.env.BASE_URL}images/icons/empty-button.png`}
               alt={isHeroReservedSeat ? 'Your reserved seat' : 'Empty seat'}
               className="seat__empty-img"
               draggable={false}
@@ -1453,7 +1484,7 @@ export const SeatSlot = memo(
         >
           {/* 2026-08-26: replaced +/SIT text stack with the SIT coin image. */}
           <img
-            src="/images/icons/sit-button.png"
+            src={`${import.meta.env.BASE_URL}images/icons/sit-button.png`}
             alt="Sit down"
             className="seat__empty-img seat__empty-img--sit"
             draggable={false}
@@ -1577,7 +1608,25 @@ export const SeatSlot = memo(
      * still in the hand until the engine folds them, and erasing their cards
      * would be erasing a live holding.
      */
-    const heroIsOutOfPlay = player.status === 'sitting_out' || player.status === 'away';
+    /* ── HOLDING CARDS BEATS EVERY OTHER SIGNAL ────────────────────────────
+       Dan 2026-08-26: "hero can NEVER EVER EVER lose access to seeing their
+       hole cards."
+
+       This suppression exists so a STALE holding cannot be drawn over a hero
+       who has no hand — which is a real problem and stays solved, because the
+       merge upstream now expires the holding at the hand boundary. But as a
+       standalone status test it was also capable of hiding a hand the hero
+       genuinely HOLDS: a resync can re-stamp the hero 'sitting_out' from a
+       stale ref, and a frame where the engine roster omits the hero's seat
+       substitutes a placeholder with that status. Either one blanked a live
+       hand for as long as it lasted.
+
+       Cards present is now the stronger signal. If the hero is holding
+       something, it is drawn, whatever the status line says; the suppression
+       only applies when there is nothing to show anyway. */
+    const heroHoldsCards = !!player.holeCards && player.holeCards.length > 0;
+    const heroIsOutOfPlay =
+      !heroHoldsCards && (player.status === 'sitting_out' || player.status === 'away');
 
     // 2026-04-15 Bible V8 §6.1 — pure-CSS ring countdown. Set animation
     // duration + a negative animation-delay so the ring animates from the
@@ -1625,14 +1674,39 @@ export const SeatSlot = memo(
       // overrun). serverNow() applies the measured offset - see
       // utils/serverClock.ts. durationMs above never had this problem: it is
       // deadline minus start, server-minus-server, so the offset cancels.
-      const elapsedMs = turnStartTimeMs ? Math.max(0, serverNow() - turnStartTimeMs) : 0;
+      const rawElapsedMs = turnStartTimeMs ? Math.max(0, serverNow() - turnStartTimeMs) : 0;
+      /* Item 10 (Dan 2026-08-26): anchor at this client's FIRST paint of the
+         turn. The base elapsed (latency + deal hold) is subtracted from both
+         the duration and the elapsed, so the ring spans mount → deadline:
+         starts full, empties exactly when the engine folds or the time bank
+         fires, never earlier. Capped so a pathological anchor can never
+         reduce the ring below one second. */
+      /* Only broadcast latency and the deal hold are compensated — a few
+         seconds at most. A LARGER first-paint elapsed means a genuine
+         mid-turn rejoin (reconnect, tab wake), where the ring must pick up
+         at its true position rather than pretend the clock restarted —
+         tests/seatslot-countdown-duration.test.tsx pins that case. */
+      const TURN_PAINT_LATENCY_ALLOWANCE_MS = 3_000;
+      const anchorKey = turnStartTimeMs || turnDeadlineMs;
+      if (turnPaintAnchorRef.current?.key !== anchorKey) {
+        turnPaintAnchorRef.current = {
+          key: anchorKey,
+          baseElapsedMs: rawElapsedMs <= TURN_PAINT_LATENCY_ALLOWANCE_MS ? rawElapsedMs : 0,
+        };
+      }
+      const baseElapsedMs = Math.min(
+        turnPaintAnchorRef.current.baseElapsedMs,
+        Math.max(0, durationMs - 1_000)
+      );
+      const effDurationMs = durationMs - baseElapsedMs;
+      const elapsedMs = Math.max(0, rawElapsedMs - baseElapsedMs);
       // Dan 2026-08-15: the yellow countdown is a full 15 seconds. On a normal
       // 15s turn that is the entire clock (never goes red); when a time bank
       // extends the turn, yellow still owns the first 15s and the borrowed
       // seconds run red. Capped at the turn length so the colour animation can
       // never outlive the ring it colours.
       const YELLOW_MS = 15_000;
-      const yellowMs = Math.min(YELLOW_MS, durationMs);
+      const yellowMs = Math.min(YELLOW_MS, effDurationMs);
       /**
        * Dan 2026-08-21 (bug list item 8): "it must take 15 seconds to fully
        * disappear, it needs to slow down at the end and FLASH when there are 5
@@ -1658,14 +1732,14 @@ export const SeatSlot = memo(
        */
       const FLASH_WINDOW_MS = 5_000;
       const FLASH_CYCLE_MS = 500;
-      const remainingMs = Math.max(0, durationMs - elapsedMs);
-      const flashDelayMs = durationMs - FLASH_WINDOW_MS - elapsedMs;
+      const remainingMs = Math.max(0, effDurationMs - elapsedMs);
+      const flashDelayMs = effDurationMs - FLASH_WINDOW_MS - elapsedMs;
       const flashCount = Math.max(
         0,
         Math.ceil(Math.min(FLASH_WINDOW_MS, remainingMs) / FLASH_CYCLE_MS)
       );
       timerStyle = {
-        '--sp-timer-duration': `${(durationMs / 1000).toFixed(3)}s`,
+        '--sp-timer-duration': `${(effDurationMs / 1000).toFixed(3)}s`,
         '--sp-timer-yellow-duration': `${(yellowMs / 1000).toFixed(3)}s`,
         '--sp-timer-delay': `-${(elapsedMs / 1000).toFixed(3)}s`,
         '--sp-timer-flash-delay': `${(flashDelayMs / 1000).toFixed(3)}s`,
@@ -1780,6 +1854,17 @@ export const SeatSlot = memo(
                       isWinner={
                         isWinner &&
                         (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
+                      }
+                      /* POKERBROS PARITY 2026-08-26: while a winner is on
+                         display, every face-up card outside the winning five
+                         dims — a losing shown hand dims whole, a winner's
+                         unused cards dim around the lit ones. */
+                      isDimmed={
+                        winnerDisplayActive &&
+                        !(
+                          isWinner &&
+                          (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
+                        )
                       }
                       deckStyle={deckStyle}
                       cardBack={cardBack}
@@ -2235,6 +2320,16 @@ export const SeatSlot = memo(
                       isWinner &&
                       (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
                     }
+                    /* POKERBROS PARITY 2026-08-26: same rule as the villain
+                       row — during winner display, only the winning cards
+                       stay lit; the hero's other cards dim with the rest. */
+                    isDimmed={
+                      winnerDisplayActive &&
+                      !(
+                        isWinner &&
+                        (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
+                      )
+                    }
                     deckStyle={deckStyle}
                     cardBack={cardBack}
                     /* The hero's own hand is on screen for the whole hand and is
@@ -2292,6 +2387,20 @@ export const SeatSlot = memo(
           >
             {netWinAmount > 0 ? '+' : '-'}
             {formatStack(Math.abs(netWinAmount))}
+          </div>
+        )}
+
+        {/* POKERBROS PARITY 2026-08-26 (round 3): the reference scatters
+            four-point gold star sparkles over the winner's cards while the
+            +N float shows — measured off the 30.5-31.1s frames (one large
+            star on the cards, smaller ones twinkling around them). Positive
+            wins only: a rake-negative chop gets information, not confetti. */}
+        {isWinner && typeof netWinAmount === 'number' && netWinAmount > 0 && (
+          <div className="seat__win-sparkles" aria-hidden="true" key={`spark-${netWinAmount}`}>
+            <span className="seat__win-sparkle" />
+            <span className="seat__win-sparkle" />
+            <span className="seat__win-sparkle" />
+            <span className="seat__win-sparkle" />
           </div>
         )}
 
@@ -2409,6 +2518,10 @@ export const SeatSlot = memo(
     // each must break the memo or the feature is invisible.
     if (prev.isMuckedShowdown !== next.isMuckedShowdown) return false;
     if (prev.showdownRevealDelayMs !== next.showdownRevealDelayMs) return false;
+    // POKERBROS PARITY 2026-08-26: the table-wide dim flag flips on every
+    // seat at once when a winner is named — it must break the memo or losing
+    // seats keep full-brightness cards while the winner's are lit.
+    if (prev.winnerDisplayActive !== next.winnerDisplayActive) return false;
     {
       const a = prev.winningHoleCardIndexes;
       const b = next.winningHoleCardIndexes;

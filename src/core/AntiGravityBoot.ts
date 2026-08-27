@@ -43,13 +43,8 @@ export function initAntiGravity(): BootStatus {
   // ═══════════════════════════════════════════════════════════════════════════
   // PHASE 1: VERIFY ENV VARS (Required)
   // ═══════════════════════════════════════════════════════════════════════════
-  const ANTIGRAVITY_ENABLED = import.meta.env.VITE_ANTIGRAVITY_ENABLED;
   const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
   const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-  if (ANTIGRAVITY_ENABLED !== 'true') {
-    errors.push('VITE_ANTIGRAVITY_ENABLED is not set to "true"');
-  }
 
   if (!SUPABASE_URL) {
     errors.push('VITE_SUPABASE_URL is missing');
@@ -60,7 +55,7 @@ export function initAntiGravity(): BootStatus {
   }
 
   // All env vars must be present for ANTIGRAVITY_OK
-  if (ANTIGRAVITY_ENABLED === 'true' && SUPABASE_URL && SUPABASE_ANON_KEY) {
+  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     antigravityOk = true;
   }
 

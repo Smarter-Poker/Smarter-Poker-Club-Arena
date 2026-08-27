@@ -172,6 +172,14 @@ export function spawnAheadMsFor(cfg: Record<string, unknown>): number {
  * head start; the ramp is the rule.
  */
 export const HORSE_SEED_WITHIN_MS = 60 * 60 * 1000;
+/* DELIBERATELY NO LONGER EQUAL TO MTT_PRESTART_RAMP_MS (2026-08-26).
+   They were aligned on 2026-08-23 when both meant "about to start". The ramp
+   now runs for the full 72-hour publish window so the board is never a wall of
+   empty games; this constant is a different thing - the head start given at
+   SPAWN, before the ramp has ticked once. Seeding three days early would put
+   chips into a pool for an event that has only just appeared, and the ramp
+   reaches it within one tick anyway. One hour is still exactly right for a
+   head start. */
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PURE SCHEDULING LOGIC — exported so the matching rules are testable with no DB
@@ -1098,12 +1106,21 @@ export class ScheduledTournamentService {
     // player-paid total (floor 10%, splitBuyIn's arithmetic without the
     // ladder snap — a manual event keeps its price). Compliant splits,
     // including every spin's fee-free 0, pass through untouched.
+    //
+    // CENTS FIX 2026-08-26: this block used to floor the cap to WHOLE chips
+    // (Math.floor((amt+fee)*0.1)), so a restarted 1-chip game saw its 0.10
+    // fee "exceed" a cap of 0 and had the fee silently folded into the prize
+    // — undoing Dan's 2026-08-25 fractional-fee rule on every restart of the
+    // micro rungs. The cap now floors to CENTS, same as feeToCents, and the
+    // player-paid total is preserved to the cent (a legacy 19.80 stays 19.80
+    // — clampRakeToCap is NOT used here because it whole-rounds the total).
     {
       const amt = Number(row.buy_in_amount) || 0;
       const fee = Number(row.buy_in_fee) || 0;
-      const cap = Math.floor((amt + fee) * 0.1 + 1e-9);
+      const total = Math.round((amt + fee) * 100) / 100;
+      const cap = Math.floor(total * 0.1 * 100 + 1e-9) / 100;
       if (fee > cap) {
-        row.buy_in_amount = amt + fee - cap;
+        row.buy_in_amount = Math.round((total - cap) * 100) / 100;
         row.buy_in_fee = cap;
       }
     }

@@ -14,6 +14,7 @@ import React, { useMemo, useEffect, useRef, useState, memo } from 'react';
 import { CardImage, CardBack, type Card } from './CardImage';
 import { haptic, soundService } from '../../services/SoundService';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
+import { formatPopupText } from '../../utils/popupStyle';
 import './CommunityCards.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -523,18 +524,29 @@ function CommunityCardsComponent({
         <div className="community-cards__hand-name">
           {/* POKERBROS PARITY 2026-08-26: the name is its own span so the
               band background (parent) and the gold gradient fill
-              (background-clip: text on this span) can coexist. */}
-          <span className="community-cards__hand-name-text">{winningHandName}</span>
+              (background-clip: text on this span) can coexist.
+              HOUSE RULE (Dan 2026-08-26): every forward-facing display
+              capitalizes the first letter of every word — the evaluator says
+              "Three of a Kind", the screen says "Three Of A Kind". Applied
+              at render through the same central transform the Toast layer
+              uses, so data-level hand names stay untouched. */}
+          <span className="community-cards__hand-name-text">
+            {formatPopupText(winningHandName)}
+          </span>
           {/* SHOWDOWN SYSTEM 2026-08-25 (spec section 14): the secondary
               descriptive line — smaller, under the classification. */}
           {winningHandDescription && (
-            <div className="community-cards__hand-description">{winningHandDescription}</div>
+            <div className="community-cards__hand-description">
+              {formatPopupText(winningHandDescription)}
+            </div>
           )}
           {/* SHOWDOWN POLISH 2026-08-25 (spec 33): the hi-lo split's low
               half gets its own line so HIGH WINNER and LOW WINNER are
               visually distinguished. The engine's low name is already
               self-describing ("Low: 8-6-4-3-2"). */}
-          {lowWinnerLabel && <div className="community-cards__low-winner">{lowWinnerLabel}</div>}
+          {lowWinnerLabel && (
+            <div className="community-cards__low-winner">{formatPopupText(lowWinnerLabel)}</div>
+          )}
         </div>
       )}
     </div>

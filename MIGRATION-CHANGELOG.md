@@ -15448,3 +15448,23 @@ earlier this round is REINSTATED within the hour:
 - Kept from round 6: the house-palette-only restyle of every RIT surface,
   and the no-currency-mark guards (harmless, and correct if a tournament
   surface ever renders these labels).
+
+### Round 6c — First Letter Of Every Word, on every RIT display (Dan)
+
+Dan: "MAKE SURE ON ALL DISPLAYS THE FIRST LETTER OF EVERY WORD IS
+CAPITALIZED ... or any other forward facing announcements." The Toast layer
+has enforced this centrally since 2026-08-20 (popupStyle), but the RIT
+surfaces bypass it. All of them now route through the SAME transform:
+
+- The felt status strip: applied at the showRitFeltBanner choke point, so
+  waiting / accepted / declined / mandatory banners are all covered, with
+  player names keeping their interior capitals.
+- The consent panel message and waiting label.
+- Winner ribbons on the board (CommunityCards): the evaluator's data-level
+  names stay untouched ("Three of a Kind"); the SCREEN says "Three Of A
+  Kind" — name, description line, and low-winner line alike. This applies to
+  every showdown platform-wide, exactly as the rule reads.
+- The multi-board run headers ("Name • Two Pair (Chop)").
+- New pins in tests/unit/ritTitleCaseDisplays.test.tsx: rendered ribbon
+  case, panel message case with name capitals preserved, the banner choke
+  point, and the transform's name-preserving behavior.

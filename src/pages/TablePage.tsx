@@ -331,6 +331,7 @@ const RANK_WORD = (r: string): string =>
   })[String(r).toUpperCase()] ?? String(r).toUpperCase();
 import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
 import { getAnimationSpeed } from '../utils/animationSpeed';
+import { formatPopupText } from '../utils/popupStyle';
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
 import { TableModalsLayer } from '../components/table/TableModalsLayer';
 import { MysteryBountyService, playerTotalsFromAwards } from '../services/MysteryBountyService';
@@ -3233,7 +3234,12 @@ export default function TablePage({
       clearTimeout(ritFeltBannerTimerRef.current);
       ritFeltBannerTimerRef.current = null;
     }
-    setRitFeltBanner(text);
+    // HOUSE RULE (Dan 2026-08-26): "on all displays the first letter of
+    // every word is capitalized" — this strip bypasses the Toast layer, so
+    // it applies the SAME central transform here, at the one choke point
+    // every banner text flows through. Player names keep their interior
+    // capitals (the transform never lowercases).
+    setRitFeltBanner(formatPopupText(text));
     if (ms && ms > 0) {
       ritFeltBannerTimerRef.current = setTimeout(() => {
         ritFeltBannerTimerRef.current = null;
@@ -13971,9 +13977,15 @@ export default function TablePage({
                               className="community-area__run-winner"
                               title={board.winnerNames.join(', ')}
                             >
-                              {board.winnerNames.length > 1
-                                ? `${board.winnerNames.join(' & ')} • ${board.winnerHandName ? `${board.winnerHandName} (Chop)` : 'Chop'}`
-                                : `${board.winnerNames[0]}${board.winnerHandName ? ` • ${board.winnerHandName}` : ''}`}
+                              {/* HOUSE RULE (Dan 2026-08-26): First Letter Of
+                                  Every Word — the evaluator's "Three of a
+                                  Kind" renders "Three Of A Kind". Names keep
+                                  their interior capitals. */}
+                              {formatPopupText(
+                                board.winnerNames.length > 1
+                                  ? `${board.winnerNames.join(' & ')} • ${board.winnerHandName ? `${board.winnerHandName} (Chop)` : 'Chop'}`
+                                  : `${board.winnerNames[0]}${board.winnerHandName ? ` • ${board.winnerHandName}` : ''}`
+                              )}
                             </span>
                           )}
                           {/* Share %/amount only once the reveal has finished —

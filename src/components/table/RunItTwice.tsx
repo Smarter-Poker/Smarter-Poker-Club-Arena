@@ -12,6 +12,7 @@
 import React, { useState, useEffect } from 'react';
 import { CardImage } from './CardImage';
 import type { Card as CardImageCard } from './CardImage';
+import { formatPopupText } from '../../utils/popupStyle';
 import './RunItTwice.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -200,12 +201,17 @@ export function RunItTwicePrompt({
           </div>
         )}
 
+        {/* HOUSE RULE (Dan 2026-08-26): First Letter Of Every Word — the
+            panel bypasses the Toast layer, so the same central transform
+            applies here. Player names keep their interior capitals. */}
         <p className="rit-panel__message">
-          {isChooserPhase
-            ? 'You Have The Best Hand. Choose How Many Times To Run It.'
-            : chosenRuns
-              ? `${opponentName} Requests To Run It ${runsLabel}.`
-              : `${opponentName} Is Choosing How Many Times To Run It.`}
+          {formatPopupText(
+            isChooserPhase
+              ? 'You Have The Best Hand. Choose How Many Times To Run It.'
+              : chosenRuns
+                ? `${opponentName} Requests To Run It ${runsLabel}.`
+                : `${opponentName} Is Choosing How Many Times To Run It.`
+          )}
         </p>
 
         <div className="rit-panel__actions">
@@ -234,7 +240,9 @@ export function RunItTwicePrompt({
               )}
             </>
           ) : heroAccepted || (isChooser && !!chosenRuns) ? (
-            <span className="rit-panel__waiting">Waiting For Other Players…</span>
+            <span className="rit-panel__waiting">
+              {formatPopupText('Waiting For Other Players…')}
+            </span>
           ) : (
             <>
               <button className="rit-panel__btn rit-panel__btn--decline" onClick={onDecline}>

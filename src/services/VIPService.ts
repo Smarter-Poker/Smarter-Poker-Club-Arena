@@ -430,8 +430,16 @@ class VIPServiceClass {
           used: usage['time_bank_seconds'] || 0,
           limit: VIP_GOLD_LIMITS.timeBankSeconds,
         },
-        emojis: { used: usage['emojis'] || 0, limit: VIP_GOLD_LIMITS.emojis },
-        tags: { used: usage['tags'] || 0, limit: VIP_GOLD_LIMITS.tags },
+        /* WH issue #771 item 3 (2026-08-27): these read usage under 'emojis'
+           and 'tags' while fn_increment_vip_usage writes the VIPFeature keys
+           'emoji_pack' and 'tag_pack' — so the two counters could NEVER
+           match and the 1,200-emoji / 1,000-tag allowances were never
+           enforced in either direction. The reader now uses the keys the
+           writer writes, which is the whole fix: the quota machinery agrees
+           with itself, and the moment the VIP page re-advertises the lines
+           the enforcement is already real. */
+        emojis: { used: usage['emoji_pack'] || 0, limit: VIP_GOLD_LIMITS.emojis },
+        tags: { used: usage['tag_pack'] || 0, limit: VIP_GOLD_LIMITS.tags },
       };
     } catch (err) {
       console.warn('[VIPService] getMonthlyUsage unexpected error:', err);

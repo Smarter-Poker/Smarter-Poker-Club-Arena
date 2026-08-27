@@ -28,6 +28,18 @@
 export const DEFAULT_RAKE_RATE = 0.1;
 
 /**
+ * Heads-Up / SNG rake (Dan 2026-08-25): "HEADS UP EVENTS ARE ONLY A 5% RAKE,
+ * SO A 1 CHIP BUY IN X 2 PLAYERS = 5% OF 2 CHIPS ... WINNER TAKES ALL = 1.90".
+ * ONE home for the number: TournamentRecurringService re-exports it and
+ * ScheduledTournamentService prices sng-type schedules with it, so a
+ * scheduled Heads-Up and a recurring one can never disagree on the cut.
+ * fn_create_tournament applies the same 5% for owner-created SNGs
+ * (migration 20260827_tournament_rake_attribution_and_creation_caps).
+ * MIRROR of src/utils/buyIn.ts — change one, change both.
+ */
+export const SNG_RAKE_RATE = 0.05;
+
+/**
  * Generator price points. The fee is whole at every rung (splitBuyIn rounds
  * it), so 1/2/3 carry a 0 fee and 5/15/25/75 round their fee up - see
  * src/utils/buyIn.ts for why that trade was made.

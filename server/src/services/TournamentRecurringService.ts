@@ -16,7 +16,7 @@
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
-import { DEFAULT_RAKE_RATE, buyInFor, wholeChips } from '../config/buyIn.js';
+import { DEFAULT_RAKE_RATE, SNG_RAKE_RATE, buyInFor, wholeChips } from '../config/buyIn.js';
 import { gameLaneFor, horseHash } from './HorseBehavior.js';
 
 /**
@@ -41,7 +41,10 @@ import { gameLaneFor, horseHash } from './HorseBehavior.js';
  * 0.05 to the house, twice, and the winner takes the 1.90 pool. Exactly the
  * number Dan wrote.
  */
-export const SNG_RAKE_RATE = 0.05;
+// Moved to ../config/buyIn.ts (2026-08-27) so ScheduledTournamentService
+// prices sng schedules with the SAME number. Re-exported for existing
+// importers.
+export { SNG_RAKE_RATE };
 
 function buyInColumns(
   buyIn: number,

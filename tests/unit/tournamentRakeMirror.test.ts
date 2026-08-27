@@ -19,6 +19,24 @@ import * as client from '../../src/utils/buyIn';
 import * as server from '../../server/src/config/buyIn';
 
 describe('server buyIn mirrors client buyIn', () => {
+  it('SNG_RAKE_RATE is 5% and identical in both copies (Dan 2026-08-25)', () => {
+    expect(server.SNG_RAKE_RATE).toBe(0.05);
+    expect(client.SNG_RAKE_RATE).toBe(server.SNG_RAKE_RATE);
+    // A Heads-Up 50 is 47.50 + 2.50, never 45 + 5 — the split every creator
+    // (recurring, scheduled, fn_create_tournament) must produce.
+    expect(server.splitBuyIn(50, server.SNG_RAKE_RATE)).toEqual({
+      total: 50,
+      prize: 47.5,
+      fee: 2.5,
+    });
+    // Dan's worked example: 1-chip duel -> 0.95 in, 0.05 to the house, twice.
+    expect(server.splitBuyIn(1, server.SNG_RAKE_RATE)).toEqual({
+      total: 1,
+      prize: 0.95,
+      fee: 0.05,
+    });
+  });
+
   it('splitBuyIn agrees on every ladder rung', () => {
     for (const total of client.BUY_IN_LADDER) {
       expect(server.splitBuyIn(total)).toEqual(client.splitBuyIn(total));

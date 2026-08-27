@@ -811,6 +811,13 @@ export class GameServer {
       // routine server/ push waits (or is explicitly forced) while real people
       // are seated. Horses are excluded — they do not care.
       humansSeatedTotal: tableLiveness.reduce((n, t) => n + t.humans, 0),
+      // HANDS, NOT PEOPLE (2026-08-27). humansSeatedTotal drove the deploy
+      // drain gate and counted only humans, so a horse's hand could be voided
+      // by a restart while a human's could not. This counts tables actually
+      // mid-hand, whoever is sitting at them, and is what the gate reads now.
+      handsInFlightTotal: tableLiveness.filter(
+        (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress < 120_000
+      ).length,
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
       tableLiveness,
@@ -940,6 +947,75 @@ export class GameServer {
   }
 
   /** Per-table liveness, shared by /health and /metrics. */
+  /**
+   * ═══ DRAIN: FINISH THE HANDS, THEN GO ═══
+   *
+   * Dan 2026-08-27: "TABLES ARE DESIGNED TO BE USED BY EVERYONE, EVERY HORSE
+   * OR HUMAN PLAYER NEEDS TO BE TREATED 100% EXACTLY THE SAME."
+   *
+   * Restarting the engine mid-hand voids that hand. The only thing that ever
+   * protected against it was the deploy workflow's drain gate, and that gate
+   * counted HUMANS — it waited for humans to leave the table, and let a
+   * horse's hand be voided without a second thought. Two things were wrong
+   * with it:
+   *
+   *   1. It protected people rather than hands, which is the exclusion Dan
+   *      banned. A hand in flight is a hand in flight.
+   *   2. It waited for the wrong event. Waiting for a table to EMPTY can take
+   *      forever (and with horses seated it never happens), so the gate would
+   *      defer a deploy for hours and then give up and restart anyway — under
+   *      seated players. Waiting for the current HAND to end takes about a
+   *      minute and protects everyone.
+   *
+   * So the engine now drains itself, on EVERY restart path — deploy,
+   * healthcheck kill, supervisor bounce — instead of relying on one CI job to
+   * ask nicely first. pauseAfterHand() is the same mechanism synchronized
+   * breaks and hand-for-hand already use: the table finishes the hand it is
+   * playing and parks at the boundary.
+   *
+   * Bounded by design. A table stuck mid-hand must not hold the process open,
+   * so this returns when the budget expires and the caller proceeds to stop()
+   * regardless — a bounded wait that saves most hands beats an unbounded one
+   * that risks SIGKILL mid-flush.
+   */
+  async drainHands(
+    maxWaitMs = 8000
+  ): Promise<{ drained: number; total: number; timedOut: boolean }> {
+    const engines = [...this.tableEngines.values()];
+    const total = engines.length;
+    if (total === 0) return { drained: 0, total: 0, timedOut: false };
+
+    for (const engine of engines) {
+      try {
+        engine.pauseAfterHand();
+      } catch {
+        /* a table that refuses to pause must not stop the others draining */
+      }
+    }
+
+    const deadline = Date.now() + Math.max(maxWaitMs, 0);
+    const atBoundary = (e: (typeof engines)[number]): boolean => {
+      try {
+        return e.isWaitingForHandForHand() || e.isPausedByDesign() || !e.isRunning();
+      } catch {
+        return true; // unreadable: do not let it hold the drain open
+      }
+    };
+
+    let drained = engines.filter(atBoundary).length;
+    while (drained < total && Date.now() < deadline) {
+      await this.sleep(250);
+      drained = engines.filter(atBoundary).length;
+    }
+
+    const timedOut = drained < total;
+    console.log(
+      `[GameServer] Drain: ${drained}/${total} table(s) parked at a hand boundary` +
+        (timedOut ? ' — budget expired, stopping anyway' : '')
+    );
+    return { drained, total, timedOut };
+  }
+
   private tableLivenessSnapshot() {
     return [...this.tableEngines].map(([id, engine]) => ({
       tableId: id,

@@ -314,19 +314,27 @@ jobs:
             BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
             # Single-line python on purpose: a multi-line literal here would
             # have column-0 lines, which terminate the YAML block scalar.
-            HUMANS=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("humansSeatedTotal"); print("ERR" if v is None else v)' 2>/dev/null || echo ERR)
-            if [ "$HUMANS" = "ERR" ]; then
+            # HANDS, NOT PEOPLE (2026-08-27). This read humansSeatedTotal, so
+            # it waited for HUMANS to leave and let a horse's hand be voided
+            # without a second thought — the exclusion Dan banned (CLAUDE.md
+            # 10.5). It also waited for the wrong event: a table EMPTYING can
+            # take forever and, with horses seated, never happens, so the gate
+            # deferred for hours and then restarted under seated players
+            # anyway. A hand ends in about a minute. Wait for that instead and
+            # everyone is protected.
+            HANDS=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("handsInFlightTotal"); print("ERR" if v is None else v)' 2>/dev/null || echo ERR)
+            if [ "$HANDS" = "ERR" ]; then
               UNREADABLE=$((UNREADABLE + 1))
-              echo "attempt $i/16: could NOT read humansSeatedTotal (${UNREADABLE} consecutive) — not assuming empty"
+              echo "attempt $i/16: could NOT read handsInFlightTotal (${UNREADABLE} consecutive) — not assuming empty"
               if [ "$UNREADABLE" -ge 4 ]; then
-                echo "::warning::humansSeatedTotal unreadable 4x — the drain gate is blind. Proceeding, but fix /health or the field name."
+                echo "::warning::handsInFlightTotal unreadable 4x — the drain gate is blind. Proceeding; the engine drains itself on SIGTERM (GameServer.drainHands), so hands are still protected."
                 exit 0
               fi
               sleep 15; continue
             fi
             UNREADABLE=0
-            if [ "$HUMANS" -eq 0 ]; then echo "no humans seated — safe to restart"; exit 0; fi
-            echo "attempt $i/16: $HUMANS human(s) seated, waiting 30s..."
+            if [ "$HANDS" -eq 0 ]; then echo "no hands in flight — safe to restart"; exit 0; fi
+            echo "attempt $i/16: $HANDS hand(s) in flight, waiting 30s..."
             sleep 30
           done
           # 2026-08-24: THE GATE NOW FAILS CLOSED. The old fallback here was
@@ -351,11 +359,11 @@ jobs:
             exit 0
           fi
           if [ "$UPTIME" -ge "$MAX_ENGINE_AGE_SEC" ]; then
-            echo "::warning::Humans still seated, but the engine is ${UPTIME}s old (>= ${MAX_ENGINE_AGE_SEC}s staleness cap) — proceeding (SIGTERM drain flushes state)"
+            echo "::warning::Hands still in flight, but the engine is ${UPTIME}s old (>= ${MAX_ENGINE_AGE_SEC}s staleness cap) — proceeding (GameServer.drainHands parks tables at a hand boundary on SIGTERM)"
             exit 0
           fi
           echo "skip=true" >> $GITHUB_OUTPUT
-          echo "::notice::Deploy DEFERRED — humans are seated and the engine is only ${UPTIME}s old. The hourly catch-up run will land this commit in the first empty window."
+          echo "::notice::Deploy DEFERRED — hands are in flight and the engine is only ${UPTIME}s old. The hourly catch-up run will land this commit at the first hand boundary."
 
       - name: Pull the exact commit onto the host
         if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
@@ -591,7 +599,7 @@ jobs:
         run: |
           REASON="already serving this commit"
           if [ "${{ steps.drain.outputs.skip }}" = "true" ]; then
-            REASON="drain gate — humans are seated in live hands"
+            REASON="drain gate — hands are still in flight"
           elif [ "${{ steps.dedupe.outputs.skip }}" = "true" ]; then
             REASON="coalescing — the engine restarted too recently, or it is already on this commit"
           fi

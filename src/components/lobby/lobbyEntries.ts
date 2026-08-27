@@ -849,7 +849,8 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
   /* Dan 2026-08-25: the lobby used to print tables.max_buy_in raw, which on 42
      of 46 live tables is 200bb — a ceiling the table's own BuyInModal will not
      sell. cashBuyInRange reports what a player can actually bring. */
-  const { min: minBuy } = cashBuyInRange(t);
+  const range = cashBuyInRange(t);
+  const minBuy = range.min;
   return {
     id: t.id,
     kind: 'cash',
@@ -873,7 +874,11 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
         : null,
     stakesValue: Number(t.big_blind) || 0,
     buyInLabel: cashBuyInLabel(t),
-    buyInValue: minBuy,
+    /* ITEM E audit, 2026-08-26: an unknown range used to sort as buyInValue 0
+       — the TOP of an ascending Buy-In sort, as if it were the cheapest game
+       on the board. Unknown sinks to the bottom instead (the comparator
+       already handles the Infinity-vs-Infinity case). */
+    buyInValue: range.unknown ? Infinity : minBuy,
     guaranteeLabel: null,
     guaranteeValue: 0,
     players: t.current_players || 0,
@@ -927,7 +932,13 @@ export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 's
       tournamentSpeed(t.name) || (kind === 'spin' || kind === 'sng' ? 'When Full' : 'Standard'),
     status: st.key,
     statusLabel: st.label,
-    live: String(t.status).toUpperCase() === 'RUNNING',
+    /* ITEM E audit, 2026-08-26: derived from the SAME status the surfaces
+       render, not from the raw column. A seat-first game whose last seat just
+       sold reports Running (Dan 2026-08-25: "IF A TABLE ALREADY HAS 3 PLAYERS,
+       IT NEEDS TO SAY RUNNING NOT STARTING") while the column still says
+       REGISTERING for a beat — so the card showed a Running badge with no
+       live pip: one card, two claims. One derivation now. */
+    live: st.key === 'running' || st.key === 'late_reg',
     rules: tournamentMedallions(t),
     ...lobbyFlags(t),
     clubLabel: null,
@@ -1172,6 +1183,32 @@ export function stackDepthLabel(entry: LobbyEntry): string | null {
   if (depth >= 40) return 'Deepstack';
   if (depth >= 20) return 'Standard';
   return 'Turbo';
+}
+
+/**
+ * The Format column's SORT rank, derived from the SAME label the column
+ * renders (ITEM E audit, 2026-08-26). It used to sort on measured depth while
+ * rendering the name keyword, so a 60bb "Sunday Turbo" printed Turbo and
+ * sorted among the Deepstacks — click the header and the visible order read
+ * `Turbo, Deepstack, Standard, Turbo…`, a sort that looks broken because the
+ * two derivations disagreed. One derivation now: rank follows the label,
+ * fastest first. A row with no label (every cash row) sinks in both
+ * directions, as before. Named rows short-circuit before any blind-structure
+ * parse, so the comparator's cost is unchanged for them.
+ */
+export function stackFormatRank(entry: LobbyEntry): number {
+  switch (stackDepthLabel(entry)) {
+    case 'Hyper':
+      return 1;
+    case 'Turbo':
+      return 2;
+    case 'Standard':
+      return 3;
+    case 'Deepstack':
+      return 4;
+    default:
+      return Infinity;
+  }
 }
 
 /**

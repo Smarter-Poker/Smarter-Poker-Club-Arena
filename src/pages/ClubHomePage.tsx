@@ -2744,9 +2744,29 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           .limit(QUERY_LIMITS.LIST),
       ]);
       if (token !== gameStatesTokenRef.current || !isMountedRef.current) return;
-      setSeatedTableIds(new Set((seatsRes.data || []).map((r) => r.table_id)));
-      setRegisteredTournamentIds(new Set((regsRes.data || []).map((r) => r.tournament_id)));
-      setFavoriteTableIds(new Set((favsRes.data || []).map((r) => r.table_id)));
+      /* ITEM E audit, 2026-08-26 — a failed read is not an empty answer.
+         Supabase resolves `{ data: null, error }` on a query-level failure, so
+         `data || []` turned "we could not find out" into "you are in
+         nothing": the panel then offered Register / Join Table to a player
+         who already holds the seat — a false negative on the buy-in surface,
+         which is the expensive direction. Each set updates only from a read
+         that actually worked; on failure the previous set stands (stale beats
+         wrong-empty). */
+      if (seatsRes.error) {
+        reportError(seatsRes.error, 'ClubHomePage.loadMyGameStates.seats');
+      } else {
+        setSeatedTableIds(new Set((seatsRes.data || []).map((r) => r.table_id)));
+      }
+      if (regsRes.error) {
+        reportError(regsRes.error, 'ClubHomePage.loadMyGameStates.registrations');
+      } else {
+        setRegisteredTournamentIds(new Set((regsRes.data || []).map((r) => r.tournament_id)));
+      }
+      if (favsRes.error) {
+        reportError(favsRes.error, 'ClubHomePage.loadMyGameStates.favorites');
+      } else {
+        setFavoriteTableIds(new Set((favsRes.data || []).map((r) => r.table_id)));
+      }
     } catch (e) {
       reportError(e, 'ClubHomePage.loadMyGameStates');
     }
@@ -3010,7 +3030,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     }
     let cancelled = false;
     void waitlistService.countsFor(ids).then((counts) => {
-      if (!cancelled) setWaitlistCounts(counts);
+      // null = the read FAILED. Keep the previous counts — stale beats
+      // wrong-empty, which badged a queued-up full table as plain 'Full'
+      // (ITEM E audit, 2026-08-26).
+      if (!cancelled && counts !== null) setWaitlistCounts(counts);
     });
     return () => {
       cancelled = true;

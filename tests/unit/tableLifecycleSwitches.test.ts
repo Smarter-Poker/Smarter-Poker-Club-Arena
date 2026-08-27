@@ -70,15 +70,21 @@ describe('the lifecycle pass runs, and knows more than DEFAULT_TABLES', () => {
   });
 });
 
-describe('auto_restart finally reaches the column', () => {
-  it('is mirrored out of the settings blob, like straddle and bomb pots before it', () => {
-    const svc = src('src/services/TableService.ts');
-    expect(svc).toMatch(/auto_restart: defaultSettings\.auto_restart \?\? false,/);
+describe('auto_restart reaches the column from the live creation path', () => {
+  // 2026-08-27: this block used to pin the CreateTableModal path
+  // (settings-blob mirror in TableService.createTable). That entire path was
+  // unreachable dead code — the modal had zero imports — and was deleted in
+  // the create-flow audit. The live writer is TableConfigPage.buildTableData,
+  // which writes the column directly.
+  it('TableConfigPage writes the column the lifecycle pass reads', () => {
+    const page = src('src/pages/TableConfigPage.tsx');
+    expect(page).toContain('auto_restart: config.autoRestart');
   });
 
-  it('the modal still offers the checkbox that now means something', () => {
-    const modal = src('src/components/club/CreateTableModal.tsx');
-    expect(modal).toContain("toggleSetting('auto_restart')");
+  it('the dead modal path stayed deleted', () => {
+    expect(
+      fs.existsSync(path.join(process.cwd(), 'src/components/club/CreateTableModal.tsx'))
+    ).toBe(false);
   });
 });
 

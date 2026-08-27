@@ -1075,6 +1075,22 @@ export abstract class ServerTableEngineBase {
     return Number.isFinite(configured) && configured > 2 ? Math.floor(configured) : 2;
   }
 
+  /**
+   * The deal threshold, for callers OUTSIDE the engine (2026-08-27).
+   *
+   * GameServer's zombie reaper decides "should this table be dealing?" and
+   * until now answered with a hard-coded `player_count >= 2` — the same
+   * disagreement the header above warns about, in the one caller that could
+   * not see this method because it was protected. A table with
+   * auto_start_players = 5 and 2-4 seats makes no progress BY DESIGN, and the
+   * reaper called that a zombie and rebuilt its engine every 180 seconds,
+   * forever. One definition of "enough players", visible to everyone who
+   * needs it.
+   */
+  public dealThreshold(): number {
+    return this.minPlayersToDeal();
+  }
+
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;

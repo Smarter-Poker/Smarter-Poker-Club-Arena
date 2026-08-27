@@ -809,7 +809,27 @@ class TournamentService {
       p_config: this.buildRpcConfig(config),
     });
 
-    if (rpcError) throw rpcError;
+    /**
+     * NEVER SHOW A PLAYER A POSTGRES ERROR (2026-08-27).
+     *
+     * This used to rethrow the raw PostgrestError, and both creation surfaces
+     * toast `error.message` — so a CHECK violation surfaced verbatim as
+     * `new row for relation "tournaments" violates check constraint ...`.
+     * The named codes below are the ones a creation insert can actually hit:
+     * 23514 (a money/whole-number CHECK), 0A000 (a feature the database
+     * refuses because it is not built, e.g. multi-day), 42501 (RLS). The raw
+     * error still goes to the reporter so nothing is lost for debugging.
+     */
+    if (rpcError) {
+      reportError(rpcError, 'TournamentService.createTournament_rpc');
+      const code = (rpcError as { code?: string }).code ?? '';
+      const friendly: Record<string, string> = {
+        '23514': 'Could not create the tournament. The buy-in or fee failed a safety check.',
+        '0A000': 'Could not create the tournament. That option is not available yet.',
+        '42501': 'You do not have permission to create games for this club.',
+      };
+      throw new Error(friendly[code] ?? 'Could not create the tournament. Please try again.');
+    }
     const result = rpcResult as {
       success?: boolean;
       error?: string;
@@ -2559,35 +2579,12 @@ class TournamentService {
   // predictable, and no client may ever decide a real prize. The one draw
   // lives server-side, at start, behind the reserve gate.
 
-  /**
-   * Create a Spin & Go on demand. Writes the same pre-draw shape as every
-   * other creation path: no fee (a Spin is priced as the buy-in, nothing on
-   * top), no multiplier (the engine draws through the reserve gate at start),
-   * winner-take-all placeholder payout (start rewrites it from the tier).
-   */
-  async createSpin(clubId: string, buyIn: number): Promise<Tournament> {
-    // Whole chips only (Dan 2026-08-20) - a Spin is priced at a round number.
-    const wholeBuyIn = Math.max(0, Math.round(Number(buyIn) || 0));
-    const config: TournamentConfig = {
-      name: `Spin & Go ${wholeBuyIn}`,
-      type: 'spin',
-      buyIn: wholeBuyIn,
-      rake: 0,
-      startingStack: 500,
-      maxPlayers: 3,
-      minPlayers: 3,
-      blindStructure: SPIN_BLIND_STRUCTURE,
-      payoutStructure: [{ place: 1, percentage: 100 }],
-      lateRegistrationLevels: 0,
-      isRebuy: false,
-      addOnAvailable: false,
-      spinConfig: {
-        possibleMultipliers: SPIN_MULTIPLIERS.standard,
-      },
-    };
-
-    return await this.createTournament(clubId, config);
-  }
+  /* `createSpin` was DELETED 2026-08-27. Zero callers anywhere in src — the
+     live paths that make Spins are the two creation forms (both send
+     type: 'spin' through createTournament) and the server-side recycler.
+     A convenience wrapper nobody calls on a money path is a hazard, not a
+     convenience — the same reasoning as `collectBounty` and
+     `rollMysteryBounty` below. */
 
   // ─────────────────────────────────────────────────────────────────────────────
   // BOUNTY TOURNAMENTS

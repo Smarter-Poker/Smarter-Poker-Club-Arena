@@ -198,3 +198,51 @@ violates…`). Map 23514/0A000 etc. to human text.
 - PR #1408 opened on branch `agent/cowork-create-audit/fix/create-flow-p0`;
   Autopilot merges on green. Publish path: merge → build-for-world-hub →
   World Hub → Vercel.
+
+---
+
+## 6. PHASE 2 — EXECUTED (same day)
+
+Shipped in the follow-up PR (branch `agent/cowork-create-audit/fix/create-flow-phase2`):
+
+- **Dead switches removed from the create form**: Triple Board, Calltime,
+  Game Length (columns stay; each wrote a column with zero readers).
+- **Bomb Pot got its knobs**: frequency (5-50 hands) and ante (1-10 BB)
+  sliders, wired to bomb_pot_frequency / bomb_pot_ante_multiplier — the
+  numbers were hard-coded 10 / 2 since FIX-D10.
+- **Dead code deleted**: CreateTableModal (+css) and TableService.createTable
+  (unreachable modal path), QuickActionsPanel (+css, zero imports and a
+  broken route), LegacyCreateTournamentModal, TournamentService.createSpin,
+  the inert Table Template footer button on CreateTablePage. Pinned tests
+  updated in the same commit (oneTableWriter, tableCreationRealities,
+  tableLifecycleSwitches).
+- **Zombie reaper fixed** (server): "should be dealing" now measures each
+  cash table against its own dealThreshold() (= minPlayersToDeal) instead of
+  a hard-coded 2, ending the 180s engine rebuild loop for tables with
+  auto_start_players > 2. New public accessor on ServerTableEngineBase.
+- **Creation errors humanized**: createTournament maps 23514 / 0A000 / 42501
+  to plain language instead of rethrowing raw Postgres text; raw error still
+  reported.
+- **Fee previews tell the per-format truth**: 5% SNG / 0 Spin / 10% MTT in
+  CreateTournamentModal (label, split preview, bounty validation) and
+  tournamentFromTableConfig — both assumed a flat 10%.
+- **Untracked authorization spine snapshotted**: fn_club_union_context,
+  fn_can_create_games, fn_game_creation_access entered version control
+  (migration `20260827_snapshot_game_creation_access_functions.sql`, applied
+  to production; one deliberate change — anon/PUBLIC EXECUTE revoked on the
+  two helpers the 2026-08-25 sweep missed; both fail closed for anon).
+- **Corrections to the Phase-1 findings**: max_reentries IS enforced
+  (`20260826_tournament_rake_settlement_integrity.sql`), and the
+  fee-formula/CHECK conflict was already fixed on origin/main
+  (`20260827_tournament_rake_attribution_and_creation_caps.sql`) — the local
+  clone was 27 commits behind when the audit read it.
+
+Verification: client tsc clean; client suite green (7,286 tests — two
+git-ls-files pins resolve at commit time when the deletions stage); server
+tsc clean; server suite 1,913 passed. Migration applied with passing
+assertions before push.
+
+Still open for Phase 3 (unchanged from section 4): one creation surface,
+template unification, live buy-in/rake/payout preview, realtime discovery,
+full creation-error taxonomy, add-on break implementation or removal,
+late_reg_mins retirement, spin 'hyper' type (cosmetic today).

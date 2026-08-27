@@ -5,16 +5,13 @@
 
 import { supabase } from '../lib/supabase';
 import { engineChannelClient } from './EngineStateClient';
-import type { PokerTable, TableSettings, GameVariant, HandState } from '../types/database.types';
+import type { PokerTable, TableSettings, HandState } from '../types/database.types';
 import { masterBus } from '../core/MasterBus';
 
 import { resolveClubUUID, isUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 import { notifyServerLeave } from './GameServerAPI';
-import { gameCreationDeniedMessage } from '../lib/gameCreationAccess';
-import { fetchGameCreationAccess } from './GameAccessService';
-import { maxSeatsForVariant } from '../config/tableSeating';
 
 // AUDIT M17: the admin money RPCs return a `reason` for ordinary refusals rather
 // than raising, so the UI can tell "you are not an admin here" apart from "the
@@ -198,212 +195,14 @@ class TableService {
     return data;
   }
 
-  /**
-   * Create a new table
-   */
-  async createTable(
-    clubId: string,
-    name: string,
-    gameVariant: GameVariant,
-    smallBlind: number,
-    bigBlind: number,
-    maxPlayers: number = 9,
-    settings?: Partial<TableSettings>
-  ): Promise<PokerTable> {
-    // Dan 2026-08-19: "PLO5 CARD IS 7 PLAYERS MAX, AND PLO6 CARD IS 6 PLAYERS
-    // MAX BY DEFAULT. PLO4 IS 8 PLAYERS MAX BY DEFAULT. MAKE THIS LAW FOR ALL
-    // GAMES." One number per variant, flat.
-    //
-    // CASH ONLY — "YOU CAN NOT RUN IT TWO OR THREE TIMES IN A TOURNAMENT", and
-    // Run It Twice is the whole reason the cap is tight. This method builds
-    // CASH tables (the club Create Table modal is its only caller). Tournament
-    // tables are created server-side and size themselves from the tournament's
-    // own structure; do not route them through here.
-    //
-    // Enforced HERE rather than only in the modal so every caller is covered.
-    // PokerEngine.deal() throws rather than degrading, so an over-seated table
-    // fails mid-hand instead of quietly dealing a short board.
-    const seatCap = maxSeatsForVariant(gameVariant);
-    if (maxPlayers > seatCap) {
-      throw new Error(
-        `${String(gameVariant).toUpperCase()} tables are capped at ${seatCap} seats ` +
-          `(requested ${maxPlayers}).`
-      );
-    }
-
-    const defaultSettings: TableSettings = {
-      straddle_enabled: true,
-      straddle_type: 'utg',
-      run_it_twice: true,
-      bomb_pot_enabled: false,
-      bomb_pot_frequency: 0,
-      bomb_pot_ante_bb: 0,
-      time_bank_enabled: true,
-      auto_muck: true,
-      vpip_display: false,
-      ante_enabled: false,
-      ante_amount: 0,
-      no_rathole: false,
-      double_board: false,
-      time_limit_minutes: 0,
-      action_time_seconds: 15,
-      /* NOTE: this is the DEFAULTS block. The operator's own choice is carried
-         to the column below - see the action_time_seconds line in the insert. */
-      min_buyin_bb: 20,
-      max_buyin_bb: 100,
-      insurance_enabled: false,
-      auto_restart: true,
-      call_time_enabled: false,
-      // Bible V8 4.3: Blind entry policies
-      wait_for_big_blind: true,
-      auto_post_blinds: true,
-      post_dead_blind: true,
-      // Bible V8 4.21: Showdown reveal policy
-      showdown_reveal: 'last_aggressor_first' as const,
-      auto_muck_losers: true,
-      // Bible V8: Anti-ratholing
-      rathole_cooldown_minutes: 0,
-      ...settings,
-    };
-
-    // Permission gate: the club owner and admins build a standalone club's
-    // games; for a club inside a union, the union's owner and admins do.
-    //
-    // 2026-08-19. This used to refuse ANY club that was in a union, which also
-    // refused the union owner — the one person the rule says may build here.
-    // It now asks the same question the database enforces on the INSERT.
-    const resolvedClubId = await resolveClubUUID(clubId);
-    if (!resolvedClubId) {
-      throw new Error('Invalid club ID provided');
-    }
-    const access = await fetchGameCreationAccess(resolvedClubId);
-    // Union governance (2026-08-19): a union club's own staff cannot build
-    // union-visible games, but they MAY build a PRIVATE club game
-    // (is_private = true — visible only inside the club, never in the union
-    // lobby; the tables RLS policy enforces who may actually insert it and
-    // trg_tables_union_ownership keeps union_id NULL on private rows).
-    const privateOnly = !access.allowed && access.reason === 'union_only';
-    if (!access.allowed && !privateOnly) {
-      throw new Error(gameCreationDeniedMessage(access));
-    }
-
-    let effectiveUnionId = access.unionId;
-    if (access.allowed && !effectiveUnionId && !privateOnly) {
-      const { data: cData } = await supabase
-        .from('clubs')
-        .select('is_union')
-        .eq('id', resolvedClubId)
-        .maybeSingle();
-      if (cData?.is_union) effectiveUnionId = resolvedClubId;
-    }
-
-    const { data, error } = await supabase
-      .from('tables')
-      .insert({
-        club_id: resolvedClubId,
-        // Stamp the owning union so a game built for a member club also shows
-        // in the union's own views. NULL for a standalone club and for
-        // private club games.
-        union_id: privateOnly ? null : effectiveUnionId,
-        is_private: privateOnly,
-        name,
-        game_type: 'cash',
-        game_variant: gameVariant,
-        stakes: smallBlind != null && bigBlind != null ? `${smallBlind}/${bigBlind}` : '1/2',
-        small_blind: smallBlind,
-        big_blind: bigBlind,
-        /**
-         * THE OPERATOR'S BUY-IN RANGE WAS BEING DISCARDED.
-         *
-         * CreateTableModal has min/max buy-in inputs, puts the host's numbers
-         * in `settings`, and these two lines then overwrote them with a fixed
-         * 40x/200x band on the way to the columns the RPC enforces. Whatever
-         * the host typed was accepted by the form, stored in a blob nothing
-         * reads, and silently replaced. The band is the FALLBACK now, which is
-         * what it was always meant to be.
-         */
-        min_buy_in:
-          Number(settings?.min_buyin_bb) > 0
-            ? Number(settings?.min_buyin_bb) * bigBlind
-            : bigBlind * 40,
-        max_buy_in:
-          Number(settings?.max_buyin_bb) > 0
-            ? Number(settings?.max_buyin_bb) * bigBlind
-            : bigBlind * 200,
-        max_players: maxPlayers,
-        current_players: 0,
-        status: 'waiting',
-        /* Action Time was a slider whose value reached `settings` and stopped
-           there: the engine reads the COLUMN, and nothing mirrored it. Every
-           table built from the modal ran at the 15s default no matter what the
-           host chose. */
-        action_time_seconds:
-          Number(settings?.action_time_seconds) > 0
-            ? Math.round(Number(settings?.action_time_seconds))
-            : 15,
-        settings: defaultSettings,
-        // FIX-D1 2026-07-19: the engine (loadTable in server) reads TOP-LEVEL
-        // columns, NOT the `settings` JSONB. Writing host gameplay choices only
-        // into the JSONB meant straddle / run-it-twice / bomb-pot / insurance /
-        // ante / auto-muck / time-bank selected at table creation were silently
-        // ignored. Mirror the merged settings into the canonical columns the
-        // engine actually consumes. (Key-name mapping: run_it_twice ->
-        // run_it_twice_enabled, auto_muck -> auto_muck_enabled, ante_amount ->
-        // ante, bomb_pot_ante_bb -> bomb_pot_ante_multiplier.)
-        straddle_enabled: defaultSettings.straddle_enabled ?? false,
-        run_it_twice_enabled: defaultSettings.run_it_twice ?? false,
-        // EXACTNESS PASS 2026-08-26: the mode column the engine reads for
-        // mandatory_twice / mandatory_three. Without this mapping the
-        // CreateTableModal selector would be dead wiring exactly like the
-        // FIX-D1 keys above once were.
-        run_it_mode: defaultSettings.run_it_mode ?? 'none',
-        auto_muck_enabled: defaultSettings.auto_muck ?? true,
-        insurance_enabled: defaultSettings.insurance_enabled ?? false,
-        ante_enabled: defaultSettings.ante_enabled ?? false,
-        ante: defaultSettings.ante_amount ?? 0,
-        bomb_pot_enabled: defaultSettings.bomb_pot_enabled ?? false,
-        // FIX-D10: engine only fires bomb pots when frequency > 0. Default to
-        // every 10 hands / 2x BB ante when enabled but unspecified.
-        bomb_pot_frequency: defaultSettings.bomb_pot_enabled
-          ? defaultSettings.bomb_pot_frequency || 10
-          : 0,
-        bomb_pot_ante_multiplier: defaultSettings.bomb_pot_enabled
-          ? defaultSettings.bomb_pot_ante_bb || 2
-          : 0,
-        // DOUBLE-BOARD BOMB POT 2026-08-20 round 2: the CreateTableModal
-        // checkbox was dead wiring — this mapping is the only path from
-        // settings to the canonical column the engine reads.
-        bomb_pot_double_board: defaultSettings.bomb_pot_enabled
-          ? (defaultSettings.bomb_pot_double_board ?? false)
-          : false,
-        // 2026-08-18: time_bank_enabled used to be derived from a
-        // time_bank_seconds value the engine never read — a per-table "seconds
-        // per activation" knob that has not existed since the rule became a
-        // flat 20s grant. Setting 0 there was the only way to turn time banks
-        // off, which nothing documented. It is an explicit switch now.
-        time_bank_enabled: defaultSettings.time_bank_enabled ?? true,
-        wait_for_big_blind: defaultSettings.wait_for_big_blind ?? true,
-        /* AUTO RESTART, 2026-08-25. CreateTableModal has had an Auto Restart
-           checkbox since it was written and it landed in `settings` only - the
-           JSONB blob nothing reads. The COLUMN is what fn_table_lifecycle_pass
-           consults, so the checkbox has never meant anything. Same class of
-           bug as the straddle / bomb-pot / ante mirrors above it, and the same
-           fix: carry the host's choice to the column the reader actually
-           looks at. */
-        auto_restart: defaultSettings.auto_restart ?? false,
-        // 7-2 game: winner holding any 7-2 collects a bounty (in BB) from each
-        // other dealt-in player, post-flop only. Engine reads these columns.
-        seven_deuce_enabled: defaultSettings.seven_deuce_enabled ?? false,
-        seven_deuce_amount: defaultSettings.seven_deuce_enabled
-          ? defaultSettings.seven_deuce_amount || 2
-          : 2,
-      })
-      .select()
-      .maybeSingle();
-
-    if (error) throw error;
-    return data;
-  }
+  /* createTable was DELETED 2026-08-27.
+     Its only caller was CreateTableModal, which had zero imports anywhere -
+     the entire modal path was unreachable dead code, discovered in the
+     create-flow audit (.agent/audits/2026-08-27-create-flow-full-audit.md).
+     The one live cash-table creation path is TableConfigPage.buildTableData,
+     which maps every control onto the exact columns the engine reads. If a
+     second programmatic creator is ever needed, build it against that column
+     contract - not a settings JSONB blob. */
 
   /**
    * Update table player count

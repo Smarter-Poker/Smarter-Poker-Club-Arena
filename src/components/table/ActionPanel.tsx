@@ -102,6 +102,11 @@ interface ActionPanelProps {
    */
   verticalSlider?: boolean;
   /**
+   * Tournament seat: the slider steps by the level's chip unit (the small
+   * blind) instead of the cash tables' whole dollar. See sliderUnitFor.
+   */
+  isTournament?: boolean;
+  /**
    * Dan 2026-08-25 (binding): "tournaments and cash games should ALWAYS be
    * defaulted to actual totals unless the user changes the setting to BB.
    * Enforce that rule and functionality."
@@ -171,6 +176,28 @@ export const MAX_SLIDER_POSITIONS = 2000;
  * accepted - the step is a usability choice, not a legality one, and the
  * type-in field is what covers the amounts between two steps.
  */
+/**
+ * The slider's travel unit, before the position-budget coarsening.
+ *
+ * Dan 2026-08-26: "in cash games it should go out by DOLLARS one at a time;
+ * in tournaments same functionality, just scaled per chip depth."
+ *
+ * Cash tables whose big blind is at least a dollar therefore step by exactly
+ * 1 - drag one notch, bet one more dollar. Sub-dollar cash stakes keep the
+ * chip grid (a whole-dollar step across a 0.05/0.10 pot would leave the
+ * slider two positions). Tournaments keep the small blind as the unit: it IS
+ * the smallest chip in play and it grows with the levels, which is what
+ * "scaled per chip depth" means - a 100/200 level steps by 100, not by 1.
+ */
+export function sliderUnitFor(
+  isTournament: boolean,
+  bigBlind: number,
+  smallestChip: number
+): number {
+  if (!isTournament && bigBlind >= 1) return 1;
+  return smallestChip > 0 ? smallestChip : 0.01;
+}
+
 export function betSliderStep(minRaise: number, maxRaise: number, smallestChip: number): number {
   const chip = smallestChip > 0 ? smallestChip : 0.01;
   const range = maxRaise - minRaise;
@@ -440,6 +467,7 @@ export default function ActionPanel({
   currentBet = 0,
 
   raiseIntent,
+  isTournament = false,
   verticalSlider = true,
   // Chips is the default and the rule — see the prop's docstring.
   showStackInBB = false,
@@ -464,9 +492,16 @@ export default function ActionPanel({
    * Dan 2026-08-23 (item 9). Was `bigBlind || 1`, which is what made the drag
    * "snap to the next BB amount". See betSliderStep for the full account.
    */
+  /* Dan 2026-08-26: dollars one at a time in cash; chip-depth scaled in
+     tournaments. See sliderUnitFor. betSliderStep still doubles the unit
+     while the range would exceed MAX_SLIDER_POSITIONS. */
+  const sliderUnit = useMemo(
+    () => sliderUnitFor(!!isTournament, bigBlind, smallestChip),
+    [isTournament, bigBlind, smallestChip]
+  );
   const sliderStep = useMemo(
-    () => betSliderStep(minRaise, maxRaise, smallestChip),
-    [minRaise, maxRaise, smallestChip]
+    () => betSliderStep(minRaise, maxRaise, sliderUnit),
+    [minRaise, maxRaise, sliderUnit]
   );
 
   /** Chips are whole cents; kill binary dust before it reaches a button. */
@@ -641,11 +676,18 @@ export default function ActionPanel({
 
   const isDesktop = windowWidth >= 1024;
 
-  // Dan 2026-04-17: the vertical slider was breaking on narrow phones — ticks
-  // piled up, progress fill looked empty at min, BB labels overlapped the
-  // amount. Force the legacy horizontal slider on mobile; keep vertical on
-  // desktop/tablet where there's room to breathe.
-  const effectiveVerticalSlider = verticalSlider && isDesktop;
+  /* Dan 2026-08-26 (mobile): "the bet slider bar needs to go up and down, not
+     side to side. When it's on its side, it auto slides to the next page."
+     A horizontal drag on a phone is the same gesture as the table-switch
+     swipe, so the two fought and the swipe usually won. The slider is now
+     VERTICAL everywhere — on phones it docks to the right side of the action
+     box (see the <=1023px block in ActionPanel.css, which used to flatten it
+     back to horizontal and now only compacts it). The 2026-04-17 phone
+     breakage that forced the horizontal fallback (piled ticks, overlapping
+     labels) is addressed in that same CSS block: fewer, smaller labels in a
+     narrower gutter, and the rail's length is MEASURED (see railLength), not
+     hard-coded, which was the actual cause of the empty-fill symptom. */
+  const effectiveVerticalSlider = verticalSlider;
 
   // Preset sizing lives in `computeRaisePresets` above - a pure function so the
   // rules Dan set (multiples of the bet being faced; whole numbers; never past

@@ -190,12 +190,18 @@ describe('4. the two beats after the wheel are animated on the engine clock', ()
 
 describe('the shared hand loop stays shared', () => {
   it('no table component or table hook branches on tournament-ness', () => {
+    /* ActionPanel.tsx left this list on 2026-08-26, deliberately: Dan -
+       "in cash games [the bet slider] should go out by dollars one at a
+       time, in tournaments same functionality, just scaled per chip depth."
+       That is a bet-GRANULARITY rule, not a hand-loop or animation rule, and
+       it cannot be expressed without knowing which kind of table this is.
+       The test below this one confines ActionPanel's tournament-awareness to
+       exactly that: the slider unit, nothing else. */
     const shared = [
       'src/components/table/DealAnimation.tsx',
       'src/components/table/CommunityCards.tsx',
       'src/components/table/PotDisplay.tsx',
       'src/components/table/ChipPhysics.tsx',
-      'src/components/table/ActionPanel.tsx',
       'src/hooks/useTableAnimations.ts',
       'src/hooks/useTableSound.ts',
     ];
@@ -210,5 +216,26 @@ describe('the shared hand loop stays shared', () => {
       if (/\bisTournament\b|\btournamentId\b|\btournamentFormat\b/.test(src)) offenders.push(f);
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("ActionPanel's tournament branch is the slider unit and nothing else", () => {
+    /* The exception above is scoped, not open-ended. ActionPanel may read
+       `isTournament` only to pick the slider's travel unit (sliderUnitFor);
+       the animation/identity fields stay banned, and every line that names
+       the flag must be part of that one feature - a prop declaration, the
+       destructuring default, or the sliderUnitFor call. A new branch on the
+       flag anywhere else in the panel re-fails this test. */
+    const src = tsCode(read('src/components/table/ActionPanel.tsx'));
+    expect(src).not.toMatch(/\btournamentId\b|\btournamentFormat\b/);
+    const lines = src.split('\n').filter((l) => /\bisTournament\b/.test(l));
+    expect(lines.length).toBeGreaterThan(0); // the feature exists
+    for (const l of lines) {
+      expect(
+        /isTournament\?:|isTournament: boolean|isTournament = false|sliderUnitFor\(!!isTournament|\[isTournament,|!isTournament && bigBlind/.test(
+          l
+        ),
+        `unexpected tournament branch in ActionPanel: ${l.trim()}`
+      ).toBe(true);
+    }
   });
 });

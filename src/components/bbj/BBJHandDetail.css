@@ -447,3 +447,64 @@
   font-size: 10px;
   color: rgba(255, 255, 255, 0.38);
 }
+
+/* ── The jackpot payout box ───────────────────────────────────────────────
+   Lives here, not in HandDetailView.css, because BBJHandDetail is the only
+   thing that renders it and Vite splits CSS per chunk: a class defined in
+   another component's stylesheet is present only if that component happens
+   to land in the same chunk, which is luck rather than a contract.
+   tests/unit/classNamesResolve.test.ts enforces exactly that, and caught
+   this. */
+/* ── The jackpot payout box, drawn the way the reference frames it ────────── */
+.hdv__bbjp {
+  border-radius: 10px;
+  border: 1px solid rgba(240, 185, 11, 0.55);
+  overflow: hidden;
+}
+
+.hdv__bbjp-head {
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  color: #f0b90b;
+  background: rgba(240, 185, 11, 0.08);
+}
+
+.hdv__bbjp-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.hdv__bbjp-row + .hdv__bbjp-row {
+  border-top: 1px solid rgba(240, 185, 11, 0.12);
+}
+
+.hdv__bbjp-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #fff;
+}
+
+.hdv__bbjp-name.is-you {
+  color: #34c759;
+  font-weight: 700;
+}
+
+.hdv__bbjp-id {
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.38);
+  white-space: nowrap;
+}
+
+.hdv__bbjp-amt {
+  color: #f0b90b;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

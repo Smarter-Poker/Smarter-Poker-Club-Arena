@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * FIVE THEME PRESETS MUST PAINT FIVE DIFFERENT TABLES (2026-08-25)
+ * EVERY THEME PRESET MUST PAINT A DIFFERENT TABLE (2026-08-25)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Measured on main before this commit: the Theme Settings "Themes" tab offered
@@ -35,8 +35,8 @@ const THEME_MODAL = read('src/components/table/ThemeSettingsModal.tsx');
 
 /** The ids the Themes tab actually renders, read from the shipped source. */
 function offeredThemeIds(): string[] {
-  const block = THEME_MODAL.match(/\n\s{2}themes: \[([\s\S]*?)\n\s{2}\],/);
-  expect(block, "the modal's themes tab was not found").toBeTruthy();
+  const block = THEME_MODAL.match(/export const THEME_PRESETS[^=]*= \[([\s\S]*?)\n\];/);
+  expect(block, 'the shared theme preset catalogue was not found').toBeTruthy();
   const ids = [...block![1].matchAll(/id: '([a-z0-9_-]+)'/g)].map((m) => m[1]);
   expect(ids.length, 'themes tab parsed empty').toBeGreaterThan(0);
   return ids;

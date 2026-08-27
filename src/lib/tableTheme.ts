@@ -47,6 +47,11 @@ export const THEME_PRESET_SKINS: Readonly<Record<string, string>> = {
   'neon-blue': 'ice_cavern',
   'rustic-wood': 'golden_sand',
   'casino-green': 'classic_green',
+  'ocean-depths': 'ocean_blue',
+  'crimson-club': 'crimson',
+  'arctic-suite': 'arctic_white',
+  'amethyst-night': 'amethyst_cavern',
+  'carbon-ion': 'carbon_ion',
 };
 
 /** The skin asset for an id, or undefined if nothing real is behind it. */

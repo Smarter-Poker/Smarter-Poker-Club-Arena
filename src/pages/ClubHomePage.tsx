@@ -627,7 +627,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [loading, setLoading] = useState(!bootCache?.club);
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null);
-  const [isInUnion, setIsInUnion] = useState(false);
+  const [, setIsInUnion] = useState(false);
   const [unionName, setUnionName] = useState<string | null>(null);
   /** Live seat count from get_club_home. Null until it answers; see the note
       where it is set - the stale clubs.online_count is never used. */
@@ -1852,7 +1852,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             supabase.from('unions').select('name').eq('id', unionId).maybeSingle(),
           ]);
 
-          if (allUcResult.data && allUcResult.data.length > 0) {
+          // Do NOT throw on allUcResult or memberCountResult error.
+          // A silent failure here degrades gracefully: unionClubIds defaults
+          // to [resolvedId] (showing only club tables) and member_count defaults
+          // to the stale DB row value. A throw here crashes the entire lobby!
+          if (!allUcResult.error && allUcResult.data && allUcResult.data.length > 0) {
             unionClubIds = allUcResult.data.map((r) => r.club_id);
           }
 
@@ -3389,8 +3393,33 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               <h2 className="lobby-club__name" title={club.name}>
                 {club.name}
               </h2>
+              {unionName && (
+                <div
+                  style={{
+                    marginTop: '1px',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    color: '#9aa5b6',
+                    letterSpacing: '0.02em',
+                  }}
+                  title="Union This Club Plays Inside"
+                >
+                  {unionName}
+                </div>
+              )}
               <div className="lobby-club__meta">
-                <span className="lobby-club__id">ID {club.club_id}</span>
+                <span
+                  className="lobby-club__id"
+                  style={{ userSelect: 'all', cursor: 'pointer' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(club.club_id.toString());
+                    toast.success('Club ID Copied');
+                  }}
+                  title="Click to copy"
+                >
+                  ID {club.club_id}
+                </span>
                 <span className="lobby-club__members">
                   <IconMembers />
                   {(club.member_count || 0).toLocaleString()}
@@ -3406,13 +3435,19 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 }}
               >
                 {currentUser?.player_number && (
-                  <span className="lobby-club__id" style={{ userSelect: 'all' }}>
-                    Player {currentUser.player_number}
+                  <span
+                    className="lobby-club__id"
+                    style={{ userSelect: 'all', cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigator.clipboard.writeText(currentUser.player_number!.toString());
+                      toast.success('Player Number Copied');
+                    }}
+                    title="Click to copy"
+                  >
+                    Player ID: {currentUser.player_number}
                   </span>
                 )}
-                <span className="lobby-club__id" style={{ userSelect: 'all', color: '#9aa5b6' }}>
-                  {club.name}
-                </span>
               </div>
 
               <div
@@ -3436,19 +3471,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   </div>
                 )}
 
-                {unionName && (
-                  <div
-                    style={{
-                      marginTop: '6px',
-                      fontSize: '0.85rem',
-                      color: '#9aa5b6',
-                      fontStyle: 'italic',
-                    }}
-                  >
-                    Plays Inside The <strong style={{ color: '#ffffff' }}>{unionName}</strong>
-                  </div>
-                )}
-
                 <div
                   style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}
                 >
@@ -3465,6 +3487,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     onClick={async () => {
                       haptic.medium();
                       let refQuery = '';
+                      let profRefNum: number | null = null;
                       try {
                         // readLocalSession, not the auth SDK's remote user
                         // lookup: the pre-push guard blocks that call by name,
@@ -3485,9 +3508,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                             // code from the invite link.
                             .eq('id', session.userId)
                             .maybeSingle();
-                          refQuery = prof?.player_number
-                            ? `?ref=${prof.player_number}`
-                            : `?ref=${session.userId}`;
+                          if (prof?.player_number) {
+                            profRefNum = prof.player_number;
+                            refQuery = `?ref=${prof.player_number}`;
+                          } else {
+                            refQuery = `?ref=${session.userId}`;
+                          }
                         }
                       } catch (err) {
                         // The link still works without a referral code, so this
@@ -3496,17 +3522,22 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                         reportError(err, 'ClubHomePage.share_ref_lookup_failed');
                       }
                       const shareUrl = `${window.location.origin}/hub/club-arena/invite/${club.id}${refQuery}`;
+                      const inviterName =
+                        currentUser?.display_name || currentUser?.username || 'A player';
+                      const playerNumText = profRefNum
+                        ? `\nYour Referral Number: ${profRefNum}`
+                        : '';
+                      const shareText = `${inviterName} invited you to join ${club.name}!\n\nClub ID: ${club.club_id}${playerNumText}`;
+
                       try {
                         if (navigator.share) {
                           await navigator.share({
                             title: club.name,
-                            text: `${currentUser?.display_name || 'A player'} invited you to join ${club.name}`,
+                            text: shareText,
                             url: shareUrl,
                           });
                         } else {
-                          await navigator.clipboard.writeText(
-                            `${currentUser?.display_name || 'A player'} invited you to join ${club.name}\n\n${shareUrl}`
-                          );
+                          await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
                           toast.success('Club link copied!');
                         }
                       } catch (e) {
@@ -3581,6 +3612,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 onOpenBBJ={() => {
                   haptic.medium();
                   setShowBBJInfo(true);
+                }}
+                onOpenUnionBank={(balance) => {
+                  setUnionWalletModal({ key: 'chips', label: 'Union Bank', balance });
                 }}
                 onOpenUnionRake={() => setUnionTreasuryModal('rake')}
                 onOpenUnionBackupBBJ={() => setUnionTreasuryModal('backup')}
@@ -3784,25 +3818,35 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       {/* ═══════════════════════════════════════════════════════════════════
           GAME ACTION BAR — every game type, flat, plus explicit sorting
       ═══════════════════════════════════════════════════════════════════ */}
-      <div className="game-bar">
-        <div className="game-bar__types" role="tablist" aria-label="Game type">
-          {GAME_TYPE_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              role="tab"
-              aria-selected={gameType === tab.key}
-              className={`game-bar__type ${gameType === tab.key ? 'is-active' : ''}`}
-              onClick={() => {
-                haptic.selection();
-                selectGameType(tab.key);
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
+      <section className="lobby-controls" aria-label="Browse games">
+        <div className="lobby-controls__heading">
+          <div>
+            <span className="lobby-controls__eyebrow">Live Club Schedule</span>
+            <strong className="lobby-controls__title">Find Your Game</strong>
+          </div>
+          <span className="lobby-controls__total">
+            <strong>{totalGameCount.toLocaleString()}</strong> Games
+          </span>
         </div>
+        <div className="game-bar">
+          <div className="game-bar__types" role="tablist" aria-label="Game type">
+            {GAME_TYPE_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                role="tab"
+                aria-selected={gameType === tab.key}
+                className={`game-bar__type ${gameType === tab.key ? 'is-active' : ''}`}
+                onClick={() => {
+                  haptic.selection();
+                  selectGameType(tab.key);
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
-        {/* ON ALL THIS IS A SORT BUTTON, AND IT SAYS SO (Dan 2026-08-25).
+          {/* ON ALL THIS IS A SORT BUTTON, AND IT SAYS SO (Dan 2026-08-25).
             The comment that used to sit here claimed the button was "Hidden
             on ALL". It was not, and what it opened there was worse than
             hidden: AdvancedFilters retargets initialType 'ALL' to 'HOLDEM',
@@ -3817,27 +3861,27 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             to order. So the sheet opens in sortOnly mode instead: the game
             type row and every filter section are gone, Sort By is all that is
             left, and the button reads Sort. Every other tab is unchanged. */}
-        <button
-          className={`game-bar__filter-btn ${(() => {
-            if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
-            const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
-            const fVal = advFilters[gameType as FilterGameType];
-            const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
-            return isFilt || sortKey !== 'recommended' ? 'is-set' : '';
-          })()}`}
-          aria-label={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
-          title={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
-          onClick={() => {
-            haptic.light();
-            setFiltersOpen(true);
-          }}
-        >
-          <IconSort />
-          <span>{gameType === 'ALL' ? 'Sort' : 'Filters'}</span>
-        </button>
-      </div>
+          <button
+            className={`game-bar__filter-btn ${(() => {
+              if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
+              const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+              const fVal = advFilters[gameType as FilterGameType];
+              const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
+              return isFilt || sortKey !== 'recommended' ? 'is-set' : '';
+            })()}`}
+            aria-label={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
+            title={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
+            onClick={() => {
+              haptic.light();
+              setFiltersOpen(true);
+            }}
+          >
+            <IconSort />
+            <span>{gameType === 'ALL' ? 'Sort' : 'Filters'}</span>
+          </button>
+        </div>
 
-      {/* ═══════════════════════════════════════════════════════════════════
+        {/* ═══════════════════════════════════════════════════════════════════
           QUICK PREFERENCES — the one-tap shortcuts under the action bar
           ───────────────────────────────────────────────────────────────────
           Dan 2026-08-21: "you never added the quick preference link under the
@@ -3849,67 +3893,32 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           two can never disagree, and the icon on the right opens that sheet
           for everything the row has no space for.
       ═══════════════════════════════════════════════════════════════════ */}
-      {gameType !== 'ALL' &&
-        (() => {
-          const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
-          if (!qSpec) return null;
-          const qVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
+        {gameType !== 'ALL' &&
+          (() => {
+            const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+            if (!qSpec) return null;
+            const qVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
 
-          return (
-            <div className="quickprefs">
-              <div className="quickprefs__row">
-                {qSpec.range.presets.map((p) => {
-                  const on = (qVal.selectedRanges || []).includes(p.key);
-                  return (
-                    <button
-                      key={p.key}
-                      className={`quickprefs__chip ${on ? 'is-on' : ''}`}
-                      aria-pressed={on}
-                      onClick={() => {
-                        haptic.selection();
-                        const arr = qVal.selectedRanges || [];
-                        const nextArr = on ? arr.filter((k) => k !== p.key) : [...arr, p.key];
-                        const next: FilterStore = {
-                          ...advFilters,
-                          [gameType]: { ...qVal, selectedRanges: nextArr },
-                        };
-                        setAdvFilters(next);
-                        if (resolvedClubId) saveFilters(resolvedClubId, next);
-                      }}
-                    >
-                      {p.label}
-                    </button>
-                  );
-                })}
-                {currentUserId && (
+            return (
+              <div className="quickprefs">
+                <div className="quickprefs__row quickprefs__row--status" aria-label="Game status">
                   <button
                     type="button"
-                    className={`quickprefs__chip ${favoritesOnly ? 'is-on' : ''}`}
-                    aria-pressed={favoritesOnly}
+                    className={`quickprefs__chip ${qVal.statuses.length === 0 ? 'is-on' : ''}`}
+                    aria-pressed={qVal.statuses.length === 0}
                     onClick={() => {
                       haptic.selection();
-                      selectFavoritesOnly(!favoritesOnly);
+                      const next: FilterStore = {
+                        ...advFilters,
+                        [gameType]: { ...qVal, statuses: [] },
+                      };
+                      setAdvFilters(next);
+                      if (resolvedClubId) saveFilters(resolvedClubId, next);
                     }}
                   >
-                    Favorites
+                    All
                   </button>
-                )}
-                <button
-                  className="quickprefs__more"
-                  aria-label="Advanced filters"
-                  title="Advanced Filters"
-                  onClick={() => {
-                    haptic.light();
-                    setFiltersOpen(true);
-                  }}
-                >
-                  <IconSort />
-                </button>
-              </div>
-
-              <div className="quickprefs__row quickprefs__row--status">
-                <span className="quickprefs__label">{showsCash ? 'Tables:' : 'Games:'}</span>
-                {/* AUDIT 2026-08-21: these chips used to be a hand-written list
+                  {/* AUDIT 2026-08-21: these chips used to be a hand-written list
                     chosen by showsCash, which disagreed with the sheet on the
                     same screen - Spin-It offered Full/Empty/Open Seats inside
                     Advanced Filters and Running/Registering out here. Both now
@@ -3919,36 +3928,50 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     They also write the SAVED filter now rather than the local
                     sub-filter state, which is what makes them agree with the
                     sheet after a reload instead of resetting. */}
-                {qSpec.statuses.map((sf) => {
-                  const on = qVal.statuses.includes(sf.key);
-                  return (
+                  {qSpec.statuses.map((sf) => {
+                    const on = qVal.statuses.includes(sf.key);
+                    return (
+                      <button
+                        key={sf.key}
+                        className={`quickprefs__chip ${on ? 'is-on' : ''}`}
+                        aria-pressed={on}
+                        onClick={() => {
+                          haptic.selection();
+                          const next: FilterStore = {
+                            ...advFilters,
+                            [gameType]: {
+                              ...qVal,
+                              statuses: on
+                                ? qVal.statuses.filter((k) => k !== sf.key)
+                                : [...qVal.statuses, sf.key],
+                            },
+                          };
+                          setAdvFilters(next);
+                          if (resolvedClubId) saveFilters(resolvedClubId, next);
+                        }}
+                      >
+                        {sf.label}
+                      </button>
+                    );
+                  })}
+                  {currentUserId && showsCash && (
                     <button
-                      key={sf.key}
-                      className={`quickprefs__chip ${on ? 'is-on' : ''}`}
-                      aria-pressed={on}
+                      type="button"
+                      className={`quickprefs__chip ${favoritesOnly ? 'is-on' : ''}`}
+                      aria-pressed={favoritesOnly}
                       onClick={() => {
                         haptic.selection();
-                        const next: FilterStore = {
-                          ...advFilters,
-                          [gameType]: {
-                            ...qVal,
-                            statuses: on
-                              ? qVal.statuses.filter((k) => k !== sf.key)
-                              : [...qVal.statuses, sf.key],
-                          },
-                        };
-                        setAdvFilters(next);
-                        if (resolvedClubId) saveFilters(resolvedClubId, next);
+                        selectFavoritesOnly(!favoritesOnly);
                       }}
                     >
-                      {sf.label}
+                      Favorites
                     </button>
-                  );
-                })}
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })()}
+            );
+          })()}
+      </section>
 
       {/* ═══════════════════════════════════════════════════════════════════
           CLUB / UNION AD STRIP — directly under the action bar
@@ -4001,22 +4024,28 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           filter or a search is actively hiding games — that one is not a
           statistic, it is the explanation for why the list looks short, and
           it carries the one-tap clear. */}
-      {shownCount > 0 && narrowing.any && totalGameCount > shownCount && (
-        <div className="lobby-count">
+      <div className="lobby-resultsbar">
+        <div className="lobby-count" aria-live="polite">
           <span className="lobby-count__text">
-            {
-              <>
-                {/* countsCapped: a list query came back exactly full, so the
-                    total is a floor, not a fact. Say "200+" rather than a
-                    number we cannot stand behind. */}
-                Showing <strong>{shownCount.toLocaleString()}</strong> Of{' '}
-                {totalGameCount.toLocaleString()}
-                {countsCapped ? '+' : ''} Games
-              </>
-            }
+            Showing <strong>{shownCount.toLocaleString()}</strong> Of{' '}
+            {totalGameCount.toLocaleString()}
+            {countsCapped ? '+' : ''} Games
           </span>
         </div>
-      )}
+        {(isOwner || userRole === 'admin') && club?.is_union === true && (
+          <button
+            type="button"
+            className="lobby-createbtn"
+            onClick={() => {
+              haptic.selection();
+              if (TOURNAMENT_TYPES.includes(gameType)) setShowCreateTournament(true);
+              else navigate(`/clubs/${clubId}/create-table`);
+            }}
+          >
+            + Create {TOURNAMENT_TYPES.includes(gameType) ? 'Tournament' : 'Cash Game'}
+          </button>
+        )}
+      </div>
 
       {/* ═══════════════════════════════════════════════════════════════════
           LOBBY V2 — dense line-based game table + game lobby panel
@@ -4027,29 +4056,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           the panel and reuse the existing platform flows.
       ═══════════════════════════════════════════════════════════════════ */}
       <div className="club-home__games club-home__games--v2">
-        <div className="lobby-actionsrow">
-          {/* CREATE NEW GAME - owners/admins of STANDALONE clubs and UNIONS.
-              Same branch main shipped on the old create tile: a tournament
-              tab opens CreateTournamentModal, a cash tab goes to the
-              create-table page. */}
-          {(isOwner || userRole === 'admin') && (!isInUnion || club?.is_union) && (
-            <button
-              type="button"
-              className="lobby-createbtn"
-              onClick={() => {
-                haptic.selection();
-                if (['MTT', 'SNG', 'SPIN'].includes(gameType)) {
-                  setShowCreateTournament(true);
-                } else {
-                  navigate(`/clubs/${clubId}/create-table`);
-                }
-              }}
-            >
-              + Create New {TOURNAMENT_TYPES.includes(gameType) ? 'Game' : 'Table'}
-            </button>
-          )}
-        </div>
-
         {/* Render while loading too: LobbyTable owns the skeleton rows, and
             gating on entries>0 made them unreachable - first load flashed the
             empty state instead (review 2026-08-22). */}

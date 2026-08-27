@@ -1242,11 +1242,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
 
       // NOTE: When an event is both PKO and mystery, `fn_collect_bounty` returns
-
       // 'pko'. In that case `res.paid_cash` is half a head, so ranking it against
-      // the mystery ladder would report a rung nobody pulled. Ask Dan what "top 3 pull"
-      // means in a hybrid format, or if such an event will ever be configured.
-      // For now, a PKO+mystery knockout gets no prize rank.
+      // the mystery ladder would report a rung nobody pulled.
+      //
+      // RESOLVED — Dan 2026-08-26, verbatim: "no, never pko+mystery bounty
+      // ever." The hybrid is now IMPOSSIBLE to configure: the DB constraint
+      // `tournaments_never_pko_and_mystery` (migration 20260826210000,
+      // applied and probe-verified) refuses any row carrying both flags.
+      // This branch is therefore defense-in-depth for a state the schema
+      // forbids, and a PKO knockout correctly gets no mystery prize rank.
       const prizeRank = isMysteryCollectMode(res.mode)
         ? await this.preMysteryPrizeRank(res.paid_cash)
         : undefined;
@@ -2120,101 +2124,57 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * completion path settles rake identically.
    */
   protected async settleTournamentRake(tournament: any): Promise<void> {
-    const totalEntries = tournament?.current_players || 0;
-    let totalRake = 0;
-    {
-      const { data: feeRows, error: feeErr } = await supabase
-        .from('rake_records')
-        .select('rake_amount')
-        .eq('tournament_id', this.tournamentId)
-        .eq('is_tournament', true);
-      if (feeErr) {
-        reportError(
-          new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] fee-ledger read failed: ${feeErr.message} — settling 0 rake`
-          ),
-          'Tournament.fee_ledger_read_failed'
-        );
-      } else {
-        totalRake =
-          Math.round(
-            (feeRows ?? []).reduce((sum, r) => sum + Number(r.rake_amount || 0), 0) * 100
-          ) / 100;
-      }
-    }
-
-    if (totalRake > 0 && tournament?.club_id) {
-      // Get club + union info
-      const { data: club } = await supabase
-        .from('clubs')
-        .select('owner_id, name, union_id')
-        .eq('id', tournament.club_id)
-        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
-
-      if (club) {
-        const rakeDescription = `Tournament rake: ${tournament.name || 'tournament'} (${totalEntries} entries, collected fees)`;
-
-        if (club.union_id) {
-          // Club is in a union — ALL rake held by union wallet.
-          // UNION AUDIT FIX 2026-07-21: was a read-then-write UPDATE (concurrent
-          // tournament completions could lose rake). Use the same atomic
-          // increment_union_wallet RPC as the cash-rake path — it upserts the
-          // union_wallets row, increments chip_balance + rake_wallet +
-          // total_rake_collected under a single UPDATE, and is SECURITY DEFINER.
-          // AUDIT 2026-08-19: the union_wallet_transactions audit row is now
-          // written INSIDE the RPC, atomic with the wallet credit and carrying
-          // the correct rake_wallet balance_after. The separate client-side
-          // insert that used to follow could fail independently, silently
-          // shrinking the weekly-rakeback basis (which sums the audit rows).
-          const { data: rakeRes, error: rakeErr } = await supabase.rpc('increment_union_wallet', {
-            p_union_id: club.union_id,
-            p_amount: totalRake,
-            p_club_id: tournament.club_id,
-            p_notes: `${rakeDescription} — ${club.name || 'club'}`,
-          });
-          if (rakeErr || (rakeRes && (rakeRes as any).success === false)) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Union wallet rake credit failed: ${
-                  rakeErr?.message || JSON.stringify(rakeRes)
-                }`
-              ),
-              'Tournament.Union_wallet_rake_credit_failed'
+    // SETTLEMENT INTEGRITY 2026-08-26. This used to sum the fee ledger and
+    // credit the union/club wallet from HERE, in two separate client calls
+    // with no idempotency marker. Two consequences, both measured live:
+    //
+    //   - a tournament finished by the recovery watchdog (which never called
+    //     this) or whose wallet credit failed simply NEVER landed its rake —
+    //     ~6,748 chips across ~940 events in the 30 days before the fix,
+    //     debited from players and held by nothing;
+    //   - any re-run of the finish path would have credited the wallet a
+    //     second time, with nothing to say it already had.
+    //
+    // fn_settle_tournament_rake does the whole thing in ONE transaction:
+    // claims the tournament_rake_settlements PK (so a second caller gets
+    // already_settled instead of a second credit), sums the fee ledger, and
+    // credits the union rake wallet or standalone club treasury. Retried
+    // here because it is idempotent; anything that still fails is caught by
+    // fn_sweep_unsettled_tournament_rake on the discovery loop.
+    void tournament; // destination now resolves inside the RPC
+    let lastErr = '';
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const { data, error } = await supabase.rpc('fn_settle_tournament_rake', {
+          p_tournament_id: this.tournamentId,
+          p_source: 'engine_finish',
+        });
+        if (!error && data?.ok) {
+          if (data.already_settled) {
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Rake already settled (${data.amount} -> ${data.destination})`
             );
           } else {
             console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to union wallet ${club.union_id.slice(0, 8)}`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${data.amount} -> ${data.destination}`
             );
           }
-        } else {
-          // Standalone club — rake goes to the club's OPERATIONAL BANK
-          // (clubs.chip_treasury + total_rake), not the owner's personal wallet.
-          // BUG 016 FIX (2026-04-15): club_wallets doesn't exist; remove dead probe
-          // and use the atomic RPC. Atomic increment also eliminates the
-          // read-then-write race the old code had.
-          //
-          // 2026-08-15: renamed from increment_club_chip_pool. Despite its name (and
-          // the previous comment here) it writes chip_TREASURY, never chip_pool —
-          // chip_pool is the separate mint-and-distribute ledger.
-          const { error: cpErr } = await supabase.rpc('credit_club_rake_to_treasury', {
-            p_club_id: tournament.club_id,
-            p_amount: totalRake,
-          });
-          if (cpErr) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Club chip_treasury credit failed: ${cpErr.message}`
-              ),
-              'Tournament.Club_chip_pool_credit_failed'
-            );
-          } else {
-            console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to club chip_pool ${tournament.club_id.slice(0, 8)}`
-            );
-          }
+          return;
         }
+        lastErr = error?.message || data?.reason || 'settle_failed';
+      } catch (err: any) {
+        lastErr = String(err?.message ?? err);
       }
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 250 * attempt));
     }
+    // Not silent, and not fatal: the sweep re-drives it, so nothing is lost —
+    // but a failing settle path is a signal someone should see.
+    reportError(
+      new Error(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settlement FAILED after 3 attempts (${lastErr}) — fn_sweep_unsettled_tournament_rake will re-drive it`
+      ),
+      'Tournament.rake_settlement_failed'
+    );
   }
 
   /**

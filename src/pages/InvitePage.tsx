@@ -12,7 +12,6 @@ import { useToast } from '../components/common/Toast';
 import { QRCodeSVG } from 'qrcode.react';
 import { masterBus } from '../core/MasterBus';
 import './InvitePage.css';
-import { retryAsync } from '../utils/retryAsync';
 import { resolveClubIdFilter } from '../utils/clubIdResolver';
 import PageSkeleton from '../components/common/PageSkeleton';
 import ClubBottomNav from '../components/club/ClubBottomNav';
@@ -273,20 +272,11 @@ export default function InvitePage() {
         return;
       }
 
-      // Active membership — bump the denormalized member count and enter.
-      const { error: countErr } = await retryAsync(
-        () =>
-          // Round 19: prod sig (p_club_id, p_delta).
-          supabase.rpc('increment_member_count', {
-            p_club_id: club.id,
-            p_delta: 1,
-          }),
-        3
-      );
-      if (countErr) {
-        reportError(countErr, 'InvitePage.increment_member_count_failed');
-        toast.error('Joined successfully, but member count may be temporarily off.');
-      }
+      // NO manual member_count bump here. trg_sync_club_member_count RECOUNTS
+      // clubs.member_count on every club_members insert/update, so the join
+      // above has already set the exact figure. The increment_member_count(+1)
+      // call this replaced ran on top of that recount and inflated the count
+      // by one on every invite-page join — the only join path that did.
 
       toast.success(`Welcome to ${club.name}!`);
       navigate(`/clubs/${club.slug || club.id}`);

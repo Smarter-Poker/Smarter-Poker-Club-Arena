@@ -42,7 +42,6 @@ import { measureTopChromeBottom, TOP_CHROME_SELECTORS } from './topChrome';
 import {
   rankOverlayAnnouncements,
   overlayMessage,
-  ANNOUNCE_WITHIN_MS,
   type OverlayAnnouncement,
   type OverlayCandidate,
 } from '../../utils/overlayAnnouncements';
@@ -290,24 +289,28 @@ export function TournamentStartingTicker() {
            A SEPARATE query, not a widening of the one above, because the two
            announcements answer different questions on different clocks. The
            starting-soon strip looks five MINUTES ahead at events that have not
-           started; an overlay is worth shouting about twelve HOURS out, and it
-           is worth shouting about LOUDEST on an event that is already running
-           with late registration still open - a state the query above excludes
-           on purpose. Widening it would have dragged running events into the
-           "starts in 0:00" copy.
+           started; an overlay speaks only about an event that is already
+           running with late registration still open - a state the query above
+           excludes on purpose. Widening it would have dragged running events
+           into the "starts in 0:00" copy.
 
            Scoped to the same clubs and the same MTT-only rule: a player is
            never told about money they cannot go and win. */
+        /* Dan 2026-08-26: overlays are announced ONLY for events currently
+           running — a future event's shortfall is a field that has not
+           arrived, not an overlay. ANNOUNCED/REGISTERING are gone from the
+           status list, and the row now carries blind_structure +
+           level_started_at so overlayFor can place the 75%-of-late-reg
+           gate exactly (it fails closed without them). */
         const overlayPromise = supabase
           .from('tournaments')
           .select(
-            'id, name, status, start_time, guaranteed_prize, prize_pool, current_players, buy_in_amount, late_reg_levels, late_reg_mins, started_at, current_level, max_players'
+            'id, name, status, start_time, guaranteed_prize, prize_pool, current_players, buy_in_amount, late_reg_levels, late_reg_mins, started_at, current_level, max_players, blind_structure, level_started_at'
           )
           .in('club_id', clubIds)
           .eq('tournament_type', 'MTT')
           .gt('guaranteed_prize', 0)
-          .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'LATE_REG'])
-          .lte('start_time', new Date(Date.now() + ANNOUNCE_WITHIN_MS).toISOString())
+          .in('status', ['RUNNING', 'IN_PROGRESS', 'LATE_REG', 'LATE_REGISTRATION'])
           .order('guaranteed_prize', { ascending: false })
           .limit(25);
 

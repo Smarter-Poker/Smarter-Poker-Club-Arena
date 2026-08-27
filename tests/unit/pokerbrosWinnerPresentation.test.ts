@@ -190,6 +190,14 @@ describe('the winner sequence details match the reference', () => {
     expect(SEAT_CSS.slice(at, SEAT_CSS.indexOf('}', at))).toMatch(/#ffe94a/i);
   });
 
+  it('the riding pot-win amount is the same measured yellow, not cyan', () => {
+    const at = TABLE_CSS.indexOf('.pot-win-float {');
+    expect(at).toBeGreaterThan(-1);
+    const body = TABLE_CSS.slice(at, TABLE_CSS.indexOf('}', at));
+    expect(body).toMatch(/#ffe94a/i);
+    expect(body).not.toMatch(/#00d4ff/i);
+  });
+
   it('four-point star sparkles render over a positive win, and only a positive one', () => {
     expect(SEAT).toMatch(/seat__win-sparkles/);
     expect(SEAT).toMatch(/netWinAmount\s*>\s*0\s*&&\s*\(/);
@@ -202,6 +210,53 @@ describe('the winner sequence details match the reference', () => {
 
   it('the double-board bomb pot lights and dims board 2 like board 1', () => {
     expect(TABLE_PAGE).toMatch(/board2HighlightedIndices/);
+    expect(TABLE_PAGE).toMatch(/highlightedIndices=\{board2HighlightedIndices\}/);
+  });
+});
+
+describe('multi-board and chopped pots get the same winner display', () => {
+  it('each winner carries their OWN hand name, and every seat reads its own', () => {
+    expect(TABLE_PAGE).toMatch(/handNames:\s*Record<string,\s*string>/);
+    expect(TABLE_PAGE).toMatch(/winnerInfo\.handNames\[player\.id\]\s*\|\|\s*winnerInfo\.handName/);
+  });
+
+  it('per-pot POT_WIN events MERGE — earlier pot winners stay lit on split/side pots', () => {
+    expect(TABLE_PAGE).toMatch(/new Set\(\[\.\.\.prevWin\.playerIds,\s*\.\.\.winnerIds\]\)/);
+    expect(TABLE_PAGE).toMatch(
+      /handNames:\s*\{\s*\.\.\.prevWin\.handNames,\s*\.\.\.handNamesNow\s*\}/
+    );
+  });
+
+  it('a user winning several pots SUMS their shares, never overwrites them', () => {
+    expect(TABLE_PAGE).toMatch(
+      /mergedAmounts\[uid\]\s*=\s*\(mergedAmounts\[uid\]\s*\?\?\s*0\)\s*\+/
+    );
+    expect(TABLE_PAGE).toMatch(/amounts:\s*mergedAmounts/);
+  });
+
+  it('handNames resets with the rest of winnerInfo at hand start', () => {
+    const clears = TABLE_PAGE.match(/handNames:\s*\{\}/g) || [];
+    expect(clears.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('every RIT board derives its winning five AND its winner hole cards', () => {
+    expect(TABLE_PAGE).toMatch(/winnerHoleIndices/);
+    expect(TABLE_PAGE).toMatch(/holeIndices:\s*revealed\s*\?\s*winnerHoleIndices\s*:\s*\{\}/);
+    expect(TABLE_PAGE).toMatch(/ritWinnerHoleIndices/);
+  });
+
+  it('a multi-run winner lights the union of every board\u2019s winning hole cards', () => {
+    expect(TABLE_PAGE).toMatch(/ritWinnerHoleIndices\[player\.id\]/);
+  });
+
+  it('stacked boards render the banner in-flow so every board names its hand', () => {
+    const at = BOARD_CSS.indexOf('.table-page[data-boards] .community-cards__hand-name');
+    expect(at, 'multi-board banner rule missing').toBeGreaterThan(-1);
+    const body = BOARD_CSS.slice(at, BOARD_CSS.indexOf('}', at));
+    expect(body).toMatch(/position:\s*static/);
+  });
+
+  it('board 2 of a double-board hand still gets the highlight+dim treatment', () => {
     expect(TABLE_PAGE).toMatch(/highlightedIndices=\{board2HighlightedIndices\}/);
   });
 });

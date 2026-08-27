@@ -1068,3 +1068,19 @@
     top: calc(100% + 3px);
   }
 }
+
+/* ─── MULTI-BOARD (run it twice / three times, double-board bomb pot) ───
+   MULTI-BOARD PARITY 2026-08-26: with boards stacked (gap 3-6px), an
+   absolutely-positioned banner under board 1 lands ON TOP of board 2's
+   header and cards. When the table carries a data-boards attribute the
+   banner joins the normal flow instead: each board's hand name renders
+   compactly under its own cards and pushes the next run down, so every
+   board names its winning hand and nothing is covered. */
+.table-page[data-boards] .community-cards__hand-name {
+  position: static;
+  transform: none;
+  width: 100%;
+  margin-top: 2px;
+  padding: 2px 0 6px;
+  font-size: 1rem;
+}

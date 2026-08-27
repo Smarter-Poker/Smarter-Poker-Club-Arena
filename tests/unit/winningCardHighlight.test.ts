@@ -57,10 +57,11 @@ describe('the engine SENDS which board cards won', () => {
   });
 
   it('BOARD cards only — hole cards are drawn at the seat, not on the felt', () => {
-    // `boardNow` is read from communityCards just ABOVE the derivation, so
-    // anchor on it rather than slicing forward from winningBoardIndices.
-    const at = EVENTS.indexOf('const boardNow');
-    expect(at, 'boardNow not found').toBeGreaterThan(-1);
+    // `capturedBoard` is read from communityCards just ABOVE the derivation
+    // (captured before the settle hold, 2026-08-26), so anchor on it rather
+    // than slicing forward from winningBoardIndices.
+    const at = EVENTS.indexOf('const capturedBoard');
+    expect(at, 'capturedBoard not found').toBeGreaterThan(-1);
     expect(EVENTS.slice(at, at + 400)).toMatch(/communityCards/);
     expect(EVENTS.indexOf('winningBoardIndices')).toBeGreaterThan(at);
   });

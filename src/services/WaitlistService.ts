@@ -61,6 +61,9 @@ export interface WaitlistEntry {
   joinedAt: string;
   /** Display name of the table, resolved by getUserWaitlists. '' when unresolved. */
   tableName: string;
+  /** Player display name, resolved by getTableWaitlist (Dan 2026-08-26: "your
+   *  name needs to appear on the waiting list"). '' when unresolved. */
+  displayName: string;
 }
 
 export interface WaitlistPosition {
@@ -82,7 +85,7 @@ function mapRow(
     created_at: string;
     notified_at: string | null;
   },
-  extras?: { position?: number; tableName?: string }
+  extras?: { position?: number; tableName?: string; displayName?: string }
 ): WaitlistEntry {
   const status = (row.status as WaitlistStatus) ?? 'waiting';
   return {
@@ -95,6 +98,7 @@ function mapRow(
     position: extras?.position ?? (status === 'notified' ? 0 : 0),
     joinedAt: row.created_at,
     tableName: extras?.tableName ?? '',
+    displayName: extras?.displayName ?? '',
   };
 }
 
@@ -354,12 +358,34 @@ export const WaitlistService = {
       reportError(error, 'WaitlistService.getTableWaitlist', { tableId });
       return [];
     }
+    /* Dan 2026-08-26: "if you join the wait list, your name needs to appear
+       on the waiting list." Resolve display names in one batch — the same
+       profiles join the table-page modal already does, moved here so every
+       caller gets names instead of anonymous 'Player' rows. Best-effort: a
+       failed lookup degrades to '' rather than hiding the queue. */
+    const rows = (data ?? []) as any[];
+    const names = new Map<string, string>();
+    const ids = Array.from(new Set(rows.map((r) => r.user_id).filter(Boolean)));
+    if (ids.length > 0) {
+      const { data: profiles, error: profErr } = await supabase
+        .from('profiles')
+        .select('id, display_name, username')
+        .in('id', ids);
+      if (profErr) {
+        reportWarning(profErr.message, 'WaitlistService.getTableWaitlist.profiles', { tableId });
+      }
+      for (const p of (profiles ?? []) as any[]) {
+        names.set(p.id, p.display_name || p.username || '');
+      }
+    }
     let rank = 0;
-    return (data ?? []).map((r) => {
-      const row = r as any;
+    return rows.map((row) => {
       const notified = row.status === 'notified';
       if (!notified) rank += 1;
-      return mapRow(row, { position: notified ? 0 : rank });
+      return mapRow(row, {
+        position: notified ? 0 : rank,
+        displayName: names.get(row.user_id) ?? '',
+      });
     });
   },
 

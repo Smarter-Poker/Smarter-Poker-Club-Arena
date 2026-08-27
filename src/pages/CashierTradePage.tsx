@@ -155,6 +155,27 @@ interface ChipRequestRow {
   mine: boolean;
 }
 
+/**
+ * One tournament ticket this viewer can act on (audit 2026-08-26). Tickets
+ * were issued into a void: fn_redeem_tournament_ticket and
+ * fn_cancel_tournament_ticket existed and NOTHING called them, so the
+ * escrowed value left the issuer on Send Ticket and was unreachable forever.
+ * The Tickets tab is that missing surface. `held` rows carry Redeem; rows the
+ * viewer issued carry Cancel while still unredeemed.
+ */
+interface TicketRow {
+  id: string;
+  value: number;
+  note: string | null;
+  status: string;
+  createdAt: string;
+  holderId: string;
+  issuedById: string;
+  /** The counterparty: issuer for a held ticket, holder for an issued one. */
+  otherName: string;
+  held: boolean;
+}
+
 interface InvoiceRow {
   id: string;
   createdAt: string;
@@ -164,7 +185,7 @@ interface InvoiceRow {
   status: string;
 }
 
-type TabKey = 'trade' | 'record' | 'leaderboard' | 'request';
+type TabKey = 'trade' | 'record' | 'leaderboard' | 'request' | 'tickets';
 
 const fmt = (n: number) =>
   n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -259,6 +280,15 @@ export default function CashierTradePage() {
   const [invoicesError, setInvoicesError] = useState<string | null>(null);
   /** Bumped by Retry; the invoice fetch lives inline in an effect. */
   const [invoicesReload, setInvoicesReload] = useState(0);
+  // The Tickets tab (audit 2026-08-26). See TicketRow for why it exists.
+  const [tickets, setTickets] = useState<TicketRow[]>([]);
+  const [ticketsLoading, setTicketsLoading] = useState(false);
+  const [ticketsError, setTicketsError] = useState<string | null>(null);
+  /** Which ticket row is mid-RPC. Redeeming or cancelling MOVES CHIPS. */
+  const [ticketActingId, setTicketActingId] = useState<string | null>(null);
+  const ticketActingRef = useRef(false);
+  /** Unredeemed tickets in the viewer's hand. Drives the Tickets tab badge. */
+  const [heldTicketCount, setHeldTicketCount] = useState(0);
   const [askOpen, setAskOpen] = useState(false);
   const [askAmount, setAskAmount] = useState('');
   const [askNote, setAskNote] = useState('');
@@ -445,15 +475,39 @@ export default function CashierTradePage() {
       setPendingCount(0);
       return;
     }
-    const { count, error } = await supabase
+    let q = supabase
       .from('chip_requests')
       .select('id', { count: 'exact', head: true })
       .eq('club_id', clubUuid)
       .in('status', ['pending']);
+    // Agent tier can only ANSWER requests addressed to them
+    // (fn_respond_chip_request refuses the rest), so their badge counts those
+    // plus their own. Counting the whole club advertised work the server
+    // would refuse them. Staff still see the whole queue.
+    if (user?.id && ['super_agent', 'agent', 'sub_agent'].includes(myRole)) {
+      q = q.or(`approver_id.eq.${user.id},requester_id.eq.${user.id}`);
+    }
+    const { count, error } = await q;
     if (!isMounted.current) return;
     // A failed count must not claim zero. Leave the previous value alone.
     if (!error) setPendingCount(count ?? 0);
-  }, [clubUuid]);
+  }, [clubUuid, myRole, user?.id]);
+
+  /** Unredeemed tickets in this viewer's hand, for the Tickets tab badge. */
+  const loadHeldTicketCount = useCallback(async () => {
+    if (!clubUuid || !user?.id) {
+      setHeldTicketCount(0);
+      return;
+    }
+    const { count, error } = await supabase
+      .from('tournament_tickets')
+      .select('id', { count: 'exact', head: true })
+      .eq('club_id', clubUuid)
+      .eq('holder_id', user.id)
+      .eq('status', 'issued');
+    if (!isMounted.current) return;
+    if (!error) setHeldTicketCount(count ?? 0);
+  }, [clubUuid, user?.id]);
 
   const loadClub = useCallback(async () => {
     // Bail-before-try left `loading` true forever, because the finally that
@@ -631,10 +685,11 @@ export default function CashierTradePage() {
         // the count frozen at whatever it was when the page opened - the exact
         // scenario the badge exists for.
         void loadPendingCount();
+        void loadHeldTicketCount();
       })
     );
     return () => unsubs.forEach((u) => u());
-  }, [loadClub, clubUuid, loadPendingCount]);
+  }, [loadClub, clubUuid, loadPendingCount, loadHeldTicketCount]);
 
   /**
    * Players have no Trade tab. This lived inside loadClub, which is recreated
@@ -744,13 +799,23 @@ export default function CashierTradePage() {
     try {
       const { data, error } = await supabase
         .from('chip_requests')
-        .select('id, requester_id, amount, note, status, created_at')
+        .select('id, requester_id, approver_id, amount, note, status, created_at')
         .eq('club_id', clubUuid)
         .in('status', ['pending'])
         .order('created_at', { ascending: false })
         .limit(100);
       if (error) throw error;
-      const ids = [...new Set((data || []).map((r) => r.requester_id as string))];
+      // NEVER OFFER AN APPROVE THE SERVER WILL REFUSE (audit 2026-08-26).
+      // fn_respond_chip_request lets agent-tier roles answer only requests
+      // ADDRESSED to them, but this list showed an agent every pending
+      // request in the club with live Approve buttons - each tap a
+      // guaranteed "this request is not addressed to you". Staff keep the
+      // whole queue; agents see their own requests and their own inbox.
+      const agentTier = ['super_agent', 'agent', 'sub_agent'].includes(myRole);
+      const visible = (data || []).filter(
+        (r) => !agentTier || r.requester_id === user.id || r.approver_id === user.id
+      );
+      const ids = [...new Set(visible.map((r) => r.requester_id as string))];
       const names = new Map<string, string>();
       if (ids.length > 0) {
         const { data: profs } = await supabase
@@ -764,9 +829,9 @@ export default function CashierTradePage() {
           );
       }
       if (!isMounted.current || seq !== reqSeqRef.current) return;
-      setPendingCount((data || []).length);
+      setPendingCount(visible.length);
       setRequests(
-        (data || []).map((r) => ({
+        visible.map((r) => ({
           id: r.id as string,
           requesterId: r.requester_id as string,
           requesterName: names.get(r.requester_id as string) || 'Player',
@@ -786,15 +851,127 @@ export default function CashierTradePage() {
     } finally {
       if (isMounted.current && seq === reqSeqRef.current) setRequestsLoading(false);
     }
-  }, [user?.id, clubUuid]);
+  }, [user?.id, clubUuid, myRole]);
 
   useEffect(() => {
     if (tab === 'request') loadRequests();
   }, [tab, loadRequests]);
 
+  // ── Tickets tab data (audit 2026-08-26) ────────────────────────────────────
+  const ticketSeqRef = useRef(0);
+  const loadTickets = useCallback(async () => {
+    if (!user?.id || !clubUuid) return;
+    const seq = ++ticketSeqRef.current;
+    setTicketsLoading(true);
+    setTicketsError(null);
+    try {
+      // RLS already scopes reads; this narrows to the rows the viewer can ACT
+      // on - tickets in their hand and tickets they issued.
+      const { data, error } = await supabase
+        .from('tournament_tickets')
+        .select('id, holder_id, issued_by, value, note, status, created_at')
+        .eq('club_id', clubUuid)
+        .or(`holder_id.eq.${user.id},issued_by.eq.${user.id}`)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      const ids = new Set<string>();
+      for (const t of data || []) {
+        if (t.holder_id) ids.add(t.holder_id as string);
+        if (t.issued_by) ids.add(t.issued_by as string);
+      }
+      const names = new Map<string, string>();
+      if (ids.size > 0) {
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id, display_name, username')
+          .in('id', Array.from(ids));
+        for (const pr of profs || [])
+          names.set(
+            pr.id as string,
+            (pr.display_name as string) || (pr.username as string) || 'Member'
+          );
+      }
+      if (!isMounted.current || seq !== ticketSeqRef.current) return;
+      setTickets(
+        (data || []).map((t) => {
+          const held = t.holder_id === user.id;
+          return {
+            id: t.id as string,
+            value: Number(t.value) || 0,
+            note: (t.note as string) || null,
+            status: (t.status as string) || 'issued',
+            createdAt: t.created_at as string,
+            holderId: t.holder_id as string,
+            issuedById: t.issued_by as string,
+            held,
+            otherName:
+              names.get(held ? (t.issued_by as string) : (t.holder_id as string)) || 'Member',
+          };
+        })
+      );
+      // The badge rides on the same read the tab just made.
+      setHeldTicketCount(
+        (data || []).filter((t) => t.holder_id === user.id && t.status === 'issued').length
+      );
+    } catch (e) {
+      reportError(e, 'CashierTradePage.loadTickets');
+      // "No Tickets" is a different statement from "we could not read them".
+      if (isMounted.current && seq === ticketSeqRef.current)
+        setTicketsError('Could Not Load Your Tickets.');
+    } finally {
+      if (isMounted.current && seq === ticketSeqRef.current) setTicketsLoading(false);
+    }
+  }, [user?.id, clubUuid]);
+
+  useEffect(() => {
+    if (tab === 'tickets') void loadTickets();
+  }, [tab, loadTickets]);
+
+  /**
+   * Redeem (holder) or cancel (issuer) one ticket. Both RPCs MOVE CHIPS -
+   * redeem credits the holder's playing balance, cancel refunds the escrow to
+   * the issuer - so this carries the same double-tap guard as every other
+   * money action on this page. The server holds every rule either way:
+   * fn_redeem refuses a ticket that is not yours or not issued, fn_cancel
+   * refuses a non-issuer and (since the 2026-08-26 migration) refuses to
+   * burn an escrow whose refund has nowhere to land.
+   */
+  const actOnTicket = async (row: TicketRow, action: 'redeem' | 'cancel') => {
+    if (ticketActingRef.current) return;
+    ticketActingRef.current = true;
+    setTicketActingId(row.id);
+    try {
+      const { data, error } = await supabase.rpc(
+        action === 'redeem' ? 'fn_redeem_tournament_ticket' : 'fn_cancel_tournament_ticket',
+        { p_ticket_id: row.id }
+      );
+      if (error) throw error;
+      const res = data as { success?: boolean; error?: string } | null;
+      if (!res?.success) throw new Error(res?.error || 'The Ticket Could Not Be Updated');
+      toast?.success?.(
+        action === 'redeem'
+          ? `Redeemed A Ticket Worth ${fmt(row.value)} Chips`
+          : `Cancelled The Ticket. ${fmt(row.value)} Chips Are Back In Your Balance`
+      );
+      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_ticket', userId: user?.id || '' });
+      void loadTickets();
+    } catch (e) {
+      reportError(e, 'CashierTradePage.actOnTicket');
+      toast?.error?.((e as Error).message || 'The Ticket Could Not Be Updated');
+    } finally {
+      ticketActingRef.current = false;
+      if (isMounted.current) setTicketActingId(null);
+    }
+  };
+
   useEffect(() => {
     void loadPendingCount();
   }, [loadPendingCount]);
+
+  useEffect(() => {
+    void loadHeldTicketCount();
+  }, [loadHeldTicketCount]);
 
   const respondToRequest = async (id: string, action: 'approve' | 'decline' | 'cancel') => {
     // Approving a chip request performs the same conserved ledger move as a
@@ -1406,12 +1583,14 @@ export default function CashierTradePage() {
             ['record', 'Trade Record'],
             ['leaderboard', 'Leaderboard Record'],
             ['request', 'Chip Request'],
+            ['tickets', 'Tickets'],
           ] as [TabKey, string][]
         )
           .filter(([key]) => {
             if (myRole === 'player') {
-              // Players only see their transaction history and chip requests
-              return key === 'record' || key === 'request';
+              // Players see their history, chip requests, and their tickets —
+              // the tab where a ticket sent to them is actually redeemed.
+              return key === 'record' || key === 'request' || key === 'tickets';
             }
             return true;
           })
@@ -1430,6 +1609,11 @@ export default function CashierTradePage() {
                   queue that pulls itself. Dan 2026-08-25. */}
               {key === 'request' && pendingCount > 0 ? (
                 <span className={styles.tabBadge}>{pendingCount.toLocaleString()}</span>
+              ) : null}
+              {/* A ticket in hand is chips waiting to be redeemed. Same pull
+                  as the request badge: the tab must advertise the work. */}
+              {key === 'tickets' && heldTicketCount > 0 ? (
+                <span className={styles.tabBadge}>{heldTicketCount.toLocaleString()}</span>
               ) : null}
             </button>
           ))}
@@ -1820,6 +2004,69 @@ export default function CashierTradePage() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {tab === 'tickets' && (
+        <div className={styles.list}>
+          {ticketsLoading && <div className={styles.empty}>Loading Tickets...</div>}
+          {!ticketsLoading && ticketsError && (
+            <div className={styles.empty} role="alert">
+              {ticketsError}{' '}
+              <button type="button" className={styles.retryBtn} onClick={() => void loadTickets()}>
+                Retry
+              </button>
+            </div>
+          )}
+          {!ticketsLoading && !ticketsError && tickets.length === 0 && (
+            <div className={styles.empty}>
+              No Tickets Yet. Tickets Sent To You Appear Here, Ready To Redeem.
+            </div>
+          )}
+          {!ticketsLoading &&
+            !ticketsError &&
+            tickets.map((t) => (
+              <div key={t.id} className={styles.row}>
+                <div className={styles.rowInfo}>
+                  <span className={styles.rowName}>
+                    {t.held ? `From ${t.otherName}` : `To ${t.otherName}`}
+                  </span>
+                  <span className={styles.rowSub}>
+                    {txLabel(t.status)} &middot;{' '}
+                    {new Date(t.createdAt).toLocaleString([], {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                    {t.note ? ` · ${t.note}` : ''}
+                  </span>
+                </div>
+                <span className={styles.rowBalance}>{fmt(t.value)}</span>
+                {/* A held ticket redeems; a ticket you issued cancels back to
+                    your balance. A self-issued ticket cannot exist - the
+                    server refuses issuing to yourself - so the two buttons
+                    can never collide on one row. */}
+                {t.status === 'issued' && t.held && (
+                  <button
+                    className={`${styles.reqBtn} ${styles.reqBtnGo}`}
+                    disabled={ticketActingId !== null}
+                    onClick={() => void actOnTicket(t, 'redeem')}
+                  >
+                    {ticketActingId === t.id ? 'Working...' : 'Redeem'}
+                  </button>
+                )}
+                {t.status === 'issued' && !t.held && (
+                  <button
+                    className={styles.reqBtn}
+                    disabled={ticketActingId !== null}
+                    onClick={() => void actOnTicket(t, 'cancel')}
+                  >
+                    {ticketActingId === t.id ? 'Working...' : 'Cancel'}
+                  </button>
+                )}
+              </div>
+            ))}
         </div>
       )}
 

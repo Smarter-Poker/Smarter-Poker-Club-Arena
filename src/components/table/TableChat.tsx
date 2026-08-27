@@ -13,13 +13,15 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import './TableChat.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
-import chatIcon from '../../assets/icons/icon-chat.jpg';
+import { useButtonImage } from '../../hooks/useButtonImage';
 
 /**
  * ChatBubbleIcon renders the custom chat bubbles image provided by Dan.
  * The image has a dark background that blends naturally with the dark button.
  */
 function ChatBubbleIcon() {
+  const chatIcon = useButtonImage('icon-chat');
+
   return <img src={chatIcon} className="chat-collapsed__icon-img" alt="" draggable={false} />;
 }
 

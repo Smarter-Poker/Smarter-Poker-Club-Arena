@@ -32,7 +32,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
-import hamburgerIcon from '../../assets/icons/icon-hamburger.jpg';
+import { useButtonImage } from '../../hooks/useButtonImage';
 
 // ─── SVG Icons for Identity section ─── */
 const AvatarIcon = () => (
@@ -227,7 +227,7 @@ export function createDefaultMenuSections(
       actions: [
         {
           id: 'help',
-          label: 'Help & Rules',
+          label: 'Game Rules',
           icon: <HelpIcon />,
           onClick: handlers.onHelp || (() => {}),
         },
@@ -265,6 +265,7 @@ export function TableMenu({
   observers = [],
   onOpenIdentity,
 }: TableMenuProps) {
+  const hamburgerIcon = useButtonImage('icon-hamburger');
   /* `activeSection` / `setActiveSection` deleted 2026-08-25: state written by
      nobody and read by nobody since the file was written. */
   const menuRef = useRef<HTMLDivElement>(null);

@@ -965,6 +965,19 @@ export const SeatSlot = memo(
     // and drive off an isWinner rising edge so the bounce replays every win.
     const winnerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const prevIsWinnerRef = useRef(false);
+
+    /* Dan 2026-08-26 mobile pass, item 10: how much of the turn had already
+       elapsed when THIS CLIENT first painted the turn. The engine stamps
+       turn_start_time_ms when it arms the timer, which is broadcast-latency
+       plus the deal hold BEFORE the seat can render the ring — so the ring
+       used to mount already part-drained and visibly emptied in fewer than 15
+       seconds. Anchoring the animation at first paint makes the ring start
+       FULL and reach empty exactly at the engine's deadline (the fold /
+       time-bank moment), which is what "it must take 15 full seconds to
+       disappear" means on a screen that cannot see the packet in flight.
+       Keyed by the turn's start stamp so re-renders mid-turn reuse the same
+       anchor instead of re-anchoring (which would freeze the ring). */
+    const turnPaintAnchorRef = useRef<{ key: number; baseElapsedMs: number } | null>(null);
     useEffect(() => {
       return () => {
         if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
@@ -1661,14 +1674,39 @@ export const SeatSlot = memo(
       // overrun). serverNow() applies the measured offset - see
       // utils/serverClock.ts. durationMs above never had this problem: it is
       // deadline minus start, server-minus-server, so the offset cancels.
-      const elapsedMs = turnStartTimeMs ? Math.max(0, serverNow() - turnStartTimeMs) : 0;
+      const rawElapsedMs = turnStartTimeMs ? Math.max(0, serverNow() - turnStartTimeMs) : 0;
+      /* Item 10 (Dan 2026-08-26): anchor at this client's FIRST paint of the
+         turn. The base elapsed (latency + deal hold) is subtracted from both
+         the duration and the elapsed, so the ring spans mount → deadline:
+         starts full, empties exactly when the engine folds or the time bank
+         fires, never earlier. Capped so a pathological anchor can never
+         reduce the ring below one second. */
+      /* Only broadcast latency and the deal hold are compensated — a few
+         seconds at most. A LARGER first-paint elapsed means a genuine
+         mid-turn rejoin (reconnect, tab wake), where the ring must pick up
+         at its true position rather than pretend the clock restarted —
+         tests/seatslot-countdown-duration.test.tsx pins that case. */
+      const TURN_PAINT_LATENCY_ALLOWANCE_MS = 3_000;
+      const anchorKey = turnStartTimeMs || turnDeadlineMs;
+      if (turnPaintAnchorRef.current?.key !== anchorKey) {
+        turnPaintAnchorRef.current = {
+          key: anchorKey,
+          baseElapsedMs: rawElapsedMs <= TURN_PAINT_LATENCY_ALLOWANCE_MS ? rawElapsedMs : 0,
+        };
+      }
+      const baseElapsedMs = Math.min(
+        turnPaintAnchorRef.current.baseElapsedMs,
+        Math.max(0, durationMs - 1_000)
+      );
+      const effDurationMs = durationMs - baseElapsedMs;
+      const elapsedMs = Math.max(0, rawElapsedMs - baseElapsedMs);
       // Dan 2026-08-15: the yellow countdown is a full 15 seconds. On a normal
       // 15s turn that is the entire clock (never goes red); when a time bank
       // extends the turn, yellow still owns the first 15s and the borrowed
       // seconds run red. Capped at the turn length so the colour animation can
       // never outlive the ring it colours.
       const YELLOW_MS = 15_000;
-      const yellowMs = Math.min(YELLOW_MS, durationMs);
+      const yellowMs = Math.min(YELLOW_MS, effDurationMs);
       /**
        * Dan 2026-08-21 (bug list item 8): "it must take 15 seconds to fully
        * disappear, it needs to slow down at the end and FLASH when there are 5
@@ -1694,14 +1732,14 @@ export const SeatSlot = memo(
        */
       const FLASH_WINDOW_MS = 5_000;
       const FLASH_CYCLE_MS = 500;
-      const remainingMs = Math.max(0, durationMs - elapsedMs);
-      const flashDelayMs = durationMs - FLASH_WINDOW_MS - elapsedMs;
+      const remainingMs = Math.max(0, effDurationMs - elapsedMs);
+      const flashDelayMs = effDurationMs - FLASH_WINDOW_MS - elapsedMs;
       const flashCount = Math.max(
         0,
         Math.ceil(Math.min(FLASH_WINDOW_MS, remainingMs) / FLASH_CYCLE_MS)
       );
       timerStyle = {
-        '--sp-timer-duration': `${(durationMs / 1000).toFixed(3)}s`,
+        '--sp-timer-duration': `${(effDurationMs / 1000).toFixed(3)}s`,
         '--sp-timer-yellow-duration': `${(yellowMs / 1000).toFixed(3)}s`,
         '--sp-timer-delay': `-${(elapsedMs / 1000).toFixed(3)}s`,
         '--sp-timer-flash-delay': `${(flashDelayMs / 1000).toFixed(3)}s`,

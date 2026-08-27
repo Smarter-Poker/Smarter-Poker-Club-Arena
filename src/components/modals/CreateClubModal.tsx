@@ -12,13 +12,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 import { useIsMounted } from '../../hooks/useIsMounted';
-import { supabase } from '../../lib/supabase';
 import { ClubsService } from '../../services/ClubsService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
-import { ClubCardGenerator } from '../../services/ClubCardGenerator';
-import { sanitizeInput } from '../../utils/sanitizeInput';
-import { buildClubSlug, escapeIlikePattern } from '../../utils/clubSlug';
 import { masterBus } from '../../core/MasterBus';
 import haptic from '../../services/HapticService';
 import styles from './CreateClubModal.module.css';
@@ -48,7 +44,6 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   const toast = useToast();
 
   const [clubName, setClubName] = useState('');
-  const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [hasAgreed, setHasAgreed] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -82,7 +77,6 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       return;
     }
 
-    setLogoFile(file);
     const reader = new FileReader();
     reader.onload = (e) => {
       setLogoPreview(e.target?.result as string);
@@ -138,7 +132,6 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       toast.success(`Club "${clubName}" created successfully!`);
 
       setClubName('');
-      setLogoFile(null);
       setLogoPreview(null);
       setHasAgreed(false);
 
@@ -314,46 +307,6 @@ interface LogoGeneratorModalProps {
   onClose: () => void;
   clubName?: string;
 }
-
-// Logo style presets
-const LOGO_PRESETS = [
-  { id: 'shark', icon: '◆', name: 'Shark', theme: 'shark', style: 'aggressive' as const },
-  { id: 'dragon', icon: '◆', name: 'Dragon', theme: 'dragon', style: 'classic' as const },
-  { id: 'eagle', icon: '◆', name: 'Eagle', theme: 'eagle', style: 'elegant' as const },
-  { id: 'lion', icon: '◆', name: 'Lion', theme: 'lion', style: 'aggressive' as const },
-  { id: 'phoenix', icon: '▲', name: 'Phoenix', theme: 'phoenix', style: 'modern' as const },
-  { id: 'wolf', icon: '◆', name: 'Wolf', theme: 'wolf', style: 'classic' as const },
-  {
-    id: 'cards',
-    icon: '◆',
-    name: 'Cards',
-    theme: 'playing cards and poker chips',
-    style: 'elegant' as const,
-  },
-  {
-    id: 'crown',
-    icon: '♛',
-    name: 'Crown',
-    theme: 'royal crown with poker elements',
-    style: 'elegant' as const,
-  },
-  {
-    id: 'diamond',
-    icon: '◆',
-    name: 'Diamond',
-    theme: 'diamond gemstone',
-    style: 'modern' as const,
-  },
-  {
-    id: 'skull',
-    icon: '◆',
-    name: 'Skull',
-    theme: 'skull with poker elements',
-    style: 'aggressive' as const,
-  },
-  { id: 'tiger', icon: '◆', name: 'Tiger', theme: 'tiger', style: 'playful' as const },
-  { id: 'spade', icon: '♠', name: 'Spade', theme: 'spade suit symbol', style: 'classic' as const },
-];
 
 function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorModalProps) {
   const isMounted = useIsMounted();

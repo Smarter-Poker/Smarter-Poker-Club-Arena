@@ -56,10 +56,13 @@ describe('a snapshot carrying no hero cards means "no news"', () => {
     /* Item 9 (a stale holding must never be drawn over a hero with no hand)
        is still satisfied — by the hand number, which is the thing that
        actually changes between hands. */
+    /* 2026-08-26: the boundary check was hoisted out of the hero branch (as
+       cardHoldSameHand) so the same rule can also preserve OPPONENTS' revealed
+       showdown hands across the post-hand hold. Same derivation, wider duty. */
     expect(TABLE_PAGE).toMatch(/const sameHand\s*=/);
-    expect(TABLE_PAGE).toMatch(/const nextHand = mapped\.handNumber \?\? 0;/);
-    expect(TABLE_PAGE).toMatch(/const prevHand = prev\.handNumber \?\? 0;/);
-    expect(TABLE_PAGE).toMatch(/nextHand === prevHand/);
+    expect(TABLE_PAGE).toMatch(/const cardHoldNextHand = mapped\.handNumber \?\? 0;/);
+    expect(TABLE_PAGE).toMatch(/const cardHoldPrevHand = prev\.handNumber \?\? 0;/);
+    expect(TABLE_PAGE).toMatch(/cardHoldNextHand === cardHoldPrevHand/);
   });
 });
 

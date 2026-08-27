@@ -633,6 +633,49 @@ export const BUTTON_FELT_MARGIN_WIDTH_PCT =
   FELT_MARKER_MARGIN_WIDTH_PCT + BUTTON_FELT_DAYLIGHT_WIDTH_PCT;
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   THE TOP SEATS' BOX IS AN OBSTACLE (Dan 2026-08-26 mobile pass, item 2)
+   ═══════════════════════════════════════════════════════════════════════════
+
+   "The button is currently covering the top player's box. This needs to be
+   adjusted to never overlap anything."
+
+   Every top-cap seat (ring y < 20 — the band tableSeatGeometry calls
+   TOP_CAP_Y_MAX) stands ABOVE the felt, and its rendered box — avatar over
+   nameplate — hangs DOWNWARD over the felt's top edge. The button's on-felt
+   projection lands it exactly in that overhang: on the 8-max top-centre seat
+   the puck was painted on the nameplate itself.
+
+   So a top-cap seat's button placement gains one more acceptance test: the
+   candidate must sit clear of a keep-out box modelled on the seat's rendered
+   footprint. The box is expressed in the same square space as everything else
+   here (units of 1% of the table's width):
+
+     half-width  13   half a nameplate (~90px on a 347px table) plus air
+     drop        22   from the seat ANCHOR down past the plate's bottom edge
+     rise         4   a little clearance above the anchor as well
+
+   The same swing loop that already separates the button from the chips walks
+   the puck around the felt until it clears the box — for the top-centre seat
+   that lands it beside the plate, on clear felt, at the same daylight from
+   the rail. Side and bottom seats never enter this branch: their y is ≥ 20. */
+export const TOP_CAP_SEAT_Y_MAX = 20;
+export const SEAT_BOX_HALF_WIDTH_PCT = 13;
+export const SEAT_BOX_DROP_WIDTH_PCT = 22;
+export const SEAT_BOX_RISE_WIDTH_PCT = 4;
+
+/** True when a candidate button position sits inside a TOP-CAP seat's box. */
+export function overlapsTopSeatBox(cand: Pos, seat: Pos, size: Size = NOMINAL_SCALER): boolean {
+  if (!Number.isFinite(seat.y) || seat.y >= TOP_CAP_SEAT_Y_MAX) return false;
+  const c = sq(cand, size);
+  const s = sq(seat, size);
+  return (
+    Math.abs(c.x - s.x) < SEAT_BOX_HALF_WIDTH_PCT &&
+    c.y - s.y < SEAT_BOX_DROP_WIDTH_PCT &&
+    c.y - s.y > -SEAT_BOX_RISE_WIDTH_PCT
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    FELT MATHS
    ═══════════════════════════════════════════════════════════════════════════
    The felt is a STADIUM, not an ellipse. `.table-surface` carries
@@ -1194,8 +1237,14 @@ export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod
   // would rotate the button to dodge a stack that is not there any more.
   const chips = chipRestPosition(seat, size, pod);
   const puck = buttonRadiusWidthPct(size);
+  // Item 2 (Dan 2026-08-26): a candidate must clear the chips, stay off the
+  // printed masthead, AND - for a top-cap seat - stay out of the seat's own
+  // rendered box (avatar + nameplate hanging over the felt's top edge). One
+  // predicate, used by the direct placement and by every swing candidate.
   const clear = (p: Pos) =>
-    markerGapWidthPct(p, chips, size) >= MARKER_MIN_GAP_WIDTH_PCT && !isOnFeltText(p, size, puck);
+    markerGapWidthPct(p, chips, size) >= MARKER_MIN_GAP_WIDTH_PCT &&
+    !isOnFeltText(p, size, puck) &&
+    !overlapsTopSeatBox(p, seat, size);
   if (clear(placed)) return placed;
 
   // Swing it around the middle of the felt, 1.5 degrees at a time, out to a
@@ -1203,31 +1252,55 @@ export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod
   // swing happens in square space so the angle is the angle a person sees, and
   // every candidate is put back on the felt before it is judged.
   //
-  // TWO conditions travel together here now (Dan 2026-08-26, second report):
-  // the puck must be clear of its own chips AND off the printed masthead. They
-  // have to be satisfied by the SAME candidate - solving them one after the
-  // other lets the second rotation walk the puck back into the first's
-  // problem, which is the trap the "re-clamp with the same margin" note below
-  // is about. `dir` is tried +1 first, which for a seat left of the middle
-  // swings the puck UP, and that is the direction Dan named.
+  // ALL conditions travel together (Dan 2026-08-26, both reports): the puck
+  // must be clear of its own chips, off the printed masthead, and out of a
+  // top-cap seat's box - satisfied by the SAME candidate, because solving them
+  // one after the other lets a later rotation walk the puck back into an
+  // earlier problem. Both directions are searched to THEIR first acceptable
+  // angle and the winner is the candidate nearer its OWN seat: first-found
+  // used to decide, and on a top-cap seat whose box is easier to clear on one
+  // side, first-found could walk the puck toward a NEIGHBOURING chair -
+  // tests/unit/chipRail.test.ts pins that a button always stays nearest the
+  // seat it was computed for.
   const pv = sq(placed, size);
   const cv = sq(c, size);
-  for (let i = 1; i <= 60; i++) {
-    for (const dir of [1, -1]) {
+  const sv = sq(seat, size);
+  let best: Pos | null = null;
+  let bestDist = Infinity;
+  for (const dir of [1, -1]) {
+    for (let i = 1; i <= 60; i++) {
       const phi = dir * i * 1.5 * (Math.PI / 180);
       const cosP = Math.cos(phi);
       const sinP = Math.sin(phi);
       const vx = pv.x - cv.x;
       const vy = pv.y - cv.y;
-      const cand = clampIntoFelt(
-        unsq({ x: cv.x + vx * cosP - vy * sinP, y: cv.y + vx * sinP + vy * cosP }, size),
-        size,
-        BUTTON_FELT_MARGIN_WIDTH_PCT
+      /* Swung candidates ride the BOUNDARY, in both directions. The stadium
+         is not a circle, so a point swung along its own arc can land INSIDE
+         the inset boundary near the straight walls - and clampIntoFelt only
+         pulls outside points in, it never pushes inside points out. A sunken
+         candidate breaks the "never deeper in than the chips" ordering, so
+         every candidate is projected exactly onto the button's boundary
+         before it is judged. */
+      const swung = unsq(
+        { x: cv.x + vx * cosP - vy * sinP, y: cv.y + vx * sinP + vy * cosP },
+        size
       );
-      if (clear(cand)) return cand;
+      const exit = feltExitScale(swung, size, BUTTON_FELT_MARGIN_WIDTH_PCT);
+      const cand = Number.isFinite(exit)
+        ? { x: c.x + (swung.x - c.x) * exit, y: c.y + (swung.y - c.y) * exit }
+        : swung;
+      if (clear(cand)) {
+        const cs = sq(cand, size);
+        const d = Math.hypot(cs.x - sv.x, cs.y - sv.y);
+        if (d < bestDist) {
+          best = cand;
+          bestDist = d;
+        }
+        break; // this direction's first (smallest-swing) acceptable candidate
+      }
     }
   }
-  return placed;
+  return best ?? placed;
 }
 
 /**

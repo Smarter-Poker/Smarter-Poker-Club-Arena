@@ -34,7 +34,13 @@ describe('TournamentStartingTicker registration predicate', () => {
     // only where it is actually written.
     const statusFilters = src.match(/\.in\('status',\s*\[[^\]]*\]\)/g) ?? [];
     expect(statusFilters.length).toBeGreaterThan(0);
-    const playerFilters = statusFilters.filter((f) => !/ANNOUNCED|REGISTERING/.test(f));
+    // Tournament-status filters are upper case by schema — the starting-soon
+    // query uses ANNOUNCED/REGISTERING and the overlay query (2026-08-26,
+    // running events only) uses RUNNING/LATE_REG. Everything else is a
+    // tournament_players predicate and must stay lower case.
+    const playerFilters = statusFilters.filter(
+      (f) => !/ANNOUNCED|REGISTERING|RUNNING|LATE_REG/.test(f)
+    );
     expect(playerFilters.length).toBeGreaterThan(0);
     for (const f of playerFilters) {
       expect(f).not.toMatch(/[A-Z]{2,}/);

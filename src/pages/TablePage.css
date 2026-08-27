@@ -1041,6 +1041,29 @@
   font-weight: 700;
 }
 
+/* Dan 2026-08-26 mobile pass, item 5: the hand number can NEVER be cut off.
+   Line 2 is a flex row: the game label is the flexible part that ellipsizes,
+   the hand-number span refuses to shrink. */
+.table-brand__line--level {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 3px;
+  max-width: 100%;
+}
+
+.table-brand__game {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-brand__hand {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .table-brand__clock {
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
   font-variant-numeric: tabular-nums;
@@ -1219,18 +1242,22 @@
   gap: 3px;
   width: 100%;
 }
+/* Dan 2026-08-26 mobile pass, item 4: "remove the weird extra boxes above and
+   below the flop." The boxes were THIS strip's chrome — a full-board-width
+   bordered slab per run, one above each run's cards, so a two-run hand framed
+   the flop with an empty-looking box on both sides. The row keeps its layout
+   job (badge left, winner centre, equity right) but paints nothing itself;
+   the RUN badge below still has its own small gold pill, which is all the
+   labelling the reference shows. */
 .community-area__run-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 6px;
   width: 100%;
-  padding: 2px 8px;
-  background: rgba(10, 14, 22, 0.88);
-  border: 1px solid rgba(255, 215, 0, 0.35);
-  border-radius: 6px;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  padding: 0 4px;
+  background: none;
+  border: none;
   box-sizing: border-box;
 }
 .community-area__run-badge {
@@ -1394,11 +1421,22 @@
 }
 
 /* `.community-cards__placeholder` was removed from this selector 2026-08-26
-   with the ghost turn/river slots themselves. */
+   with the ghost turn/river slots themselves.
+
+   Dan 2026-08-26 (same day, from a live flop): "revert back to the normal
+   sized flops, I don't like these oversized boards." Deleting the ghost
+   slots had a second effect nobody priced in: `flex: 1 1 0` sized every card
+   as an EQUAL SHARE OF THE ROW, and with only three cards dealt each share
+   became a third of the 68% board row - a flop half again bigger than the
+   same table's river. The card's basis is now pinned to ONE FIFTH of the row
+   (less its share of the four gaps) whatever the count on the felt, so a
+   flop card is exactly the size it will be when the river lands and the
+   board stops breathing between streets. flex-grow 0 is the fix; flex-shrink
+   1 keeps six-card double boards from overflowing. */
 .table-surface .community-cards__card {
   width: auto;
   height: auto;
-  flex: 1 1 0;
+  flex: 0 1 calc((100% - 4 * var(--cc-card-gap, 6px)) / 5);
   min-width: 0;
   aspect-ratio: 64 / 92;
 }
@@ -2303,6 +2341,56 @@
   transition: background-color 0.4s ease;
   animation: equityPop calc(0.45s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.3, 1.4);
 }
+/* Dan 2026-08-26 mobile pass, item 13: the badge may never block a revealed
+   hand. Villain cards fan OUTBOARD (tableSeatGeometry.seatCardSide), so the
+   badge docks on the seat's INBOARD side — vertically centred on the seat,
+   fully off the card fan's airspace. The hero seat keeps the below-seat
+   position (its cards render in the corner panel, not at the seat). */
+.equity-overlay--inboard-right {
+  bottom: auto;
+  top: 50%;
+  left: calc(100% + 6px);
+  transform: translateY(-50%);
+  font-size: 18px;
+}
+
+.equity-overlay--inboard-left {
+  bottom: auto;
+  top: 50%;
+  left: auto;
+  right: calc(100% + 6px);
+  transform: translateY(-50%);
+  font-size: 18px;
+}
+
+.equity-overlay--inboard-right .equity-overlay__track,
+.equity-overlay--inboard-left .equity-overlay__track {
+  width: 64px;
+}
+
+/* The pop keyframes bake in the below-seat translateX(-50%); the side-docked
+   badges need their own translateY variant or the animation would yank them
+   back under the seat for its first half-second. */
+.equity-overlay--inboard-right,
+.equity-overlay--inboard-left {
+  animation-name: equityPopSide;
+}
+
+@keyframes equityPopSide {
+  0% {
+    transform: translateY(-50%) scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(-50%) scale(1.18);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-50%) scale(1);
+    opacity: 1;
+  }
+}
+
 .equity-overlay--ahead {
   background-color: rgba(46, 204, 113, 0.95);
   box-shadow: 0 0 16px rgba(46, 204, 113, 0.6);
@@ -2963,6 +3051,28 @@
   gap: 8px;
 }
 
+/* Dan 2026-08-26 mobile pass, item 6: the bottom-left corner is a ROW now —
+   previous-hand box at the anchor, time-bank tile BESIDE it (only rendered
+   while the action is on the hero). `order` keeps the previous-hand box
+   leftmost regardless of DOM order, so the time-bank tile — and the Rabbit
+   Hunt button that takes its place after the hand (see RabbitHunt.css) —
+   occupy the slot to its right. */
+.hud-bl-row {
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.hud-bl-row .prev-hand-card-wrapper,
+.hud-bl-row .prev-hand-card {
+  order: 0;
+}
+
+.hud-bl-row .tbc-widget,
+.hud-bl-row .rabbit-hunt {
+  order: 1;
+}
+
 .add-chips-icon-btn {
   background: rgba(0, 0, 0, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.18);
@@ -3133,6 +3243,80 @@ button.post-bb-overlay-button:hover {
   font-weight: 500;
   color: rgba(255, 255, 255, 0.75);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   POST OR WAIT FOR BB — the entry-choice dialog shown right after a cash
+   buy-in confirms (Dan 2026-08-26). Mobile-first: full-width sheet at 375px,
+   centered card above that.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.post-or-wait__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.post-or-wait {
+  width: 100%;
+  max-width: 360px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 212, 255, 0.45);
+  background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
+  box-shadow:
+    0 0 18px rgba(0, 212, 255, 0.3),
+    0 8px 28px rgba(0, 0, 0, 0.6);
+  padding: 18px 16px 16px;
+  color: #fff;
+  text-align: center;
+}
+.post-or-wait__title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.post-or-wait__body {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.78);
+}
+.post-or-wait__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.post-or-wait__post,
+.post-or-wait__wait {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+.post-or-wait__post {
+  border: 1px solid rgba(0, 212, 255, 0.7);
+  background: linear-gradient(180deg, #0e7490 0%, #155e75 100%);
+  color: #fff;
+}
+.post-or-wait__post:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.post-or-wait__wait {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+}
+.post-or-wait__wait:hover,
+.post-or-wait__post:not(:disabled):hover {
+  filter: brightness(1.12);
+}
 @keyframes post-bb-pulse {
   from {
     box-shadow:
@@ -3296,11 +3480,16 @@ body.ca-raising .bankroll-widget {
   font-size: 1.05rem;
   font-weight: 800;
   letter-spacing: 0.01em;
-  color: #00d4ff;
+  /* POKERBROS PARITY 2026-08-26 (final audit): the reference's winner amount
+     is bright yellow (measured stroke core rgb(255,255,119)) — the cyan this
+     float shipped with matched nothing in the recording, and its glow was
+     already warm. One color for the whole +N story: this ride, the seat
+     float, and the sparkles. */
+  color: #ffe94a;
   -webkit-text-stroke: 0.5px rgba(0, 0, 0, 0.55);
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.85),
-    0 0 10px rgba(255, 200, 60, 0.45);
+    0 0 10px rgba(255, 233, 74, 0.5);
   transform: translate(calc(var(--pwf-from-x) - 50%), calc(var(--pwf-from-y) - 50%));
   animation: potWinFloatRide 2.2s cubic-bezier(0.25, 0.6, 0.3, 1) forwards;
 }
@@ -3668,8 +3857,8 @@ body.ca-raising .bankroll-widget {
   justify-content: center;
   padding: 8px 14px;
   border-radius: 8px;
-  background: linear-gradient(180deg, rgba(18, 22, 44, 0.92), rgba(12, 15, 32, 0.92));
-  border: 1px solid rgba(120, 150, 255, 0.22);
+  background: linear-gradient(180deg, rgba(28, 33, 40, 0.92), rgba(22, 27, 34, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.15);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
   animation: ritFeltBannerIn calc(0.3s * var(--animation-speed, 1)) ease-out;
 }
@@ -3678,7 +3867,7 @@ body.ca-raising .bankroll-widget {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: #dbe3f0;
+  color: #e4e6eb;
   text-align: center;
   line-height: 1.4;
 }
@@ -3703,4 +3892,22 @@ body.ca-raising .bankroll-widget {
 .community-area__run--extra[data-base-count='3'] .community-cards__card:nth-child(-n + 3),
 .community-area__run--extra[data-base-count='4'] .community-cards__card:nth-child(-n + 4) {
   visibility: hidden;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Dan 2026-08-26: Remove all baked CSS backgrounds/borders on image buttons 
+   since the new 3D assets come with them built-in
+   ═══════════════════════════════════════════════════════════════════════════════ */
+.control-strip__btn--icon-img,
+.add-chips-icon-btn {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.control-strip__btn--icon-img:hover,
+.add-chips-icon-btn:hover {
+  background: transparent !important;
+  filter: brightness(1.1);
 }

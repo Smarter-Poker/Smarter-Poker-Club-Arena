@@ -68,7 +68,53 @@ export function isActiveNow(horseId: string, hourUTC: number): boolean {
 // again for no visible reason. Slow drift reads as a table warming up or
 // dying off, which is what actually happens.
 
-export type TableVibe = 'hot' | 'busy' | 'steady' | 'quiet';
+export type TableVibe = 'hot' | 'busy' | 'steady' | 'quiet' | 'empty';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HELD-EMPTY TABLES (Dan 2026-08-26, binding)
+// ═══════════════════════════════════════════════════════════════════════════════
+// "THERE SHOULD ALWAYS BE A HANDFUL OF TABLES THAT ARE EMPTY, NOT EVERY TABLE
+//  SHOULD BE FULL. LEAVE 15% OF ALL CASH GAME TABLES EMPTY."
+//
+// A room where every game is populated reads as scripted — and gives a human
+// who wants to START a game nowhere to do it. So a deterministic 15% of cash
+// tables are held EMPTY: the fleet seats no horses there and queues none
+// behind them. The bucket is long (2h) so an empty table stays findable
+// instead of flickering, and the set rotates so it is not the same games
+// every day. The moment a HUMAN sits at one, it stops being held — the fleet
+// may then populate the game around them (occupancyTargetFor's humanSeated
+// pin already guarantees a playable table).
+
+/** How long a held-empty cash table stays empty before the set rotates. */
+export const EMPTY_BUCKET_MS = 2 * 60 * 60_000;
+
+/** Fraction of cash tables held empty at any time. */
+export const CASH_EMPTY_FRACTION = 0.15;
+
+export function cashTableHeldEmpty(tableId: string, nowMs: number = Date.now()): boolean {
+  const bucket = Math.floor(nowMs / EMPTY_BUCKET_MS);
+  const h = horseHash(`${tableId}:empty:${bucket}`);
+  return h % 100 < CASH_EMPTY_FRACTION * 100;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GAME LANES (Dan 2026-08-26, binding)
+// ═══════════════════════════════════════════════════════════════════════════════
+// "33% OF HORSES SHOULD BE PLAYING NOTHING BUT TOURNAMENTS, SPINS AND HEADS
+//  UP. 33% PLAY NOTHING BUT CASH. 34% PLAY A MIX OF BOTH."
+//
+// A stable identity, derived from the id hash like every other trait, so the
+// same horse is a cash grinder every day rather than re-rolling per cycle.
+
+export type HorseGameLane = 'events' | 'cash' | 'both';
+
+export function gameLaneFor(horseId: string): HorseGameLane {
+  const h = horseHash(`${horseId}:lane`);
+  const roll = h % 100;
+  if (roll < 33) return 'events'; // tournaments, spins, heads-up only
+  if (roll < 66) return 'cash'; // cash only
+  return 'both';
+}
 
 /** How long a table keeps its current popularity before drifting. */
 export const VIBE_BUCKET_MS = 22 * 60_000;
@@ -98,6 +144,12 @@ export function occupancyTargetFor(
   humanSeated: boolean = false,
   nowMs: number = Date.now()
 ): { seatTarget: number; waitTarget: number; vibe: TableVibe } {
+  // Dan 2026-08-26: 15% of cash tables are held EMPTY — no horses seated, no
+  // queue — so a human always has somewhere to start a fresh game. The hold
+  // releases the moment a human sits (their game then populates normally).
+  if (!humanSeated && cashTableHeldEmpty(tableId, nowMs)) {
+    return { seatTarget: 0, waitTarget: 0, vibe: 'empty' };
+  }
   const vibe = tableVibe(tableId, nowMs);
   const h = horseHash(`${tableId}:${Math.floor(nowMs / VIBE_BUCKET_MS)}:seats`);
   let seatTarget: number;

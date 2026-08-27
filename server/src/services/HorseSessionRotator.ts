@@ -41,7 +41,7 @@
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
-import { isActiveNow, wantsTableChange } from './HorseBehavior.js';
+import { cashTableHeldEmpty, isActiveNow, wantsTableChange } from './HorseBehavior.js';
 
 const CYCLE_MS = 90_000; // examine the floor every 90s
 const GLOBAL_DEPARTURES_PER_CYCLE = 4;
@@ -158,7 +158,13 @@ export class HorseSessionRotator {
       // V8: tables with a HUMAN present are protected harder — never thin a
       // human's game below 5, and horse-only tables absorb most rotation.
       const humanPresent = tableSeats.some((x) => !horseIds.has(x.user_id));
-      if (tableSeats.length < (humanPresent ? 5 : 4)) continue;
+      // Dan 2026-08-26: a horse-only table the occupancy law wants EMPTY must
+      // actually empty. The 4-seat floor below exists so a departure never
+      // threatens a live game — but a held-empty table is not a game being
+      // protected, it is a game being wound down, so it drains one horse per
+      // cycle through the same hand-boundary-safe leave path.
+      const heldEmpty = !humanPresent && cashTableHeldEmpty(tableId);
+      if (!heldEmpty && tableSeats.length < (humanPresent ? 5 : 4)) continue;
 
       const engine = this.getEngine(tableId);
       if (!engine) continue; // no live engine — not our business
@@ -167,6 +173,11 @@ export class HorseSessionRotator {
       let best: { seat: (typeof tableSeats)[number]; p: number } | null = null;
       for (const seat of tableSeats) {
         if (!horseIds.has(seat.user_id)) continue;
+        // Held-empty drain: certain departure, one per cycle, no hazard math.
+        if (heldEmpty) {
+          best = { seat, p: Number.POSITIVE_INFINITY };
+          break;
+        }
         const t = (seat as any).tables;
         const bb = Number(t?.big_blind) || 2;
         const buyIn = bb * 100;

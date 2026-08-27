@@ -125,7 +125,27 @@ interface RevenueData {
     avg_pot: number;
     rake_per_hand: number;
   };
-  daily: Array<{ d: string; hands: number; rake: number; bbj: number; pot_total: number }>;
+  /**
+   * INSURANCE P&L 2026-08-27 (Dan): settled all-in insurance contracts at
+   * this club's tables. `bank` says where the money actually settles -
+   * 'union' for affiliated clubs, 'club' for standalone - so the label can
+   * be honest about whose profit it is.
+   */
+  insurance?: {
+    contracts: number;
+    premiums: number;
+    payouts: number;
+    net: number;
+    bank: 'union' | 'club';
+  };
+  daily: Array<{
+    d: string;
+    hands: number;
+    rake: number;
+    bbj: number;
+    pot_total: number;
+    ins_net?: number;
+  }>;
   by_table: Array<{
     table_id: string;
     name: string;
@@ -1600,6 +1620,25 @@ export default function ClubDashboard() {
                     { label: 'Rake per hand', value: formatChips(revenue.totals.rake_per_hand) },
                     { label: 'Average pot', value: formatChips(revenue.totals.avg_pot) },
                     { label: 'Total pots', value: formatChips(revenue.totals.pot_total) },
+                    // INSURANCE P&L 2026-08-27 (Dan): net = premiums - payouts
+                    // over the window. The bank suffix says whose profit it is
+                    // - a union-affiliated club's insurance settles to the
+                    // union bank, a standalone club keeps it.
+                    ...(revenue.insurance
+                      ? [
+                          {
+                            label:
+                              revenue.insurance.bank === 'union'
+                                ? 'Insurance net (to union)'
+                                : 'Insurance net (club bank)',
+                            value: formatChips(revenue.insurance.net),
+                          },
+                          {
+                            label: 'Insurance premiums / payouts',
+                            value: `${formatChips(revenue.insurance.premiums)} / ${formatChips(revenue.insurance.payouts)}`,
+                          },
+                        ]
+                      : []),
                   ].map((m) => (
                     <div
                       key={m.label}

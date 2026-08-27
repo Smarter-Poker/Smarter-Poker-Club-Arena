@@ -78,6 +78,9 @@ const SETTINGS = read('src/pages/ClubSettingsPage.tsx');
 const INVITE = read('src/pages/InvitePage.tsx');
 const CLUBS_SERVICE = read('src/services/ClubsService.ts');
 const CREATE_MODAL = read('src/components/modals/CreateClubModal.tsx');
+const JOIN_MODAL = read('src/components/modals/JoinClubModal.tsx');
+const APP = read('src/App.tsx');
+const HAMBURGER = read('src/components/navigation/HamburgerMenu.tsx');
 const FIND = read('src/components/modals/FindPlayerModal.tsx');
 const PLAYER_SEARCH = read('src/components/admin/PlayerSearch.tsx');
 
@@ -120,11 +123,77 @@ describe('a club code means the same thing on every screen', () => {
     expect(parseClubCode(' 25450 ')).toBe(25450);
   });
 
-  it('is imported by both screens rather than spelled out twice', () => {
+  it('is imported by every screen that reads a code, rather than spelled out again', () => {
+    // The join UI moved from HomePage's inline form into JoinClubModal, so the
+    // modal is now the screen that must share the definition. It briefly
+    // carried a hand-rolled third spelling (parseInt + range check) — exactly
+    // the drift this util exists to prevent.
     expect(CLUBS_PAGE).toMatch(/from '\.\.\/utils\/clubCode'/);
-    expect(HOME).toMatch(/from '\.\.\/utils\/clubCode'/);
+    expect(JOIN_MODAL).toMatch(/from '\.\.\/\.\.\/utils\/clubCode'/);
+    expect(codeOnly(JOIN_MODAL)).not.toMatch(/parseInt\(/);
     // The exact-six gate is gone.
     expect(codeOnly(CLUBS_PAGE)).not.toMatch(/joinClubId\.length !== 6/);
+  });
+});
+
+describe('the join modal', () => {
+  it('cannot start two joins from a held Enter key', () => {
+    // The button disables on isJoining, but Enter in the input is not the
+    // button — the handler itself must refuse re-entry.
+    expect(JOIN_MODAL).toMatch(/if \(isJoining\) return;/);
+  });
+
+  it('detects a pasted invite link where the paste actually arrives', () => {
+    // maxLength={6} truncates a pasted URL before onChange sees it, so an
+    // onChange-only regex can never match a full link. onPaste gets the
+    // clipboard whole.
+    expect(JOIN_MODAL).toMatch(/onPaste=/);
+    expect(JOIN_MODAL).toMatch(/e\.clipboardData\.getData\('text'\)/);
+  });
+
+  it('does not report a lookup failure as a wrong code', () => {
+    expect(JOIN_MODAL).toMatch(/Could not look up that code right now/);
+  });
+});
+
+describe('creating a club (service path — the modal and ClubsPage both delegate here)', () => {
+  it('fails closed on the 4-club limit', () => {
+    // fn_join_club re-checks the limit for joins but its owner branch does
+    // not, so this client check is the only limit on the create path. A count
+    // error must refuse, not shrug — this guard was dropped in the modal
+    // redesign and is pinned here so it cannot be dropped twice.
+    expect(CLUBS_SERVICE).toMatch(/Could not verify your club memberships/);
+  });
+
+  it('cleans up the orphan club when the owner join fails', () => {
+    // Without this, a failed owner membership leaves a members-less club row
+    // squatting on the name forever. The old CreateClubModal had the guard;
+    // the refactor into ClubsService must keep it.
+    expect(CLUBS_SERVICE).toMatch(/Failed to set up club ownership/);
+    expect(CREATE_MODAL).toMatch(/ClubsService\.create\(/);
+  });
+});
+
+describe('every door that says Create Club opens something', () => {
+  it('the empty state on the clubs list opens the modal, not a tab that no longer renders', () => {
+    expect(CLUBS_PAGE).toMatch(/onCreate=\{\(\) => setShowCreateModal\(true\)\}/);
+    expect(codeOnly(CLUBS_PAGE)).not.toMatch(/setActiveTab\('create'\)/);
+  });
+
+  it('old /clubs/create links land on the lobby with the modal opening', () => {
+    // CreateClubPage is deleted; without the redirect, /clubs/create falls
+    // through to clubs/:clubId with clubId="create".
+    expect(APP).toMatch(/path="clubs\/create"/);
+    expect(APP).toMatch(/to="\/\?create=club"/);
+    expect(HOME).toMatch(/searchParams\.get\('create'\) === 'club'/);
+    expect(codeOnly(HAMBURGER)).not.toMatch(/'\/clubs\/create'/);
+  });
+
+  it('a shared join link still opens the join modal prefilled', () => {
+    // ?c= and ?ref= used to feed an inline form that the redesign deleted;
+    // the captured deep link must reach the modal instead.
+    expect(CLUBS_PAGE).toMatch(/initialCode=\{deepLink\.code\}/);
+    expect(CLUBS_PAGE).toMatch(/initialRef=\{deepLink\.ref\}/);
   });
 });
 
@@ -192,5 +261,62 @@ describe('the admin player search', () => {
   it('escapes ILIKE wildcards so an underscore does not over-match', () => {
     expect(PLAYER_SEARCH).toMatch(/likeSafe/);
     expect(codeOnly(PLAYER_SEARCH)).not.toMatch(/ilike\('username', `%\$\{query\}%`\)/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2 (2026-08-27): the counts are true, the limit is real, the trap traps
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DISCOVERY = read('src/components/clubs/ClubDiscovery.tsx');
+const LIMIT_MIGRATION = read(
+  'supabase/migrations/20260827_four_club_limit_enforced_server_side.sql'
+);
+
+describe('member_count tells the truth', () => {
+  it('InvitePage does not bump a count a trigger already recomputed', () => {
+    // trg_sync_club_member_count RECOUNTS clubs.member_count on every
+    // club_members change. The increment_member_count(+1) InvitePage ran on
+    // top of that recount inflated the count by one on every invite-page
+    // join — the only join path that did.
+    expect(codeOnly(INVITE)).not.toMatch(/increment_member_count/);
+  });
+});
+
+describe('the discovery grid shows only data that exists', () => {
+  it('no fabricated stakes: clubs has no min_stakes/max_stakes columns', () => {
+    // Every card used to render the fallback "1/2 - 5/10" as if it were the
+    // club's real stakes, and a stake filter filtered on that fabrication.
+    expect(codeOnly(DISCOVERY)).not.toMatch(/min_stakes|max_stakes/);
+    expect(codeOnly(DISCOVERY)).not.toMatch(/'5\/10'/);
+    expect(codeOnly(DISCOVERY)).not.toMatch(/stakeFilter/);
+  });
+
+  it('selects the columns it renders, not * plus a dead embed', () => {
+    expect(codeOnly(DISCOVERY)).not.toMatch(/select\('\*, club_members\(count\)'\)/);
+  });
+});
+
+describe('the 4-club limit is enforced where it cannot be skipped', () => {
+  it('the trigger migration exists, covers insert and approval, and exempts horses', () => {
+    // fn_join_club's owner branch never counts memberships, so club creation
+    // relied on a client-side check alone. The trigger backstops every insert
+    // path and the pending->active approval transition. Verified against
+    // production with a rolled-back probe on 2026-08-27: 4th membership
+    // allowed, 5th refused (23514); a horse seated in 6 clubs unhindered.
+    expect(LIMIT_MIGRATION).toMatch(/trg_four_club_limit_ins/);
+    expect(LIMIT_MIGRATION).toMatch(/trg_four_club_limit_upd/);
+    expect(LIMIT_MIGRATION).toMatch(/is_horse/);
+    expect(LIMIT_MIGRATION).toMatch(/BEFORE UPDATE OF status/);
+  });
+});
+
+describe('the join modal traps focus itself', () => {
+  it('owns its focus trap so every caller gets it', () => {
+    expect(JOIN_MODAL).toMatch(/useFocusTrap\(isOpen\)/);
+    expect(JOIN_MODAL).toMatch(/role="dialog"/);
+    // HomePage used to build a trap ref for this modal and attach it to
+    // nothing — accessibility theater.
+    expect(codeOnly(HOME)).not.toMatch(/joinModalRef/);
   });
 });

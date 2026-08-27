@@ -280,3 +280,56 @@
 .card-image--flipping {
   animation: card-flip 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UNREADABLE CARD (2026-08-26)
+   ═══════════════════════════════════════════════════════════════════════════
+   getCardImagePath used to substitute the ACE OF SPADES for any card it could
+   not parse, so a corrupt card rendered as a real, plausible, playable one and
+   the player bet behind it. It returns null now, and this is what null looks
+   like.
+
+   Designed to be impossible to mistake for a card: no white face, no rank, no
+   suit pip, a dashed amber border and a single question mark. If a player ever
+   sees this they should know the slot is untrustworthy without being told. */
+.card-image--unreadable {
+  background: transparent;
+  box-shadow: none;
+}
+
+.card-image__unreadable {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  /* Amber, not red: red on a poker felt reads as the hearts/diamonds colour. */
+  border: 2px dashed #f59e0b;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(245, 158, 11, 0.12) 0 6px,
+    rgba(15, 23, 42, 0.55) 6px 12px
+  );
+  color: #f59e0b;
+  font-weight: 800;
+  font-size: 1.1em;
+  line-height: 1;
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .card-image__unreadable {
+    animation: cardUnreadablePulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes cardUnreadablePulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.62;
+  }
+}

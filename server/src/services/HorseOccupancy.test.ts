@@ -12,7 +12,10 @@ import {
   tableVibe,
   occupancyTargetFor,
   wantsTableChange,
+  cashTableHeldEmpty,
+  gameLaneFor,
   VIBE_BUCKET_MS,
+  EMPTY_BUCKET_MS,
 } from './HorseBehavior.js';
 
 const tables = Array.from({ length: 400 }, (_, i) => `tbl-${i}-${i * 7919}`);
@@ -68,14 +71,65 @@ describe('a floor is lopsided, not uniform', () => {
     }
   });
 
-  it('never asks for more seats than the table has, or fewer than a game', () => {
+  it('never asks for more seats than the table has, or fewer than a game (unless held empty)', () => {
     for (const max of [2, 6, 8, 9]) {
       for (const id of tables.slice(0, 80)) {
-        const { seatTarget, waitTarget } = occupancyTargetFor(id, max, false, 1_700_000_000_000);
+        const { seatTarget, waitTarget, vibe } = occupancyTargetFor(id, max, false, 1_700_000_000_000);
         expect(seatTarget).toBeLessThanOrEqual(max);
-        expect(seatTarget).toBeGreaterThanOrEqual(2);
+        // Dan 2026-08-26: a held-empty table wants exactly zero. Anything
+        // that is actually running still wants at least a playable game.
+        if (vibe === 'empty') {
+          expect(seatTarget).toBe(0);
+          expect(waitTarget).toBe(0);
+        } else {
+          expect(seatTarget).toBeGreaterThanOrEqual(2);
+        }
         expect(waitTarget).toBeLessThanOrEqual(3);
       }
+    }
+  });
+});
+
+describe('held-empty cash tables (Dan 2026-08-26: leave 15% of cash tables empty)', () => {
+  it('holds roughly 15% of tables empty at any moment', () => {
+    const t0 = 1_700_000_000_000;
+    const empty = tables.filter((id) => cashTableHeldEmpty(id, t0)).length;
+    const frac = empty / tables.length;
+    expect(frac).toBeGreaterThan(0.08);
+    expect(frac).toBeLessThan(0.24);
+  });
+
+  it('an empty table stays empty for its whole bucket, then the set rotates', () => {
+    const t0 = 1_700_000_000_000;
+    const id = tables.find((x) => cashTableHeldEmpty(x, t0))!;
+    expect(cashTableHeldEmpty(id, t0 + EMPTY_BUCKET_MS - 1000)).toBe(true);
+    const later = new Set<boolean>();
+    for (let b = 0; b < 60; b++) later.add(cashTableHeldEmpty(id, t0 + b * EMPTY_BUCKET_MS));
+    expect(later.has(false)).toBe(true);
+  });
+
+  it('a HUMAN sitting down releases the hold — their game populates normally', () => {
+    const t0 = 1_700_000_000_000;
+    const id = tables.find((x) => cashTableHeldEmpty(x, t0))!;
+    const { seatTarget } = occupancyTargetFor(id, 6, true, t0);
+    expect(seatTarget).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('game lanes (Dan 2026-08-26: 33% events-only, 33% cash-only, 34% both)', () => {
+  it('splits the stable roughly in thirds, stably', () => {
+    const horses = Array.from({ length: 3000 }, (_, i) => `horse-${i}-${i * 104729}`);
+    const seen = { events: 0, cash: 0, both: 0 };
+    for (const h of horses) {
+      const lane = gameLaneFor(h);
+      seen[lane]++;
+      // Stable identity: same horse, same lane, every time.
+      expect(gameLaneFor(h)).toBe(lane);
+    }
+    for (const lane of ['events', 'cash', 'both'] as const) {
+      const frac = seen[lane] / horses.length;
+      expect(frac, `${lane} share`).toBeGreaterThan(0.25);
+      expect(frac, `${lane} share`).toBeLessThan(0.42);
     }
   });
 });

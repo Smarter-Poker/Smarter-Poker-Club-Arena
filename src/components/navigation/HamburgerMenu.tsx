@@ -837,7 +837,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         <div style={sectionHeaderStyle}>Clubs</div>
         {[
           { label: 'My Clubs', path: '/clubs' },
-          { label: 'Create Club', path: '/clubs/create' },
+          { label: 'Create Club', path: '/?create=club' },
           { label: 'Find Player', path: '/search' },
           { label: 'Messages', path: '/messages' },
           { label: 'Club Messages', path: '/messages/clubs' },

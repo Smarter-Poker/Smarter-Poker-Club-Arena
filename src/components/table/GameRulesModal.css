@@ -24,7 +24,6 @@
   from {
     opacity: 0;
   }
-
   to {
     opacity: 1;
   }
@@ -35,8 +34,8 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .rules-modal {
-  width: 90%;
-  max-width: 400px;
+  width: 95%;
+  max-width: 500px;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
@@ -51,12 +50,11 @@
 @keyframes gameRulesSlideUp {
   from {
     opacity: 0;
-    transform: translateY(30px);
+    transform: translateY(30px) scale(0.95);
   }
-
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -124,8 +122,59 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   CONTENT
+   TABS
    ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rules-modal__tabs {
+  display: flex;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.rules-modal__tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 14px 10px;
+  color: #8b949e;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.rules-modal__tab:hover {
+  color: #e4e6eb;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.rules-modal__tab--active {
+  color: #1877f2;
+}
+
+.rules-modal__tab--active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #1877f2;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CONTENT AREA
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rules-modal__content-area {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
 
 .rules-modal__content {
   padding: 20px;
@@ -136,6 +185,14 @@
   flex: 1;
 }
 
+.rules-modal__content--rankings {
+  padding-right: 12px; /* Extra room for scrollbar */
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TAB 1: TABLE INFO
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
 .rules-modal__section-title {
   font-size: 0.75rem;
   font-weight: 600;
@@ -145,7 +202,6 @@
   margin: 0 0 12px;
 }
 
-/* Grid Layout */
 .rules-modal__grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -174,7 +230,6 @@
   color: #e4e6eb;
 }
 
-/* Features */
 .rules-modal__features {
   display: flex;
   flex-direction: column;
@@ -193,13 +248,9 @@
 }
 
 .rules-modal__feature--active {
-  background: rgba(46, 160, 67, 0.1);
-  border-color: rgba(46, 160, 67, 0.3);
+  background: rgba(24, 119, 242, 0.1);
+  border-color: rgba(24, 119, 242, 0.3);
   opacity: 1;
-}
-
-.rules-modal__feature-icon {
-  font-size: 1.125rem;
 }
 
 .rules-modal__feature-text {
@@ -208,7 +259,6 @@
   color: #e4e6eb;
 }
 
-/* Custom Rules */
 .rules-modal__custom-list {
   display: flex;
   flex-direction: column;
@@ -249,6 +299,131 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
+   TAB 2 & 3: RULES & LIMITS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rules-modal__bullet-list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.rules-modal__bullet-list li {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #c9d1d9;
+}
+
+.rules-modal__bullet-list strong {
+  color: #e4e6eb;
+}
+
+.rules-modal__text {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #c9d1d9;
+  margin: 0;
+}
+
+.rules-modal__text strong {
+  color: #e4e6eb;
+}
+
+.rules-modal__callout {
+  background: rgba(24, 119, 242, 0.1);
+  border-left: 3px solid #1877f2;
+  padding: 12px 16px;
+  border-radius: 4px;
+}
+
+.rules-modal__callout p {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #c9d1d9;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TAB 4: HAND RANKINGS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rules-modal__ranking-notice {
+  background: rgba(248, 81, 73, 0.1);
+  border: 1px solid rgba(248, 81, 73, 0.3);
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: #ff7b72;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.rules-modal__ranking-notice strong {
+  color: #fff;
+}
+
+.rules-modal__hand-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.rules-modal__hand-item {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.rules-modal__hand-title {
+  margin: 0;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #1877f2;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-align: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.rules-modal__hand-row {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  align-items: center;
+}
+
+.rules-modal__hand-cards {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Size container specifically so CardImage fits well */
+.rules-modal__hand-card-wrap {
+  width: 32px;
+  height: 46px;
+  position: relative;
+}
+
+/* We override .card-image to ensure it fits the wrapper nicely */
+.rules-modal__hand-card-wrap .card-image {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.rules-modal__hand-desc {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: #c9d1d9;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
    RESPONSIVE — Mobile
    ═══════════════════════════════════════════════════════════════════════════════ */
 
@@ -273,6 +448,15 @@
     font-size: 1rem;
   }
 
+  .rules-modal__tabs {
+    flex-wrap: wrap;
+  }
+
+  .rules-modal__tab {
+    padding: 12px 8px;
+    font-size: 0.6875rem;
+  }
+
   .rules-modal__content {
     padding: 16px;
     gap: 16px;
@@ -288,5 +472,22 @@
 
   .rules-modal__feature {
     padding: 8px 10px;
+  }
+
+  .rules-modal__hand-row {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .rules-modal__hand-cards {
+    gap: 6px;
+  }
+
+  .rules-modal__hand-card-wrap {
+    width: 36px;
+    height: 52px;
   }
 }

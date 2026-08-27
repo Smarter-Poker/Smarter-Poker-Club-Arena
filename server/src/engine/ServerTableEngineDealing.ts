@@ -578,10 +578,26 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // Give busted players 5 seconds to process the UI modal and hit rebuy before the next hand starts.
           // activePlayers refers to the players DEALT into this hand (so they started > 0 chips).
           // If they now have 0, they just busted.
-          const justBustedHumans = activePlayers.filter(
-            (p) => p.stack === 0 && p.is_horse === false
-          );
-          if (justBustedHumans.length > 0) {
+          //
+          // EVERY PLAYER, HORSE OR HUMAN (Dan 2026-08-27). This filter used to
+          // carry `&& p.is_horse === false`, so the table held for five seconds
+          // when a human busted and snapped straight into the next hand when a
+          // horse did. Dan: "YES IT STILL NEEDS TO THE SAME 5 SECOND PAUSE TO
+          // REBUY. NOT EVERY HORSE ALWAYS REBUYS IN THE CASH GAMES, AND IF YOU
+          // DIDN'T GIVE THEM THE SAME EXACT FEATURES AND FUNCTIONALITY, PEOPLE
+          // WOULD NOTICE!"
+          //
+          // He is right, and the tell is the RHYTHM of the table rather than
+          // any one hand: a seat whose bust never costs the table a beat is a
+          // seat everybody can identify as a horse. The pause is also not
+          // ceremonial for horses — the stop-loss (two rebuys) and an empty
+          // club treasury both mean a horse genuinely may not come back, so
+          // the window it is given to return has to be the same window.
+          //
+          // See CLAUDE.md section 10.5. There is no "equal outcome by a
+          // different mechanism" exemption: timing is part of the outcome.
+          const justBustedPlayers = activePlayers.filter((p) => p.stack === 0);
+          if (justBustedPlayers.length > 0) {
             let needsRebuyPause = false;
             if (!this.isTournamentTable()) {
               needsRebuyPause = true; // Cash games always have rebuy
@@ -624,7 +640,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
             if (needsRebuyPause) {
               console.log(
-                `[ServerTableEngine:${this.tableId}] Pausing 5s for busted players to buy back in: ${justBustedHumans.map((p) => p.username).join(', ')}`
+                `[ServerTableEngine:${this.tableId}] Pausing 5s for busted players to buy back in: ${justBustedPlayers.map((p) => p.username).join(', ')}`
               );
               this.setLoopPhase('rebuy_pause');
               await this.sleep(5000);

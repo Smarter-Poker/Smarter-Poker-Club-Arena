@@ -1850,13 +1850,19 @@ export class GameServer {
         // meet the threshold, which is the only thing the loop below cared about.
         //
         // 2026-08-22: `cash_tables_needing_engine` is `cash_tables_with_players`
-        // plus "...OR at least one seated human". Below two occupants no engine
+        // plus "...OR at least one seated player". Below two occupants no engine
         // existed, so the FIRST person to sit at an empty table got WS close
         // 4404 from the engine transport and sat on "connecting" until somebody
         // else arrived — there was nothing to connect TO. The engine is what
         // publishes the idle snapshot (stage 'waiting', seats, stacks), so its
         // mere existence is the difference between a real table and an eternal
-        // spinner. A table of horses alone still does not get one.
+        // spinner.
+        //
+        // HORSES ARE PLAYERS (Dan 2026-08-27). This comment used to end "A
+        // table of horses alone still does not get one." That was an exclusion
+        // stated outright: a lone human was given a dealer and a lone horse was
+        // denied one. Any occupied table gets an engine now — see CLAUDE.md
+        // section 10.5, which forbids this class of rule entirely.
         //
         // It returns `human_count` so the two ideas below can stay separate:
         // "needs an engine" is NOT "should be dealing". See seatedCounts.

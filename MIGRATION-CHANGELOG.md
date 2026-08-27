@@ -15837,3 +15837,32 @@ control-tested every detector before believing its result.
 - New pin `tests/unit/UnknownBalanceIsNotZero.test.ts` (mutation-tested).
 
 Verified: tsc clean, 7,331/7,331 tests, deprecated-table gate green.
+
+## 2026-08-27 — Phase-5: no ceiling on people; the flaky suite fixed (cowork-mobile)
+
+Full write-up: `.agent/audits/2026-08-27-phase5-no-ceiling-on-people.md`
+
+Dan: "there should never be a cap on the amount of players in the club, union
+or anywhere else." Correction first: none of these were caps on PLAYERS - they
+were page sizes on background reads. But each treated its slice as the whole
+room, so the effect was the same once the room outgrew them.
+
+- HorseSessionRotator: `.limit(400)` UNORDERED, with 348 live seats measured
+  that day (87% of it). Now pages the whole room, ordered.
+- horseLoadMap (both halves) and the same-tournament entrant guard: three
+  `.limit(20000)` ceilings removed; all page. A truncated entrant list is how a
+  horse gets registered into the same tournament twice.
+- Waitlist: took the oldest TEN and looked for a human among them - a
+  horse-heavy head notified nobody while humans waited behind. Now walks the
+  queue. Kept as two queries on purpose: `table_waitlist.user_id` has FKs to
+  BOTH profiles and auth.users, so an embedded filter is ambiguous and a 400
+  would silence every seat offer.
+- FLAKY SUITE FIXED: full runs failed 2, then 4, then 5 specs across different
+  files while each passed alone. Two CPU-bound describes were spending ~8.5s of
+  the 10s default, and EngineStartResilience left three collaborators unstubbed
+  against its own docstring. Proven pre-existing by reproducing on main with
+  these changes stashed. Now: two consecutive full runs, 1,941/1,941.
+
+Reported not changed: 31 further row ceilings on people-tables, of which ~8 are
+complete-set operations (StatsExport, AgentPromoPanel, member lists) that need
+the same treatment in their own pass.

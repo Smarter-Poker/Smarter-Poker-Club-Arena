@@ -403,24 +403,61 @@ export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
     // act on a seat-open notification, so offering it the seat silently
     // wasted the offer — regularly, since horses were often at the head.
     // Fetch the oldest few and notify the first HUMAN.
-    const { data: nextBatch } = await supabase
-      .from('table_waitlist')
-      .select('id, user_id')
-      .eq('table_id', tableId)
-      .eq('status', 'waiting')
-      .order('created_at', { ascending: true })
-      .limit(10);
-    if (!nextBatch || nextBatch.length === 0) return;
+    /* ═══ NO ARBITRARY WINDOW ON THE QUEUE (Dan 2026-08-27) ═══════════════
+       This fetched the ten oldest entries and then looked for a human among
+       them. If the ten oldest all happened to be horses, it returned without
+       notifying ANYBODY - while real people waited directly behind them. The
+       queue is deliberately horse-seeded ("atmosphere"), so a horse-heavy
+       head is the expected shape, not a freak one; the ten was simply a
+       number somebody hoped was big enough.
 
-    const ids = nextBatch.map((r) => r.user_id as string);
-    const { data: horseRows } = await supabase
-      .from('profiles')
-      .select('id')
-      .in('id', ids)
-      .eq('is_horse', true);
-    const horseIds = new Set((horseRows ?? []).map((r) => r.id as string));
-    const next = nextBatch.find((r) => !horseIds.has(r.user_id as string));
-    if (!next) return; // only horses are queued — nobody to seat
+       Measured 2026-08-27 before changing it: 12 tables with a queue, 22
+       people waiting, no queue longer than 10 and no table with a human
+       stranded behind ten horses - so this was latent, not live. Fixed
+       anyway, because "big enough today" is exactly the reasoning that
+       eventually is not.
+
+       The window is gone rather than raised: walk the queue in order, a page
+       at a time, until a human turns up or the queue runs out. No ceiling,
+       and on the normal queue (22 people across 12 tables today) it is still
+       exactly one round trip.
+
+       DELIBERATELY NOT an embedded `profiles!inner(is_horse)` filter, which
+       would have been one query instead of two: `table_waitlist.user_id`
+       carries TWO foreign keys - one to `profiles(id)` and one to
+       `auth.users(id)` - and an ambiguous embed resolves at PostgREST's
+       discretion. If it ever answered 400, `data` is null, this function
+       returns early, and seat offers stop going out ENTIRELY - silently, and
+       far worse than the horse-heavy-head case being fixed. Two plain reads
+       cannot fail that way. */
+    const QUEUE_PAGE = 25;
+    let next: { id: string; user_id: string } | undefined;
+    for (let page = 0; ; page++) {
+      if (page > 10_000) break; // anti-runaway assert, not a queue limit
+      const { data: batch } = await supabase
+        .from('table_waitlist')
+        .select('id, user_id')
+        .eq('table_id', tableId)
+        .eq('status', 'waiting')
+        .order('created_at', { ascending: true })
+        .range(page * QUEUE_PAGE, page * QUEUE_PAGE + QUEUE_PAGE - 1);
+      if (!batch || batch.length === 0) break;
+
+      const ids = batch.map((r) => r.user_id as string);
+      const { data: horseRows } = await supabase
+        .from('profiles')
+        .select('id')
+        .in('id', ids)
+        .eq('is_horse', true);
+      const horseIds = new Set((horseRows ?? []).map((r) => r.id as string));
+      const found = batch.find((r) => !horseIds.has(r.user_id as string));
+      if (found) {
+        next = found as { id: string; user_id: string };
+        break;
+      }
+      if (batch.length < QUEUE_PAGE) break; // queue exhausted, all horses
+    }
+    if (!next) return; // nobody human is queued — nothing to offer
 
     const { data: claimed } = await supabase
       .from('table_waitlist')

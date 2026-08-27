@@ -636,7 +636,14 @@ class AvatarServiceClass {
     userId: string
   ): Promise<{ cosmetics: (AvatarCosmetic & { isOwned: boolean })[]; ok: boolean }> {
     if (!userId) {
-      return { cosmetics: ALL_COSMETICS.map((c) => ({ ...c, isOwned: false })), ok: false };
+      /* A free cosmetic is owned even by nobody (2026-08-27, the three-free
+         rule): it consults neither VIP status nor the ledger, so a signed-out
+         or unresolved account still sees the free tier as available rather
+         than as six locked tiles it can never explain. */
+      return {
+        cosmetics: ALL_COSMETICS.map((c) => ({ ...c, isOwned: c.tier === 'free' })),
+        ok: false,
+      };
     }
 
     /* TWO INDEPENDENT SOURCES, TRACKED SEPARATELY.

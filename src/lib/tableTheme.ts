@@ -101,7 +101,7 @@ export interface TableFeltDesign {
 const FELT_META: Record<string, Omit<TableFeltDesign, 'id'>> = {
   neon_city: {
     name: 'Neon City',
-    tier: 'standard',
+    tier: 'vip',
     thumbnail: 'linear-gradient(135deg, #2b2b33 40%, #d446b8 75%, #2ad4d4)',
   },
   classic_green: {
@@ -116,17 +116,17 @@ const FELT_META: Record<string, Omit<TableFeltDesign, 'id'>> = {
   },
   ice_cavern: {
     name: 'Ice Cavern',
-    tier: 'standard',
+    tier: 'vip',
     thumbnail: 'linear-gradient(135deg, #0c1524 40%, #3f6fae 75%, #bcd6ee)',
   },
   arctic_white: {
     name: 'Arctic White',
-    tier: 'standard',
+    tier: 'vip',
     thumbnail: 'linear-gradient(135deg, #f2f2f0 35%, #3f8fd4)',
   },
   mahogany_red: {
     name: 'Royal Mahogany',
-    tier: 'standard',
+    tier: 'vip',
     thumbnail: 'linear-gradient(135deg, #3a1410 30%, #b3273a 70%, #d8a437)',
   },
   ocean_blue: {
@@ -136,17 +136,17 @@ const FELT_META: Record<string, Omit<TableFeltDesign, 'id'>> = {
   },
   crimson: {
     name: 'Crimson',
-    tier: 'standard',
+    tier: 'vip',
     thumbnail: 'linear-gradient(135deg, #7a1a3a, #3d0a20)',
   },
   electric_purple: {
     name: 'Electric Purple',
-    tier: 'standard',
+    tier: 'vip',
     thumbnail: 'linear-gradient(135deg, #4a1a7a, #240a3d)',
   },
   golden_sand: {
     name: 'Golden Sand',
-    tier: 'standard',
+    tier: 'vip',
     thumbnail: 'linear-gradient(135deg, #7a6a1a, #3d380a)',
   },
   jade_city: {

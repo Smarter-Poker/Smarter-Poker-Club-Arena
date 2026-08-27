@@ -36,12 +36,24 @@ describe('avatar cosmetics catalog', () => {
        has to change in the same breath or a player's frame vanishes when they
        walk between the two surfaces. */
     expect(AVATAR_FRAMES.map((f) => f.id)).toEqual([
+      // The three FREE frames (Dan 2026-08-27, "3 free, rest VIP locked").
+      // Frames had no free tier at all, so these were authored rather than
+      // demoted — no paid cosmetic was given away.
+      'frame-slate',
+      'frame-ivory',
+      'frame-copper',
       'frame-gold',
       'frame-diamond',
       'frame-cyber',
       'frame-hellfire',
     ]);
-    expect(AVATAR_AURAS.map((a) => a.id)).toEqual(['aura-fire', 'aura-glitch']);
+    expect(AVATAR_AURAS.map((a) => a.id)).toEqual([
+      'aura-mist',
+      'aura-dusk',
+      'aura-moss',
+      'aura-fire',
+      'aura-glitch',
+    ]);
   });
 
   it('matches the database guard catalog exactly', () => {
@@ -56,6 +68,16 @@ describe('avatar cosmetics catalog', () => {
       'frame_hellfire',
       'aura_fire',
       'aura_glitch',
+      // The free tier, added to the guard in the same breath as the catalog
+      // (migration free_avatar_cosmetics_tier). This assertion is what caught
+      // the omission: without it the picker would have offered six free tiles
+      // the trigger refuses.
+      'frame_slate',
+      'frame_ivory',
+      'frame_copper',
+      'aura_mist',
+      'aura_dusk',
+      'aura_moss',
     ];
     expect(ALL_COSMETICS.map((c) => c.unlockToken).sort()).toEqual([...guardCatalog].sort());
   });
@@ -123,7 +145,12 @@ describe('resolveCosmetic', () => {
 });
 
 describe('isCosmeticOwned', () => {
-  const gold = AVATAR_FRAMES[0];
+  /* BY ID, NOT BY POSITION (2026-08-27). This was `AVATAR_FRAMES[0]`, which
+     silently became the free `frame-slate` the moment the free tier was
+     added in front of the paid ones — so every assertion below would have
+     been testing the wrong cosmetic while still passing its own name. */
+  const gold = AVATAR_FRAMES.find((f) => f.id === 'frame-gold')!;
+  const freeFrame = AVATAR_FRAMES.find((f) => f.id === 'frame-slate')!;
 
   it('grants vip-tier cosmetics to a VIP', () => {
     expect(isCosmeticOwned(gold, { isVip: true, unlockedTokens: new Set() })).toBe(true);
@@ -137,6 +164,15 @@ describe('isCosmeticOwned', () => {
 
   it('refuses when the player is neither VIP nor granted', () => {
     expect(isCosmeticOwned(gold, { isVip: false, unlockedTokens: new Set() })).toBe(false);
+  });
+
+  it('grants a FREE cosmetic to everyone, with no VIP and no ledger row', () => {
+    /* Dan 2026-08-27: three free per category. Free means free — a brand new
+       account with no unlock history equips these, which is the whole point
+       of authoring them rather than demoting paid ones. Mirrored in
+       sp_cosmetic_is_owned (migration free_avatar_cosmetics_tier). */
+    expect(isCosmeticOwned(freeFrame, { isVip: false, unlockedTokens: new Set() })).toBe(true);
+    expect(freeFrame.tier).toBe('free');
   });
 
   it('does not accept a NEIGHBOURING token as ownership', () => {

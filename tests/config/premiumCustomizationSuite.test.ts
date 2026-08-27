@@ -26,6 +26,8 @@ describe('premium customization suite', () => {
     const selectableIds = assets.match(/TABLE_BACKGROUND_IDS: string\[\] = \[([\s\S]*?)\];/)?.[1];
     expect(selectableIds).not.toContain('final_table_broadcast');
     expect(tablePage).toContain("tableState.isFinalTable ? 'final_table_broadcast'");
+    expect(tablePage).toContain("tableState.isFinalTable\n                  ? 'final_table'");
+    expect(preview).toContain('? TABLE_SKINS.final_table');
   });
 
   it('provides mobile discovery and personal loadout controls', () => {

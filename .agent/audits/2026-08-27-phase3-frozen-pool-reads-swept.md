@@ -119,3 +119,72 @@ SPEND at this table".
 - **585 authenticated-executable SECURITY DEFINER functions** (61 anon). Needs
   a per-function audit with call-site evidence, batched; a blanket revoke would
   break legitimately public reads.
+
+---
+
+## ADDENDUM — I broke the nightly reconciler this morning, and found a worse one behind it
+
+Verifying phase 2 end-to-end (rather than trusting that it applied) revealed
+that **`ledger_reconcile_log` had NO rows for 2026-08-27 at all.** The job runs
+at 08:00 UTC via Open Claw -> `/api/cron/ledger-reconcile` -> the workers
+service. It fired. It failed.
+
+Running the function directly gave the reason:
+
+```
+ERROR: 23514: new row for relation "ledger_reconcile_log"
+violates check constraint "ledger_reconcile_log_entity_type_check"
+DETAIL: Failing row contains (..., frozen_wallets_pool, ...)
+```
+
+`ledger_reconcile_log_entity_type_check` permitted five `entity_type` values;
+the function emits nine.
+
+**MY REGRESSION.** The phase-2 refit added a `frozen_wallets_pool` row as an
+`INSERT ... VALUES`, so it fires on every run. From the moment that migration
+applied (~06:16 UTC) until this fix, every nightly run raised 23514 and rolled
+back — taking seat-exit detection, escrow checks, negative-balance checks and
+treasury reconciliation down with it. The phase-2 audit note said "the next
+scheduled nightly is the end-to-end proof". It was, and it failed. Checking
+beat assuming.
+
+**THE WORSE ONE BEHIND IT.** Three more emitted kinds were also missing from
+the constraint — `cashout_escrow_stuck`, `negative_balance`,
+`over_claimed_send`, added the same day by the cashier audit. Those are
+`INSERT ... SELECT`, so on a healthy night they insert zero rows and never test
+the constraint. They were latent landmines set to detonate on the FIRST night a
+cashout escrow stuck, a wallet went negative, or an agent over-claimed a send —
+rolling back the whole run and leaving the log silent precisely when a real
+money fault appeared. A monitor that fails closed at the moment of failure is
+worse than no monitor, and nothing would have pointed at the constraint.
+
+Fixed together (migration
+`reconcile_log_entity_type_check_covers_every_emitted_kind`), because they are
+one defect: a function that grew new row kinds while its table's constraint did
+not. The migration asserts itself by inserting one row of each of the nine
+kinds inside its own transaction and deleting them.
+
+### End-to-end proof, finally obtained
+
+`select * from reconcile_ledger_nightly();`
+
+|            | before | after |
+| ---------- | ------ | ----- |
+| total rows | 588    | **8** |
+| criticals  | 575    | **4** |
+
+The frozen-pool invariant row reads `baseline 732,591,994.33 / observed
+732,591,994.33, drift 0.00, ok` — the freeze check works.
+
+### The 4 real criticals that were buried under 575 phantom rows
+
+These are financial findings for Dan; I have not moved any chips.
+
+1. **Club JAQK treasury** — ledger 90,516.12 vs stored 12,459.07 (**-78,057.05**)
+2. **SHARK CLUB treasury** — ledger 32,320.73 vs stored 0.00 (**-32,320.73**)
+3. **Midway Union treasury is NEGATIVE** — -1,202.80
+4. **Seat exit #15448** — 55 chips left the felt uncredited (carried from phase 2)
+
+The two treasury drifts and the negative treasury have been sitting in the
+noise. They are exactly what the reconciler exists to surface, and exactly what
+575 phantom rows a night made unreadable.

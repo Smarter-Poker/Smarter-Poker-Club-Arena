@@ -161,10 +161,116 @@ const STANDARD_HANDS = [
 ];
 
 const SHORT_DECK_HANDS = [
-  ...STANDARD_HANDS.slice(0, 3),
-  STANDARD_HANDS[4], // Flush
-  STANDARD_HANDS[3], // Full House
-  ...STANDARD_HANDS.slice(5),
+  {
+    name: 'Royal Flush',
+    desc: 'Five sequential cards of the same suit. The highest straight flush is T-J-Q-K-A, same suit.',
+    cards: [
+      { rank: 'A' as const, suit: 's' as const },
+      { rank: 'K' as const, suit: 's' as const },
+      { rank: 'Q' as const, suit: 's' as const },
+      { rank: 'J' as const, suit: 's' as const },
+      { rank: 'T' as const, suit: 's' as const },
+    ],
+  },
+  {
+    name: 'Straight Flush',
+    desc: 'Five sequential cards of the same suit.',
+    cards: [
+      { rank: 'J' as const, suit: 'h' as const },
+      { rank: 'T' as const, suit: 'h' as const },
+      { rank: '9' as const, suit: 'h' as const },
+      { rank: '8' as const, suit: 'h' as const },
+      { rank: '7' as const, suit: 'h' as const },
+    ],
+  },
+  {
+    name: 'Four of a Kind / Quad',
+    desc: 'Four cards of the same rank.',
+    cards: [
+      { rank: 'T' as const, suit: 's' as const },
+      { rank: 'T' as const, suit: 'h' as const },
+      { rank: 'T' as const, suit: 'c' as const },
+      { rank: 'T' as const, suit: 'd' as const },
+      { rank: '6' as const, suit: 's' as const },
+    ],
+  },
+  {
+    name: 'Flush',
+    desc: 'Five non-sequential cards of the same suit.',
+    cards: [
+      { rank: 'A' as const, suit: 'c' as const },
+      { rank: 'K' as const, suit: 'c' as const },
+      { rank: 'J' as const, suit: 'c' as const },
+      { rank: '8' as const, suit: 'c' as const },
+      { rank: '6' as const, suit: 'c' as const },
+    ],
+  },
+  {
+    name: 'Full House',
+    desc: 'Three of a kind plus a pair.',
+    cards: [
+      { rank: 'Q' as const, suit: 's' as const },
+      { rank: 'Q' as const, suit: 'd' as const },
+      { rank: 'Q' as const, suit: 'c' as const },
+      { rank: 'J' as const, suit: 'd' as const },
+      { rank: 'J' as const, suit: 'c' as const },
+    ],
+  },
+  {
+    name: 'Straight',
+    desc: 'Five sequential cards of mixed suits (A-6-7-8-9 is the lowest straight).',
+    cards: [
+      { rank: '9' as const, suit: 's' as const },
+      { rank: '8' as const, suit: 'h' as const },
+      { rank: '7' as const, suit: 'd' as const },
+      { rank: '6' as const, suit: 'c' as const },
+      { rank: 'A' as const, suit: 'h' as const },
+    ],
+  },
+  {
+    name: 'Three of a Kind',
+    desc: 'Three cards of the same rank.',
+    cards: [
+      { rank: '7' as const, suit: 'c' as const },
+      { rank: '7' as const, suit: 's' as const },
+      { rank: '7' as const, suit: 'h' as const },
+      { rank: 'K' as const, suit: 'd' as const },
+      { rank: '8' as const, suit: 's' as const },
+    ],
+  },
+  {
+    name: 'Two Pair',
+    desc: 'Two different pairs of cards.',
+    cards: [
+      { rank: 'J' as const, suit: 'h' as const },
+      { rank: 'J' as const, suit: 's' as const },
+      { rank: '8' as const, suit: 'c' as const },
+      { rank: '8' as const, suit: 'd' as const },
+      { rank: '9' as const, suit: 'c' as const },
+    ],
+  },
+  {
+    name: 'One Pair',
+    desc: 'Two cards of the same rank.',
+    cards: [
+      { rank: 'A' as const, suit: 'd' as const },
+      { rank: 'A' as const, suit: 'c' as const },
+      { rank: '8' as const, suit: 'h' as const },
+      { rank: '7' as const, suit: 's' as const },
+      { rank: '6' as const, suit: 'c' as const },
+    ],
+  },
+  {
+    name: 'High Card',
+    desc: 'No made hand, ranked by the highest single card.',
+    cards: [
+      { rank: 'A' as const, suit: 'h' as const },
+      { rank: 'J' as const, suit: 'd' as const },
+      { rank: '9' as const, suit: 's' as const },
+      { rank: '7' as const, suit: 'c' as const },
+      { rank: '6' as const, suit: 'h' as const },
+    ],
+  },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════

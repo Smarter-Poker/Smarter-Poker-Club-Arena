@@ -64,13 +64,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  background: rgba(28, 33, 40, 0.85); /* Solid color background */
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 50%;
-  border: none;
-  background: transparent;
-  position: relative;
-  overflow: visible;
-  transition: transform 0.2s var(--ease-spring, ease-out);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 /* The coin image — fills the container, no crop, transparent background. */
@@ -99,8 +96,8 @@
   cursor: default;
 }
 .seat--empty.seat--empty-locked .seat__empty-img {
-  opacity: 0.45;
-  filter: grayscale(30%);
+  opacity: 0.8;
+  filter: grayscale(20%);
 }
 
 /* Remove pseudo-element pulse ring — no longer needed. */

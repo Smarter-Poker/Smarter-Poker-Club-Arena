@@ -176,9 +176,6 @@ export async function atomicCashout(
  *  ever expired a 'notified' row). */
 const WAITLIST_OFFER_TTL_MS = 3 * 60 * 1000;
 
-/** Warn once per process rather than on every seat offer. */
-let warnedNoPushCreds = false;
-
 export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
   try {
     // Only cash tables have waitlists
@@ -276,62 +273,46 @@ export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
       data: { table_id: tableId },
     });
 
-    // Best-effort WEB PUSH so the alert reaches a player who has the app
-    // closed (Dan 2026-08-26: "you should receive a push notification").
-    // OneSignal external user ids are the Supabase user ids. Silently a
-    // no-op when the room has no OneSignal credentials configured.
-    const osAppId = process.env.ONESIGNAL_APP_ID;
-    const osKey = process.env.ONESIGNAL_REST_API_KEY;
-
-    // SAY SO WHEN THE PUSH CANNOT BE SENT.
+    // WEB PUSH, via the platform's real delivery path.
     //
-    // This block was added 2026-08-26 because Dan asked for it directly ("you
-    // should receive a push notification"). It has never sent one. Neither
-    // variable is set in the running engine container - verified 2026-08-27,
-    // `printenv | grep -c ONESIGNAL_APP_ID` returns 0 inside
-    // club-arena-engine, and 48h of container logs contain zero OneSignal
-    // lines. The `if` above is simply false on every seat offer, so the whole
-    // block is skipped in silence and the feature reads as shipped.
+    // This used to POST straight to onesignal.com. OneSignal was REMOVED from
+    // this platform on 2026-08-19 and replaced by self-hosted VAPID web push —
+    // pages/api/notifications/send.js says so in its header and rejects
+    // OneSignal device ids outright. This block was written on 2026-08-26, a
+    // week after that, so it has never delivered anything: the engine
+    // container has no ONESIGNAL_APP_ID or ONESIGNAL_REST_API_KEY (verified
+    // 2026-08-27, `printenv | grep -c ONESIGNAL_APP_ID` returns 0 inside
+    // club-arena-engine) and 48h of its logs contain zero OneSignal lines.
     //
-    // That silence is the bug. A feature that no-ops when unconfigured is
-    // indistinguishable from one that works until somebody measures it, and
-    // measuring it is what took a month. Warning once per process is cheap and
-    // makes the gap visible in `docker logs` the moment anyone looks.
-    if (!osAppId || !osKey) {
-      if (!warnedNoPushCreds) {
-        warnedNoPushCreds = true;
-        console.warn(
-          '[Waitlist] SEAT-OPEN PUSH IS DISABLED: ONESIGNAL_APP_ID and/or ' +
-            'ONESIGNAL_REST_API_KEY are not set on this engine, so no seat-open ' +
-            'push has ever been delivered. The in-app notification is the only ' +
-            'delivery path until they are configured.'
-        );
+    // The correct path needs no credentials at all. push_outbox is the durable
+    // queue World Hub's /api/cron/push-dispatch drains every few minutes; it
+    // loads the consent gate and calls gateDecision() on every row before
+    // delivering, so a row written here is opt-out-respecting by construction
+    // rather than by this file remembering to check. That also closes the
+    // consent bypass the old raw insert had: send.js enforces preferences and
+    // the engine went around it.
+    //
+    // A crash between the notification insert and this write costs one push,
+    // never a duplicate: the outbox row is the only thing that sends.
+    try {
+      const { error: pushErr } = await supabase.from('push_outbox').insert({
+        recipient_user_id: next.user_id,
+        title: 'Seat Open',
+        body: `A Seat Just Opened At ${tableRow.name || 'Your Waitlisted Table'}. Tap To Claim It.`,
+        url: `/hub/club-arena/table/${tableId}`,
+        event: 'waitlist_seat_open',
+        related_entity_id: tableId,
+        // Collapses repeat offers for the same table into one notification
+        // shade entry rather than stacking them.
+        tag: `seat-open-${tableId}`,
+      });
+      if (pushErr) {
+        console.warn(`[Waitlist] push_outbox insert failed: ${pushErr.message}`);
       }
+    } catch (pushErr) {
+      console.warn(`[Waitlist] push enqueue threw for ${next.user_id.slice(0, 8)}:`, pushErr);
     }
 
-    if (osAppId && osKey && typeof fetch === 'function') {
-      try {
-        await fetch('https://onesignal.com/api/v1/notifications', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Basic ${osKey}`,
-          },
-          body: JSON.stringify({
-            app_id: osAppId,
-            include_external_user_ids: [next.user_id],
-            headings: { en: 'Seat Open' },
-            contents: {
-              en: `A Seat Just Opened At ${tableRow.name || 'Your Waitlisted Table'}. Tap To Claim It.`,
-            },
-            url: `https://smarter.poker/hub/club-arena/table/${tableId}`,
-            data: { type: 'waitlist_seat_open', table_id: tableId },
-          }),
-        });
-      } catch (pushErr) {
-        console.warn(`[Waitlist] push notify failed for ${next.user_id.slice(0, 8)}:`, pushErr);
-      }
-    }
     console.log(
       `[Waitlist] Notified ${next.user_id.slice(0, 8)} — seat open at ${tableId.slice(0, 8)}`
     );

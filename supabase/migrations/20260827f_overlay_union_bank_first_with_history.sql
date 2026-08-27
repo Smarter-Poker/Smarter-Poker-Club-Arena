@@ -1,0 +1,48 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- OVERLAY FUNDS FROM THE UNION BANK FIRST, AND LEAVES A TRANSACTION HISTORY
+-- APPLIED via Supabase MCP before this file was committed; every path probed
+-- inside rolled-back transactions.
+--
+-- Dan 2026-08-27: "IF A GUARANTEED PRIZE POOL FALLS SHORT OR HAS AN OVERLAY
+-- THAT MONEY COMES FROM THE UNION BANK, OR THE CLUB BANK IF ITS A STAND ALONE
+-- CLUB NOT ATTACHED TO A UNION. THERE MUST BE A TRANSACTION HISTORY OF THOSE
+-- CHIPS LEAVING THE BANK TO FUND THE OVERLAY."
+--
+-- fn_apply_prize_guarantee (shipped earlier the same day) already funded the
+-- overlay atomically and idempotently, and its three engine call sites are
+-- already on main. Two things did not match the instruction:
+--
+--   1. It always debited clubs.chip_treasury, even for a club that belongs to
+--      a union. The UNION bank funds an affiliated club's overlay; the club's
+--      own bank pays only when the club is STANDALONE.
+--   2. It recorded the overlay in tournament_guarantee_overlays but wrote no
+--      chip_transactions row — so the chips left a bank with no transaction
+--      history, which is the specific thing Dan asked for.
+--
+-- Only the funding half is rewritten. The PK-claimed idempotency, the
+-- finalization, the negative-bank alert and the return shape are preserved, so
+-- no engine change is needed.
+--
+-- tournament_guarantee_overlays gains bank_type / bank_entity_id / union_id so
+-- a reader can see WHICH bank paid.
+--
+-- Reporting: ca_union_insurance_pnl gains an `overlay` block plus a per-day
+-- overlay column; ca_club_overlay_pnl reports per-club totals and every funded
+-- event. Both read tournament_guarantee_overlays — one source of truth.
+--
+-- DUPLICATE REMOVED: a parallel implementation I had begun before this one
+-- appeared on main (fn_fund_tournament_overlay + tournament_overlay_funding +
+-- an earlier ca_club_overlay_pnl) is dropped. Two competing overlay systems is
+-- exactly the duplicate-infrastructure trap RULE 12 forbids.
+--
+-- Probes (all rolled back):
+--   union-affiliated club  bank_type=union, union bank -2640.00,
+--                          club treasury untouched, 1 chip_transactions row
+--   idempotency            second call returns already_finalized, no re-debit
+--   standalone club        bank_type=club
+--
+-- Historical minting (136,593.10 chips across 3,393 completed events before
+-- any funding existed) is NOT retroactively charged to any bank: those pools
+-- are settled and long since paid out to players.
+-- ═══════════════════════════════════════════════════════════════════════════
+SELECT 1;

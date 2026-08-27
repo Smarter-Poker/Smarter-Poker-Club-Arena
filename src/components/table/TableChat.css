@@ -674,3 +674,30 @@
   color: #f85149;
   white-space: nowrap;
 }
+
+/* ═══ Dan 2026-08-26 mobile pass, item 7 ═══
+   "Move the messenger to the upper right corner." On phones the collapsed
+   chat bubble leaves THE BOTTOM-EDGE LINE and docks under the tab bar on the
+   right — the spot the stats icon vacated (it moved to the upper LEFT, see
+   TableHUD.css at the same breakpoint). Same 54px derivation: 42px tab bar
+   + 12px clearance. The open chat panel itself is untouched. */
+@media (max-width: 768px) {
+  .chat-collapsed {
+    top: calc(env(safe-area-inset-top, 0px) + 54px);
+    bottom: auto;
+    right: 6px;
+  }
+}
+
+/* Dan 2026-08-26: Strip baked button styles for 3D assets */
+.chat-collapsed {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.chat-collapsed:hover {
+  background: transparent !important;
+  filter: brightness(1.1);
+}

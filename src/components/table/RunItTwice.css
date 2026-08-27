@@ -384,7 +384,7 @@
   color: #dfe8f0;
 }
 .rit-result__amount {
-  color: #4ade80;
+  color: #3fb950;
   font-weight: 700;
 }
 .rit-result__close {
@@ -411,7 +411,7 @@
   font-size: 11px;
   font-weight: 700;
   font-family: 'JetBrains Mono', monospace;
-  color: #cbd5e1;
+  color: #e4e6eb;
   white-space: nowrap;
 }
 
@@ -419,20 +419,20 @@
   padding: 1px 5px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.08);
-  color: #94a3b8;
+  color: #8b949e;
   font-size: 10px;
   font-weight: 700;
 }
 
 .rit-board__run--won .rit-result__board-equity {
-  color: #4ade80;
+  color: #3fb950;
 }
 
 .rit-result__board-winner {
   margin-left: 8px;
   font-size: 11px;
   font-weight: 700;
-  color: #4ade80;
+  color: #3fb950;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -450,8 +450,8 @@
   width: min(340px, 92vw);
   max-height: 86vh;
   overflow-y: auto;
-  background: linear-gradient(180deg, #1c2440 0%, #141a30 55%, #10152a 100%);
-  border: 1px solid rgba(120, 150, 255, 0.28);
+  background: linear-gradient(180deg, #1c2128 0%, #161b22 100%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 14px;
   padding: 14px 14px 16px;
   box-shadow:
@@ -460,7 +460,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  color: #e2e8f0;
+  color: #e4e6eb;
 }
 
 .rit-panel__title {
@@ -469,7 +469,7 @@
   font-size: 14px;
   font-weight: 800;
   letter-spacing: 0.4px;
-  color: #f1f5f9;
+  color: #e4e6eb;
 }
 
 .rit-panel__board-row {
@@ -481,7 +481,7 @@
 .rit-panel__board-label {
   font-size: 12px;
   font-weight: 700;
-  color: #94a3b8;
+  color: #8b949e;
 }
 
 .rit-panel__board-cards {
@@ -499,9 +499,9 @@
   height: 36px;
   border-radius: 4px;
   background:
-    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.16) 0 18%, transparent 20%),
-    repeating-linear-gradient(45deg, #2c3e6e 0 4px, #26365f 4px 8px);
-  border: 1px solid rgba(255, 255, 255, 0.22);
+    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.12) 0 18%, transparent 20%),
+    repeating-linear-gradient(45deg, #21262d 0 4px, #161b22 4px 8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.07);
 }
 
@@ -517,11 +517,11 @@
 }
 
 .rit-panel__pot {
-  color: #e2e8f0;
+  color: #e4e6eb;
 }
 
 .rit-panel__countdown {
-  color: #fbbf24;
+  color: #ffb800;
   font-family: 'JetBrains Mono', monospace;
 }
 
@@ -535,7 +535,7 @@
 .rit-panel__timer-fill {
   height: 100%;
   border-radius: 2px;
-  background: linear-gradient(90deg, #fbbf24, #f59e0b);
+  background: linear-gradient(90deg, #ffb800, #d19a00);
   transition: width 1s linear;
 }
 
@@ -570,7 +570,7 @@
   min-width: 0;
   font-size: 12px;
   font-weight: 700;
-  color: #cbd5e1;
+  color: #e4e6eb;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -580,7 +580,7 @@
   font-size: 11px;
   font-weight: 700;
   font-family: 'JetBrains Mono', monospace;
-  color: #94a3b8;
+  color: #8b949e;
 }
 
 .rit-panel__check {
@@ -598,9 +598,9 @@
 }
 
 .rit-panel__check--on {
-  color: #4ade80;
-  border-color: #4ade80;
-  background: rgba(74, 222, 128, 0.12);
+  color: #3fb950;
+  border-color: #3fb950;
+  background: rgba(63, 185, 80, 0.12);
   animation: ritCheckPop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.4);
 }
 
@@ -620,7 +620,7 @@
   text-align: center;
   font-size: 12px;
   font-weight: 600;
-  color: #cbd5e1;
+  color: #e4e6eb;
   line-height: 1.45;
 }
 
@@ -649,15 +649,15 @@
 }
 
 .rit-panel__btn--decline {
-  background: linear-gradient(180deg, #f97316, #ea580c);
-  color: #fff7ed;
-  box-shadow: 0 4px 14px rgba(249, 115, 22, 0.35);
+  background: rgba(255, 255, 255, 0.1);
+  color: #8b949e;
+  box-shadow: none;
 }
 
 .rit-panel__btn--accept {
-  background: linear-gradient(180deg, #fbbf24, #f59e0b);
-  color: #451a03;
-  box-shadow: 0 4px 14px rgba(251, 191, 36, 0.35);
+  background: linear-gradient(135deg, #3fb950 0%, #2ea043 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(63, 185, 80, 0.3);
 }
 
 .rit-panel__btn:hover {
@@ -668,5 +668,5 @@
   padding: 9px 16px;
   font-size: 12px;
   font-weight: 700;
-  color: #94a3b8;
+  color: #8b949e;
 }

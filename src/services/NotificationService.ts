@@ -20,6 +20,7 @@ export interface Notification {
   userId: string;
   type:
     | 'waitlist_ready'
+    | 'waitlist_seat_open' // engine seat offer (notifyWaitlistSeatOpen)
     | 'table_invite'
     | 'club_announcement'
     | 'message'
@@ -146,7 +147,7 @@ class NotificationServiceClass {
   ): Promise<Notification[]> {
     let query = supabase
       .from('notifications')
-      .select('id, user_id, type, title, message, metadata, read, action_url, created_at')
+      .select('id, user_id, type, title, message, metadata, data, read, action_url, created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
@@ -349,6 +350,13 @@ class NotificationServiceClass {
     switch (type) {
       case 'waitlist_ready':
         return metadata.tableId ? `/table/${metadata.tableId}` : '/';
+      case 'waitlist_seat_open': {
+        // The engine writes { table_id } into the row's `data` column, which
+        // mapNotification folds into this metadata bag. Snake and camel both
+        // accepted so an older writer still deep-links.
+        const tid = (metadata.table_id ?? metadata.tableId) as string | undefined;
+        return tid ? `/table/${tid}` : '/waitlist';
+      }
       case 'table_invite':
         return metadata.tableId ? `/table/${metadata.tableId}` : '/';
       case 'club_announcement':
@@ -625,7 +633,13 @@ class NotificationServiceClass {
       type: data.type as Notification['type'],
       title: data.title as string,
       message: data.message as string,
-      metadata: data.metadata as Record<string, unknown> | undefined,
+      // The engine writes its payload into `data` (waitlist_seat_open carries
+      // { table_id } there); older writers used `metadata`. Fold both so a
+      // deep link never depends on which column the writer chose.
+      metadata: {
+        ...((data.data as Record<string, unknown>) || {}),
+        ...((data.metadata as Record<string, unknown>) || {}),
+      },
       isRead: (data.read ?? false) as boolean,
       createdAt: data.created_at as string,
     };

@@ -9,7 +9,7 @@
 
 import React from 'react';
 import './PreviousHandCard.css';
-import prevHandIcon from '../../assets/icons/icon-prevhand.jpg';
+import { useButtonImage } from '../../hooks/useButtonImage';
 
 /**
  * AUDIT 2026-08-25 — FIVE OF THESE SEVEN PROPS ARE ACCEPTED AND IGNORED.
@@ -46,6 +46,7 @@ export interface PreviousHandCardProps {
 }
 
 export function PreviousHandCard({ handNumber, onTap }: PreviousHandCardProps) {
+  const prevHandIcon = useButtonImage('icon-prevhand');
   // Don't show if no hand has been played yet
   if (handNumber == null) return null;
 
@@ -67,12 +68,7 @@ export function PreviousHandCard({ handNumber, onTap }: PreviousHandCardProps) {
       >
         <div className="prev-hand-card__icon">
           {/* Custom playing-cards icon image */}
-          <img
-            src={prevHandIcon}
-            className="prev-hand-card__icon-img"
-            alt=""
-            draggable={false}
-          />
+          <img src={prevHandIcon} className="prev-hand-card__icon-img" alt="" draggable={false} />
         </div>
       </div>
     </div>

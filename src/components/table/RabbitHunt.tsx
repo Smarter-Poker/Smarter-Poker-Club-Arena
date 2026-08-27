@@ -38,7 +38,7 @@ import { reportError } from '../../utils/errorReporter';
 /* Dan: "use the actual rabbit hunt dynamic image". Updated to the custom
    rabbit/crosshair icon provided by the user. Imported through Vite so it
    emits to dist/assets/ and reaches production via the automated build. */
-import rabbitHuntIcon from '../../assets/icons/icon-rabbit.jpg';
+import { useButtonImage } from '../../hooks/useButtonImage';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -105,6 +105,7 @@ export function RabbitHunt({
   rabbitDiamondCost,
   onReveal,
 }: RabbitHuntProps) {
+  const rabbitHuntIcon = useButtonImage('icon-rabbit');
   const { user } = useAuthUser();
   const toast = useToast();
 
@@ -234,15 +235,30 @@ export function RabbitHunt({
     return null;
   }
 
-  const pendingCount = Math.max(0, cardsAvailable - revealedCards.length);
+  // (pendingCount removed 2026-08-26 — it fed the old in-panel reveal, which
+  // now renders on the CommunityCards board.)
 
   return (
     <div className="rabbit-hunt">
+      {/* POKERBROS PARITY 2026-08-26 (frame-by-frame of RABBIT HUNT.MOV): the
+          reference button is a COMPACT ICON, anchored bottom-LEFT above the
+          table toolbar, that fades in once the pot has shipped and vanishes on
+          the tap. No text label — the artwork carries the name. The cost badge
+          stays as a corner pill: the reference app does not bill per hunt, we
+          do, and a paid tap with no visible price is not an option here. */}
       {!hasRevealed && (
         <button
           className={`rabbit-hunt__button ${isRevealing ? 'rabbit-hunt__button--loading' : ''} ${isVIP ? 'rabbit-hunt__button--vip' : ''}`}
           onClick={handleReveal}
           disabled={isRevealing}
+          aria-label={
+            isRevealing
+              ? 'Revealing Rabbit Hunt'
+              : typeof vipRemaining === 'number'
+                ? `Rabbit Hunt, ${vipRemaining} Free This Month`
+                : 'Rabbit Hunt'
+          }
+          title="Rabbit Hunt"
         >
           <img
             className="rabbit-hunt__icon-img"
@@ -251,7 +267,18 @@ export function RabbitHunt({
             aria-hidden="true"
             draggable={false}
           />
-          <span className="rabbit-hunt__label">{isRevealing ? 'Revealing...' : 'Rabbit Hunt'}</span>
+          {/* Dan 2026-08-26: "there is enough space below to add the current
+              total rabbit hunts the user has left." The artwork's lower band
+              is empty, so the count overlays INSIDE the icon rather than
+              growing the button. VIP-only by necessity: the monthly pool is
+              the one per-user stock the client can know BEFORE the press
+              (checkVIPStatus above) — the offer event is a table broadcast
+              and cannot carry a per-user number, and a pack's uses_remaining
+              only comes back after a reveal consumes one. Non-VIPs have no
+              stock, only a price, and the price pill already shows it. */}
+          {!isRevealing && typeof vipRemaining === 'number' && (
+            <span className="rabbit-hunt__remaining">{vipRemaining} Left</span>
+          )}
           {!isRevealing && (
             <span
               className={`rabbit-hunt__cost ${isVIP && vipRemaining !== 0 ? 'rabbit-hunt__cost--free' : ''}`}

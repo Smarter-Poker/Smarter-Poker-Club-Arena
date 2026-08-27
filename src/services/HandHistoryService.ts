@@ -84,6 +84,14 @@ export interface HandRecord {
   community_cards: Card[];
   /** Round 2 (double board): board 2, empty on single-board hands. */
   community_cards2?: Card[];
+  /**
+   * COMPLETENESS PASS 2026-08-26: Run It Twice boards 2..N in run order
+   * (board 1 is community_cards). Read from the first-class
+   * hand_history.rit_boards column, with a fallback parse of the
+   * `rit_board_N:` pseudo-actions for the rows that predate it. Empty on
+   * single-run hands.
+   */
+  rit_boards?: Card[][];
   players: HandPlayer[];
   actions: HandAction[];
   /* Real per-winner amounts. Consumers used to reconstruct these by dividing
@@ -117,7 +125,7 @@ class HandHistoryServiceClass {
     const { data, error } = await supabase
       .from('hand_history')
       .select(
-        'id, created_at, table_id, hand_number, pot_size, community_cards, community_cards2, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, hole_cards, showdown'
+        'id, created_at, table_id, hand_number, pot_size, community_cards, community_cards2, rit_boards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, hole_cards, showdown'
       )
       .eq('id', handId)
       .maybeSingle();
@@ -152,7 +160,7 @@ class HandHistoryServiceClass {
     const { data, error } = await supabase
       .from('hand_history')
       .select(
-        'id, created_at, table_id, hand_number, pot_size, community_cards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, hole_cards, showdown'
+        'id, created_at, table_id, hand_number, pot_size, community_cards, rit_boards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, hole_cards, showdown'
       )
       .contains('players', containmentJson)
       .order('created_at', { ascending: false })
@@ -286,16 +294,49 @@ class HandHistoryServiceClass {
       };
     });
 
-    const actions: HandAction[] = jsonbActions.map(
-      (a: any): HandAction => ({
-        player_id: a?.userId || '',
-        action: (a?.action as HandAction['action']) || 'fold',
-        amount: typeof a?.amount === 'number' ? a.amount : undefined,
-        street: (a?.stage as HandAction['street']) || 'preflop',
-        timestamp:
-          typeof a?.timestamp === 'number' ? a.timestamp : new Date(row.created_at).getTime(),
-      })
-    );
+    /* COMPLETENESS PASS 2026-08-26: Run It Twice boards 2..N. The first-class
+       column (migration 20260826_hand_history_rit_boards) is authoritative;
+       rows that predate it carry the boards as `rit_board_N:<cards>`
+       pseudo-actions inside `actions`, which this parses back out. Either
+       way the pseudo-entries are FILTERED from the action list below — they
+       used to leak into every replay's action feed as a bogus system entry. */
+    const ritPseudo = /^rit_board_(\d+):/;
+    let rit_boards: Card[][] = [];
+    if (Array.isArray((row as any).rit_boards) && (row as any).rit_boards.length > 0) {
+      rit_boards = ((row as any).rit_boards as unknown[][]).map(
+        (b) => (Array.isArray(b) ? b : []) as Card[]
+      );
+    } else {
+      rit_boards = jsonbActions
+        .map((a: any) => {
+          const m = typeof a?.action === 'string' ? ritPseudo.exec(a.action) : null;
+          if (!m) return null;
+          return {
+            run: Number(m[1]),
+            cards: String(a.action)
+              .slice(m[0].length)
+              .split(',')
+              .map((c) => c.trim())
+              .filter(Boolean) as unknown as Card[],
+          };
+        })
+        .filter((b): b is { run: number; cards: Card[] } => b !== null && b.cards.length > 0)
+        .sort((x, y) => x.run - y.run)
+        .map((b) => b.cards);
+    }
+
+    const actions: HandAction[] = jsonbActions
+      .filter((a: any) => !(typeof a?.action === 'string' && ritPseudo.test(a.action)))
+      .map(
+        (a: any): HandAction => ({
+          player_id: a?.userId || '',
+          action: (a?.action as HandAction['action']) || 'fold',
+          amount: typeof a?.amount === 'number' ? a.amount : undefined,
+          street: (a?.stage as HandAction['street']) || 'preflop',
+          timestamp:
+            typeof a?.timestamp === 'number' ? a.timestamp : new Date(row.created_at).getTime(),
+        })
+      );
 
     const winners: HandWinner[] = jsonbWinners.map((w: any) => ({
       user_id: w?.userId || '',
@@ -322,6 +363,7 @@ class HandHistoryServiceClass {
       community_cards2: Array.isArray((row as any).community_cards2)
         ? (row as any).community_cards2
         : [],
+      rit_boards,
       players,
       actions,
       winners,

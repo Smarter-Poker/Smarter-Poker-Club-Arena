@@ -1012,7 +1012,7 @@ const LobbyRow = memo(function LobbyRow({
   return (
     <tr
       data-id={entry.id}
-      className={`lt-row lt-row--${entry.status}${selected ? ' is-selected' : ''}${cursor ? ' is-cursor' : ''}${mine ? ' is-mine' : ''}`}
+      className={`lt-row lt-row--${entry.status}${entry.featured ? ' is-featured' : ''}${selected ? ' is-selected' : ''}${cursor ? ' is-cursor' : ''}${mine ? ' is-mine' : ''}`}
       data-kind={entry.kind}
       role="row"
       aria-selected={selected}

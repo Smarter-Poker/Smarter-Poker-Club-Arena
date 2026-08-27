@@ -437,30 +437,8 @@ export function TableTabBar({
   /** A LOBBY tab is a placeholder, not a seat — no engine, no chips. */
   const isLobbyId = (id: string) => id.startsWith('lobby:');
 
-  const handleClose = useCallback((e: React.MouseEvent, tabId: string) => {
-    /* Audit 2026-08-25: this began `if (tabs.length <= 1) return;` — dead in
-       one direction and wrong in the other. Dead because the X is only
-       RENDERED under the same condition, so the guard never ran. Wrong because
-       that render condition itself hid the X on a single table, while the
-       long-press quick menu right beside it offers "Leave Table" at one table
-       (deliberately — see its note). One control present, its twin missing, on
-       the state a player is in most of the time.
-
-       Leaving one table has never needed a second table to exist:
-       FORCE_LEAVE_TABLE is the secure cashout path in the owning TablePage, and
-       MultiTablePage's TABLE_LEFT handler calls goToLobby() when the last tab
-       closes. The count gate survives only for a LOBBY tab, where closing your
-       only tab would leave an empty bar behind — exactly the rule the quick
-       menu already applies. */
-    e.stopPropagation();
-
-    // Route X-button clicks through the secure cashout layer,
-    // bypassing the instant component teardown in MultiTablePage
-    masterBus.emit('TABLE_MENU_ACTION', {
-      tableId: tabId,
-      action: 'FORCE_LEAVE_TABLE',
-    });
-  }, []);
+  /* handleClose removed 2026-08-26 (Dan: no × inside the pills) — the quick
+     menu's Leave Table / Close Lobby emits the same FORCE_LEAVE_TABLE. */
 
   const handleMenuClose = useCallback(() => setIsMenuOpen(false), []);
   const handleMenuToggle = useCallback(() => setIsMenuOpen((prev) => !prev), []);
@@ -781,34 +759,13 @@ export function TableTabBar({
                 </span>
               )}
 
-              {/* Close control — only on hover for non-sole tabs.
-                  Audit 2026-08-20: this was a <button> INSIDE the tab
-                  <button> — interactive content nested in interactive content
-                  is invalid HTML and browsers/screen readers mis-handle the
-                  pair (focus lands on the outer, clicks can fire both). A
-                  span with role=button + its own key handling keeps the DOM
-                  legal and both controls independently operable. */}
-              {(!isLobbyId(tab.id) || tabs.length > 1) && (
-                <span
-                  role="button"
-                  tabIndex={0}
-                  className="table-tab-bar__close"
-                  onClick={(e) => handleClose(e, tab.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleClose(e as unknown as React.MouseEvent, tab.id);
-                    }
-                  }}
-                  title={isLobbyId(tab.id) ? 'Close lobby' : 'Leave table'}
-                  aria-label={
-                    isLobbyId(tab.id) ? 'Close lobby' : `Leave ${formatGameTitle(tab.name)}`
-                  }
-                >
-                  ×
-                </span>
-              )}
+              {/* Dan 2026-08-26: the action pills carry NO × off-button.
+                  The inline close control is gone entirely — leaving a table
+                  or closing the lobby lives in the long-press quick menu
+                  ("Leave Table" / "Close Lobby") and in the table's own
+                  hamburger menu, both of which route through the same secure
+                  FORCE_LEAVE_TABLE cashout path this × used. Do not
+                  reintroduce an inline dismiss on the pill. */}
             </button>
           );
         })}

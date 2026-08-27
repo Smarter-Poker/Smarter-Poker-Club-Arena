@@ -17,6 +17,7 @@ import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
 import { DEFAULT_RAKE_RATE, buyInFor, wholeChips } from '../config/buyIn.js';
+import { gameLaneFor, horseHash } from './HorseBehavior.js';
 
 /**
  * Derive the two buy-in columns from ONE whole-dollar total.
@@ -656,6 +657,26 @@ function seatFirstHumanWindowMs(): number {
 function openingHorsesForSeatFirst(seats: number): number {
   return Math.max(0, seats - 1);
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * HELD-EMPTY SEAT-FIRST GAMES (Dan 2026-08-26, binding)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * "LEAVE ... 33% OF ALL SPINS AND 50% OF HEADS UP [EMPTY]."
+ *
+ * A board where every Spin already has two horses in it never offers a player
+ * the experience of STARTING a game. So a deterministic share of seat-first
+ * games — hashed on the tournament id, so every code path agrees forever —
+ * opens with ZERO horses and stays empty until a human buys a seat. The
+ * moment one does, topUpWithHorses fills the remaining seats and the game
+ * starts on the normal start-when-full rule. Because the flag rides the id,
+ * the fraction holds across the whole rolling board: each freshly created
+ * instance re-rolls it.
+ */
+export function seatFirstHeldEmpty(tournamentId: string, seats: number): boolean {
+  const frac = seats <= 2 ? 0.5 : 0.33;
+  return horseHash(`${tournamentId}:hold-empty`) % 100 < frac * 100;
+}
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  SEAT-FIRST GAMES (Dan, 2026-08-21)
@@ -715,14 +736,15 @@ export function isSeatFirstFormat(variant: string, maxPlayers: number): boolean 
  *  1. It never targets more than `maxPlayers - 1`, so the ramp can NEVER trip
  *     the `maxReached` start gate in discoverTournaments and begin an event
  *     ahead of its own clock. There is always a seat for a human.
- *  2. It is capped at MTT_PRESTART_MAX_HORSES regardless of field size. The
- *     pool is finite (584 horses, most of them already dealing cash or in
- *     another event) and every registration is a REAL buy-in through
- *     fn_register_horse_for_tournament - real wallet debit, real rake, real
- *     prize-pool contribution. A 200-seat event must not swallow the pool or
- *     inflate a prize pool with a hundred horse buy-ins an hour early. Filling
- *     the rest is the existing past-start top-up's job, on the clock, when it
- *     is actually needed.
+ *  2. It is capped at MTT_PRESTART_MAX_HORSES regardless of field size,
+ *     UNLESS the event carries a guarantee - see the guarantee block in the
+ *     function. Every registration is a REAL buy-in through
+ *     fn_register_horse_for_tournament (real wallet debit, real rake, real
+ *     prize-pool contribution), so an uncapped ramp on a 1,000-seat event
+ *     would spend the club's chips on a field nobody asked for. A guarantee
+ *     is the one case where the club has ALREADY promised that money, so
+ *     covering it with entries is strictly better than paying it as overlay.
+ *     Filling the rest is the past-start top-up's job, on the clock.
  *  3. Seat-first games (Spin, heads-up) return 0 and are left completely
  *     alone. Their binding rule is that they start when seats are BOUGHT, and
  *     registrations are not seats.
@@ -730,7 +752,46 @@ export function isSeatFirstFormat(variant: string, maxPlayers: number): boolean 
  * Returns the number of registered entrants the field SHOULD have right now.
  * The caller tops up toward it and never removes anybody.
  */
-export const MTT_PRESTART_RAMP_MS = 60 * 60 * 1000;
+/**
+ * How far ahead of the gun the field starts building.
+ *
+ * WAS ONE HOUR, AND THAT IS WHY THE BOARD WAS DEAD (Dan 2026-08-26: "horses
+ * should be registering and playing the tournaments anyways").
+ *
+ * Measured on production the day this changed: of 37 REGISTERING MTTs, THIRTY
+ * SIX had a field of exactly ZERO, and the nearest one to the gun was 86
+ * minutes out - just outside the window. So the entire tournament board read
+ * "0 entered" at every moment except the final hour of each event. A lobby
+ * full of empty games is not a lobby anybody joins; the one thing that makes a
+ * player enter a tournament is other players already in it.
+ *
+ * 72 hours matches the lobby's own publish window exactly
+ * (tournamentScheduleWindow). The rule is now simply: IF IT IS ON THE BOARD,
+ * IT LOOKS LIKE A REAL EVENT. Nothing is announced that is not also populated.
+ *
+ * WHY THIS IS AFFORDABLE, measured rather than assumed. The old note below
+ * said the pool was finite and "most of them already dealing cash". That was
+ * true when a seated horse was invisible to every tournament; it stopped being
+ * true when horses learned to multi-table. Live at the time of writing:
+ *
+ *   584 horses x 4 games each   = 2,336 slots
+ *   in use (seats + pre-starts) =   664
+ *   FREE                        = 1,672
+ *   this change costs           =   296  (17.7% of what is free)
+ *
+ * and 209 horses are completely idle. The squared curve does the shaping: an
+ * event three days out gets the `Math.max(1, ...)` floor of one entrant, and
+ * the field builds toward MTT_PRESTART_MAX_HORSES as the gun approaches. Far
+ * events look started, near events look busy, which is what a real room looks
+ * like.
+ *
+ * NOTE THIS IS NO LONGER TIED TO HORSE_SEED_WITHIN_MS. Those two were aligned
+ * on 2026-08-23 when both meant "about to start". They now mean different
+ * things: this is the whole build, that is the head start given at SPAWN, and
+ * a spawn-time seed three days early would put chips in a pool for an event
+ * nobody can see yet. See the note on HORSE_SEED_WITHIN_MS.
+ */
+export const MTT_PRESTART_RAMP_MS = 72 * 60 * 60 * 1000;
 export const MTT_PRESTART_MAX_HORSES = 24;
 /**
  * Most entrants the ramp will add in a single tick.
@@ -937,6 +998,19 @@ export function mttPrestartHorseTarget(opts: {
   variant: string;
   /** Entrants already registered. Bounds how far one tick may jump. */
   currentPlayers?: number;
+  /**
+   * `tournaments.guaranteed_prize`. When set, the field goal is whatever it
+   * takes to COVER it - see the note below.
+   */
+  guaranteedPrize?: number;
+  /** `tournaments.prize_pool` - what the field has actually paid in so far. */
+  prizePool?: number;
+  /**
+   * `tournaments.buy_in_amount` - the PRIZE side of the entry. The fee is rake
+   * and never reaches the pool, so using the total here would under-count the
+   * entries needed and leave the guarantee short.
+   */
+  buyInPrizeShare?: number;
 }): number {
   const { msUntilStart, maxPlayers, variant } = opts;
   const current = Math.max(0, Number(opts.currentPlayers) || 0);
@@ -950,8 +1024,44 @@ export function mttPrestartHorseTarget(opts: {
   if (startsOnBoughtSeats(variant, maxPlayers)) return 0;
 
   const seats = Number(maxPlayers) || 0;
+
+  /* ── THE GUARANTEE DECIDES THE FIELD (Dan 2026-08-26) ──────────────────────
+     "the horses should fill any and all seats to insure that the guarantee is
+     always met."
+
+     MTT_PRESTART_MAX_HORSES is 24. That is the right default for an ordinary
+     event - enough to make a lobby row look like a game without spending the
+     club's chips on a field nobody asked for. It is nowhere near enough for a
+     GUARANTEED one: the Sunday $200 Deep Stack promises 20,000 and pays 180 of
+     every 200 entry into the pool, so covering it takes 112 entries. Ramping
+     to 24 would have left roughly 15,000 of overlay on an event the club had
+     already promised to cover.
+
+     A horse entry is a REAL entry. fn_register_horse_for_tournament debits the
+     horse's wallet through atomic_deduct_wallet_and_log, writes a rake row and
+     adds `v_split.prize` to prize_pool - the same money movement a human makes.
+     So horses filling seats does not paper over the shortfall, it genuinely
+     funds it, and the guarantee stops being an overlay at all.
+
+     THE CAP IS STILL A CAP. `seats - 1` is untouched (safety property 1: the
+     table always leaves a chair for a human), and a guarantee can never ask
+     for more than the event's own field. What changes is only the FLOOR: an
+     event carrying a guarantee ramps to whatever covers it, an event without
+     one keeps the 24 it always had. */
+  const guarantee = Math.max(0, Number(opts.guaranteedPrize) || 0);
+  const pool = Math.max(0, Number(opts.prizePool) || 0);
+  const prizeShare = Math.max(0, Number(opts.buyInPrizeShare) || 0);
+  const shortfall = guarantee - pool;
+  const entriesToCover =
+    guarantee > 0 && shortfall > 0 && prizeShare > 0 ? Math.ceil(shortfall / prizeShare) : 0;
+
+  /* Entries needed ON TOP of the field that is already there. `current`
+     already paid into `pool`, so adding it back would double count them and
+     over-fill the event. */
+  const guaranteeGoal = entriesToCover > 0 ? current + entriesToCover : 0;
+
   // Always leave a seat: see safety property 1.
-  const fieldGoal = Math.min(seats - 1, MTT_PRESTART_MAX_HORSES);
+  const fieldGoal = Math.min(seats - 1, Math.max(MTT_PRESTART_MAX_HORSES, guaranteeGoal));
   if (fieldGoal < 1) return 0;
 
   const elapsed = 1 - msUntilStart / MTT_PRESTART_RAMP_MS; // 0 at T-60, 1 at T-0
@@ -1447,6 +1557,47 @@ export class TournamentRecurringService {
             continue;
           }
           throw createErr;
+        }
+      }
+
+      /**
+       * ═════════════════════════════════════════════════════════════════════
+       * MTT FLOOR (Dan 2026-08-26, binding): "at least 2 tournaments at once."
+       * ═════════════════════════════════════════════════════════════════════
+       * The hourly blocks carry 1-2 named events and create at most one
+       * instance per name, so a quiet block could leave the board with a
+       * single live MTT (or none, right after one finishes). Count what is
+       * actually live and, while it is short of two, launch the next unlaunched
+       * config from the schedule — same createTournament path, same duplicate
+       * guard, so a race can only ever fail benignly.
+       */
+      const { count: liveMtts, error: mttCountErr } = await supabase
+        .from('tournaments')
+        .select('id', { count: 'exact', head: true })
+        .eq('tournament_type', 'MTT')
+        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'LATE_REG']);
+      if (!mttCountErr && (liveMtts ?? 0) < 2) {
+        let need = 2 - (liveMtts ?? 0);
+        const allConfigs = HOURLY_SCHEDULE.flatMap((b) => b.tournaments);
+        for (const config of allConfigs) {
+          if (need <= 0) break;
+          const existing = await this.getActiveCount(config.type, config.name);
+          if (existing > 0) continue;
+          try {
+            const result = await this.createTournament(config);
+            if (result.tournamentId) {
+              need--;
+              console.log(
+                `[TournamentRecurring] MTT floor: launched "${config.name}" to keep at least 2 tournaments live`
+              );
+            }
+          } catch (createErr: any) {
+            const msg = String(createErr?.message ?? createErr ?? '');
+            if (createErr?.code === '23505' || /duplicate key|unique constraint/i.test(msg)) {
+              continue; // created concurrently — still counts toward the floor
+            }
+            throw createErr;
+          }
         }
       }
     } catch (err: any) {
@@ -2421,7 +2572,11 @@ export class TournamentRecurringService {
        * start with - 12 of 24 open Spins were stuck that way, some for a day,
        * and the next human to sit at one became its FOURTH entrant.
        */
-      const opening = openingHorsesForSeatFirst(seats);
+      // Dan 2026-08-26: a held-empty game opens with NO horses — its seats
+      // are the invitation. topUpWithHorses fills it the moment a human sits.
+      const opening = seatFirstHeldEmpty(tournament.id, seats)
+        ? 0
+        : openingHorsesForSeatFirst(seats);
       const candidates = await this.pickFreeHorses(opening);
       let seated = 0;
       for (const horse of candidates) {
@@ -2700,7 +2855,9 @@ export class TournamentRecurringService {
 
       const candidates = (horses ?? [])
         .map((h) => (h as { id: string }).id)
-        .filter((id) => id && !busy.has(id));
+        // Game lanes (Dan 2026-08-26): cash-only horses never enter events —
+        // tournaments, spins and heads-up draw from the events/both lanes.
+        .filter((id) => id && !busy.has(id) && gameLaneFor(id) !== 'cash');
 
       /**
        * ═══════════════════════════════════════════════════════════════════
@@ -3146,6 +3303,45 @@ export class TournamentRecurringService {
         liveCount = regCount || 0;
       }
 
+      /**
+       * HELD-EMPTY GATE (Dan 2026-08-26): a seat-first game flagged held-empty
+       * gets NO horses while no human has bought a seat — 33% of Spins and
+       * 50% of Heads-Up boards stay genuinely open for a human to start.
+       * The instant a human sits, the hold releases and this same function
+       * fills the remaining seats so the game can start.
+       */
+      if (
+        seatFirst &&
+        seatFirstHeldEmpty(
+          tournamentId,
+          Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
+        )
+      ) {
+        let humanSeated = false;
+        if (primaryTableId && liveCount > 0) {
+          const { data: seatRows } = await supabase
+            .from('table_seats')
+            .select('user_id')
+            .eq('table_id', primaryTableId)
+            .is('left_at', null);
+          const seatIds = (seatRows ?? []).map((r) => String((r as { user_id: string }).user_id));
+          if (seatIds.length > 0) {
+            const { data: horseRows } = await supabase
+              .from('profiles')
+              .select('id')
+              .in('id', seatIds)
+              .eq('is_horse', true);
+            humanSeated = (horseRows ?? []).length < seatIds.length;
+          }
+        }
+        if (!humanSeated) {
+          await supabase.rpc('fn_sync_seat_first_player_count', {
+            p_tournament_id: tournamentId,
+          });
+          return 0;
+        }
+      }
+
       const shortfall = targetPlayers - liveCount;
       if (shortfall <= 0) {
         /**
@@ -3329,7 +3525,10 @@ export class TournamentRecurringService {
         .eq('is_horse', true)
         .eq('horse_status', 'available')
         .limit(count + busyIds.size);
-      const horses = (horsePool ?? []).filter((h) => !busyIds.has(h.id)).slice(0, count);
+      const horses = (horsePool ?? [])
+        // Game lanes (Dan 2026-08-26): cash-only horses never register for events.
+        .filter((h) => !busyIds.has(h.id) && gameLaneFor(h.id) !== 'cash')
+        .slice(0, count);
 
       if (!horses || horses.length === 0) return 0;
 

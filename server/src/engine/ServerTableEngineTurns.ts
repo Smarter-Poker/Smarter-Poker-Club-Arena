@@ -1360,8 +1360,21 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
       this.clearTurnTimer();
       this.preciseTimer.cancelTimer(this.tableId, userId); // Step 4: Cancel precise deadline
-      // Bible V8 §6.2: If time bank was active, notify engine to deduct used time from pool
-      if (this.timeBankActivatedThisTurn) {
+      // Bible V8 §6.2: If time bank was active, notify engine to deduct used time from pool.
+      //
+      // 2026-08-26: this was gated on timeBankActivatedThisTurn ALONE. The
+      // ARM-ONLY branch of activateTimeBank returns early - with the message
+      // "Time Bank Armed. It Starts When Your Clock Runs Out" - and never sets
+      // that flag, because nothing has been spent yet. So a player who pressed
+      // the button early and then acted inside their ordinary clock left
+      // bank.armed = true behind them. On any LATER turn in the same street,
+      // onPrimaryTimerExpired sees that stale intent and spends a use they did
+      // not ask for; only resetStreetActivations cleared it, a whole street
+      // later. playerActed is the thing that clears bank.armed, and
+      // TimeBankEngine.manualcountdown.test.ts already pins that contract
+      // ("player acted in time; the intent dies with it"). The engine was
+      // right; this caller simply never reached it.
+      if (this.timeBankActivatedThisTurn || this.timeBankEngine.isArmed(this.tableId, userId)) {
         this.timeBankEngine.playerActed(this.tableId, userId);
       }
       const actionApplied = this.handController.performAction(
@@ -1632,10 +1645,18 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     if (activeBank?.isActive) return;
 
     const timeBankAlreadyUsedThisTurn = this.timeBankActivatedThisTurn;
-    this.handleTurnChange(
+    // handleTurnChange is async. Calling it bare left a rejection unhandled and
+    // - worse - left this seat with no clock at all, which is the precise hang
+    // this method was added to prevent. The other call site
+    // (ServerTableEngineHandEvents, "void this.handleTurnChange(...).catch")
+    // has had the guard since it went async; this one never got it.
+    void this.handleTurnChange(
       { type: 'TURN_CHANGE', seat: player.seat, availableActions: [] } as HandEvent,
       this.seatedPlayers
-    );
+    ).catch((err) => {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.rearm_turn_change_threw');
+      this.forceArmTurnTimer(player.seat, this.tableInfo?.action_time_seconds || 15);
+    });
 
     this.timeBankActivatedThisTurn = timeBankAlreadyUsedThisTurn;
   }
@@ -1854,6 +1875,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // tiers, and rake-aware pot odds all switch on the real game mode.
       gameMode: this.isTournamentTable() ? ('tournament' as const) : ('cash' as const),
       ante: this.tableInfo?.ante || 0,
+      // V18 STRADDLE (2026-08-26): straddle posts are not ActionRecords, so
+      // a straddled pot's preflop currentBet (2xBB) with an empty history
+      // read as an OPEN RAISE and the fleet folded to dead money. Tell the
+      // brain straddles are possible here.
+      straddleActive: this.tableInfo?.straddle_enabled === true,
       // V12: REAL tournament state for the ICM layer — players left, spots
       // paid, average stack, PKO bounty share — plus the table format
       // (mtt/spin/hu_sng). Cached with a 20s TTL; null before the first

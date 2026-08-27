@@ -168,6 +168,42 @@ export default function UnionStatementsPage() {
   // a version the older one may land last and show the wrong week's money.
   const loadVersion = useRef(0);
   const [settlingId, setSettlingId] = useState<string | null>(null);
+  /**
+   * INSURANCE P&L 2026-08-27 (Dan): the union's live daily insurance profit
+   * and loss - premiums in, payouts out, straight from the settled-contract
+   * ledger. Live rather than invoice-based, because insurance settles into
+   * the union wallet in real time (there is nothing to square up weekly).
+   */
+  const [insurancePnl, setInsurancePnl] = useState<{
+    totals: { contracts: number; premiums: number; payouts: number; net: number };
+    by_club: Array<{
+      club_id: string;
+      club_name: string;
+      contracts: number;
+      premiums: number;
+      payouts: number;
+      net: number;
+    }>;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!unionId) return;
+    let cancelled = false;
+    supabase
+      .rpc('ca_union_insurance_pnl', { p_union_id: unionId, p_days: 14 })
+      .then(({ data, error: insError }) => {
+        if (cancelled) return;
+        if (insError) {
+          if (!isAuthzError(insError)) reportError(insError, 'UnionStatementsPage.insurance_pnl');
+          setInsurancePnl(null);
+        } else {
+          setInsurancePnl(data as typeof insurancePnl);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [unionId]);
 
   const load = useCallback(async () => {
     if (!unionId) {
@@ -465,6 +501,23 @@ export default function UnionStatementsPage() {
           {totals.missing > 0 && (
             <span className={styles.warn}>{compactInt(totals.missing)} With No Statement</span>
           )}
+        </div>
+      )}
+
+      {/* INSURANCE P&L 2026-08-27 (Dan): the union bank's live insurance
+          line - last 14 days, straight from the settled-contract ledger. */}
+      {insurancePnl && (
+        <div className={styles.statusStrip}>
+          <span>Insurance Last 14 Days:</span>
+          <span
+            className={insurancePnl.totals.net < 0 ? styles.neg : styles.pos}
+            title="Premiums collected minus payouts paid, settled to the union insurance wallet"
+          >
+            {money(insurancePnl.totals.net)} Net
+          </span>
+          <span>{money(insurancePnl.totals.premiums)} Premiums In</span>
+          <span>{money(insurancePnl.totals.payouts)} Payouts Out</span>
+          <span>{compactInt(insurancePnl.totals.contracts)} Contracts</span>
         </div>
       )}
 

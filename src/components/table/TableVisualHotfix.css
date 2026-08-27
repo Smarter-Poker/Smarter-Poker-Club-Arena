@@ -311,17 +311,10 @@
   font-weight: 700 !important;
 }
 
-/* ── 12a. Board placeholders: outlined empty slots (real-room style) ────── */
-/* The 5 board slots always exist — making the undealt ones visible is what
-   makes the board read as CENTERED. Undefined back-style "classic" fell to an
-   invisible navy fill; replace with a subtle outlined slot. */
-.table-page .community-cards__placeholder .card-back {
-  background: rgba(255, 255, 255, 0.035) !important;
-  border: 1.5px dashed rgba(255, 255, 255, 0.22) !important;
-}
-.table-page .community-cards__placeholder {
-  opacity: 0.9;
-}
+/* ── 12a. Board placeholders — RULE DELETED 2026-08-26 ──────────────────
+   The undealt turn/river slots no longer render at all (Dan: "remove the
+   ghost place holders"), so the outlined-slot treatment these two rules
+   applied had no markup left to apply to. */
 
 /* ── 12b. Seat hole-card backs: visible card backs, not ghost boxes ─────── */
 /* Dan 2026-08-18 CORRECTION. The comment that used to sit here said "Defined

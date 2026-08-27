@@ -292,7 +292,6 @@ export function savePreferences(prefs: Partial<UserPreferences>): void {
 // set of defaults that nothing reads is a trap: it looks like the source of
 // truth for auto-muck and stack display, and it is not.
 
-
 /**
  * Add to recent tables list
  */

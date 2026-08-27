@@ -167,10 +167,15 @@ class TournamentTimerServiceClass {
        * tick, i.e. once per second, for as long as the tab stayed open.
        *
        * The engine on Hetzner is the authoritative writer and it persists the
-       * plain index. This client timer must agree with it or not write at all.
-       * `initializeAllTimers` currently has no caller, so nothing in the
-       * shipped app starts this loop today; the +1 was a loaded gun rather
-       * than an active fire, and it is unloaded here.
+       * plain index (TournamentManagerBase: `.update({ current_level: this.currentLevel })`).
+       *
+       * RESOLVED 2026-08-26 (handoff ITEM B): the design question is answered —
+       * THE CLIENT DOES NOT WRITE `current_level`, ever. The write is gone from
+       * handleLevelChange, `initializeAllTimers` (the only thing that ever
+       * started this loop) has been deleted outright, and nothing in src/
+       * calls startTimer(). A grep of src/ confirms every remaining
+       * `current_level` reference is a read. This service survives only as the
+       * read-side state TournamentClock queries via getTimerState.
        *
        * The DISPLAY number is still level + 1, and it is applied at the point
        * of display (getFullClockState, TournamentHUD, TournamentClock) - never

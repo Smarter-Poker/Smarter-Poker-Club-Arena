@@ -150,7 +150,10 @@ describe('the SAME bug class, everywhere it occurs — nothing is superseded in 
   });
 
   it('only pauses for a REAL showdown (a fold win keeps its pace)', () => {
-    expect(events).toContain('this.currentHandShowdownResults.length >= 2');
+    /* 2026-08-26: the payload is CAPTURED before the settle hold (the live
+       fields are cleared by HAND_COMPLETE during the sleep), so the gate now
+       reads the captured copy. Same rule, race-proof source. */
+    expect(events).toContain('capturedShowdownResults.length >= 2');
   });
 
   it('a freshly dealt BOARD is revealed before the next player is on the clock', () => {

@@ -861,10 +861,14 @@ export default function TournamentPage() {
             break;
 
           case 'mystery_bounty_revealed':
-            // Relay the server reveal so the overlay celebration toast can show it.
-            // Note: The lobby chest animation was removed because the table
-            // already plays one, and the gate here was dead anyway.
-            masterBus.emit('MYSTERY_BOUNTY_REVEALED', data);
+            /* ITEM A closed 2026-08-26: nothing to do here, deliberately.
+               This used to relay onto masterBus "so the overlay celebration
+               toast can show it" — but that bus event had ZERO subscribers
+               (the relay emitted into the void), and the real celebration,
+               MysteryBountyCelebration, subscribes to the server's own
+               `t-break-<id>` channel directly — precisely so OBSERVERS
+               holding no entry see it too. The table plays the chest
+               animation; the lobby's dead half-wiring is gone. */
             break;
 
           case 'ADDON_PERIOD_START':

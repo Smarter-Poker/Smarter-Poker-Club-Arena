@@ -295,7 +295,8 @@ export type BusEventType =
   | 'RAKEBACK_CLAIMED'
   | 'CLUB_SETTINGS_UPDATED'
   // Phase 4 deep-sweep: Backported overlay + theme events
-  | 'MYSTERY_BOUNTY_REVEALED'
+  // (MYSTERY_BOUNTY_REVEALED removed 2026-08-26: zero subscribers ever; the
+  // celebration listens to the server's t-break channel directly.)
   | 'UI_THEME_CHANGED'
   // Phase 8 Deep Sweep: flash pool game state event
   | 'GAME_STATE_UPDATED'
@@ -991,16 +992,6 @@ export interface BusPayloadMap {
   RAKEBACK_CLAIMED: { clubId: string; amount?: number; userId?: string };
   CLUB_SETTINGS_UPDATED: { clubId?: string; setting?: string; value?: unknown };
   // Phase 4 deep-sweep: overlay + theme payloads
-  MYSTERY_BOUNTY_REVEALED: {
-    playerName?: string;
-    amount: number;
-    tierLabel?: string;
-    isJackpot?: boolean;
-    avgBounty?: number;
-    tournamentId?: string;
-    eliminatedPlayerId?: string;
-    collectorPlayerId?: string;
-  };
   UI_THEME_CHANGED: { key: string; value?: unknown };
   // Phase 8 Deep Sweep: flash pool game state event
   GAME_STATE_UPDATED: {

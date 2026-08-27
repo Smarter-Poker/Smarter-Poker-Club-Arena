@@ -9,13 +9,15 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { supabase, getAuthUser } from '../lib/supabase';
+import { getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { ClubsService } from '../services/ClubsService';
 import { unionService } from '../services/UnionService';
 import type { Union } from '../services/UnionService';
-import { LoadingState, NoClubsEmpty } from '../components/common/EmptyState';
+import { NoClubsEmpty } from '../components/common/EmptyState';
 import { CardSkeleton } from '../components/skeletons/CardSkeleton';
+import CreateClubModal from '../components/modals/CreateClubModal';
+import JoinClubModal from '../components/modals/JoinClubModal';
 import { useToast } from '../components/common/Toast';
 import IntroVideo from '../components/IntroVideo';
 import haptic from '../services/HapticService';
@@ -26,9 +28,12 @@ import styles from './ClubsPage.module.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { STORAGE_KEYS } from '../lib/storage';
 import { reportError } from '../utils/errorReporter';
+import { isJoinableClubCode } from '../utils/clubCode';
 
-import { safeErrorMessage } from '../utils/safeErrorMessage';
-type Tab = 'discover' | 'my-clubs' | 'create';
+// The 'create' tab died with the inline create form — creation now lives in
+// CreateClubModal. Keeping the variant around left NoClubsEmpty pointing at a
+// tab that rendered nothing.
+type Tab = 'discover' | 'my-clubs';
 
 interface Club {
   id: string;
@@ -75,10 +80,18 @@ export default function ClubsPage() {
     searchParams.get('join') === 'true' || initialJoinCode ? 'discover' : 'my-clubs';
 
   const [activeTab, setActiveTab] = useState<Tab>(initialTab as Tab);
-  const [joinClubId, setJoinClubId] = useState(initialJoinCode);
-  const [joinReferralCode, setJoinReferralCode] = useState(initialReferralCode);
-  const [isJoining, setIsJoining] = useState(false);
-  const [joinError, setJoinError] = useState<string | null>(null);
+
+  // Deep link (`/clubs-list?c=12345&ref=AB12`, or `?join=true`): captured ONCE,
+  // because the effect below strips the params from the URL immediately — a
+  // re-render after that must not lose the code the link carried. The captured
+  // values open the Join modal prefilled; the old inline join form these params
+  // used to feed was removed in the modal redesign, which silently killed every
+  // shared join link until this wiring was added.
+  const [deepLink] = useState(() => ({
+    code: isJoinableClubCode(initialJoinCode) ? initialJoinCode.trim() : '',
+    ref: initialReferralCode.trim(),
+    join: searchParams.get('join') === 'true',
+  }));
 
   // Clear params from URL without reloading if they exist
   useEffect(() => {
@@ -132,12 +145,9 @@ export default function ClubsPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Create club form
-  const [clubName, setClubName] = useState('');
-  const [clubDescription, setClubDescription] = useState('');
-  const [isPublic, setIsPublic] = useState(true);
-  const [isCreating, setIsCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  // A deep-linked code (or ?join=true) opens the Join modal on arrival.
+  const [showJoinModal, setShowJoinModal] = useState(() => !!deepLink.code || deepLink.join);
   const [visibleClubCards, setVisibleClubCards] = useState(new Set<number>());
 
   // #3: Request deduplication — prevent concurrent loadMyClubs() from stacking
@@ -275,94 +285,6 @@ export default function ClubsPage() {
     };
   }, []);
 
-  // Join club by ID
-  const handleJoinClub = async () => {
-    if (joinClubId.length !== 6) return;
-
-    setIsJoining(true);
-    setJoinError(null);
-
-    try {
-      // Find club by club_id (the 6-digit public ID)
-      const { data: club, error } = await supabase
-        .from('clubs')
-        .select('id')
-        .eq('club_id', parseInt(joinClubId, 10))
-        .maybeSingle();
-
-      if (error || !club) {
-        setJoinError('Club not found. Check the ID and try again.');
-        return;
-      }
-
-      if (joinReferralCode.trim()) {
-        ClubsService.rememberInviteCode(club.id, joinReferralCode.trim());
-      }
-
-      // join() redeems that code and hands back the membership AS IT STANDS
-      // AFTERWARDS, so the 'pending' branch below now only fires for someone
-      // who really is waiting on an owner — not for an invited player the
-      // redemption has already admitted.
-      const membership = await ClubsService.join(club.id);
-
-      // Refresh both clubs AND unions (joined club might belong to a union)
-      await loadMyClubs();
-      setJoinClubId('');
-      setJoinReferralCode('');
-      if (membership?.status === 'pending') {
-        // Approval-gated club — the request is queued, the user is not yet a member.
-        toast.success('Request submitted - pending owner approval.');
-      } else {
-        toast.success('Successfully joined club!');
-        setActiveTab('my-clubs');
-      }
-    } catch (err: any) {
-      reportError(err, 'ClubsPage.Join_failed');
-      toast.error(err.message || 'Failed to join club');
-      setJoinError(safeErrorMessage(err, 'Failed to join club'));
-    } finally {
-      setIsJoining(false);
-    }
-  };
-
-  // Create new club
-  const handleCreateClub = async () => {
-    if (!clubName.trim()) {
-      setCreateError('Club name is required');
-      return;
-    }
-    if (clubName.trim().length < 3) {
-      setCreateError('Club name must be at least 3 characters');
-      return;
-    }
-    if (clubName.trim().length > 30) {
-      setCreateError('Club name must be 30 characters or less');
-      return;
-    }
-
-    setIsCreating(true);
-    setCreateError(null);
-
-    try {
-      const club = await ClubsService.create({
-        name: clubName.trim(),
-        description: clubDescription.trim() || undefined,
-        is_public: isPublic,
-      });
-
-      // ClubsService.create() emits CLUB_JOINED via joinClub() internally — no need to emit again
-
-      // Navigate to the new club
-      navigate(`/clubs/${club.slug || club.id}`);
-    } catch (err: any) {
-      reportError(err, 'ClubsPage.Create_failed');
-      toast.error(err.message || 'Failed to create club');
-      setCreateError(safeErrorMessage(err, 'Failed to create club'));
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
   return (
     <>
       {/* Intro Video - plays on first load while content loads in background */}
@@ -400,15 +322,6 @@ export default function ClubsPage() {
           >
             My Clubs
           </button>
-          <button
-            className={`${styles.tab} ${activeTab === 'create' ? styles.active : ''}`}
-            onClick={() => {
-              haptic.selection();
-              setActiveTab('create');
-            }}
-          >
-            Create Club
-          </button>
         </div>
 
         {/* Tab Content */}
@@ -416,47 +329,32 @@ export default function ClubsPage() {
           {/* Discover Tab */}
           {activeTab === 'discover' && (
             <div className={styles.discoverTab}>
-              <section className={styles.joinSection}>
-                <h3>Join A Club</h3>
-                <p>Enter A 6-Digit Club Code To Join An Existing Club.</p>
-
-                {joinError && <div className={styles.errorText}>{joinError}</div>}
-
-                <div className={styles.formGroup}>
-                  <label className={styles.label}>Enter Club Code:</label>
-                  <input
-                    className={styles.joinInput}
-                    placeholder="482913"
-                    value={joinClubId}
-                    onChange={(e) => {
-                      setJoinClubId(e.target.value.replace(/\D/g, ''));
-                      setJoinError(null);
-                    }}
-                    maxLength={6}
-                  />
-                </div>
-
-                <div className={styles.formGroup}>
-                  <label className={styles.label}>Referral Code (Optional):</label>
-                  <input
-                    className={styles.joinInput}
-                    placeholder="Referral Code"
-                    value={joinReferralCode}
-                    onChange={(e) => {
-                      setJoinReferralCode(e.target.value.trim());
-                    }}
-                  />
-                </div>
-
+              <section
+                className={styles.joinSection}
+                style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}
+              >
                 <button
                   className={styles.btnPrimary}
-                  disabled={joinClubId.length !== 6 || isJoining}
                   onClick={() => {
-                    haptic.medium();
-                    handleJoinClub();
+                    haptic.selection();
+                    setShowJoinModal(true);
                   }}
                 >
-                  {isJoining ? 'Joining...' : 'JOIN CLUB'}
+                  JOIN WITH CODE
+                </button>
+                <button
+                  className={styles.btnSecondary}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    color: '#fff',
+                  }}
+                  onClick={() => {
+                    haptic.selection();
+                    setShowCreateModal(true);
+                  }}
+                >
+                  CREATE CLUB
                 </button>
               </section>
 
@@ -586,7 +484,7 @@ export default function ClubsPage() {
                   })}
                 </div>
               ) : myUnions.length === 0 ? (
-                <NoClubsEmpty onCreate={() => setActiveTab('create')} />
+                <NoClubsEmpty onCreate={() => setShowCreateModal(true)} />
               ) : (
                 <p
                   style={{
@@ -664,85 +562,21 @@ export default function ClubsPage() {
               )}
             </div>
           )}
-
-          {/* Create Club Tab */}
-          {activeTab === 'create' && (
-            <div className={styles.createTab}>
-              <div className={styles.createForm}>
-                <h3>CREATE A CLUB</h3>
-                <p>Start Your Own Private Poker Community.</p>
-
-                {createError && <div className={styles.errorText}>{createError}</div>}
-
-                <div className={styles.formGroup}>
-                  <label className={styles.label}>CLUB NAME:</label>
-                  <input
-                    className={styles.input}
-                    placeholder="Enter Club Name"
-                    value={clubName}
-                    onChange={(e) => {
-                      setClubName(e.target.value);
-                      setCreateError(null);
-                    }}
-                  />
-                </div>
-
-                <div className={styles.formGroup}>
-                  <label className={styles.label}>DESCRIPTION:</label>
-                  <textarea
-                    className={styles.textarea}
-                    placeholder="Describe Your Club..."
-                    rows={3}
-                    maxLength={500}
-                    value={clubDescription}
-                    onChange={(e) => setClubDescription(e.target.value)}
-                  />
-                </div>
-
-                <div className={styles.visibilityCard}>
-                  <div className={styles.checkboxGroup}>
-                    <label className={styles.checkbox}>
-                      <input
-                        type="radio"
-                        name="club-visibility"
-                        checked={isPublic}
-                        onChange={() => {
-                          haptic.selection();
-                          setIsPublic(true);
-                        }}
-                      />
-                      <span>Public (Anyone Can Find And Join)</span>
-                    </label>
-                    <label className={styles.checkbox}>
-                      <input
-                        type="radio"
-                        name="club-visibility"
-                        checked={!isPublic}
-                        onChange={() => {
-                          haptic.selection();
-                          setIsPublic(false);
-                        }}
-                      />
-                      <span>Private (Invite Only, Requires Approval)</span>
-                    </label>
-                  </div>
-                </div>
-
-                <button
-                  className={styles.btnPrimary}
-                  onClick={() => {
-                    haptic.success();
-                    handleCreateClub();
-                  }}
-                  disabled={isCreating || !clubName.trim()}
-                >
-                  {isCreating ? 'Creating...' : 'CREATE CLUB'}
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
+
+      <CreateClubModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSuccess={(id) => navigate(`/clubs/${id}`)}
+      />
+      <JoinClubModal
+        isOpen={showJoinModal}
+        onClose={() => setShowJoinModal(false)}
+        initialCode={deepLink.code}
+        initialRef={deepLink.ref}
+      />
     </>
   );
 }
+// Trigger CI Wed Aug 26 18:13:36 CDT 2026

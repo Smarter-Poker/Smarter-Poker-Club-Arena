@@ -150,6 +150,26 @@ describe('logHandHistory — the hot path', () => {
     expect(row.hand_number).toBe(GLOBAL_HAND);
   });
 
+  it('persists RIT boards first-class, and single-run hands write NULL (2026-08-26)', async () => {
+    // Migration 20260826_hand_history_rit_boards: boards 2..N go to their own
+    // column. A single-run hand writes NULL — not [] — so the millions of
+    // historical rows and a normal hand look identical to readers.
+    const single = await logHandHistory(params(GLOBAL_HAND + 71));
+    expect(single.handId).toBe('inserted');
+    expect(inserts().at(-1)!.row!.rit_boards).toBeNull();
+
+    const withBoards = {
+      ...params(GLOBAL_HAND + 72),
+      ritBoards: [
+        ['Ahearts', 'Kdiamonds', 'Qspades', 'Jclubs', '10hearts'],
+        ['2clubs', '3clubs', '4clubs', '5clubs', '6clubs'],
+      ],
+    };
+    const multi = await logHandHistory(withBoards);
+    expect(multi.handId).toBe('inserted');
+    expect(inserts().at(-1)!.row!.rit_boards).toEqual(withBoards.ritBoards);
+  });
+
   it('COSTS EXACTLY ONE ROUND TRIP WHEN IT FAILS — it must never stall the table', async () => {
     // This is the regression guard for the review finding that mattered most.
     //

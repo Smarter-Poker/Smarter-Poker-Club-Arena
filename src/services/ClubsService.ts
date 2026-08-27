@@ -12,6 +12,7 @@ import { buildClubSlug, escapeIlikePattern } from '../utils/clubSlug';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
+import { ClubCardGenerator } from './ClubCardGenerator';
 import { cashoutService } from './CashoutService';
 
 // Module-level circuit breaker — resets after 5 min cooldown
@@ -149,6 +150,7 @@ export async function createClub(clubData: {
   location?: ClubLocation;
   city?: string;
   country?: string;
+  logoPreview?: string | null;
 }): Promise<Club> {
   const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
@@ -162,9 +164,15 @@ export async function createClub(clubData: {
     .eq('user_id', user.user.id)
     .in('status', ['active', 'approved']);
 
+  // FAIL CLOSED. fn_join_club re-checks this limit for joins, but its owner
+  // branch — the one createClub lands in — does not, so this client check is
+  // the ONLY 4-club limit on the create path. Dan's 2026-08-26 lobby audit
+  // (item 5) found it shrugging on a count error; it must refuse instead.
   if (countError) {
     reportError(countError, 'ClubsService._Failed_to_check_club_membership_count');
-  } else if (count && count >= 4) {
+    throw new Error('Could not verify your club memberships. Please try again.');
+  }
+  if (count !== null && count >= 4) {
     throw new Error('You can only be a member of up to 4 clubs. Leave a club to create a new one.');
   }
 
@@ -196,6 +204,30 @@ export async function createClub(clubData: {
   // Enforce mutual exclusivity: public clubs can't require approval
   const isPublic = clubData.is_public ?? true;
 
+  // ── Step 1: Upload raw logo to storage ──────────────────────────────
+  let logoUrl: string | null = null;
+  if (clubData.logoPreview) {
+    try {
+      const logoBlob = await fetch(clubData.logoPreview).then((r) => r.blob());
+      const logoExt = logoBlob.type.includes('png') ? 'png' : 'jpg';
+      const logoFileName = `club-logos/${Date.now()}-logo.${logoExt}`;
+
+      const { data: logoUploadData, error: logoUploadError } = await supabase.storage
+        .from('club-assets')
+        .upload(logoFileName, logoBlob, {
+          contentType: logoBlob.type || 'image/png',
+          upsert: true,
+        });
+
+      if (!logoUploadError && logoUploadData) {
+        const { data: urlData } = supabase.storage.from('club-assets').getPublicUrl(logoFileName);
+        logoUrl = urlData?.publicUrl || null;
+      }
+    } catch (e) {
+      reportError(e, 'ClubsService.createClub.LogoUpload');
+    }
+  }
+
   // Insert with collision retry for random club_id AND slug (clubs.slug has a
   // unique index — retries make the slug collision-proof, see utils/clubSlug)
   let data: any = null;
@@ -220,6 +252,8 @@ export async function createClub(clubData: {
         owner_id: user.user.id,
         member_count: 1,
         level: 1,
+        logo_url: logoUrl,
+        avatar_url: logoUrl, // ensure compatibility
       })
       .select()
       .maybeSingle();
@@ -249,8 +283,54 @@ export async function createClub(clubData: {
     throw new Error('Failed to create club');
   }
 
-  // Auto-join as owner
-  await joinClub(data.id, 'owner');
+  // ── Step 3: Generate baked card with REAL club_id ────────────────────
+  if (logoUrl || clubData.logoPreview) {
+    try {
+      const { dataUrl, format } = await ClubCardGenerator.generateCard({
+        logoUrl: logoUrl || (clubData.logoPreview as string),
+        clubId: data.club_id,
+        clubName: safeName.toUpperCase(),
+      });
+
+      const cardBlob = await fetch(dataUrl).then((r) => r.blob());
+      const ext = format === 'webp' ? 'webp' : 'png';
+      const contentType = format === 'webp' ? 'image/webp' : 'image/png';
+      const cardFileName = `club-cards/${data.club_id}-card-v2.${ext}`;
+
+      const { data: cardUploadData, error: cardUploadError } = await supabase.storage
+        .from('club-assets')
+        .upload(cardFileName, cardBlob, { contentType, upsert: true });
+
+      if (!cardUploadError && cardUploadData) {
+        const { data: urlData } = supabase.storage.from('club-assets').getPublicUrl(cardFileName);
+        if (urlData?.publicUrl) {
+          await supabase
+            .from('clubs')
+            .update({ card_image_url: urlData.publicUrl })
+            .eq('id', data.id);
+          data.card_image_url = urlData.publicUrl;
+        }
+      }
+    } catch (cardErr) {
+      console.warn('[ClubsService] Baked card generation failed (non-blocking):', cardErr);
+    }
+  }
+
+  // Auto-join as owner — clean up the orphan club if this fails. Without the
+  // cleanup a failed owner join leaves a members-less club row that squats on
+  // the name forever (the old CreateClubModal had this guard; the refactor to
+  // this service must not lose it).
+  try {
+    await joinClub(data.id, 'owner');
+  } catch (joinErr) {
+    reportError(joinErr, 'ClubsService.createClub.OwnerJoinFailed_cleaning_up_orphan');
+    try {
+      await supabase.from('clubs').delete().eq('id', data.id);
+    } catch (cleanupErr) {
+      reportError(cleanupErr, 'ClubsService.createClub.OrphanCleanupFailed');
+    }
+    throw new Error('Failed to set up club ownership. Please try again.');
+  }
 
   return data;
 }

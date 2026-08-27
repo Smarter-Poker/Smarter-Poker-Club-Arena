@@ -112,6 +112,14 @@ export interface TableSettings {
   straddle_enabled: boolean;
   straddle_type: 'utg'; // FIX 114: UTG straddle only
   run_it_twice: boolean;
+  /**
+   * EXACTNESS PASS 2026-08-26: how the runs are decided. 'mandatory_twice' /
+   * 'mandatory_three' skip the consent question entirely (the host already
+   * decided — engine reads the tables.run_it_mode column). Previously only
+   * TableConfigPage could set this; a table created from CreateTableModal
+   * could never be mandatory.
+   */
+  run_it_mode?: 'none' | 'player_choice' | 'mandatory_twice' | 'mandatory_three';
   bomb_pot_enabled: boolean;
   bomb_pot_frequency: number; // Every N hands
   bomb_pot_ante_bb: number;
@@ -404,6 +412,7 @@ export interface TournamentPlayer {
   bounty_winnings: number;
   current_bounty: number;
   mystery_bounty_value?: number | null;
+  is_satellite_qualifier?: boolean;
 }
 
 export type TournamentPlayerStatus = 'registered' | 'playing' | 'eliminated' | 'winner';

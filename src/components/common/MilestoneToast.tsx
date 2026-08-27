@@ -10,6 +10,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './MilestoneToast.css';
+import { formatPopupText } from '../../utils/popupStyle';
 
 /**
  * BUNDLE PASS 2026-08-24: SoundService was a STATIC import here. This component
@@ -105,9 +106,16 @@ export const MilestoneToast: React.FC = () => {
         >
           <div className="milestone-toast__icon">{n.icon}</div>
           <div className="milestone-toast__content">
-            <div className="milestone-toast__title">{n.title}</div>
-            <div className="milestone-toast__description">{n.description}</div>
-            {n.reward && <div className="milestone-toast__reward">Reward: {n.reward}</div>}
+            {/* formatPopupText: this popup does not go through the Toast
+                provider, so the house rule (Title Case, no em dashes - see
+                CLAUDE.md 5.7 and src/utils/popupStyle.ts) is applied here, the
+                same way MysteryBountyCelebration does it. The text is
+                bus-supplied, so it is never pre-formatted. */}
+            <div className="milestone-toast__title">{formatPopupText(n.title)}</div>
+            <div className="milestone-toast__description">{formatPopupText(n.description)}</div>
+            {n.reward && (
+              <div className="milestone-toast__reward">Reward: {formatPopupText(n.reward)}</div>
+            )}
           </div>
           <div className="milestone-toast__progress" />
         </div>

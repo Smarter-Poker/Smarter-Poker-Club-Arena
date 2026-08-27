@@ -168,7 +168,9 @@ describe('horses take seats, not just places on a list', () => {
     for (const caller of ['createOpenSeatTable', 'topUpWithHorses']) {
       const start = recurring.indexOf(caller);
       expect(start, `${caller} is gone`).toBeGreaterThan(-1);
-      const body = recurring.slice(start, start + 3000);
+      // 6000: the held-empty gates (Dan 2026-08-26) sit between each entry
+      // point and its pickFreeHorses call; the call is still a single batch.
+      const body = recurring.slice(start, start + 6000);
       expect(body).toMatch(/pickFreeHorses\(/);
     }
   });

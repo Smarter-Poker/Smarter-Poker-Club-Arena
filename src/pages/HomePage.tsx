@@ -21,7 +21,7 @@ import {
   type ReactNode,
   type ErrorInfo,
 } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { SHARK_CLUB_ID } from '../lib/constants';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { ClubsService } from '../services/ClubsService';
@@ -58,6 +58,7 @@ import { lazyWithRetry } from '../utils/lazyWithRetry';
 
 // Lazy-load heavy components to reduce initial bundle
 const CreateClubModal = lazyWithRetry(() => import('../components/modals/CreateClubModal'));
+const JoinClubModal = lazyWithRetry(() => import('../components/modals/JoinClubModal'));
 const FindPlayerModal = lazyWithRetry(() => import('../components/modals/FindPlayerModal'));
 
 const SWR_CACHE_TTL = 60 * 60 * 1000; // 1 hour — skip stale cache from old sessions
@@ -259,18 +260,25 @@ function HomePageInner() {
   // JOIN A CLUB modal state
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showCreateClubModal, setShowCreateClubModal] = useState(false);
-  const [clubCode, setClubCode] = useState('');
-  const [isValidatingCode, setIsValidatingCode] = useState(false);
-  const [showReferralPrompt, setShowReferralPrompt] = useState(false);
-  const [validClubId, setValidClubId] = useState<string | null>(null);
-  const [validClubName, setValidClubName] = useState<string | null>(null);
-  const [isJoining, setIsJoining] = useState(false);
-  const [referralCode, setReferralCode] = useState('');
-  const joinInputRef = useRef<HTMLInputElement>(null);
 
-  // Focus trapping for modals (accessibility)
+  // Deep link: /?create=club (the /clubs/create redirect in App.tsx, used by
+  // the hamburger menu and CreateUnionPage since CreateClubPage was deleted)
+  // opens the create modal on arrival. Strip the param so refresh and back
+  // do not re-open it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get('create') === 'club') {
+      setShowCreateClubModal(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete('create');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  // Focus trapping for modals (accessibility). The join modal owns its own
+  // trap internally (JoinClubModal) — the ref created here for it was never
+  // attached to anything, so it trapped nothing while looking like it did.
   const leaveModalRef = useFocusTrap(!!leaveConfirm?.visible);
-  const joinModalRef = useFocusTrap(showJoinModal);
 
   // Find Player modal state
   const [showFindPlayerModal, setShowFindPlayerModal] = useState(false);
@@ -719,134 +727,6 @@ function HomePageInner() {
   // ═══════════════════════════════════════════════════════════════════════════════
   // JOIN A CLUB LOGIC
   // ═══════════════════════════════════════════════════════════════════════════════
-  const handleJoinClubSubmit = async () => {
-    if (!clubCode.trim()) {
-      toast.error('Please enter a club code');
-      return;
-    }
-
-    // Sanitize input for defense-in-depth, then validate the numeric code.
-    // Canonical codes are 5-digit, but 6-digit codes exist from a legacy
-    // generation bug — accept both so those clubs remain joinable.
-    const sanitized = sanitizeInput(clubCode.trim());
-    const numericCode = parseInt(sanitized, 10);
-    if (isNaN(numericCode) || numericCode < 10000 || numericCode > 999999) {
-      toast.error('Club code must be a 5-digit number');
-      return;
-    }
-
-    setIsValidatingCode(true);
-    try {
-      // Validate club code exists by club_id (5-digit integer)
-      const { data: club, error } = await supabase
-        .from('clubs')
-        .select('id, name, club_id')
-        .eq('club_id', numericCode)
-        .maybeSingle();
-
-      if (!isMountedRef.current) return;
-
-      if (error || !club) {
-        toast.error('Invalid club code. Please check and try again.');
-        setIsValidatingCode(false);
-        return;
-      }
-
-      // Check if user is already a member of this club
-      const {
-        data: { user: currentUser },
-      } = await getAuthUser();
-      if (currentUser) {
-        const { data: existingMembership } = await supabase
-          .from('club_members')
-          .select('user_id, status')
-          .eq('club_id', club.id)
-          .eq('user_id', currentUser.id)
-          .maybeSingle();
-        if (existingMembership) {
-          if (existingMembership.status === 'pending') {
-            toast.info('Your join request for this club is still pending approval.');
-          } else {
-            toast.info('You are already a member of this club!');
-          }
-          setIsValidatingCode(false);
-          return;
-        }
-
-        // Pre-check the 4-club limit for faster, friendlier feedback than the RPC error
-        const { canJoin } = await ClubsService.canJoinMoreClubs();
-        if (!canJoin) {
-          toast.error('You can only be a member of up to 4 clubs. Leave a club to join a new one.');
-          setIsValidatingCode(false);
-          return;
-        }
-      }
-
-      // Valid club found - show referral prompt
-      setValidClubId(club.id);
-      setValidClubName(club.name || null);
-      setShowReferralPrompt(true);
-    } catch (err) {
-      if (!isMountedRef.current) return;
-      reportError(err, 'HomePage.Error_validating_club_code');
-      toast.error('Failed to validate club code');
-    } finally {
-      if (isMountedRef.current) setIsValidatingCode(false);
-    }
-  };
-
-  const handleJoinClub = async (withReferral = false) => {
-    if (!validClubId || isJoining) return;
-
-    setIsJoining(true);
-    try {
-      if (withReferral && referralCode) {
-        localStorage.setItem(`referral_${validClubId}`, referralCode);
-      }
-      const membership = await ClubsService.join(validClubId);
-      if (!isMountedRef.current) return;
-
-      if (membership?.status === 'pending') {
-        // Approval-required club — request queued, NOT yet a member.
-        // No optimistic club card; it would vanish on the next refresh.
-        toast.info(
-          `Join request sent to ${validClubName || 'the club'} - you'll be added once an admin approves.`
-        );
-      } else {
-        // #2: Optimistic UI — add placeholder club immediately
-        const optimisticClub: UserClub = {
-          id: validClubId,
-          club_id: 0,
-          name: validClubName || 'Loading...',
-          avatar_url: null,
-          member_count: 1,
-          is_owner: false,
-        } as UserClub;
-        setUserClubs((prev) => [...prev, optimisticClub]);
-        toast.success(`Successfully joined ${validClubName || 'the club'}!`);
-      }
-
-      setShowJoinModal(false);
-      setShowReferralPrompt(false);
-      setClubCode('');
-      setReferralCode('');
-      // NOTE: ClubsService.join() already emits CLUB_JOINED via bus
-      setValidClubId(null);
-      setValidClubName(null);
-      // Background refresh to get real club data
-      fetchUserData(true, () => isMountedRef.current);
-    } catch (err: any) {
-      if (!isMountedRef.current) return;
-      toast.error(err.message || 'Failed to join club');
-    } finally {
-      if (isMountedRef.current) setIsJoining(false);
-    }
-  };
-
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // USER'S CLUBS — sorted (pinned first); Shark Club renders like any other club
-  // ═══════════════════════════════════════════════════════════════════════════════
-
   const displayClubs = useMemo(() => {
     const clubs = [...userClubs];
 
@@ -1307,7 +1187,6 @@ function HomePageInner() {
               onClick={() => {
                 haptic.light();
                 setShowJoinModal(true);
-                setTimeout(() => joinInputRef.current?.focus(), 100);
               }}
               aria-label="Join a Club"
             />
@@ -1505,108 +1384,10 @@ function HomePageInner() {
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════════════
-                JOIN A CLUB MODAL
-            ═══════════════════════════════════════════════════════════════════════ */}
-      {showJoinModal && (
-        <div
-          className={styles.modalOverlay}
-          onClick={() => {
-            setShowJoinModal(false);
-            setShowReferralPrompt(false);
-            setClubCode('');
-            setReferralCode('');
-            setValidClubId(null);
-            setValidClubName(null);
-          }}
-        >
-          <div
-            ref={joinModalRef}
-            className={styles.modalContent}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {!showReferralPrompt ? (
-              <>
-                <h2 className={styles.modalTitle}>Join A Club</h2>
-                <div className={styles.inputGroup}>
-                  <input
-                    ref={joinInputRef}
-                    type="tel"
-                    inputMode="numeric"
-                    pattern="[0-9]{5,6}"
-                    maxLength={6}
-                    className={styles.clubCodeInput}
-                    placeholder="Enter 5-Digit Club Code"
-                    value={clubCode}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      // Detect pasted invite link
-                      const match = val.match(/\/invite\/([^/?]+)(?:\?ref=([a-zA-Z0-9]+))?/i);
-                      if (match) {
-                        const [, extractedClubId, extractedRef] = match;
-                        setShowJoinModal(false);
-                        navigate(
-                          `/invite/${extractedClubId}${extractedRef ? `?ref=${extractedRef}` : ''}`
-                        );
-                      } else {
-                        setClubCode(val.replace(/\D/g, '').slice(0, 6));
-                      }
-                    }}
-                    onKeyDown={(e) => e.key === 'Enter' && handleJoinClubSubmit()}
-                  />
-                </div>
-                <div className={styles.modalButtons}>
-                  <button
-                    className={styles.modalButtonPrimary}
-                    onClick={handleJoinClubSubmit}
-                    disabled={isValidatingCode || clubCode.length < 5}
-                  >
-                    {isValidatingCode ? 'Validating...' : 'Continue'}
-                  </button>
-                  <button
-                    className={styles.modalButtonSecondary}
-                    onClick={() => setShowJoinModal(false)}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <h2 className={styles.modalTitle}>
-                  {validClubName ? `Join ${validClubName}` : 'Referral Code'}
-                </h2>
-                <p className={styles.modalSubtitle}>Enter A Referral Code Or Join Without One</p>
-                <div className={styles.inputGroup}>
-                  <input
-                    type="text"
-                    className={styles.clubCodeInput}
-                    placeholder="Referral Code (Optional)"
-                    value={referralCode}
-                    onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                  />
-                </div>
-                <div className={styles.modalButtons}>
-                  <button
-                    className={styles.modalButtonPrimary}
-                    onClick={() => handleJoinClub(true)}
-                    disabled={isJoining}
-                  >
-                    {isJoining ? 'Joining...' : 'Join with Referral'}
-                  </button>
-                  <button
-                    className={styles.modalButtonSecondary}
-                    onClick={() => handleJoinClub(false)}
-                    disabled={isJoining}
-                  >
-                    {isJoining ? 'Joining...' : 'Join Without Referral'}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      {/* JOIN A CLUB MODAL */}
+      <Suspense fallback={null}>
+        <JoinClubModal isOpen={showJoinModal} onClose={() => setShowJoinModal(false)} />
+      </Suspense>
 
       {/* CREATE A CLUB MODAL */}
       <Suspense fallback={null}>

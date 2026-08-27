@@ -779,7 +779,8 @@ export const WalletService = {
     // transaction will actually spend. Falls back to the global wallet when
     // club scoping is off or no club context resolves.
     try {
-      const clubId = opts?.clubId ?? useUserStore.getState().currentClubId ?? null;
+      // If opts.clubId is explicitly passed (even as null), use it. Otherwise fall back to currentClubId.
+      const clubId = opts && 'clubId' in opts ? opts.clubId : (useUserStore.getState().currentClubId ?? null);
       const { data, error } = await supabase.rpc('fn_player_spendable_balance', {
         p_user_id: userId,
         p_club_id: clubId,

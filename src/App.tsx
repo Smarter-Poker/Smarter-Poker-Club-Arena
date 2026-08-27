@@ -58,7 +58,6 @@ const ClubsPage = lazyWithRetry(() => import('./pages/ClubsPage'));
 const ClubHomePage = lazyWithRetry(() => import('./pages/ClubHomePage'));
 const ClubDashboard = lazyWithRetry(() => import('./pages/club/ClubDashboard'));
 const ClubDataPage = lazyWithRetry(() => import('./pages/club/ClubDataPage'));
-const CreateClubPage = lazyWithRetry(() => import('./pages/CreateClubPage'));
 const CreateTablePage = lazyWithRetry(() => import('./pages/CreateTablePage'));
 const TableConfigPage = lazyWithRetry(() => import('./pages/TableConfigPage'));
 const AgentManagementPage = lazyWithRetry(() => import('./pages/AgentManagementPage'));
@@ -533,16 +532,15 @@ export default function App() {
                    in tests/unit/deadLobbyIsGone.test.ts fails if either the
                    route or the component comes back. */}
                 <Route path="clubs" element={<Navigate to="/" replace />} />
-                <Route
-                  path="clubs/create"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Create Club">
-                        <CreateClubPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
-                />
+
+                {/* CreateClubPage was deleted with the modal redesign, but
+                    old links (hamburger menu, CreateUnionPage, bookmarks)
+                    still pointed here — and without this redirect they fell
+                    through to clubs/:clubId with clubId="create", a club
+                    that does not exist. The lobby opens CreateClubModal
+                    when it sees ?create=club. */}
+                <Route path="clubs/create" element={<Navigate to="/?create=club" replace />} />
+
                 <Route
                   path="clubs/:clubId"
                   element={

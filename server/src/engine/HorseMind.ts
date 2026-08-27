@@ -1215,6 +1215,17 @@ export class HorseMind {
     }
   }
 
+  /** V18 SELF-IMAGE: hero's own recent aggression ratio as the table sees
+   *  it - rAggr/(rAggr+rPassive) over the decayed recency window. Null
+   *  below a real sample. High = the fleet just watched hero bet a lot. */
+  static selfImageOf(id: string): number | null {
+    const s = this.stats.get(id);
+    if (!s || s.rHands < 8) return null;
+    const acts = s.rAggr + s.rPassive;
+    if (acts < 10) return null;
+    return s.rAggr / acts;
+  }
+
   /** Fold-to-c-bet frequency (0..1), or null below a 10-opportunity sample. */
   static foldToCbetOf(id: string): number | null {
     const s = this.stats.get(id);

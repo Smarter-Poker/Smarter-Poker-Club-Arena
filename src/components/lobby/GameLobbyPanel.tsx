@@ -53,6 +53,17 @@ export interface GameLobbyPanelProps {
 
 type TournTab = 'overview' | 'structure' | 'payouts';
 
+/** How long a queued player has ACTUALLY been waiting, from created_at.
+ *  (Dan 2026-08-26: replaced the fabricated ~5m-per-position ETA.) */
+function waitedLabel(joinedAt: string): string {
+  const t = new Date(joinedAt).getTime();
+  if (!Number.isFinite(t)) return '';
+  const mins = Math.floor((Date.now() - t) / 60000);
+  if (mins < 1) return 'Just Joined';
+  if (mins < 60) return `${mins}m`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
 interface CtaSpec {
   label: string;
   kind: 'primary' | 'secondary' | 'gold' | 'danger' | 'disabled';
@@ -590,6 +601,12 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
               {waitlist.length > 0 && (
                 <section className="glp__section">
                   <h3 className="glp__h">Waiting List</h3>
+                  {/* Dan 2026-08-26: real names, real times. Every non-hero row
+                      used to render the literal string 'Player' with a
+                      fabricated ~5m-per-position ETA. The service now resolves
+                      display names, and the time column shows how long each
+                      player has actually been waiting (from created_at) —
+                      truthful, and the only wait figure the data can prove. */}
                   <ol className="glp__waitlist">
                     {waitlist.slice(0, 10).map((w, i) => (
                       <li key={w.id || i}>
@@ -597,9 +614,9 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                         <span className="glp__wl-name">
                           {w.userId && currentUserId && w.userId === currentUserId
                             ? 'You'
-                            : 'Player'}
+                            : w.displayName || 'Player'}
                         </span>
-                        <span className="glp__wl-time">~{(i + 1) * 5}m</span>
+                        <span className="glp__wl-time">{waitedLabel(w.joinedAt)}</span>
                       </li>
                     ))}
                   </ol>

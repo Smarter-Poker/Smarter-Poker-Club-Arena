@@ -88,6 +88,18 @@ describe('club wallet rows by role', () => {
     }
   });
 
+  it('shows spins_wallet only for standalone clubs with spins active', () => {
+    for (const r of BANK_ROLES) {
+      expect(clubWalletRows(r, { standalone: true, spinsActive: true })).toContain('spins_wallet');
+      expect(clubWalletRows(r, { standalone: true, spinsActive: false })).not.toContain(
+        'spins_wallet'
+      );
+      expect(clubWalletRows(r, { standalone: false, spinsActive: true })).not.toContain(
+        'spins_wallet'
+      );
+    }
+  });
+
   it('REGRESSION: no non-bank role ever receives club_bank or rake_treasury', () => {
     for (const r of NON_BANK_ROLES) {
       for (const standalone of [true, false]) {

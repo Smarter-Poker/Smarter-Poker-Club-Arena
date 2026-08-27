@@ -1323,10 +1323,11 @@ export default function DynamicWallet({
     {
       key: 'union_bank',
       label: 'Union Bank',
-      hint: 'Send or pull chips from clubs & members',
+
       icon: 'bank',
       value: animUnionBank,
       known: unionFiguresKnown,
+      hint: unionFiguresKnown ? 'Send or Pull Chips From Clubs & Members' : 'Union Admins Only',
       onOpen: () => onOpenUnionBank?.(data.unionBank || 0),
     },
     {

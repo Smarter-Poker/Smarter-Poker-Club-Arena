@@ -36,6 +36,9 @@ describe('Club Arena Tournament Board lobby design', () => {
     expect(lobbyWalletCss).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
     expect(lobbyWalletCss).toContain('grid-row: 1');
     expect(lobbyWalletCss).toContain('grid-row: 2');
+    expect(lobbyWalletCss).toContain('@media (max-width: 480px)');
+    expect(lobbyWalletCss).toContain('grid-template-columns: 11px minmax(0, auto)');
+    expect(lobbyWalletCss).toContain('font-size: 0.48rem');
     expect(lobbyWalletCss).not.toContain('linear-gradient');
   });
 

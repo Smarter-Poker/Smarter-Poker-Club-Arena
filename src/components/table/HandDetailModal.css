@@ -640,10 +640,60 @@
   color: rgba(255, 255, 255, 0.45);
 }
 
+/* ── Loading, and the honest fallback ──────────────────────────────────────
+   The detail tab used to render the LEGACY street walk while the raw row was
+   still being fetched — the one whose figures this file documents as wrong —
+   and then swap silently. A skeleton says "not yet"; the notice below says
+   "these numbers are the reduced ones" rather than presenting them as equal. */
+.hdm-skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+}
+
+.hdm-skeleton {
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: hdm-shimmer 1.3s infinite;
+}
+
+@keyframes hdm-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Both animations named together: the sheet's slide-in (the feature branch's
+   .hdm-panel) and the skeleton's shimmer. Each side of the merge had listed
+   only its own selector, so keeping either alone would have left one animation
+   still running for a reader who asked for reduced motion. */
 @media (prefers-reduced-motion: reduce) {
-  .hdm-panel {
+  .hdm-panel,
+  .hdm-skeleton {
     animation: none;
   }
+}
+
+.hdm-degraded {
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 149, 0, 0.3);
+  background: rgba(255, 149, 0, 0.08);
+  color: #ff9500;
+  font-size: 10.5px;
+  text-align: center;
 }
 
 /* PWA GUARANTEE. In an installed app the page draws under the status bar, and

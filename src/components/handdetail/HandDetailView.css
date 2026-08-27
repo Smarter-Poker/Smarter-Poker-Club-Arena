@@ -50,19 +50,24 @@
   color: rgba(255, 255, 255, 0.4);
 }
 
+/* Six tracks, matching .hdv__row exactly. It was `1fr auto auto` over a
+   six-track row, so the words "Player / Action / Stack" sat above whatever
+   happened to be under them at that width, which was never the columns they
+   name. The header now inherits the row grid, so they cannot drift again. */
 .hdv__colkey {
   display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 8px;
-  padding: 0 10px;
+  grid-template-columns: var(--hdv-row-cols);
+  gap: 6px;
+  padding: 0 8px 2px;
   font-size: 9px;
   letter-spacing: 0.6px;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.32);
 }
 
-.hdv__colkey span:nth-child(2) {
-  justify-self: center;
+.hdv__colkey > span:nth-child(5),
+.hdv__colkey > span:nth-child(6) {
+  text-align: right;
 }
 
 .hdv__street {
@@ -101,10 +106,24 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* position | name | action | cards | amount | stack */
+/* position | name | action | cards | amount | stack
+   Declared once as a custom property so .hdv__colkey cannot drift out of step
+   with it. `min-content` on the cards track lets the strip shrink instead of
+   painting over the columns to its right. */
+.hdv {
+  --hdv-row-cols: 32px minmax(40px, 1fr) auto minmax(0, min-content) 50px 52px;
+}
+
+/* No stack column on a hand whose rebuild does not reconcile - roughly 0.8% of
+   live hands. The 52px track used to be reserved unconditionally, so a sixth
+   of the width was dead space on exactly the hands with least room to spare. */
+.hdv.is-nostack {
+  --hdv-row-cols: 32px minmax(40px, 1fr) auto minmax(0, min-content) 50px 0;
+}
+
 .hdv__row {
   display: grid;
-  grid-template-columns: 34px minmax(48px, 1fr) auto minmax(0, auto) 52px 54px;
+  grid-template-columns: var(--hdv-row-cols);
   align-items: center;
   gap: 6px;
   padding: 5px 8px;
@@ -299,11 +318,15 @@
   overflow: hidden;
 }
 
-/* Showdown row: who | what they made | what it paid */
+/* Showdown row: who | what they made | what it paid
+   At 375px the old `minmax(96px, 1fr)` left ~106px for a position badge plus
+   up to six hole cards (154px in PLO6), and `.hdv__cards { overflow: hidden }`
+   silently cut the last cards off every Omaha hand. The who-column now stacks
+   its cards under the name and is allowed the room they need. */
 .hdv__sd {
   display: grid;
-  grid-template-columns: minmax(96px, 1fr) minmax(0, 1.35fr) auto;
-  align-items: center;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr) auto;
+  align-items: start;
   gap: 8px;
   padding: 8px;
   background: rgba(255, 255, 255, 0.02);
@@ -386,12 +409,84 @@
 }
 
 @media (max-width: 380px) {
+  .hdv {
+    --hdv-row-cols: 28px minmax(32px, 1fr) auto minmax(0, min-content) 46px 46px;
+  }
+
+  .hdv.is-nostack {
+    --hdv-row-cols: 28px minmax(32px, 1fr) auto minmax(0, min-content) 46px 0;
+  }
+
   .hdv__row {
-    grid-template-columns: 30px minmax(40px, 1fr) auto minmax(0, auto) 46px 48px;
     font-size: 11px;
   }
 
+  /* The made-hand column drops under the who-column rather than squeezing the
+     hole cards out of existence. Previously this made the who-column NARROWER,
+     which is the opposite of what 375px needs. */
   .hdv__sd {
-    grid-template-columns: minmax(84px, 1fr) minmax(0, 1.2fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
+
+  .hdv__sd-made {
+    grid-column: 1 / -1;
+  }
+}
+
+/* A showdown row on run 2+ carries no net, because the engine records one
+   winners[] entry for the hand rather than one per run. The empty span still
+   needs to hold its line so the rows below do not jump. */
+.hdv__sd-net.is-blank {
+  color: transparent;
+}
+
+.hdv__sd-net.is-blank::after {
+  content: '\2014';
+  color: rgba(255, 255, 255, 0.25);
+}
+
+/* THE BAD BEAT. The hand the jackpot was paid for is the story of the rundown,
+   and it was drawn identically to every other row. */
+.hdv__sd.is-badbeat {
+  background: rgba(240, 185, 11, 0.07);
+  box-shadow: inset 3px 0 0 #f0b90b;
+}
+
+.hdv__sd-tag {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(240, 185, 11, 0.2);
+  color: #f0b90b;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+/* Run-it-twice / double board: the same street on every extra board. */
+.hdv__street-run {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.hdv__street-run-label {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* An unrecognised verb keeps the engine's own word and a neutral chip, so it
+   reads as "something happened that we do not have a name for" rather than
+   impersonating an action we do know. */
+.hdv__act--unknown {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.55);
+  font-style: italic;
 }

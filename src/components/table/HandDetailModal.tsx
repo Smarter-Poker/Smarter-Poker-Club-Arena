@@ -60,6 +60,14 @@ export interface HandDetailModalProps {
   hands: HandRecord[];
   heroId: string;
   /**
+   * The viewer's display name, the fallback when `heroId` is empty.
+   *
+   * `heroId` is `userId || ''` at the call site, so for an observer — or any
+   * session where auth has not resolved — the shared view had neither an id
+   * nor a name and lit nobody's row. The BBJ rundown has always taken both.
+   */
+  currentUserName?: string | null;
+  /**
    * Open the full animated replay of THE HAND PASSED IN — not "the last hand".
    *
    * The argument is the whole point of this prop. TablePage's handler was
@@ -160,9 +168,13 @@ function HiddenCards({ count = 2 }: { count?: number }) {
 }
 
 function fmt(n: number): string {
-  const abs = Math.abs(n);
-  if (abs >= 1) return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
-  return n.toFixed(2);
+  // `Math.abs(NaN) >= 1` is false, so this used to fall through to
+  // `NaN.toFixed(2)` and print the string "NaN" into a chip figure. Every
+  // other money formatter in this feature is NaN-safe by construction.
+  const v = Number.isFinite(n) ? n : 0;
+  const abs = Math.abs(v);
+  if (abs >= 1) return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  return v.toFixed(2);
 }
 
 /* `pineapple_discard` was missing here, so the street header printed the raw
@@ -170,6 +182,27 @@ function fmt(n: number): string {
    next door printed "Discard" for the same street (HandHistoryPanel's
    getStreetLabel). Any street name added to HandHistoryStreet must gain a label
    in both places or one surface starts leaking column names at the player. */
+/**
+ * The game-type chip beside the stakes.
+ *
+ * `HandDetailView` has always rendered one; only the BBJ caller passed it, so
+ * the table's own rundown showed no game type at all even though the record
+ * carries it. Same shape as the winners list uses, so both surfaces name a
+ * variant the same way.
+ */
+function gameTypeBadge(variant: string | null | undefined): string | null {
+  const v = String(variant || '')
+    .toLowerCase()
+    .trim();
+  if (!v) return null;
+  if (v === 'nlh') return 'NLH';
+  if (v === 'flh') return 'FLH';
+  if (v === 'short_deck' || v === 'shortdeck') return 'Short Deck';
+  if (v === 'pineapple') return 'Pineapple';
+  if (/^(plo|flo)\d*8?$/.test(v)) return v.toUpperCase();
+  return v.replace(/_/g, ' ').replace(/\b([a-z])/g, (c) => c.toUpperCase());
+}
+
 const STREET_LABEL: Record<string, string> = {
   preflop: 'PreFlop',
   pineapple_discard: 'Discard',
@@ -183,6 +216,7 @@ export function HandDetailModal({
   onClose,
   hands,
   heroId,
+  currentUserName,
   onReplay,
   onShare,
 }: HandDetailModalProps) {
@@ -229,10 +263,50 @@ export function HandDetailModal({
     }
   }, [isOpen]);
 
+  const panelRef = React.useRef<HTMLDivElement | null>(null);
+  const restoreFocusTo = React.useRef<HTMLElement | null>(null);
+
+  /**
+   * DIALOG SEMANTICS. This carried `role="dialog"` and nothing that makes one:
+   * no Escape, no focus move, no focus restore, and `aria-modal` absent so a
+   * screen reader still announced the table behind it. BBJInfoModal, in the
+   * same feature, does all of it correctly — the two dialogs had opposite
+   * postures for no reason.
+   */
+  useEffect(() => {
+    if (!isOpen) return;
+    restoreFocusTo.current = document.activeElement as HTMLElement | null;
+    panelRef.current?.focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      // Give focus back to whatever opened this, not to the top of the page.
+      restoreFocusTo.current?.focus?.();
+    };
+  }, [isOpen, onClose]);
+
+  /** Left/Right/Home/End across the two tabs, the way a tablist behaves. */
+  const onTabsKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'ArrowLeft' || e.key === 'Home') {
+      e.preventDefault();
+      setTab('summary');
+    } else if (e.key === 'ArrowRight' || e.key === 'End') {
+      e.preventDefault();
+      setTab('detail');
+    }
+  };
+
   const hand = hands[Math.min(index, Math.max(0, hands.length - 1))];
 
   // The raw row behind the hand on screen, rebuilt by the shared reconstruction.
-  const { model: replay } = useHandReplayModel(isOpen && hand ? hand.id : null);
+  const { model: replay, state: replayState } = useHandReplayModel(isOpen && hand ? hand.id : null);
 
   const positionOf = useMemo(() => {
     const m = new Map<string, string>();
@@ -335,8 +409,18 @@ export function HandDetailModal({
    */
   if (!hand) {
     return (
-      <div className="hdm-overlay" role="dialog" aria-label="Hand detail" onClick={onClose}>
-        <div className="hdm-panel" style={sheetStyle} onClick={(e) => e.stopPropagation()}>
+      <div className="hdm-overlay" onClick={onClose}>
+        {/* The dialog is the PANEL, not the overlay. They were the same element,
+            so the thing carrying role="dialog" was also the click-out target. */}
+        <div
+          className="hdm-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Hand detail"
+          tabIndex={-1}
+          style={sheetStyle}
+          onClick={(e) => e.stopPropagation()}
+        >
           {grabHandle}
           <div className="hdm-header">
             <span className="hdm-title">HAND DETAIL</span>
@@ -364,15 +448,24 @@ export function HandDetailModal({
   const total = hands.length;
   const displayPos = total - index; // 1..N, N = newest
 
-  let runningPot = 0;
-
   return (
     /* The overlay closes on tap and the panel stops the bubble, which was
        already true — but at <=640px the panel was `width:100vw; height:100%`,
        so there was no overlay left to tap. The sheet is three quarters of the
        height now and the exposed quarter above it is a real target. */
-    <div className="hdm-overlay" role="dialog" aria-label="Hand detail" onClick={onClose}>
-      <div className="hdm-panel" style={sheetStyle} onClick={(e) => e.stopPropagation()}>
+    <div className="hdm-overlay" onClick={onClose}>
+      {/* The dialog is the PANEL, not the overlay. They were the same element,
+          so the thing carrying role="dialog" was also the click-out target. */}
+      <div
+        className="hdm-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Hand detail"
+        tabIndex={-1}
+        ref={panelRef}
+        style={sheetStyle}
+        onClick={(e) => e.stopPropagation()}
+      >
         {grabHandle}
         {/* ── Header ── */}
         <div className="hdm-header">
@@ -435,50 +528,115 @@ export function HandDetailModal({
         </div>
 
         {/* ── Body ── */}
-        <div className="hdm-body">
+        <div
+          className="hdm-body"
+          id="hdm-panel-body"
+          role="tabpanel"
+          aria-labelledby={tab === 'summary' ? 'hdm-tab-summary' : 'hdm-tab-detail'}
+          tabIndex={0}
+        >
+          {/* THE RUNDOWN.
+              `replay` is null while the row is being fetched, and this used to
+              fall straight through to the legacy street walk below — the one
+              this file's own header documents as over-counting every raised
+              pot and defaulting every position badge to seat 1. So on EVERY
+              open the player saw the known-wrong numbers first and watched
+              them silently change. The hook has always returned a state; it
+              was being discarded. A skeleton is the honest thing to show
+              while we do not yet know. */}
           {tab === 'detail' && replay ? (
-            <HandDetailView model={replay} currentUserId={heroId} />
+            <HandDetailView
+              model={replay}
+              currentUserId={heroId}
+              currentUserName={currentUserName}
+              badge={gameTypeBadge(hand.gameType)}
+            />
+          ) : tab === 'detail' && (replayState === 'loading' || replayState === 'idle') ? (
+            <>
+              {/* THE BOARDS ARE NOT PART OF WHAT WE ARE WAITING FOR. The
+                  skeleton exists because the action log and every figure in it
+                  are reconstructed from the raw row, and showing the legacy
+                  walk's known-wrong numbers before that lands was the bug it
+                  was added to fix. The runs are different in kind: they come
+                  off `hand` — the record already on screen — and they are
+                  cards, not computed money, so nothing about them can be
+                  revised by the fetch. Hiding them here is what made hand
+                  #3046089 show one board out of three again, which is the
+                  report this block was written for. `HandDetailView` draws
+                  them per street once `replay` resolves, so this renders only
+                  while it has not. */}
+              {runs && <RunBoardsBlock runs={runs} />}
+              <div className="hdm-skeletons">
+                {[0, 1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="hdm-skeleton" />
+                ))}
+              </div>
+            </>
           ) : tab === 'detail' ? (
             <>
-              {hand.streets.map((street) => {
-                const streetStartPot = runningPot;
-                return (
-                  <div key={street.name} className="hdm-street">
-                    <div className="hdm-street__head">
-                      <span className="hdm-street__name">
-                        {STREET_LABEL[street.name] || street.name}
-                      </span>
-                      {street.cards && street.cards.length > 0 && (
-                        <span className="hdm-cards">
-                          {street.cards.map((c, i) => (
-                            <MiniCard key={i} card={c} />
-                          ))}
+              {/* FALLBACK ONLY. Reached when the raw row cannot be read (an RLS
+                  refusal, or a hand cached from an older build). Its figures
+                  are the ones described above, so it says so rather than
+                  presenting them as equivalent. */}
+              <div className="hdm-degraded">
+                Showing A Reduced Rundown - The Full Hand Could Not Be Read.
+              </div>
+              {/* The running pot is computed up front rather than mutated
+                  inside JSX. `let runningPot` lived in the render body and was
+                  incremented from inside .map(), so a re-entrant render under
+                  StrictMode double-counted every street. */}
+              {(() => {
+                let acc = 0;
+                const streetPots = hand.streets.map((street) => {
+                  const start = acc;
+                  for (const a of street.actions) if (a.amount && a.amount > 0) acc += a.amount;
+                  return { start, end: acc };
+                });
+                return hand.streets.map((street, si) => {
+                  const streetStartPot = streetPots[si].start;
+                  let rowPot = streetStartPot;
+                  return (
+                    <div key={street.name} className="hdm-street">
+                      <div className="hdm-street__head">
+                        <span className="hdm-street__name">
+                          {STREET_LABEL[street.name] || street.name}
                         </span>
-                      )}
-                      <span className="hdm-street__pot">{fmt(streetStartPot)}</span>
+                        {street.cards && street.cards.length > 0 && (
+                          <span className="hdm-cards">
+                            {street.cards.map((c, i) => (
+                              <MiniCard key={i} card={c} />
+                            ))}
+                          </span>
+                        )}
+                        <span className="hdm-street__pot">{fmt(streetStartPot)}</span>
+                      </div>
+                      {street.actions.map((a, i) => {
+                        if (a.amount && a.amount > 0) rowPot += a.amount;
+                        return (
+                          <div
+                            key={i}
+                            className={`hdm-row${a.playerId === heroId ? ' hdm-row--hero' : ''}`}
+                          >
+                            <span className="hdm-pos">{positionOf.get(a.playerId) || ''}</span>
+                            <span className="hdm-name">{a.playerName}</span>
+                            <span className={`hdm-action hdm-action--${a.action}`}>
+                              {a.action === 'allin' ? 'all in' : a.action}
+                            </span>
+                            <span className="hdm-amount">
+                              {a.amount && a.amount > 0 ? fmt(a.amount) : ''}
+                            </span>
+                            <span className="hdm-pot">{fmt(rowPot)}</span>
+                          </div>
+                        );
+                      })}
                     </div>
-                    {street.actions.map((a, i) => {
-                      if (a.amount && a.amount > 0) runningPot += a.amount;
-                      return (
-                        <div
-                          key={i}
-                          className={`hdm-row${a.playerId === heroId ? ' hdm-row--hero' : ''}`}
-                        >
-                          <span className="hdm-pos">{positionOf.get(a.playerId) || ''}</span>
-                          <span className="hdm-name">{a.playerName}</span>
-                          <span className={`hdm-action hdm-action--${a.action}`}>
-                            {a.action === 'allin' ? 'all in' : a.action}
-                          </span>
-                          <span className="hdm-amount">
-                            {a.amount && a.amount > 0 ? fmt(a.amount) : ''}
-                          </span>
-                          <span className="hdm-pot">{fmt(runningPot)}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
+                  );
+                });
+              })()}
+              {/* Every board the hand ran. Production hand #3046089 ran three
+                  and this modal showed one. Kept here, after the street list
+                  and inside the same fallback, exactly where it sat before the
+                  street walk was replaced. */}
               {runs && <RunBoardsBlock runs={runs} />}
               <div className="hdm-potline">
                 <span>Pot</span>
@@ -547,14 +705,34 @@ export function HandDetailModal({
         </div>
 
         {/* ── Tabs ── */}
-        <div className="hdm-tabs">
+        {/* Two plain buttons before this: no role, no aria-selected, no arrow
+            keys, and a body with no tabpanel. A screen reader could not tell
+            these were tabs, and neither could a keyboard. */}
+        <div
+          className="hdm-tabs"
+          role="tablist"
+          aria-label="Hand detail view"
+          onKeyDown={onTabsKeyDown}
+        >
           <button
+            type="button"
+            role="tab"
+            id="hdm-tab-summary"
+            aria-selected={tab === 'summary'}
+            aria-controls="hdm-panel-body"
+            tabIndex={tab === 'summary' ? 0 : -1}
             className={`hdm-tab${tab === 'summary' ? ' hdm-tab--active' : ''}`}
             onClick={() => setTab('summary')}
           >
             Hand Summary
           </button>
           <button
+            type="button"
+            role="tab"
+            id="hdm-tab-detail"
+            aria-selected={tab === 'detail'}
+            aria-controls="hdm-panel-body"
+            tabIndex={tab === 'detail' ? 0 : -1}
             className={`hdm-tab${tab === 'detail' ? ' hdm-tab--active' : ''}`}
             onClick={() => setTab('detail')}
           >

@@ -120,6 +120,28 @@ function stamp(iso: string | null | undefined): string {
   );
 }
 
+/**
+ * Game types print the way the lobby names them.
+ *
+ * The badge used to be `titleCase(v).toUpperCase()`, which is self-cancelling
+ * and maps nothing — `short_deck` reached the player as the badge SHORT_DECK,
+ * underscore included. The winners list already had this function; it simply
+ * was not reused.
+ */
+function gameTypeLabel(variant: string | null | undefined): string | null {
+  const v = String(variant || '')
+    .toLowerCase()
+    .trim();
+  if (!v) return null;
+  if (v === 'nlh') return 'NLH';
+  if (v === 'flh') return 'FLH';
+  if (v === 'short_deck' || v === 'shortdeck') return 'Short Deck';
+  if (v === 'pineapple') return 'Pineapple';
+  if (v === 'ofc_pineapple') return 'OFC';
+  if (/^(plo|flo)\d*8?$/.test(v)) return v.toUpperCase();
+  return titleCase(v.replace(/_/g, ' '));
+}
+
 function money(n: number | null | undefined, dp = 2): string {
   return Number(n || 0).toLocaleString('en-US', {
     minimumFractionDigits: dp,
@@ -247,11 +269,17 @@ export function BBJHandDetail({
 
   const payoutBox = (
     <section className="hdv__bbjp">
-      <header className="hdv__bbjp-head">BBJP Winners</header>
+      <header className="hdv__bbjp-head">
+        BBJP Winners
+        {/* The box lists shares and never showed what they are shares OF.
+            `jackpot.total` has been in the payload the whole time. */}
+        <span className="hdv__bbjp-total">{money(detail.jackpot?.total)}</span>
+      </header>
       {recipients.map((r, i) => {
         const you = currentUserId
           ? r.userId === currentUserId
-          : !!currentUserName && r.name.toLowerCase() === currentUserName.toLowerCase();
+          : !!currentUserName &&
+            String(r.name || '').toLowerCase() === currentUserName.toLowerCase();
         const id = numberOf.get(r.userId) || r.playerNumber || '';
         return (
           <div className="hdv__bbjp-row" key={`${r.userId}-${i}`}>
@@ -278,7 +306,7 @@ export function BBJHandDetail({
    * action, and this says exactly that rather than implying the whole record
    * is gone.
    */
-  if (detail.handAvailable === false || !model) {
+  if (!model) {
     return (
       <div className="bbjhd">
         <Header onBack={onBack} />
@@ -327,7 +355,8 @@ export function BBJHandDetail({
         model={model}
         currentUserId={currentUserId}
         currentUserName={currentUserName}
-        badge={titleCase(detail.gameVariant || '').toUpperCase() || null}
+        badge={gameTypeLabel(detail.gameVariant)}
+        badBeatUserId={detail.jackpot?.badBeatUserId ?? null}
         footer={recipients.length > 0 ? payoutBox : null}
       />
     </div>

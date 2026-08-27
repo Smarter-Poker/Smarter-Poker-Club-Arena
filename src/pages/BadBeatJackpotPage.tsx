@@ -55,6 +55,8 @@ export default function BadBeatJackpotPage() {
   const [loading, setLoading] = useState(true);
   const [openHandPayoutId, setOpenHandPayoutId] = useState<string | null>(null);
   const [justUpdated, setJustUpdated] = useState(false);
+  /** True when the last read threw. Distinct from "this club has no pool". */
+  const [loadFailed, setLoadFailed] = useState(false);
   const [playerContribution, setPlayerContribution] = useState(0);
   // 2026-08-18: real hand count + own-contribution facts, from the ledger.
   const [poolFacts, setPoolFacts] = useState<{ hands: number; chips: number } | null>(null);
@@ -268,13 +270,35 @@ export default function BadBeatJackpotPage() {
           prevAmountRef.current = jackpotData.main_balance || 0;
         }
 
-        // 2026-08-18: pool facts from the LEDGER (the pool counters have
-        // drifted: 161,442 counter vs 261,316 actual rows).
-        if (jackpotData?.id) {
-          const { data: factRows } = await supabase.rpc('fn_bbj_pool_facts', {
-            p_pool_id: jackpotData.id,
-          });
-          if (getIsMounted && !getIsMounted()) return;
+        /**
+         * The two reads below do not depend on each other and were awaited one
+         * after the other, so the page paid two full round trips in series on
+         * every load and every HAND_COMPLETED bus tick. They are the same two
+         * calls, issued together.
+         *
+         * 2026-08-18: pool facts come from the LEDGER, because the pool
+         * counters have drifted (161,442 counter vs 261,316 actual rows).
+         *
+         * "Your contribution" used to read bbj_contributions.player_id, which
+         * is NULL on all 550,782 rows — the card always computed 0 and never
+         * rendered, after pulling up to 10,000 rows to find that out. The BBJ
+         * fee comes out of the POT, so a player's honest share is
+         * fee x (their pot contribution / pot size), which is what the RPC
+         * returns, for the calling user only.
+         */
+        const wantsMine = Boolean(user?.id && jackpotData?.id);
+        const [factsRes, mineRes] = await Promise.all([
+          jackpotData?.id
+            ? supabase.rpc('fn_bbj_pool_facts', { p_pool_id: jackpotData.id })
+            : Promise.resolve({ data: null }),
+          wantsMine
+            ? supabase.rpc('fn_bbj_my_contribution', { p_pool_id: jackpotData!.id, p_days: 90 })
+            : Promise.resolve({ data: null }),
+        ]);
+        if (getIsMounted && !getIsMounted()) return;
+
+        {
+          const factRows = factsRes.data;
           const f = Array.isArray(factRows) ? factRows[0] : factRows;
           if (f) {
             setPoolFacts({
@@ -284,33 +308,33 @@ export default function BadBeatJackpotPage() {
           }
         }
 
-        // "Your contribution" used to read bbj_contributions.player_id, which
-        // is NULL on all 550,782 rows — the card always computed 0 and never
-        // rendered, after pulling up to 10,000 rows to find that out. The BBJ
-        // fee comes out of the POT, so a player's honest share is
-        // fee x (their pot contribution / pot size) — which is what this RPC
-        // returns, for the calling user only.
-        if (user?.id && jackpotData?.id) {
-          const { data: mineRows } = await supabase.rpc('fn_bbj_my_contribution', {
-            p_pool_id: jackpotData.id,
-            p_days: 90,
-          });
-          if (getIsMounted && !getIsMounted()) return;
+        if (wantsMine) {
+          const mineRows = mineRes.data;
           const mine = Array.isArray(mineRows) ? mineRows[0] : mineRows;
           if (mine) {
             setPlayerContribution(Number(mine.attributed_chips) || 0);
             setMyHands(Number(mine.hands_contributed) || 0);
           }
         }
+        if (!getIsMounted || getIsMounted()) setLoadFailed(false);
       } catch (error) {
         reportError(error, 'BadBeatJackpotPage.Failed_to_load_jackpot');
-        if (!getIsMounted || getIsMounted()) toast.error('Failed to load jackpot data.');
+        if (!getIsMounted || getIsMounted()) {
+          setLoadFailed(true);
+          toast.error('Failed to load jackpot data.');
+        }
       } finally {
         loadingRef.current = false;
         if (!getIsMounted || getIsMounted()) setLoading(false);
       }
     },
-    [clubId]
+    // `user?.id` is READ in this body (the fn_bbj_my_contribution block), and
+    // it was not a dependency. On first mount `user` is typically still null,
+    // so that block was skipped - and because the callback was never recreated
+    // when auth resolved, every later caller kept invoking the stale version.
+    // "Your Contribution (90D)" therefore never appeared until the club id
+    // itself changed. `toast` is captured for the same reason.
+    [clubId, user?.id, toast]
   );
 
   // Bus listener: reload jackpot data when a hand completes (BBJ contribution may have been added)
@@ -331,6 +355,39 @@ export default function BadBeatJackpotPage() {
       <div className="bbj-page">
         <div className="loading-state">
           <PageSkeleton variant="stats" />
+        </div>
+        {clubId && <ClubBottomNav clubId={clubId} />}
+      </div>
+    );
+  }
+
+  /**
+   * NO POOL, OR THE READ FAILED.
+   *
+   * This used to fall straight through to the full jackpot screen built
+   * entirely out of zeros - "Main Jackpot 0", "0 Chips", a rules panel priced
+   * off a zero pool, an empty winners list - with a transient toast as the only
+   * signal that anything was wrong. A player cannot tell that from a club whose
+   * jackpot genuinely sits at zero. Say which it is, and give them a way to try
+   * again, because there was none anywhere on this page.
+   */
+  if (loadFailed || !jackpot) {
+    return (
+      <div className="bbj-page">
+        <div className="bbj-page__empty">
+          <h2 className="bbj-page__empty-title">
+            {loadFailed ? 'Could Not Load The Jackpot' : 'No Jackpot Pool For This Club Yet'}
+          </h2>
+          <p className="bbj-page__empty-body">
+            {loadFailed
+              ? 'The Jackpot Could Not Be Read Just Now. Nothing Is Lost - Try Again.'
+              : 'A Pool Starts Building As Soon As Hands Are Dealt With The Jackpot Drop Enabled.'}
+          </p>
+          {loadFailed && (
+            <button type="button" className="bbj-page__retry" onClick={() => loadJackpotData()}>
+              Try Again
+            </button>
+          )}
         </div>
         {clubId && <ClubBottomNav clubId={clubId} />}
       </div>

@@ -364,6 +364,162 @@ describe('buildReplay — a hand the engine recorded in full', () => {
   });
 });
 
+describe('buildReplay — the reader never invents an action', () => {
+  /**
+   * `normalizeVerb` returned `'check'` for anything it did not recognise, so
+   * any verb the engine writes that is not in its table — a timeout, a
+   * sit-out, a verb added next quarter — was drawn to the player as a CHECK
+   * THAT NEVER HAPPENED, indistinguishable from a real one, on a surface that
+   * is about money.
+   */
+  const m = buildReplay({
+    handNumber: 9,
+    playedAt: null,
+    gameVariant: 'nlh',
+    smallBlind: 1,
+    bigBlind: 2,
+    potSize: 3,
+    buttonSeat: 3,
+    board: [],
+    players: [
+      { seat: 1, userId: 'a', username: 'A', stack: 99 },
+      { seat: 2, userId: 'b', username: 'B', stack: 98 },
+      { seat: 3, userId: 'c', username: 'C', stack: 100 },
+    ],
+    actions: [
+      { seat: 3, userId: 'c', action: 'time_out', amount: 0, stage: 'preflop' },
+      { seat: 1, userId: 'a', action: 'fold', amount: 0, stage: 'preflop' },
+    ],
+    winners: [],
+    holeCards: {},
+  } as never);
+
+  const rows = m.streets.flatMap((s) => s.rows);
+
+  it('does not turn an unknown verb into a Check', () => {
+    const checks = rows.filter((r) => r.verb === 'check');
+    expect(checks).toHaveLength(0);
+  });
+
+  it('prints the engine own word for it instead', () => {
+    const row = rows.find((r) => r.seat === 3 && r.verb === 'unknown')!;
+    expect(row).toBeTruthy();
+    expect(row.label).toBe('Time Out');
+  });
+});
+
+describe('buildReplay — "all in" with a space is still a raise-to level', () => {
+  /**
+   * `TO_LEVEL_VERBS` was tested against the RAW string while the label went
+   * through a normaliser that collapsed spaces and hyphens. A row storing
+   * `"all in"` was therefore labelled All In and had its amount treated as an
+   * INCREMENT — adding the whole raise-to level to the pot on top of what that
+   * seat already had in.
+   */
+  const build = (verb: string) =>
+    buildReplay({
+      handNumber: 10,
+      playedAt: null,
+      gameVariant: 'nlh',
+      smallBlind: 1,
+      bigBlind: 2,
+      potSize: 43,
+      buttonSeat: 3,
+      board: [],
+      players: [
+        { seat: 1, userId: 'a', username: 'A', stack: 0 },
+        { seat: 2, userId: 'b', username: 'B', stack: 0 },
+        { seat: 3, userId: 'c', username: 'C', stack: 0 },
+      ],
+      actions: [
+        { seat: 3, userId: 'c', action: 'raise', amount: 8, stage: 'preflop' },
+        { seat: 1, userId: 'a', action: 'fold', amount: 0, stage: 'preflop' },
+        // to 20, and this seat already has the big blind's 2 in
+        { seat: 2, userId: 'b', action: verb, amount: 20, stage: 'preflop' },
+        { seat: 3, userId: 'c', action: 'call', amount: 12, stage: 'preflop' },
+      ],
+      winners: [],
+      holeCards: {},
+    } as never);
+
+  it('reads every spelling the same way', () => {
+    for (const spelling of ['all_in', 'all in', 'ALL-IN', 'allin']) {
+      const m = build(spelling);
+      // 1 + 2 blinds + 8 raise + 18 (to 20, minus the 2 already in) + 12 call
+      expect(m.rebuiltPot).toBe(41);
+    }
+  });
+
+  it('labels every spelling the same way', () => {
+    for (const spelling of ['all_in', 'all in', 'ALL-IN', 'allin']) {
+      const row = build(spelling)
+        .streets.flatMap((s) => s.rows)
+        .find((r) => r.verb === 'all_in')!;
+      expect(row.label).toBe('All In');
+    }
+  });
+});
+
+describe('buildReplay — an antes-only log still gets its blinds', () => {
+  /**
+   * The blind-synthesis guard used to fire on ANY forced-money verb, and
+   * `ante` was in the set. A tournament row that records antes but not blinds
+   * therefore suppressed the blinds entirely: the pot came out short by
+   * SB + BB, the whole stack column was withdrawn, and every preflop raise-to
+   * was differenced against a committed map with no blinds in it.
+   */
+  const m = buildReplay({
+    handNumber: 11,
+    playedAt: null,
+    gameVariant: 'nlh',
+    smallBlind: 1,
+    bigBlind: 2,
+    potSize: 6, // 3 antes + SB 1 + BB 2
+    buttonSeat: 3,
+    board: [],
+    players: [
+      { seat: 1, userId: 'a', username: 'A', stack: 10 },
+      { seat: 2, userId: 'b', username: 'B', stack: 10 },
+      { seat: 3, userId: 'c', username: 'C', stack: 10 },
+    ],
+    actions: [
+      { seat: 1, userId: 'a', action: 'ante', amount: 1, stage: 'preflop', dead: true },
+      { seat: 2, userId: 'b', action: 'ante', amount: 1, stage: 'preflop', dead: true },
+      { seat: 3, userId: 'c', action: 'ante', amount: 1, stage: 'preflop', dead: true },
+      { seat: 3, userId: 'c', action: 'fold', amount: 0, stage: 'preflop' },
+    ],
+    winners: [],
+    holeCards: {},
+  } as never);
+
+  it('synthesises the blinds the log does not carry', () => {
+    const rows = m.streets.flatMap((s) => s.rows);
+    expect(rows.filter((r) => r.verb === 'sb')).toHaveLength(1);
+    expect(rows.filter((r) => r.verb === 'bb')).toHaveLength(1);
+  });
+
+  it('reconciles, so the stack column survives', () => {
+    expect(m.rebuiltPot).toBe(6);
+    expect(m.reconciles).toBe(true);
+  });
+});
+
+describe('buildReplay — the pot line is not a claim about the main pot', () => {
+  const m = buildReplay(HAND_3048511 as never);
+
+  it('marks exactly one street as final', () => {
+    expect(m.streets.filter((s) => s.isFinal)).toHaveLength(1);
+    expect(m.streets[m.streets.length - 1].isFinal).toBe(true);
+  });
+
+  it('carries every extra board per street, not just a label', () => {
+    // 3048511 ran twice. The second board existed only as the text "Board 2".
+    const flop = m.streets.find((s) => s.key === 'flop')!;
+    expect(flop.extraBoards).toHaveLength(1);
+    expect(flop.extraBoards[0]).toHaveLength(3);
+  });
+});
+
 describe('titleCase', () => {
   it('capitalises the first letter of every word, per the house rule', () => {
     expect(titleCase('Four of a Kind')).toBe('Four Of A Kind');

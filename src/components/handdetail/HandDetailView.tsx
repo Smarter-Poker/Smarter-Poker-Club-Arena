@@ -36,6 +36,7 @@
  */
 
 import CardImage, { CardBack } from '../table/CardImage';
+import { cardKey } from '../../utils/handEvaluator';
 import type { ReplayModel, ReplayRow, ReplayShowdownRow } from '../../utils/handReplay';
 import './HandDetailView.css';
 
@@ -48,6 +49,12 @@ export interface HandDetailViewProps {
   footer?: React.ReactNode;
   /** Extra chip beside the stakes, e.g. the game type. */
   badge?: string | null;
+  /**
+   * The player whose hand the jackpot was paid for, if this hand hit one.
+   * The showdown marks them. `.hdv__sd.is-badbeat` and `.hdv__sd-tag` existed
+   * for this from the start and had no writer.
+   */
+  badBeatUserId?: string | null;
 }
 
 function money(n: number | null | undefined, dp = 2): string {
@@ -126,16 +133,22 @@ function ShowdownRow({
   row,
   isYou,
   muckCount,
+  isBadBeat,
 }: {
   row: ReplayShowdownRow;
   isYou: boolean;
   muckCount: number;
+  /** The hand the jackpot was paid for. It is the story; mark it. */
+  isBadBeat: boolean;
 }) {
   const net = row.net;
   return (
-    <div className={`hdv__sd${row.isWinner ? ' is-winner' : ''}`}>
+    <div className={`hdv__sd${row.isWinner ? ' is-winner' : ''}${isBadBeat ? ' is-badbeat' : ''}`}>
       <div className="hdv__sd-who">
-        <span className={`hdv__name${isYou ? ' is-you' : ''}`}>{row.name}</span>
+        <span className={`hdv__name${isYou ? ' is-you' : ''}`}>
+          {row.name}
+          {isBadBeat && <span className="hdv__sd-tag">BAD BEAT</span>}
+        </span>
         <span className="hdv__sd-holerow">
           <span className="hdv__pos">{row.position}</span>
           <span className="hdv__cards">
@@ -145,7 +158,12 @@ function ShowdownRow({
                     key={`h-${row.key}-${i}`}
                     card={c}
                     size="xs"
-                    className={row.playing.has(`${c.rank}${c.suit}`) ? 'hdv-plays' : 'hdv-idle'}
+                    /* cardKey(), not a template literal. The model builds the
+                       set with cardKey (which uppercases the rank), and the
+                       two agreed only by accident of upstream normalisation —
+                       the day a card arrives un-normalised the "which five
+                       played" highlight fails silently. */
+                    className={row.playing.has(cardKey(c)) ? 'hdv-plays' : 'hdv-idle'}
                   />
                 ))
               : Array.from({ length: muckCount }).map((_, i) => (
@@ -182,6 +200,7 @@ export function HandDetailView({
   currentUserName,
   footer,
   badge,
+  badBeatUserId,
 }: HandDetailViewProps) {
   // Id first: two players can share a display name, and lighting the wrong row
   // on a money surface is not a cosmetic mistake.
@@ -194,7 +213,7 @@ export function HandDetailView({
   const showStack = model.reconciles;
 
   return (
-    <div className="hdv">
+    <div className={`hdv${showStack ? '' : ' is-nostack'}`}>
       <div className="hdv__meta">
         <span className="hdv__meta-when">{stamp(model.playedAt)}</span>
         <span className="hdv__meta-stakes">
@@ -204,9 +223,14 @@ export function HandDetailView({
         <span className="hdv__meta-sn">SN: {model.handNumber ?? ''}</span>
       </div>
 
+      {/* Six cells over a six-track grid, so each word sits above the column it
+          names. It used to be three cells over a six-track row. */}
       <div className="hdv__colkey">
+        <span />
         <span>Player</span>
         <span>Action</span>
+        <span />
+        <span>Amount</span>
         <span>{showStack ? 'Stack' : ''}</span>
       </div>
 
@@ -222,6 +246,23 @@ export function HandDetailView({
             <span className="hdv__street-pot">{money(street.potAfter)}</span>
           </header>
 
+          {/* RUN IT TWICE / DOUBLE BOARD. The model has carried these boards
+              since the RPC started returning them, and the view drew only
+              board one — the second run existed as a text label and nothing
+              else. One row per extra board, same street, labelled. */}
+          {street.extraBoards.map((b, bi) =>
+            b.length > 0 ? (
+              <div className="hdv__street-run" key={`run-${street.key}-${bi}`}>
+                <span className="hdv__street-run-label">Run {bi + 2}</span>
+                <span className="hdv__street-board">
+                  {b.map((c, i) => (
+                    <CardImage key={`b2-${street.key}-${bi}-${i}`} card={c} size="xs" />
+                  ))}
+                </span>
+              </div>
+            ) : null
+          )}
+
           {street.rows.map((row) => (
             <ActionRow
               key={row.key}
@@ -232,22 +273,28 @@ export function HandDetailView({
             />
           ))}
 
+          {/* THE POT LINE IS A RUNNING TOTAL until the last street.
+              It printed `Main(x)` after every street, so a flop section claimed
+              to be the main pot on a hand whose main pot was ten times larger.
+              Only the final street speaks for the pot, and only there is the
+              real main/side breakdown shown. */}
           <div className="hdv__potline">
             <span>Pot</span>
-            <span>Main({money(street.potAfter)})</span>
+            {street.isFinal ? (
+              <span>
+                {model.pots.map((p, i) => (
+                  <span key={p.label}>
+                    {i > 0 ? '  ' : ''}
+                    {p.label}({money(p.amount)})
+                  </span>
+                ))}
+              </span>
+            ) : (
+              <span>{money(street.potAfter)}</span>
+            )}
           </div>
         </section>
       ))}
-
-      {model.pots.length > 1 && (
-        <div className="hdv__pots">
-          {model.pots.map((p) => (
-            <span key={p.label}>
-              {p.label} <strong>{money(p.amount)}</strong>
-            </span>
-          ))}
-        </div>
-      )}
 
       {(model.rake > 0 || model.bbjFee > 0) && (
         <div className="hdv__drop">
@@ -274,6 +321,7 @@ export function HandDetailView({
               row={row}
               isYou={isYou(row.userId, row.name)}
               muckCount={muckCount}
+              isBadBeat={!!badBeatUserId && row.userId === badBeatUserId}
             />
           ))}
         </section>

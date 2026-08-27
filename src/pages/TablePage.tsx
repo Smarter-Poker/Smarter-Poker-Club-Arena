@@ -16928,6 +16928,7 @@ export default function TablePage({
           buttons in its header, driving the existing HandReplayPlayer and
           ShareHand modals. */}
       <HandDetailModal
+        currentUserName={username || null}
         isOpen={showHandDetail}
         onClose={() => setShowHandDetail(false)}
         hands={handHistory}

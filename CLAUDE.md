@@ -306,7 +306,13 @@ CSS Modules + global CSS.
 6. Mobile-first. 375px first, then scale up.
 7. Never ask permission for obvious work. Just do it.
 8. When corrected, change course immediately.
-9. Write it down. Update MIGRATION-CHANGELOG.md at session end.
+9. Write it down — in your OWN file: `docs/changelog/YYYY-MM-DD-<slug>.md`.
+   Do NOT append to `MIGRATION-CHANGELOG.md`. It is frozen as history.
+   Measured 2026-08-26: it was the single biggest source of merge conflict in
+   this repo — 18 of 108 conflicting pull requests, ahead of both TablePage.tsx
+   and ClubHomePage.tsx — because every agent was told to append to the same
+   last line of the same 950KB file. Two files written independently cannot
+   conflict. See `docs/changelog/README.md`.
 
 ---
 

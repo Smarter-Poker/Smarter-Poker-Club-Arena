@@ -3469,7 +3469,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 <div className="lobby-club__activity">
                   {playersPlaying !== null && (
                     <div className="lobby-club__playing">
-                      <strong>{playersPlaying.toLocaleString()}</strong> playing now
+                      <strong>{playersPlaying.toLocaleString()}</strong> Playing Now
                     </div>
                   )}
 

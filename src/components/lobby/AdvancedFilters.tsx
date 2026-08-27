@@ -351,7 +351,7 @@ export default function AdvancedFilters({
                collapsed is right. */
             <details className="afx-section" open>
               <summary>
-                <h3>Sort the board</h3>
+                <h3>Sort The Board</h3>
               </summary>
               <div className="afx-chips">
                 {sortOptions.map((opt) => (
@@ -392,7 +392,7 @@ export default function AdvancedFilters({
               <details className="afx-section" open>
                 <summary>
                   <h3>
-                    {spec.range.label} · {fmt(value.rangeMin)} – {fmt(value.rangeMax)}
+                    {spec.range.label} · {fmt(value.rangeMin)} - {fmt(value.rangeMax)}
                   </h3>
                 </summary>
                 {/* Two overlaid range inputs rather than a custom drag handler.
@@ -543,9 +543,9 @@ export default function AdvancedFilters({
                 <>
                   <details className="afx-section">
                     <summary>
-                      <h3>Required features</h3>
+                      <h3>Required Features</h3>
                     </summary>
-                    <p className="afx-hint">Only show games with every selected feature.</p>
+                    <p className="afx-hint">Only Show Games With Every Selected Feature.</p>
                     <div className="afx-grid">
                       {spec.features.map((f) => (
                         <button
@@ -563,9 +563,9 @@ export default function AdvancedFilters({
 
                   <details className="afx-section">
                     <summary>
-                      <h3>Exclude features</h3>
+                      <h3>Exclude Features</h3>
                     </summary>
-                    <p className="afx-hint">Hide games that use any selected feature.</p>
+                    <p className="afx-hint">Hide Games That Use Any Selected Feature.</p>
                     <div className="afx-grid">
                       {spec.features.map((f) => (
                         <button

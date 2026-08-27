@@ -71,7 +71,7 @@ describe('Club Arena Tournament Board lobby design', () => {
     expect(filters).toContain('Tournament Board');
     expect(filters).toContain("Apply {activeCount > 0 ? `${activeCount} ` : ''}Filters");
     expect(filters).toContain('Reset {activeTypeLabel}');
-    expect(filters).toContain('Only show games with every selected feature.');
+    expect(filters).toContain('Only Show Games With Every Selected Feature.');
     expect(filtersCss).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
     expect(filtersCss).toContain('background: #08111d');
     expect(filtersCss).not.toMatch(/(?:linear|radial|conic)-gradient\s*\(/i);

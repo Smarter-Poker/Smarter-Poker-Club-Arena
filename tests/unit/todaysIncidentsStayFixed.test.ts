@@ -89,7 +89,7 @@ describe('the club header counted the wrong things and flipped between them', ()
 
   it('reads players-currently-playing from live seats, not the stale column', () => {
     expect(clubHome).toMatch(
-      /<strong>\{playersPlaying\.toLocaleString\(\)\}<\/strong> playing now/
+      /<strong>\{playersPlaying\.toLocaleString\(\)\}<\/strong> Playing Now/
     );
     expect(codeOnly(clubHome)).not.toMatch(/club\.online_count\.toLocaleString/);
   });

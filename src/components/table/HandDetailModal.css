@@ -69,12 +69,34 @@
   }
 }
 
-/* On a phone there is no "three quarters" worth having — take the screen. */
-@media (max-width: 640px) {
-  .hdm-panel {
-    width: 100vw;
-    min-width: 0;
+@keyframes hdmSlideUp {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
   }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Grab handle — the affordance that says "this drags". Shown only where the
+   panel IS a sheet; the component wires the pointer drag (past 100px closes,
+   the same threshold common/BottomSheet uses). */
+.hdm-grab {
+  display: none;
+  justify-content: center;
+  padding: 8px 0 2px;
+  flex-shrink: 0;
+  cursor: grab;
+  touch-action: none;
+}
+
+.hdm-grab span {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.22);
 }
 
 /* With real width available, the streets read as two columns instead of one
@@ -91,12 +113,71 @@
   }
 }
 
-/* ── Header ── */
+/* ── Header ──
+   The base panel is full height from top: 0, so it pays the top inset here
+   too — a landscape phone is wider than 640px and gets the side-panel
+   presentation, notch and all. The two blocks at the foot of this file layer
+   the phone-sheet and installed-app rules on top, in that order. */
 .hdm-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 14px 6px;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 14px 6px;
+}
+
+/* ── Phones: a three-quarter-height bottom sheet ────────────────────────────
+   Dan 2026-08-27, verbatim: "the previous hand table when opened should only
+   be 3/4 page, and there needs to be the padding on the top like there is on
+   all Club Arena pages. You can't click the X. Also when it's 3/4 page you
+   should be able to click off to close as well."
+
+   It took the whole screen: `width: 100vw; height: 100%` from `top: 0`. Two
+   consequences, both reported as one bug.
+
+   1. THE X WAS UNREACHABLE. Under viewport-fit=cover the first row of a
+      full-height fixed panel draws under the notch and the status bar, and
+      .hdm-header paid no top inset at all.
+   2. CLICKING OFF DID NOTHING. The overlay has always had onClick={onClose}
+      with the panel stopping the bubble — but a panel covering 100% of the
+      overlay leaves no backdrop to click. The gesture was wired to a target
+      that did not exist.
+
+   Three quarters of the HEIGHT, anchored to the bottom, fixes both: the top
+   quarter is backdrop you can actually hit, and the sheet's own header is
+   nowhere near the status bar. The desktop presentation (a side panel filling
+   three quarters of the WIDTH) is unchanged.
+
+   POSITION IN THE FILE IS LOAD-BEARING: this block must stay AFTER the
+   .hdm-header rule above, because that rule sets a `padding` SHORTHAND and a
+   shorthand resets padding-top. Above it, the header rule here would be dead. */
+@media (max-width: 640px) {
+  .hdm-overlay {
+    align-items: flex-end;
+    justify-content: stretch;
+  }
+
+  .hdm-panel {
+    width: 100vw;
+    min-width: 0;
+    height: 75vh;
+    /* dvh where it exists: 75vh of a browser's *largest* viewport can sit
+       under a collapsing URL bar. */
+    height: 75dvh;
+    border-right: none;
+    border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.5);
+    animation: hdmSlideUp 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .hdm-grab {
+    display: flex;
+  }
+
+  /* The canonical Club Arena sheet-header rule (GameLobbyPanel.css). */
+  .hdm-header {
+    padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  }
 }
 
 .hdm-title {
@@ -167,6 +248,16 @@
   font-size: 0.8rem;
   font-weight: 700;
   color: #cfd3dd;
+}
+
+/* The street's own label. Weight and colour come from the head; what the label
+   needs of its own is a refusal to shrink, so a long one ("Run It Twice") keeps
+   its width when the board cards beside it are wide, and the pot on the far
+   right stays where the eye expects it. */
+.hdm-street__name {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
 }
 
 .hdm-street__pot {
@@ -497,4 +588,75 @@
   font-size: 0.86rem;
   line-height: 1.55;
   color: rgba(255, 255, 255, 0.6);
+}
+
+/* ── Run It Twice ───────────────────────────────────────────────────────────
+   Same visual grammar as the replay's RUN n badge (HandReplay.tsx). */
+.hdm-runs {
+  border-color: rgba(var(--hdm-accent-rgb), 0.28);
+  background: rgba(var(--hdm-accent-rgb), 0.08);
+}
+
+.hdm-runs__count {
+  margin-left: auto;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--hdm-accent);
+}
+
+.hdm-run {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.hdm-run__badge {
+  min-width: 46px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--hdm-accent);
+  color: var(--pure-white, #ffffff);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* Cards every run shares: the board as it stood when the players agreed to run
+   it again. Dimmed so the divergence is what the eye lands on. */
+.hdm-card--shared {
+  opacity: 0.42;
+}
+
+.hdm-runs__note {
+  padding: 4px 10px 8px;
+  font-size: 0.66rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hdm-panel {
+    animation: none;
+  }
+}
+
+/* PWA GUARANTEE. In an installed app the page draws under the status bar, and
+   on some devices env(safe-area-inset-top) resolves to 0 — so the env()
+   padding above silently vanishes and the close button goes back under the
+   clock. The floor makes that impossible.
+
+   LAST IN THE FILE ON PURPOSE. .hdm-header's own rule sets a `padding`
+   shorthand and a shorthand RESETS padding-top; equal specificity means source
+   order decides. Nothing that touches .hdm-header padding may be added below
+   this block. */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .hdm-header {
+    padding-top: calc(12px + max(env(safe-area-inset-top, 0px), 24px));
+  }
 }

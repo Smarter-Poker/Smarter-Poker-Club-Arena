@@ -27,6 +27,28 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dismissCallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /**
+   * THE STUCK-BANNER BUG (Dan 2026-08-27: "announcements ... sometimes glitch
+   * and stay on the screen").
+   *
+   * `onDismiss` used to be in the auto-dismiss effect's dependency array. Its
+   * call site passes an INLINE arrow (`onDismissAnnouncement={() =>
+   * setAnnouncement(null)}`) through a parent that re-renders on every engine
+   * websocket tick, so the prop had a new identity many times a second. Every
+   * one of those re-renders tore the effect down and re-ran it, which cleared
+   * the pending auto-dismiss timer and started a fresh full-length one. On a
+   * busy table the timer could therefore never reach zero and the banner sat on
+   * the felt until the component unmounted.
+   *
+   * The callback now lives in a ref, so the timer effect depends on `type`
+   * alone and runs exactly once per announcement. The identity of the prop is
+   * irrelevant. (The call site is ALSO stabilised with useCallback and the
+   * parent memoised — belt and braces, because a future prop could re-introduce
+   * the churn and this component must not care.)
+   */
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+
   // Unmount guard
   useEffect(() => {
     return () => {
@@ -36,23 +58,42 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
   }, []);
 
   useEffect(() => {
-    if (type) {
-      setVisible(true);
-      dismissTimerRef.current = setTimeout(
-        () => {
-          setVisible(false);
-          dismissCallbackTimerRef.current = setTimeout(onDismiss, 500); // Wait for fade-out
-        },
-        // Dan 2026-08-23: a level change is INFORMATION, not an event. It gets
-        // the short banner treatment and gets out of the way; the moments that
-        // genuinely deserve the table's full attention keep the long beat.
-        type === 'level_up' ? 2600 : type === 'mystery_bounty_revealed' ? 5000 : 4000
-      );
-      return () => {
-        if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
-      };
+    if (!type) {
+      // (c) The banner is gone; the next announcement must fade IN, not
+      // inherit a stale `visible` and appear with no transition. Without this
+      // reset an announcement dismissed by the parent left `visible` true.
+      setVisible(false);
+      return;
     }
-  }, [type, onDismiss]);
+    setVisible(true);
+    dismissTimerRef.current = setTimeout(
+      () => {
+        dismissTimerRef.current = null;
+        setVisible(false);
+        dismissCallbackTimerRef.current = setTimeout(() => {
+          dismissCallbackTimerRef.current = null;
+          onDismissRef.current();
+        }, 500); // Wait for fade-out
+      },
+      // Dan 2026-08-23: a level change is INFORMATION, not an event. It gets
+      // the short banner treatment and gets out of the way; the moments that
+      // genuinely deserve the table's full attention keep the long beat.
+      type === 'level_up' ? 2600 : type === 'mystery_bounty_revealed' ? 5000 : 4000
+    );
+    return () => {
+      // (b) BOTH timers. The cleanup used to clear only the outer one, so a
+      // type change during the 500ms fade left the inner callback armed and it
+      // dismissed the announcement that had just replaced it.
+      if (dismissTimerRef.current) {
+        clearTimeout(dismissTimerRef.current);
+        dismissTimerRef.current = null;
+      }
+      if (dismissCallbackTimerRef.current) {
+        clearTimeout(dismissCallbackTimerRef.current);
+        dismissCallbackTimerRef.current = null;
+      }
+    };
+  }, [type]);
 
   if (!type) return null;
 

@@ -14,6 +14,21 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import './TableChat.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { useButtonImage } from '../../hooks/useButtonImage';
+import QuickChatPresets from './QuickChatPresets';
+/**
+ * The microphone. Voice chat is a separate agent's component with a fixed
+ * contract - `<VoiceControls tableId={...} userId={...} />` - and it is
+ * entirely self-contained: its own stylesheet, its own hook, its own
+ * push-to-talk button and speaking roster. This file only gives it a slot in
+ * the header, to the LEFT of the close X.
+ *
+ * The import is static because the file EXISTS: a stub that renders nothing
+ * was written at that exact path (VoiceControls.tsx) so the sheet could ship
+ * before voice did. The voice agent overwrites it wholesale. A lazy/optional
+ * import would only convert a compile error into a silent blank at runtime,
+ * which is the harder failure to notice.
+ */
+import VoiceControls from './VoiceControls';
 
 /**
  * ChatBubbleIcon renders the custom chat bubbles image provided by Dan.
@@ -70,11 +85,16 @@ export interface TableChatProps {
   onSendMessage: (message: string) => void;
   myPlayerId?: string;
   /**
-   * @deprecated Accepted and never read. Every message this component renders
-   * is already handed to it in `messages`; the subscription, the insert and the
-   * per-table filtering all live in `useTableChat`, which is where the table id
-   * genuinely belongs. TablePage still passes it (TablePage.tsx, the
-   * `<TableChat>` block) and that line can go.
+   * The table this chat belongs to.
+   *
+   * It was marked `@deprecated - accepted and never read` until 2026-08-27,
+   * and the note asked TablePage to stop passing it. It is read again now, and
+   * for a reason that is not chat's: the microphone in the sheet header is a
+   * voice ROOM, and a voice room is per table. `VoiceControls` needs the id and
+   * this is the only prop that carries it. Do not remove it from the call site.
+   *
+   * Text messaging still does not use it - the subscription, the insert and the
+   * per-table filtering all live in `useTableChat`.
    */
   tableId?: string;
   isCollapsed?: boolean;
@@ -183,6 +203,7 @@ export function TableChat({
   messages,
   onSendMessage,
   myPlayerId,
+  tableId,
   isCollapsed = false,
   onToggleCollapse,
   maxMessages = 100,
@@ -277,25 +298,40 @@ export function TableChat({
     [messages, maxMessages]
   );
 
-  // Handle send
-  const handleSend = useCallback(() => {
-    const now = Date.now();
-    /* SEND_COOLDOWN_MS, not the 300 this was.
-       There are TWO rate limiters on this path and they disagreed. This one
-       cleared the input at 300ms; `useTableChat.handleSendChatMessage` then
-       refused anything inside 1000ms and returned in silence. So a player
-       typing two quick messages had the second one taken out of the box and
-       thrown away, with no message, no toast and no way to get the text back.
-       Matching the hook's window means the refusal happens HERE, before the
-       input is cleared, so the text stays where the player can send it again. */
-    if (now - lastSentRef.current < SEND_COOLDOWN_MS) return;
-
-    if (inputValue.trim() && !isDisabled) {
+  /**
+   * The one send path. The compose box and the quick-chat presets BOTH go
+   * through it, so a preset is rate-limited, filtered, bubbled over the seat
+   * and marked as failed exactly like a typed line. A preset that took its own
+   * route to the database would be a second definition of "send a message".
+   *
+   * Returns false when the send was REFUSED, which is what lets the preset row
+   * tell the difference between "sent" and "swallowed".
+   */
+  const sendText = useCallback(
+    (raw: string): boolean => {
+      const text = raw.trim();
+      if (!text || isDisabled) return false;
+      const now = Date.now();
+      /* SEND_COOLDOWN_MS, not the 300 this was.
+         There are TWO rate limiters on this path and they disagreed. This one
+         cleared the input at 300ms; `useTableChat.handleSendChatMessage` then
+         refused anything inside 1000ms and returned in silence. So a player
+         typing two quick messages had the second one taken out of the box and
+         thrown away, with no message, no toast and no way to get the text back.
+         Matching the hook's window means the refusal happens HERE, before the
+         input is cleared, so the text stays where the player can send it again. */
+      if (now - lastSentRef.current < SEND_COOLDOWN_MS) return false;
       lastSentRef.current = now;
-      onSendMessage(inputValue.trim());
-      setInputValue('');
-    }
-  }, [inputValue, isDisabled, onSendMessage]);
+      onSendMessage(text);
+      return true;
+    },
+    [isDisabled, onSendMessage]
+  );
+
+  // Handle send from the compose box
+  const handleSend = useCallback(() => {
+    if (sendText(inputValue)) setInputValue('');
+  }, [inputValue, sendText]);
 
   // Handle key press
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -325,11 +361,68 @@ export function TableChat({
    * what makes "tap a bet button while chat is open" close chat and still land
    * the bet on the next tap rather than being swallowed.
    */
+  /**
+   * ONE close per open cycle.
+   *
+   * There are now three ways out - the X, the backdrop, Escape - and the
+   * backdrop is inside the document `mousedown` listener's definition of
+   * "outside the panel" as well as carrying its own handler. One tap on the
+   * backdrop therefore reaches `handleClose` twice, and `onToggleCollapse` is a
+   * TOGGLE: two calls that each read a stale `isChatCollapsed` happen to
+   * cancel out today only because TablePage's handler is not a functional
+   * update. That is an accident, not a guarantee, and the failure mode is
+   * "chat closes and instantly reopens". The latch makes the second call a
+   * no-op; it is released whenever the open state actually changes.
+   */
+  const closingRef = useRef(false);
+
   const handleClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
     onToggleCollapse?.();
   }, [onToggleCollapse]);
 
   const isOpen = !isCollapsed && !isMuted;
+
+  useEffect(() => {
+    closingRef.current = false;
+  }, [isOpen]);
+
+  /* Drag-down-to-dismiss, matching HandDetailModal and common/BottomSheet:
+     past 100px of downward travel the sheet closes, anything less springs
+     back. The transform is applied ONLY while a drag is in flight, so the CSS
+     open animation is untouched on every other frame. */
+  const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const dragStartY = useRef(0);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setDragY(0);
+      setDragging(false);
+    }
+  }, [isOpen]);
+
+  const onGrabDown = useCallback((e: React.PointerEvent) => {
+    dragStartY.current = e.clientY;
+    setDragging(true);
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+  }, []);
+
+  const onGrabMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!dragging) return;
+      const dy = e.clientY - dragStartY.current;
+      if (dy > 0) setDragY(dy);
+    },
+    [dragging]
+  );
+
+  const onGrabUp = useCallback(() => {
+    setDragging(false);
+    if (dragY > 100) handleClose();
+    setDragY(0);
+  }, [dragY, handleClose]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -391,84 +484,138 @@ export function TableChat({
     );
   }
 
+  /* Only while a drag is in flight. An unconditional inline transform would
+     override the CSS slide-up and the sheet would appear without animating. */
+  const sheetStyle: React.CSSProperties | undefined = dragY
+    ? {
+        transform: `translateY(${dragY}px)`,
+        transition: dragging ? 'none' : 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+      }
+    : undefined;
+
   return (
-    <div className="table-chat" ref={panelRef} role="dialog" aria-label="Table chat">
-      {/* Header */}
-      <div className="table-chat__header">
-        <span className="table-chat__title">Table Chat</span>
-        {/* The "▾" that used to live here read as MINIMIZE, and Dan's report is
-            that there was no way to turn chat off. Same callback, but now it
-            says what it does and is a 32px target instead of a 22px chevron.
-            &#10005; is the multiplication X GameLobbyPanel's close already uses
-            — one X glyph across the app, and no emoji (house rule: emoji break
-            the SWC compiler). */}
-        <button
-          className="table-chat__close"
-          onClick={handleClose}
-          title="Close chat"
-          aria-label="Close chat"
-        >
-          &#10005;
-        </button>
-      </div>
+    <>
+      {/* The backdrop. Dan 2026-08-27 asked for the same shape the Previous
+          Hand sheet just got: three quarters of the height, so the exposed
+          quarter above it is a real target you can tap to dismiss.
 
-      {/* Messages */}
-      <div className="table-chat__messages" ref={messagesContainerRef} onScroll={handleScroll}>
-        {displayMessages.length === 0 ? (
-          <div className="table-chat__empty">
-            <span>No Messages Yet</span>
-            <span>Be The First To Say Hello! </span>
+          It is also what makes the sheet MODAL - while chat is open the table
+          underneath must not take taps, which is the whole reason the sheet is
+          allowed above the action panel (see TableChat.css, THE Z-INDEX
+          DECISION). `mousedown`, not `click`, to match the document listener
+          below and the rest of the table's dismissal convention. */}
+      <div className="table-chat-backdrop" onMouseDown={handleClose} aria-hidden="true" />
+
+      <div
+        className="table-chat"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Table chat"
+        style={sheetStyle}
+      >
+        {/* Grab handle — the affordance that says "this drags". */}
+        <div
+          className="table-chat__grab"
+          aria-hidden="true"
+          onPointerDown={onGrabDown}
+          onPointerMove={onGrabMove}
+          onPointerUp={onGrabUp}
+          onPointerCancel={onGrabUp}
+        >
+          <span />
+        </div>
+
+        {/* Header */}
+        <div className="table-chat__header">
+          {/* THE MICROPHONE, on the left of the row (Dan 2026-08-27: "there
+              should also be a microphone for voice as well"). The slot is a
+              flex child that is allowed to grow, so the voice agent's
+              push-to-talk button and its speaking roster have somewhere to go
+              without the title or the X moving. */}
+          <div className="table-chat__voice">
+            <VoiceControls tableId={tableId} userId={myPlayerId ?? ''} />
           </div>
-        ) : (
-          displayMessages.map((msg) => (
-            <MessageRow
-              key={msg.id}
-              message={msg}
-              isOwnMessage={msg.playerId === myPlayerId}
-              isNew={newMessageIds.has(msg.id)}
-            />
-          ))
-        )}
-        <div ref={messagesEndRef} />
-
-        {/* Scroll-to-bottom FAB */}
-        {isScrolledUp && (
+          <span className="table-chat__title">Table Chat</span>
+          {/* The "▾" that used to live here read as MINIMIZE, and Dan's report is
+              that there was no way to turn chat off. Same callback, but now it
+              says what it does and is a 32px target instead of a 22px chevron.
+              &#10005; is the multiplication X GameLobbyPanel's close already uses
+              — one X glyph across the app, and no emoji (house rule: emoji break
+              the SWC compiler). */}
           <button
-            className="table-chat__scroll-fab"
-            onClick={scrollToBottom}
-            title="Jump to latest"
-            aria-label="Jump to latest message"
+            className="table-chat__close"
+            onClick={handleClose}
+            title="Close chat"
+            aria-label="Close chat"
           >
-            &#8595;
+            &#10005;
           </button>
-        )}
-      </div>
+        </div>
 
-      {/* Input */}
+        {/* Messages */}
+        <div className="table-chat__messages" ref={messagesContainerRef} onScroll={handleScroll}>
+          {displayMessages.length === 0 ? (
+            <div className="table-chat__empty">
+              <span>No Messages Yet</span>
+              <span>Be The First To Say Hello! </span>
+            </div>
+          ) : (
+            displayMessages.map((msg) => (
+              <MessageRow
+                key={msg.id}
+                message={msg}
+                isOwnMessage={msg.playerId === myPlayerId}
+                isNew={newMessageIds.has(msg.id)}
+              />
+            ))
+          )}
+          <div ref={messagesEndRef} />
 
-      <div className="table-chat__input-container">
-        {/* Emoji toggle removed */}
-        <input
-          type="text"
-          className="table-chat__input"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyDown={handleKeyPress}
-          placeholder={placeholder}
-          disabled={isDisabled}
-          maxLength={200}
-        />
-        <button
-          className="table-chat__send"
-          onClick={handleSend}
-          disabled={!inputValue.trim() || isDisabled}
-          aria-label="Send message"
-          title="Send"
-        >
-          &#10148;
-        </button>
+          {/* Scroll-to-bottom FAB */}
+          {isScrolledUp && (
+            <button
+              className="table-chat__scroll-fab"
+              onClick={scrollToBottom}
+              title="Jump to latest"
+              aria-label="Jump to latest message"
+            >
+              &#8595;
+            </button>
+          )}
+        </div>
+
+        {/* One-tap phrases. Typing on a phone while a hand is running means the
+            software keyboard over the felt and an action clock that does not
+            wait; a preset is a single tap. Same send path as the box below. */}
+        <QuickChatPresets onSend={sendText} disabled={isDisabled} cooldownMs={SEND_COOLDOWN_MS} />
+
+        {/* Input */}
+
+        <div className="table-chat__input-container">
+          {/* Emoji toggle removed */}
+          <input
+            type="text"
+            className="table-chat__input"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyPress}
+            placeholder={placeholder}
+            disabled={isDisabled}
+            maxLength={200}
+          />
+          <button
+            className="table-chat__send"
+            onClick={handleSend}
+            disabled={!inputValue.trim() || isDisabled}
+            aria-label="Send message"
+            title="Send"
+          >
+            &#10148;
+          </button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 

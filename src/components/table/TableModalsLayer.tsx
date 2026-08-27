@@ -419,7 +419,7 @@ import React from 'react';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
 
-export function TableModalsLayer(props: TableModalsLayerProps) {
+function TableModalsLayerImpl(props: TableModalsLayerProps) {
   const { diamonds } = useWallet();
   const {
     currentCardBack,
@@ -1317,5 +1317,24 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     </>
   );
 }
+
+/**
+ * MEMOISED (Dan 2026-08-27, the stuck-announcement bug).
+ *
+ * TablePage re-renders on every engine websocket tick — several times a second
+ * on an active table. This layer is a pure function of its props, and one of
+ * its children (TournamentAnnouncementOverlay) schedules a self-dismiss timer.
+ * Re-rendering it needlessly is how that timer got rescheduled forever and the
+ * banner stuck to the felt.
+ *
+ * memo only pays off if the props are stable, so the callbacks that FEED
+ * child-side effects and timers are wrapped in useCallback at the call site
+ * (onDismissAnnouncement, onDismissTournamentWinner, onCloseHandHistory,
+ * onCloseSessionHUD). This was deliberately NOT a blanket stabilisation of
+ * every inline arrow in TablePage: the rest are click handlers, where a new
+ * identity costs a render of a closed modal and nothing else.
+ */
+export const TableModalsLayer = React.memo(TableModalsLayerImpl);
+TableModalsLayer.displayName = 'TableModalsLayer';
 
 export default TableModalsLayer;

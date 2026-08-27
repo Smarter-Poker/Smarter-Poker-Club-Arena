@@ -117,6 +117,85 @@
   border-top: none;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   THE HERO HAS NO ACTION — there is no bar, only the table
+   ═══════════════════════════════════════════════════════════════
+
+   Dan 2026-08-27:
+
+     item 3 — "the bottom action bar should not be dark when the hero doesn't
+       have a hand, it should just display the bottom area of the table, not a
+       dark void."
+     item 6 — "when a player is all in, the action bar or dark area must not
+       display; anytime the hero's action is over, it should just display the
+       bottom of the table."
+
+   One state, one fix, and it is the seated twin of the spectator rule above.
+   `.action-panel-wrapper` paints a near-opaque gradient and a border-top
+   (TablePage.css) and stands on the `--sp-bottom-row-h` floor declared at the
+   top of this file. Both of those are correct while a row is up — both rows
+   are `position: fixed`, so without the floor the wrapper measures zero and
+   the bar climbs back over the hero's plate, which is the 2026-08-23
+   regression. But TablePage.tsx renders `null` into this wrapper whenever the
+   hero has nothing to do: between hands, after a fold, while away, and — since
+   2026-08-27 — all-in with the last chip already in the middle. The floor and
+   the gradient then paint a fifth of a phone in flat black with nothing in it.
+   That strip is Dan's "dark void", and it is exactly the bottom of the table
+   he wants to see instead.
+
+   WHY `:not(:has(*))` AND NOT THE ATTRIBUTE ALONE. `data-hero-action="none"`
+   is the right trigger — it is the published contract on `.table-page`, and it
+   is derived from the very branch conditions that decide whether a row
+   renders, so it cannot drift from them. But "none" ALSO covers five states
+   where TablePage deliberately puts a VISIBLE footer in this wrapper:
+   Spectating, You Are Registered, Seat Reserved (twice) and You Are Sitting
+   Out — two of which carry a button the player is being asked to press.
+   Collapsing on the attribute alone would strip the ground out from under
+   those. So the rule asks the wrapper whether it is actually empty, which is
+   the condition being described, and the attribute narrows it to the states
+   where empty is expected rather than a bug being papered over.
+
+   `:has()` has been Baseline since December 2023 (Safari 15.4, Chrome 105,
+   Firefox 121) and the selector is live, so adding or removing the row
+   re-evaluates it. In a browser that cannot parse `:has()` the whole rule is
+   dropped and the bar behaves exactly as it did before this change — the safe
+   direction for a progressive enhancement.
+
+   ONE PIXEL, NOT ZERO. `--sp-action-h` is published by a ResizeObserver in
+   TablePage.tsx that ignores a height of 0 on purpose ("a zero here would
+   strand every consumer on a reserve of nothing"), so a wrapper that collapsed
+   to nothing would freeze that variable at the height of the bar that just
+   went away and the felt would never take the space back. 1px keeps it
+   measurable; with the safe-area padding below it the wrapper reports the
+   home-indicator strip and nothing more, and `--sp-table-bottom` in
+   TablePage.css drops from ~86px to ~34px on a notched phone. The table grows
+   into it, which is the second half of what Dan asked for.
+
+   THE SAFE-AREA PADDING STAYS. It is the home-indicator strip, not chrome; the
+   felt has no business under it.
+
+   `--sp-hero-clear` (88px at <=768px) STAYS TOO, and deliberately. It is not
+   the bar's reserve — it is the strip the hero's own name plate, hole cards
+   and the bottom-corner HUD stack live in, all of which are on screen in every
+   one of these states. Shrinking it here would put the hero's stack size back
+   under the fold, which is the bug --sp-hero-clear was added to fix.
+
+   POINTER-EVENTS. An invisible fixed box at z-index 60 spanning the width of
+   the screen would still swallow every tap in the strip it covers — the hero's
+   seat sits right there. It is not there to be touched when it is not there to
+   be seen.
+
+   Specificity 0,3,0 (`.table-page` + the attribute + the wrapper class;
+   `:has(*)` contributes nothing, its argument being the universal selector),
+   so it beats both `.table-page .action-panel-wrapper` above and
+   `.action-panel-wrapper` in TablePage.css wherever the bundler puts them. */
+.table-page[data-hero-action='none'] .action-panel-wrapper:not(:has(*)) {
+  min-height: 1px;
+  background: none;
+  border-top: none;
+  pointer-events: none;
+}
+
 .table-page[data-hero='false'] .spectator-footer-bar {
   /* 3px above and 4px below a 15px line box = 22px of chrome, which is as short
      as a legible sentence gets. The wrapper's env() pad sits under it. */

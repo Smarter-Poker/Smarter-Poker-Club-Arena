@@ -18,12 +18,29 @@ import { reportError } from '../utils/errorReporter';
 export interface TournamentBreakState {
   active: boolean;
   timeRemaining: number;
+  /**
+   * 'last_hand' is the :55 window, where the break has been announced but the
+   * five minutes have not started because tables are still finishing the hand
+   * in progress. 'counting_down' is the five minutes themselves. See
+   * TournamentBreakScreen for why the distinction has to reach the UI.
+   */
+  phase?: 'last_hand' | 'counting_down';
+  /** Absolute end of the break, epoch ms; null during the last-hand window. */
+  breakEndsAtMs?: number | null;
+  /** Blind level the break interrupted, as broadcast by the server. */
+  level?: number;
   nextLevel?: {
     level: number;
     smallBlind: number;
     bigBlind: number;
     ante?: number;
-    duration: number;
+    /**
+     * OPTIONAL, and it always was in practice. The server's break payload
+     * carries only smallBlind, bigBlind and ante — declaring `duration`
+     * required let TournamentBreakScreen divide by an undefined and render
+     * NaN into the progress ring on every break.
+     */
+    duration?: number;
   };
 }
 

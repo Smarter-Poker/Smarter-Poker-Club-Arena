@@ -336,10 +336,27 @@ export abstract class TournamentManagerBase {
 
     const blindStructure = this.tournamentCache?.blind_structure || [];
     const nextLevel = blindStructure[Math.min(this.currentLevel, blindStructure.length - 1)];
+    /**
+     * THE PAYLOAD MUST NOT INVENT AN END TIME (2026-08-27).
+     *
+     * This used to send `breakEndsAt: now + breakDurationMs`, i.e. :55 plus
+     * five minutes, in the same breath as persisting `break_ends_at: null` for
+     * exactly the reason documented above: at :55 only the LAST HAND is
+     * announced, and the five minutes start when it lands. Every consumer of
+     * this event counted down to that fabricated instant, so the break screen,
+     * the tournament clock and the blinds tab all reached 0:00 up to
+     * LAST_HAND_GRACE_MS (two minutes) before play actually resumed, and then
+     * sat there under a full-screen opaque overlay.
+     *
+     * `phase` says which half of the break this is, and `breakEndsAt` is null
+     * until beginBreakCountdown knows the real answer. A client that cannot
+     * read a clock renders "Last Hand" rather than a wrong number.
+     */
     await this.broadcast('tournament_break', {
       level: this.currentLevel,
+      phase: 'last_hand',
       breakDurationMinutes: Math.round(breakDurationMs / 60000),
-      breakEndsAt: new Date(Date.now() + breakDurationMs).toISOString(),
+      breakEndsAt: null,
       synchronized: true,
       nextLevel: nextLevel
         ? {
@@ -427,6 +444,10 @@ export abstract class TournamentManagerBase {
     }
     await this.broadcast('tournament_break_started', {
       level: this.currentLevel,
+      phase: 'counting_down',
+      // The countdown seed every client needs. Without breakDurationMinutes
+      // here, TournamentClock fell back to a hardcoded 300 seconds.
+      breakDurationMinutes: Math.round(breakDurationMs / 60000),
       breakEndsAt: endsAt,
       synchronized: true,
     });
@@ -735,12 +756,61 @@ export abstract class TournamentManagerBase {
     }
   }
 
-  /** Check if this is an MTT or XMTT (eligible for synchronized breaks) */
+  /**
+   * Is this a multi-table event (MTT / XMTT) as opposed to a single-table
+   * Spin or Heads-Up?
+   *
+   * NOT the synchronized-break gate any more — see takesSynchronizedBreaks()
+   * below, and read that before wiring this into anything new.
+   *
+   * CASE-INSENSITIVE since 2026-08-27. It was the only format check in the
+   * codebase comparing raw column values (every other one normalises first —
+   * payoutStructure.ts, and lines 1361, 1915 and 2212 of this file). Migration
+   * 20260820_spin_no_fee_constraint.sql records a real incident where a
+   * creation path wrote `variant: 'SPIN'` uppercase and slipped past exactly
+   * this shape of test.
+   */
   isMttOrXmtt(): boolean {
-    const type = this.tournamentCache?.tournament_type;
-    const variant = this.tournamentCache?.variant;
+    const type = String(this.tournamentCache?.tournament_type ?? '').toUpperCase();
+    const variant = String(this.tournamentCache?.variant ?? '').toLowerCase();
     if (type === 'SNG' || type === 'SPIN' || variant === 'sng' || variant === 'spin') return false;
     return true;
+  }
+
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  EVERY FORMAT TAKES THE :55 BREAK (Dan 2026-08-27, binding)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * "DO A DEEP DIVE AND AUDIT INTO THE SYNCHRONIZED BREAKS FOR EVERY MTT, SPIN
+   *  AND HEADS UP... THEY SHOULD START AT THE :55 OF THE HOUR EVERY HOUR."
+   *
+   * Until this existed, GameServer gated the break on isMttOrXmtt(), whose
+   * whole job was to return FALSE for Spins and Sit-n-Gos. Heads-Up has no
+   * type or variant of its own on this platform — it is stored as
+   * `tournament_type='SNG'` + `variant='sng'` + `max_players=2`
+   * (TournamentRecurringService.SNG_BOARD_SHAPES is a single 2-seat shape, and
+   * TournamentService documents "sng: Heads Up... 'sng' stays the stored
+   * value") — so that one predicate was excluding all three of the formats
+   * Dan named. The entire live Spin board (32 permanently-open tables) and the
+   * entire Heads-Up board (16 boards) dealt straight through every break while
+   * the MTTs sat on the break screen. That is the opposite of synchronized.
+   *
+   * NOTE what this deliberately does NOT do: it does not read the format at
+   * all. "Synchronized" is a platform-wide property — the value of everyone
+   * stopping at once is destroyed by any exception, and a format-shaped
+   * carve-out is how the last one got in. The only opt-out left is the
+   * explicit per-tournament `synchronized_breaks` column, which an operator
+   * sets on purpose.
+   *
+   * Nothing else needed changing to admit them: pauseForBreak,
+   * beginBreakCountdown, suspendLevelClock and resumeFromBreak are all
+   * format-agnostic, every Spin/SNG already runs through this same
+   * TournamentManager (GameServer has exactly one constructor call site), and
+   * the client mounts TournamentBreakScreen for any tournament table.
+   */
+  takesSynchronizedBreaks(): boolean {
+    return this.synchronizedBreaksEnabled();
   }
 
   /** Start hand-for-hand sync: check every 500ms if all tables finished their hand */

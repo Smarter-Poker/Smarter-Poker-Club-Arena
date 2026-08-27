@@ -386,12 +386,17 @@ export interface TableModalsLayerProps {
   tournamentBreak: {
     active: boolean;
     timeRemaining: number;
+    phase?: 'last_hand' | 'counting_down';
+    breakEndsAtMs?: number | null;
+    /** Blind level the break interrupted, as broadcast by the server. */
+    level?: number;
     nextLevel?: {
       level: number;
       smallBlind: number;
       bigBlind: number;
       ante?: number;
-      duration: number;
+      // Never sent by the server on a break payload. See TournamentBreakScreen.
+      duration?: number;
     } | null;
   };
 
@@ -1289,11 +1294,14 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         <TournamentBreakScreen
           isVisible={tournamentBreak.active}
           breakTimeRemaining={tournamentBreak.timeRemaining}
+          phase={tournamentBreak.phase ?? 'counting_down'}
+          breakEndsAtMs={tournamentBreak.breakEndsAtMs ?? null}
           tournamentName={tableName}
-          currentLevel={0}
-          nextLevel={
-            tournamentBreak.nextLevel || { level: 1, smallBlind: 0, bigBlind: 0, duration: 0 }
-          }
+          // The level the break interrupted, as the server sent it. This was
+          // hardcoded to 0, so the panel read "Coming Next: Level 1" for the
+          // whole life of every tournament.
+          currentLevel={tournamentBreak.level ?? 0}
+          nextLevel={tournamentBreak.nextLevel || { level: 1, smallBlind: 0, bigBlind: 0 }}
           playersRemaining={players.filter(Boolean).length}
           totalPlayers={maxPlayers}
           averageStack={

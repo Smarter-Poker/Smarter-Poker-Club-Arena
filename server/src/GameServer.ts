@@ -1080,19 +1080,29 @@ export class GameServer {
   private async triggerSynchronizedBreak(): Promise<void> {
     if (!this.running) return;
 
-    const mttEngines: TournamentManager[] = [];
+    /**
+     * EVERY FORMAT, NOT JUST THE MTTs (Dan 2026-08-27).
+     *
+     * This used to be gated on a multi-table-format predicate whose entire
+     * purpose is to return false for Spins and Sit-n-Gos — which is also how
+     * Heads-Up is stored (variant 'sng', max_players 2). So the whole Spin
+     * board and the whole Heads-Up board dealt through every break. Dan:
+     * "EVERY MTT, SPIN AND HEADS UP... THEY SHOULD START AT THE :55 OF THE
+     * HOUR EVERY HOUR."
+     *
+     * takesSynchronizedBreaks() is now the single gate, and the only opt-out
+     * it honours is the explicit per-tournament `synchronized_breaks` column
+     * (2026-08-22 parity) — never the format.
+     */
+    const breakEngines: TournamentManager[] = [];
     for (const tm of this.tournamentEngines.values()) {
-      // synchronized_breaks=false (2026-08-22 parity): the tournament opted out
-      // of the platform-wide :55 break and keeps playing straight through it.
-      // See TournamentManagerBase.synchronizedBreaksEnabled for the per-
-      // structure-break note.
-      if (tm.isRunning() && tm.isMttOrXmtt() && tm.synchronizedBreaksEnabled()) {
-        mttEngines.push(tm);
+      if (tm.isRunning() && tm.takesSynchronizedBreaks()) {
+        breakEngines.push(tm);
       }
     }
 
-    if (mttEngines.length === 0) {
-      console.log('[GameServer] Synchronized break: no running MTTs/XMTTs to pause');
+    if (breakEngines.length === 0) {
+      console.log('[GameServer] Synchronized break: no running tournaments to pause');
       return;
     }
 
@@ -1111,7 +1121,7 @@ export class GameServer {
      * every table across every tournament is parked between hands.
      */
     console.log(
-      `[GameServer] ═══ LAST HAND ═══ Announcing final hand on ${mttEngines.length} MTT/XMTT tournament(s) — break starts when every table finishes`
+      `[GameServer] ═══ LAST HAND ═══ Announcing final hand on ${breakEngines.length} tournament(s) (MTT / Spin / Heads-Up) — break starts when every table finishes`
     );
 
     /**
@@ -1123,7 +1133,7 @@ export class GameServer {
     this.breakEndsAt =
       Date.now() + TournamentManager.LAST_HAND_GRACE_MS + GameServer.BREAK_DURATION_MS;
 
-    for (const tm of mttEngines) {
+    for (const tm of breakEngines) {
       try {
         await tm.pauseForBreak(GameServer.BREAK_DURATION_MS);
       } catch (err: any) {
@@ -1132,7 +1142,7 @@ export class GameServer {
     }
 
     const waitStartedAt = Date.now();
-    const allParked = await this.waitForAllTablesParked(mttEngines);
+    const allParked = await this.waitForAllTablesParked(breakEngines);
     const lastHandMs = Date.now() - waitStartedAt;
 
     if (allParked) {
@@ -1150,7 +1160,7 @@ export class GameServer {
     // break is held for exactly as long as everyone else.
     this.breakEndsAt = Date.now() + GameServer.BREAK_DURATION_MS;
 
-    for (const tm of mttEngines) {
+    for (const tm of breakEngines) {
       try {
         await tm.beginBreakCountdown(GameServer.BREAK_DURATION_MS);
       } catch (err: any) {
@@ -1172,13 +1182,11 @@ export class GameServer {
       // Close the window FIRST. Anything starting from here on is not in a
       // break and must not be held.
       this.breakEndsAt = 0;
-      console.log(
-        `[GameServer] ═══ BREAK ENDED ═══ Resuming ${mttEngines.length} MTT/XMTT tournaments`
-      );
+      console.log(`[GameServer] ═══ BREAK ENDED ═══ Resuming ${breakEngines.length} tournament(s)`);
       // Resume everything on break, not just the :55 snapshot — a tournament
       // that started during the break was held by holdIfBreakIsRunning and is
-      // not in mttEngines. resumeFromBreak no-ops on anything not on break.
-      const toResume = new Set<TournamentManager>(mttEngines);
+      // not in breakEngines. resumeFromBreak no-ops on anything not on break.
+      const toResume = new Set<TournamentManager>(breakEngines);
       for (const tm of this.tournamentEngines.values()) toResume.add(tm);
       for (const tm of toResume) {
         try {
@@ -1211,7 +1219,10 @@ export class GameServer {
   private async holdIfBreakIsRunning(tm: TournamentManager): Promise<void> {
     const remaining = this.remainingBreakMs();
     if (remaining <= 1000) return;
-    if (!tm.isRunning() || !tm.isMttOrXmtt() || !tm.synchronizedBreaksEnabled()) return;
+    // Same single gate as triggerSynchronizedBreak — a Spin or Heads-Up that
+    // fills at :57 must sit on the break screen with everyone else, not open
+    // its first level alone.
+    if (!tm.isRunning() || !tm.takesSynchronizedBreaks()) return;
     try {
       console.log(
         `[GameServer] Tournament started during the break — holding it for the remaining ${Math.round(remaining / 1000)}s`
@@ -2625,10 +2636,29 @@ export class GameServer {
           console.log(`[GameServer] Resuming tournament: ${tournament.name}`);
           const tm = new TournamentManager(tournament.id, this);
           this.tournamentEngines.set(tournament.id, tm);
-          tm.resume().catch((err) => {
-            reportError(err, 'GameServer.Tournament_resume_failed_for_t');
-            this.tournamentEngines.delete(tournament.id);
-          });
+          /**
+           * A RESTART DURING A BREAK MUST NOT DEAL THROUGH THE REST OF IT
+           * (2026-08-27).
+           *
+           * The two other TournamentManager construction sites both chain
+           * holdIfBreakIsRunning; this one did not. resume() has its own
+           * break-recovery block, but it can only recover a break the ROW
+           * knows about — it reads on_break / break_started_at. A tournament
+           * that was mid-break-window but not yet flagged (it started inside
+           * the last-hand wait, or its pauseForBreak write lost the race with
+           * the redeploy) came back believing nothing was happening and dealt
+           * out the remainder of the break alone, while every other table on
+           * the platform sat on the break screen.
+           *
+           * holdIfBreakIsRunning is idempotent: pauseForBreak no-ops on a
+           * tournament already on break, so the recovered case costs nothing.
+           */
+          tm.resume()
+            .then(() => this.holdIfBreakIsRunning(tm))
+            .catch((err) => {
+              reportError(err, 'GameServer.Tournament_resume_failed_for_t');
+              this.tournamentEngines.delete(tournament.id);
+            });
         }
 
         // The ramp map only ever holds tournaments still in REGISTERING.

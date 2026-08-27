@@ -7644,15 +7644,49 @@ export default function TablePage({
                  its clock never flipped to break even while the local
                  tournamentBreak state below did. See tournamentEventBridge. */
               relayTournamentEvent(table.tournament_id as string, data);
-              if (data?.type === 'tournament_break' || data?.type === 'BREAK_START') {
-                setTournamentBreak({
+              /**
+               * THE BREAK IS TWO EVENTS AND THIS ONLY EVER HEARD THE FIRST
+               * (2026-08-27).
+               *
+               * `tournament_break` fires at :55 to announce the LAST HAND;
+               * `tournament_break_started` fires once every table has finished
+               * it and carries the only real end time there is. This switch
+               * matched neither `tournament_break_started` nor anything that
+               * relays it, so the overlay was seeded with a flat five minutes
+               * at :55 and never re-seeded. It counted down through the
+               * last-hand wait, hit 0:00 up to two minutes before play resumed
+               * and froze there, full-screen and opaque, over a live table.
+               *
+               * Both events are handled now, and the phase is carried through
+               * so the screen shows "Last Hand" rather than a clock it does
+               * not yet have.
+               */
+              if (
+                data?.type === 'tournament_break' ||
+                data?.type === 'tournament_break_started' ||
+                data?.type === 'BREAK_START'
+              ) {
+                const p = data.payload || {};
+                const endsAtMs = p.breakEndsAt ? Date.parse(p.breakEndsAt) : NaN;
+                const hasEnd = Number.isFinite(endsAtMs);
+                setTournamentBreak((prev: any) => ({
                   active: true,
-                  timeRemaining:
-                    (data.payload?.breakDurationMinutes || data.payload?.durationMinutes || 5) * 60,
-                  nextLevel: data.payload?.nextLevel,
-                });
+                  // Keep the last known next level: only the :55 event carries it.
+                  nextLevel: p.nextLevel ?? prev?.nextLevel,
+                  level: typeof p.level === 'number' ? p.level : prev?.level,
+                  phase: hasEnd || p.phase === 'counting_down' ? 'counting_down' : 'last_hand',
+                  breakEndsAtMs: hasEnd ? endsAtMs : null,
+                  timeRemaining: hasEnd
+                    ? Math.max(0, Math.round((endsAtMs - Date.now()) / 1000))
+                    : (p.breakDurationMinutes || p.durationMinutes || 5) * 60,
+                }));
               } else if (data?.type === 'break_ended' || data?.type === 'BREAK_END') {
-                setTournamentBreak({ active: false, timeRemaining: 0 });
+                setTournamentBreak({
+                  active: false,
+                  timeRemaining: 0,
+                  phase: 'counting_down',
+                  breakEndsAtMs: null,
+                });
               } else if (data?.type === 'ADDON_PERIOD_START') {
                 // Add-on period: 60 seconds, show popup to all players
                 const addonData = data.payload || {};

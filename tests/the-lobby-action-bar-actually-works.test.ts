@@ -263,3 +263,60 @@ describe('the admin player search', () => {
     expect(codeOnly(PLAYER_SEARCH)).not.toMatch(/ilike\('username', `%\$\{query\}%`\)/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2 (2026-08-27): the counts are true, the limit is real, the trap traps
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DISCOVERY = read('src/components/clubs/ClubDiscovery.tsx');
+const LIMIT_MIGRATION = read(
+  'supabase/migrations/20260827_four_club_limit_enforced_server_side.sql'
+);
+
+describe('member_count tells the truth', () => {
+  it('InvitePage does not bump a count a trigger already recomputed', () => {
+    // trg_sync_club_member_count RECOUNTS clubs.member_count on every
+    // club_members change. The increment_member_count(+1) InvitePage ran on
+    // top of that recount inflated the count by one on every invite-page
+    // join — the only join path that did.
+    expect(codeOnly(INVITE)).not.toMatch(/increment_member_count/);
+  });
+});
+
+describe('the discovery grid shows only data that exists', () => {
+  it('no fabricated stakes: clubs has no min_stakes/max_stakes columns', () => {
+    // Every card used to render the fallback "1/2 - 5/10" as if it were the
+    // club's real stakes, and a stake filter filtered on that fabrication.
+    expect(codeOnly(DISCOVERY)).not.toMatch(/min_stakes|max_stakes/);
+    expect(codeOnly(DISCOVERY)).not.toMatch(/'5\/10'/);
+    expect(codeOnly(DISCOVERY)).not.toMatch(/stakeFilter/);
+  });
+
+  it('selects the columns it renders, not * plus a dead embed', () => {
+    expect(codeOnly(DISCOVERY)).not.toMatch(/select\('\*, club_members\(count\)'\)/);
+  });
+});
+
+describe('the 4-club limit is enforced where it cannot be skipped', () => {
+  it('the trigger migration exists, covers insert and approval, and exempts horses', () => {
+    // fn_join_club's owner branch never counts memberships, so club creation
+    // relied on a client-side check alone. The trigger backstops every insert
+    // path and the pending->active approval transition. Verified against
+    // production with a rolled-back probe on 2026-08-27: 4th membership
+    // allowed, 5th refused (23514); a horse seated in 6 clubs unhindered.
+    expect(LIMIT_MIGRATION).toMatch(/trg_four_club_limit_ins/);
+    expect(LIMIT_MIGRATION).toMatch(/trg_four_club_limit_upd/);
+    expect(LIMIT_MIGRATION).toMatch(/is_horse/);
+    expect(LIMIT_MIGRATION).toMatch(/BEFORE UPDATE OF status/);
+  });
+});
+
+describe('the join modal traps focus itself', () => {
+  it('owns its focus trap so every caller gets it', () => {
+    expect(JOIN_MODAL).toMatch(/useFocusTrap\(isOpen\)/);
+    expect(JOIN_MODAL).toMatch(/role="dialog"/);
+    // HomePage used to build a trap ref for this modal and attach it to
+    // nothing — accessibility theater.
+    expect(codeOnly(HOME)).not.toMatch(/joinModalRef/);
+  });
+});

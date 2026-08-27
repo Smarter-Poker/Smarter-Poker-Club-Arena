@@ -275,9 +275,10 @@ function HomePageInner() {
     }
   }, [searchParams, setSearchParams]);
 
-  // Focus trapping for modals (accessibility)
+  // Focus trapping for modals (accessibility). The join modal owns its own
+  // trap internally (JoinClubModal) — the ref created here for it was never
+  // attached to anything, so it trapped nothing while looking like it did.
   const leaveModalRef = useFocusTrap(!!leaveConfirm?.visible);
-  const joinModalRef = useFocusTrap(showJoinModal);
 
   // Find Player modal state
   const [showFindPlayerModal, setShowFindPlayerModal] = useState(false);

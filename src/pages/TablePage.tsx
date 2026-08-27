@@ -12852,10 +12852,15 @@ export default function TablePage({
       isSideMenuOpen,
     onFold: handleFold,
     onCallCheck: () => {
-      // Bible V8: Check is legal when currentBet <= hero's current bet
-      const canCheck =
-        (tableState.currentBet || 0) <= (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0);
-      if (canCheck) {
+      // Bible V8: Check is legal when currentBet <= hero's current bet.
+      //
+      // 2026-08-26: this used to inline that comparison. It was the last of
+      // several copies of the same derivation on this page - this file has TWO
+      // keyboard systems (the raw keydown useEffect and this hook) and both
+      // hand-rolled it. canCheckRightNow() is the memoised helper the fold
+      // path already uses. One derivation means the switch to the engine's
+      // authoritative legal-action set is one line, not six.
+      if (canCheckRightNow()) {
         handleCheck();
       } else {
         handleCall();

@@ -292,8 +292,16 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // intended deadline up front, stamp it onto playerTurnStartTime /
         // playerTurnDuration so broadcasts have the right deadline, emit
         // the real-time event and snapshot, THEN arm the enforcement timer.
-        // The timer call below skips re-stamping when the deadline already
-        // matches, so there is no drift.
+        // 2026-08-26: this used to claim "the timer call below skips
+        // re-stamping when the deadline already matches, so there is no
+        // drift." That is not true. startTurnTimer stamps
+        // `playerTurnStartTime = Date.now()` unconditionally - there is no
+        // such guard anywhere in it - so the deadline computed here is
+        // re-stamped a moment later and the two differ by however long the
+        // broadcast took. The drift is small and has never been the cause of a
+        // reported bug, which is exactly why a comment asserting it cannot
+        // happen is the dangerous part: it stops the next person looking.
+        // Stated accurately instead of reassuringly.
         // STALE-HANDLER GUARD (2026-08-22): TURN_CHANGE handlers are
         // dispatched fire-and-forget, so a fast action landing during the
         // settle beat spawns a SECOND handler for the next seat while this one

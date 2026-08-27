@@ -61,7 +61,14 @@ async function alreadyCreditedUnderLegacyKey(seatId: string): Promise<boolean> {
 }
 
 /**
- * Mark a horse as having left the table, cash them out atomically, and sync players count.
+ * Mark a seat as left, cash it out atomically, and sync the table's player count.
+ *
+ * 2026-08-26: the first line used to read "Mark a HORSE as having left". It is
+ * not horse-only and has not been for a long time - ServerTableEngineSeating
+ * calls it as the last-resort fallback when atomicCashout fails for ANY player,
+ * real ones included. Believing the old sentence would lead someone to assume a
+ * failure here cannot touch a human's chips. It can.
+ *
  * FIX 208: Replaced RPC with direct queries to avoid PostgREST schema cache "text = uuid" errors
  */
 export async function markSeatAsLeft(

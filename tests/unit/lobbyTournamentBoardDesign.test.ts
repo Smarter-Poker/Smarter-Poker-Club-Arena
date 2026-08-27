@@ -74,6 +74,7 @@ describe('Club Arena Tournament Board lobby design', () => {
     expect(filters).toContain('Only Show Games With Every Selected Feature.');
     expect(filtersCss).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
     expect(filtersCss).toContain('background: #08111d');
+    expect(filtersCss).toContain('z-index: 9620');
     expect(filtersCss).not.toMatch(/(?:linear|radial|conic)-gradient\s*\(/i);
     expect(filtersCss).not.toContain('overflow-x: auto');
   });

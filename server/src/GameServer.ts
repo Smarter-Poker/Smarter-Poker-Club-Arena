@@ -531,7 +531,8 @@ export class GameServer {
     if (engines.length > 0) {
       for (const engine of engines) {
         try {
-          engine.pauseAfterHand(DRAIN_BUDGET_MS);
+          // A drain is stopping the process: do not start another hand.
+          engine.pauseAfterHand(DRAIN_BUDGET_MS, { beforeNextHand: true });
         } catch {
           /* a table that cannot be asked to pause is stopped below regardless */
         }

@@ -231,8 +231,12 @@ describe('a restart mid-break does not resume play', () => {
     expect(resumeFn).toMatch(/tournament\.break_started_at/);
     expect(resumeFn).toMatch(/LAST_HAND_GRACE_MS \+\s*TournamentManagerBase\.BREAK_DURATION_MS/);
     expect(resumeFn).toMatch(/remainingMs/);
+    /* 2026-08-27: the call now also passes { beforeNextHand: true }. Restarting
+       INTO a live break is a break, so the rebuilt engines must park without
+       dealing rather than opening one more hand first - which is what an
+       un-flagged pause means. The budget argument is unchanged. */
     expect(resumeFn).toMatch(
-      /engine\.pauseAfterHand\(remainingMs \+ TournamentManagerBase\.LAST_HAND_GRACE_MS\)/
+      /engine\.pauseAfterHand\(remainingMs \+ TournamentManagerBase\.LAST_HAND_GRACE_MS,\s*\{\s*beforeNextHand:\s*true,?\s*\}\)/
     );
   });
 
@@ -435,6 +439,50 @@ describe('a paused table parks whatever it was doing', () => {
     expect(gate).toMatch(
       /tableFSM\.state === 'running'\s*\)\s*\{\s*\n\s*this\.tableFSM\.transition\('paused'\)/
     );
+  });
+
+  /**
+   * A BREAK MEANS STOP. HAND-FOR-HAND MEANS ONE MORE HAND, THEN STOP.
+   *
+   * The bubble sync resumes every table together and re-pauses them 500ms
+   * later, on purpose, "to let dealing start" - it is arming the park for the
+   * hand about to be dealt. If the top-of-loop gate honoured that re-pause the
+   * table would park BEFORE dealing, the sync would see everyone parked,
+   * resume, re-pause, and park again: the bubble could never burst and the
+   * tournament would freeze on the money. So the top-of-loop gate is gated on
+   * holdBeforeNextHand, which only the STOP callers pass.
+   */
+  it('hand-for-hand still gets its one more hand, so the bubble can burst', () => {
+    const loopSrc = DEALING.slice(DEALING.indexOf('protected async dealingLoop'));
+    const gateAt = loopSrc.indexOf('await this.awaitPauseGate()');
+    // The top-of-loop park must be conditional on holdBeforeNextHand.
+    expect(loopSrc.slice(0, gateAt)).toMatch(/this\.handForHandPaused && this\.holdBeforeNextHand/);
+    // The bubble sync's re-pause must NOT claim it.
+    const sync = BASE.slice(
+      BASE.indexOf('protected startHandForHandSync'),
+      BASE.indexOf('protected startHandForHandSync') + 2200
+    );
+    expect(sync).toMatch(/engine\.pauseAfterHand\(\);/);
+    expect(sync).not.toMatch(/beforeNextHand/);
+  });
+
+  it('every STOP caller asks for the hold, so nothing is dealt into a break', () => {
+    const pause = BASE.slice(
+      BASE.indexOf('async pauseForBreak'),
+      BASE.indexOf('areAllTablesParked')
+    );
+    expect(pause).toMatch(/beforeNextHand:\s*true/);
+    // The add-on break and the restart-into-a-live-break path are breaks too.
+    expect((BASE.match(/beforeNextHand:\s*true/g) || []).length).toBeGreaterThanOrEqual(3);
+    // A drain is stopping the process; it must not open another hand either.
+    expect(GAME_SERVER).toMatch(
+      /pauseAfterHand\(DRAIN_BUDGET_MS,\s*\{\s*beforeNextHand:\s*true\s*\}\)/
+    );
+  });
+
+  it('resuming clears the hold, so the next pause is judged on its own terms', () => {
+    const resume = ENGINE_BASE.slice(ENGINE_BASE.indexOf('resumeDealing()'));
+    expect(resume.slice(0, 800)).toMatch(/this\.holdBeforeNextHand = false/);
   });
 
   it('the park is what areAllTablesParked reads, so an idle table counts', () => {

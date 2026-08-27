@@ -89,7 +89,15 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // :55 always finishes first. That is Dan's rule exactly — the break is
         // announced, every hand finishes, and each table stops as it lands.
         // ═══════════════════════════════════════════════════════════════════
-        if (this.handForHandPaused) {
+        //
+        // `holdBeforeNextHand` is what separates a break from hand-for-hand.
+        // A break forbids the next hand outright; hand-for-hand means "deal
+        // exactly one more, THEN park", and its sync deliberately re-pauses
+        // 500ms after resuming every table. Honouring that re-pause here would
+        // park the table before it dealt, the sync would see everyone parked
+        // and resume again, and the bubble would never burst. See the field's
+        // comment on ServerTableEngineBase.
+        if (this.handForHandPaused && this.holdBeforeNextHand) {
           this.setLoopPhase('parked_for_pause');
           await this.awaitPauseGate();
           if (!this.running) break;

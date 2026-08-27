@@ -1353,6 +1353,9 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
       )}
 
       {/* Club Profile Modal */}
+      {/* tableId reaches the sheet so its session figures are the REAL ones
+          (audit 2026-08-27): it reads the same sessionStatsService the Session
+          Stats panel does, so the two can never disagree. */}
       <ClubProfileModal
         isOpen={showProfileModal}
         onClose={onCloseProfileModal}
@@ -1360,6 +1363,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         username={username}
         avatarUrl={heroAvatarUrl}
         clubName={clubName}
+        tableId={tableId}
       />
     </>
   );

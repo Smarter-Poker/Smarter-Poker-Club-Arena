@@ -95,7 +95,7 @@ export default function DailyLoginReward({
         {/* Claim button */}
         {revealed && !claimed && (
           <button className="dlr-claim-btn" onClick={handleClaim}>
-            ✨ Claim Reward
+            Claim Reward
           </button>
         )}
 

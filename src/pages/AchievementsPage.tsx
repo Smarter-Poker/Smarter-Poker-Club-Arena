@@ -132,7 +132,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'wins_10',
     name: 'First Blood',
     description: 'Win 10 hands',
-    icon: '✊',
+    icon: '☆',
     category: 'poker',
     rarity: 'common',
     requirement: 'Win 10 hands',

@@ -1,287 +1,242 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  TABLE PROFILE — Club Arena surface, built on the table's own tokens
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Rewritten 2026-08-27 with the component beside it. The previous sheet was
+ * traced off a competitor screenshot and carried three things that put it
+ * outside the Club Arena:
+ *
+ *   z-index: 10000       jumped the entire --z-* scale in design-tokens.css,
+ *                        so it painted over toasts and confetti that are
+ *                        deliberately ranked above modals;
+ *   background: #ffa800  a hard-coded orange close button, in an app whose
+ *                        design guidelines name Facebook blue and forbid the
+ *                        reference image's gold and amber;
+ *   font-family: sans-serif
+ *                        opted out of the app font on one sheet only.
+ *
+ * Everything below reads from design-tokens.css, so this sheet follows the
+ * table theme the player chose instead of pinning its own colours.
+ */
+
+@import '../../styles/design-tokens.css';
+
 .cpm-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.6);
+  inset: 0;
+  background: var(--bg-overlay, rgba(0, 0, 0, 0.6));
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 10000;
+  z-index: var(--z-modal, 500);
+  padding: var(--space-lg, 16px);
 }
 
 .cpm-modal {
-  width: 360px;
-  background: linear-gradient(180deg, #181938 0%, #0d0f22 100%);
-  border: 1px solid #4a5a9c;
-  border-radius: 12px;
-  box-shadow:
-    0 0 15px rgba(74, 90, 156, 0.5),
-    inset 0 0 10px rgba(255, 255, 255, 0.1);
-  color: #fff;
-  font-family: sans-serif;
+  width: min(380px, 100%);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary, #111827);
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius-xl, 16px);
+  box-shadow: var(--shadow-xl, 0 16px 40px rgba(0, 0, 0, 0.6));
+  color: var(--text-primary, #f3f4f6);
   overflow: hidden;
-  position: relative;
 }
 
+/* ── Header ── */
 .cpm-header {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 16px;
+  padding: var(--space-lg, 16px);
   position: relative;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, transparent 100%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--bg-surface, #1a2234);
+  border-bottom: 1px solid var(--border-default, rgba(255, 255, 255, 0.08));
+  flex: 0 0 auto;
 }
 
 .cpm-title {
   margin: 0;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 1px;
+  font-size: var(--font-lg, 1rem);
+  font-weight: var(--weight-bold, 700);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .cpm-close {
   position: absolute;
-  right: 12px;
-  background: #ffa800;
-  color: #000;
+  right: var(--space-md, 12px);
+  top: 50%;
+  transform: translateY(-50%);
+  /* 44px of touch target around a 24px glyph: the table is a phone surface
+     first, and this sheet opens mid-hand. */
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
   border: none;
-  border-radius: 50%;
-  width: 24px;
-  height: 24px;
-  font-size: 18px;
-  line-height: 24px;
-  font-weight: bold;
+  color: var(--text-secondary, #9ca3af);
+  font-size: var(--font-lg, 1rem);
+  line-height: 1;
   cursor: pointer;
 }
 
+.cpm-close:hover,
+.cpm-close:focus-visible {
+  color: var(--text-primary, #f3f4f6);
+}
+
+/* ── Body ── */
 .cpm-body {
-  padding: 16px;
+  padding: var(--space-lg, 16px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg, 16px);
+  overflow-y: auto;
+  flex: 1 1 auto;
 }
 
 .cpm-user-section {
   display: flex;
   align-items: center;
-  margin-bottom: 16px;
+  gap: var(--space-md, 12px);
 }
 
 .cpm-avatar-container {
-  width: 64px;
-  height: 64px;
-  border-radius: 8px;
-  overflow: hidden;
-  background: #333;
-  margin-right: 16px;
+  flex: 0 0 auto;
 }
 
-.cpm-avatar {
-  width: 100%;
-  height: 100%;
+.cpm-avatar,
+.cpm-avatar-placeholder {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-circle, 50%);
+  border: 1px solid var(--border-active, rgba(255, 255, 255, 0.15));
   object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .cpm-avatar-placeholder {
-  width: 100%;
-  height: 100%;
-  background: #555;
+  background: var(--bg-elevated, #1f2937);
+  color: var(--text-secondary, #9ca3af);
+  font-size: var(--font-xl, 1.25rem);
+  font-weight: var(--weight-bold, 700);
 }
 
 .cpm-user-info {
-  flex: 1;
-}
-
-.cpm-username-row {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .cpm-username {
-  font-size: 18px;
-  font-weight: bold;
-}
-
-.cpm-chat-icon {
-  font-size: 16px;
-  position: relative;
-}
-
-.cpm-chat-check {
-  position: absolute;
-  bottom: -4px;
-  right: -4px;
-  color: #0f0;
-  font-size: 10px;
+  font-size: var(--font-lg, 1rem);
+  font-weight: var(--weight-bold, 700);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cpm-user-id,
 .cpm-user-club {
-  font-size: 12px;
-  color: #aaa;
-  margin-top: 4px;
+  font-size: var(--font-sm, 0.75rem);
+  color: var(--text-secondary, #9ca3af);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.cpm-tag-input-container {
-  margin-bottom: 16px;
-}
-
-.cpm-tag-input {
-  width: 100%;
-  background: #111222;
-  border: 1px solid #333;
-  border-radius: 4px;
-  color: #fff;
-  padding: 8px;
-  box-sizing: border-box;
-}
-
-.cpm-badges {
-  display: flex;
-  justify-content: space-around;
-  margin-bottom: 16px;
-}
-
-.cpm-badge {
-  display: flex;
-  align-items: center;
-}
-
-.cpm-badge-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: #333;
-  margin-right: 8px;
-}
-
-.newb-icon {
-  background: radial-gradient(circle, #e2e2e2 0%, #888 100%);
-}
-
-.heat-icon {
-  background: radial-gradient(circle, #3a2254 0%, #1a1129 100%);
-}
-
-.cpm-badge-info {
-  font-size: 12px;
-}
-
-.newb-title {
-  color: #ffa800;
-  font-weight: bold;
-}
-.heat-title {
-  color: #ffa800;
-  font-weight: bold;
-}
-
-.cpm-badge-desc {
-  color: #aaa;
-  display: flex;
-  align-items: center;
-  margin-top: 4px;
-}
-
-.cpm-q {
-  background: #555;
-  color: #fff;
-  border-radius: 50%;
-  width: 14px;
-  height: 14px;
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  font-size: 10px;
-  margin-right: 4px;
-}
-
-.cpm-free-counts {
-  font-size: 12px;
-  color: #ddd;
-  margin-bottom: 12px;
-}
-
-.cpm-tabs {
-  display: flex;
-  background: #1a1c3b;
-  border-radius: 20px;
-  padding: 4px;
-  margin-bottom: 12px;
-}
-
-.cpm-tab {
-  flex: 1;
-  background: none;
-  border: none;
-  color: #fff;
-  font-size: 16px;
-  padding: 4px 0;
-  cursor: pointer;
-  border-radius: 16px;
-}
-
-.cpm-tab.active {
-  background: #ffa800;
-  color: #000;
-}
-
-.cpm-recently-used,
-.cpm-section-title {
-  font-size: 12px;
-  color: #888;
-  background: #111;
-  padding: 4px 8px;
-  margin: 0 -16px;
-}
-
-.cpm-recently-used-area {
-  height: 40px;
-}
-
-.cpm-emojis-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
-  margin-top: 12px;
-  margin-bottom: 16px;
-  max-height: 120px;
-  overflow-y: auto;
-}
-
-.cpm-emoji-item {
-  background: #2a2c4b;
-  border-radius: 4px;
-  padding: 8px 4px;
+/* ── Stat sections ── */
+.cpm-section {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  gap: var(--space-sm, 8px);
 }
 
-.cpm-emoji-img-placeholder {
-  width: 24px;
-  height: 24px;
-  background: #555;
-  margin-bottom: 4px;
+.cpm-section-title {
+  font-size: var(--font-xs, 0.6875rem);
+  font-weight: var(--weight-bold, 700);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted, #6b7280);
 }
 
-.cpm-emoji-price {
-  font-size: 10px;
-  color: #fff;
+.cpm-stat-grid {
+  display: grid;
+  /* Two up at 375px, three when there is room. No media query needed. */
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: var(--space-sm, 8px);
 }
 
-.cpm-footer {
+.cpm-stat {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-sm, 8px) var(--space-md, 12px);
+  background: var(--bg-surface, #1a2234);
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius-md, 8px);
+  min-width: 0;
+}
+
+.cpm-stat-label {
+  font-size: var(--font-2xs, 0.625rem);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted, #6b7280);
+}
+
+.cpm-stat-value {
+  font-size: var(--font-md, 0.875rem);
+  font-weight: var(--weight-bold, 700);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Winning and losing use the status tokens, not a fresh pair of greens. */
+.cpm-stat-value.cpm-up {
+  color: var(--color-success, #22c55e);
+}
+
+.cpm-stat-value.cpm-down {
+  color: var(--color-danger, #ef4444);
+}
+
+.cpm-note {
+  font-size: var(--font-sm, 0.75rem);
+  color: var(--text-secondary, #9ca3af);
+  text-align: center;
+}
+
+/* ── Footer ── */
+.cpm-footer {
+  padding: var(--space-md, 12px) var(--space-lg, 16px) var(--space-lg, 16px);
+  flex: 0 0 auto;
 }
 
 .cpm-confirm-btn {
-  background: linear-gradient(180deg, #ffd700 0%, #ff8c00 100%);
+  width: 100%;
+  min-height: 44px;
+  background: var(--color-info, #3b82f6);
+  color: #fff;
   border: none;
-  border-radius: 20px;
-  color: #000;
-  font-weight: bold;
-  padding: 10px 40px;
+  border-radius: var(--radius-md, 8px);
+  font-size: var(--font-md, 0.875rem);
+  font-weight: var(--weight-bold, 700);
   cursor: pointer;
+}
+
+.cpm-confirm-btn:hover,
+.cpm-confirm-btn:focus-visible {
+  filter: brightness(1.1);
 }

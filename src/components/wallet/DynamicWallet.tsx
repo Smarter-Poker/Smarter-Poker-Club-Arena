@@ -65,7 +65,7 @@ import {
 } from '../../lib/walletCache';
 import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
 import { normaliseRole, type ClubRole } from '../../types/clubRoles';
-import { clubWalletRows, type WalletRowKey } from './walletRows';
+import { clubLobbyWalletRows, clubWalletRows, type WalletRowKey } from './walletRows';
 import { useSpinsWallet } from '../../hooks/useSpinsWallet';
 import './DynamicWallet.css';
 import { reportError } from '../../utils/errorReporter';
@@ -138,6 +138,12 @@ interface DynamicWalletProps {
    * that eventually shows two DIFFERENT figures on one screen.
    */
   showBBJ?: boolean;
+  /**
+   * Compact Club Arena header treatment. It keeps the same live data and
+   * click handlers, but limits the visible tiles to the role-specific lobby
+   * summary. Every other ledger remains available through the Cashier.
+   */
+  compactLobby?: boolean;
   onBuyDiamonds?: () => void;
   /** Opens the Club Bank Cashier. Only ever wired on the four bank roles. */
   onOpenClubBank?: () => void;
@@ -408,6 +414,7 @@ export default function DynamicWallet({
   role = 'player',
   roleReady = true,
   showBBJ = true,
+  compactLobby = false,
   onBuyDiamonds,
   onOpenClubBank,
   onOpenPromoWallet,
@@ -1317,7 +1324,7 @@ export default function DynamicWallet({
       key: 'union_bank',
       label: 'Union Bank',
       hint: 'Send or pull chips from clubs & members',
-      icon: 'treasury',
+      icon: 'bank',
       value: animUnionBank,
       known: unionFiguresKnown,
       onOpen: () => onOpenUnionBank?.(data.unionBank || 0),
@@ -1380,11 +1387,49 @@ export default function DynamicWallet({
 
   const rows: WalletRow[] =
     effectiveVariant === 'union'
-      ? UNION_ROWS
-      : clubWalletRows(rowRole, {
-          standalone: !isClubInUnion,
-          spinsActive: spins.active,
-        }).map((k) => CLUB_ROW_BY_KEY[k]);
+      ? compactLobby
+        ? UNION_ROWS.filter((row) => row.key === 'union_bank' || row.key === 'union_rake')
+        : UNION_ROWS
+      : (compactLobby
+          ? clubLobbyWalletRows(rowRole)
+          : clubWalletRows(rowRole, {
+              standalone: !isClubInUnion,
+              spinsActive: spins.active,
+            })
+        ).map((k) => CLUB_ROW_BY_KEY[k]);
+
+  const compactLabel = (row: WalletRow) =>
+    compactLobby && row.key === 'club_bank' ? 'Club Balance' : row.label;
+
+  const settledRowValue = (key: string): number | null => {
+    switch (key) {
+      case 'player_wallet':
+        return data.chipBalance;
+      case 'agent_wallet':
+        return data.agentBalance;
+      case 'club_bank':
+        return data.clubBank;
+      case 'promo_wallet':
+        return data.promoBalance;
+      case 'spins_wallet':
+        return spins.balance;
+      case 'rake_treasury':
+        return data.clubRakeTreasury;
+      case 'backup_bbj':
+      case 'union_backup_bbj':
+        return data.backupBBJ;
+      case 'union_bank':
+        return data.unionBank;
+      case 'union_rake':
+        return data.unionRake;
+      case 'union_promo':
+        return data.unionPromo;
+      case 'union_spins':
+        return data.unionSpinTreasury;
+      default:
+        return null;
+    }
+  };
 
   // ── Keyboard handler for BBJ banner (accessibility) ─────────────────────────
   const bbjClickable = Boolean(onOpenBBJ);
@@ -1404,20 +1449,28 @@ export default function DynamicWallet({
   // rare occasion it actually changed.
   if (loading || (effectiveVariant === 'club' && !roleReady && cachedRole === null)) {
     return (
-      <div className="dw dw--loading" role="region" aria-busy="true" aria-label="Loading wallet">
-        <div className="dw__shimmer dw__shimmer--bbj" />
-        <div className="dw__rows">
-          <div className="dw__shimmer dw__shimmer--row" />
-          <div className="dw__shimmer dw__shimmer--row" />
-          <div className="dw__shimmer dw__shimmer--row" />
-          <div className="dw__shimmer dw__shimmer--row" />
+      <div
+        className={`dw dw--loading${compactLobby ? ' dw--lobby-board' : ''}`}
+        role="region"
+        aria-busy="true"
+        aria-label="Loading wallet"
+      >
+        {showBBJ && <div className="dw__shimmer dw__shimmer--bbj" />}
+        <div className={`dw__rows${compactLobby ? ' dw__rows--count-3' : ''}`}>
+          {Array.from({ length: compactLobby ? 3 : 4 }, (_, index) => (
+            <div key={index} className="dw__shimmer dw__shimmer--row" />
+          ))}
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`dw dw--${effectiveVariant}`} role="region" aria-label="Wallet balances">
+    <div
+      className={`dw dw--${effectiveVariant}${compactLobby ? ' dw--lobby-board' : ''}`}
+      role="region"
+      aria-label="Wallet balances"
+    >
       {/* ── Error indicator — subtle, non-blocking ──────────────────────── */}
       {fetchError && (
         <button
@@ -1464,20 +1517,39 @@ export default function DynamicWallet({
           `data`. Before this the container carried aria-live="off" and a
           blind player was never told their balance had changed at all. */}
       <span className="dw__sr-live" aria-live="polite" aria-atomic="true">
-        {`Diamonds ${formatDiamonds(data.diamonds)}. Player Wallet ${formatBalance(
-          data.chipBalance
-        )}.`}
+        {`Diamond Wallet ${formatDiamonds(data.diamonds)}. ${rows
+          .map((row) => {
+            const settled = settledRowValue(row.key);
+            return `${compactLabel(row)} ${settled === null ? 'unavailable' : formatBalance(settled)}`;
+          })
+          .join('. ')}.`}
       </span>
 
-      <div className="dw__rows">
+      <div className={`dw__rows dw__rows--count-${rows.length + 1}`}>
         {/* Diamond Balance */}
-        <div className="dw__row dw__row--diamond">
+        <div
+          className={`dw__row dw__row--diamond${compactLobby && onBuyDiamonds ? ' dw__row--actionable' : ''}`}
+          onClick={compactLobby ? onBuyDiamonds : undefined}
+          onKeyDown={
+            compactLobby && onBuyDiamonds
+              ? (e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onBuyDiamonds();
+                  }
+                }
+              : undefined
+          }
+          role={compactLobby && onBuyDiamonds ? 'button' : undefined}
+          tabIndex={compactLobby && onBuyDiamonds ? 0 : undefined}
+          aria-label={compactLobby && onBuyDiamonds ? 'Open Diamond Wallet' : undefined}
+        >
           <span className="dw__row-icon" aria-hidden="true">
             <WalletIcon name="diamond" />
           </span>
-          <span className="dw__row-label">Diamonds</span>
+          <span className="dw__row-label">{compactLobby ? 'Diamond Wallet' : 'Diamonds'}</span>
           <span className="dw__row-value">{formatDiamonds(animDiamonds)}</span>
-          {onBuyDiamonds && (
+          {onBuyDiamonds && !compactLobby && (
             <button
               className="dw__plus"
               onClick={(e) => {
@@ -1523,7 +1595,7 @@ export default function DynamicWallet({
               <WalletIcon name={row.icon} />
             </span>
             <span className="dw__row-label">
-              {row.label}
+              {compactLabel(row)}
               {row.hint && <span className="dw__row-hint">{row.hint}</span>}
             </span>
             <span className="dw__row-value">

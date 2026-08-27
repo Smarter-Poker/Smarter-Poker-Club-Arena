@@ -3219,8 +3219,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     ]
   );
 
-  const shownCount = lobbyEntries.length;
-
   /**
    * Everything the club is running, before ANY narrowing.
    *
@@ -3576,6 +3574,33 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             </div>
           </div>
 
+          <button
+            type="button"
+            className="lobby-bbj"
+            onClick={() => {
+              haptic.medium();
+              setShowBBJInfo(true);
+            }}
+            aria-label={`Bad Beat Jackpot: ${
+              jackpotAmount > 0
+                ? jackpotAmount.toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })
+                : 'No Pool'
+            }`}
+          >
+            <span className="lobby-bbj__label">Bad Beat Jackpot</span>
+            <strong className="lobby-bbj__amount">
+              {jackpotAmount > 0
+                ? jackpotAmount.toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })
+                : '-'}
+            </strong>
+          </button>
+
           {/* ── Wallet ──
               WALLET SEPARATION LAW (Dan 2026-08-20): this is a CLUB screen, so
               it renders CLUB money. The variant used to become 'union' whenever
@@ -3585,22 +3610,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               them; one wallet never gets access to the other. Union figures are
               managed on the union's own surfaces and appear nowhere here.
 
-              The BBJ now leads the wallet stack (see showBBJ below) rather
-              than sitting in its own strip above the club card. */}
+              The compact lobby summary intentionally exposes only the three
+              role-approved balances requested for this surface. Every other
+              wallet remains available through its existing cashier flow. */}
           {currentUserId && resolvedClubId && (
             <div className="lobby-top__wallet">
-              {/* Dan 2026-08-20: "the BBJ amount should be on top of the rest
-                  of the wallet data." It was a full-width strip ABOVE the club
-                  card, which put it in a different column from the money it
-                  belongs with. showBBJ={true} renders it as the first row of
-                  the wallet stack instead, where it reads as the headline
-                  figure over the balances beneath it.
-
-                  Dan 2026-08-20: tapping that BBJ figure opens the jackpot
-                  POPUP (total + last 5 winners + fee schedule + qualifying
-                  hands), not a route change. It used to navigate to the BBJ
-                  page, which left showBBJInfo with no way to ever become true
-                  and no popup anywhere in the lobby. */}
+              {/* The lobby renders its own compact Bad Beat Jackpot tile next
+                  to the club identity. DynamicWallet therefore suppresses its
+                  duplicate jackpot banner and supplies only the role-safe
+                  balance tiles below it. */}
               <DynamicWallet
                 userId={currentUserId}
                 clubId={clubId || ''}
@@ -3611,7 +3629,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 // The club's owner_id outranks a stale club_members row, which
                 // is how a brand new owner sees their own Club Bank.
                 role={isOwner ? 'owner' : userRole}
-                showBBJ
+                compactLobby
+                showBBJ={false}
                 onBuyDiamonds={() => {
                   haptic.medium();
                   navigate(`/clubs/${clubId}/detail`);
@@ -3848,7 +3867,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             <strong className="lobby-controls__title">Find Your Game</strong>
           </div>
           <span className="lobby-controls__total">
-            <strong>{totalGameCount.toLocaleString()}</strong> Games
+            <strong>
+              {totalGameCount.toLocaleString()}
+              {countsCapped ? '+' : ''}
+            </strong>{' '}
+            Games
           </span>
         </div>
         <div className="game-bar">
@@ -4047,15 +4070,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           filter or a search is actively hiding games — that one is not a
           statistic, it is the explanation for why the list looks short, and
           it carries the one-tap clear. */}
-      <div className="lobby-resultsbar">
-        <div className="lobby-count" aria-live="polite">
-          <span className="lobby-count__text">
-            Showing <strong>{shownCount.toLocaleString()}</strong> Of{' '}
-            {totalGameCount.toLocaleString()}
-            {countsCapped ? '+' : ''} Games
-          </span>
-        </div>
-        {(isOwner || userRole === 'admin') && club?.is_union === true && (
+      {(isOwner || userRole === 'admin') && club?.is_union === true && (
+        <div className="lobby-resultsbar lobby-resultsbar--create-only">
           <button
             type="button"
             className="lobby-createbtn"
@@ -4067,8 +4083,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           >
             + Create {TOURNAMENT_TYPES.includes(gameType) ? 'Tournament' : 'Cash Game'}
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════════
           LOBBY V2 — dense line-based game table + game lobby panel

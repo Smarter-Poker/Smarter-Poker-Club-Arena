@@ -106,52 +106,52 @@
      card and the wallet start directly under the ticker at every width. */
   padding: 1px 1rem 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025) 0%, transparent 100%);
+  background: #02060b;
 }
 
-/* .lobby-top__bbj (the full-width BBJTicker strip) was REMOVED on 2026-08-20.
-   Dan: "the BBJ amount should be on top of the rest of the wallet data" - it
-   is the first row of the wallet stack now (DynamicWallet showBBJ), so a
-   separate strip in the other column would be a second live copy of the same
-   number. Recent-hits scrolling moved with it; the jackpot detail modal is
-   still one tap away on the row itself. */
+/* The legacy full-width ticker is gone. The compact Bad Beat Jackpot tile now
+   sits beside the club identity and opens the existing jackpot detail modal;
+   DynamicWallet suppresses its own duplicate jackpot figure on this surface. */
 
 /* ── Club identity + wallet, side by side ──────────────────────────────────
    The wallet column is capped rather than fixed at 220px: at 375px a rigid
    220px column left the club card 115px, which truncated the club name to a
    couple of characters. Below 420px the two stack instead. */
 .lobby-top__main {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 250px);
   align-items: stretch;
   gap: 10px;
 }
 
 .lobby-top__wallet {
-  flex: 0 1 260px;
+  grid-column: 1 / -1;
   min-width: 0;
 }
 
 .lobby-club {
-  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px;
-  border-radius: 10px;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.32) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border-radius: 7px;
+  background: #07111f;
+  border: 1px solid #17375f;
+  box-shadow:
+    0 3px 0 #010307,
+    inset 0 1px 0 rgba(157, 210, 255, 0.22),
+    inset 3px 0 0 #149cff;
 }
 
 .lobby-club__avatar {
-  width: 192px;
-  height: 192px;
+  width: 76px;
+  height: 76px;
   flex-shrink: 0;
-  border-radius: 12px;
+  border-radius: 50%;
   overflow: hidden;
   background: #000;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 2px solid #218bff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -182,11 +182,11 @@
 
 .lobby-club__name {
   margin: 0 0 4px;
-  color: #4da3ff;
-  font-size: 1rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  text-shadow: 0 0 12px rgba(24, 119, 242, 0.28);
+  color: #f4f8ff;
+  font-size: 1.05rem;
+  font-weight: 850;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
   /* A long club name must ellipsis, not wrap: wrapping pushed the meta row
      down and made the card taller than the wallet beside it. */
   white-space: nowrap;
@@ -218,13 +218,17 @@
   flex-shrink: 0;
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: 6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  color: #9aa5b6;
+  background: #111d2d;
+  border: 1px solid #35567d;
+  border-bottom-color: #050a12;
+  color: #8fc7ff;
+  box-shadow:
+    0 3px 0 #02050a,
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
   cursor: pointer;
   transition:
     color 0.2s ease,
@@ -234,6 +238,71 @@
 .lobby-club__share:hover {
   color: #fff;
   border-color: rgba(255, 255, 255, 0.2);
+}
+
+.lobby-club__share:active {
+  transform: translateY(2px);
+  box-shadow:
+    0 1px 0 #02050a,
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.lobby-bbj {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px 12px;
+  border: 1px solid #2266ab;
+  border-bottom-color: #061223;
+  border-radius: 7px;
+  background: #08172a;
+  color: #fff;
+  cursor: pointer;
+  box-shadow:
+    0 4px 0 #01050a,
+    inset 0 1px 0 rgba(162, 219, 255, 0.3),
+    inset 0 -2px 0 #04101e;
+  transition:
+    transform 0.12s ease,
+    border-color 0.15s ease;
+}
+
+.lobby-bbj:hover {
+  border-color: #4baeff;
+}
+
+.lobby-bbj:active {
+  transform: translateY(3px);
+  box-shadow:
+    0 1px 0 #01050a,
+    inset 0 2px 0 #020810;
+}
+
+.lobby-bbj:focus-visible {
+  outline: 2px solid #63c7ff;
+  outline-offset: 2px;
+}
+
+.lobby-bbj__label {
+  color: #41b7ff;
+  font-size: 0.63rem;
+  font-weight: 850;
+  letter-spacing: 0.11em;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.lobby-bbj__amount {
+  color: #f8fbff;
+  font-size: 1.18rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.035em;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .lobby-club__share:focus-visible {
@@ -261,13 +330,34 @@
 }
 
 @media (max-width: 480px) {
+  .lobby-top {
+    padding-inline: 8px;
+  }
+
   .lobby-top__main {
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr) minmax(118px, 35%);
+    gap: 7px;
   }
 
   .lobby-top__wallet {
-    flex: 1 1 auto;
     width: 100%;
+  }
+
+  .lobby-club {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .lobby-bbj {
+    padding-inline: 7px;
+  }
+
+  .lobby-bbj__label {
+    font-size: 0.56rem;
+  }
+
+  .lobby-bbj__amount {
+    font-size: clamp(0.9rem, 4.4vw, 1.08rem);
   }
 }
 
@@ -1136,21 +1226,27 @@
   align-items: center;
   gap: 5px;
   padding: 3px 10px;
-  border-radius: 12px;
+  border: 1px solid #5abaff;
+  border-bottom-color: #0a2d58;
+  border-radius: 6px;
+  background: #2b77d5 !important;
+  box-shadow:
+    0 2px 0 #041329,
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
   flex-shrink: 0;
 }
 
 .club-level-badge__number {
   font-weight: 800;
   font-size: 0.75rem;
-  color: #000;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+  color: #fff;
+  text-shadow: 0 1px 0 #06172b;
 }
 
 .club-level-badge__tier {
   font-size: 0.65rem;
   font-weight: 600;
-  color: rgba(0, 0, 0, 0.7);
+  color: #dceeff;
   white-space: nowrap;
 }
 
@@ -1335,8 +1431,8 @@
      every width, so this breakpoint no longer restates it. */
 
   .lobby-club__avatar {
-    width: 112px;
-    height: 112px;
+    width: 64px;
+    height: 64px;
   }
 
   .lobby-club__avatar-fallback {
@@ -1346,12 +1442,12 @@
 
 @media (max-width: 480px) {
   .lobby-club__avatar {
-    width: 92px;
-    height: 92px;
+    width: 56px;
+    height: 56px;
   }
 
   .lobby-club__name {
-    font-size: 0.95rem;
+    font-size: 0.86rem;
   }
 }
 
@@ -1485,7 +1581,6 @@
   inset: 0 auto 0 0;
   width: 3px;
   background: #3f8cff;
-  box-shadow: 0 0 18px rgba(64, 159, 255, 0.75);
 }
 
 .lobby-controls__heading {
@@ -1543,32 +1638,62 @@
 
 .lobby-controls .game-bar__type {
   height: 40px;
-  border-color: rgba(130, 154, 200, 0.16);
-  border-radius: 10px;
+  border-color: #304966;
+  border-bottom-color: #05090f;
+  border-radius: 6px;
   background: #171e2b;
   color: #aeb9cb;
   font-size: 0.68rem;
   letter-spacing: 0.035em;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow:
+    0 3px 0 #03060b,
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -2px 0 #0a0f17;
 }
 
 .lobby-controls .game-bar__type.is-active {
   border-color: #5ab6ff;
   background: #2866dc;
   box-shadow:
-    0 6px 18px rgba(0, 94, 255, 0.34),
+    0 3px 0 #061b42,
     inset 0 1px 0 rgba(255, 255, 255, 0.38),
     inset 0 -2px 0 rgba(0, 30, 100, 0.42);
-  transform: translateY(-1px);
+}
+
+.lobby-controls .game-bar__type:active,
+.lobby-controls .game-bar__type.is-active:active {
+  transform: translateY(2px);
+  box-shadow:
+    0 1px 0 #03060b,
+    inset 0 2px 0 #0a1f46;
 }
 
 .lobby-controls .game-bar__filter-btn {
   height: 40px;
   padding-inline: 14px;
-  border-color: rgba(91, 170, 255, 0.42);
-  background: rgba(28, 74, 156, 0.22);
+  border-color: #356eaa;
+  border-bottom-color: #06101c;
+  border-radius: 6px;
+  background: #142b4d;
   color: #bcdcff;
   font-weight: 800;
+  box-shadow:
+    0 3px 0 #03060b,
+    inset 0 1px 0 rgba(161, 214, 255, 0.22),
+    inset 0 -2px 0 #09182c;
+}
+
+.lobby-controls .game-bar__filter-btn.is-set {
+  border-color: #61bdff;
+  background: #2866dc;
+  color: #fff;
+}
+
+.lobby-controls .game-bar__filter-btn:active {
+  transform: translateY(2px);
+  box-shadow:
+    0 1px 0 #03060b,
+    inset 0 2px 0 #07152a;
 }
 
 .lobby-controls .quickprefs {
@@ -1588,13 +1713,29 @@
   height: 34px;
   border: 0;
   border-radius: 8px;
+  border: 1px solid #273b55;
+  border-bottom-color: #03060a;
+  background: #111a27;
   color: #8995aa;
+  box-shadow:
+    0 3px 0 #020408,
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .lobby-controls .quickprefs__row--status .quickprefs__chip.is-on {
   background: #2459bd;
   color: #fff;
-  box-shadow: 0 3px 10px rgba(0, 66, 190, 0.3);
+  border-color: #58b1ff;
+  box-shadow:
+    0 3px 0 #071b41,
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.lobby-controls .quickprefs__row--status .quickprefs__chip:active {
+  transform: translateY(2px);
+  box-shadow:
+    0 1px 0 #020408,
+    inset 0 2px 0 #071327;
 }
 
 .lobby-resultsbar {
@@ -1621,6 +1762,21 @@
   border-radius: 9px;
   background: #14254a;
   color: #93c8ff;
+  border-bottom-color: #050b16;
+  box-shadow:
+    0 3px 0 #02050a,
+    inset 0 1px 0 rgba(163, 215, 255, 0.22);
+}
+
+.lobby-resultsbar--create-only {
+  justify-content: flex-end;
+  border: 0;
+  background: transparent;
+}
+
+.lobby-resultsbar .lobby-createbtn:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #02050a;
 }
 
 @media (max-width: 768px) {
@@ -1638,12 +1794,32 @@
   }
 
   .lobby-controls .game-bar {
-    padding: 9px 8px 8px 12px;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px 5px;
+    padding: 9px 8px 10px 12px;
+  }
+
+  /* The tablist contributes its seven controls to the five-column board, and
+     the Filters button becomes item eight. That yields 5 + 3 with every
+     control visible and no swipe-to-reveal row. */
+  .lobby-controls .game-bar__types {
+    display: contents;
+    overflow: visible;
   }
 
   .lobby-controls .game-bar__type {
-    min-width: 70px;
-    height: 42px;
+    min-width: 0;
+    width: auto;
+    height: 40px;
+    padding-inline: 2px;
+  }
+
+  .lobby-controls .game-bar__filter-btn {
+    min-width: 0;
+    height: 40px;
+    justify-content: center;
+    padding-inline: 3px;
   }
 
   .lobby-controls .quickprefs {
@@ -1651,12 +1827,15 @@
   }
 
   .lobby-controls .quickprefs__row--status {
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    overflow: visible;
   }
 
   .lobby-controls .quickprefs__row--status .quickprefs__chip {
-    min-width: 84px;
+    min-width: 0;
     height: 38px;
+    padding-inline: 4px;
   }
 
   .lobby-resultsbar {

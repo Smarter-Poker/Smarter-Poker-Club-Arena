@@ -17,7 +17,7 @@ import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
 import { DEFAULT_RAKE_RATE, SNG_RAKE_RATE, buyInFor, wholeChips } from '../config/buyIn.js';
-import { gameLaneFor, horseHash } from './HorseBehavior.js';
+import { gameLaneFor, horseHash, isActiveNow } from './HorseBehavior.js';
 
 /**
  * Derive the two buy-in columns from ONE whole-dollar total.
@@ -2811,7 +2811,7 @@ export class TournamentRecurringService {
     return horseAtCapacity(load.get(id) ?? 0);
   }
 
-  private async pickFreeHorses(count: number): Promise<string[]> {
+  private async pickFreeHorses(count: number, allLanes = false): Promise<string[]> {
     if (count <= 0) return [];
     try {
       // Dan 2026-08-23: a horse is unavailable at FOUR concurrent games, not
@@ -2868,7 +2868,13 @@ export class TournamentRecurringService {
         .map((h) => (h as { id: string }).id)
         // Game lanes (Dan 2026-08-26): cash-only horses never enter events —
         // tournaments, spins and heads-up draw from the events/both lanes.
-        .filter((id) => id && !busy.has(id) && gameLaneFor(id) !== 'cash');
+        .filter((id) => {
+          if (!id || busy.has(id)) return false;
+          // Freeroll override: every horse that is currently PLAYING is
+          // eligible, cash lane included. See topUpWithHorses opts.allLanes.
+          if (allLanes) return isActiveNow(id, new Date().getUTCHours());
+          return gameLaneFor(id) !== 'cash';
+        });
 
       /**
        * ═══════════════════════════════════════════════════════════════════
@@ -3227,7 +3233,21 @@ export class TournamentRecurringService {
    * incremented guess, which drifts if a real player registers in the same
    * window. Returns how many horses were actually added.
    */
-  async topUpWithHorses(tournamentId: string, targetPlayers: number): Promise<number> {
+  /**
+   * @param opts.allLanes  FREEROLLS ONLY (Dan 2026-08-27): "all horses, if
+   *   they are playing, should play the freeroll - all real players would."
+   *   The lane split exists so the fleet does not look like one homogeneous
+   *   crowd across cash and events. A freeroll is the one event where that
+   *   distinction is FALSE TO LIFE: nobody skips free money because they
+   *   consider themselves a cash specialist. With this set, cash-lane horses
+   *   are eligible too, and the pool is filtered by whether the horse is
+   *   INSIDE ITS ACTIVITY WINDOW instead - "if they are playing".
+   */
+  async topUpWithHorses(
+    tournamentId: string,
+    targetPlayers: number,
+    opts: { allLanes?: boolean } = {}
+  ): Promise<number> {
     try {
       /**
        * A seat-first game needs BODIES IN SEATS, not names on a list.
@@ -3417,7 +3437,7 @@ export class TournamentRecurringService {
           );
         }
       } else {
-        added = await this.registerHorses(tournamentId, shortfall);
+        added = await this.registerHorses(tournamentId, shortfall, opts.allLanes === true);
       }
 
       /**
@@ -3482,7 +3502,11 @@ export class TournamentRecurringService {
     }
   }
 
-  private async registerHorses(tournamentId: string, count: number): Promise<number> {
+  private async registerHorses(
+    tournamentId: string,
+    count: number,
+    allLanes = false
+  ): Promise<number> {
     try {
       // TOURNEY-AUDIT 2026-07-24: exclude horses already registered/playing in
       // another active tournament. The old query only checked horse_status
@@ -3537,8 +3561,15 @@ export class TournamentRecurringService {
         .eq('horse_status', 'available')
         .limit(count + busyIds.size);
       const horses = (horsePool ?? [])
-        // Game lanes (Dan 2026-08-26): cash-only horses never register for events.
-        .filter((h) => !busyIds.has(h.id) && gameLaneFor(h.id) !== 'cash')
+        .filter((h) => {
+          if (busyIds.has(h.id)) return false;
+          // Freeroll override (Dan 2026-08-27): free money is not a lane
+          // decision - every horse currently playing enters. Otherwise the
+          // 2026-08-26 rule stands: cash-only horses never register for
+          // events.
+          if (allLanes) return isActiveNow(h.id, new Date().getUTCHours());
+          return gameLaneFor(h.id) !== 'cash';
+        })
         .slice(0, count);
 
       if (!horses || horses.length === 0) return 0;

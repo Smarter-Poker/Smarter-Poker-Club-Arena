@@ -25,9 +25,6 @@
  *   - refuses to exceed max_players.
  *
  * WHAT IT DELIBERATELY DOES NOT DO
- *   - Freerolls (buy-in 0) are excluded in the SQL: their prize is funded by
- *     the club by definition, so no number of entrants removes the shortfall,
- *     and stuffing horses in would only dilute a real player's equity.
  *   - It never removes or unregisters anyone.
  *   - It tops up to the guarantee, not to max_players: the goal is to erase
  *     the overlay, not to fill the room.
@@ -38,6 +35,28 @@
  * raises a finding for any overlay that still happened, so a guard that
  * silently stops working shows up on the daily panel rather than in the
  * accounts.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * FREEROLLS - Dan 2026-08-27, correcting an earlier decision of mine
+ * ═══════════════════════════════════════════════════════════════════════════
+ * "All horses, IF THEY ARE PLAYING, should play the freeroll. All real
+ *  players would. So if a horse is online and playing they should always
+ *  register for the freeroll."
+ *
+ * The first cut of this file EXCLUDED freerolls, reasoning that their prize
+ * is club-funded so entrants cannot remove the shortfall, and that adding
+ * horses would dilute a human's equity. Both statements are true and the
+ * conclusion was still wrong, because it answered an accounting question
+ * when the real one is behavioural: nobody skips free money. A freeroll
+ * sitting at 4 of 50 does not read as a quiet game, it reads as a dead room
+ * - and that is what a human sees before deciding whether this site has
+ * players on it. Measured when Dan raised it: "$100 Freeroll" 24 of 500,
+ * "Coffee Break Freeroll" 4 of 50.
+ *
+ * So freerolls fill toward capacity from EVERY lane - the lane split is a
+ * cash-versus-events personality and free money is neither. Eligibility is
+ * "is this horse inside its activity window right now", the literal reading
+ * of "if they are playing", plus the same four-table cap every path honours.
  */
 
 import { supabase } from './supabase/client.js';
@@ -83,6 +102,59 @@ export function topUpTargetFor(risk: OverlayRisk): number {
   return Math.min(target, risk.current_players + MAX_TOPUP_PER_CYCLE);
 }
 
+export interface FreerollTarget {
+  tournament_id: string;
+  name: string;
+  status: string;
+  current_players: number;
+  max_players: number;
+  minutes_to_start: number;
+}
+
+/** Pure: how full should this freeroll be right now? Exported for tests. */
+export function freerollTargetFor(t: FreerollTarget): number {
+  const cap = Math.max(0, Math.floor(t.max_players));
+  if (cap === 0) return 0;
+  // Fill toward capacity, but never add more than the per-cycle ceiling at
+  // once: a 500-seat freeroll fills over several cycles rather than draining
+  // every free horse on the estate in one call and emptying the cash room.
+  return Math.min(cap, t.current_players + MAX_TOPUP_PER_CYCLE);
+}
+
+/**
+ * Register currently-playing horses into open freerolls, up to capacity.
+ * Uses the allLanes override: free money is not a lane decision.
+ */
+export async function fillFreerollsOnce(unionId: string = MIDWAY_UNION_ID): Promise<number> {
+  let added = 0;
+  try {
+    const { data, error } = await supabase.rpc('fn_freeroll_fill_targets', { p_union: unionId });
+    if (error) throw new Error(error.message);
+    const targets = (data ?? []) as FreerollTarget[];
+    for (const t of targets) {
+      const target = freerollTargetFor(t);
+      if (target <= t.current_players) continue;
+      const n = await seeder.topUpWithHorses(t.tournament_id, target, { allLanes: true });
+      added += n;
+      if (n > 0) {
+        console.log(
+          `[HorseOverlayGuard] freeroll ${t.name}: ${t.current_players}/${t.max_players} ` +
+            `(starts in ${t.minutes_to_start}m) - registered ${n} horse(s) toward ${target}`
+        );
+      } else {
+        console.warn(
+          `[HorseOverlayGuard] freeroll ${t.name} wanted ${target - t.current_players} more and ` +
+            `added NONE - every candidate is outside its activity window or at the four-table cap`
+        );
+      }
+    }
+    return added;
+  } catch (err) {
+    reportError(err, 'HorseOverlayGuard.freerolls');
+    return added;
+  }
+}
+
 export async function runOverlayGuardOnce(unionId: string = MIDWAY_UNION_ID): Promise<number> {
   if (running) return 0;
   running = true;
@@ -125,18 +197,25 @@ export async function runOverlayGuardOnce(unionId: string = MIDWAY_UNION_ID): Pr
   }
 }
 
+/** One full cycle: guaranteed events first, then freerolls. */
+export async function runEventFillCycle(unionId: string = MIDWAY_UNION_ID): Promise<number> {
+  const guaranteed = await runOverlayGuardOnce(unionId);
+  const freerolls = await fillFreerollsOnce(unionId);
+  return guaranteed + freerolls;
+}
+
 export function startHorseOverlayGuard(): void {
   if (timer || !enabled()) return;
   timer = setInterval(() => {
-    void runOverlayGuardOnce().catch((err: unknown) => reportError(err, 'HorseOverlayGuard.tick'));
+    void runEventFillCycle().catch((err: unknown) => reportError(err, 'HorseOverlayGuard.tick'));
   }, CYCLE_MS);
   timer.unref?.();
   bootTimer = setTimeout(() => {
-    void runOverlayGuardOnce().catch((err: unknown) => reportError(err, 'HorseOverlayGuard.boot'));
+    void runEventFillCycle().catch((err: unknown) => reportError(err, 'HorseOverlayGuard.boot'));
   }, BOOT_DELAY_MS);
   bootTimer.unref?.();
   console.log(
-    '[HorseOverlayGuard] started - Midway Union guaranteed events checked every 2 minutes'
+    '[HorseOverlayGuard] started - guaranteed events topped to their guarantee and freerolls filled from every lane, every 2 minutes'
   );
 }
 

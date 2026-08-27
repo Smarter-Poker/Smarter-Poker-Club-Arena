@@ -8,7 +8,13 @@ import {
   assignedLaneCount,
   type HorseGameLane,
 } from './HorseBehavior.js';
-import { topUpTargetFor, MIDWAY_UNION_ID, type OverlayRisk } from './HorseOverlayGuard.js';
+import {
+  topUpTargetFor,
+  freerollTargetFor,
+  MIDWAY_UNION_ID,
+  type OverlayRisk,
+  type FreerollTarget,
+} from './HorseOverlayGuard.js';
 
 vi.mock('./supabase/client.js', () => ({ supabase: { rpc: vi.fn(), from: vi.fn() } }));
 vi.mock('./errorReporter.js', () => ({ reportError: vi.fn() }));
@@ -92,5 +98,43 @@ describe('overlay top-up target', () => {
 
   it('points at Midway Union by default', () => {
     expect(MIDWAY_UNION_ID).toBe('fade0000-0000-0000-0000-000000000001');
+  });
+});
+
+describe('freerolls fill from every lane', () => {
+  const fr = (over: Partial<FreerollTarget> = {}): FreerollTarget => ({
+    tournament_id: 'f1',
+    name: 'Coffee Break Freeroll (PLO4)',
+    status: 'REGISTERING',
+    current_players: 4,
+    max_players: 50,
+    minutes_to_start: 12,
+    ...over,
+  });
+
+  it('fills toward capacity, not merely to a quorum', () => {
+    // 4 of 50 is the measured state Dan objected to. The target moves to the
+    // per-cycle ceiling above the field, heading for the full 50.
+    expect(freerollTargetFor(fr())).toBe(44);
+  });
+
+  it('a big freeroll fills over several cycles instead of draining the fleet', () => {
+    // 24 of 500 (the live "$100 Freeroll"): one cycle adds at most 40, so the
+    // cash room is not emptied in a single call.
+    expect(freerollTargetFor(fr({ current_players: 24, max_players: 500 }))).toBe(64);
+  });
+
+  it('never exceeds capacity', () => {
+    expect(freerollTargetFor(fr({ current_players: 48, max_players: 50 }))).toBe(50);
+  });
+
+  it('a full freeroll asks for nobody', () => {
+    const t = fr({ current_players: 50, max_players: 50 });
+    expect(freerollTargetFor(t)).toBe(50);
+    expect(freerollTargetFor(t) - t.current_players).toBe(0);
+  });
+
+  it('a capacity-less row is ignored rather than treated as infinite', () => {
+    expect(freerollTargetFor(fr({ max_players: 0 }))).toBe(0);
   });
 });

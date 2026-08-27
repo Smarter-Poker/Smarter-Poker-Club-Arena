@@ -3819,6 +3819,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           GAME ACTION BAR — every game type, flat, plus explicit sorting
       ═══════════════════════════════════════════════════════════════════ */}
       <section className="lobby-controls" aria-label="Browse games">
+        <div className="lobby-controls__heading">
+          <div>
+            <span className="lobby-controls__eyebrow">Live Club Schedule</span>
+            <strong className="lobby-controls__title">Find Your Game</strong>
+          </div>
+          <span className="lobby-controls__total">
+            <strong>{totalGameCount.toLocaleString()}</strong> Games
+          </span>
+        </div>
         <div className="game-bar">
           <div className="game-bar__types" role="tablist" aria-label="Game type">
             {GAME_TYPE_TABS.map((tab) => (

@@ -1589,3 +1589,127 @@ abbr.lt-variant[title] {
     transition: none;
   }
 }
+
+/* LIVE EVENT BOARD — visual-only row/card treatment. */
+@media (min-width: 901px) {
+  .lobby-table-wrap {
+    border-color: rgba(88, 142, 235, 0.25);
+    border-radius: 14px;
+    background: #080b11;
+    box-shadow: 0 18px 38px rgba(0, 0, 0, 0.44);
+  }
+
+  .lobby-table {
+    border-collapse: separate;
+    border-spacing: 0 4px;
+    padding: 0 5px 5px;
+  }
+
+  .lobby-table thead th {
+    padding-block: 12px;
+    background: rgba(13, 17, 25, 0.97);
+    border-bottom-color: rgba(80, 135, 225, 0.26);
+    color: #758198;
+  }
+
+  .lt-row {
+    background: linear-gradient(90deg, rgba(20, 26, 39, 0.96), rgba(11, 14, 21, 0.98));
+    box-shadow: inset 3px 0 0 rgba(88, 137, 225, 0.28);
+  }
+
+  .lt-row td {
+    height: 48px;
+    border-top: 1px solid rgba(105, 137, 193, 0.1);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.68);
+  }
+
+  .lt-row td:first-child {
+    border-radius: 9px 0 0 9px;
+  }
+
+  .lt-row td:last-child {
+    border-radius: 0 9px 9px 0;
+  }
+
+  .lt-row:hover {
+    background: linear-gradient(90deg, rgba(31, 63, 119, 0.6), rgba(16, 25, 42, 0.98));
+    box-shadow:
+      inset 4px 0 0 #50baff,
+      0 5px 16px rgba(0, 0, 0, 0.34);
+    transform: translateY(-1px);
+  }
+
+  .lt-row.is-featured {
+    background: linear-gradient(90deg, rgba(32, 76, 150, 0.58), rgba(17, 24, 42, 0.98) 62%);
+    box-shadow:
+      inset 4px 0 0 #56d3ff,
+      0 6px 18px rgba(0, 45, 130, 0.22);
+  }
+
+  .lt-name__line1,
+  .lt-name:not(.lt-name--mtt) {
+    font-size: 0.86rem;
+    font-weight: 760;
+    color: #f4f8ff;
+  }
+}
+
+@media (max-width: 900px) {
+  .lobby-table tbody {
+    gap: 12px;
+  }
+
+  .lobby-table tr {
+    padding: 13px 13px 12px 16px;
+    border-color: rgba(101, 148, 222, 0.25);
+    border-radius: 14px;
+    background:
+      radial-gradient(circle at 100% 0, rgba(48, 100, 192, 0.16), transparent 38%),
+      linear-gradient(160deg, rgba(27, 35, 52, 0.98), rgba(10, 13, 21, 0.99) 70%);
+    box-shadow:
+      0 10px 24px rgba(0, 0, 0, 0.52),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .lobby-table tr.is-featured {
+    border-color: rgba(85, 207, 255, 0.48);
+    background:
+      radial-gradient(circle at 92% 0, rgba(46, 141, 255, 0.27), transparent 43%),
+      linear-gradient(155deg, rgba(27, 51, 91, 0.99), rgba(11, 16, 28, 0.99) 72%);
+    box-shadow:
+      0 14px 30px rgba(0, 29, 90, 0.55),
+      inset 0 1px 0 rgba(170, 226, 255, 0.13);
+  }
+
+  .lobby-table td.lt-col-name {
+    padding-right: 112px;
+    padding-bottom: 3px;
+  }
+
+  .lt-name__line1,
+  .lt-name:not(.lt-name--mtt) {
+    font-size: 0.94rem;
+    line-height: 1.25;
+  }
+
+  .lobby-table td.lt-col-num,
+  .lobby-table td.lt-col-players,
+  .lobby-table td.lt-col-starts,
+  .lobby-table td.lt-col-payout,
+  .lobby-table td.lt-col-tstack,
+  .lobby-table td.lt-col-tlevel,
+  .lobby-table td.lt-col-leveltime,
+  .lobby-table td.lt-col-format {
+    min-height: 46px;
+    padding: 5px 8px 6px;
+    border: 1px solid rgba(106, 137, 191, 0.11);
+    border-radius: 9px;
+    background: rgba(2, 5, 11, 0.54);
+  }
+
+  .lobby-table td.lt-col-actions {
+    margin-top: 3px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(120, 150, 205, 0.12);
+  }
+}

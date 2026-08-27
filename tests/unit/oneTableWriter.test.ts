@@ -56,11 +56,11 @@ describe('exactly one writer per kind of table', () => {
         // The host's own creation screen: Save creates the table and returns
         // to the lobby, Start creates it and sits down. Both insert status
         // 'waiting' from ONE buildTableData().
+        //
+        // 2026-08-27: TableService left this list. Its createTable was the
+        // Create Table modal's service, and the modal had zero imports — the
+        // whole path was unreachable. Deleted, not preserved.
         'src/pages/TableConfigPage.tsx',
-        // The Create Table modal's service. Maps settings onto the exact columns
-        // the engine reads, and is the only writer that enforces the per-variant
-        // seat cap.
-        'src/services/TableService.ts',
         // Tournament tables. Sized from the tournament's own structure, never
         // through the cash path.
         'src/services/TournamentService.ts',

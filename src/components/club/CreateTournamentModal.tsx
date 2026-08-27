@@ -189,9 +189,14 @@ export default function CreateTournamentModal({
 
   // ── The buy-in, split ──
   // total = what the player pays (the typed whole number)
-  // fee   = the 10% house cut, rounded to a whole number
-  // prize = total - fee, what reaches the prize pool. Also whole.
-  const split = useMemo(() => splitBuyIn(Number(buyIn) || 0), [buyIn]);
+  // fee   = the house cut OUT of it — and the RATE IS PER FORMAT
+  //         (2026-08-27): fn_create_tournament charges 5% on an SNG, 0 on a
+  //         Spin, 10% on everything else. This preview used a flat 10% for
+  //         all of them, so every Heads Up / SNG advertised double the fee
+  //         the server actually took.
+  // prize = total - fee, what reaches the prize pool.
+  const feeRate = format === 'spin' ? 0 : format === 'sng' ? 0.05 : 0.1;
+  const split = useMemo(() => splitBuyIn(Number(buyIn) || 0, feeRate), [buyIn, feeRate]);
 
   // ── Auto-select payout structure ──
   // SNG/Spin: based on max players. MTT/Bounty/PKO/Mystery: default MTT structure (no max player cap)
@@ -391,10 +396,10 @@ export default function CreateTournamentModal({
       }
 
       const parsedBuyIn = Math.round(Number(buyIn));
-      // The 10% house fee is a CUT OF the buy-in, not a surcharge on top. Both
-      // halves are whole numbers, and prize + fee is exactly what the player
-      // pays. fn_create_tournament recomputes the identical split server-side.
-      const parsedRake = splitBuyIn(parsedBuyIn).fee;
+      // The house fee is a CUT OF the buy-in, not a surcharge on top, at the
+      // per-format rate (5% SNG / 0 Spin / 10% otherwise — see feeRate above).
+      // fn_create_tournament recomputes the identical split server-side.
+      const parsedRake = splitBuyIn(parsedBuyIn, feeRate).fee;
 
       // ── Bounty validation (defense-in-depth) ──
       if (isBountyFormat) {
@@ -409,7 +414,7 @@ export default function CreateTournamentModal({
         // prize half of the split — otherwise the prize pool would go negative
         // and registration would reject every entrant with
         // 'misconfigured_bounty'.
-        if (ba > splitBuyIn(parsedBuyIn).prize) {
+        if (ba > splitBuyIn(parsedBuyIn, feeRate).prize) {
           toast.error(
             `Bounty ${money(ba)} plus the ${money(parsedRake)} fee exceeds the ${money(parsedBuyIn)} buy-in. Lower the bounty or raise the buy-in.`
           );
@@ -930,7 +935,11 @@ export default function CreateTournamentModal({
                     2026-08-20: the fee is a CUT OUT OF the buy-in, rounded to a
                     whole number, so the player pays exactly the figure typed on
                     the left and never a decimal. */}
-                <label>Fee (10% Of Buy-In)</label>
+                <label>
+                  {feeRate === 0
+                    ? 'Fee (Spins Carry None)'
+                    : `Fee (${Math.round(feeRate * 100)}% Of Buy-In)`}
+                </label>
                 <input
                   type="number"
                   className={styles.input}

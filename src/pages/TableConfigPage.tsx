@@ -95,9 +95,20 @@ interface TableConfig {
   hideClubName: boolean;
 
   // Game Variants (toggles)
+  //
+  // 2026-08-27: `tripleBoard` was removed. It wrote tables.triple_board, a
+  // column with ZERO readers anywhere — engine, SQL, lobby. A host who turned
+  // it on was promised a three-board game and dealt an ordinary one. Same
+  // treatment as the seven dead security switches (2026-08-19): the column
+  // stays so nothing is lost, the switch goes until the feature exists.
   bombPotEnabled: boolean;
+  // The two numbers that make Bomb Pot real. The engine fires a bomb pot
+  // every `bomb_pot_frequency` hands with `bomb_pot_ante_multiplier` x BB
+  // antes; until 2026-08-27 both were hard-coded (10 / 2) and the host had
+  // no say.
+  bombPotFrequency: number;
+  bombPotAnteBB: number;
   doubleBoard: boolean;
-  tripleBoard: boolean;
   pineappleHoldem: boolean;
   sevenDeuceEnabled: boolean;
   sevenDeuceAmountBB: number;
@@ -118,10 +129,12 @@ interface TableConfig {
   maintainPercentMin: number;
   maintainHands: number;
   autoStartPlayers: number;
-  gameLengthHours: number;
+  // 2026-08-27: `gameLengthHours` and `calltimeEnabled` removed — both wrote
+  // columns (game_length_hours, calltime_enabled) with zero readers anywhere.
+  // A "12 hour" table ran forever; a Calltime shot clock never ticked.
+  // Columns stay; the switches return in the commit that implements them.
 
   // Time & Auto Settings (toggles)
-  calltimeEnabled: boolean;
   autoExtension: boolean;
   autoRestart: boolean;
   autoCreateTable: boolean;
@@ -260,8 +273,10 @@ const DEFAULT_CONFIG: TableConfig = {
 
   // Game Variants
   bombPotEnabled: false,
+  // Bible V8 section 4.22 defaults, previously hard-coded in buildTableData.
+  bombPotFrequency: 10,
+  bombPotAnteBB: 2,
   doubleBoard: false,
-  tripleBoard: false,
   pineappleHoldem: false,
   sevenDeuceEnabled: false,
   sevenDeuceAmountBB: 2,
@@ -286,10 +301,8 @@ const DEFAULT_CONFIG: TableConfig = {
   maintainPercentMin: 0,
   maintainHands: 10,
   autoStartPlayers: 2,
-  gameLengthHours: 12,
 
   // Time & Auto Settings
-  calltimeEnabled: false,
   autoExtension: false,
   autoRestart: false,
   autoCreateTable: false,
@@ -842,17 +855,17 @@ export default function TableConfigPage() {
     // Game variants
     bomb_pot_enabled: config.bombPotEnabled,
     // FIX-D10 2026-07-19: the engine only fires bomb pots when
-    // bomb_pot_frequency > 0, but the config page exposes just an on/off toggle,
-    // so "enabled" bomb pots never occurred. Write sensible defaults when enabled
-    // (every 10 hands, 2x BB ante per Bible V8 §4.22) until the UI exposes knobs.
-    bomb_pot_frequency: config.bombPotEnabled ? 10 : 0,
-    bomb_pot_ante_multiplier: config.bombPotEnabled ? 2 : 0,
+    // bomb_pot_frequency > 0. The knobs are the host's now (2026-08-27) —
+    // they were hard-coded 10 / 2 "until the UI exposes knobs", and it does.
+    bomb_pot_frequency: config.bombPotEnabled ? config.bombPotFrequency : 0,
+    bomb_pot_ante_multiplier: config.bombPotEnabled ? config.bombPotAnteBB : 0,
     // DOUBLE-BOARD BOMB POT 2026-08-20: the existing Double Board toggle,
     // combined with Bomb Pot, now means "bomb pots deal two boards" — the
     // engine reads bomb_pot_double_board and splits every pot across them.
     bomb_pot_double_board: config.bombPotEnabled && config.doubleBoard,
     double_board: config.doubleBoard,
-    triple_board: config.tripleBoard,
+    // triple_board is no longer written (2026-08-27): the column has zero
+    // readers, so the toggle that fed it promised a game that never existed.
     /**
      * 2026-08-25: THE COLUMN HAS A READER NOW.
      *
@@ -925,10 +938,10 @@ export default function TableConfigPage() {
     maintain_percent_min: config.maintainPercentMin,
     maintain_hands: config.maintainHands,
     auto_start_players: config.autoStartPlayers,
-    game_length_hours: config.gameLengthHours,
+    // game_length_hours and calltime_enabled are no longer written
+    // (2026-08-27): zero readers each — see the TableConfig comment.
 
     // Time & auto settings
-    calltime_enabled: config.calltimeEnabled,
     auto_extension: config.autoExtension,
     auto_restart: config.autoRestart,
     auto_create_table: config.autoCreateTable,
@@ -1346,18 +1359,37 @@ export default function TableConfigPage() {
               label="Bomb Pot"
               value={config.bombPotEnabled}
               onChange={(v) => updateConfig('bombPotEnabled', v)}
-              tooltip="Enable bomb pot rounds"
+              tooltip="Everyone antes and the hand starts on the flop, on a fixed schedule"
             />
+            {config.bombPotEnabled && (
+              <>
+                <Slider
+                  label="Bomb Pot Every"
+                  value={config.bombPotFrequency}
+                  onChange={(v) => updateConfig('bombPotFrequency', v)}
+                  min={5}
+                  max={50}
+                  step={5}
+                  suffix=" hands"
+                />
+                <Slider
+                  label="Bomb Pot Ante"
+                  value={config.bombPotAnteBB}
+                  onChange={(v) => updateConfig('bombPotAnteBB', v)}
+                  min={1}
+                  max={10}
+                  step={0.5}
+                  suffix=" Big Blind"
+                />
+              </>
+            )}
             <Toggle
               label="Double Board"
               value={config.doubleBoard}
               onChange={(v) => updateConfig('doubleBoard', v)}
             />
-            <Toggle
-              label="Triple Board"
-              value={config.tripleBoard}
-              onChange={(v) => updateConfig('tripleBoard', v)}
-            />
+            {/* Triple Board removed 2026-08-27: its column has zero readers.
+                The switch promised a game the engine cannot deal. */}
             {SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase()) && (
               <Toggle
                 label="Seven-Deuce"
@@ -1441,13 +1473,9 @@ export default function TableConfigPage() {
               suffix=" max"
             />
 
-            <Toggle
-              label="Calltime"
-              value={config.calltimeEnabled}
-              onChange={(v) => updateConfig('calltimeEnabled', v)}
-              tooltip="Shot clock for action"
-            />
-
+            {/* Calltime removed 2026-08-27: calltime_enabled has zero readers.
+                The shot clock the tooltip promised never ticked. Action Time
+                below is the real timer. */}
             <Slider
               label="Action Time"
               value={config.actionTimeSeconds}
@@ -2232,14 +2260,9 @@ export default function TableConfigPage() {
               onChange={(v) => updateConfig('hideClubName', v)}
             />
 
-            <Slider
-              label="Game Length"
-              value={config.gameLengthHours}
-              onChange={(v) => updateConfig('gameLengthHours', v)}
-              min={1}
-              max={24}
-              suffix=" hour"
-            />
+            {/* Game Length removed 2026-08-27: game_length_hours has zero
+                readers. Every "12 hour" table ran forever; the closest real
+                lifecycle controls are Auto Extension / Auto Restart above. */}
           </>
         )}
       </div>

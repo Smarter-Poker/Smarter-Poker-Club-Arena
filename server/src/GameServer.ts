@@ -1855,7 +1855,7 @@ export class GameServer {
         // spinner. A table of horses alone still does not get one.
         //
         // It returns `human_count` so the two ideas below can stay separate:
-        // "needs an engine" is NOT "should be dealing". See readyIds.
+        // "needs an engine" is NOT "should be dealing". See seatedCounts.
         const { data: ready, error } = await supabase.rpc('cash_tables_needing_engine', {
           p_min: 2,
         });
@@ -2036,11 +2036,22 @@ export class GameServer {
          *
          * So: two or more occupants is what "should be dealing" means, exactly
          * as before. A lone seat gets an engine and is left alone in it.
+         *
+         * 2026-08-27: "two or more" was still not the whole truth. The
+         * ENGINE'S definition of enough is max(2, auto_start_players) —
+         * minPlayersToDeal, which ServerTableEngineDealing's header warns
+         * "the watchdog reads too so the two cannot disagree". This reaper
+         * was the one reader that disagreed: a table with AutoStart 5 and
+         * 2-4 seats makes no progress by design, and a hard-coded >= 2 here
+         * called that a zombie and rebuilt its engine every 180s forever.
+         * The COUNTS are kept so each engine can be measured against its own
+         * threshold below.
          */
-        const readyIds = new Set(
-          ((ready || []) as Array<{ table_id: string; player_count: number }>)
-            .filter((r) => r.player_count >= 2)
-            .map((r) => r.table_id)
+        const seatedCounts = new Map<string, number>(
+          ((ready || []) as Array<{ table_id: string; player_count: number }>).map((r) => [
+            r.table_id,
+            Number(r.player_count) || 0,
+          ])
         );
         for (const [id, engine] of this.tableEngines) {
           if (!engine.isRunning()) {
@@ -2080,15 +2091,21 @@ export class GameServer {
             if (!this.tournamentOwnedTables.has(id)) tableStateHub.dropTable(id);
             continue;
           }
-          // 2026-08-15: `readyIds` comes from `cash_tables_with_players`, whose
-          // WHERE clause includes `t.tournament_id IS NULL`. Gating the rebuild
+          // 2026-08-15: the seat counts come from a cash-only RPC (its WHERE
+          // clause includes `t.tournament_id IS NULL`). Gating the rebuild
           // on it meant TOURNAMENT tables had no freeze recovery at all: when
           // one died, the `!isRunning()` branch above deleted it and nothing
           // anywhere recreated it, so every seated player was frozen
           // permanently. Tournament tables are rebuilt by their own
           // TournamentManager sweep, so here we only need to stop treating a
           // cash-only list as the definition of "should be dealing".
-          const shouldBeDealing = readyIds.has(id) || this.tournamentOwnedTables.has(id);
+          //
+          // 2026-08-27: a cash table "should be dealing" when it has reached
+          // ITS OWN deal threshold — dealThreshold() is minPlayersToDeal, the
+          // same number the dealing loop and the turn watchdog use.
+          const shouldBeDealing =
+            (seatedCounts.get(id) ?? 0) >= engine.dealThreshold() ||
+            this.tournamentOwnedTables.has(id);
           /**
            * Dan 2026-08-19: PAUSED IS NOT DEAD — the other half of the break fix.
            *

@@ -179,10 +179,15 @@ export function buildTournamentConfig(
   // buy-ins must never be decimal buy-ins, whole numbers only." The Buy-in
   // slider on the create-table form already steps in whole chips; rounding here
   // is the backstop for a restored draft or a programmatic config. `buyIn` is
-  // the TOTAL the player pays and the 10% fee is a cut OUT of it, so both
-  // halves of the split are whole numbers too.
+  // the TOTAL the player pays and the fee is a cut OUT of it.
+  //
+  // THE RATE IS PER FORMAT (2026-08-27): fn_create_tournament charges 5% on
+  // an SNG, 0 on a Spin, 10% otherwise. This split previously assumed a flat
+  // 10%, so the `rake` figure the UI showed for an SNG was double what the
+  // server actually took. The server recomputes regardless; this is display
+  // and derived-default truthfulness.
   const buyIn = Math.max(0, Math.round(Number(config.buyIn) || 0));
-  const split = splitBuyIn(buyIn);
+  const split = splitBuyIn(buyIn, isSpins ? 0 : isSng ? 0.05 : 0.1);
 
   const isMtt = config.gameMode === 'mtt';
   const clampInt = (v: number, lo: number, hi: number) =>

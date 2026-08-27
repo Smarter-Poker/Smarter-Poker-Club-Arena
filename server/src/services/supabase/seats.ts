@@ -56,7 +56,6 @@ import { supabase } from './client.js';
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-
 /**
  * Mark a seat as left, cash it out atomically, and sync the table's player count.
  *
@@ -158,7 +157,6 @@ export async function atomicCashout(
     return 0;
   }
 }
-
 
 /**
  * TOURNEY-AUDIT 2026-07-24 (sweep 6): cash-game waitlist notifier. When a seat
@@ -346,9 +344,15 @@ export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
  * Process leave-pending players after hand completion
  */
 export async function processLeavePending(tableId: string, clubId: string): Promise<string[]> {
+  /* Deliberately does NOT select `stack`. This query only ENUMERATES which
+     seats asked to leave; the amount comes from the locked read inside
+     atomic_seat_cashout_locked. `stack` was selected here and never used, which
+     is precisely the shape that invites someone to "save a round-trip" by
+     passing it along - and an unlocked stack read handed to a credit is the
+     2026-08-27 race. Do not add it back. */
   const { data: pendingSeats } = await supabase
     .from('table_seats')
-    .select('user_id, stack, seat_number')
+    .select('user_id, seat_number')
     .eq('table_id', tableId)
     .eq('leave_pending', true)
     .is('left_at', null);

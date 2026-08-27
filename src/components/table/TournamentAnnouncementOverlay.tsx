@@ -70,10 +70,10 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
       color: '#3fb950',
     },
     final_table: {
-      icon: '*',
+      icon: 'FT',
       title: 'FINAL TABLE',
       subtitle: `${data?.playersRemaining || 'All'} players remain - final table begins!`,
-      color: '#8b5cf6',
+      color: '#d9aa4e',
     },
     level_up: {
       icon: '⬆',
@@ -160,7 +160,7 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
 
   return (
     <div
-      className={`tournamentAnnouncement ${compact ? 'compact' : ''} ${visible ? 'visible' : ''}`}
+      className={`tournamentAnnouncement ${compact ? 'compact' : ''} ${type === 'final_table' ? 'finalTableAnnouncement' : ''} ${visible ? 'visible' : ''}`}
       style={{ '--accent-color': c.color } as React.CSSProperties}
       role="status"
       aria-live="polite"

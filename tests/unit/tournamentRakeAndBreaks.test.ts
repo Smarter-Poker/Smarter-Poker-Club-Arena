@@ -105,7 +105,9 @@ describe('the break is two phases: last hand, THEN five minutes', () => {
   });
 
   it('waits for every table across every tournament before counting down', () => {
-    expect(trigger).toMatch(/await this\.waitForAllTablesParked\(mttEngines\)/);
+    // Renamed from mttEngines 2026-08-27: the snapshot is every format now,
+    // not only the MTTs. See the takesSynchronizedBreaks suite below.
+    expect(trigger).toMatch(/await this\.waitForAllTablesParked\(breakEngines\)/);
     const waitAt = trigger.indexOf('waitForAllTablesParked');
     const countdownAt = trigger.indexOf('beginBreakCountdown');
     const resumeTimerAt = trigger.indexOf('breakResumeTimer');
@@ -229,8 +231,12 @@ describe('a restart mid-break does not resume play', () => {
     expect(resumeFn).toMatch(/tournament\.break_started_at/);
     expect(resumeFn).toMatch(/LAST_HAND_GRACE_MS \+\s*TournamentManagerBase\.BREAK_DURATION_MS/);
     expect(resumeFn).toMatch(/remainingMs/);
+    /* 2026-08-27: the call now also passes { beforeNextHand: true }. Restarting
+       INTO a live break is a break, so the rebuilt engines must park without
+       dealing rather than opening one more hand first - which is what an
+       un-flagged pause means. The budget argument is unchanged. */
     expect(resumeFn).toMatch(
-      /engine\.pauseAfterHand\(remainingMs \+ TournamentManagerBase\.LAST_HAND_GRACE_MS\)/
+      /engine\.pauseAfterHand\(remainingMs \+ TournamentManagerBase\.LAST_HAND_GRACE_MS,\s*\{\s*beforeNextHand:\s*true,?\s*\}\)/
     );
   });
 
@@ -265,8 +271,19 @@ describe('the engine pause outlasts the break', () => {
 
   it('the park no longer self-resumes after a hard-coded 120s', () => {
     // 120s is shorter than a 5-minute break: every table used to resume mid-break.
-    expect(DEALING).toMatch(/this\.pauseMaxWaitMs \?\? 120000/);
+    //
+    // MOVED 2026-08-27: the park itself moved out of the dealing loop and into
+    // ServerTableEngineBase.awaitPauseGate, so the loop could await it from the
+    // TOP of the iteration as well as after the deal — a gate that only sat
+    // after dealHand() was unreachable for any table that was idle, holding for
+    // a spin wheel, or short a player at :55. The budget rule is unchanged and
+    // is asserted where it now lives; the dealing loop must no longer carry a
+    // park of its own.
+    expect(ENGINE).toMatch(/this\.pauseMaxWaitMs \?\? 120000/);
+    expect(ENGINE).not.toMatch(/\}, 120000\);/);
     expect(DEALING).not.toMatch(/\}, 120000\);/);
+    expect(DEALING).not.toMatch(/this\.handForHandResolve = resolve/);
+    expect(DEALING).toMatch(/await this\.awaitPauseGate\(\)/);
   });
 
   it('the break asks for a budget covering the last hand plus the break', () => {
@@ -303,5 +320,179 @@ describe('tournament rake is actually collected', () => {
   it('surfaces why registrations were skipped instead of failing silently', () => {
     expect(registerFn).toMatch(/failures/);
     expect(registerFn).toMatch(/console\.warn/);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  EVERY FORMAT TAKES THE :55 BREAK (Dan 2026-08-27, binding)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * "DO A DEEP DIVE AND AUDIT INTO THE SYNCHRONIZED BREAKS FOR EVERY MTT, SPIN
+ *  AND HEADS UP... THEY SHOULD START AT THE :55 OF THE HOUR EVERY HOUR."
+ *
+ * Verified broken: GameServer gated the break on isMttOrXmtt(), whose entire
+ * job is to return FALSE for SNG and SPIN. Heads-Up has no type of its own on
+ * this platform (it is variant 'sng' + max_players 2), so that one predicate
+ * excluded all three formats Dan named — the whole 32-board Spin fleet and the
+ * whole 16-board Heads-Up fleet dealt through every break while the MTTs sat
+ * on the break screen.
+ */
+describe('the :55 break covers every format, not only the MTTs', () => {
+  const trigger = GAME_SERVER.slice(
+    GAME_SERVER.indexOf('private async triggerSynchronizedBreak'),
+    GAME_SERVER.indexOf('private async waitForAllTablesParked')
+  );
+  const hold = GAME_SERVER.slice(
+    GAME_SERVER.indexOf('private async holdIfBreakIsRunning'),
+    GAME_SERVER.indexOf('private async waitForAllTablesParked')
+  );
+
+  it('the break snapshot does not filter on format', () => {
+    expect(trigger).toMatch(/tm\.takesSynchronizedBreaks\(\)/);
+    // THE REGRESSION: any format predicate back in this gate re-excludes
+    // Spin and Heads-Up, because that is exactly what isMttOrXmtt() means.
+    expect(trigger).not.toMatch(/isMttOrXmtt/);
+  });
+
+  it('a tournament that starts mid-break is held regardless of format', () => {
+    expect(hold).toMatch(/tm\.takesSynchronizedBreaks\(\)/);
+    expect(hold).not.toMatch(/isMttOrXmtt/);
+  });
+
+  it('the only opt-out is the explicit per-tournament column', () => {
+    const gate = BASE.slice(
+      BASE.indexOf('takesSynchronizedBreaks(): boolean'),
+      BASE.indexOf('takesSynchronizedBreaks(): boolean') + 200
+    );
+    expect(gate).toMatch(/synchronizedBreaksEnabled\(\)/);
+    // No format may be read here. Spin, sng and tournament_type are all
+    // disqualifying — see the method's own docstring.
+    expect(gate).not.toMatch(/spin|sng|tournament_type|variant/i);
+  });
+
+  it('isMttOrXmtt still exists but normalises case', () => {
+    const fn = BASE.slice(BASE.indexOf('isMttOrXmtt(): boolean'));
+    expect(fn.slice(0, 400)).toMatch(/toUpperCase\(\)/);
+    expect(fn.slice(0, 400)).toMatch(/toLowerCase\(\)/);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE PARK IS REACHABLE FROM AN IDLE TABLE (Dan 2026-08-27, binding)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * "AT THE :55 BREAK HAS STARTED, AND ALL HANDS FINISH. ONCE A TABLE HAS
+ *  FINISHED THE HAND, THEY STOP, AND DON'T RESTART UNTIL THE BREAK IS OVER."
+ *
+ * Verified broken: the park lived inline AFTER `await this.dealHand(...)`, and
+ * every guard above it leaves the iteration with `continue` (short-handed,
+ * spin-reveal hold, bounty reveal, admin lock) while the start-up wait loop
+ * enters the dealing loop below it entirely. A table that was not mid-hand at
+ * :55 therefore never parked:
+ *
+ *   - areAllTablesParked() stayed false, so the platform burned the whole
+ *     2-minute LAST_HAND_GRACE_MS every hour and started the break late;
+ *   - and the moment that table got players back it dealt a full hand IN THE
+ *     MIDDLE OF THE BREAK before parking.
+ */
+describe('a paused table parks whatever it was doing', () => {
+  const DEALING = readFileSync(
+    resolve(__dirname, '../../server/src/engine/ServerTableEngineDealing.ts'),
+    'utf8'
+  );
+  const ENGINE_BASE = readFileSync(
+    resolve(__dirname, '../../server/src/engine/ServerTableEngineBase.ts'),
+    'utf8'
+  );
+  const loop = DEALING.slice(DEALING.indexOf('protected async dealingLoop'));
+
+  it('the gate is awaited before the short-handed idle branch', () => {
+    const gateAt = loop.indexOf('await this.awaitPauseGate()');
+    const shortHandedAt = loop.indexOf('activePlayers.length < this.minPlayersToDeal()');
+    const dealAt = loop.indexOf('await this.dealHand(');
+    expect(gateAt).toBeGreaterThan(-1);
+    expect(shortHandedAt).toBeGreaterThan(-1);
+    expect(dealAt).toBeGreaterThan(-1);
+    // THE REGRESSION: a gate that only sits after the deal is unreachable for
+    // every table that never reaches the deal.
+    expect(gateAt).toBeLessThan(shortHandedAt);
+    expect(gateAt).toBeLessThan(dealAt);
+  });
+
+  it('it also parks immediately after a hand lands, not after the display pause', () => {
+    const dealAt = loop.indexOf('await this.dealHand(');
+    const postDealGate = loop.indexOf('await this.awaitPauseGate()', dealAt);
+    const displayPause = loop.indexOf('wentToShowdown');
+    expect(postDealGate).toBeGreaterThan(dealAt);
+    expect(postDealGate).toBeLessThan(displayPause);
+  });
+
+  it('parking never fires an invalid FSM transition from an idle table', () => {
+    const gate = ENGINE_BASE.slice(
+      ENGINE_BASE.indexOf('protected async awaitPauseGate'),
+      ENGINE_BASE.indexOf('protected async awaitPauseGate') + 3000
+    );
+    // The FSM has no waiting -> paused edge, and the gate is now reachable
+    // from the idle branches where the table sits in 'waiting'.
+    expect(gate).toMatch(
+      /tableFSM\.state === 'running'\s*\)\s*\{\s*\n\s*this\.tableFSM\.transition\('paused'\)/
+    );
+  });
+
+  /**
+   * A BREAK MEANS STOP. HAND-FOR-HAND MEANS ONE MORE HAND, THEN STOP.
+   *
+   * The bubble sync resumes every table together and re-pauses them 500ms
+   * later, on purpose, "to let dealing start" - it is arming the park for the
+   * hand about to be dealt. If the top-of-loop gate honoured that re-pause the
+   * table would park BEFORE dealing, the sync would see everyone parked,
+   * resume, re-pause, and park again: the bubble could never burst and the
+   * tournament would freeze on the money. So the top-of-loop gate is gated on
+   * holdBeforeNextHand, which only the STOP callers pass.
+   */
+  it('hand-for-hand still gets its one more hand, so the bubble can burst', () => {
+    const loopSrc = DEALING.slice(DEALING.indexOf('protected async dealingLoop'));
+    const gateAt = loopSrc.indexOf('await this.awaitPauseGate()');
+    // The top-of-loop park must be conditional on holdBeforeNextHand.
+    expect(loopSrc.slice(0, gateAt)).toMatch(/this\.handForHandPaused && this\.holdBeforeNextHand/);
+    // The bubble sync's re-pause must NOT claim it.
+    const sync = BASE.slice(
+      BASE.indexOf('protected startHandForHandSync'),
+      BASE.indexOf('protected startHandForHandSync') + 2200
+    );
+    expect(sync).toMatch(/engine\.pauseAfterHand\(\);/);
+    expect(sync).not.toMatch(/beforeNextHand/);
+  });
+
+  it('every STOP caller asks for the hold, so nothing is dealt into a break', () => {
+    const pause = BASE.slice(
+      BASE.indexOf('async pauseForBreak'),
+      BASE.indexOf('areAllTablesParked')
+    );
+    expect(pause).toMatch(/beforeNextHand:\s*true/);
+    // The add-on break and the restart-into-a-live-break path are breaks too.
+    expect((BASE.match(/beforeNextHand:\s*true/g) || []).length).toBeGreaterThanOrEqual(3);
+    // A drain is stopping the process; it must not open another hand either.
+    expect(GAME_SERVER).toMatch(
+      /pauseAfterHand\(DRAIN_BUDGET_MS,\s*\{\s*beforeNextHand:\s*true\s*\}\)/
+    );
+  });
+
+  it('resuming clears the hold, so the next pause is judged on its own terms', () => {
+    const resume = ENGINE_BASE.slice(ENGINE_BASE.indexOf('resumeDealing()'));
+    expect(resume.slice(0, 800)).toMatch(/this\.holdBeforeNextHand = false/);
+  });
+
+  it('the park is what areAllTablesParked reads, so an idle table counts', () => {
+    const gate = ENGINE_BASE.slice(
+      ENGINE_BASE.indexOf('protected async awaitPauseGate'),
+      ENGINE_BASE.indexOf('protected async awaitPauseGate') + 3000
+    );
+    // isWaitingForHandForHand() is handForHandPaused && handForHandResolve !== null,
+    // so the gate must be what assigns handForHandResolve.
+    expect(gate).toMatch(/this\.handForHandResolve = resolve/);
+    expect(gate).toMatch(/this\.pauseMaxWaitMs \?\? 120000/);
   });
 });

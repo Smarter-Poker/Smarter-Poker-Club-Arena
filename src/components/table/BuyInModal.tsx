@@ -255,7 +255,6 @@ export function BuyInModal({
                 maximumFractionDigits: 2,
               })}
             </span>
-            <span className="buy-in-modal__chip-icon">◉</span>
           </div>
           <span className="buy-in-modal__max-label">{formatAmount(maxBuyIn, currency)}</span>
         </div>

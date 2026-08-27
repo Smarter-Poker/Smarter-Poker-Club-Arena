@@ -1122,6 +1122,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
 
         const result = await logHandHistory({
           tableId: this.tableId,
+          nitGame: this.tableInfo.nit_game === true,
           tournamentId: this.tableInfo.tournament_id || undefined,
           handNumber: this.handCount,
           gameVariant: this.tableInfo.game_variant || 'nlh',

@@ -43,6 +43,24 @@
 
 /* ── FRAMES ───────────────────────────────────────────────────────────────── */
 
+/* THE THREE FREE FRAMES (Dan 2026-08-27). A solid ring and nothing else: no
+   glow, no inset bloom, no animation. That restraint is the product decision,
+   not a shortcut — every paid frame keeps an effect these deliberately lack,
+   so the difference is visible at a glance on the felt. Mirrored byte-for-byte
+   in the World Hub's AvatarGallery.jsx, per the contract in
+   src/cosmetics/avatarCosmetics.ts. */
+.sp-cosmetic--frame.frame-slate {
+  border-color: #8b97a8;
+}
+
+.sp-cosmetic--frame.frame-ivory {
+  border-color: #e8e2d4;
+}
+
+.sp-cosmetic--frame.frame-copper {
+  border-color: #b87333;
+}
+
 .sp-cosmetic--frame.frame-gold {
   border-color: #ffd700;
   box-shadow:
@@ -72,6 +90,22 @@
 }
 
 /* ── AURAS ────────────────────────────────────────────────────────────────── */
+
+/* THE THREE FREE AURAS (Dan 2026-08-27): one static inset halo each, no
+   keyframes at all. They therefore need no prefers-reduced-motion branch —
+   there is no motion to reduce, which is also why they are safe on the felt
+   during a hand. */
+.sp-cosmetic--aura.aura-mist {
+  box-shadow: inset 0 0 1.4em rgba(190, 205, 220, 0.4);
+}
+
+.sp-cosmetic--aura.aura-dusk {
+  box-shadow: inset 0 0 1.4em rgba(120, 110, 170, 0.45);
+}
+
+.sp-cosmetic--aura.aura-moss {
+  box-shadow: inset 0 0 1.4em rgba(110, 160, 120, 0.45);
+}
 
 @keyframes spAuraFire {
   0%,

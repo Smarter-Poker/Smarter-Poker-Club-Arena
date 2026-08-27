@@ -103,8 +103,56 @@
    restrained stage wash; gameplay remains the strongest layer on a phone. */
 .table-page[data-final-table='true'] {
   box-shadow:
-    inset 0 0 90px rgba(18, 104, 180, 0.14),
-    inset 0 0 0 1px rgba(210, 169, 86, 0.2);
+    inset 0 0 110px rgba(8, 32, 65, 0.3),
+    inset 0 0 0 1px rgba(210, 169, 86, 0.34);
+}
+
+.final-table-broadcast-hud {
+  position: absolute;
+  z-index: 45;
+  top: max(6px, env(safe-area-inset-top));
+  left: 50%;
+  display: grid;
+  grid-template-columns: auto auto auto;
+  align-items: center;
+  gap: 7px;
+  max-width: calc(100% - 84px);
+  padding: 5px 9px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(218, 172, 82, 0.5);
+  border-radius: 4px;
+  color: #d9aa4e;
+  background: linear-gradient(180deg, rgba(7, 13, 23, 0.96), rgba(2, 6, 12, 0.94));
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.55),
+    inset 0 1px rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+  white-space: nowrap;
+  font:
+    700 7px/1 'JetBrains Mono',
+    ui-monospace,
+    monospace;
+  letter-spacing: 0.08em;
+}
+.final-table-broadcast-hud strong {
+  padding-inline: 7px;
+  border-inline: 1px solid rgba(218, 172, 82, 0.25);
+  color: #fff;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+}
+.final-table-broadcast-hud b {
+  color: #d9aa4e;
+  font: inherit;
+}
+
+@media (max-width: 390px) {
+  .final-table-broadcast-hud span {
+    display: none;
+  }
+  .final-table-broadcast-hud {
+    max-width: calc(100% - 104px);
+  }
 }
 
 /* Dan 2026-08-18: the blurred-skin .table-backdrop layer is GONE ("remove

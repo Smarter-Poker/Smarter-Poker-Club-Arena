@@ -632,6 +632,29 @@ export abstract class ServerTableEngineBase {
    * outlast the short hand-for-hand window without self-resuming.
    */
   protected pauseMaxWaitMs: number | null = null;
+  /**
+   * DOES THIS PAUSE FORBID THE NEXT HAND, OR ONLY THE ONE AFTER IT?
+   *
+   * The two callers of pauseAfterHand want opposite things, and conflating
+   * them deadlocks one of them:
+   *
+   *   - A SYNCHRONIZED BREAK (and the add-on break, and a drain) means STOP.
+   *     The hand in flight finishes, and no further hand is dealt until the
+   *     break ends. A table that was idle at :55 must park without dealing.
+   *     -> beforeNextHand: true.
+   *
+   *   - HAND-FOR-HAND means DEAL EXACTLY ONE MORE HAND, THEN STOP. The bubble
+   *     sync resumes every table together and re-pauses them 500ms later,
+   *     deliberately, "to let dealing start" — it is arming the park for the
+   *     hand that is about to be dealt. If the top-of-loop gate honoured that
+   *     re-pause, the table would park BEFORE dealing, the sync would see
+   *     everyone parked, resume, re-pause, and park again — the bubble would
+   *     never burst and the tournament would freeze on the money.
+   *     -> beforeNextHand stays false, and only the post-deal gate parks.
+   *
+   * Cleared by resumeDealing along with the rest of the pause state.
+   */
+  protected holdBeforeNextHand: boolean = false;
 
   // Bible V8 §1.1.4: Action serialization lock — prevents parallel action processing
   protected actionLock: boolean = false;
@@ -1913,9 +1936,12 @@ export abstract class ServerTableEngineBase {
    * pause now say so; the safety net still exists, it is just sized to the
    * pause being requested.
    */
-  pauseAfterHand(maxWaitMs?: number): void {
+  pauseAfterHand(maxWaitMs?: number, opts?: { beforeNextHand?: boolean }): void {
     this.handForHandPaused = true;
     this.pauseMaxWaitMs = maxWaitMs && maxWaitMs > 0 ? maxWaitMs : null;
+    // See holdBeforeNextHand. Sticky within one pause: a break already holding
+    // the table must not be downgraded by a later ordinary pause request.
+    if (opts?.beforeNextHand) this.holdBeforeNextHand = true;
     if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
   }
 
@@ -1928,6 +1954,7 @@ export abstract class ServerTableEngineBase {
     // hand-for-hand pause gets its own short safety window rather than
     // inheriting a multi-minute one.
     this.pauseMaxWaitMs = null;
+    this.holdBeforeNextHand = false;
     // Bible V8 §3.1: Table FSM — paused → running
     if (this.tableFSM.state === 'paused') {
       this.tableFSM.transition('running');
@@ -1941,6 +1968,91 @@ export abstract class ServerTableEngineBase {
   /** Check if engine is currently waiting for hand-for-hand resume */
   isWaitingForHandForHand(): boolean {
     return this.handForHandPaused && this.handForHandResolve !== null;
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  THE PARK. A PAUSED TABLE STOPS, WHATEVER IT WAS DOING (2026-08-27)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Dan: "AT THE :55 BREAK HAS STARTED, AND ALL HANDS FINISH. ONCE A TABLE HAS
+   * FINISHED THE HAND, THEY STOP, AND DON'T RESTART UNTIL THE BREAK IS OVER."
+   *
+   * This block used to live INLINE in the dealing loop, immediately after
+   * `await this.dealHand(...)`. That is the one place in the loop a table only
+   * reaches when it actually dealt a hand, and every branch above it exits the
+   * iteration with `continue`:
+   *
+   *   - `activePlayers.length < minPlayersToDeal()`  (sleep 3s, continue)
+   *   - the spin-reveal hold                          (sleep <=1s, continue)
+   *   - the mystery-bounty reveal gate                (sleep 250ms, continue)
+   *   - the admin-pause / maintenance lock            (sleep 3s, continue)
+   *
+   * and the start-up wait loop hands control to the dealing loop without
+   * passing it at all. So a table that was NOT mid-hand at :55 — one short a
+   * player while the balancer moves somebody in, one holding for a spin wheel,
+   * one that just filled — never parked. Two things followed, both wrong:
+   *
+   *   1. `isWaitingForHandForHand()` stayed false, so `areAllTablesParked()`
+   *      was false, so the platform burned the whole LAST_HAND_GRACE_MS every
+   *      single hour and logged "last hand did not land within 120s" for a
+   *      table that had no hand in the air at all. Every break started two
+   *      minutes late and ran two minutes past the hour.
+   *
+   *   2. Far worse: the instant that table got its players back — a balanced
+   *      seat arriving, a wheel finishing — it went straight to `dealHand()`
+   *      and played a full hand IN THE MIDDLE OF THE BREAK, only parking
+   *      afterwards. That is precisely the thing the break exists to prevent.
+   *
+   * The gate is now a method and the loop awaits it at the TOP of every
+   * iteration, before any of those branches and before the deal. A table with
+   * cards in the air still finishes its hand first, because the loop cannot
+   * come back around until `dealHand()` resolves — "all hands finish" and "no
+   * new hand starts" are the same single check from here.
+   *
+   * The post-deal call site is retained so hand-for-hand still parks the
+   * instant a hand settles rather than after the showdown display pause.
+   */
+  protected async awaitPauseGate(): Promise<void> {
+    if (!this.handForHandPaused || !this.running) return;
+    // Bible V8 §3.1: Table FSM — running → paused. GUARDED: the FSM has no
+    // waiting → paused edge, and this gate is now reachable from the idle
+    // branches where the table sits in 'waiting'. An unguarded transition
+    // logged a false "Invalid transition" to Sentry on every idle park.
+    if (this.tableFSM.state === 'running') {
+      this.tableFSM.transition('paused');
+    }
+    console.log(
+      `[ServerTableEngine:${this.tableId}] Parked between hands — waiting for the pause to lift...`
+    );
+    await new Promise<void>((resolve) => {
+      this.handForHandResolve = resolve;
+      /**
+       * Safety timeout so a table can never wedge forever.
+       *
+       * Dan 2026-08-19: this was hard-coded to 120 seconds. A synchronized
+       * break is five minutes measured from AFTER the last hand completes, so
+       * every table silently self-resumed two minutes in and dealt through the
+       * rest of the break. The budget now comes from whoever requested the
+       * pause (pauseAfterHand), defaulting to the original two minutes for
+       * hand-for-hand.
+       */
+      const maxWaitMs = this.pauseMaxWaitMs ?? 120000;
+      const timer = setTimeout(() => {
+        if (this.handForHandResolve === resolve) {
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] Pause safety timeout after ${Math.round(
+              maxWaitMs / 1000
+            )}s — resuming to avoid a wedged table`
+          );
+          this.handForHandResolve = null;
+          resolve();
+        }
+      }, maxWaitMs);
+      // The break is minutes long and this timer is the only thing keeping a
+      // reference; unref so a shutdown inside a break is not held open by it.
+      (timer as { unref?: () => void }).unref?.();
+    });
   }
 
   /**

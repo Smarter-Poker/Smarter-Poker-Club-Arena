@@ -370,6 +370,10 @@ export class HorseFleetManager {
           max_players: clampSeatsForVariant(config.gameVariant, config.maxPlayers),
           current_players: 0,
           status: 'waiting',
+          // ALL-CASH INSURANCE 2026-08-26 (Dan: "publish this for all cash
+          // games") - fleet cash tables are born with insurance on; the
+          // 20260827 migration flipped the existing fleet.
+          insurance_enabled: true,
         });
 
         if (error) {
@@ -882,6 +886,8 @@ export class HorseFleetManager {
           max_players: clampSeatsForVariant(config.gameVariant, config.maxPlayers),
           current_players: 0,
           status: 'waiting',
+          // ALL-CASH INSURANCE 2026-08-26: overflow cash tables too.
+          insurance_enabled: true,
         });
         if (error) {
           // Unique-name races between cycles are expected and harmless.

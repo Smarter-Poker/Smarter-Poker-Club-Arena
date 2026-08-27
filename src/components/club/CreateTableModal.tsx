@@ -96,7 +96,10 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
     action_time_seconds: 15,
     min_buyin_bb: 20,
     max_buyin_bb: 100,
-    insurance_enabled: false,
+    // ALL-CASH INSURANCE 2026-08-26 (Dan: "publish this for all cash
+    // games") - new club cash tables default to insurance ON; the host can
+    // still toggle it off per table below.
+    insurance_enabled: true,
     auto_restart: true,
     call_time_enabled: false,
   });

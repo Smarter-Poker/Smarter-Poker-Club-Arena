@@ -779,7 +779,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
             <strong>{TABS.find((tab) => tab.key === activeTab)?.label}</strong>
             <span>{TAB_DESCRIPTIONS[activeTab]}</span>
           </div>
-          <span className="theme-modal__count">{currentAssets.length} choices</span>
+          <span className="theme-modal__count">{currentAssets.length} Choices</span>
         </div>
 
         {/* Asset Grid */}

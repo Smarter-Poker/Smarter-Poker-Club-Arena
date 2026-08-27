@@ -2765,20 +2765,40 @@ export class TournamentRecurringService {
    */
   private async horseLoadMap(): Promise<Map<string, number> | null> {
     // One live seat = one game. Cash and tournament tables alike.
-    const { data: seatRows, error: seatErr } = await supabase
-      .from('table_seats')
-      .select('user_id')
-      .is('left_at', null)
-      // A TRUNCATED SET UNDERSTATES LOAD, which hands out a horse that is
-      // already at four tables - so this ceiling sits far above any plausible
-      // live count, not just above today's.
-      .limit(20000);
-    if (seatErr) {
-      reportError(
-        new Error(`[TournamentRecurring] horse seat-load read failed: ${seatErr.message}`),
-        'TournamentRecurring.horse_load_seats_failed'
-      );
-      return null;
+    /* NO CEILING (Dan 2026-08-27: "there should never be a cap ... anywhere
+       else"). This read carried `.limit(20000)` with a comment explaining
+       that a truncated set understates load and hands out a horse already at
+       four tables - the ceiling was picked to make that implausible, and
+       nothing checked whether it had been hit, so saturation would have
+       passed as a complete answer. It pages instead: no number to outgrow,
+       and an incomplete read is reported as UNKNOWN, which is this
+       function's documented contract. */
+    const PAGE = 1000;
+    const seatRows: Array<{ user_id?: string }> = [];
+    for (let page = 0; ; page++) {
+      if (page > 10_000) {
+        reportError(
+          new Error('[TournamentRecurring] horse seat-load paging did not terminate'),
+          'TournamentRecurring.horse_load_seats_runaway'
+        );
+        return null;
+      }
+      const { data: chunk, error: seatErr } = await supabase
+        .from('table_seats')
+        .select('user_id')
+        .is('left_at', null)
+        .order('user_id', { ascending: true })
+        .range(page * PAGE, page * PAGE + PAGE - 1);
+      if (seatErr) {
+        reportError(
+          new Error(`[TournamentRecurring] horse seat-load read failed: ${seatErr.message}`),
+          'TournamentRecurring.horse_load_seats_failed'
+        );
+        return null;
+      }
+      if (!chunk) return null;
+      seatRows.push(...chunk);
+      if (chunk.length < PAGE) break;
     }
 
     // A registration is a game only until the tournament STARTS. Once it is
@@ -2786,18 +2806,32 @@ export class TournamentRecurringService {
     // has already counted it; counting both would put every tournament
     // regular at an instant 2. That is why RUNNING is absent from this list
     // and must stay absent.
-    const { data: regRows, error: regErr } = await supabase
-      .from('tournament_players')
-      .select('user_id, tournaments!inner(status)')
-      .in('status', ['registered', 'playing'])
-      .in('tournaments.status', ['ANNOUNCED', 'REGISTERING'])
-      .limit(20000);
-    if (regErr) {
-      reportError(
-        new Error(`[TournamentRecurring] horse registration-load read failed: ${regErr.message}`),
-        'TournamentRecurring.horse_load_registrations_failed'
-      );
-      return null;
+    const regRows: Array<{ user_id?: string }> = [];
+    for (let page = 0; ; page++) {
+      if (page > 10_000) {
+        reportError(
+          new Error('[TournamentRecurring] horse registration-load paging did not terminate'),
+          'TournamentRecurring.horse_load_registrations_runaway'
+        );
+        return null;
+      }
+      const { data: chunk, error: regErr } = await supabase
+        .from('tournament_players')
+        .select('user_id, tournaments!inner(status)')
+        .in('status', ['registered', 'playing'])
+        .in('tournaments.status', ['ANNOUNCED', 'REGISTERING'])
+        .order('user_id', { ascending: true })
+        .range(page * PAGE, page * PAGE + PAGE - 1);
+      if (regErr) {
+        reportError(
+          new Error(`[TournamentRecurring] horse registration-load read failed: ${regErr.message}`),
+          'TournamentRecurring.horse_load_registrations_failed'
+        );
+        return null;
+      }
+      if (!chunk) return null;
+      regRows.push(...chunk);
+      if (chunk.length < PAGE) break;
     }
 
     return buildHorseLoadMap(
@@ -3504,15 +3538,36 @@ export class TournamentRecurringService {
       // Still never twice into the SAME tournament. This is the booking bug
       // the concurrency limit was standing in for, and it is the one that
       // actually matters - it survives the change intact.
-      const { data: alreadyIn } = await supabase
-        .from('tournament_players')
-        .select('user_id')
-        .eq('tournament_id', tournamentId)
-        .in('status', ['registered', 'playing'])
-        .limit(20000);
-      for (const r of alreadyIn ?? []) {
-        const id = (r as { user_id?: string }).user_id;
-        if (id) busyIds.add(id);
+      /* NO CEILING (Dan 2026-08-27). This carried `.limit(20000)`, and a
+         truncated read here is the one failure this block exists to prevent:
+         a missing id is a horse that does not look registered, so it gets
+         registered into the SAME tournament twice - the bug the comment above
+         calls "the one that actually matters". Pages instead, so the guard
+         cannot be defeated by a big enough field. */
+      const ENTRANT_PAGE = 1000;
+      for (let page = 0; ; page++) {
+        if (page > 10_000) {
+          reportError(
+            new Error('[TournamentRecurring] entrant paging did not terminate'),
+            'TournamentRecurring.entrant_paging_runaway'
+          );
+          return 0;
+        }
+        const { data: alreadyIn, error: entrantErr } = await supabase
+          .from('tournament_players')
+          .select('user_id')
+          .eq('tournament_id', tournamentId)
+          .in('status', ['registered', 'playing'])
+          .order('user_id', { ascending: true })
+          .range(page * ENTRANT_PAGE, page * ENTRANT_PAGE + ENTRANT_PAGE - 1);
+        // An incomplete entrant list would let a double-registration through,
+        // so a failed page declines the pass rather than guessing.
+        if (entrantErr || !alreadyIn) return 0;
+        for (const r of alreadyIn) {
+          const id = (r as { user_id?: string }).user_id;
+          if (id) busyIds.add(id);
+        }
+        if (alreadyIn.length < ENTRANT_PAGE) break;
       }
 
       /**

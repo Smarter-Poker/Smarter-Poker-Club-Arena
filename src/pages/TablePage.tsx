@@ -15625,6 +15625,9 @@ export default function TablePage({
                         showStackInBB={v8Settings.show_stack_in_bb}
                         isMyTurn={true}
                         isPreflop={tableState.boardStage === 'preflop'}
+                        /* Dan 2026-08-26: cash sliders step by whole dollars,
+                           tournament sliders by the level's chip unit. */
+                        isTournament={tableState.isTournament}
                         /* Dan 2026-08-19 item 4b: PLO must always offer
                            RAISE POT - preflop had no POT button at all. */
                         isPotLimit={isPotLimit}

@@ -8,6 +8,8 @@
 
 import { supabase } from '../lib/supabase';
 import type { Card } from '../types/database.types';
+import { derivePositions } from '../utils/pokerPositions';
+import { buildReplay } from '../utils/handReplay';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -27,7 +29,13 @@ export interface HandPlayer {
   user_id: string;
   username: string;
   avatar_url: string | null;
-  position: 'UTG' | 'UTG+1' | 'UTG+2' | 'MP' | 'MP+1' | 'HJ' | 'CO' | 'BTN' | 'SB' | 'BB';
+  /**
+   * Empty when the button is not among the occupied seats — a dead button, or
+   * a row written before `button_seat` existed. A missing badge is honest; a
+   * wrong one is not, and a wrong one is what this field held until
+   * 2026-08-27. See the note on `buttonSeat` in mapHandHistoryRow.
+   */
+  position: 'UTG' | 'UTG+1' | 'UTG+2' | 'MP' | 'MP+1' | 'HJ' | 'CO' | 'BTN' | 'SB' | 'BB' | '';
   hole_cards: Card[];
   final_hand?: string;
   result: number;
@@ -54,7 +62,27 @@ export interface HandAction {
      the type was a lie the compiler happily enforced against nobody: anyone
      writing `a.action === 'all-in'` got silence and a branch that never ran.
      `discard` (74,631 rows, draw and pineapple games) was missing outright. */
-  action: 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | 'discard';
+  /* FORCED MONEY + RETURNS 2026-08-27: the engine now also records what it
+     used to move silently — `sb`, `bb`, `ante`, `straddle`, `post` (a dead
+     blind or a "post BB to enter") and `return` (an uncalled bet coming back).
+     Adding them to the union is not cosmetic: this type is the contract every
+     consumer narrows against, and the last time it disagreed with the database
+     the mismatch was invisible for months. `return` carries a POSITIVE amount;
+     the verb is what makes it money leaving the pot. */
+  action:
+    | 'fold'
+    | 'check'
+    | 'call'
+    | 'bet'
+    | 'raise'
+    | 'all_in'
+    | 'discard'
+    | 'sb'
+    | 'bb'
+    | 'ante'
+    | 'straddle'
+    | 'post'
+    | 'return';
   amount?: number;
   /** Stored as `stage`. `pineapple_discard` is a real street here. */
   street: 'preflop' | 'flop' | 'turn' | 'river' | 'pineapple_discard';
@@ -125,7 +153,7 @@ class HandHistoryServiceClass {
     const { data, error } = await supabase
       .from('hand_history')
       .select(
-        'id, created_at, table_id, hand_number, pot_size, community_cards, community_cards2, rit_boards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, hole_cards, showdown'
+        'id, created_at, started_at, table_id, hand_number, pot_size, community_cards, community_cards2, rit_boards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, bbj_amount, button_seat, hole_cards, showdown, pots'
       )
       .eq('id', handId)
       .maybeSingle();
@@ -160,7 +188,7 @@ class HandHistoryServiceClass {
     const { data, error } = await supabase
       .from('hand_history')
       .select(
-        'id, created_at, table_id, hand_number, pot_size, community_cards, rit_boards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, hole_cards, showdown'
+        'id, created_at, started_at, table_id, hand_number, pot_size, community_cards, rit_boards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, bbj_amount, button_seat, hole_cards, showdown, pots'
       )
       .contains('players', containmentJson)
       .order('created_at', { ascending: false })
@@ -216,18 +244,84 @@ class HandHistoryServiceClass {
     const jsonbActions: any[] = Array.isArray(row.actions) ? row.actions : [];
     const jsonbWinners: any[] = Array.isArray(row.winners) ? row.winners : [];
 
-    // Compute per-player result: winnings from winners[] minus total amount bet in actions[]
-    const buildResult = (userId: string): number => {
-      const invested = jsonbActions
-        .filter((a) => a?.userId === userId && typeof a?.amount === 'number' && a.amount > 0)
-        .reduce((sum, a) => sum + Number(a.amount), 0);
-      const won = jsonbWinners
-        .filter((w) => w?.userId === userId && typeof w?.amount === 'number')
-        .reduce((sum, w) => sum + Number(w.amount), 0);
-      return Math.round((won - invested) * 100) / 100;
-    };
+    /**
+     * THE BUTTON. `row.button_seat` is written by the engine on every hand and
+     * was never selected here; this read it from `players[].isButton`, a field
+     * NOTHING in the codebase has ever written, so it fell back to seat 1 on
+     * every hand and every position badge the table drew was wrong.
+     *
+     * `isButton` is kept only as a floor for a hypothetical row shape; it has
+     * never resolved in production.
+     */
+    const buttonSeat: number | null = Number.isFinite(Number(row?.button_seat))
+      ? Number(row.button_seat)
+      : ((jsonbPlayers.find((p) => p?.isButton)?.seat as number | undefined) ?? null);
 
-    const buttonSeat = (jsonbPlayers.find((p) => p?.isButton)?.seat as number | undefined) ?? 1;
+    /**
+     * Positions come from `derivePositions`, which is the one correct
+     * derivation in this codebase. The local `getPositionName` it replaced did
+     * `(seat - buttonSeat + playerCount) % playerCount` — modular arithmetic on
+     * RAW seat numbers, which is wrong the moment seating is sparse, and a
+     * six-handed hand on seats 1, 2, 3, 5, 8, 9 is the normal case here.
+     * `pokerPositions.ts` was written for exactly this and says so in its own
+     * header; this file simply never used it.
+     */
+    const positionBySeat = derivePositions(
+      jsonbPlayers.map((p) => Number(p?.seat)).filter((s) => Number.isFinite(s)),
+      buttonSeat
+    );
+
+    /**
+     * PER-PLAYER NET, rebuilt properly.
+     *
+     * This used to sum `actions[].amount` for what a player invested. The
+     * engine writes that field as the raise-TO level for bet/raise/all_in and
+     * as the chips added for call (HandController.ts:600-724), so the sum
+     * double-counts every re-raise: on production hand 3048511 it makes
+     * HighRoller's investment 174.10 against a true 161.10, and his net is
+     * shown 13 chips worse than it was.
+     *
+     * `buildReplay` differences each to-level against what that seat already
+     * had in on the street, and adds the blinds the action log never records.
+     * Measured across the 4,000 most recent live hands it lands on the stored
+     * `pot_size` on 99.18%; the naive sum lands on it only when nobody raised.
+     *
+     * Where a hand carries an ante or a straddle — recorded in no column and no
+     * action — neither method is exact, but this one is short by the forced
+     * money rather than long by every raise.
+     */
+    const replay = buildReplay({
+      handNumber: row.hand_number ?? null,
+      playedAt: row.started_at ?? row.created_at ?? null,
+      gameVariant: row.game_variant ?? null,
+      smallBlind: Number(row.small_blind) || 0,
+      bigBlind: Number(row.big_blind) || 0,
+      potSize: Number(row.pot_size) || 0,
+      rakeAmount: Number(row.rake_amount) || 0,
+      buttonSeat,
+      board: row.community_cards ?? [],
+      players: jsonbPlayers.map((p) => ({
+        userId: String(p?.userId ?? ''),
+        username: String(p?.username ?? ''),
+        seat: Number(p?.seat) || 0,
+        stack: p?.stack === undefined || p?.stack === null ? null : Number(p.stack),
+      })),
+      actions: jsonbActions.map((a) => ({
+        seat: Number(a?.seat) || 0,
+        userId: String(a?.userId ?? ''),
+        action: String(a?.action ?? ''),
+        amount: Number(a?.amount) || 0,
+        stage: a?.stage ?? null,
+      })),
+      winners: jsonbWinners.map((w) => ({
+        userId: String(w?.userId ?? ''),
+        amount: Number(w?.amount) || 0,
+      })),
+      holeCards: (row?.hole_cards as Record<string, never[]>) ?? {},
+    });
+    const netByUser = new Map(replay.players.map((p) => [p.userId, p.net]));
+    const buildResult = (userId: string): number => netByUser.get(userId) ?? 0;
+
     const playerCount = jsonbPlayers.length || 1;
 
     /* The hand's hole cards live in their own JSONB column, keyed by user id:
@@ -269,7 +363,7 @@ class HandHistoryServiceClass {
         user_id: uid,
         username: profile?.username || p?.username || (uid ? uid.slice(0, 8) : 'Unknown'),
         avatar_url: profile?.avatar_url || null,
-        position: this.getPositionName(Number(p?.seat) || 0, buttonSeat, playerCount),
+        position: (positionBySeat[Number(p?.seat) || 0] ?? '') as HandPlayer['position'],
         /* 2026-08-23 (Dan, with a screenshot): the Showdown block drew two grey
            card backs for every villain who reached showdown and LOST. This line
            gated the stored holdings behind `isMe || isWinner`, so a losing
@@ -404,17 +498,6 @@ class HandHistoryServiceClass {
     return map;
   }
 
-  private getPositionName(
-    seat: number,
-    buttonSeat: number,
-    playerCount: number
-  ): 'UTG' | 'UTG+1' | 'UTG+2' | 'MP' | 'MP+1' | 'HJ' | 'CO' | 'BTN' | 'SB' | 'BB' {
-    // Calculate position relative to button
-    const positions = this.getPositionOrder(playerCount);
-    const relativePos = (seat - buttonSeat + playerCount) % playerCount;
-    return positions[relativePos] || 'MP';
-  }
-
   /**
    * Save a completed hand to Supabase for cross-device persistence and admin review.
    * Fire-and-forget — localStorage is the primary real-time store.
@@ -505,15 +588,6 @@ class HandHistoryServiceClass {
       // Non-critical — localStorage is the primary store
       reportError(err, 'HandHistoryService.saveHandToSupabase');
     }
-  }
-
-  private getPositionOrder(
-    playerCount: number
-  ): ('BTN' | 'SB' | 'BB' | 'UTG' | 'UTG+1' | 'UTG+2' | 'MP' | 'MP+1' | 'HJ' | 'CO')[] {
-    if (playerCount <= 2) return ['BTN', 'BB'];
-    if (playerCount <= 3) return ['BTN', 'SB', 'BB'];
-    if (playerCount <= 6) return ['BTN', 'SB', 'BB', 'UTG', 'MP', 'CO'];
-    return ['BTN', 'SB', 'BB', 'UTG', 'UTG+1', 'MP', 'MP+1', 'HJ', 'CO'];
   }
 }
 

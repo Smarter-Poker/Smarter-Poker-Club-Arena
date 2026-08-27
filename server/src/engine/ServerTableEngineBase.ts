@@ -457,6 +457,11 @@ export abstract class ServerTableEngineBase {
      *  hand_history replayable by HorseMind, which requires it to count an
      *  all-in as aggression at all. */
     isFullRaise?: boolean;
+    /** 2026-08-27: set on forced-money rows that are DEAD — an ante, or the
+     *  small-blind half of a dead blind. Dead money is in the pot but is not
+     *  part of the live bet level, so it never counts toward a call and must
+     *  not be differenced against a raise-TO level. */
+    dead?: boolean;
   }[] = [];
   protected currentHandWinners: {
     userId: string;

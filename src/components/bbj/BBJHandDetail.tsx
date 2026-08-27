@@ -28,6 +28,7 @@ import { buildReplay, titleCase } from '../../utils/handReplay';
 import type { StoredCard } from '../../utils/deckCards';
 import { reportError } from '../../utils/errorReporter';
 import './BBJHandDetail.css';
+import { gameTypeLabel, money, stamp } from '../../utils/handFormat';
 
 export interface BBJHandDetailProps {
   /** bbj_payouts id — the jackpot hit whose hand this is. */
@@ -106,47 +107,6 @@ interface HandDetail {
     handWinnerUserId: string | null;
     recipients: DetailRecipient[];
   };
-}
-
-/** Absolute timestamp, the way a jackpot board states one. */
-function stamp(iso: string | null | undefined): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-  );
-}
-
-/**
- * Game types print the way the lobby names them.
- *
- * The badge used to be `titleCase(v).toUpperCase()`, which is self-cancelling
- * and maps nothing — `short_deck` reached the player as the badge SHORT_DECK,
- * underscore included. The winners list already had this function; it simply
- * was not reused.
- */
-function gameTypeLabel(variant: string | null | undefined): string | null {
-  const v = String(variant || '')
-    .toLowerCase()
-    .trim();
-  if (!v) return null;
-  if (v === 'nlh') return 'NLH';
-  if (v === 'flh') return 'FLH';
-  if (v === 'short_deck' || v === 'shortdeck') return 'Short Deck';
-  if (v === 'pineapple') return 'Pineapple';
-  if (v === 'ofc_pineapple') return 'OFC';
-  if (/^(plo|flo)\d*8?$/.test(v)) return v.toUpperCase();
-  return titleCase(v.replace(/_/g, ' '));
-}
-
-function money(n: number | null | undefined, dp = 2): string {
-  return Number(n || 0).toLocaleString('en-US', {
-    minimumFractionDigits: dp,
-    maximumFractionDigits: dp,
-  });
 }
 
 function Header({ onBack }: { onBack: () => void }) {

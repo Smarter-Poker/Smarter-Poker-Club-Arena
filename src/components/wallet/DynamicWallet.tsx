@@ -1316,6 +1316,7 @@ export default function DynamicWallet({
     {
       key: 'union_bank',
       label: 'Union Bank',
+      hint: 'Send or pull chips from clubs & members',
       icon: 'treasury',
       value: animUnionBank,
       known: unionFiguresKnown,

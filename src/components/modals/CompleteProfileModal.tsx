@@ -129,7 +129,10 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
             <div className={styles.avatarSection}>
               <label>Profile Avatar (Required)</label>
               <div className={styles.avatarControls}>
-                <div className={styles.avatarPreview} onClick={() => setShowAvatarGallery(true)}>
+                <div
+                  className={`${styles.avatarPreview} ${!hasAvatar ? styles.avatarPreviewNeedsAvatar : ''}`}
+                  onClick={() => setShowAvatarGallery(true)}
+                >
                   {hasAvatar ? (
                     <img src={user.avatar_url!} alt="Your Avatar" className={styles.avatarImg} />
                   ) : (
@@ -206,6 +209,10 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
         isVip={user.vip_level !== 'bronze'}
         isOpen={showAvatarGallery}
         onClose={() => setShowAvatarGallery(false)}
+        onAvatarChanged={(newUrl) => {
+          // Synchronize local state immediately so the required gate clears
+          setUser({ ...user, avatar_url: newUrl });
+        }}
       />
     </>
   );
@@ -226,8 +233,9 @@ export function useCompleteProfile(user: any) {
 
     const hasCompletedLocal = localStorage.getItem('profile_alias_configured') === 'true';
 
-    // Detect system-generated 'Player1234' names
-    const isSystemGenerated = /^Player\d{4}$/.test(user.username || '');
+    // Detect system-generated 'Player1234' names OR completely empty names
+    const isSystemGenerated =
+      /^Player\d{4}$/.test(user.username || '') || !(user.username || '').trim();
 
     // Google logins initially have NO avatar_url
     const isMissingAvatar = !user.avatar_url;

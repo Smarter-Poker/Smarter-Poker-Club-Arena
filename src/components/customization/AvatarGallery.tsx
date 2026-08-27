@@ -32,7 +32,7 @@
  *     still contain surprising values in old rows.
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useToast } from '../common/Toast';
 
 import { createPortal } from 'react-dom';
@@ -109,10 +109,21 @@ export function AvatarGallery({
   const [equippedFrame, setEquippedFrame] = useState<string | null>(null);
   const [equippedAura, setEquippedAura] = useState<string | null>(null);
   const [savingCosmetic, setSavingCosmetic] = useState(false);
+  const cosmeticInFlightRef = useRef(false);
+  const selectedAvatarRef = useRef(selectedAvatar);
+  const confirmedAvatarRef = useRef(currentAvatarUrl);
+  const avatarRevisionRef = useRef(0);
+  const pendingAvatarWritesRef = useRef(0);
+  const mutationInstanceRef = useRef(`avatar-gallery-${Math.random().toString(36).slice(2)}`);
+  const cosmeticRevisionRef = useRef(0);
 
   // Keep the preview honest if the caller swaps the current avatar underneath us
   useEffect(() => {
-    if (isOpen) setSelectedAvatar(currentAvatarUrl);
+    if (isOpen && pendingAvatarWritesRef.current === 0) {
+      selectedAvatarRef.current = currentAvatarUrl;
+      confirmedAvatarRef.current = currentAvatarUrl;
+      setSelectedAvatar(currentAvatarUrl);
+    }
   }, [isOpen, currentAvatarUrl]);
 
   // Load the library and the provider photo together
@@ -204,6 +215,7 @@ export function AvatarGallery({
    */
   const equipCosmetic = useCallback(
     async (kind: CosmeticKind, id: string | null) => {
+      if (cosmeticInFlightRef.current) return;
       if (!userId) {
         toast.error('Sign In To Change Your Style');
         return;
@@ -217,6 +229,7 @@ export function AvatarGallery({
       const prevAura = equippedAura;
       const nextFrame = kind === 'frame' ? id : equippedFrame;
       const nextAura = kind === 'aura' ? id : equippedAura;
+      const mutationId = `${mutationInstanceRef.current}:cosmetic:${++cosmeticRevisionRef.current}`;
 
       if (nextFrame === prevFrame && nextAura === prevAura) {
         toast.success(kind === 'frame' ? 'Frame Already Applied' : 'Aura Already Applied');
@@ -225,21 +238,54 @@ export function AvatarGallery({
 
       haptic.light();
       setNotice(null);
+      cosmeticInFlightRef.current = true;
       setSavingCosmetic(true);
       setEquippedFrame(nextFrame);
       setEquippedAura(nextAura);
+      masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'player-appearance',
+        scope: userId,
+        mutationId,
+        state: 'pending',
+      });
       /* Push to the header store straight away so the orb and the hamburger
          change in the same frame as the tile. The profiles realtime handler in
          that store will deliver the same values a moment later and its
          self-echo guard drops the duplicate. */
       useHeaderDataStore.getState().setCosmetics(nextFrame, nextAura);
+      masterBus.emit('PLAYER_APPEARANCE_CHANGED', {
+        userId,
+        frame: nextFrame,
+        aura: nextAura,
+        mutationId,
+        source: 'cosmetic-picker',
+      });
 
       const result = await avatarService.setCosmetics(userId, nextFrame, nextAura);
 
       if (!result.ok) {
+        masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+          kind: 'player-appearance',
+          scope: userId,
+          mutationId,
+          state: 'rolling-back',
+        });
         setEquippedFrame(prevFrame);
         setEquippedAura(prevAura);
         useHeaderDataStore.getState().setCosmetics(prevFrame, prevAura);
+        masterBus.emit('PLAYER_APPEARANCE_CHANGED', {
+          userId,
+          frame: prevFrame,
+          aura: prevAura,
+          mutationId,
+          source: 'rollback',
+        });
+        masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+          kind: 'player-appearance',
+          scope: userId,
+          mutationId,
+          state: 'rolled-back',
+        });
         if (result.reason === 'not-owned') {
           toast.error('You Have Not Unlocked That Yet');
           setNotice('Frames and auras are a VIP benefit, or can be granted in your club shop.');
@@ -249,11 +295,24 @@ export function AvatarGallery({
           toast.error('Could Not Update Your Style. Please Try Again.');
         }
       } else if (id === null) {
+        masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+          kind: 'player-appearance',
+          scope: userId,
+          mutationId,
+          state: 'confirmed',
+        });
         toast.success(kind === 'frame' ? 'Frame Removed' : 'Aura Removed');
       } else {
+        masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+          kind: 'player-appearance',
+          scope: userId,
+          mutationId,
+          state: 'confirmed',
+        });
         toast.success(kind === 'frame' ? 'Frame Equipped' : 'Aura Equipped');
       }
 
+      cosmeticInFlightRef.current = false;
       setSavingCosmetic(false);
     },
     [userId, cosmeticsOk, equippedFrame, equippedAura, toast]
@@ -276,40 +335,113 @@ export function AvatarGallery({
   }, [activeTab, freeAvatars, vipAvatars, myAvatars]);
 
   const saveAvatar = useCallback(
-    async (newUrl: string) => {
+    async (newUrl: string, previousUrl: string) => {
       if (!userId) {
         toast.error('Sign In To Change Your Avatar');
         return;
       }
-      if (newUrl === currentAvatarUrl) {
+      if (newUrl === previousUrl) {
         /* This used to return in silence. Tapping the avatar you already wear
            is the single most likely tap in this grid, and it produced no toast,
            no state change and no explanation - indistinguishable from a dead
-           tile. Confirm the state instead. */
+           tile. Compare to the synchronous selection ref, not the render-time
+           prop: while B is saving, a rapid B -> A tap must still enqueue A even
+           when A was the avatar at the start of this render. */
         toast.success('Avatar Already Applied');
         return;
       }
+      const revision = ++avatarRevisionRef.current;
+      const mutationId = `${mutationInstanceRef.current}:avatar:${revision}`;
+      pendingAvatarWritesRef.current += 1;
       setSaving(true);
+      onAvatarChanged?.(newUrl);
+      masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'player-appearance',
+        scope: userId,
+        mutationId,
+        state: 'pending',
+      });
+      masterBus.emit('PLAYER_APPEARANCE_CHANGED', {
+        userId,
+        avatar: newUrl,
+        mutationId,
+        source: 'avatar-picker',
+      });
+      masterBus.emit('USER_PROFILE_LOADED', { avatarUrl: newUrl, userId });
       try {
         const success = await avatarService.setUserAvatar(userId, newUrl);
         if (!success) {
+          if (avatarRevisionRef.current === revision) {
+            masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+              kind: 'player-appearance',
+              scope: userId,
+              mutationId,
+              state: 'rolling-back',
+            });
+            const rollbackUrl = confirmedAvatarRef.current || previousUrl;
+            selectedAvatarRef.current = rollbackUrl;
+            setSelectedAvatar(rollbackUrl);
+            onAvatarChanged?.(rollbackUrl);
+            masterBus.emit('PLAYER_APPEARANCE_CHANGED', {
+              userId,
+              avatar: rollbackUrl,
+              mutationId,
+              source: 'rollback',
+            });
+            masterBus.emit('USER_PROFILE_LOADED', { avatarUrl: rollbackUrl, userId });
+          }
+          masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+            kind: 'player-appearance',
+            scope: userId,
+            mutationId,
+            state: 'rolled-back',
+          });
           toast.error('Could Not Update Avatar. Please Try Again.');
         } else {
-          toast.success('Avatar Updated');
-          onAvatarChanged?.(newUrl);
-          masterBus.emit('USER_PROFILE_LOADED', {
-            avatarUrl: newUrl,
-            userId,
+          confirmedAvatarRef.current = newUrl;
+          masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+            kind: 'player-appearance',
+            scope: userId,
+            mutationId,
+            state: 'confirmed',
           });
+          toast.success('Avatar Updated');
           // We do not close the modal here to let them see it apply
         }
       } catch (err) {
+        if (avatarRevisionRef.current === revision) {
+          masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+            kind: 'player-appearance',
+            scope: userId,
+            mutationId,
+            state: 'rolling-back',
+          });
+          const rollbackUrl = confirmedAvatarRef.current || previousUrl;
+          selectedAvatarRef.current = rollbackUrl;
+          setSelectedAvatar(rollbackUrl);
+          onAvatarChanged?.(rollbackUrl);
+          masterBus.emit('PLAYER_APPEARANCE_CHANGED', {
+            userId,
+            avatar: rollbackUrl,
+            mutationId,
+            source: 'rollback',
+          });
+          masterBus.emit('USER_PROFILE_LOADED', { avatarUrl: rollbackUrl, userId });
+        }
+        masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+          kind: 'player-appearance',
+          scope: userId,
+          mutationId,
+          state: 'rolled-back',
+        });
         toast.error('Could Not Update Avatar. Please Try Again.');
         reportError(err, 'AvatarGallery.Unexpected_update_error');
+      } finally {
+        pendingAvatarWritesRef.current = Math.max(0, pendingAvatarWritesRef.current - 1);
+        if (pendingAvatarWritesRef.current === 0) setSaving(false);
       }
-      setSaving(false);
     },
-    [userId, currentAvatarUrl, onAvatarChanged, toast]
+    [userId, onAvatarChanged, toast]
   );
 
   const handleSelect = useCallback(
@@ -327,8 +459,10 @@ export function AvatarGallery({
       }
       haptic.light();
       setNotice(null);
+      const previousUrl = selectedAvatarRef.current;
+      selectedAvatarRef.current = avatar.imageUrl;
       setSelectedAvatar(avatar.imageUrl);
-      saveAvatar(avatar.imageUrl);
+      void saveAvatar(avatar.imageUrl, previousUrl);
     },
     [isVip, saveAvatar]
   );

@@ -37,7 +37,7 @@
  * Mobile-first: the grids are 6-up at 375px and grow from there.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { avatarService } from '../../services/AvatarService';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
@@ -111,6 +111,8 @@ export const AvatarCustomizer: React.FC<AvatarCustomizerProps> = ({
   const [selectedBg, setSelectedBg] = useState(AVATAR_BACKGROUNDS[0]);
   const [saving, setSaving] = useState(false);
   const toast = useToast();
+  const mutationInstanceRef = useRef(`avatar-customizer-${Math.random().toString(36).slice(2)}`);
+  const mutationRevisionRef = useRef(0);
 
   const previewUrl = useMemo(
     () => composeQuickAvatar(selectedIcon, selectedBg),
@@ -135,17 +137,77 @@ export const AvatarCustomizer: React.FC<AvatarCustomizerProps> = ({
 
     setSaving(true);
     haptic.medium();
+    const mutationId = `${mutationInstanceRef.current}:${++mutationRevisionRef.current}`;
+    masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+      kind: 'player-appearance',
+      scope: userId,
+      mutationId,
+      state: 'pending',
+    });
+    masterBus.emit('PLAYER_APPEARANCE_CHANGED', {
+      userId,
+      avatar: previewUrl,
+      mutationId,
+      source: 'avatar-picker',
+    });
+    masterBus.emit('USER_PROFILE_LOADED', { avatarUrl: previewUrl, userId });
     try {
       const saved = await avatarService.setUserAvatar(userId, previewUrl);
       if (!saved) {
+        masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+          kind: 'player-appearance',
+          scope: userId,
+          mutationId,
+          state: 'rolling-back',
+        });
+        if (currentAvatar) {
+          masterBus.emit('PLAYER_APPEARANCE_CHANGED', {
+            userId,
+            avatar: currentAvatar,
+            mutationId,
+            source: 'rollback',
+          });
+          masterBus.emit('USER_PROFILE_LOADED', { avatarUrl: currentAvatar, userId });
+        }
+        masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+          kind: 'player-appearance',
+          scope: userId,
+          mutationId,
+          state: 'rolled-back',
+        });
         toast.error('Could Not Save Avatar. Please Try Again.');
         return;
       }
+      masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'player-appearance',
+        scope: userId,
+        mutationId,
+        state: 'confirmed',
+      });
       toast.success('Avatar Saved');
       onSaved?.(previewUrl);
-      // Repaint every avatar surface now, rather than on the next page load.
-      masterBus.emit('USER_PROFILE_LOADED', { avatarUrl: previewUrl, userId });
     } catch (err) {
+      masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'player-appearance',
+        scope: userId,
+        mutationId,
+        state: 'rolling-back',
+      });
+      if (currentAvatar) {
+        masterBus.emit('PLAYER_APPEARANCE_CHANGED', {
+          userId,
+          avatar: currentAvatar,
+          mutationId,
+          source: 'rollback',
+        });
+        masterBus.emit('USER_PROFILE_LOADED', { avatarUrl: currentAvatar, userId });
+      }
+      masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'player-appearance',
+        scope: userId,
+        mutationId,
+        state: 'rolled-back',
+      });
       reportError(err, 'AvatarCustomizer.handleSave');
       toast.error('Could Not Save Avatar. Please Try Again.');
     } finally {

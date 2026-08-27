@@ -33,7 +33,8 @@ import { reportError } from '../utils/errorReporter';
 
 export type BusEventType =
   | 'TABLE_CHAT_INSERT'
-  | 'TABLE_PROFILES_UPDATE'
+  | 'PLAYER_APPEARANCE_CHANGED'
+  | 'CUSTOMIZATION_MUTATION_STATE'
   | 'AUTH_STATE_CHANGED'
   | 'USER_PROFILE_LOADED'
   | 'CLUB_JOINED'
@@ -350,7 +351,29 @@ export type BusEventType =
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
   TABLE_CHAT_INSERT: { tableId: string; newRow: Record<string, unknown> };
-  TABLE_PROFILES_UPDATE: { newRow: Record<string, unknown> };
+  /**
+   * A seated player's render-only identity changed. This event deliberately
+   * carries no stack, cards, action or seat data: the game engine remains the
+   * only authority for gameplay state. Pickers emit it optimistically so every
+   * mounted table repaints in the tap frame; the seat-scoped profiles realtime
+   * channel reconciles the durable cross-device value.
+   */
+  PLAYER_APPEARANCE_CHANGED: {
+    userId: string;
+    avatar?: string;
+    frame?: string | null;
+    aura?: string | null;
+    /** Links the optimistic paint or rollback to its ordered durable write. */
+    mutationId?: string;
+    source: 'avatar-picker' | 'cosmetic-picker' | 'rollback';
+  };
+  /** Orders optimistic visual state against asynchronous database echoes. */
+  CUSTOMIZATION_MUTATION_STATE: {
+    kind: 'table-appearance' | 'player-appearance' | 'user-table-setting';
+    scope: string;
+    mutationId: string;
+    state: 'pending' | 'confirmed' | 'rolling-back' | 'rolled-back';
+  };
   AUTH_STATE_CHANGED: AuthStatePayload;
   USER_PROFILE_LOADED: { avatarUrl?: string; displayName?: string; userId?: string };
   CLUB_JOINED: ClubEventPayload;
@@ -750,6 +773,8 @@ export interface BusPayloadMap {
   SETTINGS_CHANGED: {
     setting: string;
     value: string | number | boolean;
+    /** Account scope for settings persisted outside localStorage. */
+    userId?: string;
     /**
      * Which hook instance emitted this, so a receiver can ignore its OWN echo
      * without a stateful latch. See useTableSettings: the previous
@@ -992,7 +1017,14 @@ export interface BusPayloadMap {
   RAKEBACK_CLAIMED: { clubId: string; amount?: number; userId?: string };
   CLUB_SETTINGS_UPDATED: { clubId?: string; setting?: string; value?: unknown };
   // Phase 4 deep-sweep: overlay + theme payloads
-  UI_THEME_CHANGED: { key: string; value?: unknown };
+  UI_THEME_CHANGED: {
+    key: string;
+    value?: unknown;
+    /** Prevents a customization from another signed-in tab/account leaking in. */
+    userId?: string;
+    /** Present on optimistic paints and their rollbacks; absent on DB echoes. */
+    mutationId?: string;
+  };
   // Phase 8 Deep Sweep: flash pool game state event
   GAME_STATE_UPDATED: {
     tableId?: string;
@@ -1182,6 +1214,13 @@ class MasterBusCore {
     'SYSTEM_ERROR',
     'AUTH_STATE_CHANGED',
     'DIAMOND_BALANCE_CHANGED',
+    // Every tap is an ordered visual mutation. Suppressing a repeated choice
+    // can strand a rollback or a second mounted table on the prior artwork.
+    'UI_THEME_CHANGED',
+    'PLAYER_APPEARANCE_CHANGED',
+    'SETTINGS_CHANGED',
+    'USER_PROFILE_LOADED',
+    'CUSTOMIZATION_MUTATION_STATE',
   ];
 
   // #4b Channel factory registry for auto-recovery
@@ -1433,6 +1472,25 @@ class MasterBusCore {
    * Set up internal handlers for cross-store synchronization
    */
   private setupInternalHandlers(): void {
+    // Light/dark mode is part of the same visual system as felt art. Zustand's
+    // persisted store updates the source tab before emitting; this handler is
+    // what applies a BroadcastChannel or database-originated change in every
+    // other mounted tab without calling setTheme() and echoing it back.
+    this.subscribe('UI_THEME_CHANGED', (event) => {
+      if (event.payload.key !== 'theme') return;
+      const activeUserId = useUserStore.getState().user?.id;
+      if (event.payload.userId && event.payload.userId !== activeUserId) return;
+      const theme = event.payload.value;
+      if (theme !== 'light' && theme !== 'dark') return;
+      if (useSettingsStore.getState().theme !== theme) {
+        useSettingsStore.setState({ theme });
+      }
+      if (typeof document !== 'undefined') {
+        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.style.colorScheme = theme;
+      }
+    });
+
     // When auth state changes, sync user data across stores
     this.subscribe('AUTH_STATE_CHANGED', (event) => {
       const { userId, isAuthenticated } = event.payload;

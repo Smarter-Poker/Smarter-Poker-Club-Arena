@@ -56,21 +56,22 @@ describe('the felt repaints before the network', () => {
 
     await applyTableAppearance({ table_id: 'neon_city' }, { userId: 'u1' });
 
-    expect(order[0]).toBe('emit:UI_THEME_CHANGED');
     expect(order).toContain('upsert');
     expect(order.indexOf('emit:UI_THEME_CHANGED')).toBeLessThan(order.indexOf('upsert'));
   });
 
-  it('a card back ALSO syncs the global card-back setting', () => {
+  it('a card back ALSO syncs the global card-back setting', async () => {
     /* The /settings page and the card-back store display
        useTableSettings.cardBack. Without this the dropdown shows one design
        while the felt deals another — in both directions. */
-    void applyTableAppearance({ cards_id: 'dragon' }, { userId: 'u1' });
-    expect(emitsOf('SETTINGS_CHANGED')).toEqual([{ setting: 'cardBack', value: 'dragon' }]);
+    await applyTableAppearance({ cards_id: 'dragon' }, { userId: 'u1' });
+    expect(emitsOf('SETTINGS_CHANGED')).toEqual([
+      { setting: 'cardBack', value: 'dragon', userId: 'u1' },
+    ]);
   });
 
-  it('a felt/button/background change does NOT touch the card-back setting', () => {
-    void applyTableAppearance({ table_id: 'neon_city' }, { userId: 'u1' });
+  it('a felt/button/background change does NOT touch the card-back setting', async () => {
+    await applyTableAppearance({ table_id: 'neon_city' }, { userId: 'u1' });
     expect(emitsOf('SETTINGS_CHANGED')).toHaveLength(0);
   });
 });
@@ -98,7 +99,11 @@ describe('it writes only what changed', () => {
   it('writes the per-game-type bucket when asked', async () => {
     await applyTableAppearance({ table_id: 'x' }, { userId: 'u1', gameType: 'PLO' });
     expect(upsert.mock.calls[0][0].game_type).toBe('PLO');
-    expect(emitsOf('UI_THEME_CHANGED')[0]).toEqual({ key: 'PLO', value: { table_id: 'x' } });
+    expect(emitsOf('UI_THEME_CHANGED')[0]).toMatchObject({
+      key: 'PLO',
+      value: { table_id: 'x' },
+      userId: 'u1',
+    });
   });
 });
 
@@ -113,8 +118,8 @@ describe('a rejected write puts the felt back', () => {
 
     expect(result.ok).toBe(false);
     const themes = emitsOf('UI_THEME_CHANGED');
-    expect(themes[0]).toEqual({ key: 'ALL', value: { cards_id: 'dragon' } });
-    expect(themes[1], 'the felt was left showing a rejected choice').toEqual({
+    expect(themes[0]).toMatchObject({ key: 'ALL', value: { cards_id: 'dragon' } });
+    expect(themes[1], 'the felt was left showing a rejected choice').toMatchObject({
       key: 'ALL',
       value: { cards_id: 'classic_blue' },
     });
@@ -122,6 +127,85 @@ describe('a rejected write puts the felt back', () => {
     expect(emitsOf('SETTINGS_CHANGED').at(-1)).toEqual({
       setting: 'cardBack',
       value: 'classic_blue',
+      userId: 'u1',
+    });
+  });
+
+  it('an older failed tap cannot roll back a newer visible choice', async () => {
+    let resolveFirst: ((value: { error: { message: string } }) => void) | undefined;
+    upsert
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ error: { message: string } }>((resolve) => {
+            resolveFirst = resolve;
+          })
+      )
+      .mockResolvedValueOnce({ error: null });
+
+    const first = applyTableAppearance(
+      { table_id: 'first' },
+      { userId: 'rapid-user', previous: { table_id: 'old' } }
+    );
+    const second = applyTableAppearance(
+      { table_id: 'second' },
+      { userId: 'rapid-user', previous: { table_id: 'first' } }
+    );
+
+    // The second write is queued, but both paints happened immediately.
+    await Promise.resolve();
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(
+      emitsOf('UI_THEME_CHANGED')
+        .slice(0, 2)
+        .map(({ key, value }) => ({ key, value }))
+    ).toEqual([
+      { key: 'ALL', value: { table_id: 'first' } },
+      { key: 'ALL', value: { table_id: 'second' } },
+    ]);
+
+    resolveFirst?.({ error: { message: 'first failed' } });
+    const firstResult = await first;
+    expect(firstResult.reverted).toEqual({});
+    await second;
+
+    expect(upsert).toHaveBeenCalledTimes(2);
+    expect(upsert.mock.calls.map(([row]) => row.table_id)).toEqual(['first', 'second']);
+    expect(emitsOf('UI_THEME_CHANGED')).toHaveLength(2);
+  });
+
+  it('turns a thrown network failure into a stale-safe rollback result', async () => {
+    upsert.mockRejectedValueOnce(new Error('network down'));
+    const result = await applyTableAppearance(
+      { background_id: 'vegas' },
+      { userId: 'u1', previous: { background_id: 'midnight' } }
+    );
+    expect(result.ok).toBe(false);
+    expect(result.reverted).toEqual({ background_id: 'midnight' });
+    expect(emitsOf('UI_THEME_CHANGED').at(-1)).toMatchObject({
+      key: 'ALL',
+      value: { background_id: 'midnight' },
+    });
+  });
+
+  it('two rejected rapid taps return to the last durable artwork', async () => {
+    upsert
+      .mockResolvedValueOnce({ error: { message: 'first denied' } })
+      .mockResolvedValueOnce({ error: { message: 'second denied' } });
+
+    const first = applyTableAppearance(
+      { button_id: 'first' },
+      { userId: 'double-failure-user', previous: { button_id: 'durable' } }
+    );
+    const second = applyTableAppearance(
+      { button_id: 'second' },
+      { userId: 'double-failure-user', previous: { button_id: 'first' } }
+    );
+    const [, secondResult] = await Promise.all([first, second]);
+
+    expect(secondResult.reverted).toEqual({ button_id: 'durable' });
+    expect(emitsOf('UI_THEME_CHANGED').at(-1)).toMatchObject({
+      key: 'ALL',
+      value: { button_id: 'durable' },
     });
   });
 

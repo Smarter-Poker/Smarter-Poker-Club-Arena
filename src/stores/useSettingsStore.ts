@@ -11,7 +11,7 @@ interface SettingsState {
   toggleSound: () => void;
   toggleFourColorDeck: () => void;
   toggleNotifications: () => void;
-  setTheme: (theme: 'dark' | 'light') => void;
+  setTheme: (theme: 'dark' | 'light', userId?: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -26,7 +26,7 @@ export const useSettingsStore = create<SettingsState>()(
       toggleFourColorDeck: () => set((state) => ({ fourColorDeck: !state.fourColorDeck })),
       toggleNotifications: () =>
         set((state) => ({ notificationsEnabled: !state.notificationsEnabled })),
-      setTheme: (theme) => {
+      setTheme: (theme, userId) => {
         set({ theme });
         // Apply immediately even on direct /table routes where Shell may not
         // be the component that initiated the change. The persisted store is
@@ -36,7 +36,7 @@ export const useSettingsStore = create<SettingsState>()(
           document.documentElement.setAttribute('data-theme', theme);
           document.documentElement.style.colorScheme = theme;
         }
-        masterBus.emit('UI_THEME_CHANGED', { key: 'theme', value: theme });
+        masterBus.emit('UI_THEME_CHANGED', { key: 'theme', value: theme, userId });
       },
     }),
     {

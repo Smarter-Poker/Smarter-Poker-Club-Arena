@@ -7199,39 +7199,6 @@ export default function TablePage({
     }
   });
 
-  /**
-   * THE HERO'S NEW AVATAR APPEARS ON THE FELT IMMEDIATELY.
-   *
-   * Dan 2026-08-26: "if a user changes their avatar... it needs to change,
-   * save and update in real time on the felt."
-   *
-   * It did not. `AvatarGallery` writes `profiles.avatar_url` and emits
-   * `USER_PROFILE_LOADED`, and THREE surfaces listened — the global header,
-   * the hamburger menu and the funnel tracker. The table was not one of them,
-   * and the table does not subscribe to `profiles` over realtime either. So
-   * the player picked a new avatar, watched their header change, looked back
-   * at their own seat and saw the old picture, for the rest of the session.
-   *
-   * Patching the seat directly rather than re-fetching: the event carries the
-   * new URL, the seat is already in state, and a refetch would race the
-   * engine snapshot that owns every other field on that player. Scoped to the
-   * hero's own id so one player's change can never repaint another's seat —
-   * an opponent's avatar arrives with the snapshot, from the server.
-   */
-  useMasterBusSubscription('USER_PROFILE_LOADED', (payload: any) => {
-    const newUrl = payload?.avatarUrl;
-    const who = payload?.userId;
-    if (!newUrl || !who || who !== userId) return;
-    setTableState((prev) => {
-      const hit = prev.players.some((p) => p && p.id === who && p.avatar !== newUrl);
-      if (!hit) return prev; // nothing to repaint — do not churn nine seats
-      return {
-        ...prev,
-        players: prev.players.map((p) => (p && p.id === who ? { ...p, avatar: newUrl } : p)),
-      };
-    });
-  });
-
   // Fetch Hero profile just once if needed
   useEffect(() => {
     if (userId && userId !== 'guest') {
@@ -9568,8 +9535,11 @@ export default function TablePage({
       if (!existing) return prev;
 
       const nextAvatar = change.avatar ?? existing.avatar;
-      const nextFrame = change.frame ?? undefined;
-      const nextAura = change.aura ?? undefined;
+      // Undefined means the event did not touch that field; null means the
+      // player explicitly removed it. The old `?? undefined` collapsed both
+      // meanings and an avatar-only optimistic event could strip cosmetics.
+      const nextFrame = change.frame === undefined ? existing.frame : (change.frame ?? undefined);
+      const nextAura = change.aura === undefined ? existing.aura : (change.aura ?? undefined);
 
       /* No-op guard. Realtime echoes the hero's own write back to them, and a
          `profiles` UPDATE fires for any column — a chip balance, a last-seen

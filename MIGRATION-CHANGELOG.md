@@ -15892,3 +15892,45 @@ partial set.
 Guard: tests/unit/CompleteSetReadsDoNotTruncate.test.ts (13 specs,
 mutation-tested) plus tests/unit/fetchAllRows.test.ts (8 specs).
 Verified: client 7,422/7,422, server 1,967/1,967, both tsc clean.
+
+## 2026-08-27 — Two mobile felt bugs from Dan (cowork-mobile)
+
+1. "Sometimes cards dim like you folded, even though you are live in a hand.
+   That should never happen while you still have a hand."
+
+   The dim is `winnerDisplayActive`, which darkens every face-up card outside
+   the winning five. Its ONLY fence was a reset at hand start - and a reset
+   cannot fence an out-of-order event. A POT_WIN belonging to hand N arriving
+   after hand N+1 had started merged into the fresh hand and dimmed the hero's
+   brand-new hole cards. The merge comment claimed "the hand-start resets fence
+   the union to the current hand", which is true only while events arrive in
+   order.
+
+   winnerInfo now carries the hand number it belongs to, enforced at BOTH ends:
+   the merge drops a payload that is not for the live hand (fenced ABOVE the
+   derived maps, so a stale display's hole-card indices and amounts are not
+   carried forward), and the render refuses to dim for winners stamped with a
+   different hand. The legitimate showdown dim is untouched - the existing
+   pokerbrosWinnerPresentation pin was updated in the same commit to require
+   both the dim and its new fence.
+
+2. "There are bugs in the pre action buttons, they don't work and function all
+   the time, and sometimes stay engaged on future streets."
+
+   Both halves were single-shot calls. `setPreAction` resolves
+   { success: false } rather than throwing, including for a FULL 30 SECONDS
+   while GameServerAPI's circuit breaker is open, so an attempt inside that
+   window simply lost and the player was told to play it manually.
+
+   The clear direction is the one that costs a hand: the ENGINE disposes
+   pre-actions only at hand end while the CLIENT clears every street, so a
+   failed clear left the engine armed and the bar dark - the player saw nothing
+   engaged and the engine acted for them on a later street. Both directions now
+   retry (3 bounded attempts), and a failed clear puts the armed control BACK
+   on screen so the player can see and cancel what the engine is still holding.
+
+Guard: tests/unit/LiveHandNeverDimsAndPreActionsLand.test.ts (9 specs,
+mutation-tested - and strengthened after a first mutation slipped past a pin
+that only required one of the two restore paths).
+Verified: client 7,516/7,516, server 1,991/1,991, both tsc clean, ui-text gate
+green.

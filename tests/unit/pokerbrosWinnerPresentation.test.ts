@@ -105,7 +105,18 @@ describe('cards outside the winning five drop to 0.28 (measured, channel-neutral
     const uses = SEAT.match(/isDimmed=\{\s*winnerDisplayActive\s*&&/g) || [];
     expect(uses.length, 'villain row AND hero row must both dim').toBeGreaterThanOrEqual(2);
     expect(SEAT).toMatch(/prev\.winnerDisplayActive\s*!==\s*next\.winnerDisplayActive/);
-    expect(TABLE_PAGE).toMatch(/winnerDisplayActive=\{winnerInfo\.playerIds\.length\s*>\s*0\}/);
+    /* The table-wide dim is still driven from winnerInfo here - that is what
+       this spec is about and it is unchanged. The expression gained a second
+       clause on 2026-08-27 (Dan: "cards dim like you folded even though you
+       are live in a hand"): the winners must also belong to the hand ON THE
+       FELT. A POT_WIN for hand N arriving after hand N+1 started used to merge
+       into the fresh hand and dim the hero's brand-new hole cards. This pin
+       now requires BOTH halves, so neither the dim nor its fence can be
+       dropped without failing here. */
+    expect(TABLE_PAGE).toMatch(
+      /winnerDisplayActive=\{[\s\S]{0,400}winnerInfo\.playerIds\.length\s*>\s*0/
+    );
+    expect(TABLE_PAGE).toMatch(/winnerInfo\.handNumber === \(tableState\.handNumber \?\? 0\)/);
   });
 });
 

@@ -278,6 +278,7 @@ import { TournamentHUD } from '../components/tournament/TournamentHUD';
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
 import { reportError } from '../utils/errorReporter';
+import { retryAsync } from '../utils/retryAsync';
 import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage';
 import { serverNow } from '../utils/serverClock';
 // Dan 2026-08-21, item 15: hero's live hand strength under their seat box.
@@ -2204,17 +2205,36 @@ export default function TablePage({
         // and the engine still folds the hand they wanted to play — pre-actions
         // are only disposed at hand end, so the whole rest of the hand is
         // exposed.
-        void serverSetPreAction(tableId, serverAction).then((res) => {
-          if (!res?.success) {
-            reportError(
-              new Error(res?.error || 'setPreAction rejected by engine'),
-              'TablePage.PreAction_set_refused'
-            );
+        /* RETRIED, BECAUSE ONE ATTEMPT IS NOT A DELIVERY (Dan 2026-08-27:
+           "there are bugs in the pre action buttons, they don't work and
+           function all the time").
+
+           `setPreAction` resolves `{ success: false }` rather than throwing -
+           on a non-OK status, on an unreachable engine, and for a FULL 30
+           SECONDS whenever GameServerAPI's circuit breaker is open. A single
+           attempt inside that window simply lost, and the player was told to
+           play it manually for a reason that had nothing to do with them.
+           Three bounded attempts cover a transient blip and a breaker that
+           closes; a genuine refusal still disarms the bar rather than lying
+           about it. */
+        void retryAsync(() => serverSetPreAction(tableId, serverAction), 2, 400)
+          .then((res: { success?: boolean; error?: string } | undefined) => {
+            if (!res?.success) {
+              reportError(
+                new Error(res?.error || 'setPreAction rejected by engine'),
+                'TablePage.PreAction_set_refused'
+              );
+              hadPreActionRef.current = false;
+              setPreAction(null); // the bar must not claim something the engine has not armed
+              toast?.error?.(res?.error || 'Could not arm that pre-action - play it manually.');
+            }
+          })
+          .catch((err: unknown) => {
+            reportError(err, 'TablePage.PreAction_set_threw');
             hadPreActionRef.current = false;
-            setPreAction(null); // the bar must not claim something the engine has not armed
-            toast?.error?.(res?.error || 'Could not arm that pre-action - play it manually.');
-          }
-        });
+            setPreAction(null);
+            toast?.error?.('Could not arm that pre-action - play it manually.');
+          });
         // Also emit to MasterBus for local telemetry
         masterBus.emit('PRE_ACTION_SET', {
           tableId,
@@ -2225,18 +2245,42 @@ export default function TablePage({
         // Clear pre-action on server (only if one was previously armed —
         // P2-1: avoids a junk clear request on initial mount when null).
         hadPreActionRef.current = false;
-        void serverSetPreAction(tableId, 'clear').then((res) => {
-          if (!res?.success) {
-            // The engine still holds the old pre-action and WILL execute it.
-            // Say so plainly — this is the direction that folds a live hand.
-            reportError(
-              new Error(res?.error || 'clear pre-action rejected by engine'),
-              'TablePage.PreAction_clear_refused'
-            );
+        /* THE DIRECTION THAT COSTS A HAND (Dan 2026-08-27: pre-actions
+           "sometimes stay engaged on future streets").
+
+           The engine disposes pre-actions only at HAND END, while the client's
+           rule is one action and one street - so every street boundary sends a
+           clear, and a clear that fails leaves the ENGINE armed while the BAR
+           GOES DARK. The player sees nothing engaged, and the engine folds or
+           calls for them on a later street. That is precisely the reported
+           symptom, and the old code knew it: its own comment said "the engine
+           still holds the old pre-action and WILL execute it".
+
+           Two changes. It RETRIES, for the same circuit-breaker reason as the
+           arm above. And when the clear genuinely fails it puts the bar BACK
+           to what the engine is actually holding instead of leaving it dark -
+           a visible armed control the player can cancel again beats an
+           invisible one that acts for them. */
+        const armed = preAction;
+        void retryAsync(() => serverSetPreAction(tableId, 'clear'), 2, 400)
+          .then((res: { success?: boolean; error?: string } | undefined) => {
+            if (!res?.success) {
+              reportError(
+                new Error(res?.error || 'clear pre-action rejected by engine'),
+                'TablePage.PreAction_clear_refused'
+              );
+              hadPreActionRef.current = true;
+              // Show what the engine is still holding, rather than nothing.
+              if (armed) setPreAction(armed);
+              toast?.error?.('Could not cancel your pre-action - it may still run this hand.');
+            }
+          })
+          .catch((err: unknown) => {
+            reportError(err, 'TablePage.PreAction_clear_threw');
             hadPreActionRef.current = true;
+            if (armed) setPreAction(armed);
             toast?.error?.('Could not cancel your pre-action - it may still run this hand.');
-          }
-        });
+          });
       }
     }
   }, [preAction, tableId, userId, toast]);
@@ -3444,6 +3488,20 @@ export default function TablePage({
     amounts: Record<string, number>;
     /** Round 2 (double board): winning hand name per board — [top, bottom]. */
     boardHandNames?: [string, string] | null;
+    /**
+     * WHICH HAND THESE WINNERS BELONG TO (Dan 2026-08-27: "cards dim like you
+     * folded even though you are live in a hand").
+     *
+     * The winner display dims every face-up card outside the winning five.
+     * Clearing this state at hand start was the only fence, and a reset
+     * cannot fence an OUT-OF-ORDER event: a POT_WIN for hand N arriving after
+     * hand N+1 has started merged into the fresh hand, and the hero's
+     * brand-new cards rendered dimmed as though they had folded.
+     *
+     * Stamping the hand turns that into something the render can check, so a
+     * late or duplicated broadcast can no longer dim a live hand.
+     */
+    handNumber: number;
   }>({
     playerIds: [],
     handName: '',
@@ -3454,6 +3512,7 @@ export default function TablePage({
     handNames: {},
     amounts: {},
     boardHandNames: null,
+    handNumber: 0,
   });
   /** Mirror of winnerInfo for the WS event handlers, which close over stale
    *  state. Read by the Share Hand snapshot at HAND_COMPLETE. */
@@ -10005,6 +10064,7 @@ export default function TablePage({
           handNames: {},
           amounts: {},
           boardHandNames: null,
+          handNumber: 0,
         });
         setWinnerParticle((prev) => ({ ...prev, active: false }));
         setIsAllInMode(false);
@@ -10663,6 +10723,7 @@ export default function TablePage({
             handNames: {},
             amounts: {},
             boardHandNames: null,
+            handNumber: 0,
           });
           setRitResult(null);
           clearRitRevealTimers();
@@ -10954,7 +11015,38 @@ export default function TablePage({
           // Replacing winnerInfo on each event un-lit every earlier pot's
           // winners mid-display. MERGE instead — the hand-start resets fence
           // the union to the current hand, so nothing bleeds across hands.
-          const prevWin = winnerInfoRef.current;
+          /* ═══ A WINNER FROM A FINISHED HAND CANNOT DIM A LIVE ONE ═══
+             Dan 2026-08-27: "sometimes cards dim like you folded, even though
+             you are live in a hand. That should never happen while you still
+             have a hand."
+
+             This merge is the path that did it. The note above says the
+             hand-start resets "fence the union to the current hand" - true
+             only while events arrive IN ORDER. A POT_WIN belonging to hand N
+             that lands AFTER hand N+1 has started merges into the fresh hand,
+             `winnerDisplayActive` flips on, and every face-up card outside the
+             (nonexistent) winning five dims - including the hero's brand-new
+             hole cards, which reads exactly like having folded.
+
+             A reset cannot fence an out-of-order event; a hand number can. The
+             fence sits HERE, above the derived maps below, so a stale display
+             is dropped before its hole-card indices and amounts are carried
+             forward rather than after. */
+          const liveHandNumber = tableStateRef.current.handNumber ?? 0;
+          const carried = winnerInfoRef.current;
+          const prevWin =
+            carried.playerIds.length > 0 &&
+            carried.handNumber > 0 &&
+            carried.handNumber !== liveHandNumber
+              ? {
+                  ...carried,
+                  playerIds: [],
+                  handNames: {},
+                  amounts: {},
+                  holeCardIndices: {},
+                  cardIndices: [],
+                }
+              : carried;
           const mergedHole: Record<string, number[]> = { ...prevWin.holeCardIndices };
           for (const [uid, idxs] of Object.entries(winHoleCardIndices)) {
             mergedHole[uid] = mergedHole[uid] ? [...new Set([...mergedHole[uid], ...idxs])] : idxs;
@@ -10970,6 +11062,7 @@ export default function TablePage({
             mergedAmounts[uid] = (mergedAmounts[uid] ?? 0) + (Number(amt) || 0);
           }
           const merged = {
+            handNumber: liveHandNumber,
             playerIds: [...new Set([...prevWin.playerIds, ...winnerIds])],
             handName: winHandName || prevWin.handName,
             handDescription: winHandDescription || prevWin.handDescription,
@@ -15184,7 +15277,20 @@ export default function TablePage({
                      any winner is on display, every face-up card outside the
                      winning five dims to half brightness (losing shown hands
                      whole, the winner's unused cards around the lit ones). */
-                  winnerDisplayActive={winnerInfo.playerIds.length > 0}
+                  /* AND IT MUST BELONG TO THE HAND ON THE FELT (2026-08-27).
+                     Dan: "cards dim like you folded even though you are live
+                     in a hand - that should never happen while you still have
+                     a hand." The dim is driven from here, so the guarantee is
+                     enforced here too: winners stamped with a different hand
+                     than the one being played light nothing and dim nothing.
+                     Belt and braces with the fence on the merge itself - this
+                     one holds even if some future path writes winnerInfo
+                     without going through that merge. */
+                  winnerDisplayActive={
+                    winnerInfo.playerIds.length > 0 &&
+                    (winnerInfo.handNumber === 0 ||
+                      winnerInfo.handNumber === (tableState.handNumber ?? 0))
+                  }
                   /* CHOP PARITY 2026-08-26: each winner's OWN hand name —
                      a hi-lo low winner labels as its low, a chopped pot
                      labels both seats with their (identical) rank, and a

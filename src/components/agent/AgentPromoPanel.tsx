@@ -17,6 +17,7 @@ import { triggerHaptic } from '../../services/HapticService';
 import { resolveAvatarDisplay } from '../../utils/avatarUtils';
 import { checkSettlementLock } from '../../utils/settlementLock';
 import { reportError } from '../../utils/errorReporter';
+import { fetchAllRows } from '../../utils/fetchAllRows';
 
 /** crypto.randomUUID is not in every embedded webview; fall back rather than throw. */
 function newOpId(): string {
@@ -113,14 +114,21 @@ export default function AgentPromoPanel({
       if (!isMounted.current) return;
       setPromoBalance(Number(agent?.promo_wallet_balance) || 0);
 
-      const { data: players } = await supabase
-        .from('club_members')
-        .select('user_id, chip_balance')
-        .eq('club_id', clubId)
-        .eq('agent_id', userId)
-        .eq('role', 'player')
-        .order('chip_balance', { ascending: false })
-        .limit(1000);
+      /* EVERY player under this agent, not the first thousand (2026-08-27).
+         A truncated list is a player who can never be sent a promo and who
+         does not appear to exist on this panel. */
+      const players = await fetchAllRows<{ user_id: string; chip_balance: number }>(
+        (from, to) =>
+          supabase
+            .from('club_members')
+            .select('user_id, chip_balance')
+            .eq('club_id', clubId)
+            .eq('agent_id', userId)
+            .eq('role', 'player')
+            .order('chip_balance', { ascending: false })
+            .range(from, to),
+        { label: 'AgentPromoPanel.players' }
+      );
       // Batch-fetch profiles (no FK between club_members → profiles)
       const playerProfileMap: Record<string, any> = {};
       if (players && players.length > 0) {

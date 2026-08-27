@@ -20,6 +20,7 @@ import {
   totalPayout,
   type ResultSort,
 } from '../../utils/tournamentPayout';
+import { fetchAllRows } from '../../utils/fetchAllRows';
 import {
   MysteryBountyService,
   formatCents,
@@ -151,11 +152,19 @@ export default function TournamentResultsPage() {
 
       // If "mine" filter, only show tournaments user participated in
       if (filter === 'mine' && user?.id) {
-        const { data: myEntries } = await supabase
-          .from('tournament_players')
-          .select('tournament_id')
-          .eq('user_id', user.id)
-          .limit(5000);
+        /* "Tournaments I played" is a complete set - a player past 5,000
+           entries would have silently lost the oldest of their own history
+           (2026-08-27). */
+        const myEntries = await fetchAllRows<{ tournament_id: string }>(
+          (from, to) =>
+            supabase
+              .from('tournament_players')
+              .select('tournament_id')
+              .eq('user_id', user.id)
+              .order('tournament_id', { ascending: true })
+              .range(from, to),
+          { label: 'TournamentResults.myEntries' }
+        );
 
         if (!isMounted.current) return;
         const myTournamentIds = new Set((myEntries || []).map((e) => e.tournament_id));
@@ -230,7 +239,13 @@ export default function TournamentResultsPage() {
         .select('user_id, username, position, prize, bounty_winnings, bounties_collected, status')
         .eq('tournament_id', selectedTournament!.id)
         .order('position', { ascending: true, nullsFirst: false })
-        .limit(1000);
+        /* A 1,001-entrant field would have lost its tail - and the tail of a
+           results table is the players who busted first, i.e. most of the
+           field (2026-08-27). Kept as a single read with a ceiling far above
+           any field this room runs, rather than paging a screen that renders
+           one list; the ceiling is now stated as a rendering bound, not
+           mistaken for the size of the field. */
+        .limit(50000);
 
       if (isMounted.current) {
         setResults(

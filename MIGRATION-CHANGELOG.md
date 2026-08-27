@@ -15866,3 +15866,29 @@ room, so the effect was the same once the room outgrew them.
 Reported not changed: 31 further row ceilings on people-tables, of which ~8 are
 complete-set operations (StatsExport, AgentPromoPanel, member lists) that need
 the same treatment in their own pass.
+
+## 2026-08-27 — Phase-6: complete-set reads no longer truncate (cowork-mobile)
+
+Full write-up: `.agent/audits/2026-08-27-phase6-complete-set-reads.md`
+
+New tested helper `src/utils/fetchAllRows.ts` pages a query until the server
+returns a short page, and rejects on a failed page rather than returning a
+partial set.
+
+- LIVE BUG FIXED: ClubDetailPage's member list capped at 500 while SHARK CLUB
+  had 590 members and Club JAQK 584 - 90 and 84 members were missing from their
+  own club's list. It was ordered by created_at, so the invisible ones were
+  always the newest joiners.
+- Also paged (latent): StatsExport roster (5000), AgentAssignmentPanel (2000),
+  AgentPromoPanel (1000), TournamentResults myEntries (5000), and the
+  union-clubs lookup in server/src/handlers/admin.ts (100) - which is an
+  AUTHORIZATION path where truncation denies a legitimate union admin.
+- NOT removed on purpose: StatsExport.fetchOwnHands keeps its 200-table scope.
+  Every id rides in the next request's URL and ~1000 uuids is a 37 KB URL that
+  servers answer 414, so paging it would break the export. The silence was the
+  bug: the limit is now a named constant, the clip is detected, and the user is
+  told the file is scoped instead of getting a row count that reads complete.
+
+Guard: tests/unit/CompleteSetReadsDoNotTruncate.test.ts (13 specs,
+mutation-tested) plus tests/unit/fetchAllRows.test.ts (8 specs).
+Verified: client 7,422/7,422, server 1,967/1,967, both tsc clean.

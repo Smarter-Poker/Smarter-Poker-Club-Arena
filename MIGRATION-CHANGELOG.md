@@ -2,6 +2,60 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-08-26 (late night) — HANDOFF CLOSURE + FIRST REAL-BROWSER LOBBY AUDIT
+
+Worked the two 2026-08-26 handoffs and the open guard issue. Much of the
+handoffs' backlog turned out to already be shipped by intervening PRs (#939,
+#950, and the TournamentPage cleanup) — verified each rather than redone:
+
+1. **PRIORITY ONE discharged: the tournament lobby has now been opened in a
+   real browser.** New repeatable probe `e2e-live/tournament-lobby-audit.mjs`
+   (mints a one-time session for the documented test account via the GoTrue
+   admin magic-link flow — no password is stored anywhere on this machine —
+   and runs the handoff's 10-row checklist in headless Chromium against
+   production at 375×812 AND 430×932). Results on "Late Night Grind (PLO4)"
+   (RUNNING): detail fits one screen at both widths; blinds clock ticks
+   3:28 → 3:26 and never reads 0:00; tab arrows WRAP (ArrowLeft from Detail
+   lands on Rewards) and Home jumps back; Entries shows 10 real avatar
+   images; Rewards bands render with no NaN; `?tab=chips` deep-links to
+   Ranking. Screenshots verified by eye. ONE real defect found and fixed:
+2. **Footer was 12px off the bottom at BOTH widths** (footerBottom 800/920 vs
+   viewports 812/932) — the measure subtracted the parent `<main>`'s bottom
+   padding, leaving exactly that band visible under the buttons. The shell now
+   takes the full remaining height and cancels the parent's gutter with a
+   matching negative margin (TournamentDetails.tsx measure()). Same guarded
+   writes, same ResizeObserver convergence.
+3. **ITEM B verified closed** — no client writer of `tournaments.current_level`
+   remains anywhere in src/ (all references are reads); the engine's
+   TournamentManagerBase persist is the sole writer; `initializeAllTimers` is
+   already deleted. Stale comment in TournamentTimerService corrected to say
+   so.
+4. **ITEM A closed for real** — TournamentPage relayed the chest reveal onto
+   masterBus "so the celebration toast can show it", but that bus event had
+   ZERO subscribers (an emit into the void) and MysteryBountyCelebration
+   subscribes to the server's own t-break channel directly (so observers see
+   it). Dead relay + orphan MYSTERY_BOUNTY_REVEALED bus type deleted.
+5. **ITEM D verified closed** — the dead comment pointers cited by the handoff
+   no longer exist; remaining LiveChipCounts/TournamentStandings mentions are
+   legitimate "replaces X" history.
+6. **Table follow-ups: #950 shipped the five dead components, the CSS
+   scoping, and the landscape height budget** (verified in the tree, landscape
+   scaler now uses --sp-ls-table-w/h). Two named orphans it missed are now
+   deleted: `src/components/chips/ChipStack.tsx` + `.css` (barrel-only ref,
+   barrel imported by nothing) and `src/hooks/useTableModals.ts` (importer
+   removed in #936, test deleted in #950).
+7. **Estate integrity #1231** — `scripts/agent-trees-snapshot.sh` re-synced to
+   the canonical version in the three drifted repos via PRs:
+   commander-shared#33, Diamond-Arena#39, PepNationLab#114. The hourly guard
+   closes the issue itself once they land.
+
+Client: 7,202 tests green, tsc clean. Still open from the handoffs, deliberately
+not touched: ITEM C (pko+mystery prizeRank — needs Dan's ruling on whether the
+combo will ever be configured), ITEM E (GameLobbyPanel/lobbyEntries/Spin
+surfaces line-by-line audit), buy-in idempotency general case (server-side
+key), `.bbj-info` desktop hover popover, and the `seat--sitout`/'AWAY' pill
+rename (ships a new visual — Dan's call).
+
 ## Cowork session 2026-08-26 (night) — DAN'S 8-POINT LOBBY/ENGINE AUDIT
 
 Dan's punch list (screenshots of Club JAQK lobby + game panels), all eight

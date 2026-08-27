@@ -170,9 +170,24 @@ export default function TournamentDetails({
       const above = el.getBoundingClientRect().top + window.scrollY;
       const parent = el.parentElement;
       const below = parent ? parseFloat(getComputedStyle(parent).paddingBottom || '0') || 0 : 0;
-      // A floor, so a mis-measure during a transition can never collapse the
-      // lobby to nothing - a short page is recoverable, a zero-height one is not.
-      const avail = Math.max(320, window.innerHeight - above - below);
+      /**
+       * FLUSH MEANS FLUSH (Dan 2026-08-25: "actually attach it to the bottom,
+       * there is a gap below it"). Subtracting `below` left the footer
+       * floating exactly the parent's bottom padding above the screen edge —
+       * measured in production Chromium on 2026-08-26 at BOTH 375×812 and
+       * 430×932: footer bottom 800/920 against viewports of 812/932, a 12px
+       * band of `<main>` padding showing under the buttons. The checklist
+       * row this page was built against says "footer flush to the bottom,
+       * no gap", so the shell now claims that band: full remaining height,
+       * plus a negative bottom margin that cancels the parent's own gutter.
+       * Converges the same way --details-h does — the guarded writes stop
+       * the ResizeObserver loop after one pass.
+       */
+      const avail = Math.max(320, window.innerHeight - above);
+      const nextMargin = below > 0 ? `${-Math.round(below)}px` : '';
+      if (el.style.marginBottom !== nextMargin) {
+        el.style.marginBottom = nextMargin;
+      }
       const next = `${Math.round(avail)}px`;
       // Write only on a real change. The ResizeObserver below watches the
       // parent, and this write changes the parent's height, so an
@@ -1181,7 +1196,9 @@ export default function TournamentDetails({
         <div className="details-title">
           <div className="tournament-title">
             <h2>
-              {tournament.guaranteed_prize && tournament.guaranteed_prize > 0 ? `${chipsCompact(tournament.guaranteed_prize)} GTD ` : ''}
+              {tournament.guaranteed_prize && tournament.guaranteed_prize > 0
+                ? `${chipsCompact(tournament.guaranteed_prize)} GTD `
+                : ''}
               {tournament.name}
             </h2>
             <span className="tournament-id">ID:{tournament.id.slice(0, 8)}</span>

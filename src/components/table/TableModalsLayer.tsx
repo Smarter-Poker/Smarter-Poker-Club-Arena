@@ -267,8 +267,9 @@ export interface TableModalsLayerProps {
   /** @deprecated unused by this layer — see the note on boardStage */
   buyInProcessingRef: React.MutableRefObject<boolean>;
   onCloseCashier: () => void;
-  /** Must report whether the chips actually moved — see CashierModal.onAddChips. */
-  onAddChips: (amount: number) => Promise<boolean>;
+  /** Must report whether the chips actually moved — see CashierModal.onAddChips.
+   *  `opId` is the modal's per-attempt idempotency id (Cashier audit 2026-08-27). */
+  onAddChips: (amount: number, opId?: string) => Promise<boolean>;
   onWithdrawChips: (amount: number) => Promise<boolean>;
 
   // Bust Rebuy

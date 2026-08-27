@@ -110,14 +110,24 @@ export const WalletService = {
       .eq('user_id', userId);
 
     if (error) throw error;
-    return (data || []).map((w) => ({
-      userId: w.user_id,
-      walletType: w.wallet_type as WalletType,
-      balance: w.balance,
-      lockedBalance: w.locked_balance,
-      availableBalance: w.balance - w.locked_balance,
-      lastUpdated: w.updated_at,
-    }));
+    /* Cashier audit 2026-08-27 (P2): the ONE wallet read with no Number()
+       coercion. `balance`/`locked_balance` are numeric columns on an
+       any-typed row; if they ever arrive as strings (PostgREST does this for
+       some numeric configurations), `balance - locked_balance` is NaN and
+       the wallet page's summed hero figure string-concatenates. Every other
+       read in this file coerces; now this one does too. */
+    return (data || []).map((w) => {
+      const balance = Number(w.balance) || 0;
+      const lockedBalance = Number(w.locked_balance) || 0;
+      return {
+        userId: w.user_id,
+        walletType: w.wallet_type as WalletType,
+        balance,
+        lockedBalance,
+        availableBalance: balance - lockedBalance,
+        lastUpdated: w.updated_at,
+      };
+    });
   },
 
   // AUDIT 2026-08-25: `getWalletBalance` and `getTotalAvailable` are deleted.
@@ -379,7 +389,7 @@ export const WalletService = {
   ): Promise<boolean> {
     if (amount <= 0) throw new Error('Transfer amount must be positive');
 
-    const { error } = await retryAsync(async () => {
+    const { data: transferData, error } = await retryAsync(async () => {
       const res = await supabase.rpc('wallet_user_transfer', {
         p_from_user_id: fromUserId,
         p_to_user_id: toUserId,
@@ -391,6 +401,17 @@ export const WalletService = {
     });
 
     if (error) throw error;
+    /* Cashier audit 2026-08-27 (P1-7): the RPCs in this codebase return
+       refusals as { success: false, error } rather than throwing —
+       internalTransfer above checks it, this call discarded `data`, so a
+       refusal logged both sides and emitted BALANCE_UPDATED for a transfer
+       that never happened. Latent today (42501 from the browser, see the
+       docblock) but armed to fire the moment the grant is fixed — which is
+       the stated intended fix. */
+    const parsed = transferData as { success?: boolean; error?: string } | null;
+    if (parsed && parsed.success === false) {
+      throw new Error(parsed.error || 'Transfer refused by the server');
+    }
 
     // Log both sides of the user-to-user transfer
     await this.logTransaction(
@@ -440,7 +461,7 @@ export const WalletService = {
   async distributePromo(agentId: string, playerId: string, amount: number): Promise<boolean> {
     if (amount <= 0) throw new Error('Amount must be positive');
 
-    const { error } = await retryAsync(
+    const { data: promoData, error } = await retryAsync(
       () =>
         supabase.rpc('distribute_promo_chips', {
           p_agent_id: agentId,
@@ -451,6 +472,12 @@ export const WalletService = {
     );
 
     if (error) throw error;
+    // Same refusal check as transferToUser (Cashier audit 2026-08-27, P1-7):
+    // a { success: false } body must not report as a paid distribution.
+    const promoParsed = promoData as { success?: boolean; error?: string } | null;
+    if (promoParsed && promoParsed.success === false) {
+      throw new Error(promoParsed.error || 'Promo distribution refused by the server');
+    }
 
     masterBus.emit('BALANCE_UPDATED', { source: 'promo', userId: playerId });
 

@@ -495,6 +495,8 @@ interface TableState {
   spinMultiplier?: number;
   handForHand?: boolean;
   bubbleInfo?: { playersRemaining: number; paidPositions: number };
+  /** Authoritative MTT milestone; activates the event-only broadcast skin. */
+  isFinalTable?: boolean;
   lateRegOpen?: boolean;
   currentLevel?: number;
   refreshTrigger?: number;
@@ -6949,6 +6951,11 @@ export default function TablePage({
           gameType: (table.game_variant || table.game_type || 'NLH') as any,
           isTournament: table.game_type === 'tournament' || !!table.tournament_id,
           tournamentId: table.tournament_id || undefined,
+          // Reconnects happen after the one-shot event. TournamentService
+          // canonically names the consolidated table "Final Table".
+          isFinalTable:
+            (table.game_type === 'tournament' || !!table.tournament_id) &&
+            /\bfinal table\b/i.test(table.name || ''),
           /**
            * ═══════════════════════════════════════════════════════════════════
            *  A TOURNAMENT'S BLINDS COME FROM ITS BLINDS, NOT ITS BIRTH CERTIFICATE
@@ -7703,6 +7710,7 @@ export default function TablePage({
                   const tid = fmt === 'mtt' ? tableStateRef.current.tournamentId : null;
                   const ftName = tableStateRef.current.tableName || 'Tournament';
                   if (tid) {
+                    setTableState((prev) => ({ ...prev, isFinalTable: true }));
                     (async () => {
                       let ftPlayers: Array<{
                         userId: string;
@@ -13589,7 +13597,12 @@ export default function TablePage({
       /* Dan 2026-08-18 — the page never shows the skin composite's scene:
          the table is .table-art inside the aspect-locked scaler, and the
          page behind it is a standalone designed background (style below). */
-      data-felt-theme={v8Theme.table_id || v8Theme.theme_id || userSettings.theme || 'black'}
+      data-felt-theme={
+        tableState.isFinalTable
+          ? 'final_table'
+          : v8Theme.table_id || v8Theme.theme_id || userSettings.theme || 'black'
+      }
+      data-final-table={tableState.isFinalTable ? 'true' : undefined}
       data-background-theme={v8Theme.background_id || 'midnight'}
       data-button-theme={v8Theme.button_id || 'classic-white'}
       data-cards-theme={activeCardBack}
@@ -13617,8 +13630,8 @@ export default function TablePage({
         // no longer leave the page empty — see lib/tableTheme.
         backgroundColor: DEFAULT_TABLE_BACKDROP_COLOR,
         backgroundImage: resolveBackgroundLayers(v8Theme.background_id),
-        backgroundSize: TABLE_BACKGROUND_SIZE,
-        backgroundPosition: TABLE_BACKGROUND_POSITION,
+        backgroundSize: `var(--sp-background-layers-size, ${TABLE_BACKGROUND_SIZE})`,
+        backgroundPosition: `var(--sp-background-layers-position, ${TABLE_BACKGROUND_POSITION})`,
         backgroundRepeat: TABLE_BACKGROUND_REPEAT,
       }}
     >
@@ -14175,7 +14188,11 @@ export default function TablePage({
                 and + SIT buttons sit ON the rail at every breakpoint. */}
             <img
               className="table-art"
-              src={resolveSkin(v8Theme.table_id || v8Theme.theme_id || userSettings.theme || '')}
+              src={resolveSkin(
+                tableState.isFinalTable
+                  ? 'final_table'
+                  : v8Theme.table_id || v8Theme.theme_id || userSettings.theme || ''
+              )}
               alt=""
               draggable={false}
             />

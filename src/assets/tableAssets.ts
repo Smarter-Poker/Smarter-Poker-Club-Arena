@@ -35,6 +35,7 @@ import skinMahoganyRed from '../assets/tables/skin_mahogany_red.png';
 import skinAmethystCavern from '../assets/tables/skin_amethyst_cavern.png';
 import skinCarbonIon from '../assets/tables/skin_carbon_ion.png';
 import skinJadeCity from '../assets/tables/skin_jade_city.png';
+import skinFinalTable from '../assets/tables/skin_final_table.png';
 
 import bgMidnight from '../assets/backgrounds/bg_midnight.jpg';
 import bgRoyalIndigo from '../assets/backgrounds/bg_royal_indigo.jpg';
@@ -66,6 +67,9 @@ export const TABLE_SKINS: Record<string, string> = {
   amethyst_cavern: skinAmethystCavern,
   carbon_ion: skinCarbonIon,
   jade_city: skinJadeCity,
+  // Event-only broadcast skin; excluded from TABLE_SKIN_IDS because it is
+  // activated automatically by the MTT milestone, not manually selected.
+  final_table: skinFinalTable,
   // Legacy ThemeSettingsModal ids (pre-2026-08-17 the modal's table list
   // never matched the skin switch, so these all silently fell back to
   // green). Map each to the closest real skin so old saved rows upgrade.
@@ -111,6 +115,9 @@ export const TABLE_SKIN_IDS: string[] = [
   'carbon_ion',
   'jade_city',
 ];
+
+/** Real skins controlled by game state rather than the cosmetic picker. */
+export const EVENT_TABLE_SKIN_IDS: string[] = ['final_table'];
 
 export const TABLE_BACKGROUND_IDS: string[] = [
   'midnight',

@@ -110,6 +110,20 @@ const CONFETTI_COLORS = [
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Money, guarded.
+ *
+ * This overlay is full-screen and celebratory, so anything that throws inside
+ * it takes the whole screen with it at the worst possible moment — and its
+ * inputs come straight off a `bbj_hit` bus event, not from a typed query. A
+ * partial event threw on `loser.username`; a `tableShare / 0` upstream would
+ * have rendered the INFINITY GLYPH into a payout figure.
+ */
+function chips(n: number | null | undefined): string {
+  const v = Number(n);
+  return (Number.isFinite(v) ? v : 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
+}
+
 export function BBJCelebration({
   visible,
   totalPayout,
@@ -192,7 +206,6 @@ export function BBJCelebration({
     // `soundsAllowed` is deliberately NOT a dependency: it can flip when the
     // player switches tabs mid-celebration, and re-running this effect would
     // restart the whole phase sequence and the counter from zero.
-     
   }, [visible, totalPayout]);
   // ↑ onComplete accessed via onCompleteRef to prevent timer reset on parent re-render
 
@@ -451,22 +464,18 @@ export function BBJCelebration({
           <div className="bbj-breakdown-card bbj-breakdown-loser">
             <div className="bbj-breakdown-emoji" aria-hidden="true" />
             <div className="bbj-breakdown-label">BAD BEAT HOLDER</div>
-            <div className="bbj-breakdown-name">{loser.username}</div>
-            <div className="bbj-breakdown-hand">{loser.handName}</div>
-            <div className="bbj-breakdown-amount">
-              +${loser.share.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-            </div>
+            <div className="bbj-breakdown-name">{loser?.username || 'Player'}</div>
+            <div className="bbj-breakdown-hand">{loser?.handName || ''}</div>
+            <div className="bbj-breakdown-amount">+${chips(loser?.share)}</div>
             <div className="bbj-breakdown-percent">50%</div>
           </div>
 
           <div className="bbj-breakdown-card bbj-breakdown-winner">
             <div className="bbj-breakdown-emoji" aria-hidden="true" />
             <div className="bbj-breakdown-label">HAND WINNER</div>
-            <div className="bbj-breakdown-name">{winner.username}</div>
-            <div className="bbj-breakdown-hand">{winner.handName}</div>
-            <div className="bbj-breakdown-amount">
-              +${winner.share.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-            </div>
+            <div className="bbj-breakdown-name">{winner?.username || 'Player'}</div>
+            <div className="bbj-breakdown-hand">{winner?.handName || ''}</div>
+            <div className="bbj-breakdown-amount">+${chips(winner?.share)}</div>
             <div className="bbj-breakdown-percent">25%</div>
           </div>
 
@@ -474,9 +483,7 @@ export function BBJCelebration({
             <div className="bbj-breakdown-emoji" aria-hidden="true" />
             <div className="bbj-breakdown-label">TABLE SHARE</div>
             <div className="bbj-breakdown-name">{tablePlayerCount} Players</div>
-            <div className="bbj-breakdown-hand">
-              ${perPlayerShare.toLocaleString('en-US', { minimumFractionDigits: 2 })} Each
-            </div>
+            <div className="bbj-breakdown-hand">${chips(perPlayerShare)} Each</div>
             <div className="bbj-breakdown-amount">
               +${tableShare.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </div>

@@ -167,7 +167,14 @@ export type ReplayVerb =
   | 'discard'
   | 'return'
   | 'show'
-  | 'muck';
+  | 'muck'
+  /**
+   * A verb this reader does not know. The row still renders, carrying the
+   * engine's own word for it in `label`. The alternative — the old behaviour —
+   * was to coerce it to `check`, which drew a player an action that never
+   * happened on a surface that is about money.
+   */
+  | 'unknown';
 
 export interface ReplayRow {
   key: string;
@@ -195,6 +202,16 @@ export interface ReplayStreet {
   board: DeckCard[];
   /** Only the cards this street turned over, for surfaces that want just those. */
   newCards: DeckCard[];
+  /**
+   * The same street on every EXTRA board — run-it-twice runs 2..N, or the
+   * second board of a double-board bomb pot. Empty on a single-board hand.
+   */
+  extraBoards: DeckCard[][];
+  /**
+   * True on the last street of the hand, and only there does the pot line
+   * speak for the real pot. Everywhere else it is a running total.
+   */
+  isFinal: boolean;
   /** Pot after every action on this street. */
   potAfter: number;
   rows: ReplayRow[];
@@ -259,6 +276,15 @@ export interface ReplayModel {
 
 const STREET_ORDER: Array<{ key: string; label: string; boardTo: number }> = [
   { key: 'preflop', label: 'PreFlop', boardTo: 0 },
+  /**
+   * A REAL STREET, not a footnote on preflop.
+   *
+   * `pineapple_discard` was being folded into preflop, so the shared rundown
+   * never printed it — while the panel next door printed "Discard" for the
+   * same actions. 74,631 discard actions exist in production. Collapsing a
+   * street means its rows appear under a heading they did not happen on.
+   */
+  { key: 'pineapple_discard', label: 'Discard', boardTo: 0 },
   { key: 'flop', label: 'Flop', boardTo: 3 },
   { key: 'turn', label: 'Turn', boardTo: 4 },
   { key: 'river', label: 'River', boardTo: 5 },
@@ -280,37 +306,83 @@ const VERB_LABEL: Record<ReplayVerb, string> = {
   return: 'Return',
   show: 'Show',
   muck: 'Muck',
+  // Never actually rendered: `labelFor` prints the engine's own word instead.
+  // Present so the map stays exhaustive over ReplayVerb, which is what makes
+  // adding a verb a compile error rather than a silent fallthrough.
+  unknown: 'Action',
 };
 
-/** Verbs whose stored amount is a raise-TO level rather than an increment. */
-const TO_LEVEL_VERBS = new Set(['bet', 'raise', 'all_in', 'allin', 'all-in']);
+/**
+ * Verbs whose stored amount is a raise-TO level rather than an increment.
+ *
+ * Tested against the CANONICAL verb, not the raw string. It used to be tested
+ * against `raw.toLowerCase()` while the label went through a normaliser that
+ * also collapsed spaces and hyphens — so a row storing `"all in"` was labelled
+ * All In and had its amount treated as an INCREMENT, adding the whole raise-to
+ * level to the pot on top of what that seat already had in.
+ */
+const TO_LEVEL_VERBS = new Set(['bet', 'raise', 'all_in', 'allin']);
 
 /**
- * Explicit forced-money rows.
+ * The forced-money verbs that ARE a blind.
  *
  * The engine writes these as of 2026-08-27 (FORCED_BETS_POSTED). Millions of
  * rows predate it and carry none, which is why the blinds are still
- * synthesised below — but only when the log has nothing of its own to say.
+ * synthesised below — but only when the log has no blinds of its own.
+ *
+ * `ante` and `straddle` are deliberately NOT here. Their presence says nothing
+ * about whether the blinds were recorded, and treating them as evidence of
+ * blinds is what made an antes-only tournament row rebuild short by SB + BB.
  */
-const POST_VERBS = new Set(['post', 'post_sb', 'post_bb', 'sb', 'bb', 'ante', 'straddle', 'blind']);
+const BLIND_VERBS = new Set([
+  'post',
+  'post_sb',
+  'post_bb',
+  'sb',
+  'bb',
+  'blind',
+  'small_blind',
+  'big_blind',
+]);
 
 const money = (n: number) => Math.round(n * 100) / 100;
 
-function normalizeVerb(raw: string): ReplayVerb {
-  const v = String(raw || '')
+/** One normalisation, used by BOTH the label and the amount rule. */
+function canonicalVerb(raw: string): string {
+  return String(raw || '')
     .toLowerCase()
-    .replace(/[\s-]/g, '_');
+    .trim()
+    .replace(/[\s-]+/g, '_');
+}
+
+/**
+ * Returns null for anything this does not recognise.
+ *
+ * It used to return `'check'`. That is the worst possible default on a money
+ * rundown: any action string the engine writes that is not in VERB_LABEL — a
+ * timeout, a sit-out, a verb added next quarter — was drawn to the player as a
+ * CHECK THAT NEVER HAPPENED, indistinguishable from a real one. An unknown
+ * verb is now carried through as itself (see `labelFor`), which is ugly
+ * exactly once and never a lie.
+ */
+function normalizeVerb(raw: string): ReplayVerb | null {
+  const v = canonicalVerb(raw);
   if (v === 'allin' || v === 'all_in') return 'all_in';
   if (v === 'post_sb' || v === 'sb' || v === 'small_blind') return 'sb';
   if (v === 'post_bb' || v === 'bb' || v === 'big_blind') return 'bb';
   if (v === 'blind' || v === 'post') return 'bb';
   if ((VERB_LABEL as Record<string, string>)[v]) return v as ReplayVerb;
-  return 'check';
+  return null;
+}
+
+/** The chip on the row. An unrecognised verb prints as itself, Title Cased. */
+function labelFor(raw: string, verb: ReplayVerb | null): string {
+  if (verb) return VERB_LABEL[verb];
+  return titleCase(canonicalVerb(raw).replace(/_/g, ' ')) || 'Action';
 }
 
 function stageOf(a: ReplayActionInput): string {
   const s = String(a.stage ?? a.street ?? 'preflop').toLowerCase();
-  if (s === 'pineapple_discard') return 'preflop';
   return STREET_ORDER.some((x) => x.key === s) ? s : 'preflop';
 }
 
@@ -375,7 +447,18 @@ export function buildReplay(input: ReplayInput): ReplayModel {
   };
 
   const live = (input.actions || []).filter((a) => a && !isSystemAction(a));
-  const logHasPosts = live.some((a) => POST_VERBS.has(String(a.action || '').toLowerCase()));
+  /**
+   * Does the log carry the BLINDS specifically?
+   *
+   * This used to ask whether the log had any forced-money verb at all, with
+   * `ante` in the set — so a tournament row that recorded antes but no blinds
+   * suppressed blind synthesis entirely. The rebuilt pot came out short by
+   * SB + BB, `reconciles` went false, the whole stack column was withdrawn,
+   * and every preflop raise-TO was differenced against a `committed` map that
+   * was missing the blinds. An ante is not a blind, and its presence says
+   * nothing about whether the blinds were recorded.
+   */
+  const logHasBlinds = live.some((a) => BLIND_VERBS.has(canonicalVerb(a.action)));
   /**
    * A hand written by an engine that records its own returns needs no
    * inference — and inferring on top of a recorded return would subtract the
@@ -385,7 +468,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
 
   // Blinds, synthesised only when the log does not already carry them.
   const preflopPosts: Array<ReplayRow & { stage: string }> = [];
-  if (!logHasPosts) {
+  if (!logHasBlinds) {
     const post = (seat: number | null, amount: number, verb: 'sb' | 'bb') => {
       if (seat === null || !(amount > 0)) return;
       addMoney(seat, amount);
@@ -412,7 +495,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
   // Per-street committed totals, so a raise-TO level becomes an increment.
   let streetKey = 'preflop';
   let committed = new Map<number, number>();
-  if (!logHasPosts) {
+  if (!logHasBlinds) {
     if (sbSeat !== null && Number(input.smallBlind) > 0)
       committed.set(sbSeat, Number(input.smallBlind));
     if (bbSeat !== null && Number(input.bigBlind) > 0)
@@ -424,6 +507,18 @@ export function buildReplay(input: ReplayInput): ReplayModel {
    * highest was matched by nobody, so the engine gave it back and both
    * `pot_size` and the ending stack already exclude it.
    */
+  /**
+   * Uncalled bets this reader INFERRED, kept so the engine's own pot_size can
+   * overrule them.
+   *
+   * The inference is right for the common case — a bet everyone folds to — and
+   * it is a guess on any street whose log is incomplete, where it would
+   * fabricate a Return that never happened and a negative number in a money
+   * rundown. Rather than pick a heuristic and hope, both readings are computed
+   * and `pot_size` decides which one was real. See the reconciliation below.
+   */
+  const inferredReturns: Array<{ key: string; seat: number; amount: number }> = [];
+
   const settleStreet = () => {
     if (logHasReturns) return;
     const entries = [...committed.entries()].filter(([, v]) => v > 0);
@@ -434,6 +529,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
     const excess = money(top[1] - next);
     if (excess <= 0.005) return;
     addMoney(top[0], -excess);
+    inferredReturns.push({ key: `return-${streetKey}-${top[0]}`, seat: top[0], amount: excess });
     rows.push({
       key: `return-${streetKey}-${top[0]}`,
       stage: streetKey,
@@ -460,6 +556,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
 
     const seat = Number(a.seat);
     const verb = normalizeVerb(a.action);
+    const canonical = canonicalVerb(a.action);
     const raw = Number(a.amount) || 0;
 
     let increment = 0;
@@ -469,7 +566,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
       increment = -Math.abs(raw);
     } else if (input.amountsAreIncremental) {
       increment = raw;
-    } else if (TO_LEVEL_VERBS.has(String(a.action || '').toLowerCase())) {
+    } else if (TO_LEVEL_VERBS.has(canonical)) {
       increment = money(raw - (committed.get(seat) || 0));
     } else {
       increment = raw;
@@ -491,7 +588,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
        * `verb === 'ante'` is the floor for rows written before the engine
        * carried the flag, and for any importer that does not set it.
        */
-      const isDead = (a as { dead?: boolean }).dead === true || verb === 'ante';
+      const isDead = (a as { dead?: boolean }).dead === true || canonical === 'ante';
       if (!isDead) committed.set(seat, money((committed.get(seat) || 0) + increment));
     }
 
@@ -502,8 +599,11 @@ export function buildReplay(input: ReplayInput): ReplayModel {
       userId: a.userId || bySeat.get(seat)?.userId || '',
       name: bySeat.get(seat)?.username || 'Player',
       position: positions[seat] || '',
-      verb,
-      label: VERB_LABEL[verb],
+      // An unrecognised verb keeps the engine's own word for it rather than
+      // being coerced into one of ours. `unknown` is a real ReplayVerb so the
+      // CSS has something to hang off; the LABEL is what the player reads.
+      verb: verb ?? 'unknown',
+      label: labelFor(a.action, verb),
       amount: increment,
       stackAfter: null,
       showsMuck: verb === 'fold' || verb === 'muck',
@@ -512,9 +612,40 @@ export function buildReplay(input: ReplayInput): ReplayModel {
   });
   settleStreet();
 
-  const rebuiltPot = money(pot);
+  /**
+   * THE STORED POT ARBITRATES THE INFERENCE.
+   *
+   * If the rebuild with the inferred returns does not land on `pot_size` but
+   * the rebuild WITHOUT them does, the inference was wrong and it is withdrawn
+   * — rows, chips and all. A guess that disagrees with the engine's own number
+   * is not a guess worth drawing.
+   */
+  const returnedTotal = money(inferredReturns.reduce((t, r) => t + r.amount, 0));
   const storedPot = Number(input.potSize) || 0;
-  const reconciles = storedPot > 0 && Math.abs(rebuiltPot - storedPot) < 0.02;
+  if (
+    inferredReturns.length > 0 &&
+    Math.abs(money(pot) - storedPot) >= 0.02 &&
+    Math.abs(money(pot + returnedTotal) - storedPot) < 0.02
+  ) {
+    for (const r of inferredReturns) {
+      pot = money(pot + r.amount);
+      invested.set(r.seat, money((invested.get(r.seat) || 0) + r.amount));
+    }
+    const dropped = new Set(inferredReturns.map((r) => r.key));
+    for (let i = rows.length - 1; i >= 0; i -= 1) {
+      if (dropped.has(rows[i].key)) rows.splice(i, 1);
+    }
+  }
+
+  const rebuiltPot = money(pot);
+  /**
+   * A hand whose stored pot is 0 and whose rebuild is also 0 DOES reconcile.
+   *
+   * This required `storedPot > 0`, so a walk - or any row written before
+   * pot_size existed - could never reconcile even when the rebuild was
+   * provably exact, and the stack column was withdrawn for no reason.
+   */
+  const reconciles = Math.abs(rebuiltPot - storedPot) < 0.02;
 
   // ── starting stacks, then the stack after every row ────────────────────────
   const startStack = new Map<number, number | null>();
@@ -570,7 +701,10 @@ export function buildReplay(input: ReplayInput): ReplayModel {
       verb: 'show',
       label: VERB_LABEL.show,
       amount: 0,
-      stackAfter: startStack.get(Number(p.seat)) === null ? null : null,
+      // A `show` moves no chips, so there is no stack transition to draw. The
+      // column is blank here by intent, not by accident - this line used to be
+      // a ternary whose two branches were both null.
+      stackAfter: null,
       showsMuck: false,
       shownCards: hole,
     });
@@ -587,17 +721,68 @@ export function buildReplay(input: ReplayInput): ReplayModel {
     }
   }
 
-  const streets: ReplayStreet[] = STREET_ORDER.map((street, i) => {
+  const builtStreets = STREET_ORDER.map((street, i) => {
     const prev = i === 0 ? 0 : STREET_ORDER[i - 1].boardTo;
     return {
       key: street.key,
       label: street.label,
       board: board.slice(0, street.boardTo),
       newCards: board.slice(prev, street.boardTo),
+      /**
+       * EVERY EXTRA BOARD, sliced to the same street. A run-it-twice hand and a
+       * double-board bomb pot both deal a second board street by street, and
+       * until now the model carried those boards and the view drew only board
+       * one - the second run existed as a text label and nothing else.
+       */
+      extraBoards: boards.slice(1).map((b) => b.slice(0, street.boardTo)),
       potAfter: potAtEndOf.get(street.key) ?? 0,
       rows: rows.filter((r) => r.stage === street.key).map(({ stage: _s, ...rest }) => rest),
     };
   }).filter((s) => s.rows.length > 0 || s.newCards.length > 0);
+
+  /**
+   * The pot line under a street is a RUNNING total, not the main pot.
+   *
+   * It read `Main({potAfter})` after every street, so a flop section announced
+   * `Main(24.00)` on a hand whose main pot was 240 - true only on the last
+   * street. Only the final street can speak for the pot, and only that one now
+   * carries the real breakdown.
+   */
+  const streets: ReplayStreet[] = builtStreets.map((s, i) => ({
+    ...s,
+    isFinal: i === builtStreets.length - 1,
+  }));
+
+  // ── pot breakdown, resolved before the showdown rows that name it ─────────
+  const storedPotsRaw = (input.pots || []).filter((p) => Number(p?.amount) > 0);
+  const potBreakdown =
+    storedPotsRaw.length > 0
+      ? storedPotsRaw.map((p, i) => ({
+          label: i === 0 ? 'Main' : `Side ${i}`,
+          amount: money(Number(p.amount) || 0),
+        }))
+      : [{ label: 'Main', amount: money(storedPot || rebuiltPot) }];
+
+  /**
+   * Which pot a player contested.
+   *
+   * The engine records the winner of each pot index in `winners[].potIndex`,
+   * so for anyone who won something the answer is exact. For everyone else it
+   * is the main pot unless they were all-in short, which the row does not
+   * record — so it says "Main pot" rather than guessing at a side pot.
+   */
+  const potIndexByWinner = new Map<string, number>();
+  for (const w of input.winners || []) {
+    if (!w?.userId) continue;
+    const idx = Number(w.potIndex) || 0;
+    const prev = potIndexByWinner.get(w.userId);
+    if (prev === undefined || idx > prev) potIndexByWinner.set(w.userId, idx);
+  }
+  const potLabelFor = (userId: string): string => {
+    const idx = potIndexByWinner.get(userId);
+    if (idx === undefined || idx <= 0) return 'Main pot';
+    return `${potBreakdown[idx]?.label ?? `Side ${idx}`} pot`;
+  };
 
   // ── showdown rows, one per player per board ───────────────────────────────
   const showdownRows: ReplayShowdownRow[] = [];
@@ -634,21 +819,14 @@ export function buildReplay(input: ReplayInput): ReplayModel {
         // run. On a hand that ran twice the split between boards is not stored,
         // so it is shown once against board one rather than invented for both.
         net: boardIndex === 0 ? money(won - inv) : null,
-        potLabel: 'Main pot',
+        // Names the pot this player actually contested. It was hard-coded to
+        // "Main pot" for every row, which is a claim rather than a label the
+        // moment a hand has a side pot.
+        potLabel: potLabelFor(p.userId),
         isWinner: won > 0,
       });
     }
   });
-
-  // ── pot breakdown ─────────────────────────────────────────────────────────
-  const storedPots = (input.pots || []).filter((p) => Number(p?.amount) > 0);
-  const potBreakdown =
-    storedPots.length > 0
-      ? storedPots.map((p, i) => ({
-          label: i === 0 ? 'Main' : `Side ${i}`,
-          amount: money(Number(p.amount) || 0),
-        }))
-      : [{ label: 'Main', amount: money(storedPot || rebuiltPot) }];
 
   return {
     handNumber: input.handNumber,

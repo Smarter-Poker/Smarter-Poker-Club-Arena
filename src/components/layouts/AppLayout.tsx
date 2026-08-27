@@ -52,6 +52,14 @@ export default function AppLayout() {
     (location.pathname.startsWith('/tournaments/') && location.pathname.endsWith('/play'));
   const showGlobalHeader = !isTablePage;
 
+  /**
+   * Full-bleed routes: pages that render their own edge-to-edge chrome and
+   * must sit flush against the global header rather than inside the shell's
+   * gutter. Dan, 2026-08-27, on notifications: "IT NEEDS TO BE RAISED UP TO
+   * THE TOP TO BE ATTACHED TO THE GLOBAL HEADER."
+   */
+  const isFlushPage = location.pathname.replace(/\/+$/, '').endsWith('/notifications');
+
   return (
     <div className={styles.layout}>
       {/* First-time Welcome Modal */}
@@ -89,7 +97,10 @@ export default function AppLayout() {
       )}
 
       {/* Main Content */}
-      <main id="main-content" className={styles.main}>
+      <main
+        id="main-content"
+        className={isFlushPage ? `${styles.main} ${styles.mainFlush}` : styles.main}
+      >
         <RouteErrorBoundary>
           <Outlet />
         </RouteErrorBoundary>

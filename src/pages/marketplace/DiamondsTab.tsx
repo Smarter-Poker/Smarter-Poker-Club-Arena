@@ -19,9 +19,9 @@ import styles from './DiamondsTab.module.css';
 /* ── Nav-tab destination URLs ────────────────────────────────────────────── */
 const NAV_LINKS = [
   { label: 'VIP Membership', icon: '♛', href: '/marketplace?tab=membership' },
-  { label: 'Merch', icon: '🛍', href: 'https://smarter.poker/merch' },
-  { label: 'Smarter Rewards', icon: '🏆', href: 'https://smarter.poker/rewards' },
-  { label: 'Club Arena', icon: '🎮', href: '/marketplace?tab=store' },
+  { label: 'Merch', icon: '◈', href: 'https://smarter.poker/merch' },
+  { label: 'Smarter Rewards', icon: '★', href: 'https://smarter.poker/rewards' },
+  { label: 'Club Arena', icon: '♠', href: '/marketplace?tab=store' },
 ] as const;
 
 /* ── Tier config: maps package index → visual tier ──────────────────────── */

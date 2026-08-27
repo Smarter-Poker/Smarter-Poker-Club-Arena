@@ -43,11 +43,33 @@ async function alreadyRan(day: string): Promise<boolean> {
   try {
     const { data, error } = await supabase
       .from('horse_daily_audit')
-      .select('day')
+      .select('day, generated_at')
       .eq('day', day)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    return data != null;
+    if (data == null) return false;
+    // ── 2026-08-27, found by its own silence ──
+    // "A row exists" was the wrong question. A row can be generated DURING
+    // the target day - by a manual run, by an agent, by an earlier catch-up -
+    // and it then covers a partial day while permanently convincing this job
+    // that its work is done. That is exactly what happened: an audit row
+    // written at 20:37 on the 26th made the 06:00 window on the 27th stand
+    // down, so the fleet's first full day of telemetry was never audited and
+    // horse_job_runs never recorded a 'daily_audit' claim at all.
+    // The real question is whether the row was generated AFTER the day it
+    // describes had closed.
+    const generatedAt = (data as { generated_at?: string }).generated_at;
+    if (!generatedAt) return false;
+    const dayClosedMs = Date.parse(day + 'T00:00:00Z') + 86_400_000;
+    const staleRow = Date.parse(generatedAt) < dayClosedMs;
+    if (staleRow) {
+      console.log(
+        `[HorseDailyAudit] ${day} has a row generated ${generatedAt}, BEFORE the day closed - ` +
+          `regenerating over the complete day`
+      );
+      return false;
+    }
+    return true;
   } catch (err) {
     // Never let a failed lookup skip the day; the run itself is idempotent.
     reportError(err, 'HorseDailyAudit.alreadyRan');
@@ -78,8 +100,15 @@ async function maybeRun(): Promise<void> {
   const target = yesterdayUTC();
   const inWindow = hour >= AUDIT_HOUR_UTC && hour < AUDIT_HOUR_UTC + AUDIT_CATCHUP_HOURS;
   if (!inWindow || running || lastAuditedDay === target) return;
+  // ── 2026-08-27: EVERY stand-down path says so now. ──
+  // This function had one silent `return` (the alreadyRan branch) and it cost
+  // a day of audits with ZERO log lines in 20 hours of container output -
+  // indistinguishable from the service not being deployed. The house rule is
+  // that a job must never look the same whether or not it worked; this file
+  // was violating the rule it was written to enforce.
   if (await alreadyRan(target)) {
     lastAuditedDay = target;
+    console.log(`[HorseDailyAudit] ${target} already audited after the day closed - nothing to do`);
     return;
   }
   if (!(await claimNightlyJob('daily_audit', target))) {

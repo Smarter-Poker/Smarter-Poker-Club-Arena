@@ -52,8 +52,17 @@ describe('nightly jobs — a restart must trigger the run, not prevent it', () =
     expect(tunerSrc).toContain("from('horse_self_tune_log')");
   });
 
-  it('a partial league card is treated as NOT done, so it resumes', () => {
-    expect(leagueSrc).toContain('>= LEAGUE_MATCHUPS.length');
+  it('a partial league card is DONE for the night - the daily rotation covers the rest', () => {
+    // SUPERSEDED 2026-08-27. The old rule ("resume until every matchup has a
+    // row") was written when the card was 6 matchups and finished inside the
+    // budget. At 23 matchups the budget stops after ~4, so "not done" was
+    // permanently true and the same head re-ran every night while the tail
+    // was never measured at all. The card now ROTATES daily: any rows for the
+    // date mean tonight's slice is done, and tomorrow starts further along.
+    // What replaces the old guarantee is fn_audit_league_coverage, which
+    // raises league_card_starved when a matchup goes 7+ days unmeasured.
+    expect(leagueSrc).toContain('(data?.length ?? 0) > 0');
+    expect(leagueSrc).toContain('rotateBy');
   });
 
   it('a failed guard lookup fails OPEN — a skipped night is worse than a duplicate', () => {

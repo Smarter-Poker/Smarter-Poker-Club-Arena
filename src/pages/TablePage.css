@@ -680,6 +680,11 @@
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;
+  /* One consistent physical separation treatment across the collection.
+     Shadow follows the transparent silhouette, so it reads as table weight
+     rather than a rectangular image effect. Material highlights stay in the
+     artwork and remain unique to each skin. */
+  filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.42)) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.55));
   z-index: 0;
 }
 

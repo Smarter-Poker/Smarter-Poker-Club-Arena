@@ -45,7 +45,17 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    */
   public async addChips(
     userId: string,
-    amount: number
+    amount: number,
+    /**
+     * Cashier audit 2026-08-27 (P0-1): a CALLER-HELD attempt id. The stable
+     * key below only ever de-duplicated the two attempts of one invocation —
+     * a second HTTP request minted a fresh randomUUID and a fresh debit, so
+     * the exact window the key exists for (commit, then lost response, then
+     * the player retries) still double-charged. When the client supplies its
+     * per-attempt opId, the key is stable across HTTP retries too; callers
+     * without one (the horse rotator) keep the per-invocation key.
+     */
+    opId?: string
   ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
     const player = this.seatedPlayers.find((p) => p.user_id === userId);
     if (!player) return { success: false, error: 'Player not seated' };
@@ -80,7 +90,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
      * actually committed, the second is a DB-side no-op that returns the
      * current balance, so we learn the chips landed instead of dropping them.
      */
-    const addOnKey = `addon:${this.tableId}:${userId}:${randomUUID()}`;
+    const addOnKey = `addon:${this.tableId}:${userId}:${opId || randomUUID()}`;
     let lastError: { message?: string } | null = null;
     let debited = false;
     for (let attempt = 1; attempt <= 2 && !debited; attempt++) {

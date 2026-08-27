@@ -51,7 +51,7 @@ export function ChallengeToastListener() {
             const challenge = dailyChallengeService.findInPools(newRecord.challenge_id);
             if (challenge) {
               toastRef.current.success(
-                `🏆 Challenge Complete: ${challenge.name}! Check Hub to claim.`
+                `Challenge Complete: ${challenge.name}! Check Hub to claim.`
               );
             }
           }

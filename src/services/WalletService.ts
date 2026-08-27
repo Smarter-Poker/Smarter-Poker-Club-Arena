@@ -138,6 +138,14 @@ export const WalletService = {
       supabase.from('agents').select('agent_wallet_balance').eq('user_id', userId).maybeSingle(),
     ]);
 
+    /* ABSORBED FROM THE CASHIER AUDIT (2026-08-27, P2), whose fix landed on
+       main against the OLD body of this method: it added Number() coercion
+       because PostgREST can return numeric columns as STRINGS, and a string
+       minus a string is NaN — which string-concatenated into the wallet
+       page's hero figure. That hazard is real and is handled below: every
+       value goes through `num()` before it is summed or subtracted. Their
+       patch hardened the arithmetic on a frozen source; this removes the
+       frozen source and keeps the hardening. */
     if (membersRes.error) throw membersRes.error;
     // A non-agent has no `agents` row. That is a legitimate zero, not a
     // failure — only a real query error is worth throwing over.
@@ -433,7 +441,7 @@ export const WalletService = {
   ): Promise<boolean> {
     if (amount <= 0) throw new Error('Transfer amount must be positive');
 
-    const { error } = await retryAsync(async () => {
+    const { data: transferData, error } = await retryAsync(async () => {
       const res = await supabase.rpc('wallet_user_transfer', {
         p_from_user_id: fromUserId,
         p_to_user_id: toUserId,
@@ -445,6 +453,17 @@ export const WalletService = {
     });
 
     if (error) throw error;
+    /* Cashier audit 2026-08-27 (P1-7): the RPCs in this codebase return
+       refusals as { success: false, error } rather than throwing —
+       internalTransfer above checks it, this call discarded `data`, so a
+       refusal logged both sides and emitted BALANCE_UPDATED for a transfer
+       that never happened. Latent today (42501 from the browser, see the
+       docblock) but armed to fire the moment the grant is fixed — which is
+       the stated intended fix. */
+    const parsed = transferData as { success?: boolean; error?: string } | null;
+    if (parsed && parsed.success === false) {
+      throw new Error(parsed.error || 'Transfer refused by the server');
+    }
 
     // Log both sides of the user-to-user transfer
     await this.logTransaction(
@@ -494,7 +513,7 @@ export const WalletService = {
   async distributePromo(agentId: string, playerId: string, amount: number): Promise<boolean> {
     if (amount <= 0) throw new Error('Amount must be positive');
 
-    const { error } = await retryAsync(
+    const { data: promoData, error } = await retryAsync(
       () =>
         supabase.rpc('distribute_promo_chips', {
           p_agent_id: agentId,
@@ -505,6 +524,12 @@ export const WalletService = {
     );
 
     if (error) throw error;
+    // Same refusal check as transferToUser (Cashier audit 2026-08-27, P1-7):
+    // a { success: false } body must not report as a paid distribution.
+    const promoParsed = promoData as { success?: boolean; error?: string } | null;
+    if (promoParsed && promoParsed.success === false) {
+      throw new Error(promoParsed.error || 'Promo distribution refused by the server');
+    }
 
     masterBus.emit('BALANCE_UPDATED', { source: 'promo', userId: playerId });
 

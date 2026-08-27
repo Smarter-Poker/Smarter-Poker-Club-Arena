@@ -52,6 +52,7 @@ interface ThemeSelection {
 }
 
 type ThemeTab = 'themes' | 'table' | 'button' | 'background' | 'cards';
+type BackgroundGroup = 'places-rooms' | 'skins';
 
 interface ThemeAsset {
   id: string;
@@ -116,7 +117,40 @@ const BACKGROUND_META: Record<string, { name: string; vipOnly: boolean }> = {
   carbon_grid: { name: 'Carbon Grid', vipOnly: true },
   ice_frost: { name: 'Ice Frost', vipOnly: true },
   jade_neon: { name: 'Jade Neon', vipOnly: true },
+  place_las_vegas: { name: 'Las Vegas', vipOnly: false },
+  place_paris: { name: 'Paris', vipOnly: false },
+  place_london: { name: 'London', vipOnly: false },
+  place_tokyo: { name: 'Tokyo', vipOnly: false },
+  place_dubai: { name: 'Dubai', vipOnly: true },
+  place_sydney: { name: 'Sydney Harbour', vipOnly: false },
+  place_rio: { name: 'Rio De Janeiro', vipOnly: false },
+  place_santorini: { name: 'Santorini', vipOnly: true },
+  place_new_york: { name: 'New York', vipOnly: false },
+  place_monaco: { name: 'Monte Carlo', vipOnly: true },
+  skin_shadow_suits: { name: 'Shadow Suits', vipOnly: false },
+  skin_gilded_fall: { name: 'Gilded Fall', vipOnly: false },
+  skin_crimson_damask: { name: 'Crimson Damask', vipOnly: false },
+  skin_graphite_embossed: { name: 'Graphite Embossed', vipOnly: false },
+  skin_obsidian_micro: { name: 'Obsidian Micro', vipOnly: false },
+  skin_emerald_argyle: { name: 'Emerald Argyle', vipOnly: true },
+  skin_ultraviolet_suits: { name: 'Ultraviolet Suits', vipOnly: true },
+  skin_black_gold_chips: { name: 'Black Gold Chips', vipOnly: true },
+  skin_golden_sparks: { name: 'Golden Sparks', vipOnly: true },
+  skin_platinum_deco: { name: 'Platinum Deco', vipOnly: true },
 };
+
+export const BACKGROUND_SKIN_IDS = new Set([
+  'skin_shadow_suits',
+  'skin_gilded_fall',
+  'skin_crimson_damask',
+  'skin_graphite_embossed',
+  'skin_obsidian_micro',
+  'skin_emerald_argyle',
+  'skin_ultraviolet_suits',
+  'skin_black_gold_chips',
+  'skin_golden_sparks',
+  'skin_platinum_deco',
+]);
 
 const BACKGROUND_FALLBACK_GRADIENT = 'radial-gradient(ellipse at 50% 35%, #2c323c, #0a0c10)';
 
@@ -517,6 +551,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   const navigate = useNavigate();
   const [showVipPrompt, setShowVipPrompt] = useState(false);
   const [activeTab, setActiveTab] = useState<ThemeTab>('themes');
+  const [backgroundGroup, setBackgroundGroup] = useState<BackgroundGroup>('places-rooms');
   const [gameType, setGameType] = useState<string>('ALL');
   const [selection, setSelection] = useState<ThemeSelection>({ ...DEFAULT_SELECTION });
   const [saving, setSaving] = useState(false);
@@ -765,7 +800,14 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   if (!isOpen) return null;
 
   const currentField = TAB_TO_FIELD[activeTab];
-  const currentAssets = THEME_ASSETS[activeTab];
+  const currentAssets =
+    activeTab === 'background'
+      ? THEME_ASSETS.background.filter((asset) =>
+          backgroundGroup === 'skins'
+            ? BACKGROUND_SKIN_IDS.has(asset.id)
+            : !BACKGROUND_SKIN_IDS.has(asset.id)
+        )
+      : THEME_ASSETS[activeTab];
   const currentSelected = selection[currentField];
 
   const selectedTable =
@@ -883,6 +925,36 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
             </button>
           ))}
         </div>
+
+        {activeTab === 'background' && (
+          <div className="theme-modal__background-groups" aria-label="Background categories">
+            {(
+              [
+                ['places-rooms', 'Places & Rooms'],
+                ['skins', 'Skins'],
+              ] as const
+            ).map(([group, label]) => (
+              <button
+                key={group}
+                type="button"
+                className={`theme-modal__background-group ${backgroundGroup === group ? 'theme-modal__background-group--active' : ''}`}
+                aria-pressed={backgroundGroup === group}
+                onClick={() => setBackgroundGroup(group)}
+              >
+                {label}
+                <span>
+                  {
+                    THEME_ASSETS.background.filter((asset) =>
+                      group === 'skins'
+                        ? BACKGROUND_SKIN_IDS.has(asset.id)
+                        : !BACKGROUND_SKIN_IDS.has(asset.id)
+                    ).length
+                  }
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="theme-modal__section-heading">
           <div>

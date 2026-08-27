@@ -1242,11 +1242,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
 
       // NOTE: When an event is both PKO and mystery, `fn_collect_bounty` returns
-
       // 'pko'. In that case `res.paid_cash` is half a head, so ranking it against
-      // the mystery ladder would report a rung nobody pulled. Ask Dan what "top 3 pull"
-      // means in a hybrid format, or if such an event will ever be configured.
-      // For now, a PKO+mystery knockout gets no prize rank.
+      // the mystery ladder would report a rung nobody pulled.
+      //
+      // RESOLVED — Dan 2026-08-26, verbatim: "no, never pko+mystery bounty
+      // ever." The hybrid is now IMPOSSIBLE to configure: the DB constraint
+      // `tournaments_never_pko_and_mystery` (migration 20260826210000,
+      // applied and probe-verified) refuses any row carrying both flags.
+      // This branch is therefore defense-in-depth for a state the schema
+      // forbids, and a PKO knockout correctly gets no mystery prize rank.
       const prizeRank = isMysteryCollectMode(res.mode)
         ? await this.preMysteryPrizeRank(res.paid_cash)
         : undefined;

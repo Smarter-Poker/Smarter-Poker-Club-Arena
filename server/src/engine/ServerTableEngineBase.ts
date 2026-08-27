@@ -1176,7 +1176,12 @@ export abstract class ServerTableEngineBase {
         !ritIsTournament &&
         (((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
           (this.tableInfo.run_it_twice_enabled ?? false));
-      const insuranceEnabled = this.tableInfo.insurance_enabled ?? false;
+      // ALL-CASH INSURANCE 2026-08-26 (Dan): insurance is a CASH feature.
+      // The ledger step was already cash-only (ServerTableEngineSettlement
+      // gates on !isTournamentTable), but the engine itself never refused a
+      // stray insurance_enabled flag on a tournament row - which would have
+      // moved seat chips with NO bank ledger behind them. Same gate as RIT.
+      const insuranceEnabled = (this.tableInfo.insurance_enabled ?? false) && !ritIsTournament;
       // SEQUENCING 2026-08-26 (Dan's leader-seat recording): FIX 92 used to
       // force-disable RIT here whenever insurance was on ("insurance takes
       // priority"). The reference table runs BOTH: the run-it-multi-times

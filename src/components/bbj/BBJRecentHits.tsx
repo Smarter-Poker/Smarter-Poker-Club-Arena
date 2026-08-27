@@ -37,11 +37,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import CardImage from '../table/CardImage';
-import { PlayerAvatar as Avatar } from '../avatars/PlayerAvatar';
 import { toDeckCards } from '../../utils/deckCards';
 import type { Card as DeckCard } from '../table/CardImage';
 import { bestFive } from '../../utils/handEvaluator';
 import { getAvatarWithFallback } from '../../utils/avatarGenerator';
+import { titleCase } from '../../utils/handReplay';
 import { reportError } from '../../utils/errorReporter';
 import './BBJRecentHits.css';
 
@@ -164,8 +164,32 @@ const EXAMPLE_HITS: Array<{
   },
 ];
 
-/** The size PlayerAvatar draws at `size="md"`; lets storage art be resized. */
-const BBJ_AVATAR_PX = 48;
+/**
+ * Dan 2026-08-27: "double the size of the current avatar, and remove the circle
+ * frame. avatars should display here like they do on the table with no
+ * background. remove the 1 pill tag at the bottom."
+ *
+ * So this row no longer uses PlayerAvatar, which draws a circular crop, a VIP
+ * ring, a presence dot and the level badge that pill came from. The library art
+ * is a free-standing bust with its own transparency — the felt renders it as a
+ * bare <img> and so does this, at 96px against the old 48.
+ */
+const BBJ_AVATAR_PX = 96;
+
+/** Game types print the way the lobby names them. */
+function gameTypeLabel(variant: string | null): string {
+  const v = String(variant || '')
+    .toLowerCase()
+    .trim();
+  if (!v) return '';
+  if (v === 'nlh') return 'NLH';
+  if (v === 'flh') return 'FLH';
+  if (v === 'short_deck' || v === 'shortdeck') return 'Short Deck';
+  if (v === 'pineapple') return 'Pineapple';
+  if (v === 'ofc_pineapple') return 'OFC';
+  if (/^(plo|flo)\d*8?$/.test(v)) return v.toUpperCase();
+  return titleCase(v.replace(/_/g, ' '));
+}
 
 function money(n: number | null | undefined, dp = 2): string {
   return Number(n || 0).toLocaleString('en-US', {
@@ -195,6 +219,31 @@ export function BBJRecentHits({
 }: BBJRecentHitsProps) {
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [failed, setFailed] = useState(false);
+  /**
+   * Bumped by a live `bbj_winners` INSERT.
+   *
+   * AUDIT 2026-08-27: every other BBJ surface was already live — the table's
+   * pool ticker, BBJTicker, BadBeatJackpotPage's toast — and this one, the list
+   * a player actually opens after a jackpot lands, was the only mount-only
+   * fetch on the feature. Its effect keyed on [poolId, limit], and neither
+   * changes when a hit arrives, so the rows sat stale until the component
+   * unmounted. The pool number above it would tick up while the list under it
+   * still showed the previous five winners.
+   */
+  const [revision, setRevision] = useState(0);
+
+  useEffect(() => {
+    if (!poolId) return;
+    const channel = supabase
+      .channel(`bbj-recent-hits-${poolId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bbj_winners' }, () =>
+        setRevision((r) => r + 1)
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [poolId]);
 
   useEffect(() => {
     if (!poolId) return;
@@ -231,7 +280,7 @@ export function BBJRecentHits({
     return () => {
       alive = false;
     };
-  }, [poolId, limit]);
+  }, [poolId, limit, revision]);
 
   // Reconstructing a made hand walks up to 150 combinations per row. Cheap, but
   // there is no reason to redo it on every keystroke-level re-render.
@@ -244,7 +293,9 @@ export function BBJRecentHits({
         hit,
         cards: made ? made.cards : hole,
         // Prefer what the engine actually recorded; fall back to what we derived.
-        label: hit.bad_beat_hand || made?.name || 'Qualifying Hand',
+        // Title Cased per the house rule, so "Four of a Kind" reads
+        // "Four Of A Kind" the way every other label on this surface does.
+        label: titleCase(hit.bad_beat_hand || made?.name || 'Qualifying Hand'),
         derived: !!made,
       };
     });
@@ -277,8 +328,13 @@ export function BBJRecentHits({
       <div className="bbj-hits">
         <div className="bbj-hits__caption">Last 3 Bad Beat Jackpot Winners</div>
         {EXAMPLE_HITS.map((ex) => (
-          <div className="bbj-hits__row" key={ex.id} aria-label="Jackpot win">
-            <Avatar name={ex.name} size="md" className="bbj-hits__avatar" />
+          <div className="bbj-hits__row is-example" key={ex.id} aria-label="Jackpot win">
+            <img
+              className="bbj-hits__avatar"
+              src={getAvatarWithFallback(null, ex.id, ex.name, BBJ_AVATAR_PX)}
+              alt=""
+              aria-hidden="true"
+            />
             <div className="bbj-hits__who">
               <span className="bbj-hits__name">{ex.name}</span>
               <span className="bbj-hits__id">{ex.playerId}</span>
@@ -317,6 +373,7 @@ export function BBJRecentHits({
           : !!currentUserName && hit.bad_beat_name.toLowerCase() === currentUserName.toLowerCase();
         const clickable = !!onOpenHand;
         const amount = hit.bad_beat_amount ?? hit.total_payout;
+        const gameType = gameTypeLabel(hit.game_variant);
 
         return (
           <div
@@ -341,16 +398,17 @@ export function BBJRecentHits({
                 : undefined
             }
           >
-            <Avatar
+            <img
+              className="bbj-hits__avatar"
               src={getAvatarWithFallback(
                 hit.bad_beat_avatar_url,
                 hit.bad_beat_user_id || hit.payout_id,
                 hit.bad_beat_name,
                 BBJ_AVATAR_PX
               )}
-              name={hit.bad_beat_name}
-              size="md"
-              className="bbj-hits__avatar"
+              alt=""
+              aria-hidden="true"
+              loading="lazy"
             />
 
             <div className="bbj-hits__who">
@@ -362,21 +420,18 @@ export function BBJRecentHits({
             </div>
 
             <div className="bbj-hits__hand">
-              {cards.length > 0 ? (
-                <>
-                  <div className="bbj-hits__cards" title={label}>
-                    {cards.map((card, i) => (
-                      <CardImage key={`${hit.payout_id}-${i}`} card={card} size="xs" />
-                    ))}
-                  </div>
-                  <span className="bbj-hits__handname">{label}</span>
-                </>
-              ) : (
-                <span className="bbj-hits__handname">{label}</span>
+              {cards.length > 0 && (
+                <div className="bbj-hits__cards" title={label}>
+                  {cards.map((card, i) => (
+                    <CardImage key={`${hit.payout_id}-${i}`} card={card} size="xs" />
+                  ))}
+                </div>
               )}
+              <span className="bbj-hits__handname">{label}</span>
             </div>
 
             <div className="bbj-hits__right">
+              {gameType && <span className="bbj-hits__gametype">{gameType}</span>}
               <span className="bbj-hits__amt">+ {money(amount)}</span>
               <span className="bbj-hits__when">{stamp(hit.awarded_at)}</span>
             </div>

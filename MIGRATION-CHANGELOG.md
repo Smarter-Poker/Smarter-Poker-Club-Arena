@@ -15798,3 +15798,20 @@ plausible numbers. One sampled player read 3,313,727.73 against a true
   writers), config/reference tables, no skipped-spec stubs.
 - OPEN: `union_clubs` at 6,590,684 reads on a 2-row table (hot-path re-query,
   own task); seat exit #15448; the SECURITY DEFINER function backlog.
+
+### Addendum, same day — the reconciler was rolling back every run
+
+Verifying phase 2 end-to-end found `ledger_reconcile_log` EMPTY for 2026-08-27:
+`ledger_reconcile_log_entity_type_check` allowed 5 entity_type values while
+`reconcile_ledger_nightly` emits 9. The `frozen_wallets_pool` row added that
+morning is an INSERT..VALUES, so it broke the job immediately (my regression).
+The cashier audit's `cashout_escrow_stuck` / `negative_balance` /
+`over_claimed_send` are INSERT..SELECT and were latent - they would have
+detonated on the first night a real money fault existed. Both fixed by
+migration `reconcile_log_entity_type_check_covers_every_emitted_kind`.
+
+Proven end to end: the run now returns 8 rows / 4 criticals (was 588 / 575),
+and the frozen-pool invariant reads drift 0.00. The 4 surviving criticals are
+REAL and are for Dan: Club JAQK treasury -78,057.05, SHARK CLUB treasury
+-32,320.73, Midway Union treasury negative at -1,202.80, and seat exit #15448
+(55 chips).

@@ -111,7 +111,7 @@ export default function CreateUnionPage() {
             <span className={styles.noClubIcon}></span>
             <h2>Create A Club First</h2>
             <p>You Need To Own At Least One Club Before You Can Create A Union.</p>
-            <button className={styles.createClubBtn} onClick={() => navigate('/clubs/create')}>
+            <button className={styles.createClubBtn} onClick={() => navigate('/?create=club')}>
               Create Your First Club
             </button>
           </div>

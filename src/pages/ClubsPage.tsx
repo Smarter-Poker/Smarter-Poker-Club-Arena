@@ -9,12 +9,12 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { supabase, getAuthUser } from '../lib/supabase';
+import { getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { ClubsService } from '../services/ClubsService';
 import { unionService } from '../services/UnionService';
 import type { Union } from '../services/UnionService';
-import { LoadingState, NoClubsEmpty } from '../components/common/EmptyState';
+import { NoClubsEmpty } from '../components/common/EmptyState';
 import { CardSkeleton } from '../components/skeletons/CardSkeleton';
 import CreateClubModal from '../components/modals/CreateClubModal';
 import JoinClubModal from '../components/modals/JoinClubModal';
@@ -30,8 +30,10 @@ import { STORAGE_KEYS } from '../lib/storage';
 import { reportError } from '../utils/errorReporter';
 import { isJoinableClubCode } from '../utils/clubCode';
 
-import { safeErrorMessage } from '../utils/safeErrorMessage';
-type Tab = 'discover' | 'my-clubs' | 'create';
+// The 'create' tab died with the inline create form — creation now lives in
+// CreateClubModal. Keeping the variant around left NoClubsEmpty pointing at a
+// tab that rendered nothing.
+type Tab = 'discover' | 'my-clubs';
 
 interface Club {
   id: string;
@@ -78,10 +80,18 @@ export default function ClubsPage() {
     searchParams.get('join') === 'true' || initialJoinCode ? 'discover' : 'my-clubs';
 
   const [activeTab, setActiveTab] = useState<Tab>(initialTab as Tab);
-  const [joinClubId, setJoinClubId] = useState(initialJoinCode);
-  const [joinReferralCode, setJoinReferralCode] = useState(initialReferralCode);
-  const [isJoining, setIsJoining] = useState(false);
-  const [joinError, setJoinError] = useState<string | null>(null);
+
+  // Deep link (`/clubs-list?c=12345&ref=AB12`, or `?join=true`): captured ONCE,
+  // because the effect below strips the params from the URL immediately — a
+  // re-render after that must not lose the code the link carried. The captured
+  // values open the Join modal prefilled; the old inline join form these params
+  // used to feed was removed in the modal redesign, which silently killed every
+  // shared join link until this wiring was added.
+  const [deepLink] = useState(() => ({
+    code: isJoinableClubCode(initialJoinCode) ? initialJoinCode.trim() : '',
+    ref: initialReferralCode.trim(),
+    join: searchParams.get('join') === 'true',
+  }));
 
   // Clear params from URL without reloading if they exist
   useEffect(() => {
@@ -135,14 +145,9 @@ export default function ClubsPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Create club form
-  const [clubName, setClubName] = useState('');
-  const [clubDescription, setClubDescription] = useState('');
-  const [isPublic, setIsPublic] = useState(true);
-  const [isCreating, setIsCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showJoinModal, setShowJoinModal] = useState(false);
+  // A deep-linked code (or ?join=true) opens the Join modal on arrival.
+  const [showJoinModal, setShowJoinModal] = useState(() => !!deepLink.code || deepLink.join);
   const [visibleClubCards, setVisibleClubCards] = useState(new Set<number>());
 
   // #3: Request deduplication — prevent concurrent loadMyClubs() from stacking
@@ -279,101 +284,6 @@ export default function ClubsPage() {
       unsubs.forEach((u) => u());
     };
   }, []);
-
-  // Join club by ID
-  const handleJoinClub = async () => {
-    // 5 OR 6 DIGITS. Every club that exists has a FIVE-digit club_id -- 25450,
-    // 55555, 77777 -- because all three client paths generate
-    // Math.floor(10000 + Math.random() * 90000). This gate demanded exactly six,
-    // so typing a real club code left JOIN CLUB greyed out forever and set no
-    // error to explain it. HomePage's own join modal has always accepted 5-6;
-    // this screen simply disagreed with it. The column default in Postgres is
-    // six digits, so both lengths have to be accepted.
-    if (!isJoinableClubCode(joinClubId)) return;
-
-    setIsJoining(true);
-    setJoinError(null);
-
-    try {
-      // Find club by club_id (the 6-digit public ID)
-      const { data: club, error } = await supabase
-        .from('clubs')
-        .select('id')
-        .eq('club_id', parseInt(joinClubId, 10))
-        .maybeSingle();
-
-      if (error || !club) {
-        setJoinError('Club not found. Check the ID and try again.');
-        return;
-      }
-
-      if (joinReferralCode.trim()) {
-        ClubsService.rememberInviteCode(club.id, joinReferralCode.trim());
-      }
-
-      // join() redeems that code and hands back the membership AS IT STANDS
-      // AFTERWARDS, so the 'pending' branch below now only fires for someone
-      // who really is waiting on an owner — not for an invited player the
-      // redemption has already admitted.
-      const membership = await ClubsService.join(club.id);
-
-      // Refresh both clubs AND unions (joined club might belong to a union)
-      await loadMyClubs();
-      setJoinClubId('');
-      setJoinReferralCode('');
-      if (membership?.status === 'pending') {
-        // Approval-gated club — the request is queued, the user is not yet a member.
-        toast.success('Request submitted - pending owner approval.');
-      } else {
-        toast.success('Successfully joined club!');
-        setActiveTab('my-clubs');
-      }
-    } catch (err: any) {
-      reportError(err, 'ClubsPage.Join_failed');
-      toast.error(err.message || 'Failed to join club');
-      setJoinError(safeErrorMessage(err, 'Failed to join club'));
-    } finally {
-      setIsJoining(false);
-    }
-  };
-
-  // Create new club
-  const handleCreateClub = async () => {
-    if (!clubName.trim()) {
-      setCreateError('Club name is required');
-      return;
-    }
-    if (clubName.trim().length < 3) {
-      setCreateError('Club name must be at least 3 characters');
-      return;
-    }
-    if (clubName.trim().length > 30) {
-      setCreateError('Club name must be 30 characters or less');
-      return;
-    }
-
-    setIsCreating(true);
-    setCreateError(null);
-
-    try {
-      const club = await ClubsService.create({
-        name: clubName.trim(),
-        description: clubDescription.trim() || undefined,
-        is_public: isPublic,
-      });
-
-      // ClubsService.create() emits CLUB_JOINED via joinClub() internally — no need to emit again
-
-      // Navigate to the new club
-      navigate(`/clubs/${club.slug || club.id}`);
-    } catch (err: any) {
-      reportError(err, 'ClubsPage.Create_failed');
-      toast.error(err.message || 'Failed to create club');
-      setCreateError(safeErrorMessage(err, 'Failed to create club'));
-    } finally {
-      setIsCreating(false);
-    }
-  };
 
   return (
     <>
@@ -574,7 +484,7 @@ export default function ClubsPage() {
                   })}
                 </div>
               ) : myUnions.length === 0 ? (
-                <NoClubsEmpty onCreate={() => setActiveTab('create')} />
+                <NoClubsEmpty onCreate={() => setShowCreateModal(true)} />
               ) : (
                 <p
                   style={{
@@ -660,7 +570,12 @@ export default function ClubsPage() {
         onClose={() => setShowCreateModal(false)}
         onSuccess={(id) => navigate(`/clubs/${id}`)}
       />
-      <JoinClubModal isOpen={showJoinModal} onClose={() => setShowJoinModal(false)} />
+      <JoinClubModal
+        isOpen={showJoinModal}
+        onClose={() => setShowJoinModal(false)}
+        initialCode={deepLink.code}
+        initialRef={deepLink.ref}
+      />
     </>
   );
 }

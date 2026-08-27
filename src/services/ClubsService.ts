@@ -164,9 +164,15 @@ export async function createClub(clubData: {
     .eq('user_id', user.user.id)
     .in('status', ['active', 'approved']);
 
+  // FAIL CLOSED. fn_join_club re-checks this limit for joins, but its owner
+  // branch — the one createClub lands in — does not, so this client check is
+  // the ONLY 4-club limit on the create path. Dan's 2026-08-26 lobby audit
+  // (item 5) found it shrugging on a count error; it must refuse instead.
   if (countError) {
     reportError(countError, 'ClubsService._Failed_to_check_club_membership_count');
-  } else if (count && count >= 4) {
+    throw new Error('Could not verify your club memberships. Please try again.');
+  }
+  if (count !== null && count >= 4) {
     throw new Error('You can only be a member of up to 4 clubs. Leave a club to create a new one.');
   }
 
@@ -310,8 +316,21 @@ export async function createClub(clubData: {
     }
   }
 
-  // Auto-join as owner
-  await joinClub(data.id, 'owner');
+  // Auto-join as owner — clean up the orphan club if this fails. Without the
+  // cleanup a failed owner join leaves a members-less club row that squats on
+  // the name forever (the old CreateClubModal had this guard; the refactor to
+  // this service must not lose it).
+  try {
+    await joinClub(data.id, 'owner');
+  } catch (joinErr) {
+    reportError(joinErr, 'ClubsService.createClub.OwnerJoinFailed_cleaning_up_orphan');
+    try {
+      await supabase.from('clubs').delete().eq('id', data.id);
+    } catch (cleanupErr) {
+      reportError(cleanupErr, 'ClubsService.createClub.OrphanCleanupFailed');
+    }
+    throw new Error('Failed to set up club ownership. Please try again.');
+  }
 
   return data;
 }

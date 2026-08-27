@@ -18,6 +18,8 @@ import { reportError } from '../utils/errorReporter';
 import BBJService from '../services/BBJService';
 import { confirmDialog } from '../components/common/confirmDialog';
 import BBJAdminAnalytics from '../components/bbj/BBJAdminAnalytics';
+import { BBJRecentHits } from '../components/bbj/BBJRecentHits';
+import { BBJHandDetail } from '../components/bbj/BBJHandDetail';
 import BBJRulesPanel from '../components/bbj/BBJRulesPanel';
 
 interface JackpotInfo {
@@ -50,10 +52,9 @@ export default function BadBeatJackpotPage() {
   const toast = useToast();
 
   const [jackpot, setJackpot] = useState<JackpotInfo | null>(null);
-  const [history, setHistory] = useState<JackpotHistory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openHandPayoutId, setOpenHandPayoutId] = useState<string | null>(null);
   const [justUpdated, setJustUpdated] = useState(false);
-  const [visibleHistoryRows, setVisibleHistoryRows] = useState(new Set<number>());
   const [playerContribution, setPlayerContribution] = useState(0);
   // 2026-08-18: real hand count + own-contribution facts, from the ledger.
   const [poolFacts, setPoolFacts] = useState<{ hands: number; chips: number } | null>(null);
@@ -230,7 +231,6 @@ export default function BadBeatJackpotPage() {
   useEffect(() => {
     setJustUpdated(false);
     setPlayerContribution(0);
-    setVisibleHistoryRows(new Set());
     loadingRef.current = false;
   }, [clubId]);
 
@@ -266,25 +266,6 @@ export default function BadBeatJackpotPage() {
         if (jackpotData) {
           setJackpot(jackpotData);
           prevAmountRef.current = jackpotData.main_balance || 0;
-        }
-
-        // RAKE-AUDIT 2026-07-24: winners history keyed to the resolved pool so
-        // union-club players see union-pool hits.
-        let historyQuery = supabase
-          .from('bbj_winners')
-          .select(
-            'id, awarded_at, total_payout, winner_hand, loser_hand, winner_display_name, loser_display_name'
-          );
-        historyQuery = jackpotData?.id
-          ? historyQuery.eq('pool_id', jackpotData.id)
-          : historyQuery.eq('club_id', resolvedId);
-        const { data: historyData } = await historyQuery
-          .order('awarded_at', { ascending: false })
-          .limit(10);
-
-        if (getIsMounted && !getIsMounted()) return;
-        if (historyData) {
-          setHistory(historyData);
         }
 
         // 2026-08-18: pool facts from the LEDGER (the pool counters have
@@ -344,15 +325,6 @@ export default function BadBeatJackpotPage() {
     );
     return unsubHand;
   }, [clubId, loadJackpotData]);
-
-  // Stagger history rows
-  useEffect(() => {
-    setVisibleHistoryRows(new Set());
-    const timers = history.map((_, i) =>
-      setTimeout(() => setVisibleHistoryRows((prev) => new Set([...prev, i])), i * 50)
-    );
-    return () => timers.forEach((t) => clearTimeout(t));
-  }, [history.length]);
 
   if (loading) {
     return (
@@ -617,48 +589,25 @@ export default function BadBeatJackpotPage() {
       </div>
 
       {/* History */}
-      <div className="jackpot-history">
-        <h3>Recent Hits</h3>
-        {history.length === 0 ? (
-          <div className="empty-state">
-            <p>No Jackpot Hits Yet. Will You Be The First?</p>
+      <div className="jackpot-history" style={{ padding: '0 0.5rem' }}>
+        {openHandPayoutId ? (
+          <div style={{ marginTop: '1rem' }}>
+            <BBJHandDetail
+              payoutId={openHandPayoutId}
+              onBack={() => setOpenHandPayoutId(null)}
+              currentUserName={user?.display_name || null}
+              currentUserId={user?.id}
+            />
           </div>
         ) : (
-          <div className="history-list">
-            {history.map((hit, index) => (
-              <div
-                key={hit.id}
-                className="history-row"
-                style={{
-                  opacity: visibleHistoryRows.has(index) ? 1 : 0,
-                  transform: visibleHistoryRows.has(index) ? 'translateY(0)' : 'translateY(8px)',
-                  transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                }}
-              >
-                <div className="hit-info">
-                  <span className="hit-date">{formatDate(hit.awarded_at)}</span>
-                  {/* 2026-08-18 (corrected): in bbj_winners, "winner" means
-                      winner OF THE JACKPOT — the bad-beat holder, who LOST the
-                      hand — and "loser" is the player who won the pot. Verified
-                      against bbj_payout_recipients: winner_user_id receives the
-                      50% share, and on every hit where the hand names differ,
-                      loser_hand is the STRONGER hand. The old line read
-                      "{loser_hand} beat by {winner_hand}", which rendered
-                      "Royal Flush beat by Four of a Kind" — exactly backwards. */}
-                  {(hit.winner_display_name || hit.loser_display_name) && (
-                    <span className="hit-players">
-                      {hit.winner_display_name || 'Player'}
-                      {hit.loser_display_name ? ` beaten by ${hit.loser_display_name}` : ''}
-                    </span>
-                  )}
-                  <span className="hit-hands">
-                    {hit.winner_hand} Lost To {hit.loser_hand}
-                  </span>
-                </div>
-                <div className="hit-amount">{hit.total_payout.toLocaleString()}</div>
-              </div>
-            ))}
-          </div>
+          <BBJRecentHits
+            poolId={jackpot?.id || null}
+            limit={10}
+            poolAmount={jackpot?.main_balance || 0}
+            currentUserId={user?.id}
+            currentUserName={user?.display_name || null}
+            onOpenHand={setOpenHandPayoutId}
+          />
         )}
       </div>
 

@@ -399,15 +399,33 @@ Fixed and backfilled in `20260827_horses_are_players_law.sql`, along with two
 others found in the same sweep: horses were exempt from nit eviction, and a
 lone horse was denied a dealing engine that a lone human would have received.
 
-### The one open item Dan must decide
+### Dan's rulings on the two collisions with physical constraints
 
-`sp_prune_hand_history` keeps human hands forever and prunes horse-only hands
-after `hand_history_retention_policy.horse_retention_days` (currently 7). That
-is a STORAGE policy, not player treatment: `hand_history` is already 3.6 GB
-over 1.57M hands, 99.95% horse-only, growing ~221k hands/day (~0.5 GB/day if
-never pruned). It was left in place and raised with Dan rather than changed
-silently, because the honest answer is that equal retention has a real
-infrastructure cost. **The knob is a config row — Dan sets it, not an agent.**
+Both were put to Dan on 2026-08-27 with the costs stated. His answers are
+BINDING and are recorded here so nobody re-opens them as a "bug":
+
+**1. Hand-history retention: STAYS AT 7 DAYS.** Horse-only hands are pruned
+after `hand_history_retention_policy.horse_retention_days`; hands a human was
+dealt into are kept forever. Equalising would cost ~0.5 GB/day (~15 GB/month)
+on a table already at 3.6 GB — 221k hands/day, 99.95% of them horse-only. Dan
+chose to leave it at 7. **This is the one sanctioned asymmetry in the entire
+law, it is a STORAGE decision rather than a player-treatment one, and it is
+Dan's to change — it is a config row, not code. Do not "fix" it.**
+
+**2. The deploy drain gate: PROTECT THE HAND, NOT THE PLAYER.** The gate used
+to read `humansSeatedTotal` and wait for HUMANS to leave, so a horse's hand
+was voided by a restart without a second thought. It also waited for the wrong
+event — a table EMPTYING can take forever and, with horses seated, never
+happens, so it deferred for hours and then restarted under seated players
+anyway. Fixed both ways: `/health` publishes `handsInFlightTotal` (every
+player counted), the gate waits on that, and `GameServer.drainHands()` parks
+every table at a hand boundary on SIGTERM — so hands are protected on EVERY
+restart path, not just the deploy workflow that remembered to ask.
+
+### Previously open, now closed
+
+Both items above were open questions when this section was first written.
+They are now decided; see Dan's rulings.
 
 ---
 

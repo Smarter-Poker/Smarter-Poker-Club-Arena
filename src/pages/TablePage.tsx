@@ -1517,36 +1517,79 @@ export default function TablePage({
   }, [tableState.tournamentId, restoreMysteryBountyState]);
 
   // REST fetch for initial seats while WS connects (3-5s speedup)
+  //
+  /* ── A FAILED PREFETCH USED TO MEAN AN EMPTY TABLE (2026-08-26) ──────────
+     The failure path was `.catch(console.warn)`. This fetch is what paints
+     the seats in the 3-5s before the websocket is up, so a single rejected
+     request left the player looking at an EMPTY felt — no players, no retry,
+     no message — until the engine snapshot happened to arrive. On a table
+     whose socket is slow (the exact case this prefetch exists for) that is
+     the whole first impression.
+
+     This file already calls the idiom out as a defect twice, at the
+     `.catch(console.warn)` audit note and again on the wallet-debit path
+     ("The failure path was `.catch(console.error)`. This is a wallet debit;
+     it reports like one now."), and fixed it in both places. This was the
+     one left standing.
+
+     Three attempts with backoff, then report. Deliberately NOT a toast: the
+     engine snapshot supersedes this data the moment it lands, so a player
+     whose socket connects normally must never be shown an error about a
+     redundant prefetch. Silence toward the player, loud toward us. */
   useEffect(() => {
     if (!tableId || engineSnapshot) return;
     let active = true;
-    tableService
-      .getSeatedPlayers(tableId)
-      .then((seats) => {
-        if (!active || engineSnapshot) return;
-        setTableState((prev) => {
-          const p = [...prev.players];
-          seats.forEach((seat: any) => {
-            const idx = seat.seat_number - 1;
-            if (idx >= 0 && idx < p.length) {
-              p[idx] = {
-                id: seat.user_id,
-                name: seat.profiles?.display_name || seat.profiles?.username || 'Player',
-                stack: seat.stack || 0,
-                avatar: seat.profiles?.avatar_url || undefined,
-                isHero: seat.user_id === userId,
-                status: 'active',
-                holeCards: [],
-                showCards: false,
-              };
-            }
-          });
-          return { ...prev, players: p };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const applySeats = (seats: any[]) => {
+      setTableState((prev) => {
+        const p = [...prev.players];
+        seats.forEach((seat: any) => {
+          const idx = seat.seat_number - 1;
+          if (idx >= 0 && idx < p.length) {
+            p[idx] = {
+              id: seat.user_id,
+              name: seat.profiles?.display_name || seat.profiles?.username || 'Player',
+              stack: seat.stack || 0,
+              avatar: seat.profiles?.avatar_url || undefined,
+              isHero: seat.user_id === userId,
+              status: 'active',
+              holeCards: [],
+              showCards: false,
+            };
+          }
         });
-      })
-      .catch(console.warn);
+        return { ...prev, players: p };
+      });
+    };
+
+    const PREFETCH_ATTEMPTS = 3;
+    const attempt = (n: number) => {
+      tableService
+        .getSeatedPlayers(tableId)
+        .then((seats) => {
+          if (!active || engineSnapshot) return;
+          applySeats(seats);
+        })
+        .catch((err) => {
+          if (!active || engineSnapshot) return;
+          if (n < PREFETCH_ATTEMPTS) {
+            // 400ms, 800ms — both well inside the window the socket needs.
+            timer = setTimeout(() => active && attempt(n + 1), 400 * n);
+            return;
+          }
+          reportError(err, 'TablePage.seat_prefetch_failed', {
+            tableId,
+            attempts: PREFETCH_ATTEMPTS,
+            note: 'seats stayed empty until the engine snapshot arrived',
+          });
+        });
+    };
+    attempt(1);
+
     return () => {
       active = false;
+      if (timer) clearTimeout(timer);
     };
   }, [tableId, userId]);
 
@@ -4023,6 +4066,10 @@ export default function TablePage({
   // player object; gates the recovery-poll teardown so it doesn't stop while
   // heroIdx=-1 mid-reload. Reset when the fetch is re-armed for a new hand.
   const heroCardsRecoveredRef = useRef(false);
+  /* One horse-yield failure report per table per mount. The yield runs every
+     15s on every seated client; without this a broken RPC would file four
+     reports a minute per player. See the catch block in the yield interval. */
+  const horseYieldReportedRef = useRef(false);
   // CA-21 BUG FIX: bbjTimerRef tracks the 3s BBJ celebration delay timer.
   const bbjTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // CA-22 BUG FIX: handCompleteTimerRef tracks the 3s HAND_COMPLETE table-reset timer.
@@ -4312,12 +4359,39 @@ export default function TablePage({
                 isMounted.current
               ) {
                 _LAST_BBJ_HIT_COUNT[pool.pool_id] = nextHitCount;
+                /* ── A JACKPOT THAT PAID ALWAYS ANNOUNCES (2026-08-26) ─────
+                   `hit_count` went up, so the Bad Beat Jackpot has ALREADY
+                   been awarded and the money has ALREADY moved. Everything
+                   below is only about naming the winner and the amount.
+
+                   The old code wrapped it in `catch { console.error(...) }`,
+                   and the line directly above marks this hit as seen BEFORE
+                   the try — so a single failed detail fetch meant the biggest
+                   event on the platform passed in complete silence, for
+                   everyone at the table, permanently. There is no second
+                   chance: the hit count never increments again for that hit.
+
+                   One retry, then announce anyway with what the row itself
+                   proves. A jackpot celebration missing the winner's name is
+                   a small disappointment; a jackpot that nobody saw is the
+                   feature not existing. */
+                let announced = false;
                 try {
-                  const { data } = await supabase.rpc('fn_bbj_recent_hits', {
-                    p_pool_id: pool.pool_id,
-                    p_limit: 1,
-                  });
+                  let data: any[] | null = null;
+                  for (let attempt = 1; attempt <= 2 && !data?.length; attempt++) {
+                    const res = await supabase.rpc('fn_bbj_recent_hits', {
+                      p_pool_id: pool.pool_id,
+                      p_limit: 1,
+                    });
+                    data = res.data;
+                    if (!data?.length && attempt === 1) {
+                      // The award and the ledger row are written in separate
+                      // statements; a 300ms wait covers reading between them.
+                      await new Promise((r) => setTimeout(r, 300));
+                    }
+                  }
                   if (data && data.length > 0) {
+                    announced = true;
                     const hit = data[0];
                     let tName = hit.table_name;
                     if (!tName && hit.table_id) {
@@ -4349,7 +4423,37 @@ export default function TablePage({
                     });
                   }
                 } catch (err) {
-                  console.error('Failed to fetch BBJ hit details:', err);
+                  reportError(err, 'TablePage.bbj_hit_details_failed', {
+                    poolId: pool.pool_id,
+                    tableId,
+                    note: 'announced the hit without winner details',
+                  });
+                }
+
+                if (!announced) {
+                  /* The detail lookup failed or came back empty. The hit is
+                     real — hit_count incremented — so it is announced with
+                     the one number the pool row itself carries: how far the
+                     balance fell. `main_balance` is post-reset, `old` is
+                     pre-hit, and the difference is what left the pool. If
+                     even that is unreadable, 0 renders as a nameless
+                     celebration, which still beats silence. */
+                  const before = Number((payload.old as any)?.main_balance);
+                  const after = Number((payload.new as any)?.main_balance);
+                  const drop =
+                    Number.isFinite(before) && Number.isFinite(after) && before > after
+                      ? before - after
+                      : 0;
+                  masterBus.emit('BBJ_HIT_GLOBAL', {
+                    tableId: '',
+                    tableName: 'a table',
+                    gameVariant: 'Poker',
+                    bigBlind: 0,
+                    winnerName: 'A player',
+                    amount: drop,
+                    handNumber: 0,
+                    emittedAt: Date.now(),
+                  });
                 }
               }
 
@@ -5182,28 +5286,75 @@ export default function TablePage({
           }
         }
       } catch (err) {
-        console.warn('[TablePage] Tournament rebuy check error:', err);
+        /* A failed rebuy check means the player is NOT offered a rebuy they
+           may well be entitled to — they simply bust out. The fall-through
+           below is the right behaviour (never hold a player hostage on a
+           dead table waiting for a lookup that is not coming), but this is a
+           lost purchase and a worse outcome for the player, so it is
+           reported rather than warned into a console nobody reads. */
+        reportError(err, 'TablePage.tournament_rebuy_check_failed', {
+          tournamentId: tableState.tournamentId,
+          note: 'player was not offered a rebuy they may have been entitled to',
+        });
       }
 
       // No rebuy on offer — nothing to hold for. Let the deferred exit run.
       releaseBustHold();
 
-      // If rebuy not available or not allowed, check if eliminated and exit cleanly
-      try {
-        const { data: tp } = await supabase
-          .from('tournament_players')
-          .select('status, position, prize')
-          .eq('tournament_id', tableState.tournamentId!)
-          .eq('user_id', userId)
-          .maybeSingle();
+      /* If rebuy not available or not allowed, check if eliminated and exit
+         cleanly.
 
-        if (tp?.status === 'eliminated') {
-          heroSeatRef.current = 0;
-          setTableState((prev) => ({ ...prev, heroSeat: 0 }));
-          goToLobbyWithResultRef.current?.(Number(tp.position) || 0, Number(tp.prize) || 0, 2000);
+         ── A BUSTED PLAYER ALWAYS LEAVES WITH THEIR RESULT (2026-08-26) ────
+         The failure path was `console.warn`. This read is the ONLY thing
+         that routes a knocked-out player to the lobby with their finishing
+         position and their prize — so one transient error left them parked
+         at a table they are no longer in, with no explanation, no result
+         screen, and (if they placed in the money) no sight of what they
+         won. They would have to work out for themselves that the tournament
+         was over for them.
+
+         Retried, because the row is written by the engine at the moment of
+         elimination and this can genuinely race it. If every attempt fails,
+         the player is still moved — the position and prize are read as 0,
+         which the lobby renders as an unplaced finish, and that is far
+         better than stranding them on a dead table. */
+      const ELIM_ATTEMPTS = 3;
+      let tp: { status?: string; position?: unknown; prize?: unknown } | null = null;
+      let elimErr: unknown = null;
+      for (let attempt = 1; attempt <= ELIM_ATTEMPTS; attempt++) {
+        try {
+          const { data } = await supabase
+            .from('tournament_players')
+            .select('status, position, prize')
+            .eq('tournament_id', tableState.tournamentId!)
+            .eq('user_id', userId)
+            .maybeSingle();
+          tp = data;
+          elimErr = null;
+          break;
+        } catch (err) {
+          elimErr = err;
+          if (attempt < ELIM_ATTEMPTS) {
+            await new Promise((r) => setTimeout(r, 400 * attempt));
+          }
         }
-      } catch (err) {
-        console.warn('[TablePage] Tournament elimination check error:', err);
+      }
+
+      if (elimErr) {
+        reportError(elimErr, 'TablePage.tournament_elimination_check_failed', {
+          tournamentId: tableState.tournamentId,
+          attempts: ELIM_ATTEMPTS,
+          note: 'routed the player to the lobby without their position or prize',
+        });
+      }
+
+      /* `elimErr` means we could not read the row at all. The bust hold has
+         already been released above and no rebuy was on offer, so the player
+         IS out — route them rather than leave them on the felt. */
+      if (tp?.status === 'eliminated' || elimErr) {
+        heroSeatRef.current = 0;
+        setTableState((prev) => ({ ...prev, heroSeat: 0 }));
+        goToLobbyWithResultRef.current?.(Number(tp?.position) || 0, Number(tp?.prize) || 0, 2000);
       }
     })();
   }, [
@@ -8963,6 +9114,7 @@ export default function TablePage({
     // Interval also raised 10s -> 15s and jittered, so seated clients at the
     // same table stop hitting the database in lockstep.
     const JITTER_MS = Math.floor(Math.random() * 4000);
+    horseYieldReportedRef.current = false;
     const interval = setInterval(async () => {
       try {
         const entries = await waitlistService.getTableWaitlist(tableId);
@@ -8973,7 +9125,26 @@ export default function TablePage({
           }
         }
       } catch (err) {
-        // Non-critical — silently ignore
+        /* ── THIS IS NOT "NON-CRITICAL" (2026-08-26) ────────────────────────
+           The comment here said "Non-critical — silently ignore", and it was
+           wrong in the way that costs the most: the ONLY implementation of
+           "give a horse's seat back when a human is queued behind a full
+           table" is the call above. When it throws, a real player sits on the
+           waitlist forever while horses play in front of them, every 15
+           seconds, on every seated client, with nothing written anywhere.
+           Nobody would ever learn this was happening.
+
+           It stays non-fatal — a failed yield must never take the felt down,
+           and the next tick retries anyway — but it is now REPORTED, and
+           reported once per table per mount so a persistently broken RPC does
+           not bury Sentry under four-per-minute duplicates. */
+        if (!horseYieldReportedRef.current) {
+          horseYieldReportedRef.current = true;
+          reportError(err, 'TablePage.horse_yield_failed', {
+            tableId,
+            note: 'a waitlisted player may be unable to get a seat from the horses',
+          });
+        }
       }
     }, 15000 + JITTER_MS);
 

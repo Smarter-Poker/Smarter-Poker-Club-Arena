@@ -215,6 +215,24 @@ export default function AdvancedFilters({
     [store, activeType, spec]
   );
 
+  const activeCount = useMemo(() => {
+    if (!spec) return sortKey && sortKey !== 'recommended' ? 1 : 0;
+    const empty = emptyFilterValue(spec);
+    let count = 0;
+    count += value.format.length;
+    count += value.games.length;
+    count += value.statuses.length;
+    count += value.mustHave.length;
+    count += value.hide.length;
+    count += value.selectedRanges?.length ?? 0;
+    if (value.rangeMin !== empty.rangeMin || value.rangeMax !== empty.rangeMax) count += 1;
+    if (value.seatMin !== empty.seatMin || value.seatMax !== empty.seatMax) count += 1;
+    if (sortKey && sortKey !== 'recommended') count += 1;
+    return count;
+  }, [sortKey, spec, value]);
+
+  const activeTypeLabel = TABS.find((tab) => tab.key === activeType)?.label ?? 'Games';
+
   /* One step for this spec, shared by both thumbs and both clamps. */
   /* A step of 0.01 is right for the BLINDS slider (min 0.02) and wrong for
      every buy-in slider, whose min is 0 - which also satisfies `< 1`. That
@@ -290,14 +308,23 @@ export default function AdvancedFilters({
         onClick={(e) => e.stopPropagation()}
       >
         <header className="afx-head">
+          <div className="afx-head__copy">
+            <span className="afx-head__eyebrow">Tournament Board</span>
+            <h2>{sortOnly ? 'Sort Games' : 'Game Filters'}</h2>
+            <p>
+              {sortOnly
+                ? 'Choose how the board is ordered'
+                : `${activeTypeLabel} · ${activeCount} active ${activeCount === 1 ? 'filter' : 'filters'}`}
+            </p>
+          </div>
           <button
-            className="afx-back"
+            type="button"
+            className="afx-close"
             onClick={onClose}
-            aria-label={sortOnly ? 'Close sort' : 'Close advanced filters'}
+            aria-label={sortOnly ? 'Close sort' : 'Close game filters'}
           >
-            &#8249;&#8249;
+            Close
           </button>
-          <h2>{sortOnly ? 'Sort' : 'Advanced Filters'}</h2>
         </header>
 
         {!sortOnly && (
@@ -322,9 +349,9 @@ export default function AdvancedFilters({
                and a sheet titled Sort that shows one collapsed accordion row
                looks empty on arrival. In full mode there are six sections and
                collapsed is right. */
-            <details className="afx-section" open={sortOnly}>
+            <details className="afx-section" open>
               <summary>
-                <h3>Sort By</h3>
+                <h3>Sort The Board</h3>
               </summary>
               <div className="afx-chips">
                 {sortOptions.map((opt) => (
@@ -345,27 +372,27 @@ export default function AdvancedFilters({
           {!sortOnly && spec && (
             <>
               {spec.format && (
-                <details className="afx-section">
+                <details className="afx-section" open>
                   <summary>
-                    <h3>Format:</h3>
+                    <h3>Format</h3>
                   </summary>
                   {chipRow(spec.format, 'format', value.format)}
                 </details>
               )}
 
               {spec.games && (
-                <details className="afx-section">
+                <details className="afx-section" open>
                   <summary>
-                    <h3>Games:</h3>
+                    <h3>Games</h3>
                   </summary>
                   {chipRow(spec.games, 'games', value.games)}
                 </details>
               )}
 
-              <details className="afx-section">
+              <details className="afx-section" open>
                 <summary>
                   <h3>
-                    {spec.range.label}: {fmt(value.rangeMin)} - {fmt(value.rangeMax)}
+                    {spec.range.label} · {fmt(value.rangeMin)} - {fmt(value.rangeMax)}
                   </h3>
                 </summary>
                 {/* Two overlaid range inputs rather than a custom drag handler.
@@ -458,11 +485,11 @@ export default function AdvancedFilters({
                 </div>
               </details>
 
-              <details className="afx-section">
+              <details className="afx-section" open>
                 <summary>
                   <h3>
                     {spec.seats
-                      ? `${spec.seatsLabel}: ${value.seatMin} min ${value.seatMax} max`
+                      ? `${spec.seatsLabel} · ${value.seatMin} min / ${value.seatMax} max`
                       : spec.seatsLabel}
                   </h3>
                 </summary>
@@ -516,9 +543,9 @@ export default function AdvancedFilters({
                 <>
                   <details className="afx-section">
                     <summary>
-                      <h3>Must-Have Features:</h3>
+                      <h3>Required Features</h3>
                     </summary>
-                    <p className="afx-hint">Show Tables Only With ALL Selected Features.</p>
+                    <p className="afx-hint">Only Show Games With Every Selected Feature.</p>
                     <div className="afx-grid">
                       {spec.features.map((f) => (
                         <button
@@ -536,9 +563,9 @@ export default function AdvancedFilters({
 
                   <details className="afx-section">
                     <summary>
-                      <h3>Hide:</h3>
+                      <h3>Exclude Features</h3>
                     </summary>
-                    <p className="afx-hint">Tables With Selected Features Will Be Hidden.</p>
+                    <p className="afx-hint">Hide Games That Use Any Selected Feature.</p>
                     <div className="afx-grid">
                       {spec.features.map((f) => (
                         <button
@@ -572,9 +599,6 @@ export default function AdvancedFilters({
           </footer>
         ) : (
           <footer className="afx-foot">
-            <button className="afx-btn afx-btn--cancel" onClick={onClose}>
-              Cancel
-            </button>
             <button
               className="afx-btn afx-btn--reset"
               onClick={() => {
@@ -586,7 +610,7 @@ export default function AdvancedFilters({
                 setStore((prev) => ({ ...prev, [activeType]: emptyFilterValue(spec) }));
               }}
             >
-              Reset
+              Reset {activeTypeLabel}
             </button>
             <button
               className="afx-btn afx-btn--save"
@@ -596,7 +620,7 @@ export default function AdvancedFilters({
                 onClose();
               }}
             >
-              Save
+              Apply {activeCount > 0 ? `${activeCount} ` : ''}Filters
             </button>
           </footer>
         )}

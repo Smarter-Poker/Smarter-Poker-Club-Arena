@@ -1473,9 +1473,7 @@
   margin-top: 14px;
   border-color: rgba(77, 163, 255, 0.34);
   border-radius: 16px;
-  background:
-    radial-gradient(circle at 12% -30%, rgba(40, 112, 255, 0.28), transparent 34%),
-    linear-gradient(155deg, rgba(18, 27, 48, 0.98), rgba(7, 10, 18, 0.99) 68%);
+  background: #111a2a;
   box-shadow:
     0 14px 32px rgba(0, 0, 0, 0.42),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -1486,7 +1484,7 @@
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
-  background: linear-gradient(180deg, #63c7ff, #2f63ff 55%, transparent);
+  background: #3f8cff;
   box-shadow: 0 0 18px rgba(64, 159, 255, 0.75);
 }
 
@@ -1547,7 +1545,7 @@
   height: 40px;
   border-color: rgba(130, 154, 200, 0.16);
   border-radius: 10px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.025));
+  background: #171e2b;
   color: #aeb9cb;
   font-size: 0.68rem;
   letter-spacing: 0.035em;
@@ -1556,7 +1554,7 @@
 
 .lobby-controls .game-bar__type.is-active {
   border-color: #5ab6ff;
-  background: linear-gradient(180deg, #3497ff, #1b53da);
+  background: #2866dc;
   box-shadow:
     0 6px 18px rgba(0, 94, 255, 0.34),
     inset 0 1px 0 rgba(255, 255, 255, 0.38),
@@ -1594,7 +1592,7 @@
 }
 
 .lobby-controls .quickprefs__row--status .quickprefs__chip.is-on {
-  background: linear-gradient(180deg, rgba(45, 105, 224, 0.92), rgba(25, 64, 145, 0.92));
+  background: #2459bd;
   color: #fff;
   box-shadow: 0 3px 10px rgba(0, 66, 190, 0.3);
 }
@@ -1604,7 +1602,7 @@
   padding: 10px 12px;
   border: 1px solid rgba(103, 137, 196, 0.13);
   border-radius: 11px;
-  background: linear-gradient(90deg, rgba(20, 27, 41, 0.86), rgba(8, 11, 18, 0.72));
+  background: #101621;
 }
 
 .lobby-count__text {
@@ -1621,7 +1619,7 @@
   min-height: 38px;
   border-color: rgba(71, 142, 255, 0.65);
   border-radius: 9px;
-  background: linear-gradient(180deg, rgba(30, 82, 180, 0.34), rgba(12, 34, 85, 0.42));
+  background: #14254a;
   color: #93c8ff;
 }
 

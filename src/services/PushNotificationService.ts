@@ -58,6 +58,9 @@ const ONESIGNAL_APP_ID = import.meta.env.VITE_ONESIGNAL_APP_ID || '';
 // SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/** Warn once per session rather than on every retired send. */
+let warnedRetired = false;
+
 class PushNotificationServiceClass {
   private initialized = false;
 
@@ -164,6 +167,40 @@ class PushNotificationServiceClass {
       const filteredUserIds = await this.filterByPreferences(userIds, payload.category);
       if (filteredUserIds.length === 0) return true;
 
+      // RETIRED PATH — see the header note added 2026-08-27.
+      //
+      // This invokes the `send-push-notification` edge function, which relays
+      // to onesignal.com. OneSignal was REMOVED from this platform on
+      // 2026-08-19 and replaced with self-hosted VAPID web push. Every call
+      // below has therefore delivered nothing since that date, while returning
+      // through a `catch` that logs at console.debug and returns false - so
+      // eight call sites (cashout, credit requests, disputes, settlements,
+      // tournament auto-seat) believe they notify people and do not.
+      //
+      // It is NOT simply repointed at push_outbox, and that is deliberate: the
+      // edge function performs no authorisation on WHO may be notified, so any
+      // authenticated user can push an arbitrary title, message and url to
+      // arbitrary user ids. Today that is inert because the vendor is gone.
+      // Wiring it to a working transport would turn a dead relay into a live
+      // spam and phishing vector - precisely the hole World Hub closed in
+      // pages/api/notifications/send.js on 2026-07-25.
+      //
+      // The correct route for these flows is server-side: write a push_outbox
+      // row from a trusted context, as server/src/services/supabase/seats.ts
+      // now does for seat offers. World Hub's /api/cron/push-dispatch drains
+      // that queue and applies the consent gate to every row.
+      if (!warnedRetired) {
+        warnedRetired = true;
+        console.warn(
+          '[PushService] RETIRED: push via the send-push-notification edge ' +
+            'function has delivered nothing since OneSignal was removed on ' +
+            '2026-08-19. These call sites are not notifying anyone. They need ' +
+            'to move to a server-side push_outbox write - see issue #1498.'
+        );
+      }
+      return false;
+
+      // eslint-disable-next-line no-unreachable
       const { error } = await supabase.functions.invoke('send-push-notification', {
         body: {
           userIds: filteredUserIds,

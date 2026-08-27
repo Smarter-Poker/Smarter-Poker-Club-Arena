@@ -92,7 +92,7 @@ describe('solid-color live lobby', () => {
     const liveEvents = tableCss.slice(tableCss.indexOf('LIVE EVENT BOARD'));
     expect(liveEvents).not.toMatch(/(?:linear|radial|conic)-gradient\s*\(/i);
     expect(liveEvents).toContain('background: #111722');
-    expect(liveEvents).toContain('background: #151d2b');
-    expect(liveEvents).toContain('background: #18325a');
+    expect(liveEvents).toContain('background: #0d1725');
+    expect(liveEvents).toContain('background: #12294b');
   });
 });

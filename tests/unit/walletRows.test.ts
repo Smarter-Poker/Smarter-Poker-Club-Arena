@@ -13,6 +13,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  clubLobbyWalletRows,
   clubWalletRows,
   canSeeClubBank,
   canMintInClubBank,
@@ -95,6 +96,30 @@ describe('club wallet rows by role', () => {
         expect(rows).not.toContain('rake_treasury');
       }
     }
+  });
+});
+
+describe('compact lobby wallet rows by role', () => {
+  it('keeps a player lobby to Diamond plus Player Wallet', () => {
+    expect(clubLobbyWalletRows('player')).toEqual(['player_wallet']);
+  });
+
+  it.each(['agent', 'sub_agent'] as const)(
+    'shows %s the Agent and Player wallets beneath Diamonds',
+    (role) => {
+      expect(clubLobbyWalletRows(role)).toEqual(['agent_wallet', 'player_wallet']);
+    }
+  );
+
+  it.each(['owner', 'co_owner', 'admin', 'super_agent'] as const)(
+    'shows %s the Club Bank and Agent Wallet beneath Diamonds',
+    (role) => {
+      expect(clubLobbyWalletRows(role)).toEqual(['club_bank', 'agent_wallet']);
+    }
+  );
+
+  it('fails closed for an unknown role', () => {
+    expect(clubLobbyWalletRows('legacy_member')).toEqual(['player_wallet']);
   });
 });
 

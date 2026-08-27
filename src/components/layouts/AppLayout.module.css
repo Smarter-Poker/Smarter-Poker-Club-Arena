@@ -185,8 +185,27 @@
   width: 100%;
   margin: 0 auto;
   padding: var(--space-8) var(--space-6);
-  padding-top: calc(63px + var(--space-8));
-  /* Account for fixed header height: 60px header + 3px border */
+  /* NO HEADER RESERVATION HERE. GlobalHeader is position: sticky, which stays
+     IN the flow and is therefore already accounted for by normal layout. This
+     rule used to add `padding-top: calc(63px + var(--space-8))` on top of it,
+     so every Club Arena page above 600px carried a header's worth of empty
+     space under the header — the black band in Dan's 2026-08-27 screenshot of
+     the notifications page. The reservation is a leftover from when the header
+     was position: fixed. The 600px block below had already been corrected for
+     exactly this reason on 2026-08-24; tablet and desktop were missed. */
+}
+
+/* Pages that own their own chrome edge-to-edge — a full-bleed list that must
+   sit flush against the global header's bottom border, with no shell gutter
+   framing it. Higher specificity than .main so it wins inside the media
+   queries below without !important. */
+.main.mainFlush {
+  padding: 0;
+  max-width: none;
+  /* A flex column so the page inside can `flex: 1` to the bottom of the
+     viewport without having to know the global header's height. */
+  display: flex;
+  flex-direction: column;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -232,8 +251,9 @@
 
   .main {
     padding: var(--space-4);
-    padding-top: calc(55px + var(--space-4));
-    /* tablet header: 52px + 3px border */
+    /* Header reservation removed 2026-08-27 — see the note on .main above.
+       The header is sticky and already occupies flow space; adding 55px for
+       it put a dead band under it on every tablet-width page. */
   }
 }
 

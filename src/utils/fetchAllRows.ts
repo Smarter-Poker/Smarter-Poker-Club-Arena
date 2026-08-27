@@ -73,7 +73,7 @@ export async function fetchAllRows<T>(
     const from = page * pageSize;
     const { data, error } = await makePageQuery(from, from + pageSize - 1);
     if (error) {
-      throw new Error(`${label}: page ${page} failed — ${error.message ?? 'unknown error'}`);
+      throw new Error(`${label}: page ${page} failed - ${error.message ?? 'unknown error'}`);
     }
     // `null` with no error is PostgREST's shape for "no rows", not a failure.
     const rows = data ?? [];
@@ -83,7 +83,7 @@ export async function fetchAllRows<T>(
     if (rows.length < pageSize) return all;
   }
   throw new Error(
-    `${label}: still returning full pages after ${maxPages} of them — ` +
+    `${label}: still returning full pages after ${maxPages} of them - ` +
       'refusing to loop forever. This is a bug in the query, not a row limit.'
   );
 }

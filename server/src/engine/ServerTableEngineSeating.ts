@@ -732,6 +732,8 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    */
   public postBBToEnter(userId: string): { success: boolean; error?: string } {
     if (!this.waitingForBB.has(userId)) {
+      // RACE FIX 2026-08-27: mid-hand joiner not registered yet — see helper.
+      if (this.queuePostToEnter(userId)) return { success: true };
       return { success: false, error: 'Player is not waiting for BB' };
     }
     // This endpoint may NOT buy its way past either positional rule. Posting
@@ -763,6 +765,23 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     // for a MISSED blind).
     this.postingBBToEnter.add(userId);
     return { success: true };
+  }
+
+  /**
+   * POST-TO-ENTER RACE FIX 2026-08-27 (Dan: "the post to get dealt in
+   * feature in cash games isn't working"): a brand-new joiner is only
+   * registered as waiting by the dealing loop's next pass, which mid-hand
+   * can be minutes away. A post tapped in that window used to come back
+   * "Player is not waiting for BB" and die. The intent is queued here; the
+   * dealing loop replays it through postBBToEnter the moment the joiner is
+   * registered — positional hold-outs and the live-BB bill included. Anyone
+   * the engine already knows and is not holding out is simply in the
+   * rotation, and posting means nothing for them (returns false).
+   */
+  protected queuePostToEnter(userId: string): boolean {
+    if (this.isTournamentTable() || this.knownPlayerIds.has(userId)) return false;
+    this.pendingPostToEnter.add(userId);
+    return true;
   }
 
   /**

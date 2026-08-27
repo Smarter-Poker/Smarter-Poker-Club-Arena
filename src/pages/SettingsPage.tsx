@@ -550,13 +550,13 @@ export default function SettingsPage() {
          OS preference at save time, which is what the label promises. */
       const { setTheme } = useSettingsStore.getState();
       if (settings.theme === 'dark' || settings.theme === 'light') {
-        setTheme(settings.theme);
+        setTheme(settings.theme, authUser?.id);
       } else if (settings.theme === 'auto') {
         const prefersLight =
           typeof window !== 'undefined' &&
           typeof window.matchMedia === 'function' &&
           window.matchMedia('(prefers-color-scheme: light)').matches;
-        setTheme(prefersLight ? 'light' : 'dark');
+        setTheme(prefersLight ? 'light' : 'dark', authUser?.id);
       }
 
       // Sync to Supabase profiles table
@@ -579,7 +579,10 @@ export default function SettingsPage() {
          failed appearance write must not fail the whole settings save. */
       const appearance = await applyTableAppearance(
         { cards_id: normalizeCardBack(settings.cardBack) },
-        { userId: user?.id }
+        {
+          userId: user?.id,
+          previous: { cards_id: normalizeCardBack(tableSettingsRef.current.cardBack) },
+        }
       );
       if (!appearance.ok && user?.id) {
         reportError(appearance.error, 'SettingsPage.cardBackSaveFailed');

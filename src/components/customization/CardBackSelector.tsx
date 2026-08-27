@@ -136,9 +136,9 @@ export const CardBackSelector: React.FC<CardBackSelectorProps> = ({
       setBusy(true);
       try {
         await onChange?.(design.id);
-        // Announced only once the handler has accepted it, so the felt and the
-        // toast can never disagree with what was stored.
-        masterBus.emit('SETTINGS_CHANGED', { setting: 'cardBack', value: design.id });
+        // The required handler owns the one canonical optimistic event and
+        // durable write. Emitting a second unscoped event here let another
+        // account's tab consume the same choice and made the felt render twice.
         toast.success(`Equipped The ${design.name} Card Back`);
       } catch {
         setSelected(previous);

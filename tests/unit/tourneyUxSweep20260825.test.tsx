@@ -366,11 +366,12 @@ describe('Item 7 - amounts default to actual totals, never BB', () => {
 
   it('the hamburger toggle writes the key the felt actually reads', () => {
     const src = code(read('src/components/navigation/HamburgerMenu.tsx'));
-    // The bus key must be a field of DEFAULT_USER_TABLE_SETTINGS or the table
-    // settings hook silently drops the event.
-    expect(src).toMatch(/setting: 'show_stack_in_bb'/);
-    expect(src).not.toMatch(/setting: 'showStackInBB'/);
-    expect(src).toMatch(/from\('user_table_settings'\)[\s\S]{0,200}show_stack_in_bb: newValue/);
+    // The hamburger now calls the same ordered hook as the table panel. That
+    // hook owns the optimistic bus event, persistence ordering and rollback;
+    // a second direct upsert here would reintroduce the race this test guards.
+    expect(src).toMatch(/toggleTableSetting\('show_stack_in_bb'\)/);
+    expect(src).not.toMatch(/toggleTableSetting\('showStackInBB'\)/);
+    expect(src).not.toMatch(/from\('user_table_settings'\)[\s\S]{0,200}\.upsert/);
   });
 });
 

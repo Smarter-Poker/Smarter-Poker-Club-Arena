@@ -25,13 +25,14 @@ import {
 import { CardBack, normalizeCardBack, CARD_BACK_CATALOG, isCardBackUnlocked } from './CardImage';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import './ThemeSettingsModal.css';
 import { reportError } from '../../utils/errorReporter';
 import { useSettingsStore } from '../../stores/useSettingsStore';
 import { avatarService } from '../../services/AvatarService';
 import TableStudioGameplayPreview from './TableStudioGameplayPreview';
+import { applyTableAppearance, type AppearancePatch } from '../../lib/applyTableAppearance';
+import { pickThemeRow } from '../../hooks/useUserThemeSettings';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -351,7 +352,7 @@ const TAB_TO_FIELD: Record<ThemeTab, keyof ThemeSelection> = {
 
 const DEFAULT_SELECTION: ThemeSelection = {
   theme_id: 'default-dark',
-  table_id: 'neon_city',
+  table_id: 'classic_green',
   button_id: 'classic-white',
   background_id: 'midnight',
   cards_id: 'classic_red',
@@ -607,9 +608,18 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   // depend on it. handleSave needs the value it is replacing so it can put it
   // back if the write fails.
   const selectionRef = useRef(selection);
+  const gameTypeRef = useRef(gameType);
+  const userIdRef = useRef(userId);
+  userIdRef.current = userId;
+  const pendingSavesRef = useRef(0);
   useEffect(() => {
     selectionRef.current = selection;
   }, [selection]);
+
+  const replaceSelection = useCallback((next: ThemeSelection) => {
+    selectionRef.current = next;
+    setSelection(next);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -714,10 +724,8 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
       try {
         const { data, error } = await supabase
           .from('user_theme_settings')
-          .select('theme_id, table_id, button_id, background_id, cards_id')
-          .eq('user_id', userId)
-          .eq('game_type', gameType)
-          .maybeSingle();
+          .select('game_type, theme_id, table_id, button_id, background_id, cards_id')
+          .eq('user_id', userId);
 
         if (error) {
           // A FAILED READ IS NOT "YOU HAVE THE DEFAULT THEME" (2026-08-25).
@@ -731,49 +739,28 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           return;
         }
 
-        if (data && mounted) {
-          setSelection({
-            theme_id: data.theme_id || DEFAULT_SELECTION.theme_id,
+        if (mounted) {
+          /* The reader and this editor now use the same precedence: exact
+             bucket, then a legacy raw variant that canonicalises to it, then
+             ALL. A stored `plo4` row can no longer paint the table while this
+             modal confidently highlights unrelated defaults. */
+          const row = pickThemeRow(data || [], gameType as (typeof GAME_TYPES)[number]);
+          replaceSelection({
+            theme_id: row?.theme_id || DEFAULT_SELECTION.theme_id,
             // Normalised for the same reason cards_id is: rows hold legacy
             // aliases ('dark-felt', 'diamond-pattern' are both live in
             // production) which paint correctly but match no tile, so the tab
             // looked like it had forgotten the player's choice.
-            table_id: normalizeFeltId(data.table_id || DEFAULT_SELECTION.table_id),
-            button_id: data.button_id || DEFAULT_SELECTION.button_id,
+            table_id: normalizeFeltId(row?.table_id || DEFAULT_SELECTION.table_id),
+            button_id: row?.button_id || DEFAULT_SELECTION.button_id,
             background_id: normalizeBackgroundId(
-              data.background_id || DEFAULT_SELECTION.background_id
+              row?.background_id || DEFAULT_SELECTION.background_id
             ),
             // Dan 2026-08-20: normalise, or a row still holding one of the old
             // invented ids (standard-red, premium-platinum, ...) highlights no
             // tile at all and the tab looks like it forgot the user's choice.
-            cards_id: normalizeCardBack(data.cards_id || DEFAULT_SELECTION.cards_id),
+            cards_id: normalizeCardBack(row?.cards_id || DEFAULT_SELECTION.cards_id),
           });
-        } else if (mounted) {
-          // No saved theme for this game type — try ALL fallback
-          if (gameType !== 'ALL') {
-            const { data: fallback } = await supabase
-              .from('user_theme_settings')
-              .select('theme_id, table_id, button_id, background_id, cards_id')
-              .eq('user_id', userId)
-              .eq('game_type', 'ALL')
-              .maybeSingle();
-
-            if (fallback && mounted) {
-              setSelection({
-                theme_id: fallback.theme_id || DEFAULT_SELECTION.theme_id,
-                table_id: normalizeFeltId(fallback.table_id || DEFAULT_SELECTION.table_id),
-                button_id: fallback.button_id || DEFAULT_SELECTION.button_id,
-                background_id: normalizeBackgroundId(
-                  fallback.background_id || DEFAULT_SELECTION.background_id
-                ),
-                cards_id: normalizeCardBack(fallback.cards_id || DEFAULT_SELECTION.cards_id),
-              });
-            } else if (mounted) {
-              setSelection({ ...DEFAULT_SELECTION });
-            }
-          } else if (mounted) {
-            setSelection({ ...DEFAULT_SELECTION });
-          }
         }
       } catch (err) {
         console.warn('[ThemeSettings] Unexpected error:', err);
@@ -789,7 +776,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     // `toast` is stable for the life of the provider; listing it would re-run
     // the load on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, userId, gameType]);
+  }, [isOpen, userId, gameType, replaceSelection]);
 
   /**
    * APPLY NOW, PERSIST, AND UNDO IF THE PERSIST FAILED.
@@ -807,7 +794,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
    *      opened the modal their choice had silently reverted.
    */
   const handleSave = useCallback(
-    async (overrideSelection?: Partial<ThemeSelection>) => {
+    async (patch: AppearancePatch, previous: AppearancePatch) => {
       /* Dan 2026-08-26: "if a user changes their avatar, deck color, table,
          background, button or anything else, it needs to change, save and
          update in real time."
@@ -824,45 +811,47 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
          The caller (`handleAssetSelect`) reverts its optimistic state on a
          false return. */
       if (!userId) {
+        replaceSelection({ ...selectionRef.current, ...previous });
         toast.error('Please Sign In To Save Your Theme.');
         return false;
       }
-      const previous = selectionRef.current;
-      const currentToSave = { ...previous, ...(overrideSelection || {}) };
+      const savedFor = gameType;
+      pendingSavesRef.current += 1;
       setSaving(true);
-      // 1. Live, before the network.
-      masterBus.emit('UI_THEME_CHANGED', { key: gameType, value: currentToSave });
-      try {
-        const { error } = await supabase.from('user_theme_settings').upsert(
-          {
-            user_id: userId,
-            game_type: gameType,
-            ...currentToSave,
-          },
-          { onConflict: 'user_id,game_type' }
-        );
+      const result = await applyTableAppearance(patch, {
+        userId,
+        gameType: savedFor,
+        previous,
+      });
 
-        if (error) {
-          setSelection(previous);
-          masterBus.emit('UI_THEME_CHANGED', { key: gameType, value: previous });
-          toast.error('Could Not Save Your Theme. Please Try Again.');
-          reportError(error, 'ThemeSettingsModal.Save_failed');
-        } else {
-          toast.success('Theme Applied');
-          // No longer closing modal on auto-save
+      if (!result.ok) {
+        /* Reconcile only fields the ordered writer actually rolled back, and
+           only if this modal is still displaying the bucket that was saved.
+           An older failed request must not erase a newer tap or a newly chosen
+           game-type tab. */
+        if (userIdRef.current === userId && gameTypeRef.current === savedFor && result.reverted) {
+          const reverted = result.reverted;
+          setSelection((current) => {
+            const next = { ...current };
+            for (const field of Object.keys(reverted) as (keyof ThemeSelection)[]) {
+              if (current[field] === patch[field] && reverted[field]) {
+                next[field] = reverted[field] as string;
+              }
+            }
+            selectionRef.current = next;
+            return next;
+          });
         }
-        setSaving(false);
-        return !error;
-      } catch (err) {
-        setSelection(previous);
-        masterBus.emit('UI_THEME_CHANGED', { key: gameType, value: previous });
         toast.error('Could Not Save Your Theme. Please Try Again.');
-        reportError(err, 'ThemeSettingsModal.Unexpected_save_error');
-        setSaving(false);
-        return false;
+        reportError(result.error, 'ThemeSettingsModal.Save_failed');
+      } else {
+        toast.success('Theme Applied');
       }
+      pendingSavesRef.current = Math.max(0, pendingSavesRef.current - 1);
+      if (pendingSavesRef.current === 0) setSaving(false);
+      return result.ok;
     },
-    [userId, gameType, toast]
+    [userId, gameType, toast, replaceSelection]
   );
 
   const handleAssetSelect = useCallback(
@@ -886,18 +875,21 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
          the player looking at a selection the server never received. A
          FAILED write already restores `previous` inside handleSave. */
       const before = selectionRef.current;
-      setSelection((prev) => ({ ...prev, ...newSel }));
+      const next = { ...before, ...newSel };
+      replaceSelection(next);
+      const previousPatch: AppearancePatch = {};
+      for (const field of Object.keys(newSel) as (keyof ThemeSelection)[]) {
+        previousPatch[field] = before[field];
+      }
       const recentKey = `${tab}:${assetId}`;
       setRecentIds((previous) => {
         const next = [recentKey, ...previous.filter((id) => id !== recentKey)].slice(0, 12);
         writeLocalJson(`table-studio-recent:${userId || 'guest'}`, next);
         return next;
       });
-      void handleSave(newSel).then((ok) => {
-        if (ok === false) setSelection(before);
-      });
+      void handleSave(newSel, previousPatch);
     },
-    [isVip, ownedCardBacks, handleSave]
+    [isVip, ownedCardBacks, handleSave, replaceSelection, userId]
   );
 
   /**
@@ -908,9 +900,10 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
    * It now goes through exactly the same path as picking a tile.
    */
   const handleReset = useCallback(() => {
-    setSelection({ ...DEFAULT_SELECTION });
-    handleSave({ ...DEFAULT_SELECTION });
-  }, [handleSave]);
+    const previous = { ...selectionRef.current };
+    replaceSelection({ ...DEFAULT_SELECTION });
+    void handleSave({ ...DEFAULT_SELECTION }, previous);
+  }, [handleSave, replaceSelection]);
 
   const toggleFavorite = useCallback(
     (tab: ThemeTab, assetId: string) => {
@@ -940,9 +933,10 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
       background_id: pick(BACKGROUND_ASSETS, 'background') || DEFAULT_SELECTION.background_id,
       cards_id: pick(CARD_ASSETS, 'cards') || DEFAULT_SELECTION.cards_id,
     };
-    setSelection(randomized);
-    void handleSave(randomized);
-  }, [handleSave, isVip, ownedCardBacks]);
+    const previous = { ...selectionRef.current };
+    replaceSelection(randomized);
+    void handleSave(randomized, previous);
+  }, [handleSave, isVip, ownedCardBacks, replaceSelection]);
 
   const loadoutKey = `table-studio-loadouts:${userId || 'guest'}`;
   const readLoadouts = useCallback((): Array<ThemeSelection | null> => {
@@ -971,10 +965,11 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     (slot: number) => {
       const saved = readLoadouts()[slot];
       if (!saved) return;
-      setSelection(saved);
-      void handleSave(saved);
+      const previous = { ...selectionRef.current };
+      replaceSelection(saved);
+      void handleSave(saved, previous);
     },
-    [handleSave, readLoadouts]
+    [handleSave, readLoadouts, replaceSelection]
   );
 
   if (!isOpen) return null;
@@ -1037,7 +1032,10 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
               id="theme-game-type"
               className="theme-modal__game-select"
               value={gameType}
-              onChange={(e) => setGameType(e.target.value)}
+              onChange={(e) => {
+                gameTypeRef.current = e.target.value;
+                setGameType(e.target.value);
+              }}
             >
               {GAME_TYPES.map((gt) => (
                 <option key={gt} value={gt}>
@@ -1286,7 +1284,10 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           </button>
           <button
             className="theme-modal__btn theme-modal__btn--save"
-            onClick={() => handleSave()}
+            /* Every tile auto-saves through the ordered writer. Done closes
+               the studio; it must not launch a redundant full-row write that
+               can race the final tap the player just made. */
+            onClick={onClose}
             disabled={saving}
           >
             {saving ? 'Saving...' : 'Done'}

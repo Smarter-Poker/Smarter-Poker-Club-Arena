@@ -17,6 +17,7 @@ import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
 import { DEFAULT_RAKE_RATE, buyInFor, wholeChips } from '../config/buyIn.js';
+import { gameLaneFor, horseHash } from './HorseBehavior.js';
 
 /**
  * Derive the two buy-in columns from ONE whole-dollar total.
@@ -655,6 +656,26 @@ function seatFirstHumanWindowMs(): number {
  */
 function openingHorsesForSeatFirst(seats: number): number {
   return Math.max(0, seats - 1);
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * HELD-EMPTY SEAT-FIRST GAMES (Dan 2026-08-26, binding)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * "LEAVE ... 33% OF ALL SPINS AND 50% OF HEADS UP [EMPTY]."
+ *
+ * A board where every Spin already has two horses in it never offers a player
+ * the experience of STARTING a game. So a deterministic share of seat-first
+ * games — hashed on the tournament id, so every code path agrees forever —
+ * opens with ZERO horses and stays empty until a human buys a seat. The
+ * moment one does, topUpWithHorses fills the remaining seats and the game
+ * starts on the normal start-when-full rule. Because the flag rides the id,
+ * the fraction holds across the whole rolling board: each freshly created
+ * instance re-rolls it.
+ */
+export function seatFirstHeldEmpty(tournamentId: string, seats: number): boolean {
+  const frac = seats <= 2 ? 0.5 : 0.33;
+  return horseHash(`${tournamentId}:hold-empty`) % 100 < frac * 100;
 }
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -1536,6 +1557,47 @@ export class TournamentRecurringService {
             continue;
           }
           throw createErr;
+        }
+      }
+
+      /**
+       * ═════════════════════════════════════════════════════════════════════
+       * MTT FLOOR (Dan 2026-08-26, binding): "at least 2 tournaments at once."
+       * ═════════════════════════════════════════════════════════════════════
+       * The hourly blocks carry 1-2 named events and create at most one
+       * instance per name, so a quiet block could leave the board with a
+       * single live MTT (or none, right after one finishes). Count what is
+       * actually live and, while it is short of two, launch the next unlaunched
+       * config from the schedule — same createTournament path, same duplicate
+       * guard, so a race can only ever fail benignly.
+       */
+      const { count: liveMtts, error: mttCountErr } = await supabase
+        .from('tournaments')
+        .select('id', { count: 'exact', head: true })
+        .eq('tournament_type', 'MTT')
+        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'LATE_REG']);
+      if (!mttCountErr && (liveMtts ?? 0) < 2) {
+        let need = 2 - (liveMtts ?? 0);
+        const allConfigs = HOURLY_SCHEDULE.flatMap((b) => b.tournaments);
+        for (const config of allConfigs) {
+          if (need <= 0) break;
+          const existing = await this.getActiveCount(config.type, config.name);
+          if (existing > 0) continue;
+          try {
+            const result = await this.createTournament(config);
+            if (result.tournamentId) {
+              need--;
+              console.log(
+                `[TournamentRecurring] MTT floor: launched "${config.name}" to keep at least 2 tournaments live`
+              );
+            }
+          } catch (createErr: any) {
+            const msg = String(createErr?.message ?? createErr ?? '');
+            if (createErr?.code === '23505' || /duplicate key|unique constraint/i.test(msg)) {
+              continue; // created concurrently — still counts toward the floor
+            }
+            throw createErr;
+          }
         }
       }
     } catch (err: any) {
@@ -2510,7 +2572,11 @@ export class TournamentRecurringService {
        * start with - 12 of 24 open Spins were stuck that way, some for a day,
        * and the next human to sit at one became its FOURTH entrant.
        */
-      const opening = openingHorsesForSeatFirst(seats);
+      // Dan 2026-08-26: a held-empty game opens with NO horses — its seats
+      // are the invitation. topUpWithHorses fills it the moment a human sits.
+      const opening = seatFirstHeldEmpty(tournament.id, seats)
+        ? 0
+        : openingHorsesForSeatFirst(seats);
       const candidates = await this.pickFreeHorses(opening);
       let seated = 0;
       for (const horse of candidates) {
@@ -2789,7 +2855,9 @@ export class TournamentRecurringService {
 
       const candidates = (horses ?? [])
         .map((h) => (h as { id: string }).id)
-        .filter((id) => id && !busy.has(id));
+        // Game lanes (Dan 2026-08-26): cash-only horses never enter events —
+        // tournaments, spins and heads-up draw from the events/both lanes.
+        .filter((id) => id && !busy.has(id) && gameLaneFor(id) !== 'cash');
 
       /**
        * ═══════════════════════════════════════════════════════════════════
@@ -3235,6 +3303,45 @@ export class TournamentRecurringService {
         liveCount = regCount || 0;
       }
 
+      /**
+       * HELD-EMPTY GATE (Dan 2026-08-26): a seat-first game flagged held-empty
+       * gets NO horses while no human has bought a seat — 33% of Spins and
+       * 50% of Heads-Up boards stay genuinely open for a human to start.
+       * The instant a human sits, the hold releases and this same function
+       * fills the remaining seats so the game can start.
+       */
+      if (
+        seatFirst &&
+        seatFirstHeldEmpty(
+          tournamentId,
+          Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
+        )
+      ) {
+        let humanSeated = false;
+        if (primaryTableId && liveCount > 0) {
+          const { data: seatRows } = await supabase
+            .from('table_seats')
+            .select('user_id')
+            .eq('table_id', primaryTableId)
+            .is('left_at', null);
+          const seatIds = (seatRows ?? []).map((r) => String((r as { user_id: string }).user_id));
+          if (seatIds.length > 0) {
+            const { data: horseRows } = await supabase
+              .from('profiles')
+              .select('id')
+              .in('id', seatIds)
+              .eq('is_horse', true);
+            humanSeated = (horseRows ?? []).length < seatIds.length;
+          }
+        }
+        if (!humanSeated) {
+          await supabase.rpc('fn_sync_seat_first_player_count', {
+            p_tournament_id: tournamentId,
+          });
+          return 0;
+        }
+      }
+
       const shortfall = targetPlayers - liveCount;
       if (shortfall <= 0) {
         /**
@@ -3418,7 +3525,10 @@ export class TournamentRecurringService {
         .eq('is_horse', true)
         .eq('horse_status', 'available')
         .limit(count + busyIds.size);
-      const horses = (horsePool ?? []).filter((h) => !busyIds.has(h.id)).slice(0, count);
+      const horses = (horsePool ?? [])
+        // Game lanes (Dan 2026-08-26): cash-only horses never register for events.
+        .filter((h) => !busyIds.has(h.id) && gameLaneFor(h.id) !== 'cash')
+        .slice(0, count);
 
       if (!horses || horses.length === 0) return 0;
 

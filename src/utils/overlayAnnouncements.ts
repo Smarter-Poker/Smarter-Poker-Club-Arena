@@ -50,30 +50,30 @@
  * quickJoinRanking and satelliteAwardPlan.
  */
 
-import { isInLateRegistration } from './tournamentFilters';
+import { isInLateRegistration, isRunning } from './tournamentFilters';
+import { lateRegEndMs, type LobbyTournamentRow } from '../components/lobby/lobbyEntries';
 
 /**
- * How close to the start an event has to be before a gap is worth saying.
+ * RUNNING EVENTS ONLY, AND ONLY LATE IN LATE REGISTRATION.
  *
- * WAS 12 HOURS. Dan 2026-08-26, overruling that: "IT SHOULD BE ANNOUNCING
- * OVERLAY ALERTS FOR ANY TOURNAMENT THAT DOESN'T APPEAR TO BE MEETING THE
- * GUARANTEE."
+ * Dan 2026-08-26, overruling the 7-day pre-start window this shipped with the
+ * day before: "YOU NEVER ANNOUNCE AN OVERLAY FOR EVENTS IN THE FUTURE, ONLY
+ * FOR EVENTS THAT ARE CURRENTLY RUNNING. AND YOU SHOULDN'T MAKE ANY
+ * ANNOUNCEMENT OF ANY TOURNAMENT UNTIL IT'S 75% OF THE WAY DOWN WITH LATE
+ * REGISTRATION."
  *
- * Twelve hours was my caution about crying wolf - every guaranteed event is
- * "short" the moment it is created, so a wide window risks a permanent flag
- * nobody reads. Dan's call is the commercial one and he is right that a
- * shortfall a player could still fix is worth saying out loud. Seven days
- * covers the whole publish window (6 days for a 200+ buy-in), so an event
- * announces for as long as it is on the board and enterable.
+ * The reasoning holds up: a Sunday event flagged on Wednesday is not an
+ * overlay, it is a field that has not arrived yet — and the prestart horse
+ * ramp (mttPrestartHorseTarget) closes most gaps before the start anyway. The
+ * only moment a shortfall is both REAL and ACTIONABLE is when the event is
+ * running, the field is nearly settled, and the registration door is about to
+ * close. That moment is the last quarter of late registration, and that is
+ * now the only moment this module will speak.
  *
- * The wolf-crying guard did not go away, it moved: MIN_OVERLAY_FRACTION and
- * MIN_OVERLAY_CHIPS still gate on the shortfall being MATERIAL, and the copy
- * says POTENTIAL while the field can still close it. What stops a flag being
- * permanent now is the horse ramp - mttPrestartHorseTarget fills a guaranteed
- * event to whatever covers it in the last hour, so an announcement is a live
- * window that genuinely closes rather than a standing complaint.
+ * The 'potential' tier still exists in the type for exhaustiveness, but
+ * overlayFor never produces it any more.
  */
-export const ANNOUNCE_WITHIN_MS = 7 * 24 * 60 * 60 * 1000;
+export const LATE_REG_ANNOUNCE_FRACTION = 0.75;
 
 /**
  * The smallest shortfall worth announcing, as a fraction of the guarantee.
@@ -105,6 +105,11 @@ export interface OverlayCandidate {
   started_at?: string | null;
   current_level?: number | null;
   max_players?: number | null;
+  /** Needed by lateRegEndMs to place the 75% point exactly (level-based
+   *  windows). Callers that cannot supply them simply never announce
+   *  level-gated events — the gate fails closed. */
+  blind_structure?: string | null;
+  level_started_at?: string | null;
 }
 
 export interface OverlayAnnouncement {
@@ -151,23 +156,30 @@ export function overlayFor(
   if (!Number.isFinite(startsAt)) return null;
 
   const status = String(t.status || '').toUpperCase();
-  const preStart = status === 'REGISTERING' || status === 'ANNOUNCED';
 
-  let tier: OverlayTier;
-  if (preStart) {
-    // NEAR: close enough that the field is roughly settled. A guarantee is
-    // "short" from the moment it is created; that is not news.
-    if (startsAt - now > ANNOUNCE_WITHIN_MS) return null;
-    tier = 'potential';
-  } else if (
-    isInLateRegistration({ ...t, name: t.name || '', max_players: t.max_players ?? 0 }, now)
-  ) {
-    // The field is known and the door is still open. This is the real one.
-    tier = 'live';
-  } else {
-    // Running with late registration closed, or finished. Nothing to sell.
+  // FUTURE EVENTS NEVER ANNOUNCE (Dan 2026-08-26). Not "rarely" — never.
+  // A pre-start guarantee gap is a field that has not arrived, not an overlay.
+  const running = isRunning(status) || status === 'LATE_REG' || status === 'LATE_REGISTRATION';
+  if (!running) return null;
+
+  // The registration door must still be open, or there is nothing to sell.
+  if (!isInLateRegistration({ ...t, name: t.name || '', max_players: t.max_players ?? 0 }, now)) {
     return null;
   }
+
+  // …and at least LATE_REG_ANNOUNCE_FRACTION of the late-reg window must have
+  // elapsed. Before that the field is still arriving and the "overlay" is
+  // noise. If the row cannot prove where the window starts and ends, it
+  // cannot prove the 75% point either — fail closed, never announce on a
+  // guess. lateRegEndMs is the same derivation the lobby countdown uses, so
+  // the ticker can never claim a window the card denies.
+  const begun = new Date(t.started_at || t.start_time).getTime();
+  const closesAt = lateRegEndMs(t as unknown as LobbyTournamentRow);
+  if (!Number.isFinite(begun) || closesAt == null || closesAt <= begun) return null;
+  const progress = (now - begun) / (closesAt - begun);
+  if (progress < LATE_REG_ANNOUNCE_FRACTION || now >= closesAt) return null;
+
+  const tier: OverlayTier = 'live';
 
   /* How many more entries would close the gap. The PRIZE side of the buy-in
      is what reaches the pool - the fee is rake and never does - so using the

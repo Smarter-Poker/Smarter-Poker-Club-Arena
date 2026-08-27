@@ -885,15 +885,53 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           //
           // Only for a real showdown; a fold-around win has nothing to reveal
           // and keeps its brisk pace.
-          if (this.running && this.currentHandShowdownResults.length >= 2) {
-            const handAtShowdown = this.handCount;
-            const controllerAtShowdown = this.handController;
+          //
+          // ── 2026-08-26 (Dan: "hands MUST be announced and highlighted at
+          //    showdown 100% of the time") — THE SETTLE HOLD ATE ITS OWN
+          //    EVENT. completeHandInner() emits WINNERS and then HAND_COMPLETE
+          //    in the same tick. This handler is fire-and-forget, so while it
+          //    slept here, the HAND_COMPLETE listener ran to completion:
+          //    ServerTableEngineDealing nulled `this.handController`
+          //    unconditionally and handleHandCompleteEvent cleared
+          //    `currentHandWinnerIds`. Waking up, the old guard saw
+          //    `handController !== controllerAtShowdown` — true on EVERY
+          //    showdown — and broke before emitting. pot_win and
+          //    pot_distributed were therefore skipped for every contested
+          //    showdown, which is exactly the set of hands the announcement
+          //    exists for; fold-around wins (no settle hold) kept working,
+          //    making the failure read as "intermittent".
+          //
+          //    Fix: capture the entire payload BEFORE sleeping (the winner
+          //    fields and the controller are guaranteed live here, one tick
+          //    after WINNERS), and afterwards guard only on what actually
+          //    invalidates a broadcast — the engine stopping or a NEW hand
+          //    having started. The controller being nulled is the expected
+          //    post-hand state, not a cancellation.
+          const emitHandNumber = this.handCount;
+          const capturedWinnerIds = [...this.currentHandWinnerIds];
+          const capturedWinners = [...this.currentHandWinners];
+          const capturedWinnersByBoard = [...this.currentHandWinnersByBoard];
+          const capturedShowdownResults = [...this.currentHandShowdownResults];
+          const capturedPotSize = this.currentHandPotSize;
+          const capturedPotAwards = this.buildPotAwardGroups();
+          const liveState = this.handController?.getState?.() as unknown as
+            | {
+                communityCards?: Array<{ rank?: string; suit?: string }>;
+                pots?: Array<{
+                  amount: number;
+                  eligiblePlayers?: string[];
+                  eligible?: string[];
+                }>;
+              }
+            | undefined;
+          const capturedBoard = (liveState?.communityCards ?? []) as Array<{
+            rank?: string;
+            suit?: string;
+          }>;
+          const capturedPots = liveState?.pots ?? [];
+          if (this.running && capturedShowdownResults.length >= 2) {
             await this.sleep(this.showdownSettleMs);
-            if (
-              !this.running ||
-              this.handController !== controllerAtShowdown ||
-              this.handCount !== handAtShowdown
-            ) {
+            if (!this.running || this.handCount !== emitHandNumber) {
               break;
             }
           }
@@ -917,22 +955,18 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
            * and those are drawn at the seat, not on the felt. Matching is by
            * rank+suit against the community cards actually on the board.
            */
-          const boardNow = (this.handController?.getState?.()?.communityCards ?? []) as Array<{
-            rank?: string;
-            suit?: string;
-          }>;
           const cardKey = (c: { rank?: string; suit?: string }) => `${c?.rank}${c?.suit}`;
           const winningBoardIndices = (() => {
             try {
               const used = new Set<string>();
-              for (const w of this.currentHandWinners) {
+              for (const w of capturedWinners) {
                 for (const c of (w.hand?.cards ?? []) as Array<{ rank?: string; suit?: string }>) {
                   used.add(cardKey(c));
                 }
               }
               if (used.size === 0) return [];
               const out: number[] = [];
-              boardNow.forEach((c, i) => {
+              capturedBoard.forEach((c, i) => {
                 if (used.has(cardKey(c))) out.push(i);
               });
               return out;
@@ -945,9 +979,9 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           this.hub?.emitEvent(this.tableId, {
             type: 'pot_win',
             table_id: this.tableId,
-            hand_number: this.handCount,
-            winner_ids: this.currentHandWinnerIds,
-            pot: this.currentHandPotSize,
+            hand_number: emitHandNumber,
+            winner_ids: capturedWinnerIds,
+            pot: capturedPotSize,
             // The board cards that are part of the winning hand(s). The client
             // reads this as `card_indices` and lights exactly these.
             card_indices: winningBoardIndices,
@@ -957,8 +991,8 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             // indices of the winner's OWN hole cards that participate in the
             // winning five, so the seat can light exactly those (the board
             // half of the highlight rides card_indices above).
-            winners: this.currentHandWinners.map((w) => {
-              const sd = this.currentHandShowdownResults.find((r) => r.userId === w.userId);
+            winners: capturedWinners.map((w) => {
+              const sd = capturedShowdownResults.find((r) => r.userId === w.userId);
               const holeIndices: number[] = [];
               try {
                 if (sd && w.hand?.cards) {
@@ -990,7 +1024,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             }),
             // Round 2 (double board): board 1 / board 2 winner + hand-name
             // breakdown. Empty array on single-board hands.
-            winners_by_board: this.currentHandWinnersByBoard.map((w) => ({
+            winners_by_board: capturedWinnersByBoard.map((w) => ({
               board: w.board,
               user_id: w.userId,
               amount: w.amount,
@@ -1005,7 +1039,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             // beats even when one player appears in several groups, and can
             // label HIGH vs LOW winners on hi-lo boards. The flat winners[]
             // above stays authoritative for totals.
-            pot_awards: this.buildPotAwardGroups(),
+            pot_awards: capturedPotAwards,
           });
 
           // Phase X5 (2026-04-29) — Bible V8 §1.16 pot_distributed companion
@@ -1019,18 +1053,13 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           // payload's rename, applied only in ServerTableEngine.ts) was always
           // undefined here, so every pot listed every winner and side-pot
           // breakdowns were wrong for the client and the audit trail alike.
-          const stateSnapshot = this.handController?.getState?.() as unknown as
-            | {
-                pots?: Array<{
-                  amount: number;
-                  eligiblePlayers?: string[];
-                  eligible?: string[];
-                }>;
-              }
-            | undefined;
-          const potBreakdown = (stateSnapshot?.pots ?? []).map((p, idx) => {
+          // 2026-08-26: reads the pots captured BEFORE the settle hold — the
+          // controller is legitimately null by the time the hold ends (see the
+          // capture note above), and reading it here returned an empty
+          // breakdown on every contested showdown.
+          const potBreakdown = capturedPots.map((p, idx) => {
             const eligibleIds = p.eligiblePlayers ?? p.eligible ?? [];
-            const eligibleWinners = this.currentHandWinners.filter(
+            const eligibleWinners = capturedWinners.filter(
               (w) => eligibleIds.length === 0 || eligibleIds.includes(w.userId)
             );
             const totalEligibleAmount = eligibleWinners.reduce((s, w) => s + w.amount, 0) || 1;
@@ -1047,8 +1076,8 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           this.hub?.emitEvent(this.tableId, {
             type: 'pot_distributed',
             table_id: this.tableId,
-            hand_number: this.handCount,
-            total_pot: this.currentHandPotSize,
+            hand_number: emitHandNumber,
+            total_pot: capturedPotSize,
             pots: potBreakdown,
             timestamp: Date.now(),
           });

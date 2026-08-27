@@ -2,6 +2,76 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-08-26 (night) — DAN'S 8-POINT LOBBY/ENGINE AUDIT
+
+Dan's punch list (screenshots of Club JAQK lobby + game panels), all eight
+shipped in one branch:
+
+1. **Cash rebuy silently failed, then booted the player (item 6).**
+   `atomic_table_rebuy` was the only function in the buy-in family running
+   SECURITY INVOKER — its first statement died on RLS
+   (`transaction_idempotency_keys`: RLS on, zero policies) for 100% of real
+   players. Recreated SECURITY DEFINER with an `auth.uid() = p_user_id` guard
+   (migration `20260826150000`, applied + probe-verified in rolled-back
+   transactions). Client: bust-rebuy prompt now reads the CLUB wallet through
+   `fn_player_spendable_balance` (it displayed the legacy `wallets` balance the
+   RPC never spends), reports failures to Sentry, and dismissing the prompt no
+   longer force-leaves the table — that was the "boots you" half (BuyInModal's
+   only close affordances backdropped into handleLeaveTable).
+2. **Waitlist end-to-end (item 2).** RLS only let a player read their OWN
+   row, so the queue rendered 'Player'×10 for everyone but admins. New policy
+   `waitlist_public_queue_read` (active rows public), one-time GC of 1,737
+   abandoned horse "atmosphere" rows (migration `20260826151500`). The fleet
+   now PRUNES horse queue rows every cycle (only genuinely full tables keep
+   1-3, humans never touched), the seat-open notifier skips horses, expires
+   3-minute-stale offers, and sends a best-effort OneSignal push. Client:
+   `getTableWaitlist` resolves real display names + real waited-since times;
+   the seat offer (row → 'notified') raises a clickable toast that deep-links
+   to the table; `waitlist_seat_open` notifications deep-link (the engine
+   writes `data`, the client only read `metadata` — now folded); the old
+   `position === 1` auto-navigate (a column that defaults to 1 for everyone)
+   is gone.
+3. **Overlay announcements (item 3, reversing the 7-day window from
+   yesterday).** Future events NEVER announce. Only running events with the
+   registration door open, and only past 75% of the late-reg window
+   (`LATE_REG_ANNOUNCE_FRACTION`, derived through the same `lateRegEndMs` the
+   lobby countdown uses; fails closed when the row can't prove the window).
+4. **Rabbit hunt can never linger (item 4).** The reveal's ONLY clear was the
+   hand-number-changed effect, which never fires on an idle table. Now: hand
+   boundary clears it, an 8s backstop timer always removes it, stale offers
+   (offer hand < current hand) are rejected, and the 3s freeze-replay's
+   duplicate-enqueue and latched-freeze defects are fixed.
+5. **Showdown announcement 100% (item 5).** The settle hold ate its own
+   event: HAND_COMPLETE nulled the controller and cleared winner state while
+   the WINNERS handler slept, so the post-sleep guard broke before emitting —
+   `pot_win`/`pot_distributed` were skipped on EVERY contested showdown
+   (fold-wins worked, hence "intermittent"). Payload is now captured before
+   the sleep; the guard only checks engine-stopped/new-hand. Client keeps
+   opponents' revealed cards on the felt through the post-hand hold (same
+   no-news rule the hero already had).
+6. **15% cash / 33% spin / 50% HU tables held empty (item 1).**
+   `cashTableHeldEmpty` (2h buckets) zeroes occupancy targets; the rotator
+   drains held-empty horse-only tables one seat per cycle; a human sitting
+   releases the hold. Seat-first: `seatFirstHeldEmpty` (hash on tournament id)
+   opens 33% of spins / 50% of HU with zero horses; topUpWithHorses refuses to
+   fill them until a human buys a seat, then fills so the game starts.
+7. **Post or Wait for BB popup (item 7).** The engine already enforced
+   wait-or-post (2026-08-26 reversal); the client now ASKS: a dialog follows
+   the buy-in confirm (Post Big Blind → /post-bb with a one-retry for the
+   registration race; Wait → default), auto-resolves when the hero is dealt
+   in, and the passive pill remains for mid-wait changes of mind.
+8. **Horse lanes + activity floors (item 8).** `gameLaneFor`: 33%
+   events-only / 33% cash-only / 34% both, enforced in cash seeding, waitlist
+   seeding, `pickFreeHorses` and `registerHorses`. MTT floor: at least 2 live
+   MTTs at all times (checkAndLaunchTournaments launches extras from the
+   schedule when short). Fleet activity floor: when seated horses < 1/3 of
+   the stable, seat targets get a one-seat boost per cycle.
+
+Tests: client 7,169 green, server 1,908 green, both tsc clean. Five
+source-pin tests updated to the new anchors in the same commit (per the
+NEVER-PUSH-A-RED-TEST rule). Migrations applied to production via Supabase
+MCP and verified (`list_migrations` + probes).
+
 ## Cowork session 2026-08-26 (late) — WINNER PRESENTATION, POKERBROS 1:1 (3 passes, measured)
 
 Dan supplied HIGHLIGHT WINNING HAND AND DSIPLAY IT ON SCREEN.MOV (26-Aug PLO5

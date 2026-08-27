@@ -3133,6 +3133,80 @@ button.post-bb-overlay-button:hover {
   font-weight: 500;
   color: rgba(255, 255, 255, 0.75);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   POST OR WAIT FOR BB — the entry-choice dialog shown right after a cash
+   buy-in confirms (Dan 2026-08-26). Mobile-first: full-width sheet at 375px,
+   centered card above that.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.post-or-wait__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.post-or-wait {
+  width: 100%;
+  max-width: 360px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 212, 255, 0.45);
+  background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
+  box-shadow:
+    0 0 18px rgba(0, 212, 255, 0.3),
+    0 8px 28px rgba(0, 0, 0, 0.6);
+  padding: 18px 16px 16px;
+  color: #fff;
+  text-align: center;
+}
+.post-or-wait__title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.post-or-wait__body {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.78);
+}
+.post-or-wait__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.post-or-wait__post,
+.post-or-wait__wait {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+.post-or-wait__post {
+  border: 1px solid rgba(0, 212, 255, 0.7);
+  background: linear-gradient(180deg, #0e7490 0%, #155e75 100%);
+  color: #fff;
+}
+.post-or-wait__post:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.post-or-wait__wait {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+}
+.post-or-wait__wait:hover,
+.post-or-wait__post:not(:disabled):hover {
+  filter: brightness(1.12);
+}
 @keyframes post-bb-pulse {
   from {
     box-shadow:

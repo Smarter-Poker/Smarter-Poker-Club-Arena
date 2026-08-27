@@ -1787,23 +1787,14 @@ class TournamentService {
     // as it does out of an entry. The advertised price IS the total charged and
     // the remainder feeds the prize pool. Until this, a 20 rebuy charged 22
     // while a 20 entry charged 20 - two prices for one rule.
-    const rebuyFee = this.calcTournamentFee(tournament, rebuyCost);
     const rebuyTotalCost = rebuyCost;
 
-    // Pre-validate wallet balance (better error messages)
-    const { data: walletData } = await supabase
-      .from('wallets')
-      .select('balance')
-      .eq('user_id', userId)
-      .eq('wallet_type', 'PLAYER')
-      .maybeSingle();
-
-    if (!walletData || (walletData.balance || 0) < rebuyTotalCost) {
-      throw new Error(
-        `Insufficient chips for rebuy. Need ${rebuyTotalCost} (${rebuyFee} of it is the fee), have ${walletData?.balance || 0}`
-      );
-    }
-
+    // 2026-08-27: the frozen-pool pre-check that lived here is GONE. It read
+    // public.wallets - frozen since 2026-08-21, nothing maintains it - so a
+    // player with plenty of live chips could be refused before the atomic RPC
+    // (the real authority, which checks the LIVE pool and produces its own
+    // insufficient-funds error) ever ran. A "better error message" computed
+    // from a dead table was a false refusal gate on a money action.
     // Process rebuy via ATOMIC RPC
     // (This RPC handles the wallet deduction and logging natively. It rolls back automatically on failure.)
     const { data, error } = await retryAsync(
@@ -1917,20 +1908,12 @@ class TournamentService {
       throw new Error('You have already used your add-on for this tournament');
     }
 
-    // Pre-validate wallet balance (better error messages)
-    const { data: addonWallet } = await supabase
-      .from('wallets')
-      .select('balance')
-      .eq('user_id', userId)
-      .eq('wallet_type', 'PLAYER')
-      .maybeSingle();
-
-    if (!addonWallet || (addonWallet.balance || 0) < addonTotalCost) {
-      throw new Error(
-        `Insufficient chips for add-on. Need ${addonTotalCost}, have ${addonWallet?.balance || 0}`
-      );
-    }
-
+    // 2026-08-27: the frozen-pool pre-check that lived here is GONE. It read
+    // public.wallets - frozen since 2026-08-21, nothing maintains it - so a
+    // player with plenty of live chips could be refused before the atomic RPC
+    // (the real authority, which checks the LIVE pool and produces its own
+    // insufficient-funds error) ever ran. A "better error message" computed
+    // from a dead table was a false refusal gate on a money action.
     // Process addon via ATOMIC RPC
     // (This handles wallet deduction, logging, and rollback natively)
     const { data, error } = await retryAsync(
@@ -2035,22 +2018,14 @@ class TournamentService {
     // a re-entry is a full fresh buy-in and must carry the same fee as entry #1)
     // A re-entry is a full fresh buy-in and carries the same fee as entry #1 -
     // and since 2026-08-21, on the same terms: cut OUT of the advertised price.
-    const reentryFee = this.calcTournamentFee(tournament, reentryCost);
     const reentryTotalCost = reentryCost;
 
-    const { data: walletData } = await supabase
-      .from('wallets')
-      .select('balance')
-      .eq('user_id', userId)
-      .eq('wallet_type', 'PLAYER')
-      .maybeSingle();
-
-    if (!walletData || (walletData.balance || 0) < reentryTotalCost) {
-      throw new Error(
-        `Insufficient chips for re-entry. Need ${reentryTotalCost} (${reentryFee} of it is the fee), have ${walletData?.balance || 0}`
-      );
-    }
-
+    // 2026-08-27: the frozen-pool pre-check that lived here is GONE. It read
+    // public.wallets - frozen since 2026-08-21, nothing maintains it - so a
+    // player with plenty of live chips could be refused before the atomic RPC
+    // (the real authority, which checks the LIVE pool and produces its own
+    // insufficient-funds error) ever ran. A "better error message" computed
+    // from a dead table was a false refusal gate on a money action.
     // Process re-entry via ATOMIC RPC (same as rebuy/addon, type='reentry')
     const { data, error } = await retryAsync(
       () =>

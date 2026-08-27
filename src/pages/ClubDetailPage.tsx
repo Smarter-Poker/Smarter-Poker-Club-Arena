@@ -34,6 +34,7 @@ import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import { retryFetch } from '../utils/retryFetch';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import { reportError } from '../utils/errorReporter';
+import { fetchAllRows } from '../utils/fetchAllRows';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -784,21 +785,33 @@ export default function ClubDetailPage() {
       setClub(mappedClub);
 
       // Load members (no FK between club_members → profiles; batch-fetch)
+      /* ═══ THE CAP WAS TRUNCATING TWO REAL CLUBS (fixed 2026-08-27) ═══
+         The note that used to sit here already knew the shape of this - "500
+         with no order is an arbitrary slice of a 588-member club" - and
+         answered it by ADDING AN ORDER, which makes the missing members
+         predictable rather than random. It does not make them visible.
+
+         Measured the day this was fixed: SHARK CLUB has 590 members and Club
+         JAQK 584, so 90 and 84 members respectively were simply absent from
+         the club's own member list, with nothing on screen to say the list
+         was short. Ordering by created_at meant the invisible ones were
+         always the newest joiners - the members most likely to be looked for.
+
+         Pages now. The ordering stays, because paging over an unordered query
+         can serve a row twice or skip it. retryFetch still wraps the whole
+         read so a transient blip retries the way it always did. */
       const memberData = await retryFetch(
         () =>
-          supabase
-            .from('club_members')
-            .select('user_id, role, chip_balance, status, created_at, last_active')
-            .eq('club_id', resolvedId)
-            // 500 with no order is an arbitrary slice of a 588-member club:
-            // whoever falls off the end is invisible, and which 88 those are
-            // can change between two loads of the same page
-            .order('created_at', { ascending: true })
-            .limit(500)
-            .then(({ data, error }) => {
-              if (error) throw error;
-              return data;
-            }),
+          fetchAllRows<any>(
+            (from, to) =>
+              supabase
+                .from('club_members')
+                .select('user_id, role, chip_balance, status, created_at, last_active')
+                .eq('club_id', resolvedId)
+                .order('created_at', { ascending: true })
+                .range(from, to),
+            { label: 'ClubDetailPage.members' }
+          ),
         { maxRetries: 2 }
       );
 

@@ -12,6 +12,7 @@ import { supabase } from '../../lib/supabase';
 import { UnionOpsService } from '../../services/UnionOpsService';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
+import { fetchAllRows } from '../../utils/fetchAllRows';
 
 interface Member {
   user_id: string;
@@ -39,15 +40,21 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
       // two foreign keys (profiles and users), so an embed needs a constraint
       // hint and silently breaks if either FK is ever renamed. A plain id
       // lookup has no such coupling.
-      const { data: memberRows, error } = await supabase
-        .from('club_members')
-        .select('user_id, role')
-        .eq('club_id', clubId)
-        // an unordered cap returns an arbitrary slice; order so the same 2,000
-        // come back every time and the tail is the tail
-        .order('joined_at', { ascending: true })
-        .limit(2000);
-      if (error) throw error;
+      /* Ordering made the missing members predictable; paging makes them
+         present (2026-08-27). Assigning members to agents against a truncated
+         roster silently excludes whoever fell off the end - and on this panel
+         that reads as "that member does not exist" rather than "the list is
+         short". */
+      const memberRows = await fetchAllRows<{ user_id: string; role: string }>(
+        (from, to) =>
+          supabase
+            .from('club_members')
+            .select('user_id, role')
+            .eq('club_id', clubId)
+            .order('joined_at', { ascending: true })
+            .range(from, to),
+        { label: 'AgentAssignmentPanel.members' }
+      );
 
       const ids = (memberRows ?? []).map((m) => (m as { user_id: string }).user_id);
       const names = new Map<string, string>();

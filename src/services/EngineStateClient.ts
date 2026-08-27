@@ -599,6 +599,33 @@ export class EngineStateClient {
   private resetInbox(): void {
     this.inbox = [];
     this.lastEventSeq = 0;
+    /**
+     * EPOCH RESET 2026-08-27 (security/realtime audit): the table froze
+     * permanently after ANY engine restart.
+     *
+     * TableStateHub.dropTable() deliberately keeps the room's subscribers and
+     * their open sockets, and resets the room's sequence (`room.lastSeq = 0`).
+     * The client never reset its counterpart, so with `this.seq` still at, say,
+     * 4213 from before the restart, the monotonicity belt
+     *     if (msg.seq < this.seq) return;
+     * discarded the rebuilt engine's `SNAPSHOT seq:1`, and every following
+     * DELTA tripped `msg.prev !== this.seq` -> requestResync(), whose reply is
+     * another small-seq SNAPSHOT that was dropped again. An endless loop — and
+     * because frames kept arriving, `lastInboundAt` and `unansweredResyncs`
+     * were refreshed every time, so neither the staleness watchdog nor the
+     * reconnect ladder ever escalated. The table sat frozen until the player
+     * reloaded the page.
+     *
+     * This fires on every dropTable path: the zombie reaper, the watchdog
+     * kill, and tournament table breaks — including the very drill
+     * faultInjection claims verifies that "connected clients keep receiving".
+     *
+     * Resetting the epoch here is safe: the hub always sends a FULL snapshot
+     * on subscribe and on resync, so nothing is lost by forgetting the old
+     * sequence.
+     */
+    this.seq = 0;
+    this.snapshot = null;
   }
 
   private requestResync(): void {

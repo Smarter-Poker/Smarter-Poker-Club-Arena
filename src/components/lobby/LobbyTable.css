@@ -1721,3 +1721,202 @@ abbr.lt-variant[title] {
     border-top: 1px solid rgba(120, 150, 205, 0.12);
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE TOURNAMENT-BOARD CARDS
+   Solid raised surface, status rail, recessed data bays and balanced actions.
+═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  .lobby-table tbody {
+    gap: 11px;
+    padding: 4px 7px 8px;
+  }
+
+  .lobby-table tr {
+    gap: 8px;
+    padding: 11px 11px 12px 13px;
+    border: 1px solid #29435f;
+    border-bottom-color: #02060b;
+    border-left-width: 4px;
+    border-radius: 10px;
+    background: #0d1928;
+    box-shadow:
+      0 5px 0 #02050a,
+      0 11px 22px rgba(0, 0, 0, 0.48),
+      inset 0 1px 0 rgba(184, 223, 255, 0.11),
+      inset 0 -2px 0 #07101b;
+  }
+
+  .lobby-table tr[data-kind='mtt']:not(.is-featured) {
+    padding-top: 11px;
+    padding-bottom: 12px;
+  }
+
+  .lobby-table td.lt-col-name {
+    min-height: 0;
+    padding: 0 92px 8px 0;
+    border-bottom: 1px solid #20354c;
+  }
+
+  .lobby-table tr[data-kind='mtt'] td.lt-col-name {
+    padding-right: 0;
+  }
+
+  .lt-name__line1,
+  .lt-name:not(.lt-name--mtt) {
+    color: #f5f8fc;
+    font-size: 0.9rem;
+    font-weight: 850;
+    letter-spacing: 0.005em;
+    line-height: 1.18;
+  }
+
+  .lt-name__table {
+    margin-top: 3px;
+    color: #aeb9ca;
+    font-size: 0.68rem;
+    font-weight: 650;
+    line-height: 1.2;
+  }
+
+  .lt-name__meta {
+    margin-top: 3px;
+    color: #8ca0ba;
+    font-size: 0.62rem;
+    line-height: 1.2;
+  }
+
+  .lobby-table td.lt-col-status {
+    top: 10px;
+    right: 10px;
+  }
+
+  .lt-status {
+    max-width: 88px;
+    padding: 4px 7px;
+    border: 1px solid currentColor;
+    border-bottom-color: #02060b;
+    border-radius: 7px;
+    background: #102235;
+    font-size: 0.59rem;
+    letter-spacing: 0.015em;
+    box-shadow:
+      0 3px 0 #02050a,
+      inset 0 1px 0 rgba(255, 255, 255, 0.13);
+  }
+
+  .lobby-table td.lt-col-kind,
+  .lobby-table td.lt-col-variant {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+  }
+
+  .lt-kind,
+  .lt-variant {
+    min-height: 29px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 7px;
+    border-color: #3c5e8a;
+    border-bottom-color: #02060b;
+    border-radius: 6px;
+    background: #1b3154;
+    color: #d7e7ff;
+    box-shadow:
+      0 3px 0 #02050a,
+      inset 0 1px 0 rgba(255, 255, 255, 0.13);
+  }
+
+  .lobby-table td.lt-col-num,
+  .lobby-table td.lt-col-players,
+  .lobby-table td.lt-col-starts,
+  .lobby-table td.lt-col-payout,
+  .lobby-table td.lt-col-leveltime,
+  .lobby-table td.lt-col-format,
+  .lobby-table td.lt-col-tstack,
+  .lobby-table td.lt-col-tlevel {
+    flex: 1 1 82px;
+    min-width: 72px;
+    min-height: 47px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 5px 7px 6px;
+    border: 1px solid #1d334b;
+    border-bottom-color: #02050a;
+    border-radius: 7px;
+    background: #07111d;
+    box-shadow:
+      0 3px 0 #02050a,
+      inset 0 2px 3px rgba(0, 0, 0, 0.55),
+      inset 0 1px 0 rgba(122, 180, 235, 0.06);
+  }
+
+  .lobby-table td.lt-col-num::before,
+  .lobby-table td.lt-col-players::before,
+  .lobby-table td.lt-col-starts::before,
+  .lobby-table td.lt-col-payout::before,
+  .lobby-table td.lt-col-leveltime::before,
+  .lobby-table td.lt-col-format::before,
+  .lobby-table td.lt-col-tstack::before,
+  .lobby-table td.lt-col-tlevel::before {
+    margin-bottom: 2px;
+    color: #7f91a9;
+    font-size: 0.52rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    line-height: 1.1;
+  }
+
+  .lobby-table td.lt-col-num .lt-mono,
+  .lobby-table td.lt-col-starts .lt-dim,
+  .lobby-table td.lt-col-players .lt-seats__num,
+  .lobby-table td.lt-col-payout .lt-payout__x,
+  .lobby-table td.lt-col-format .lt-format,
+  .lobby-table td.lt-col-tstack .lt-mono,
+  .lobby-table td.lt-col-tlevel .lt-tlevel__n {
+    color: #edf5ff;
+    font-size: 0.79rem;
+    font-weight: 820;
+    line-height: 1.1;
+  }
+
+  .lobby-table td.lt-col-actions {
+    margin-top: 4px;
+    padding-top: 9px;
+    border-top: 1px solid #20354c;
+  }
+
+  .lt-actions {
+    gap: 9px;
+  }
+
+  .lt-act {
+    min-height: 44px;
+    border-radius: 7px;
+    font-size: 0.76rem;
+  }
+
+  .lt-act--primary {
+    border-color: #84d4ff;
+    border-bottom-color: #05233b;
+    background: #2b9fdf;
+    box-shadow:
+      0 4px 0 #05233b,
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),
+      inset 0 -2px 0 #1675ad;
+  }
+
+  .lt-act--ghost {
+    border-color: #49688f;
+    border-bottom-color: #02050a;
+    background: #1b2a40;
+    box-shadow:
+      0 4px 0 #02050a,
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      inset 0 -2px 0 #0d1624;
+  }
+}

@@ -39,6 +39,7 @@ import CardImage, { CardBack } from '../table/CardImage';
 import { cardKey } from '../../utils/handEvaluator';
 import type { ReplayModel, ReplayRow, ReplayShowdownRow } from '../../utils/handReplay';
 import './HandDetailView.css';
+import { blindLabel, money, stamp } from '../../utils/handFormat';
 
 export interface HandDetailViewProps {
   model: ReplayModel;
@@ -55,29 +56,6 @@ export interface HandDetailViewProps {
    * for this from the start and had no writer.
    */
   badBeatUserId?: string | null;
-}
-
-function money(n: number | null | undefined, dp = 2): string {
-  return Number(n || 0).toLocaleString('en-US', {
-    minimumFractionDigits: dp,
-    maximumFractionDigits: dp,
-  });
-}
-
-/** Stakes print as typed: 0.05/0.1, not 0.05/0.10. */
-function blindLabel(n: number): string {
-  return (Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
-}
-
-function stamp(iso: string | null): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-  );
 }
 
 /** How many face-down cards a muck shows — the variant's own holding size. */
@@ -282,8 +260,11 @@ export function HandDetailView({
             <span>Pot</span>
             {street.isFinal ? (
               <span>
+                {/* Keyed by index, not by label: two Side pots without an
+                    index suffix share a label, and a duplicate React key drops
+                    one of them from the line that states the pot breakdown. */}
                 {model.pots.map((p, i) => (
-                  <span key={p.label}>
+                  <span key={`${i}-${p.label}`}>
                     {i > 0 ? '  ' : ''}
                     {p.label}({money(p.amount)})
                   </span>

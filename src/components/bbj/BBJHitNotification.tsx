@@ -32,6 +32,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { prefersReducedMotion } from '../../utils/animationSpeed';
 import './BBJHitNotification.css';
+import { money } from '../../utils/handFormat';
 
 /** How long the card sits on screen before it leaves. Dan: three seconds. */
 export const BBJ_NOTIFICATION_MS = 3000;
@@ -103,10 +104,12 @@ export function BBJHitNotification({
      vanish half-flight. */
   const [reduced] = useState(() => prefersReducedMotion());
 
-  const money = amount.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  /* `amount` is TYPED number but SOURCED from a realtime payload
+     (TablePage's bbjHitNotice). A null or undefined there threw a TypeError
+     inside render and took the whole table page down - at the single moment a
+     crash is least acceptable, the one where a player has just been paid.
+     `money` is the NaN-safe formatter every other BBJ surface already uses. */
+  const amountText = money(amount);
 
   return (
     <div
@@ -143,7 +146,7 @@ export function BBJHitNotification({
         disabled={!onObserve}
       >
         <span className="bbj-hit__title">Bad Beat Jackpot</span>
-        <span className="bbj-hit__amount">${money}</span>
+        <span className="bbj-hit__amount">${amountText}</span>
         <span className="bbj-hit__who">{winnerName}</span>
         <span className="bbj-hit__where">
           {tableName}

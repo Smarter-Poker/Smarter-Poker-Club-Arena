@@ -216,3 +216,19 @@
   color: #f0b90b;
   font-variant-numeric: tabular-nums;
 }
+
+/* THE ONE ROW A PLAYER LOOKS FOR IN THIS BOX IS THEIR OWN.
+   `hdv__bbjp-name` carried `is-you` from the start and no stylesheet ever
+   defined the pair, so the highlight that BBJHandDetail threads
+   currentUserId/currentUserName all the way down to compute rendered with zero
+   visual difference. Same green as the winners list uses for `is-you`, so the
+   two surfaces agree on what "this is you" looks like. */
+.hdv__bbjp-name.is-you {
+  color: #34c759;
+  font-weight: 800;
+}
+
+.hdv__bbjp-row:has(.hdv__bbjp-name.is-you) {
+  background: rgba(52, 199, 89, 0.08);
+  border-radius: 6px;
+}

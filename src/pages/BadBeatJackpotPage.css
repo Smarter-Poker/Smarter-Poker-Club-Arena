@@ -377,3 +377,17 @@
   outline: 2px solid #f0b90b;
   outline-offset: 2px;
 }
+
+/* The page's loading wrapper was styled by whichever OTHER page's stylesheet
+   happened to be in the bundle: `.loading-state` is defined in 21 unrelated
+   page CSS files and in none of this page's own. Under Vite's per-chunk CSS
+   splitting that resolves only by luck, which is the exact failure this repo
+   has already hit once (see the note in BBJHandDetail.css). */
+.bbj-page .loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: 24px 16px;
+}

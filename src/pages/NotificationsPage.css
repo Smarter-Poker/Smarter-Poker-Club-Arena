@@ -1,10 +1,16 @@
 /**
- * NOTIFICATIONS PAGE — embed shell styles
+ * NOTIFICATIONS PAGE — Club Arena native list
  * ═══════════════════════════════════════════════════════════════════════
- * This file used to carry ~500 lines dressing Club Arena's own copy of the
- * notification list. That copy is gone (see NotificationsPage.tsx): the page
- * now embeds the canonical display at /hub/notifications so there is exactly
- * one notifications UI. All that is left is the shell around the frame.
+ * Dan, 2026-08-27: "NOTIFICATIONS PAGE SHOULD NOT TAKE SO LONG TO LOAD, IT
+ * SHOULD INSTANTLY OPEN AND DISPLAY WHEN CLICKED LIKE IT DOES ON ANY OTHER
+ * PLATFORM... AND IT NEEDS TO BE RAISED UP TO THE TOP TO BE ATTACHED TO THE
+ * GLOBAL HEADER."
+ *
+ * Both halves of that were the same root cause: this route used to mount an
+ * <iframe> onto the World Hub's Next.js page. See NotificationsPage.tsx for
+ * why that is gone. What is left here is a plain list, and the layout rule
+ * that makes it sit flush under the global header instead of below a band of
+ * dead space (AppLayout.module.css .mainFlush).
  *
  * The keyframes below MUST live here rather than in an inline <style>.
  * tests/unit/inlineAnimationsResolve.test.ts enforces that an animation named
@@ -15,50 +21,327 @@
  * out at opacity: 0, waiting on an animation that no longer existed.
  */
 
-.ca-notif-embed {
-  position: relative;
+.ca-notif {
+  /* Facebook-family palette, matching the hub display this replaced so the
+     two surfaces still read as one product. */
+  --notif-bg: #f0f2f5;
+  --notif-card: #ffffff;
+  --notif-text: #050505;
+  --notif-text-sec: #65676b;
+  --notif-border: #dadde1;
+  --notif-blue: #1877f2;
+  --notif-red: #e4405f;
+
   width: 100%;
-  /* Fill everything under the Club Arena header. dvh so the iOS address bar
-     collapsing does not leave a dead strip at the bottom. */
-  height: calc(100dvh - 56px);
-  background: #f0f2f5;
-  overflow: hidden;
+  /* Fills whatever the shell gives it. AppLayout's .mainFlush is a flex
+     column, so this grows to the bottom of the viewport without this file
+     needing to know the global header's height — which differs per breakpoint
+     and also carries env(safe-area-inset-top) on a notched phone. Hardcoding
+     a header height here is how the old embed ended up with a dead strip. */
+  flex: 1;
+  background: var(--notif-bg);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+  color: var(--notif-text);
 }
 
-.ca-notif-embed__frame {
-  width: 100%;
-  height: 100%;
+/* ── Title bar ───────────────────────────────────────────────────────── */
+
+.ca-notif__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--notif-card);
+  border-bottom: 1px solid var(--notif-border);
+  /* Deliberately NOT sticky. GlobalHeader is itself sticky at top: 0 with
+     z-index 130, so a second sticky bar at top: 0 pins underneath it and is
+     covered. Sticking it below the header would mean hardcoding a header
+     height that changes with breakpoint and safe-area inset. It scrolls with
+     the list, which is what the World Hub page does too. */
+}
+
+.ca-notif__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--notif-text);
+}
+
+.ca-notif__count {
+  background: var(--notif-red);
+  color: #fff;
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.ca-notif__markall {
+  background: none;
   border: none;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--notif-blue);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.ca-notif__markall:hover {
+  background: rgba(24, 119, 242, 0.1);
+}
+
+/* ── List ────────────────────────────────────────────────────────────── */
+
+.ca-notif__list {
+  max-width: 680px;
+  margin: 0 auto;
+  padding-bottom: 24px;
+}
+
+.ca-notif__row {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--notif-border);
+  transition:
+    opacity 0.3s ease,
+    max-height 0.3s ease;
+  max-height: 800px;
+}
+
+.ca-notif__row--deleting {
+  opacity: 0;
+  max-height: 0;
+}
+
+.ca-notif__tap {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 16px;
+  background: var(--notif-card);
+  border: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: background 0.2s ease;
+}
+
+.ca-notif__row--unread .ca-notif__tap {
+  background: rgba(24, 119, 242, 0.08);
+}
+
+.ca-notif__tap--clickable {
+  cursor: pointer;
+}
+
+.ca-notif__tap--clickable:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.ca-notif__row--unread .ca-notif__tap--clickable:hover {
+  background: rgba(24, 119, 242, 0.14);
+}
+
+/* ── Avatar + category badge ─────────────────────────────────────────── */
+
+.ca-notif__avatarWrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.ca-notif__avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #ddd;
+  background: #e4e6eb;
   display: block;
 }
 
-.ca-notif-embed__loader {
+.ca-notif__badge {
   position: absolute;
-  inset: 0;
+  bottom: -2px;
+  right: -2px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f0f2f5;
+  color: #fff;
 }
 
-.ca-notif-embed__spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid rgba(24, 119, 242, 0.2);
-  border-top-color: #1877f2;
+/* ── Body ────────────────────────────────────────────────────────────── */
+
+.ca-notif__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.ca-notif__text {
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--notif-text);
+  overflow-wrap: anywhere;
+}
+
+.ca-notif__actor {
+  font-weight: 700;
+}
+
+.ca-notif__time {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--notif-text-sec);
+  font-weight: 400;
+}
+
+.ca-notif__row--unread .ca-notif__time {
+  color: var(--notif-blue);
+  font-weight: 600;
+}
+
+/* ── Trailing controls ───────────────────────────────────────────────── */
+
+.ca-notif__aside {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.ca-notif__dot {
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  animation: ca-notif-spin 0.8s linear infinite;
+  background: var(--notif-blue);
 }
 
-@keyframes ca-notif-spin {
-  to {
-    transform: rotate(360deg);
+.ca-notif__delete {
+  display: flex;
+  padding: 4px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--notif-text-sec);
+  cursor: pointer;
+  opacity: 0.4;
+  transition: opacity 0.2s ease;
+}
+
+.ca-notif__delete:hover,
+.ca-notif__delete:focus-visible {
+  opacity: 1;
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────── */
+
+.ca-notif__empty {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--notif-text-sec);
+}
+
+.ca-notif__empty h3 {
+  margin: 12px 0 4px;
+  font-size: 18px;
+  color: var(--notif-text);
+}
+
+.ca-notif__empty p {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* ── Skeleton ────────────────────────────────────────────────────────── *
+ * Only ever seen on a genuinely cold first visit. Once the feed has been
+ * read once, the cache paints real rows on the first frame instead. */
+
+.ca-notif__skelRow {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background: var(--notif-card);
+  border-bottom: 1px solid var(--notif-border);
+}
+
+.ca-notif__skelAvatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #e4e6eb;
+  flex-shrink: 0;
+  animation: ca-notif-shimmer 1.5s ease-in-out infinite;
+}
+
+.ca-notif__skelLines {
+  flex: 1;
+  padding-top: 8px;
+}
+
+.ca-notif__skelLine {
+  height: 14px;
+  border-radius: 7px;
+  background: #e4e6eb;
+  margin-bottom: 8px;
+  animation: ca-notif-shimmer 1.5s ease-in-out infinite;
+}
+
+.ca-notif__skelLine--short {
+  width: 40%;
+  height: 10px;
+  margin-bottom: 0;
+}
+
+.ca-notif__skelLine--long {
+  width: 70%;
+}
+
+@keyframes ca-notif-shimmer {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
   }
 }
 
-/* Respect the OS setting rather than spinning forever in someone's face. */
 @media (prefers-reduced-motion: reduce) {
-  .ca-notif-embed__spinner {
-    animation-duration: 2.4s;
+  .ca-notif__skelAvatar,
+  .ca-notif__skelLine {
+    animation: none;
+  }
+}
+
+/* ── Mobile ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 600px) {
+  .ca-notif__bar {
+    padding: 10px 12px;
+  }
+
+  .ca-notif__list {
+    max-width: 100%;
+  }
+
+  .ca-notif__tap {
+    padding: 12px;
+  }
+
+  .ca-notif__avatar {
+    width: 48px;
+    height: 48px;
   }
 }

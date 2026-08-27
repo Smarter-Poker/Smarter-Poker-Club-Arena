@@ -61,7 +61,11 @@ describe('horses take seats, not just places on a list', () => {
     expect(topUp).toMatch(/isSeatFirstFormat\(/);
     expect(topUp).toMatch(/fn_seat_horse_in_seat_first_game/);
     // registerHorses is still correct for an MTT, so it must remain reachable.
-    expect(topUp).toMatch(/registerHorses\(tournamentId, shortfall\)/);
+    // 2026-08-27: a third argument was added (the freeroll all-lanes
+    // override). The property here is REACHABILITY of the registration path
+    // with the computed shortfall, not the arity, so the trailing arguments
+    // are left open. The two leading arguments stay pinned.
+    expect(topUp).toMatch(/registerHorses\(tournamentId, shortfall[),]/);
   });
 
   it('never takes a horse out of a game it is already in', () => {
@@ -93,7 +97,14 @@ describe('horses take seats, not just places on a list', () => {
      * past-start short tournament, and this database had already been
      * saturated once that day. Batching is not a micro-optimisation here.
      */
-    expect(recurring).toMatch(/private async pickFreeHorses\(count: number\): Promise<string\[\]>/);
+    // 2026-08-27: an optional second argument was added (the freeroll
+    // all-lanes override, defaulted so every existing caller is unchanged).
+    // The property under test is the PLURAL, count-taking, batched shape -
+    // one call answering with many horses - so the first parameter and the
+    // string[] return stay pinned and the optional tail is left open.
+    expect(recurring).toMatch(
+      /private async pickFreeHorses\(count: number[,)][^)]*\)?: Promise<string\[\]>/
+    );
     // The singular form must be gone, or a caller can quietly reintroduce the
     // per-horse shape.
     expect(recurring).not.toMatch(/pickFreeHorse\(\)/);

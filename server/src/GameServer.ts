@@ -181,6 +181,8 @@ export class GameServer {
   private seatFirstFullSince: Map<string, number> = new Map();
   /** Last fn_sweep_unsettled_tournament_rake pass (2026-08-26 settlement integrity). */
   private lastRakeSweepAt = 0;
+  /** Last fn_tournament_money_conservation pass (2026-08-27 phase 3). */
+  private lastConservationAt = 0;
   private running: boolean = false;
   private startTime: number = Date.now();
 
@@ -2669,6 +2671,61 @@ export class GameServer {
             }
           } catch (sweepEx) {
             reportError(sweepEx, 'GameServer.rake_sweep_threw');
+          }
+        }
+
+        // ── HEADS-UP SHORTFALL BACK-PAY + CONSERVATION SENTINEL (2026-08-27) ──
+        // Back-pay: every completed Heads-Up whose winner was paid one prize
+        // share instead of two (the createSNG pool overwrite, ~230,561 chips
+        // over 30 days) is repaid, evidence-based and idempotent
+        // (fn_credit_and_log key per tournament+winner). Self-draining: paid
+        // events fall out of the scan, and the cutoff date means the backlog
+        // can only shrink. Runs on the same cadence as the rake sweep.
+        if (Date.now() - this.lastRakeSweepAt < 60_000) {
+          try {
+            const { data: bp, error: bpErr } = await supabase.rpc(
+              'fn_backpay_hu_winner_shortfalls',
+              { p_limit: 100 }
+            );
+            if (bpErr) {
+              reportError(
+                new Error(`[GameServer] HU shortfall back-pay failed: ${bpErr.message}`),
+                'GameServer.hu_backpay_failed'
+              );
+            } else if (Number(bp?.paid) > 0) {
+              console.log(
+                `[GameServer] HU shortfall back-pay: ${bp.paid} winner(s), ${bp.chips} chips (scanned ${bp.scanned})`
+              );
+            }
+          } catch (bpEx) {
+            reportError(bpEx, 'GameServer.hu_backpay_threw');
+          }
+        }
+
+        // Conservation: per-event money in vs money out (prizes + bounties +
+        // refunds + booked rake + funded overlay). Every 6 hours; anything
+        // beyond tolerance files a deduped financial_alert. This is the
+        // invariant that would have caught both the minted overlays and the
+        // HU shortfalls on day one.
+        if (Date.now() - this.lastConservationAt > 6 * 60 * 60 * 1000) {
+          this.lastConservationAt = Date.now();
+          try {
+            const { data: cons, error: consErr } = await supabase.rpc(
+              'fn_tournament_money_conservation',
+              { p_since_days: 7, p_tolerance: 1.0, p_limit: 500 }
+            );
+            if (consErr) {
+              reportError(
+                new Error(`[GameServer] conservation sweep failed: ${consErr.message}`),
+                'GameServer.conservation_sweep_failed'
+              );
+            } else if (Number(cons?.flagged) > 0) {
+              console.log(
+                `[GameServer] Conservation sweep: ${cons.flagged} event(s) flagged (retained ${cons.retained_chips}, unfunded ${cons.unfunded_chips})`
+              );
+            }
+          } catch (consEx) {
+            reportError(consEx, 'GameServer.conservation_sweep_threw');
           }
         }
 

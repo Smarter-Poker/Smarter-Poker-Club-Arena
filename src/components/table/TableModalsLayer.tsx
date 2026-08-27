@@ -28,8 +28,7 @@ import type { ThrowEvent } from '../../services/ThrowableService';
 import DiamondWalletModal from '../wallet/DiamondWalletModal';
 import CashierModal from './CashierModal';
 import BuyInModal from './BuyInModal';
-import RabbitHunt from './RabbitHunt';
-import type { RabbitHuntRevealResult } from './RabbitHunt';
+
 import LeaderboardPanel from './LeaderboardPanel';
 import LeaveTableConfirm from './LeaveTableConfirm';
 import { SessionHUD } from './SessionHUD';
@@ -293,19 +292,15 @@ export interface TableModalsLayerProps {
   onConfirmBuyIn: (amount: number, autoRebuy?: boolean) => Promise<void>;
 
   // Rabbit Hunt
-  isRabbitAvailable?: boolean;
   /**
    * Cards a reveal will show, as counted by the SERVER. Replaces the old
    * `currentBoard` prop, which was only ever passed [] — so every reveal
    * claimed five cards regardless of the street the hand actually ended on.
    */
-  rabbitCardsAvailable?: number;
   /** Live diamond price from feature_pricing, delivered with the offer. */
-  rabbitDiamondCost?: number | null;
   // One contract, declared once, in the component that consumes it. This shape
   // was written out inline here AND in TablePage AND in RabbitHunt — three
   // copies of the same object, which is three chances for them to drift.
-  onRabbitReveal?: () => Promise<RabbitHuntRevealResult>;
 
   // Leaderboard
   showLeaderboard: boolean;
@@ -555,10 +550,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     onCloseBuyInModal,
     onConfirmBuyIn,
     // Rabbit Hunt
-    isRabbitAvailable,
-    rabbitCardsAvailable,
-    rabbitDiamondCost,
-    onRabbitReveal,
+
     // Leaderboard
     showLeaderboard,
     leaderboardPlayers,
@@ -1123,16 +1115,6 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         cashoutRestriction={cashoutMinBuyIn > 0 ? cashoutMinBuyIn : undefined}
         onTopUp={onTopUpAccount}
       />
-
-      {/* Rabbit Hunt (post-hand) */}
-      {!isHandInProgress && isRabbitAvailable && (
-        <RabbitHunt
-          isAvailable={isRabbitAvailable}
-          cardsAvailable={rabbitCardsAvailable || 0}
-          rabbitDiamondCost={rabbitDiamondCost}
-          onReveal={onRabbitReveal as any}
-        />
-      )}
 
       {/* Leaderboard Panel */}
       <LeaderboardPanel

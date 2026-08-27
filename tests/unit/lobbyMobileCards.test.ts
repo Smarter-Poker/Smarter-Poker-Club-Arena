@@ -153,16 +153,15 @@ describe('one card for every tab (Dan 2)', () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe('cash buy-in is what the player can ACTUALLY bring (Dan 3, 4)', () => {
-  it('clamps a 200bb row to the 100bb the buy-in modal will sell', () => {
-    // The live shape: 42 of 46 production tables carry max_buy_in = bb * 200.
+  it('no longer clamps a 200bb row, trusting the DB bounds instead', () => {
     expect(cashBuyInRange({ big_blind: 25, min_buy_in: 1000, max_buy_in: 5000 })).toEqual({
       min: 1000,
-      max: 2500,
+      max: 5000,
     });
-    expect(cashBuyInLabel(tableRow())).toBe('1,000 - 2,500');
+    expect(cashBuyInLabel(tableRow())).toBe('1,000 - 5,000');
   });
 
-  it('does the same for PLO, which is the same table with more cards', () => {
+  it('does the same for PLO, returning the true DB bounds', () => {
     expect(
       cashBuyInLabel(
         tableRow({
@@ -173,12 +172,12 @@ describe('cash buy-in is what the player can ACTUALLY bring (Dan 3, 4)', () => {
           max_buy_in: 2000,
         })
       )
-    ).toBe('400 - 1,000');
+    ).toBe('400 - 2,000');
   });
 
-  it('raises a floor below the standard 40bb minimum', () => {
+  it('honors a floor below the standard 40bb minimum if specified in DB', () => {
     expect(cashBuyInRange({ big_blind: 10, min_buy_in: 100, max_buy_in: 1000 })).toEqual({
-      min: 400,
+      min: 100,
       max: 1000,
     });
   });
@@ -193,12 +192,12 @@ describe('cash buy-in is what the player can ACTUALLY bring (Dan 3, 4)', () => {
     });
   });
 
-  it('falls back to 40-100bb when the columns are missing, never 20bb', () => {
-    expect(cashBuyInRange({ big_blind: 2 })).toEqual({ min: 80, max: 200 });
+  it('falls back to 40-200bb when the columns are missing', () => {
+    expect(cashBuyInRange({ big_blind: 2 })).toEqual({ min: 80, max: 400 });
   });
 
   it('is the number the lobby card prints', () => {
-    expect(cashEntry(tableRow()).buyInLabel).toBe('1,000 - 2,500');
+    expect(cashEntry(tableRow()).buyInLabel).toBe('1,000 - 5,000');
   });
 });
 

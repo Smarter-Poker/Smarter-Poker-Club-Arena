@@ -175,12 +175,16 @@ const EXAMPLE_HITS: Array<{
  * So this row no longer uses PlayerAvatar, which draws a circular crop, a VIP
  * ring, a presence dot and the level badge that pill came from. The library art
  * is a free-standing bust with its own transparency — the felt renders it as a
- * bare <img> and so does this, at 76px against the old 48.
+ * bare <img> and so does this, at 96px against the old 48. DOUBLE, which is what
+ * was asked for: it was drawn at 60 for a week, and 60 is not double 48.
  *
- * The number must match the CSS box (.bbj-hits__avatar). It said 96 while the
- * stylesheet drew 76, so every avatar was fetched ~26% larger than displayed.
+ * The number must match the CSS box (.bbj-hits__avatar). It has now been wrong
+ * twice - 96 against a 76px box, then 76 against a 60px box - each time
+ * over-fetching the image AND writing intrinsic width/height attributes that
+ * disagree with what is rendered. tests/unit/bbjAvatarSize.test.ts reads both
+ * files and fails if they part company again.
  */
-const BBJ_AVATAR_PX = 76;
+const BBJ_AVATAR_PX = 96;
 
 /**
  * jsonb arrives parsed, but this renders money - never let a shape surprise
@@ -236,8 +240,19 @@ export function BBJRecentHits({
     if (!poolId) return;
     const channel = supabase
       .channel(`bbj-recent-hits-${poolId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bbj_winners' }, () =>
-        setRevision((r) => r + 1)
+      /* FILTERED. The channel NAME was scoped to the pool and the subscription
+         was not, so every jackpot anywhere on the platform - any club, any
+         union - forced a full refetch of this pool's list. Both sibling
+         surfaces (BBJTicker, BadBeatJackpotPage) already filter on pool_id. */
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'bbj_winners',
+          filter: `pool_id=eq.${poolId}`,
+        },
+        () => setRevision((r) => r + 1)
       )
       .subscribe();
     return () => {
@@ -248,6 +263,18 @@ export function BBJRecentHits({
   useEffect(() => {
     if (!poolId) return;
     let alive = true;
+    /* A NEW POOL IS NOT THE OLD POOL'S ROWS.
+       `hits` was only ever assigned on success, so switching clubs left the
+       previous club's winners and payout figures mounted - and because
+       `hits !== null` the skeleton never showed, so there was no visible moment
+       of loading to suggest they were stale. `failed` had the mirror problem:
+       nothing ever set it back to false, so one transient RPC error stuck the
+       panel on its error message for the life of the component, including
+       through the realtime refetch after a real jackpot landed. */
+    setHits(null);
+    setTotal(null);
+    setFailed(false);
+    setMoreFailed(false);
     (async () => {
       try {
         const { data, error } = await supabase.rpc('fn_bbj_recent_hits', {
@@ -350,7 +377,6 @@ export function BBJRecentHits({
         // Title Cased per the house rule, so "Four of a Kind" reads
         // "Four Of A Kind" the way every other label on this surface does.
         label: titleCase(hit.bad_beat_hand || made?.name || 'Qualifying Hand'),
-        derived: !!made,
       };
     });
   }, [hits]);

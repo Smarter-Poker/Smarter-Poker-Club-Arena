@@ -23,7 +23,7 @@
    five-card hand wants to be. */
 .bbj-hits__row {
   display: grid;
-  grid-template-columns: 60px minmax(0, 1fr) auto;
+  grid-template-columns: 96px minmax(0, 1fr) auto;
   grid-template-areas:
     'avatar who right'
     'avatar hand hand';
@@ -69,14 +69,18 @@
   background: rgba(52, 199, 89, 0.07);
 }
 
-/* Dan 2026-08-27: double size, no circle frame, no background, no level pill —
+/* Dan 2026-08-27: "double the size of the current avatar, and remove the circle
+   frame ... avatars should display here like they do on the table with no
+   background". The avatar was 48px, so double is 96 - it was drawn at 60 from
+   2026-08-27 (PR #1469) until this was caught in the phase-6 audit, which is
+   1.25x, not double. No circle frame, no background, no level pill —
    drawn the way the felt draws it. The library art is a free-standing bust with
    its own transparency, so any crop or ring here is something we are adding,
    not something the artwork needs. `object-fit: contain` keeps the bust whole;
    `cover` on a non-square bust cuts the head off. */
 .bbj-hits__avatar {
-  width: 60px;
-  height: 60px;
+  width: 96px;
+  height: 96px;
   flex-shrink: 0;
   border: 0;
   border-radius: 0;
@@ -242,12 +246,14 @@
 /* Very narrow phones: the card strip drops under the name so nothing clips. */
 @media (max-width: 359px) {
   .bbj-hits__row {
-    grid-template-columns: 48px minmax(0, 1fr) auto;
+    grid-template-columns: 72px minmax(0, 1fr) auto;
   }
 
+  /* Still larger than the 48 this replaced. The old breakpoint shrank it back
+     TO 48, which undid the instruction entirely on the narrowest phones. */
   .bbj-hits__avatar {
-    width: 48px;
-    height: 48px;
+    width: 72px;
+    height: 72px;
   }
 
   .bbj-hits__when {

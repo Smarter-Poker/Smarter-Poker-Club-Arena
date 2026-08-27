@@ -2,8 +2,8 @@
  *  BAD BEAT JACKPOT PAGE — Live Jackpot Updates
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -13,7 +13,6 @@ import './BadBeatJackpotPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import PageSkeleton from '../components/common/PageSkeleton';
-import { formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import BBJService from '../services/BBJService';
 import { confirmDialog } from '../components/common/confirmDialog';
@@ -34,18 +33,7 @@ interface JackpotInfo {
   last_hit_amount?: number;
 }
 
-interface JackpotHistory {
-  id: string;
-  awarded_at: string;
-  total_payout: number;
-  winner_hand: string;
-  loser_hand: string;
-  winner_display_name?: string;
-  loser_display_name?: string;
-}
-
 export default function BadBeatJackpotPage() {
-  const navigate = useNavigate();
   useVisibilityRefresh(() => loadJackpotData());
   const { clubId } = useParams();
   const { user } = useAuthUser();
@@ -136,8 +124,31 @@ export default function BadBeatJackpotPage() {
   const prevAmountRef = useRef<number>(0);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /**
+   * THE REALTIME HANDLER MUST CALL THE CURRENT LOADER, NOT THE ONE IT CLOSED OVER.
+   *
+   * `loadJackpotData` is a useCallback over [clubId, user?.id, toast], and the
+   * effect below is keyed on [clubId] alone - deliberately, because adding the
+   * callback would tear down and re-subscribe the realtime channel every time
+   * auth resolved. The cost of that shortcut was a stale closure: on first
+   * mount `user` is null, so the captured loader skips the
+   * `fn_bbj_my_contribution` branch, and the "BAD BEAT JACKPOT HIT!" handler
+   * kept invoking THAT version forever. A player who was paid never saw their
+   * contribution figure appear, no matter how many hands or hits went by.
+   *
+   * A ref updated on every render is the fix that keeps both properties: one
+   * subscription per club, always the newest loader.
+   */
+  const loadRef = useRef<(getIsMounted?: () => boolean) => void>(() => {});
+
   useEffect(() => {
-    if (clubId) {
+    if (!clubId) {
+      // Nothing will ever call the loader, so nothing will ever clear the
+      // initial `loading: true` - the page sat on a skeleton for good.
+      setLoading(false);
+      return;
+    }
+    {
       let isMounted = true;
       loadJackpotData(() => isMounted);
 
@@ -197,10 +208,10 @@ export default function BadBeatJackpotPage() {
               table: 'bbj_winners',
               filter: winnersFilter,
             },
-            (payload) => {
+            () => {
               if (!isMounted) return;
-              toast.success(' BAD BEAT JACKPOT HIT!');
-              loadJackpotData(() => isMounted);
+              toast.success('Bad Beat Jackpot Hit');
+              loadRef.current(() => isMounted);
             }
           )
           .subscribe((status: string, err?: Error) => {
@@ -229,16 +240,34 @@ export default function BadBeatJackpotPage() {
 
   const loadingRef = useRef(false);
 
-  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  /**
+   * RESET PER-CLUB STATE WHEN NAVIGATING BETWEEN CLUBS.
+   *
+   * This cleared three things and left four behind: `jackpot`, `poolFacts`,
+   * `myHands` and `loadFailed`. The load below only assigns `if (jackpotData)`,
+   * so moving from a club WITH a pool to one WITHOUT left the previous club's
+   * main/backup/promo balances and hand counts on screen, presented as this
+   * club's - and the honest "No Jackpot Pool For This Club Yet" branch could
+   * never be reached. Showing one club's money under another club's name is
+   * the worst failure this page has.
+   */
   useEffect(() => {
     setJustUpdated(false);
     setPlayerContribution(0);
+    setJackpot(null);
+    setPoolFacts(null);
+    setMyHands(0);
+    setLoadFailed(false);
+    prevAmountRef.current = 0;
     loadingRef.current = false;
   }, [clubId]);
 
   const loadJackpotData = useCallback(
     async (getIsMounted?: () => boolean) => {
-      if (!clubId) return;
+      if (!clubId) {
+        setLoading(false);
+        return;
+      }
       if (loadingRef.current) return;
       loadingRef.current = true;
       if (!getIsMounted || getIsMounted()) setLoading(true);
@@ -336,6 +365,9 @@ export default function BadBeatJackpotPage() {
     // itself changed. `toast` is captured for the same reason.
     [clubId, user?.id, toast]
   );
+
+  // Keep the realtime handler pointed at the newest loader. See loadRef above.
+  loadRef.current = loadJackpotData;
 
   // Bus listener: reload jackpot data when a hand completes (BBJ contribution may have been added)
   useEffect(() => {

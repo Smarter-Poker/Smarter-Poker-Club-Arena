@@ -260,8 +260,11 @@ export function HandDetailView({
             <span>Pot</span>
             {street.isFinal ? (
               <span>
+                {/* Keyed by index, not by label: two Side pots without an
+                    index suffix share a label, and a duplicate React key drops
+                    one of them from the line that states the pot breakdown. */}
                 {model.pots.map((p, i) => (
-                  <span key={p.label}>
+                  <span key={`${i}-${p.label}`}>
                     {i > 0 ? '  ' : ''}
                     {p.label}({money(p.amount)})
                   </span>

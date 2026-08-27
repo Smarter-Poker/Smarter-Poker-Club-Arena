@@ -1041,6 +1041,29 @@
   font-weight: 700;
 }
 
+/* Dan 2026-08-26 mobile pass, item 5: the hand number can NEVER be cut off.
+   Line 2 is a flex row: the game label is the flexible part that ellipsizes,
+   the hand-number span refuses to shrink. */
+.table-brand__line--level {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 3px;
+  max-width: 100%;
+}
+
+.table-brand__game {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-brand__hand {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .table-brand__clock {
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
   font-variant-numeric: tabular-nums;
@@ -1219,18 +1242,22 @@
   gap: 3px;
   width: 100%;
 }
+/* Dan 2026-08-26 mobile pass, item 4: "remove the weird extra boxes above and
+   below the flop." The boxes were THIS strip's chrome — a full-board-width
+   bordered slab per run, one above each run's cards, so a two-run hand framed
+   the flop with an empty-looking box on both sides. The row keeps its layout
+   job (badge left, winner centre, equity right) but paints nothing itself;
+   the RUN badge below still has its own small gold pill, which is all the
+   labelling the reference shows. */
 .community-area__run-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 6px;
   width: 100%;
-  padding: 2px 8px;
-  background: rgba(10, 14, 22, 0.88);
-  border: 1px solid rgba(255, 215, 0, 0.35);
-  border-radius: 6px;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  padding: 0 4px;
+  background: none;
+  border: none;
   box-sizing: border-box;
 }
 .community-area__run-badge {
@@ -2303,6 +2330,56 @@
   transition: background-color 0.4s ease;
   animation: equityPop calc(0.45s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.3, 1.4);
 }
+/* Dan 2026-08-26 mobile pass, item 13: the badge may never block a revealed
+   hand. Villain cards fan OUTBOARD (tableSeatGeometry.seatCardSide), so the
+   badge docks on the seat's INBOARD side — vertically centred on the seat,
+   fully off the card fan's airspace. The hero seat keeps the below-seat
+   position (its cards render in the corner panel, not at the seat). */
+.equity-overlay--inboard-right {
+  bottom: auto;
+  top: 50%;
+  left: calc(100% + 6px);
+  transform: translateY(-50%);
+  font-size: 18px;
+}
+
+.equity-overlay--inboard-left {
+  bottom: auto;
+  top: 50%;
+  left: auto;
+  right: calc(100% + 6px);
+  transform: translateY(-50%);
+  font-size: 18px;
+}
+
+.equity-overlay--inboard-right .equity-overlay__track,
+.equity-overlay--inboard-left .equity-overlay__track {
+  width: 64px;
+}
+
+/* The pop keyframes bake in the below-seat translateX(-50%); the side-docked
+   badges need their own translateY variant or the animation would yank them
+   back under the seat for its first half-second. */
+.equity-overlay--inboard-right,
+.equity-overlay--inboard-left {
+  animation-name: equityPopSide;
+}
+
+@keyframes equityPopSide {
+  0% {
+    transform: translateY(-50%) scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(-50%) scale(1.18);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-50%) scale(1);
+    opacity: 1;
+  }
+}
+
 .equity-overlay--ahead {
   background-color: rgba(46, 204, 113, 0.95);
   box-shadow: 0 0 16px rgba(46, 204, 113, 0.6);
@@ -2961,6 +3038,28 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
+}
+
+/* Dan 2026-08-26 mobile pass, item 6: the bottom-left corner is a ROW now —
+   previous-hand box at the anchor, time-bank tile BESIDE it (only rendered
+   while the action is on the hero). `order` keeps the previous-hand box
+   leftmost regardless of DOM order, so the time-bank tile — and the Rabbit
+   Hunt button that takes its place after the hand (see RabbitHunt.css) —
+   occupy the slot to its right. */
+.hud-bl-row {
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.hud-bl-row .prev-hand-card-wrapper,
+.hud-bl-row .prev-hand-card {
+  order: 0;
+}
+
+.hud-bl-row .tbc-widget,
+.hud-bl-row .rabbit-hunt {
+  order: 1;
 }
 
 .add-chips-icon-btn {

@@ -49,6 +49,23 @@ import type { SeatPlayer } from '../components/table/SeatSlot';
      top cap diagonals  8.5 -> 6     (9-max seats 5/6, 7-max, 5-max, 3-max)
      top centre         6   -> 5     (2/4/6/8-max)
 
+   ── Dan 2026-08-26 mobile pass, item 3 — SIDE SEATS OFF THE FELT ────────────
+   "All avatars on the sides need to be moved over off the tables on both
+   sides and closer to the edge of the screens. They are creeping onto the
+   table too far." The side rails moved from x 10.5/89.5 to x 8/92 — every
+   ring, both sides. The felt window starts at x 13.3, so at 8 the seat CENTRE
+   is clearly on the painted rail and the avatar art hangs toward the screen
+   edge rather than over the felt. Chips and the dealer button are computed
+   from the seat position and clamped INTO the felt by tableGeometry.ts, so
+   they follow correctly without a second edit.
+
+   The BOTTOM CAPS (y 82.5) deliberately stay at 10.5/89.5: pushing them to
+   8/92 drove their dealer-button projection so deep inboard that the puck
+   measured nearer the seat ABOVE than its own seat — the exact "whose button
+   is that" failure tests/table-geometry-chips.test.ts pins. The corners sit
+   against the rail's curve, so they were never the seats creeping onto the
+   felt anyway.
+
    That is the highest either can go while the bust art — drawn rising from the
    character's feet, so it overhangs the avatar slot upward — stays inside the
    table canvas. The remaining headroom was bought by dropping the top row's
@@ -57,11 +74,11 @@ import type { SeatPlayer } from '../components/table/SeatSlot';
    tests/e2e/top-rail-seat.spec.ts measures exactly this and is the guard. */
 export const SEAT_POSITIONS_6MAX = [
   { x: 50, y: 100 }, // Seat 1 (Hero, bottom-centre; ring position only - the rail drop is CSS, see above)
-  { x: 10.5, y: 66 }, // Seat 2 (lower-left, on rail side)
-  { x: 10.5, y: 33 }, // Seat 3 (upper-left, on rail side)
+  { x: 8, y: 66 }, // Seat 2 (lower-left, on rail side)
+  { x: 8, y: 33 }, // Seat 3 (upper-left, on rail side)
   { x: 50, y: 5 }, // Seat 4 (top-center; box rests ON the rail band - compact seat)
-  { x: 89.5, y: 33 }, // Seat 5 (upper-right, on rail side)
-  { x: 89.5, y: 66 }, // Seat 6 (lower-right, on rail side)
+  { x: 92, y: 33 }, // Seat 5 (upper-right, on rail side)
+  { x: 92, y: 66 }, // Seat 6 (lower-right, on rail side)
 ];
 
 /* ── Dan 2026-08-25 round 2, item 10 — THE SEAT UNDER THE TOP CAP SAT TOO LOW ──
@@ -94,12 +111,12 @@ export const SEAT_POSITIONS_6MAX = [
 export const SEAT_POSITIONS_9MAX = [
   { x: 50, y: 100 }, // Seat 1 (Hero, bottom-centre; ring position only - the rail drop is CSS, see above)
   { x: 10.5, y: 82.5 }, // Seat 2 (lower-left, bottom cap)
-  { x: 10.5, y: 58 }, // Seat 3 (left-low, on rail side)
-  { x: 10.5, y: 30 }, // Seat 4 (left-high, on rail side; 36 -> 30, see the note above)
+  { x: 8, y: 58 }, // Seat 3 (left-low, on rail side)
+  { x: 8, y: 30 }, // Seat 4 (left-high, on rail side; 36 -> 30, see the note above)
   { x: 27, y: 6 }, // Seat 5 (top-left, top cap - plate on the rail)
   { x: 73, y: 6 }, // Seat 6 (top-right, top cap - plate on the rail)
-  { x: 89.5, y: 30 }, // Seat 7 (right-high, on rail side; 36 -> 30, see the note above)
-  { x: 89.5, y: 58 }, // Seat 8 (right-low, on rail side)
+  { x: 92, y: 30 }, // Seat 7 (right-high, on rail side; 36 -> 30, see the note above)
+  { x: 92, y: 58 }, // Seat 8 (right-low, on rail side)
   { x: 89.5, y: 82.5 }, // Seat 9 (lower-right, bottom cap)
 ];
 
@@ -136,26 +153,26 @@ export const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
   ],
   4: [
     { x: 50, y: 100 }, // Hero (ring position; the rail drop is CSS - see the note above)
-    { x: 10.5, y: 45 }, // left-middle
+    { x: 8, y: 45 }, // left-middle
     { x: 50, y: 5 }, // top-center, box on the rail
-    { x: 89.5, y: 45 }, // right-middle
+    { x: 92, y: 45 }, // right-middle
   ],
   5: [
     { x: 50, y: 100 }, // Hero (ring position; the rail drop is CSS - see the note above)
-    { x: 10.5, y: 55 }, // left-low
+    { x: 8, y: 55 }, // left-low
     { x: 20.5, y: 6 }, // upper-left diagonal
     { x: 79.5, y: 6 }, // upper-right diagonal
-    { x: 89.5, y: 55 }, // right-low
+    { x: 92, y: 55 }, // right-low
   ],
   6: SEAT_POSITIONS_6MAX,
   7: [
     { x: 50, y: 100 }, // Hero (ring position; the rail drop is CSS - see the note above)
-    { x: 10.5, y: 62 }, // left-low
-    { x: 10.5, y: 33 }, // left-high
+    { x: 8, y: 62 }, // left-low
+    { x: 8, y: 33 }, // left-high
     { x: 27, y: 6 }, // top-left diagonal
     { x: 73, y: 6 }, // top-right diagonal
-    { x: 89.5, y: 33 }, // right-high
-    { x: 89.5, y: 62 }, // right-low
+    { x: 92, y: 33 }, // right-high
+    { x: 92, y: 62 }, // right-low
   ],
   /* 8-max carried the SAME crowding as 9-max (see SEAT_POSITIONS_9MAX): the
      left/right-high pair sat at 28 with a 240px gap below them and a 331px hole
@@ -171,11 +188,11 @@ export const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
   8: [
     { x: 50, y: 100 }, // Hero (ring position; the rail drop is CSS - see the note above)
     { x: 10.5, y: 82.5 }, // lower-left bottom cap
-    { x: 10.5, y: 52 }, // left-low
-    { x: 10.5, y: 23 }, // left-high (28 -> 23, see the note above)
+    { x: 8, y: 52 }, // left-low
+    { x: 8, y: 23 }, // left-high (28 -> 23, see the note above)
     { x: 50, y: 5 }, // top-center, box on the rail
-    { x: 89.5, y: 23 }, // right-high (28 -> 23, see the note above)
-    { x: 89.5, y: 52 }, // right-low
+    { x: 92, y: 23 }, // right-high (28 -> 23, see the note above)
+    { x: 92, y: 52 }, // right-low
     { x: 89.5, y: 82.5 }, // lower-right bottom cap
   ],
   9: SEAT_POSITIONS_9MAX,

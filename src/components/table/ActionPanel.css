@@ -404,13 +404,17 @@
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
+/* ─── Dan 2026-08-26 mobile pass, item 8 ─────────────────────
+   "Bet boxes should be different colors: FOLD = RED, CHECK = BLUE and
+   BET = GREEN (not all blue)." Call shares the middle slot with Check and
+   stays blue; Raise/Bet and All-In are the committing actions and go green. */
+
 /* ─── FOLD (Red) ──────────────────────────────────────────── */
-/* ─── FOLD ─────────────────────────────────────────────────── */
 .action-panel .action-btn--fold {
-  background: linear-gradient(180deg, #1587f8 0%, #0078ff 40%, #003a9e 100%);
+  background: linear-gradient(180deg, #f0524d 0%, #dc2626 40%, #7f1212 100%);
   box-shadow:
-    0 4px 0 #002070,
-    0 6px 20px rgba(21, 135, 248, 0.35),
+    0 4px 0 #4c0a0a,
+    0 6px 20px rgba(220, 38, 38, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.2),
     inset 0 -2px 0 rgba(0, 0, 0, 0.2);
 }
@@ -418,8 +422,8 @@
 .action-panel .action-btn--fold:hover:not(:disabled) {
   filter: brightness(1.15);
   box-shadow:
-    0 3px 0 #002070,
-    0 8px 32px rgba(21, 135, 248, 0.55),
+    0 3px 0 #4c0a0a,
+    0 8px 32px rgba(220, 38, 38, 0.55),
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
   transform: translateY(-1px);
 }
@@ -462,12 +466,12 @@
   transform: translateY(-1px);
 }
 
-/* ─── RAISE ────────────────────────────────────────────────── */
+/* ─── RAISE / BET (Green — item 8) ─────────────────────────── */
 .action-panel .action-btn--raise {
-  background: linear-gradient(180deg, #1587f8 0%, #0078ff 40%, #003a9e 100%);
+  background: linear-gradient(180deg, #34d374 0%, #16a34a 40%, #0b5426 100%);
   box-shadow:
-    0 4px 0 #002070,
-    0 6px 20px rgba(21, 135, 248, 0.35),
+    0 4px 0 #063317,
+    0 6px 20px rgba(22, 163, 74, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.2),
     inset 0 -2px 0 rgba(0, 0, 0, 0.2);
 }
@@ -475,8 +479,8 @@
 .action-panel .action-btn--raise:hover:not(:disabled) {
   filter: brightness(1.15);
   box-shadow:
-    0 3px 0 #002070,
-    0 8px 32px rgba(21, 135, 248, 0.55),
+    0 3px 0 #063317,
+    0 8px 32px rgba(22, 163, 74, 0.55),
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
   transform: translateY(-1px);
 }
@@ -490,16 +494,16 @@
   transform: translateY(2px);
   box-shadow:
     0 0 0 2px rgba(255, 255, 255, 0.5),
-    0 2px 0 #002070,
-    0 4px 16px rgba(21, 135, 248, 0.5);
+    0 2px 0 #063317,
+    0 4px 16px rgba(22, 163, 74, 0.5);
 }
 
-/* ─── ALL-IN — The big play ────────────────────────────────── */
+/* ─── ALL-IN — The big play (green family with the bet — item 8) ── */
 .action-panel .action-btn--allin {
-  background: linear-gradient(180deg, #1587f8 0%, #0078ff 40%, #003a9e 100%);
+  background: linear-gradient(180deg, #34d374 0%, #16a34a 40%, #0b5426 100%);
   box-shadow:
-    0 4px 0 #002070,
-    0 6px 20px rgba(21, 135, 248, 0.4),
+    0 4px 0 #063317,
+    0 6px 20px rgba(22, 163, 74, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.2),
     inset 0 -2px 0 rgba(0, 0, 0, 0.2);
   animation: allinPulse 1.8s ease-in-out infinite;
@@ -508,8 +512,8 @@
 .action-panel .action-btn--allin:hover:not(:disabled) {
   filter: brightness(1.15);
   box-shadow:
-    0 3px 0 #002070,
-    0 8px 32px rgba(21, 135, 248, 0.6),
+    0 3px 0 #063317,
+    0 8px 32px rgba(22, 163, 74, 0.6),
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
   transform: translateY(-1px);
 }

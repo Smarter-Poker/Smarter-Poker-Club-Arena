@@ -138,20 +138,23 @@
   color: rgba(255, 255, 255, 0.8);
 }
 
-/* Active Tab — electric-blue palette (Dan: match action button blue) */
+/* Active Tab — DARK blue (Dan 2026-08-26 mobile pass, item 1: "background
+   should be dark blue, not the blue that it currently is"). The electric
+   action-button gradient washed out the white mini cards; a deep navy keeps
+   the pill clearly active while the cards carry the contrast. */
 .table-tab-bar__tab--active {
-  background: linear-gradient(180deg, #1587f8 0%, #0078ff 40%, #003a9e 100%);
-  border-color: #1587f8;
+  background: linear-gradient(180deg, #14365f 0%, #0d2749 45%, #071a34 100%);
+  border-color: #2b5a96;
   color: #ffffff;
   box-shadow:
-    0 2px 8px rgba(21, 135, 248, 0.4),
-    0 4px 0 #002070,
-    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    0 2px 8px rgba(13, 39, 73, 0.55),
+    0 4px 0 #04101f,
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .table-tab-bar__tab--active:hover {
-  background: linear-gradient(180deg, #3aa0ff 0%, #1587f8 40%, #0060d0 100%);
-  border-color: #3aa0ff;
+  background: linear-gradient(180deg, #1a4272 0%, #103058 45%, #0a2140 100%);
+  border-color: #3a6ca8;
   color: #ffffff;
 }
 
@@ -765,44 +768,60 @@
   }
 
   .table-tab-bar__mini-card {
-    width: 15px;
-    height: 21px;
+    width: 16px;
+    height: 26px;
   }
 
-  /* 3-4 cards (PLO4): 4x10 + 3 gaps = 43 inside the 49.25px a cards pill has.
-     The glyphs come down with the card — "10" at the desktop 0.55rem is ~9px
-     wide and would sit on its own edges in a 10px card. */
+  /* ── Dan 2026-08-26 mobile pass, item 1: "the action pills need to be large
+     enough to see ALL cards displayed inside them." Two changes together make
+     that guarantee:
+
+       1. A cards-mode pill is released from the four-way width split
+        (max-width: none). The strip already scrolls when the pills outgrow
+        the viewport — the documented fallback — and a scrolling strip with
+        every card whole beats four fixed pills with the 4th card clipped.
+       2. The ACTIVE cards pill reserves real right padding for the floating
+        X disc, which used to land ON the outermost card. */
+  .table-tab-bar__tab.table-tab-bar__tab--cards {
+    max-width: none;
+  }
+
+  .table-tab-bar__tab--active.table-tab-bar__tab--cards {
+    padding-left: 4px;
+    padding-right: 15px;
+  }
+
+  /* 3-4 cards (PLO4): 4x12 + 3 gaps = 51px; the pill grows to carry it (see
+     max-width: none above) instead of shrinking the cards to unreadable. */
   .table-tab-bar__mini-cards--wide .table-tab-bar__mini-card {
-    width: 10px;
-    height: 19px;
+    width: 12px;
+    height: 24px;
   }
 
   .table-tab-bar__mini-cards--wide .table-tab-bar__mini-card-rank {
-    font-size: 0.45rem;
+    font-size: 0.5rem;
   }
 
   .table-tab-bar__mini-cards--wide .table-tab-bar__mini-card-suit {
-    font-size: 0.4rem;
+    font-size: 0.45rem;
   }
 
-  /* 5-6 cards (PLO5 / PLO6), the widest case there is: 6x8 with no gap comes
-     to 48 inside 49.25px. Anything larger clips, and half a hole card is worse
-     than a small whole one. */
+  /* 5-6 cards (PLO5 / PLO6), the widest case there is. */
   .table-tab-bar__mini-cards--xwide {
-    gap: 0;
+    gap: 1px;
   }
 
   .table-tab-bar__mini-cards--xwide .table-tab-bar__mini-card {
-    width: 8px;
-    height: 18px;
+    width: 10px;
+    height: 22px;
   }
 
   .table-tab-bar__mini-cards--xwide .table-tab-bar__mini-card-rank {
-    font-size: 0.4rem;
+    font-size: 0.45rem;
   }
 
   .table-tab-bar__mini-cards--xwide .table-tab-bar__mini-card-suit {
-    font-size: 0.375rem;
+    font-size: 0.4rem;
   }
 
   .table-tab-bar__add {

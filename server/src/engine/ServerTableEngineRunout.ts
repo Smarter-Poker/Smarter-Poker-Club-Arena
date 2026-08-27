@@ -1102,6 +1102,47 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       totalDistribution.set(pid, scaledCents[i] / 100);
     });
 
+    /**
+     * ── TOURNAMENT CHIPS ARE INTEGERS (Dan 2026-08-26: RIT everywhere) ──
+     *
+     * The 2026-08-18 tournament gate existed because per-board splits produce
+     * fractional amounts while tournament_players.chips is INTEGER — the sync
+     * floors (tables.ts), so a live 3-run tournament hand (41627f9a) split
+     * 1760.88 into fractional chips and destroyed the difference. The gate is
+     * lifted for MTTs, Spins and heads-up SNGs by making the split
+     * integer-exact instead: floor every winner's credited total to whole
+     * chips, then hand the remaining odd chips out one at a time CLOCKWISE
+     * FROM THE DEALER among the paid winners — the same convention
+     * distributePot has always used for a chopped pot's odd chip. Conserves
+     * the pot to the chip; tournament pots are never raked, so netPot here
+     * is the whole (integer) pot.
+     */
+    const ritIsTournamentHand =
+      !!this.tableInfo?.tournament_id || this.tableInfo?.game_type === 'tournament';
+    if (ritIsTournamentHand && totalDistribution.size > 0) {
+      const seatOf = new Map<string, number>();
+      for (const p of state.players) seatOf.set(p.user_id, p.seat);
+      const maxSeat = Math.max(...state.players.map((p) => p.seat), dealerSeat ?? 0) + 1;
+      const clockwiseFromDealer = (seat: number) => {
+        const d = (seat - (dealerSeat ?? 0) + maxSeat * 10) % maxSeat;
+        // The dealer itself sorts LAST — the first seat to the dealer's left
+        // gets the first odd chip, standard live-poker convention.
+        return d === 0 ? maxSeat : d;
+      };
+      const entries = [...totalDistribution.entries()].sort(
+        (a, b) =>
+          clockwiseFromDealer(seatOf.get(a[0]) ?? 0) - clockwiseFromDealer(seatOf.get(b[0]) ?? 0)
+      );
+      const totalChips = Math.round(entries.reduce((s, [, amt]) => s + amt, 0));
+      const floors = entries.map(([, amt]) => Math.floor(amt + 1e-9));
+      let oddChips = totalChips - floors.reduce((s, f) => s + f, 0);
+      for (let i = 0; i < entries.length && oddChips > 0; i++) {
+        floors[i] += 1;
+        oddChips -= 1;
+      }
+      entries.forEach(([pid], i) => totalDistribution.set(pid, floors[i]));
+    }
+
     // POKERBROS PARITY 2026-08-26: publish the unmerged per-(run, pot)
     // breakdown through the SAME presentation state the single-board path
     // uses, so pot_win carries pot_awards groups ordered run 1 → run N,
@@ -1119,6 +1160,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       board: a.board,
       handDescription: a.hand ? describeHand(a.hand) : undefined,
     }));
+    // Tournament chips are whole numbers on screen too: round each display
+    // share to integer chips first — the per-player repair below then folds
+    // any drift into the largest share, and since the credited totals are
+    // integers (odd-chip block above) every "+N" float and run label lands
+    // on a whole number.
+    if (ritIsTournamentHand) {
+      for (const a of this.currentHandPerPotAwards) a.amount = Math.round(a.amount);
+    }
     // EXACTNESS PASS 2026-08-26: per-player penny repair. Each display share
     // above was rounded independently, so a player's shares could sum a cent
     // or two away from their CREDITED total (scaleWinnerCentsForRake). The

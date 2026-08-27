@@ -15360,3 +15360,24 @@ three times, captured from a folded player's seat). Three behaviors adopted:
   TableConfigPage could set it, so a table created from the modal could
   never be mandatory — the exact dead-wiring shape FIX-D1 fixed for the
   other creation settings.
+
+### Round 6 — house palette only, and RIT published to ALL formats (Dan 2026-08-26)
+
+- Every RIT surface added in this work now uses the smarter.poker scheme
+  exclusively (panel gradient #1c2128→#161b22, borders rgba(255,255,255,.15),
+  text #e4e6eb/#8b949e, gold #ffb800, accept green #3fb950 gradient,
+  translucent decline — matching the existing prompt/insurance modals). The
+  slate/amber/orange hexes my consent panel, felt strip and replay badge
+  introduced are gone.
+- THE TOURNAMENT GATE IS LIFTED: RIT now runs on cash, MTTs, Spins and
+  heads-up SNGs. The 2026-08-18 gate existed because fractional per-board
+  splits destroyed INTEGER tournament chips (hand 41627f9a). That failure
+  mode is now impossible: dealAndResolveRIT's tournament branch floors every
+  credited total to whole chips and deals the odd chips clockwise from the
+  dealer (distributePot's own convention); display shares are integerized
+  the same way, so every "+N" float and run label is a whole number.
+  Tournament run labels and the consent panel drop the "$" mark.
+- Pins: tournament offer fires; 2-run and 3-run tournament settlements
+  credit whole chips only, conserve the pot exactly, and display whole
+  chips (multiple randomized trials); source pin that Base's enable formula
+  no longer references tournaments.

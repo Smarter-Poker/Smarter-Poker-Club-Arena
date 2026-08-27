@@ -240,3 +240,156 @@ describe('per-run pot awards — the split-pot ship sequence', () => {
     expect([...new Set(awards.map((a) => a.board ?? 1))].sort()).toEqual([1, 2, 3]);
   });
 });
+
+describe('RIT ALL FORMATS (Dan 2026-08-26) — tournaments split in whole chips', () => {
+  it('the enable formula in Base no longer excludes tournaments', async () => {
+    // The gate lived in ServerTableEngineBase's configure block. It is
+    // lifted, not merely bypassed in tests — the formula must read only the
+    // table's own run-it-twice columns.
+    const { readFileSync } = await import('node:fs');
+    const base = readFileSync(new URL('./ServerTableEngineBase.ts', import.meta.url), 'utf8');
+    expect(base).not.toMatch(/ritIsTournament\s*&&|!ritIsTournament/);
+    expect(base).toContain('LIFTED 2026-08-26');
+  });
+
+  function tournamentHarness(stacks: number[], runs: 2 | 3) {
+    const players = mkPlayers(stacks);
+    const events: HandEvent[] = [];
+    // Tournament pots are never raked (Dealing zeroes rakeConfig for
+    // tournament tables) — mirror that here.
+    const hc = new HandController(
+      cfg({ rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: false } } as Partial<HandConfig>),
+      players,
+      1
+    );
+    hc.onEvent((e2) => events.push(e2));
+    hc.start();
+    let guard = 0;
+    while (!events.some((e2) => e2.type === 'ALL_IN_RUNOUT') && guard++ < 20) {
+      const st = (hc as unknown as { state: { currentPlayerSeat: number } }).state;
+      if (st.currentPlayerSeat <= 0) break;
+      hc.performAction(st.currentPlayerSeat, 'all_in', 0);
+    }
+    const e = new ServerTableEngine(TABLE) as unknown as Record<string, any>;
+    e.running = true;
+    e.handCount = 1;
+    e.handController = hc;
+    e.tableInfo = {
+      game_variant: 'nlh',
+      big_blind: 10,
+      tournament_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      game_type: 'tournament',
+    };
+    e.seatedPlayers = players.map((p) => ({
+      seat_number: p.seat,
+      user_id: p.user_id,
+      username: p.username,
+      stack: p.stack,
+      is_horse: true,
+    }));
+    const emitted: Array<Record<string, unknown>> = [];
+    e.hub = { emitEvent: (_t: string, p: Record<string, unknown>) => emitted.push(p) };
+    e.broadcastCurrentState = vi.fn();
+    e.broadcastAllInEquity = vi.fn().mockResolvedValue(undefined);
+    e.sleep = vi.fn().mockResolvedValue(undefined);
+    e.markProgress = vi.fn();
+    e.runItTwiceEngine.configure(TABLE, { enabled: true, autoDeclineTimeout: 25, maxRuns: 3 });
+    e.insuranceEngine.configure(TABLE, { enabled: false });
+    const st = (hc as unknown as { state: { players: SeatPlayer[] } }).state;
+    const ids = st.players.filter((p) => !p.is_folded).map((p) => p.user_id);
+    e.runItTwiceEngine.offer(TABLE, `${TABLE}:1`, ids[0], ids, 0);
+    e.runItTwiceEngine.chooserDecides(TABLE, ids[0], runs);
+    for (const id of ids.slice(1)) e.runItTwiceEngine.accept(TABLE, id);
+    e.dealAndResolveRIT(st.players.filter((p) => !p.is_folded));
+    return { e, hc, st, emitted, totalBuyin: stacks.reduce((s, x) => s + x, 0) };
+  }
+
+  it('the offer fires on a tournament table — the 2026-08-18 gate is lifted', () => {
+    vi.useFakeTimers();
+    const players = mkPlayers([500, 500]);
+    const events: HandEvent[] = [];
+    const hc = new HandController(cfg(), players, 1);
+    hc.onEvent((e2) => events.push(e2));
+    hc.start();
+    let guard = 0;
+    while (!events.some((e2) => e2.type === 'ALL_IN_RUNOUT') && guard++ < 20) {
+      const st = (hc as unknown as { state: { currentPlayerSeat: number } }).state;
+      if (st.currentPlayerSeat <= 0) break;
+      hc.performAction(st.currentPlayerSeat, 'all_in', 0);
+    }
+    const runoutEvent = events.find((e2) => e2.type === 'ALL_IN_RUNOUT')!;
+    const { e, emitted } = (() => {
+      const eng = new ServerTableEngine(TABLE) as unknown as Record<string, any>;
+      eng.running = true;
+      eng.handCount = 1;
+      eng.handController = hc;
+      eng.tableInfo = {
+        game_variant: 'nlh',
+        big_blind: 10,
+        tournament_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        game_type: 'tournament',
+        run_it_twice: true,
+      };
+      eng.seatedPlayers = players.map((p) => ({
+        seat_number: p.seat,
+        user_id: p.user_id,
+        username: p.username,
+        stack: p.stack,
+        is_horse: true,
+      }));
+      const em: Array<Record<string, unknown>> = [];
+      eng.hub = { emitEvent: (_t: string, p: Record<string, unknown>) => em.push(p) };
+      eng.broadcastCurrentState = vi.fn();
+      eng.broadcastAllInEquity = vi.fn().mockResolvedValue(undefined);
+      eng.sleep = vi.fn().mockResolvedValue(undefined);
+      eng.markProgress = vi.fn();
+      eng.runItTwiceEngine.configure(TABLE, { enabled: true, autoDeclineTimeout: 25, maxRuns: 3 });
+      eng.insuranceEngine.configure(TABLE, { enabled: false });
+      return { e: eng, emitted: em };
+    })();
+    e.handleAllInRunout(runoutEvent, e.seatedPlayers);
+    expect(
+      emitted.find((p) => p.type === 'rit_offer'),
+      'a tournament all-in must receive the RIT offer'
+    ).toBeTruthy();
+  });
+
+  it('2 and 3 runs credit WHOLE chips only, conserve the pot, and display whole chips', () => {
+    // The deal is random, so run the settlement several times per run count —
+    // scoops and splits both land here, and the invariants must hold for all.
+    for (const runs of [2, 3] as const) {
+      for (let trial = 0; trial < 4; trial++) {
+        const { e, st, totalBuyin } = tournamentHarness([500, 500], runs);
+        const winners = e.currentHandWinners as Array<{ userId: string; amount: number }>;
+        expect(winners.length).toBeGreaterThan(0);
+        let paid = 0;
+        for (const w of winners) {
+          expect(
+            Number.isInteger(w.amount),
+            `runs=${runs} trial=${trial}: credit ${w.amount} must be a whole chip amount`
+          ).toBe(true);
+          paid += w.amount;
+        }
+        // No rake, no BBJ in tournaments: every chip in the pot is paid out.
+        expect(paid).toBe(totalBuyin);
+        // Engine stacks are whole chips — the INTEGER column sync cannot
+        // floor anything away (the exact 41627f9a failure mode).
+        for (const p of st.players) {
+          expect(
+            Number.isInteger(p.stack),
+            `runs=${runs} trial=${trial}: stack ${p.stack} must be integer`
+          ).toBe(true);
+        }
+        expect(st.players.reduce((s, p) => s + p.stack, 0)).toBe(totalBuyin);
+        // Display shares are whole chips too — no fractional "+N" floats.
+        const awards = e.currentHandPerPotAwards as Array<{ amount: number }>;
+        for (const a of awards) {
+          expect(
+            Number.isInteger(a.amount),
+            `runs=${runs} trial=${trial}: display share ${a.amount} must be integer`
+          ).toBe(true);
+        }
+      }
+    }
+  });
+});

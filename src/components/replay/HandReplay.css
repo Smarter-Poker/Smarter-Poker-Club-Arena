@@ -364,9 +364,9 @@
   padding: 1px 6px;
   margin-right: 4px;
   border-radius: 4px;
-  background: rgba(251, 191, 36, 0.15);
-  border: 1px solid rgba(251, 191, 36, 0.4);
-  color: #fbbf24;
+  background: rgba(255, 184, 0, 0.15);
+  border: 1px solid rgba(255, 184, 0, 0.4);
+  color: #ffb800;
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.06em;

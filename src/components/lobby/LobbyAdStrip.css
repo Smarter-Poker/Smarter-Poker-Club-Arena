@@ -102,6 +102,24 @@
   border: 1px solid rgba(0, 200, 255, 0.28);
 }
 
+/* HOUSE — smarter.poker's own promotions (2026-08-27). Deliberately the
+   quietest of the three: a club's notice and a union's notice are somebody
+   speaking to their own players and should draw the eye first. Ours fills
+   space that would otherwise be empty, and looks like it. */
+.lobby-ads__strip--house::before {
+  background: linear-gradient(180deg, #9aa6b8, #6d7889);
+}
+
+.lobby-ads__strip--house .lobby-ads__icon {
+  color: #9aa6b8;
+}
+
+.lobby-ads__strip--house .lobby-ads__tag {
+  color: #c3ccd9;
+  background: rgba(154, 166, 184, 0.12);
+  border: 1px solid rgba(154, 166, 184, 0.26);
+}
+
 /* One line, always. Keyed on the ad id in JSX so React remounts the node on
    rotation and this fade actually replays. */
 .lobby-ads__text {

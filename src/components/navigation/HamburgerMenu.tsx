@@ -987,6 +987,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           { label: 'Agent Dashboard', path: '/agent-dashboard' },
           { label: 'Club Dashboard', path: '/data' },
           { label: 'Club Settings', path: '/admin' },
+          { label: 'House Ads', path: '/house-ads' },
           { label: 'Anti-Cheat', path: '/anti-cheat' },
         ].map((item, i) => (
           <div

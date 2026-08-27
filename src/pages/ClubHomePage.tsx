@@ -4024,6 +4024,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           haptic.selection();
           navigate(`/clubs/${clubId}/announcements`);
         }}
+        /* A house ad carries its own destination (2026-08-27). Without this
+           every promo would land on the club's announcements page, where the
+           thing it advertised is not. */
+        onNavigate={(path) => {
+          haptic.selection();
+          navigate(path);
+        }}
       />
 
       {/* The standalone STATUS REFINEMENT row was folded into the quick

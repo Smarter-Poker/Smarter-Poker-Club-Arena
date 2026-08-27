@@ -613,7 +613,23 @@ export function detectBBJHit(
     kickers: number[];
     holeCards?: Array<{ rank: string; suit: string }>;
   }>,
-  winnerId: string,
+  /**
+   * The pot winner, or ALL of them on a chopped pot.
+   *
+   * AUDIT FIX 2026-08-27: settlement passed `currentHandWinnerIds[0]` and this
+   * took a single id, so on a split pot exactly one winner was examined. The
+   * "winner must hold quads or better" gate then ran against whichever winner
+   * happened to be first in the array — and if the OTHER one held the quads,
+   * a real bad beat was silently refused. That is a false negative on a money
+   * surface: the player who took the beat is simply not paid, and nothing
+   * anywhere records that a jackpot was considered and dropped.
+   *
+   * All winners are now evaluated and the STRONGEST is the one the rule is
+   * applied to, mirroring exactly what the loser side has done since
+   * 2026-08-18. A string is still accepted so every existing caller and test
+   * keeps working unchanged.
+   */
+  winnerId: string | string[],
   variant: string,
   potSize: number,
   bigBlind: number,
@@ -622,13 +638,35 @@ export function detectBBJHit(
   // BBJ AUDIT FIX 2026-08-18: the final community cards (board 0 for RIT
   // hands). Needed to enforce Dan's "both cards from hand must play" rule -
   // BBJ_RULES.requireBothHoleCards was declared and never enforced.
-  communityCards?: Array<{ rank: string; suit: string }>
+  communityCards?: Array<{ rank: string; suit: string }>,
+  /**
+   * AUDIT FIX 2026-08-27: the last two BBJ_RULES that were declared, published
+   * to players, and enforced NOWHERE.
+   *
+   * `excludeDoubleBoard` and `onlyFirstRunout` appeared in exactly two places
+   * before today: this constant, and the rules panel that tells players they
+   * apply (BBJBasicPanel.tsx:266-269, BBJRulesPanel.tsx:151). No code read
+   * them. A double-board bomb pot could therefore pay a jackpot that the
+   * published rules say it cannot — the rules page and the engine disagreed,
+   * and the engine wins, which means the page was lying.
+   *
+   * `onlyFirstRunout` needs no flag and never did: `SHOWDOWN` is emitted once
+   * per hand (HandController.ts:1559), before the extra runouts happen in
+   * ServerTableEngineRunout, so `showdownResults` is already board one's
+   * evaluation — and settlement passes board one's cards to match. It is
+   * asserted by construction rather than by a condition. Saying so here is the
+   * point: the next person to read the rule should not have to re-derive that.
+   */
+  context?: { doubleBoard?: boolean }
 ): BBJDetectionResult {
   const noHit: BBJDetectionResult = { hit: false };
 
   // 1. Check basic BBJ eligibility
   if (numPlayersDealt < BBJ_RULES.minPlayersDealt) return noHit;
   if (potSize < bigBlind * BBJ_RULES.minPotBB) return noHit;
+  // A double-board bomb pot deals two boards for one pot, so a "bad beat" on
+  // one of them is not the hand the jackpot is for.
+  if (BBJ_RULES.excludeDoubleBoard && context?.doubleBoard === true) return noHit;
 
   const normalizedVariant = variant.toLowerCase();
   const qualifying = BBJ_QUALIFYING_HANDS[normalizedVariant];
@@ -636,8 +674,20 @@ export function detectBBJHit(
 
   // 2. Find the LOSER(s) with qualifying hands
   // A "loser" is any non-winner showdown player whose hand meets the minimum
-  const losers = showdownResults.filter((r) => r.userId !== winnerId);
-  const winner = showdownResults.find((r) => r.userId === winnerId);
+  const winnerIds = Array.isArray(winnerId) ? winnerId.filter(Boolean) : [winnerId];
+  const winnerIdSet = new Set(winnerIds);
+  const losers = showdownResults.filter((r) => !winnerIdSet.has(r.userId));
+  // On a chopped pot, the rule is applied to the STRONGEST winning hand — the
+  // same "take the best, not the first" rule the loser side uses below.
+  const winner = showdownResults
+    .filter((r) => winnerIdSet.has(r.userId))
+    .reduce<(typeof showdownResults)[number] | undefined>((best, r) => {
+      if (!best) return r;
+      if (r.handRanking > best.handRanking) return r;
+      if (r.handRanking === best.handRanking && compareKickers(r.kickers, best.kickers) > 0)
+        return r;
+      return best;
+    }, undefined);
   if (!winner || losers.length === 0) return noHit;
 
   // BBJ AUDIT FIX 2026-08-18 (the $99k finding): the WINNER's hand was never
@@ -719,7 +769,9 @@ export function detectBBJHit(
         name: best.handName,
         kickers: best.kickers,
       },
-      winnerUserId: winnerId,
+      // The winner the rule was actually applied to, which on a chopped pot is
+      // the strongest of them rather than whichever id arrived first.
+      winnerUserId: winner.userId,
       winnerHand: {
         ranking: winner.handRanking,
         name: winner.handName,

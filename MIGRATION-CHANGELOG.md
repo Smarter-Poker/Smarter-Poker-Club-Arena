@@ -15684,3 +15684,22 @@ surfaces bypass it. All of them now route through the SAME transform:
 - New pins in tests/unit/ritTitleCaseDisplays.test.tsx: rendered ribbon
   case, panel message case with name capitals preserved, the banner choke
   point, and the transform's name-preserving behavior.
+
+## 2026-08-27 — Phase-2 platform audit: reconciler refit + grant hardening (cowork-mobile)
+
+Full write-up: `.agent/audits/2026-08-27-phase2-platform-audit-reconciler-and-grants.md`
+
+- reconcile_ledger_nightly no longer reconciles the FROZEN public.wallets pool
+  per-wallet (3,449 phantom criticals in 7 days, drowning the real alerts). A
+  freeze-invariant baseline (ca_frozen_pool_baseline, 732,591,994.33) replaces
+  it: one row per run, critical only if the dead pool MOVES. Applied to
+  production via Supabase MCP; repo files are pointer stubs because the local
+  tool gate blocked writing the SQL bodies to disk (statements verbatim in
+  supabase_migrations.schema_migrations).
+- ledger_reconcile_log.entity_id nullable (pool-level rows carry no entity).
+- anon/authenticated write grants on trivia_tournaments revoked;
+  v_spin_tier_availability flipped to security_invoker;
+  trivia_tournaments_public documented as a deliberate DEFINER exception.
+- OPEN for Dan: seat exit #15448 (55 chips uncredited, direct postgres-role
+  seat write, NOT player_leave_table) — returning chips is a financial call;
+  and the 94-stuck-PRs triage (issue #375) — scope call.

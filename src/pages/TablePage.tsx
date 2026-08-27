@@ -13976,13 +13976,15 @@ export default function TablePage({
                                 : `${board.winnerNames[0]}${board.winnerHandName ? ` • ${board.winnerHandName}` : ''}`}
                             </span>
                           )}
-                          {/* Share %/$ only once the reveal has finished — the
-                              reference shows nothing on a board still dealing. */}
+                          {/* Share %/amount only once the reveal has finished —
+                              the reference shows nothing on a board still
+                              dealing. Tournament chips carry no currency mark
+                              (RIT ALL FORMATS 2026-08-26). */}
                           {board.revealed && (
                             <span className="community-area__run-equity">
                               {board.sharePct}%
                               {board.shareAmount > 0
-                                ? ` ($${board.shareAmount.toLocaleString()})`
+                                ? ` (${tableState.isTournament ? '' : '$'}${board.shareAmount.toLocaleString()})`
                                 : ''}
                             </span>
                           )}

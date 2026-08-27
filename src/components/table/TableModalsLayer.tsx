@@ -961,6 +961,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         players={ritPanelPlayers}
         totalSeconds={ritTotalSeconds}
         heroAccepted={ritHeroAccepted}
+        currency={isTournament ? '' : '$'}
       />
 
       {/* Bad Beat Jackpot Display — per-variant qualifying rule (2026-08-18).

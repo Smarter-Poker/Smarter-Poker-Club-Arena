@@ -80,6 +80,7 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
     straddle_enabled: true,
     straddle_type: 'utg',
     run_it_twice: true,
+    run_it_mode: 'none',
     bomb_pot_enabled: false,
     bomb_pot_double_board: false,
     bomb_pot_frequency: 10,
@@ -428,6 +429,32 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                   />
                   Run It Twice (RIT)
                 </label>
+
+                {/* EXACTNESS PASS 2026-08-26: run mode. Mandatory modes skip
+                    the consent question entirely (the host already decided).
+                    This selector existed only on TableConfigPage before, so a
+                    table created HERE could never be mandatory. */}
+                {settings.run_it_twice && (
+                  <div style={{ paddingLeft: 20, marginBottom: 4 }}>
+                    <select
+                      className={styles['form-select']}
+                      value={settings.run_it_mode ?? 'none'}
+                      onChange={(e) =>
+                        setSettings((prev) => ({
+                          ...prev,
+                          run_it_mode: e.target.value as NonNullable<
+                            import('../../types/database.types').TableSettings['run_it_mode']
+                          >,
+                        }))
+                      }
+                      aria-label="Run it mode"
+                    >
+                      <option value="none">Players Choose (Ask Every Time)</option>
+                      <option value="mandatory_twice">Mandatory Run It Twice</option>
+                      <option value="mandatory_three">Mandatory Run It 3 Times</option>
+                    </select>
+                  </div>
+                )}
 
                 {/* ── VPIP Display ── */}
                 <label className={styles['checkbox-label']}>

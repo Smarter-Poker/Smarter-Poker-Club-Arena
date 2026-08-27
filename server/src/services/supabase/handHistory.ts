@@ -45,6 +45,15 @@ export async function logHandHistory(params: {
   communityCards: string[];
   /** DOUBLE-BOARD BOMB POT 2026-08-20: board 2 (empty on single-board hands). */
   communityCards2?: string[];
+  /**
+   * COMPLETENESS PASS 2026-08-26: run-it-twice boards 2..N (engine card
+   * strings, run order). Written to hand_history.rit_boards — NULL on every
+   * single-run hand so historical rows and normal hands look identical.
+   * Before this column, a RIT hand was indistinguishable in the database:
+   * the extra boards were smuggled through `actions` as `rit_board_N:`
+   * pseudo-entries, which replayers had to parse back out.
+   */
+  ritBoards?: string[][];
   // Round 38 — wall-clock timestamps. startedAt is captured at HAND_START
   // in ServerTableEngine; endedAt is stamped here at write time.
   startedAt?: number;
@@ -178,6 +187,10 @@ export async function logHandHistory(params: {
     // so existing consumers see no change. Column added by migration
     // 20260820 bomb_pot_double_board.
     community_cards2: params.communityCards2?.length ? params.communityCards2 : null,
+    // COMPLETENESS PASS 2026-08-26: RIT boards 2..N, first-class. NULL (not
+    // []) on single-run hands so historical rows and normal hands look
+    // identical. Column added by migration 20260826_hand_history_rit_boards.
+    rit_boards: params.ritBoards?.length ? params.ritBoards : null,
     started_at: startedAtIso,
     ended_at: endedAtIso,
     winners: params.winners,

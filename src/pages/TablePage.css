@@ -3673,8 +3673,8 @@ body.ca-raising .bankroll-widget {
   justify-content: center;
   padding: 8px 14px;
   border-radius: 8px;
-  background: linear-gradient(180deg, rgba(18, 22, 44, 0.92), rgba(12, 15, 32, 0.92));
-  border: 1px solid rgba(120, 150, 255, 0.22);
+  background: linear-gradient(180deg, rgba(28, 33, 40, 0.92), rgba(22, 27, 34, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.15);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
   animation: ritFeltBannerIn calc(0.3s * var(--animation-speed, 1)) ease-out;
 }
@@ -3683,7 +3683,7 @@ body.ca-raising .bankroll-widget {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: #dbe3f0;
+  color: #e4e6eb;
   text-align: center;
   line-height: 1.4;
 }

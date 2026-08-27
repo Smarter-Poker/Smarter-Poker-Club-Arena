@@ -352,6 +352,11 @@ class TableService {
         // ante, bomb_pot_ante_bb -> bomb_pot_ante_multiplier.)
         straddle_enabled: defaultSettings.straddle_enabled ?? false,
         run_it_twice_enabled: defaultSettings.run_it_twice ?? false,
+        // EXACTNESS PASS 2026-08-26: the mode column the engine reads for
+        // mandatory_twice / mandatory_three. Without this mapping the
+        // CreateTableModal selector would be dead wiring exactly like the
+        // FIX-D1 keys above once were.
+        run_it_mode: defaultSettings.run_it_mode ?? 'none',
         auto_muck_enabled: defaultSettings.auto_muck ?? true,
         insurance_enabled: defaultSettings.insurance_enabled ?? false,
         ante_enabled: defaultSettings.ante_enabled ?? false,

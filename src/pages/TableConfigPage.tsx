@@ -103,6 +103,7 @@ interface TableConfig {
   sevenDeuceAmountBB: number;
   nitGame: boolean;
   capEnabled: boolean;
+  capBB: number;
   noRathole: boolean;
 
   // Table Parameters (sliders)
@@ -266,6 +267,11 @@ const DEFAULT_CONFIG: TableConfig = {
   sevenDeuceAmountBB: 2,
   nitGame: false,
   capEnabled: false,
+  // 50 BB is the middle of the range cap games actually run at. The AMOUNT is
+  // what makes the Cap toggle real: the engine caps on cap_bb (see
+  // ServerTableEngineTurns), and until 2026-08-27 this page never wrote it, so
+  // the switch was decorative.
+  capBB: 50,
   noRathole: false,
 
   // Table Parameters
@@ -879,7 +885,17 @@ export default function TableConfigPage() {
     // 7-2 winner. Only meaningful when the toggle is on; default 2 BB.
     seven_deuce_amount: config.sevenDeuceEnabled ? config.sevenDeuceAmountBB : 2,
     nit_game: config.nitGame,
-    cap_enabled: config.capEnabled,
+    /**
+     * CAP NEEDS AN AMOUNT (2026-08-27). `cap_enabled` alone is not a cap:
+     * ServerTableEngineTurns computes the ceiling as cap_bb x big_blind and
+     * treats cap_bb <= 0 as "no cap". This page toggled cap_enabled since
+     * February and never wrote cap_bb, so every cap table it built played
+     * uncapped. The amount is authored in big blinds and forced to 0 when the
+     * toggle is off, so a stale amount cannot cap a table whose owner turned
+     * the switch off.
+     */
+    cap_enabled: config.capEnabled && config.capBB > 0,
+    cap_bb: config.capEnabled ? config.capBB : 0,
     no_rathole: config.noRathole,
 
     // Table parameters
@@ -994,15 +1010,35 @@ export default function TableConfigPage() {
       return;
     }
 
+    /**
+     * WHAT SAVE MEANS NOW (2026-08-27).
+     *
+     * Save used to insert a full `tables` row stamped with the is_template
+     * flag and toast "Table template saved!". Both halves of that were false.
+     * Nothing in src reads that flag — the template dropdown at the top of this page
+     * reads `table_templates`, so the saved "template" never appeared in it.
+     * And because every lobby query ignores `is_template` too, the row DID
+     * appear in the club lobby as an ordinary joinable table. On the SNG/MTT
+     * tabs it was worse: saving a tournament config produced a CASH table row.
+     *
+     * Save now does what its name says for each tab:
+     *   Regular — create the table, open in the lobby, stay-or-leave is the
+     *             only difference from Start (Start navigates to the felt).
+     *   SNG/MTT — create the tournament exactly as Start does (the engine owns
+     *             starting either way). Templates have their own button.
+     */
+    if (config.gameMode !== 'regular') {
+      setSaving(true);
+      try {
+        await handleStartTournament();
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     setSaving(true);
     try {
-      // Save also lands the recurring schedule when the MTT tab has the
-      // Tournament Schedule toggle on — Start and Save behave the same way.
-      if (config.gameMode === 'mtt' && config.tournamentSchedule) {
-        const ok = await saveTournamentSchedule();
-        if (!ok) return;
-      }
-
       const {
         data: { user },
       } = await getAuthUser();
@@ -1013,13 +1049,12 @@ export default function TableConfigPage() {
       const tableData = {
         ...buildTableData(resolvedId),
         created_by: user.id,
-        is_template: true,
       };
 
       const { error } = await supabase.from('tables').insert(tableData);
       if (error) throw error;
 
-      toast.success('Table template saved!');
+      toast.success('Table created. It is open in your club lobby.');
       navigate(`/clubs/${clubId}`);
     } catch (error) {
       reportError(error, 'TableConfigPage.Failed_to_save_table');
@@ -1107,10 +1142,16 @@ export default function TableConfigPage() {
       const createOneOff = !scheduleOn || Boolean(tournamentConfig.startTime);
       if (createOneOff) {
         const created = await tournamentService.createTournament(clubId || '', tournamentConfig);
+        // Say what was actually built: a 3-handed SNG is a Spin, a 2-handed
+        // one is Heads Up, and the old message called every SNG "Heads Up".
         toast.success(
           config.gameMode === 'sng'
-            ? 'Heads Up created - it starts as soon as it fills.'
-            : 'Tournament created - registration is open.'
+            ? config.isSpins
+              ? 'Spin created. It starts as soon as three players sit.'
+              : config.sngPlayerCount === 2
+                ? 'Heads Up created. It starts as soon as it fills.'
+                : 'Sit and Go created. It starts as soon as it fills.'
+            : 'Tournament created. Registration is open.'
         );
         const createdId = (created as { id?: string } | null)?.id;
         if (createdId) {
@@ -1165,10 +1206,20 @@ export default function TableConfigPage() {
 
       const resolvedId = await resolveClubUUID(clubId || '');
 
+      /**
+       * STATUS IS 'waiting', NOT 'active' (2026-08-27).
+       *
+       * The engine discovers cash tables through cash_tables_needing_engine,
+       * whose WHERE clause is `status IN ('waiting', 'running')`. 'active' is a
+       * legal column value that no engine query has ever matched — so every
+       * table Start created sat in the lobby, accepted seats, and never dealt
+       * a hand: no engine adopted it and every socket closed 4404. 'waiting'
+       * is what the working writers (TableService, the lifecycle pass) use;
+       * the engine flips it to 'running' when it starts dealing.
+       */
       const tableData = {
         ...buildTableData(resolvedId),
         created_by: user.id,
-        status: 'active',
       };
 
       const { data, error } = await supabase
@@ -1342,8 +1393,20 @@ export default function TableConfigPage() {
               label="Cap"
               value={config.capEnabled}
               onChange={(v) => updateConfig('capEnabled', v)}
-              tooltip="Cap the max bet"
+              tooltip="Limit the total chips a player can commit in one hand"
             />
+            {config.capEnabled && (
+              <Slider
+                label="Cap Amount"
+                value={config.capBB}
+                onChange={(v) => updateConfig('capBB', v)}
+                min={10}
+                max={200}
+                step={5}
+                suffix=" Big Blinds"
+                tooltip="The most a player can put in across the whole hand. Reaching the cap does not put them all-in."
+              />
+            )}
             <Toggle
               label="Ban Chat"
               value={config.banChat}
@@ -1676,20 +1739,27 @@ export default function TableConfigPage() {
               max={60}
               suffix=" sec"
             />
-            {/* Fee is the HOUSE RULE 10% cut OUT of the buy-in — read-only,
-                recomputed server-side in fn_create_tournament. */}
+            {/* Fee is the HOUSE RULE cut OUT of the buy-in — read-only,
+                recomputed server-side in fn_create_tournament, which charges
+                5% on an SNG, 10% on an MTT, and 0 on a Spin (its edge lives in
+                the multiplier distribution). Until 2026-08-27 this label said
+                10% for all of them. */}
             <div className="config-toggle">
               <span className="toggle-label">
                 Fee
                 <span
                   className="tooltip-icon"
-                  title="10% of the buy-in, taken out of it, never added on top. Spins carry no fee."
+                  title="Taken out of the buy-in, never added on top. Spins carry no fee."
                 >
                   ?
                 </span>
               </span>
               <span style={{ color: '#1877f2', fontWeight: 600, fontSize: '0.85rem' }}>
-                10% Of Buy-In
+                {config.gameMode === 'sng'
+                  ? config.isSpins
+                    ? 'No Fee'
+                    : '5% Of Buy-In'
+                  : '10% Of Buy-In'}
               </span>
             </div>
 

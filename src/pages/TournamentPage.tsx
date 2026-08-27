@@ -6,11 +6,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { isClubStaff } from '../types/clubRoles';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import {
-  tournamentService,
-  BLIND_STRUCTURES,
-  PAYOUT_STRUCTURES,
-} from '../services/TournamentService';
+import { tournamentService } from '../services/TournamentService';
 import type { Tournament } from '../types/database.types';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import './TournamentPage.css';
@@ -56,7 +52,7 @@ import {
 } from '../services/MysteryBountyService';
 // WHOLE-NUMBER TOURNAMENT MONEY (Dan 2026-08-20). Every buy-in / fee / prize
 // figure on this page renders through these, never as a raw column value.
-import { digitsOnly, formatBuyIn, money, splitBuyIn, totalBuyIn } from '../utils/buyIn';
+import { formatBuyIn, money, totalBuyIn } from '../utils/buyIn';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 
@@ -1751,175 +1747,8 @@ export default function TournamentPage() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// CREATE TOURNAMENT MODAL
-// ═══════════════════════════════════════════════════════════════════════════════
-
-interface CreateModalProps {
-  clubId: string;
-  onClose: () => void;
-  onCreate: (tournament: Tournament) => void;
-}
-
-function LegacyCreateTournamentModal({ clubId, onClose, onCreate }: CreateModalProps) {
-  const toast = useToast();
-  // WHOLE-DOLLAR BUY-IN (Dan 2026-08-20): `buyIn` is the TOTAL the player pays
-  // and is always a whole number. The fee is a cut OUT of it, derived, never
-  // typed - the old free-form Rake field let an owner author a second number
-  // that disagreed with the 10% house rule and turned the advertised price into
-  // 1.1x a round number.
-  const [form, setForm] = useState({
-    name: '',
-    type: 'sng' as 'sng' | 'mtt',
-    buyIn: '10',
-    startingStack: 1500,
-    maxPlayers: 6,
-    blindSpeed: 'turbo' as 'turbo' | 'regular' | 'deepStack',
-  });
-
-  const split = splitBuyIn(Number(form.buyIn) || 0);
-
-  const handleCreate = async () => {
-    if (!form.name) return;
-    if (!Number.isInteger(Number(form.buyIn)) || Number(form.buyIn) <= 0) {
-      toast.error('Buy-in must be a whole number of chips, with no decimals.');
-      return;
-    }
-
-    const payoutKey =
-      form.type === 'sng'
-        ? form.maxPlayers === 6
-          ? 'sng6'
-          : 'sng9'
-        : form.maxPlayers <= 10
-          ? 'mtt10'
-          : form.maxPlayers <= 20
-            ? 'mtt20'
-            : 'mtt50';
-
-    const tournament = await tournamentService.createTournament(clubId, {
-      name: form.name,
-      type: form.type,
-      buyIn: split.total,
-      rake: split.fee,
-      startingStack: form.startingStack,
-      maxPlayers: form.maxPlayers,
-      minPlayers: form.type === 'sng' ? form.maxPlayers : 2,
-      blindStructure: BLIND_STRUCTURES[form.blindSpeed],
-      payoutStructure: PAYOUT_STRUCTURES[payoutKey],
-      lateRegistrationLevels: 0,
-      isRebuy: false,
-      addOnAvailable: false,
-    });
-
-    onCreate(tournament);
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Create Tournament</h2>
-
-        <div className="form-group">
-          <label>Tournament Name</label>
-          <input
-            type="text"
-            placeholder="Enter Name..."
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-          />
-        </div>
-
-        <div className="form-row">
-          <div className="form-group">
-            <label>Type</label>
-            <select
-              value={form.type}
-              onChange={(e) => setForm({ ...form, type: e.target.value as 'sng' | 'mtt' })}
-            >
-              <option value="sng">Heads Up</option>
-              <option value="mtt">Tournament</option>
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label>Max Players</label>
-            <select
-              value={form.maxPlayers}
-              onChange={(e) => setForm({ ...form, maxPlayers: Number(e.target.value) })}
-            >
-              <option value={6}>6 Players</option>
-              <option value={9}>9 Players</option>
-              {form.type === 'mtt' && <option value={20}>20 Players</option>}
-              {form.type === 'mtt' && <option value={50}>50 Players</option>}
-            </select>
-          </div>
-        </div>
-
-        <div className="form-row">
-          <div className="form-group">
-            <label>Buy-In</label>
-            <input
-              type="number"
-              min={1}
-              step={1}
-              inputMode="numeric"
-              value={form.buyIn}
-              onChange={(e) => setForm({ ...form, buyIn: digitsOnly(e.target.value) })}
-            />
-            <small>Whole Chips Only. The Total The Player Pays.</small>
-          </div>
-
-          <div className="form-group">
-            <label>Fee (10% Of Buy-In)</label>
-            <input type="number" min={0} step={1} value={split.fee} readOnly disabled />
-            <small>
-              {split.total > 0
-                ? `${money(split.prize)} to the prize pool + ${money(split.fee)} fee`
-                : 'Taken out of the buy-in, not added on top'}
-            </small>
-          </div>
-        </div>
-
-        <div className="form-row">
-          <div className="form-group">
-            <label>Starting Stack</label>
-            <input
-              type="number"
-              min={500}
-              step={500}
-              value={form.startingStack}
-              onChange={(e) => setForm({ ...form, startingStack: Number(e.target.value) })}
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Blind Speed</label>
-            <select
-              value={form.blindSpeed}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  blindSpeed: e.target.value as 'turbo' | 'regular' | 'deepStack',
-                })
-              }
-            >
-              <option value="turbo">Turbo (3 Min)</option>
-              <option value="regular">Regular (8 Min)</option>
-              <option value="deepStack">Deep Stack (15 Min)</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="modal-actions">
-          <button className="btn btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn btn-primary" onClick={handleCreate} disabled={!form.name}>
-            Create Tournament
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+/* LegacyCreateTournamentModal was DELETED 2026-08-27. It was defined here
+   and rendered by nothing — the live modal is components/club/
+   CreateTournamentModal, imported at the top of this file — yet it still
+   contained a reachable tournamentService.createTournament call. Dead code
+   on a money path is a hazard, not a spare part. */

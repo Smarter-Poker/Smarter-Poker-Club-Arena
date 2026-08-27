@@ -160,6 +160,17 @@ export abstract class ServerTableEngineBase {
   // Bible V8 §4.2: Players waiting for BB position before they can play
   protected waitingForBB: Set<string> = new Set();
 
+  // POST-TO-ENTER RACE FIX 2026-08-27 (Dan: "the post to get dealt in
+  // feature in cash games isn't working"): a brand-new joiner is only
+  // REGISTERED as waiting by the dealing loop's next pass - which, mid-hand,
+  // can be minutes away. Tapping Post Big Blind in that window came back
+  // "Player is not waiting for BB" and the client gave up. The intent is
+  // recorded HERE instead; the dealing loop applies it the moment the joiner
+  // is registered, through the same postBBToEnter path (positional hold-outs
+  // and the live-BB bill included). Pruned with knownPlayerIds when a seat
+  // empties.
+  protected pendingPostToEnter: Set<string> = new Set();
+
   // Bible V8 §4.2: Track every userId we've ever seen seated at this table.
   // Used by the dealing loop to detect new joiners after the engine has started
   // dealing hands. Since 2026-08-25 a new joiner does NOT wait and does not
@@ -1062,6 +1073,22 @@ export abstract class ServerTableEngineBase {
     if (this.isTournamentTable()) return 2;
     const configured = Number(this.tableInfo?.auto_start_players);
     return Number.isFinite(configured) && configured > 2 ? Math.floor(configured) : 2;
+  }
+
+  /**
+   * The deal threshold, for callers OUTSIDE the engine (2026-08-27).
+   *
+   * GameServer's zombie reaper decides "should this table be dealing?" and
+   * until now answered with a hard-coded `player_count >= 2` — the same
+   * disagreement the header above warns about, in the one caller that could
+   * not see this method because it was protected. A table with
+   * auto_start_players = 5 and 2-4 seats makes no progress BY DESIGN, and the
+   * reaper called that a zombie and rebuilt its engine every 180 seconds,
+   * forever. One definition of "enough players", visible to everyone who
+   * needs it.
+   */
+  public dealThreshold(): number {
+    return this.minPlayersToDeal();
   }
 
   async start(): Promise<void> {

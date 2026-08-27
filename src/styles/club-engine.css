@@ -29,9 +29,14 @@
   --club-card: #22262f;
 
   /* ─────────────── Semantic Colors ─────────────── */
-  --success-green: #00d26a;
-  --success-green-glow: rgba(0, 210, 106, 0.4);
-  --success-green-dim: rgba(0, 210, 106, 0.15);
+  /* HOUSE GREEN. #3fb950 is the smarter.poker scheme green (Dan, #1365).
+     This token, --success in globals.css, and ~130 literals across the table
+     were three different greens, which is why gameplay never matched the
+     club chrome. One green now; tests/gameplay-wears-the-house-colours
+     fails if a fourth appears. */
+  --success-green: #3fb950;
+  --success-green-glow: rgba(63, 185, 80, 0.4);
+  --success-green-dim: rgba(63, 185, 80, 0.15);
 
   --danger-red: #ff4757;
   --danger-red-glow: rgba(255, 71, 87, 0.4);

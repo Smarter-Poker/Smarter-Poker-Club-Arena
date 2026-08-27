@@ -172,14 +172,10 @@ export default function CreateTablePage() {
         ))}
       </div>
 
-      {/* Table Template Button */}
-      <div className="create-table-page__footer">
-        <button className="template-button">
-          <span>Table Template</span>
-          <span className="template-icon">⚙</span>
-        </button>
-        <p className="unlock-hint">Unlock At Level 1</p>
-      </div>
+      {/* The "Table Template" footer button was removed 2026-08-27: it had no
+          onClick since the page was written — a button that does nothing.
+          Templates live on the config page itself (the Load Template dropdown
+          and Save as Template button), which is where a template is useful. */}
 
       {/* Background */}
       <div className="create-table-page__background"></div>

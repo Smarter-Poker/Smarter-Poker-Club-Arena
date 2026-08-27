@@ -31,6 +31,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ActionPanel, {
   betSliderStep,
+  sliderUnitFor,
   sanitizeAmountDraft,
   MAX_SLIDER_POSITIONS,
 } from '../src/components/table/ActionPanel';
@@ -149,11 +150,34 @@ describe('the slider offers amounts between the blinds', () => {
     expect(onAction).toHaveBeenCalledWith('allin', 187.5);
   });
 
-  it('uses the SMALL blind when the parent passes one that is not half the big', () => {
-    // A 2/5 table: half the big blind is 2.50, but the chip is 2.
+  it('a dollar-stakes CASH table steps by exactly one dollar (Dan 2026-08-26)', () => {
+    /* Dan 2026-08-26: "in cash games it should go out by DOLLARS one at a
+       time." This replaces the 2026-08-23 rule this test used to pin (step =
+       the table's small blind): a 2/5 cash table now steps 1 at a time, not
+       2 at a time. Tournaments keep the chip-scaled step - the case below. */
     render(<ActionPanel {...base} bigBlind={5} smallBlind={2} onAction={vi.fn()} />);
     openPanel();
-    expect(slider().step).toBe('2');
+    expect(slider().step).toBe('1');
+  });
+
+  it('a TOURNAMENT steps by the level chip unit, scaled with depth', () => {
+    // A 1500/3000 level: the drag walks 1500-chip denominations, not dollars.
+    render(
+      <ActionPanel
+        {...base}
+        isTournament
+        bigBlind={3000}
+        smallBlind={1500}
+        currentBet={3000}
+        callAmount={3000}
+        minRaise={6000}
+        maxRaise={90000}
+        allInTo={90000}
+        onAction={vi.fn()}
+      />
+    );
+    openPanel();
+    expect(slider().step).toBe('1500');
   });
 
   it('nudges by one chip, not by one big blind', () => {
@@ -164,6 +188,29 @@ describe('the slider offers amounts between the blinds', () => {
     expect(shownAmount()).toBe('13');
     fireEvent.click(screen.getByLabelText('Decrease By 1'));
     expect(shownAmount()).toBe('12');
+  });
+});
+
+describe('sliderUnitFor - dollars in cash, chip depth in tournaments', () => {
+  it('cash at a dollar big blind or better walks whole dollars', () => {
+    expect(sliderUnitFor(false, 2, 1)).toBe(1);
+    expect(sliderUnitFor(false, 5, 2)).toBe(1); // 2/5: dollar steps, not 2-chip steps
+    expect(sliderUnitFor(false, 1, 0.5)).toBe(1);
+  });
+
+  it('sub-dollar cash keeps the chip grid - a dollar step would leave two positions', () => {
+    expect(sliderUnitFor(false, 0.1, 0.05)).toBe(0.05);
+    expect(sliderUnitFor(false, 0.5, 0.25)).toBe(0.25);
+  });
+
+  it('tournaments scale with the level, whatever the number', () => {
+    expect(sliderUnitFor(true, 200, 100)).toBe(100);
+    expect(sliderUnitFor(true, 3000, 1500)).toBe(1500);
+    expect(sliderUnitFor(true, 2, 1)).toBe(1);
+  });
+
+  it('never returns a unit of zero', () => {
+    expect(sliderUnitFor(true, 0, 0)).toBeGreaterThan(0);
   });
 });
 

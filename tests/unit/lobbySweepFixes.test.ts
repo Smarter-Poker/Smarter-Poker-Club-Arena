@@ -22,6 +22,8 @@ import {
   formatChipTotal,
   lateRegEndMs,
   stackDepthBB,
+  stackDepthLabel,
+  stackFormatRank,
   tournamentEntry,
   tournamentStatus,
   type LobbyTableRow,
@@ -172,12 +174,28 @@ describe('the cash title strips every variant spelling', () => {
   });
 });
 
-describe('Format sorts on depth, not on the alphabet', () => {
+describe('Format sorts on the RENDERED bucket, not the alphabet and not raw depth', () => {
+  /* ITEM E audit 2026-08-26: raw-depth sorting disagreed with the rendered
+     word whenever the NAME carried a speed keyword ("Sunday Turbo" at 60bb
+     rendered Turbo, sorted Deepstack). stackFormatRank derives the rank from
+     stackDepthLabel itself, so the two cannot diverge. */
   it('gives a cash row Infinity so it sinks in both directions', () => {
     expect(stackDepthBB(cashEntry(cRow()))).toBe(0);
+    expect(stackFormatRank(cashEntry(cRow()))).toBe(Infinity);
     const col = TABLE.slice(TABLE.indexOf('const COL_FORMAT'), TABLE.indexOf('const COL_ACTIONS'));
-    expect(col).toContain('stackDepthBB');
-    expect(col).toContain('Infinity');
+    expect(col).toContain('stackFormatRank');
+  });
+  it('a name keyword and a measured depth land on the SAME rank as their label', () => {
+    const named = tournamentEntry(
+      tRow({
+        name: 'Sunday Turbo Special',
+        starting_chips: 6000,
+        blind_structure: JSON.stringify([{ level: 1, smallBlind: 50, bigBlind: 100, ante: 0 }]),
+      }),
+      'mtt'
+    ); // 60bb — Deepstack by measured depth, Turbo by name
+    expect(stackDepthLabel(named)).toBe('Turbo');
+    expect(stackFormatRank(named)).toBe(2); // Turbo's rank, not Deepstack's
   });
 });
 

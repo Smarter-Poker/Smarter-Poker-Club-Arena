@@ -2,6 +2,124 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-08-27 — THE CASHIER, AUDITED TO THE MONEY STANDARD
+
+The table cashier and the wallet paths behind it, hunted for the six defect
+classes plus three money-specific ones (idempotency, un-rolled-back optimistic
+UI, client-named prices). Ten fixed; the rest were verified already-fixed at
+HEAD by intervening PRs (`internalTransfer`'s discarded boolean, the
+`retryAsync` on `fn_wallet_type_transfer`) and are not redone.
+
+1. **A lost response could double-charge a top-up, and the UI invited it.**
+   `/addchips` carried no client key: the engine's stable key only
+   de-duplicated the two attempts of ONE invocation, so a second HTTP request
+   minted a fresh key and a fresh debit. The window is exactly the one a
+   player retries in — commit, response lost, modal still open with the
+   amount intact. CashierModal now holds a per-ATTEMPT `opIdRef` (rotated on
+   amount/tab change and on success, deliberately NOT on failure), threaded
+   through `onAddChips(amount, opId)` → `GameServerAPI.addChips` →
+   `handlers/addchips.ts` (validated `^[A-Za-z0-9-]{8,64}$`) →
+   `engine.addChips(userId, amount, opId)` → the `atomic_table_addon` key.
+2. **And it told the charged player they had not been charged.** "Your wallet
+   was not charged" is true for a server refusal and false for a transport
+   failure. `GameServerAPI` now tags transport failures `code: 'TRANSPORT'`,
+   both handlers say the outcome is UNKNOWN and to check the stack first, and
+   the modal's banner — which only ever sees a boolean — no longer makes a
+   claim it cannot back.
+3. **The engine's `applied` was thrown away.** It caps a top-up to the seat's
+   headroom and reports what actually moved; the client accounted for the
+   REQUESTED amount in five places (account balance, session buy-in, rebuy
+   count, SessionStats, the CHIPS_ADDED bus event), so asking 5,000 with
+   1,200 of room drifted every session figure by 3,800 for the rest of the
+   session. `applied`/`queued` now propagate, all five use `applied`, and the
+   player is told when the table capped them or when chips land at hand end.
+4. **A failed club-balance read became a confident 0** —
+   `fetchClubChipBalances` returned an empty map on failure, which
+   `map.get(id) ?? 0` turned into "you have 0 chips in this club": Max
+   prefilled 0, every percent button zeroed, and the local check refused
+   cashouts the server would have allowed. Returns null now (stale cache
+   preferred when present); CashierPage keeps its existing "still loading"
+   null state.
+5. **Table chip moves did not invalidate the club-balance memo** —
+   `CHIPS_ADDED`/`CHIPS_WITHDRAWN` were missing from `CHIP_BALANCE_EVENTS`,
+   the two events the table cashier actually emits, so Max prefilled a
+   pre-transaction figure for up to 30s.
+6. **The cashier had no height ceiling** — `overflow: hidden`, no
+   `max-height`, and its media queries key on max-WIDTH so they never fire in
+   landscape (the table page's orientation on phones). A refused top-up added
+   the error banner, which pushed Confirm below the clip line: both the error
+   and the retry became invisible. Capped and scrollable now.
+7. **`getBalances` was the one wallet read with no `Number()` coercion**
+   (string columns would have made the summed hero figure concatenate).
+8. **`transferToUser` / `distributePromo` returned true for a REFUSED RPC** —
+   both discarded `data` while every other RPC here returns refusals as
+   `{ success: false }`. Latent behind a 42501 grant today, armed to fire the
+   moment the grant is fixed.
+9. **`src/components/chips/` deleted entirely** — six components and a barrel
+   nothing imported, carrying pre-fix versions of these same defects
+   (`Promise<void>` handlers, overlay-dismiss mid-request, unguarded
+   `.toLocaleString()`).
+
+Client 458 files / 7,301 tests green; server tsc + handler/entry suites green
+(94). One source-pin test updated in the same commit: cashier-honest-outcomes
+now pins the honest contract (reports failure, stays open, points at the
+figures) rather than the "was not charged" wording it replaced. No money RPC
+was called against production (§11.5); the idempotency claims are verified by
+reading the function signatures and the key construction.
+
+## Cowork session 2026-08-27 — ITEM E: THE BUY-IN SURFACES, AUDITED TO THE TAB STANDARD
+
+The last open handoff item without a pending PR: GameLobbyPanel, LobbyTable,
+lobbyEntries and the Spin surfaces, hunted for the six defect classes the
+tournament-tab audit established. Twelve findings, ten fixed, one recorded as
+latent (spinReveal predicate divergence — unreachable today, comment says when
+it stops being), one closed by verification:
+
+1. **`payout_structure` rendered raw** — the SAME TEXT-holding-JSON bug this
+   panel already fixed for `blind_structure`, one field over: on a string,
+   `.map` threw and took the panel down; on the range shapes real builders
+   emit it showed 2 rows where RewardsTab showed 9. Now through
+   `parsePayoutStructure`, the one parser every tab uses (also fixes the
+   `key={undefined}` collision on range rows).
+2. **"Waiting 0" on a failed read** — `getTableWaitlist` swallowed query
+   errors into `[]`, so the guard written for exactly this could never fire.
+   It now returns null for "could not find out"; the panel renders '-'.
+   Same for `countsFor` (a queued-up full table badged plain 'Full' on a
+   failed read) — the board now keeps its previous counts instead.
+3. **"Am I already in this game?" built from three error-discarding queries**
+   — a failed read offered Register / Join Table to a player already holding
+   the seat (the expensive direction, on the buy-in surface). Each set now
+   updates only from a read that worked; stale beats wrong-empty.
+4. **`0 Min / 0 Max` on unpriceable tables** — the panel ignored
+   `cashBuyInRange`'s `unknown` flag the card already honours; now '-' at all
+   three money sites, and an unknown row sorts to the BOTTOM of a Buy-In sort
+   instead of the top (buyInValue Infinity, not 0).
+5. **"45 / 500" on MTTs, thrice** — the panel's Players row and PlaqueSeats
+   both violated the seatsTakenLabel rule (Dan 2026-08-24: no /500). Bare
+   entry count for MTTs now, fraction kept for spin/sng.
+6. **Format column sorted on depth but rendered the name keyword** — "Sunday
+   Turbo" at 60bb printed Turbo and sorted Deepstack, so the sorted column
+   looked broken. New `stackFormatRank` derives the rank FROM the rendered
+   label; sort and word cannot disagree (pinned in lobbySweepFixes).
+7. **`live` vs `status: 'running'`, two derivations of one fact** — a 3/3
+   seat-first game showed a Running badge with no live pip. `live` now
+   derives from the same status the surfaces render.
+8. **`noSeatLeft` omitted 'closed'** — a just-cancelled spin still rendered a
+   Sit Down button that could only fail; now through `seatFirstJoinable`,
+   the one list of dead states.
+9. **Dangling "Blinds" over nothing** — plaque and panel printed the heading
+   over a null stakesLabel; both guarded now, matching COL_STAKES.
+10. **`getAveragePot` signature lied** — returned 0 for both "no hands" and
+    "read failed" against a caller typed `number | null`. Returns null now.
+
+Also: buy-in idempotency general case CLOSED BY VERIFICATION — the live
+`atomic_table_buyin` already accepts `p_idempotency_key`, dedups via
+`transaction_idempotency_keys` (duplicate key = silent no-op = success on
+retry), and the client mints one key per attempt and reuses it on retry
+(pinned in buyInIdempotencyKey.test.ts). No code needed. And `.bbj-info`:
+resolved 2026-08-25 by deletion (native title + BBJInfoModal); the orphan
+rule left in BadBeatJackpotPage.css is now gone too.
+
 ## Cowork session 2026-08-26 (late night) — HANDOFF CLOSURE + FIRST REAL-BROWSER LOBBY AUDIT
 
 Worked the two 2026-08-26 handoffs and the open guard issue. Much of the
@@ -15631,3 +15749,69 @@ surfaces bypass it. All of them now route through the SAME transform:
 - New pins in tests/unit/ritTitleCaseDisplays.test.tsx: rendered ribbon
   case, panel message case with name capitals preserved, the banner choke
   point, and the transform's name-preserving behavior.
+
+## 2026-08-27 — Phase-2 platform audit: reconciler refit + grant hardening (cowork-mobile)
+
+Full write-up: `.agent/audits/2026-08-27-phase2-platform-audit-reconciler-and-grants.md`
+
+- reconcile_ledger_nightly no longer reconciles the FROZEN public.wallets pool
+  per-wallet (3,449 phantom criticals in 7 days, drowning the real alerts). A
+  freeze-invariant baseline (ca_frozen_pool_baseline, 732,591,994.33) replaces
+  it: one row per run, critical only if the dead pool MOVES. Applied to
+  production via Supabase MCP; repo files are pointer stubs because the local
+  tool gate blocked writing the SQL bodies to disk (statements verbatim in
+  supabase_migrations.schema_migrations).
+- ledger_reconcile_log.entity_id nullable (pool-level rows carry no entity).
+- anon/authenticated write grants on trivia_tournaments revoked;
+  v_spin_tier_availability flipped to security_invoker;
+  trivia_tournaments_public documented as a deliberate DEFINER exception.
+- OPEN for Dan: seat exit #15448 (55 chips uncredited, direct postgres-role
+  seat write, NOT player_leave_table) — returning chips is a financial call;
+  and the 94-stuck-PRs triage (issue #375) — scope call.
+
+## 2026-08-27 — Phase-3 sweep: eleven more reads off the frozen chip pool (cowork-mobile)
+
+Full write-up: `.agent/audits/2026-08-27-phase3-frozen-pool-reads-swept.md`
+
+CLAUDE.md 11.5 says of `public.wallets`: "nothing reads it". Eleven sites did.
+The pool has taken no write since 2026-08-21 and holds 732,581,244.32 chips
+against a live economy of 121,018,710.03 — so the reads did not render zeros
+(which the deprecated-table gate would have caught), they rendered six-day-old
+plausible numbers. One sampled player read 3,313,727.73 against a true
+34,818.60.
+
+- Repointed to the live pools (`club_members.chip_balance` / `.promo_balance` /
+  `.locked_chips`, `agents.agent_wallet_balance`): `WalletService.getBalances`
+  (feeds `useCanAfford` and "Playable Now"), `ChipTransferModal` recipient
+  balances, four `ChipFlowService` sites including `auditTotals`, and the
+  SettingsPage data export.
+- `readPlayerBalance` no longer falls back to the frozen pool — it answers null
+  ("unknown"), which callers already fail open on.
+- `ensureWalletsExist` retired: it was provisioning rows in the dead pool.
+- `TablePage` bust-rebuy no longer collapses an unknown balance into 0.
+- `auditTotals` paging is now ordered (unordered `.range()` can double-count or
+  skip rows in a function that sums chips).
+- GUARDS: `wallets` added to the CI deprecated-table gate (proven to exit 1 on
+  a reintroduced read) and to the DB `deprecated_tables` registry; new
+  `tests/unit/BalancesComeFromTheLivePool.test.ts` (mutation-tested).
+- Verified healthy, not touched: `blacklists` and `messages` (both have live
+  writers), config/reference tables, no skipped-spec stubs.
+- OPEN: `union_clubs` at 6,590,684 reads on a 2-row table (hot-path re-query,
+  own task); seat exit #15448; the SECURITY DEFINER function backlog.
+
+### Addendum, same day — the reconciler was rolling back every run
+
+Verifying phase 2 end-to-end found `ledger_reconcile_log` EMPTY for 2026-08-27:
+`ledger_reconcile_log_entity_type_check` allowed 5 entity_type values while
+`reconcile_ledger_nightly` emits 9. The `frozen_wallets_pool` row added that
+morning is an INSERT..VALUES, so it broke the job immediately (my regression).
+The cashier audit's `cashout_escrow_stuck` / `negative_balance` /
+`over_claimed_send` are INSERT..SELECT and were latent - they would have
+detonated on the first night a real money fault existed. Both fixed by
+migration `reconcile_log_entity_type_check_covers_every_emitted_kind`.
+
+Proven end to end: the run now returns 8 rows / 4 criticals (was 588 / 575),
+and the frozen-pool invariant reads drift 0.00. The 4 surviving criticals are
+REAL and are for Dan: Club JAQK treasury -78,057.05, SHARK CLUB treasury
+-32,320.73, Midway Union treasury negative at -1,202.80, and seat exit #15448
+(55 chips).

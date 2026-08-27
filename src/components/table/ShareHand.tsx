@@ -603,7 +603,7 @@ export function ShareHand({
                 },
                 {
                   platform: 'telegram',
-                  icon: '✈',
+                  icon: '',
                   label: 'Telegram',
                   className: 'share-hand__social-btn--telegram',
                 },

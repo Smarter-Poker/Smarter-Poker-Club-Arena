@@ -53,13 +53,14 @@ describe('exactly one writer per kind of table', () => {
   it('is the sanctioned four, and nothing else', () => {
     expect(tableInserters()).toEqual(
       [
-        // The host's own creation screen: Save writes is_template, Start writes
-        // status 'active'. Both build their payload from ONE buildTableData().
+        // The host's own creation screen: Save creates the table and returns
+        // to the lobby, Start creates it and sits down. Both insert status
+        // 'waiting' from ONE buildTableData().
+        //
+        // 2026-08-27: TableService left this list. Its createTable was the
+        // Create Table modal's service, and the modal had zero imports — the
+        // whole path was unreachable. Deleted, not preserved.
         'src/pages/TableConfigPage.tsx',
-        // The Create Table modal's service. Maps settings onto the exact columns
-        // the engine reads, and is the only writer that enforces the per-variant
-        // seat cap.
-        'src/services/TableService.ts',
         // Tournament tables. Sized from the tournament's own structure, never
         // through the cash path.
         'src/services/TournamentService.ts',
@@ -89,17 +90,33 @@ describe('exactly one writer per kind of table', () => {
   });
 });
 
-describe('Save and Start are told apart', () => {
+describe('Save and Start both create tables the engine can adopt', () => {
   const page = fs.readFileSync(path.join(SRC, 'pages/TableConfigPage.tsx'), 'utf8');
 
-  it('Save writes a template, Start writes a live table', () => {
-    expect(page).toContain('is_template: true');
-    expect(page).toContain("status: 'active'");
+  it("neither writes status 'active', which no engine query matches", () => {
+    // cash_tables_needing_engine selects status IN ('waiting','running').
+    // 'active' is a legal value nothing reads: a table inserted with it sits
+    // in the lobby forever and never deals. This test USED TO PIN that bug
+    // ("Start writes status 'active'"); it now pins the fix.
+    expect(page).not.toContain("status: 'active'");
+  });
+
+  it('neither writes is_template, which nothing anywhere reads', () => {
+    // The template store is table_templates (the Save as Template button).
+    // A tables row flagged is_template rendered in the lobby as a joinable
+    // game because no lobby query filters the column.
+    expect(page).not.toContain('is_template: true');
   });
 
   it('both build the SAME payload, so a feature cannot reach one and not the other', () => {
     const uses = page.match(/\.\.\.buildTableData\(resolvedId\)/g) || [];
     expect(uses.length).toBe(2);
+  });
+
+  it('the Cap toggle now carries an amount the engine can enforce', () => {
+    // cap_enabled alone is not a cap: the engine computes the ceiling from
+    // cap_bb and treats <= 0 as uncapped.
+    expect(page).toContain('cap_bb: config.capEnabled ? config.capBB : 0');
   });
 });
 

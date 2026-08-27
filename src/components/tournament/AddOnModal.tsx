@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { tournamentService } from '../../services/TournamentService';
 import { masterBus } from '../../core/MasterBus';
 import { soundService } from '../../services/SoundService';
@@ -40,6 +40,9 @@ export const AddOnModal: React.FC<AddOnModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(durationSeconds);
   const [purchased, setPurchased] = useState(false);
+  // Ref guard: the add-on RPC has no idempotency key, so a double tap that
+  // lands before setProcessing re-renders would buy two add-ons.
+  const inFlightRef = useRef(false);
 
   // ── Countdown timer ──
   useEffect(() => {
@@ -58,6 +61,8 @@ export const AddOnModal: React.FC<AddOnModalProps> = ({
   }, [purchased, onClose]);
 
   const handleAddOn = useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     setProcessing(true);
     setError(null);
     try {
@@ -75,6 +80,7 @@ export const AddOnModal: React.FC<AddOnModalProps> = ({
       setError(safeErrorMessage(err, 'Add-on failed'));
     } finally {
       setProcessing(false);
+      inFlightRef.current = false;
     }
   }, [tournamentId, userId, currentStack, addOnChips, onSuccess]);
 

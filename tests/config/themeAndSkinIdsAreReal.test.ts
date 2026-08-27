@@ -104,6 +104,12 @@ describe('a table skin you can pick is a skin that exists', () => {
     return [...block![1].matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]);
   }
 
+  function eventSkinIds(): string[] {
+    const block = TABLE_ASSETS.match(/EVENT_TABLE_SKIN_IDS: string\[\] = \[([\s\S]*?)\];/);
+    expect(block, 'EVENT_TABLE_SKIN_IDS not found').toBeTruthy();
+    return [...block![1].matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]);
+  }
+
   it('every canonical skin id imports a file that is on disk', () => {
     const ids = canonicalSkinIds();
     expect(ids.length).toBeGreaterThanOrEqual(13);
@@ -111,8 +117,8 @@ describe('a table skin you can pick is a skin that exists', () => {
     expect(missing, `skin ids with no artwork: ${missing.join(', ')}`).toEqual([]);
   });
 
-  it('every skin file on disk is offered by an id (no orphaned artwork)', () => {
-    const ids = new Set(canonicalSkinIds());
+  it('every skin file on disk is selectable or event-driven (no orphaned artwork)', () => {
+    const ids = new Set([...canonicalSkinIds(), ...eventSkinIds()]);
     const onDisk = fs
       .readdirSync(skinDir)
       .filter((f) => f.startsWith('skin_') && f.endsWith('.png'))

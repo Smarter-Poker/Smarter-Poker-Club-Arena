@@ -641,7 +641,12 @@ export default function PlayerSessionsPage() {
           color_label: noteData.color_label,
           notes: noteData.notes,
         },
-        { onConflict: 'club_id,target_user_id,user_id' }
+        /* PHANTOM COLUMN FIX 2026-08-27: `player_notes` has no `club_id`
+           column, so this upsert 400'd and Save Note could never succeed.
+           The READ path at the top of this page is already club-agnostic —
+           a note is per (author, subject), which is what the conflict target
+           says now. */
+        { onConflict: 'user_id,target_user_id' }
       );
       if (upsertErr) throw upsertErr;
       setNotes((prev) => ({ ...prev, [noteTarget.userId]: noteData }));

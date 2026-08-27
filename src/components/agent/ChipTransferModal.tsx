@@ -58,6 +58,8 @@ export default function ChipTransferModal({
   const [amount, setAmount] = useState<string>('');
   const [note, setNote] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
+  // Ref, not isLoading: a same-frame double tap must not run two transfers.
+  const transferInFlightRef = useRef(false);
   const [isLoadingRecipients, setIsLoadingRecipients] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -185,15 +187,22 @@ export default function ChipTransferModal({
 
       // Get wallet balances for all recipients
       const recipientIds = (data || []).map((m: any) => m.users?.id).filter(Boolean);
+      /* ═══ THE AGENT WAS SHOWN SIX-DAY-OLD BALANCES (fixed 2026-08-27) ═══
+         This read the retired global wallet table, frozen since 2026-08-21,
+         to decide what each recipient already holds - the number an agent
+         looks at when choosing how many chips to send. Measured that day, one
+         player read 3,313,727.73 there against a true 34,818.60. It reads the
+         live club-scoped pool now, and scopes to THIS club, which is also the
+         only balance that means anything in a club-chip transfer. */
       const { data: wallets } = await supabase
-        .from('wallets')
-        .select('user_id, balance')
+        .from('club_members')
+        .select('user_id, chip_balance')
         .in('user_id', recipientIds)
-        .eq('wallet_type', 'PLAYER');
+        .eq('club_id', await resolveClubUUID(clubId));
 
       const walletMap: Record<string, number> = {};
       (wallets || []).forEach((w: any) => {
-        walletMap[w.user_id] = w.balance;
+        walletMap[w.user_id] = Number(w.chip_balance ?? 0) || 0;
       });
 
       const recipientList: Recipient[] = (data || [])
@@ -275,6 +284,8 @@ export default function ChipTransferModal({
       return;
     }
     if (!user?.id) return;
+    if (transferInFlightRef.current) return;
+    transferInFlightRef.current = true;
 
     setIsLoading(true);
     setError(null);
@@ -335,6 +346,7 @@ export default function ChipTransferModal({
       if (isMounted.current) setError(safeErrorMessage(err, 'Transfer failed. Please try again.'));
     }
     setIsLoading(false);
+    transferInFlightRef.current = false;
   };
 
   const handleClose = () => {

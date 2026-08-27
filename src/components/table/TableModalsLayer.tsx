@@ -267,8 +267,9 @@ export interface TableModalsLayerProps {
   /** @deprecated unused by this layer — see the note on boardStage */
   buyInProcessingRef: React.MutableRefObject<boolean>;
   onCloseCashier: () => void;
-  /** Must report whether the chips actually moved — see CashierModal.onAddChips. */
-  onAddChips: (amount: number) => Promise<boolean>;
+  /** Must report whether the chips actually moved — see CashierModal.onAddChips.
+   *  `opId` is the modal's per-attempt idempotency id (Cashier audit 2026-08-27). */
+  onAddChips: (amount: number, opId?: string) => Promise<boolean>;
   onWithdrawChips: (amount: number) => Promise<boolean>;
 
   // Bust Rebuy
@@ -1352,6 +1353,9 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
       )}
 
       {/* Club Profile Modal */}
+      {/* tableId reaches the sheet so its session figures are the REAL ones
+          (audit 2026-08-27): it reads the same sessionStatsService the Session
+          Stats panel does, so the two can never disagree. */}
       <ClubProfileModal
         isOpen={showProfileModal}
         onClose={onCloseProfileModal}
@@ -1359,6 +1363,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         username={username}
         avatarUrl={heroAvatarUrl}
         clubName={clubName}
+        tableId={tableId}
       />
     </>
   );

@@ -232,12 +232,12 @@
   color: #cbd0da;
 }
 .hdm-action--check {
-  background: rgba(34, 197, 94, 0.25);
-  color: #7ce7a5;
+  background: rgba(63, 185, 80, 0.25);
+  color: #4dc660;
 }
 .hdm-action--call {
-  background: rgba(34, 197, 94, 0.3);
-  color: #7ce7a5;
+  background: rgba(63, 185, 80, 0.3);
+  color: #4dc660;
 }
 /* Aggression chip — was amber. Matches getActionColor in HandHistoryPanel.tsx. */
 .hdm-action--bet,
@@ -399,7 +399,7 @@
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   font-size: 0.76rem;
-  color: var(--success-green, #00d26a);
+  color: var(--success-green, #3fb950);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -414,7 +414,7 @@
 }
 
 .hdm-net--win {
-  color: var(--success-green, #00d26a);
+  color: var(--success-green, #3fb950);
 }
 
 .hdm-net--loss {

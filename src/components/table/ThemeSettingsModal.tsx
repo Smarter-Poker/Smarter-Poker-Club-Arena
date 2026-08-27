@@ -29,6 +29,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import './ThemeSettingsModal.css';
 import { reportError } from '../../utils/errorReporter';
+import { useSettingsStore } from '../../stores/useSettingsStore';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -51,6 +52,7 @@ interface ThemeSelection {
 }
 
 type ThemeTab = 'themes' | 'table' | 'button' | 'background' | 'cards';
+type BackgroundGroup = 'places-rooms' | 'skins';
 
 interface ThemeAsset {
   id: string;
@@ -85,6 +87,14 @@ const TABS: { key: ThemeTab; label: string }[] = [
   { key: 'cards', label: 'Cards' },
 ];
 
+const TAB_DESCRIPTIONS: Record<ThemeTab, string> = {
+  themes: 'Complete, coordinated table looks',
+  table: 'The felt and rail at the center of play',
+  button: 'Dealer marker finish and color',
+  background: 'The room surrounding your table',
+  cards: 'The design shown on every face-down card',
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // THEME ASSETS — Bible V8 §11.2.2
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -107,7 +117,40 @@ const BACKGROUND_META: Record<string, { name: string; vipOnly: boolean }> = {
   carbon_grid: { name: 'Carbon Grid', vipOnly: true },
   ice_frost: { name: 'Ice Frost', vipOnly: true },
   jade_neon: { name: 'Jade Neon', vipOnly: true },
+  place_las_vegas: { name: 'Las Vegas', vipOnly: false },
+  place_paris: { name: 'Paris', vipOnly: false },
+  place_london: { name: 'London', vipOnly: false },
+  place_tokyo: { name: 'Tokyo', vipOnly: false },
+  place_dubai: { name: 'Dubai', vipOnly: true },
+  place_sydney: { name: 'Sydney Harbour', vipOnly: false },
+  place_rio: { name: 'Rio De Janeiro', vipOnly: false },
+  place_santorini: { name: 'Santorini', vipOnly: true },
+  place_new_york: { name: 'New York', vipOnly: false },
+  place_monaco: { name: 'Monte Carlo', vipOnly: true },
+  skin_shadow_suits: { name: 'Shadow Suits', vipOnly: false },
+  skin_gilded_fall: { name: 'Gilded Fall', vipOnly: false },
+  skin_crimson_damask: { name: 'Crimson Damask', vipOnly: false },
+  skin_graphite_embossed: { name: 'Graphite Embossed', vipOnly: false },
+  skin_obsidian_micro: { name: 'Obsidian Micro', vipOnly: false },
+  skin_emerald_argyle: { name: 'Emerald Argyle', vipOnly: true },
+  skin_ultraviolet_suits: { name: 'Ultraviolet Suits', vipOnly: true },
+  skin_black_gold_chips: { name: 'Black Gold Chips', vipOnly: true },
+  skin_golden_sparks: { name: 'Golden Sparks', vipOnly: true },
+  skin_platinum_deco: { name: 'Platinum Deco', vipOnly: true },
 };
+
+export const BACKGROUND_SKIN_IDS = new Set([
+  'skin_shadow_suits',
+  'skin_gilded_fall',
+  'skin_crimson_damask',
+  'skin_graphite_embossed',
+  'skin_obsidian_micro',
+  'skin_emerald_argyle',
+  'skin_ultraviolet_suits',
+  'skin_black_gold_chips',
+  'skin_golden_sparks',
+  'skin_platinum_deco',
+]);
 
 const BACKGROUND_FALLBACK_GRADIENT = 'radial-gradient(ellipse at 50% 35%, #2c323c, #0a0c10)';
 
@@ -148,81 +191,139 @@ const CARD_ASSETS: ThemeAsset[] = CARD_BACK_CATALOG.map((design) => ({
   vipOnly: design.tier !== 'standard',
 }));
 
+export const THEME_PRESETS: ThemeAsset[] = [
+  {
+    id: 'default-dark',
+    name: 'Default Dark',
+    thumbnail: 'linear-gradient(135deg, #1a1a2e, #16213e)',
+    vipOnly: false,
+  },
+  {
+    id: 'classic-brown',
+    name: 'Classic Brown',
+    thumbnail: 'linear-gradient(135deg, #3e2723, #5d4037)',
+    vipOnly: false,
+  },
+  {
+    id: 'neon-blue',
+    name: 'Neon Blue',
+    thumbnail: 'linear-gradient(135deg, #0d47a1, #1565c0)',
+    vipOnly: true,
+  },
+  {
+    id: 'rustic-wood',
+    name: 'Rustic Wood',
+    thumbnail: 'linear-gradient(135deg, #4e342e, #795548)',
+    vipOnly: true,
+  },
+  {
+    id: 'casino-green',
+    name: 'Casino Green',
+    thumbnail: 'linear-gradient(135deg, #1b5e20, #2e7d32)',
+    vipOnly: true,
+  },
+  {
+    id: 'ocean-depths',
+    name: 'Ocean Depths',
+    thumbnail: 'linear-gradient(135deg, #061a2c, #0b6584)',
+    vipOnly: false,
+  },
+  {
+    id: 'crimson-club',
+    name: 'Crimson Club',
+    thumbnail: 'linear-gradient(135deg, #26070d, #8f142c)',
+    vipOnly: false,
+  },
+  {
+    id: 'arctic-suite',
+    name: 'Arctic Suite',
+    thumbnail: 'linear-gradient(135deg, #dce9f0, #55748a)',
+    vipOnly: true,
+  },
+  {
+    id: 'amethyst-night',
+    name: 'Amethyst Night',
+    thumbnail: 'linear-gradient(135deg, #160b27, #63389a)',
+    vipOnly: true,
+  },
+  {
+    id: 'carbon-ion',
+    name: 'Carbon Ion',
+    thumbnail: 'linear-gradient(135deg, #080d0f, #167f78)',
+    vipOnly: true,
+  },
+];
+
+export const BUTTON_ASSETS: ThemeAsset[] = [
+  {
+    // FIX-D7 2026-07-19: the app default is 'classic-white' but it wasn't a
+    // selectable tile, so a fresh user / Reset showed no button highlighted.
+    // Add it (matches the [data-button-theme='classic-white'] CSS token).
+    id: 'classic-white',
+    name: 'Classic White',
+    thumbnail: 'linear-gradient(145deg, #ffffff 0%, #e8e8e8 50%, #d0d0d0 100%)',
+    vipOnly: false,
+  },
+  {
+    id: 'red-d-gear',
+    name: 'Red D',
+    thumbnail: 'linear-gradient(135deg, #c62828, #e53935)',
+    vipOnly: false,
+  },
+  {
+    id: 'gray-d-gear',
+    name: 'Gray D',
+    thumbnail: 'linear-gradient(135deg, #616161, #757575)',
+    vipOnly: false,
+  },
+  {
+    id: 'blue-crystal',
+    name: 'Blue Crystal',
+    thumbnail: 'linear-gradient(135deg, #1565c0, #42a5f5)',
+    vipOnly: true,
+  },
+  {
+    id: 'gold-star',
+    name: 'Gold Star',
+    thumbnail: 'linear-gradient(135deg, #f57f17, #fbc02d)',
+    vipOnly: true,
+  },
+  {
+    id: 'sports-themed',
+    name: 'Sports',
+    thumbnail: 'linear-gradient(135deg, #33691e, #558b2f)',
+    vipOnly: true,
+  },
+  {
+    id: 'jade-seal',
+    name: 'Jade Seal',
+    thumbnail: 'linear-gradient(145deg, #a7e5c2, #176344)',
+    vipOnly: true,
+  },
+  {
+    id: 'amethyst-chip',
+    name: 'Amethyst Chip',
+    thumbnail: 'linear-gradient(145deg, #d4b8ff, #5b2d91)',
+    vipOnly: true,
+  },
+  {
+    id: 'carbon-ion',
+    name: 'Carbon Ion',
+    thumbnail: 'linear-gradient(145deg, #263238, #101416)',
+    vipOnly: true,
+  },
+  {
+    id: 'ocean-pearl',
+    name: 'Ocean Pearl',
+    thumbnail: 'linear-gradient(145deg, #eaf8ff, #4da6c8)',
+    vipOnly: true,
+  },
+];
+
 const THEME_ASSETS: Record<ThemeTab, ThemeAsset[]> = {
-  themes: [
-    {
-      id: 'default-dark',
-      name: 'Default Dark',
-      thumbnail: 'linear-gradient(135deg, #1a1a2e, #16213e)',
-      vipOnly: false,
-    },
-    {
-      id: 'classic-brown',
-      name: 'Classic Brown',
-      thumbnail: 'linear-gradient(135deg, #3e2723, #5d4037)',
-      vipOnly: false,
-    },
-    {
-      id: 'neon-blue',
-      name: 'Neon Blue',
-      thumbnail: 'linear-gradient(135deg, #0d47a1, #1565c0)',
-      vipOnly: true,
-    },
-    {
-      id: 'rustic-wood',
-      name: 'Rustic Wood',
-      thumbnail: 'linear-gradient(135deg, #4e342e, #795548)',
-      vipOnly: true,
-    },
-    {
-      id: 'casino-green',
-      name: 'Casino Green',
-      thumbnail: 'linear-gradient(135deg, #1b5e20, #2e7d32)',
-      vipOnly: true,
-    },
-  ],
+  themes: THEME_PRESETS,
   table: TABLE_ASSETS,
-  button: [
-    {
-      // FIX-D7 2026-07-19: the app default is 'classic-white' but it wasn't a
-      // selectable tile, so a fresh user / Reset showed no button highlighted.
-      // Add it (matches the [data-button-theme='classic-white'] CSS token).
-      id: 'classic-white',
-      name: 'Classic White',
-      thumbnail: 'linear-gradient(145deg, #ffffff 0%, #e8e8e8 50%, #d0d0d0 100%)',
-      vipOnly: false,
-    },
-    {
-      id: 'red-d-gear',
-      name: 'Red D',
-      thumbnail: 'linear-gradient(135deg, #c62828, #e53935)',
-      vipOnly: false,
-    },
-    {
-      id: 'gray-d-gear',
-      name: 'Gray D',
-      thumbnail: 'linear-gradient(135deg, #616161, #757575)',
-      vipOnly: false,
-    },
-    {
-      id: 'blue-crystal',
-      name: 'Blue Crystal',
-      thumbnail: 'linear-gradient(135deg, #1565c0, #42a5f5)',
-      vipOnly: true,
-    },
-    {
-      id: 'gold-star',
-      name: 'Gold Star',
-      thumbnail: 'linear-gradient(135deg, #f57f17, #fbc02d)',
-      vipOnly: true,
-    },
-    {
-      id: 'sports-themed',
-      name: 'Sports',
-      thumbnail: 'linear-gradient(135deg, #33691e, #558b2f)',
-      vipOnly: true,
-    },
-  ],
+  button: BUTTON_ASSETS,
   // Dan 2026-08-18: ten standalone designed backgrounds (see
   // src/assets/backgrounds/, applied via TABLE_BACKGROUNDS in TablePage).
   //
@@ -290,6 +391,31 @@ const PRESET_TRIMMINGS: Record<string, Omit<Partial<ThemeSelection>, 'table_id'>
   'casino-green': {
     button_id: 'gold-star',
     background_id: 'jade_neon',
+    cards_id: 'carbon',
+  },
+  'ocean-depths': {
+    button_id: 'ocean-pearl',
+    background_id: 'ocean_abyss',
+    cards_id: 'classic_blue',
+  },
+  'crimson-club': {
+    button_id: 'red-d-gear',
+    background_id: 'crimson_lounge',
+    cards_id: 'classic_red',
+  },
+  'arctic-suite': {
+    button_id: 'ocean-pearl',
+    background_id: 'ice_frost',
+    cards_id: 'diamond-foil',
+  },
+  'amethyst-night': {
+    button_id: 'amethyst-chip',
+    background_id: 'royal_indigo',
+    cards_id: 'royal',
+  },
+  'carbon-ion': {
+    button_id: 'carbon-ion',
+    background_id: 'carbon_grid',
     cards_id: 'carbon',
   },
 };
@@ -425,11 +551,14 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   const navigate = useNavigate();
   const [showVipPrompt, setShowVipPrompt] = useState(false);
   const [activeTab, setActiveTab] = useState<ThemeTab>('themes');
+  const [backgroundGroup, setBackgroundGroup] = useState<BackgroundGroup>('places-rooms');
   const [gameType, setGameType] = useState<string>('ALL');
   const [selection, setSelection] = useState<ThemeSelection>({ ...DEFAULT_SELECTION });
   const [saving, setSaving] = useState(false);
   /** Card backs bought with diamonds in the store. See canAccessAsset. */
   const [ownedCardBacks, setOwnedCardBacks] = useState<string[]>([]);
+  const uiMode = useSettingsStore((state) => state.theme);
+  const setUiMode = useSettingsStore((state) => state.setTheme);
 
   // The live selection, readable from a callback without making every callback
   // depend on it. handleSave needs the value it is replacing so it can put it
@@ -671,47 +800,168 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   if (!isOpen) return null;
 
   const currentField = TAB_TO_FIELD[activeTab];
-  const currentAssets = THEME_ASSETS[activeTab];
+  const currentAssets =
+    activeTab === 'background'
+      ? THEME_ASSETS.background.filter((asset) =>
+          backgroundGroup === 'skins'
+            ? BACKGROUND_SKIN_IDS.has(asset.id)
+            : !BACKGROUND_SKIN_IDS.has(asset.id)
+        )
+      : THEME_ASSETS[activeTab];
   const currentSelected = selection[currentField];
+
+  const selectedTable =
+    TABLE_SKINS[normalizeFeltId(selection.table_id)] || TABLE_SKINS.classic_green;
+  const selectedBackground =
+    TABLE_BACKGROUNDS[normalizeBackgroundId(selection.background_id)] || TABLE_BACKGROUNDS.midnight;
+  const selectedCardName =
+    CARD_BACK_CATALOG.find((design) => design.id === normalizeCardBack(selection.cards_id))?.name ||
+    'Classic Red';
 
   return (
     <div className="theme-modal-overlay" onClick={onClose}>
-      <div className="theme-modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="theme-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="theme-studio-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="theme-modal__header">
-          <h3 className="theme-modal__title">Theme Settings</h3>
-          <button className="theme-modal__close" onClick={onClose}>
+          <div>
+            <span className="theme-modal__eyebrow">PLAYER TABLE STUDIO</span>
+            <h3 id="theme-studio-title" className="theme-modal__title">
+              Make The Table Yours
+            </h3>
+          </div>
+          <button className="theme-modal__close" onClick={onClose} aria-label="Close table studio">
             ×
           </button>
         </div>
 
-        {/* Game Type Selector */}
-        <div className="theme-modal__game-type">
-          <label className="theme-modal__game-label">Game Type:</label>
-          <select
-            className="theme-modal__game-select"
-            value={gameType}
-            onChange={(e) => setGameType(e.target.value)}
-          >
-            {GAME_TYPES.map((gt) => (
-              <option key={gt} value={gt}>
-                {GAME_TYPE_LABELS[gt] ?? gt}
-              </option>
+        <div className="theme-modal__studio-bar">
+          <div className="theme-modal__game-type">
+            <label className="theme-modal__game-label" htmlFor="theme-game-type">
+              Apply To
+            </label>
+            <select
+              id="theme-game-type"
+              className="theme-modal__game-select"
+              value={gameType}
+              onChange={(e) => setGameType(e.target.value)}
+            >
+              {GAME_TYPES.map((gt) => (
+                <option key={gt} value={gt}>
+                  {GAME_TYPE_LABELS[gt] ?? gt}
+                </option>
+              ))}
+            </select>
+          </div>
+          <span className="theme-modal__autosave" aria-live="polite">
+            <span className="theme-modal__autosave-dot" />
+            {saving ? 'Saving selection' : 'Changes save automatically'}
+          </span>
+        </div>
+
+        <fieldset className="theme-modal__mode" aria-label="Club Arena appearance mode">
+          <legend>Interface</legend>
+          <div className="theme-modal__mode-options">
+            {(['light', 'dark'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={`theme-modal__mode-option ${uiMode === mode ? 'theme-modal__mode-option--active' : ''}`}
+                aria-pressed={uiMode === mode}
+                onClick={() => setUiMode(mode)}
+              >
+                <span
+                  className={`theme-modal__mode-icon theme-modal__mode-icon--${mode}`}
+                  aria-hidden="true"
+                />
+                {mode === 'light' ? 'Light' : 'Dark'}
+              </button>
             ))}
-          </select>
+          </div>
+          <span className="theme-modal__mode-note">
+            Changes Menus And Controls. Your Table Design Stays Yours.
+          </span>
+        </fieldset>
+
+        <div className="theme-modal__live-preview" aria-label="Current table appearance preview">
+          <img className="theme-modal__live-bg" src={selectedBackground} alt="" />
+          <div className="theme-modal__live-vignette" />
+          <img className="theme-modal__live-table" src={selectedTable} alt="" />
+          <div className="theme-modal__live-cards">
+            <CardBack style={normalizeCardBack(selection.cards_id)} size="sm" />
+            <CardBack style={normalizeCardBack(selection.cards_id)} size="sm" />
+          </div>
+          <div className="theme-modal__live-button" data-button-theme={selection.button_id}>
+            D
+          </div>
+          <div className="theme-modal__live-caption">
+            <span>LIVE TABLE PREVIEW</span>
+            <strong>
+              {selectedCardName} · {GAME_TYPE_LABELS[gameType] ?? gameType}
+            </strong>
+          </div>
         </div>
 
         {/* Tab Bar */}
-        <div className="theme-modal__tabs">
+        <div
+          className="theme-modal__tabs"
+          role="tablist"
+          aria-label="Table customization categories"
+        >
           {TABS.map((tab) => (
             <button
               key={tab.key}
               className={`theme-modal__tab ${activeTab === tab.key ? 'theme-modal__tab--active' : ''}`}
               onClick={() => setActiveTab(tab.key)}
+              role="tab"
+              aria-selected={activeTab === tab.key}
             >
               {tab.label}
             </button>
           ))}
+        </div>
+
+        {activeTab === 'background' && (
+          <div className="theme-modal__background-groups" aria-label="Background categories">
+            {(
+              [
+                ['places-rooms', 'Places & Rooms'],
+                ['skins', 'Skins'],
+              ] as const
+            ).map(([group, label]) => (
+              <button
+                key={group}
+                type="button"
+                className={`theme-modal__background-group ${backgroundGroup === group ? 'theme-modal__background-group--active' : ''}`}
+                aria-pressed={backgroundGroup === group}
+                onClick={() => setBackgroundGroup(group)}
+              >
+                {label}
+                <span>
+                  {
+                    THEME_ASSETS.background.filter((asset) =>
+                      group === 'skins'
+                        ? BACKGROUND_SKIN_IDS.has(asset.id)
+                        : !BACKGROUND_SKIN_IDS.has(asset.id)
+                    ).length
+                  }
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="theme-modal__section-heading">
+          <div>
+            <strong>{TABS.find((tab) => tab.key === activeTab)?.label}</strong>
+            <span>{TAB_DESCRIPTIONS[activeTab]}</span>
+          </div>
+          <span className="theme-modal__count">{currentAssets.length} Choices</span>
         </div>
 
         {/* Asset Grid */}
@@ -727,10 +977,13 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
             );
 
             return (
-              <div
+              <button
+                type="button"
                 key={asset.id}
                 className={`theme-asset ${isSelected ? 'theme-asset--selected' : ''} ${isLocked ? 'theme-asset--locked' : ''}`}
                 onClick={() => handleAssetSelect(activeTab, asset.id, asset.vipOnly)}
+                aria-pressed={isSelected}
+                aria-label={`${asset.name}${isLocked ? ', VIP required' : ''}`}
               >
                 <div className="theme-asset__preview">
                   {/* ── Dan 2026-08-18: show the actual thing, not a colour ──
@@ -750,7 +1003,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                 </div>
                 <span className="theme-asset__name">{asset.name}</span>
                 {asset.vipOnly && !isLocked && <span className="theme-asset__tier-badge">VIP</span>}
-              </div>
+              </button>
             );
           })}
         </div>
@@ -758,14 +1011,14 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
         {/* Footer */}
         <div className="theme-modal__footer">
           <button className="theme-modal__btn theme-modal__btn--reset" onClick={handleReset}>
-            Reset
+            Restore Defaults
           </button>
           <button
             className="theme-modal__btn theme-modal__btn--save"
             onClick={() => handleSave()}
             disabled={saving}
           >
-            {saving ? 'Saving...' : 'Confirm'}
+            {saving ? 'Saving...' : 'Done'}
           </button>
         </div>
 

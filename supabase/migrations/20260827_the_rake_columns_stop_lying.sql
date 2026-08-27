@@ -1,0 +1,26 @@
+-- Applied to production 2026-08-27 as `the_rake_columns_stop_lying`.
+--
+-- The clubs table carries TWO pairs of rake columns:
+--     default_rake_percent / rake_cap      <- the engine reads THESE
+--     rake_percent         / rake_cap_bb   <- legacy duplicate, read by NOTHING
+--
+-- On all three clubs: default_rake_percent = -1.00 and rake_cap = -1.00 (the
+-- "inherit" sentinel), while rake_percent = 5.00 and rake_cap_bb = 3.00 sit
+-- there looking authoritative.
+--
+-- Every table says inherit-from-club, every club says inherit-from-schedule, so
+-- the chain falls through to RAKE_SCHEDULE in server/src/config/RakeConfig.ts,
+-- which is 10% at every stake. PLAYERS ARE RAKED 10% WHILE TWO COLUMNS IN THE
+-- CLUBS TABLE READ 5%.
+--
+-- Not an engine bug: the -1 sentinel is correctly implemented on both sides
+-- (RakeConfig.isRakeSet, ServerTableEngineBase.pick) and 10% is the documented
+-- schedule default. It is a TRAP for whoever reads the database next, and it
+-- caught this audit - the first pass measured live rake against
+-- clubs.rake_percent, found 4,350 hands "over the limit", and was wrong.
+--
+-- NO VALUE IS CHANGED. Whether the platform takes 10% or 5% is a commercial
+-- decision and an audit does not get to silently rewrite a rake number. What
+-- changes: the columns now say what they are, and fn_effective_rake_config()
+-- answers "what will actually be charged" without anyone needing to know which
+-- of the four columns is real.

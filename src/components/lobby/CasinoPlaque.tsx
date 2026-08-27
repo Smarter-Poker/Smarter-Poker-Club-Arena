@@ -50,7 +50,14 @@ export default function CasinoPlaque({ entry, children }: CasinoPlaqueProps) {
           {isCash ? (
             <>
               <span className="cplaque__variant">{entry.variantLabel}</span>
-              <span className="cplaque__stakes">Blinds {entry.stakesLabel}</span>
+              {/* `stakesLabel: string | null` — null means the row cannot say
+                  its stakes, and the contract is that it then says NOTHING.
+                  The dangling word "Blinds" over nothing broke that (ITEM E
+                  audit, 2026-08-26); COL_STAKES on the board already drops
+                  the cell. */}
+              {entry.stakesLabel && (
+                <span className="cplaque__stakes">Blinds {entry.stakesLabel}</span>
+              )}
             </>
           ) : (
             <span className="cplaque__variant">
@@ -82,8 +89,29 @@ export default function CasinoPlaque({ entry, children }: CasinoPlaqueProps) {
   );
 }
 
-/** Seat pips used in the plaque's right zone. */
-export function PlaqueSeats({ players, capacity }: { players: number; capacity: number }) {
+/** Seat pips used in the plaque's right zone.
+ *
+ * `bareCount` is the MTT form (ITEM E audit, 2026-08-26): the canonical rule
+ * — seatsTakenLabel, pinned to Dan 2026-08-24, "THERE ARE NO LIMITATIONS ON
+ * THE AMOUNT OF PLAYERS THAT CAN REGISTER, IT SHOULDN'T DEFAULT TO /500" —
+ * prints a bare entry count for an MTT. This component was the last surface
+ * still rendering `45 / 500 Seats` with pips against a cap that is not a cap. */
+export function PlaqueSeats({
+  players,
+  capacity,
+  bareCount = false,
+}: {
+  players: number;
+  capacity: number;
+  bareCount?: boolean;
+}) {
+  if (bareCount) {
+    return (
+      <div className="cplaque__seats" aria-label={`${players} entered`}>
+        <span className="cplaque__seats-num">{players.toLocaleString()} Entered</span>
+      </div>
+    );
+  }
   const cap = Math.max(0, Math.min(capacity || 0, 12));
   return (
     /* The visible text prints "-" for an unknown capacity; the label used to

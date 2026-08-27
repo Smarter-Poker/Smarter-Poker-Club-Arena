@@ -466,12 +466,17 @@
   transform: translateY(-1px);
 }
 
-/* ─── RAISE / BET (Green — item 8) ─────────────────────────── */
+/* ─── RAISE / BET (Green — item 8) ───────────────────────────
+   Green is Dan's call (item 8). The RAMP is the house family:
+   #4dc660 light -> #3fb950 base -> #2ea043 deep, the same three greens the
+   Cashier and Sit-Out buttons already wear. It used to ramp
+   #34d374/#16a34a/#0b5426 - a different green from every other green in the
+   app, on the single most-looked-at control in the product. */
 .action-panel .action-btn--raise {
-  background: linear-gradient(180deg, #34d374 0%, #16a34a 40%, #0b5426 100%);
+  background: linear-gradient(180deg, #4dc660 0%, #3fb950 40%, #2ea043 100%);
   box-shadow:
     0 4px 0 #063317,
-    0 6px 20px rgba(22, 163, 74, 0.35),
+    0 6px 20px rgba(63, 185, 80, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.2),
     inset 0 -2px 0 rgba(0, 0, 0, 0.2);
 }
@@ -480,7 +485,7 @@
   filter: brightness(1.15);
   box-shadow:
     0 3px 0 #063317,
-    0 8px 32px rgba(22, 163, 74, 0.55),
+    0 8px 32px rgba(63, 185, 80, 0.55),
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
   transform: translateY(-1px);
 }
@@ -495,15 +500,15 @@
   box-shadow:
     0 0 0 2px rgba(255, 255, 255, 0.5),
     0 2px 0 #063317,
-    0 4px 16px rgba(22, 163, 74, 0.5);
+    0 4px 16px rgba(63, 185, 80, 0.5);
 }
 
 /* ─── ALL-IN — The big play (green family with the bet — item 8) ── */
 .action-panel .action-btn--allin {
-  background: linear-gradient(180deg, #34d374 0%, #16a34a 40%, #0b5426 100%);
+  background: linear-gradient(180deg, #4dc660 0%, #3fb950 40%, #2ea043 100%);
   box-shadow:
     0 4px 0 #063317,
-    0 6px 20px rgba(22, 163, 74, 0.4),
+    0 6px 20px rgba(63, 185, 80, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.2),
     inset 0 -2px 0 rgba(0, 0, 0, 0.2);
   animation: allinPulse 1.8s ease-in-out infinite;
@@ -513,7 +518,7 @@
   filter: brightness(1.15);
   box-shadow:
     0 3px 0 #063317,
-    0 8px 32px rgba(22, 163, 74, 0.6),
+    0 8px 32px rgba(63, 185, 80, 0.6),
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
   transform: translateY(-1px);
 }
@@ -809,51 +814,55 @@
   white-space: nowrap;
 }
 
-/* Mobile (<768px): collapse the right-side rail back into the main column —
-   the absolute-positioned rail can extend off-screen on narrow phones, so we
-   render the rail inline above the presets instead. */
+/* ═══ Mobile (<1024px): the rail STAYS VERTICAL, docked right ═══════════════
+   Dan 2026-08-26: "on mobile the bet slider bar needs to go up and down, not
+   side to side. When it's on its side, it auto slides to the next page. Place
+   the slider on the right side of the action box when it opens."
+
+   This block used to flatten the rail back into a horizontal strip — the
+   exact gesture that collides with the table-switch swipe. It now only
+   COMPACTS the right-hand gutter for a phone: a 56px rail column instead of
+   the desktop 76px, smaller tick labels laid to the LEFT of the rail line so
+   nothing can clip at the viewport edge, and the floor cap hidden (the thumb
+   starts on the floor, and the amount box above already prints it). The
+   content column keeps a slim left pad, so the action box reads left with
+   the slider on its right — the layout Dan described. */
 @media (max-width: 1023px) {
   .action-panel--raise-vertical {
-    /* Rail renders inline below 1024px, so drop both gutters and fall back
-       to the symmetric 16px the base .action-panel--raise already uses.
-       Both sides must reset together or the DEAD-CENTER RULE breaks. */
-    padding-right: 16px;
-    padding-left: 16px;
+    padding-left: 12px;
+    padding-right: calc(56px + 8px);
   }
   .raise-slider-vertical {
-    position: relative;
-    right: auto;
-    width: 100%;
-    height: 56px;
-    margin: 0 0 12px 0;
+    right: -60px;
+    width: 56px;
+    justify-content: flex-end;
   }
   .raise-slider-vertical__rail {
-    width: 100%;
-    margin: 0;
-  }
-  @supports (-webkit-appearance: none) and (not (-moz-appearance: none)) {
-    .raise-slider-vertical__rail .raise-slider {
-      width: 100%;
-      height: 32px;
-      transform: translate(-50%, -50%);
-    }
-  }
-  .raise-slider-vertical__ticks {
-    inset: auto 0 4px 0;
-    height: 12px;
+    width: 30px;
+    margin: 6px 0;
   }
   .raise-slider-vertical__tick {
-    width: 2px;
-    height: 12px;
-    bottom: auto !important;
-    top: 0;
+    width: 10px;
+  }
+  /* Labels swing to the LEFT of the rail: the rail hugs the viewport's right
+     edge, so a right-hand label is the one thing here that could clip. */
+  .raise-slider-vertical__tick-label {
+    left: auto;
+    right: calc(100% + 4px);
+    font-size: 8px;
   }
   .raise-slider-vertical__caps {
-    flex-direction: row;
-    justify-content: flex-start;
-    padding-bottom: 0;
-    margin: 4px 0 0 0;
+    display: none;
   }
+}
+
+/* THE DRAG BELONGS TO THE SLIDER (Dan 2026-08-26). The phone was treating a
+   drag on the thumb as a page gesture — touch-action: none hands the whole
+   gesture to the range input, on every axis, so a bet drag can never scroll,
+   swipe tables, or rubber-band the page. On the rail's input only: the rest
+   of the panel keeps normal touch behaviour. */
+.raise-slider-vertical__rail .raise-slider {
+  touch-action: none;
 }
 
 /* Legacy horizontal slider — Dan 2026-04-17: used on mobile now since the
@@ -1412,24 +1421,24 @@
 
 @keyframes actionAttentionPulse {
   0% {
-    box-shadow: inset 0 1px 0 rgba(34, 197, 94, 0);
+    box-shadow: inset 0 1px 0 rgba(63, 185, 80, 0);
     border-top-color: var(--border-default);
   }
   30% {
     box-shadow:
-      inset 0 1px 0 rgba(34, 197, 94, 0.5),
-      0 -4px 30px rgba(34, 197, 94, 0.25);
-    border-top-color: rgba(34, 197, 94, 0.6);
+      inset 0 1px 0 rgba(63, 185, 80, 0.5),
+      0 -4px 30px rgba(63, 185, 80, 0.25);
+    border-top-color: rgba(63, 185, 80, 0.6);
   }
   60% {
     box-shadow:
-      inset 0 1px 0 rgba(34, 197, 94, 0.2),
-      0 -2px 15px rgba(34, 197, 94, 0.1);
-    border-top-color: rgba(34, 197, 94, 0.3);
+      inset 0 1px 0 rgba(63, 185, 80, 0.2),
+      0 -2px 15px rgba(63, 185, 80, 0.1);
+    border-top-color: rgba(63, 185, 80, 0.3);
   }
   100% {
-    box-shadow: inset 0 1px 0 rgba(34, 197, 94, 0);
-    border-top-color: rgba(34, 197, 94, 0.3);
+    box-shadow: inset 0 1px 0 rgba(63, 185, 80, 0);
+    border-top-color: rgba(63, 185, 80, 0.3);
   }
 }
 

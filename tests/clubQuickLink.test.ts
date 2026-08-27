@@ -143,8 +143,9 @@ describe('fetchClubChipBalances', () => {
       error: null,
     });
     const balances = await fetchClubChipBalances(USER);
-    expect(balances.get(A.id)).toBe(1234.5);
-    expect(balances.get(B.id)).toBe(0);
+    expect(balances).not.toBeNull();
+    expect(balances!.get(A.id)).toBe(1234.5);
+    expect(balances!.get(B.id)).toBe(0);
   });
 
   it('only counts active/approved memberships', async () => {
@@ -167,10 +168,33 @@ describe('fetchClubChipBalances', () => {
     expect(inMock).toHaveBeenCalledTimes(2);
   });
 
-  it('returns empty map on query error without throwing', async () => {
+  it('returns NULL on a failed read with no cache — unknown is not zero', async () => {
+    /* Cashier audit 2026-08-27: an empty map here flowed into
+       `map.get(clubId) ?? 0`, telling the cashout modal the player has 0
+       chips in the club and refusing every cashout locally. "Could not find
+       out" and "has no chips" are different answers. */
+    clearClubChipBalanceCache();
     inMock.mockResolvedValue({ data: null, error: { message: 'boom' } });
     const balances = await fetchClubChipBalances(USER);
-    expect(balances.size).toBe(0);
+    expect(balances).toBeNull();
+  });
+
+  it('returns the STALE cache on a failed read when one exists — stale beats wrong-empty', async () => {
+    clearClubChipBalanceCache();
+    inMock.mockResolvedValue({ data: [{ club_id: A.id, chip_balance: 7 }], error: null });
+    await fetchClubChipBalances(USER);
+    // Age the cache past the 30s TTL so the next call REQUERIES...
+    const realNow = Date.now;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + 60_000);
+    try {
+      // ...and that query fails: the expired-but-present cache is the answer.
+      inMock.mockResolvedValue({ data: null, error: { message: 'boom' } });
+      const balances = await fetchClubChipBalances(USER);
+      expect(balances).not.toBeNull();
+      expect(balances!.get(A.id)).toBe(7);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it('exposes the bus events that should invalidate it', () => {

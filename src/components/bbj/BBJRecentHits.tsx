@@ -16,6 +16,16 @@
  * cards, and then to the engine's own hand name. It never draws a hand it cannot
  * prove.
  *
+ * THE AVATAR IS THE CLUB AVATAR (Dan, 2026-08-27: "you need to use there club
+ * avatar as the image, not there profile pics"). fn_bbj_recent_hits serves
+ * profiles.arena_avatar_url - Club Arena's own column, library art, the same
+ * one the felt reads - and never profiles.avatar_url, which is the social
+ * media photo and is not this app's to display. That arrives as a Hub-relative
+ * path like /avatars/table/vip_spartan@2x.webp, so it goes through
+ * getAvatarWithFallback exactly as SeatSlot does: absolute Hub origin (so it
+ * also resolves in local dev), and a deterministic monogram when a winner has
+ * not picked one.
+ *
  * Every figure comes from fn_bbj_recent_hits, which reads the payout ledger and
  * derives each player's ROLE from which uid actually received which share. It
  * deliberately does not trust the stored column names: in bbj_payouts /
@@ -31,6 +41,7 @@ import { PlayerAvatar as Avatar } from '../avatars/PlayerAvatar';
 import { toDeckCards } from '../../utils/deckCards';
 import type { Card as DeckCard } from '../table/CardImage';
 import { bestFive } from '../../utils/handEvaluator';
+import { getAvatarWithFallback } from '../../utils/avatarGenerator';
 import { reportError } from '../../utils/errorReporter';
 import './BBJRecentHits.css';
 
@@ -152,6 +163,9 @@ const EXAMPLE_HITS: Array<{
     share: 0.5,
   },
 ];
+
+/** The size PlayerAvatar draws at `size="md"`; lets storage art be resized. */
+const BBJ_AVATAR_PX = 48;
 
 function money(n: number | null | undefined, dp = 2): string {
   return Number(n || 0).toLocaleString('en-US', {
@@ -328,7 +342,12 @@ export function BBJRecentHits({
             }
           >
             <Avatar
-              src={hit.bad_beat_avatar_url || undefined}
+              src={getAvatarWithFallback(
+                hit.bad_beat_avatar_url,
+                hit.bad_beat_user_id || hit.payout_id,
+                hit.bad_beat_name,
+                BBJ_AVATAR_PX
+              )}
               name={hit.bad_beat_name}
               size="md"
               className="bbj-hits__avatar"

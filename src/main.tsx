@@ -37,6 +37,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './styles/club-engine.css';
 import './styles/animations.css';
+import './styles/metallic-popups.css';
 // LAST of the global sheets on purpose: the reduced-motion rule is the final
 // word on animation, and importing it after the rest keeps its !important
 // declarations from being read before the sheets they moderate.

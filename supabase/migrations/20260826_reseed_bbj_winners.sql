@@ -123,5 +123,57 @@ BEGIN
   INSERT INTO public.bbj_winners (pool_id, winner_id, loser_id, winner_display_name, loser_display_name, winner_hand, loser_hand, winner_payout, loser_payout, table_share_payout, total_payout, pool_amount_at_hit, table_id, hand_number, awarded_at)
   VALUES (v_pool_id, v_val_id, v_wasp_id, 'Valentina Salvatore', 'WASP', 'Four of a Kind', 'Royal Flush', v_loser, v_winner, v_table, v_total, v_pool_amount, v_table_id, 1506711, '2026-08-18 23:35:00+00', 0, false);
 
+
+  -- Add hand details for UI mock
+  UPDATE public.hand_history
+  SET 
+    pot_size = COALESCE((SELECT pool_amount_at_hit FROM public.bbj_winners WHERE hand_number = hand_history.hand_number), 1500.00),
+    community_cards = ARRAY(
+      SELECT jsonb_array_elements_text(board)
+    ),
+    players = jsonb_build_array(
+      jsonb_build_object(
+        'userId', (SELECT winner_id FROM public.bbj_winners WHERE hand_number = hand_history.hand_number),
+        'seat', 1,
+        'stack', 5000,
+        'cards', COALESCE(hole_cards->(SELECT winner_id::text FROM public.bbj_winners WHERE hand_number = hand_history.hand_number), '[]'::jsonb)
+      ),
+      jsonb_build_object(
+        'userId', (SELECT loser_id FROM public.bbj_winners WHERE hand_number = hand_history.hand_number),
+        'seat', 2,
+        'stack', 5000,
+        'cards', COALESCE(hole_cards->(SELECT loser_id::text FROM public.bbj_winners WHERE hand_number = hand_history.hand_number), '[]'::jsonb)
+      )
+    ),
+    actions = jsonb_build_array(
+      jsonb_build_object(
+        'userId', (SELECT loser_id FROM public.bbj_winners WHERE hand_number = hand_history.hand_number),
+        'seat', 2,
+        'action', 'bet',
+        'amount', 500,
+        'stage', 'River'
+      ),
+      jsonb_build_object(
+        'userId', (SELECT winner_id FROM public.bbj_winners WHERE hand_number = hand_history.hand_number),
+        'seat', 1,
+        'action', 'call',
+        'amount', 500,
+        'stage', 'River'
+      )
+    ),
+    winners = jsonb_build_array(
+      jsonb_build_object(
+        'userId', (SELECT loser_id FROM public.bbj_winners WHERE hand_number = hand_history.hand_number),
+        'amount', 1000,
+        'potIndex', 0,
+        'hand', jsonb_build_object('name', (SELECT loser_hand FROM public.bbj_winners WHERE hand_number = hand_history.hand_number))
+      )
+    )
+  WHERE hand_number IN (1080832, 1127041, 1253455, 1269428, 1506711);
+
+
+  -- Update Club JAQK to have an avatar so the BBJ seed displays it
+  UPDATE public.clubs SET avatar_url = '/poker-chip-logo.webp' WHERE club_id = 77777;
+
 END;
 $$;

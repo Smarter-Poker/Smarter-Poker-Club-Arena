@@ -407,6 +407,46 @@ describe('shipped functionality is still here', () => {
     );
   });
 
+  it('rabbit hunt stays live in every format: cash, MTT, spins, heads-up', () => {
+    // Dan 2026-08-26: "implement it fully in the cash games, mtt, spins and
+    // heads up." Verified live that day - production had zero tables or
+    // tournaments with the feature off across all formats, and reveals were
+    // being consumed. What keeps it that way is exactly three anchors, and
+    // losing any one of them turns a format off SILENTLY:
+    //
+    // 1. Every tournament table (MTT, Spin, SNG/heads-up) carries the
+    //    tournament's toggle onto its tables row, defaulting ON. Before this
+    //    line, tournament tables simply inherited the column default and a
+    //    host had no switch at all.
+    const tm = read('server/src/tournament/TournamentManagerBase.ts');
+    expect(
+      tm.includes('allow_rabbit_hunt: tournament.allow_rabbit_hunt !== false'),
+      'tournament tables no longer carry the rabbit hunt toggle'
+    ).toBe(true);
+    // 2. The availability event honors tables.allow_rabbit_hunt and defaults
+    //    ALLOWED - `!== false`, never `=== true`, or every row that predates
+    //    the column goes dark.
+    const settle = read('server/src/engine/ServerTableEngineSettlement.ts');
+    expect(
+      settle.includes('?.allow_rabbit_hunt !== false'),
+      'the offer gate no longer defaults to allowed'
+    ).toBe(true);
+    // 3. The reveal path is format-agnostic: the handler knows nothing about
+    //    game types, so a new format is included by construction. If a format
+    //    gate ever appears here, someone must say which format it turns off
+    //    and why, in this file, on purpose.
+    const handler = read('server/src/handlers/rabbithunt.ts');
+    expect(
+      handler.includes('game_type') || handler.includes('tournament_type'),
+      'the reveal handler grew a format gate - rabbit hunt is meant to work in every format'
+    ).toBe(false);
+    // And the host toggle column ships as a migration, defaulting true.
+    expect(
+      existsSync(root('supabase/migrations/20260825_tournaments_allow_rabbit_hunt.sql')),
+      'the tournaments.allow_rabbit_hunt migration is gone'
+    ).toBe(true);
+  });
+
   it('the sentinel list is not empty or trivially passing', () => {
     // A guard that checks nothing passes forever. If someone empties the list
     // to make a build go green, this fails instead.

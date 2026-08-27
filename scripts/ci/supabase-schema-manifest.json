@@ -1564,6 +1564,7 @@
     "fn_mark_gdpr_completed",
     "fn_mark_messages_read",
     "fn_member_leave_to_treasury",
+    "fn_membership_approval_gate",
     "fn_membership_starts_with_zero_chips",
     "fn_memory_promote_session_to_leaderboard",
     "fn_merch_set_updated_at",

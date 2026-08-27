@@ -15,7 +15,6 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { ClubsService } from '../../services/ClubsService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
-import { masterBus } from '../../core/MasterBus';
 import haptic from '../../services/HapticService';
 import styles from './CreateClubModal.module.css';
 import { reportError } from '../../utils/errorReporter';
@@ -138,7 +137,9 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       onClose();
       onSuccess?.(clubData.id);
 
-      masterBus.emit('CLUB_JOINED', { clubId: clubData.id, action: 'club_created' });
+      // No CLUB_JOINED emit here: ClubsService.create() already emits it via
+      // the owner auto-join inside joinClub(). This modal's second emit made
+      // every subscriber refetch twice per created club.
     } catch (err: any) {
       reportError(err, 'CreateClubModal.Failed_to_create_club');
       if (isMounted.current) toast.error(err.message || 'Failed to create club');

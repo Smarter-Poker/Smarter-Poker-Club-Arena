@@ -3,6 +3,7 @@ import { resolve } from 'path';
 import { describe, expect, it } from 'vitest';
 
 const page = readFileSync(resolve(__dirname, '../../src/pages/ClubHomePage.tsx'), 'utf8');
+const pageCss = readFileSync(resolve(__dirname, '../../src/pages/ClubHomePage.css'), 'utf8');
 const table = readFileSync(resolve(__dirname, '../../src/components/lobby/LobbyTable.tsx'), 'utf8');
 const css = readFileSync(resolve(__dirname, '../../src/components/lobby/LobbyTable.css'), 'utf8');
 
@@ -27,6 +28,14 @@ describe('union-owned lobby creation controls', () => {
 });
 
 describe('responsive tournament list redesign', () => {
+  it('renders the live-board hierarchy and responsive control deck', () => {
+    expect(page).toContain('Live Club Schedule');
+    expect(page).toContain('Find Your Game');
+    expect(page).toContain('lobby-controls__total');
+    expect(pageCss).toContain('LIVE GAME BOARD');
+    expect(css).toContain('LIVE EVENT BOARD');
+  });
+
   it('marks featured rows so mobile can progressively disclose extra details', () => {
     expect(table).toContain("entry.featured ? ' is-featured' : ''");
     expect(css).toContain("tr[data-kind='mtt'].is-featured td.lt-col-tstack");

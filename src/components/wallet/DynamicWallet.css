@@ -611,6 +611,24 @@
   margin-bottom: 8px;
 }
 
+@media (max-width: 480px) {
+  .dw--lobby-board .dw__row {
+    grid-template-columns: 11px minmax(0, auto);
+    column-gap: 3px;
+  }
+
+  .dw--lobby-board .dw__row-icon,
+  .dw--lobby-board .dw__row-icon svg {
+    width: 11px;
+    height: 11px;
+  }
+
+  .dw--lobby-board .dw__row-label {
+    font-size: 0.48rem;
+    letter-spacing: 0.005em;
+  }
+}
+
 @media (max-width: 380px) {
   .dw--lobby-board .dw__rows {
     gap: 5px;
@@ -622,7 +640,7 @@
   }
 
   .dw--lobby-board .dw__row-label {
-    font-size: 0.54rem;
-    letter-spacing: 0.02em;
+    font-size: 0.44rem;
+    letter-spacing: 0;
   }
 }

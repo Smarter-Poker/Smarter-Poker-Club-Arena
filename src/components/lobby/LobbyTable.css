@@ -829,6 +829,26 @@ abbr.lt-variant[title] {
     border-left-color: rgba(120, 150, 220, 0.4);
   }
 
+  /* Mobile is a scan-first list. Structural tournament details remain in the
+     existing lobby panel reached by Details/the card; only a featured row
+     keeps the two most useful wells expanded in-place. */
+  .lobby-table tr[data-kind='mtt'] td.lt-col-tstack,
+  .lobby-table tr[data-kind='mtt'] td.lt-col-tlevel,
+  .lobby-table tr[data-kind='mtt'] td.lt-col-leveltime,
+  .lobby-table tr[data-kind='mtt'] td.lt-col-format {
+    display: none;
+  }
+
+  .lobby-table tr[data-kind='mtt'].is-featured td.lt-col-tstack,
+  .lobby-table tr[data-kind='mtt'].is-featured td.lt-col-tlevel {
+    display: block;
+  }
+
+  .lobby-table tr[data-kind='mtt']:not(.is-featured) {
+    padding-top: 11px;
+    padding-bottom: 11px;
+  }
+
   /* ── ONE ORDER, EVERY TAB ───────────────────────────────────────────────
      THE REASON THE MTT CARDS CAME OUT SCRAMBLED. Each tab declares its own
      column order — the MTT set opens with Starting Time, the ALL set opens

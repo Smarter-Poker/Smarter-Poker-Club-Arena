@@ -206,6 +206,7 @@ export async function createClub(clubData: {
 
   // ── Step 1: Upload raw logo to storage ──────────────────────────────
   let logoUrl: string | null = null;
+  let uploadedLogoPath: string | null = null;
   if (clubData.logoPreview) {
     try {
       const logoBlob = await fetch(clubData.logoPreview).then((r) => r.blob());
@@ -220,6 +221,7 @@ export async function createClub(clubData: {
         });
 
       if (!logoUploadError && logoUploadData) {
+        uploadedLogoPath = logoFileName;
         const { data: urlData } = supabase.storage.from('club-assets').getPublicUrl(logoFileName);
         logoUrl = urlData?.publicUrl || null;
       }
@@ -280,6 +282,15 @@ export async function createClub(clubData: {
 
   if (!data) {
     reportError(lastError, 'ClubsService.Club_creation_failed');
+    // The logo was uploaded before the insert (the URL goes INTO the row), so
+    // a failed create would otherwise strand the file in club-assets forever —
+    // nothing references it and nothing ever cleans that bucket.
+    if (uploadedLogoPath) {
+      supabase.storage
+        .from('club-assets')
+        .remove([uploadedLogoPath])
+        .catch((e: unknown) => reportError(e, 'ClubsService.createClub.OrphanLogoCleanup'));
+    }
     throw new Error('Failed to create club');
   }
 
@@ -328,6 +339,13 @@ export async function createClub(clubData: {
       await supabase.from('clubs').delete().eq('id', data.id);
     } catch (cleanupErr) {
       reportError(cleanupErr, 'ClubsService.createClub.OrphanCleanupFailed');
+    }
+    // The club row is gone; its uploaded logo must not stay behind either.
+    if (uploadedLogoPath) {
+      supabase.storage
+        .from('club-assets')
+        .remove([uploadedLogoPath])
+        .catch((e: unknown) => reportError(e, 'ClubsService.createClub.OrphanLogoCleanup'));
     }
     throw new Error('Failed to set up club ownership. Please try again.');
   }

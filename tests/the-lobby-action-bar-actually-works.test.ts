@@ -320,3 +320,47 @@ describe('the join modal traps focus itself', () => {
     expect(codeOnly(HOME)).not.toMatch(/joinModalRef/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 3 (2026-08-27): the approval gate holds server-side, and creates
+// clean up after themselves
+// ─────────────────────────────────────────────────────────────────────────────
+
+const GATE_MIGRATION = read('supabase/migrations/20260827_approval_gate_cannot_be_self_served.sql');
+
+describe('the approval gate cannot be self-served', () => {
+  it('the trigger migration exists and closes both doors', () => {
+    // clubs.requires_approval was enforced only inside fn_join_club. A direct
+    // authenticated INSERT landed status='active' (the column default), and a
+    // pending requester could PATCH their own row to active. Verified against
+    // production with simulated authenticated sessions, rolled back: the
+    // insert now lands as pending, the self-approval is refused (23514), and
+    // fn_join_club still returns pending/active exactly as designed.
+    expect(GATE_MIGRATION).toMatch(/trg_approval_gate_ins/);
+    expect(GATE_MIGRATION).toMatch(/trg_approval_gate_upd/);
+    // The role gate MUST be current_user with a non-definer function —
+    // the `role` GUC stays 'authenticated' through a SECURITY DEFINER call,
+    // which would break fn_redeem_club_invite_code admitting invited players.
+    expect(GATE_MIGRATION).toMatch(/current_user NOT IN \('authenticated', 'anon'\)/);
+    // (asserted structurally: no SECURITY DEFINER between LANGUAGE and the
+    // search_path line of the gate function; SQL comments discuss the term)
+    expect(GATE_MIGRATION).toMatch(/LANGUAGE plpgsql\nSET search_path TO 'public'/);
+  });
+});
+
+describe('a failed create leaves nothing behind', () => {
+  it('the uploaded logo is removed when the club insert or owner join fails', () => {
+    // The logo uploads BEFORE the club row exists (its URL goes into the
+    // insert), so both failure paths would otherwise strand a file in
+    // club-assets that nothing references and nothing cleans.
+    expect(CLUBS_SERVICE).toMatch(/uploadedLogoPath/);
+    expect(CLUBS_SERVICE).toMatch(/OrphanLogoCleanup/);
+  });
+
+  it('created clubs announce themselves exactly once', () => {
+    // ClubsService.create() emits CLUB_JOINED via the owner auto-join;
+    // the modal used to emit a second one and every subscriber refetched
+    // twice per created club.
+    expect(codeOnly(CREATE_MODAL)).not.toMatch(/masterBus\.emit/);
+  });
+});

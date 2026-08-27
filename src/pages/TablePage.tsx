@@ -7644,24 +7644,73 @@ export default function TablePage({
                  its clock never flipped to break even while the local
                  tournamentBreak state below did. See tournamentEventBridge. */
               relayTournamentEvent(table.tournament_id as string, data);
-              if (data?.type === 'tournament_break' || data?.type === 'BREAK_START') {
-                setTournamentBreak({
+              /**
+               * THE BREAK IS TWO EVENTS AND THIS ONLY EVER HEARD THE FIRST
+               * (2026-08-27).
+               *
+               * `tournament_break` fires at :55 to announce the LAST HAND;
+               * `tournament_break_started` fires once every table has finished
+               * it and carries the only real end time there is. This switch
+               * matched neither `tournament_break_started` nor anything that
+               * relays it, so the overlay was seeded with a flat five minutes
+               * at :55 and never re-seeded. It counted down through the
+               * last-hand wait, hit 0:00 up to two minutes before play resumed
+               * and froze there, full-screen and opaque, over a live table.
+               *
+               * Both events are handled now, and the phase is carried through
+               * so the screen shows "Last Hand" rather than a clock it does
+               * not yet have.
+               */
+              if (
+                data?.type === 'tournament_break' ||
+                data?.type === 'tournament_break_started' ||
+                data?.type === 'BREAK_START'
+              ) {
+                const p = data.payload || {};
+                const endsAtMs = p.breakEndsAt ? Date.parse(p.breakEndsAt) : NaN;
+                const hasEnd = Number.isFinite(endsAtMs);
+                setTournamentBreak((prev: any) => ({
                   active: true,
-                  timeRemaining:
-                    (data.payload?.breakDurationMinutes || data.payload?.durationMinutes || 5) * 60,
-                  nextLevel: data.payload?.nextLevel,
-                });
+                  // Keep the last known next level: only the :55 event carries it.
+                  nextLevel: p.nextLevel ?? prev?.nextLevel,
+                  level: typeof p.level === 'number' ? p.level : prev?.level,
+                  phase: hasEnd || p.phase === 'counting_down' ? 'counting_down' : 'last_hand',
+                  breakEndsAtMs: hasEnd ? endsAtMs : null,
+                  timeRemaining: hasEnd
+                    ? Math.max(0, Math.round((endsAtMs - Date.now()) / 1000))
+                    : (p.breakDurationMinutes || p.durationMinutes || 5) * 60,
+                }));
               } else if (data?.type === 'break_ended' || data?.type === 'BREAK_END') {
-                setTournamentBreak({ active: false, timeRemaining: 0 });
+                setTournamentBreak({
+                  active: false,
+                  timeRemaining: 0,
+                  phase: 'counting_down',
+                  breakEndsAtMs: null,
+                });
               } else if (data?.type === 'ADDON_PERIOD_START') {
                 // Add-on period: 60 seconds, show popup to all players
                 const addonData = data.payload || {};
                 // Fetch fresh wallet balance
                 (async () => {
                   try {
+                    /* 2026-08-27: was getPlayerBalance, which turns a refused
+                       read into 0 - and a 0 here reads as "cannot afford the
+                       add-on" for a funded player. Unknown is left as the
+                       existing 0 ONLY because the affordability check below
+                       fails closed to the server, which refuses an underfunded
+                       add-on anyway; the reportError makes the failed read
+                       visible instead of silent. */
                     let walBal = 0;
                     if (userId && userId !== 'guest') {
-                      walBal = await WalletService.getPlayerBalance(userId, { tableId });
+                      const rb = await WalletService.readPlayerBalance(userId, { tableId });
+                      if (rb.balance === null) {
+                        reportError(
+                          new Error('add-on affordability read failed; treating as unknown'),
+                          'TablePage.addOnBalance',
+                          { userId, tableId }
+                        );
+                      }
+                      walBal = rb.balance ?? 0;
                     }
                     // 2026-08-20: `addonData.addOnCost || 0` silently priced the
                     // add-on at ZERO whenever the broadcast omitted the field --
@@ -8334,8 +8383,12 @@ export default function TablePage({
 
         // Load user's Player Wallet balance for buy-in
         if (userId && userId !== 'guest') {
-          const balance = await WalletService.getPlayerBalance(userId, { tableId });
-          setAccountBalance(balance);
+          /* 2026-08-27: a failed read must not present itself as an empty
+             wallet on the buy-in sheet. Keep the last known figure on unknown;
+             the buy-in RPC is the authority either way and refuses an
+             underfunded entry. */
+          const rb = await WalletService.readPlayerBalance(userId, { tableId });
+          if (rb.balance !== null) setAccountBalance(rb.balance);
 
           // FIX 136: Check 2-hour re-entry restriction from recent cashout
           const { data: cashoutHistory } = await supabase
@@ -8626,8 +8679,13 @@ export default function TablePage({
       if (payload.balance !== undefined) {
         setAccountBalance(payload.balance);
       } else {
-        WalletService.getPlayerBalance(userId, { tableId })
-          .then(setAccountBalance)
+        /* 2026-08-27: same rule - .then(setAccountBalance) on a helper that
+           collapses failures wrote a 0 into the on-screen balance whenever a
+           resync was refused. */
+        WalletService.readPlayerBalance(userId, { tableId })
+          .then((rb) => {
+            if (rb.balance !== null) setAccountBalance(rb.balance);
+          })
           .catch((e) => reportError(e, 'TablePage.balanceSync'));
       }
     }
@@ -13652,7 +13710,9 @@ export default function TablePage({
           : v8Theme.table_id || v8Theme.theme_id || userSettings.theme || 'black'
       }
       data-final-table={tableState.isFinalTable ? 'true' : undefined}
-      data-background-theme={v8Theme.background_id || 'midnight'}
+      data-background-theme={
+        tableState.isFinalTable ? 'final_table_broadcast' : v8Theme.background_id || 'midnight'
+      }
       data-button-theme={v8Theme.button_id || 'classic-white'}
       data-cards-theme={activeCardBack}
       data-theme-preset={v8Theme.theme_id || 'default-dark'}
@@ -13678,7 +13738,9 @@ export default function TablePage({
         // designed backdrop, so a 404 / decode failure / slow first paint can
         // no longer leave the page empty — see lib/tableTheme.
         backgroundColor: DEFAULT_TABLE_BACKDROP_COLOR,
-        backgroundImage: resolveBackgroundLayers(v8Theme.background_id),
+        backgroundImage: resolveBackgroundLayers(
+          tableState.isFinalTable ? 'final_table_broadcast' : v8Theme.background_id
+        ),
         backgroundSize: `var(--sp-background-layers-size, ${TABLE_BACKGROUND_SIZE})`,
         backgroundPosition: `var(--sp-background-layers-position, ${TABLE_BACKGROUND_POSITION})`,
         backgroundRepeat: TABLE_BACKGROUND_REPEAT,
@@ -13691,6 +13753,13 @@ export default function TablePage({
                 .community-area { animation: boardFade 0.4s ease-out; }
                 .board-transition { animation: boardSlideIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
             `}</style>
+      {tableState.isFinalTable && (
+        <div className="final-table-broadcast-hud" aria-label="Final Table broadcast status">
+          <span>SMARTER POKER CHAMPIONSHIP</span>
+          <strong>FINAL TABLE</strong>
+          <b>{tableState.players.filter(Boolean).length} PLAYERS</b>
+        </div>
+      )}
       {/* AUDIT 2026-08-25 — THE ANSWER TO THE DEAD BOOKMARK.
           See the bootstrap loader for how a table that does not exist used to
           leave the player on a permanently blank felt. Rendered above the

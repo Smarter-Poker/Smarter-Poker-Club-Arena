@@ -73,6 +73,30 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           this.postHandTasksPromise = null;
         }
 
+        // ═══════════════════════════════════════════════════════════════════
+        // THE PARK — no new hand starts while a deliberate pause is in force.
+        //
+        // This sits at the TOP of the iteration on purpose. Every guard below
+        // exits with `continue` (short-handed, spin-reveal hold, bounty
+        // reveal, admin lock), and the start-up wait loop enters the dealing
+        // loop here — so a gate placed after `dealHand()` was unreachable for
+        // any table that was not already mid-hand, and such a table dealt
+        // straight through the break the moment it could. See awaitPauseGate
+        // on the base class for the full account.
+        //
+        // A table WITH cards in the air is unaffected: the loop cannot return
+        // to this line until dealHand() resolves, so the hand in progress at
+        // :55 always finishes first. That is Dan's rule exactly — the break is
+        // announced, every hand finishes, and each table stops as it lands.
+        // ═══════════════════════════════════════════════════════════════════
+        if (this.handForHandPaused) {
+          this.setLoopPhase('parked_for_pause');
+          await this.awaitPauseGate();
+          if (!this.running) break;
+          // Fall through and re-evaluate the table from scratch: seats,
+          // blinds and stacks may all have moved during a five-minute break.
+        }
+
         // Reload players + refresh blinds before each hand.
         //
         // BUDGETED (2026-08-22): these are three Supabase round trips with
@@ -462,36 +486,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         await this.dealHand(activePlayers);
         this.consecutiveErrors = 0;
 
-        // Hand-for-hand: if paused, wait until tournament manager resumes all tables
-        // Bible V8 §3.1: Table FSM — running → paused
+        // Hand-for-hand / synchronized break: the hand just landed, so park
+        // NOW rather than waiting for the showdown display pause below. This
+        // is what makes areAllTablesParked() go true promptly, which is what
+        // starts the five minutes. Same gate as the top of the loop — see
+        // awaitPauseGate on the base class.
         if (this.handForHandPaused && this.running) {
-          this.tableFSM.transition('paused');
-          console.log(
-            `[ServerTableEngine:${this.tableId}] Hand-for-hand: waiting for all tables to complete...`
-          );
-          await new Promise<void>((resolve) => {
-            this.handForHandResolve = resolve;
-            /**
-             * Safety timeout so a table can never wedge forever.
-             *
-             * Dan 2026-08-19: this was hard-coded to 120 seconds. A
-             * synchronized break is five minutes measured from AFTER the last
-             * hand completes, so every table silently self-resumed two minutes
-             * in and dealt through the rest of the break. The budget now comes
-             * from whoever requested the pause (pauseAfterHand), defaulting to
-             * the original two minutes for hand-for-hand.
-             */
-            const maxWaitMs = this.pauseMaxWaitMs ?? 120000;
-            setTimeout(() => {
-              if (this.handForHandResolve === resolve) {
-                console.warn(
-                  `[ServerTableEngine:${this.tableId}] Pause safety timeout after ${Math.round(maxWaitMs / 1000)}s — resuming to avoid a wedged table`
-                );
-                this.handForHandResolve = null;
-                resolve();
-              }
-            }, maxWaitMs);
-          });
+          this.setLoopPhase('parked_for_pause');
+          await this.awaitPauseGate();
         }
 
         // Bible V8 §4.23: Formal cleanup timing between hands.
@@ -578,10 +580,26 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // Give busted players 5 seconds to process the UI modal and hit rebuy before the next hand starts.
           // activePlayers refers to the players DEALT into this hand (so they started > 0 chips).
           // If they now have 0, they just busted.
-          const justBustedHumans = activePlayers.filter(
-            (p) => p.stack === 0 && p.is_horse === false
-          );
-          if (justBustedHumans.length > 0) {
+          //
+          // EVERY PLAYER, HORSE OR HUMAN (Dan 2026-08-27). This filter used to
+          // carry `&& p.is_horse === false`, so the table held for five seconds
+          // when a human busted and snapped straight into the next hand when a
+          // horse did. Dan: "YES IT STILL NEEDS TO THE SAME 5 SECOND PAUSE TO
+          // REBUY. NOT EVERY HORSE ALWAYS REBUYS IN THE CASH GAMES, AND IF YOU
+          // DIDN'T GIVE THEM THE SAME EXACT FEATURES AND FUNCTIONALITY, PEOPLE
+          // WOULD NOTICE!"
+          //
+          // He is right, and the tell is the RHYTHM of the table rather than
+          // any one hand: a seat whose bust never costs the table a beat is a
+          // seat everybody can identify as a horse. The pause is also not
+          // ceremonial for horses — the stop-loss (two rebuys) and an empty
+          // club treasury both mean a horse genuinely may not come back, so
+          // the window it is given to return has to be the same window.
+          //
+          // See CLAUDE.md section 10.5. There is no "equal outcome by a
+          // different mechanism" exemption: timing is part of the outcome.
+          const justBustedPlayers = activePlayers.filter((p) => p.stack === 0);
+          if (justBustedPlayers.length > 0) {
             let needsRebuyPause = false;
             if (!this.isTournamentTable()) {
               needsRebuyPause = true; // Cash games always have rebuy
@@ -624,7 +642,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
             if (needsRebuyPause) {
               console.log(
-                `[ServerTableEngine:${this.tableId}] Pausing 5s for busted players to buy back in: ${justBustedHumans.map((p) => p.username).join(', ')}`
+                `[ServerTableEngine:${this.tableId}] Pausing 5s for busted players to buy back in: ${justBustedPlayers.map((p) => p.username).join(', ')}`
               );
               this.setLoopPhase('rebuy_pause');
               await this.sleep(5000);
@@ -1079,8 +1097,33 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       gameVariant: this.dealtGameVariant() as GameVariant,
       smallBlind: this.tableInfo.small_blind,
       bigBlind: this.tableInfo.big_blind,
-      // FIX-219: Bible V8 §4.3 — Respect ante_enabled toggle; if disabled, zero out ante
-      ante: (this.tableInfo.ante_enabled ?? true) ? this.tableInfo.ante : undefined,
+      /* FIX-219: Bible V8 §4.3 — Respect ante_enabled toggle; if disabled, zero
+         out ante. That is a CASH-TABLE toggle: CreateTableModal writes it
+         (`ante_enabled: parseFloat(anteAmount) > 0`) and the lobby gates its
+         ante badge on it.
+
+         ── A TOURNAMENT ANTE IS NOT SUBJECT TO IT (2026-08-27) ──────────────
+         Measured in production: `ante_enabled` is FALSE on ALL 93,416 table
+         rows, so this expression yielded `undefined` every time and
+         HandController's `if (this.config.ante)` never fired. NO ANTE HAS EVER
+         BEEN POSTED, on any table, anywhere.
+
+         For cash that is at worst a dormant feature. For tournaments it is
+         wrong: the ante comes from the BLIND STRUCTURE, refreshed on every
+         level change by refreshBlindsFromDb (which sets `this.tableInfo.ante =
+         data.ante` and cannot set a toggle it does not own). 10,085 tournaments
+         carry non-zero antes in their structure and 43 were live at the time of
+         writing; every one of them advertised "Level N: x/y ante z" in the
+         blinds tab and collected nothing. That materially changes tournament
+         play, which is exactly what an ante is for.
+
+         So: tournaments take the ante their level specifies; cash keeps the
+         toggle. */
+      ante: this.tableInfo.tournament_id
+        ? this.tableInfo.ante
+        : (this.tableInfo.ante_enabled ?? true)
+          ? this.tableInfo.ante
+          : undefined,
       bigBlindAnte: this.tableInfo.big_blind_ante_enabled ?? false,
       // 2026-08-22 parity: AoF tables restrict preflop to fold / all-in.
       allInOrFold: this.tableInfo.all_in_or_fold ?? false,

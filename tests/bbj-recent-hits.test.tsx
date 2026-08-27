@@ -94,10 +94,7 @@ describe('recent-hit payout contract', () => {
  * (supabase/migrations/20260827_bbj_full_hand_seed.sql).
  */
 describe('the winner row draws the club avatar', () => {
-  const SRC = readFileSync(
-    resolve(__dirname, '../src/components/bbj/BBJRecentHits.tsx'),
-    'utf8'
-  );
+  const SRC = readFileSync(resolve(__dirname, '../src/components/bbj/BBJRecentHits.tsx'), 'utf8');
 
   it('resolves the avatar through getAvatarWithFallback', () => {
     // arena_avatar_url arrives Hub-relative (/avatars/table/vip_spartan@2x.webp).

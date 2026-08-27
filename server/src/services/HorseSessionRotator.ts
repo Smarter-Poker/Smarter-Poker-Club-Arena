@@ -109,14 +109,53 @@ export class HorseSessionRotator {
 
   private async rotate(): Promise<void> {
     // Seated horses at CASH tables with enough table population to spare one.
-    const { data: seats, error } = await supabase
-      .from('table_seats')
-      .select(
-        'table_id, user_id, seat_number, stack, joined_at, tables!inner(id, big_blind, tournament_id, status)'
-      )
-      .is('left_at', null)
-      .limit(400);
-    if (error || !seats) return;
+    /* ═══ NO CEILING. IT PAGES UNTIL IT HAS THE WHOLE ROOM ═══════════════
+       Dan 2026-08-27: "there should never be a cap on the amount of players
+       in the club, union or anywhere else."
+
+       To be exact about what was here: the `.limit(400)` was never a cap on
+       PLAYERS - nobody was stopped from joining, sitting or playing by it. It
+       was a page size on one background maintenance read. But it capped what
+       this pass could SEE, which caps what it can do, and that is a
+       distinction without a difference once the room outgrows it: measured
+       2026-08-27 the room held 348 live seats, 87% of the ceiling, and past
+       400 Postgres would have returned an ARBITRARY 400 with no error and no
+       log - tables silently never rotating.
+
+       Raising the number would only move the day it happens, so there is no
+       number now. This pages through every live seat, ordered so the paging
+       is stable (an unordered .range() can serve a row twice or skip it
+       between pages, which is the defect the club_members house rule in the
+       client suite exists to catch). The loop ends when a short page says it
+       has reached the end; the guard below is an anti-infinite-loop assert,
+       NOT a data cap - it throws rather than quietly returning a partial
+       room. */
+    const PAGE = 1000;
+    const seats: any[] = [];
+    for (let page = 0; ; page++) {
+      if (page > 10_000) {
+        reportError(
+          new Error('[HorseSessionRotator] seat paging did not terminate; aborting the pass'),
+          'HorseSessionRotator.seat_paging_runaway'
+        );
+        return;
+      }
+      const { data: chunk, error } = await supabase
+        .from('table_seats')
+        .select(
+          'table_id, user_id, seat_number, stack, joined_at, tables!inner(id, big_blind, tournament_id, status)'
+        )
+        .is('left_at', null)
+        .order('table_id', { ascending: true })
+        .order('seat_number', { ascending: true })
+        .range(page * PAGE, page * PAGE + PAGE - 1);
+      // A failed page means an INCOMPLETE room, and rotating against half a
+      // room is how a table gets picked that should not have been. Decline
+      // the pass; it runs again on the next cycle.
+      if (error || !chunk) return;
+      seats.push(...chunk);
+      if (chunk.length < PAGE) break;
+    }
 
     // Group by table; only consider cash tables with 4+ occupied seats so a
     // departure never threatens the game.

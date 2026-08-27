@@ -32,7 +32,7 @@
  *  Color Palette:
  *    Gold: #ffd700 (pot amount, border glow, shimmer)
  *    Royal Blue: #4169e5 (side pots)
- *    Emerald: #10b981 (total, increase badge)
+ *    Emerald: #3fb950 (total, increase badge)
  *    Felt contact: rgba(0,0,0,0.7) (chip landing shadow)
  */
 
@@ -80,9 +80,9 @@
   --pd-blue-glow: rgba(65, 105, 225, 0.12);
 
   /* Emerald palette */
-  --pd-emerald: #10b981;
-  --pd-emerald-bg: rgba(16, 185, 129, 0.12);
-  --pd-emerald-border: rgba(16, 185, 129, 0.3);
+  --pd-emerald: #3fb950;
+  --pd-emerald-bg: rgba(63, 185, 80, 0.12);
+  --pd-emerald-border: rgba(63, 185, 80, 0.3);
 }
 
 /* =================================================================================
@@ -625,7 +625,7 @@
   border-radius: 6px;
   box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.2),
-    0 0 16px rgba(16, 185, 129, 0.06);
+    0 0 16px rgba(63, 185, 80, 0.06);
   animation: pdTotalFadeIn 0.35s var(--pd-ease-settle) backwards;
   animation-delay: 0.2s;
 }
@@ -644,7 +644,7 @@
 .pot-display__total-label {
   font-size: 0.5625rem;
   font-weight: 600;
-  color: rgba(16, 185, 129, 0.8);
+  color: rgba(63, 185, 80, 0.8);
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
@@ -654,7 +654,7 @@
   font-weight: 700;
   color: var(--pd-emerald);
   font-family: 'JetBrains Mono', monospace;
-  text-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+  text-shadow: 0 0 8px rgba(63, 185, 80, 0.3);
 }
 
 /* =================================================================================
@@ -679,7 +679,7 @@
   top: -20px;
   right: -20px;
   padding: 2px 8px;
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.95) 0%, rgba(16, 185, 129, 0.85) 100%);
+  background: linear-gradient(135deg, rgba(63, 185, 80, 0.95) 0%, rgba(63, 185, 80, 0.85) 100%);
   color: #ffffff;
   border-radius: 4px;
   font-size: 0.75rem;
@@ -687,8 +687,8 @@
   font-family: 'JetBrains Mono', monospace;
   animation: pdIncreaseFloat var(--pd-increase-duration) var(--pd-ease-settle) forwards;
   box-shadow:
-    0 2px 8px rgba(16, 185, 129, 0.5),
-    0 0 16px rgba(16, 185, 129, 0.2);
+    0 2px 8px rgba(63, 185, 80, 0.5),
+    0 0 16px rgba(63, 185, 80, 0.2);
   pointer-events: none;
   z-index: 5;
 }
@@ -701,7 +701,7 @@
   left: 20%;
   right: 20%;
   height: 8px;
-  background: radial-gradient(ellipse at center, rgba(16, 185, 129, 0.4) 0%, transparent 80%);
+  background: radial-gradient(ellipse at center, rgba(63, 185, 80, 0.4) 0%, transparent 80%);
   border-radius: 50%;
   animation: pdTrailFade var(--pd-increase-duration) ease forwards;
   pointer-events: none;

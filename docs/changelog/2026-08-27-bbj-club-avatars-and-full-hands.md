@@ -26,13 +26,13 @@ column the felt itself reads in
 All five seeded winners already had one, so the page changed the moment the
 migration applied:
 
-| Winner | Now shows |
-| --- | --- |
-| Valentina Salvatore | `/avatars/table/vip_spartan@2x.webp` |
-| Josephine Whitmore | `/avatars/table/vip_tiger_boss@2x.webp` |
-| Freeway | `/avatars/table/free_cowboy@2x.webp` |
-| broadwayKing | `/avatars/table/vip_phantom@2x.webp` |
-| CRUX | `/avatars/table/vip_mad_scientist@2x.webp` |
+| Winner              | Now shows                                  |
+| ------------------- | ------------------------------------------ |
+| Valentina Salvatore | `/avatars/table/vip_spartan@2x.webp`       |
+| Josephine Whitmore  | `/avatars/table/vip_tiger_boss@2x.webp`    |
+| Freeway             | `/avatars/table/free_cowboy@2x.webp`       |
+| broadwayKing        | `/avatars/table/vip_phantom@2x.webp`       |
+| CRUX                | `/avatars/table/vip_mad_scientist@2x.webp` |
 
 Client-side, `BBJRecentHits` now runs that value through `getAvatarWithFallback`
 exactly as `SeatSlot` does, so the Hub-relative path resolves absolutely (it
@@ -57,8 +57,8 @@ is visible in the screenshot Dan sent:
 - `rake_amount` and `bbj_amount` were both 0, so the "Taken From The Pot" line
   never drew.
 
-And the cards did not make the stated hands. CRUX was billed with *Four of a
-Kind* holding `As Ad` on a board with one ace — trip aces. `bestFive()` would
+And the cards did not make the stated hands. CRUX was billed with _Four of a
+Kind_ holding `As Ad` on a board with one ace — trip aces. `bestFive()` would
 have drawn what it could actually prove, contradicting the winners list one row
 above it.
 
@@ -68,13 +68,13 @@ through River, amounts that sum **to the penny** to `pot_size`, rake and jackpot
 drop, and hole cards that make the category the list claims under that variant's
 own rules — Omaha using exactly two from hand and three from the board.
 
-| Hand | Bad beat | Beaten by | Pot |
-| --- | --- | --- | --- |
-| 1506711 | Valentina Salvatore, quad aces | WASP, royal flush | 7,835.00 |
-| 1269428 | Josephine Whitmore, queen-high straight flush | earlyPosition, royal flush | 581.00 |
-| 1253455 | Freeway, eight-high straight flush | Caroline Myers, ten-high straight flush | 736.50 |
-| 1127041 | broadwayKing, quad queens | Alice Bourgeois, quad kings | 105.50 |
-| 1080832 | CRUX, quad aces | Christopher Lee, royal flush | 2,227.00 |
+| Hand    | Bad beat                                      | Beaten by                               | Pot      |
+| ------- | --------------------------------------------- | --------------------------------------- | -------- |
+| 1506711 | Valentina Salvatore, quad aces                | WASP, royal flush                       | 7,835.00 |
+| 1269428 | Josephine Whitmore, queen-high straight flush | earlyPosition, royal flush              | 581.00   |
+| 1253455 | Freeway, eight-high straight flush            | Caroline Myers, ten-high straight flush | 736.50   |
+| 1127041 | broadwayKing, quad queens                     | Alice Bourgeois, quad kings             | 105.50   |
+| 1080832 | CRUX, quad aces                               | Christopher Lee, royal flush            | 2,227.00 |
 
 `scripts/dev/gen-bbj-seed.mjs` generates the migration. It carries a port of the
 client's own `handEvaluator` and `pokerPositions` and **refuses to emit SQL**
@@ -88,7 +88,7 @@ showing numbers that do not add up.
 
 `bbj_payouts` carries `winner_share`, `loser_share` **and** `table_share`, but
 only the first two ever got `bbj_payout_recipients` rows. So the popup headlined
-*Jackpot Paid 7,883.92* above two lines totalling 5,912.94, and 1,970.98 was
+_Jackpot Paid 7,883.92_ above two lines totalling 5,912.94, and 1,970.98 was
 listed nowhere. `tests/bbj-recent-hits.test.tsx` had asserted the 50/25/25 split
 against a fixture the whole time; nothing checked the fixture against the table.
 

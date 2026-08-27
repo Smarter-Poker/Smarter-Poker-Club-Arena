@@ -669,6 +669,11 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'v18_squeeze_response', pairs: 6000, a: {}, b: { v18Squeeze: false } },
   { name: 'v18_self_image', pairs: 6000, a: {}, b: { v18SelfImage: false } },
   { name: 'v18_exploit_size', pairs: 6000, a: {}, b: { v18ExploitSize: false } },
+  // 2026-08-27: the bet-ratio scale repair. There is no "off" for a fixed
+  // arithmetic bug, so this measures the sizing-read layer as a whole
+  // against playing without size reads at all - if the repair helps, this
+  // matchup should grow relative to its own history.
+  { name: 'v19_size_reads', pairs: 6000, a: {}, b: { v7SizeReads: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
   { name: 'mind_layer', a: {}, b: { mind: false } },

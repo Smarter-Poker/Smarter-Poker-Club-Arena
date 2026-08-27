@@ -15798,3 +15798,71 @@ plausible numbers. One sampled player read 3,313,727.73 against a true
   writers), config/reference tables, no skipped-spec stubs.
 - OPEN: `union_clubs` at 6,590,684 reads on a 2-row table (hot-path re-query,
   own task); seat exit #15448; the SECURITY DEFINER function backlog.
+
+### Addendum, same day — the reconciler was rolling back every run
+
+Verifying phase 2 end-to-end found `ledger_reconcile_log` EMPTY for 2026-08-27:
+`ledger_reconcile_log_entity_type_check` allowed 5 entity_type values while
+`reconcile_ledger_nightly` emits 9. The `frozen_wallets_pool` row added that
+morning is an INSERT..VALUES, so it broke the job immediately (my regression).
+The cashier audit's `cashout_escrow_stuck` / `negative_balance` /
+`over_claimed_send` are INSERT..SELECT and were latent - they would have
+detonated on the first night a real money fault existed. Both fixed by
+migration `reconcile_log_entity_type_check_covers_every_emitted_kind`.
+
+Proven end to end: the run now returns 8 rows / 4 criticals (was 588 / 575),
+and the frozen-pool invariant reads drift 0.00. The 4 surviving criticals are
+REAL and are for Dan: Club JAQK treasury -78,057.05, SHARK CLUB treasury
+-32,320.73, Midway Union treasury negative at -1,202.80, and seat exit #15448
+(55 chips).
+
+## 2026-08-27 — Phase-4 sweep: the loaded gun the last audit left behind (cowork-mobile)
+
+Full write-up: `.agent/audits/2026-08-27-phase4-unknown-is-not-zero.md`
+
+Swept the three bug CLASSES from phases 2-3 rather than hunting instances, and
+control-tested every detector before believing its result.
+
+- CONSTRAINT-vs-WRITER drift (class B): swept DB functions (9 call sites of
+  log_wallet_transaction, all permitted) and the World Hub API (19 real literal
+  writes inspected, 0 violations). `ledger_reconcile_log` was the only
+  instance and is already fixed. Noted honestly: the CA-client run of this
+  detector returned an EMPTY that a control test proved worthless.
+- UNKNOWN-collapsed-to-ZERO (class C): the 2026-08-25 audit fixed one call site
+  and left `WalletService.getPlayerBalance`, whose body was `r.balance ?? 0`.
+  Five sites still used it - including `useGlobalBalanceSync` (blanked the
+  GLOBAL chip figure app-wide on one refused read) and `ChipTransferModal`
+  (blocked an agent from sending chips they held). All five now guard on null
+  and keep the last known good value; the helper is deleted.
+- New pin `tests/unit/UnknownBalanceIsNotZero.test.ts` (mutation-tested).
+
+Verified: tsc clean, 7,331/7,331 tests, deprecated-table gate green.
+
+## 2026-08-27 — Phase-5: no ceiling on people; the flaky suite fixed (cowork-mobile)
+
+Full write-up: `.agent/audits/2026-08-27-phase5-no-ceiling-on-people.md`
+
+Dan: "there should never be a cap on the amount of players in the club, union
+or anywhere else." Correction first: none of these were caps on PLAYERS - they
+were page sizes on background reads. But each treated its slice as the whole
+room, so the effect was the same once the room outgrew them.
+
+- HorseSessionRotator: `.limit(400)` UNORDERED, with 348 live seats measured
+  that day (87% of it). Now pages the whole room, ordered.
+- horseLoadMap (both halves) and the same-tournament entrant guard: three
+  `.limit(20000)` ceilings removed; all page. A truncated entrant list is how a
+  horse gets registered into the same tournament twice.
+- Waitlist: took the oldest TEN and looked for a human among them - a
+  horse-heavy head notified nobody while humans waited behind. Now walks the
+  queue. Kept as two queries on purpose: `table_waitlist.user_id` has FKs to
+  BOTH profiles and auth.users, so an embedded filter is ambiguous and a 400
+  would silence every seat offer.
+- FLAKY SUITE FIXED: full runs failed 2, then 4, then 5 specs across different
+  files while each passed alone. Two CPU-bound describes were spending ~8.5s of
+  the 10s default, and EngineStartResilience left three collaborators unstubbed
+  against its own docstring. Proven pre-existing by reproducing on main with
+  these changes stashed. Now: two consecutive full runs, 1,941/1,941.
+
+Reported not changed: 31 further row ceilings on people-tables, of which ~8 are
+complete-set operations (StatsExport, AgentPromoPanel, member lists) that need
+the same treatment in their own pass.

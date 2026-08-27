@@ -37,7 +37,6 @@ import CashierClubSwitcher from '../components/club/CashierClubSwitcher';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
-import { callClubArenaApi } from '../services/clubArenaApi';
 import {
   resolveTargetClub,
   readCachedQuickLinkClubs,
@@ -214,6 +213,18 @@ export default function CashierPage() {
 
   // Rate limiting: minimum 2s between financial actions (beyond the 3s cooldown)
   const lastActionRef = useRef<number>(0);
+  /**
+   * 2026-08-27: idempotency keys for the CURRENT money intent, one per action.
+   * Minted per INTENT, not per call: held across a failed attempt so a retry
+   * of the same send/cashout/distribution replays server-side instead of
+   * debiting twice, and rotated when the inputs change (a corrected amount is
+   * a NEW intent - replaying the old key would move the wrong number). Every
+   * success path here clears the inputs, so success rotates them too via the
+   * effect below the input state. Pattern: WalletCashierModal.doSend.
+   */
+  const sendOpIdRef = useRef<string>(newOpId());
+  const cashoutOpIdRef = useRef<string>(newOpId());
+  const promoOpIdRef = useRef<string>(newOpId());
   const RATE_LIMIT_MS = 2000;
 
   // Connection status: track realtime channel health
@@ -321,6 +332,12 @@ export default function CashierPage() {
   // Send chips state
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [selectedRecipient, setSelectedRecipient] = useState('');
+  // Any change to what is being moved is a NEW intent - fresh keys.
+  useEffect(() => {
+    sendOpIdRef.current = newOpId();
+    cashoutOpIdRef.current = newOpId();
+    promoOpIdRef.current = newOpId();
+  }, [amount, selectedRecipient]);
   const [loadingRecipients, setLoadingRecipients] = useState(false);
   const [recipientSearch, setRecipientSearch] = useState('');
 
@@ -354,7 +371,16 @@ export default function CashierPage() {
     (async () => {
       const resolved = (await resolveClubUUID(clubId)) || clubId;
       const map = await fetchClubChipBalances(user.id);
-      if (live && isMounted.current) setMyClubChips(map.get(resolved) ?? 0);
+      /* NULL map = the read FAILED with nothing cached (Cashier audit
+         2026-08-27). Collapsing that into 0 told the cashout modal the
+         player has no chips in this club: Max prefilled 0 and the local
+         amount check refused every cashout without asking the server. The
+         null state ("Still loading your club balance") already renders for
+         exactly this; keep it. A missing membership ROW in a map that DID
+         load is still a real zero. */
+      if (live && isMounted.current) {
+        setMyClubChips(map === null ? null : (map.get(resolved) ?? 0));
+      }
     })();
     return () => {
       live = false;
@@ -1449,7 +1475,12 @@ export default function CashierPage() {
           p_amount: value,
           p_destination: canHoldAgentWallet(recipient?.role) ? 'agent_wallet' : 'player_wallet',
           p_reason: `Cashier Send To ${recipient?.username || 'Member'}`,
-          p_op_id: newOpId(),
+          // Per-INTENT key (see sendOpIdRef). A key minted inside the call
+          // protects nothing: the dangerous shape is commit + lost response +
+          // user retry, and that retry must present the SAME key so the
+          // server replays instead of debiting again. The 30-line note above
+          // this call claimed that was already true. It was not.
+          p_op_id: sendOpIdRef.current,
         });
         if (sendError) throw sendError;
         const sendRes = (Array.isArray(sendData) ? sendData[0] : sendData) as {
@@ -1592,7 +1623,13 @@ export default function CashierPage() {
           let cashoutFailed = false;
           try {
             if (!clubId) throw new Error('Club ID is missing');
-            await cashoutService.requestCashout(user.id, clubId!, value);
+            await cashoutService.requestCashout(
+              user.id,
+              clubId!,
+              value,
+              undefined,
+              cashoutOpIdRef.current
+            );
             if (isMounted.current)
               setMessage({
                 type: 'success',
@@ -1636,6 +1673,14 @@ export default function CashierPage() {
   // Process high-value cashout after ConfirmModal approval
   const processHighValueCashout = async (value: number) => {
     if (!user?.id) return;
+    // 2026-08-27: this path had no double-submit guard. setIsProcessing is
+    // React state and applies after a render, so two taps on the confirm
+    // modal inside one frame both reached the RPC (with, before today, two
+    // different op ids). Same 2s ref limiter the non-modal cashout path
+    // already stamps.
+    const nowHV = Date.now();
+    if (nowHV - lastActionRef.current < 2000) return;
+    lastActionRef.current = nowHV;
     setCashoutConfirm({ show: false, value: 0 });
     setIsProcessing(true);
     try {
@@ -1657,7 +1702,13 @@ export default function CashierPage() {
       }
 
       // Use CashoutService directly (same as normal cashout path) — no World Hub API dependency
-      await cashoutService.requestCashout(user.id, clubId, value);
+      await cashoutService.requestCashout(
+        user.id,
+        clubId,
+        value,
+        undefined,
+        cashoutOpIdRef.current
+      );
       if (isMounted.current)
         setMessage({
           type: 'success',
@@ -2175,8 +2226,9 @@ export default function CashierPage() {
           </h2>
           <div className={styles.cardBody}>
             <div className={`${styles.message} ${styles.messageInfo}`}>
-              Distribute Chips Directly To Players Or Agents From The Club Bank. Each Distribution
-              Is Logged With A Full Audit Trail.
+              {['owner', 'co_owner', 'admin', 'super_agent'].includes(userRole) || isUnionOwner
+                ? 'Distribute Chips Directly To Players Or Agents From The Club Bank. Each Distribution Is Logged With A Full Audit Trail.'
+                : 'Distribute Chips To Your Downline From Your Agent Wallet. Each Distribution Is Logged With A Full Audit Trail.'}
             </div>
 
             {/* Player Selector */}
@@ -2287,22 +2339,57 @@ export default function CashierPage() {
                 }
 
                 try {
-                  // Distribute SERVER-SIDE. `distribute_promo_chips` is granted
-                  // to postgres/service_role only, so the browser rpc() this
-                  // used to call returned 42501 permission denied, was retried
-                  // three times, and surfaced as a raw Postgres string — the
-                  // Distribute tab could never succeed for anyone. The route
-                  // identifies the agent from the JWT (no agents.id lookup
-                  // needed, which also unblocks owners who have no agents row),
-                  // enforces the promo caps, and writes the audit trail.
-                  // Same call the Agent promo panel already uses.
-                  await callClubArenaApi('distribute-promo', {
-                    action: 'send',
-                    clubId: (await resolveClubUUID(clubId || '')) || clubId || '',
-                    targetUserId: selectedRecipient,
-                    amount: value,
-                  });
-                  const recipient = recipients.find((r) => r.id === selectedRecipient);
+                  /**
+                   * THE TAB NOW DOES WHAT ITS OWN COPY SAYS (audit 2026-08-27).
+                   *
+                   * The card reads "Distribute Chips ... From The Club Bank",
+                   * but this called the distribute-promo World Hub route,
+                   * whose RPC (transfer_promo_agent_to_player) debits
+                   * club_members.promo_balance - a pool that is zero for
+                   * every member in production and that nothing funds. The
+                   * tab has NEVER moved a chip: zero ledger rows of that
+                   * type exist.
+                   *
+                   * It now routes by the caller's role onto the two
+                   * canonical RPCs. The four bank roles spend the CLUB BANK
+                   * (fn_club_bank_send - self-send permitted there, which is
+                   * how an owner funds their own float); an agent spends
+                   * their AGENT WALLET (fn_agent_wallet_send, downline
+                   * enforced server-side). Both derive the destination from
+                   * the recipient's role and write one ledger row.
+                   * promoOpIdRef is the page's per-INTENT key: held across a
+                   * failed attempt, rotated when the inputs change.
+                   */
+                  const resolvedForDistribute =
+                    (await resolveClubUUID(clubId || '')) || clubId || '';
+                  const recipientRow = recipients.find((r) => r.id === selectedRecipient);
+                  const viaClubBank =
+                    ['owner', 'co_owner', 'admin', 'super_agent'].includes(userRole) ||
+                    isUnionOwner;
+                  const { data: distData, error: distError } = await supabase.rpc(
+                    viaClubBank ? 'fn_club_bank_send' : 'fn_agent_wallet_send',
+                    {
+                      p_club_id: resolvedForDistribute,
+                      p_to_user_id: selectedRecipient,
+                      p_amount: value,
+                      p_destination: canHoldAgentWallet(recipientRow?.role)
+                        ? 'agent_wallet'
+                        : 'player_wallet',
+                      p_reason: viaClubBank
+                        ? 'Distributed From The Club Bank'
+                        : 'Distributed From The Agent Wallet',
+                      p_op_id: promoOpIdRef.current,
+                    }
+                  );
+                  if (distError) throw distError;
+                  const distRes = (Array.isArray(distData) ? distData[0] : distData) as {
+                    success?: boolean;
+                    error?: string;
+                  } | null;
+                  if (!distRes?.success) {
+                    throw new Error(distRes?.error || 'The Cashier Refused That Distribution');
+                  }
+                  const recipient = recipientRow;
                   if (isMounted.current)
                     setMessage({
                       type: 'success',

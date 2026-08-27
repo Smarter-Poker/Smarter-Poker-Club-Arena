@@ -1,0 +1,23 @@
+-- Applied to production 2026-08-27 as `two_flags_for_one_fact_disagree`.
+--
+-- "Is this account a horse" is stored twice:
+--     profiles.is_horse    (authoritative - the horse fleet sets it)
+--     club_members.is_bot  (per-membership copy)
+--
+-- Measured:
+--     is_horse=false, is_bot=false     15 members      900,127.21 chips  <- real people
+--     is_horse=TRUE,  is_bot=FALSE    985 members   74,565,324.43 chips  <- DISAGREE
+--     is_horse=true,  is_bot=true     502 members   45,553,471.79 chips
+--
+-- 985 of 1,487 horses - 66% of the fleet holding 74.5 MILLION chips - are
+-- flagged is_bot = false, so anything segmenting on that flag counts them as
+-- human. It produced a wrong answer in the audit that found it: a seated
+-- count keyed on is_bot said "346 horses, 733 humans" when only 15 human
+-- MEMBERSHIPS exist platform-wide.
+--
+-- THE FLAG IS DELIBERATELY NOT CORRECTED HERE. Three functions read it and one
+-- is mass_fund_horses; flipping 985 rows to true could pull those accounts into
+-- a funding run and move a great deal of money as a side effect of a
+-- data-quality fix. fn_membership_starts_with_zero_chips also branches on it.
+-- Correcting it is the right end state, done deliberately with
+-- mass_fund_horses read first - not as a side effect of noticing at 3am.

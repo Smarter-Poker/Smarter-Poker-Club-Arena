@@ -274,8 +274,13 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
         return;
       }
       await onRegister(tournament.id);
-      setIsRegistered(true);
-      setRegCheckFailed(false);
+      // 2026-08-27: the registration hook NEVER rejects - it resolves on
+      // dialog cancel, on its re-entrancy guard, and on failures it swallows
+      // into a toast. Setting isRegistered here therefore marked CANCELLED
+      // registrations as Registered, directly under the comment saying only a
+      // call that actually resolved counts. Ask the source of truth instead:
+      // checkRegistration reads tournament_players and sets both flags.
+      await checkRegistration();
     } catch (error) {
       reportError(error, 'TournamentLobbyCard.Failed_to_register');
     } finally {
@@ -441,7 +446,9 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
 
       {/* Title */}
       <h3 className={styles.title}>
-        {tournament.guaranteedPrize && tournament.guaranteedPrize > 0 ? `${chipsCompact(tournament.guaranteedPrize)} GTD ` : ''}
+        {tournament.guaranteedPrize && tournament.guaranteedPrize > 0
+          ? `${chipsCompact(tournament.guaranteedPrize)} GTD `
+          : ''}
         {formatGameTitle(tournament.name)}
       </h3>
 

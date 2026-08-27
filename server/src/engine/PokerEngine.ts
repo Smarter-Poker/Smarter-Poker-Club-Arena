@@ -850,6 +850,25 @@ export function validateAction(
 // RAKE CALCULATION — Exact penny, NO rounding
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Heads-up is raked at 5%, not the schedule's 10%.
+ *
+ * ── Dan 2026-08-27, correcting a rake audit ──────────────────────────────────
+ * "Rake is 10% with a max cap. Heads up is 5% rake."
+ *
+ * The engine already knew heads-up is cheaper, but only in the CAP:
+ * getPlayerCountCaps() halves it at two players. The PERCENT stayed at the
+ * schedule's 10%, so every heads-up pot small enough that the cap never bound
+ * was raked at double the intended rate.
+ *
+ * Measured before this fix, over 12 hours of live cash heads-up hands:
+ * 635 raked hands, 398 of them at ~10%, average effective rate 7.77%, and
+ * 457.69 chips taken above what 5% would have collected. The cap was doing its
+ * job on the big pots, which is why the average sat between the two rates and
+ * why this went unnoticed.
+ */
+export const HEADS_UP_RAKE_PERCENT = 5;
+
 export function calculateRake(
   pot: number,
   sawFlop: boolean,
@@ -866,7 +885,16 @@ export function calculateRake(
   // (Math.min) so over-rounding past the cap is impossible.
   // Aligns with the same Math.round fix applied in HandController.completeHand
   // (commit 9900b874) and distributePot (FIX 179).
-  const rake = Math.round(pot * config.percent) / 100;
+  /* Heads-up pays 5%. `Math.min` rather than an assignment, so a club or table
+     that has deliberately configured a rate BELOW 5% keeps it -- this is a
+     ceiling for two-handed play, never a floor that could raise someone's
+     rake. A table configured at 3% stays at 3% heads-up. */
+  let percent = config.percent;
+  if (playerCount !== undefined && playerCount <= 2) {
+    percent = Math.min(percent, HEADS_UP_RAKE_PERCENT);
+  }
+
+  const rake = Math.round(pot * percent) / 100;
   // Bible V8 §2.9: Use player-count-based cap if available, otherwise flat cap
   let cap = config.cap;
   if (config.playerCountCaps && config.playerCountCaps.length > 0 && playerCount !== undefined) {

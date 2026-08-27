@@ -206,8 +206,7 @@ function ChallengeCard({
           }}
           title="Swap this challenge for a new one"
         >
-          <span style={{ fontSize: 16, marginRight: 6 }}>🎲</span>
-          Reroll (10 💎)
+          Reroll (10 Diamonds)
         </button>
       )}
     </div>
@@ -485,7 +484,7 @@ export default function DailyChallengesPage() {
   const handleBuyFreeze = useCallback(async () => {
     if (!userId || buyingFreeze) return;
     if ((stats?.totalDiamondsEarned || 0) < 5000) {
-      toast.error('Not enough diamonds. You need 5,000 💎 to buy a freeze.');
+      toast.error('Not enough diamonds. You need 5,000 Diamonds to buy a freeze.');
       return;
     }
 
@@ -499,7 +498,7 @@ export default function DailyChallengesPage() {
     try {
       const res = await dailyChallengeService.buyStreakFreeze(userId);
       if (res.success) {
-        toast.success('Streak Freeze purchased! ❄️');
+        toast.success('Streak Freeze purchased.');
       } else {
         toast.error(res.error || 'Failed to buy freeze');
         // Revert UI on fail
@@ -517,7 +516,7 @@ export default function DailyChallengesPage() {
     async (challenge: TieredUserChallenge) => {
       if (!userId) return;
       if ((stats?.totalDiamondsEarned || 0) < 10) {
-        toast.error('Not enough diamonds (10 💎 required).');
+        toast.error('Not enough diamonds. 10 Diamonds required.');
         return;
       }
       const confirmSwap = window.confirm('Pay 10 Diamonds to swap this challenge for a new one?');
@@ -740,7 +739,7 @@ export default function DailyChallengesPage() {
                   cursor: 'pointer',
                 }}
               >
-                {buyingFreeze ? 'Buying...' : 'Buy ❄️ (5K 💎)'}
+                {buyingFreeze ? 'Buying...' : 'Buy Streak Freeze (5K Diamonds)'}
               </button>
             </div>
           )}

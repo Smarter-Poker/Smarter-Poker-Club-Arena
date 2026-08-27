@@ -439,6 +439,19 @@ async function ensureClubMembership(horseId: string, clubId: string): Promise<vo
     is_prepaid: true,
     trust_score: 50,
     tier: 'bronze',
+    /* THIS LINE IS THE ROOT CAUSE OF THE 2026-08-27 FLAG DRIFT.
+       It was absent, so the column took its `false` default and every horse
+       onboarded through this path was recorded as a human being. By the time
+       it was found, 985 of 1,487 horses -- 66% of the fleet, holding 74.5
+       million chips -- were flagged is_bot = false, and anything segmenting
+       on that column counted them as players. It produced a wrong seated
+       count in the cost analysis that led to finding it.
+       `profiles.is_horse` stays authoritative; this is the per-membership
+       copy and it has to agree. A trigger now enforces that
+       (20260827_the_bot_flag_cannot_drift_again), so this line is
+       belt-and-braces -- but the insert should state the truth itself
+       rather than rely on a trigger to correct it. */
+    is_bot: true,
   });
   if (error && !/duplicate|unique/i.test(error.message)) {
     throw new Error(`club_members insert: ${error.message}`);

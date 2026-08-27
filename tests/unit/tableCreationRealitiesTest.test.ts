@@ -54,15 +54,19 @@ describe('the Ante slider now reaches the engine', () => {
   });
 });
 
-describe("the modal stops discarding the operator's numbers", () => {
-  it('uses the 40x/200x band as a FALLBACK, not an override', () => {
-    // It used to be `min_buy_in: bigBlind * 40` unconditionally, three lines
-    // after reading the host's own figure into `settings`.
-    expect(TABLE_SERVICE).toContain('Number(settings?.min_buyin_bb) > 0');
-    expect(TABLE_SERVICE).toContain('Number(settings?.max_buyin_bb) > 0');
+describe('the modal path is gone, not merely patched', () => {
+  // 2026-08-27: the two assertions that stood here pinned fixes INSIDE
+  // TableService.createTable — the settings-blob-to-column mirrors. The whole
+  // method was then found to be unreachable (its only caller,
+  // CreateTableModal, had zero imports anywhere) and deleted. What is worth
+  // pinning now is that the dead path stays dead: a `tables` insert built
+  // from a settings JSONB blob was the source of every dead-switch bug this
+  // file documents.
+  it('TableService no longer inserts tables at all', () => {
+    expect(TABLE_SERVICE).not.toMatch(/\.from\(\s*'tables'\s*\)[\s\S]{0,160}?\.insert\(/);
   });
 
-  it('mirrors action time to the column the engine reads', () => {
-    expect(TABLE_SERVICE).toContain('Number(settings?.action_time_seconds) > 0');
+  it('the settings-blob mapping is gone with it', () => {
+    expect(TABLE_SERVICE).not.toContain('Number(settings?.min_buyin_bb) > 0');
   });
 });

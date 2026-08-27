@@ -47,6 +47,11 @@ export const THEME_PRESET_SKINS: Readonly<Record<string, string>> = {
   'neon-blue': 'ice_cavern',
   'rustic-wood': 'golden_sand',
   'casino-green': 'classic_green',
+  'ocean-depths': 'ocean_blue',
+  'crimson-club': 'crimson',
+  'arctic-suite': 'arctic_white',
+  'amethyst-night': 'amethyst_cavern',
+  'carbon-ion': 'carbon_ion',
 };
 
 /** The skin asset for an id, or undefined if nothing real is behind it. */
@@ -283,8 +288,10 @@ export function resolveBackground(bid: string): string {
  * 2026-08-20 follow-up: guaranteeing a layer *underneath* stopped the page
  * being empty when an asset fails, but it did nothing for the reported
  * symptom, because the artwork does load — it is simply almost invisible.
- * Update 2026-08-20: Backgrounds were regenerated in landscape (2560x1440) with higher luma (55-85),
- * so they are no longer near-black or heavily cropped on wide viewports. A backdrop hidden *behind* that reads exactly as blank.
+ * Update 2026-08-27: Backgrounds are portrait-native 1440x2560 private-room
+ * compositions. Their central 70% is intentionally quiet and contains no
+ * second table; architecture and material detail live at the phone edges
+ * around the real table. A backdrop hidden *behind* that reads exactly as blank.
  *
  * So the ambience moves above the art: a soft pool lifts the centre where the
  * table sits, and a vignette frames the edges. The artwork still reads —

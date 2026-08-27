@@ -233,6 +233,12 @@ jobs:
       - name: UI copy — page copy is Title Cased
         run: node scripts/ci/check-title-case.mjs
 
+      # design-guidelines.md rule 1: "NO EMOJIS - EVER". The third copy rule,
+      # and until 2026-08-27 the only one nothing enforced. Added after the
+      # audit found emoji rendering in gameplay.
+      - name: UI copy — no emoji in player-facing code
+        run: node scripts/ci/check-no-emoji.mjs
+
       # A CSS module key with no matching class resolves to undefined, React
       # drops className={undefined} without a word, and the element ships with
       # no styling at all. Build green, tests green, page visibly broken. It

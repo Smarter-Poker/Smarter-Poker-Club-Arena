@@ -1613,7 +1613,7 @@ abbr.lt-variant[title] {
   }
 
   .lt-row {
-    background: linear-gradient(90deg, rgba(20, 26, 39, 0.96), rgba(11, 14, 21, 0.98));
+    background: #111722;
     box-shadow: inset 3px 0 0 rgba(88, 137, 225, 0.28);
   }
 
@@ -1632,7 +1632,7 @@ abbr.lt-variant[title] {
   }
 
   .lt-row:hover {
-    background: linear-gradient(90deg, rgba(31, 63, 119, 0.6), rgba(16, 25, 42, 0.98));
+    background: #172844;
     box-shadow:
       inset 4px 0 0 #50baff,
       0 5px 16px rgba(0, 0, 0, 0.34);
@@ -1640,7 +1640,7 @@ abbr.lt-variant[title] {
   }
 
   .lt-row.is-featured {
-    background: linear-gradient(90deg, rgba(32, 76, 150, 0.58), rgba(17, 24, 42, 0.98) 62%);
+    background: #162b50;
     box-shadow:
       inset 4px 0 0 #56d3ff,
       0 6px 18px rgba(0, 45, 130, 0.22);
@@ -1663,9 +1663,7 @@ abbr.lt-variant[title] {
     padding: 13px 13px 12px 16px;
     border-color: rgba(101, 148, 222, 0.25);
     border-radius: 14px;
-    background:
-      radial-gradient(circle at 100% 0, rgba(48, 100, 192, 0.16), transparent 38%),
-      linear-gradient(160deg, rgba(27, 35, 52, 0.98), rgba(10, 13, 21, 0.99) 70%);
+    background: #151d2b;
     box-shadow:
       0 10px 24px rgba(0, 0, 0, 0.52),
       inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -1673,9 +1671,7 @@ abbr.lt-variant[title] {
 
   .lobby-table tr.is-featured {
     border-color: rgba(85, 207, 255, 0.48);
-    background:
-      radial-gradient(circle at 92% 0, rgba(46, 141, 255, 0.27), transparent 43%),
-      linear-gradient(155deg, rgba(27, 51, 91, 0.99), rgba(11, 16, 28, 0.99) 72%);
+    background: #18325a;
     box-shadow:
       0 14px 30px rgba(0, 29, 90, 0.55),
       inset 0 1px 0 rgba(170, 226, 255, 0.13);

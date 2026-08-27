@@ -181,6 +181,10 @@ export class GameServer {
   private seatFirstFullSince: Map<string, number> = new Map();
   /** Last fn_sweep_unsettled_tournament_rake pass (2026-08-26 settlement integrity). */
   private lastRakeSweepAt = 0;
+  /** Last fn_tournament_money_conservation pass (2026-08-27 phase 3). */
+  private lastConservationAt = 0;
+  /** Last fn_backpay_hu_winner_shortfalls pass (2026-08-27 phase 3d). */
+  private lastHuBackpayAt = 0;
   private running: boolean = false;
   private startTime: number = Date.now();
 
@@ -1855,7 +1859,7 @@ export class GameServer {
         // spinner. A table of horses alone still does not get one.
         //
         // It returns `human_count` so the two ideas below can stay separate:
-        // "needs an engine" is NOT "should be dealing". See readyIds.
+        // "needs an engine" is NOT "should be dealing". See seatedCounts.
         const { data: ready, error } = await supabase.rpc('cash_tables_needing_engine', {
           p_min: 2,
         });
@@ -2036,11 +2040,22 @@ export class GameServer {
          *
          * So: two or more occupants is what "should be dealing" means, exactly
          * as before. A lone seat gets an engine and is left alone in it.
+         *
+         * 2026-08-27: "two or more" was still not the whole truth. The
+         * ENGINE'S definition of enough is max(2, auto_start_players) —
+         * minPlayersToDeal, which ServerTableEngineDealing's header warns
+         * "the watchdog reads too so the two cannot disagree". This reaper
+         * was the one reader that disagreed: a table with AutoStart 5 and
+         * 2-4 seats makes no progress by design, and a hard-coded >= 2 here
+         * called that a zombie and rebuilt its engine every 180s forever.
+         * The COUNTS are kept so each engine can be measured against its own
+         * threshold below.
          */
-        const readyIds = new Set(
-          ((ready || []) as Array<{ table_id: string; player_count: number }>)
-            .filter((r) => r.player_count >= 2)
-            .map((r) => r.table_id)
+        const seatedCounts = new Map<string, number>(
+          ((ready || []) as Array<{ table_id: string; player_count: number }>).map((r) => [
+            r.table_id,
+            Number(r.player_count) || 0,
+          ])
         );
         for (const [id, engine] of this.tableEngines) {
           if (!engine.isRunning()) {
@@ -2080,15 +2095,21 @@ export class GameServer {
             if (!this.tournamentOwnedTables.has(id)) tableStateHub.dropTable(id);
             continue;
           }
-          // 2026-08-15: `readyIds` comes from `cash_tables_with_players`, whose
-          // WHERE clause includes `t.tournament_id IS NULL`. Gating the rebuild
+          // 2026-08-15: the seat counts come from a cash-only RPC (its WHERE
+          // clause includes `t.tournament_id IS NULL`). Gating the rebuild
           // on it meant TOURNAMENT tables had no freeze recovery at all: when
           // one died, the `!isRunning()` branch above deleted it and nothing
           // anywhere recreated it, so every seated player was frozen
           // permanently. Tournament tables are rebuilt by their own
           // TournamentManager sweep, so here we only need to stop treating a
           // cash-only list as the definition of "should be dealing".
-          const shouldBeDealing = readyIds.has(id) || this.tournamentOwnedTables.has(id);
+          //
+          // 2026-08-27: a cash table "should be dealing" when it has reached
+          // ITS OWN deal threshold — dealThreshold() is minPlayersToDeal, the
+          // same number the dealing loop and the turn watchdog use.
+          const shouldBeDealing =
+            (seatedCounts.get(id) ?? 0) >= engine.dealThreshold() ||
+            this.tournamentOwnedTables.has(id);
           /**
            * Dan 2026-08-19: PAUSED IS NOT DEAD — the other half of the break fix.
            *
@@ -2669,6 +2690,73 @@ export class GameServer {
             }
           } catch (sweepEx) {
             reportError(sweepEx, 'GameServer.rake_sweep_threw');
+          }
+        }
+
+        // ── HEADS-UP SHORTFALL BACK-PAY + CONSERVATION SENTINEL (2026-08-27) ──
+        // Back-pay: every completed Heads-Up whose winner was paid one prize
+        // share instead of two (the createSNG pool overwrite, ~230,561 chips
+        // over 30 days) is repaid, evidence-based and idempotent
+        // (fn_credit_and_log key per tournament+winner). Self-draining: paid
+        // events fall out of the scan, and the cutoff date means the backlog
+        // can only shrink.
+        //
+        // ITS OWN TIMER (2026-08-27, phase 3d). This used to run inside a
+        // 60-second window that opened only when the RAKE sweep had just
+        // fired -- a piggyback on another job's clock. In production that
+        // meant it ran once on engine boot and then effectively never again:
+        // 100 winners repaid at 15:32 after a deploy, then nothing, with
+        // 8,600 events and ~211,000 chips still owed. Money owed to players
+        // must not depend on when a different sweep happens to tick, so this
+        // now keeps its own interval like every other periodic job here.
+        // 250 per pass drains the remaining backlog in about three hours
+        // instead of fourteen; the RPC is ~270ms and fully idempotent.
+        if (Date.now() - this.lastHuBackpayAt > 5 * 60 * 1000) {
+          this.lastHuBackpayAt = Date.now();
+          try {
+            const { data: bp, error: bpErr } = await supabase.rpc(
+              'fn_backpay_hu_winner_shortfalls',
+              { p_limit: 250 }
+            );
+            if (bpErr) {
+              reportError(
+                new Error(`[GameServer] HU shortfall back-pay failed: ${bpErr.message}`),
+                'GameServer.hu_backpay_failed'
+              );
+            } else if (Number(bp?.paid) > 0) {
+              console.log(
+                `[GameServer] HU shortfall back-pay: ${bp.paid} winner(s), ${bp.chips} chips (scanned ${bp.scanned})`
+              );
+            }
+          } catch (bpEx) {
+            reportError(bpEx, 'GameServer.hu_backpay_threw');
+          }
+        }
+
+        // Conservation: per-event money in vs money out (prizes + bounties +
+        // refunds + booked rake + funded overlay). Every 6 hours; anything
+        // beyond tolerance files a deduped financial_alert. This is the
+        // invariant that would have caught both the minted overlays and the
+        // HU shortfalls on day one.
+        if (Date.now() - this.lastConservationAt > 6 * 60 * 60 * 1000) {
+          this.lastConservationAt = Date.now();
+          try {
+            const { data: cons, error: consErr } = await supabase.rpc(
+              'fn_tournament_money_conservation',
+              { p_since_days: 7, p_tolerance: 1.0, p_limit: 500 }
+            );
+            if (consErr) {
+              reportError(
+                new Error(`[GameServer] conservation sweep failed: ${consErr.message}`),
+                'GameServer.conservation_sweep_failed'
+              );
+            } else if (Number(cons?.flagged) > 0) {
+              console.log(
+                `[GameServer] Conservation sweep: ${cons.flagged} event(s) flagged (retained ${cons.retained_chips}, unfunded ${cons.unfunded_chips})`
+              );
+            }
+          } catch (consEx) {
+            reportError(consEx, 'GameServer.conservation_sweep_threw');
           }
         }
 

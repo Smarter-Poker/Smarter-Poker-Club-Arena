@@ -235,7 +235,7 @@
 }
 
 .hh-entry__shown--won .hh-entry__player-name {
-  color: var(--success-green, #00d26a);
+  color: var(--success-green, #3fb950);
   font-weight: 700;
 }
 
@@ -286,7 +286,7 @@
 }
 
 .hh-entry__won {
-  color: var(--success-green, #00d26a);
+  color: var(--success-green, #3fb950);
   font-weight: 700;
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
   flex-shrink: 0;

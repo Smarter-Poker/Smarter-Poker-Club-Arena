@@ -16,7 +16,7 @@
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
-import { DEFAULT_RAKE_RATE, buyInFor, wholeChips } from '../config/buyIn.js';
+import { DEFAULT_RAKE_RATE, SNG_RAKE_RATE, buyInFor, wholeChips } from '../config/buyIn.js';
 import { gameLaneFor, horseHash } from './HorseBehavior.js';
 
 /**
@@ -41,7 +41,10 @@ import { gameLaneFor, horseHash } from './HorseBehavior.js';
  * 0.05 to the house, twice, and the winner takes the 1.90 pool. Exactly the
  * number Dan wrote.
  */
-export const SNG_RAKE_RATE = 0.05;
+// Moved to ../config/buyIn.ts (2026-08-27) so ScheduledTournamentService
+// prices sng schedules with the SAME number. Re-exported for existing
+// importers.
+export { SNG_RAKE_RATE };
 
 function buyInColumns(
   buyIn: number,
@@ -2151,15 +2154,17 @@ export class TournamentRecurringService {
         ? config.horsesToRegister
         : Math.max(config.horsesToRegister, config.maxPlayers);
       const registered = await this.registerHorses(tournament.id, horseTarget);
-      // TOURNEY-AUDIT 2026-07-24 [money]: exclude the bounty portion from the
-      // prize pool for bounty formats (same fix as the club-level MTT path).
-      const xmttPerEntry = Math.max(0, config.buyIn - (bountyAmount || 0));
-      const entriesPool = Math.round(xmttPerEntry * registered * 100) / 100;
-      const prizePool = config.guarantee ? Math.max(entriesPool, config.guarantee) : entriesPool;
-
+      // POOL TRUTH 2026-08-27: prize_pool is ACCUMULATED by the register RPCs
+      // (each entry adds its exact prize share - fee and bounty excluded), so
+      // recomputing it here from config.buyIn x registered both overstated it
+      // by the FEE on every entry (config.buyIn is the fee-inclusive total)
+      // and pre-applied the guarantee, which must now be FUNDED at
+      // finalization (fn_apply_prize_guarantee, host club treasury), never
+      // written for free at creation. The lobby already displays
+      // max(prize_pool, guaranteed_prize) client-side.
       const { error: updateErr } = await supabase
         .from('tournaments')
-        .update({ current_players: registered, prize_pool: prizePool, status: 'REGISTERING' })
+        .update({ current_players: registered, status: 'REGISTERING' })
         .eq('id', tournament.id);
       if (updateErr)
         reportError(
@@ -2363,18 +2368,17 @@ export class TournamentRecurringService {
         ? config.horsesToRegister
         : Math.max(config.horsesToRegister, config.maxPlayers);
       const registered = await this.registerHorses(tournament.id, horseTarget);
-      // TOURNEY-AUDIT 2026-07-24 [money]: for bounty formats the bounty
-      // portion of each entry funds the bounty pool, NOT the prize pool —
-      // the old math left the full buy-in in the pool AND paid bounties on
-      // top (double-counting the bounty component).
-      const perEntryToPool = Math.max(0, config.buyIn - (bountyAmount || 0));
-      const entriesPool = Math.round(perEntryToPool * registered * 100) / 100;
-      // Honor guaranteed prize: prize pool = max(entries contribution, guarantee)
-      const prizePool = config.guarantee ? Math.max(entriesPool, config.guarantee) : entriesPool;
-
+      // POOL TRUTH 2026-08-27: prize_pool is ACCUMULATED by the register RPCs
+      // (each entry adds its exact prize share - fee and bounty excluded), so
+      // recomputing it here from config.buyIn x registered both overstated it
+      // by the FEE on every entry (config.buyIn is the fee-inclusive total)
+      // and pre-applied the guarantee, which must now be FUNDED at
+      // finalization (fn_apply_prize_guarantee, host club treasury), never
+      // written for free at creation. The lobby already displays
+      // max(prize_pool, guaranteed_prize) client-side.
       const { error: updateErr } = await supabase
         .from('tournaments')
-        .update({ current_players: registered, prize_pool: prizePool, status: 'REGISTERING' })
+        .update({ current_players: registered, status: 'REGISTERING' })
         .eq('id', tournament.id);
       if (updateErr)
         reportError(
@@ -2471,7 +2475,6 @@ export class TournamentRecurringService {
         const seatPlan = horsesForSeatHeldGame(config.maxPlayers);
         registered = await this.registerHorses(sng.id, seatPlan.horses);
       }
-      const prizePool = config.buyIn * registered;
 
       /**
        * Dan 2026-08-23: same trap as createSpin, one branch narrower.
@@ -2483,9 +2486,17 @@ export class TournamentRecurringService {
        * registration model, and for those the count is correct and must still
        * be written.
        */
+      // POOL TRUTH 2026-08-27: prize_pool was written here as
+      // config.buyIn x registered — 0 for a seat-first game, OVERWRITING the
+      // prize share the opening horse's registration had just accumulated.
+      // The 2026-08-23 fix below caught this exact trap for current_players
+      // and left prize_pool in it, so every Heads-Up duel paid its winner ONE
+      // prize share instead of two (95 on a 100 duel priced at 1.90x) —
+      // ~230,561 chips retained over 30 days, repaid by
+      // fn_backpay_hu_winner_shortfalls. The register RPCs are the only
+      // writer of pool contributions now.
       const seatFirstSng = isSeatFirstFormat('sng', config.maxPlayers);
       const sngStateUpdate: Record<string, unknown> = {
-        prize_pool: prizePool,
         status: 'REGISTERING',
       };
       if (!seatFirstSng) sngStateUpdate.current_players = registered;

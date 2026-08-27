@@ -316,11 +316,14 @@ export const WaitlistService = {
    * calling it per row would be 46 requests for a badge. This is one `in`
    * query returning only the ids.
    *
-   * Returns an empty map on failure rather than throwing: a waitlist count is
-   * an enhancement to a badge, and a table must still list if it cannot be
-   * fetched.
+   * Returns NULL on failure rather than an empty map (ITEM E audit,
+   * 2026-08-26): an empty map fed `cashStatus(t, 0)`, so a full table with a
+   * real queue badged as plain 'Full' whenever this read failed. The caller
+   * keeps its PREVIOUS counts on null — stale beats wrong-empty. A table
+   * must still list if the badge cannot be fetched, which is the caller's
+   * job, not a reason to lie about the count.
    */
-  async countsFor(tableIds: string[]): Promise<Map<string, number>> {
+  async countsFor(tableIds: string[]): Promise<Map<string, number> | null> {
     const counts = new Map<string, number>();
     if (!tableIds.length) return counts;
     try {
@@ -329,12 +332,17 @@ export const WaitlistService = {
         .select('table_id')
         .in('table_id', tableIds)
         .eq('status', 'waiting');
-      if (error || !data) return counts;
+      if (error || !data) {
+        if (error) reportError(error, 'WaitlistService.countsFor');
+        return null;
+      }
       for (const row of data as { table_id: string }[]) {
         counts.set(row.table_id, (counts.get(row.table_id) ?? 0) + 1);
       }
-    } catch {
-      /* a badge is not worth an exception */
+    } catch (e) {
+      /* a badge is not worth an exception — but it is worth a report */
+      reportError(e, 'WaitlistService.countsFor');
+      return null;
     }
     return counts;
   },
@@ -346,7 +354,16 @@ export const WaitlistService = {
    * to decide whether a horse should yield its seat.
    */
 
-  async getTableWaitlist(tableId: string): Promise<WaitlistEntry[]> {
+  /**
+   * Returns NULL when the read FAILED — "we could not find out" and "nobody
+   * is waiting" are different answers, and the panel renders them differently
+   * ('-' vs '0'). Returning [] here collapsed a failed query into "Waiting 0"
+   * beside a Join Waitlist button: a promise that you are first in line,
+   * made on a guess (ITEM E audit, 2026-08-26 — the named house bug shape;
+   * the panel's own .catch could never see it because a Supabase builder only
+   * REJECTS on transport failures, not query errors).
+   */
+  async getTableWaitlist(tableId: string): Promise<WaitlistEntry[] | null> {
     if (!tableId) return [];
     const { data, error } = await supabase
       .from('table_waitlist')
@@ -356,7 +373,7 @@ export const WaitlistService = {
       .order('created_at', { ascending: true });
     if (error) {
       reportError(error, 'WaitlistService.getTableWaitlist', { tableId });
-      return [];
+      return null;
     }
     /* Dan 2026-08-26: "if you join the wait list, your name needs to appear
        on the waiting list." Resolve display names in one batch — the same

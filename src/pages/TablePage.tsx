@@ -495,6 +495,8 @@ interface TableState {
   spinMultiplier?: number;
   handForHand?: boolean;
   bubbleInfo?: { playersRemaining: number; paidPositions: number };
+  /** Authoritative MTT milestone; activates the event-only broadcast skin. */
+  isFinalTable?: boolean;
   lateRegOpen?: boolean;
   currentLevel?: number;
   refreshTrigger?: number;
@@ -4230,7 +4232,7 @@ export default function TablePage({
   // Returns TRUE only when the engine actually credited the stack. The cashier
   // uses this to decide whether to close; before 2026-08-20 it resolved void on
   // every rejection path, so a refused top-up closed the modal looking successful.
-  const handleAddChips = async (amount: number): Promise<boolean> => {
+  const handleAddChips = async (amount: number, opId?: string): Promise<boolean> => {
     if (!userId || userId === 'guest' || !tableId) {
       reportError(
         new Error('Cannot add chips: not authenticated'),
@@ -4249,27 +4251,54 @@ export default function TablePage({
       // so every top-up charged the player twice for a single stack increase.
       // The engine is now the sole authoritative debit; UI/session trackers update
       // only after it acks.
-      const res = await GameServerAPI.addChips(tableId, amount);
+      const res = await GameServerAPI.addChips(tableId, amount, opId);
       if (!res.success) {
         reportError(
           new Error(res.error || 'addChips rejected by engine'),
           'TablePage.addChips_engine_rejected'
         );
-        // atomic_table_addon is atomic: on failure the wallet was NOT charged.
         if (typeof window !== 'undefined') {
-          toast.error(res.error || 'Unable to add chips \u2014 your wallet was not charged.');
+          /* Cashier audit 2026-08-27 (P0-1): "your wallet was not charged"
+             is TRUE for a server refusal and FALSE for a transport failure \u2014
+             the request may have committed before the response was lost, and
+             telling a charged player they were not charged (with the modal
+             open and the amount intact) is the strongest possible invitation
+             to a double top-up. Say which case this is. */
+          if (res.code === 'TRANSPORT') {
+            toast.error(
+              'The Connection Dropped Before The Table Answered. Your Chips May Have Been Added. Check Your Stack Before Trying Again.'
+            );
+          } else {
+            toast.error(res.error || 'Unable to add chips \u2014 your wallet was not charged.');
+          }
         }
         return false;
       }
+      /* Cashier audit 2026-08-27 (P0-2): the engine caps the top-up to the
+         seat's headroom and reports what actually moved as `applied`. The
+         client used to account for the REQUESTED amount everywhere \u2014 ask for
+         5,000 with 1,200 of room and the session figures drifted by 3,800
+         for the rest of the session. Every tracker now uses `applied`. */
+      const applied = typeof res.applied === 'number' ? res.applied : amount;
+      if (typeof window !== 'undefined') {
+        if (applied < amount) {
+          toast.info(
+            `Added ${applied.toLocaleString()} Chips. That Is This Table's Maximum Top-Up Right Now.`
+          );
+        }
+        if (res.queued) {
+          toast.info('Your Chips Land When This Hand Ends.');
+        }
+      }
       // Engine ack'd the single debit -- reflect it locally + in session trackers.
-      setAccountBalance((prev) => Math.max(0, prev - amount));
-      totalBuyInRef.current += amount; // Track for session P/L
+      setAccountBalance((prev) => Math.max(0, prev - applied));
+      totalBuyInRef.current += applied; // Track for session P/L
       totalRebuysRef.current += 1; // Track rebuy count for session summary
       // Dan 2026-08-15: feed the top-up into SessionStatsService too, otherwise
       // its buyInTotal never moves and P&L reads as pure profit after a rebuy.
-      sessionStatsService.recordRebuy(tableId, amount);
+      sessionStatsService.recordRebuy(tableId, applied);
       // Update peak stack if rebuy pushes hero above previous peak
-      const newPeakCandidate = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + amount;
+      const newPeakCandidate = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + applied;
       if (newPeakCandidate > peakStackRef.current) peakStackRef.current = newPeakCandidate;
 
       // We do NOT optimistic update tableState anymore. The next WebSocket broadcast
@@ -4277,8 +4306,13 @@ export default function TablePage({
       // us the authoritative stack size.
 
       // Emit bus event so other pages (Dashboard, Profile) know about the chip change
-      const estimatedNewStack = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + amount;
-      masterBus.emit('CHIPS_ADDED', { tableId, userId, amount, newStack: estimatedNewStack });
+      const estimatedNewStack = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + applied;
+      masterBus.emit('CHIPS_ADDED', {
+        tableId,
+        userId,
+        amount: applied,
+        newStack: estimatedNewStack,
+      });
       return true;
     } catch (error) {
       reportError(error, 'TablePage.Failed_to_add_chips');
@@ -4316,7 +4350,16 @@ export default function TablePage({
           'TablePage.removeChips_engine_rejected'
         );
         if (typeof window !== 'undefined') {
-          toast.error(res.error || 'Unable to cash out chips.');
+          // Same TRANSPORT honesty as handleAddChips (Cashier audit
+          // 2026-08-27): a lost response is not a refusal — the cash-out may
+          // have committed.
+          if (res.code === 'TRANSPORT') {
+            toast.error(
+              'The Connection Dropped Before The Table Answered. Your Cash-Out May Have Gone Through. Check Your Stack And Wallet Before Trying Again.'
+            );
+          } else {
+            toast.error(res.error || 'Unable to cash out chips.');
+          }
         }
         return false;
       }
@@ -5127,9 +5170,17 @@ export default function TablePage({
          for exactly this reason. Same rule here, same table context. */
       try {
         const r = await WalletService.readPlayerBalance(userId, { tableId });
-        setBustWalletBalance(r.balance ?? 0);
+        /* NULL STAYS NULL (2026-08-27). This was `r.balance ?? 0`, which
+           collapsed "we could not find out" back into "you have no chips" —
+           the exact defect the 2026-08-25 audit removed from the tournament
+           sign-up gate, surviving here. The state is already typed
+           `number | null` so the dialog can say "unknown"; the ?? 0 was the
+           only thing stopping it. It matters more now that readPlayerBalance
+           no longer falls back to a frozen table: an unreachable RPC used to
+           answer with a stale number, and now honestly answers null. */
+        setBustWalletBalance(r.balance);
       } catch {
-        setBustWalletBalance(0);
+        setBustWalletBalance(null);
       }
       setBustRebuyOpen(true);
     })();
@@ -6949,6 +7000,11 @@ export default function TablePage({
           gameType: (table.game_variant || table.game_type || 'NLH') as any,
           isTournament: table.game_type === 'tournament' || !!table.tournament_id,
           tournamentId: table.tournament_id || undefined,
+          // Reconnects happen after the one-shot event. TournamentService
+          // canonically names the consolidated table "Final Table".
+          isFinalTable:
+            (table.game_type === 'tournament' || !!table.tournament_id) &&
+            /\bfinal table\b/i.test(table.name || ''),
           /**
            * ═══════════════════════════════════════════════════════════════════
            *  A TOURNAMENT'S BLINDS COME FROM ITS BLINDS, NOT ITS BIRTH CERTIFICATE
@@ -7703,6 +7759,7 @@ export default function TablePage({
                   const tid = fmt === 'mtt' ? tableStateRef.current.tournamentId : null;
                   const ftName = tableStateRef.current.tableName || 'Tournament';
                   if (tid) {
+                    setTableState((prev) => ({ ...prev, isFinalTable: true }));
                     (async () => {
                       let ftPlayers: Array<{
                         userId: string;
@@ -9168,7 +9225,8 @@ export default function TablePage({
     horseYieldReportedRef.current = false;
     const interval = setInterval(async () => {
       try {
-        const entries = await waitlistService.getTableWaitlist(tableId);
+        // null = read failed ("could not find out") — yield nothing on a guess.
+        const entries = (await waitlistService.getTableWaitlist(tableId)) ?? [];
         if (entries.length > 0) {
           const yielded = await HydraService.checkWaitlistAndYield(tableId, entries.length);
           if (yielded) {
@@ -13358,6 +13416,7 @@ export default function TablePage({
     if (!tableId) return;
     try {
       const entries = await waitlistService.getTableWaitlist(tableId);
+      if (entries === null) return; // read failed — keep what the modal has
       if (entries.length === 0) {
         setWaitListPlayers([]);
         return;
@@ -13587,7 +13646,12 @@ export default function TablePage({
       /* Dan 2026-08-18 — the page never shows the skin composite's scene:
          the table is .table-art inside the aspect-locked scaler, and the
          page behind it is a standalone designed background (style below). */
-      data-felt-theme={v8Theme.table_id || v8Theme.theme_id || userSettings.theme || 'black'}
+      data-felt-theme={
+        tableState.isFinalTable
+          ? 'final_table'
+          : v8Theme.table_id || v8Theme.theme_id || userSettings.theme || 'black'
+      }
+      data-final-table={tableState.isFinalTable ? 'true' : undefined}
       data-background-theme={v8Theme.background_id || 'midnight'}
       data-button-theme={v8Theme.button_id || 'classic-white'}
       data-cards-theme={activeCardBack}
@@ -13615,8 +13679,8 @@ export default function TablePage({
         // no longer leave the page empty — see lib/tableTheme.
         backgroundColor: DEFAULT_TABLE_BACKDROP_COLOR,
         backgroundImage: resolveBackgroundLayers(v8Theme.background_id),
-        backgroundSize: TABLE_BACKGROUND_SIZE,
-        backgroundPosition: TABLE_BACKGROUND_POSITION,
+        backgroundSize: `var(--sp-background-layers-size, ${TABLE_BACKGROUND_SIZE})`,
+        backgroundPosition: `var(--sp-background-layers-position, ${TABLE_BACKGROUND_POSITION})`,
         backgroundRepeat: TABLE_BACKGROUND_REPEAT,
       }}
     >
@@ -14173,7 +14237,11 @@ export default function TablePage({
                 and + SIT buttons sit ON the rail at every breakpoint. */}
             <img
               className="table-art"
-              src={resolveSkin(v8Theme.table_id || v8Theme.theme_id || userSettings.theme || '')}
+              src={resolveSkin(
+                tableState.isFinalTable
+                  ? 'final_table'
+                  : v8Theme.table_id || v8Theme.theme_id || userSettings.theme || ''
+              )}
               alt=""
               draggable={false}
             />
@@ -15623,6 +15691,9 @@ export default function TablePage({
                         showStackInBB={v8Settings.show_stack_in_bb}
                         isMyTurn={true}
                         isPreflop={tableState.boardStage === 'preflop'}
+                        /* Dan 2026-08-26: cash sliders step by whole dollars,
+                           tournament sliders by the level's chip unit. */
+                        isTournament={tableState.isTournament}
                         /* Dan 2026-08-19 item 4b: PLO must always offer
                            RAISE POT - preflop had no POT button at all. */
                         isPotLimit={isPotLimit}
@@ -15743,35 +15814,34 @@ export default function TablePage({
                   if (isPostingBB || !tableId) return;
                   setIsPostingBB(true);
                   try {
+                    /* POST-TO-ENTER RACE FIX 2026-08-27 (Dan: "the post to
+                       get dealt in feature isn't working... you also get a
+                       pop up that says you're being dealt in for free...
+                       that must be removed. all players must post or wait
+                       for BB. period.")
+
+                       The server now QUEUES a post tapped before the dealing
+                       loop has registered the joiner and applies it at the
+                       next hand - so the 2s retry dance is gone, and with it
+                       the "dealt in for free" message, which was a lie twice
+                       over: nobody is ever dealt in free, and the failed
+                       post left the player waiting. One call, three honest
+                       outcomes. */
                     const res = await serverPostBBToEnter(tableId);
                     if (res?.success) {
-                      toast.success('Posting The Big Blind. You Are In The Next Hand.');
-                      setPostOrWaitOpen(false);
+                      toast.success('Posting The Big Blind. You Are Dealt Into The Next Hand.');
                     } else if (res?.error === 'Player is not waiting for BB') {
-                      /* The buy-in just landed and the dealing loop has not
-                         registered the hero yet (it does within one tick).
-                         One quiet retry covers the race. */
-                      await new Promise((r) => setTimeout(r, 2000));
-                      const retry = await serverPostBBToEnter(tableId);
-                      if (retry?.success) {
-                        toast.success('Posting The Big Blind. You Are In The Next Hand.');
-                      } else {
-                        toast.info(
-                          retry?.error === 'Player is not waiting for BB'
-                            ? 'You Are Being Dealt In. No Post Needed.'
-                            : retry?.error ||
-                                'Could Not Post The Big Blind. You Will Wait For It Instead.'
-                        );
-                      }
-                      setPostOrWaitOpen(false);
+                      // Already known to the engine and not held out: they
+                      // are in the rotation and post blinds like everyone.
+                      toast.info('You Are Already In The Hand Rotation.');
                     } else {
-                      // Positional refusal (SB or button incoming): the wait is
-                      // mandatory there and cannot be bought.
+                      // Positional refusal (SB or button incoming): the wait
+                      // is mandatory there and cannot be bought.
                       toast.info(
                         res?.error || 'Could Not Post The Big Blind. You Will Wait For It Instead.'
                       );
-                      setPostOrWaitOpen(false);
                     }
+                    setPostOrWaitOpen(false);
                   } catch (e) {
                     reportError(e, 'TablePage.postOrWaitPostBB');
                     toast.error('Could Not Post The Big Blind.');
@@ -15820,7 +15890,9 @@ export default function TablePage({
               try {
                 const res = await serverPostBBToEnter(tableId);
                 if (res?.success) {
-                  toast.success('Posting The Big Blind. You Are In This Hand.');
+                  toast.success('Posting The Big Blind. You Are Dealt Into The Next Hand.');
+                } else if (res?.error === 'Player is not waiting for BB') {
+                  toast.info('You Are Already In The Hand Rotation.');
                 } else {
                   toast.error(res?.error || 'Could Not Post The Big Blind.');
                 }

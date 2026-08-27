@@ -95,14 +95,26 @@ interface TableConfig {
   hideClubName: boolean;
 
   // Game Variants (toggles)
+  //
+  // 2026-08-27: `tripleBoard` was removed. It wrote tables.triple_board, a
+  // column with ZERO readers anywhere — engine, SQL, lobby. A host who turned
+  // it on was promised a three-board game and dealt an ordinary one. Same
+  // treatment as the seven dead security switches (2026-08-19): the column
+  // stays so nothing is lost, the switch goes until the feature exists.
   bombPotEnabled: boolean;
+  // The two numbers that make Bomb Pot real. The engine fires a bomb pot
+  // every `bomb_pot_frequency` hands with `bomb_pot_ante_multiplier` x BB
+  // antes; until 2026-08-27 both were hard-coded (10 / 2) and the host had
+  // no say.
+  bombPotFrequency: number;
+  bombPotAnteBB: number;
   doubleBoard: boolean;
-  tripleBoard: boolean;
   pineappleHoldem: boolean;
   sevenDeuceEnabled: boolean;
   sevenDeuceAmountBB: number;
   nitGame: boolean;
   capEnabled: boolean;
+  capBB: number;
   noRathole: boolean;
 
   // Table Parameters (sliders)
@@ -117,10 +129,12 @@ interface TableConfig {
   maintainPercentMin: number;
   maintainHands: number;
   autoStartPlayers: number;
-  gameLengthHours: number;
+  // 2026-08-27: `gameLengthHours` and `calltimeEnabled` removed — both wrote
+  // columns (game_length_hours, calltime_enabled) with zero readers anywhere.
+  // A "12 hour" table ran forever; a Calltime shot clock never ticked.
+  // Columns stay; the switches return in the commit that implements them.
 
   // Time & Auto Settings (toggles)
-  calltimeEnabled: boolean;
   autoExtension: boolean;
   autoRestart: boolean;
   autoCreateTable: boolean;
@@ -259,13 +273,20 @@ const DEFAULT_CONFIG: TableConfig = {
 
   // Game Variants
   bombPotEnabled: false,
+  // Bible V8 section 4.22 defaults, previously hard-coded in buildTableData.
+  bombPotFrequency: 10,
+  bombPotAnteBB: 2,
   doubleBoard: false,
-  tripleBoard: false,
   pineappleHoldem: false,
   sevenDeuceEnabled: false,
   sevenDeuceAmountBB: 2,
   nitGame: false,
   capEnabled: false,
+  // 50 BB is the middle of the range cap games actually run at. The AMOUNT is
+  // what makes the Cap toggle real: the engine caps on cap_bb (see
+  // ServerTableEngineTurns), and until 2026-08-27 this page never wrote it, so
+  // the switch was decorative.
+  capBB: 50,
   noRathole: false,
 
   // Table Parameters
@@ -280,10 +301,8 @@ const DEFAULT_CONFIG: TableConfig = {
   maintainPercentMin: 0,
   maintainHands: 10,
   autoStartPlayers: 2,
-  gameLengthHours: 12,
 
   // Time & Auto Settings
-  calltimeEnabled: false,
   autoExtension: false,
   autoRestart: false,
   autoCreateTable: false,
@@ -836,17 +855,17 @@ export default function TableConfigPage() {
     // Game variants
     bomb_pot_enabled: config.bombPotEnabled,
     // FIX-D10 2026-07-19: the engine only fires bomb pots when
-    // bomb_pot_frequency > 0, but the config page exposes just an on/off toggle,
-    // so "enabled" bomb pots never occurred. Write sensible defaults when enabled
-    // (every 10 hands, 2x BB ante per Bible V8 §4.22) until the UI exposes knobs.
-    bomb_pot_frequency: config.bombPotEnabled ? 10 : 0,
-    bomb_pot_ante_multiplier: config.bombPotEnabled ? 2 : 0,
+    // bomb_pot_frequency > 0. The knobs are the host's now (2026-08-27) —
+    // they were hard-coded 10 / 2 "until the UI exposes knobs", and it does.
+    bomb_pot_frequency: config.bombPotEnabled ? config.bombPotFrequency : 0,
+    bomb_pot_ante_multiplier: config.bombPotEnabled ? config.bombPotAnteBB : 0,
     // DOUBLE-BOARD BOMB POT 2026-08-20: the existing Double Board toggle,
     // combined with Bomb Pot, now means "bomb pots deal two boards" — the
     // engine reads bomb_pot_double_board and splits every pot across them.
     bomb_pot_double_board: config.bombPotEnabled && config.doubleBoard,
     double_board: config.doubleBoard,
-    triple_board: config.tripleBoard,
+    // triple_board is no longer written (2026-08-27): the column has zero
+    // readers, so the toggle that fed it promised a game that never existed.
     /**
      * 2026-08-25: THE COLUMN HAS A READER NOW.
      *
@@ -879,7 +898,17 @@ export default function TableConfigPage() {
     // 7-2 winner. Only meaningful when the toggle is on; default 2 BB.
     seven_deuce_amount: config.sevenDeuceEnabled ? config.sevenDeuceAmountBB : 2,
     nit_game: config.nitGame,
-    cap_enabled: config.capEnabled,
+    /**
+     * CAP NEEDS AN AMOUNT (2026-08-27). `cap_enabled` alone is not a cap:
+     * ServerTableEngineTurns computes the ceiling as cap_bb x big_blind and
+     * treats cap_bb <= 0 as "no cap". This page toggled cap_enabled since
+     * February and never wrote cap_bb, so every cap table it built played
+     * uncapped. The amount is authored in big blinds and forced to 0 when the
+     * toggle is off, so a stale amount cannot cap a table whose owner turned
+     * the switch off.
+     */
+    cap_enabled: config.capEnabled && config.capBB > 0,
+    cap_bb: config.capEnabled ? config.capBB : 0,
     no_rathole: config.noRathole,
 
     // Table parameters
@@ -909,10 +938,10 @@ export default function TableConfigPage() {
     maintain_percent_min: config.maintainPercentMin,
     maintain_hands: config.maintainHands,
     auto_start_players: config.autoStartPlayers,
-    game_length_hours: config.gameLengthHours,
+    // game_length_hours and calltime_enabled are no longer written
+    // (2026-08-27): zero readers each — see the TableConfig comment.
 
     // Time & auto settings
-    calltime_enabled: config.calltimeEnabled,
     auto_extension: config.autoExtension,
     auto_restart: config.autoRestart,
     auto_create_table: config.autoCreateTable,
@@ -994,15 +1023,35 @@ export default function TableConfigPage() {
       return;
     }
 
+    /**
+     * WHAT SAVE MEANS NOW (2026-08-27).
+     *
+     * Save used to insert a full `tables` row stamped with the is_template
+     * flag and toast "Table template saved!". Both halves of that were false.
+     * Nothing in src reads that flag — the template dropdown at the top of this page
+     * reads `table_templates`, so the saved "template" never appeared in it.
+     * And because every lobby query ignores `is_template` too, the row DID
+     * appear in the club lobby as an ordinary joinable table. On the SNG/MTT
+     * tabs it was worse: saving a tournament config produced a CASH table row.
+     *
+     * Save now does what its name says for each tab:
+     *   Regular — create the table, open in the lobby, stay-or-leave is the
+     *             only difference from Start (Start navigates to the felt).
+     *   SNG/MTT — create the tournament exactly as Start does (the engine owns
+     *             starting either way). Templates have their own button.
+     */
+    if (config.gameMode !== 'regular') {
+      setSaving(true);
+      try {
+        await handleStartTournament();
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     setSaving(true);
     try {
-      // Save also lands the recurring schedule when the MTT tab has the
-      // Tournament Schedule toggle on — Start and Save behave the same way.
-      if (config.gameMode === 'mtt' && config.tournamentSchedule) {
-        const ok = await saveTournamentSchedule();
-        if (!ok) return;
-      }
-
       const {
         data: { user },
       } = await getAuthUser();
@@ -1013,13 +1062,12 @@ export default function TableConfigPage() {
       const tableData = {
         ...buildTableData(resolvedId),
         created_by: user.id,
-        is_template: true,
       };
 
       const { error } = await supabase.from('tables').insert(tableData);
       if (error) throw error;
 
-      toast.success('Table template saved!');
+      toast.success('Table created. It is open in your club lobby.');
       navigate(`/clubs/${clubId}`);
     } catch (error) {
       reportError(error, 'TableConfigPage.Failed_to_save_table');
@@ -1107,10 +1155,16 @@ export default function TableConfigPage() {
       const createOneOff = !scheduleOn || Boolean(tournamentConfig.startTime);
       if (createOneOff) {
         const created = await tournamentService.createTournament(clubId || '', tournamentConfig);
+        // Say what was actually built: a 3-handed SNG is a Spin, a 2-handed
+        // one is Heads Up, and the old message called every SNG "Heads Up".
         toast.success(
           config.gameMode === 'sng'
-            ? 'Heads Up created - it starts as soon as it fills.'
-            : 'Tournament created - registration is open.'
+            ? config.isSpins
+              ? 'Spin created. It starts as soon as three players sit.'
+              : config.sngPlayerCount === 2
+                ? 'Heads Up created. It starts as soon as it fills.'
+                : 'Sit and Go created. It starts as soon as it fills.'
+            : 'Tournament created. Registration is open.'
         );
         const createdId = (created as { id?: string } | null)?.id;
         if (createdId) {
@@ -1165,10 +1219,20 @@ export default function TableConfigPage() {
 
       const resolvedId = await resolveClubUUID(clubId || '');
 
+      /**
+       * STATUS IS 'waiting', NOT 'active' (2026-08-27).
+       *
+       * The engine discovers cash tables through cash_tables_needing_engine,
+       * whose WHERE clause is `status IN ('waiting', 'running')`. 'active' is a
+       * legal column value that no engine query has ever matched — so every
+       * table Start created sat in the lobby, accepted seats, and never dealt
+       * a hand: no engine adopted it and every socket closed 4404. 'waiting'
+       * is what the working writers (TableService, the lifecycle pass) use;
+       * the engine flips it to 'running' when it starts dealing.
+       */
       const tableData = {
         ...buildTableData(resolvedId),
         created_by: user.id,
-        status: 'active',
       };
 
       const { data, error } = await supabase
@@ -1295,18 +1359,37 @@ export default function TableConfigPage() {
               label="Bomb Pot"
               value={config.bombPotEnabled}
               onChange={(v) => updateConfig('bombPotEnabled', v)}
-              tooltip="Enable bomb pot rounds"
+              tooltip="Everyone antes and the hand starts on the flop, on a fixed schedule"
             />
+            {config.bombPotEnabled && (
+              <>
+                <Slider
+                  label="Bomb Pot Every"
+                  value={config.bombPotFrequency}
+                  onChange={(v) => updateConfig('bombPotFrequency', v)}
+                  min={5}
+                  max={50}
+                  step={5}
+                  suffix=" hands"
+                />
+                <Slider
+                  label="Bomb Pot Ante"
+                  value={config.bombPotAnteBB}
+                  onChange={(v) => updateConfig('bombPotAnteBB', v)}
+                  min={1}
+                  max={10}
+                  step={0.5}
+                  suffix=" Big Blind"
+                />
+              </>
+            )}
             <Toggle
               label="Double Board"
               value={config.doubleBoard}
               onChange={(v) => updateConfig('doubleBoard', v)}
             />
-            <Toggle
-              label="Triple Board"
-              value={config.tripleBoard}
-              onChange={(v) => updateConfig('tripleBoard', v)}
-            />
+            {/* Triple Board removed 2026-08-27: its column has zero readers.
+                The switch promised a game the engine cannot deal. */}
             {SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase()) && (
               <Toggle
                 label="Seven-Deuce"
@@ -1342,8 +1425,20 @@ export default function TableConfigPage() {
               label="Cap"
               value={config.capEnabled}
               onChange={(v) => updateConfig('capEnabled', v)}
-              tooltip="Cap the max bet"
+              tooltip="Limit the total chips a player can commit in one hand"
             />
+            {config.capEnabled && (
+              <Slider
+                label="Cap Amount"
+                value={config.capBB}
+                onChange={(v) => updateConfig('capBB', v)}
+                min={10}
+                max={200}
+                step={5}
+                suffix=" Big Blinds"
+                tooltip="The most a player can put in across the whole hand. Reaching the cap does not put them all-in."
+              />
+            )}
             <Toggle
               label="Ban Chat"
               value={config.banChat}
@@ -1378,13 +1473,9 @@ export default function TableConfigPage() {
               suffix=" max"
             />
 
-            <Toggle
-              label="Calltime"
-              value={config.calltimeEnabled}
-              onChange={(v) => updateConfig('calltimeEnabled', v)}
-              tooltip="Shot clock for action"
-            />
-
+            {/* Calltime removed 2026-08-27: calltime_enabled has zero readers.
+                The shot clock the tooltip promised never ticked. Action Time
+                below is the real timer. */}
             <Slider
               label="Action Time"
               value={config.actionTimeSeconds}
@@ -1676,20 +1767,27 @@ export default function TableConfigPage() {
               max={60}
               suffix=" sec"
             />
-            {/* Fee is the HOUSE RULE 10% cut OUT of the buy-in — read-only,
-                recomputed server-side in fn_create_tournament. */}
+            {/* Fee is the HOUSE RULE cut OUT of the buy-in — read-only,
+                recomputed server-side in fn_create_tournament, which charges
+                5% on an SNG, 10% on an MTT, and 0 on a Spin (its edge lives in
+                the multiplier distribution). Until 2026-08-27 this label said
+                10% for all of them. */}
             <div className="config-toggle">
               <span className="toggle-label">
                 Fee
                 <span
                   className="tooltip-icon"
-                  title="10% of the buy-in, taken out of it, never added on top. Spins carry no fee."
+                  title="Taken out of the buy-in, never added on top. Spins carry no fee."
                 >
                   ?
                 </span>
               </span>
               <span style={{ color: '#1877f2', fontWeight: 600, fontSize: '0.85rem' }}>
-                10% Of Buy-In
+                {config.gameMode === 'sng'
+                  ? config.isSpins
+                    ? 'No Fee'
+                    : '5% Of Buy-In'
+                  : '10% Of Buy-In'}
               </span>
             </div>
 
@@ -2162,14 +2260,9 @@ export default function TableConfigPage() {
               onChange={(v) => updateConfig('hideClubName', v)}
             />
 
-            <Slider
-              label="Game Length"
-              value={config.gameLengthHours}
-              onChange={(v) => updateConfig('gameLengthHours', v)}
-              min={1}
-              max={24}
-              suffix=" hour"
-            />
+            {/* Game Length removed 2026-08-27: game_length_hours has zero
+                readers. Every "12 hour" table ran forever; the closest real
+                lifecycle controls are Auto Extension / Auto Restart above. */}
           </>
         )}
       </div>

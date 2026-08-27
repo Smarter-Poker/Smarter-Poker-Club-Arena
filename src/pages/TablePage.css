@@ -86,6 +86,27 @@
   height: 100%;
 }
 
+/* The ten room backgrounds are intentionally wide compositions. On a phone,
+   `cover` enlarged them until only the quiet centre remained and cropped away
+   the room that is supposed to surround the table. Preserve the complete room
+   frame in portrait; the table artwork remains the foreground and the CSS
+   backdrop fills any remaining area. Wider screens retain natural cover. */
+@media (max-aspect-ratio: 3 / 4) {
+  .table-page {
+    --sp-background-layers-size: cover, cover, 100% 100%, auto, cover;
+    --sp-background-layers-position:
+      center center, center center, center center, center center, center center;
+  }
+}
+
+/* The generated broadcast skin carries the milestone identity. Add only a
+   restrained stage wash; gameplay remains the strongest layer on a phone. */
+.table-page[data-final-table='true'] {
+  box-shadow:
+    inset 0 0 90px rgba(18, 104, 180, 0.14),
+    inset 0 0 0 1px rgba(210, 169, 86, 0.2);
+}
+
 /* Dan 2026-08-18: the blurred-skin .table-backdrop layer is GONE ("remove
    the weird images around the table"). The page background is a designed,
    interchangeable image set inline by TablePage (TABLE_BACKGROUNDS). */
@@ -326,13 +347,13 @@
 .header-blinds {
   font-size: 0.75rem;
   font-weight: 600;
-  color: #22c55e;
+  color: #3fb950;
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
-  text-shadow: 0 0 8px rgba(34, 197, 94, 0.3);
+  text-shadow: 0 0 8px rgba(63, 185, 80, 0.3);
   padding: 2px 8px;
-  background: rgba(34, 197, 94, 0.08);
+  background: rgba(63, 185, 80, 0.08);
   border-radius: 4px;
-  border: 1px solid rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(63, 185, 80, 0.15);
 }
 
 .header-brand {
@@ -659,6 +680,11 @@
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;
+  /* One consistent physical separation treatment across the collection.
+     Shadow follows the transparent silhouette, so it reads as table weight
+     rather than a rectangular image effect. Material highlights stay in the
+     artwork and remain unique to each skin. */
+  filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.42)) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.55));
   z-index: 0;
 }
 
@@ -761,29 +787,103 @@
    Dealer button color tokens — consumed by .dealer-button component
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.table-page[data-button-theme='classic-white'] {
+:where(
+  .table-page,
+  .theme-asset__btnstage,
+  .theme-modal__live-button
+)[data-button-theme='classic-white'] {
   --dealer-btn-bg: linear-gradient(145deg, #ffffff 0%, #e8e8e8 50%, #d0d0d0 100%);
   --dealer-btn-color: #111;
 }
-.table-page[data-button-theme='red-d-gear'] {
+:where(
+  .table-page,
+  .theme-asset__btnstage,
+  .theme-modal__live-button
+)[data-button-theme='red-d-gear'] {
   --dealer-btn-bg: linear-gradient(135deg, #c62828, #e53935);
   --dealer-btn-color: #fff;
 }
-.table-page[data-button-theme='gray-d-gear'] {
+:where(
+  .table-page,
+  .theme-asset__btnstage,
+  .theme-modal__live-button
+)[data-button-theme='gray-d-gear'] {
   --dealer-btn-bg: linear-gradient(135deg, #616161, #757575);
   --dealer-btn-color: #fff;
 }
-.table-page[data-button-theme='blue-crystal'] {
+:where(
+  .table-page,
+  .theme-asset__btnstage,
+  .theme-modal__live-button
+)[data-button-theme='blue-crystal'] {
   --dealer-btn-bg: linear-gradient(135deg, #1565c0, #42a5f5);
   --dealer-btn-color: #fff;
 }
-.table-page[data-button-theme='gold-star'] {
+:where(
+  .table-page,
+  .theme-asset__btnstage,
+  .theme-modal__live-button
+)[data-button-theme='gold-star'] {
   --dealer-btn-bg: linear-gradient(135deg, #f57f17, #fbc02d);
   --dealer-btn-color: #1a1a1e;
 }
-.table-page[data-button-theme='sports-themed'] {
+:where(
+  .table-page,
+  .theme-asset__btnstage,
+  .theme-modal__live-button
+)[data-button-theme='sports-themed'] {
   --dealer-btn-bg: linear-gradient(135deg, #33691e, #558b2f);
   --dealer-btn-color: #fff;
+}
+:where(
+  .table-page,
+  .theme-asset__btnstage,
+  .theme-modal__live-button
+)[data-button-theme='jade-seal'] {
+  --dealer-btn-bg: radial-gradient(
+    circle at 34% 28%,
+    #d6f7df 0%,
+    #58ad7b 35%,
+    #145039 74%,
+    #09271d 100%
+  );
+  --dealer-btn-color: #f4fff8;
+}
+:where(
+  .table-page,
+  .theme-asset__btnstage,
+  .theme-modal__live-button
+)[data-button-theme='amethyst-chip'] {
+  --dealer-btn-bg: radial-gradient(
+    circle at 34% 28%,
+    #ecdfff 0%,
+    #9c69d2 34%,
+    #4a2476 72%,
+    #1e0d34 100%
+  );
+  --dealer-btn-color: #fff;
+}
+:where(
+  .table-page,
+  .theme-asset__btnstage,
+  .theme-modal__live-button
+)[data-button-theme='carbon-ion'] {
+  --dealer-btn-bg: conic-gradient(from 20deg, #12181b, #38464a, #0d1214, #263438, #12181b);
+  --dealer-btn-color: #65ead8;
+}
+:where(
+  .table-page,
+  .theme-asset__btnstage,
+  .theme-modal__live-button
+)[data-button-theme='ocean-pearl'] {
+  --dealer-btn-bg: radial-gradient(
+    circle at 32% 25%,
+    #ffffff 0%,
+    #dff5fb 30%,
+    #71b8d2 70%,
+    #2c708d 100%
+  );
+  --dealer-btn-color: #092b3d;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -1067,7 +1167,7 @@
 .table-brand__clock {
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
   font-variant-numeric: tabular-nums;
-  color: rgba(134, 239, 172, 0.6);
+  color: rgba(77, 198, 96, 0.6);
 }
 
 /* Union name after the club on masthead line 1 — cooler tone than the club's
@@ -1287,7 +1387,7 @@
 .community-area__run-equity {
   font-size: 0.62rem;
   font-weight: 700;
-  color: #4ade80;
+  color: #4dc660;
   font-family: 'JetBrains Mono', monospace, sans-serif;
   white-space: nowrap;
   flex-shrink: 0;
@@ -1673,7 +1773,7 @@
   padding: 8px 20px;
   border: none;
   border-radius: 10px;
-  background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+  background: linear-gradient(180deg, #3fb950 0%, #2ea043 100%);
   color: #fff;
   font-size: 0.875rem;
   font-weight: 700;
@@ -2392,8 +2492,8 @@
 }
 
 .equity-overlay--ahead {
-  background-color: rgba(46, 204, 113, 0.95);
-  box-shadow: 0 0 16px rgba(46, 204, 113, 0.6);
+  background-color: rgba(63, 185, 80, 0.95);
+  box-shadow: 0 0 16px rgba(63, 185, 80, 0.6);
 }
 .equity-overlay--behind {
   background-color: rgba(231, 76, 60, 0.95);
@@ -3105,8 +3205,8 @@
 }
 
 .floating-im-back {
-  background: linear-gradient(180deg, #10b981 0%, #059669 100%);
-  border: 1px solid #34d399;
+  background: linear-gradient(180deg, #3fb950 0%, #2ea043 100%);
+  border: 1px solid #4dc660;
   color: white;
   font-weight: 700;
   border-radius: 8px;

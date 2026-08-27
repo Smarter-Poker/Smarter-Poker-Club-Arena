@@ -276,10 +276,9 @@
   .payout-percent {
     font-size: 1.25rem;
   }
-  .bbj-info {
-    margin: 0 0.75rem;
-    padding: 0.75rem;
-  }
+  /* `.bbj-info` rule removed 2026-08-26: no markup on this page has ever
+     carried the class (the table widget's popover of that name was deleted
+     2026-08-25 — see BadBeatJackpot.css for the full reasoning). */
   .qualifying-hands {
     padding: 0.75rem;
   }

@@ -147,8 +147,15 @@ test.describe('LIVE E2E — the multi-table tab bar, beat by beat', () => {
         face: getComputedStyle(spade).backgroundColor,
       };
     });
-    expect(colors.spade, 'spades must be near-black').toBe('rgb(17, 19, 24)');
-    expect(colors.heart, 'hearts must be red').toBe('rgb(220, 38, 38)');
+    // These two must equal SUIT_COLOR in CardImage.tsx, which paints the real
+    // cards on the felt. They used to be #111318 / #dc2626 - a second shade of
+    // each suit - so the same card was one colour in this mini preview and
+    // another in the hand it previewed. #1e293b is still near-black and
+    // #ef4444 is still red; the intent below is unchanged, the shade now
+    // matches the felt. tests/gameplay-wears-the-house-colours.test.ts pins
+    // both ends so they cannot drift apart again.
+    expect(colors.spade, 'spades must be near-black').toBe('rgb(30, 41, 59)');
+    expect(colors.heart, 'hearts must be red').toBe('rgb(239, 68, 68)');
     expect(colors.face, 'the mini card must have a white face').toBe('rgb(248, 249, 251)');
   });
 
@@ -267,9 +274,7 @@ test.describe('LIVE E2E — the multi-table tab bar, beat by beat', () => {
     expect(styles.stripPosition, 'the strip must overlay its tile').toBe('absolute');
   });
 
-  test('CARD ART: nothing crops the indices and nothing stair-steps the pips', async ({
-    page,
-  }) => {
+  test('CARD ART: nothing crops the indices and nothing stair-steps the pips', async ({ page }) => {
     // Dan 2026-08-21: "the cards ... are no longer crisp and clean, they seem
     // distorted with edges cut off." Both halves of that regression are
     // CSS-visible, so they are pinned here.
@@ -314,9 +319,10 @@ test.describe('LIVE E2E — the multi-table tab bar, beat by beat', () => {
     );
     for (const name of ['timerBarUrgent', 'tabResultWon', 'actionChipIn']) {
       if (name in b) {
-        expect(b[name], `${name} must be flattened under prefers-reduced-motion`).toBeLessThanOrEqual(
-          1
-        );
+        expect(
+          b[name],
+          `${name} must be flattened under prefers-reduced-motion`
+        ).toBeLessThanOrEqual(1);
       }
     }
     await ctx.close();

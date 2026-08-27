@@ -130,9 +130,12 @@ describe('TableService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('getAveragePot', () => {
-    it('should return 0 when no hand history', async () => {
+    it('returns null when there is no hand history — unknown is not zero', async () => {
+      /* ITEM E audit 2026-08-26: 0 used to mean both "no hands" and "the
+         read failed", which forced the caller to guess. null = could not
+         find out / nothing to average; a number = a real average. */
       const result = await tableService.getAveragePot('table-1');
-      expect(result).toBe(0);
+      expect(result).toBeNull();
     });
   });
 

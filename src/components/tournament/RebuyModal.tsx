@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { tournamentService } from '../../services/TournamentService';
 import { masterBus } from '../../core/MasterBus';
 import { soundService } from '../../services/SoundService';
@@ -40,8 +40,14 @@ export const RebuyModal: React.FC<RebuyModalProps> = ({
 }) => {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A ref, not `processing`: setProcessing lands after a render, so a
+  // same-frame double tap otherwise fires two rebuys. The rebuy RPC takes no
+  // idempotency key, so the second one is a real second charge.
+  const inFlightRef = useRef(false);
 
   const handleRebuy = useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     setProcessing(true);
     setError(null);
     try {
@@ -58,6 +64,7 @@ export const RebuyModal: React.FC<RebuyModalProps> = ({
       setError(safeErrorMessage(err, 'Rebuy failed'));
     } finally {
       setProcessing(false);
+      inFlightRef.current = false;
     }
   }, [tournamentId, userId, rebuyChips, onSuccess]);
 

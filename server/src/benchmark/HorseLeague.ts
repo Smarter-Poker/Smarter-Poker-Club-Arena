@@ -733,7 +733,15 @@ const LEAGUE_BOOT_DELAY_MS = 90 * 1000;
 // 2.8 bb/100. The cost is wall clock, not responsiveness: runMatchup yields
 // every 16 hands, so this is ~70s of shared CPU per matchup rather than 70s
 // of frozen tables.
-const PAIRS_PER_MATCHUP = 10000;
+// 2026-08-27 (measured, not guessed): the 23-matchup card completed FOUR
+// matchups in its 90-minute budget - roughly 22 minutes each at 10,000 pairs -
+// so every V15/V16/V17/V18 layer went unmeasured while the four oldest
+// matchups were re-measured for the fourth time. A card whose tail never runs
+// is not a card. Two changes: a smaller default (stderr ~4.5 bb/100, still
+// well inside layer-scale edges), and DAILY ROTATION so the starting index
+// walks the list - every matchup is measured every few nights instead of the
+// same head forever.
+const PAIRS_PER_MATCHUP = 4000;
 /** Wall-clock ceiling for a whole run. See the note in runLeague. */
 const MAX_RUN_MS = 90 * 60 * 1000;
 
@@ -796,7 +804,11 @@ async function alreadyRanToday(date: string): Promise<boolean> {
     if (error) throw new Error(error.message);
     // A partial run (fewer rows than matchups) SHOULD be resumed, so only a
     // complete card counts as done.
-    return (data?.length ?? 0) >= LEAGUE_MATCHUPS.length;
+    // 2026-08-27: with a rotating card the budget legitimately leaves the
+    // tail unrun, so "complete" can no longer mean every matchup. A run
+    // counts as done for the day once ANY rows exist for it - the rotation,
+    // not a same-night retry, is what covers the rest.
+    return (data?.length ?? 0) > 0;
   } catch (err) {
     // Never let a failed lookup silently skip the night; the upsert on
     // (run_date, matchup) makes a duplicate run harmless.
@@ -853,13 +865,21 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
   // dealing live poker — so a run in progress and a run that never began were
   // indistinguishable from outside. That is exactly the state this whole audit
   // keeps finding: a job that looks identical whether or not it is working.
+  // DAILY ROTATION (2026-08-27): start the card at a different index each
+  // day so the budget cannot permanently starve the tail. Deterministic from
+  // the run date, so a re-run of the same date repeats the same order.
+  const dayIndex = Math.floor(Date.parse(date) / 86_400_000);
+  const rotateBy =
+    ((dayIndex % LEAGUE_MATCHUPS.length) + LEAGUE_MATCHUPS.length) % LEAGUE_MATCHUPS.length;
+  const card = LEAGUE_MATCHUPS.slice(rotateBy).concat(LEAGUE_MATCHUPS.slice(0, rotateBy));
   console.log(
-    `[HorseLeague] run ${date} starting: ${LEAGUE_MATCHUPS.length} matchups x ` +
-      `${PAIRS_PER_MATCHUP} pairs (budget ${Math.round(MAX_RUN_MS / 60000)} min)`
+    `[HorseLeague] run ${date} starting: ${card.length} matchups x ` +
+      `${PAIRS_PER_MATCHUP} pairs (budget ${Math.round(MAX_RUN_MS / 60000)} min), ` +
+      `rotation offset ${rotateBy} -> first up ${card[0]?.name}`
   );
   try {
     const runSeed = (Date.parse(date) / 86_400_000) >>> 0;
-    for (const m of LEAGUE_MATCHUPS) {
+    for (const m of card) {
       // V13: a wall-clock budget. The league shares the event loop with live
       // tables by design, so its duration depends on how busy the fleet is,
       // not on its own CPU cost — an unbounded run could still be going when
@@ -868,7 +888,11 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
       if (Date.now() - startedAt > MAX_RUN_MS) {
         console.warn(
           `[HorseLeague] run ${date} hit its ${Math.round(MAX_RUN_MS / 60000)}-minute budget ` +
-            `after ${results.length}/${LEAGUE_MATCHUPS.length} matchups - stopping cleanly`
+            `after ${results.length}/${card.length} matchups - stopping cleanly. ` +
+            `Unrun tonight: ${card
+              .slice(results.length)
+              .map((x) => x.name)
+              .join(', ')} (they lead tomorrow's rotation)`
         );
         break;
       }

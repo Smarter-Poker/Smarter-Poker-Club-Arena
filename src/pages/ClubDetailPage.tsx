@@ -1963,10 +1963,14 @@ export default function ClubDetailPage() {
                   const resolvedClubId = clubId ? await resolveClubUUID(clubId) : '';
                   const { error } = await supabase
                     .from('tables')
+                    /* PHANTOM COLUMN FIX 2026-08-27: `tables` has no
+                       `is_active` column, so every delete 400'd, threw, and
+                       rolled the row back into the list — a club owner could
+                       not delete a table from this screen at all. status +
+                       is_deleted IS the soft delete. */
                     .update({
                       status: 'deleted',
                       is_deleted: true,
-                      is_active: false,
                       updated_at: new Date().toISOString(),
                     })
                     .eq('id', id)

@@ -179,6 +179,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             this.waitingForBB.delete(id);
           }
         }
+        // POST-TO-ENTER RACE FIX 2026-08-27: a queued intent from someone no
+        // longer seated (or never seated) is dead weight - drop it.
+        for (const id of this.pendingPostToEnter) {
+          if (!currentIds.has(id)) this.pendingPostToEnter.delete(id);
+        }
         // Same pruning for button eligibility: a player who has left and comes
         // back is a new joiner again and re-earns the button by playing a hand.
         // This also keeps the set bounded by the table rather than by the
@@ -228,6 +233,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             if (p && p.seat_number === bbSeatIndex) {
               this.waitingForBB.delete(userId);
               // Player will now post BB naturally this hand
+            }
+          }
+        }
+
+        // POST-TO-ENTER RACE FIX 2026-08-27: apply queued mid-hand posts NOW,
+        // after registration (above) and after the natural-BB release (a
+        // waiter whose seat just became the big blind posts it as their own -
+        // billing them again through bbOnlyPosts would double-charge, and the
+        // waitingForBB guard inside postBBToEnter makes that impossible
+        // here). The call runs the same positional hold-outs as a live tap;
+        // a refusal simply leaves the player waiting, exactly as if they had
+        // tapped the button themselves at this moment.
+        if (this.pendingPostToEnter.size > 0) {
+          for (const userId of Array.from(this.pendingPostToEnter)) {
+            this.pendingPostToEnter.delete(userId);
+            if (this.waitingForBB.has(userId)) {
+              this.postBBToEnter(userId);
             }
           }
         }

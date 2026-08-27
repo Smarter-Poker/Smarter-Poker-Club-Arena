@@ -231,7 +231,7 @@
   height: 18px;
   padding: 0 4px;
   border-radius: 9px;
-  background: #22c55e;
+  background: #3fb950;
   color: #ffffff;
   font-size: 0.625rem;
   font-weight: 700;
@@ -352,18 +352,22 @@
   }
 }
 
-/* 4-color deck */
+/* 4-color deck. THESE FOUR MUST EQUAL SUIT_COLOR IN CardImage.tsx, which is
+   what paints the real cards on the felt. All four had drifted - spades
+   #111318 vs #1e293b, hearts #dc2626 vs #ef4444, diamonds #2563eb vs #3b82f6,
+   clubs #16a34a vs #22c55e - so the same card was one colour in the tab bar's
+   mini preview and another in the hand it previewed. */
 .table-tab-bar__mini-card--s {
-  color: #111318;
+  color: #1e293b;
 }
 .table-tab-bar__mini-card--h {
-  color: #dc2626;
+  color: #ef4444;
 }
 .table-tab-bar__mini-card--d {
-  color: #2563eb;
+  color: #3b82f6;
 }
 .table-tab-bar__mini-card--c {
-  color: #16a34a;
+  color: #22c55e;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -882,7 +886,7 @@
 /* Showdown result flash: one readable pulse, green for a pot won, red for a
    pot lost, then back to normal. */
 .table-tab-bar__tab--won {
-  border-color: rgba(34, 197, 94, 0.8);
+  border-color: rgba(63, 185, 80, 0.8);
   animation: tabResultWon 2.5s ease-out;
 }
 
@@ -893,14 +897,14 @@
 
 @keyframes tabResultWon {
   0% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
-    background-color: rgba(34, 197, 94, 0.35);
+    box-shadow: 0 0 0 0 rgba(63, 185, 80, 0);
+    background-color: rgba(63, 185, 80, 0.35);
   }
   25% {
-    box-shadow: 0 0 14px 3px rgba(34, 197, 94, 0.55);
+    box-shadow: 0 0 14px 3px rgba(63, 185, 80, 0.55);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+    box-shadow: 0 0 0 0 rgba(63, 185, 80, 0);
   }
 }
 

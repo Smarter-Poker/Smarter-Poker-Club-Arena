@@ -126,7 +126,7 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
       .join(' ');
 
     const isPositive = values[values.length - 1] >= values[0];
-    const strokeColor = isPositive ? '#22c55e' : '#ef4444';
+    const strokeColor = isPositive ? '#3fb950' : '#ef4444';
 
     return (
       <svg className="sh-sparkline" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">

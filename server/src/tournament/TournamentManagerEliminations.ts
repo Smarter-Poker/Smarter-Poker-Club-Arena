@@ -353,11 +353,46 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // basePosition .. basePosition-(n-1) strictly decreasing and always
           // >= 2, so places are distinct by construction and place 1 stays
           // reserved for the winner. No clamp required.
-          const basePosition = Math.max(playingCount, bustedOrdered.length + 1);
+          // PAYOUT-INTEGRITY 2026-08-27: distinct WITHIN a sweep was not
+          // enough. `playingCount` is a live count and is NOT monotonic —
+          // ensureLateRegSeated promotes `registered` entrants to `playing`
+          // after eliminations have begun — so a later sweep could compute a
+          // basePosition at or above a place an earlier sweep already paid,
+          // and the wallet key (`...:prize:{user}:{place}`) dedupes a repeated
+          // USER, not a repeated PLACE. Confirmed live: 206 duplicated places
+          // across 138 tournaments, e.g. Late Night Grind 03b76a64 paid place
+          // 2 to two players and disbursed 107% of its pool.
+          //
+          // Places are now taken from the set that is actually still FREE,
+          // walking down, so a collision is impossible by construction rather
+          // than by arithmetic that assumed a stable count.
+          const { data: takenRows } = await supabase
+            .from('tournament_players')
+            .select('position')
+            .eq('tournament_id', this.tournamentId)
+            .not('position', 'is', null);
+          const takenPositions = new Set<number>(
+            (takenRows || [])
+              .map((r) => Number((r as { position: unknown }).position))
+              .filter((n) => Number.isFinite(n))
+          );
 
+          let nextPosition = Math.max(playingCount, bustedOrdered.length + 1);
           for (let i = 0; i < bustedOrdered.length; i++) {
-            const position = basePosition - i;
-            await this.eliminatePlayer(bustedOrdered[i].user_id, position);
+            // Place 1 belongs to the winner and is never handed out here.
+            while (nextPosition >= 2 && takenPositions.has(nextPosition)) nextPosition--;
+            if (nextPosition < 2) {
+              reportError(
+                new Error(
+                  `No free finishing place left for ${bustedOrdered[i].user_id} in tournament ${this.tournamentId}`
+                ),
+                'TournamentManager.no_free_finishing_place'
+              );
+              break;
+            }
+            await this.eliminatePlayer(bustedOrdered[i].user_id, nextPosition);
+            takenPositions.add(nextPosition);
+            nextPosition--;
           }
         }
 
@@ -2670,8 +2705,35 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         `[Tournament:${this.tournamentId.slice(0, 8)}] finishing with ${stillPlaying.length} unresolved player(s) — assigning places 2..${stillPlaying.length + 1}`
       );
       const ordered = [...stillPlaying].sort((a, b) => (a.chips ?? 0) - (b.chips ?? 0));
+      // PAYOUT-INTEGRITY 2026-08-27: `ordered.length + 1 - i` assumed no place
+      // below it was taken — with a single unresolved player it ALWAYS wrote
+      // place 2, occupied or not, paying a second 2nd-place prize. Same
+      // free-place walk as the bust sweep.
+      const { data: finishTaken } = await supabase
+        .from('tournament_players')
+        .select('position')
+        .eq('tournament_id', this.tournamentId)
+        .not('position', 'is', null);
+      const finishTakenPositions = new Set<number>(
+        (finishTaken || [])
+          .map((r) => Number((r as { position: unknown }).position))
+          .filter((n) => Number.isFinite(n))
+      );
+      let finishNext = ordered.length + 1;
       for (let i = 0; i < ordered.length; i++) {
-        await this.eliminatePlayer(ordered[i].user_id, ordered.length + 1 - i);
+        while (finishNext >= 2 && finishTakenPositions.has(finishNext)) finishNext--;
+        if (finishNext < 2) {
+          reportError(
+            new Error(
+              `No free finishing place left for ${ordered[i].user_id} in tournament ${this.tournamentId}`
+            ),
+            'TournamentManager.no_free_finishing_place_at_finish'
+          );
+          break;
+        }
+        await this.eliminatePlayer(ordered[i].user_id, finishNext);
+        finishTakenPositions.add(finishNext);
+        finishNext--;
       }
     }
 

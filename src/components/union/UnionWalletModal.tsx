@@ -306,6 +306,22 @@ export function UnionWalletModal({
         >
           <div>
             <h2 style={{ margin: '0 0 4px', fontSize: 20, color: '#fff' }}>{walletLabel}</h2>
+
+            <p style={{ color: '#888', fontSize: 12, margin: '0 0 14px' }}>
+              {readOnly ? (
+                <>
+                  The Capital Every Spin Bonus Pool Is Seeded From, And Every Spin Prize Is Paid Out
+                  Of. It Is Not A Send Source: Add Funds With Fund Spin Reserve On The Wallet Tab.
+                </>
+              ) : (
+                <>
+                  Send Chips, Diamonds Or Promo Funds To Any Member Of The Union.
+                  {walletKey === 'bbj' &&
+                    ' BBJ funds are reserved for jackpots, so chips sent here draw on the main bank.'}
+                </>
+              )}
+            </p>
+
             <div style={{ color: '#4599FF', fontSize: 16, fontWeight: 700 }}>
               {fmt(liveBalance)}
             </div>
@@ -325,6 +341,21 @@ export function UnionWalletModal({
             ×
           </button>
         </div>
+
+        {!readOnly && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            {(['chips', 'diamonds', 'promo'] as SendKind[]).map((k) => (
+              <button
+                key={k}
+                className={`admin-btn admin-btn-sm ${kind === k ? '' : 'admin-btn-ghost'}`}
+                aria-pressed={kind === k}
+                onClick={() => setKind(k)}
+              >
+                {k === 'chips' ? 'Chips' : k === 'diamonds' ? 'Diamonds' : 'Promo'}
+              </button>
+            ))}
+          </div>
+        )}
 
         {!readOnly && (
           <>
@@ -516,7 +547,7 @@ export function UnionWalletModal({
                     ? mode === 'send'
                       ? `Send to ${target.type === 'club' ? target.data.name : target.data.display_name || target.data.username}`
                       : `Pull from ${target.type === 'club' ? target.data.name : 'Target'}`
-                    : 'Pick a target'}
+                    : 'Pick a member or club'}
               </button>
             </div>
           </>

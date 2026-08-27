@@ -533,6 +533,14 @@ export default function App() {
                    route or the component comes back. */}
                 <Route path="clubs" element={<Navigate to="/" replace />} />
 
+                {/* CreateClubPage was deleted with the modal redesign, but
+                    old links (hamburger menu, CreateUnionPage, bookmarks)
+                    still pointed here — and without this redirect they fell
+                    through to clubs/:clubId with clubId="create", a club
+                    that does not exist. The lobby opens CreateClubModal
+                    when it sees ?create=club. */}
+                <Route path="clubs/create" element={<Navigate to="/?create=club" replace />} />
+
                 <Route
                   path="clubs/:clubId"
                   element={

@@ -78,6 +78,9 @@ const SETTINGS = read('src/pages/ClubSettingsPage.tsx');
 const INVITE = read('src/pages/InvitePage.tsx');
 const CLUBS_SERVICE = read('src/services/ClubsService.ts');
 const CREATE_MODAL = read('src/components/modals/CreateClubModal.tsx');
+const JOIN_MODAL = read('src/components/modals/JoinClubModal.tsx');
+const APP = read('src/App.tsx');
+const HAMBURGER = read('src/components/navigation/HamburgerMenu.tsx');
 const FIND = read('src/components/modals/FindPlayerModal.tsx');
 const PLAYER_SEARCH = read('src/components/admin/PlayerSearch.tsx');
 
@@ -120,11 +123,77 @@ describe('a club code means the same thing on every screen', () => {
     expect(parseClubCode(' 25450 ')).toBe(25450);
   });
 
-  it('is imported by both screens rather than spelled out twice', () => {
+  it('is imported by every screen that reads a code, rather than spelled out again', () => {
+    // The join UI moved from HomePage's inline form into JoinClubModal, so the
+    // modal is now the screen that must share the definition. It briefly
+    // carried a hand-rolled third spelling (parseInt + range check) — exactly
+    // the drift this util exists to prevent.
     expect(CLUBS_PAGE).toMatch(/from '\.\.\/utils\/clubCode'/);
-    expect(HOME).toMatch(/from '\.\.\/utils\/clubCode'/);
+    expect(JOIN_MODAL).toMatch(/from '\.\.\/\.\.\/utils\/clubCode'/);
+    expect(codeOnly(JOIN_MODAL)).not.toMatch(/parseInt\(/);
     // The exact-six gate is gone.
     expect(codeOnly(CLUBS_PAGE)).not.toMatch(/joinClubId\.length !== 6/);
+  });
+});
+
+describe('the join modal', () => {
+  it('cannot start two joins from a held Enter key', () => {
+    // The button disables on isJoining, but Enter in the input is not the
+    // button — the handler itself must refuse re-entry.
+    expect(JOIN_MODAL).toMatch(/if \(isJoining\) return;/);
+  });
+
+  it('detects a pasted invite link where the paste actually arrives', () => {
+    // maxLength={6} truncates a pasted URL before onChange sees it, so an
+    // onChange-only regex can never match a full link. onPaste gets the
+    // clipboard whole.
+    expect(JOIN_MODAL).toMatch(/onPaste=/);
+    expect(JOIN_MODAL).toMatch(/e\.clipboardData\.getData\('text'\)/);
+  });
+
+  it('does not report a lookup failure as a wrong code', () => {
+    expect(JOIN_MODAL).toMatch(/Could not look up that code right now/);
+  });
+});
+
+describe('creating a club (service path — the modal and ClubsPage both delegate here)', () => {
+  it('fails closed on the 4-club limit', () => {
+    // fn_join_club re-checks the limit for joins but its owner branch does
+    // not, so this client check is the only limit on the create path. A count
+    // error must refuse, not shrug — this guard was dropped in the modal
+    // redesign and is pinned here so it cannot be dropped twice.
+    expect(CLUBS_SERVICE).toMatch(/Could not verify your club memberships/);
+  });
+
+  it('cleans up the orphan club when the owner join fails', () => {
+    // Without this, a failed owner membership leaves a members-less club row
+    // squatting on the name forever. The old CreateClubModal had the guard;
+    // the refactor into ClubsService must keep it.
+    expect(CLUBS_SERVICE).toMatch(/Failed to set up club ownership/);
+    expect(CREATE_MODAL).toMatch(/ClubsService\.create\(/);
+  });
+});
+
+describe('every door that says Create Club opens something', () => {
+  it('the empty state on the clubs list opens the modal, not a tab that no longer renders', () => {
+    expect(CLUBS_PAGE).toMatch(/onCreate=\{\(\) => setShowCreateModal\(true\)\}/);
+    expect(codeOnly(CLUBS_PAGE)).not.toMatch(/setActiveTab\('create'\)/);
+  });
+
+  it('old /clubs/create links land on the lobby with the modal opening', () => {
+    // CreateClubPage is deleted; without the redirect, /clubs/create falls
+    // through to clubs/:clubId with clubId="create".
+    expect(APP).toMatch(/path="clubs\/create"/);
+    expect(APP).toMatch(/to="\/\?create=club"/);
+    expect(HOME).toMatch(/searchParams\.get\('create'\) === 'club'/);
+    expect(codeOnly(HAMBURGER)).not.toMatch(/'\/clubs\/create'/);
+  });
+
+  it('a shared join link still opens the join modal prefilled', () => {
+    // ?c= and ?ref= used to feed an inline form that the redesign deleted;
+    // the captured deep link must reach the modal instead.
+    expect(CLUBS_PAGE).toMatch(/initialCode=\{deepLink\.code\}/);
+    expect(CLUBS_PAGE).toMatch(/initialRef=\{deepLink\.ref\}/);
   });
 });
 

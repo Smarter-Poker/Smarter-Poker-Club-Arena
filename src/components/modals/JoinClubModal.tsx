@@ -2,12 +2,11 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { ClubsService } from '../../services/ClubsService';
-import { masterBus } from '../../core/MasterBus';
 import haptic from '../../services/HapticService';
 import { useToast } from '../common/Toast';
 import { useIsMounted } from '../../hooks/useIsMounted';
-import { sanitizeInput } from '../../utils/sanitizeInput';
 import { reportError } from '../../utils/errorReporter';
+import { isJoinableClubCode, parseClubCode } from '../../utils/clubCode';
 
 import styles from './JoinClubModal.module.css';
 
@@ -15,9 +14,29 @@ interface JoinClubModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: (clubId: string) => void;
+  /** Prefill from a deep link (`/clubs-list?c=12345`). Digits only. */
+  initialCode?: string;
+  /** Referral code from a deep link (`&ref=...`) — parked before the join so
+   *  fn_redeem_club_invite_code can attach the upline agent afterwards. */
+  initialRef?: string;
 }
 
-export default function JoinClubModal({ isOpen, onClose, onSuccess }: JoinClubModalProps) {
+/** An invite link pasted anywhere in this modal routes to the invite page,
+ *  which owns referral attribution. Returns the SPA path, or null. */
+function parseInviteLink(text: string): string | null {
+  const match = text.match(/\/invite\/([^/?\s]+)(?:\?ref=([a-zA-Z0-9]+))?/i);
+  if (!match) return null;
+  const [, clubId, ref] = match;
+  return `/invite/${clubId}${ref ? `?ref=${ref}` : ''}`;
+}
+
+export default function JoinClubModal({
+  isOpen,
+  onClose,
+  onSuccess,
+  initialCode,
+  initialRef,
+}: JoinClubModalProps) {
   const navigate = useNavigate();
   const toast = useToast();
   const isMounted = useIsMounted();
@@ -28,22 +47,27 @@ export default function JoinClubModal({ isOpen, onClose, onSuccess }: JoinClubMo
 
   useEffect(() => {
     if (isOpen) {
-      setClubCode('');
+      // A deep-linked code lands prefilled so the player only confirms it.
+      setClubCode(initialCode && isJoinableClubCode(initialCode) ? initialCode.trim() : '');
       setIsJoining(false);
       setTimeout(() => inputRef.current?.focus(), 100);
     }
-  }, [isOpen]);
+  }, [isOpen, initialCode]);
 
   const handleJoin = async () => {
-    if (!clubCode.trim()) {
-      toast.error('Please enter a club code');
-      return;
-    }
+    // Re-entry guard FIRST: the Enter key is not gated by the button's
+    // disabled state, so a held or double-tapped Enter would otherwise
+    // start two joins in flight.
+    if (isJoining) return;
 
-    const sanitized = sanitizeInput(clubCode.trim());
-    const numericCode = parseInt(sanitized.replace(/\D/g, ''), 10);
-    if (isNaN(numericCode) || numericCode < 10000 || numericCode > 999999) {
-      toast.error('Club code must be a 5 or 6 digit number');
+    // ONE definition of what a club code is — src/utils/clubCode.ts.
+    // This modal used to hand-roll a third spelling of the 5-or-6-digit rule,
+    // which is exactly how the first two screens came to disagree.
+    const numericCode = parseClubCode(clubCode);
+    if (numericCode === null) {
+      toast.error(
+        clubCode.trim() ? 'Club code must be a 5 or 6 digit number' : 'Please enter a club code'
+      );
       return;
     }
 
@@ -56,10 +80,22 @@ export default function JoinClubModal({ isOpen, onClose, onSuccess }: JoinClubMo
         .eq('club_id', numericCode)
         .maybeSingle();
 
-      if (error || !club) {
-        toast.error('Invalid club code. Please check and try again.');
-        setIsJoining(false);
+      if (error) {
+        // A transport/database failure is not "wrong code" — telling the
+        // player their valid code is invalid teaches them to stop using it.
+        reportError(error, 'JoinClubModal.clubLookup');
+        toast.error('Could not look up that code right now. Please try again.');
         return;
+      }
+      if (!club) {
+        toast.error('Invalid club code. Please check and try again.');
+        return;
+      }
+
+      // Park the deep-linked referral code before joining, under the club's
+      // UUID — the spelling joinClub redeems it from.
+      if (initialRef?.trim()) {
+        ClubsService.rememberInviteCode(club.id, initialRef.trim());
       }
 
       // Join the club via ClubsService
@@ -125,18 +161,19 @@ export default function JoinClubModal({ isOpen, onClose, onSuccess }: JoinClubMo
             placeholder="e.g. 48291"
             className={styles.codeInput}
             value={clubCode}
-            onChange={(e) => {
-              const val = e.target.value;
-              // Detect pasted invite link
-              const match = val.match(/\/invite\/([^/?]+)(?:\?ref=([a-zA-Z0-9]+))?/i);
-              if (match) {
-                const [, extractedClubId, extractedRef] = match;
+            onPaste={(e) => {
+              // Invite-link detection MUST happen here: maxLength={6}
+              // truncates a pasted URL before onChange ever sees it, so an
+              // onChange-only check can never match a full link.
+              const pasted = e.clipboardData.getData('text');
+              const invitePath = parseInviteLink(pasted);
+              if (invitePath) {
+                e.preventDefault();
                 onClose();
-                navigate(`/invite/${extractedClubId}${extractedRef ? `?ref=${extractedRef}` : ''}`);
-                return;
+                navigate(invitePath);
               }
-              setClubCode(val.replace(/\D/g, ''));
             }}
+            onChange={(e) => setClubCode(e.target.value.replace(/\D/g, ''))}
             onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
           />
         </div>
@@ -147,7 +184,7 @@ export default function JoinClubModal({ isOpen, onClose, onSuccess }: JoinClubMo
             haptic.success();
             handleJoin();
           }}
-          disabled={isJoining || clubCode.length < 5}
+          disabled={isJoining || !isJoinableClubCode(clubCode)}
         >
           {isJoining ? 'Joining...' : 'JOIN CLUB'}
         </button>

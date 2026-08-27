@@ -21,7 +21,7 @@ import {
   type ReactNode,
   type ErrorInfo,
 } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { SHARK_CLUB_ID } from '../lib/constants';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { ClubsService } from '../services/ClubsService';
@@ -47,7 +47,6 @@ import {
 } from '../utils/clubQuickLink';
 import CarouselSection from '../components/home/CarouselSection';
 import { getClubLevelFromMembers } from '../utils/clubLevels';
-import { parseClubCode } from '../utils/clubCode';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import type { UserClub, ClubStats } from '../components/home/CarouselSection';
 import { useFocusTrap } from '../hooks/useFocusTrap';
@@ -261,6 +260,20 @@ function HomePageInner() {
   // JOIN A CLUB modal state
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showCreateClubModal, setShowCreateClubModal] = useState(false);
+
+  // Deep link: /?create=club (the /clubs/create redirect in App.tsx, used by
+  // the hamburger menu and CreateUnionPage since CreateClubPage was deleted)
+  // opens the create modal on arrival. Strip the param so refresh and back
+  // do not re-open it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get('create') === 'club') {
+      setShowCreateClubModal(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete('create');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   // Focus trapping for modals (accessibility)
   const leaveModalRef = useFocusTrap(!!leaveConfirm?.visible);

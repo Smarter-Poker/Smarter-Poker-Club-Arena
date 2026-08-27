@@ -191,3 +191,135 @@
   font-size: 18px;
   color: var(--soft-white, #b0b3b8);
 }
+
+/* Table Studio companion treatment: in-game controls use the same tactile
+   obsidian/cobalt language as the appearance picker they open. */
+.tsp-container {
+  --tsp-accent: #48bfff;
+  --tsp-line: rgba(148, 178, 205, 0.16);
+  color: #edf7ff;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+}
+
+.tsp-overlay {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.035), transparent 44%), #090f16;
+  border: 1px solid rgba(161, 197, 224, 0.2);
+  border-radius: 18px;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.62),
+    inset 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.tsp-header {
+  min-height: 64px;
+  padding: 14px 16px;
+  background: linear-gradient(90deg, rgba(25, 40, 55, 0.8), rgba(10, 17, 25, 0.8));
+  border-bottom-color: var(--tsp-line);
+}
+
+.tsp-title {
+  color: #f2f8fc;
+  font-family: 'Rajdhani', 'Arial Narrow', sans-serif;
+  font-size: 19px;
+  letter-spacing: 0.025em;
+}
+
+.tsp-close {
+  color: #9db1c1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--tsp-line);
+}
+.tsp-close:hover,
+.tsp-close:focus-visible {
+  color: #fff;
+  background: rgba(72, 191, 255, 0.12);
+  outline: 2px solid rgba(72, 191, 255, 0.45);
+  outline-offset: 2px;
+}
+
+.tsp-list {
+  padding: 8px;
+}
+.tsp-item {
+  min-height: 56px;
+  margin: 2px 0;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+}
+.tsp-item:hover {
+  background: rgba(72, 191, 255, 0.055);
+  border-color: rgba(72, 191, 255, 0.12);
+}
+.tsp-item--active {
+  background: rgba(72, 191, 255, 0.035);
+}
+.tsp-item__label {
+  color: #dce9f2;
+  font-size: 13px;
+  font-weight: 650;
+}
+.tsp-item__desc {
+  color: #71889a;
+  font-size: 10px;
+}
+
+.tsp-toggle:focus-visible {
+  outline: 2px solid var(--tsp-accent);
+  outline-offset: 4px;
+  border-radius: 999px;
+}
+.tsp-toggle__track {
+  width: 46px;
+  height: 26px;
+  border-radius: 999px;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.35);
+}
+.tsp-toggle--on .tsp-toggle__track {
+  background: linear-gradient(180deg, #52c7ff, #198cc5);
+  border-color: rgba(130, 220, 255, 0.75);
+  box-shadow:
+    0 0 15px rgba(42, 170, 230, 0.24),
+    inset 0 1px rgba(255, 255, 255, 0.25);
+}
+.tsp-toggle--off .tsp-toggle__track {
+  background: #17222d;
+  border-color: #34495a;
+}
+.tsp-toggle__thumb {
+  width: 18px;
+  height: 18px;
+  background: linear-gradient(145deg, #fff, #dce7ee);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.tsp-toggle--on .tsp-toggle__thumb {
+  transform: translateX(20px);
+}
+
+.tsp-theme-link {
+  min-height: 52px;
+  margin: 7px 8px 12px;
+  padding: 11px 13px;
+  background: linear-gradient(135deg, rgba(72, 191, 255, 0.13), rgba(72, 191, 255, 0.035));
+  border-color: rgba(72, 191, 255, 0.22);
+  border-radius: 11px;
+}
+.tsp-theme-link:hover,
+.tsp-theme-link:focus-visible {
+  background: linear-gradient(135deg, rgba(72, 191, 255, 0.2), rgba(72, 191, 255, 0.07));
+  border-color: rgba(72, 191, 255, 0.42);
+  outline: none;
+}
+.tsp-theme-link__label {
+  color: #79d5ff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.tsp-theme-link__arrow {
+  color: #79d5ff;
+}

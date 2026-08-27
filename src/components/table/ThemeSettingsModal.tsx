@@ -85,6 +85,14 @@ const TABS: { key: ThemeTab; label: string }[] = [
   { key: 'cards', label: 'Cards' },
 ];
 
+const TAB_DESCRIPTIONS: Record<ThemeTab, string> = {
+  themes: 'Complete, coordinated table looks',
+  table: 'The felt and rail at the center of play',
+  button: 'Dealer marker finish and color',
+  background: 'The room surrounding your table',
+  cards: 'The design shown on every face-down card',
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // THEME ASSETS — Bible V8 §11.2.2
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -674,44 +682,104 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   const currentAssets = THEME_ASSETS[activeTab];
   const currentSelected = selection[currentField];
 
+  const selectedTable =
+    TABLE_SKINS[normalizeFeltId(selection.table_id)] || TABLE_SKINS.classic_green;
+  const selectedBackground =
+    TABLE_BACKGROUNDS[normalizeBackgroundId(selection.background_id)] || TABLE_BACKGROUNDS.midnight;
+  const selectedCardName =
+    CARD_BACK_CATALOG.find((design) => design.id === normalizeCardBack(selection.cards_id))?.name ||
+    'Classic Red';
+
   return (
     <div className="theme-modal-overlay" onClick={onClose}>
-      <div className="theme-modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="theme-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="theme-studio-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="theme-modal__header">
-          <h3 className="theme-modal__title">Theme Settings</h3>
-          <button className="theme-modal__close" onClick={onClose}>
+          <div>
+            <span className="theme-modal__eyebrow">PLAYER TABLE STUDIO</span>
+            <h3 id="theme-studio-title" className="theme-modal__title">
+              Make The Table Yours
+            </h3>
+          </div>
+          <button className="theme-modal__close" onClick={onClose} aria-label="Close table studio">
             ×
           </button>
         </div>
 
-        {/* Game Type Selector */}
-        <div className="theme-modal__game-type">
-          <label className="theme-modal__game-label">Game Type:</label>
-          <select
-            className="theme-modal__game-select"
-            value={gameType}
-            onChange={(e) => setGameType(e.target.value)}
-          >
-            {GAME_TYPES.map((gt) => (
-              <option key={gt} value={gt}>
-                {GAME_TYPE_LABELS[gt] ?? gt}
-              </option>
-            ))}
-          </select>
+        <div className="theme-modal__studio-bar">
+          <div className="theme-modal__game-type">
+            <label className="theme-modal__game-label" htmlFor="theme-game-type">
+              Apply To
+            </label>
+            <select
+              id="theme-game-type"
+              className="theme-modal__game-select"
+              value={gameType}
+              onChange={(e) => setGameType(e.target.value)}
+            >
+              {GAME_TYPES.map((gt) => (
+                <option key={gt} value={gt}>
+                  {GAME_TYPE_LABELS[gt] ?? gt}
+                </option>
+              ))}
+            </select>
+          </div>
+          <span className="theme-modal__autosave" aria-live="polite">
+            <span className="theme-modal__autosave-dot" />
+            {saving ? 'Saving selection' : 'Changes save automatically'}
+          </span>
+        </div>
+
+        <div className="theme-modal__live-preview" aria-label="Current table appearance preview">
+          <img className="theme-modal__live-bg" src={selectedBackground} alt="" />
+          <div className="theme-modal__live-vignette" />
+          <img className="theme-modal__live-table" src={selectedTable} alt="" />
+          <div className="theme-modal__live-cards">
+            <CardBack style={normalizeCardBack(selection.cards_id)} size="sm" />
+            <CardBack style={normalizeCardBack(selection.cards_id)} size="sm" />
+          </div>
+          <div className="theme-modal__live-button" data-button-theme={selection.button_id}>
+            D
+          </div>
+          <div className="theme-modal__live-caption">
+            <span>LIVE TABLE PREVIEW</span>
+            <strong>
+              {selectedCardName} · {GAME_TYPE_LABELS[gameType] ?? gameType}
+            </strong>
+          </div>
         </div>
 
         {/* Tab Bar */}
-        <div className="theme-modal__tabs">
+        <div
+          className="theme-modal__tabs"
+          role="tablist"
+          aria-label="Table customization categories"
+        >
           {TABS.map((tab) => (
             <button
               key={tab.key}
               className={`theme-modal__tab ${activeTab === tab.key ? 'theme-modal__tab--active' : ''}`}
               onClick={() => setActiveTab(tab.key)}
+              role="tab"
+              aria-selected={activeTab === tab.key}
             >
               {tab.label}
             </button>
           ))}
+        </div>
+
+        <div className="theme-modal__section-heading">
+          <div>
+            <strong>{TABS.find((tab) => tab.key === activeTab)?.label}</strong>
+            <span>{TAB_DESCRIPTIONS[activeTab]}</span>
+          </div>
+          <span className="theme-modal__count">{currentAssets.length} Choices</span>
         </div>
 
         {/* Asset Grid */}
@@ -727,10 +795,13 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
             );
 
             return (
-              <div
+              <button
+                type="button"
                 key={asset.id}
                 className={`theme-asset ${isSelected ? 'theme-asset--selected' : ''} ${isLocked ? 'theme-asset--locked' : ''}`}
                 onClick={() => handleAssetSelect(activeTab, asset.id, asset.vipOnly)}
+                aria-pressed={isSelected}
+                aria-label={`${asset.name}${isLocked ? ', VIP required' : ''}`}
               >
                 <div className="theme-asset__preview">
                   {/* ── Dan 2026-08-18: show the actual thing, not a colour ──
@@ -750,7 +821,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                 </div>
                 <span className="theme-asset__name">{asset.name}</span>
                 {asset.vipOnly && !isLocked && <span className="theme-asset__tier-badge">VIP</span>}
-              </div>
+              </button>
             );
           })}
         </div>
@@ -758,14 +829,14 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
         {/* Footer */}
         <div className="theme-modal__footer">
           <button className="theme-modal__btn theme-modal__btn--reset" onClick={handleReset}>
-            Reset
+            Restore Defaults
           </button>
           <button
             className="theme-modal__btn theme-modal__btn--save"
             onClick={() => handleSave()}
             disabled={saving}
           >
-            {saving ? 'Saving...' : 'Confirm'}
+            {saving ? 'Saving...' : 'Done'}
           </button>
         </div>
 

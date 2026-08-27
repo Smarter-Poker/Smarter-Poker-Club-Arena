@@ -201,7 +201,6 @@ export async function createClub(clubData: {
     throw new Error('A club with this name already exists. Please choose a different name.');
   }
 
-  // Enforce mutual exclusivity: public clubs can't require approval
   const isPublic = clubData.is_public ?? true;
 
   // ── Step 1: Upload raw logo to storage ──────────────────────────────
@@ -250,7 +249,7 @@ export async function createClub(clubData: {
         description: safeDescription,
         color_theme: clubData.color_theme || 'royal-blue',
         is_public: isPublic,
-        requires_approval: !isPublic,
+        requires_approval: clubData.requires_approval ?? false,
         owner_id: user.user.id,
         member_count: 1,
         level: 1,

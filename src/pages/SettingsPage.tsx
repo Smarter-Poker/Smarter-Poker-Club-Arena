@@ -581,20 +581,29 @@ export default function SettingsPage() {
           .eq('id', user.id);
         if (profileErr) throw profileErr;
 
-        // Sync notification preferences to dedicated table (used by push service)
+        /* PHANTOM COLUMN FIX 2026-08-27: this upsert named FIVE columns that
+           do not exist on user_notification_preferences (table_alerts,
+           achievement_alerts, friend_alerts, club_announcements,
+           settlement_alerts). PostgREST returned PGRST204, the throw below
+           fired, and setHasChanges(false) plus the success toast were never
+           reached — so "Save Changes" failed 100% of the time and the button
+           never cleared, for every user, on every save. Mapped to the real
+           columns; the two settings with no column (achievements, settlement
+           alerts) still live in profiles.settings, written just above.
+
+           It is also no longer fatal: a push-preferences hiccup must not
+           fail the whole settings save. */
         const { error: notifErr } = await supabase.from('user_notification_preferences').upsert(
           {
             user_id: user.id,
-            table_alerts: settings.handWonNotifications ?? true,
+            live_notifications: settings.handWonNotifications ?? true,
             tournament_reminders: settings.tournamentReminders ?? true,
-            achievement_alerts: settings.achievementNotifications ?? true,
-            friend_alerts: settings.friendAlerts ?? true,
-            club_announcements: settings.clubActivity ?? true,
-            settlement_alerts: settings.settlementAlerts ?? true,
+            friend_activity: settings.friendAlerts ?? true,
+            club_updates: settings.clubActivity ?? true,
           },
           { onConflict: 'user_id' }
         );
-        if (notifErr) throw notifErr;
+        if (notifErr) reportError(notifErr, 'SettingsPage.notification_prefs_upsert');
       }
 
       setHasChanges(false);

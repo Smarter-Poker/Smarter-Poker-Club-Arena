@@ -1271,9 +1271,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       }
       // Table cap: never more than this hand has left under the ceiling.
       amount = Math.min(amount, capRemaining);
-      /* The cap, not the stack, decides all-in at a capped table: a player who
-         has committed the ceiling still has chips in front of them. */
-      if (amount >= Math.min(player.stack, capRemaining)) {
+      /* CAP FIX 2026-08-27: this used to promote to all_in whenever the amount
+         reached min(stack, capRemaining) — so a bet CLAMPED BY THE CAP one
+         line above was immediately turned back into an all-in, and
+         HandController.performAction ignores `amount` for all_in and commits
+         the ENTIRE stack (`this.state.pot += player.stack; player.stack = 0`).
+         The rewrite at the top of this method was therefore a no-op round
+         trip and the ceiling was defeated by the largest action it exists to
+         bound. Only the STACK may promote: the player is all-in when they
+         have no chips left, not when the cap says stop. */
+      if (amount >= player.stack && player.stack <= capRemaining) {
         normalizedAction = 'all_in';
         amount = undefined;
       }
@@ -1290,8 +1297,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
          way: this street's bet plus whatever the cap leaves. */
       const capRaiseTo = capRemaining === Infinity ? Infinity : player.bet + capRemaining;
       amount = Math.min(amount, capRaiseTo);
-      const maxRaiseTo = Math.min(player.stack + player.bet, capRaiseTo);
-      if (amount >= maxRaiseTo) {
+      /* CAP FIX 2026-08-27: same defect on the raise path — a raise clamped to
+         capRaiseTo reached maxRaiseTo and was promoted to a whole-stack shove.
+         The stack must be the binding constraint for an all-in; when the cap
+         is what bounds the wager it stays a sized raise. */
+      const stackRaiseTo = player.stack + player.bet;
+      const maxRaiseTo = Math.min(stackRaiseTo, capRaiseTo);
+      if (amount >= maxRaiseTo && stackRaiseTo <= capRaiseTo) {
         normalizedAction = 'all_in';
         amount = undefined;
       }
@@ -2013,9 +2025,25 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // the same HandStage literals the controller emits.
           fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage as HandStage)
         : 0;
+      /* CAP FIX 2026-08-27: the horse path is a parallel implementation of the
+         human clamp chain and carried NO cap term at all — `cap_enabled` /
+         `cap_bb` were read only in _handlePlayerActionInner, so a horse at a
+         capped table sized and shoved against its raw stack, straight past the
+         ceiling the host set. Same arithmetic as the human path. */
+      const horseCapBB = Number(this.tableInfo?.cap_bb) || 0;
+      const horseCapChips =
+        this.tableInfo?.cap_enabled === true && horseCapBB > 0
+          ? horseCapBB * (Number(this.tableInfo?.big_blind) || 0)
+          : 0;
+      const horseCapRemaining =
+        horseCapChips > 0
+          ? Math.max(0, horseCapChips - (Number(enginePlayer.totalInvested) || 0))
+          : Infinity;
       if (action === 'bet' && amount !== undefined) {
         amount = horseFlBetSize > 0 ? horseFlBetSize : Math.max(state.minRaise, amount);
-        if (amount >= enginePlayer.stack) {
+        amount = Math.min(amount, horseCapRemaining);
+        // Only the STACK promotes to all_in; a cap-bounded wager stays sized.
+        if (amount >= enginePlayer.stack && enginePlayer.stack <= horseCapRemaining) {
           action = 'all_in';
           amount = undefined;
         }
@@ -2023,8 +2051,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         const minRaiseTo = state.currentBet + state.minRaise;
         amount =
           horseFlBetSize > 0 ? state.currentBet + horseFlBetSize : Math.max(minRaiseTo, amount);
-        const maxRaiseTo = enginePlayer.stack + enginePlayer.bet;
-        if (amount >= maxRaiseTo) {
+        const horseCapRaiseTo =
+          horseCapRemaining === Infinity ? Infinity : enginePlayer.bet + horseCapRemaining;
+        amount = Math.min(amount, horseCapRaiseTo);
+        const horseStackRaiseTo = enginePlayer.stack + enginePlayer.bet;
+        const maxRaiseTo = Math.min(horseStackRaiseTo, horseCapRaiseTo);
+        if (amount >= maxRaiseTo && horseStackRaiseTo <= horseCapRaiseTo) {
           action = 'all_in';
           amount = undefined;
         }

@@ -1576,7 +1576,16 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         }
         return;
       }
-      void this.dealNextInsuranceStreet(offerPlayers, allInPlayers, pot);
+      /* PARKED-HAND FIX 2026-08-27: this was the one call site of the three
+         with no .catch. dealNextInsuranceStreet can reject from
+         dealNextStreet(), from broadcastAllInEquity()'s worker pool, or from
+         finalizeRunout() — and an unhandled rejection here leaves the hand
+         with currentPlayerSeat -1, no clock and no continuation, recoverable
+         only by the 45s watchdog. Same guard the sibling call sites use. */
+      void this.dealNextInsuranceStreet(offerPlayers, allInPlayers, pot).catch((err) => {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.insurance_deal_street_rejected');
+        this.safeContinueRunout('insurance_deal_street_rejected');
+      });
     };
 
     // Preflop all-in: no offer before the flop — deal up to the flop first.

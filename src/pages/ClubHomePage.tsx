@@ -3393,6 +3393,20 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               <h2 className="lobby-club__name" title={club.name}>
                 {club.name}
               </h2>
+              {unionName && (
+                <div
+                  style={{
+                    marginTop: '1px',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    color: '#9aa5b6',
+                    letterSpacing: '0.02em',
+                  }}
+                  title="Union This Club Plays Inside"
+                >
+                  {unionName}
+                </div>
+              )}
               <div className="lobby-club__meta">
                 <span
                   className="lobby-club__id"
@@ -3431,21 +3445,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     }}
                     title="Click to copy"
                   >
-                    Player {currentUser.player_number}
+                    Player ID: {currentUser.player_number}
                   </span>
                 )}
-                <span
-                  className="lobby-club__id"
-                  style={{ userSelect: 'all', color: '#9aa5b6', cursor: 'pointer' }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigator.clipboard.writeText(club.name);
-                    toast.success('Club Name Copied');
-                  }}
-                  title="Click to copy"
-                >
-                  {club.name}
-                </span>
               </div>
 
               <div
@@ -3466,19 +3468,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                       <span className="club-level-badge__number">Level {clubLevel.level}</span>
                       <span className="club-level-badge__tier">{clubLevel.tierLabel}</span>
                     </span>
-                  </div>
-                )}
-
-                {unionName && (
-                  <div
-                    style={{
-                      marginTop: '6px',
-                      fontSize: '0.85rem',
-                      color: '#9aa5b6',
-                      fontStyle: 'italic',
-                    }}
-                  >
-                    Plays Inside The <strong style={{ color: '#ffffff' }}>{unionName}</strong>
                   </div>
                 )}
 

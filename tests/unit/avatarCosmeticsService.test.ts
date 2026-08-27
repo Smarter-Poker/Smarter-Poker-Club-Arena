@@ -103,11 +103,18 @@ describe('getCosmetics', () => {
 });
 
 describe('getCosmeticCatalog', () => {
-  it('marks everything unowned for a plain account', async () => {
+  it('marks every PAID cosmetic unowned for a plain account, and every free one owned', async () => {
+    /* 2026-08-27: the catalog gained a free tier (three frames, three auras)
+       when Dan set the three-free rule. "Everything unowned" was the right
+       assertion when all six cosmetics were VIP; now the meaningful claim is
+       that the PAID ones stay locked while the free ones are available to an
+       account with no VIP and no ledger row. */
     const { cosmetics, ok } = await avatarService.getCosmeticCatalog(USER);
     expect(ok).toBe(true);
-    expect(cosmetics).toHaveLength(6);
-    expect(cosmetics.every((c) => !c.isOwned)).toBe(true);
+    expect(cosmetics).toHaveLength(12);
+    expect(cosmetics.filter((c) => c.tier === 'vip').every((c) => !c.isOwned)).toBe(true);
+    expect(cosmetics.filter((c) => c.tier === 'free').every((c) => c.isOwned)).toBe(true);
+    expect(cosmetics.filter((c) => c.tier === 'free')).toHaveLength(6);
   });
 
   it('marks everything owned for a VIP', async () => {
@@ -130,7 +137,9 @@ describe('getCosmeticCatalog', () => {
     state.unlockSelect = { data: null, error: { code: '42501' } };
     const { cosmetics, ok } = await avatarService.getCosmeticCatalog(USER);
     expect(ok).toBe(false);
-    expect(cosmetics.every((c) => !c.isOwned)).toBe(true);
+    // The PAID tier fails closed. Free cosmetics are unaffected by a ledger
+    // failure because they never consult the ledger.
+    expect(cosmetics.filter((c) => c.tier === 'vip').every((c) => !c.isOwned)).toBe(true);
   });
 
   it('still credits a VIP when only the ledger read errors', async () => {
@@ -161,7 +170,10 @@ describe('getCosmeticCatalog', () => {
     state.unlockSelect = { data: null, error: { code: '42501' } };
     const { cosmetics, ok } = await avatarService.getCosmeticCatalog(USER);
     expect(ok).toBe(false);
-    expect(cosmetics.every((c) => !c.isOwned)).toBe(true);
+    // Both entitlement sources are dead, so nothing PAID may be credited.
+    // The free tier still stands: it depends on neither source.
+    expect(cosmetics.filter((c) => c.tier === 'vip').every((c) => !c.isOwned)).toBe(true);
+    expect(cosmetics.filter((c) => c.tier === 'free').every((c) => c.isOwned)).toBe(true);
   });
 });
 

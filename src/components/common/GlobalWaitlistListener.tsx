@@ -89,7 +89,7 @@ export default function GlobalWaitlistListener() {
         filter: `table_id=in.(${watched.join(',')})`,
       },
       async (payload) => {
-        const vacatedTableId = (payload.old as any)?.table_id;
+        const vacatedTableId = (payload.old as { table_id?: string })?.table_id;
         if (!vacatedTableId) return;
 
         /* Dan 2026-08-26 waitlist fix — this used to AUTO-NAVIGATE whoever
@@ -129,7 +129,7 @@ export default function GlobalWaitlistListener() {
         filter: `table_id=in.(${watched.join(',')})`,
       },
       (payload) => {
-        if ((payload.new as any)?.user_id === user.id) {
+        if ((payload.new as { user_id?: string })?.user_id === user.id) {
           masterBus.emit('WAITLIST_CHANGED', undefined as void);
         }
       }
@@ -245,10 +245,15 @@ export default function GlobalWaitlistListener() {
                straight to their table; the push notification and the
                notifications-page row are the out-of-app copies of the same
                offer. */
-            const newRow = (payload as any).new;
-            const oldRow = (payload as any).old;
+            type WaitlistPayload = {
+              new?: { status?: string; table_id?: string | number };
+              old?: { status?: string };
+              eventType?: string;
+            };
+            const newRow = (payload as WaitlistPayload).new;
+            const oldRow = (payload as WaitlistPayload).old;
             if (
-              (payload as any).eventType === 'UPDATE' &&
+              (payload as WaitlistPayload).eventType === 'UPDATE' &&
               newRow?.status === 'notified' &&
               oldRow?.status !== 'notified' &&
               newRow?.table_id

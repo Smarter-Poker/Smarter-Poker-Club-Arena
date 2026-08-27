@@ -183,6 +183,8 @@ export class GameServer {
   private lastRakeSweepAt = 0;
   /** Last fn_tournament_money_conservation pass (2026-08-27 phase 3). */
   private lastConservationAt = 0;
+  /** Last fn_backpay_hu_winner_shortfalls pass (2026-08-27 phase 3d). */
+  private lastHuBackpayAt = 0;
   private running: boolean = false;
   private startTime: number = Date.now();
 
@@ -2697,12 +2699,24 @@ export class GameServer {
         // over 30 days) is repaid, evidence-based and idempotent
         // (fn_credit_and_log key per tournament+winner). Self-draining: paid
         // events fall out of the scan, and the cutoff date means the backlog
-        // can only shrink. Runs on the same cadence as the rake sweep.
-        if (Date.now() - this.lastRakeSweepAt < 60_000) {
+        // can only shrink.
+        //
+        // ITS OWN TIMER (2026-08-27, phase 3d). This used to run inside a
+        // 60-second window that opened only when the RAKE sweep had just
+        // fired -- a piggyback on another job's clock. In production that
+        // meant it ran once on engine boot and then effectively never again:
+        // 100 winners repaid at 15:32 after a deploy, then nothing, with
+        // 8,600 events and ~211,000 chips still owed. Money owed to players
+        // must not depend on when a different sweep happens to tick, so this
+        // now keeps its own interval like every other periodic job here.
+        // 250 per pass drains the remaining backlog in about three hours
+        // instead of fourteen; the RPC is ~270ms and fully idempotent.
+        if (Date.now() - this.lastHuBackpayAt > 5 * 60 * 1000) {
+          this.lastHuBackpayAt = Date.now();
           try {
             const { data: bp, error: bpErr } = await supabase.rpc(
               'fn_backpay_hu_winner_shortfalls',
-              { p_limit: 100 }
+              { p_limit: 250 }
             );
             if (bpErr) {
               reportError(

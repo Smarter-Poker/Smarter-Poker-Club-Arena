@@ -88,6 +88,22 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
 
   const potTotal = (h.main_pot || 0) + (h.side_pots || []).reduce((a, b) => a + (b || 0), 0);
 
+  /* RUN IT TWICE — boards 2..N, and the reason Dan saw one board on a hand that
+     ran three (production hand #3046089, 2026-08-27).
+
+     `hand_history.rit_boards` was read correctly by HandHistoryService and
+     landed on the service record; this adapter is the ONLY producer of the view
+     model both hand-history screens render, and it did not carry the field
+     across. The service knew and the screen never heard. Board 1 is not in here
+     — it is the ordinary board and stays in `streets[].cards`, which is where
+     `runBoardsFor` reads it from.
+
+     Normalised through toCardCodes for the same reason community_cards is: the
+     column stores spelled-out strings ("7clubs"), and a board that reaches the
+     panel unparsed prints "UNDEFINE" beside a diamond. Empty runs are dropped
+     rather than rendered as a blank RUN badge. */
+  const ritBoards = (h.rit_boards || []).map((b) => toCardCodes(b)).filter((b) => b.length > 0);
+
   /* TWO DIFFERENT MONEY FIGURES, and conflating them cost a player the truth
      about their own hand.
 
@@ -155,6 +171,9 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
     heroId,
     heroResult: (h.players || []).find((p) => p.user_id === heroId)?.result ?? 0,
     potTotal,
+    // Absent rather than empty on a single-run hand: `runBoardsFor` reads the
+    // length, and an empty array is a claim that the hand ran once, not silence.
+    ritBoards: ritBoards.length ? ritBoards : undefined,
   };
 }
 

@@ -1119,6 +1119,156 @@ export abstract class ServerTableEngineBase {
     return this.minPlayersToDeal();
   }
 
+  /**
+   * ── RIT CONFIG IS RE-READ, NOT REMEMBERED (2026-08-27) ──────────────────
+   *
+   * This block used to live inline in start(), which runs ONCE per engine
+   * process. So `run_it_twice`, `allow_run_it_twice`, `run_it_twice_enabled`,
+   * `insurance_enabled` and `run_it_mode` were sampled at boot and never
+   * looked at again: an owner turning insurance on, or run-it-twice off,
+   * changed nothing at all until the table's engine happened to restart.
+   *
+   * Production hand #3046089 is that defect: cash table d9d3c3b3 dealt three
+   * boards and split a 1470 pot without one player at the table being shown a
+   * prompt, off configuration the engine had been holding since it booted.
+   *
+   * ── WHAT THIS METHOD DOES *NOT* DO ANY MORE (merge note, 2026-08-27) ────
+   *
+   * The extraction was written when FIX 92 ended `ritEffective = ritEnabled &&
+   * !insuranceEnabled` — "insurance takes priority, RIT is disabled". That
+   * force-disable was RETIRED on 2026-08-26 by Dan's leader-seat ruling and
+   * the body below is the retired-it version, not the extracted one: when both
+   * features are on, the run-it-multi-times question comes FIRST and insurance
+   * engages only if the hand resolves to a single run ("THE INSURANCE PART
+   * PICKED UP ON THE TURN. AFTER THE RUN IT TWICE WAS DECLINED").
+   *
+   * Per-HAND exclusivity still holds absolutely — a hand that deals extra
+   * boards never carries an insurance contract, and an insured hand always
+   * runs exactly once — but it is enforced by the runout dispatch
+   * (`ritFirst` in handleAllInRunout), not by switching the feature off here.
+   * So do not restore the `&& !insuranceEnabled` term: hand #3046089 needed
+   * the configuration RE-READ, which is what this method is for, and did not
+   * need the table's RIT switch overridden.
+   *
+   * It is called from start() AND from ServerTableEngineRunout at the top of
+   * handleAllInRunout — the last instant before an offer can be made, and the
+   * only place in the hand where the answer matters. That is deliberately
+   * tighter than "hand start": there is no window between the re-read and the
+   * decision for the two to disagree, and no code path can reach the offer
+   * without passing through it.
+   *
+   * ONE CAVEAT, and it is the important one: `this.tableInfo` is itself a
+   * cached snapshot. It is assigned exactly once (start(), from loadTable) and
+   * the only thing that refreshes any part of it afterwards is refreshBlinds(),
+   * which copies back three columns — small_blind, big_blind, ante — and only
+   * for tournament tables. So this method re-reads the freshest values the
+   * PROCESS has; it does not re-read the DATABASE. Adding a per-hand
+   * `loadTable` for these five columns is a separate decision (an extra round
+   * trip on every hand, under the 90s deal watchdog) and is deliberately NOT
+   * taken here.
+   *
+   * Returns `insuranceEnabled` so start() can keep configuring the insurance
+   * engine from the same computation. The insurance engine is deliberately NOT
+   * re-configured per hand: start() sets only `enabled` on it, while other call
+   * sites set `houseMargin` and `offerTimeoutSeconds` too, so a partial
+   * re-configure mid-flow would silently drop them. The runout dispatch reads
+   * the RIT engine's own `isEnabled` for its sequencing, so the two cannot
+   * drift apart.
+   */
+  protected applyRunItTwiceConfig(): { ritEffective: boolean; insuranceEnabled: boolean } {
+    // No table row loaded yet: leave whatever configuration is already in
+    // place rather than reconfiguring from nothing.
+    if (!this.tableInfo) return { ritEffective: false, insuranceEnabled: false };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // FIX 92 (HISTORY): RIT and Insurance used to be mutually exclusive at
+    // CONFIGURE time — "RUN IT TWICE AND INSURANCE ARE NOT ALLOWED ON THE
+    // SAME TABLE", insurance taking priority and RIT being switched off. See
+    // the SEQUENCING note below for what replaced it on 2026-08-26.
+    // ═══════════════════════════════════════════════════════════════════════
+    // RIT INTENT FIX 2026-08-18: the engine read `run_it_twice_enabled`,
+    // a column NOTHING in the product ever writes (39 of 710 open tables
+    // true, likely a one-off script). The creation surfaces write
+    // `run_it_twice` (CreateTableModal) and `allow_run_it_twice`
+    // (TableCreationPage) - each defaulting the OTHER to true - and the
+    // lobby advertises the feature off `run_it_twice`. So the lobby said
+    // "run it twice" on ~every table while the engine had it off on 94%
+    // of them, and no offer ever fired in live traffic. Owner intent:
+    // OFF means at least one user-written column is false; the legacy
+    // engine column is honored as an additional ON override.
+    // TOURNAMENT GATE 2026-08-18 — CONFIRMED CASH-ONLY BY DAN 2026-08-26:
+    // "run it twice or 3 times is a cash game only area. it should never
+    // be in MTT, SPINS OR HEADS UP." The gate was briefly lifted the same
+    // day and reinstated within the hour on that ruling — RIT is a product
+    // decision, cash tables only, not merely a numeric limitation.
+    //
+    // (The original numeric reason still stands as history: per-board
+    // splits produce fractional amounts while tournament_players.chips is
+    // INTEGER — the sync floors, destroying chips; live 3-run tournament
+    // hand 41627f9a split 1760.88 into 586.96/1173.92 before the gate went
+    // in. dealAndResolveRIT now carries an integer-exact tournament branch
+    // as DEFENSE IN DEPTH: unreachable while this gate holds, but if the
+    // gate ever regresses, that branch makes the 41627f9a chip destruction
+    // impossible rather than merely unlikely.)
+    const ritIsTournament =
+      !!this.tableInfo.tournament_id || this.tableInfo.game_type === 'tournament';
+    const ritEnabled =
+      !ritIsTournament &&
+      (((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
+        (this.tableInfo.run_it_twice_enabled ?? false));
+    // ALL-CASH INSURANCE 2026-08-26 (Dan): insurance is a CASH feature.
+    // The ledger step was already cash-only (ServerTableEngineSettlement
+    // gates on !isTournamentTable), but the engine itself never refused a
+    // stray insurance_enabled flag on a tournament row - which would have
+    // moved seat chips with NO bank ledger behind them. Same gate as RIT.
+    const insuranceEnabled = (this.tableInfo.insurance_enabled ?? false) && !ritIsTournament;
+    // SEQUENCING 2026-08-26 (Dan's leader-seat recording): FIX 92 used to
+    // force-disable RIT here whenever insurance was on ("insurance takes
+    // priority"). The reference table runs BOTH: the run-it-multi-times
+    // question comes FIRST, and insurance engages only when the hand
+    // resolves to a single run ("THE INSURANCE PART PICKED UP ON THE TURN.
+    // AFTER THE RUN IT TWICE WAS DECLINED"). Per-HAND exclusivity still
+    // holds - a hand that deals extra boards never carries an insurance
+    // contract, and an insured hand always runs exactly once - it is now
+    // enforced by the runout dispatch (handleAllInRunout), not by turning
+    // the feature off.
+    const ritEffective = ritEnabled;
+
+    // Bible V8 §4.20 + FIX 98: Configure Run It Twice engine
+    /**
+     * Dan 2026-08-25: run_it_mode reaches the engine at last. Read
+     * DEFENSIVELY and additively — see RITConfig.mode. The column is the
+     * string 'none' on all 46 live tables while run-it-twice is genuinely on
+     * via the three boolean columns, so a mode that gated `enabled` would
+     * have switched the feature off across the whole platform. It can only
+     * ever REMOVE the question, never the feature.
+     */
+    const ritMode = String(this.tableInfo.run_it_mode || '').toLowerCase();
+    this.runItTwiceEngine.configure(this.tableId, {
+      enabled: ritEffective,
+      mode:
+        ritMode === 'mandatory_three'
+          ? 'mandatory_three'
+          : ritMode === 'mandatory_twice'
+            ? 'mandatory_twice'
+            : ritMode === 'player_choice'
+              ? 'player_choice'
+              : 'none',
+      // POKERBROS PARITY 2026-08-26 (Dan's reference recordings): one shared
+      // 25-second countdown covers the chooser AND every responder — the
+      // reference panel shows "Countdown: 25s" ticking for the whole
+      // decision, not 5s + 10s phases. The engine's DeadlineScheduler
+      // auto-declines at this same deadline, and the wire events now carry
+      // it (deadline_ts) so every client renders the same clock.
+      autoDeclineTimeout: 25,
+      maxRuns: 3, // Support up to 3 boards (Dan's rules: player can choose 1/2/3)
+      chooserTimeout: 25,
+      responderTimeout: 25,
+    });
+
+    return { ritEffective, insuranceEnabled };
+  }
+
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
@@ -1195,92 +1345,9 @@ export abstract class ServerTableEngineBase {
         reconnectGraceSeconds: 5,
       });
 
-      // ═══════════════════════════════════════════════════════════════════════
-      // FIX 92: MUTUAL EXCLUSION — RIT and Insurance CANNOT coexist on the
-      // same table. Per Dan: "RUN IT TWICE AND INSURANCE ARE NOT ALLOWED ON
-      // THE SAME TABLE." If both are enabled in DB, insurance takes priority
-      // (it's the more complex feature). RIT is disabled.
-      // ═══════════════════════════════════════════════════════════════════════
-      // RIT INTENT FIX 2026-08-18: the engine read `run_it_twice_enabled`,
-      // a column NOTHING in the product ever writes (39 of 710 open tables
-      // true, likely a one-off script). The creation surfaces write
-      // `run_it_twice` (CreateTableModal) and `allow_run_it_twice`
-      // (TableCreationPage) - each defaulting the OTHER to true - and the
-      // lobby advertises the feature off `run_it_twice`. So the lobby said
-      // "run it twice" on ~every table while the engine had it off on 94%
-      // of them, and no offer ever fired in live traffic. Owner intent:
-      // OFF means at least one user-written column is false; the legacy
-      // engine column is honored as an additional ON override.
-      // TOURNAMENT GATE 2026-08-18 — CONFIRMED CASH-ONLY BY DAN 2026-08-26:
-      // "run it twice or 3 times is a cash game only area. it should never
-      // be in MTT, SPINS OR HEADS UP." The gate was briefly lifted the same
-      // day and reinstated within the hour on that ruling — RIT is a product
-      // decision, cash tables only, not merely a numeric limitation.
-      //
-      // (The original numeric reason still stands as history: per-board
-      // splits produce fractional amounts while tournament_players.chips is
-      // INTEGER — the sync floors, destroying chips; live 3-run tournament
-      // hand 41627f9a split 1760.88 into 586.96/1173.92 before the gate went
-      // in. dealAndResolveRIT now carries an integer-exact tournament branch
-      // as DEFENSE IN DEPTH: unreachable while this gate holds, but if the
-      // gate ever regresses, that branch makes the 41627f9a chip destruction
-      // impossible rather than merely unlikely.)
-      const ritIsTournament =
-        !!this.tableInfo.tournament_id || this.tableInfo.game_type === 'tournament';
-      const ritEnabled =
-        !ritIsTournament &&
-        (((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
-          (this.tableInfo.run_it_twice_enabled ?? false));
-      // ALL-CASH INSURANCE 2026-08-26 (Dan): insurance is a CASH feature.
-      // The ledger step was already cash-only (ServerTableEngineSettlement
-      // gates on !isTournamentTable), but the engine itself never refused a
-      // stray insurance_enabled flag on a tournament row - which would have
-      // moved seat chips with NO bank ledger behind them. Same gate as RIT.
-      const insuranceEnabled = (this.tableInfo.insurance_enabled ?? false) && !ritIsTournament;
-      // SEQUENCING 2026-08-26 (Dan's leader-seat recording): FIX 92 used to
-      // force-disable RIT here whenever insurance was on ("insurance takes
-      // priority"). The reference table runs BOTH: the run-it-multi-times
-      // question comes FIRST, and insurance engages only when the hand
-      // resolves to a single run ("THE INSURANCE PART PICKED UP ON THE TURN.
-      // AFTER THE RUN IT TWICE WAS DECLINED"). Per-HAND exclusivity still
-      // holds - a hand that deals extra boards never carries an insurance
-      // contract, and an insured hand always runs exactly once - it is now
-      // enforced by the runout dispatch (handleAllInRunout), not by turning
-      // the feature off.
-      const ritEffective = ritEnabled;
-
-      // Bible V8 §4.20 + FIX 98: Configure Run It Twice engine
-      // Chooser gets 5s, responders get 10s — per Dan's rules
-      /**
-       * Dan 2026-08-25: run_it_mode reaches the engine at last. Read
-       * DEFENSIVELY and additively — see RITConfig.mode. The column is the
-       * string 'none' on all 46 live tables while run-it-twice is genuinely on
-       * via the three boolean columns, so a mode that gated `enabled` would
-       * have switched the feature off across the whole platform. It can only
-       * ever REMOVE the question, never the feature.
-       */
-      const ritMode = String(this.tableInfo.run_it_mode || '').toLowerCase();
-      this.runItTwiceEngine.configure(this.tableId, {
-        enabled: ritEffective,
-        mode:
-          ritMode === 'mandatory_three'
-            ? 'mandatory_three'
-            : ritMode === 'mandatory_twice'
-              ? 'mandatory_twice'
-              : ritMode === 'player_choice'
-                ? 'player_choice'
-                : 'none',
-        // POKERBROS PARITY 2026-08-26 (Dan's reference recordings): one shared
-        // 25-second countdown covers the chooser AND every responder — the
-        // reference panel shows "Countdown: 25s" ticking for the whole
-        // decision, not 5s + 10s phases. The engine's DeadlineScheduler
-        // auto-declines at this same deadline, and the wire events now carry
-        // it (deadline_ts) so every client renders the same clock.
-        autoDeclineTimeout: 25,
-        maxRuns: 3, // Support up to 3 boards (Dan's rules: player can choose 1/2/3)
-        chooserTimeout: 25,
-        responderTimeout: 25,
-      });
+      // Run It Twice — see applyRunItTwiceConfig(). Extracted 2026-08-27 so it
+      // can be re-evaluated per hand instead of once per process lifetime.
+      const { insuranceEnabled } = this.applyRunItTwiceConfig();
 
       // Bible V8 §4.19: Configure Insurance engine
       this.insuranceEngine.configure(this.tableId, {

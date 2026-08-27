@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, memo, useCallback, useMemo, useRef } from 'react';
+import { toCardCodes } from '../../utils/cardCode';
 import './HandHistoryPanel.css';
 
 export interface HandHistoryAction {
@@ -60,6 +61,75 @@ export interface HandRecord {
   heroId: string;
   heroResult: number; // +/- amount, the hero's `players[].result`
   potTotal: number;
+  /**
+   * RUN IT TWICE — boards 2..N, in run order. Board 1 is the ordinary board and
+   * stays in `streets[].cards`.
+   *
+   * Filled by `adaptServiceHandToPanel` from the `hand_history.rit_boards`
+   * column. Absent on an ordinary single-run hand, which is the overwhelming
+   * majority of rows.
+   */
+  ritBoards?: string[][];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RUN-IT-TWICE BOARDS — how they reach these two screens
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Verified on production hand #3046089 (2026-08-27): it ran THREE boards, the
+   server stored all three, and both hand-history screens showed one. The board
+   the player was shown was not the board that decided most of the pot.
+
+   Where it was lost: `hand_history.rit_boards` is read correctly by
+   HandHistoryService (mapHandHistoryRow) and lands on the SERVICE record as
+   `rit_boards` — and then `adaptServiceHandToPanel` built the view model this
+   file describes and did not carry the field across. The service knew; the
+   screen never heard.
+
+   The adapter carries it now (`ritBoards` above), which is the whole path: one
+   producer, one field, one reader below. A registry keyed by hand id briefly
+   bridged the gap while the adapter was owned by another agent; it was deleted
+   in the same commit that fixed the adapter, exactly as its own note said it
+   should be. Do not reintroduce a second source for this — two of them can
+   disagree about which boards a hand ran. */
+
+export interface RunBoards {
+  /** Board 1 first, then every extra run, in run order. */
+  boards: string[][];
+  /**
+   * How many leading cards every run shares — the cards that were already on
+   * the felt when the players agreed to run it again. Everything from this
+   * index on is where the runs diverge, and that is the only part of a
+   * run-it-twice board a player is actually reading.
+   */
+  sharedCount: number;
+}
+
+/**
+ * Board 1 plus every extra run, normalised to canonical card codes.
+ *
+ * Returns null for an ordinary single-run hand, so a caller can render nothing
+ * without a length check of its own.
+ */
+export function runBoardsFor(hand: HandRecord): RunBoards | null {
+  const extra = hand.ritBoards;
+  if (!extra || extra.length === 0) return null;
+
+  /* Board 1 is stored per street by the adapter, so it is read back the same
+     way rather than re-sliced from a flat list. */
+  const boardOne = hand.streets
+    .filter((s) => s.name === 'flop' || s.name === 'turn' || s.name === 'river')
+    .flatMap((s) => s.cards || []);
+
+  const boards = [boardOne, ...extra].map((b) => toCardCodes(b)).filter((b) => b.length > 0);
+  if (boards.length < 2) return null;
+
+  const shortest = Math.min(...boards.map((b) => b.length));
+  let sharedCount = 0;
+  while (sharedCount < shortest && boards.every((b) => b[sharedCount] === boards[0][sharedCount])) {
+    sharedCount += 1;
+  }
+  return { boards, sharedCount };
 }
 
 export interface HandHistoryPanelProps {
@@ -128,21 +198,62 @@ const SUIT_GLYPH: Record<string, string> = { s: '♠', h: '♥', d: '♦', c: '�
  * would not say — even though handToText below has always written the holdings
  * into the clipboard export. Same data, now on screen.
  */
+function CardChip({ code, shared = false }: { code: string; shared?: boolean }) {
+  const suit = code.slice(-1).toLowerCase();
+  const rank = code.slice(0, -1).toUpperCase().replace('T', '10');
+  const red = suit === 'h' || suit === 'd';
+  return (
+    <span className={`hh-card${red ? ' hh-card--red' : ''}${shared ? ' hh-card--shared' : ''}`}>
+      {rank}
+      {SUIT_GLYPH[suit] || '?'}
+    </span>
+  );
+}
+
 function HoleCards({ cards }: { cards: string[] }) {
   return (
     <span className="hh-entry__holecards">
-      {cards.map((c, i) => {
-        const suit = c.slice(-1).toLowerCase();
-        const rank = c.slice(0, -1).toUpperCase().replace('T', '10');
-        const red = suit === 'h' || suit === 'd';
-        return (
-          <span key={i} className={`hh-card${red ? ' hh-card--red' : ''}`}>
-            {rank}
-            {SUIT_GLYPH[suit] || '?'}
-          </span>
-        );
-      })}
+      {cards.map((c, i) => (
+        <CardChip key={i} code={c} />
+      ))}
     </span>
+  );
+}
+
+/**
+ * Every board a hand ran, one row per run.
+ *
+ * The runs share a prefix by construction — the cards already dealt when the
+ * players agreed to run it again — so those are dimmed and only the diverging
+ * cards carry full contrast. A player reading three near-identical rows of
+ * five cards otherwise has to diff them by eye.
+ */
+function RunBoards({ runs }: { runs: RunBoards }) {
+  return (
+    <div className="hh-entry__street hh-runs">
+      <div className="hh-entry__street-header">
+        <span className="hh-entry__street-name">Run It Twice</span>
+        <span className="hh-runs__count">{runs.boards.length} Boards</span>
+      </div>
+      {runs.boards.map((board, bi) => (
+        <div className="hh-run" key={bi}>
+          <span className="hh-run__badge">RUN {bi + 1}</span>
+          <span className="hh-run__cards">
+            {board.map((c, ci) => (
+              <CardChip key={ci} code={c} shared={ci < runs.sharedCount} />
+            ))}
+          </span>
+        </div>
+      ))}
+      {/* The stored winner rows carry one aggregate amount and one hand name
+          per player for the WHOLE hand — no run index — so which run each
+          player took is not recoverable from the row. The totals below are
+          therefore labelled as covering every run rather than being split
+          across the boards, which would be an invention. */}
+      <div className="hh-runs__note">
+        Boards Share The Cards Dealt Before The All In. Collected Totals Below Cover Every Run.
+      </div>
+    </div>
   );
 }
 
@@ -248,6 +359,9 @@ function HandEntry({
       }));
   }, [hand]);
 
+  /* Null on an ordinary hand, so nothing about a single-run hand changes. */
+  const runs = useMemo(() => runBoardsFor(hand), [hand]);
+
   return (
     <div className={`hh-entry ${isExpanded ? 'hh-entry--expanded' : ''}`}>
       {/* Summary row */}
@@ -301,6 +415,9 @@ function HandEntry({
               </div>
             </div>
           ))}
+
+          {/* Run It Twice: every board the hand actually ran, board 1 first. */}
+          {runs && <RunBoards runs={runs} />}
 
           {/* X6.2g: Showdown section header per spec §10.4 */}
           {showdownRows.length > 0 && (
@@ -410,96 +527,123 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
     }
   }, [isOpen, hands]);
 
+  /* Escape closes the panel from the panel itself.
+   *
+   * It had no key handler of its own and no backdrop, so on a phone the only
+   * way out was the 32px X in the corner — and in the installed app that X can
+   * sit under the status bar. TableChat's pair (outside-click + Escape) is the
+   * established shape in this repo; here the backdrop below IS the outside
+   * click, so this is the other half. */
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="hh-panel">
-      {/* Header */}
-      <div className="hh-panel__header">
-        <h3 className="hh-panel__title">Hand History</h3>
-        <div className="hh-panel__header-actions">
-          <button className="hh-panel__export" onClick={exportAll} title="Export all hands">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path
-                d="M8 2v8M4 7l4 4 4-4M2 12h12"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-          <button className="hh-panel__close" onClick={onClose}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path
-                d="M4 4l8 8M12 4l-8 8"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
+    <>
+      {/* A real, tappable backdrop. There was none: the panel was a lone fixed
+          div, so "tap anywhere else to close" — the gesture every other sheet
+          in Club Arena answers — did nothing at all here. */}
+      <div className="hh-backdrop" onClick={onClose} aria-hidden="true" />
+      <div className="hh-panel" role="dialog" aria-label="Hand history">
+        {/* Bottom-sheet grab handle. CSS shows it only where the panel IS a
+            bottom sheet (<=640px); on the desktop drawer it stays hidden. */}
+        <div className="hh-panel__grab" aria-hidden="true">
+          <span />
         </div>
-      </div>
-
-      {/* Session stats */}
-      {sessionStats && (
-        <div className="hh-panel__stats">
-          <div className="hh-panel__stat">
-            <span className="hh-panel__stat-label">Hands</span>
-            <span className="hh-panel__stat-value">{sessionStats.handsPlayed}</span>
-          </div>
-          <div className="hh-panel__stat">
-            <span className="hh-panel__stat-label">Result</span>
-            <span
-              className="hh-panel__stat-value"
-              style={{
-                color:
-                  sessionStats.totalResult > 0
-                    ? '#3fb950'
-                    : sessionStats.totalResult < 0
-                      ? '#ef4444'
-                      : '#9ca3af',
-              }}
-            >
-              {sessionStats.totalResult > 0 ? '+' : ''}
-              {formatAmount(sessionStats.totalResult)}
-            </span>
-          </div>
-          <div className="hh-panel__stat">
-            <span className="hh-panel__stat-label">Wins</span>
-            <span className="hh-panel__stat-value">
-              {sessionStats.wins}/{sessionStats.handsPlayed}
-            </span>
+        {/* Header */}
+        <div className="hh-panel__header">
+          <h3 className="hh-panel__title">Hand History</h3>
+          <div className="hh-panel__header-actions">
+            <button className="hh-panel__export" onClick={exportAll} title="Export all hands">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path
+                  d="M8 2v8M4 7l4 4 4-4M2 12h12"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            <button className="hh-panel__close" onClick={onClose} aria-label="Close">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path
+                  d="M4 4l8 8M12 4l-8 8"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
           </div>
         </div>
-      )}
 
-      {/* Hand list */}
-      <div className="hh-panel__list">
-        {hands.length === 0 ? (
-          <div className="hh-panel__empty">No Hands Played Yet</div>
-        ) : (
-          hands.map((hand, idx) => (
-            <div
-              key={hand.id}
-              style={{
-                opacity: visibleHands[idx] ? 1 : 0,
-                transform: visibleHands[idx] ? 'translateY(0)' : 'translateY(8px)',
-                transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              }}
-            >
-              <HandEntry
-                hand={hand}
-                heroId={heroId}
-                isExpanded={expandedId === hand.id}
-                onToggle={() => toggleExpand(hand.id)}
-              />
+        {/* Session stats */}
+        {sessionStats && (
+          <div className="hh-panel__stats">
+            <div className="hh-panel__stat">
+              <span className="hh-panel__stat-label">Hands</span>
+              <span className="hh-panel__stat-value">{sessionStats.handsPlayed}</span>
             </div>
-          ))
+            <div className="hh-panel__stat">
+              <span className="hh-panel__stat-label">Result</span>
+              <span
+                className="hh-panel__stat-value"
+                style={{
+                  color:
+                    sessionStats.totalResult > 0
+                      ? '#3fb950'
+                      : sessionStats.totalResult < 0
+                        ? '#ef4444'
+                        : '#9ca3af',
+                }}
+              >
+                {sessionStats.totalResult > 0 ? '+' : ''}
+                {formatAmount(sessionStats.totalResult)}
+              </span>
+            </div>
+            <div className="hh-panel__stat">
+              <span className="hh-panel__stat-label">Wins</span>
+              <span className="hh-panel__stat-value">
+                {sessionStats.wins}/{sessionStats.handsPlayed}
+              </span>
+            </div>
+          </div>
         )}
+
+        {/* Hand list */}
+        <div className="hh-panel__list">
+          {hands.length === 0 ? (
+            <div className="hh-panel__empty">No Hands Played Yet</div>
+          ) : (
+            hands.map((hand, idx) => (
+              <div
+                key={hand.id}
+                style={{
+                  opacity: visibleHands[idx] ? 1 : 0,
+                  transform: visibleHands[idx] ? 'translateY(0)' : 'translateY(8px)',
+                  transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                }}
+              >
+                <HandEntry
+                  hand={hand}
+                  heroId={heroId}
+                  isExpanded={expandedId === hand.id}
+                  onToggle={() => toggleExpand(hand.id)}
+                />
+              </div>
+            ))
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 });
 

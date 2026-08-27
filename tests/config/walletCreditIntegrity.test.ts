@@ -133,7 +133,8 @@ describe('no site credits and then logs as a separate, ungated step', () => {
 
         // Permitted only when the credit reports back and the write is gated.
         expect(
-          rpc === 'fn_credit_player_wallet_once' && /didCredit|=== false|if \(!\w*[Cc]redit/.test(window),
+          rpc === 'fn_credit_player_wallet_once' &&
+            /didCredit|=== false|if \(!\w*[Cc]redit/.test(window),
           `${file}:${i + 1} credits via ${rpc} and then writes a ledger row that is not gated ` +
             `on whether the credit actually happened — the phantom-row shape`
         ).toBe(true);
@@ -143,7 +144,9 @@ describe('no site credits and then logs as a separate, ungated step', () => {
 });
 
 describe('the two table cash-out paths cannot diverge again', () => {
-  const seats = stripComments(readFileSync(join(ROOT, 'server/src/services/supabase/seats.ts'), 'utf8'));
+  const seats = stripComments(
+    readFileSync(join(ROOT, 'server/src/services/supabase/seats.ts'), 'utf8')
+  );
 
   /* 2026-08-27: these two assertions still guard "the two paths cannot
      diverge", but the mechanism they guard changed, so they had to change with

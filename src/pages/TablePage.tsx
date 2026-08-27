@@ -1641,10 +1641,7 @@ export default function TablePage({
            blanked off the felt mid-announcement, timing-dependently. Within
            the same hand, a revealed opponent hand stays revealed; the next
            hand's boundary reset clears it like everything else. */
-        if (
-          cardHoldSameHand &&
-          (!sp.holeCards || sp.holeCards.length === 0)
-        ) {
+        if (cardHoldSameHand && (!sp.holeCards || sp.holeCards.length === 0)) {
           const prevPlayer = prev.players[i];
           if (
             prevPlayer &&
@@ -5472,7 +5469,6 @@ export default function TablePage({
       setLeaveNotice('Error leaving table. Please try again.');
     }
   };
-
 
   // Handle force leave (triggered by closing tab 'X' button or when already cashed out)
   const handleForceLeaveTable = async () => {
@@ -14083,13 +14079,15 @@ export default function TablePage({
                                 : `${board.winnerNames[0]}${board.winnerHandName ? ` • ${board.winnerHandName}` : ''}`}
                             </span>
                           )}
-                          {/* Share %/$ only once the reveal has finished — the
-                              reference shows nothing on a board still dealing. */}
+                          {/* Share %/amount only once the reveal has finished —
+                              the reference shows nothing on a board still
+                              dealing. Tournament chips carry no currency mark
+                              (RIT ALL FORMATS 2026-08-26). */}
                           {board.revealed && (
                             <span className="community-area__run-equity">
                               {board.sharePct}%
                               {board.shareAmount > 0
-                                ? ` ($${board.shareAmount.toLocaleString()})`
+                                ? ` (${tableState.isTournament ? '' : '$'}${board.shareAmount.toLocaleString()})`
                                 : ''}
                             </span>
                           )}
@@ -15408,8 +15406,8 @@ export default function TablePage({
           <div className="post-or-wait" role="dialog" aria-modal="true">
             <h3 className="post-or-wait__title">Post Or Wait For The Big Blind?</h3>
             <p className="post-or-wait__body">
-              Post The Big Blind Now And You Are Dealt Into The Next Hand. Or Wait, And You
-              Are Dealt In When The Big Blind Reaches Your Seat.
+              Post The Big Blind Now And You Are Dealt Into The Next Hand. Or Wait, And You Are
+              Dealt In When The Big Blind Reaches Your Seat.
             </p>
             <div className="post-or-wait__actions">
               <button
@@ -15436,7 +15434,8 @@ export default function TablePage({
                         toast.info(
                           retry?.error === 'Player is not waiting for BB'
                             ? 'You Are Being Dealt In. No Post Needed.'
-                            : retry?.error || 'Could Not Post The Big Blind. You Will Wait For It Instead.'
+                            : retry?.error ||
+                                'Could Not Post The Big Blind. You Will Wait For It Instead.'
                         );
                       }
                       setPostOrWaitOpen(false);

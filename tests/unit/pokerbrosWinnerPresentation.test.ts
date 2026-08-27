@@ -190,6 +190,14 @@ describe('the winner sequence details match the reference', () => {
     expect(SEAT_CSS.slice(at, SEAT_CSS.indexOf('}', at))).toMatch(/#ffe94a/i);
   });
 
+  it('the riding pot-win amount is the same measured yellow, not cyan', () => {
+    const at = TABLE_CSS.indexOf('.pot-win-float {');
+    expect(at).toBeGreaterThan(-1);
+    const body = TABLE_CSS.slice(at, TABLE_CSS.indexOf('}', at));
+    expect(body).toMatch(/#ffe94a/i);
+    expect(body).not.toMatch(/#00d4ff/i);
+  });
+
   it('four-point star sparkles render over a positive win, and only a positive one', () => {
     expect(SEAT).toMatch(/seat__win-sparkles/);
     expect(SEAT).toMatch(/netWinAmount\s*>\s*0\s*&&\s*\(/);

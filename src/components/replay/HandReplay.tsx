@@ -54,6 +54,12 @@ export interface HandData {
   community_cards: Card[];
   /** Round 2 (double board): board 2, absent on single-board hands. */
   community_cards2?: Card[];
+  /**
+   * COMPLETENESS PASS 2026-08-26: Run It Twice boards 2..N in run order
+   * (board 1 is community_cards). Dealt AFTER the all-in locked, so they
+   * render only once the replay reaches the river step.
+   */
+  rit_boards?: Card[][];
   players: HandPlayer[];
   actions: PlayerAction[];
 }
@@ -82,8 +88,26 @@ function normalizeRank(rank: string): CardImageCard['rank'] {
   return rank as CardImageCard['rank'];
 }
 
-// Convert database Card to CardImage Card
-function toCardImage(card: Card): CardImageCard {
+/**
+ * Convert a stored card to CardImage form.
+ *
+ * COMPLETENESS PASS 2026-08-26: production `hand_history.community_cards`
+ * rows store ENGINE STRINGS ('8spades', '10hearts'), not {rank, suit}
+ * objects — verified against a live row. This function only handled the
+ * object form, so `card.rank` came back undefined and CardImage fell back
+ * to its Ace-of-Spades placeholder for every board card in a replayed
+ * hand_history row. Both forms are handled now (rit_boards uses the same
+ * string format).
+ */
+function toCardImage(card: Card | string): CardImageCard {
+  if (typeof card === 'string') {
+    const m = /^(10|[2-9TJQKA])(hearts|diamonds|clubs|spades|[hdcs])$/.exec(card);
+    if (m) {
+      return { rank: normalizeRank(m[1]), suit: SUIT_ABBREV[m[2]] || 's' };
+    }
+    // Unparseable string — let CardImage's own guard warn and fall back.
+    return { rank: 'A', suit: 's' };
+  }
   return {
     rank: normalizeRank(card.rank),
     suit: SUIT_ABBREV[card.suit] || 's',
@@ -191,6 +215,9 @@ export default function HandReplay({
             main_pot: data.main_pot,
             community_cards: data.community_cards,
             community_cards2: data.community_cards2 ?? [],
+            // COMPLETENESS PASS 2026-08-26: Run It Twice boards 2..N (board
+            // 1 is community_cards) — rendered as RUN rows at showdown.
+            rit_boards: data.rit_boards ?? [],
             players: data.players.map((p) => ({
               seat: p.seat,
               user_id: p.user_id,
@@ -486,6 +513,22 @@ export default function HandReplay({
                     ))}
                   </div>
                 )}
+                {/* COMPLETENESS PASS 2026-08-26: Run It Twice boards 2..N.
+                    Dealt AFTER the all-in locked, so they exist only from
+                    the river step onward — gated on board 1's slice being
+                    complete, labeled by run. */}
+                {(handData.rit_boards?.length ?? 0) > 0 &&
+                  getVisibleCommunityCards().length >= 5 &&
+                  handData.rit_boards!.map((board, bi) => (
+                    <div className="community-cards-row" key={`rit-${bi}`}>
+                      <span className="replay-run-badge">RUN {bi + 2}</span>
+                      {board.map((card, idx) => (
+                        <div key={`rit-${bi}-${idx}`} className="card small">
+                          <CardImage card={toCardImage(card)} size="xs" />
+                        </div>
+                      ))}
+                    </div>
+                  ))}
 
                 {/* Result */}
                 <div className={`player-result ${player.result >= 0 ? 'positive' : 'negative'}`}>

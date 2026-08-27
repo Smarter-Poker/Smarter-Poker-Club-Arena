@@ -3370,11 +3370,16 @@ body.ca-raising .bankroll-widget {
   font-size: 1.05rem;
   font-weight: 800;
   letter-spacing: 0.01em;
-  color: #00d4ff;
+  /* POKERBROS PARITY 2026-08-26 (final audit): the reference's winner amount
+     is bright yellow (measured stroke core rgb(255,255,119)) — the cyan this
+     float shipped with matched nothing in the recording, and its glow was
+     already warm. One color for the whole +N story: this ride, the seat
+     float, and the sparkles. */
+  color: #ffe94a;
   -webkit-text-stroke: 0.5px rgba(0, 0, 0, 0.55);
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.85),
-    0 0 10px rgba(255, 200, 60, 0.45);
+    0 0 10px rgba(255, 233, 74, 0.5);
   transform: translate(calc(var(--pwf-from-x) - 50%), calc(var(--pwf-from-y) - 50%));
   animation: potWinFloatRide 2.2s cubic-bezier(0.25, 0.6, 0.3, 1) forwards;
 }
@@ -3742,8 +3747,8 @@ body.ca-raising .bankroll-widget {
   justify-content: center;
   padding: 8px 14px;
   border-radius: 8px;
-  background: linear-gradient(180deg, rgba(18, 22, 44, 0.92), rgba(12, 15, 32, 0.92));
-  border: 1px solid rgba(120, 150, 255, 0.22);
+  background: linear-gradient(180deg, rgba(28, 33, 40, 0.92), rgba(22, 27, 34, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.15);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
   animation: ritFeltBannerIn calc(0.3s * var(--animation-speed, 1)) ease-out;
 }
@@ -3752,7 +3757,7 @@ body.ca-raising .bankroll-widget {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: #dbe3f0;
+  color: #e4e6eb;
   text-align: center;
   line-height: 1.4;
 }

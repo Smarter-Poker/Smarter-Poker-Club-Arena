@@ -72,6 +72,43 @@ source-pin tests updated to the new anchors in the same commit (per the
 NEVER-PUSH-A-RED-TEST rule). Migrations applied to production via Supabase
 MCP and verified (`list_migrations` + probes).
 
+## Cowork session 2026-08-26 (late) — WINNER PRESENTATION, POKERBROS 1:1 (3 passes, measured)
+
+Dan supplied HIGHLIGHT WINNING HAND AND DSIPLAY IT ON SCREEN.MOV (26-Aug PLO5
+"Flush" hand) and asked for a frame-by-frame 1:1 clone of the winner
+presentation. Three passes shipped (PR #1307 rounds 1-2, PR #1330 round 3,
+plus a final-audit PR); pass 2 onward MEASURED the recording per pixel:
+
+1. **The cut.** One-frame hard cut (between two adjacent 30fps frames):
+   winning five get a steady thin warm-gold ring (#e9b355, no pulse, no pop,
+   no lift), every card outside them drops to brightness(0.28)
+   channel-neutral, and the ENTIRE scene dims to ~0.73 — felt art, brand
+   block, pot, page backdrop, dealer button, and every seat's chrome
+   including the winner's own plate (per-group filters; stacking contexts
+   forbid a single overlay). Retired as motion-the-reference-does-not-have:
+   winnerTableFlash, ccHighlightPulse, winnerCardPulse, ccGlowPulse, the
+   highlight-pop state machine, showdown screen shake, the spark burst, the
+   showdown-wide gold ambient, CardImage's highlight lift, the sheen sweep
+   and hover lift on tableau cards.
+2. **The banner.** Below the board (+4px), translucent dark band, orange
+   lens-flare streak on the bottom edge, hand name as gradient-gold
+   background-clip text (measured core #ffe39c) sized at 0.33x card height
+   via clamp(--cc-card-h).
+3. **The sequence.** +N floats and the pot-win ride recolored to the
+   measured yellow (#ffe94a — the ride was cyan and matched nothing);
+   four-point star sparkles over the winner's cards for the life of the
+   float; float/sparkles/BBJ credit excluded from the scene dim; seat
+   hand-name label is plain quiet text (the reference has no gold pill).
+4. **Bug found by the audit:** double-board bomb pots never highlighted or
+   dimmed board 2 (engine card_indices are board-1 only) — board 2 now
+   derives its winning five client-side like the RIT boards do.
+
+Deliberately NOT matched: the reference ships the pot ~2.3s after the cut;
+Dan's 2026-08-21 3-second showdown-read floor (engine-matched) outranks it.
+
+Pinned by tests/unit/pokerbrosWinnerPresentation.test.ts (25 measured
+assertions); tests/e2e/showdown-beats.spec.ts rewritten for the new beats.
+
 ## Cowork session 2026-08-26 (evening) — INSURANCE REFERENCE PARITY (pass 6)
 
 Dan supplied the missing reference: a leader-seat recording (INSURANCE.MOV)
@@ -15402,3 +15439,82 @@ three times, captured from a folded player's seat). Three behaviors adopted:
   ritRunRibbonAtRef). Engine hold formula now
   reveal + runs x RIT_RESULT_RUN_MS + push — spec mirrors updated
   byte-identical, handCompletionLaw pins updated in the same commit.
+
+### Round 4 — completeness pass: RIT boards persisted first-class, replay fixed
+
+- **hand_history.rit_boards** (migration 20260826_hand_history_rit_boards,
+  APPLIED to production via Supabase MCP, verified in list_migrations):
+  boards 2..N in run order, JSONB, NULL on single-run hands. Writer:
+  logHandHistory via new engine field currentHandRitExtraBoards. Reader:
+  HandHistoryService.mapHandHistoryRow, column-first with a pseudo-action
+  fallback for pre-column rows. This closes the 2026-08-21 open item ("RIT
+  boards are never persisted ... NEXT STEP: persist the extra board(s)").
+- rit_board_N pseudo-actions are now FILTERED from the mapped action list
+  (they leaked into every replay's action feed as a bogus system entry).
+- HandReplay renders every RIT board as a labeled RUN row from the river
+  step onward. Fixed along the way: replay board cards rendered as
+  Ace-of-Spades placeholders for ALL hand_history rows, because rows store
+  engine card strings ('8spades') and the converter only handled objects.
+- Dead code: RunItTwiceBoard removed (zero call sites, 2-player-only).
+  Correction to the round-1 audit: the uppercase RIT\_\* masterBus cases DO
+  fire (evt.type is uppercased before the switch) — kept.
+- New pins: server handHistory.test (rit_boards written / NULL when
+  single-run), tests/unit/ritBoardsPersistence.test.ts (column-first,
+  fallback order, action filtering, empty on single-run).
+
+### Round 5 — exactness pass (display pennies, mandatory-mode wiring)
+
+- Wiring audit result: the event pipeline is sound — EngineStateClient
+  already gives every EVENT its own macrotask with order preserved (the
+  Task-56 fix), so showdown / rit_result / pot_win bursts cannot coalesce.
+- Per-player PENNY REPAIR on the RIT display awards: each (run, pot, winner)
+  share was rounded independently, so a player's "+N" floats could sum a
+  cent away from what their stack actually rose, and the decrementing pot
+  counter could park at 0.01. Each player's drift now folds into their
+  largest share — display sums equal credited totals to the cent, pinned
+  per-player in RunItTwice.parity.test.ts.
+- run_it_mode is finally reachable from table CREATION: TableSettings type +
+  TableService column mapping + a mode selector in CreateTableModal
+  (Players Choose / Mandatory Twice / Mandatory 3 Times). Previously only
+  TableConfigPage could set it, so a table created from the modal could
+  never be mandatory — the exact dead-wiring shape FIX-D1 fixed for the
+  other creation settings.
+
+### Round 6 — house palette only, and RIT published to ALL formats (Dan 2026-08-26)
+
+- Every RIT surface added in this work now uses the smarter.poker scheme
+  exclusively (panel gradient #1c2128→#161b22, borders rgba(255,255,255,.15),
+  text #e4e6eb/#8b949e, gold #ffb800, accept green #3fb950 gradient,
+  translucent decline — matching the existing prompt/insurance modals). The
+  slate/amber/orange hexes my consent panel, felt strip and replay badge
+  introduced are gone.
+- THE TOURNAMENT GATE IS LIFTED: RIT now runs on cash, MTTs, Spins and
+  heads-up SNGs. The 2026-08-18 gate existed because fractional per-board
+  splits destroyed INTEGER tournament chips (hand 41627f9a). That failure
+  mode is now impossible: dealAndResolveRIT's tournament branch floors every
+  credited total to whole chips and deals the odd chips clockwise from the
+  dealer (distributePot's own convention); display shares are integerized
+  the same way, so every "+N" float and run label is a whole number.
+  Tournament run labels and the consent panel drop the "$" mark.
+- Pins: tournament offer fires; 2-run and 3-run tournament settlements
+  credit whole chips only, conserve the pot exactly, and display whole
+  chips (multiple randomized trials); source pin that Base's enable formula
+  no longer references tournaments.
+
+### Round 6b — CORRECTION: RIT is CASH-ONLY (Dan, same day)
+
+Dan's ruling, verbatim: "run it twice or 3 times is a cash game only area.
+it should never be in MTT, SPINS OR HEADS UP." The tournament gate lifted
+earlier this round is REINSTATED within the hour:
+
+- Base's enable formula refuses tournaments again (ritIsTournament),
+  documented as a product decision, not merely a numeric limitation.
+- The integer odd-chip tournament branch in dealAndResolveRIT STAYS as
+  defense in depth: unreachable while the gate holds, but if the gate ever
+  regresses it makes the 41627f9a chip-destruction impossible rather than
+  merely unlikely. Its test now drives the resolver directly and says so.
+- Test pins flipped: a tournament all-in gets NO rit_offer and NO
+  rit_mandatory; source pin asserts the gate exists and carries the ruling.
+- Kept from round 6: the house-palette-only restyle of every RIT surface,
+  and the no-currency-mark guards (harmless, and correct if a tournament
+  surface ever renders these labels).

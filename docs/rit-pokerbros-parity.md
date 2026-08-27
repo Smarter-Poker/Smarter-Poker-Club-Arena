@@ -180,8 +180,27 @@ from a FOLDED player's seat) added three behaviors:
   `reveal + runs × RIT_RESULT_RUN_MS + push` (the per-run windows ARE the
   showdown read on a multi-board hand).
 
+## 2d. Round 4 — completeness pass (persistence + replay + cleanup)
+
+- **`hand_history.rit_boards` exists at last** (migration
+  20260826_hand_history_rit_boards, applied to production). Boards 2..N in
+  run order, JSONB, NULL on single-run hands. The engine writes it at
+  settlement; the client mapper prefers it and falls back to parsing the
+  `rit_board_N:` pseudo-actions on pre-column rows. `rit_boards IS NOT NULL`
+  is now the exact predicate for "this hand ran multiple boards".
+- The pseudo-entries are FILTERED from the mapped action list — they leaked
+  into every replay's action feed as a bogus system entry.
+- Hand replay renders every RIT board as a labeled RUN row from the river
+  step onward — and a pre-existing replay bug was fixed along the way:
+  production rows store board cards as engine STRINGS ('8spades'), which the
+  replay's card converter didn't handle, so every hand_history replay board
+  rendered as Ace-of-Spades placeholders.
+- Dead code removed: the RunItTwiceBoard component (zero call sites,
+  hardcoded 2-player model). The uppercase RIT\_\* masterBus re-broadcast
+  cases were AUDITED AND KEPT — the event type is uppercased before that
+  switch, so they do fire (an earlier audit note claiming they were dead
+  was wrong).
+
 ## 3. Explicitly out of scope
 
 - No PokerBros assets, artwork or text is copied; visual layout is our own.
-- `hand_history` first-class RIT board column (boards persist as
-  `rit_board_N:` actions; parser now reads boards 2 AND 3).

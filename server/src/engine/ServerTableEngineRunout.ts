@@ -991,6 +991,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // hand's community cards and append each extra runout to the action log,
     // so the full multi-board hand is reconstructable from the record.
     this.currentHandCommunityCards = boards[0].map((c) => `${c.rank}${c.suit}`);
+    // COMPLETENESS PASS 2026-08-26: boards 2..N go to hand_history.rit_boards
+    // first-class at settlement; the pseudo-actions below stay for replayers
+    // of the 5M rows that predate the column.
+    this.currentHandRitExtraBoards = boards.slice(1).map((b) => b.map((c) => `${c.rank}${c.suit}`));
     for (let b = 1; b < boards.length; b++) {
       this.currentHandActions.push({
         seat: 0,
@@ -1098,6 +1102,50 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       totalDistribution.set(pid, scaledCents[i] / 100);
     });
 
+    /**
+     * ── TOURNAMENT BACKSTOP: chips are INTEGERS (2026-08-26) ──
+     *
+     * RIT is CASH-ONLY by Dan's ruling (2026-08-26): "run it twice or 3
+     * times is a cash game only area. it should never be in MTT, SPINS OR
+     * HEADS UP." The Base configure gate refuses to enable RIT on any
+     * tournament table, so this branch is UNREACHABLE in a healthy system.
+     *
+     * It stays as defense in depth, because the failure mode is real money:
+     * per-board splits produce fractional amounts while
+     * tournament_players.chips is INTEGER — the sync floors (tables.ts), and
+     * live 3-run tournament hand 41627f9a split 1760.88 into fractional
+     * chips and destroyed the difference before the gate existed. If the
+     * gate ever regresses, this branch floors every winner's credited total
+     * to whole chips and hands the remaining odd chips out one at a time
+     * CLOCKWISE FROM THE DEALER (distributePot's own chop convention),
+     * conserving the pot to the chip instead of destroying the fraction.
+     */
+    const ritIsTournamentHand =
+      !!this.tableInfo?.tournament_id || this.tableInfo?.game_type === 'tournament';
+    if (ritIsTournamentHand && totalDistribution.size > 0) {
+      const seatOf = new Map<string, number>();
+      for (const p of state.players) seatOf.set(p.user_id, p.seat);
+      const maxSeat = Math.max(...state.players.map((p) => p.seat), dealerSeat ?? 0) + 1;
+      const clockwiseFromDealer = (seat: number) => {
+        const d = (seat - (dealerSeat ?? 0) + maxSeat * 10) % maxSeat;
+        // The dealer itself sorts LAST — the first seat to the dealer's left
+        // gets the first odd chip, standard live-poker convention.
+        return d === 0 ? maxSeat : d;
+      };
+      const entries = [...totalDistribution.entries()].sort(
+        (a, b) =>
+          clockwiseFromDealer(seatOf.get(a[0]) ?? 0) - clockwiseFromDealer(seatOf.get(b[0]) ?? 0)
+      );
+      const totalChips = Math.round(entries.reduce((s, [, amt]) => s + amt, 0));
+      const floors = entries.map(([, amt]) => Math.floor(amt + 1e-9));
+      let oddChips = totalChips - floors.reduce((s, f) => s + f, 0);
+      for (let i = 0; i < entries.length && oddChips > 0; i++) {
+        floors[i] += 1;
+        oddChips -= 1;
+      }
+      entries.forEach(([pid], i) => totalDistribution.set(pid, floors[i]));
+    }
+
     // POKERBROS PARITY 2026-08-26: publish the unmerged per-(run, pot)
     // breakdown through the SAME presentation state the single-board path
     // uses, so pot_win carries pot_awards groups ordered run 1 → run N,
@@ -1115,6 +1163,46 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       board: a.board,
       handDescription: a.hand ? describeHand(a.hand) : undefined,
     }));
+    // Tournament chips are whole numbers on screen too: round each display
+    // share to integer chips first — the per-player repair below then folds
+    // any drift into the largest share, and since the credited totals are
+    // integers (odd-chip block above) every "+N" float and run label lands
+    // on a whole number.
+    if (ritIsTournamentHand) {
+      for (const a of this.currentHandPerPotAwards) a.amount = Math.round(a.amount);
+    }
+    // EXACTNESS PASS 2026-08-26: per-player penny repair. Each display share
+    // above was rounded independently, so a player's shares could sum a cent
+    // or two away from their CREDITED total (scaleWinnerCentsForRake). The
+    // "+N" floats ride these shares and the pot counter decrements by them —
+    // a drifted cent shows a player floats that do not add up to what their
+    // stack actually rose, and leaves the pot pill parked at 0.01. Repair:
+    // fold each player's drift into their single largest share, so every
+    // player's display shares sum EXACTLY to their credited total (and the
+    // grand total therefore matches the net pot to the cent).
+    {
+      const shareCentsByPlayer = new Map<string, number>();
+      for (const a of this.currentHandPerPotAwards) {
+        shareCentsByPlayer.set(
+          a.userId,
+          (shareCentsByPlayer.get(a.userId) ?? 0) + Math.round(a.amount * 100)
+        );
+      }
+      for (const [pid, credited] of totalDistribution) {
+        const creditedCents = Math.round(credited * 100);
+        const displayCents = shareCentsByPlayer.get(pid) ?? 0;
+        const driftCents = creditedCents - displayCents;
+        if (driftCents === 0) continue;
+        let largest: (typeof this.currentHandPerPotAwards)[number] | null = null;
+        for (const a of this.currentHandPerPotAwards) {
+          if (a.userId !== pid) continue;
+          if (!largest || a.amount > largest.amount) largest = a;
+        }
+        if (largest) {
+          largest.amount = Math.max(0, (Math.round(largest.amount * 100) + driftCents) / 100);
+        }
+      }
+    }
     // Per-run winner labels (who took each run, with what, for how much) —
     // the run headers on the felt read these off pot_win's winners_by_board.
     {

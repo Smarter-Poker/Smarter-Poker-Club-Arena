@@ -211,6 +211,44 @@ no row touched.
   class, so that test was updated in the same commit (house rule 8) and now also asserts
   the dealing loop no longer carries a park of its own.
 
+### CONFIRMED ON PRODUCTION — the 18:55 break, 2026-08-27
+
+Engine build `a64e2a22` (contains both PR #1461 and PR #1470), verified serving on
+`https://engine.smarter.poker` at 18:30:47 by the deploy's own version gate.
+
+`tournaments` rows, live:
+
+| field                           | Prime Time Main Event (NLH) | Evening Mystery Bounty (PLO5) |
+| ------------------------------- | --------------------------- | ----------------------------- |
+| `break_started_at`              | **18:55:00.002**            | **18:55:00.175**              |
+| `break_ends_at` (stamped later) | 19:00:58.378                | 19:00:58.495                  |
+| last-hand wait                  | 58.4s                       | 58.3s                         |
+
+So: announced on the :55 to the millisecond, `break_ends_at` left NULL for the
+58 seconds the last hands took, then a full five minutes on top — a 5m58s break
+end to end, which is the "up to like a 6 minute break" Dan described.
+
+Hands per minute across the window:
+
+| minute (UTC) | 18:50 | 18:51 | 18:52 | 18:53 | 18:54 | **18:55** | **18:56** | **18:57** | **18:58** | **18:59** | **19:00** | 19:01 | 19:02 |
+| ------------ | ----- | ----- | ----- | ----- | ----- | --------- | --------- | --------- | --------- | --------- | --------- | ----- | ----- |
+| hands        | 14    | 11    | 12    | 12    | 15    | **11**    | **0**     | **0**     | **0**     | **0**     | **0**     | 5     | 5     |
+
+A hard zero for the whole break, where the 48-hour pre-fix profile always left
+stragglers (:56=54, :57=21, :58=34, :59=33). Play resumed at 19:01, immediately
+after the 19:00:58 end time. Both rows came off the break cleanly — `on_break`
+false, `break_ends_at` NULL — so nothing was stranded.
+
+### Still to be observed: Spin and Heads-Up
+
+The Spin and Heads-Up boards were **not running** at the time of this verification
+and had not dealt a hand for hours (last SPIN hand 12:08 UTC, last SNG hand 01:50
+UTC, while 33 Spin and 16 Heads-Up rows sat in REGISTERING). That is a separate
+fault, unrelated to this work and predating it — but it means the Spin/HU half of
+this fix is proven by code and tests, not yet by a live break. The first hour a
+Spin or Heads-Up is actually running, re-run the minute-of-hour query below and
+confirm those rows take the MTT shape.
+
 ### What to check on production after deploy
 
 Re-run the minute-of-hour query. SPIN and SNG should develop the MTT shape — a spike at

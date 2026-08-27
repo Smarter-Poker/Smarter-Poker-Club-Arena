@@ -175,6 +175,36 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       return { success: false, error: 'No RIT state found' };
     }
 
+    /**
+     * ── THE CHOOSER CANNOT "ACCEPT" (2026-08-27) ─────────────────────────
+     *
+     * Phase 1 below required `runs !== undefined`. A chooser client that
+     * POSTed `{ response: 'accept' }` with no `runs` therefore fell through
+     * into phase 2, was recorded as an ACCEPTANCE, and left `chooserDecided`
+     * false forever — so tryCompleteAcceptance could never complete, the panel
+     * sat on "Waiting For Other Players" for everyone, and the offer died at
+     * the 25s auto-decline. A deadlock that looks exactly like a broken
+     * feature, produced by a request the server answered `success: true`.
+     *
+     * The alternative fix — treat a bare accept as picking the default run
+     * count — was rejected. Consent here is consent to run it N TIMES (see the
+     * CONSENT-RACE FIX in RunItTwiceEngine): inventing N on the chooser's
+     * behalf puts boards on the felt that nobody chose, which is Defect A
+     * again in a different costume. So this fails LOUDLY and tells the client
+     * exactly what to send instead. The offer is untouched and still live, so
+     * a corrected request lands normally.
+     *
+     * A chooser DECLINE with no runs is left alone: it falls through to phase
+     * 2's decline branch, which is the correct and already-announced outcome
+     * (identical in effect to picking 1).
+     */
+    if (userId === state.chooserPlayerId && runs === undefined && response === 'accept') {
+      return {
+        success: false,
+        error: 'Chooser must send runs (1, 2 or 3), not accept',
+      };
+    }
+
     // Phase 1: Chooser picks how many boards
     if (userId === state.chooserPlayerId && runs !== undefined) {
       this.runItTwiceEngine.chooserDecides(this.tableId, userId, runs);
@@ -441,6 +471,30 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   protected handleAllInRunout(event: HandEvent, players: SeatedPlayer[]): void {
     if (event.type !== 'ALL_IN_RUNOUT' || !this.handController) return;
 
+    /**
+     * ── RE-READ THE RIT CONFIGURATION BEFORE DECIDING (2026-08-27) ────────
+     *
+     * `runItTwiceEngine.configure` used to be called exactly once, in
+     * ServerTableEngineBase.start(). Everything the table said about run it
+     * twice and insurance after that point was invisible to the engine until
+     * the process restarted — which is how production hand #3046089 dealt
+     * three boards off a configuration snapshot older than the table's own
+     * settings. This is the last instruction before the offer decision, so
+     * what the table says and what the engine does cannot disagree.
+     *
+     * It re-reads the configuration; it does NOT decide the RIT/insurance
+     * ordering. `insurance_enabled` no longer switches run-it-twice off (Dan
+     * 2026-08-26 — see applyRunItTwiceConfig). On a table with both on, the
+     * RIT question comes first and insurance picks up the single run; that is
+     * `ritFirst` below, a few lines down, and it is the only place the two
+     * features are sequenced.
+     *
+     * See applyRunItTwiceConfig() for what it can and cannot refresh
+     * (`this.tableInfo` is itself a per-process snapshot).
+     */
+    this.applyRunItTwiceConfig();
+    this.wireRunItTwiceEvents();
+
     const board = (event as any).board as import('../types.js').Card[];
     const pot = (event as any).pot as number;
     const allInPlayers = (event as any).players as import('../types.js').SeatPlayer[];
@@ -649,7 +703,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           chooserPlayerId,
           allPlayerIds,
           pot,
-          maxRuns: this.runItTwiceEngine.getChosenRuns(this.tableId),
+          // The CEILING the offer permits, not a count anyone consented to.
+          // Read from getChosenRuns() until 2026-08-27 — which now answers the
+          // consent question and is 1 on a live offer, so the panel would have
+          // advertised a single board. maxRunsAllowed is the table's maximum.
+          maxRuns: this.runItTwiceEngine.maxRunsAllowed(this.tableId),
           timeoutSeconds: ritTimeoutSeconds,
           deadline_ts: this.ritOfferDeadlineTs,
         });
@@ -934,6 +992,50 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    *  followed by the timeout branch cannot toast the same player twice. */
   private ritSingleRunNotifiedHand = -1;
 
+  /** True once wireRunItTwiceEvents has registered its forwarder. */
+  private ritEventsWired = false;
+
+  /**
+   * ── THE RIT ENGINE'S OWN EVENTS REACH THE WIRE (2026-08-27) ─────────────
+   *
+   * `new RunItTwiceEngine((event) => console.log(...))` in
+   * ServerTableEngineBase is the whole delivery mechanism for the engine's
+   * lifecycle events, and it is a log line. The insurance engine two
+   * declarations below forwards ACCEPTED / DECLINED / SETTLED to the hub; RIT
+   * forwarded nothing, so the DeadlineScheduler's auto-decline — the one RIT
+   * outcome no other code path announces — died in the process.
+   *
+   * WHAT IS FORWARDED, and why only this:
+   *
+   *   RIT_OFFERED   already on the wire as `rit_offer` (richer: chooser,
+   *                 deadline_ts, pot, allPlayerIds)
+   *   RIT_ACCEPTED  already on the wire as `rit_all_accepted` / `rit_mandatory`
+   *   RIT_RESOLVED  already on the wire as `rit_result` (with the boards)
+   *   RIT_DECLINED  forwarded ONLY when reason === 'timeout'
+   *
+   * Forwarding the first three would double-emit, and each engine event
+   * carries strictly less than the broadcast it duplicates. A PLAYER decline
+   * is likewise already announced, by respondToRIT, with the correct
+   * `player_declined` reason and the correct player — forwarding that too
+   * would race it and win with a worse reason. So this maps exactly one
+   * unannounced engine event onto the EXISTING `rit_single_run` name, through
+   * emitRitSingleRun, whose per-hand guard then makes the redundant
+   * `no_agreement` that waitForRITResponse emits ~250ms later a no-op. One
+   * notice per hand, no new client vocabulary.
+   *
+   * Registered through addEventListener rather than by assigning onEvent, so
+   * the constructor callback and the tests that replace it both keep working.
+   */
+  protected wireRunItTwiceEvents(): void {
+    if (this.ritEventsWired) return;
+    this.ritEventsWired = true;
+    this.runItTwiceEngine.addEventListener((event) => {
+      if (event.type !== 'RIT_DECLINED') return;
+      if ((event as Record<string, unknown>).reason !== 'timeout') return;
+      this.emitRitSingleRun('no_agreement');
+    });
+  }
+
   /**
    * Announce that a Run It Twice offer ended in ONE board, and why.
    *
@@ -943,8 +1045,27 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * completely silent on the wire. All three are legitimate poker; none of them
    * should look like a broken feature.
    */
+  /**
+   * 2026-08-27: two more reasons, because two more paths silently ran one
+   * board. `no_consent_recorded` is the resolver finding fewer than two
+   * consented runs (Defect A's blast radius: a cleared, missing or unaccepted
+   * offer must run once and SAY so); `deck_too_short` is the resolver refusing
+   * to deal N boards it does not have cards for.
+   *
+   * Both are new strings on an existing event. TablePage's rit_single_run
+   * handler maps the three known reasons to their own message and falls
+   * through to "Running It Once. Not Everyone Agreed In Time." for anything
+   * else, so an unrecognised reason degrades to the generic notice rather than
+   * to silence — which is the whole point of the event. Giving these two their
+   * own copy is a client change and is deliberately not made here.
+   */
   protected emitRitSingleRun(
-    reason: 'chooser_chose_one' | 'player_declined' | 'no_agreement',
+    reason:
+      | 'chooser_chose_one'
+      | 'player_declined'
+      | 'no_agreement'
+      | 'no_consent_recorded'
+      | 'deck_too_short',
     playerId?: string
   ): void {
     if (this.ritSingleRunNotifiedHand === this.handCount) return;
@@ -984,6 +1105,18 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // resolved across multiple boards (see currentHandRitBoards).
     this.currentHandRitBoards = runs >= 2 ? runs : 0;
     if (runs < 2) {
+      /**
+       * Fewer than two CONSENTED runs. Since 2026-08-27 getChosenRuns() is 1
+       * whenever there is no accepted offer on this table, so this branch is
+       * also the landing point for the missing-consent case that used to deal
+       * the table MAXIMUM instead (production hand #3046089, three boards, no
+       * prompt shown to anybody).
+       *
+       * It said nothing before. A player who had just been asked to run it
+       * twice saw one board and no explanation, which is indistinguishable
+       * from the feature being broken.
+       */
+      this.emitRitSingleRun('no_consent_recorded');
       // Dan 2026-08-20: continueRunout() is the INSTANT synchronous loop —
       // flop, turn and river all land in one tick with no equity updates. A
       // hand that ends up running ONCE must still be watchable, exactly like
@@ -1006,7 +1139,24 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         ),
         'ServerTableEnginethistableId.RIT'
       );
-      this.handController.continueRunout();
+      /**
+       * 2026-08-27: this path had BOTH silent-fallback defects at once. It
+       * announced nothing — players who had all consented to two or three
+       * boards got one, with no event to explain it — and it finished the hand
+       * through continueRunout(), the instant synchronous loop that lands
+       * flop, turn and river in a single tick with no equity refresh. Every
+       * other "we are running once after all" path was switched to the paced
+       * runout on 2026-08-20; this one was missed.
+       *
+       * The RIT VERIFIER also has to be told: currentHandRitBoards was set to
+       * `runs` a few lines above on the assumption that N boards were about to
+       * be dealt. One board is dealt. Left as it was, settlement would record
+       * a multi-board hand that never happened.
+       */
+      this.currentHandRitBoards = 0;
+      this.currentHandRitBaseBoardCount = 0;
+      this.emitRitSingleRun('deck_too_short');
+      void this.pacedAllInRunout(allInPlayers, this.handController.getState().pot);
       return;
     }
 

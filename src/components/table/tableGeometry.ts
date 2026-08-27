@@ -1342,7 +1342,34 @@ export function chipStepWidthPct(seat: Pos, size: Size = NOMINAL_SCALER, pod?: S
  * result is in percentages), and TablePage.css locks that aspect at every
  * breakpoint, so the default is exact in production rather than approximate.
  */
+/* MEMOISED (2026-08-27). Pure in (seat, size, pod), and now genuinely
+   expensive: since the bet became a rectangle rather than a disc, far more
+   seats fall through the direct placement into the swing search, which walks up
+   to 120 candidates and tests each against the chips, the masthead and the seat
+   box. `DealerButton.tsx` calls this on every render and on every resize
+   observation, and `tests/unit/mobileBoardAndActionBar.test.ts` sweeps a
+   thousand board widths across three tables and nine rings — a quarter of a
+   million calls, which is what took that suite past its timeout and is how the
+   cost was noticed at all.
+
+   Bounded, and cleared wholesale rather than evicted one at a time: the keys
+   are (ring x table size), so the live set is tiny and a cap this size is only
+   ever reached by a test sweeping synthetic geometry. */
+const buttonPositionCache = new Map<string, Pos>();
+const BUTTON_CACHE_MAX = 4096;
+
 export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod?: Size): Pos {
+  const cacheKey =
+    seat.x + ',' + seat.y + '|' + size.w + ',' + size.h + '|' + (pod ? pod.w + ',' + pod.h : '-');
+  const cached = buttonPositionCache.get(cacheKey);
+  if (cached) return cached;
+  const computed = dealerButtonPositionUncached(seat, size, pod);
+  if (buttonPositionCache.size >= BUTTON_CACHE_MAX) buttonPositionCache.clear();
+  buttonPositionCache.set(cacheKey, computed);
+  return computed;
+}
+
+function dealerButtonPositionUncached(seat: Pos, size: Size = NOMINAL_SCALER, pod?: Size): Pos {
   const c = feltCenter();
   const s = sq(seat, size);
   const t = sq(c, size);

@@ -46,11 +46,13 @@
  * deliberate — see the note on `netOf` below.
  */
 
-import React, { useMemo, useState, useEffect } from 'react';
-import type { HandRecord } from './HandHistoryPanel';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import type { HandRecord, RunBoards } from './HandHistoryPanel';
+import { runBoardsFor } from './HandHistoryPanel';
 import HandDetailView from '../handdetail/HandDetailView';
 import { useHandReplayModel } from '../../hooks/useHandReplayModel';
 import './HandDetailModal.css';
+import { gameTypeLabel } from '../../utils/handFormat';
 
 export interface HandDetailModalProps {
   isOpen: boolean;
@@ -84,15 +86,62 @@ export interface HandDetailModalProps {
 const SUIT_GLYPH: Record<string, string> = { s: '♠', h: '♥', d: '♦', c: '♣' };
 const RED_SUITS = new Set(['h', 'd']);
 
-function MiniCard({ card }: { card: string }) {
+function MiniCard({ card, shared = false }: { card: string; shared?: boolean }) {
   if (!card || card.length < 2) return <span className="hdm-card hdm-card--back" />;
   const rank = card.slice(0, -1).toUpperCase().replace('T', '10');
   const suit = card.slice(-1).toLowerCase();
   return (
-    <span className={`hdm-card${RED_SUITS.has(suit) ? ' hdm-card--red' : ''}`}>
+    <span
+      className={`hdm-card${RED_SUITS.has(suit) ? ' hdm-card--red' : ''}${
+        shared ? ' hdm-card--shared' : ''
+      }`}
+    >
       <span className="hdm-card__rank">{rank}</span>
       <span className="hdm-card__suit">{SUIT_GLYPH[suit] || '?'}</span>
     </span>
+  );
+}
+
+/**
+ * Every board the hand ran, one row per run, board 1 first.
+ *
+ * Dan 2026-08-27: "it even glitched in the previous hands, hand summary."
+ * Production hand #3046089 ran THREE boards; the server wrote all three and
+ * this modal had no reference to `rit_boards` anywhere, so a player opening it
+ * saw board 1 alone with nothing to say the hand had run more than once.
+ *
+ * The runs share every card dealt before the all-in, so those are dimmed and
+ * only the divergence carries full contrast — three near-identical rows of
+ * five cards are otherwise something the player has to diff by eye.
+ *
+ * WHAT IS DELIBERATELY NOT HERE: which run each player won. The stored winner
+ * rows carry one aggregate amount and one hand name for the whole hand, with
+ * no run index on them, so per-board attribution is not recoverable from the
+ * record. The boards are shown and the collected totals are labelled as
+ * covering every run. Splitting them across the boards would be a guess
+ * presented as a result.
+ */
+function RunBoardsBlock({ runs }: { runs: RunBoards }) {
+  return (
+    <div className="hdm-street hdm-runs">
+      <div className="hdm-street__head">
+        <span className="hdm-street__name">Run It Twice</span>
+        <span className="hdm-runs__count">{runs.boards.length} Boards</span>
+      </div>
+      {runs.boards.map((board, bi) => (
+        <div className="hdm-run" key={bi}>
+          <span className="hdm-run__badge">RUN {bi + 1}</span>
+          <span className="hdm-cards">
+            {board.map((c, ci) => (
+              <MiniCard key={ci} card={c} shared={ci < runs.sharedCount} />
+            ))}
+          </span>
+        </div>
+      ))}
+      <div className="hdm-runs__note">
+        Boards Share The Cards Dealt Before The All In. Collected Totals Cover Every Run.
+      </div>
+    </div>
   );
 }
 
@@ -119,10 +168,14 @@ function HiddenCards({ count = 2 }: { count?: number }) {
   );
 }
 
+/**
+ * This tab shows sub-chip amounts, so it keeps its own two-decimals-under-one
+ * rule rather than the shared `money`. What it does NOT keep is its own idea
+ * of a non-number: `Math.abs(NaN) >= 1` is false, so it used to fall through
+ * to `NaN.toFixed(2)` and print the string "NaN" into a chip figure while the
+ * tab beside it printed 0.00 for the same value.
+ */
 function fmt(n: number): string {
-  // `Math.abs(NaN) >= 1` is false, so this used to fall through to
-  // `NaN.toFixed(2)` and print the string "NaN" into a chip figure. Every
-  // other money formatter in this feature is NaN-safe by construction.
   const v = Number.isFinite(n) ? n : 0;
   const abs = Math.abs(v);
   if (abs >= 1) return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
@@ -134,26 +187,6 @@ function fmt(n: number): string {
    next door printed "Discard" for the same street (HandHistoryPanel's
    getStreetLabel). Any street name added to HandHistoryStreet must gain a label
    in both places or one surface starts leaking column names at the player. */
-/**
- * The game-type chip beside the stakes.
- *
- * `HandDetailView` has always rendered one; only the BBJ caller passed it, so
- * the table's own rundown showed no game type at all even though the record
- * carries it. Same shape as the winners list uses, so both surfaces name a
- * variant the same way.
- */
-function gameTypeBadge(variant: string | null | undefined): string | null {
-  const v = String(variant || '')
-    .toLowerCase()
-    .trim();
-  if (!v) return null;
-  if (v === 'nlh') return 'NLH';
-  if (v === 'flh') return 'FLH';
-  if (v === 'short_deck' || v === 'shortdeck') return 'Short Deck';
-  if (v === 'pineapple') return 'Pineapple';
-  if (/^(plo|flo)\d*8?$/.test(v)) return v.toUpperCase();
-  return v.replace(/_/g, ' ').replace(/\b([a-z])/g, (c) => c.toUpperCase());
-}
 
 const STREET_LABEL: Record<string, string> = {
   preflop: 'PreFlop',
@@ -177,9 +210,42 @@ export function HandDetailModal({
   const [index, setIndex] = useState(0);
   const [tab, setTab] = useState<'summary' | 'detail'>('detail');
 
+  /* Drag-to-dismiss for the mobile sheet, matching common/BottomSheet: past
+     100px of downward travel the sheet closes, anything less springs back.
+     The transform is applied only while a drag is in flight, so the CSS
+     open animation is untouched on every other frame. */
+  const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const dragStartY = useRef(0);
+
+  const onGrabDown = useCallback((e: React.PointerEvent) => {
+    dragStartY.current = e.clientY;
+    setDragging(true);
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+  }, []);
+
+  const onGrabMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!dragging) return;
+      const dy = e.clientY - dragStartY.current;
+      if (dy > 0) setDragY(dy);
+    },
+    [dragging]
+  );
+
+  const onGrabUp = useCallback(() => {
+    setDragging(false);
+    if (dragY > 100) onClose();
+    setDragY(0);
+  }, [dragY, onClose]);
+
   // Snap back to the newest hand each time the modal opens.
   useEffect(() => {
-    if (isOpen) setIndex(0);
+    if (isOpen) {
+      setIndex(0);
+      setDragY(0);
+      setDragging(false);
+    }
   }, [isOpen]);
 
   const panelRef = React.useRef<HTMLDivElement | null>(null);
@@ -292,6 +358,31 @@ export function HandDetailModal({
       }));
   }, [hand, netOf]);
 
+  /* Null on an ordinary single-run hand, so nothing changes for one. */
+  const runs = useMemo(() => (hand ? runBoardsFor(hand) : null), [hand]);
+
+  /* Only while a drag is in flight. An unconditional inline transform would
+     override the CSS slide-in and the sheet would appear without animating. */
+  const sheetStyle: React.CSSProperties | undefined = dragY
+    ? {
+        transform: `translateY(${dragY}px)`,
+        transition: dragging ? 'none' : 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+      }
+    : undefined;
+
+  const grabHandle = (
+    <div
+      className="hdm-grab"
+      aria-hidden="true"
+      onPointerDown={onGrabDown}
+      onPointerMove={onGrabMove}
+      onPointerUp={onGrabUp}
+      onPointerCancel={onGrabUp}
+    >
+      <span />
+    </div>
+  );
+
   if (!isOpen) return null;
 
   /**
@@ -304,14 +395,18 @@ export function HandDetailModal({
   if (!hand) {
     return (
       <div className="hdm-overlay" onClick={onClose}>
+        {/* The dialog is the PANEL, not the overlay. They were the same element,
+            so the thing carrying role="dialog" was also the click-out target. */}
         <div
           className="hdm-panel"
           role="dialog"
           aria-modal="true"
           aria-label="Hand detail"
           tabIndex={-1}
+          style={sheetStyle}
           onClick={(e) => e.stopPropagation()}
         >
+          {grabHandle}
           <div className="hdm-header">
             <span className="hdm-title">HAND DETAIL</span>
             <div className="hdm-header__actions">
@@ -339,6 +434,10 @@ export function HandDetailModal({
   const displayPos = total - index; // 1..N, N = newest
 
   return (
+    /* The overlay closes on tap and the panel stops the bubble, which was
+       already true — but at <=640px the panel was `width:100vw; height:100%`,
+       so there was no overlay left to tap. The sheet is three quarters of the
+       height now and the exposed quarter above it is a real target. */
     <div className="hdm-overlay" onClick={onClose}>
       {/* The dialog is the PANEL, not the overlay. They were the same element,
           so the thing carrying role="dialog" was also the click-out target. */}
@@ -349,8 +448,10 @@ export function HandDetailModal({
         aria-label="Hand detail"
         tabIndex={-1}
         ref={panelRef}
+        style={sheetStyle}
         onClick={(e) => e.stopPropagation()}
       >
+        {grabHandle}
         {/* ── Header ── */}
         <div className="hdm-header">
           <span className="hdm-title">HAND DETAIL</span>
@@ -433,14 +534,29 @@ export function HandDetailModal({
               model={replay}
               currentUserId={heroId}
               currentUserName={currentUserName}
-              badge={gameTypeBadge(hand.gameType)}
+              badge={gameTypeLabel(hand.gameType)}
             />
           ) : tab === 'detail' && (replayState === 'loading' || replayState === 'idle') ? (
-            <div className="hdm-skeletons">
-              {[0, 1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="hdm-skeleton" />
-              ))}
-            </div>
+            <>
+              {/* THE BOARDS ARE NOT PART OF WHAT WE ARE WAITING FOR. The
+                  skeleton exists because the action log and every figure in it
+                  are reconstructed from the raw row, and showing the legacy
+                  walk's known-wrong numbers before that lands was the bug it
+                  was added to fix. The runs are different in kind: they come
+                  off `hand` — the record already on screen — and they are
+                  cards, not computed money, so nothing about them can be
+                  revised by the fetch. Hiding them here is what made hand
+                  #3046089 show one board out of three again, which is the
+                  report this block was written for. `HandDetailView` draws
+                  them per street once `replay` resolves, so this renders only
+                  while it has not. */}
+              {runs && <RunBoardsBlock runs={runs} />}
+              <div className="hdm-skeletons">
+                {[0, 1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="hdm-skeleton" />
+                ))}
+              </div>
+            </>
           ) : tab === 'detail' ? (
             <>
               {/* FALLBACK ONLY. Reached when the raw row cannot be read (an RLS
@@ -502,6 +618,11 @@ export function HandDetailModal({
                   );
                 });
               })()}
+              {/* Every board the hand ran. Production hand #3046089 ran three
+                  and this modal showed one. Kept here, after the street list
+                  and inside the same fallback, exactly where it sat before the
+                  street walk was replaced. */}
+              {runs && <RunBoardsBlock runs={runs} />}
               <div className="hdm-potline">
                 <span>Pot</span>
                 <span>Main({fmt(hand.potTotal)})</span>
@@ -522,6 +643,9 @@ export function HandDetailModal({
               <div className="hdm-potline hdm-potline--top">
                 <span>Main Pot : {fmt(hand.potTotal)}</span>
               </div>
+              {/* Hand Summary is the tab Dan had open when he reported the
+                  run-it-twice glitch, so the boards lead it. */}
+              {runs && <RunBoardsBlock runs={runs} />}
               {summaryRows.length === 0 && (
                 <div className="hdm-empty">No Showdown - The Pot Was Taken Without A Reveal.</div>
               )}

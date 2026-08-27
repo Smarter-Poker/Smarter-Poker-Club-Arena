@@ -68,7 +68,11 @@ export function useHandReplayModel(handId: string | null | undefined): {
   const [model, setModel] = useState<ReplayModel | null>(null);
   const [state, setState] = useState<HandReplayState>('idle');
   // Paging back and forth through a session must not refetch the same hand.
-  const cache = useRef(new Map<string, ReplayModel>());
+  /* Lazily created. `useRef(new Map())` evaluates its argument on EVERY
+     render and throws all but the first away - invisible functionally, but
+     this hook lives in a modal the player pages through hand by hand. */
+  const cache = useRef<Map<string, ReplayModel> | null>(null);
+  if (cache.current === null) cache.current = new Map<string, ReplayModel>();
 
   useEffect(() => {
     if (!handId) {
@@ -77,7 +81,7 @@ export function useHandReplayModel(handId: string | null | undefined): {
       return;
     }
 
-    const cached = cache.current.get(handId);
+    const cached = cache.current!.get(handId);
     if (cached) {
       setModel(cached);
       setState('ready');
@@ -158,7 +162,7 @@ export function useHandReplayModel(handId: string | null | undefined): {
           pots: (row.pots as never[]) ?? null,
         });
 
-        cache.current.set(handId, built);
+        cache.current!.set(handId, built);
         setModel(built);
         setState('ready');
       } catch (e) {

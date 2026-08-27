@@ -2601,15 +2601,8 @@ export const SeatSlot = memo(
     if (pp.showCards !== np.showCards) return false;
     if (pp.avatar !== np.avatar) return false;
     /**
-     * AUDIT 2026-08-25 — the equipped cosmetics were compared by nothing.
-     *
-     * `frame` and `aura` are declared on SeatPlayer with the note "refreshed
-     * live by the table's profiles subscription", and `<AvatarCosmetics>` is
-     * rendered from them. The subscription rewrites the player object and
-     * changes ONLY these two fields, so the memo returned true and the seat
-     * never repainted: equipping a frame changed nothing at the table until
-     * something else about that player moved. The claim in the doc comment was
-     * simply not implemented on this side of the boundary.
+     * Compare cosmetics (frame and aura).
+     * These are refreshed live by the table's profiles subscription.
      */
     if (pp.frame !== np.frame) return false;
     if (pp.aura !== np.aura) return false;

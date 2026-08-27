@@ -107,8 +107,15 @@ describe('every BEM className resolves on the route that renders it', () => {
    * The baseline exists so the number can only ever go DOWN: a new unresolved
    * class fails this test, and fixing one requires lowering the number in the
    * same commit. Same rule the cron governance check uses in the World Hub.
+   *
+   * 2026-08-27: 43 -> 41. `hdm-street__name` was three of them — two already
+   * here, and the Run It Twice board block added a third. It is the street
+   * label inside `.hdm-street__head`, so it was inheriting the head's type and
+   * looked right by accident; `HandDetailModal.css` now defines it, and all
+   * three references resolve. Baseline lowered in the same commit, per the
+   * paragraph above.
    */
-  const BASELINE = 43;
+  const BASELINE = 41;
 
   it(`has no more than ${BASELINE} unresolved BEM class names`, () => {
     expect(unresolved.length).toBeLessThanOrEqual(BASELINE);

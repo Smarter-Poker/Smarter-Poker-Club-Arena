@@ -63,6 +63,55 @@ const TABLES: Record<string, Size> = {
 };
 
 const RINGS = SEAT_LAYOUTS;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE COMMUNITY BOARD, AS THE STYLESHEET ACTUALLY DRAWS IT
+   ═══════════════════════════════════════════════════════════════════════════
+
+   `.table-surface .community-area` is `width: 95%` of `.table-surface`, with
+   `left: 50%` and `top: 42.5%` OF THE FELT and a translate(-50%, -50%). Five
+   cards at aspect-ratio 64/92 share that row.
+
+   ── THE AXIS CONVERSION WAS UPSIDE DOWN (fixed 2026-08-27) ─────────────────
+   This rectangle used to be built as
+
+       const cardW = (0.68 * FELT_WINDOW.width) / 5;              // % of WIDTH
+       const boardHalfH = ((cardW * 92) / 64 / 2) * (1000 / 605);
+
+   and hung from `feltCenter()`. Both halves were wrong in the same direction —
+   they made the modelled board far bigger than the painted one:
+
+     * a card's HEIGHT in percent-of-width, turned into percent-of-height, must
+       be MULTIPLIED by w/h (605/1000 = 0.605), not by h/w. Using 1000/605
+       overstated the height by (1000/605)^2 = 2.73x. A 68% board's cards are
+       9.7% of the scaler's height; the model claimed 26.5%.
+     * `feltCenter().y` is 49.05% of the scaler. The board is not centred on the
+       felt — it hangs from `.community-area`'s own anchor, 43.03%. The model
+       was six points low as well as three times too tall.
+
+   Being over-conservative is not free. It is what stopped the felt board taking
+   the last point of width when the seats were still at the board's height, and
+   an over-tall model makes a correct layout look like a collision — which is
+   the failure that costs an afternoon, because the number it prints is real and
+   the rectangle it printed it against is not. */
+const BOARD_FELT_FRACTION = 0.95;
+/** `.table-surface .community-cards__container { --cc-card-gap }` on a phone. */
+const BOARD_GAP_PX = 2;
+/** `.community-area { top }` — a percentage of the FELT, not of the scaler. */
+const BOARD_TOP_FELT_PCT = 42.5;
+
+function boardRect(table: Size) {
+  const gapPct = (BOARD_GAP_PX / table.w) * 100;
+  const rowW = BOARD_FELT_FRACTION * FELT_WINDOW.width;
+  const cardW = (rowW - 4 * gapPct) / 5;
+  return {
+    centreX: FELT_WINDOW.left + FELT_WINDOW.width / 2,
+    centreY: FELT_WINDOW.top + (BOARD_TOP_FELT_PCT / 100) * FELT_WINDOW.height,
+    halfW: rowW / 2,
+    halfH: (cardW * (92 / 64) * (table.w / table.h)) / 2,
+  };
+}
+
 const mag = (p: Pos) => Math.hypot(p.x, p.y);
 const toPx = (from: Pos, to: Pos, t: Size): Pos => ({
   x: ((to.x - from.x) * t.w) / 100,
@@ -355,20 +404,20 @@ describe('item 13 - one rail, equal for every seat', () => {
        giving one seat a shorter walk." So the rail is short enough for every
        seat, and this asserts what that buys: no seat's chips land on the cards.
 
-       The board is the middle 68% of the felt's width (TablePage.css,
-       `.table-surface .community-cards`), five cards at 64:92, centred. */
-    const c = feltCenter();
-    const boardHalfW = 0.34 * FELT_WINDOW.width;
-    const cardW = (0.68 * FELT_WINDOW.width) / 5;
-    const boardHalfH = ((cardW * 92) / 64 / 2) * (1000 / 605);
+       The board is the middle BOARD_FELT_FRACTION of the felt's width
+       (TablePage.css, `.table-surface .community-area`), five cards at 64:92,
+       centred on the felt's midline and hung from `.community-area`'s own
+       vertical anchor. */
     const chipHalf = 2; // a chip is ~4% of the table's width - see item 8
 
     for (const [label, table] of Object.entries(TABLES)) {
+      const board = boardRect(table);
       for (const [size, ring] of Object.entries(RINGS)) {
         for (const seat of ring) {
           const p = chipRestPosition(seat, table);
-          const onBoardX = Math.abs(p.x - c.x) < boardHalfW + chipHalf;
-          const onBoardY = Math.abs(p.y - c.y) < boardHalfH + chipHalf * (1000 / 605);
+          const onBoardX = Math.abs(p.x - board.centreX) < board.halfW + chipHalf;
+          const onBoardY =
+            Math.abs(p.y - board.centreY) < board.halfH + chipHalf * (table.w / table.h);
           expect(
             onBoardX && onBoardY,
             `${size}-max ${label}: seat ${JSON.stringify(seat)} put chips at ` +

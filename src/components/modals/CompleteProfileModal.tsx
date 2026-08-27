@@ -2,7 +2,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — Complete Profile Modal
  * ═══════════════════════════════════════════════════════════════════════════════
- * Forces users to configure their Poker Alias (and optionally Real Name)
+ * Forces users to configure their Poker Alias, Real Name, and Avatar
  * if they signed in via a provider (Google) that skipped the Hub signup form.
  */
 
@@ -13,8 +13,9 @@ import { sanitizeInput } from '../../utils/sanitizeInput';
 import { reportError } from '../../utils/errorReporter';
 import { STORAGE_KEYS } from '../../lib/storage';
 import styles from './CompleteProfileModal.module.css';
-
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
+import { AvatarGallery } from '../customization/AvatarGallery';
+
 interface CompleteProfileModalProps {
   isOpen: boolean;
   onComplete: () => void;
@@ -27,6 +28,8 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
   const [mounted, setMounted] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [showAvatarGallery, setShowAvatarGallery] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -44,10 +47,18 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
 
   if (!isOpen || !user) return null;
 
+  const hasAvatar = !!user.avatar_url;
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
     setError(null);
+
+    if (!hasAvatar) {
+      setError('Please select an Avatar.');
+      setIsSaving(false);
+      return;
+    }
 
     const safeAlias = sanitizeInput(alias);
     const safeRealName = sanitizeInput(realName) || safeAlias; // Fallback
@@ -95,86 +106,108 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
   };
 
   return (
-    <div className={styles.overlay}>
-      <div
-        className={styles.modal}
-        style={{
-          opacity: mounted ? 1 : 0,
-          transform: mounted ? 'translateY(0)' : 'translateY(8px)',
-          transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-        }}
-      >
-        <header className={styles.header}>
-          <h2>Complete Your Profile</h2>
-        </header>
+    <>
+      <div className={styles.overlay}>
+        <div
+          className={styles.modal}
+          style={{
+            opacity: mounted ? 1 : 0,
+            transform: mounted ? 'translateY(0)' : 'translateY(8px)',
+            transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+          }}
+        >
+          <header className={styles.header}>
+            <h2>Complete Your Profile</h2>
+          </header>
 
-        <div className={styles.content}>
-          <p className={styles.intro}>
-            Welcome To Club Arena! Before You Hit The Tables, Please Choose Your Poker Alias. This
-            Is How Other Players Will Identify You.
-          </p>
+          <div className={styles.content}>
+            <p className={styles.intro}>
+              Welcome To Club Arena! Before You Hit The Tables, Please Choose Your Poker Alias And
+              Avatar.
+            </p>
 
-          <form id="complete-profile-form" onSubmit={handleSave} className={styles.formGroup}>
-            <div className={styles.formGroup}>
-              <label>Poker Alias (Required)</label>
-              <div className={styles.inputWrapper}>
-                <span className={styles.inputIcon}>◆</span>
-                <input
-                  className={styles.input}
-                  placeholder="E.g. SharkPro99"
-                  value={alias}
-                  onChange={(e) => setAlias(e.target.value)}
-                  maxLength={16}
-                  required
-                />
+            <div className={styles.avatarSection}>
+              <label>Profile Avatar (Required)</label>
+              <div className={styles.avatarControls}>
+                <div className={styles.avatarPreview} onClick={() => setShowAvatarGallery(true)}>
+                  {hasAvatar ? (
+                    <img src={user.avatar_url!} alt="Your Avatar" className={styles.avatarImg} />
+                  ) : (
+                    <div className={styles.avatarPlaceholder}>
+                      <span>+</span>
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className={styles.selectAvatarBtn}
+                  onClick={() => setShowAvatarGallery(true)}
+                >
+                  {hasAvatar ? 'Change Avatar' : 'Select Avatar'}
+                </button>
               </div>
             </div>
 
-            <div className={styles.formGroup} style={{ marginTop: '0.5rem' }}>
-              <label>Real Name (Optional)</label>
-              <div className={styles.inputWrapper}>
-                <span className={styles.inputIcon}>◉</span>
-                <input
-                  className={styles.input}
-                  placeholder="E.g. John Doe"
-                  value={realName}
-                  onChange={(e) => setRealName(e.target.value)}
-                  maxLength={24}
-                />
+            <form id="complete-profile-form" onSubmit={handleSave} className={styles.formGroup}>
+              <div className={styles.formGroup}>
+                <label>Poker Alias (Required)</label>
+                <div className={styles.inputWrapper}>
+                  <span className={styles.inputIcon}>◆</span>
+                  <input
+                    className={styles.input}
+                    placeholder="E.g. SharkPro99"
+                    value={alias}
+                    onChange={(e) => setAlias(e.target.value)}
+                    maxLength={16}
+                    required
+                  />
+                </div>
               </div>
-            </div>
 
-            {error && <div className={styles.errorText}>{error}</div>}
+              <div className={styles.formGroup} style={{ marginTop: '0.5rem' }}>
+                <label>Real Name (Optional)</label>
+                <div className={styles.inputWrapper}>
+                  <span className={styles.inputIcon}>◉</span>
+                  <input
+                    className={styles.input}
+                    placeholder="E.g. John Doe"
+                    value={realName}
+                    onChange={(e) => setRealName(e.target.value)}
+                    maxLength={24}
+                  />
+                </div>
+              </div>
 
-            <div className={styles.infoBox}>
-              <p>You Can Change These Later In Your Profile Settings.</p>
-            </div>
-          </form>
+              {error && <div className={styles.errorText}>{error}</div>}
+
+              <div className={styles.infoBox}>
+                <p>You Can Change These Later In Your Profile Settings.</p>
+              </div>
+            </form>
+          </div>
+
+          <footer className={styles.footer}>
+            <button
+              type="submit"
+              form="complete-profile-form"
+              className={styles.submitButton}
+              disabled={isSaving || !alias.trim() || !hasAvatar}
+            >
+              {isSaving ? 'Saving...' : 'Enter Arena'}
+            </button>
+          </footer>
         </div>
-
-        <footer className={styles.footer}>
-          <button
-            type="submit"
-            form="complete-profile-form"
-            className={styles.submitButton}
-            disabled={isSaving || !alias.trim()}
-          >
-            {isSaving ? 'Saving...' : 'Enter Arena'}
-          </button>
-
-          <button
-            type="button"
-            className={styles.cancelButton}
-            onClick={() => {
-              // If they explicitly choose to keep the auto-generated name, let them bypass
-              onComplete();
-            }}
-          >
-            Keep System Generated Name ({user.username})
-          </button>
-        </footer>
       </div>
-    </div>
+
+      {/* Modals rendered outside so they overlay properly */}
+      <AvatarGallery
+        userId={user.id}
+        currentAvatarUrl={user.avatar_url || ''}
+        isVip={user.vip_level !== 'bronze'}
+        isOpen={showAvatarGallery}
+        onClose={() => setShowAvatarGallery(false)}
+      />
+    </>
   );
 }
 
@@ -186,30 +219,32 @@ export function useCompleteProfile(user: any) {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    if (!user || !user.username) {
+    if (!user) {
       setIsReady(true);
       return;
     }
 
-    const hasCompleted = localStorage.getItem(STORAGE_KEYS.WELCOME_ACCEPTED)
-      ? localStorage.getItem('profile_alias_configured') === 'true'
-      : false;
+    const hasCompletedLocal = localStorage.getItem('profile_alias_configured') === 'true';
 
     // Detect system-generated 'Player1234' names
-    const isSystemGenerated = /^Player\d{4}$/.test(user.username);
+    const isSystemGenerated = /^Player\d{4}$/.test(user.username || '');
+
+    // Google logins initially have NO avatar_url
+    const isMissingAvatar = !user.avatar_url;
 
     // Only show if it's a new or system-generated account that hasn't configured an alias yet
-    if (isSystemGenerated && !hasCompleted) {
+    if (isSystemGenerated || isMissingAvatar) {
       setShowProfileModal(true);
     } else {
-      // Auto-flag as complete if they already have a custom name
-      if (!isSystemGenerated && !hasCompleted) {
+      // Auto-flag as complete if they already have a custom name and avatar
+      if (!hasCompletedLocal) {
         localStorage.setItem('profile_alias_configured', 'true');
       }
+      setShowProfileModal(false);
     }
 
     setIsReady(true);
-  }, [user]);
+  }, [user?.username, user?.avatar_url]); // Re-evaluate when username or avatar changes
 
   const finishProfile = () => {
     localStorage.setItem('profile_alias_configured', 'true');

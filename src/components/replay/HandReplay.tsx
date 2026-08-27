@@ -239,7 +239,7 @@ export default function HandReplay({
               user_id: p.user_id,
               username: p.username,
               avatar_url: p.avatar_url,
-              position: p.position as any,
+              position: p.position as HandPlayer['position'],
               hole_cards: p.hole_cards,
               final_hand: p.final_hand,
               result: p.result,
@@ -260,7 +260,7 @@ export default function HandReplay({
                 player_id: a.player_id,
                 action: a.action as PlayerAction['action'],
                 amount: a.amount,
-                street: (a as any).street,
+                street: (a as { street?: string }).street as 'PREFLOP' | 'FLOP' | 'TURN' | 'RIVER',
                 timestamp: a.timestamp,
               })),
           });

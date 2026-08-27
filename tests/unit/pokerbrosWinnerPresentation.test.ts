@@ -105,11 +105,25 @@ describe('cards outside the winning five drop to 0.28 (measured, channel-neutral
     const uses = SEAT.match(/isDimmed=\{\s*winnerDisplayActive\s*&&/g) || [];
     expect(uses.length, 'villain row AND hero row must both dim').toBeGreaterThanOrEqual(2);
     expect(SEAT).toMatch(/prev\.winnerDisplayActive\s*!==\s*next\.winnerDisplayActive/);
-    // `shownWinnerInfo` since 2026-08-27 (round 3, item 7): the hand-stamped
-    // view, so the table-wide dim cannot outlive the hand that caused it.
+    /* The table-wide dim is still driven from the winner state — that is what
+       this spec is about and it is unchanged. What changed on 2026-08-27 is
+       that the winners must also belong to the hand ON THE FELT (Dan: "cards
+       dim like you folded even though you are live in a hand"; and, the same
+       day, "Wins The Pot doesn't disappear after a new hand starts"). A POT_WIN
+       for hand N arriving after hand N+1 started used to merge into the fresh
+       hand and dim the hero's brand-new hole cards.
+
+       The fence was first written inline in this prop as a second clause. It
+       moved into `shownWinnerInfo` — one hand-stamped view that every winner
+       surface reads — because the same staleness was showing up on the "Wins
+       The Pot" band, the board highlight and the per-seat hand names, and three
+       more copies of the clause is three more places to forget it. Both halves
+       are still pinned: the dim, and the fence behind it. */
     expect(TABLE_PAGE).toMatch(
       /winnerDisplayActive=\{shownWinnerInfo\.playerIds\.length\s*>\s*0\}/
     );
+    expect(TABLE_PAGE).toMatch(/const shownWinnerInfo = useMemo/);
+    expect(TABLE_PAGE).toMatch(/winnerInfo\.handNumber === live/);
   });
 });
 

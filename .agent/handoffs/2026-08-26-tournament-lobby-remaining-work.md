@@ -205,6 +205,14 @@ not fire for it.
 "top 3 pull" means when the payment is half a head. If no, record the answer and
 close it.
 
+> **CLOSED 2026-08-26.** Dan, verbatim: "no, never pko+mystery bounty ever."
+> Recorded as an invariant, not a note: DB constraint
+> `tournaments_never_pko_and_mystery` (migration `20260826210000`, applied to
+> production and probe-verified in a rolled-back transaction — the UPDATE
+> raises 23514) makes the hybrid impossible to configure. Zero rows in the
+> table's history ever carried both flags. The engine's no-prizeRank branch
+> stays as defense-in-depth, with its comment updated to cite the ruling.
+
 ### ITEM D — Dead comment pointers (5 minutes)
 
 Comments citing files deleted in #959, by line number:

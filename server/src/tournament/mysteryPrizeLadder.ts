@@ -116,6 +116,11 @@ export function prizeRankOf(amount: unknown, ladder: readonly number[]): number 
  * `'pko'`, and `paid_cash` is then only half the head. That knockout is
  * deliberately not treated as a mystery pull: ranking a half-payment against a
  * ladder of whole heads would report a rung nobody pulled.
+ *
+ * That combination CANNOT EXIST any more. Dan 2026-08-26: "no, never
+ * pko+mystery bounty ever" — enforced by the DB constraint
+ * `tournaments_never_pko_and_mystery` (migration 20260826210000). The CASE
+ * order note above stays as the reason the constraint was worth adding.
  */
 export const MYSTERY_COLLECT_MODES: readonly string[] = ['mystery', 'mystery_pre'];
 

@@ -1422,24 +1422,19 @@ export abstract class TournamentManagerBase {
         const lateRegCap = Number(tournament.late_reg_levels ?? tournament.rebuy_levels ?? 0);
         const gtd = Number(tournament.guaranteed_prize) || 0;
         if (lateRegCap <= 0 && gtd > 0 && !this.prizePoolFinalized) {
-          const { data: poolRow } = await supabase
-            .from('tournaments')
-            .select('prize_pool')
-            .eq('id', this.tournamentId)
-            .maybeSingle(); // FIX 168
-          const poolNow = Number(poolRow?.prize_pool) || 0;
-          const finalPool = effectivePrizePool(poolNow, gtd);
-          if (finalPool > poolNow) {
-            await supabase
-              .from('tournaments')
-              .update({ prize_pool: finalPool, prize_pool_finalized: true } as any)
-              .eq('id', this.tournamentId);
-            tournament.prize_pool = finalPool;
-            if (this.tournamentCache) this.tournamentCache.prize_pool = finalPool;
+          /* OVERLAY IS REAL MONEY 2026-08-27 (Dan): the guarantee used to be
+             honoured by writing a bigger number into prize_pool — no bank
+             debited, nothing recorded, so every overlay chip was minted from
+             nothing (136,593.10 across 3,393 completed events). It is funded
+             now: fn_fund_tournament_overlay debits the union bank, or the
+             club's own bank when the club has no union, writes the
+             chip_transactions row, and sets the pool + finalized flag
+             atomically. Idempotent per tournament. */
+          const funded = await this.fundOverlayFromBank(gtd);
+          if (funded !== null) {
+            tournament.prize_pool = funded;
+            if (this.tournamentCache) this.tournamentCache.prize_pool = funded;
             this.prizePoolFinalized = true;
-            console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Guarantee applied at start: pool ${poolNow} -> ${finalPool}`
-            );
           }
         }
       }
@@ -2974,17 +2969,28 @@ export abstract class TournamentManagerBase {
             // where the advertised guarantee becomes real money. Writing the
             // max back to prize_pool keeps every reader — payouts, lobby,
             // fn_tournament_payout_reconcile — agreeing on one number.
-            const finalPool = freshT
+            let finalPool = freshT
               ? effectivePrizePool(freshT.prize_pool, freshT.guaranteed_prize)
               : 0;
             if (freshT) {
-              await supabase
-                .from('tournaments')
-                .update({
-                  prize_pool: finalPool,
-                  prize_pool_finalized: true,
-                } as any)
-                .eq('id', this.tournamentId);
+              /* OVERLAY IS REAL MONEY 2026-08-27 (Dan): when the guarantee is
+                 what lifts the pool, those chips must LEAVE A BANK and be
+                 recorded. fundOverlayFromBank does the debit, the ledger row
+                 and the pool write atomically; it returns null when there is
+                 no shortfall, and then the plain write below still runs. */
+              const gtdHere = Number(freshT.guaranteed_prize) || 0;
+              const funded = gtdHere > 0 ? await this.fundOverlayFromBank(gtdHere) : null;
+              if (funded !== null) {
+                finalPool = funded;
+              } else {
+                await supabase
+                  .from('tournaments')
+                  .update({
+                    prize_pool: finalPool,
+                    prize_pool_finalized: true,
+                  } as any)
+                  .eq('id', this.tournamentId);
+              }
               console.log(
                 `[Tournament:${this.tournamentId.slice(0, 8)}] Late reg/rebuy closed at level ${this.currentLevel} — prize pool finalized: ${finalPool}`
               );
@@ -3252,19 +3258,86 @@ export abstract class TournamentManagerBase {
     if (freshT) {
       // GUARANTEE (2026-08-23): same rule as the late-reg-close site — the
       // pool is final now, so the advertised guarantee is applied here.
-      const finalPool = effectivePrizePool(freshT.prize_pool, freshT.guaranteed_prize);
-      await supabase
-        .from('tournaments')
-        .update({
-          prize_pool: finalPool,
-          prize_pool_finalized: true,
-        } as any)
-        .eq('id', this.tournamentId);
+      let finalPool = effectivePrizePool(freshT.prize_pool, freshT.guaranteed_prize);
+      // OVERLAY IS REAL MONEY 2026-08-27 (Dan): fund the shortfall out of the
+      // bank and record it, rather than minting the difference.
+      const gtdHere = Number(freshT.guaranteed_prize) || 0;
+      const funded = gtdHere > 0 ? await this.fundOverlayFromBank(gtdHere) : null;
+      if (funded !== null) {
+        finalPool = funded;
+      } else {
+        await supabase
+          .from('tournaments')
+          .update({
+            prize_pool: finalPool,
+            prize_pool_finalized: true,
+          } as any)
+          .eq('id', this.tournamentId);
+      }
 
       await this.recalculateEliminatedPrizes(finalPool);
     }
 
     await this.broadcast('ADDON_PERIOD_END', {});
+  }
+
+  /**
+   * OVERLAY FUNDING 2026-08-27 (Dan): "IF A GUARANTEED PRIZE POOL FALLS SHORT
+   * OR HAS AN OVERLAY THAT MONEY COMES FROM THE UNION BANK, OR THE CLUB BANK
+   * IF ITS A STAND ALONE CLUB... THERE MUST BE A TRANSACTION HISTORY OF THOSE
+   * CHIPS LEAVING THE BANK TO FUND THE OVERLAY."
+   *
+   * Delegates to fn_fund_tournament_overlay, which in ONE locked transaction
+   * resolves the bank (union first, the club's own bank when it has no union),
+   * debits the shortfall, writes the `overlay_funding` chip_transactions row,
+   * records tournament_overlay_funding, and sets prize_pool + finalized.
+   * Idempotent per tournament, so a retry or a second guarantee site cannot
+   * double-charge the bank.
+   *
+   * Returns the final pool when the bank funded an overlay, or null when there
+   * was nothing to fund (the field covered the guarantee) or the call failed —
+   * in both of those cases the caller does its own plain pool write, so a
+   * funding hiccup can never leave the guarantee unhonoured.
+   */
+  protected async fundOverlayFromBank(guaranteed: number): Promise<number | null> {
+    try {
+      const { data, error } = await supabase.rpc('fn_fund_tournament_overlay', {
+        p_tournament_id: this.tournamentId,
+      });
+      if (error) {
+        reportError(error, 'TournamentManager.overlay_funding_failed');
+        return null;
+      }
+      const res = (data ?? {}) as {
+        ok?: boolean;
+        overlay_amount?: number;
+        bank_type?: string;
+        underfunded?: boolean;
+        already_funded?: boolean;
+        no_overlay?: boolean;
+        reason?: string;
+      };
+      if (!res.ok) {
+        reportError(
+          new Error(`overlay funding refused: ${res.reason ?? 'unknown'}`),
+          'TournamentManager.overlay_funding_refused'
+        );
+        return null;
+      }
+      if (res.no_overlay) return null; // field covered the guarantee
+      const overlay = Number(res.overlay_amount) || 0;
+      if (overlay > 0 && !res.already_funded) {
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Overlay ${overlay} funded from the ${res.bank_type} bank${
+            res.underfunded ? ' (BANK NEGATIVE — critical alert raised)' : ''
+          }`
+        );
+      }
+      return guaranteed;
+    } catch (err) {
+      reportError(err, 'TournamentManager.overlay_funding_threw');
+      return null;
+    }
   }
 
   protected isProcessingEliminations = false;

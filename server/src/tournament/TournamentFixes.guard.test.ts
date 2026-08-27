@@ -597,3 +597,28 @@ describe('a tournament that started and never dealt is rescued whatever its vari
     );
   });
 });
+
+describe('an overlay is real money and leaves a real bank (2026-08-27)', () => {
+  it('every guarantee site funds through the bank RPC, none writes the pool raw', () => {
+    // Dan: "IF A GUARANTEED PRIZE POOL FALLS SHORT OR HAS AN OVERLAY THAT
+    // MONEY COMES FROM THE UNION BANK, OR THE CLUB BANK IF ITS A STAND ALONE
+    // CLUB... THERE MUST BE A TRANSACTION HISTORY OF THOSE CHIPS LEAVING THE
+    // BANK." Before this, the guarantee was honoured by writing a bigger
+    // number into prize_pool: 136,593.10 chips minted across 3,393 completed
+    // events with zero transaction rows.
+    const base = code(BASE);
+    expect(base).toMatch(/protected async fundOverlayFromBank/);
+    expect(base).toMatch(/fn_fund_tournament_overlay/);
+    // All three guarantee sites go through it.
+    expect((base.match(/fundOverlayFromBank\(/g) || []).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('a funding failure still honours the guarantee', () => {
+    // The bank debit must never be able to leave players short of an
+    // advertised pool: fundOverlayFromBank returns null on refusal/throw and
+    // the caller falls back to its own plain pool write.
+    const base = code(BASE);
+    expect(base).toMatch(/overlay_funding_failed|overlay_funding_threw/);
+    expect(base).toMatch(/if \(funded !== null\)/);
+  });
+});

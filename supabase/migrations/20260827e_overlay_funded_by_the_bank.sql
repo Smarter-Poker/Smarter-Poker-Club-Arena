@@ -1,0 +1,49 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- AN OVERLAY IS REAL MONEY AND MUST LEAVE A REAL BANK — Dan 2026-08-27
+-- APPLIED via Supabase MCP before this file was committed; every path probed
+-- inside rolled-back transactions.
+--
+-- "IF A GUARANTEED PRIZE POOL FALLS SHORT OR HAS AN OVERLAY THAT MONEY COMES
+--  FROM THE UNION BANK, OR THE CLUB BANK IF ITS A STAND ALONE CLUB NOT
+--  ATTACHED TO A UNION. THERE MUST BE A TRANSACTION HISTORY OF THOSE CHIPS
+--  LEAVING THE BANK TO FUND THE OVERLAY."
+--
+-- Before: the guarantee was honoured by writing a bigger number into
+-- tournaments.prize_pool. No bank was debited and nothing was recorded, so
+-- every overlay chip was minted from nothing — 136,593.10 chips across 3,393
+-- completed guaranteed events, with ZERO transaction rows to show for it.
+--
+-- Objects created:
+--   tournament_overlay_funding   one row per funded event (UNIQUE tournament_id
+--                                => idempotent), recording guarantee, pool
+--                                before, overlay, bank before/after, and
+--                                whether the bank went negative.
+--   fn_fund_tournament_overlay   the single sanctioned way to apply a
+--                                guarantee. Locks the tournament row, resolves
+--                                the bank (union first; the club's own bank
+--                                when the club has no union), debits the
+--                                shortfall, writes the `overlay_funding`
+--                                chip_transactions row, sets prize_pool +
+--                                prize_pool_finalized — all in one transaction.
+--   ca_club_overlay_pnl          per-club overlay reporting (totals + events).
+--   ca_union_insurance_pnl       extended with an `overlay` block and a
+--                                per-day overlay column.
+--
+-- It NEVER refuses. A guarantee is a promise already advertised to players, so
+-- a bank too thin to cover it must not silently shrink the pool mid-event: it
+-- funds, drives the bank negative if it must, and raises a CRITICAL financial
+-- alert naming the shortfall. Loud, not blocking — the same doctrine as the
+-- seat-stack-exit trigger and the insurance under-collection alert.
+--
+-- Probes (all rolled back):
+--   union event     overlay 2640.00 -> union bank -2640.00, pool 360 -> 3000,
+--                   1 chip_transactions row
+--   idempotency     second call: already_funded=true, bank moved 0.00
+--   standalone club bank_type=club, club bank -2640.00
+--   no overlay      field covered the guarantee: no row written, bank untouched
+--
+-- Historical minting is NOT retroactively charged to any bank: those pools are
+-- settled and the money is long since paid out to players. This governs every
+-- guarantee from here forward.
+-- ═══════════════════════════════════════════════════════════════════════════
+SELECT 1;

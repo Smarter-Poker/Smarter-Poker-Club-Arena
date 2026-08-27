@@ -316,6 +316,80 @@ CSS Modules + global CSS.
 
 ---
 
+---
+
+## 10.5 HORSES ARE PLAYERS (Dan, 2026-08-27, BINDING — NO EXCEPTIONS)
+
+**Dan, verbatim: "HORSES ARE NEVER EVER DISCLUDED BY DESIGN ON ANYTHING! THEY
+MUST ALWAYS BE TREATED LIKE REAL LIVE PLAYERS!"**
+
+This is a HARD LAW. It outranks any optimisation, any convenience, and any
+assumption you arrive with. If you are writing a filter, a report, a payout, a
+rule, a limit, a stat, a sweep or a guard, and you find yourself typing
+`is_horse` in order to leave horses OUT of something a human would get — stop.
+You are writing a bug.
+
+### The rule
+
+A horse pays the same buy-in, out of the same club wallet, through the same
+RPCs, and sits in the same seat as anybody else. Therefore a horse:
+
+- **EARNS** everything a human earns from the same action — VIP points, agent
+  and super-agent commissions, `player_stats`, rakeback basis, leaderboard
+  position, achievements, anything downstream of play or of rake;
+- **IS PAID** everything a human is paid — prizes, bounties, refunds,
+  shortfall back-pay, jackpots. Never "skip the horses" on a repayment;
+- **IS SUBJECT TO** every rule a human is subject to — nit/VPIP eviction,
+  limits, guards, integrity checks;
+- **COUNTS** everywhere a human counts — player counts, engine provisioning,
+  table liveness, conservation and reconciliation totals;
+- **IS NEVER** silently filtered out of a report, a total, or a ledger.
+
+### What is still allowed
+
+`is_horse` remains legitimate for exactly two things:
+
+1. **Identification** — surfacing the flag as DATA (a badge, a column, a
+   roster field), or the horse-specific plumbing that creates, seats, funds
+   and steers the fleet (`fn_register_horse_for_tournament`,
+   `fn_seed_horses_to_floor`, `autoRebuyHorse`, HorseLogic, and so on). Those
+   spawn and drive horses; they do not deny horses anything.
+2. **Equal outcome by a different mechanism.** A horse has no browser, so a
+   pause built for human reaction time is not owed to it — but the THING the
+   pause protects (the chance to rebuy before removal) absolutely is, and a
+   horse gets it through `autoRebuyHorse`. The test is never "did it run the
+   same code", it is **"did it get the same outcome"**. If the answer is no,
+   it is an exclusion and it is banned.
+
+Anything where horses would be reported as opt-in (a `p_include_horses`
+parameter) MUST default to **true**.
+
+### Why this rule exists
+
+On 2026-08-27 I wrote `AND NOT COALESCE(p.is_horse, false)` into
+`fn_settle_tournament_rake` on my own assumption that horses are "house
+players" who should not earn. Nobody asked for it. Every tournament on this
+platform is horse-heavy, so the effect was that tournament rake attribution
+earned **nothing for anyone** — 39 settled events, zero VIP points, zero agent
+commissions — and I then reported that zero as "correct behaviour". It was my
+invention presented as a design decision, which is worse than a plain bug.
+
+Fixed and backfilled in `20260827_horses_are_players_law.sql`, along with two
+others found in the same sweep: horses were exempt from nit eviction, and a
+lone horse was denied a dealing engine that a lone human would have received.
+
+### The one open item Dan must decide
+
+`sp_prune_hand_history` keeps human hands forever and prunes horse-only hands
+after `hand_history_retention_policy.horse_retention_days` (currently 7). That
+is a STORAGE policy, not player treatment: `hand_history` is already 3.6 GB
+over 1.57M hands, 99.95% horse-only, growing ~221k hands/day (~0.5 GB/day if
+never pruned). It was left in place and raised with Dan rather than changed
+silently, because the honest answer is that equal retention has a real
+infrastructure cost. **The knob is a config row — Dan sets it, not an agent.**
+
+---
+
 ## 11. AGENT NETWORK + DEPLOY PLAYBOOK (added 2026-07-23, binding; corrected same day after live use)
 
 Cloud Cowork sessions have a locked-down sandbox. Learn the map ONCE and never

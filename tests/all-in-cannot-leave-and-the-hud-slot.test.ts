@@ -69,6 +69,30 @@ const BASE = read('server/src/engine/ServerTableEngineBase.ts');
 const TABLE_PAGE = read('src/pages/TablePage.tsx');
 const MODALS = read('src/components/table/TableModalsLayer.tsx');
 const RABBIT_CSS = read('src/components/table/RabbitHunt.css');
+const TBC_CSS = read('src/components/table/TimebankCounter.css');
+const PREV_CSS = read('src/components/table/PreviousHandCard.css');
+const HUD_CSS = read('src/components/table/TableHUD.css');
+const TABLE_CSS = read('src/pages/TablePage.css');
+
+/** The declaration block of the first rule whose selector is exactly `sel`. */
+const ruleBody = (css: string, sel: string) => {
+  const bare = strip(css);
+  const at = bare.indexOf(`${sel} {`);
+  if (at < 0) throw new Error(`rule ${sel} not found`);
+  return bare.slice(at, bare.indexOf('}', at));
+};
+
+/**
+ * Every widget that can stand in the bottom-left HUD corner, and the rule that
+ * sizes it. `--sp-hero-clear` reserves the felt's bottom strip from ONE tile
+ * size, so all three of these have to be that one size or the reserve is a
+ * guess. See the note above `--sp-hero-clear` in TablePage.css.
+ */
+const SLOT_WIDGETS: Array<[string, string, string]> = [
+  ['TimebankCounter.css', TBC_CSS, '.tbc-widget'],
+  ['PreviousHandCard.css', PREV_CSS, '.prev-hand-card'],
+  ['RabbitHunt.css', RABBIT_CSS, '.rabbit-hunt__button'],
+];
 
 describe('an all-in player cannot leave the table', () => {
   it('leaveTable refuses before it does anything else', () => {
@@ -118,8 +142,10 @@ describe('the bottom-left HUD slot', () => {
     expect(strip(TABLE_PAGE)).not.toMatch(/\{tableState\.heroSeat > 0 && \(\s*<TimebankCounter/);
     const at = TABLE_PAGE.indexOf('<TimebankCounter');
     expect(at).toBeGreaterThan(-1);
-    // The guard immediately above it is the turn context, not seat occupancy.
-    expect(TABLE_PAGE.slice(at - 400, at)).toMatch(/\{isHeroTurnContext && \(/);
+    // The guard immediately above it is the slot decision, and the slot's
+    // 'timebank' branch is the turn context — not seat occupancy.
+    expect(TABLE_PAGE.slice(at - 400, at)).toMatch(/\{hudSlotControl === 'timebank' && \(/);
+    expect(strip(TABLE_PAGE)).toMatch(/isHeroTurnContext\s*\n?\s*\?\s*'timebank'/);
   });
 
   it('puts Rabbit Hunt in that same slot once the hand is over', () => {
@@ -129,14 +155,34 @@ describe('the bottom-left HUD slot', () => {
     expect(rabbit, 'RabbitHunt not rendered in the HUD stack').toBeGreaterThan(-1);
     // Inside the same stack, between the tile and the previous-hand card.
     expect(rabbit).toBeLessThan(stackEnd);
-    expect(TABLE_PAGE).toMatch(/!tableState\.isHandInProgress && isRabbitAvailable && \(/);
+    expect(TABLE_PAGE.slice(0, rabbit)).toMatch(/\{hudSlotControl === 'rabbit' && \(/);
+    // And it still requires that no hand be in progress. This is NOT redundant
+    // with the branch order: a reveal freezes the engine snapshot for 3s and
+    // paints cards onto the live board, so the gate is a safety rule about the
+    // REVEAL, not only about who gets the slot.
+    expect(strip(TABLE_PAGE)).toMatch(/!tableState\.isHandInProgress && isRabbitAvailable/);
   });
 
-  it('the two conditions cannot both be true', () => {
-    // One needs a hand in progress, the other needs none. No overlap logic is
-    // required and none should ever be added.
-    expect(TABLE_PAGE).toMatch(/isHeroTurnContext/);
-    expect(TABLE_PAGE).toMatch(/!tableState\.isHandInProgress/);
+  it('the slot is filled by one control chosen in one place, not by two conditions', () => {
+    // UPDATED 2026-08-27. This used to assert only that both expressions existed
+    // and reason, in a comment, that they could not overlap. They could not —
+    // by an accident of how each was written, two months apart, with nothing
+    // declaring the invariant and nothing stopping either from being widened.
+    // The corner's whole height budget (--sp-hero-clear) assumes exactly one
+    // tile stands here, so the guarantee is now structural: a ternary chain
+    // yields one value, which makes two controls in one slot unrepresentable.
+    const body = strip(TABLE_PAGE);
+    expect(body).toMatch(/const hudSlotControl: 'timebank' \| 'rabbit' \| null/);
+    // Exactly one render site each, and both read the decision rather than
+    // recomputing it.
+    expect(body.match(/hudSlotControl === 'timebank'/g)).toHaveLength(1);
+    expect(body.match(/hudSlotControl === 'rabbit'/g)).toHaveLength(1);
+    // The time bank wins the slot: the hero is on the clock, and the Rabbit
+    // Hunt offer survives being displaced (the server holds it 90s).
+    expect(body.indexOf("? 'timebank'")).toBeLessThan(body.indexOf("? 'rabbit'"));
+    // No second, independent gate may render either widget.
+    expect(body).not.toMatch(/\{isHeroTurnContext && \(\s*<TimebankCounter/);
+    expect(body).not.toMatch(/isRabbitAvailable && \(\s*<RabbitHunt/);
   });
 
   it('Rabbit Hunt no longer renders from the modals layer', () => {
@@ -159,5 +205,88 @@ describe('the bottom-left HUD slot', () => {
     // interactive child has to opt back in or the button is unclickable.
     const css = RABBIT_CSS.slice(RABBIT_CSS.indexOf('.rabbit-hunt {'));
     expect(css.slice(0, css.indexOf('}'))).toMatch(/pointer-events:\s*auto/);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  SAME POSITION MEANS SAME BOX (2026-08-27)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Dan: "it should appear in the same position that the time bank icon lives."
+ *
+ * Rendering into the time bank's slot was done in #1327 and was only half of it.
+ * `.rabbit-hunt__button` was still a hardcoded 64px square (54px under 480px)
+ * standing in a corner of 36px tiles, so the corner grew by 28px the moment a
+ * hand ended and the button overhung the felt's bottom edge — `--sp-hero-clear`
+ * reserves that strip from ONE tile size. It was in the right place and the
+ * wrong shape, which is what "not in the same position" looked like on screen.
+ *
+ * These pin the mechanism, not a pixel: the size lives in TableHUD.css as a
+ * token and all three widgets read it. A widget that declares its own square is
+ * the bug, whatever number it picks.
+ */
+describe('every widget in the bottom-left HUD corner is the same tile', () => {
+  it('the size is declared once, on .table-hud, as a token', () => {
+    expect(strip(HUD_CSS)).toMatch(/--sp-hud-tile-size:\s*36px/);
+  });
+
+  it('all three read that token for width and height', () => {
+    for (const [name, css, sel] of SLOT_WIDGETS) {
+      const rule = ruleBody(css, sel);
+      expect(rule, `${name} ${sel} does not read --sp-hud-tile-size for width`).toMatch(
+        /width:\s*var\(--sp-hud-tile-size/
+      );
+      expect(rule, `${name} ${sel} does not read --sp-hud-tile-size for height`).toMatch(
+        /height:\s*var\(--sp-hud-tile-size/
+      );
+    }
+  });
+
+  it('none of them hardcodes a pixel square', () => {
+    for (const [name, css, sel] of SLOT_WIDGETS) {
+      const rule = ruleBody(css, sel);
+      expect(rule, `${name} ${sel} hardcodes a size`).not.toMatch(/(?:^|\s)(?:width|height):\s*\d/);
+    }
+    // And no breakpoint may quietly put one back. This is how Rabbit Hunt's
+    // 54px override survived the move into the slot.
+    expect(strip(RABBIT_CSS), 'RabbitHunt.css still carries its old 64/54px square').not.toMatch(
+      /\b(?:64|54)px\b/
+    );
+  });
+
+  it('and the same radius, background and touch target, so the corner reads as a set', () => {
+    for (const [name, css, sel] of SLOT_WIDGETS) {
+      const rule = ruleBody(css, sel);
+      expect(rule, `${name} ${sel} does not use the tile radius`).toMatch(
+        /border-radius:\s*var\(--sp-hud-tile-radius/
+      );
+      expect(rule, `${name} ${sel} does not use the tile background`).toMatch(
+        /background:\s*var\(--sp-hud-tile-bg/
+      );
+      // 36px painted, 44px touched — the pseudo-element that grows the hit area
+      // without moving a pixel of layout. Same insets in all three or a tap on
+      // the seam behaves differently depending on which control is in the slot.
+      expect(strip(css), `${name} has no 44px touch target`).toMatch(/inset:\s*-3px\s+-4px/);
+    }
+  });
+
+  it("the corner's height budget still matches what --sp-hero-clear reserves", () => {
+    // The corner is a row (.hud-bl-row), so it is as tall as its tallest child:
+    // one 36px tile, resting on a line 8px above the action bar. Anything that
+    // reserves the strip for a hero must clear that 44px. The spectator
+    // collapse is deliberately far below it — no hero plate, no tile, no row.
+    const declared = [...TABLE_CSS.matchAll(/--sp-hero-clear:\s*(\d+)px/g)].map((m) =>
+      Number(m[1])
+    );
+    expect(declared.length, '--sp-hero-clear is never declared').toBeGreaterThan(0);
+    const TILE = 36;
+    const LINE = 8;
+    for (const px of declared) {
+      if (px <= LINE) continue; // the data-hero='false' collapse
+      expect(px, `a --sp-hero-clear of ${px}px does not clear the HUD row`).toBeGreaterThanOrEqual(
+        TILE + LINE
+      );
+    }
   });
 });

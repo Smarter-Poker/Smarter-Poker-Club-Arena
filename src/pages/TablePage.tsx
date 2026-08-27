@@ -12949,6 +12949,49 @@ export default function TablePage({
     tableState.isHandInProgress;
 
   /**
+   * ═══ ONE SLOT, ONE CONTROL (2026-08-27) ═══
+   *
+   * The bottom-left HUD corner holds the previous-hand card and ONE other
+   * widget beside it. Dan named both of that slot's tenants:
+   *
+   *   "TIME BANK ICON SHOULD ONLY APPEAR WHEN ITS THE USERS TURN TO ACT"
+   *   "THAT ALSO THE EXACT POSITION THAT THE RABBIT HUNT BUTTON SHOULD APPEAR
+   *    WHEN THE HAND IS OVER"
+   *
+   * Until now the two tenants were two INDEPENDENT conditions rendered one
+   * after the other in the JSX, and the only thing keeping them apart was that
+   * `isHeroTurnContext` happens to require `isHandInProgress` while Rabbit Hunt
+   * requires its negation. That is true, and it is an accident of two
+   * expressions written two months apart — nothing declared it, nothing
+   * enforced it, and either expression could be widened by someone who never
+   * knew the other existed. The slot's whole height budget assumes exactly one
+   * tile stands here (see --sp-hero-clear in TablePage.css), so "they happen
+   * not to collide" is not a strong enough guarantee to leave implicit.
+   *
+   * So the choice is made ONCE, here, and it is a choice — not two conditions.
+   * A ternary chain can only ever yield one value, so two controls in this slot
+   * is now unrepresentable rather than merely unlikely, and the precedence is
+   * written down: the time bank WINS. It is the only one of the two that is
+   * time-critical (the hero is on the clock), and Rabbit Hunt's offer survives
+   * being displaced because the server holds it for 90 seconds.
+   *
+   * Rabbit Hunt keeps `!tableState.isHandInProgress` as its own precondition,
+   * and that is deliberate rather than redundant with the branch above it: a
+   * reveal FREEZES the engine snapshot for 3s and paints extra cards onto the
+   * live board (see handleRabbitReveal / rabbitHuntFreezeEnd). Offering that
+   * mid-hand would stall the table, so the gate is a safety rule about the
+   * REVEAL, not just about the slot. Do not drop it to make the button appear
+   * a snapshot earlier.
+   *
+   * Pinned by tests/all-in-cannot-leave-and-the-hud-slot.test.ts.
+   */
+  const hudSlotControl: 'timebank' | 'rabbit' | null = isHeroTurnContext
+    ? 'timebank'
+    : !tableState.isHandInProgress && isRabbitAvailable
+      ? 'rabbit'
+      : null;
+
+  /**
    * Phase 1.3 PR-C+D: thin wrapper around submitAction that routes server-side
    * rejections into the ActionErrorToast. submitAction never throws — it always
    * resolves with `{success, error?, code?, hint?}` — so the old
@@ -14898,8 +14941,41 @@ export default function TablePage({
                 Dan 2026-08-26 mobile pass, item 6 (round 2): the slot sits
                 BESIDE the previous-hand box, not on top of it - the container
                 is a row (.hud-bl-row, TablePage.css) with the previous-hand
-                box ordered first. */}
-            {isHeroTurnContext && (
+                box ordered first.
+
+                2026-08-27, TWO THINGS FIXED HERE.
+
+                (1) WHICH control stands in the slot is decided ONCE, above, by
+                `hudSlotControl`. It used to be two independent conditions in a
+                row, mutually exclusive only by an accident of how each was
+                written. See the derivation for why that was not good enough.
+
+                (2) The control is now the same SIZE as the tile it replaces.
+                Rabbit Hunt was a hardcoded 64px square (54px under 480px) in a
+                row of 36px tiles, so the corner grew by 28px the moment the
+                hand ended and the button overhung the felt's bottom edge -
+                which is exactly the "not in the same position" Dan reported.
+                Fixed in RabbitHunt.css by reading --sp-hud-tile-size like its
+                two slot-mates do. Do not reintroduce a pixel square there.
+
+                ONE THING DELIBERATELY NOT CHANGED: the Rabbit Hunt branch keeps
+                `!tableState.isHandInProgress`. The 2-second minimum-visible
+                floor (RABBIT_MIN_VISIBLE_MS) defers the STATE, but this gate
+                still hides the button the instant the next hand starts, so on a
+                short inter-hand gap the floor buys less than its full two
+                seconds. That is the safe trade and not an oversight: a reveal
+                freezes the engine snapshot for 3s and paints cards onto the
+                board, so a button that outlives the hand boundary is a button
+                that can stall a live table. Lengthening the window means making
+                the reveal hand-safe first, which is a change to
+                handleRabbitReveal, not to this gate.
+
+                `body.ca-raising` (TablePage.css) hides everything in this
+                corner while the raise overlay is open - checked, and it cannot
+                eat the Rabbit Hunt window: ActionPanel owns that body class and
+                removes it on unmount, and ActionPanel only mounts while the
+                hero is to act in a live hand. No hand, no class. */}
+            {hudSlotControl === 'timebank' && (
               <TimebankCounter
                 /* null = not loaded yet. The tile renders a dash rather
                    than asserting a number, which is what showed a wrong 4. */
@@ -14929,10 +15005,10 @@ export default function TablePage({
                 onClick={() => setShowTimeBankStore(true)}
               />
             )}
-            {/* The same slot, once the hand is over. Mutually exclusive with
-                the tile above by construction: that one needs a hand in
-                progress and the hero on the clock, this one needs no hand. */}
-            {!tableState.isHandInProgress && isRabbitAvailable && (
+            {/* The same slot, same tile, once the hand is over. It cannot
+                render beside the time bank: `hudSlotControl` yields one value,
+                and 'timebank' wins. */}
+            {hudSlotControl === 'rabbit' && (
               <RabbitHunt
                 isAvailable={isRabbitAvailable}
                 cardsAvailable={rabbitCardsAvailable}
@@ -16320,8 +16396,12 @@ export default function TablePage({
                 </div>
               )}
 
-            {/* Rabbit Hunt lives in TableModalsLayer, which renders the
-                <RabbitHunt> component that actually SHOWS the cards.
+            {/* Rabbit Hunt lives in the bottom-left HUD corner, in the slot it
+                shares with the time-bank tile (`hudSlotControl`, above). It has
+                NOT been in TableModalsLayer since 2026-08-26 — that layer has
+                neither the import nor the JSX — and this comment said it did
+                until 2026-08-27.
+
                 A second button used to sit here calling handleRabbitReveal
                 directly and throwing the result away — it spent the reveal (and,
                 now, the player's diamonds) and displayed nothing. Removed
@@ -16412,7 +16492,10 @@ export default function TablePage({
                           serverRabbitCardsRef for free and showed nothing — and
                           the real paid RabbitHunt panel then charged 5 diamonds
                           and revealed an empty board. The RabbitHunt component
-                          in TableModalsLayer is the single entry point. */}
+                          in the bottom-left HUD slot is the single entry point.
+                          (It was in TableModalsLayer when this was written; it
+                          moved on 2026-08-26 and this line was corrected on
+                          2026-08-27.) */}
                       <ActionPanel
                         canFold={true}
                         canCheck={callAmount === 0}

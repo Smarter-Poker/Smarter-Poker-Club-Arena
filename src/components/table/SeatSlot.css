@@ -34,6 +34,20 @@
   --sp-card2-w: 44px;
   --sp-card2-h: 62px;
   --sp-card2-step: 32px;
+
+  /* ── EVERY FORMATTED AMOUNT ON THIS SEAT READS ONE FONT ──────────────────
+     Dan 2026-08-27: "1,518 looks like it has an extra space or something."
+     The full diagnosis is on `.seat__stack`; the short version is that a
+     MONOSPACED face gives the comma a whole digit's advance, so a thousands
+     separator is drawn with a digit-width of air around it. The proportional
+     UI face plus `font-variant-numeric: tabular-nums` (declared beside every
+     use of this token) keeps the digits uniform-width — no jitter as a stack
+     changes — while the comma keeps its own narrow advance.
+
+     Declared once here, on the element the responsive blocks already retune,
+     so the stack, the +/- delta float and the bounty value cannot drift onto
+     three different treatments. */
+  --sp-amount-font: var(--font-sans, 'Inter', -apple-system, BlinkMacSystemFont, sans-serif);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -576,11 +590,39 @@
   line-height: 1.3;
 }
 
+/* ═══ THE COMMA IS NOT A DIGIT ═══════════════════════════════════════════════
+   Dan 2026-08-27: "the number fonts inside the action box look weird with the
+   commas. 1,518 looks like it has an extra space or something."
+
+   DIAGNOSED, not guessed. There is no `letter-spacing` anywhere on this plate,
+   and no `font-feature-settings`. The cause is the FONT: `.seat__stack` asked
+   for JetBrains Mono, and a monospaced face gives EVERY glyph the same advance
+   — in JetBrains Mono that is 600/1000 em, comma included. The comma's ink is
+   about a quarter of that cell, so a thousands separator is drawn as a small
+   mark floating in a full digit's worth of whitespace. `1,518` therefore reads
+   as `1, 518`, which is exactly the screenshot. The bigger the amount the more
+   often it happens, which is why it was reported on the stack and not on the
+   blinds.
+
+   THE FIX KEEPS THE DIGITS TABULAR. Losing the monospace face naively would
+   also lose the equal digit advances, and a stack whose digits re-flow every
+   time it changes is a worse bug than a wide comma — the number would visibly
+   jitter on every pot. `font-variant-numeric: tabular-nums` asks Inter for its
+   `tnum` figures, which are uniform-width by definition, while punctuation
+   keeps its own natural (narrow) advance. Equal digits, tight comma.
+
+   `--sp-amount-font` is declared once, on `.seat`, and every formatted amount
+   on the seat reads it — stack, the +/- delta float, and the bounty value — so
+   the next amount that appears on this plate cannot pick up the old treatment
+   by copying the wrong neighbour. Numbers are formatted with
+   `.toLocaleString()` in SeatSlot.tsx (`formatStack`), never `.padStart()`.
+   ═══════════════════════════════════════════════════════════════════════════ */
 .seat__stack {
   font-size: 0.6875rem;
   font-weight: 700;
   color: var(--stack-healthy, #f3f4f6);
-  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-family: var(--sp-amount-font);
+  font-variant-numeric: tabular-nums;
   line-height: 1.3;
   transition:
     color 0.4s ease,
@@ -662,7 +704,11 @@
   transform: translateX(-50%);
   font-size: 0.5625rem;
   font-weight: 800;
-  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  /* Same comma treatment as the stack it is reporting a change to — see the
+     block above `.seat__stack`. A `+1,250` float with a monospaced comma had
+     the identical gap. */
+  font-family: var(--sp-amount-font);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
   animation: stackDeltaFloat 2s ease-out forwards;
@@ -1415,27 +1461,40 @@
    The container also stops being width-constrained by the resting fan: at
    1.12 step the row is genuinely (n x 1.12) card widths wide, which is what
    --vh-fan-w already computes. */
-/* Dan 2026-08-26 (showdown pass): "Hold'em should be side by side, showing
-   the whole card images; PLO should be slightly stacked, but never hidden or
-   running off the edge of the screen." The step therefore depends on the
-   COUNT: a two-card hand gets a full card width plus a small gap (both faces
-   whole), a 3-6 card hand overlaps like the reference - every rank and suit
-   readable in the exposed column, and the row narrow enough to anchor inside
-   the seat (see the on-top-of-the-avatar anchors near the fan rules). Child
-   count is read with :has, the same device the hero fan uses. */
+/* ═══ ONE STEP FOR EVERY HAND SIZE — NOTHING IS EVER PARTLY HIDDEN ═════════
+   Dan 2026-08-27: "Clearly showing every single card in the hand, and allowing
+   them to be highlighted at showdown."
+
+   This used to taper the step by card count — 1.06 for a pair, 0.48 for 3-4
+   cards, 0.40 for 5-6 — under the earlier reading of "PLO should be slightly
+   stacked, but never hidden". Those two halves cannot both be true: a step of
+   0.40 means each card covers 60% of the one beside it, so on a PLO6 showdown
+   five of the six hands were four-fifths hidden with only a rank corner
+   showing. That IS hidden, and it is also what made the highlight unreadable —
+   a gold ring around a card you can only see 8px of.
+
+   So the step is now 1.06 (a full card width plus a 12% gap) at EVERY count.
+   No card covers any part of another at any hand size, which is the whole of
+   Dan's sentence rather than half of it.
+
+   WHAT IT COSTS AND WHY IT IS SAFE. The row gets wider for PLO — at six cards
+   it is 6.3 card widths instead of 3.0. It cannot leave the screen, because
+   `--vh-fan-w` already computes the true width and the revealed anchors below
+   pin the row's OUTBOARD edge to the avatar's outboard edge and grow it
+   INBOARD across the felt; the avatar is always fully on screen. Widest case,
+   PLO6 on a 375px phone: card 20.6px, row 129.6px, and a left-rail seat's row
+   runs x 1.8..131.4px of a 347px table — 15.8px from the viewport edge. The
+   community board sits at y 168..238px there and the side seats' clusters sit
+   in their avatars' band (y 103..143 and 293..333), so a wider row does not
+   reach it. Top-cap seats reveal DOWNWARD and centred (rule below), which is
+   the case with the most felt beneath it.
+
+   Child count is no longer read at all here — there is nothing left to vary. */
 .seat__cards--opponent.seat__cards--revealed {
   --vh-reveal: 1.6;
   --vh-step-f: 1.06;
   --vh-rot-scale: 0;
   z-index: 14;
-}
-
-.seat__cards--opponent.seat__cards--revealed:has(> :nth-child(3)) {
-  --vh-step-f: 0.48;
-}
-
-.seat__cards--opponent.seat__cards--revealed:has(> :nth-child(5)) {
-  --vh-step-f: 0.4;
 }
 
 /* THE TOP ROW REVEALS DOWNWARD.
@@ -2359,7 +2418,9 @@
   filter: drop-shadow(0 1px 1px rgba(120, 30, 0, 0.8));
 }
 .seat__bounty-val {
-  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  /* Third formatted amount on the seat, same treatment — see `.seat__stack`. */
+  font-family: var(--sp-amount-font);
+  font-variant-numeric: tabular-nums;
   font-size: 0.62rem;
   line-height: 1;
 }
@@ -3537,25 +3598,54 @@
   left: auto;
   right: calc(50% - var(--seat-avatar-size, 84px) / 2);
 }
-.seat--cards-right .seat__cards--opponent.seat__cards--revealed .seat__card {
-  left: auto;
-  right: calc(var(--vh-i, 0) * var(--vh-step));
-}
-
 .seat--cards-left .seat__cards--opponent.seat__cards--revealed {
   right: auto;
   left: calc(50% - var(--seat-avatar-size, 84px) / 2);
 }
-.seat--cards-left .seat__cards--opponent.seat__cards--revealed .seat__card {
-  right: auto;
+
+/* ═══ A SHOWN HAND READS LEFT TO RIGHT ON EVERY SEAT ══════════════════════
+   Dan 2026-08-27: "cards regardless of what side of the table they are on
+   need to be displayed left to right. These are the ONLY WAY they should be
+   displayed at showdown, or when shown by the player."
+
+   The two `.seat--cards-*` pairs above mirror the cluster by table side —
+   `.seat--cards-left` sets `--vh-dir: -1` and lays its cards out from
+   `right:` — so a seat on the left half of the table dealt AsKd showed it as
+   Kd As. That is fine for a face-down rosette, where the mirroring is what
+   makes both rails look symmetrical, and it is wrong the moment the faces are
+   up: a hand is read in one direction, and which chair you happen to be
+   sitting in must not reverse it.
+
+   `.seat-wrapper--top .seat .seat__cards--revealed .seat__card` has been
+   doing exactly this for the top-cap seats since 2026-08-26 (their revealed
+   row is centred, so a mirrored one would have run out of its own container).
+   This generalises that precedent to every seat at every table position — the
+   top-cap rule is now this rule, one line further down, rather than a special
+   case.
+
+   Card 0 is therefore ALWAYS leftmost, which is also what makes the showdown
+   highlight legible: `winningHoleCardIndexes` is an ordered list, and on a
+   mirrored row it lit the cards from the wrong end of the hand.
+
+   FACE-DOWN CLUSTERS ARE UNTOUCHED. This is keyed on `--revealed`, so the
+   resting rosette keeps its mirroring and its `--vh-dir` splay. At reveal the
+   splay is flattened anyway (`--vh-rot-scale: 0` on the container, further up
+   this file), so `--vh-dir` has nothing left to mirror and only the card
+   ORDER remains — which is what these two declarations fix.
+
+   0-4-0, the same specificity as the mirrored pair above, and written after
+   them, so it wins on order without disturbing anything else. */
+.seat--cards-left .seat__cards--opponent.seat__cards--revealed .seat__card,
+.seat--cards-right .seat__cards--opponent.seat__cards--revealed .seat__card {
   left: calc(var(--vh-i, 0) * var(--vh-step));
+  right: auto;
 }
 
-/* The top row's REVEALED hand is centred under the pod (see the reveal rule
-   further up), so it must lay its cards left-to-right regardless of which
-   half of the table the seat sits on — a mirrored row would run out of the
-   centred container. 0-4-0, so it wins over the `.seat--cards-left` pair
-   above without disturbing the face-down cluster, which keeps its mirroring. */
+/* The top-cap seats' revealed row is CENTRED under the pod (see the reveal
+   rule further up) rather than anchored to the avatar's outboard edge, so it
+   would run out of its own container if it were mirrored. Kept as its own
+   rule because it must also beat the `.seat--cards-*` pair for a hero-side
+   or wrapper-scoped cluster that does not carry `--opponent`. */
 .seat-wrapper--top .seat .seat__cards--revealed .seat__card {
   left: calc(var(--vh-i, 0) * var(--vh-step));
   right: auto;
@@ -3661,4 +3751,77 @@
      gentle arc: the edge cards sit lower, like a hand actually held. */
   transform: rotate(calc(var(--sp-hfan-c) * 3deg))
     translateY(calc(var(--sp-hfan-c) * var(--sp-hfan-c) * 1.4px));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE HERO'S HAND WHEN IT IS SHOWN TO THE TABLE
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Dan 2026-08-27: "Clearly showing every single card in the hand ... These are
+   the ONLY WAY they should be displayed at showdown, or when shown by the
+   player."
+
+   PRIVATE AND SHOWN ARE TWO DIFFERENT JOBS, and the row above only ever did
+   the first one. While the hand is the hero's own business the compact row is
+   RIGHT: it overlaps (`--sp-hero-card-step` is smaller than the card width) and
+   it arcs 4/5/6-card hands, which is how a hand you are holding looks and which
+   is what lets a PLO6 hand live in the strip of backdrop to the right of the
+   seat without running off a 375px phone. The hero already knows what they
+   hold, so a covered card costs them nothing.
+
+   The moment the hand is TABLED it is being read by other people, and none of
+   that holds any more. So `--revealed` flattens the arc and opens the row to a
+   1px gap between whole cards — the same rule the villains' revealed clusters
+   follow, and the same rule for a hero on the left of the table as on the
+   right. `SeatSlot.tsx` adds the class; see `heroHandIsTabled` there for what
+   counts as tabled.
+
+   SIZE, so the widest hand still fits the same strip. A row of six whole cards
+   needs more width than six cards overlapped by 60%, and the space right of the
+   hero seat does not grow, so the card comes down instead. The factors are
+   applied to `--sp-card2-w`, which is already retuned at all four breakpoints
+   on `.seat`, so this scales with everything else and adds no breakpoint block
+   of its own:
+
+     cards   factor   375px card   375px row (n*w + gaps)   room available
+     2-3     1.00     32px         65px / 98px              151px
+     4       0.92     29px         119px                    151px
+     5       0.80     26px         126px                    151px
+     6       0.70     22px         137px                    151px
+
+   Every one of those is a WHOLE card. For comparison the private PLO6 row shows
+   39px cards with only 16px of each exposed, so a revealed card is smaller as a
+   rectangle and nearly 40% larger as something you can actually read.
+
+   Height stays at the 1.4 playing-card ratio, derived from the width here so
+   the two cannot drift.
+
+   Specificity: `.seat__cards--hero.seat__cards--revealed:has(...)` is 0-3-0 and
+   beats the 0-2-0 private size guards; the transform reset is written both at
+   0-3-0 (a tie with the arc rule above, won on order — this block is last in
+   the file) and at 0-2-0 (which beats the 0-1-0 `--marked` lift, so a card the
+   player picked to show lies flat with the rest and keeps only its gold glow).
+   ═══════════════════════════════════════════════════════════════════════════ */
+.seat__cards--hero.seat__cards--revealed {
+  --sp-hero-card-w: var(--sp-card2-w, 44px);
+  --sp-hero-card-h: calc(var(--sp-hero-card-w) * 1.4);
+  /* step = width + 1px, so `margin-left: calc(step - w)` on the flex child
+     resolves to a 1px hairline instead of a negative slice. Zero overlap
+     without a second margin rule to keep in step with the first. */
+  --sp-hero-card-step: calc(var(--sp-hero-card-w) + 1px);
+}
+
+.seat__cards--hero.seat__cards--revealed:has(> :nth-child(4)) {
+  --sp-hero-card-w: calc(var(--sp-card2-w, 44px) * 0.92);
+}
+.seat__cards--hero.seat__cards--revealed:has(> :nth-child(5)) {
+  --sp-hero-card-w: calc(var(--sp-card2-w, 44px) * 0.8);
+}
+.seat__cards--hero.seat__cards--revealed:has(> :nth-child(6)) {
+  --sp-hero-card-w: calc(var(--sp-card2-w, 44px) * 0.7);
+}
+
+.seat__cards--hero.seat__cards--revealed:has(> :nth-child(4)) > *,
+.seat__cards--hero.seat__cards--revealed > * {
+  transform: none;
 }

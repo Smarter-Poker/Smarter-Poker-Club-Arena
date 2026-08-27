@@ -268,16 +268,23 @@ export function RabbitHunt({
             draggable={false}
           />
           {/* Dan 2026-08-26: "there is enough space below to add the current
-              total rabbit hunts the user has left." The artwork's lower band
-              is empty, so the count overlays INSIDE the icon rather than
-              growing the button. VIP-only by necessity: the monthly pool is
-              the one per-user stock the client can know BEFORE the press
-              (checkVIPStatus above) — the offer event is a table broadcast
-              and cannot carry a per-user number, and a pack's uses_remaining
-              only comes back after a reveal consumes one. Non-VIPs have no
-              stock, only a price, and the price pill already shows it. */}
+              total rabbit hunts the user has left." The count overlays INSIDE
+              the tile rather than growing the button. VIP-only by necessity:
+              the monthly pool is the one per-user stock the client can know
+              BEFORE the press (checkVIPStatus above) — the offer event is a
+              table broadcast and cannot carry a per-user number, and a pack's
+              uses_remaining only comes back after a reveal consumes one.
+              Non-VIPs have no stock, only a price, and the price pill already
+              shows it.
+
+              The bare numeral, not "N Left": this is a 36px HUD tile now (see
+              RabbitHunt.css) and it carries the count exactly the way the time
+              bank tile in the same slot carries its own — a numeral in the
+              bottom-right corner. The word does not fit and does not need to;
+              the aria-label above still says "N Free This Month" in full, so
+              nothing is lost to a screen reader. */}
           {!isRevealing && typeof vipRemaining === 'number' && (
-            <span className="rabbit-hunt__remaining">{vipRemaining} Left</span>
+            <span className="rabbit-hunt__remaining">{vipRemaining}</span>
           )}
           {!isRevealing && (
             <span

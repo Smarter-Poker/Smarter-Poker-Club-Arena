@@ -80,8 +80,9 @@ interface TableInstance {
    * updateTableInfo's shallow !== bail-out keeps working (P1-2 fix).
    */
   holeCards?: string;
-  /** Hero's last action this street at this table ('fold', 'call', ...). */
-  lastAction?: string;
+  /* `lastAction` REMOVED 2026-08-27 (round 3, item 5): it existed only to feed
+     TableTabBar's transient action chip, which is gone — "there should never
+     be an action, like BET, inside the action pill". */
   /** Live Bad Beat Jackpot pool at this table (0/undefined = no BBJ). */
   jackpot?: number;
   /** Hero folded this hand (tab dims). */
@@ -827,7 +828,6 @@ export default function MultiTablePage() {
           turnProgress,
           pot: t.pot,
           holeCards: t.holeCards,
-          lastAction: t.lastAction,
           folded: t.folded,
           handResult: t.handResult,
           sittingOut: t.sittingOut,
@@ -2332,26 +2332,26 @@ export default function MultiTablePage() {
               onQuickAction={handleQuickAction}
               onSitOutAll={handleSitOutAll}
               onBackAll={handleBackAll}
+              /* Dan 2026-08-27 round 3, item 3: "there is a negative number in
+                 the header that needs to be removed."
+
+                 That number was the multi-table session P&L chip, which lived
+                 between the tab strip and the tile toggle and rendered
+                 `-37` whenever the session was down. The chip is gone from the
+                 header; the breakdown it opened is NOT gone — it moved onto the
+                 tab quick menu, beside "Sit Out All Tables", which is where the
+                 other across-all-tables actions already live. Deleting the
+                 trigger without rehoming the popover would have left
+                 `showSessionAgg` unreachable, i.e. dead code.
+
+                 Passed as undefined when there is nothing tracked to show, so
+                 the menu row appears on exactly the condition the chip did. */
+              onShowSession={
+                sessionAgg && sessionAgg.rows.some((r) => r.tracked)
+                  ? () => setShowSessionAgg(true)
+                  : undefined
+              }
             />
-            {/* Batch 5: live multi-table P&L chip -> session breakdown */}
-            {sessionAgg && sessionAgg.rows.some((r) => r.tracked) && (
-              <button
-                type="button"
-                className={`multi-table-page__pnl-chip${
-                  sessionAgg.net > 0
-                    ? ' multi-table-page__pnl-chip--up'
-                    : sessionAgg.net < 0
-                      ? ' multi-table-page__pnl-chip--down'
-                      : ''
-                }`}
-                onClick={() => setShowSessionAgg((v) => !v)}
-                title="Session across all tables"
-                aria-label="Session across all tables"
-              >
-                {sessionAgg.net > 0 ? '+' : ''}
-                {sessionAgg.net.toLocaleString('en-US')}
-              </button>
-            )}
             {tables.length > 1 && (
               <button
                 className="tile-toggle-btn"

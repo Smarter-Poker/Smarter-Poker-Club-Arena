@@ -938,7 +938,16 @@ export class HandController {
 
   private advanceGame(): void {
     const activePlayers = this.getActivePlayers();
-    if (activePlayers.length === 1) {
+    /* `<= 1`, not `=== 1` (2026-08-27, round 3, item 8 sweep).
+       `foldForMissedDiscard` twenty lines up already tests `<= 1` for the same
+       question, and the asymmetry was live: with ZERO active players — every
+       remaining seat marked sitting_out mid-hand, which `getActivePlayers`
+       excludes — this fell through to `isBettingRoundComplete()`, which is true
+       for an empty list, and on into `advanceStage()`, which emits an
+       ALL_IN_RUNOUT carrying `players: []`. A hand with nobody in it took the
+       run-the-board-out path instead of ending. It recovered, but through the
+       longest route available, and a hand that should stop should stop. */
+    if (activePlayers.length <= 1) {
       this.completeHand();
       return;
     }

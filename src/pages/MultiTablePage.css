@@ -258,6 +258,16 @@
    TILE TOGGLE BUTTON
    ───────────────────────────────────────────────────────────────────────────── */
 
+/* Dan 2026-08-27 round 3, item 4: "the 4-box square needs to live in a fixed
+   position opposite side of the hamburger menu."
+
+   It did not. It is the last flex item in `.multi-table-page__tab-bar-wrapper`,
+   and it only LOOKED right-aligned at <=480px, where `.table-tab-bar` is given
+   `flex: 1 1 auto` and grows into the space. Above 480px the strip does not
+   grow, so the button sat immediately after the last tab pill and moved every
+   time a table was opened or closed. `margin-left: auto` is the fix that holds
+   at every width: the button is pushed to the wrapper's right edge, which is
+   the far side from the hamburger (`order: -1` inside the strip, TableTabBar.css). */
 .tile-toggle-btn {
   width: 28px;
   height: 28px;
@@ -273,6 +283,7 @@
     background 0.15s,
     color 0.15s;
   flex-shrink: 0;
+  margin-left: auto;
   margin-right: 6px;
 }
 
@@ -357,20 +368,9 @@
     min-width: 0;
   }
 
-  /* The strip's four-pill budget (see the arithmetic in TableTabBar.css) is
-     computed from a fixed 52px for this chip, so the chip has to actually hold
-     to it. A six-figure swing ellipsises rather than pushing a table off the
-     screen — the exact figure is one tap away in the breakdown this opens. */
-  .multi-table-page__pnl-chip {
-    /* border-box is the global reset (src/styles/club-engine.css), so 52px is
-       the whole chip, border and padding included. */
-    max-width: 52px;
-    padding: 4px 6px;
-    font-size: 0.62rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  /* The 52px session-P&L chip that used to be budgeted here was deleted on
+     2026-08-27 (round 3, item 3). Those 52px go back to the tab strip; see the
+     width arithmetic in TableTabBar.css, updated in the same commit. */
 
   .table-grid {
     grid-template-columns: 1fr;
@@ -834,28 +834,11 @@
    ROADMAP BATCH 5 — aggregated session chip + popover
    ───────────────────────────────────────────────────────────────────────────── */
 
-.multi-table-page__pnl-chip {
-  flex-shrink: 0;
-  padding: 5px 10px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 0.72rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-}
-
-.multi-table-page__pnl-chip--up {
-  color: #4ade80;
-  border-color: rgba(74, 222, 128, 0.4);
-}
-
-.multi-table-page__pnl-chip--down {
-  color: #f87171;
-  border-color: rgba(248, 113, 113, 0.4);
-}
+/* `.multi-table-page__pnl-chip{,--up,--down}` DELETED 2026-08-27 (round 3,
+   item 3: "there is a negative number in the header that needs to be
+   removed"). The chip is no longer rendered — the session breakdown below is
+   opened from the tab quick menu instead ("Session Totals"), so only the
+   trigger went. */
 
 .multi-table-page__session-agg {
   position: fixed;

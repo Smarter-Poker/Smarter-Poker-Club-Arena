@@ -393,6 +393,98 @@ export function buttonRadiusWidthPct(size: Size = NOMINAL_SCALER): number {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   A BET IS NOT A DISC (Dan 2026-08-27, round 3, item 9)
+   ═══════════════════════════════════════════════════════════════════════════
+   "Chips can never overlap the button and the button can never overlap the
+    chips. You have to ensure these are both ALWAYS in different positions for
+    all players in all seat positions."
+
+   THIS FILE ALREADY GUARANTEED THAT — for the thing it thought a bet was. The
+   whole separation story below (BUTTON_ANGLE_DEG, BUTTON_RAIL_RATIO,
+   MARKER_MIN_GAP_WIDTH_PCT and the swing loop in dealerButtonPosition) treats
+   the chips as a DISC of `chipRadiusWidthPct`, and against a disc the 6% centre
+   -to-centre minimum really does leave clear felt: at 375px the two radii sum
+   to 4.25% against a 6% floor.
+
+   What actually renders is `.chip-physics`, and it is a horizontal flex row:
+
+       [ chip tower ][ 6px gap ][ 42 ]        ChipPhysics.css, `.chip-physics`
+
+   The AMOUNT sits beside the tower, the row is centred on the chip position
+   (`.seat__bet-chips` translates -50%), and it is the widest thing on the felt
+   that nothing was measuring. At 375px the tower is 12.5px and a two-digit
+   amount at 0.9rem monospace is ~17px, so the row is ~36px wide and its half-
+   width is 5.2% of the table — larger than the puck's whole 4.9%, and larger
+   than the 1.8% the geometry believed. The puck could satisfy every rule in
+   this file and still land on the number, which is exactly Dan's screenshot:
+   Jessica's "D" against her "13".
+
+   So the chips get a RECTANGLE, like the board and the top seat boxes already
+   have, and the button dodges the rectangle. Modelling the real footprint is
+   what makes "always, all seats" true rather than nearly true — and it is
+   cheaper than it looks, because the box is wide but short: the swing loop only
+   has to step around it sideways, not walk further out.
+
+   The label's width is BOUNDED rather than measured. This module is pure
+   geometry with no DOM, and a keep-out that changed size as the pot grew would
+   move the puck mid-hand — which is worse than being slightly generous. Five
+   characters covers everything `formatChipAmount` emits ("9,999", "12.5K",
+   "1.24M"); beyond that the number is abbreviated, not lengthened. */
+
+/** `.chip-physics { gap: 6px }` — tower to amount. */
+export const CHIP_AMOUNT_GAP_PX = 6;
+/**
+ * Widest string `formatChipAmount` (ChipPhysics.tsx) can produce: "9,999" just
+ * under the 10K abbreviation, "12.5K", "1.2M". Never six — past those bounds
+ * the number is abbreviated, not lengthened.
+ */
+export const CHIP_AMOUNT_MAX_CHARS = 5;
+/**
+ * Advance width of one character of `.cp-amount`, in px.
+ *
+ * `.cp-amount` is JetBrains Mono, whose advance is 0.6em, at the size
+ * TableVisualHotfix.css section 4 gives it on the table page.
+ *
+ * THE FONT SIZE AND THIS KEEP-OUT ARE ONE DECISION, and 2026-08-27 is when
+ * that became true. The label was 0.9rem, which made the widest bet 43px — on
+ * a 347px phone table that is 12.4% of the whole felt, and a keep-out that wide
+ * cannot be honoured: the puck can only move ALONG its boundary (depth is spent
+ * on "player, then button, then chips"), and the swing needed to clear 12.4%
+ * carried the puck past the halfway point to the next chair, which
+ * tests/table-geometry-chips.test.ts correctly refuses.
+ *
+ * So the label came down to 0.7rem in the same commit. 5 x 11.2 x 0.6 = 33.6px
+ * is a keep-out the geometry can actually satisfy at every seat of every ring
+ * at every table size — and because the CSS is now derived from this number
+ * rather than merely described by it, the bound is a fact about what renders
+ * rather than a hope. If the font moves, this moves, and the tests will say
+ * whether the new value is reachable.
+ */
+export const CHIP_AMOUNT_CHAR_PX = 11.2 * 0.6;
+/**
+ * How tall a bet tower gets, in chips. `.cp-stack` is column-reverse with
+ * `--cp-chip-overlap = 0.25 * size - size`, so each chip past the first adds a
+ * quarter of a chip: four chips = 1.75 chip heights. Four is the tower's own
+ * colour-up ceiling (`.cp-stack__multi` takes over past it with a "x12" label,
+ * which does not grow the stack).
+ */
+export const CHIP_TOWER_MAX_CHIPS = 4;
+
+/** Half the WIDTH of the whole rendered bet marker (tower + gap + amount). */
+export function chipMarkerHalfWidthPct(size: Size = NOMINAL_SCALER): number {
+  const chipPx = clampPx((CHIP_WIDTH_PCT / 100) * size.w, CHIP_MIN_PX, CHIP_MAX_PX);
+  const labelPx = CHIP_AMOUNT_MAX_CHARS * CHIP_AMOUNT_CHAR_PX;
+  return ((chipPx + CHIP_AMOUNT_GAP_PX + labelPx) / 2 / size.w) * 100;
+}
+
+/** Half the HEIGHT of the whole rendered bet marker, as a percent of WIDTH. */
+export function chipMarkerHalfHeightPct(size: Size = NOMINAL_SCALER): number {
+  const chipPx = clampPx((CHIP_WIDTH_PCT / 100) * size.w, CHIP_MIN_PX, CHIP_MAX_PX);
+  const towerPx = chipPx * (1 + (CHIP_TOWER_MAX_CHIPS - 1) * 0.25);
+  return (towerPx / 2 / size.w) * 100;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    THE TWO THINGS PRINTED ON THE FELT
    ═══════════════════════════════════════════════════════════════════════════
    Both are mirrors of TablePage.css in the same sense as FELT_WINDOW, and both
@@ -565,6 +657,40 @@ export const MARKER_MIN_GAP_WIDTH_PCT = 6;
  * neither disc can overhang the painted rail at any table size.
  */
 export const FELT_MARKER_MARGIN_WIDTH_PCT = 2.5;
+
+/* ── WHY THE HERO'S BET WAS NOT LIFTED (Dan 2026-08-27, round 3, item 4) ──
+   "Hero's chips need to be moved up higher on the table when they are put into
+    the pot, and the action pill should be below them above the hero's head."
+
+   THE SECOND HALF IS DONE, in SeatSlot.css: the pill now hangs under the bet
+   instead of floating above it, which is the ordering Dan photographed as
+   wrong. THE FIRST HALF WAS ATTEMPTED AND REVERTED, deliberately, and this note
+   is here so the next agent does not spend the afternoon rediscovering it.
+
+   The hero's chair sits at y=100, about 10.8% of the table's HEIGHT below the
+   painted felt — further out than any other seat. Its rail walk therefore
+   overshoots the felt entirely, and `clampIntoFelt` projects the bet back onto
+   the boundary. So the hero's bet is not placed by the rail at all; it is
+   pinned to the felt's edge, and the ONLY way to raise it is to make the
+   projection fall further in, by giving the chips their own felt margin the way
+   BUTTON_FELT_DAYLIGHT_WIDTH_PCT gave the puck one.
+
+   That was tried (6.5% against the current 2.5%, which lifts the bet ~14px at
+   375px) and it fails "one rail, equal for every seat" at every ring and every
+   table size — 26 assertions. It has to: raising ONLY the seats that clamp is
+   precisely a per-seat term, and Dan's round-2 item 13 is that there are none:
+     "All chips should all appear to be in the same position and distance in
+      front of them. Imagine an imaginary oval, and all chips must appear
+      equally on that line for all players at all tables."
+   Lengthening the rail for EVERYBODY does not help either — the hero is already
+   clamped, so a longer walk moves every other seat's bet and leaves the hero's
+   exactly where it is, which makes the ring less equal, not more.
+
+   So the two requests are in direct conflict, and this one is Dan's to settle:
+   the hero can sit on the same oval as everybody else, or the hero's bet can be
+   higher, not both. Left on the oval, because that is the rule he stated last
+   and the one the whole module is built around. Raised with him rather than
+   changed silently. */
 
 /**
  * How much CLEAR FELT the button keeps between its own edge and the painted
@@ -928,6 +1054,40 @@ function feltTextRectSq(size: Size): RectSq {
 }
 
 /**
+ * The rendered bet marker — tower, gap and amount — centred on `chips`.
+ *
+ * See "A BET IS NOT A DISC" above. Wide and short, because that is the shape
+ * `.chip-physics` actually paints.
+ */
+function chipMarkerRectSq(chips: Pos, size: Size): RectSq {
+  const c = sq(chips, size);
+  const halfW = chipMarkerHalfWidthPct(size);
+  const halfH = chipMarkerHalfHeightPct(size);
+  return { x0: c.x - halfW, x1: c.x + halfW, y0: c.y - halfH, y1: c.y + halfH };
+}
+
+/**
+ * True when a marker of this radius would sit on a seat's rendered bet.
+ *
+ * Dan 2026-08-27 round 3 item 9. The same slab test `isOnFeltText` uses, with
+ * the disc's radius as the pad, so the answer is about the whole puck rather
+ * than its centre. No extra clear-air term: MARKER_MIN_GAP_WIDTH_PCT is still
+ * enforced alongside this and is what buys the daylight — this decides
+ * TOUCHING, which is the thing Dan said can never happen.
+ */
+export function isOnChipMarker(
+  p: Pos,
+  chips: Pos,
+  size: Size = NOMINAL_SCALER,
+  markerRadiusWidthPct: number = 0
+): boolean {
+  const r = chipMarkerRectSq(chips, size);
+  const q = sq(p, size);
+  const pad = markerRadiusWidthPct;
+  return q.x > r.x0 - pad && q.x < r.x1 + pad && q.y > r.y0 - pad && q.y < r.y1 + pad;
+}
+
+/**
  * True when a marker of this radius would sit on the felt masthead - the
  * wordmark and the date / club / union / stakes lines printed under it.
  *
@@ -1243,6 +1403,13 @@ export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod
   // predicate, used by the direct placement and by every swing candidate.
   const clear = (p: Pos) =>
     markerGapWidthPct(p, chips, size) >= MARKER_MIN_GAP_WIDTH_PCT &&
+    /* Round 3, item 9: and not ON the bet either. The centre-to-centre
+       minimum above is a DISC rule, and the rendered bet is a wide box (see "A
+       BET IS NOT A DISC"), so a puck could clear the first test by 6% of the
+       table and still be sitting on the amount beside the tower. Both, always:
+       the gap keeps them reading as two markers, this keeps them from
+       touching. */
+    !isOnChipMarker(p, chips, size, puck) &&
     !isOnFeltText(p, size, puck) &&
     !overlapsTopSeatBox(p, seat, size);
   if (clear(placed)) return placed;
@@ -1265,6 +1432,7 @@ export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod
   const pv = sq(placed, size);
   const cv = sq(c, size);
   const sv = sq(seat, size);
+
   let best: Pos | null = null;
   let bestDist = Infinity;
   for (const dir of [1, -1]) {
@@ -1280,7 +1448,16 @@ export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod
          pulls outside points in, it never pushes inside points out. A sunken
          candidate breaks the "never deeper in than the chips" ordering, so
          every candidate is projected exactly onto the button's boundary
-         before it is judged. */
+         before it is judged.
+
+         THIS IS WHY THE PUCK IS NEVER MOVED INWARD TO SOLVE A COLLISION, and
+         it was tried on 2026-08-27: giving the search a second, radial axis
+         does clear the wide bet box in fewer degrees, but "player, then
+         button, then chips" (Dan 2026-08-19) is measured as the fraction of
+         its own boundary the puck reaches, with a 0.02 tolerance, and the
+         shallowest useful step was 0.94. Depth is not available. Angle is the
+         only axis, which is what bounds how wide the bet's keep-out can
+         usefully be — see CHIP_AMOUNT_MAX_CHARS. */
       const swung = unsq(
         { x: cv.x + vx * cosP - vy * sinP, y: cv.y + vx * sinP + vy * cosP },
         size

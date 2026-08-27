@@ -68,6 +68,17 @@ export interface UserTableSettings {
    *  instead of one socket per table. Mirrors to the ca_ws_mux localStorage
    *  flag that EngineStateClient reads at (re)connect time. */
   multi_shared_socket: boolean;
+  /**
+   * The top announcement ticker (TournamentStartingTicker) — the scrolling
+   * "starts in 2:14" / overlay strip that rides over the club lobby and the
+   * felt. Dan 2026-08-27, round 3, item 6: "the ticker at the top should be
+   * able to turn on or off in the table settings and in the club settings."
+   *
+   * This is the PLAYER's half. The club's half is `clubs.ticker_enabled`, and
+   * the two compose as AND — either can silence the strip, neither can force
+   * it on the other.
+   */
+  show_ticker: boolean;
 }
 
 export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
@@ -110,6 +121,10 @@ export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
   // day). The toggle remains the kill switch: turning it OFF writes
   // ca_ws_mux='0' and EngineStateClient falls back to per-table sockets.
   multi_shared_socket: true,
+  // Matches `user_table_settings.show_ticker DEFAULT true` in
+  // 20260827g_ticker_toggles_player_and_club.sql — see the block above for why
+  // these two must not disagree.
+  show_ticker: true,
 };
 
 // Metadata for rendering toggles
@@ -231,6 +246,11 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
     description:
       'All Tables Share One Game Connection - Instant Table Joins, Fewer Reconnects, Better Battery',
   },
+  {
+    key: 'show_ticker',
+    label: 'Announcement Ticker',
+    description: 'Show The Scrolling Tournament And Overlay Ticker At The Top Of The Screen',
+  },
 ];
 
 const LOCAL_CACHE_KEY = 'user_table_settings_cache';
@@ -311,6 +331,7 @@ export function useUserTableSettings(userId: string | null | undefined) {
               data.multi_desktop_alerts ?? DEFAULT_USER_TABLE_SETTINGS.multi_desktop_alerts,
             multi_shared_socket:
               data.multi_shared_socket ?? DEFAULT_USER_TABLE_SETTINGS.multi_shared_socket,
+            show_ticker: data.show_ticker ?? DEFAULT_USER_TABLE_SETTINGS.show_ticker,
           };
           setSettings(loaded);
           // Cache locally for instant loads

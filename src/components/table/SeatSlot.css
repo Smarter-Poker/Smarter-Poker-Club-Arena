@@ -30,10 +30,21 @@
      in the same place and by the same rule.
 
      Height is round(width x 1.4) — the 2.5:3.5 playing-card ratio, made exact
-     so the card art is never resampled. Keep it exact if these change. */
-  --sp-card2-w: 44px;
-  --sp-card2-h: 62px;
-  --sp-card2-step: 32px;
+     so the card art is never resampled. Keep it exact if these change.
+
+     Dan 2026-08-27 mobile round 3, item 1: "cards while playing No Limit
+     Hold'em are a lot smaller than cards in PLO. The hold'em cards need to be
+     the exact same size as the PLO cards." They now ARE: every width/height
+     below is the PLO4 pair for that breakpoint (the `:has(> *:nth-child(4))`
+     guards at ~1742, 2775, 2859, 2932 — keep the two sets equal if either
+     moves). Only the STEP still differs, and it must: step is the stride
+     between adjacent cards, and four cards have to overlap harder than two to
+     fit the same felt. The step here preserves the two-card row's existing
+     overlap (w - step, i.e. 12/12/10/9px) on top of the new width, so the
+     cards grew without the pair closing up. */
+  --sp-card2-w: 60px;
+  --sp-card2-h: 84px;
+  --sp-card2-step: 48px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1862,6 +1873,38 @@
   pointer-events: none;
 }
 
+/* ── THE HERO'S BADGE HANGS UNDER THE BET, NOT OVER IT ──────────────────────
+   Dan 2026-08-27, round 3, item 4: "the action pill CHECK should be below them
+   [the chips] above the hero's head."
+
+   It was above them. `.seat__action` is anchored to the top of the SEAT BOX
+   (top: -26px), while the bet is anchored to the seat's CENTRE and pushed out
+   along the rail (`--bet-offset-y`, about -71px on a phone). The hero's seat
+   box is the tallest on the table, so -26px from its top edge lands ABOVE the
+   bet rather than below it, and the column read CHECK / chips / head instead of
+   chips / CHECK / head.
+
+   Anchoring to the same origin the chips use is what makes the order true by
+   construction rather than by a number that happens to work at one breakpoint:
+     50%                     the seat's centre, the chips' origin
+     + var(--bet-offset-y)   the chips' own centre, whatever the rail decides
+     + --sp-bet-half         half the tower, i.e. its underside
+     + 4px                   air
+   The badge then follows the bet at every table size and every seat pod,
+   including the sizes where `--bet-offset-y` is measured rather than assumed.
+
+   HERO ONLY. Villains keep the crown overlap described above: their seat boxes
+   are short, their bets are nowhere near their heads, and the two have never
+   competed.
+
+   `--sp-bet-half` is half of `--cp-chip-size` times the four-chip tower factor
+   (1.75) — the same tower height tableGeometry.ts models in
+   CHIP_TOWER_MAX_CHIPS. Kept as its own token so the two cannot drift silently. */
+.seat--hero .seat__action {
+  --sp-bet-half: calc(var(--cp-chip-size, 24px) * 1.75 / 2);
+  top: calc(50% + var(--bet-offset-y, 0px) + var(--sp-bet-half) + 4px);
+}
+
 @keyframes actionPopIn {
   0% {
     opacity: 0;
@@ -2740,11 +2783,11 @@
   .seat {
     --seat-avatar-base: 66px; /* Dan 2026-08-24: avatars were too large on phones */
     width: 88px; /* was 72px -- 1.5x avatars */
-    /* The two-card hand at this breakpoint — hero AND every hold'em villain.
-       See the token block on the base `.seat` rule for why they share it. */
-    --sp-card2-w: 42px;
-    --sp-card2-h: 59px;
-    --sp-card2-step: 30px;
+    /* The two-card hand at this breakpoint. Width/height are the PLO4 pair for
+       this breakpoint (item 1, 2026-08-27); step keeps the row's own overlap. */
+    --sp-card2-w: 57px;
+    --sp-card2-h: 80px;
+    --sp-card2-step: 45px;
   }
 
   .seat__info {
@@ -2819,10 +2862,10 @@
   .seat {
     --seat-avatar-base: 58px; /* see the note in the 640px block */
     width: 80px; /* was 66px -- 1.5x avatars */
-    /* Two-card hand: hero AND every hold'em villain. See the base `.seat`. */
-    --sp-card2-w: 36px;
-    --sp-card2-h: 50px;
-    --sp-card2-step: 26px;
+    /* Two-card hand: PLO4's width/height at this breakpoint (item 1). */
+    --sp-card2-w: 51px;
+    --sp-card2-h: 71px;
+    --sp-card2-step: 41px;
   }
 
   /* Only the overlap into the name box is tuned per breakpoint now; the slot
@@ -2896,10 +2939,10 @@
   .seat {
     --seat-avatar-base: 52px; /* see the note in the 640px block */
     width: 72px; /* was 58px -- 1.5x avatars */
-    /* Two-card hand: hero AND every hold'em villain. See the base `.seat`. */
-    --sp-card2-w: 32px;
-    --sp-card2-h: 45px;
-    --sp-card2-step: 23px;
+    /* Two-card hand: PLO4's width/height at this breakpoint (item 1). */
+    --sp-card2-w: 45px;
+    --sp-card2-h: 63px;
+    --sp-card2-step: 36px;
   }
 
   .seat {

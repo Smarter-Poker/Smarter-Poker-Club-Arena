@@ -41,6 +41,13 @@ import {
   FELT_MARKER_MARGIN_WIDTH_PCT,
   FELT_WINDOW,
   MARKER_MIN_GAP_WIDTH_PCT,
+  isOnChipMarker,
+  buttonRadiusWidthPct,
+  chipMarkerHalfWidthPct,
+  chipMarkerHalfHeightPct,
+  CHIP_AMOUNT_CHAR_PX,
+  CHIP_AMOUNT_MAX_CHARS,
+  CHIP_AMOUNT_GAP_PX,
   overlapsTopSeatBox,
   TOP_CAP_SEAT_Y_MAX,
   type Pos,
@@ -488,6 +495,63 @@ describe('the rail itself', () => {
     const c = feltCenter();
     expect(betChipOffsetPx(c, TABLES['phone 375px'])).toEqual({ x: 0, y: 0 });
     expect(dealerButtonPosition(c)).toEqual(c);
+  });
+});
+
+/**
+ * Dan 2026-08-27, round 3, item 9: "chips can never overlap the button or the
+ * button can never overlap the chips. You have to ensure that these are both
+ * ALWAYS in different positions for all players in all seat positions."
+ *
+ * The suite above already proved they are never in the same place — as DISCS.
+ * What renders is `.chip-physics`, a flex row of [tower][6px][amount], centred
+ * on the chip position, and the amount is the widest thing on the felt that
+ * nothing was measuring. A puck could satisfy MARKER_MIN_GAP_WIDTH_PCT by 6% of
+ * the table and still be printed across the number, which is what Dan
+ * photographed. `isOnChipMarker` is the box, and this is the guarantee.
+ */
+describe('round 3 item 9 - the button is never ON the rendered bet', () => {
+  for (const [label, table] of Object.entries(TABLES)) {
+    for (const [size, ring] of Object.entries(RINGS)) {
+      it(`${size}-max on a ${label} table: no seat's puck touches its own bet`, () => {
+        for (const seat of ring) {
+          const chips = chipRestPosition(seat, table);
+          const btn = dealerButtonPosition(seat, table);
+          expect(
+            isOnChipMarker(btn, chips, table, buttonRadiusWidthPct(table)),
+            `seat ${JSON.stringify(seat)}: puck at ${btn.x.toFixed(1)},${btn.y.toFixed(1)} ` +
+              `is on the bet marker at ${chips.x.toFixed(1)},${chips.y.toFixed(1)}`
+          ).toBe(false);
+        }
+      });
+    }
+  }
+
+  it('measures the bet as the whole row, not the tower', () => {
+    // The regression in one line: a marker modelled as the tower alone is
+    // about a third of its real width, and the third that is missing is the
+    // side the puck was landing on.
+    const table = TABLES['phone 375px'];
+    expect(chipMarkerHalfWidthPct(table)).toBeGreaterThan(chipMarkerHalfHeightPct(table));
+    const labelPx = CHIP_AMOUNT_MAX_CHARS * CHIP_AMOUNT_CHAR_PX;
+    expect(labelPx + CHIP_AMOUNT_GAP_PX).toBeGreaterThan(
+      (chipMarkerHalfHeightPct(table) * table.w) / 100
+    );
+  });
+
+  it('keeps the keep-out inside what the search can actually satisfy', () => {
+    /* THE CEILING, WRITTEN DOWN. The puck can only move along its own felt
+       boundary — depth is spent on "player, then button, then chips" — so a
+       keep-out wider than roughly 8% of the table's width cannot be cleared by
+       the hero without swinging the puck past the halfway point to the next
+       chair. Measured on 2026-08-27: 7.51% passes every seat of every ring;
+       the 0.9rem label it replaced was 8.89% and did not. If this ever fails,
+       the number to change is the amount's FONT SIZE (TableVisualHotfix.css
+       section 4, from which CHIP_AMOUNT_CHAR_PX is derived) — not this
+       ceiling, and not the ownership guard above it. */
+    for (const table of Object.values(TABLES)) {
+      expect(chipMarkerHalfWidthPct(table)).toBeLessThanOrEqual(8);
+    }
   });
 });
 

@@ -213,14 +213,11 @@ test.describe('LIVE E2E — the multi-table tab bar, beat by beat', () => {
     expect(lost.tabResultLost, 'a loss must flash red for the same moment').toBe(2500);
   });
 
-  test('the last-action chip arrives, it does not blink into place', async ({ page }) => {
-    const b = await beat(
-      page,
-      `const c=document.createElement('span');c.className='table-tab-bar__action-chip';
-       c.textContent='Fold';$('tabTurn').appendChild(c);`
-    );
-    expect(b.actionChipIn, 'the action chip must enter').toBe(180);
-  });
+  /* The last-action chip's entrance test was removed on 2026-08-27 with the
+     chip (Dan, round 3, item 5: "there should never be an action, like BET,
+     inside the action pill"). There is no element left to animate; the
+     invariant that nothing renders one is pinned in
+     tests/unit/tabBarQuietWhileObserving.test.ts instead. */
 
   test('the long-press quick menu and quick-join sheet both make an entrance', async ({ page }) => {
     const menu = await beat(
@@ -313,11 +310,9 @@ test.describe('LIVE E2E — the multi-table tab bar, beat by beat', () => {
     const b = await beat(
       page,
       `$('timerBar').classList.add('table-tab-bar__timer-bar--urgent');
-       $('tabIdle').classList.add('table-tab-bar__tab--won');
-       const c=document.createElement('span');c.className='table-tab-bar__action-chip';
-       c.textContent='Call';$('tabTurn').appendChild(c);`
+       $('tabIdle').classList.add('table-tab-bar__tab--won');`
     );
-    for (const name of ['timerBarUrgent', 'tabResultWon', 'actionChipIn']) {
+    for (const name of ['timerBarUrgent', 'tabResultWon']) {
       if (name in b) {
         expect(
           b[name],

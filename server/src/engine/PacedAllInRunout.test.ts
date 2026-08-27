@@ -118,6 +118,78 @@ describe('pacedAllInRunout', () => {
     expect(timeline.filter((e) => e.what.startsWith('deal:'))).toHaveLength(1);
   });
 
+  /**
+   * Dan 2026-08-27, round 3, item 8: "There was a 3-way all-in preflop, one
+   * player with AA, another with QQ and the third with 99. There was a bug or
+   * glitch with 3 players all in, the board never ran out, nothing happened,
+   * and the players who lost (QQ and 99) saw all their chips lost."
+   *
+   * The loop used to `await` the equity broadcast on every street, so the
+   * DEAL was gated on a computation whose cost grows with the number of all-in
+   * hands: the worker pool carries a 15s per-job timeout, and its failure path
+   * is a synchronous per-player enumeration on the main event loop. Two hands
+   * was survivable. Three was not, three times over.
+   *
+   * There was no three-handed test on a plain table — the existing 3-way
+   * coverage is all RunItTwice — which is why a bug that only appears with a
+   * third player reached production.
+   */
+  describe('three-handed, the case Dan reported', () => {
+    const THREE = [
+      { user_id: 'aa', seat: 1, cards: [{}, {}] },
+      { user_id: 'qq', seat: 2, cards: [{}, {}] },
+      { user_id: 'nn', seat: 3, cards: [{}, {}] },
+    ] as never[];
+
+    it('runs the board out and completes, with three players all in preflop', async () => {
+      const { engine, timeline, getBoard } = harness(0);
+      await engine.pacedAllInRunout(THREE, 1000);
+
+      expect(timeline.filter((e) => e.what.startsWith('deal:')).map((d) => d.what)).toEqual([
+        'deal:flop',
+        'deal:turn',
+        'deal:river',
+      ]);
+      expect(getBoard()).toHaveLength(5);
+      expect(timeline.filter((e) => e.what === 'complete')).toHaveLength(1);
+    });
+
+    it('deals on time even when the equity computation takes far longer than the street', async () => {
+      /* THE REGRESSION ITSELF. Equity here takes 500ms a street against a 10ms
+         street pause — the shape of a three-way job that times out on the pool
+         and falls back to the synchronous enumeration. Before the fix this
+         test's board would still be face down when the assertion ran, because
+         the deal waited for the number. */
+      const { engine, timeline, getBoard } = harness(0);
+      engine.broadcastAllInEquity = vi
+        .fn()
+        .mockImplementation(() => new Promise((r) => setTimeout(r, 500)));
+
+      const started = Date.now();
+      await engine.pacedAllInRunout(THREE, 1000);
+      const elapsed = Date.now() - started;
+
+      expect(getBoard()).toHaveLength(5);
+      expect(timeline.filter((e) => e.what === 'complete')).toHaveLength(1);
+      // Three streets of a 500ms wait would be 1.5s on its own. The whole
+      // runout is paced by its own sleeps (5 + 10 + 10 + 5 = 30ms) and must
+      // stay in that neighbourhood.
+      expect(elapsed).toBeLessThan(400);
+    });
+
+    it('a rejected equity job does not stop the board or the hand', async () => {
+      // Nothing awaits the promise any more, so a rejection has to be caught at
+      // the call site or it becomes an unhandled rejection that can take the
+      // process down — and with it every other table on the server.
+      const { engine, timeline, getBoard } = harness(0);
+      engine.broadcastAllInEquity = vi.fn().mockRejectedValue(new Error('equity pool is down'));
+
+      await expect(engine.pacedAllInRunout(THREE, 1000)).resolves.toBeUndefined();
+      expect(getBoard()).toHaveLength(5);
+      expect(timeline.filter((e) => e.what === 'complete')).toHaveLength(1);
+    });
+  });
+
   it('does not spin forever when the deck runs short', async () => {
     // AUDIT 2026-08-19: dealNextStreet returns whatever the deck has left. A
     // board that stops growing used to satisfy the loop condition forever —

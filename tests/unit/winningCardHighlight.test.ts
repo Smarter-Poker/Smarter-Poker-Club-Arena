@@ -79,7 +79,12 @@ describe('the engine SENDS which board cards won', () => {
 
 describe('the client RENDERS the highlight', () => {
   it('the board is passed the winner card indices', () => {
-    expect(TABLE_PAGE).toMatch(/highlightedIndices=\{winnerInfo\.cardIndices\}/);
+    /* `shownWinnerInfo`, not `winnerInfo`, since 2026-08-27 (round 3, item 7).
+       Same field; the view it is read from is stamped with the hand it belongs
+       to, so a result cannot be rendered against a later hand. Asserted as the
+       STAMPED view deliberately — reading the raw record here would be the
+       regression this rename exists to prevent. */
+    expect(TABLE_PAGE).toMatch(/highlightedIndices=\{shownWinnerInfo\.cardIndices\}/);
   });
 
   it('it reads the field the engine actually emits', () => {
@@ -87,8 +92,29 @@ describe('the client RENDERS the highlight', () => {
   });
 
   it('the highlight is cleared between hands, never carried over', () => {
-    const clears = TABLE_PAGE.match(/cardIndices:\s*\[\]/g) || [];
-    expect(clears.length).toBeGreaterThanOrEqual(2);
+    /* THE CLEAR IS ONE OBJECT NOW, NOT THREE COPIES OF ONE (2026-08-27).
+       This used to count `cardIndices: []` literals, requiring at least two —
+       HAND_STARTED and the HAND_COMPLETE hold. Those literals were four
+       hand-maintained copies of the same empty value, and the round-3 item-7
+       stamp had to be added to every one of them, which is precisely how a
+       clearing path gets missed. They collapsed onto `EMPTY_WINNER_INFO`.
+
+       So the assertion moved with them, and got stronger: the empty value has
+       to exist, both clearing paths have to use it, and — the part no literal
+       count could ever have caught — the display has to be fenced by the hand
+       stamp, so a clear that is late or never arrives cannot show a stale
+       banner in the first place. */
+    expect(TABLE_PAGE).toMatch(/const EMPTY_WINNER_INFO: TableWinnerInfo = \{/);
+    expect(TABLE_PAGE).toMatch(/cardIndices:\s*\[\]/);
+    const clears = TABLE_PAGE.match(/setWinnerInfo\(EMPTY_WINNER_INFO\)/g) || [];
+    expect(clears.length, 'HAND_STARTED and the HAND_COMPLETE hold both clear it').toBe(2);
+    // And the mirror the WS handlers read, which render-time assignment alone
+    // left holding the previous hand until React committed.
+    const mirrorClears = TABLE_PAGE.match(/winnerInfoRef\.current = EMPTY_WINNER_INFO/g) || [];
+    expect(mirrorClears.length).toBe(2);
+    // The fence itself.
+    expect(TABLE_PAGE).toMatch(/const shownWinnerInfo = useMemo/);
+    expect(TABLE_PAGE).toMatch(/winnerInfo\.handNumber === live/);
   });
 
   it('the board component still accepts and applies the prop', () => {

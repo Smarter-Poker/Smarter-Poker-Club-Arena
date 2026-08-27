@@ -105,7 +105,11 @@ describe('cards outside the winning five drop to 0.28 (measured, channel-neutral
     const uses = SEAT.match(/isDimmed=\{\s*winnerDisplayActive\s*&&/g) || [];
     expect(uses.length, 'villain row AND hero row must both dim').toBeGreaterThanOrEqual(2);
     expect(SEAT).toMatch(/prev\.winnerDisplayActive\s*!==\s*next\.winnerDisplayActive/);
-    expect(TABLE_PAGE).toMatch(/winnerDisplayActive=\{winnerInfo\.playerIds\.length\s*>\s*0\}/);
+    // `shownWinnerInfo` since 2026-08-27 (round 3, item 7): the hand-stamped
+    // view, so the table-wide dim cannot outlive the hand that caused it.
+    expect(TABLE_PAGE).toMatch(
+      /winnerDisplayActive=\{shownWinnerInfo\.playerIds\.length\s*>\s*0\}/
+    );
   });
 });
 
@@ -217,7 +221,9 @@ describe('the winner sequence details match the reference', () => {
 describe('multi-board and chopped pots get the same winner display', () => {
   it('each winner carries their OWN hand name, and every seat reads its own', () => {
     expect(TABLE_PAGE).toMatch(/handNames:\s*Record<string,\s*string>/);
-    expect(TABLE_PAGE).toMatch(/winnerInfo\.handNames\[player\.id\]\s*\|\|\s*winnerInfo\.handName/);
+    expect(TABLE_PAGE).toMatch(
+      /shownWinnerInfo\.handNames\[player\.id\]\s*\|\|\s*shownWinnerInfo\.handName/
+    );
   });
 
   it('per-pot POT_WIN events MERGE — earlier pot winners stay lit on split/side pots', () => {
@@ -235,8 +241,18 @@ describe('multi-board and chopped pots get the same winner display', () => {
   });
 
   it('handNames resets with the rest of winnerInfo at hand start', () => {
-    const clears = TABLE_PAGE.match(/handNames:\s*\{\}/g) || [];
-    expect(clears.length).toBeGreaterThanOrEqual(3);
+    /* Counted `handNames: {}` literals and wanted three of them. Those were
+       three of the four hand-written copies of the empty winner record; on
+       2026-08-27 they became one `EMPTY_WINNER_INFO`, so counting copies now
+       measures duplication rather than correctness. What has to be true is
+       that the empty value carries the field and that both clearing paths use
+       it — plus the stamp, which is what makes the display correct even when a
+       clear never happens (round 3, item 7). */
+    expect(TABLE_PAGE).toMatch(
+      /const EMPTY_WINNER_INFO: TableWinnerInfo = \{[\s\S]*?handNames:\s*\{\},/
+    );
+    expect((TABLE_PAGE.match(/setWinnerInfo\(EMPTY_WINNER_INFO\)/g) || []).length).toBe(2);
+    expect(TABLE_PAGE).toMatch(/const shownWinnerInfo = useMemo/);
   });
 
   it('every RIT board derives its winning five AND its winner hole cards', () => {

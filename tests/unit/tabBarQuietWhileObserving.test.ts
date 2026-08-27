@@ -27,6 +27,17 @@ import { resolve } from 'node:path';
 
 const SRC = readFileSync(resolve(__dirname, '../../src/components/table/TableTabBar.tsx'), 'utf8');
 
+/**
+ * The same source with comments removed.
+ *
+ * Needed from 2026-08-27, when the action chip was deleted and a note was left
+ * where it stood explaining what went and why. An assertion that the chip is
+ * absent has to look at the CODE — a comment saying "the chip was removed"
+ * contains every string such an assertion searches for, and would report the
+ * chip as still present forever.
+ */
+const CODE = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+
 /** The per-tab render body. */
 const TAB = SRC.slice(SRC.indexOf('const isActive = tab.id === activeTabId;'));
 
@@ -66,8 +77,15 @@ describe('an observed tab shows the game and the stakes, and nothing that moves'
     );
   });
 
-  it('does not flash an action chip or a win/loss pulse', () => {
-    expect(TAB).toMatch(/const flash = observing \? undefined : actionFlash\[tab\.id\]/);
+  it('does not flash a win/loss pulse', () => {
+    /* The action-chip half of this assertion went on 2026-08-27 with the chip
+       itself (round 3, item 5: "there should never be an action, like BET,
+       inside the action pill"). An observed tab cannot flash an action it no
+       longer has, for anybody — so the invariant this line protected is now
+       enforced by the chip's absence rather than by a gate on it. The
+       replacement assertion is stronger: nothing may render it at all. */
+    expect(CODE).not.toMatch(/table-tab-bar__action-chip/);
+    expect(CODE).not.toMatch(/actionFlash/);
     expect(TAB).toMatch(/const result = observing \? undefined : resultFlash\[tab\.id\]/);
   });
 

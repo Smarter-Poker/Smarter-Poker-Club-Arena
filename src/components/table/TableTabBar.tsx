@@ -43,9 +43,8 @@ export interface TabInfo {
    * When present the tab renders mini cards instead of the table name.
    */
   holeCards?: string;
-  /** Hero's last action this street ('fold', 'call', ...) for the
-   *  transient badge under the tab. */
-  lastAction?: string;
+  /* `lastAction` REMOVED 2026-08-27 (round 3, item 5) with the transient
+     action chip it fed — see the note in the component body. */
   /** Hero folded this hand — the tab dims (roadmap batch 1). */
   folded?: boolean;
   /** Showdown outcome edge: "win:<hand>" / "loss:<hand>" / "". The tab
@@ -147,15 +146,8 @@ const MiniCards = React.memo(function MiniCards({ cards }: { cards: string }) {
   );
 });
 
-/** Display labels for the transient last-action chip. */
-const ACTION_LABEL: Record<string, string> = {
-  fold: 'Fold',
-  check: 'Check',
-  call: 'Call',
-  bet: 'Bet',
-  raise: 'Raise',
-  all_in: 'All In',
-};
+/* `ACTION_LABEL` DELETED 2026-08-27 — see the note on the transient action
+   chip's removal further down (round 3, item 5). */
 
 export interface TableTabBarProps {
   tabs: TabInfo[];
@@ -173,6 +165,15 @@ export interface TableTabBarProps {
   /** Batch 3: one-tap sit out / return across every seated table. */
   onSitOutAll?: () => void;
   onBackAll?: () => void;
+  /**
+   * Open the across-all-tables session breakdown.
+   *
+   * Dan 2026-08-27 round 3, item 3: the header's session P&L chip was removed
+   * (it was the "negative number in the header"). Its popover is still wanted,
+   * so its trigger moved here, next to the other all-tables actions. Absent
+   * when there is no tracked session to show.
+   */
+  onShowSession?: () => void;
   /**
    * Supabase realtime link is down or reconnecting. Multi-tabling players
    * cannot otherwise tell that their tables have stopped receiving updates —
@@ -197,61 +198,34 @@ export function TableTabBar({
   onQuickAction,
   onSitOutAll,
   onBackAll,
+  onShowSession,
 }: TableTabBarProps) {
   const emptySlots = maxTables - tabs.length;
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  // ─── Transient last-action chips (PokerBros parity, Dan 2026-08-20) ───
-  // When a tab's lastAction changes to a new non-empty value, flash it on the
-  // tab for 2.5s, then clear. Timers live in a ref keyed by tab id so a
-  // re-render (the turn clock ticks tabs every second) never cancels a
-  // pending expiry — an effect-cleanup clearTimeout here would leave chips
-  // stuck on screen whenever the clock was running.
-  const [actionFlash, setActionFlash] = useState<Record<string, string>>({});
-  const prevActionsRef = useRef<Record<string, string>>({});
-  const flashTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  useEffect(() => {
-    for (const tab of tabs) {
-      const prev = prevActionsRef.current[tab.id] ?? '';
-      const cur = tab.lastAction ?? '';
-      if (cur && cur !== prev) {
-        setActionFlash((p) => ({ ...p, [tab.id]: cur }));
-        clearTimeout(flashTimersRef.current[tab.id]);
-        flashTimersRef.current[tab.id] = setTimeout(() => {
-          setActionFlash((p) => {
-            if (!(tab.id in p)) return p;
-            const next = { ...p };
-            delete next[tab.id];
-            return next;
-          });
-        }, 2500);
-      }
-      prevActionsRef.current[tab.id] = cur;
-    }
-    // Audit 2026-08-20: closing a tab left its entries behind in all three
-    // stores forever (and a pending timer could later setState for a tab that
-    // no longer exists). Prune everything keyed by an id that is gone.
-    const liveIds = new Set(tabs.map((t) => t.id));
-    for (const id of Object.keys(prevActionsRef.current)) {
-      if (!liveIds.has(id)) {
-        delete prevActionsRef.current[id];
-        clearTimeout(flashTimersRef.current[id]);
-        delete flashTimersRef.current[id];
-        setActionFlash((p) => {
-          if (!(id in p)) return p;
-          const next = { ...p };
-          delete next[id];
-          return next;
-        });
-      }
-    }
-  }, [tabs]);
-  // Clear all pending flash timers on unmount only.
-  useEffect(() => {
-    const timers = flashTimersRef.current;
-    return () => Object.values(timers).forEach(clearTimeout);
-  }, []);
+  /* ─── THE TRANSIENT LAST-ACTION CHIP IS GONE (Dan 2026-08-27, round 3) ───
+     "There should never be an action, like BET, inside the action pill — only
+     the hand you have and the timer bar."
+
+     What went: `actionFlash` state, `prevActionsRef`, `flashTimersRef`, the
+     rising-edge effect that armed a 2.5s flash, the unmount sweep, the
+     `ACTION_LABEL` map, the `<span className="table-tab-bar__action-chip">`
+     and the `lastAction` field on this file's TabInfo, on MultiTablePage's
+     TableInfo and on TablePage's `onTableInfoUpdate` payload — the whole chain
+     that computed the value, because a chip nothing renders is not a feature
+     that is merely hidden.
+
+     WHAT REMAINS ON THE PILL IS EXACTLY WHAT DAN ASKED FOR: the mini cards
+     (`<MiniCards>`), and `.table-tab-bar__timer-bar` riding the pill's bottom
+     edge. The result flash below is a WIN/LOSS pulse on the pill's own
+     background, not an action word, and the decision / TIME BANK branches are
+     states of the clock rather than actions taken — none of those puts an
+     action inside the pill, so none of them is in scope here.
+
+     Do not reintroduce it. If a "what did I just do" cue is ever wanted again,
+     it belongs on the seat (`.seat__action`), where the same information is
+     already drawn for every player at the table. */
 
   // ─── Showdown result flash (roadmap batch 1) ──────────────────────────
   // Same rising-edge machinery as the action chips: when a tab's handResult
@@ -609,7 +583,6 @@ export function TableTabBar({
           const isMyTurn = !observing && tab.isMyTurn;
           const isUrgent = isMyTurn && tab.timeRemaining !== undefined && tab.timeRemaining < 10;
           const hasCards = !observing && heroHasCards;
-          const flash = observing ? undefined : actionFlash[tab.id];
           const result = observing ? undefined : resultFlash[tab.id];
           const isMuted = !!mutedIds?.includes(tab.id);
           // Dan 2026-08-21: 5 seconds left on ANY clock at this table - turn,
@@ -723,10 +696,9 @@ export function TableTabBar({
                 </span>
               )}
 
-              {/* Transient last-action chip ("Fold", "Call", ...) */}
-              {flash && !isMyTurn && (
-                <span className="table-tab-bar__action-chip">{ACTION_LABEL[flash] ?? flash}</span>
-              )}
+              {/* The transient last-action chip that stood here was removed on
+                  2026-08-27 (round 3, item 5). See the note in the component
+                  body for what went with it and why. */}
 
               {/* Turn indicator — show timer or pulsing dot */}
               {!isActive && isMyTurn && (
@@ -885,11 +857,13 @@ export function TableTabBar({
                     () => onQuickAction(tab.id, 'leave'),
                     true
                   )}
-                {(onSitOutAll || onBackAll) && tabs.length > 1 && (
+                {((onSitOutAll || onBackAll) && tabs.length > 1) || onShowSession ? (
                   <div className="table-tab-bar__qmenu-sep" aria-hidden="true" />
-                )}
+                ) : null}
                 {onSitOutAll && tabs.length > 1 && item('Sit Out All Tables', onSitOutAll)}
                 {onBackAll && tabs.length > 1 && item('Back At All Tables', onBackAll)}
+                {/* Rehomed from the header chip — see onShowSession's doc. */}
+                {onShowSession && item('Session Totals', onShowSession)}
               </div>
             </>
           );

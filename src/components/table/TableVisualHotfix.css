@@ -211,11 +211,23 @@
 
 /* Only the TEXT beside a stack is sized in rem, because it is type on the table
    page rather than a marker on the felt. */
+/* 0.7rem, not 0.9rem (Dan 2026-08-27, round 3, item 9).
+   THIS NUMBER IS PART OF THE DEALER-BUTTON GEOMETRY, not a taste call. The bet
+   marker is a flex ROW — tower, 6px gap, then this label — so the label's width
+   is most of the marker's width, and `tableGeometry.ts` has to keep the puck
+   off the whole marker rather than off the tower. At 0.9rem the widest amount
+   ("9,999") was 43px, 12.4% of a 347px phone table, and no position on the
+   puck's boundary cleared a keep-out that wide without walking it most of the
+   way to the next chair.
+   `CHIP_AMOUNT_CHAR_PX` in tableGeometry.ts is derived from this size. Change
+   one and change the other, then run tests/table-geometry-chips.test.ts and
+   tests/unit/chipRail.test.ts — they are what says whether the new keep-out is
+   reachable. */
 .table-page .cp-amount {
-  font-size: 0.9rem !important;
+  font-size: 0.7rem !important;
 }
 .table-page .cp--compact .cp-amount {
-  font-size: 0.8rem !important;
+  font-size: 0.65rem !important;
 }
 .table-page .cp-chip__label {
   font-size: 0.6rem !important;
@@ -234,8 +246,38 @@
 .table-page .pot-area {
   /* Dan 2026-08-17 (audit): 24% left the pot box kissing the board cards'
      top edge on the live table. 19% restores clear air between pot and
-     board while staying under the felt masthead. */
-  top: 19% !important;
+     board while staying under the felt masthead.
+
+     Dan 2026-08-27 round 3, item 2: "the pot area and the chips below it need
+     to slide down because it's blocking the showdown and other features of the
+     villains above them." 19% -> 28%.
+
+     WHY 19% WAS SAFE TO LEAVE. That number was tuned on 2026-08-17 against the
+     pot as it was THEN: the tall glassmorphism box, a column layout with big
+     padding and a gold glow wall. It was redesigned into a thin single-row
+     pill three days later (PotDisplay.css section 5, "Dan 2026-08-20
+     PokerBros-parity: the pot is a THIN PILL"), and nobody re-derived this
+     override afterwards. The clearance the old note was protecting had already
+     grown by the height difference of the two designs, and TablePage.css:1351
+     measured what was left: the pot's underside sits ~95px clear of the
+     board's top edge on a 393x852 phone. The pot was parked high against a
+     constraint that no longer exists, which is why it ended up level with the
+     top row's bet chips instead.
+
+     THE ARITHMETIC (390px viewport, scaler 360x595, the same frame
+     TablePage.css:1331 uses):
+       top-row seat (50,5)   chips centre 85.7px = 14.4% of the scaler,
+                             underside ~15.5%
+       pot pill              ~22px tall, so at top:T it spans T-1.9% .. T+1.9%;
+                             the pile hangs below it to about T+6%
+       board top edge        43.5% of the felt = 40% of the scaler
+     At 19% the pill's top edge was 17.1% — ten pixels under the top row's
+     chips, which is the report. At 28% it is 26.1%: 64px of air above, and the
+     pile's underside at ~34% still leaves 36px above the board.
+
+     Ceiling: keep T <= 30%, or the pile starts crowding the board again and
+     the 2026-08-17 note becomes true a second time. */
+  top: 28% !important;
 }
 .table-page .pot-display__side-pots {
   margin-top: 2px !important;

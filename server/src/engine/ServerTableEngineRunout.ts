@@ -772,8 +772,41 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           break;
         }
 
+        /* ── EQUITY NEVER GATES THE DEAL (Dan 2026-08-27, round 3, item 8) ──
+           "There was a 3-way all-in preflop, one player with AA, another with
+            QQ and the third with 99. There was a bug with 3 players all in, the
+            board never ran out, nothing happened, and the players who lost saw
+            all their chips lost."
+
+           THIS `await` IS WHY IT WAS THREE-HANDED AND NOT TWO. The dealing loop
+           stopped on every street until the equity numbers came back, and the
+           cost of those numbers is not linear in the number of players:
+
+             - `getEquityPool().estimateEquity` carries a 15s per-job timeout
+               (EquityWorkerPool.JOB_TIMEOUT_MS). On timeout it THROWS, which
+               lands in the catch below;
+             - the catch is a per-player synchronous fallback on the MAIN EVENT
+               LOOP — `insuranceEquity` enumerates every remaining board on the
+               flop and turn and samples 6,000 preflop, once PER PLAYER.
+
+           Two players is one worker job and, in the bad case, two synchronous
+           passes. Three players is one heavier job and THREE passes, and it is
+           run again on the flop, the turn and the river. Stack those and the
+           table is doing nothing visible for a long time with the cards still
+           face down — "nothing happened" — while the pot has already been
+           taken, which is the rest of Dan's report.
+
+           A percentage is COMMENTARY. The deal is the game. So the equity is
+           fired and left to land whenever it lands: the board now runs out on
+           the same 1.4s beat whatever the pool, the worker pool or the
+           fallback do, and if the numbers arrive after the next card they are
+           simply a beat behind rather than holding the hand hostage. The
+           `.catch` is what keeps a rejected job from becoming an unhandled
+           rejection now that nothing awaits it. */
         if (allInPlayers.length >= 2) {
-          await this.broadcastAllInEquity(allInPlayers, result.board, pot);
+          void this.broadcastAllInEquity(allInPlayers, result.board, pot).catch((err) =>
+            reportError(err, 'ServerTableEngine.' + this.tableId + '.paced_runout_equity_failed')
+          );
         }
 
         if (result.complete) break;
@@ -1770,8 +1803,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     this.broadcastCurrentState();
 
     // RE-BROADCAST EQUITY: all players and observers see updated percentages
-    // as each card is dealt.
-    await this.broadcastAllInEquity(allInPlayers, result.board, pot);
+    // as each card is dealt. NOT awaited — same reason as the paced runout
+    // (round 3, item 8): the cost of the numbers grows with the number of
+    // all-in players and it must never be able to hold up the card after them.
+    // This path has more at stake than the other, because the insurance flow it
+    // re-enters is what carries the hand's clock.
+    void this.broadcastAllInEquity(allInPlayers, result.board, pot).catch((err) =>
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.insurance_street_equity_failed')
+    );
 
     if (result.complete) {
       // River is down — settle (insurance included) via the normal finalize.

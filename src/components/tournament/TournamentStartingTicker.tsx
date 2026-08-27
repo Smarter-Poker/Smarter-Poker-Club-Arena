@@ -39,6 +39,7 @@ import { formatPopupText } from '../../utils/popupStyle';
 import { reportError } from '../../utils/errorReporter';
 import { busToast } from '../../core/MasterBus';
 import { measureTopChromeBottom, TOP_CHROME_SELECTORS } from './topChrome';
+import { useUserTableSettings } from '../../hooks/useUserTableSettings';
 import {
   rankOverlayAnnouncements,
   overlayMessage,
@@ -115,6 +116,31 @@ export function TournamentStartingTicker() {
   });
   const clubIdsRef = useRef<string[] | null>(null);
 
+  /* ── THE PLAYER'S HALF OF THE TICKER SWITCH (Dan 2026-08-27, item 6) ──
+     `useUserTableSettings` hydrates from its localStorage cache in its own
+     initialiser, so a returning player's choice is honoured on the very first
+     paint rather than a beat later when the row arrives — which matters for a
+     control whose entire complaint is "I do not want to see this thing". With
+     no id (signed out) the hook serves the defaults, i.e. the ticker behaves as
+     it always has. */
+  const [tickerUserId, setTickerUserId] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const auth = await import('../../lib/authUtils').then((m) => m.readLocalSession());
+        if (!cancelled) setTickerUserId(auth?.userId ?? null);
+      } catch {
+        /* signed out, or no readable session: the defaults are correct */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const { settings: userTableSettings } = useUserTableSettings(tickerUserId);
+  const tickerAllowedByPlayer = userTableSettings.show_ticker;
+
   /* Dan 2026-08-21: "it should play UNDER the global header, not through it."
 
      The header is position: sticky, top 0, z-index 100, and lives inside the
@@ -185,7 +211,19 @@ export function TournamentStartingTicker() {
     };
   }, [location.pathname]);
 
-  // ── Which clubs (and unions) does this player belong to? ──
+  /* ── Which clubs (and unions) does this player belong to? ──
+     …AND, since 2026-08-27, which of those still want to be announced for.
+
+     THE CLUB SWITCH IS APPLIED HERE, AT THE SCOPE, rather than at the render.
+     Every query below — starting-soon AND overlays — is scoped by the ids this
+     returns, so filtering once here silences a club's announcements in both
+     surfaces, and it does it without fetching them in the first place. The
+     alternative, filtering the results, could not work for overlays at all:
+     `OverlayAnnouncement` carries no club id, so by the time an overlay reaches
+     the render there is nothing left to test it against.
+
+     A club with the switch OFF is dropped from the scope entirely — it is not
+     "a club with nothing to say", it is a club that has said not to say it. */
   const loadScope = useCallback(async (): Promise<string[]> => {
     if (clubIdsRef.current) return clubIdsRef.current;
     try {
@@ -198,8 +236,36 @@ export function TournamentStartingTicker() {
         .eq('user_id', uid)
         .in('status', ['active', 'approved']);
       const ids = (data || []).map((r: { club_id: string }) => r.club_id).filter(Boolean);
-      clubIdsRef.current = ids;
-      return ids;
+      if (ids.length === 0) {
+        clubIdsRef.current = ids;
+        return ids;
+      }
+      const { data: clubRows, error: clubErr } = await supabase
+        .from('clubs')
+        .select('id, ticker_enabled')
+        .in('id', ids);
+      /* FAIL OPEN, DELIBERATELY. If this lookup errors we keep the full scope
+         and the ticker behaves exactly as it did before the switch existed.
+         The opposite choice — treat an unreadable row as "off" — would turn a
+         transient RLS or network failure into a silent, table-wide loss of the
+         five-minute call, which is the one thing this component exists to
+         deliver. A club that genuinely wants silence gets it from a row we
+         could read. */
+      if (clubErr) {
+        reportError(clubErr, 'TournamentStartingTicker.loadScope.tickerEnabled');
+        clubIdsRef.current = ids;
+        return ids;
+      }
+      const silenced = new Set(
+        (clubRows || [])
+          .filter(
+            (r: { id: string; ticker_enabled?: boolean | null }) => r.ticker_enabled === false
+          )
+          .map((r: { id: string }) => r.id)
+      );
+      const allowed = ids.filter((id) => !silenced.has(id));
+      clubIdsRef.current = allowed;
+      return allowed;
     } catch (e) {
       reportError(e, 'TournamentStartingTicker.loadScope');
       return [];
@@ -485,6 +551,12 @@ export function TournamentStartingTicker() {
 
   // Outside a club there is nothing to announce: /clubs and /table only.
   if (!insideClub) return null;
+
+  /* The player said no (round 3, item 6). The club's half of the same switch
+     is applied further up, in `loadScope` — see the note there for why the two
+     halves are enforced in different places. Both are after every hook, so
+     hook order is unchanged whichever way they fall. */
+  if (!tickerAllowedByPlayer) return null;
 
   /* ONE BAR, AND THE OVERLAY WINS IT.
      Dan 2026-08-26 asked for overlay announcements "to jump in and play", and

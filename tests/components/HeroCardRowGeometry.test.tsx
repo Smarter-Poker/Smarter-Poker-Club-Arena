@@ -195,8 +195,12 @@ describe('hero hole-card row geometry', () => {
 
   it('row widths stay within the felt at every hand size', () => {
     // Values from the base (widest) breakpoint block.
+    // Dan 2026-08-27 round 3 item 1: the 2-card width/height is now PLO4's
+    // (60x84) — "the hold'em cards need to be the exact same size as the PLO
+    // cards". Only the stride still differs: two cards keep the row's original
+    // 12px overlap (step = w - 12) where four have to close up to 25 to fit.
     const sizes = [
-      { n: 2, w: 44, step: 32 },
+      { n: 2, w: 60, step: 48 },
       { n: 4, w: 60, step: 25 },
       { n: 5, w: 57, step: 23 },
       { n: 6, w: 54, step: 21 },

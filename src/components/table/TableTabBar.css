@@ -342,8 +342,10 @@
 }
 
 @media (max-width: 480px) {
-  /* 2px, not 6px: at 375px the pill is 55.25px wide and, less its 1px borders,
-     that leaves 49.25px inside — which is what six PLO6 cards have to live in.
+  /* 2px, not 6px: at 375px the pill capped at 67.75px (55.25px before the
+     2026-08-27 rebudget) and, less its 1px borders, that leaves 65.75px
+     inside — which is what six PLO6 cards have to live in. The number only
+     grew, so the six cards keep fitting.
      It cannot go to 0: the pill's 17px corner radius reaches x=2.58 at the
      cards' top edge, so a card starting at x=0 would have its corners bitten
      off. Starting at x=3 (2px padding + 1px border) clears it. */
@@ -406,42 +408,14 @@
   }
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   TRANSIENT LAST-ACTION CHIP (PokerBros parity — Dan 2026-08-20)
-   Flashes the hero's last action ("Fold", "Call", ...) on the tab for a
-   moment after they act at that table.
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.table-tab-bar__action-chip {
-  display: inline-flex;
-  align-items: center;
-  height: 16px;
-  padding: 0 6px;
-  border-radius: 8px;
-  background: rgba(37, 99, 235, 0.85);
-  color: #ffffff;
-  font-size: 0.575rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  flex-shrink: 0;
-  animation: actionChipIn 0.18s ease-out;
-}
-
-@keyframes actionChipIn {
-  from {
-    opacity: 0;
-    transform: translateY(3px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+/* TRANSIENT LAST-ACTION CHIP — DELETED 2026-08-27 (Dan, round 3, item 5:
+   "there should never be an action, like BET, inside the action pill, only the
+   hand you have and the timer bar"). `.table-tab-bar__action-chip`, the
+   `actionChipIn` keyframe and both of its responsive rules went with the
+   markup, so nothing here describes an element the bar can no longer draw. */
 
 @media (prefers-reduced-motion: reduce) {
-  .table-tab-bar__timer-bar--urgent,
-  .table-tab-bar__action-chip {
+  .table-tab-bar__timer-bar--urgent {
     animation: none;
   }
 }
@@ -512,6 +486,27 @@
   z-index: 300;
 }
 
+/* Dan 2026-08-27 round 3, item 4: "the hamburger menu button needs to increase
+   in size to fit to height inside that frame with no padding on top or bottom."
+
+   THE FRAME IS THIS BAR, and the bar's inner height is the pill height — 36px
+   here, 34px at <=480px (see the two `--sp-tabbar-h` sums). The trigger is
+   40px square in TableMenu.css because it also lives on the felt, where it is
+   the only control in its corner, so at this breakpoint it was 4px TALLER than
+   the row it sits in: it was the item defining the bar's height, the published
+   49px contract under-stated the real 52px, and the strip carried 4px of dead
+   band. 36px makes the trigger exactly as tall as a pill — flush top and
+   bottom, no padding either side of it — and makes the 49px sum true again.
+
+   Scoped to this container, so the on-felt trigger keeps its 40px. */
+.table-tab-bar__menu-container .table-menu__trigger {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: 9px;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    RESPONSIVE — THE 375px BUDGET (Dan 2026-08-25)
    ─────────────────────────────────────────────────────────────────────────────
@@ -522,23 +517,27 @@
    Every number in this section is derived from ONE budget, taken at 375px
    portrait — the narrowest phone this ships to:
 
+   REBUDGETED 2026-08-27 (round 3, items 3 and 4). Two lines changed: the
+   session P&L chip is gone from the header entirely ("there is a negative
+   number in the header that needs to be removed"), returning its whole 52px to
+   the strip, and the hamburger grew 32 -> 34 to fill the bar's height, taking 2
+   of them back. Net +50px for the pills.
+
        375   viewport
        - 46  tile-view toggle   (44px tap target + 2px margin — MultiTablePage.css)
-       - 52  session P&L chip   (hard-capped at 52px there, so this line is
-                                 arithmetic rather than an estimate)
        -  8  this bar's own 4px horizontal padding
-       - 34  hamburger trigger  (32px + 2px margin — overrides below)
+       - 36  hamburger trigger  (34px + 2px margin — overrides below)
        -  4  this bar's flex gap before the strip
-       = 231  available to .table-tab-bar__tabs
+       = 281  available to .table-tab-bar__tabs
        -  6  three 2px gaps between four pills
        -  4  slack, so sub-pixel rounding cannot be what starts a scrollbar
-       = 221  for four pills  ->  55.25px each
+       = 271  for four pills  ->  67.75px each
 
    Four pills IS the worst case: MAX_TABLES is 4 on a phone (MultiTablePage.tsx)
    and a lobby tab spends one of those four slots, while the "+" only renders
    while emptySlots > 0 — i.e. at three pills or fewer. Three pills plus the
-   "+" comes to 3x55 + 2x2 + 2 + 32 = 203 of the 231 available, so that case
-   has 28px of slack.
+   "+" comes to 3x67 + 2x2 + 2 + 32 = 239 of the 281 available, so that case
+   has 42px of slack.
 
    The pill cap is an expression rather than a flat 55px so a 430px Pro Max
    gets 69px pills instead of being frozen at the smallest phone's size. Below
@@ -555,11 +554,13 @@
    active pill's close-control reserve went from 16px on one side to 12px on
    both. None of those touch a pill's min-width, max-width, border or the
    strip's gap, so the worst case is the same as it was: four capped pills at
-   4 x 55.25 = 221, plus three 2px gaps = 227, inside the 231 available. The
+   4 x 67.75 = 271, plus three 2px gaps = 277, inside the 281 available. The
    only width the reserve change moves is the ACTIVE pill's, and it moves it in
    both directions at once — +8px of padding against -4px of close-disc
    footprint — while that pill's shrink-to-fit width stays under the same
-   55.25px cap. Four pills still fit at 375px with 4px to spare.
+   cap. Four pills still fit at 375px with 4px to spare. (Those three figures
+   read 55.25 / 221 / 227 / 231 before the 2026-08-27 rebudget above; the
+   conclusion is unchanged because the cap only moved up.)
    ───────────────────────────────────────────────────────────────────────────── */
 
 @media (max-width: 480px) {
@@ -582,15 +583,17 @@
     gap: 2px;
   }
 
-  /* The hamburger is 40px square in TableMenu.css because it also lives on the
-     felt, where it is the only control in its corner. In this strip those 8
-     extra pixels are 2px off every pill, and 32px is still a legal touch
-     target. Scoped to this container so the on-felt trigger is untouched. */
+  /* Round 3 item 4: 34px, the pill height at this breakpoint, so the trigger
+     fills the bar's inner height flush — no band above or below it. It was
+     32px, chosen when the strip was 52px poorer (the session P&L chip, deleted
+     in the same commit) and every pixel came off a pill. Still above the 32px
+     touch floor, and 2px LARGER than before, which is the "increase in size"
+     half of the request. */
   .table-tab-bar__menu-container .table-menu__trigger {
-    width: 32px;
-    height: 32px;
-    min-width: 32px;
-    min-height: 32px;
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    min-height: 34px;
     border-radius: 8px;
   }
 
@@ -599,11 +602,12 @@
   }
 
   .table-tab-bar__tab {
-    /* 100vw minus the 144px of chrome itemised above, minus the three 2px
+    /* 100vw minus the 94px of chrome itemised above, minus the three 2px
        gaps, minus 4px of slack, split four ways. 44px floor = the smallest
-       pill still worth tapping with a thumb. */
+       pill still worth tapping with a thumb. (Was 154px, when the header also
+       carried the 52px session P&L chip and a 32px hamburger.) */
     min-width: 44px;
-    max-width: calc((100vw - 154px) / 4);
+    max-width: calc((100vw - 104px) / 4);
     /* 34px, so the pill itself clears the 32px touch floor while the bar as a
        whole is 2px SHORTER than it used to be — the felt below wants every
        pixel of that band back. */
@@ -633,7 +637,8 @@
        "PLO5" is the widest game code: 26.13px at 10px/800 Inter.
        Close disc 12px wide at `right: 1px` = 13px of the pill's right end.
        Pill = 26.13 + 26 (padding) + 2 (borders) = 54.13px, inside the
-       55.25px cap the 375px budget allows.
+       67.75px cap the 375px budget allows (55.25px when this was measured;
+       the cap rose on 2026-08-27 and the measurement still holds).
        Centred, the code's midpoint lands 0.00px off the pill's own midpoint
        and its right edge stops 0.44px short of the disc; the "Pot 55" line
        under it stops 1.50px short. Vertically the pair sits 6.84px from the
@@ -650,14 +655,14 @@
      34.25px too, so the centring is bought from slack rather than from a
      legible label.
 
-     THE MIN-WIDTH IS PART OF THE RESERVE, not decoration. Below ~330px the
-     pill's `max-width: calc((100vw - 154px) / 4)` falls under the 44px floor,
+     THE MIN-WIDTH IS PART OF THE RESERVE, not decoration. Below ~280px the
+     pill's `max-width: calc((100vw - 104px) / 4)` falls under the 44px floor,
      and a 44px pill minus a 26px symmetric reserve leaves 18px — measured at
      320px, "PLO5" clipped to "PL". 55px is 54.13 rounded up, so the code
      always has its own width; the strip is already scrolling at that viewport
      (see THE 375px BUDGET), which is the documented fallback, so a wider
      active pill there costs nothing that was not already spent. At 375px 55px
-     sits under the 55.25px cap, so the four-pill sum is untouched.
+     sits under the 67.75px cap, so the four-pill sum is untouched.
 
      A cards pill still reserves nothing: the mini cards are centred and the X
      lands on the outer card's edge, which reads as the stack being fanned.
@@ -681,22 +686,16 @@
   /* The inline × close control was removed 2026-08-26 (Dan: no off-button
      inside the action pills) — its desktop and mobile rules went with it. */
 
-  /* Turn badge and action chip share the pill with the label, so both shrink
-     with it — at their desktop sizes either one ate more than half of a 55px
-     pill and pushed the game code into an ellipsis. */
+  /* The turn badge shares the pill with the label, so it shrinks with it — at
+     its desktop size it ate more than half of a 55px pill and pushed the game
+     code into an ellipsis. (The action chip that used to be tuned alongside it
+     was deleted on 2026-08-27; see the note above.) */
   .table-tab-bar__turn-dot {
     min-width: 6px;
     height: 14px;
     padding: 0 3px;
     font-size: 0.5rem;
     border-radius: 7px;
-  }
-
-  .table-tab-bar__action-chip {
-    height: 13px;
-    padding: 0 3px;
-    font-size: 0.5rem;
-    border-radius: 6px;
   }
 
   .table-tab-bar__mini-cards {

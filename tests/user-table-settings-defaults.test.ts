@@ -68,6 +68,9 @@ const DB_COLUMN_DEFAULTS = {
   show_avatars: true,
   show_badges: false,
   show_stack_in_bb: false,
+  // 2026-08-27: added by 20260827g_ticker_toggles_player_and_club.sql, DEFAULT
+  // true — the ticker is on today, so on is what people already have.
+  show_ticker: true,
   skip_animations: false,
   text_message: true,
   use_alias: false,

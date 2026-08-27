@@ -57,6 +57,18 @@ interface ClubSettings {
   spins_enabled: boolean;
   spins_preseed_amount: number;
   spins_wallet_funding: string;
+  /**
+   * The club's half of the announcement-ticker switch (Dan 2026-08-27, round 3,
+   * item 6: "the ticker at the top should be able to turn on or off in the
+   * table settings and in the club settings").
+   *
+   * OFF suppresses THIS club's starting-soon and overlay announcements for
+   * every member. The player's half is `user_table_settings.show_ticker`; the
+   * two compose as AND, so a member who wants the strip still does not get it
+   * from a club that has switched it off, and a club that leaves it on does not
+   * override a member who has turned it off.
+   */
+  ticker_enabled: boolean;
 }
 
 export default function ClubSettingsPage() {
@@ -81,6 +93,7 @@ export default function ClubSettingsPage() {
     spins_enabled: false,
     spins_preseed_amount: 0,
     spins_wallet_funding: 'PROMO',
+    ticker_enabled: true,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -131,6 +144,7 @@ export default function ClubSettingsPage() {
     if (settings.spins_enabled !== orig.spins_enabled) changes.push('Spins Enabled');
     if (settings.spins_preseed_amount !== orig.spins_preseed_amount) changes.push('Spins Pre-seed');
     if (settings.spins_wallet_funding !== orig.spins_wallet_funding) changes.push('Spins Wallet');
+    if (settings.ticker_enabled !== orig.ticker_enabled) changes.push('Ticker');
     return changes;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings, baselineVersion]);
@@ -522,7 +536,7 @@ export default function ClubSettingsPage() {
           supabase
             .from('clubs')
             .select(
-              'id, owner_id, club_id, logo_url, name, description, is_public, requires_approval, default_rake_percent, rake_cap, bbj_rake_enabled, spins_enabled, spins_preseed_amount, spins_wallet_funding, union_id'
+              'id, owner_id, club_id, logo_url, name, description, is_public, requires_approval, default_rake_percent, rake_cap, bbj_rake_enabled, spins_enabled, spins_preseed_amount, spins_wallet_funding, ticker_enabled, union_id'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -551,6 +565,10 @@ export default function ClubSettingsPage() {
           spins_enabled: data.spins_enabled ?? false,
           spins_preseed_amount: data.spins_preseed_amount ?? 0,
           spins_wallet_funding: data.spins_wallet_funding || 'PROMO',
+          // `?? true` and not `||`: the column defaults true, and a club that
+          // has switched the ticker OFF stores exactly the value `||` would
+          // throw away.
+          ticker_enabled: data.ticker_enabled ?? true,
         };
 
         // A background refresh must never overwrite edits the owner has typed
@@ -693,6 +711,7 @@ export default function ClubSettingsPage() {
               spins_enabled: toSave.spins_enabled,
               spins_preseed_amount: toSave.spins_preseed_amount,
               spins_wallet_funding: toSave.spins_wallet_funding,
+              ticker_enabled: toSave.ticker_enabled,
             })
             .eq(resolveClubIdFilter(clubId!).column, resolveClubIdFilter(clubId!).value)
             // .select() is what makes a rejected write observable. Without it
@@ -1487,6 +1506,33 @@ export default function ClubSettingsPage() {
                 disabled={!isOwner}
               >
                 {settings.bbj_rake_enabled ? 'ON' : 'OFF'}
+              </button>
+            </div>
+
+            {/* Dan 2026-08-27, round 3, item 6: "the ticker at the top should
+                be able to turn on or off in the table settings and in the club
+                settings." This is the CLUB half — it speaks for the whole
+                membership, so it is owner-only like every other switch on this
+                page. The player half is in table settings ("Announcement
+                Ticker"), and a member can always silence it for themselves
+                whatever the club says. */}
+            <div className="toggle-row">
+              <div className="toggle-info">
+                <span className="toggle-label">Announcement Ticker</span>
+                <span className="toggle-desc">
+                  Scrolling Tournament And Overlay Announcements For This Club
+                </span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings.ticker_enabled}
+                aria-label="Announcement Ticker"
+                className={`toggle-btn ${settings.ticker_enabled ? 'on' : ''}`}
+                onClick={() => updateSetting('ticker_enabled', !settings.ticker_enabled)}
+                disabled={!isOwner}
+              >
+                {settings.ticker_enabled ? 'ON' : 'OFF'}
               </button>
             </div>
           </section>

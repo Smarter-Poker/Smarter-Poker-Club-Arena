@@ -1173,7 +1173,6 @@ function HomePageInner() {
               onClick={() => {
                 haptic.light();
                 setShowJoinModal(true);
-                setTimeout(() => joinInputRef.current?.focus(), 100);
               }}
               aria-label="Join a Club"
             />

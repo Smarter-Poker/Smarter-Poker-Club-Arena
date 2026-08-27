@@ -634,7 +634,10 @@ export default function PlayerSessionsPage() {
       const uuid = await resolveClubUUID(clubId);
       const { error: upsertErr } = await supabase.from('player_notes').upsert(
         {
-          club_id: uuid,
+          // club_id removed 2026-08-27: player_notes has no such column, so
+          // naming it here rejected the whole upsert. My first pass corrected
+          // only the conflict target and left the payload — the extended
+          // write-payload gate caught that, which is exactly what it is for.
           target_user_id: noteTarget.userId,
           user_id: user?.id,
           player_type: noteData.player_type,

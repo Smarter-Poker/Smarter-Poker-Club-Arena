@@ -103,3 +103,42 @@ tsc clean · **7,331/7,331 tests** · deprecated-table gate green.
   55 chips) - financial decisions, Dan's.
 - 585 authenticated-executable SECURITY DEFINER functions - needs a batched
   per-function audit with call-site evidence.
+
+## Class A, World Hub surface — TWO SITES STILL READ THE FROZEN POOL (reported)
+
+Phase 3 swept CA client + server + DB. The World Hub repo was NOT in that
+sweep, and it has two remaining reads of `public.wallets`:
+
+1. `pages/api/cron/signup-probe.js:118` — a health probe asserting a `wallets`
+   row exists for the probe user. Still passes today, because the signup
+   trigger `on_auth_user_created_wallet -> handle_new_user_v2_create_wallet` is
+   still armed and still writes that table. (This also confirms my phase-3
+   retirement of `ensureWalletsExist` broke no provisioning — the trigger, not
+   the client helper, is what creates these rows. Verified rather than assumed.)
+
+2. `src/lib/poker-engine/ChipBridge.js:107` — resolves `wallet_id` from
+   `wallets` in order to insert a cold-start recovery row into
+   `chip_escrow_holds`, whose `wallet_id` is NOT NULL with an FK to `wallets`.
+   It cannot simply be repointed at `club_members` without a schema change.
+
+### The finding behind #2: the recovery ledger stopped recording 11 days ago
+
+| probe                                 | value                    |
+| ------------------------------------- | ------------------------ |
+| `chip_escrow_holds` last row written  | **2026-08-16 00:26 UTC** |
+| rows still sitting in `status='held'` | **166**                  |
+| live seats holding a stack right now  | 338                      |
+| hands played in the last 24h          | 217,526                  |
+
+So the table-seat escrow ledger that exists FOR COLD-START RECOVERY has
+recorded nothing for eleven days while the room played a quarter of a million
+hands, and 166 holds are stranded `held` with nothing releasing them. Either
+the writer is silently taking its `Escrow insert skipped: no wallet row`
+branch, or the path no longer runs at all.
+
+**NOT FIXED HERE, deliberately.** Releasing or reconciling 166 escrow holds is
+money-adjacent state, the writer lives in a different repo than this PR, and
+the correct fix depends on whether the recovery design is still wanted at all
+(the engine has been server-authoritative since well before this stalled). It
+needs its own task with Dan's call on the 166 rows. Recorded here with the
+measurements so the next agent starts from evidence rather than a grep.

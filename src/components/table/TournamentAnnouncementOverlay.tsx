@@ -97,7 +97,7 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
       color: '#3b82f6',
     },
     bounty_collected: {
-      icon: '\u{1F3AF}',
+      icon: '◎',
       title: data?.mode === 'pko' ? 'BOUNTY CLAIMED' : 'KNOCKOUT!',
       subtitle: (() => {
         const who = data?.knockerName || 'A player';
@@ -111,7 +111,7 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
       color: '#f97316',
     },
     mystery_bounty_revealed: {
-      icon: '\u{1F381}',
+      icon: '◈',
       title: 'MYSTERY BOUNTY!',
       subtitle: (() => {
         const who = data?.knockerName || 'A player';

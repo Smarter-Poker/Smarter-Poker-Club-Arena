@@ -47,6 +47,16 @@
  * The two emoji PICKERS are allowlisted below. Emoji are the product there,
  * not the styling.
  *
+ * ── ESCAPES ARE DECODED FIRST ──────────────────────────────────────────────
+ *
+ * `icon: '\u{1F3AF}'` is a direct hit emoji as surely as pasting the
+ * character, and the first cut of this gate could not see it. Two were found
+ * that way AFTER this gate went green - in the tournament bounty overlays,
+ * shipped and rendering - by decompiling the deployed bundle rather than
+ * trusting the scan. A gate a keystroke can walk around is not a gate, so
+ * every \u{...} and \uXXXX (surrogate pairs included) is decoded before the
+ * scan, and the report prints the escape the author actually wrote.
+ *
  * Run:  node scripts/ci/check-no-emoji.mjs
  */
 
@@ -104,6 +114,21 @@ const EMOJI = new RegExp(
   'u'
 );
 
+/**
+ * Turn `\u{1F600}` and `\uD83D\uDE00` into the characters they denote, so an
+ * escaped emoji is caught exactly like a pasted one. Line structure is
+ * preserved (no escape contains a newline), which keeps reported line numbers
+ * honest.
+ */
+function decodeEscapes(line) {
+  return line
+    .replace(/\\u\{([0-9a-fA-F]{1,6})\}/g, (m, hex) => {
+      const cp = parseInt(hex, 16);
+      return cp <= 0x10ffff ? String.fromCodePoint(cp) : m;
+    })
+    .replace(/\\u([0-9a-fA-F]{4})/g, (m, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
 /** Strip comments so the scan only sees code and copy. Mirrors check-ui-text. */
 function stripComments(source, isCss) {
   let out = source.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
@@ -131,13 +156,15 @@ for (const file of walk(SRC)) {
   const rel = file.replace(ROOT, '');
   if (ALLOW_FILES.has(rel)) continue;
   const original = readFileSync(file, 'utf8');
-  if (!EMOJI.test(original)) continue;
+  if (!EMOJI.test(original) && !/\\u\{?[0-9a-fA-F]{4}/.test(original)) continue;
 
   const scannable = stripComments(original, extname(file) === '.css');
-  if (!EMOJI.test(scannable)) continue; // only in comments -> allowed
 
   scannable.split('\n').forEach((line, idx) => {
-    if (EMOJI.test(line)) {
+    // Decode per line: an escaped emoji renders identically to a pasted one.
+    if (EMOJI.test(decodeEscapes(line))) {
+      // Report the ORIGINAL line, so the author sees the escape they wrote
+      // rather than a character their editor may not render.
       const shown = [...line.trim()].slice(0, 120).join('');
       offenders.push(`${rel}:${idx + 1}: ${shown}`);
     }

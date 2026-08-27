@@ -130,6 +130,32 @@ with the rewrite above):
   HandNotation is intentional tabular typography for figures, not a component
   opting out of the brand.
 
+## The gate went green while two emoji were still shipping
+
+Worth recording plainly, because the lesson is the whole point of the phase.
+
+After every local gate passed and PR #1440 merged, production was verified by
+DECOMPILING the deployed bundle rather than by trusting the scan. The shipped
+gameplay chunk still contained two emoji: a direct-hit target and a gift box,
+in the tournament `bounty_collected` and `mystery_bounty_revealed` overlays.
+
+They were invisible to the gate because they were not written as characters:
+
+    icon: '\u{1F3AF}',
+    icon: '\u{1F381}',
+
+An escape renders identically to a pasted emoji and is a single keystroke away
+from any author or autofixer. A gate that a keystroke walks around is not a
+gate. `check-no-emoji.mjs` now decodes every `\u{...}` and `\uXXXX` (surrogate
+pairs included) before scanning, and reports the escape the author wrote rather
+than a character their editor may not render. Proved against all three forms
+with a throwaway probe file: escaped, pasted, and a Misc-Symbols
+emoji-presentation character. A third escaped emoji, a clipboard in
+`TransactionLedgerView`, fell out of the same sweep.
+
+The three are now `◎`, `◈` and `▤`, matching the typographic vocabulary the
+overlay and the achievements ladder already use.
+
 ## Verification
 
 `bash scripts/ci/all-gates.sh`: tsc clean, all nine house-rule gates OK

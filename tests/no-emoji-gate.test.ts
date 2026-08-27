@@ -40,6 +40,24 @@ describe('the no-emoji rule is mechanical', () => {
     expect(gate).toMatch(/FE0F/);
   });
 
+  it('sees through the escape that walked around the first cut', () => {
+    const gate = read('scripts/ci/check-no-emoji.mjs');
+    // `icon: '\\u{1F3AF}'` is a direct hit emoji as surely as pasting one.
+    // Two shipped that way while this gate reported OK; it now decodes first.
+    expect(gate).toContain('decodeEscapes');
+    expect(gate).toMatch(/String\.fromCodePoint/);
+    expect(gate).toMatch(/String\.fromCharCode/);
+  });
+
+  it('the escaped emoji it missed are gone from the source', () => {
+    for (const f of [
+      'src/components/table/TournamentAnnouncementOverlay.tsx',
+      'src/components/common/TransactionLedgerView.tsx',
+    ]) {
+      expect(read(f)).not.toMatch(/\\u\{1F[0-9A-Fa-f]{3}\}/);
+    }
+  });
+
   it('allowlists the pickers, where emoji are the product', () => {
     const gate = read('scripts/ci/check-no-emoji.mjs');
     expect(gate).toContain('src/components/table/EmojiPicker.tsx');

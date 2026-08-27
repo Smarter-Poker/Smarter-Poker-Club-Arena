@@ -297,15 +297,20 @@ export const WalletService = {
     // in ONE transaction, honoring the real from/to wallets — this replaces the old
     // atomic_deduct + atomic_credit pair which was hardcoded to PLAYER (cross-wallet
     // no-op, plus a deduct-then-credit chip-loss edge if the credit leg failed).
-    const { data: transferRes, error } = await retryAsync(async () => {
-      const res = await supabase.rpc('fn_wallet_type_transfer', {
-        p_user_id: userId,
-        p_from_wallet: request.fromWallet,
-        p_to_wallet: request.toWallet,
-        p_amount: request.amount,
-        p_note: desc,
-      });
-      return res;
+    // 2026-08-27: retryAsync REMOVED from this call. fn_wallet_type_transfer
+    // takes no idempotency key, so an automatic retry after a network-layer
+    // REJECT (a thrown fetch, not a resolved { error }) could re-run a
+    // transfer whose first attempt had committed - the double-move shape. The
+    // wallet_user_transfer call below argues 42501 resolves rather than
+    // throws; that argument never covered thrown rejects and was never made
+    // for this call site at all. One attempt: a failure surfaces, and the
+    // user retries deliberately.
+    const { data: transferRes, error } = await supabase.rpc('fn_wallet_type_transfer', {
+      p_user_id: userId,
+      p_from_wallet: request.fromWallet,
+      p_to_wallet: request.toWallet,
+      p_amount: request.amount,
+      p_note: desc,
     });
 
     if (error) throw error;
@@ -780,7 +785,8 @@ export const WalletService = {
     // club scoping is off or no club context resolves.
     try {
       // If opts.clubId is explicitly passed (even as null), use it. Otherwise fall back to currentClubId.
-      const clubId = opts && 'clubId' in opts ? opts.clubId : (useUserStore.getState().currentClubId ?? null);
+      const clubId =
+        opts && 'clubId' in opts ? opts.clubId : (useUserStore.getState().currentClubId ?? null);
       const { data, error } = await supabase.rpc('fn_player_spendable_balance', {
         p_user_id: userId,
         p_club_id: clubId,

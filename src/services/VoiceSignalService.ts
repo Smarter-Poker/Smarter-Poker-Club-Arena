@@ -42,14 +42,34 @@
  * Presence (key = userId) is peer discovery: presence sync says who is in the
  * room, join/leave says who arrived and who left.
  *
- * THE ONE THING A MESH CANNOT DO
- * ──────────────────────────────
- * There is no TURN relay. STUN alone cannot traverse a SYMMETRIC NAT, which is
- * what most mobile carrier networks are. Those peers will fail to connect, and
- * this module says so out loud (`peerStates[id] === 'failed'`, error code
- * `connection-failed`) rather than leaving a dead microphone that looks alive.
- * See the report accompanying this work: a TURN relay is the single change that
- * would take voice from "works on wifi" to "works everywhere".
+ * THE TWO THINGS A BARE MESH CANNOT DO, AND THE ONE THING THAT FIXES BOTH
+ * ──────────────────────────────────────────────────────────────────────────
+ * Voice shipped with public STUN only, and that has two consequences:
+ *
+ *   1. STUN cannot traverse a SYMMETRIC NAT, which is what most mobile carrier
+ *      networks are. Those peers do not get worse audio, they get NONE.
+ *   2. A p2p mesh hands every participant's PUBLIC IP ADDRESS to every other
+ *      participant, because that is what an ICE candidate is. At a money table
+ *      full of strangers that is a collusion and harassment surface.
+ *
+ * A TURN RELAY CLOSES BOTH. A relayed candidate carries the relay's address, so
+ * the peer's own address never leaves the relay, and a relay is reachable from
+ * behind any NAT because the client dials out to it.
+ *
+ * So the ICE list is no longer hardcoded: `fetchVoiceIceConfig` asks the engine
+ * (`GET /voice/ice`) once per join, and the engine answers with short-lived TURN
+ * credentials plus a transport policy. When a relay exists the policy is
+ * `relay`, which forces ALL media through it and hides every address. When one
+ * does not - which is every engine until the relay is deployed - the answer is
+ * the STUN-only list and policy `all`, and voice behaves exactly as it always
+ * has, symmetric-NAT failures included.
+ *
+ * Those failures are still said OUT LOUD (`peerStates[id] === 'failed'`, error
+ * code `connection-failed`) rather than leaving a dead microphone that looks
+ * alive. That property is the reason there is no automatic downgrade from
+ * `relay` to `all` when a relay-only connection fails: a silent downgrade would
+ * trade the privacy property away at the exact moment nobody is watching. If the
+ * relay dies, voice fails honestly and an operator flips one env var on purpose.
  *
  * SAFETY POSTURE
  * ──────────────
@@ -61,7 +81,10 @@
  *    the SAME function the text-chat RLS policy calls (see useTableChat), so
  *    voice and text can never disagree about who is muted.
  *  - Peer connections expose IP addresses between players. That is inherent to
- *    p2p and is documented as a finding, not solved here.
+ *    p2p, and it is the reason the relay exists: with `iceTransportPolicy:
+ *    'relay'` every candidate belongs to the relay and no player learns another
+ *    player's address. Until a relay is deployed the exposure is real and
+ *    unmitigated, and that is a live finding, not a solved one.
  */
 
 import { supabase } from '../lib/supabase';
@@ -79,14 +102,49 @@ export const VOICE_CHANNEL_PREFIX = 'table-voice:';
 export const VOICE_SIGNAL_EVENT = 'voice-signal';
 
 /**
- * Public STUN only. Two providers, because one operator having a bad afternoon
- * should not take voice down for the whole platform. Neither relays media -
- * they only report the public address a peer is reachable at.
+ * THE FALLBACK ICE LIST. Public STUN only, no relay.
+ *
+ * Two providers, because one operator having a bad afternoon should not take
+ * voice down for the whole platform. Neither relays media - they only report the
+ * public address a peer is reachable at.
+ *
+ * This used to be the ONLY list, hardcoded straight into every
+ * `RTCPeerConnection`. It is now the floor the mesh falls back to when
+ * `GET /voice/ice` cannot be reached or has nothing better to offer, so a
+ * network fault or an engine mid-deploy costs voice nothing it has today.
  */
 export const VOICE_ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun.cloudflare.com:3478' },
 ];
+
+/** Where the credential endpoint lives. Same engine every other call goes to. */
+const ENGINE_BASE_URL: string =
+  (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_ENGINE_URL ||
+  ((import.meta as unknown as { env?: { PROD?: boolean } }).env?.PROD
+    ? 'https://engine.smarter.poker'
+    : 'http://localhost:8080');
+
+export const VOICE_ICE_ENDPOINT = `${ENGINE_BASE_URL}/voice/ice`;
+
+/**
+ * How long to wait for the ICE list before giving up and using STUN.
+ *
+ * This sits directly in front of the microphone opening, so it is a delay the
+ * player is watching. Five seconds is long enough to survive a slow mobile
+ * handshake and short enough that a dead engine does not look like a hung join.
+ */
+const ICE_FETCH_TIMEOUT_MS = 5000;
+
+/**
+ * Safety margin on the credential's own expiry. Re-fetch this long before the
+ * relay would start refusing, so a session that outlives its credential renews
+ * rather than silently losing every new peer.
+ */
+const ICE_CACHE_SAFETY_MS = 60_000;
+
+/** Cache lifetime when the answer carries no expiry (the STUN-only case). */
+const ICE_CACHE_DEFAULT_MS = 10 * 60_000;
 
 /**
  * Normalised RMS above which a stream counts as speech.
@@ -159,7 +217,12 @@ export type VoiceErrorCode =
   | 'silenced'
   /** The Realtime topic would not subscribe, so no peer can be reached. */
   | 'signalling-failed'
-  /** ICE gave up. Almost always symmetric NAT with no TURN relay to fall back on. */
+  /**
+   * ICE gave up. On the STUN-only path that is almost always a symmetric NAT
+   * with no relay to fall back on. Once a relay is deployed and the policy is
+   * `relay`, it means the relay itself could not be reached - which is why the
+   * mesh never silently retries with `all`, and an operator makes that call.
+   */
   | 'connection-failed';
 
 export interface VoiceError {
@@ -314,6 +377,174 @@ export function isVoiceSupported(): boolean {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ICE CONFIGURATION — where the relay credentials come from
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** The complete transport configuration one `RTCPeerConnection` is built with. */
+export interface VoiceIceConfig {
+  iceServers: RTCIceServer[];
+  /**
+   * `relay` forces every media path through the TURN relay, so no player ever
+   * learns another player's IP address. `all` prefers a direct path and leaks
+   * it. See the argument on the server side (`server/src/voice/turnCredentials.ts`
+   * `resolveTransportPolicy`): the engine chooses `relay` whenever a relay
+   * exists, because these are strangers playing for money.
+   */
+  iceTransportPolicy: RTCIceTransportPolicy;
+  /** True when the list carries a real TURN relay with live credentials. */
+  turn: boolean;
+  /** Unix SECONDS the credential dies, or null when there is none. */
+  expiresAt: number | null;
+}
+
+/**
+ * What the mesh uses when the engine cannot be asked: exactly what it used
+ * before this endpoint existed. `all`, because forcing `relay` with nothing to
+ * relay through would mean voice for nobody.
+ */
+export const VOICE_ICE_FALLBACK: VoiceIceConfig = {
+  iceServers: VOICE_ICE_SERVERS,
+  iceTransportPolicy: 'all',
+  turn: false,
+  expiresAt: null,
+};
+
+/**
+ * A build-time override, for a deliberate local experiment or an emergency.
+ *
+ * It is read only when it says something valid, and it CANNOT invent a relay:
+ * asking for `relay` when the engine returned no TURN entry would silence voice
+ * completely, so that combination is ignored below.
+ */
+const CLIENT_POLICY_OVERRIDE: RTCIceTransportPolicy | null = (() => {
+  const raw = (import.meta as unknown as { env?: Record<string, string> }).env
+    ?.VITE_VOICE_ICE_TRANSPORT_POLICY;
+  const value = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  return value === 'relay' || value === 'all' ? (value as RTCIceTransportPolicy) : null;
+})();
+
+interface IceCacheEntry {
+  config: VoiceIceConfig;
+  /** epoch ms after which this must be fetched again. */
+  until: number;
+}
+
+/**
+ * CACHED PER SESSION, NOT PER PEER.
+ *
+ * A nine-handed table builds eight peer connections. Fetching a credential for
+ * each of them would be eight authenticated round-trips at the exact moment the
+ * player is waiting for the microphone, and every one would mint a credential
+ * equivalent to the first. One fetch per join, shared by every peer and by every
+ * table this browser has open, is the whole requirement.
+ */
+let iceCache: IceCacheEntry | null = null;
+let iceInFlight: Promise<VoiceIceConfig> | null = null;
+
+/** Test seam, and the thing to call if a credential is ever known to be bad. */
+export function __resetVoiceIceCache(): void {
+  iceCache = null;
+  iceInFlight = null;
+}
+
+/** Reject anything that is not a usable ICE list, so a bad answer falls back. */
+function parseIceResponse(raw: unknown): VoiceIceConfig | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const body = raw as Record<string, unknown>;
+
+  const servers = Array.isArray(body.iceServers) ? (body.iceServers as RTCIceServer[]) : [];
+  // An empty list is not an answer - it would gather no candidates at all, which
+  // is worse than the STUN-only fallback we already have.
+  const usable = servers.filter((s) => s && (typeof s.urls === 'string' || Array.isArray(s.urls)));
+  if (usable.length === 0) return null;
+
+  const turn = body.turn === true;
+  const policyRaw = typeof body.iceTransportPolicy === 'string' ? body.iceTransportPolicy : '';
+  let policy: RTCIceTransportPolicy = policyRaw === 'relay' ? 'relay' : 'all';
+
+  // A build override wins, EXCEPT that it can never ask for a relay that is not
+  // there. Same guard the engine applies to its own operator override.
+  if (CLIENT_POLICY_OVERRIDE) policy = CLIENT_POLICY_OVERRIDE;
+  if (policy === 'relay' && !turn) policy = 'all';
+
+  const expiresAt = typeof body.expiresAt === 'number' ? body.expiresAt : null;
+  return { iceServers: usable, iceTransportPolicy: policy, turn, expiresAt };
+}
+
+/** How long this answer may be reused, bounded by the credential's own life. */
+function cacheWindowMs(config: VoiceIceConfig, nowMs: number): number {
+  if (!config.expiresAt) return ICE_CACHE_DEFAULT_MS;
+  const remaining = config.expiresAt * 1000 - nowMs - ICE_CACHE_SAFETY_MS;
+  return Math.max(0, Math.min(ICE_CACHE_DEFAULT_MS, remaining));
+}
+
+/**
+ * Ask the engine for the ICE list, with the player's own JWT.
+ *
+ * NEVER THROWS AND NEVER BLOCKS THE JOIN FOR LONG. Every failure - no session,
+ * no network, a 401, a timeout, an unparseable body - returns the STUN-only
+ * fallback, so the worst case is precisely the behaviour voice shipped with.
+ * A failure is not cached: the next join asks again.
+ */
+export async function fetchVoiceIceConfig(): Promise<VoiceIceConfig> {
+  const now = Date.now();
+  if (iceCache && iceCache.until > now) return iceCache.config;
+  if (iceInFlight) return iceInFlight;
+
+  iceInFlight = (async (): Promise<VoiceIceConfig> => {
+    try {
+      // The endpoint is authenticated on purpose (an open credential mint is an
+      // open relay), so with no session there is nothing to ask with. Returning
+      // early also keeps every test that has no session off the network.
+      const { data } = await supabase.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) return VOICE_ICE_FALLBACK;
+
+      if (typeof fetch !== 'function') return VOICE_ICE_FALLBACK;
+
+      const controller = typeof AbortController === 'function' ? new AbortController() : null;
+      const timer = controller
+        ? setTimeout(() => {
+            try {
+              controller.abort();
+            } catch {
+              /* already settled */
+            }
+          }, ICE_FETCH_TIMEOUT_MS)
+        : null;
+
+      let parsed: VoiceIceConfig | null = null;
+      try {
+        const res = await fetch(VOICE_ICE_ENDPOINT, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller?.signal,
+        });
+        if (res && res.ok) parsed = parseIceResponse(await res.json());
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+
+      if (!parsed) return VOICE_ICE_FALLBACK;
+
+      const window = cacheWindowMs(parsed, Date.now());
+      if (window > 0) iceCache = { config: parsed, until: Date.now() + window };
+      return parsed;
+    } catch (e) {
+      // Deliberately quiet about the shape of the failure: this runs on every
+      // join, and an engine mid-deploy would otherwise fill Sentry with noise
+      // describing a case that is fully handled.
+      reportError(e, 'VoiceSignalService.fetchVoiceIceConfig');
+      return VOICE_ICE_FALLBACK;
+    } finally {
+      iceInFlight = null;
+    }
+  })();
+
+  return iceInFlight;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // THE SESSION
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -347,6 +578,12 @@ export class TableVoiceSession {
   private listeners = new Set<Listener>();
 
   private channel: RealtimeChannel | null = null;
+  /**
+   * Resolved once at join and shared by every peer connection this session
+   * builds. Starts as the STUN-only fallback so a peer created before the fetch
+   * lands is still a working peer rather than a broken one.
+   */
+  private iceConfig: VoiceIceConfig = VOICE_ICE_FALLBACK;
   private localStream: MediaStream | null = null;
   private audioCtx: AudioContext | null = null;
   private localMeter: LevelMeter | null = null;
@@ -588,7 +825,18 @@ export class TableVoiceSession {
 
     this.attachLocalMeter();
 
-    // 2. The signalling topic.
+    // 2. The transport. Asked for BEFORE the signalling topic opens, because
+    //    presence sync fires the instant it does and immediately starts building
+    //    peer connections - a peer built before the relay credential arrived
+    //    would spend its whole life on STUN. One fetch, cached, shared by every
+    //    peer; a failure here is the STUN-only fallback, never a failed join.
+    this.iceConfig = await fetchVoiceIceConfig();
+    if (this.destroyed) {
+      this.stopLocalStream();
+      return false;
+    }
+
+    // 3. The signalling topic.
     const subscribed = await this.openChannel();
     if (!subscribed || this.destroyed) {
       this.stopLocalStream();
@@ -861,7 +1109,13 @@ export class TableVoiceSession {
 
     let pc: RTCPeerConnection;
     try {
-      pc = new RTCPeerConnection({ iceServers: VOICE_ICE_SERVERS });
+      // The list and the policy both come from the engine (see fetchVoiceIceConfig).
+      // `iceTransportPolicy: 'relay'` is what stops this peer's real address ever
+      // appearing in a candidate the other player can read.
+      pc = new RTCPeerConnection({
+        iceServers: this.iceConfig.iceServers,
+        iceTransportPolicy: this.iceConfig.iceTransportPolicy,
+      });
     } catch (e) {
       reportError(e, 'TableVoiceSession.RTCPeerConnection');
       return null;

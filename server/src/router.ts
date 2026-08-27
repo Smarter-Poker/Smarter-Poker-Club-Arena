@@ -45,6 +45,7 @@ import { handlePostBB } from './handlers/postbb.js';
 import { handleInjectFault } from './handlers/faultInjection.js';
 import { handleGetActions, handleGetState } from './handlers/state.js';
 import { handleAssistantLeaksDetect } from './handlers/assistant.js';
+import { handleVoiceIce } from './handlers/voice.js';
 import type { ChannelHub } from './hub/ChannelHub.js';
 
 // ─── Internal API key (set in Hetzner env, same secret used by World Hub) ─────
@@ -204,6 +205,13 @@ export function createRouter(
     if (method === 'POST' && url === '/post-bb') return handlePostBB(req, res, { gameServer });
     if (method === 'POST' && url === '/assistant/leaks/detect')
       return handleAssistantLeaksDetect(req, res);
+
+    // The table voice mesh asks for its ICE servers here, once per join. It
+    // MINTS a short-lived TURN credential, so it is authenticated like any other
+    // player request — an open credential mint is an open relay. It answers the
+    // STUN-only list (never a 500) while no relay is configured, which is the
+    // state of every engine until one is deployed. See handlers/voice.ts.
+    if (method === 'GET' && url === '/voice/ice') return handleVoiceIce(req, res);
 
     // Fault injection for freeze drills. 404s unless FAULT_INJECTION_TOKEN is
     // set, requires that token, and refuses any table with a human seated.

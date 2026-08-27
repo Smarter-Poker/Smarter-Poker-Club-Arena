@@ -24,8 +24,25 @@ export function useGlobalBalanceSync() {
 
     const fetchTrueBalance = async () => {
       try {
-        const balance = await WalletService.getPlayerBalance(user.id);
-        useUserStore.getState().updateTotalChips(Number(balance));
+        /* A READ THAT NEVER HAPPENED IS NOT A BALANCE OF ZERO (2026-08-27).
+           This used getPlayerBalance, whose own docstring says it "collapses
+           every failure - RPC error, RLS denial, an unresolvable club id, a
+           dropped connection - into the number 0". It then wrote that 0 into
+           useUserStore.totalChips, which is the GLOBAL chip figure the whole
+           app renders: one refused read blanked a funded player's balance
+           everywhere at once.
+
+           It matters more now that readPlayerBalance no longer falls back to
+           the retired wallet pool: an unreachable RPC used to answer with a
+           stale number and now honestly answers null.
+
+           Same rule useWalletStore.loadBalances already follows - "a transient
+           network failure must not replace a good number with zeros on
+           screen": on unknown we leave the last known good value in place. */
+        const r = await WalletService.readPlayerBalance(user.id);
+        if (r.balance !== null) {
+          useUserStore.getState().updateTotalChips(Number(r.balance));
+        }
       } catch (err) {
         reportError(err, 'useGlobalBalanceSync.Failed_to_fetch_atomic_ledger_balance');
       }

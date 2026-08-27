@@ -378,6 +378,9 @@ export async function atomicCashout(
  *  ever expired a 'notified' row). */
 const WAITLIST_OFFER_TTL_MS = 3 * 60 * 1000;
 
+/** Warn once per process rather than on every seat offer. */
+let warnedNoPushCreds = false;
+
 export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
   try {
     // Only cash tables have waitlists
@@ -481,6 +484,33 @@ export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
     // no-op when the room has no OneSignal credentials configured.
     const osAppId = process.env.ONESIGNAL_APP_ID;
     const osKey = process.env.ONESIGNAL_REST_API_KEY;
+
+    // SAY SO WHEN THE PUSH CANNOT BE SENT.
+    //
+    // This block was added 2026-08-26 because Dan asked for it directly ("you
+    // should receive a push notification"). It has never sent one. Neither
+    // variable is set in the running engine container - verified 2026-08-27,
+    // `printenv | grep -c ONESIGNAL_APP_ID` returns 0 inside
+    // club-arena-engine, and 48h of container logs contain zero OneSignal
+    // lines. The `if` above is simply false on every seat offer, so the whole
+    // block is skipped in silence and the feature reads as shipped.
+    //
+    // That silence is the bug. A feature that no-ops when unconfigured is
+    // indistinguishable from one that works until somebody measures it, and
+    // measuring it is what took a month. Warning once per process is cheap and
+    // makes the gap visible in `docker logs` the moment anyone looks.
+    if (!osAppId || !osKey) {
+      if (!warnedNoPushCreds) {
+        warnedNoPushCreds = true;
+        console.warn(
+          '[Waitlist] SEAT-OPEN PUSH IS DISABLED: ONESIGNAL_APP_ID and/or ' +
+            'ONESIGNAL_REST_API_KEY are not set on this engine, so no seat-open ' +
+            'push has ever been delivered. The in-app notification is the only ' +
+            'delivery path until they are configured.'
+        );
+      }
+    }
+
     if (osAppId && osKey && typeof fetch === 'function') {
       try {
         await fetch('https://onesignal.com/api/v1/notifications', {

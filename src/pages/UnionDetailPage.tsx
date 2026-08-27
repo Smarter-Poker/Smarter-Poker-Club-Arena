@@ -83,7 +83,7 @@ export default function UnionDetailPage() {
   const [union, setUnion] = useState<Union | null>(null);
   const [clubs, setClubs] = useState<UnionClub[]>([]);
   const [tables, setTables] = useState<PokerTable[]>([]);
-  const [unionTournaments, setUnionTournaments] = useState<any[]>([]);
+  const [unionTournaments, setUnionTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
 
   // UNION LAW (2026-08-19, Dan): the union surface is the owner's operations
@@ -532,14 +532,18 @@ export default function UnionDetailPage() {
         },
         (payload) => {
           // Reload tournaments on INSERT/UPDATE events
-          const newRecord = payload.new as any;
-          const oldRecord = payload.old as any;
+          const newRecord = payload.new as { club_id?: string; [key: string]: unknown } | null;
+          const oldRecord = payload.old as { club_id?: string; [key: string]: unknown } | null;
 
           // Check if this tournament belongs to any of our union clubs
           const clubIds = clubs.map((c) => c.clubId);
           const relevantRecord = newRecord || oldRecord;
 
-          if (relevantRecord && clubIds.includes(relevantRecord?.club_id)) {
+          if (
+            relevantRecord &&
+            relevantRecord.club_id &&
+            clubIds.includes(relevantRecord.club_id)
+          ) {
             void reloadUnionTournaments();
           }
         }
@@ -596,8 +600,10 @@ export default function UnionDetailPage() {
 
     try {
       const memberships = await getUserMemberships();
-      const myClubs = memberships.map((m: any) => m.club || m.clubs).filter(Boolean);
-      const owned = myClubs.filter((c: any) => c.owner_id === user.id);
+      const myClubs = memberships
+        .map((m: { club?: Club; clubs?: Club }) => m.club || m.clubs)
+        .filter(Boolean) as Club[];
+      const owned = myClubs.filter((c) => c?.owner_id === user.id);
 
       if (owned.length === 0) {
         toast.error('You must own a club to join a union.');

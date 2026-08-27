@@ -3642,13 +3642,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 // INSIDE that cashier - there is no mint button out here any
                 // more, and no mint at all once the club is in a union.
                 onOpenPlayerWallet={() => setShowPlayerWallet(true)}
-                onOpenPromoWallet={() => {
-                  setUnionWalletModal({
-                    key: 'promo',
-                    label: 'Promo Wallet',
-                    balance: 0,
-                  });
-                }}
+                onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
                 onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
                 onOpenClubBank={() => setActiveCashier('club_bank')}
                 onOpenBBJ={() => {

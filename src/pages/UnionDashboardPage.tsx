@@ -199,7 +199,20 @@ export default function UnionDashboardPage() {
   const [spinReserveForm, setSpinReserveForm] = useState({ amount: '', from: 'promo_wallet' });
   const [recentPeriods, setRecentPeriods] = useState<SettlementPeriod[]>([]);
   /** Weekly union<->club player win/loss settlements (union_pnl_settlements). */
-  const [pnlSettlements, setPnlSettlements] = useState<any[]>([]);
+  const [pnlSettlements, setPnlSettlements] = useState<
+    {
+      id: string;
+      period_start: string;
+      period_end: string;
+      status: string;
+      total_collected: number;
+      total_paid: number;
+      total_unpaid: number;
+      club_results: any;
+      settled_at: string;
+      [key: string]: any;
+    }[]
+  >([]);
   const [rakebackHistory, setRakebackHistory] = useState<
     {
       id: string;

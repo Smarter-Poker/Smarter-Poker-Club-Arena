@@ -150,7 +150,7 @@ export function UnionWalletModal({
     void supabase
       .from('chip_transactions')
       .select('id, amount, notes, transaction_type, created_at')
-      .eq('club_id', unionId)
+      .contains('metadata', { union_id: unionId })
       .in('transaction_type', ['union_member_send', 'union_promo_send'])
       .order('created_at', { ascending: false })
       .limit(8)

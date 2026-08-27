@@ -227,7 +227,7 @@ export function createDefaultMenuSections(
       actions: [
         {
           id: 'help',
-          label: 'Help & Rules',
+          label: 'Game Rules',
           icon: <HelpIcon />,
           onClick: handlers.onHelp || (() => {}),
         },

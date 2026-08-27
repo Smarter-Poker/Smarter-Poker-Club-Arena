@@ -383,7 +383,12 @@ export abstract class TournamentManagerBase {
         // Budget the pause for the WHOLE break: the last hand still has to
         // finish, then five minutes run on top of that. The engine's default
         // 120s safety timeout would otherwise resume dealing mid-break.
-        engine.pauseAfterHand(breakDurationMs + TournamentManagerBase.LAST_HAND_GRACE_MS);
+        // beforeNextHand: a break means STOP. A table that was idle at :55
+        // must park without dealing, and no table may open a new hand until
+        // the break ends. (Hand-for-hand deliberately does NOT pass this.)
+        engine.pauseAfterHand(breakDurationMs + TournamentManagerBase.LAST_HAND_GRACE_MS, {
+          beforeNextHand: true,
+        });
       } catch (err) {
         reportError(err, 'TournamentManagerBase.pauseForBreak_pause_engine');
       }
@@ -1882,7 +1887,9 @@ export abstract class TournamentManagerBase {
           );
           for (const engine of this.tableEngines.values()) {
             try {
-              engine.pauseAfterHand(remainingMs + TournamentManagerBase.LAST_HAND_GRACE_MS);
+              engine.pauseAfterHand(remainingMs + TournamentManagerBase.LAST_HAND_GRACE_MS, {
+                beforeNextHand: true,
+              });
             } catch (err) {
               reportError(err, 'TournamentManagerBase.resume_rebreak_pause');
             }
@@ -3281,7 +3288,10 @@ export abstract class TournamentManagerBase {
       const breakMs = addonBreakMinutes * 60 * 1000;
       for (const engine of this.tableEngines.values()) {
         try {
-          engine.pauseAfterHand(breakMs + TournamentManagerBase.LAST_HAND_GRACE_MS);
+          // An add-on break is a break: nothing new is dealt during it.
+          engine.pauseAfterHand(breakMs + TournamentManagerBase.LAST_HAND_GRACE_MS, {
+            beforeNextHand: true,
+          });
         } catch (err) {
           reportError(err, 'TournamentManagerBase.addon_break_pause');
         }

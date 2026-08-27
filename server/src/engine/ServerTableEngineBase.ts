@@ -632,6 +632,29 @@ export abstract class ServerTableEngineBase {
    * outlast the short hand-for-hand window without self-resuming.
    */
   protected pauseMaxWaitMs: number | null = null;
+  /**
+   * DOES THIS PAUSE FORBID THE NEXT HAND, OR ONLY THE ONE AFTER IT?
+   *
+   * The two callers of pauseAfterHand want opposite things, and conflating
+   * them deadlocks one of them:
+   *
+   *   - A SYNCHRONIZED BREAK (and the add-on break, and a drain) means STOP.
+   *     The hand in flight finishes, and no further hand is dealt until the
+   *     break ends. A table that was idle at :55 must park without dealing.
+   *     -> beforeNextHand: true.
+   *
+   *   - HAND-FOR-HAND means DEAL EXACTLY ONE MORE HAND, THEN STOP. The bubble
+   *     sync resumes every table together and re-pauses them 500ms later,
+   *     deliberately, "to let dealing start" — it is arming the park for the
+   *     hand that is about to be dealt. If the top-of-loop gate honoured that
+   *     re-pause, the table would park BEFORE dealing, the sync would see
+   *     everyone parked, resume, re-pause, and park again — the bubble would
+   *     never burst and the tournament would freeze on the money.
+   *     -> beforeNextHand stays false, and only the post-deal gate parks.
+   *
+   * Cleared by resumeDealing along with the rest of the pause state.
+   */
+  protected holdBeforeNextHand: boolean = false;
 
   // Bible V8 §1.1.4: Action serialization lock — prevents parallel action processing
   protected actionLock: boolean = false;
@@ -1913,9 +1936,12 @@ export abstract class ServerTableEngineBase {
    * pause now say so; the safety net still exists, it is just sized to the
    * pause being requested.
    */
-  pauseAfterHand(maxWaitMs?: number): void {
+  pauseAfterHand(maxWaitMs?: number, opts?: { beforeNextHand?: boolean }): void {
     this.handForHandPaused = true;
     this.pauseMaxWaitMs = maxWaitMs && maxWaitMs > 0 ? maxWaitMs : null;
+    // See holdBeforeNextHand. Sticky within one pause: a break already holding
+    // the table must not be downgraded by a later ordinary pause request.
+    if (opts?.beforeNextHand) this.holdBeforeNextHand = true;
     if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
   }
 
@@ -1928,6 +1954,7 @@ export abstract class ServerTableEngineBase {
     // hand-for-hand pause gets its own short safety window rather than
     // inheriting a multi-minute one.
     this.pauseMaxWaitMs = null;
+    this.holdBeforeNextHand = false;
     // Bible V8 §3.1: Table FSM — paused → running
     if (this.tableFSM.state === 'paused') {
       this.tableFSM.transition('running');

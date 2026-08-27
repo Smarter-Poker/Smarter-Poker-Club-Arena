@@ -272,6 +272,98 @@ describe('buildReplay — when the row cannot be trusted', () => {
   });
 });
 
+describe('buildReplay — a hand the engine recorded in full', () => {
+  /**
+   * As of 2026-08-27 the engine writes its own forced money and its own
+   * uncalled-bet return (HandController.postBlinds -> FORCED_BETS_POSTED, and
+   * UNCALLED_BET_RETURNED). This is the shape those hands have.
+   *
+   * Two things must happen and neither is optional:
+   *   - the blinds must NOT be synthesised on top of recorded ones, or the pot
+   *     is double-counted by exactly SB + BB;
+   *   - the return must NOT be inferred on top of a recorded one, or the same
+   *     chips come out twice.
+   *
+   * This is also the only hand shape where an ANTE is recoverable at all, so
+   * it is the case that lifts the 0.8% of live hands that cannot show a stack
+   * column today.
+   */
+  const m = buildReplay({
+    handNumber: 3,
+    playedAt: null,
+    gameVariant: 'nlh',
+    smallBlind: 1,
+    bigBlind: 2,
+    // 3 antes (dead) + SB 1 + BB 2 + a 6 straddle + the SB calling it for 5
+    // more (their 1 is already live) = 3 + 3 + 6 + 5 = 17. The 20 bet on the
+    // flop went uncalled and came straight back, so it is not in the pot.
+    potSize: 17,
+    buttonSeat: 3,
+    board: ['6hearts', '2spades', 'Qhearts'],
+    players: [
+      { seat: 1, userId: 'a', username: 'A', stack: 90 },
+      { seat: 2, userId: 'b', username: 'B', stack: 108 },
+      { seat: 3, userId: 'c', username: 'C', stack: 93 },
+    ],
+    actions: [
+      { seat: 1, userId: 'a', action: 'sb', amount: 1, stage: 'preflop' },
+      { seat: 2, userId: 'b', action: 'bb', amount: 2, stage: 'preflop' },
+      { seat: 1, userId: 'a', action: 'ante', amount: 1, stage: 'preflop' },
+      { seat: 2, userId: 'b', action: 'ante', amount: 1, stage: 'preflop' },
+      { seat: 3, userId: 'c', action: 'ante', amount: 1, stage: 'preflop' },
+      { seat: 3, userId: 'c', action: 'straddle', amount: 6, stage: 'preflop' },
+      { seat: 1, userId: 'a', action: 'call', amount: 5, stage: 'preflop' },
+      { seat: 2, userId: 'b', action: 'fold', amount: 0, stage: 'preflop' },
+      { seat: 1, userId: 'a', action: 'check', amount: 0, stage: 'flop' },
+      { seat: 3, userId: 'c', action: 'bet', amount: 20, stage: 'flop' },
+      { seat: 1, userId: 'a', action: 'fold', amount: 0, stage: 'flop' },
+      // Stored POSITIVE, like every other amount. The verb is the direction.
+      { seat: 3, userId: 'c', action: 'return', amount: 20, stage: 'flop' },
+    ],
+    winners: [{ userId: 'c', amount: 17, potIndex: 0 }],
+    holeCards: {},
+  } as never);
+
+  it('rebuilds the pot including the ante and the straddle', () => {
+    // The ante is the money that no reconstruction could see before, and it is
+    // why these hands used to fall into the un-reconciled tail.
+    expect(m.rebuiltPot).toBe(17);
+    expect(m.reconciles).toBe(true);
+  });
+
+  it('does not synthesise a second set of blinds over the recorded ones', () => {
+    const preflop = m.streets.find((s) => s.key === 'preflop')!;
+    expect(preflop.rows.filter((r) => r.verb === 'sb')).toHaveLength(1);
+    expect(preflop.rows.filter((r) => r.verb === 'bb')).toHaveLength(1);
+  });
+
+  it('does not infer a return over the recorded one', () => {
+    const flop = m.streets.find((s) => s.key === 'flop')!;
+    const returns = flop.rows.filter((r) => r.verb === 'return');
+    expect(returns).toHaveLength(1);
+    expect(returns[0].amount).toBe(-20);
+  });
+
+  it('draws the ante and the straddle as their own rows', () => {
+    const preflop = m.streets.find((s) => s.key === 'preflop')!;
+    expect(preflop.rows.filter((r) => r.verb === 'ante')).toHaveLength(3);
+    const straddle = preflop.rows.find((r) => r.verb === 'straddle')!;
+    expect(straddle).toMatchObject({ seat: 3, amount: 6, label: 'Straddle' });
+  });
+
+  it('nets every player against the forced money they actually posted', () => {
+    const net = Object.fromEntries(m.players.map((p) => [p.username, p.net]));
+    expect(net.A).toBe(-7); // 1 sb + 1 ante + 5 call
+    expect(net.B).toBe(-3); // 2 bb + 1 ante
+    expect(net.C).toBe(10); // 17 collected, 6 straddle + 1 ante in
+  });
+
+  it('recovers a stack curve on a hand that previously could not have one', () => {
+    const preflop = m.streets.find((s) => s.key === 'preflop')!;
+    for (const row of preflop.rows) expect(row.stackAfter).not.toBeNull();
+  });
+});
+
 describe('titleCase', () => {
   it('capitalises the first letter of every word, per the house rule', () => {
     expect(titleCase('Four of a Kind')).toBe('Four Of A Kind');

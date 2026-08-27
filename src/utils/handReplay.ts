@@ -96,6 +96,12 @@ export interface ReplayActionInput {
   /** The engine's key is `stage`; the table adapter renames it `street`. */
   stage?: string | null;
   street?: string | null;
+  /**
+   * Set on forced-money rows that are DEAD — an ante, or the small-blind half
+   * of a dead blind. Dead money is in the pot but is not part of the live bet
+   * level, so it must not be differenced against a raise-TO level.
+   */
+  dead?: boolean;
 }
 
 export interface ReplayWinnerInput {
@@ -279,7 +285,13 @@ const VERB_LABEL: Record<ReplayVerb, string> = {
 /** Verbs whose stored amount is a raise-TO level rather than an increment. */
 const TO_LEVEL_VERBS = new Set(['bet', 'raise', 'all_in', 'allin', 'all-in']);
 
-/** Explicit forced-money rows, if the engine ever starts writing them. */
+/**
+ * Explicit forced-money rows.
+ *
+ * The engine writes these as of 2026-08-27 (FORCED_BETS_POSTED). Millions of
+ * rows predate it and carry none, which is why the blinds are still
+ * synthesised below — but only when the log has nothing of its own to say.
+ */
 const POST_VERBS = new Set(['post', 'post_sb', 'post_bb', 'sb', 'bb', 'ante', 'straddle', 'blind']);
 
 const money = (n: number) => Math.round(n * 100) / 100;
@@ -364,6 +376,12 @@ export function buildReplay(input: ReplayInput): ReplayModel {
 
   const live = (input.actions || []).filter((a) => a && !isSystemAction(a));
   const logHasPosts = live.some((a) => POST_VERBS.has(String(a.action || '').toLowerCase()));
+  /**
+   * A hand written by an engine that records its own returns needs no
+   * inference — and inferring on top of a recorded return would subtract the
+   * same chips twice.
+   */
+  const logHasReturns = live.some((a) => normalizeVerb(a.action) === 'return');
 
   // Blinds, synthesised only when the log does not already carry them.
   const preflopPosts: Array<ReplayRow & { stage: string }> = [];
@@ -407,6 +425,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
    * `pot_size` and the ending stack already exclude it.
    */
   const settleStreet = () => {
+    if (logHasReturns) return;
     const entries = [...committed.entries()].filter(([, v]) => v > 0);
     if (entries.length < 1) return;
     entries.sort((a, b) => b[1] - a[1]);
@@ -444,18 +463,36 @@ export function buildReplay(input: ReplayInput): ReplayModel {
     const raw = Number(a.amount) || 0;
 
     let increment = 0;
-    if (input.amountsAreIncremental) {
+    if (verb === 'return') {
+      // Stored positive, like every other amount. The verb carries the
+      // direction, so the sign is applied here and exactly once.
+      increment = -Math.abs(raw);
+    } else if (input.amountsAreIncremental) {
       increment = raw;
     } else if (TO_LEVEL_VERBS.has(String(a.action || '').toLowerCase())) {
       increment = money(raw - (committed.get(seat) || 0));
     } else {
       increment = raw;
     }
-    if (increment < 0) increment = 0;
+    if (increment < 0 && verb !== 'return') increment = 0;
 
-    if (increment > 0) {
+    if (increment !== 0) {
       addMoney(seat, increment);
-      committed.set(seat, money((committed.get(seat) || 0) + increment));
+      /**
+       * DEAD money goes into the pot but NOT into the live bet level.
+       *
+       * `committed` exists for one job: differencing a raise-TO level against
+       * what that seat already had in. An ante is in the pot and counts toward
+       * nothing — a player who posted a 1 ante and then raises TO 20 has added
+       * 20 live chips, not 19. Folding the ante into `committed` understates
+       * every raise made by anyone who posted one, which in a tournament is
+       * everyone at the table.
+       *
+       * `verb === 'ante'` is the floor for rows written before the engine
+       * carried the flag, and for any importer that does not set it.
+       */
+      const isDead = (a as { dead?: boolean }).dead === true || verb === 'ante';
+      if (!isDead) committed.set(seat, money((committed.get(seat) || 0) + increment));
     }
 
     rows.push({

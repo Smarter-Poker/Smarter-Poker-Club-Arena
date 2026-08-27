@@ -348,7 +348,8 @@ export default function ChipTransferModal({
       }, 1500);
     } catch (err: any) {
       reportError(err, 'ChipTransferModal.Transfer_error');
-      if (isMounted.current) setError(safeErrorMessage(err, 'Transfer failed. Please try again.'));
+      const msg = err instanceof Error ? err.message : err?.message || String(err);
+      if (isMounted.current) setError(msg);
     }
     setIsLoading(false);
     transferInFlightRef.current = false;

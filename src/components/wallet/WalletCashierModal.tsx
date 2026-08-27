@@ -146,7 +146,7 @@ interface Member {
   name: string;
   avatar_url?: string;
   short_id?: string;
-  chip_balance: number;
+  chip_balance?: number;
 }
 
 interface LedgerRow {
@@ -197,11 +197,13 @@ interface WalletCashierModalProps {
   walletType?: CashierWalletType;
 }
 
-const fmt = (n: number) =>
-  (Number.isFinite(n) ? n : 0).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+const fmt = (n?: number | null) =>
+  n === undefined || n === null
+    ? '...'
+    : (Number.isFinite(n) ? n : 0).toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
 
 const fmtWhole = (n: number) => Math.round(n).toLocaleString('en-US');
 
@@ -425,7 +427,11 @@ export default function WalletCashierModal({
         reportError(agentReadError, 'WalletCashierModal.loadClub_promo_wallet');
         setBank(null);
       } else {
-        setBank(Number(agent?.promo_wallet_balance) || 0);
+        setBank(
+          agent?.promo_wallet_balance !== undefined && agent?.promo_wallet_balance !== null
+            ? Number(agent?.promo_wallet_balance)
+            : null
+        );
       }
     } else if (walletType === 'agent_wallet') {
       const { data: agent, error: agentReadError } = await supabase
@@ -438,10 +444,18 @@ export default function WalletCashierModal({
         reportError(agentReadError, 'WalletCashierModal.loadClub_agent_wallet');
         setBank(null);
       } else {
-        setBank(Number(agent?.agent_wallet_balance) || 0);
+        setBank(
+          agent?.agent_wallet_balance !== undefined && agent?.agent_wallet_balance !== null
+            ? Number(agent?.agent_wallet_balance)
+            : null
+        );
       }
     } else {
-      setBank(Number(club?.chip_treasury) || 0);
+      setBank(
+        club?.chip_treasury !== undefined && club?.chip_treasury !== null
+          ? Number(club?.chip_treasury)
+          : null
+      );
     }
     setClubLoading(false);
   }, [clubId, walletType, user?.id, isMounted]);
@@ -485,7 +499,10 @@ export default function WalletCashierModal({
           user_id: String(m.user_id),
           role: String(m.role || 'player'),
           name: (m.name as string) || `Member ${String(m.user_id).slice(0, 8)}`,
-          chip_balance: Number(m.chip_balance) || 0,
+          chip_balance:
+            m.chip_balance !== undefined && m.chip_balance !== null
+              ? Number(m.chip_balance)
+              : undefined,
           avatar_url: (m.avatar_url as string) || '',
           username: (m.username as string) || '',
           short_id: String(m.player_number || '----'),
@@ -669,7 +686,7 @@ export default function WalletCashierModal({
       return;
     }
     if (destination === 'player_wallet') {
-      setHolderHeld(recipient.chip_balance);
+      setHolderHeld(recipient.chip_balance ?? null);
       return;
     }
     let cancelled = false;
@@ -693,8 +710,12 @@ export default function WalletCashierModal({
       }
       setHolderHeld(
         destination === 'promo_wallet'
-          ? Number(data?.promo_wallet_balance) || 0
-          : Number(data?.agent_wallet_balance) || 0
+          ? data?.promo_wallet_balance !== undefined && data?.promo_wallet_balance !== null
+            ? Number(data?.promo_wallet_balance)
+            : null
+          : data?.agent_wallet_balance !== undefined && data?.agent_wallet_balance !== null
+            ? Number(data?.agent_wallet_balance)
+            : null
       );
     })();
     return () => {
@@ -715,7 +736,8 @@ export default function WalletCashierModal({
         { event: 'UPDATE', schema: 'public', table: 'clubs', filter: `id=eq.${clubUuid}` },
         (p) => {
           if (!isMounted.current || walletType !== 'club_bank') return;
-          if (p.new?.chip_treasury !== undefined) setBank(Number(p.new.chip_treasury) || 0);
+          if (p.new?.chip_treasury !== undefined)
+            setBank(p.new.chip_treasury !== null ? Number(p.new.chip_treasury) : null);
         }
       )
       .on(
@@ -724,9 +746,13 @@ export default function WalletCashierModal({
         (p) => {
           if (!isMounted.current || p.new?.club_id !== clubUuid) return;
           if (walletType === 'promo_wallet' && p.new?.promo_wallet_balance !== undefined)
-            setBank(Number(p.new.promo_wallet_balance) || 0);
+            setBank(
+              p.new.promo_wallet_balance !== null ? Number(p.new.promo_wallet_balance) : null
+            );
           if (walletType === 'agent_wallet' && p.new?.agent_wallet_balance !== undefined)
-            setBank(Number(p.new.agent_wallet_balance) || 0);
+            setBank(
+              p.new.agent_wallet_balance !== null ? Number(p.new.agent_wallet_balance) : null
+            );
         }
       )
       .subscribe();

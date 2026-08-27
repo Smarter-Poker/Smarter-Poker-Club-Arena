@@ -221,7 +221,8 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     } catch (err: any) {
       // The op id is held, not dropped: this may have committed with the
       // response lost, and the retry has to replay rather than release twice.
-      if (isMounted.current) setError(safeErrorMessage(err, 'Failed to approve cashout'));
+      const msg = err instanceof Error ? err.message : err?.message || String(err);
+      if (isMounted.current) setError(msg);
     }
     inFlightRef.current.delete(cashout.id);
     if (isMounted.current) setProcessing(null);
@@ -262,7 +263,8 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
       // See handleApprove: rejectCashout already emits BALANCE_UPDATED with the
       // correct `userId` key.
     } catch (err: any) {
-      if (isMounted.current) setError(safeErrorMessage(err, 'Failed to reject cashout'));
+      const msg = err instanceof Error ? err.message : err?.message || String(err);
+      if (isMounted.current) setError(msg);
     }
     inFlightRef.current.delete(cashout.id);
     if (isMounted.current) setProcessing(null);

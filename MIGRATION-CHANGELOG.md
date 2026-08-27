@@ -72,6 +72,29 @@ source-pin tests updated to the new anchors in the same commit (per the
 NEVER-PUSH-A-RED-TEST rule). Migrations applied to production via Supabase
 MCP and verified (`list_migrations` + probes).
 
+## Cowork session 2026-08-26 (final) — WINNER DISPLAY ON EVERY BOARD AND EVERY CHOP
+
+Extension of the parity session below to multi-run and multi-winner hands
+(PR #1368 + a post-merge review fix):
+
+1. **Per-winner hand names.** winnerInfo.handNames (per user_id, from the
+   engine's per-winner hand_name; winners_by_board fallback). A hi-lo low
+   winner's seat labels "Low: 8-6-4-3-2", never the high hand's name.
+2. **POT_WIN merges.** The event can fire once per pot; replacing
+   winnerInfo un-lit the main-pot winner when the side pot paid. Events now
+   union (players, hole indices, names) and SUM per-user amounts (the
+   post-merge review caught the spread overwriting a double-pot winner's
+   first share). Fenced by the hand-start resets.
+3. **RIT hole cards per board.** Each run derives which of the winner's
+   hole cards made THAT board's five (unfiltered holeCards positions);
+   seats light the union across runs.
+4. **Stacked boards' banners join the flow.** Under [data-boards] the
+   banner renders compactly under its own board instead of absolutely
+   overlapping the next run — every RIT run and both bomb-pot boards name
+   their winning hand.
+
+Pinned by the parity spec (33 assertions).
+
 ## Cowork session 2026-08-26 (late) — WINNER PRESENTATION, POKERBROS 1:1 (3 passes, measured)
 
 Dan supplied HIGHLIGHT WINNING HAND AND DSIPLAY IT ON SCREEN.MOV (26-Aug PLO5

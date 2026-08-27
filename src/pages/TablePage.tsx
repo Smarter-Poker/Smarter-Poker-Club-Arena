@@ -9168,7 +9168,8 @@ export default function TablePage({
     horseYieldReportedRef.current = false;
     const interval = setInterval(async () => {
       try {
-        const entries = await waitlistService.getTableWaitlist(tableId);
+        // null = read failed ("could not find out") — yield nothing on a guess.
+        const entries = (await waitlistService.getTableWaitlist(tableId)) ?? [];
         if (entries.length > 0) {
           const yielded = await HydraService.checkWaitlistAndYield(tableId, entries.length);
           if (yielded) {
@@ -13358,6 +13359,7 @@ export default function TablePage({
     if (!tableId) return;
     try {
       const entries = await waitlistService.getTableWaitlist(tableId);
+      if (entries === null) return; // read failed — keep what the modal has
       if (entries.length === 0) {
         setWaitListPlayers([]);
         return;

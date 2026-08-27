@@ -21,11 +21,11 @@ import {
   mttTitleLine,
   seatFirstJoinable,
   seatsTakenLabel,
-  stackDepthBB,
   SPIN_MAX_MULTIPLIER,
   spinPayoutLabel,
   spinPrizeLabel,
   stackDepthLabel,
+  stackFormatRank,
 } from './lobbyEntries';
 import { prefetchIntent } from '../../utils/ChunkPreloader';
 import { useSpinTierAvailability } from '../../hooks/useSpinTierAvailability';
@@ -788,16 +788,16 @@ const COL_FORMAT: ColumnDef = {
   label: 'Format',
   className: 'lt-col-format',
   sortable: true,
-  /* The DEPTH, not the word. Sorting on the label gave the alphabet
-     ('' < Deepstack < Hyper < Standard < Turbo) and floated every cash row —
-     which has no format — to the top of the ALL tab. Infinity for a row that
-     cannot say, so it sinks in both directions, exactly as COL_TSTACK does.
-     It is also ~1,300 JSON.parse calls cheaper per sort: stackDepthLabel
-     re-parsed the blind structure inside the comparator. */
-  sortValue: (e) => {
-    const depth = stackDepthBB(e);
-    return depth > 0 ? depth : Infinity;
-  },
+  /* The RANK OF THE RENDERED LABEL, not the raw depth and not the alphabet
+     (ITEM E audit, 2026-08-26). Depth-sorting looked broken whenever a
+     tournament's NAME carried a speed word: "Sunday Turbo" at 60bb rendered
+     Turbo but sorted among the Deepstacks, so the sorted column read
+     `Turbo, Deepstack, Standard, Turbo…`. stackFormatRank derives the rank
+     from stackDepthLabel itself, so sort order and rendered word cannot
+     disagree. Cash rows still rank Infinity and sink in both directions,
+     exactly as COL_TSTACK does; named rows short-circuit before any
+     blind-structure parse, so the comparator stays cheap where it matters. */
+  sortValue: (e) => stackFormatRank(e),
   render: (e) => {
     const label = stackDepthLabel(e);
     return label ? <span className="lt-format">{label}</span> : null;
@@ -877,15 +877,14 @@ const COL_ACTIONS: ColumnDef = {
          can only ever fail — the same reasoning that gave running MTTs a
          Watch button. A player who already holds a seat gets taken back to it. */
       const mine = playerStateOf(e, ctx) !== null;
-      /* `full` is not in this list any more: tournamentStatus returns
-         'running' for a seat-first game with every seat gone, and 'completed'
-         is filtered out by the query. The capacity check is what actually
-         fires, and it is kept because it is true a moment before the status
-         catches up. */
-      const noSeatLeft =
-        e.status === 'running' ||
-        e.status === 'completed' ||
-        (e.capacity > 0 && e.players >= e.capacity);
+      /* Through seatFirstJoinable, the ONE list of dead states — status AND
+         the capacity check that fires a moment before the status catches up.
+         This used to spell its own list and omit 'closed', so a
+         just-cancelled row still rendered a Sit Down button that could only
+         fail (ITEM E audit, 2026-08-26: reachable in the window before the
+         realtime handler drops the row). Two lists that must be edited
+         together is how they drift apart. */
+      const noSeatLeft = !seatFirstJoinable(e);
 
       if (mine || noSeatLeft) {
         return (

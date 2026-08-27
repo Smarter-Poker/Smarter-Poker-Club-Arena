@@ -762,9 +762,16 @@ class TableService {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   /**
-   * Get average pot size for a table
+   * Get average pot size for a table.
+   *
+   * NULL means "could not find out" — a failed read and a table with no
+   * hands both used to answer `0`, so the signature lied and the one caller
+   * (GameLobbyPanel) was typed `number | null` against a function that could
+   * never return null; only its `> 0` display gate kept "Avg Pot 0" off the
+   * panel on a query failure (ITEM E audit, 2026-08-26). Type and code agree
+   * now: null = unknown/no data, a number = a real average.
    */
-  async getAveragePot(tableId: string): Promise<number> {
+  async getAveragePot(tableId: string): Promise<number | null> {
     // 2026-08-19: read `hands`, a table with ZERO rows ever, so this always
     // returned 0 no matter how the table was playing. hand_history is the live
     // ledger the engine writes, and carries pot_size directly.
@@ -775,7 +782,11 @@ class TableService {
       .order('created_at', { ascending: false })
       .limit(100);
 
-    if (error || !data?.length) return 0;
+    if (error) {
+      reportError(error, 'TableService.getAveragePot', { tableId });
+      return null;
+    }
+    if (!data?.length) return null;
 
     const total = data.reduce((sum, h) => sum + (h.pot_size || 0), 0);
     return Math.round(total / data.length);

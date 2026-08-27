@@ -16,7 +16,7 @@ import { Link } from 'react-router-dom';
 import CasinoPlaque, { PlaqueSeats } from './CasinoPlaque';
 import type { LobbyEntry, LobbyTableRow, LobbyTournamentRow } from './lobbyEntries';
 import { parseBlindStructure, tournamentBlinds, tournamentLevel } from './tournamentFigures';
-import { parseTableSettings } from './lobbyEntries';
+import { parseTableSettings, seatsTakenLabel } from './lobbyEntries';
 import { cashBuyInRange } from '../../lib/cashBuyIn';
 import { tournamentService } from '../../services/TournamentService';
 import { waitlistService, type WaitlistEntry } from '../../services/WaitlistService';
@@ -25,7 +25,9 @@ import { supabase } from '../../lib/supabase';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { formatBuyIn } from '../../utils/buyIn';
 import { reportError } from '../../utils/errorReporter';
-import type { Tournament, BlindLevel, PayoutEntry } from '../../types/database.types';
+import type { Tournament, BlindLevel } from '../../types/database.types';
+import { parsePayoutStructure } from '../tournament/details/types';
+import type { PayoutPlace } from '../tournament/details/types';
 import './GameLobbyPanel.css';
 
 export interface GameLobbyPanelProps {
@@ -149,16 +151,21 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       waitlistService
         .getTableWaitlist(entry.id)
         .then((rows) => {
-          if (!cancelled) {
-            setWaitlist(rows || []);
+          if (cancelled) return;
+          /* NULL means the READ failed (query-level, which the .catch below
+             can never see — a Supabase builder only rejects on transport).
+             "Waiting 0" beside a Join Waitlist button is a promise that you
+             are first in line; on a failed read it was a guess. The service
+             now says which is which, and '-' renders for "could not find
+             out" (ITEM E audit, 2026-08-26). */
+          if (rows === null) {
+            setWaitlistError(true);
+          } else {
+            setWaitlist(rows);
             setWaitlistError(false);
           }
         })
         .catch((e) => {
-          /* "Waiting 0" beside a Join Waitlist button is a promise that you
-             are first in line. On a failed read it was a guess, and the seat
-             map one screen up already knew better - it hides itself rather
-             than draw an empty table. */
           if (!cancelled) setWaitlistError(true);
           reportError(e, 'GameLobbyPanel.loadWaitlist');
         });
@@ -379,6 +386,25 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     return (parseBlindStructure(typeof raw === 'string' ? raw : null) as BlindLevel[] | null) ?? [];
   }, [tournament?.blind_structure]);
 
+  /**
+   * ── AND THE SAME BUG, ONE FIELD OVER (ITEM E audit, 2026-08-26) ─────────
+   *
+   * `payout_structure` is the SAME kind of TEXT-holding-JSON column as
+   * `blind_structure` above, and this panel rendered it raw: on a string,
+   * `.length` is the character count (truthy) and `.map` is not a function —
+   * the whole panel went down opening Payouts. And even on a real array, the
+   * range shapes builders emit ({from:2,to:9} / place:"4-6") rendered as one
+   * row with an empty Place cell while RewardsTab showed one row per paid
+   * place — two answers about who gets paid, on the buy-in surface.
+   *
+   * parsePayoutStructure is the ONE parser every tab already uses; it expands
+   * ranges to one entry per place, which also gives the rows a real key.
+   */
+  const panelPayouts = useMemo<PayoutPlace[]>(
+    () => parsePayoutStructure(tournament?.payout_structure) ?? [],
+    [tournament?.payout_structure]
+  );
+
   const cashRaw = isCash ? (entry.raw as LobbyTableRow) : null;
   /* One helper, so the panel and the card behind it cannot quote different
      buy-ins for the same table — see src/lib/cashBuyIn.ts for why the raw
@@ -388,6 +414,14 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   const cashRange = cashRaw ? cashBuyInRange(cashRaw) : null;
   const minBuy = cashRange ? cashRange.min : 0;
   const maxBuy = cashRange ? cashRange.max : 0;
+  /* ITEM E audit, 2026-08-26: cashBuyInRange returns {min:0,max:0,unknown:true}
+     for a row that cannot price itself, and cashBuyIn.ts names the bug of
+     ignoring that flag: "Returning 0/0 printed the literal '0' on the card
+     and '0 Min / 0 Max' in the panel — a claim about money that is not
+     merely unknown but wrong." The card honours it (buyInLabel → '-'); the
+     panel read only .min/.max. One formatter, used at every money site. */
+  const cashMoney = (n: number): string =>
+    cashRange && cashRange.unknown ? '-' : n.toLocaleString();
 
   const joinZone = (
     <>
@@ -398,11 +432,11 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         {isCash ? (
           <>
             <span className="cplaque__join-figure">
-              <b>{minBuy.toLocaleString()}</b>
+              <b>{cashMoney(minBuy)}</b>
               <span>Min</span>
             </span>
             <span className="cplaque__join-figure">
-              <b>{maxBuy.toLocaleString()}</b>
+              <b>{cashMoney(maxBuy)}</b>
               <span>Max</span>
             </span>
           </>
@@ -421,7 +455,11 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           </>
         )}
       </div>
-      <PlaqueSeats players={entry.players} capacity={entry.capacity} />
+      <PlaqueSeats
+        players={entry.players}
+        capacity={entry.capacity}
+        bareCount={entry.kind === 'mtt'}
+      />
       {cta.link && !busy ? (
         <Link
           className={`cplaque__cta${cta.kind !== 'primary' && cta.kind !== 'disabled' ? ` cplaque__cta--${cta.kind}` : ''}`}
@@ -505,14 +543,24 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                     <dt>Game</dt>
                     <dd>{entry.variantLabel}</dd>
                   </div>
-                  <div>
-                    <dt>Blinds</dt>
-                    <dd className="glp__mono">{entry.stakesLabel}</dd>
-                  </div>
+                  {/* `stakesLabel: string | null` — null means "this row cannot
+                      say its stakes", and the contract (lobbyEntries) is that
+                      it then says NOTHING. Printing the heading over an empty
+                      cell broke that; the board's COL_STAKES already drops the
+                      cell (ITEM E audit, 2026-08-26). */}
+                  {entry.stakesLabel && (
+                    <div>
+                      <dt>Blinds</dt>
+                      <dd className="glp__mono">{entry.stakesLabel}</dd>
+                    </div>
+                  )}
                   <div>
                     <dt>Buy-In</dt>
                     <dd className="glp__mono">
-                      {minBuy.toLocaleString()} - {maxBuy.toLocaleString()}
+                      {/* cashMoney honours cashBuyInRange's `unknown` flag the
+                          way the card's buyInLabel does — 0/0 was "a claim
+                          about money that is not merely unknown but wrong". */}
+                      {cashMoney(minBuy)} - {cashMoney(maxBuy)}
                     </dd>
                   </div>
                   <div>
@@ -709,7 +757,11 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                     <div>
                       <dt>Players</dt>
                       <dd className="glp__mono">
-                        {entry.players} / {entry.capacity || '-'}
+                        {/* seatsTakenLabel is the canonical rule (Dan
+                            2026-08-24): a bare count for an MTT — max_players
+                            is not a cap there and "45 / 500" was the exact
+                            string ruled out — a fraction for spin/sng. */}
+                        {seatsTakenLabel(entry)}
                       </dd>
                     </div>
                     <div>
@@ -837,7 +889,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   tabIndex={0}
                 >
                   <h3 className="glp__h">Payouts</h3>
-                  {tournament?.payout_structure?.length ? (
+                  {tournament && panelPayouts.length > 0 ? (
                     <>
                       <div className="glp__tablewrap">
                         <table className="glp__table">
@@ -849,18 +901,14 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                             </tr>
                           </thead>
                           <tbody>
-                            {tournament.payout_structure.map((p: PayoutEntry) => (
+                            {panelPayouts.map((p) => (
                               <tr key={p.place}>
                                 <td>{p.place}</td>
                                 <td>{p.percentage}%</td>
                                 {Number(tournament.prize_pool) > 0 && (
                                   <td>
                                     {Math.floor(
-                                      ((Number(tournament.prize_pool) || 0) *
-                                        (Number.isFinite(Number(p.percentage))
-                                          ? Number(p.percentage)
-                                          : 0)) /
-                                        100
+                                      ((Number(tournament.prize_pool) || 0) * p.percentage) / 100
                                     ).toLocaleString()}
                                   </td>
                                 )}

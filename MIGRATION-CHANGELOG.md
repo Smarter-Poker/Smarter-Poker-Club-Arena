@@ -2,6 +2,59 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-08-27 — ITEM E: THE BUY-IN SURFACES, AUDITED TO THE TAB STANDARD
+
+The last open handoff item without a pending PR: GameLobbyPanel, LobbyTable,
+lobbyEntries and the Spin surfaces, hunted for the six defect classes the
+tournament-tab audit established. Twelve findings, ten fixed, one recorded as
+latent (spinReveal predicate divergence — unreachable today, comment says when
+it stops being), one closed by verification:
+
+1. **`payout_structure` rendered raw** — the SAME TEXT-holding-JSON bug this
+   panel already fixed for `blind_structure`, one field over: on a string,
+   `.map` threw and took the panel down; on the range shapes real builders
+   emit it showed 2 rows where RewardsTab showed 9. Now through
+   `parsePayoutStructure`, the one parser every tab uses (also fixes the
+   `key={undefined}` collision on range rows).
+2. **"Waiting 0" on a failed read** — `getTableWaitlist` swallowed query
+   errors into `[]`, so the guard written for exactly this could never fire.
+   It now returns null for "could not find out"; the panel renders '-'.
+   Same for `countsFor` (a queued-up full table badged plain 'Full' on a
+   failed read) — the board now keeps its previous counts instead.
+3. **"Am I already in this game?" built from three error-discarding queries**
+   — a failed read offered Register / Join Table to a player already holding
+   the seat (the expensive direction, on the buy-in surface). Each set now
+   updates only from a read that worked; stale beats wrong-empty.
+4. **`0 Min / 0 Max` on unpriceable tables** — the panel ignored
+   `cashBuyInRange`'s `unknown` flag the card already honours; now '-' at all
+   three money sites, and an unknown row sorts to the BOTTOM of a Buy-In sort
+   instead of the top (buyInValue Infinity, not 0).
+5. **"45 / 500" on MTTs, thrice** — the panel's Players row and PlaqueSeats
+   both violated the seatsTakenLabel rule (Dan 2026-08-24: no /500). Bare
+   entry count for MTTs now, fraction kept for spin/sng.
+6. **Format column sorted on depth but rendered the name keyword** — "Sunday
+   Turbo" at 60bb printed Turbo and sorted Deepstack, so the sorted column
+   looked broken. New `stackFormatRank` derives the rank FROM the rendered
+   label; sort and word cannot disagree (pinned in lobbySweepFixes).
+7. **`live` vs `status: 'running'`, two derivations of one fact** — a 3/3
+   seat-first game showed a Running badge with no live pip. `live` now
+   derives from the same status the surfaces render.
+8. **`noSeatLeft` omitted 'closed'** — a just-cancelled spin still rendered a
+   Sit Down button that could only fail; now through `seatFirstJoinable`,
+   the one list of dead states.
+9. **Dangling "Blinds" over nothing** — plaque and panel printed the heading
+   over a null stakesLabel; both guarded now, matching COL_STAKES.
+10. **`getAveragePot` signature lied** — returned 0 for both "no hands" and
+    "read failed" against a caller typed `number | null`. Returns null now.
+
+Also: buy-in idempotency general case CLOSED BY VERIFICATION — the live
+`atomic_table_buyin` already accepts `p_idempotency_key`, dedups via
+`transaction_idempotency_keys` (duplicate key = silent no-op = success on
+retry), and the client mints one key per attempt and reuses it on retry
+(pinned in buyInIdempotencyKey.test.ts). No code needed. And `.bbj-info`:
+resolved 2026-08-25 by deletion (native title + BBJInfoModal); the orphan
+rule left in BadBeatJackpotPage.css is now gone too.
+
 ## Cowork session 2026-08-26 (late night) — HANDOFF CLOSURE + FIRST REAL-BROWSER LOBBY AUDIT
 
 Worked the two 2026-08-26 handoffs and the open guard issue. Much of the

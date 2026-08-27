@@ -322,3 +322,37 @@
   outline: 2px solid #f0b90b;
   outline-offset: 2px;
 }
+
+/* SHOW MORE. Full width and 44px tall because this list is read on a 375px
+   phone and a paging control that is hard to hit is a paging control nobody
+   uses. Same yellow as the focus ring, at rest as an outline rather than a
+   fill, so it never competes with a winner row for attention. */
+.bbj-hits__more {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin: 10px 0 2px;
+  padding: 11px 12px;
+  border: 1px solid rgba(240, 185, 11, 0.35);
+  border-radius: 10px;
+  background: rgba(240, 185, 11, 0.08);
+  color: #f0b90b;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.bbj-hits__more:hover:not(:disabled) {
+  background: rgba(240, 185, 11, 0.16);
+}
+
+.bbj-hits__more:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.bbj-hits__more:focus-visible {
+  outline: 2px solid #f0b90b;
+  outline-offset: 2px;
+}

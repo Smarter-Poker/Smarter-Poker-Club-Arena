@@ -39,6 +39,7 @@ import CardImage, { CardBack } from '../table/CardImage';
 import { cardKey } from '../../utils/handEvaluator';
 import type { ReplayModel, ReplayRow, ReplayShowdownRow } from '../../utils/handReplay';
 import './HandDetailView.css';
+import { blindLabel, money, stamp } from '../../utils/handFormat';
 
 export interface HandDetailViewProps {
   model: ReplayModel;
@@ -55,29 +56,6 @@ export interface HandDetailViewProps {
    * for this from the start and had no writer.
    */
   badBeatUserId?: string | null;
-}
-
-function money(n: number | null | undefined, dp = 2): string {
-  return Number(n || 0).toLocaleString('en-US', {
-    minimumFractionDigits: dp,
-    maximumFractionDigits: dp,
-  });
-}
-
-/** Stakes print as typed: 0.05/0.1, not 0.05/0.10. */
-function blindLabel(n: number): string {
-  return (Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
-}
-
-function stamp(iso: string | null): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-  );
 }
 
 /** How many face-down cards a muck shows — the variant's own holding size. */

@@ -51,6 +51,7 @@ import type { HandRecord } from './HandHistoryPanel';
 import HandDetailView from '../handdetail/HandDetailView';
 import { useHandReplayModel } from '../../hooks/useHandReplayModel';
 import './HandDetailModal.css';
+import { gameTypeLabel } from '../../utils/handFormat';
 
 export interface HandDetailModalProps {
   isOpen: boolean;
@@ -119,10 +120,14 @@ function HiddenCards({ count = 2 }: { count?: number }) {
   );
 }
 
+/**
+ * This tab shows sub-chip amounts, so it keeps its own two-decimals-under-one
+ * rule rather than the shared `money`. What it does NOT keep is its own idea
+ * of a non-number: `Math.abs(NaN) >= 1` is false, so it used to fall through
+ * to `NaN.toFixed(2)` and print the string "NaN" into a chip figure while the
+ * tab beside it printed 0.00 for the same value.
+ */
 function fmt(n: number): string {
-  // `Math.abs(NaN) >= 1` is false, so this used to fall through to
-  // `NaN.toFixed(2)` and print the string "NaN" into a chip figure. Every
-  // other money formatter in this feature is NaN-safe by construction.
   const v = Number.isFinite(n) ? n : 0;
   const abs = Math.abs(v);
   if (abs >= 1) return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
@@ -134,26 +139,6 @@ function fmt(n: number): string {
    next door printed "Discard" for the same street (HandHistoryPanel's
    getStreetLabel). Any street name added to HandHistoryStreet must gain a label
    in both places or one surface starts leaking column names at the player. */
-/**
- * The game-type chip beside the stakes.
- *
- * `HandDetailView` has always rendered one; only the BBJ caller passed it, so
- * the table's own rundown showed no game type at all even though the record
- * carries it. Same shape as the winners list uses, so both surfaces name a
- * variant the same way.
- */
-function gameTypeBadge(variant: string | null | undefined): string | null {
-  const v = String(variant || '')
-    .toLowerCase()
-    .trim();
-  if (!v) return null;
-  if (v === 'nlh') return 'NLH';
-  if (v === 'flh') return 'FLH';
-  if (v === 'short_deck' || v === 'shortdeck') return 'Short Deck';
-  if (v === 'pineapple') return 'Pineapple';
-  if (/^(plo|flo)\d*8?$/.test(v)) return v.toUpperCase();
-  return v.replace(/_/g, ' ').replace(/\b([a-z])/g, (c) => c.toUpperCase());
-}
 
 const STREET_LABEL: Record<string, string> = {
   preflop: 'PreFlop',
@@ -433,7 +418,7 @@ export function HandDetailModal({
               model={replay}
               currentUserId={heroId}
               currentUserName={currentUserName}
-              badge={gameTypeBadge(hand.gameType)}
+              badge={gameTypeLabel(hand.gameType)}
             />
           ) : tab === 'detail' && (replayState === 'loading' || replayState === 'idle') ? (
             <div className="hdm-skeletons">

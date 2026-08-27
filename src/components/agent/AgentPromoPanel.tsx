@@ -11,13 +11,26 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
-import { callClubArenaApi } from '../../services/clubArenaApi';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { masterBus } from '../../core/MasterBus';
 import { triggerHaptic } from '../../services/HapticService';
 import { resolveAvatarDisplay } from '../../utils/avatarUtils';
 import { checkSettlementLock } from '../../utils/settlementLock';
 import { reportError } from '../../utils/errorReporter';
+
+/** crypto.randomUUID is not in every embedded webview; fall back rather than throw. */
+function newOpId(): string {
+  try {
+    const c = globalThis.crypto as Crypto | undefined;
+    if (c?.randomUUID) return c.randomUUID();
+  } catch {
+    /* fall through */
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+    const r = (Math.random() * 16) | 0;
+    return (ch === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 
 const FB = {
   bg: '#18191A',
@@ -52,7 +65,6 @@ export default function AgentPromoPanel({
   onDistribute,
 }: AgentPromoPanelProps) {
   const [promoBalance, setPromoBalance] = useState(0);
-  const [agentPkId, setAgentPkId] = useState<string | null>(null);
   const [downline, setDownline] = useState<DownlinePlayer[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
@@ -65,6 +77,17 @@ export default function AgentPromoPanel({
   // Rate limit: 10s between distributions
   const lastDistributeRef = useRef(0);
   const DISTRIBUTE_RATE_LIMIT_MS = 10_000;
+
+  /**
+   * The idempotency key for the CURRENT attempt. Held across a failure so a
+   * retry after a lost response replays the original send instead of paying
+   * twice; cleared on success and whenever the inputs change, because a
+   * changed amount or target is a genuinely new intent.
+   */
+  const opIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    opIdRef.current = null;
+  }, [amount, selectedPlayer, clubId]);
 
   const isAgent = ['agent', 'sub_agent', 'super_agent'].includes(role);
 
@@ -89,7 +112,6 @@ export default function AgentPromoPanel({
         .maybeSingle();
       if (!isMounted.current) return;
       setPromoBalance(Number(agent?.promo_wallet_balance) || 0);
-      setAgentPkId(agent?.id || null);
 
       const { data: players } = await supabase
         .from('club_members')
@@ -212,22 +234,41 @@ export default function AgentPromoPanel({
     }
 
     try {
-      if (!agentPkId) {
-        showToast('Agent record not found', 'error');
-        setDistributing(false);
-        return;
-      }
-      // Distribute SERVER-SIDE. `distribute_promo_chips` is service_role-only, so
-      // the old direct browser rpc() returned 42501 and this button could never
-      // work. The route identifies the agent from the JWT, enforces the promo
-      // lifetime cap / playthrough rules, rate limits and idempotency, and writes
-      // the audit trail.
-      await callClubArenaApi('distribute-promo', {
-        action: 'send',
-        clubId,
-        targetUserId: selectedPlayer,
-        amount: amt,
+      /**
+       * THE POOL THIS PANEL DISPLAYS IS NOW THE POOL IT SPENDS (audit
+       * 2026-08-27). The header above shows agents.promo_wallet_balance -
+       * the float the Club Bank Cashier funds - but the old path went
+       * through the distribute-promo World Hub route, whose RPC
+       * (transfer_promo_agent_to_player) debits club_members.promo_balance:
+       * a column that is zero for every member in production and that
+       * nothing ever funds. Every distribution therefore died with
+       * "insufficient agent promo balance" while the panel showed a funded
+       * float - zero ledger rows of that type have EVER been written.
+       *
+       * fn_promo_wallet_send is the canonical promo money path (Dan
+       * 2026-08-24: to a player wallet it is just as good as cash). It
+       * debits the displayed float, enforces the recursive downline edge,
+       * refuses self-sends and sub-cent amounts, and writes one ledger row
+       * under an op_id - held in a ref across a failed attempt so a retry
+       * after a lost response replays instead of paying twice, and minted
+       * fresh once the send lands or the inputs change.
+       */
+      if (!opIdRef.current) opIdRef.current = newOpId();
+      const { data, error } = await supabase.rpc('fn_promo_wallet_send', {
+        p_club_id: clubId,
+        p_to_user_id: selectedPlayer,
+        p_amount: amt,
+        p_destination: 'player_wallet',
+        p_reason: 'Promo Distribution From The Agent Panel',
+        p_op_id: opIdRef.current,
       });
+      if (error) throw error;
+      const res = (Array.isArray(data) ? data[0] : data) as {
+        success?: boolean;
+        error?: string;
+      } | null;
+      if (!res?.success) throw new Error(res?.error || 'Distribution failed');
+      opIdRef.current = null;
 
       showToast(`${amt.toLocaleString()} promo chips sent`);
       masterBus.emit('DATA_MUTATED', { table: 'agents', action: 'promo_distributed' });

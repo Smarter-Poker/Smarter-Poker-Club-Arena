@@ -37,7 +37,6 @@ import CashierClubSwitcher from '../components/club/CashierClubSwitcher';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
-import { callClubArenaApi } from '../services/clubArenaApi';
 import {
   resolveTargetClub,
   readCachedQuickLinkClubs,
@@ -2218,8 +2217,9 @@ export default function CashierPage() {
           </h2>
           <div className={styles.cardBody}>
             <div className={`${styles.message} ${styles.messageInfo}`}>
-              Distribute Chips Directly To Players Or Agents From The Club Bank. Each Distribution
-              Is Logged With A Full Audit Trail.
+              {['owner', 'co_owner', 'admin', 'super_agent'].includes(userRole) || isUnionOwner
+                ? 'Distribute Chips Directly To Players Or Agents From The Club Bank. Each Distribution Is Logged With A Full Audit Trail.'
+                : 'Distribute Chips To Your Downline From Your Agent Wallet. Each Distribution Is Logged With A Full Audit Trail.'}
             </div>
 
             {/* Player Selector */}
@@ -2330,30 +2330,57 @@ export default function CashierPage() {
                 }
 
                 try {
-                  // Distribute SERVER-SIDE. `distribute_promo_chips` is granted
-                  // to postgres/service_role only, so the browser rpc() this
-                  // used to call returned 42501 permission denied, was retried
-                  // three times, and surfaced as a raw Postgres string — the
-                  // Distribute tab could never succeed for anyone. The route
-                  // identifies the agent from the JWT (no agents.id lookup
-                  // needed, which also unblocks owners who have no agents row),
-                  // enforces the promo caps, and writes the audit trail.
-                  // Same call the Agent promo panel already uses.
-                  // Per-INTENT idempotency key. Without it callClubArenaApi
-                  // mints uuid() per request - clubArenaApi.ts documents this
-                  // exact failure mode as the reason the option exists, and
-                  // the Distribute tab was not using it.
-                  await callClubArenaApi(
-                    'distribute-promo',
+                  /**
+                   * THE TAB NOW DOES WHAT ITS OWN COPY SAYS (audit 2026-08-27).
+                   *
+                   * The card reads "Distribute Chips ... From The Club Bank",
+                   * but this called the distribute-promo World Hub route,
+                   * whose RPC (transfer_promo_agent_to_player) debits
+                   * club_members.promo_balance - a pool that is zero for
+                   * every member in production and that nothing funds. The
+                   * tab has NEVER moved a chip: zero ledger rows of that
+                   * type exist.
+                   *
+                   * It now routes by the caller's role onto the two
+                   * canonical RPCs. The four bank roles spend the CLUB BANK
+                   * (fn_club_bank_send - self-send permitted there, which is
+                   * how an owner funds their own float); an agent spends
+                   * their AGENT WALLET (fn_agent_wallet_send, downline
+                   * enforced server-side). Both derive the destination from
+                   * the recipient's role and write one ledger row.
+                   * promoOpIdRef is the page's per-INTENT key: held across a
+                   * failed attempt, rotated when the inputs change.
+                   */
+                  const resolvedForDistribute =
+                    (await resolveClubUUID(clubId || '')) || clubId || '';
+                  const recipientRow = recipients.find((r) => r.id === selectedRecipient);
+                  const viaClubBank =
+                    ['owner', 'co_owner', 'admin', 'super_agent'].includes(userRole) ||
+                    isUnionOwner;
+                  const { data: distData, error: distError } = await supabase.rpc(
+                    viaClubBank ? 'fn_club_bank_send' : 'fn_agent_wallet_send',
                     {
-                      action: 'send',
-                      clubId: (await resolveClubUUID(clubId || '')) || clubId || '',
-                      targetUserId: selectedRecipient,
-                      amount: value,
-                    },
-                    { idempotencyKey: promoOpIdRef.current }
+                      p_club_id: resolvedForDistribute,
+                      p_to_user_id: selectedRecipient,
+                      p_amount: value,
+                      p_destination: canHoldAgentWallet(recipientRow?.role)
+                        ? 'agent_wallet'
+                        : 'player_wallet',
+                      p_reason: viaClubBank
+                        ? 'Distributed From The Club Bank'
+                        : 'Distributed From The Agent Wallet',
+                      p_op_id: promoOpIdRef.current,
+                    }
                   );
-                  const recipient = recipients.find((r) => r.id === selectedRecipient);
+                  if (distError) throw distError;
+                  const distRes = (Array.isArray(distData) ? distData[0] : distData) as {
+                    success?: boolean;
+                    error?: string;
+                  } | null;
+                  if (!distRes?.success) {
+                    throw new Error(distRes?.error || 'The Cashier Refused That Distribution');
+                  }
+                  const recipient = recipientRow;
                   if (isMounted.current)
                     setMessage({
                       type: 'success',

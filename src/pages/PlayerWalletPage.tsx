@@ -390,7 +390,21 @@ export default function PlayerWalletPage() {
     setMessage(null);
     try {
       if (!user?.id) return;
-      await internalTransfer(user.id, transferFrom, transferTo, amount);
+      // 2026-08-27: internalTransfer NEVER throws - it returns false on the
+      // store mutex skip, on insufficient balance, and on every RPC failure
+      // (the store swallows those into reportError). This success message used
+      // to fire unconditionally after the await, so a REFUSED transfer told
+      // the player it succeeded, cleared their input and emitted
+      // BALANCE_UPDATED. The catch below was dead for every store-level
+      // failure. Honour the boolean.
+      const transferred = await internalTransfer(user.id, transferFrom, transferTo, amount);
+      if (!transferred) {
+        if (isMounted.current) {
+          setMessage({ type: 'error', text: MSG.transferFailed });
+          setIsTransferring(false);
+        }
+        return;
+      }
       if (isMounted.current) {
         setMessage({
           type: 'success',

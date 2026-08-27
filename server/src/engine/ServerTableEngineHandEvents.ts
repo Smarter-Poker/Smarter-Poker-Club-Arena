@@ -200,6 +200,87 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         break;
       }
 
+      /**
+       * FORCED MONEY GOES INTO THE HAND RECORD (2026-08-27).
+       *
+       * `actions` is the only per-hand log that is persisted, and until today
+       * it contained no blind, no ante, no straddle and no dead blind — the
+       * engine moved those chips and emitted a bus event, and the record kept
+       * nothing. Every consumer rebuilding a pot, an investment or a stack
+       * from `hand_history` was therefore short by exactly the forced money.
+       *
+       * Measured before this: the reconstruction lands on the stored
+       * `pot_size` on 99.18% of the 4,000 most recent live hands, and every
+       * miss is a hand carrying an ante or a straddle.
+       *
+       * These rows are ADDITIVE. src/utils/handReplay.ts already synthesises
+       * the two blinds from `small_blind`/`big_blind` for the millions of rows
+       * that predate this, and stands down the moment the log carries real
+       * post rows — so old and new hands both rebuild correctly, and no
+       * backfill is needed or possible.
+       */
+      case 'FORCED_BETS_POSTED' as never: {
+        const postings = (
+          event as never as {
+            postings?: Array<{
+              seat: number;
+              userId: string;
+              kind: string;
+              amount: number;
+              dead?: boolean;
+            }>;
+          }
+        ).postings;
+        if (Array.isArray(postings)) {
+          for (const p of postings) {
+            if (!p || !(p.amount > 0)) continue;
+            this.currentHandActions.push({
+              seat: p.seat,
+              userId: p.userId ?? '',
+              action: p.kind,
+              amount: p.amount,
+              timestamp: Date.now(),
+              stage: 'preflop',
+              // DEAD money is in the pot but not in the live bet level. A
+              // reader that differences a raise-TO level against everything a
+              // seat has committed will understate every raise made by anyone
+              // who posted an ante, so the distinction travels with the row.
+              dead: p.dead === true,
+            });
+          }
+        }
+        break;
+      }
+
+      /**
+       * THE UNCALLED BET COMES BACK ON THE RECORD TOO.
+       *
+       * `returnUncalledBet` moves the chips and emits this event, and nothing
+       * persisted it — so the log showed a player betting 900 and never
+       * getting it back, while `pot_size` and the ending stack both already
+       * excluded it. Every reader had to INFER the return from the shape of
+       * the street to make the arithmetic close.
+       *
+       * Stored POSITIVE, like every other amount in this array. It is the verb
+       * that carries the direction; a negative number in a column of positive
+       * ones is how a reader that does not know the verb silently under-counts
+       * a pot.
+       */
+      case 'UNCALLED_BET_RETURNED' as never: {
+        const e = event as never as { seat?: number; userId?: string; amount?: number };
+        if (e && typeof e.amount === 'number' && e.amount > 0) {
+          this.currentHandActions.push({
+            seat: e.seat ?? 0,
+            userId: e.userId ?? '',
+            action: 'return',
+            amount: e.amount,
+            timestamp: Date.now(),
+            stage: this.handController?.getState()?.stage || 'river',
+          });
+        }
+        break;
+      }
+
       case 'CARDS_DEALT':
         // Write hole cards to RLS-protected table for secure per-player delivery.
         // The client subscribes to table_hole_cards INSERTs (RLS filters to own cards only).

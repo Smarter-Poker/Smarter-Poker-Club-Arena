@@ -3426,6 +3426,14 @@ export default function TablePage({
      * lights exactly those (the board half rides cardIndices).
      */
     holeCardIndices: Record<string, number[]>;
+    /**
+     * CHOP PARITY 2026-08-26: per-winner hand names. On a chopped or hi-lo
+     * split pot the winners hold DIFFERENT hands (the low's "Low: 8-6-4-3-2"
+     * is not the high's "Flush") — one shared handName mislabeled every
+     * winner but the first. Each seat reads its own entry, falling back to
+     * the shared name for older payloads.
+     */
+    handNames: Record<string, string>;
     amounts: Record<string, number>;
     /** Round 2 (double board): winning hand name per board — [top, bottom]. */
     boardHandNames?: [string, string] | null;
@@ -3436,6 +3444,7 @@ export default function TablePage({
     lowWinnerLabel: '',
     cardIndices: [],
     holeCardIndices: {},
+    handNames: {},
     amounts: {},
     boardHandNames: null,
   });
@@ -3467,11 +3476,17 @@ export default function TablePage({
 
       let winnerHandName: string | undefined;
       let highlightedIndices: number[] = [];
+      // MULTI-BOARD PARITY 2026-08-26: this board winner's OWN hole cards
+      // that participate in its winning five, keyed by ORIGINAL holeCards
+      // position (SeatSlot indexes into the unfiltered row) — a board that
+      // is won with different hole cards than board 1 must light its own.
+      let winnerHoleIndices: Record<string, number[]> = {};
 
       // Evaluate the winning hand for the winner(s) on this board
       for (const wid of winnerIds) {
         const winnerPlayer = tableState.players.find((p) => p?.id === wid);
-        const hole = (winnerPlayer?.holeCards ?? []).filter((c): c is Card => c != null);
+        const rawHole = winnerPlayer?.holeCards ?? [];
+        const hole = rawHole.filter((c): c is Card => c != null);
         if (hole.length > 0) {
           const evalResult = bestFive(hole, cards, tableState.gameType);
           if (evalResult) {
@@ -3480,6 +3495,11 @@ export default function TablePage({
             highlightedIndices = cards
               .map((c, idx) => (playedKeySet.has(cardKey(c)) ? idx : -1))
               .filter((idx) => idx >= 0);
+            winnerHoleIndices = {
+              [wid]: rawHole
+                .map((c, hi) => (c && playedKeySet.has(cardKey(c)) ? hi : -1))
+                .filter((hi) => hi >= 0),
+            };
             break;
           }
         }
@@ -3519,6 +3539,7 @@ export default function TablePage({
         winnerNames: revealed ? winnerNames : [],
         winnerHandName: revealed ? winnerHandName : undefined,
         highlightedIndices: revealed ? highlightedIndices : [],
+        holeIndices: revealed ? winnerHoleIndices : {},
         sharePct,
         shareAmount: boardPot,
         revealed,
@@ -3532,6 +3553,20 @@ export default function TablePage({
     ritRevealDone,
     ritRevealedRuns,
   ]);
+
+  // MULTI-BOARD PARITY 2026-08-26: union of each RIT board winner's hole
+  // indices — a player who wins run 1 with A-K and run 2 with the 8-8 half
+  // lights all four cards, exactly the five-card truth of each board taken
+  // together. Empty when the hand is not multi-run.
+  const ritWinnerHoleIndices = useMemo(() => {
+    const m: Record<string, number[]> = {};
+    for (const b of ritBoardsView) {
+      for (const [uid, idxs] of Object.entries(b.holeIndices ?? {})) {
+        m[uid] = m[uid] ? [...new Set([...m[uid], ...idxs])] : idxs;
+      }
+    }
+    return m;
+  }, [ritBoardsView]);
 
   // POKERBROS PARITY 2026-08-26 (round 3): the double-board bomb pot's
   // SECOND board never highlighted its winning five — the engine's
@@ -9807,6 +9842,7 @@ export default function TablePage({
           lowWinnerLabel: '',
           cardIndices: [],
           holeCardIndices: {},
+          handNames: {},
           amounts: {},
           boardHandNames: null,
         });
@@ -10464,6 +10500,7 @@ export default function TablePage({
             lowWinnerLabel: '',
             cardIndices: [],
             holeCardIndices: {},
+            handNames: {},
             amounts: {},
             boardHandNames: null,
           });
@@ -10742,30 +10779,43 @@ export default function TablePage({
             const sharePerWinner = potAmount / (winnerIds.length || 1);
             for (const wid of winnerIds) amounts[wid] = sharePerWinner;
           }
-          setWinnerInfo({
-            playerIds: winnerIds,
-            handName: winHandName,
-            handDescription: winHandDescription,
-            lowWinnerLabel: boardLabel.lowWinnerLabel,
-            cardIndices: winCardIndices,
-            holeCardIndices: winHoleCardIndices,
-            amounts,
-            boardHandNames,
-          });
+          // CHOP PARITY 2026-08-26: each winner's OWN hand name, so a hi-lo
+          // low winner's seat says "Low: 8-6-4-3-2" and never borrows the
+          // high hand's label. winners_by_board fills double-board gaps.
+          const handNamesNow: Record<string, string> = {};
+          for (const w of winnersArray) {
+            if (w.hand_name) handNamesNow[w.user_id] = w.hand_name;
+          }
+          for (const wb of winnersByBoard) {
+            if (wb.hand_name && !handNamesNow[wb.user_id]) handNamesNow[wb.user_id] = wb.hand_name;
+          }
+          // SPLIT/SIDE-POT PARITY 2026-08-26: POT_WIN can fire once per pot
+          // (the hero-outcome accumulator below has known this for a while).
+          // Replacing winnerInfo on each event un-lit every earlier pot's
+          // winners mid-display. MERGE instead — the hand-start resets fence
+          // the union to the current hand, so nothing bleeds across hands.
+          const prevWin = winnerInfoRef.current;
+          const mergedHole: Record<string, number[]> = { ...prevWin.holeCardIndices };
+          for (const [uid, idxs] of Object.entries(winHoleCardIndices)) {
+            mergedHole[uid] = mergedHole[uid] ? [...new Set([...mergedHole[uid], ...idxs])] : idxs;
+          }
+          const merged = {
+            playerIds: [...new Set([...prevWin.playerIds, ...winnerIds])],
+            handName: winHandName || prevWin.handName,
+            handDescription: winHandDescription || prevWin.handDescription,
+            lowWinnerLabel: boardLabel.lowWinnerLabel || prevWin.lowWinnerLabel,
+            cardIndices: winCardIndices.length > 0 ? winCardIndices : prevWin.cardIndices,
+            holeCardIndices: mergedHole,
+            handNames: { ...prevWin.handNames, ...handNamesNow },
+            amounts: { ...prevWin.amounts, ...amounts },
+            boardHandNames: boardHandNames ?? prevWin.boardHandNames,
+          };
+          setWinnerInfo(merged);
           // Write the mirror synchronously too. POT_WIN and HAND_COMPLETE can
           // arrive in the same WS frame, in which case React has not
           // re-rendered yet and the render-time mirror assignment would still
           // hold the previous hand's winners when Share Hand reads it.
-          winnerInfoRef.current = {
-            playerIds: winnerIds,
-            handName: winHandName,
-            handDescription: winHandDescription,
-            lowWinnerLabel: boardLabel.lowWinnerLabel,
-            cardIndices: winCardIndices,
-            holeCardIndices: winHoleCardIndices,
-            amounts,
-            boardHandNames,
-          };
+          winnerInfoRef.current = merged;
           // Bible V8 §5.1: Tiered celebration per docs/_archive/POKERBROS_UPGRADE_PLAN.md §3.7
           // < 10 BB = gold glow only (default), 10-50 BB = confetti,
           // 50+ BB = confetti + screen shake + bigWin sound
@@ -14920,16 +14970,30 @@ export default function TablePage({
                      winning five dims to half brightness (losing shown hands
                      whole, the winner's unused cards around the lit ones). */
                   winnerDisplayActive={winnerInfo.playerIds.length > 0}
+                  /* CHOP PARITY 2026-08-26: each winner's OWN hand name —
+                     a hi-lo low winner labels as its low, a chopped pot
+                     labels both seats with their (identical) rank, and a
+                     double-board split names each winner's hand. Falls back
+                     to the shared name for older payloads. */
                   winningHandName={
                     player && winnerInfo.playerIds.includes(player.id)
-                      ? winnerInfo.handName
+                      ? winnerInfo.handNames[player.id] || winnerInfo.handName
                       : undefined
                   }
                   /* SHOWDOWN SYSTEM 2026-08-25 (spec section 15): light
-                     exactly the hole cards that belong to the winning five. */
+                     exactly the hole cards that belong to the winning five.
+                     MULTI-BOARD PARITY 2026-08-26: on a run-it-multiple hand
+                     the union of every board's winning hole cards. */
                   winningHoleCardIndexes={
                     player && winnerInfo.playerIds.includes(player.id)
-                      ? winnerInfo.holeCardIndices[player.id]
+                      ? ritWinnerHoleIndices[player.id]
+                        ? [
+                            ...new Set([
+                              ...(winnerInfo.holeCardIndices[player.id] ?? []),
+                              ...ritWinnerHoleIndices[player.id],
+                            ]),
+                          ]
+                        : winnerInfo.holeCardIndices[player.id]
                       : undefined
                   }
                   /* SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the engine

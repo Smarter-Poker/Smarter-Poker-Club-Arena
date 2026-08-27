@@ -214,6 +214,46 @@ describe('the winner sequence details match the reference', () => {
   });
 });
 
+describe('multi-board and chopped pots get the same winner display', () => {
+  it('each winner carries their OWN hand name, and every seat reads its own', () => {
+    expect(TABLE_PAGE).toMatch(/handNames:\s*Record<string,\s*string>/);
+    expect(TABLE_PAGE).toMatch(/winnerInfo\.handNames\[player\.id\]\s*\|\|\s*winnerInfo\.handName/);
+  });
+
+  it('per-pot POT_WIN events MERGE — earlier pot winners stay lit on split/side pots', () => {
+    expect(TABLE_PAGE).toMatch(/new Set\(\[\.\.\.prevWin\.playerIds,\s*\.\.\.winnerIds\]\)/);
+    expect(TABLE_PAGE).toMatch(
+      /handNames:\s*\{\s*\.\.\.prevWin\.handNames,\s*\.\.\.handNamesNow\s*\}/
+    );
+  });
+
+  it('handNames resets with the rest of winnerInfo at hand start', () => {
+    const clears = TABLE_PAGE.match(/handNames:\s*\{\}/g) || [];
+    expect(clears.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('every RIT board derives its winning five AND its winner hole cards', () => {
+    expect(TABLE_PAGE).toMatch(/winnerHoleIndices/);
+    expect(TABLE_PAGE).toMatch(/holeIndices:\s*revealed\s*\?\s*winnerHoleIndices\s*:\s*\{\}/);
+    expect(TABLE_PAGE).toMatch(/ritWinnerHoleIndices/);
+  });
+
+  it('a multi-run winner lights the union of every board\u2019s winning hole cards', () => {
+    expect(TABLE_PAGE).toMatch(/ritWinnerHoleIndices\[player\.id\]/);
+  });
+
+  it('stacked boards render the banner in-flow so every board names its hand', () => {
+    const at = BOARD_CSS.indexOf('.table-page[data-boards] .community-cards__hand-name');
+    expect(at, 'multi-board banner rule missing').toBeGreaterThan(-1);
+    const body = BOARD_CSS.slice(at, BOARD_CSS.indexOf('}', at));
+    expect(body).toMatch(/position:\s*static/);
+  });
+
+  it('board 2 of a double-board hand still gets the highlight+dim treatment', () => {
+    expect(TABLE_PAGE).toMatch(/highlightedIndices=\{board2HighlightedIndices\}/);
+  });
+});
+
 describe('the banner is the reference banner (measured geometry)', () => {
   it('hugs the board from below', () => {
     const at = BOARD_CSS.indexOf('.community-cards__hand-name {');

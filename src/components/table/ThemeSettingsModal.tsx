@@ -156,81 +156,139 @@ const CARD_ASSETS: ThemeAsset[] = CARD_BACK_CATALOG.map((design) => ({
   vipOnly: design.tier !== 'standard',
 }));
 
+export const THEME_PRESETS: ThemeAsset[] = [
+  {
+    id: 'default-dark',
+    name: 'Default Dark',
+    thumbnail: 'linear-gradient(135deg, #1a1a2e, #16213e)',
+    vipOnly: false,
+  },
+  {
+    id: 'classic-brown',
+    name: 'Classic Brown',
+    thumbnail: 'linear-gradient(135deg, #3e2723, #5d4037)',
+    vipOnly: false,
+  },
+  {
+    id: 'neon-blue',
+    name: 'Neon Blue',
+    thumbnail: 'linear-gradient(135deg, #0d47a1, #1565c0)',
+    vipOnly: true,
+  },
+  {
+    id: 'rustic-wood',
+    name: 'Rustic Wood',
+    thumbnail: 'linear-gradient(135deg, #4e342e, #795548)',
+    vipOnly: true,
+  },
+  {
+    id: 'casino-green',
+    name: 'Casino Green',
+    thumbnail: 'linear-gradient(135deg, #1b5e20, #2e7d32)',
+    vipOnly: true,
+  },
+  {
+    id: 'ocean-depths',
+    name: 'Ocean Depths',
+    thumbnail: 'linear-gradient(135deg, #061a2c, #0b6584)',
+    vipOnly: false,
+  },
+  {
+    id: 'crimson-club',
+    name: 'Crimson Club',
+    thumbnail: 'linear-gradient(135deg, #26070d, #8f142c)',
+    vipOnly: false,
+  },
+  {
+    id: 'arctic-suite',
+    name: 'Arctic Suite',
+    thumbnail: 'linear-gradient(135deg, #dce9f0, #55748a)',
+    vipOnly: true,
+  },
+  {
+    id: 'amethyst-night',
+    name: 'Amethyst Night',
+    thumbnail: 'linear-gradient(135deg, #160b27, #63389a)',
+    vipOnly: true,
+  },
+  {
+    id: 'carbon-ion',
+    name: 'Carbon Ion',
+    thumbnail: 'linear-gradient(135deg, #080d0f, #167f78)',
+    vipOnly: true,
+  },
+];
+
+export const BUTTON_ASSETS: ThemeAsset[] = [
+  {
+    // FIX-D7 2026-07-19: the app default is 'classic-white' but it wasn't a
+    // selectable tile, so a fresh user / Reset showed no button highlighted.
+    // Add it (matches the [data-button-theme='classic-white'] CSS token).
+    id: 'classic-white',
+    name: 'Classic White',
+    thumbnail: 'linear-gradient(145deg, #ffffff 0%, #e8e8e8 50%, #d0d0d0 100%)',
+    vipOnly: false,
+  },
+  {
+    id: 'red-d-gear',
+    name: 'Red D',
+    thumbnail: 'linear-gradient(135deg, #c62828, #e53935)',
+    vipOnly: false,
+  },
+  {
+    id: 'gray-d-gear',
+    name: 'Gray D',
+    thumbnail: 'linear-gradient(135deg, #616161, #757575)',
+    vipOnly: false,
+  },
+  {
+    id: 'blue-crystal',
+    name: 'Blue Crystal',
+    thumbnail: 'linear-gradient(135deg, #1565c0, #42a5f5)',
+    vipOnly: true,
+  },
+  {
+    id: 'gold-star',
+    name: 'Gold Star',
+    thumbnail: 'linear-gradient(135deg, #f57f17, #fbc02d)',
+    vipOnly: true,
+  },
+  {
+    id: 'sports-themed',
+    name: 'Sports',
+    thumbnail: 'linear-gradient(135deg, #33691e, #558b2f)',
+    vipOnly: true,
+  },
+  {
+    id: 'jade-seal',
+    name: 'Jade Seal',
+    thumbnail: 'linear-gradient(145deg, #a7e5c2, #176344)',
+    vipOnly: true,
+  },
+  {
+    id: 'amethyst-chip',
+    name: 'Amethyst Chip',
+    thumbnail: 'linear-gradient(145deg, #d4b8ff, #5b2d91)',
+    vipOnly: true,
+  },
+  {
+    id: 'carbon-ion',
+    name: 'Carbon Ion',
+    thumbnail: 'linear-gradient(145deg, #263238, #101416)',
+    vipOnly: true,
+  },
+  {
+    id: 'ocean-pearl',
+    name: 'Ocean Pearl',
+    thumbnail: 'linear-gradient(145deg, #eaf8ff, #4da6c8)',
+    vipOnly: true,
+  },
+];
+
 const THEME_ASSETS: Record<ThemeTab, ThemeAsset[]> = {
-  themes: [
-    {
-      id: 'default-dark',
-      name: 'Default Dark',
-      thumbnail: 'linear-gradient(135deg, #1a1a2e, #16213e)',
-      vipOnly: false,
-    },
-    {
-      id: 'classic-brown',
-      name: 'Classic Brown',
-      thumbnail: 'linear-gradient(135deg, #3e2723, #5d4037)',
-      vipOnly: false,
-    },
-    {
-      id: 'neon-blue',
-      name: 'Neon Blue',
-      thumbnail: 'linear-gradient(135deg, #0d47a1, #1565c0)',
-      vipOnly: true,
-    },
-    {
-      id: 'rustic-wood',
-      name: 'Rustic Wood',
-      thumbnail: 'linear-gradient(135deg, #4e342e, #795548)',
-      vipOnly: true,
-    },
-    {
-      id: 'casino-green',
-      name: 'Casino Green',
-      thumbnail: 'linear-gradient(135deg, #1b5e20, #2e7d32)',
-      vipOnly: true,
-    },
-  ],
+  themes: THEME_PRESETS,
   table: TABLE_ASSETS,
-  button: [
-    {
-      // FIX-D7 2026-07-19: the app default is 'classic-white' but it wasn't a
-      // selectable tile, so a fresh user / Reset showed no button highlighted.
-      // Add it (matches the [data-button-theme='classic-white'] CSS token).
-      id: 'classic-white',
-      name: 'Classic White',
-      thumbnail: 'linear-gradient(145deg, #ffffff 0%, #e8e8e8 50%, #d0d0d0 100%)',
-      vipOnly: false,
-    },
-    {
-      id: 'red-d-gear',
-      name: 'Red D',
-      thumbnail: 'linear-gradient(135deg, #c62828, #e53935)',
-      vipOnly: false,
-    },
-    {
-      id: 'gray-d-gear',
-      name: 'Gray D',
-      thumbnail: 'linear-gradient(135deg, #616161, #757575)',
-      vipOnly: false,
-    },
-    {
-      id: 'blue-crystal',
-      name: 'Blue Crystal',
-      thumbnail: 'linear-gradient(135deg, #1565c0, #42a5f5)',
-      vipOnly: true,
-    },
-    {
-      id: 'gold-star',
-      name: 'Gold Star',
-      thumbnail: 'linear-gradient(135deg, #f57f17, #fbc02d)',
-      vipOnly: true,
-    },
-    {
-      id: 'sports-themed',
-      name: 'Sports',
-      thumbnail: 'linear-gradient(135deg, #33691e, #558b2f)',
-      vipOnly: true,
-    },
-  ],
+  button: BUTTON_ASSETS,
   // Dan 2026-08-18: ten standalone designed backgrounds (see
   // src/assets/backgrounds/, applied via TABLE_BACKGROUNDS in TablePage).
   //
@@ -298,6 +356,31 @@ const PRESET_TRIMMINGS: Record<string, Omit<Partial<ThemeSelection>, 'table_id'>
   'casino-green': {
     button_id: 'gold-star',
     background_id: 'jade_neon',
+    cards_id: 'carbon',
+  },
+  'ocean-depths': {
+    button_id: 'ocean-pearl',
+    background_id: 'ocean_abyss',
+    cards_id: 'classic_blue',
+  },
+  'crimson-club': {
+    button_id: 'red-d-gear',
+    background_id: 'crimson_lounge',
+    cards_id: 'classic_red',
+  },
+  'arctic-suite': {
+    button_id: 'ocean-pearl',
+    background_id: 'ice_frost',
+    cards_id: 'diamond-foil',
+  },
+  'amethyst-night': {
+    button_id: 'amethyst-chip',
+    background_id: 'royal_indigo',
+    cards_id: 'royal',
+  },
+  'carbon-ion': {
+    button_id: 'carbon-ion',
+    background_id: 'carbon_grid',
     cards_id: 'carbon',
   },
 };

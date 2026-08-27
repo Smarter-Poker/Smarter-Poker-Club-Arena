@@ -227,6 +227,22 @@ to the cent. Also swept for stubs/dead code and re-verified every client
 piece (banner, waiting bar, fee pill, payout flight, slow reveal, fee-first
 dialog) present and wired on main. 107 server + 50 client tests green.
 
+**Pass 8 (publish + P&L, Dan 2026-08-26/27):** migration
+`20260827_insurance_on_for_all_cash_tables` (APPLIED) enabled insurance on
+all 46 live cash tables with zero tournament rows touched; fleet inserts now
+birth cash tables insured; CreateTableModal defaults the toggle ON; the
+engine gained a tournament gate (a stray flag could have moved seat chips
+with no bank ledger). Deploy verified: engine served the exact merge commit.
+Migration `20260827b_insurance_pnl_in_daily_reports` (APPLIED) put insurance
+into the daily P&L where the money actually settles: `ca_club_revenue` gains
+totals.insurance {contracts, premiums, payouts, net, bank} + per-day
+ins_net (bank='union' for affiliated clubs, 'club' for standalone), and NEW
+`ca_union_insurance_pnl(union, days)` reports the union bank's live daily
+insurance P&L (totals, per-day, per-club), oversight-gated, anon revoked.
+ClubDashboard's revenue tab shows the insurance net with honest bank
+attribution; UnionStatementsPage shows the union's 14-day insurance strip
+(net, premiums in, payouts out, contracts).
+
 ---
 
 **Started:** 2026-03-24

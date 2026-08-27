@@ -15745,35 +15745,34 @@ export default function TablePage({
                   if (isPostingBB || !tableId) return;
                   setIsPostingBB(true);
                   try {
+                    /* POST-TO-ENTER RACE FIX 2026-08-27 (Dan: "the post to
+                       get dealt in feature isn't working... you also get a
+                       pop up that says you're being dealt in for free...
+                       that must be removed. all players must post or wait
+                       for BB. period.")
+
+                       The server now QUEUES a post tapped before the dealing
+                       loop has registered the joiner and applies it at the
+                       next hand - so the 2s retry dance is gone, and with it
+                       the "dealt in for free" message, which was a lie twice
+                       over: nobody is ever dealt in free, and the failed
+                       post left the player waiting. One call, three honest
+                       outcomes. */
                     const res = await serverPostBBToEnter(tableId);
                     if (res?.success) {
-                      toast.success('Posting The Big Blind. You Are In The Next Hand.');
-                      setPostOrWaitOpen(false);
+                      toast.success('Posting The Big Blind. You Are Dealt Into The Next Hand.');
                     } else if (res?.error === 'Player is not waiting for BB') {
-                      /* The buy-in just landed and the dealing loop has not
-                         registered the hero yet (it does within one tick).
-                         One quiet retry covers the race. */
-                      await new Promise((r) => setTimeout(r, 2000));
-                      const retry = await serverPostBBToEnter(tableId);
-                      if (retry?.success) {
-                        toast.success('Posting The Big Blind. You Are In The Next Hand.');
-                      } else {
-                        toast.info(
-                          retry?.error === 'Player is not waiting for BB'
-                            ? 'You Are Being Dealt In. No Post Needed.'
-                            : retry?.error ||
-                                'Could Not Post The Big Blind. You Will Wait For It Instead.'
-                        );
-                      }
-                      setPostOrWaitOpen(false);
+                      // Already known to the engine and not held out: they
+                      // are in the rotation and post blinds like everyone.
+                      toast.info('You Are Already In The Hand Rotation.');
                     } else {
-                      // Positional refusal (SB or button incoming): the wait is
-                      // mandatory there and cannot be bought.
+                      // Positional refusal (SB or button incoming): the wait
+                      // is mandatory there and cannot be bought.
                       toast.info(
                         res?.error || 'Could Not Post The Big Blind. You Will Wait For It Instead.'
                       );
-                      setPostOrWaitOpen(false);
                     }
+                    setPostOrWaitOpen(false);
                   } catch (e) {
                     reportError(e, 'TablePage.postOrWaitPostBB');
                     toast.error('Could Not Post The Big Blind.');
@@ -15822,7 +15821,9 @@ export default function TablePage({
               try {
                 const res = await serverPostBBToEnter(tableId);
                 if (res?.success) {
-                  toast.success('Posting The Big Blind. You Are In This Hand.');
+                  toast.success('Posting The Big Blind. You Are Dealt Into The Next Hand.');
+                } else if (res?.error === 'Player is not waiting for BB') {
+                  toast.info('You Are Already In The Hand Rotation.');
                 } else {
                   toast.error(res?.error || 'Could Not Post The Big Blind.');
                 }

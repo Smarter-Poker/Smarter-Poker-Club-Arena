@@ -160,6 +160,17 @@ export abstract class ServerTableEngineBase {
   // Bible V8 §4.2: Players waiting for BB position before they can play
   protected waitingForBB: Set<string> = new Set();
 
+  // POST-TO-ENTER RACE FIX 2026-08-27 (Dan: "the post to get dealt in
+  // feature in cash games isn't working"): a brand-new joiner is only
+  // REGISTERED as waiting by the dealing loop's next pass - which, mid-hand,
+  // can be minutes away. Tapping Post Big Blind in that window came back
+  // "Player is not waiting for BB" and the client gave up. The intent is
+  // recorded HERE instead; the dealing loop applies it the moment the joiner
+  // is registered, through the same postBBToEnter path (positional hold-outs
+  // and the live-BB bill included). Pruned with knownPlayerIds when a seat
+  // empties.
+  protected pendingPostToEnter: Set<string> = new Set();
+
   // Bible V8 §4.2: Track every userId we've ever seen seated at this table.
   // Used by the dealing loop to detect new joiners after the engine has started
   // dealing hands. Since 2026-08-25 a new joiner does NOT wait and does not

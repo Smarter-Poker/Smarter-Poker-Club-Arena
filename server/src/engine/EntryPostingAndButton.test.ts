@@ -136,6 +136,36 @@ describe('a cash entrant either waits for the big blind or posts it', () => {
     const at = seating.indexOf('public registerWaitForBB');
     expect(seating.slice(at, at + 300)).toMatch(/isTournamentTable\(\)/);
   });
+
+  it('a post tapped before registration is QUEUED, not refused (race fix 2026-08-27)', () => {
+    // Dan: "the post to get dealt in feature in cash games isn't working."
+    // A mid-hand joiner is not registered until the dealing loop's next pass,
+    // so their tap used to die on "Player is not waiting for BB". The intent
+    // is queued (cash-only, unknown joiners only) and the loop replays it
+    // through postBBToEnter AFTER the natural-BB release, so a waiter whose
+    // seat just became the big blind can never be billed twice.
+    const seating = strip(read('src/engine/ServerTableEngineSeating.ts'));
+    const at = seating.indexOf('public postBBToEnter');
+    expect(seating.slice(at, at + 400)).toMatch(/queuePostToEnter/);
+    const helper = seating.indexOf('protected queuePostToEnter');
+    expect(helper).toBeGreaterThan(-1);
+    const helperBody = seating.slice(helper, helper + 300);
+    expect(helperBody).toMatch(/isTournamentTable\(\)/);
+    expect(helperBody).toMatch(/knownPlayerIds/);
+    expect(helperBody).toMatch(/pendingPostToEnter\.add/);
+
+    const dealing = strip(read('src/engine/ServerTableEngineDealing.ts'));
+    const release = dealing.indexOf('p.seat_number === bbSeatIndex');
+    const replay = dealing.indexOf('pendingPostToEnter.size > 0');
+    expect(release).toBeGreaterThan(-1);
+    expect(replay, 'the loop must replay queued posts').toBeGreaterThan(-1);
+    // Replay comes AFTER the natural-BB release (double-charge guard).
+    expect(replay).toBeGreaterThan(release);
+    // And it goes through the guarded public method, never the sets directly.
+    const replayBody = dealing.slice(replay, replay + 400);
+    expect(replayBody).toMatch(/waitingForBB\.has/);
+    expect(replayBody).toMatch(/this\.postBBToEnter\(/);
+  });
 });
 
 describe('a new player never receives the button', () => {

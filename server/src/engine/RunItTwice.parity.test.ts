@@ -241,15 +241,15 @@ describe('per-run pot awards — the split-pot ship sequence', () => {
   });
 });
 
-describe('RIT ALL FORMATS (Dan 2026-08-26) — tournaments split in whole chips', () => {
-  it('the enable formula in Base no longer excludes tournaments', async () => {
-    // The gate lived in ServerTableEngineBase's configure block. It is
-    // lifted, not merely bypassed in tests — the formula must read only the
-    // table's own run-it-twice columns.
+describe('RIT IS CASH-ONLY (Dan 2026-08-26) — with an integer backstop behind the gate', () => {
+  it('the enable formula in Base refuses tournaments — MTT, Spins, heads-up SNG', async () => {
+    // Dan's ruling: "run it twice or 3 times is a cash game only area. it
+    // should never be in MTT, SPINS OR HEADS UP." The gate lives in
+    // ServerTableEngineBase's configure block and must stay there.
     const { readFileSync } = await import('node:fs');
     const base = readFileSync(new URL('./ServerTableEngineBase.ts', import.meta.url), 'utf8');
-    expect(base).not.toMatch(/ritIsTournament\s*&&|!ritIsTournament/);
-    expect(base).toContain('LIFTED 2026-08-26');
+    expect(base).toMatch(/!ritIsTournament\s*&&/);
+    expect(base).toContain('CONFIRMED CASH-ONLY BY DAN 2026-08-26');
   });
 
   function tournamentHarness(stacks: number[], runs: 2 | 3) {
@@ -304,7 +304,7 @@ describe('RIT ALL FORMATS (Dan 2026-08-26) — tournaments split in whole chips'
     return { e, hc, st, emitted, totalBuyin: stacks.reduce((s, x) => s + x, 0) };
   }
 
-  it('the offer fires on a tournament table — the 2026-08-18 gate is lifted', () => {
+  it('a tournament all-in gets NO offer — the engine is configured off, as Base does', () => {
     vi.useFakeTimers();
     const players = mkPlayers([500, 500]);
     const events: HandEvent[] = [];
@@ -343,18 +343,28 @@ describe('RIT ALL FORMATS (Dan 2026-08-26) — tournaments split in whole chips'
       eng.broadcastAllInEquity = vi.fn().mockResolvedValue(undefined);
       eng.sleep = vi.fn().mockResolvedValue(undefined);
       eng.markProgress = vi.fn();
-      eng.runItTwiceEngine.configure(TABLE, { enabled: true, autoDeclineTimeout: 25, maxRuns: 3 });
+      // Base's configure evaluates ritIsTournament and passes enabled: false
+      // for any tournament table — mirror that here (the source pin above
+      // guards the formula itself).
+      eng.runItTwiceEngine.configure(TABLE, { enabled: false, autoDeclineTimeout: 25, maxRuns: 3 });
       eng.insuranceEngine.configure(TABLE, { enabled: false });
       return { e: eng, emitted: em };
     })();
     e.handleAllInRunout(runoutEvent, e.seatedPlayers);
     expect(
       emitted.find((p) => p.type === 'rit_offer'),
-      'a tournament all-in must receive the RIT offer'
-    ).toBeTruthy();
+      'a tournament all-in must NEVER receive a RIT offer (cash-only ruling)'
+    ).toBeFalsy();
+    expect(
+      emitted.find((p) => p.type === 'rit_mandatory'),
+      'mandatory modes must not fire on tournament tables either'
+    ).toBeFalsy();
   });
 
-  it('2 and 3 runs credit WHOLE chips only, conserve the pot, and display whole chips', () => {
+  it('THE BACKSTOP: a direct resolver call on a tournament hand splits whole chips only', () => {
+    // Unreachable in production while the Base gate holds — this drives
+    // dealAndResolveRIT directly to prove the defense-in-depth branch keeps
+    // the 41627f9a chip-destruction impossible even if the gate regresses.
     // The deal is random, so run the settlement several times per run count —
     // scoops and splits both land here, and the invariants must hold for all.
     for (const runs of [2, 3] as const) {

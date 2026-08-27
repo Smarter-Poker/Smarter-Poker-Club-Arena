@@ -15430,3 +15430,21 @@ three times, captured from a folded player's seat). Three behaviors adopted:
   credit whole chips only, conserve the pot exactly, and display whole
   chips (multiple randomized trials); source pin that Base's enable formula
   no longer references tournaments.
+
+### Round 6b — CORRECTION: RIT is CASH-ONLY (Dan, same day)
+
+Dan's ruling, verbatim: "run it twice or 3 times is a cash game only area.
+it should never be in MTT, SPINS OR HEADS UP." The tournament gate lifted
+earlier this round is REINSTATED within the hour:
+
+- Base's enable formula refuses tournaments again (ritIsTournament),
+  documented as a product decision, not merely a numeric limitation.
+- The integer odd-chip tournament branch in dealAndResolveRIT STAYS as
+  defense in depth: unreachable while the gate holds, but if the gate ever
+  regresses it makes the 41627f9a chip-destruction impossible rather than
+  merely unlikely. Its test now drives the resolver directly and says so.
+- Test pins flipped: a tournament all-in gets NO rit_offer and NO
+  rit_mandatory; source pin asserts the gate exists and carries the ruling.
+- Kept from round 6: the house-palette-only restyle of every RIT surface,
+  and the no-currency-mark guards (harmless, and correct if a tournament
+  surface ever renders these labels).

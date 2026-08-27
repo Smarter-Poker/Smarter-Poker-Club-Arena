@@ -1103,19 +1103,22 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     });
 
     /**
-     * ── TOURNAMENT CHIPS ARE INTEGERS (Dan 2026-08-26: RIT everywhere) ──
+     * ── TOURNAMENT BACKSTOP: chips are INTEGERS (2026-08-26) ──
      *
-     * The 2026-08-18 tournament gate existed because per-board splits produce
-     * fractional amounts while tournament_players.chips is INTEGER — the sync
-     * floors (tables.ts), so a live 3-run tournament hand (41627f9a) split
-     * 1760.88 into fractional chips and destroyed the difference. The gate is
-     * lifted for MTTs, Spins and heads-up SNGs by making the split
-     * integer-exact instead: floor every winner's credited total to whole
-     * chips, then hand the remaining odd chips out one at a time CLOCKWISE
-     * FROM THE DEALER among the paid winners — the same convention
-     * distributePot has always used for a chopped pot's odd chip. Conserves
-     * the pot to the chip; tournament pots are never raked, so netPot here
-     * is the whole (integer) pot.
+     * RIT is CASH-ONLY by Dan's ruling (2026-08-26): "run it twice or 3
+     * times is a cash game only area. it should never be in MTT, SPINS OR
+     * HEADS UP." The Base configure gate refuses to enable RIT on any
+     * tournament table, so this branch is UNREACHABLE in a healthy system.
+     *
+     * It stays as defense in depth, because the failure mode is real money:
+     * per-board splits produce fractional amounts while
+     * tournament_players.chips is INTEGER — the sync floors (tables.ts), and
+     * live 3-run tournament hand 41627f9a split 1760.88 into fractional
+     * chips and destroyed the difference before the gate existed. If the
+     * gate ever regresses, this branch floors every winner's credited total
+     * to whole chips and hands the remaining odd chips out one at a time
+     * CLOCKWISE FROM THE DEALER (distributePot's own chop convention),
+     * conserving the pot to the chip instead of destroying the fraction.
      */
     const ritIsTournamentHand =
       !!this.tableInfo?.tournament_id || this.tableInfo?.game_type === 'tournament';

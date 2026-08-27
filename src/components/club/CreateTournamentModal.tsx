@@ -3,7 +3,6 @@ import {
   tournamentService,
   BLIND_STRUCTURES,
   PAYOUT_STRUCTURES,
-  SPIN_MULTIPLIERS,
 } from '../../services/TournamentService';
 import styles from './CreateTournamentModal.module.css';
 import { useToast } from '../common/Toast';
@@ -149,7 +148,6 @@ export default function CreateTournamentModal({
   const [mysteryPoolPercent, setMysteryPoolPercent] = useState('50');
 
   // ── Spin Config ──
-  const [spinType, setSpinType] = useState<'standard' | 'hyper'>('standard');
 
   // ── Multi-Day Config ──
   const [isMultiDay, setIsMultiDay] = useState(false);
@@ -541,13 +539,10 @@ export default function CreateTournamentModal({
                 // picks a PROFILE (below) rather than authoring a ladder.
               }
             : undefined,
-        spinType: format === 'spin' ? spinType : undefined,
-        spinConfig:
-          format === 'spin'
-            ? {
-                possibleMultipliers: SPIN_MULTIPLIERS[spinType] || SPIN_MULTIPLIERS.standard,
-              }
-            : undefined,
+        /* spinConfig dropped 2026-08-27 with the Spin Type control. It was
+           discarded anyway: buildRpcConfig never forwarded it, because the
+           multiplier ladder is server-side spec (spinSpec.ts) drawn through
+           the reserve gate at start — a client may not propose one. */
 
         // ── PokerBros parity (2026-08-22) ──
         shortDescription: shortDescription.trim() || undefined,
@@ -563,7 +558,7 @@ export default function CreateTournamentModal({
         synchronizedBreaks,
         actionTimeSeconds: clampInt(actionTimeSeconds, 5, 60, 15),
         tableSize: clampInt(tableSize, 2, 10, 9),
-        addonBreakMinutes: addOnAvailable ? clampInt(addonBreakMinutes, 1, 10, 1) : undefined,
+        addonBreakMinutes: addOnAvailable ? clampInt(addonBreakMinutes, 1, 7, 1) : undefined,
         earlyBirdEnabled,
         earlyBirdChips: earlyBirdEnabled
           ? Math.max(0, Math.round(Number(earlyBirdChips) || 0))
@@ -832,24 +827,21 @@ export default function CreateTournamentModal({
                 </div>
               </div>
             )}
-            {format === 'spin' && (
-              <div className={styles.col}>
-                <div className={styles.formGroup}>
-                  <label>Spin Type</label>
-                  <select
-                    className={styles.select}
-                    value={spinType}
-                    onChange={(e) => setSpinType(e.target.value as 'standard' | 'hyper')}
-                  >
-                    <option value="standard">Standard (EV: 2.24X)</option>
-                    <option value="hyper">Hyper (EV: 2.33X)</option>
-                  </select>
-                  <span className={styles.helperText}>
-                    Hyper Spins Have Higher Variance Multipliers
-                  </span>
-                </div>
-              </div>
-            )}
+            {/* SPIN TYPE REMOVED 2026-08-27 — it was three lies in one control.
+                (1) The two options were the SAME ladder: SPIN_MULTIPLIERS
+                    .standard and .hyper are the identical array reference,
+                    and spinSpec.ts has no spin_type branch at all — not in
+                    the tiers, not in the blinds, not in the 3-minute level
+                    length every tier shares.
+                (2) Both advertised EVs were wrong. The shipped spec's
+                    expectation is 2.7638; 2.24 and 2.33 were the EVs of two
+                    ladders the 2026-08-20 audit deleted.
+                (3) "Higher Variance Multipliers" promised a variance that
+                    does not exist.
+                `tournaments.spin_type` still defaults to 'standard' server-
+                side, so nothing downstream changes and restart-clones keep
+                working. If a real second spin economy is ever built, this
+                control comes back with numbers taken from the spec. */}
             {format === 'sng' && (
               <div className={styles.col}>
                 <div className={styles.formGroup}>

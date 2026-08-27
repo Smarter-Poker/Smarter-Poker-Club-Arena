@@ -57,6 +57,28 @@ function countPaidPlaces(structure: unknown): number {
   return 0;
 }
 
+/**
+ * Which kind of break a pause is (2026-08-27).
+ *
+ *   level — the :55 synchronized break. Spans every tournament at once, so
+ *           its end time is only known once GameServer confirms every table
+ *           everywhere has finished its last hand.
+ *   addon — the pause that opens the add-on window. Belongs to one
+ *           tournament, so its end time is known the moment it starts.
+ *
+ * Kept as a named type rather than an inline object in the signature: the
+ * break guard tests locate a method body by its first `{`, and an inline
+ * options type is a brace before the body.
+ */
+export type BreakKind = 'level' | 'addon';
+
+export interface BreakOptions {
+  /** False for a break this tournament owns alone. Default true. */
+  synchronized?: boolean;
+  /** What to call it on screen. Default 'level'. */
+  kind?: BreakKind;
+}
+
 export abstract class TournamentManagerBase {
   protected tournamentId: string;
   protected gameServer: GameServer;
@@ -275,13 +297,36 @@ export abstract class TournamentManagerBase {
     }
   }
 
-  /** Synchronized break: pause blind timer and broadcast break event */
-  async pauseForBreak(breakDurationMs: number): Promise<void> {
+  /**
+   * Pause the blind timer, park every table, and tell the field.
+   *
+   * ── A SECOND KIND OF BREAK (2026-08-27) ────────────────────────────────
+   * This was synchronized-break-only. The ADD-ON break (triggerAddOnPeriod)
+   * had grown its own copy that parked the tables and nothing else: it never
+   * suspended the level clock, so blinds escalated while every table sat
+   * frozen, and — worse — an advanceBlindLevel firing mid-break could reach
+   * finalizeAfterAddOn and CLOSE the add-on window while the field was still
+   * parked and unable to act on it. On a turbo with a 3-minute break that is
+   * the normal case, not an edge.
+   *
+   * The two breaks differ in exactly one respect, so that is the only thing
+   * parameterised. A synchronized break spans every tournament at once, so
+   * `break_ends_at` is left NULL until GameServer confirms every table
+   * everywhere has finished its last hand (beginBreakCountdown). An add-on
+   * break belongs to ONE tournament and has nothing to wait for, so its end
+   * time is known immediately and is stamped here — otherwise the client has
+   * no end time to count down to and nothing would ever fill it in.
+   */
+  async pauseForBreak(breakDurationMs: number, options?: BreakOptions): Promise<void> {
     if (!this.running || this.onBreak) return;
+    const synchronized = options?.synchronized !== false;
+    const kind = options?.kind ?? 'level';
     this.onBreak = true;
     // A NEW break: its countdown has not started yet, so beginBreakCountdown
     // is allowed to stamp an end time exactly once. See breakCountdownStarted.
-    this.breakCountdownStarted = false;
+    // An UNSYNCHRONIZED break stamps its own end time below, so its countdown
+    // has already started and beginBreakCountdown must not restart it.
+    this.breakCountdownStarted = !synchronized;
 
     // Save remaining blind timer time
     // TOURNEY-AUDIT 2026-07-24 (sweep 4): the empty-structure guard used to
@@ -308,7 +353,9 @@ export abstract class TournamentManagerBase {
     this.suspendLevelClock();
 
     console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] SYNCHRONIZED BREAK — ${Math.round(breakDurationMs / 60000)} minutes`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] ${
+        synchronized ? 'SYNCHRONIZED BREAK' : `${kind.toUpperCase()} BREAK`
+      } — ${Math.round(breakDurationMs / 60000)} minutes`
     );
 
     /**
@@ -327,7 +374,10 @@ export abstract class TournamentManagerBase {
         .update({
           on_break: true,
           break_started_at: new Date().toISOString(),
-          break_ends_at: null,
+          // Synchronized: NULL until every table everywhere parks (above).
+          // Unsynchronized: this tournament is the only participant, so the
+          // end time is known now and nothing else will ever fill it in.
+          break_ends_at: synchronized ? null : new Date(Date.now() + breakDurationMs).toISOString(),
         })
         .eq('id', this.tournamentId);
     } catch (err) {
@@ -340,7 +390,11 @@ export abstract class TournamentManagerBase {
       level: this.currentLevel,
       breakDurationMinutes: Math.round(breakDurationMs / 60000),
       breakEndsAt: new Date(Date.now() + breakDurationMs).toISOString(),
-      synchronized: true,
+      synchronized,
+      // Lets the overlay title an add-on break for what it is. Every existing
+      // client ignores an unknown field, so the break screen and the masthead
+      // clock render as they always have until they learn to read it.
+      kind,
       nextLevel: nextLevel
         ? {
             smallBlind: nextLevel.smallBlind,
@@ -3198,39 +3252,56 @@ export abstract class TournamentManagerBase {
       endLevel: rebuyLevelCap + addonLevels,
     });
 
-    // ADD-ON BREAK (2026-08-22 parity): the add-on window opens with a short
-    // pause so the field can take its add-on between hands. Length comes from
-    // tournaments.addon_break_minutes (clamped 1-10 at creation), never a
-    // hardcoded value. A synchronized break or hand-for-hand already owns the
-    // pause state when active, so this stands down rather than fighting them.
+    /**
+     * ── ADD-ON BREAK ───────────────────────────────────────────────────────
+     * The add-on window opens with a short pause so the field can take its
+     * add-on between hands. Length comes from tournaments.addon_break_minutes,
+     * never a hardcoded value.
+     *
+     * REWRITTEN 2026-08-27. The 2026-08-22 version parked the tables and did
+     * nothing else, which broke it three ways:
+     *
+     *   1. THE LEVEL CLOCK KEPT RUNNING. Blinds escalated while every table
+     *      sat frozen, and an advanceBlindLevel firing mid-break could reach
+     *      finalizeAfterAddOn and CLOSE the add-on window while the field was
+     *      still parked and unable to use it. With a 3-minute break on a turbo
+     *      that is the normal case.
+     *   2. THE REAPERS DID NOT KNOW. Both zombie reapers trust
+     *      isPausedByDesign() only while msPaused() <= MAX_HEALTHY_PAUSE_MS
+     *      (10 min), and reviveDeadTableEngines' `if (this.onBreak) return`
+     *      never applied because onBreak was false. A long add-on break had
+     *      its tables torn down and rebuilt UNPAUSED, mid-break.
+     *   3. NOTHING WAS PERSISTED AND NOTHING TOLD THE PLAYER. It broadcast an
+     *      `addon_break` event no client has ever listened for, so the table
+     *      simply stopped dealing behind no overlay; and with no on_break row
+     *      a redeploy inside the break lost it entirely.
+     *
+     * All three are the same fix: go through the break machinery that already
+     * works, rather than beside it. pauseForBreak suspends the level clock,
+     * persists the break, parks the tables and broadcasts the event the
+     * overlay already renders; resumeFromBreak clears the row, un-parks and
+     * re-arms the clock with the time the level had left.
+     *
+     * Clamped to 7, not 10: the pause budget is break + LAST_HAND_GRACE_MS,
+     * and 10 + 2 = 12 minutes exceeds the 10-minute reaper ceiling that
+     * defect 2 was about. 7 + 2 = 9 fits under it. The same clamp is applied
+     * at creation (fn_create_tournament, TournamentService, TableConfigPage).
+     */
     const addonBreakMinutes = Math.min(
-      10,
+      7,
       Math.max(1, Number(this.tournamentCache?.addon_break_minutes) || 1)
     );
+    // A synchronized break or hand-for-hand already owns the pause state when
+    // active, so this stands down rather than fighting them.
     if (!this.onBreak && !this.handForHandActive) {
       const breakMs = addonBreakMinutes * 60 * 1000;
-      for (const engine of this.tableEngines.values()) {
-        try {
-          engine.pauseAfterHand(breakMs + TournamentManagerBase.LAST_HAND_GRACE_MS);
-        } catch (err) {
-          reportError(err, 'TournamentManagerBase.addon_break_pause');
-        }
-      }
-      await this.broadcast('addon_break', {
-        breakDurationMinutes: addonBreakMinutes,
-        breakEndsAt: new Date(Date.now() + breakMs).toISOString(),
-      });
+      await this.pauseForBreak(breakMs, { synchronized: false, kind: 'addon' });
       const resumeTimer = setTimeout(() => {
-        // A synchronized break or the bubble sync may have taken over the
-        // pause state during the add-on break — leave the pause to them.
-        if (!this.running || this.onBreak || this.handForHandActive) return;
-        for (const engine of this.tableEngines.values()) {
-          try {
-            engine.resumeDealing();
-          } catch (err) {
-            reportError(err, 'TournamentManagerBase.addon_break_resume');
-          }
-        }
+        // resumeFromBreak is a no-op unless we are still the break's owner, so
+        // a :55 break or a bubble sync that took over in the meantime keeps it.
+        void this.resumeFromBreak().catch((err: unknown) =>
+          reportError(err, 'TournamentManagerBase.addon_break_resume')
+        );
       }, breakMs);
       if (typeof (resumeTimer as any)?.unref === 'function') (resumeTimer as any).unref();
     }

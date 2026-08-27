@@ -2098,7 +2098,7 @@ export class TournamentRecurringService {
             payout_structure: config.payoutStructure || [],
             start_time: startTime.toISOString(),
             late_reg_levels: 10, // Level-based late reg for XMTT
-            late_reg_mins: 10, // Legacy fallback
+            late_reg_mins: 0, // 2026-08-27: minutes column, never a level count. See fn_register_for_tournament.
             is_bounty: isBountyType,
             is_pko: config.type === 'progressive_bounty',
             is_mystery_bounty: config.type === 'mystery_bounty',
@@ -2312,7 +2312,7 @@ export class TournamentRecurringService {
             payout_structure: config.payoutStructure || [],
             start_time: startTime.toISOString(),
             late_reg_levels: 8, // Level-based late reg
-            late_reg_mins: 8, // Legacy fallback
+            late_reg_mins: 0, // 2026-08-27: minutes column, never a level count. See fn_register_for_tournament.
             is_bounty: isBountyType,
             is_pko: config.type === 'progressive_bounty',
             is_mystery_bounty: config.type === 'mystery_bounty',

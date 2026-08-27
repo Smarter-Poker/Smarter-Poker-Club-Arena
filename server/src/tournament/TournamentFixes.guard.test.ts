@@ -125,6 +125,37 @@ describe('rebuys and add-ons actually happen', () => {
     const trigger = code(BASE).slice(code(BASE).indexOf('triggerAddOnPeriod(): Promise<void>'));
     expect(trigger.slice(0, 4000)).toMatch(/tryTournamentAddOns\(\)/);
   });
+
+  /**
+   * THE ADD-ON BREAK STOPS THE CLOCK (2026-08-27).
+   *
+   * The first version parked the tables with a hand-rolled pause that never
+   * touched the level clock. Blinds escalated while the field sat frozen, and
+   * an advanceBlindLevel firing mid-break could reach finalizeAfterAddOn and
+   * close the add-on window before anyone could use it. Going through
+   * pauseForBreak is what suspends the clock, persists the break, and marks
+   * the pause deliberate so the zombie reapers stand down.
+   *
+   * This is the regression that would silently return: parking the engines
+   * directly "just for the add-on" looks harmless and is not.
+   */
+  it('the add-on break goes through the break machinery, not around it', () => {
+    const src = code(BASE);
+    const trigger = src.slice(src.indexOf('triggerAddOnPeriod(): Promise<void>')).slice(0, 5000);
+    expect(trigger).toMatch(/pauseForBreak\([^)]*\{[^}]*synchronized:\s*false/s);
+    expect(trigger).toMatch(/resumeFromBreak\(\)/);
+    // The hand-rolled pause loop it replaced must not come back.
+    expect(trigger).not.toMatch(/engine\.pauseAfterHand\(/);
+  });
+
+  it('the add-on break cannot outlast the reaper ceiling', () => {
+    // Budget is break + LAST_HAND_GRACE_MS (2 min) and both zombie reapers
+    // stop trusting a deliberate pause past MAX_HEALTHY_PAUSE_MS (10 min),
+    // so the clamp has to leave room for the grace: 7 + 2 = 9.
+    const src = code(BASE);
+    const trigger = src.slice(src.indexOf('triggerAddOnPeriod(): Promise<void>')).slice(0, 5000);
+    expect(trigger).toMatch(/Math\.min\(\s*7,/);
+  });
 });
 
 describe('a rebuy or add-on lands in the seat, or does not happen', () => {

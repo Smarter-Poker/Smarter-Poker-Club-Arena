@@ -3,7 +3,7 @@
  *  UNIT TESTS — TournamentService
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Tests BLIND_STRUCTURES, PAYOUT_STRUCTURES, SPIN_MULTIPLIERS, BOUNTY_PRESETS,
+ * Tests BLIND_STRUCTURES, PAYOUT_STRUCTURES, SPIN_DISPLAY_TIERS, BOUNTY_PRESETS,
  * getTournament null return, and getTournaments empty return.
  */
 
@@ -58,7 +58,7 @@ vi.mock('../../src/services/WalletService', () => ({
 import {
   BLIND_STRUCTURES,
   PAYOUT_STRUCTURES,
-  SPIN_MULTIPLIERS,
+  SPIN_DISPLAY_TIERS,
   BOUNTY_PRESETS,
   SPIN_BLIND_STRUCTURE,
   tournamentService,
@@ -148,27 +148,26 @@ describe('TournamentService', () => {
   // SPIN MULTIPLIERS
   // ─────────────────────────────────────────────────────────────────────────
 
-  describe('SPIN_MULTIPLIERS', () => {
-    it('should have standard and hyper profiles', () => {
-      expect(SPIN_MULTIPLIERS.standard).toBeDefined();
-      expect(SPIN_MULTIPLIERS.hyper).toBeDefined();
+  describe('SPIN_DISPLAY_TIERS', () => {
+    /**
+     * 2026-08-27: this block used to assert a `standard` and a `hyper` profile
+     * and check each EV separately. They were the SAME array reference, so the
+     * hyper test could never fail independently and the pair of them made a
+     * one-economy platform look like a two-economy one — which is exactly what
+     * the removed Spin Type control claimed. There is one ladder.
+     */
+    it('is a single ladder, not a menu of profiles', () => {
+      expect(Array.isArray(SPIN_DISPLAY_TIERS)).toBe(true);
+      expect(SPIN_DISPLAY_TIERS.length).toBeGreaterThan(0);
     });
 
-    it('standard probabilities should sum to ≈100%', () => {
-      const total = SPIN_MULTIPLIERS.standard.reduce((sum, s) => sum + s.probability, 0);
+    it('probabilities sum to ≈100%', () => {
+      const total = SPIN_DISPLAY_TIERS.reduce((sum, s) => sum + s.probability, 0);
       expect(total).toBeCloseTo(100, 0);
     });
 
-    it('standard EV should be < 3.0 (profitable for house)', () => {
-      const ev = SPIN_MULTIPLIERS.standard.reduce(
-        (sum, s) => sum + s.multiplier * (s.probability / 100),
-        0
-      );
-      expect(ev).toBeLessThan(3.0);
-    });
-
-    it('hyper EV should be < 3.0 (profitable for house)', () => {
-      const ev = SPIN_MULTIPLIERS.hyper.reduce(
+    it('EV is < 3.0 (profitable for house)', () => {
+      const ev = SPIN_DISPLAY_TIERS.reduce(
         (sum, s) => sum + s.multiplier * (s.probability / 100),
         0
       );

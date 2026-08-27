@@ -551,17 +551,53 @@ export default function TournamentPage() {
     );
   };
 
+  /**
+   * START EARLY — by moving the start time, not by starting it here.
+   *
+   * 2026-08-27. This used to call TournamentService.startTournament, a
+   * client-side reimplementation of the engine's start that CANCELLED the
+   * tournament and refunded the field whenever fewer than 3 were registered
+   * (which is why the button was disabled below 3 — hiding the one case an
+   * owner most wants), and that built tables with an uppercase status no
+   * engine adoption query matches, with a hardcoded 9 seats and 'nlh' and no
+   * deck clamp.
+   *
+   * fn_owner_start_tournament_now only sets start_time = now(). The engine's
+   * discovery loop then starts it through the real path — paid-seat check,
+   * spin draw, deck-safe seating, engine attachment, blind timer — and tops
+   * the field up with horses rather than cancelling when it is short. So the
+   * button now works at ANY player count and cannot destroy anything.
+   */
   const handleStart = async () => {
     if (!selectedTournament || !clubId) return;
     try {
-      await tournamentService.startTournament(selectedTournament.id);
-      // Refresh
-      const data = await tournamentService.getTournaments(clubId);
-      applyTournaments(data);
-      const updated = data.find((t) => t.id === selectedTournament.id);
+      const { data, error } = await supabase.rpc('fn_owner_start_tournament_now', {
+        p_tournament_id: selectedTournament.id,
+      });
+      if (error) throw error;
+      const res = data as { ok?: boolean; reason?: string; already_due?: boolean } | null;
+      if (!res?.ok) {
+        const reasons: Record<string, string> = {
+          not_authorised: 'You do not have permission to start this tournament.',
+          not_startable: 'This tournament is no longer waiting to start.',
+          tournament_not_found: 'That tournament no longer exists.',
+          not_authenticated: 'Please sign in again.',
+        };
+        toast.error(reasons[res?.reason ?? ''] ?? 'Could not start the tournament.');
+        return;
+      }
+      toast.success(
+        res.already_due
+          ? 'Already Due To Start. The Engine Is Seating It Now.'
+          : 'Starting Now. The Engine Seats The Field Within Seconds.'
+      );
+      const list = await tournamentService.getTournaments(clubId);
+      applyTournaments(list);
+      const updated = list.find((t) => t.id === selectedTournament.id);
       if (updated) setSelectedTournament(updated);
     } catch (error) {
-      toast.error('Failed to start: ' + (error as Error).message);
+      reportError(error, 'TournamentPage.startEarly');
+      toast.error('Could not start the tournament.');
     }
   };
 
@@ -1660,11 +1696,11 @@ export default function TournamentPage() {
                       className="btn btn-warning btn-block"
                       style={{ marginTop: '1rem' }}
                       onClick={handleStart}
-                      /* TOURNEY-AUDIT 2026-07-24: minimum is 3 — the service
-                         AUTO-CANCELS at start with < 3 registered, so enabling
-                         this button at 2 players cancelled the tournament the
-                         moment the owner clicked Start. */
-                      disabled={selectedTournament.current_players < 3}
+                      /* No minimum any more (2026-08-27). The 3-player floor
+                         existed because the old client path auto-cancelled
+                         below it. Starting early now only moves the start
+                         time; the engine fills a short field with horses and
+                         never cancels, so the button is safe at any count. */
                     >
                       Start Tournament
                     </button>

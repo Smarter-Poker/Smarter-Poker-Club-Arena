@@ -716,3 +716,53 @@
     font-size: 0.9rem;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CREATION PREVIEW (2026-08-27)
+   What the host is about to create, priced with the same helpers the server
+   uses. Sits directly under the name field so it is read before the forty
+   controls below it, not after.
+   ═══════════════════════════════════════════════════════════════════════ */
+.config-preview {
+  margin: 0.5rem 0.75rem 0.75rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid rgba(24, 119, 242, 0.35);
+  border-radius: 10px;
+  background: rgba(24, 119, 242, 0.06);
+}
+
+.config-preview__title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #1877f2;
+  margin-bottom: 0.45rem;
+}
+
+.config-preview__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.config-preview__list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+}
+
+.config-preview__list li span {
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.config-preview__list li strong {
+  font-weight: 600;
+  text-align: right;
+}

@@ -879,7 +879,13 @@ export class ScheduledTournamentService {
       payout_structure: payouts,
       start_time: startTime.toISOString(),
       late_reg_levels: lateRegLevels,
-      late_reg_mins: lateRegLevels,
+      // A MINUTES COLUMN MUST NOT HOLD A LEVEL COUNT (2026-08-27). This
+      // wrote lateRegLevels, so a 12-level late reg persisted as "12
+      // minutes". fn_register_for_tournament falls back to the minutes
+      // window whenever late_reg_levels is 0, so that stored number was a
+      // live landmine. The level ladder is the only late-reg rule this
+      // platform implements; 0 means "no minutes window".
+      late_reg_mins: 0,
       is_bounty: isBountyType,
       is_pko: type === 'progressive_bounty',
       is_mystery_bounty: type === 'mystery_bounty',
@@ -915,7 +921,7 @@ export class ScheduledTournamentService {
       action_time_seconds: clampInt(cfg.actionTimeSeconds, 5, 60, 15),
       table_size: clampInt(cfg.tableSize, 2, 10, 9),
       accelerated_mtt: asBool(cfg.acceleratedMtt),
-      addon_break_minutes: clampInt(cfg.addonBreakMinutes, 1, 10, 1),
+      addon_break_minutes: clampInt(cfg.addonBreakMinutes, 1, 7, 1),
       big_blind_ante: asBool(cfg.bigBlindAnte),
       authorized_to_register: asBool(cfg.authorizedToRegister),
       early_bird_enabled: asBool(cfg.earlyBirdEnabled),

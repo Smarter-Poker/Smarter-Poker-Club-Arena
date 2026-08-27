@@ -135,12 +135,25 @@ describe('the break is two phases: last hand, THEN five minutes', () => {
     expect(parked).toMatch(/engines\.length === 0\) return true/);
   });
 
-  it('break_ends_at is left NULL until the countdown actually starts', () => {
+  it('a SYNCHRONIZED break leaves break_ends_at NULL until the countdown starts', () => {
+    /**
+     * 2026-08-27: pauseForBreak takes a second kind of break now — the add-on
+     * break, which belongs to one tournament and therefore knows its own end
+     * time immediately. So the write is conditional rather than a bare null:
+     *
+     *   break_ends_at: synchronized ? null : <now + duration>
+     *
+     * The invariant this test was written for is untouched — at :55 the five
+     * minutes do not start until every table everywhere has finished its last
+     * hand, so the synchronized branch must still be NULL. Pinning the ternary
+     * keeps that AND stops the add-on branch quietly becoming null too, which
+     * would leave its countdown with nothing to count to.
+     */
     const pause = BASE.slice(
       BASE.indexOf('async pauseForBreak'),
       BASE.indexOf('areAllTablesParked')
     );
-    expect(pause).toMatch(/break_ends_at:\s*null/);
+    expect(pause).toMatch(/break_ends_at:\s*synchronized\s*\?\s*null\s*:/);
     const begin = BASE.slice(BASE.indexOf('async beginBreakCountdown'));
     expect(begin).toMatch(/break_ends_at:\s*endsAt/);
   });

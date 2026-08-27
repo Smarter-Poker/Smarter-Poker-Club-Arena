@@ -319,7 +319,7 @@ export function buildTournamentConfig(
         : undefined,
     addonBreakMinutes:
       isMtt && config.addOnMultiplier > 0
-        ? clampInt(config.addOnBreakLengthMinutes ?? 1, 1, 10)
+        ? clampInt(config.addOnBreakLengthMinutes ?? 1, 1, 7)
         : undefined,
     earlyBirdEnabled: isMtt ? (config.earlyBirdRegistration ?? false) : false,
     earlyBirdChips:

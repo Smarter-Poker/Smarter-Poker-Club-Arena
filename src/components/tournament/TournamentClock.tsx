@@ -54,6 +54,10 @@ interface ClockState {
   tournamentName: string;
   isPaused: boolean;
   breakStartTime?: number; // Track when break started for countdown
+  /** How long THIS break runs. The per-second tick used to recompute the
+   *  countdown from a hardcoded 300, so any break that was not exactly five
+   *  minutes displayed wrong — which is every add-on break (1-7 min). */
+  breakDurationSeconds?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -83,6 +87,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
     tournamentName: '',
     isPaused: false,
     breakStartTime: undefined,
+    breakDurationSeconds: undefined,
   });
 
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -166,6 +171,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         tournamentName: tournament.name || 'Tournament',
         isPaused: timerState?.isPaused || false,
         breakStartTime: undefined,
+        breakDurationSeconds: undefined,
       });
     } catch (err) {
       reportError(err, 'TournamentClock.Refresh_error');
@@ -181,8 +187,21 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
       setClock((prev) => {
         // Update break countdown if in a break
         if (prev.isBreak && prev.breakStartTime) {
+          /**
+           * EVERY BREAK THAT IS NOT FIVE MINUTES DISPLAYED WRONG (2026-08-27).
+           *
+           * This recomputed the countdown from a hardcoded `300`, overwriting
+           * the real duration the break event carried and that the line below
+           * had just stored. It was invisible while the :55 synchronized break
+           * — which really is 5 minutes — was the only break that existed. The
+           * add-on break is 1 to 7 minutes, so a 3-minute one would have shown
+           * a countdown starting at 5:00 and freezing at 2:00.
+           *
+           * The duration the server sent is the truth; 300 is the fallback for
+           * an event that carried none.
+           */
           const elapsed = (Date.now() - prev.breakStartTime) / 1000;
-          const breakDuration = 300; // 5 minutes default
+          const breakDuration = prev.breakDurationSeconds || 300;
           const remaining = Math.max(0, breakDuration - elapsed);
           return {
             ...prev,
@@ -277,6 +296,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         isBreak: false, // Clear break status on new level
         breakTimeRemaining: 0,
         breakStartTime: undefined,
+        breakDurationSeconds: undefined,
       }));
       // Also do a full refresh to get timeRemaining for the new level
       refreshState();
@@ -288,10 +308,17 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
   const handleBreakStart = useCallback(
     (payload: any) => {
       if (payload?.tournamentId === tournamentId) {
+        // breakDurationMinutes is what the server's tournament_break event
+        // carries; durationMinutes is the older client-side timer's spelling.
+        // Both are honoured so an add-on break and a :55 break both count down
+        // from their real length.
+        const minutes = Number(payload.breakDurationMinutes ?? payload.durationMinutes) || 0;
+        const seconds = minutes > 0 ? minutes * 60 : 300;
         setClock((prev) => ({
           ...prev,
           isBreak: true,
-          breakTimeRemaining: payload.durationMinutes ? payload.durationMinutes * 60 : 300,
+          breakTimeRemaining: seconds,
+          breakDurationSeconds: seconds,
           breakStartTime: Date.now(),
         }));
       }
@@ -306,6 +333,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
           isBreak: false,
           breakTimeRemaining: 0,
           breakStartTime: undefined,
+          breakDurationSeconds: undefined,
         }));
         refreshState();
       }

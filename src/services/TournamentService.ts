@@ -308,10 +308,22 @@ const SPEC_DISPLAY_TIERS: SpinDisplayTier[] = SPIN_TIERS.map((t) => ({
   isPremium: t.reserveThresholdX > 0,
 }));
 
-export const SPIN_MULTIPLIERS: Record<string, SpinDisplayTier[]> = {
-  standard: SPEC_DISPLAY_TIERS,
-  hyper: SPEC_DISPLAY_TIERS,
-};
+/**
+ * THE ONE LADDER (2026-08-27).
+ *
+ * This was `{ standard: SPEC_DISPLAY_TIERS, hyper: SPEC_DISPLAY_TIERS }` — two
+ * keys onto the identical array reference, kept only because the creation
+ * modal indexed by a Spin Type control. That control offered "Standard (EV:
+ * 2.24X)" and "Hyper (EV: 2.33X)" over one ladder whose real expectation is
+ * 2.7638, and promised variance that does not exist; it was removed with this
+ * change. There is exactly one spin economy, defined in server-side spinSpec,
+ * so there is exactly one display ladder here.
+ *
+ * The old `SPIN_MULTIPLIERS` map is gone rather than aliased: its last
+ * consumer was that control, and a lookup table with one real entry invites
+ * someone to add a second fake one.
+ */
+export const SPIN_DISPLAY_TIERS: SpinDisplayTier[] = SPEC_DISPLAY_TIERS;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BOUNTY CONFIGURATIONS
@@ -575,7 +587,7 @@ class TournamentService {
     if (config.tableSize !== undefined) p.tableSize = clampInt(config.tableSize, 2, 10);
     if (config.acceleratedMtt !== undefined) p.acceleratedMtt = config.acceleratedMtt;
     if (config.addonBreakMinutes !== undefined) {
-      p.addonBreakMinutes = clampInt(config.addonBreakMinutes, 1, 10);
+      p.addonBreakMinutes = clampInt(config.addonBreakMinutes, 1, 7);
     }
     if (config.bigBlindAnte !== undefined) p.bigBlindAnte = config.bigBlindAnte;
     if (config.authorizedToRegister !== undefined) {
@@ -1130,220 +1142,29 @@ class TournamentService {
   // Tournament Operations
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Start a tournament
-   */
-  async startTournament(tournamentId: string): Promise<Tournament> {
-    const tournament = await this.getTournament(tournamentId);
-    if (!tournament) throw new Error('Tournament not found');
-
-    // Validate tournament has required configuration
-    // NOTE: blind_structure and payout_structure may arrive as JSON strings from Supabase REST
-    const parsedBlinds = parseBlindStructure(tournament.blind_structure);
-    const parsedPayouts = parsePayoutStructure(tournament.payout_structure);
-    if (!parsedBlinds.length) {
-      throw new Error('Tournament has no blind structure defined');
-    }
-    if (!parsedPayouts.length) {
-      throw new Error('Tournament has no payout structure defined');
-    }
-    if ((tournament.starting_chips || 0) <= 0) {
-      throw new Error('Tournament starting chips must be > 0');
-    }
-
-    // 1. Get Players
-    const { data: players } = await supabase
-      .from('tournament_players')
-      .select(
-        'id, tournament_id, user_id, username, status, chips, table_id, position, prize, current_bounty, mystery_bounty_value, rebuys, registered_at'
-      )
-      .eq('tournament_id', tournamentId)
-      .eq('status', 'registered');
-
-    if (!players || players.length === 0) throw new Error('No players registered');
-
-    // Auto-cancel if fewer than 3 players — minimum for a valid tournament
-    if (players.length < 3) {
-      console.debug(
-        `[TournamentService] Auto-cancelling tournament ${tournament.name}: only ${players.length} players (minimum 3 required)`
-      );
-      await this.cancelTournament(
-        tournamentId,
-        `Only ${players.length} player(s) registered - minimum 3 required`
-      );
-      throw new Error(
-        `Tournament cancelled: only ${players.length} player(s) registered (minimum 3 required)`
-      );
-    }
-
-    // TOURNEY-AUDIT 2026-07-24 [race guard]: CLAIM the start atomically BEFORE
-    // creating any tables. The server's tournament discovery loop starts
-    // tournaments too — without this compare-and-swap, an owner clicking
-    // "Start" while the server loop fired created DOUBLE tables and DOUBLE
-    // seating for the same tournament. Whoever loses the CAS backs off.
-    {
-      // Same defect shape as D7: `error` was dropped here, so a denied or
-      // failed claim produced `claimed === null` and was reported to the owner
-      // as "already starting" - a race that never happened. A real failure has
-      // to read as a real failure, not as the benign branch next to it.
-      const { data: claimed, error: claimError } = await supabase
-        .from('tournaments')
-        .update({ status: 'RUNNING', started_at: new Date().toISOString() })
-        .eq('id', tournamentId)
-        .in('status', ['ANNOUNCED', 'REGISTERING'])
-        .select('id');
-      if (claimError) {
-        reportError(claimError, 'TournamentService.start_claim', { tournamentId });
-        throw new Error(`Could not start tournament: ${claimError.message}`);
-      }
-      if (!claimed || claimed.length === 0) {
-        throw new Error('Tournament is already starting (server or another admin claimed it)');
-      }
-    }
-
-    // 2. Create Tables
-    const playersPerTable = 9;
-    const numTables = Math.ceil(players.length / playersPerTable);
-    const createdTables: any[] = [];
-
-    // PERF 2026-08-24: this was one INSERT per table, awaited in sequence. A
-    // 300-entry MTT is 34 tables, so 34 serial round-trips - and that was only
-    // the first of three such loops in this function (seats and the
-    // current_players update below were the same shape), roughly 368
-    // round-trips in total while every registered player stared at a spinner.
-    // One bulk insert instead.
-    const tablePayload = Array.from({ length: numTables }, (_, i) => ({
-      club_id: tournament.club_id,
-      tournament_id: tournament.id,
-      name: `${tournament.name} - Table ${i + 1}`,
-      game_type: 'tournament',
-      game_variant: 'nlh',
-      stakes: 'Tournament',
-      small_blind: parsedBlinds[0].smallBlind,
-      big_blind: parsedBlinds[0].bigBlind,
-      min_buy_in: 0,
-      max_buy_in: 0,
-      max_players: 9,
-      status: 'RUNNING',
-      settings: { auto_muck: true },
-    }));
-
-    const { data: insertedTables, error: tablesErr } = await supabase
-      .from('tables')
-      .insert(tablePayload)
-      .select();
-    if (tablesErr) throw tablesErr;
-
-    // Re-order the returned rows to match the payload EXACTLY. Seat assignment
-    // below is `i % numTables`, so table order decides who sits where; relying
-    // on the driver returning rows in insertion order would make seating depend
-    // on an unguaranteed detail. Matching on the name we just generated is
-    // deterministic. (A plain string sort would not be - "Table 10" sorts
-    // before "Table 2".)
-    const byName = new Map((insertedTables || []).map((t: any) => [t.name, t]));
-    for (const payload of tablePayload) {
-      const row = byName.get(payload.name);
-      if (row) createdTables.push(row);
-    }
-
-    // 3. Seat Players — Fisher-Yates shuffle for unbiased randomization
-    const shuffled = [...players];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    const tableSeats = createdTables.map((t) => ({ tableId: t.id, nextSeat: 1 }));
-
-    // PERF 2026-08-24: was one INSERT per player, awaited in sequence - 300
-    // serial round-trips for a 300-entry MTT. The seat assignment arithmetic is
-    // unchanged; only the write is batched.
-    //
-    // This is now atomic rather than best-effort. Previously a failed seat was
-    // logged and the loop carried on, which produces a tournament that has
-    // started with a player missing from the felt - a worse outcome than not
-    // starting. Double-start is already prevented by the CAS claim at the top
-    // of this function, so a conflict here means something is genuinely wrong
-    // and should surface.
-    const seatPayload = shuffled.map((player, i) => {
-      const tableAssign = tableSeats[i % numTables];
-      const seat = {
-        table_id: tableAssign.tableId,
-        seat_number: tableAssign.nextSeat,
-        user_id: player.user_id,
-        // TOURNEY-AUDIT 2026-07-24: seats were inserted with NO stack — the
-        // engine reads table_seats.stack, so client-started tournaments seated
-        // everyone with a null stack.
-        stack: tournament.starting_chips,
-      };
-      tableAssign.nextSeat++;
-      return seat;
-    });
-
-    if (seatPayload.length > 0) {
-      const { error: seatErr } = await supabase.from('table_seats').insert(seatPayload);
-      if (seatErr) {
-        reportError(seatErr, 'TournamentService.Failed_to_seat_players');
-        throw seatErr;
-      }
-    }
-
-    // TOURNEY-AUDIT 2026-07-24: record each table's seated count — the seat
-    // loop never bumped tables.current_players, so every tournament table
-    // reported 0 players (breaking balance/merge checks and the Tables tab).
-    // PERF 2026-08-24: was awaited one table at a time. Each update targets a
-    // different row and carries a different value, so they are independent -
-    // running them together costs the slowest one instead of the sum.
-    // Same defect shape as D7: these updates resolve with `{ error }`, they do
-    // not throw, so a denied seat-count write used to vanish and leave the
-    // lobby showing an empty table that is actually full.
-    const seatCountResults = await Promise.all(
-      tableSeats.map((ts) =>
-        supabase
-          .from('tables')
-          .update({ current_players: ts.nextSeat - 1 })
-          .eq('id', ts.tableId)
-      )
-    );
-    seatCountResults.forEach((r, i) => {
-      if (r.error) {
-        reportError(r.error, 'TournamentService.start_table_seat_count', {
-          tournamentId,
-          tableId: tableSeats[i].tableId,
-        });
-      }
-    });
-
-    // 4. Refresh tournament row (status/started_at were already CAS-claimed above)
-    const { data, error } = await supabase
-      .from('tournaments')
-      .select()
-      .eq('id', tournamentId)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    // 5. Update Player Stacks
-    // Same defect shape as D7. This one is not survivable silently: if it is
-    // denied, every player sits at 0 chips with status 'registered' and the
-    // elimination sweep busts the whole field on its next pass. The caller
-    // must not be told the tournament started.
-    const { error: stackError } = await supabase
-      .from('tournament_players')
-      .update({
-        chips: tournament.starting_chips,
-        status: 'playing',
-      })
-      .eq('tournament_id', tournamentId)
-      .eq('status', 'registered');
-    if (stackError) {
-      reportError(stackError, 'TournamentService.start_player_stacks', { tournamentId });
-      throw stackError;
-    }
-
-    masterBus.emit('TOURNAMENT_STARTED', { tournamentId, clubId: tournament.club_id });
-
-    return data;
-  }
+  /* `startTournament` was DELETED 2026-08-27.
+   *
+   * It was a client-side reimplementation of TournamentManagerBase.start, and
+   * it was wrong four ways, all of which reached production:
+   *
+   *   1. IT CANCELLED TOURNAMENTS. Under 3 registered it flipped the row to
+   *      CANCELLED and refunded the field - the exact thing "TOURNAMENTS RUN.
+   *      THEY DO NOT CANCEL." forbids. Its only caller then disabled its own
+   *      button below 3 players to work around that, removing the one case an
+   *      owner most wants: starting a short field early.
+   *   2. IT BUILT TABLES NO ENGINE COULD SEE. It inserted status 'RUNNING'
+   *      (uppercase) while every adoption query matches lowercase
+   *      ('running','waiting'), so players sat at orphan tables with no engine
+   *      attached. Someone had to special-case 'RUNNING' in GameServer to cope.
+   *   3. IT IGNORED THE DECK. Hardcoded 9 seats and 'nlh', with no
+   *      clampSeatsForVariant - the PLO5/PLO6 over-seating deadlock reopened.
+   *   4. IT SKIPPED EVERY GUARD the real start owns: paid-seat verification,
+   *      the spin multiplier draw, guarantee application, table adoption,
+   *      engine attachment, blind timer arming.
+   *
+   * Starting early is now `fn_owner_start_tournament_now`, which moves
+   * start_time and lets the engine's discovery loop start it through the real
+   * path. See TournamentPage.handleStart. */
 
   // AUDIT M19: `eliminatePlayer` is deleted, not converted.
   //

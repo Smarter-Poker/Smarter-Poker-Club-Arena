@@ -1450,7 +1450,7 @@ class HorseOrchestrator {
           payout_structure: config.payoutStructure || [],
           start_time: startTime.toISOString(),
           late_reg_levels: 8,
-          late_reg_mins: 8,
+          late_reg_mins: 0, // 2026-08-27: minutes column, never a level count. See fn_register_for_tournament.
         })
         .select()
         .maybeSingle();

@@ -175,7 +175,21 @@ describe('DEFECT 4 — a break countdown is started once, never restarted', () =
   });
 
   it('re-opens the door for the NEXT break', () => {
-    expect(pause).toMatch(/this\.breakCountdownStarted\s*=\s*false/);
+    /**
+     * 2026-08-27: this asserted the literal `breakCountdownStarted = false`.
+     * pauseForBreak now takes a second kind of break — the add-on break, which
+     * this tournament owns alone — and the flag became `= !synchronized`:
+     *
+     *   synchronized (:55)  -> false, because GameServer stamps the real end
+     *                          time later, once every table everywhere parks.
+     *   add-on              -> true, because the end time is stamped up front
+     *                          (nothing to wait for), so the countdown has
+     *                          ALREADY started and must not be restarted.
+     *
+     * The invariant this test exists for is unchanged: a synchronized break
+     * always re-opens the door for beginBreakCountdown exactly once.
+     */
+    expect(pause).toMatch(/this\.breakCountdownStarted\s*=\s*!synchronized/);
     expect(methodBody(BASE, 'async resumeFromBreak()')).toMatch(
       /this\.breakCountdownStarted\s*=\s*false/
     );

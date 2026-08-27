@@ -12,7 +12,7 @@
  * - Save & Start buttons
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -21,10 +21,12 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import './TableConfigPage.css';
 import { reportError } from '../utils/errorReporter';
 import { formatCurrency } from '../lib/utils';
-import { RAKE_INHERIT } from '../config/RakeConfig';
+import { RAKE_INHERIT, findScheduleMatch, getTierForBB } from '../config/RakeConfig';
 import { stakesLabel, isFixedLimitVariant } from '../lib/bettingStructure';
 
 import { tournamentService } from '../services/TournamentService';
+import { payoutEngine } from '../services/PayoutEngine';
+import { splitBuyIn } from '../utils/buyIn';
 import {
   buildTournamentConfig,
   canRunAsTournament as gameTypeCanRunAsTournament,
@@ -811,6 +813,52 @@ export default function TableConfigPage() {
     }));
   };
 
+  /**
+   * The rake this table will actually take. Resolution order is the engine's
+   * (getFullRakeConfig): an override may only take LESS than the schedule, so
+   * percent is clamped to the schedule's and the cap to whichever is smaller.
+   * -1 on either slider means "inherit".
+   */
+  const cashPreview = useMemo(() => {
+    const tier = getTierForBB(config.bigBlind);
+    const row = findScheduleMatch(config.smallBlind, config.bigBlind);
+    const schedulePercent = row?.rakePercent ?? tier.rakePercent;
+    const scheduleCap = row?.rakeCap ?? tier.rakeCap;
+    const overridePercent = config.rakePercent >= 0 ? config.rakePercent : null;
+    const overrideCap = config.rakeCapBB >= 0 ? config.rakeCapBB * config.bigBlind : null;
+    return {
+      percent:
+        overridePercent !== null ? Math.min(overridePercent, schedulePercent) : schedulePercent,
+      cap: overrideCap !== null ? Math.min(overrideCap, scheduleCap) : scheduleCap,
+      isOverride: overridePercent !== null || overrideCap !== null,
+    };
+  }, [config.bigBlind, config.smallBlind, config.rakePercent, config.rakeCapBB]);
+
+  /**
+   * The buy-in split and payout places, at the rate the SERVER charges — 5%
+   * on an SNG, nothing on a Spin, 10% on an MTT. A flat 10% here is what made
+   * every SNG advertise double its real fee.
+   */
+  const tourneyPreview = useMemo(() => {
+    const rate =
+      config.isSpins && config.gameMode === 'sng' ? 0 : config.gameMode === 'sng' ? 0.05 : 0.1;
+    const split = splitBuyIn(Math.max(0, Math.round(config.buyIn)), rate);
+    const field =
+      config.gameMode === 'sng' ? config.sngPlayerCount : Math.max(2, config.maxPlayersRange);
+    const places =
+      config.isSpins && config.gameMode === 'sng'
+        ? [{ place: 1, percentage: 100 }]
+        : payoutEngine.payoutsForChoice(config.payoutStructure, field);
+    return { ...split, places };
+  }, [
+    config.buyIn,
+    config.gameMode,
+    config.isSpins,
+    config.sngPlayerCount,
+    config.maxPlayersRange,
+    config.payoutStructure,
+  ]);
+
   const handleBlindsChange = (index: number) => {
     setBlindsIndex(index);
     const preset = BLINDS_PRESETS[index];
@@ -1331,6 +1379,74 @@ export default function TableConfigPage() {
           value={config.name}
           onChange={(e) => updateConfig('name', e.target.value)}
         />
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          WHAT YOU ARE ABOUT TO CREATE (2026-08-27)
+          ───────────────────────────────────────────────────────────────────
+          Every number here is derived from the same helpers the server uses,
+          so the host sees the real economics BEFORE the game exists rather
+          than discovering them afterwards:
+            cash  — the rake schedule row for the chosen stake, and what an
+                    override actually resolves to (an override may only ever
+                    take LESS than the schedule).
+            games — the buy-in split at the REAL per-format rate (5% SNG,
+                    0 Spin, 10% MTT) and the places that get paid.
+          This is the surface where "the fee said 10% and the server took 5%"
+          became visible in the first place.
+      ═══════════════════════════════════════════════════════════════════ */}
+      <div className="config-preview">
+        <div className="config-preview__title">
+          {config.gameMode === 'regular' ? 'This Table' : 'This Tournament'}
+        </div>
+        {config.gameMode === 'regular' ? (
+          <ul className="config-preview__list">
+            <li>
+              <span>Stakes</span>
+              <strong>{stakesLabel(config.smallBlind, config.bigBlind, gameType)}</strong>
+            </li>
+            <li>
+              <span>Buy-In Range</span>
+              <strong>
+                {formatCurrency(config.minBuyInBB * config.bigBlind)} -{' '}
+                {formatCurrency(config.maxBuyInBB * config.bigBlind)}
+              </strong>
+            </li>
+            <li>
+              <span>Rake</span>
+              <strong>
+                {cashPreview.percent}%, Cap {formatCurrency(cashPreview.cap)}
+                {cashPreview.isOverride ? ' (Your Override)' : ' (Schedule)'}
+              </strong>
+            </li>
+          </ul>
+        ) : (
+          <ul className="config-preview__list">
+            <li>
+              <span>Entry</span>
+              <strong>
+                {tourneyPreview.total > 0 ? formatCurrency(tourneyPreview.total) : 'Freeroll'}
+              </strong>
+            </li>
+            <li>
+              <span>Prize Pool / Fee</span>
+              <strong>
+                {formatCurrency(tourneyPreview.prize)} + {formatCurrency(tourneyPreview.fee)}
+              </strong>
+            </li>
+            <li>
+              <span>Paid Places</span>
+              <strong>
+                {tourneyPreview.places.length > 0
+                  ? tourneyPreview.places
+                      .slice(0, 4)
+                      .map((p) => `${p.place}: ${p.percentage}%`)
+                      .join('  ') + (tourneyPreview.places.length > 4 ? '  ...' : '')
+                  : 'Winner Takes All'}
+              </strong>
+            </li>
+          </ul>
+        )}
       </div>
 
       {/* Scrollable Options */}
@@ -1983,13 +2099,20 @@ export default function TableConfigPage() {
                     tooltip="Whole chips only. 0 = same as the buy-in."
                   />
                 )}
+                {/* Capped at 7, not 10 (2026-08-27): the engine budgets the
+                    pause as break + a 2-minute last-hand grace, and 12 minutes
+                    would exceed the 10-minute ceiling past which the zombie
+                    reapers stop believing a pause is deliberate and rebuild the
+                    table mid-break. Clamped identically in the RPC and both
+                    services. */}
                 <Slider
                   label="Add-on Break Length"
                   value={config.addOnBreakLengthMinutes}
                   onChange={(v) => updateConfig('addOnBreakLengthMinutes', v)}
                   min={1}
-                  max={10}
+                  max={7}
                   suffix=" min"
+                  tooltip="Play pauses for this long when the add-on window opens, so the field can take its add-on between hands."
                 />
               </>
             )}

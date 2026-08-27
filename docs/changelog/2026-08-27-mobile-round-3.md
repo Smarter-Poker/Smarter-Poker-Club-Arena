@@ -1,7 +1,9 @@
 # Mobile round 3 (Dan, 2026-08-27)
 
-Nine reported items. Eight fixed, one half-fixed and escalated rather than
-forced — the reasoning for that one is in `tableGeometry.ts` and repeated below.
+Nine reported items, all fixed. Item 5 was half-fixed and escalated first,
+because raising the hero's bet collides with a rule Dan set in round 2; he ruled
+on it the same day and the lift is in. The reasoning is in `tableGeometry.ts`
+and repeated below.
 
 ## 1. Hold'em hole cards are the size of PLO cards
 
@@ -44,25 +46,54 @@ re-derived, and the pill cap moves from 55.25px to 67.75px.
   was 40px inside a 36px row — the item defining the bar's height, which made
   the published `--sp-tabbar-h: 49px` under-state the real 52px.
 
-## 5. The action pill hangs under the hero's bet — and the bet did not move
+## 5. The hero's bet is raised, and the action pill hangs under it
 
-Second half done: `.seat--hero .seat__action` is anchored to the chips' own
-origin (`50% + var(--bet-offset-y) + half a tower + 4px`) instead of to the top
-of the seat box, so it follows the bet at every size instead of floating above
-it.
+Two halves, and the second one needed a ruling.
 
-**First half deliberately not done.** The hero's chair is 10.8% of the table's
-height below the felt, so its rail walk overshoots and `clampIntoFelt` pins the
-bet to the felt's edge — the only way to raise it is to give the chips their own
-felt margin. Tried at 6.5%: it fails "one rail, equal for every seat" 26 times,
-because raising only the seats that clamp is exactly the per-seat term Dan's
-round-2 item 13 forbids ("all chips must appear equally on that line for all
-players"). Lengthening the rail for everybody moves every seat EXCEPT the hero,
-which makes the ring less equal, not more.
+**The pill.** `.seat--hero .seat__action` is anchored to the chips' own origin
+(`50% + var(--bet-offset-y) + half a tower + 4px`) instead of to the top of the
+seat box, so it follows the bet at every size instead of floating above it. That
+is the ordering Dan photographed as wrong: it read CHECK / chips / head and now
+reads chips / CHECK / head.
 
-The two requests are in direct conflict and it is Dan's call. Left on the oval,
-because that is the rule he stated last. Full note at `CHIP_FELT_MARGIN` in
-`tableGeometry.ts`.
+**The bet.** Raising it collides head-on with Dan's own round-2 item 13 — "all
+chips must appear equally on that line for all players at all tables" — which
+is the rule this whole module is built to keep. The hero is the one chair the
+rail does not place: it sits at y=100, ~10.8% of the table's height below the
+felt, so its walk overshoots and `clampIntoFelt` pins the bet to the felt's
+edge whatever the rail says. Every route to raising it is a per-seat term.
+
+So it was put to Dan with the cost stated rather than decided by an agent, and
+he ruled:
+
+> "All chips in all other positions and seats should sit in the same position
+> except for the hero, they need to be raised up more."
+
+`HERO_CHIP_LIFT_WIDTH_PCT = 6` — 6% of the table's width, ~21px on a 375px
+phone, applied along the line the bet already walks and AFTER the clamp. After
+the clamp is the whole trick: the hero's walk already overshoots, so anything
+added to the rail is swallowed by the projection and the bet does not move at
+all. The hero's bet goes from y 87.7% to y 84.1% of the scaler, identically at
+every table size. Every other seat is bit-for-bit where it was.
+
+This is the first and only per-seat term in `tableGeometry.ts`, so it is written
+where it can be seen — a named constant and an `isHeroSeat()` predicate sharing
+the test `TablePage.tsx` and `DealerButton.tsx` already use — rather than folded
+into a margin that would quietly take the two bottom-cap seats with it.
+
+Three specs encoded the old one-oval rule and were updated, not deleted, because
+the complaint behind them is still live:
+
+- `table-geometry-chips.test.ts` "every seat walks the same rail" now branches
+  on the hero and pins the exception to the constant: further than the rail,
+  inside the felt, and clear of the edge by exactly margin + lift;
+- its CONTROL, which measured the hero's chips sitting _on_ the boundary;
+- `tourneyUxSweep20260825.test.tsx` "the hero is not the outlier", from round 2,
+  where the hero's chips were 200px out and Dan wanted them pulled back. The
+  hero now sits at 159px at NOMINAL_SCALER — between the 123px it had been
+  pulled back to and the 200px that drew the complaint. Take the lift back off
+  and the original assertion is restored unchanged, so it still fails for every
+  reason it used to.
 
 ## 6. No action inside the tab pill
 

@@ -30,7 +30,11 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import ActionPanel from '../../src/components/table/ActionPanel';
 import * as geometry from '../../src/components/table/tableGeometry';
-import { betChipOffsetPx, NOMINAL_SCALER } from '../../src/components/table/tableGeometry';
+import {
+  betChipOffsetPx,
+  NOMINAL_SCALER,
+  HERO_CHIP_LIFT_WIDTH_PCT,
+} from '../../src/components/table/tableGeometry';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 /** Strip comments so a rule quoted in prose cannot satisfy a source assertion. */
@@ -559,20 +563,55 @@ describe("Item 11 - the hero's chips sit closer to the rail", () => {
     );
   });
 
-  it("the hero's chips are pulled well back from where they were", () => {
+  /* ── DAN REVERSED THIS FOR THE HERO ON 2026-08-27 ────────────────────────
+     Round 3: "hero's chips need to be moved up higher on the table when they
+     are put into the pot, and the action pill should be below them above the
+     hero's head." Raising the hero's bet collides with the one-oval rule these
+     two specs were written to protect, so the conflict was put to him with the
+     cost stated, and he ruled:
+
+       "All chips in all other positions and seats should sit in the same
+        position except for the hero, they need to be raised up more."
+
+     BOTH SPECS BELOW ARE UPDATED RATHER THAN DELETED, because the complaint
+     they came from has not gone away — it has a floor now as well as a
+     ceiling. The 200px picture in Dan's original screenshot is still not what
+     ships; the hero sits at 159px at NOMINAL_SCALER, between the 123px it had
+     been pulled back to and the 200px that was too far. What changed is that
+     the hero is now DELIBERATELY the outlier, by a stated amount, instead of
+     accidentally the same as everybody else. */
+
+  it("the hero's chips are still well inside the distance that drew the complaint", () => {
     const heroDist = dist(betChipOffsetPx(HERO, NOMINAL_SCALER));
     expect(heroDist).toBeGreaterThan(0);
-    // Comfortably inside the 200px that produced the complaint, with headroom
-    // so an honest re-tune does not trip it.
-    expect(heroDist).toBeLessThanOrEqual(150);
+    /* 175, up from 150, because the round-3 lift adds
+       HERO_CHIP_LIFT_WIDTH_PCT (36.3px at NOMINAL_SCALER) on purpose: 123 ->
+       159. Still comfortably inside the 200px that produced the complaint,
+       with headroom so an honest re-tune does not trip it. If this ever fails,
+       the number to look at is HERO_CHIP_LIFT_WIDTH_PCT — the ceiling is the
+       screenshot, and the screenshot has not changed. */
+    expect(heroDist).toBeLessThanOrEqual(175);
   });
 
-  it('the hero is not the outlier: every seat walks the same rail', () => {
+  it('the hero is the ONE seat off the oval, by exactly the lift', () => {
     const heroDist = dist(betChipOffsetPx(HERO, NOMINAL_SCALER));
     const topDist = dist(betChipOffsetPx({ x: 50, y: 0 }, NOMINAL_SCALER));
-    // The two seats opposite each other, both outside the painted felt by the
-    // same amount, must be treated identically to within rounding.
-    expect(Math.abs(heroDist - topDist)).toBeLessThanOrEqual(20);
+    /* These two chairs sit opposite each other, both outside the painted felt,
+       and until round 3 they were required to be identical to within rounding
+       — that was the whole content of "the hero is not the outlier".
+
+       They are no longer identical, and the difference is not drift: it is
+       Dan's exception, so it is pinned to the constant that creates it rather
+       than to a tolerance that would let it wander. Anything else moving these
+       two apart still fails here. */
+    const liftPx = (HERO_CHIP_LIFT_WIDTH_PCT / 100) * NOMINAL_SCALER.w;
+    /* Take the lift back off and the ORIGINAL assertion is restored, unchanged:
+       the two seats agree to within the same 20px they always had to. So this
+       still fails for any reason the old one would have failed — a per-seat
+       term creeping back in, a rail that treats top and bottom differently —
+       and passes only for the one exception Dan named. */
+    expect(heroDist - topDist).toBeGreaterThan(0);
+    expect(Math.abs(heroDist - liftPx - topDist)).toBeLessThanOrEqual(20);
   });
 });
 

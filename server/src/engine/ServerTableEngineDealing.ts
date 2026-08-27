@@ -1079,8 +1079,33 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       gameVariant: this.dealtGameVariant() as GameVariant,
       smallBlind: this.tableInfo.small_blind,
       bigBlind: this.tableInfo.big_blind,
-      // FIX-219: Bible V8 §4.3 — Respect ante_enabled toggle; if disabled, zero out ante
-      ante: (this.tableInfo.ante_enabled ?? true) ? this.tableInfo.ante : undefined,
+      /* FIX-219: Bible V8 §4.3 — Respect ante_enabled toggle; if disabled, zero
+         out ante. That is a CASH-TABLE toggle: CreateTableModal writes it
+         (`ante_enabled: parseFloat(anteAmount) > 0`) and the lobby gates its
+         ante badge on it.
+
+         ── A TOURNAMENT ANTE IS NOT SUBJECT TO IT (2026-08-27) ──────────────
+         Measured in production: `ante_enabled` is FALSE on ALL 93,416 table
+         rows, so this expression yielded `undefined` every time and
+         HandController's `if (this.config.ante)` never fired. NO ANTE HAS EVER
+         BEEN POSTED, on any table, anywhere.
+
+         For cash that is at worst a dormant feature. For tournaments it is
+         wrong: the ante comes from the BLIND STRUCTURE, refreshed on every
+         level change by refreshBlindsFromDb (which sets `this.tableInfo.ante =
+         data.ante` and cannot set a toggle it does not own). 10,085 tournaments
+         carry non-zero antes in their structure and 43 were live at the time of
+         writing; every one of them advertised "Level N: x/y ante z" in the
+         blinds tab and collected nothing. That materially changes tournament
+         play, which is exactly what an ante is for.
+
+         So: tournaments take the ante their level specifies; cash keeps the
+         toggle. */
+      ante: this.tableInfo.tournament_id
+        ? this.tableInfo.ante
+        : (this.tableInfo.ante_enabled ?? true)
+          ? this.tableInfo.ante
+          : undefined,
       bigBlindAnte: this.tableInfo.big_blind_ante_enabled ?? false,
       // 2026-08-22 parity: AoF tables restrict preflop to fold / all-in.
       allInOrFold: this.tableInfo.all_in_or_fold ?? false,

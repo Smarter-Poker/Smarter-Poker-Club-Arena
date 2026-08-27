@@ -1,6 +1,6 @@
 # PREFERENCE: Club Arena Is Mobile First
 
-**Date:** 2026-08-27  
+**Date:** 2026-08-27
 **Scope:** Every Club Arena design, redesign, feature flow, component, graphic, customization surface, and interaction.
 
 ## Directive

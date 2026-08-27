@@ -29,6 +29,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import './ThemeSettingsModal.css';
 import { reportError } from '../../utils/errorReporter';
+import { useSettingsStore } from '../../stores/useSettingsStore';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -521,6 +522,8 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   const [saving, setSaving] = useState(false);
   /** Card backs bought with diamonds in the store. See canAccessAsset. */
   const [ownedCardBacks, setOwnedCardBacks] = useState<string[]>([]);
+  const uiMode = useSettingsStore((state) => state.theme);
+  const setUiMode = useSettingsStore((state) => state.setTheme);
 
   // The live selection, readable from a callback without making every callback
   // depend on it. handleSave needs the value it is replacing so it can put it
@@ -818,6 +821,30 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
             {saving ? 'Saving selection' : 'Changes save automatically'}
           </span>
         </div>
+
+        <fieldset className="theme-modal__mode" aria-label="Club Arena appearance mode">
+          <legend>Interface</legend>
+          <div className="theme-modal__mode-options">
+            {(['light', 'dark'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={`theme-modal__mode-option ${uiMode === mode ? 'theme-modal__mode-option--active' : ''}`}
+                aria-pressed={uiMode === mode}
+                onClick={() => setUiMode(mode)}
+              >
+                <span
+                  className={`theme-modal__mode-icon theme-modal__mode-icon--${mode}`}
+                  aria-hidden="true"
+                />
+                {mode === 'light' ? 'Light' : 'Dark'}
+              </button>
+            ))}
+          </div>
+          <span className="theme-modal__mode-note">
+            Changes Menus And Controls. Your Table Design Stays Yours.
+          </span>
+        </fieldset>
 
         <div className="theme-modal__live-preview" aria-label="Current table appearance preview">
           <img className="theme-modal__live-bg" src={selectedBackground} alt="" />

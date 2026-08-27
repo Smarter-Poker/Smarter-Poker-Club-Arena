@@ -28,6 +28,14 @@ export const useSettingsStore = create<SettingsState>()(
         set((state) => ({ notificationsEnabled: !state.notificationsEnabled })),
       setTheme: (theme) => {
         set({ theme });
+        // Apply immediately even on direct /table routes where Shell may not
+        // be the component that initiated the change. The persisted store is
+        // still the source of truth; this keeps the visible chrome and the
+        // selected control in the same frame.
+        if (typeof document !== 'undefined') {
+          document.documentElement.setAttribute('data-theme', theme);
+          document.documentElement.style.colorScheme = theme;
+        }
         masterBus.emit('UI_THEME_CHANGED', { key: 'theme', value: theme });
       },
     }),

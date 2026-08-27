@@ -1211,6 +1211,8 @@
     "fn_audit_club_member_change",
     "fn_audit_club_settings_change",
     "fn_audit_layer_silence",
+    "fn_audit_layer_silence_and_coverage",
+    "fn_audit_league_coverage",
     "fn_audit_privileged_grants",
     "fn_auto_create_story_from_post",
     "fn_auto_end_stale_streams",

@@ -931,6 +931,7 @@
     "atomic_distribute_rake",
     "atomic_pay_agent_settlement",
     "atomic_pay_player_rakeback",
+    "atomic_seat_cashout_locked",
     "atomic_seat_horse",
     "atomic_table_addon",
     "atomic_table_buyin",

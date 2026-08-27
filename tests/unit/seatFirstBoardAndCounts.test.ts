@@ -102,7 +102,9 @@ describe('the club header counts what it says it counts', () => {
     expect(countsSql).toMatch(/count\(DISTINCT ts\.user_id\)/);
     expect(countsSql).toMatch(/still carries the stale clubs\.online_count/);
     // The header renders the live figure and nothing else.
-    expect(clubHome).toMatch(/playersPlaying\.toLocaleString\(\)\} Players Currently Playing/);
+    expect(clubHome).toMatch(
+      /<strong>\{playersPlaying\.toLocaleString\(\)\}<\/strong> playing now/
+    );
     expect(clubHome).not.toMatch(/club\.online_count\.toLocaleString/);
   });
 });

@@ -3415,16 +3415,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 {club.name}
               </h2>
               {unionName && (
-                <div
-                  style={{
-                    marginTop: '1px',
-                    fontSize: '0.85rem',
-                    fontWeight: 600,
-                    color: '#9aa5b6',
-                    letterSpacing: '0.02em',
-                  }}
-                  title="Union This Club Plays Inside"
-                >
+                <div className="lobby-club__union" title="Union This Club Plays Inside">
                   {unionName}
                 </div>
               )}
@@ -3445,19 +3436,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   <IconMembers />
                   {(club.member_count || 0).toLocaleString()}
                 </span>
-              </div>
-              <div
-                className="lobby-club__meta"
-                style={{
-                  marginTop: '2px',
-                  flexDirection: 'column',
-                  alignItems: 'flex-start',
-                  gap: '2px',
-                }}
-              >
                 {currentUser?.player_number && (
                   <span
-                    className="lobby-club__id"
+                    className="lobby-club__id lobby-club__player"
                     style={{ userSelect: 'all', cursor: 'pointer' }}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -3471,14 +3452,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 )}
               </div>
 
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  marginTop: '6px',
-                  flexDirection: 'column',
-                }}
-              >
+              <div className="lobby-club__status">
                 {clubLevel && (
                   <div className="lobby-club__level">
                     <span
@@ -3492,12 +3466,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   </div>
                 )}
 
-                <div
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}
-                >
+                <div className="lobby-club__activity">
                   {playersPlaying !== null && (
-                    <div style={{ fontSize: '0.8rem', color: '#9aa5b6' }}>
-                      {playersPlaying.toLocaleString()} Players Currently Playing
+                    <div className="lobby-club__playing">
+                      <strong>{playersPlaying.toLocaleString()}</strong> playing now
                     </div>
                   )}
 

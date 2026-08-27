@@ -9,6 +9,9 @@ const pageCss = read('src/pages/ClubHomePage.css');
 const wallet = read('src/components/wallet/DynamicWallet.tsx');
 const walletCss = read('src/components/wallet/DynamicWallet.css');
 const layout = read('src/components/layouts/AppLayout.tsx');
+const filters = read('src/components/lobby/AdvancedFilters.tsx');
+const filtersCss = read('src/components/lobby/AdvancedFilters.css');
+const tableCss = read('src/components/lobby/LobbyTable.css');
 
 describe('Club Arena Tournament Board lobby design', () => {
   it('keeps the global header and renders the club logo in the lobby identity', () => {
@@ -48,10 +51,38 @@ describe('Club Arena Tournament Board lobby design', () => {
   });
 
   it('fits every mobile control without a horizontal reveal row', () => {
-    const liveBoard = pageCss.slice(pageCss.indexOf('LIVE GAME BOARD'));
-    expect(liveBoard).toContain('grid-template-columns: repeat(5, minmax(0, 1fr))');
-    expect(liveBoard).toContain('display: contents');
-    expect(liveBoard).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))');
-    expect(liveBoard).toContain('overflow: visible');
+    const mobileConsole = pageCss.slice(pageCss.lastIndexOf('MOBILE LOBBY FINAL CONTRACT'));
+    expect(mobileConsole).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))');
+    expect(pageCss).toContain('display: contents');
+    expect(mobileConsole).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
+    expect(mobileConsole).toContain('overflow: visible');
+  });
+
+  it('uses a compact mobile identity and smaller two-line club notice', () => {
+    const mobileConsole = pageCss.slice(pageCss.lastIndexOf('MOBILE LOBBY FINAL CONTRACT'));
+    expect(page).toContain('className="lobby-club__status"');
+    expect(page).toContain('className="lobby-club__playing"');
+    expect(mobileConsole).toContain('grid-template-columns: minmax(0, 1fr) 112px');
+    expect(mobileConsole).toContain('font-size: 0.64rem');
+    expect(mobileConsole).toContain('-webkit-line-clamp: 2');
+  });
+
+  it('rebuilds Filters as a solid tournament-board console', () => {
+    expect(filters).toContain('Tournament Board');
+    expect(filters).toContain("Apply {activeCount > 0 ? `${activeCount} ` : ''}Filters");
+    expect(filters).toContain('Reset {activeTypeLabel}');
+    expect(filters).toContain('Only show games with every selected feature.');
+    expect(filtersCss).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
+    expect(filtersCss).toContain('background: #08111d');
+    expect(filtersCss).not.toMatch(/(?:linear|radial|conic)-gradient\s*\(/i);
+    expect(filtersCss).not.toContain('overflow-x: auto');
+  });
+
+  it('gives mobile game cards solid raised depth and balanced data bays', () => {
+    const cards = tableCss.slice(tableCss.indexOf('MOBILE TOURNAMENT-BOARD CARDS'));
+    expect(cards).toContain('background: #0d1928');
+    expect(cards).toContain('flex: 1 1 82px');
+    expect(cards).toContain('background: #07111d');
+    expect(cards).not.toMatch(/(?:linear|radial|conic)-gradient\s*\(/i);
   });
 });

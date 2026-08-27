@@ -57,7 +57,6 @@
   }
 }
 
-.club-home.loading,
 .club-home.error {
   display: flex;
   align-items: center;
@@ -1841,5 +1840,285 @@
   .lobby-resultsbar {
     margin: 8px 8px 0;
     padding: 8px 9px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE LOBBY FINAL CONTRACT
+   Kept at the end of the stylesheet so legacy documented rules cannot
+   re-introduce the cramped header or five-column control collision.
+═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  .lobby-top {
+    gap: 6px;
+    padding: 1px 7px 8px;
+  }
+
+  .lobby-top__main {
+    grid-template-columns: minmax(0, 1fr) 112px;
+    gap: 6px;
+  }
+
+  .lobby-club {
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr);
+    align-items: center;
+    gap: 7px;
+    min-height: 116px;
+    padding: 7px 8px;
+    border-radius: 8px;
+  }
+
+  .lobby-club__avatar {
+    width: 46px;
+    height: 46px;
+    align-self: center;
+  }
+
+  .lobby-club__info {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .lobby-club__name {
+    margin: 0;
+    font-size: 0.78rem;
+    letter-spacing: 0.015em;
+    line-height: 1.18;
+  }
+
+  .lobby-club__union {
+    margin-top: 2px;
+    overflow: hidden;
+    color: #8fa0b6;
+    font-size: 0.58rem;
+    font-weight: 700;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lobby-club__meta {
+    gap: 2px 6px;
+    margin-top: 4px;
+    font-size: 0.56rem;
+    line-height: 1.2;
+  }
+
+  .lobby-club__members svg {
+    width: 11px;
+    height: 11px;
+  }
+
+  .lobby-club__player {
+    flex-basis: 100%;
+  }
+
+  .lobby-club__status {
+    min-width: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 5px;
+    margin-top: 6px;
+  }
+
+  .lobby-club__level {
+    min-width: 0;
+    margin: 0;
+  }
+
+  .club-level-badge {
+    max-width: 100%;
+    gap: 3px;
+    padding: 2px 5px;
+    border-radius: 5px;
+    background: #2b77d5 !important;
+  }
+
+  .club-level-badge__number {
+    font-size: 0.58rem;
+    white-space: nowrap;
+  }
+
+  .club-level-badge__tier {
+    max-width: 54px;
+    overflow: hidden;
+    font-size: 0.52rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lobby-club__activity {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+
+  .lobby-club__playing {
+    max-width: 58px;
+    color: #8998ac;
+    font-size: 0.52rem;
+    line-height: 1.15;
+    text-align: right;
+  }
+
+  .lobby-club__playing strong {
+    color: #d9e6f5;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .lobby-club__share {
+    width: 27px;
+    height: 27px;
+    border-radius: 5px;
+  }
+
+  .lobby-club__share svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .lobby-bbj {
+    min-height: 116px;
+    gap: 6px;
+    padding: 8px 5px;
+    border-radius: 8px;
+  }
+
+  .lobby-bbj__label {
+    max-width: 84px;
+    font-size: 0.52rem;
+    letter-spacing: 0.08em;
+    line-height: 1.25;
+  }
+
+  .lobby-bbj__amount {
+    font-size: 0.91rem;
+    letter-spacing: 0.018em;
+  }
+
+  .lobby-top__notice p {
+    padding: 6px 9px;
+    border-left-width: 2px;
+    border-radius: 0 6px 6px 0;
+    color: #aab4c1;
+    font-size: 0.64rem;
+    line-height: 1.3;
+    -webkit-line-clamp: 2;
+  }
+
+  .lobby-controls {
+    margin: 8px 7px 7px;
+    border-radius: 10px;
+    background: #0e1928;
+    box-shadow:
+      0 5px 0 #010307,
+      0 12px 24px rgba(0, 0, 0, 0.42),
+      inset 0 1px 0 rgba(180, 220, 255, 0.1);
+  }
+
+  .lobby-controls__heading {
+    align-items: center;
+    padding: 10px 10px 8px 13px;
+  }
+
+  .lobby-controls__eyebrow {
+    font-size: 0.55rem;
+    letter-spacing: 0.13em;
+  }
+
+  .lobby-controls__title {
+    font-size: 0.91rem;
+  }
+
+  .lobby-controls__total {
+    font-size: 0.55rem;
+    letter-spacing: 0.055em;
+    white-space: nowrap;
+  }
+
+  .lobby-controls__total strong {
+    font-size: 0.74rem;
+  }
+
+  .lobby-controls .game-bar {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 7px 6px;
+    padding: 9px 8px 10px 11px;
+  }
+
+  .lobby-controls .game-bar__types {
+    display: contents;
+    overflow: visible;
+  }
+
+  .lobby-controls .game-bar__type,
+  .lobby-controls .game-bar__filter-btn {
+    width: 100%;
+    min-width: 0;
+    height: 38px;
+    padding: 3px;
+    border-radius: 6px;
+    font-size: 0.59rem;
+    line-height: 1.05;
+    white-space: normal;
+  }
+
+  .lobby-controls .game-bar__filter-btn {
+    gap: 3px;
+    justify-content: center;
+  }
+
+  .lobby-controls .game-bar__filter-btn svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .lobby-controls .quickprefs {
+    padding: 0 8px 10px 11px;
+  }
+
+  .lobby-controls .quickprefs__row--status {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    padding: 6px;
+    overflow: visible;
+    border-radius: 8px;
+  }
+
+  .lobby-controls .quickprefs__row--status .quickprefs__chip {
+    width: 100%;
+    min-width: 0;
+    height: 36px;
+    padding: 3px 4px;
+    border-radius: 6px;
+    font-size: 0.56rem;
+    line-height: 1.05;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 360px) {
+  .lobby-top__main {
+    grid-template-columns: minmax(0, 1fr) 104px;
+  }
+
+  .lobby-club {
+    grid-template-columns: 42px minmax(0, 1fr);
+    padding-inline: 6px;
+  }
+
+  .lobby-club__avatar {
+    width: 42px;
+    height: 42px;
+  }
+
+  .lobby-bbj__amount {
+    font-size: 0.82rem;
   }
 }

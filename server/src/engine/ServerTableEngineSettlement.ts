@@ -708,13 +708,26 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       }
       const bbjResult = detectBBJHit(
         this.currentHandShowdownResults,
-        this.currentHandWinnerIds[0],
+        // AUDIT FIX 2026-08-27: was `currentHandWinnerIds[0]`. On a chopped
+        // pot that examined one winner and ignored the other, so if the second
+        // held the quads the "winner must have quads or better" gate refused a
+        // real bad beat and nothing recorded that it had. All of them now; the
+        // detector applies the rule to the strongest.
+        this.currentHandWinnerIds,
         variant,
         this.currentHandPotSize,
         this.tableInfo.big_blind,
         dealtInPlayerIds.length,
         dealtInPlayerIds,
-        bbjBoard
+        bbjBoard,
+        {
+          // BBJ_RULES.excludeDoubleBoard has been published to players since it
+          // was written and enforced nowhere. A double-board bomb pot deals two
+          // boards for one pot, so a beat on one of them is not the hand the
+          // jackpot is for — and until now such a hand could pay, which made
+          // the rules panel wrong rather than the engine.
+          doubleBoard: this.currentHandCommunityCards2.length > 0,
+        }
       );
 
       if (bbjResult.hit) {

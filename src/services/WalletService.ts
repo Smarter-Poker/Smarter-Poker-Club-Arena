@@ -101,23 +101,77 @@ export const WalletService = {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Get all wallet balances for a user
+   * Get all wallet balances for a user, FROM THE LIVE POOLS.
+   *
+   * ═══ THIS READ USED TO COME OFF A FROZEN TABLE (fixed 2026-08-27) ═══
+   *
+   * It read `public.wallets`, which has taken no write since
+   * 2026-08-21 00:59 UTC (club-arena CLAUDE.md 11.5: "public.wallets is NOT
+   * the live chip pool ... 732,591,994.33 chips stranded in it"). The rule
+   * said "nothing reads it" — eleven call sites did, this one feeding
+   * `useWalletStore`, which feeds `useCanAfford` and the "Playable Now" and
+   * "Chips In Escrow" figures on PlayerWalletPage.
+   *
+   * The numbers were not zero, which is what made this survive: they were
+   * SIX DAYS STALE AND PLAUSIBLE. Measured on production the day of the fix,
+   * the frozen PLAYER pool summed to 732,581,244.32 against a real economy of
+   * 121,018,710.03 — six times the chips that exist — and one sampled player
+   * read 3,313,727.73 against a true balance of 34,818.60, a 95x lie rendered
+   * as a formatted, confident number.
+   *
+   * THE LIVE POOLS, which every server money path actually moves:
+   *   PLAYER   club_members.chip_balance   (+ locked_chips held at tables)
+   *   PROMO    club_members.promo_balance
+   *   BUSINESS agents.agent_wallet_balance (agents only; 0 for everyone else)
+   *
+   * Club-scoped by nature, so the totals here are the player's chips summed
+   * across their clubs. What is SPENDABLE at a given table is a different and
+   * narrower question — `readPlayerBalance` answers that with the same RPC the
+   * buy-in itself uses, and callers gating a spend must use that, not this.
    */
   async getBalances(userId: string): Promise<WalletBalance[]> {
-    const { data, error } = await supabase
-      .from('wallets')
-      .select('user_id, wallet_type, balance, locked_balance, updated_at')
-      .eq('user_id', userId);
+    const [membersRes, agentRes] = await Promise.all([
+      supabase
+        .from('club_members')
+        .select('chip_balance, promo_balance, locked_chips')
+        .eq('user_id', userId),
+      supabase.from('agents').select('agent_wallet_balance').eq('user_id', userId).maybeSingle(),
+    ]);
 
-    if (error) throw error;
-    return (data || []).map((w) => ({
-      userId: w.user_id,
-      walletType: w.wallet_type as WalletType,
-      balance: w.balance,
-      lockedBalance: w.locked_balance,
-      availableBalance: w.balance - w.locked_balance,
-      lastUpdated: w.updated_at,
-    }));
+    if (membersRes.error) throw membersRes.error;
+    // A non-agent has no `agents` row. That is a legitimate zero, not a
+    // failure — only a real query error is worth throwing over.
+    if (agentRes.error) throw agentRes.error;
+
+    const rows = membersRes.data || [];
+    const num = (v: unknown) => Number(v ?? 0) || 0;
+    const playerTotal = rows.reduce((sum, r) => sum + num(r.chip_balance), 0);
+    const playerLocked = rows.reduce((sum, r) => sum + num(r.locked_chips), 0);
+    const promoTotal = rows.reduce((sum, r) => sum + num(r.promo_balance), 0);
+    const businessTotal = num(agentRes.data?.agent_wallet_balance);
+    const lastUpdated = new Date().toISOString();
+
+    const make = (
+      walletType: WalletType,
+      balance: number,
+      lockedBalance: number
+    ): WalletBalance => ({
+      userId,
+      walletType,
+      balance,
+      lockedBalance,
+      // `balance` is what the player holds; `locked_chips` is the part of it
+      // already committed to a table. Available is the remainder, floored at
+      // zero so a mid-flight lock can never render a negative "Playable Now".
+      availableBalance: Math.max(0, balance - lockedBalance),
+      lastUpdated,
+    });
+
+    return [
+      make('PLAYER' as WalletType, playerTotal, playerLocked),
+      make('PROMO' as WalletType, promoTotal, 0),
+      make('BUSINESS' as WalletType, businessTotal, 0),
+    ];
   },
 
   // AUDIT 2026-08-25: `getWalletBalance` and `getTotalAvailable` are deleted.
@@ -798,22 +852,21 @@ export const WalletService = {
     } catch {
       /* fall through to the legacy wallet read */
     }
-    /* The legacy read distinguishes its own failure. A helper that returns
-       null for both "no row" and "query failed" makes a missing PLAYER wallet
-       and a refused one look identical, which is why the two helpers that did
-       that were removed above and this read is done inline. */
-    const { data: w, error: wErr } = await supabase
-      .from('wallets')
-      .select('balance')
-      .eq('user_id', userId)
-      .eq('wallet_type', 'PLAYER')
-      .maybeSingle();
-    if (wErr) {
-      reportError(wErr, 'WalletService.readPlayerBalance', { userId });
-      return { balance: null, source: 'failed' };
-    }
-    // No row is a genuine zero: a provisioned account with no chips.
-    return { balance: Number(w?.balance ?? 0) || 0, source: 'wallet' };
+    /* ═══ THE FALLBACK WAS A FROZEN READ, AND IS GONE (2026-08-27) ═══
+       This used to fall back to `public.wallets`, a pool that has taken no
+       write since 2026-08-21 and reads up to 95x high (see getBalances). A
+       fallback that answers with a confidently wrong number is worse than one
+       that admits it does not know: this function's own contract says
+       `balance: null` means "we could not find out", and that callers gating
+       a spend must let the server decide, because the buy-in RPC refuses an
+       underfunded entry anyway. So failing to 'unknown' costs nothing and
+       cannot authorise a spend against six-day-old chips. */
+    reportError(
+      new Error('fn_player_spendable_balance did not answer; no live fallback exists'),
+      'WalletService.readPlayerBalance',
+      { userId }
+    );
+    return { balance: null, source: 'failed' };
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -829,23 +882,24 @@ export const WalletService = {
    * @param walletTypes - Array of wallet types to ensure exist (default: all three)
    */
   async ensureWalletsExist(
-    userId: string,
-    walletTypes: WalletType[] = ['PLAYER', 'BUSINESS', 'PROMO']
+    _userId: string,
+    _walletTypes: WalletType[] = ['PLAYER', 'BUSINESS', 'PROMO']
   ): Promise<void> {
-    for (const walletType of walletTypes) {
-      const { error } = await supabase.from('wallets').upsert(
-        {
-          user_id: userId,
-          wallet_type: walletType,
-          balance: 0,
-          locked_balance: 0,
-        },
-        { onConflict: 'user_id,wallet_type', ignoreDuplicates: true }
-      );
-      if (error) {
-        reportError(error, 'WalletService.ensureWalletsExist', { userId, walletType });
-      }
-    }
+    /* ═══ RETIRED 2026-08-27 — IT PROVISIONED ROWS IN THE FROZEN POOL ═══
+       This upserted zero-balance rows into `public.wallets`, which has been
+       frozen since 2026-08-21. That is a money path writing to the dead pool,
+       which club-arena CLAUDE.md 11.5 names as broken by definition. It was
+       harmless only by luck: the rows it wrote carried balance 0, so they did
+       not move the pool's total and did not trip the freeze-invariant check
+       added the same week — a nonzero write would have.
+
+       Nothing needs provisioning now. The live pools create their own rows:
+       `club_members` on join, `agents` on promotion (its caller in
+       AgentService creates the agents row on the very next statement). Kept as
+       a no-op rather than deleted so an in-flight caller cannot throw; the
+       parameters keep their names, underscored, so the signature still reads.
+       Remove the call sites and then this, in that order. */
+    return;
   },
 };
 

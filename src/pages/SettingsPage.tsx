@@ -299,10 +299,20 @@ export default function SettingsPage() {
           )
           .eq('id', user.id)
           .maybeSingle(),
+        // A DATA EXPORT MUST NOT EXPORT A FROZEN NUMBER (fixed 2026-08-27).
+        // This exported rows from the retired global wallet table, frozen
+        // since 2026-08-21 - handing the player a formatted, confident,
+        // six-day-stale balance as their own record. The live club-scoped
+        // pool is what they actually hold.
         supabase
-          .from('wallets')
-          .select('id, user_id, wallet_type, balance, created_at')
-          .eq('user_id', user.id),
+          .from('club_members')
+          .select('club_id, user_id, chip_balance, promo_balance, locked_chips')
+          .eq('user_id', user.id)
+          // Ordered so a re-export of unchanged data is byte-identical, and
+          // so the membership-cap rule in tests/unit/clubMemberStatus.test.ts
+          // reads this chain unambiguously (it scans to the next semicolon,
+          // which here runs on into the sibling query's own .limit()).
+          .order('club_id', { ascending: true }),
         supabase
           .from('training_user_achievements')
           .select('id, user_id, achievement_id, unlocked_at, progress')

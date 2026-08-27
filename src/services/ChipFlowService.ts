@@ -121,19 +121,18 @@ export const ChipFlowService = {
     masterBus.emit('CASHIER_BALANCE_CHANGED', { clubId: relatedEntityId || '' });
 
     // 5. Get final balances
-    const { data: fromWallet } = await supabase
-      .from('wallets')
-      .select('balance')
-      .eq('user_id', fromUserId)
-      .eq('wallet_type', 'PLAYER')
-      .maybeSingle();
-
-    const { data: toWallet } = await supabase
-      .from('wallets')
-      .select('balance')
-      .eq('user_id', toUserId)
-      .eq('wallet_type', 'PLAYER')
-      .maybeSingle();
+    /* Live pool read (2026-08-27): the old table is frozen - see
+   WalletService.getBalances for the measurements. club_members.chip_balance is
+   what every server money path actually moves. */
+    const liveChips = async (uid: string): Promise<{ balance: number } | null> => {
+      const { data } = await supabase
+        .from('club_members')
+        .select('chip_balance')
+        .eq('user_id', uid);
+      if (!data) return null;
+      return { balance: data.reduce((sum, r) => sum + (Number(r.chip_balance ?? 0) || 0), 0) };
+    };
+    const [fromWallet, toWallet] = await Promise.all([liveChips(fromUserId), liveChips(toUserId)]);
 
     return {
       success: true,
@@ -174,13 +173,17 @@ export const ChipFlowService = {
         clubId
       );
 
-      // Return real balance instead of zeros
-      const { data: wallet } = await supabase
-        .from('wallets')
-        .select('balance')
-        .eq('user_id', unionOwnerId)
-        .eq('wallet_type', 'PLAYER')
-        .maybeSingle();
+      // Return real balance instead of zeros. Live pool (2026-08-27): the
+      // old table is frozen; club_members.chip_balance is the live one.
+      const { data: ownerRows } = await supabase
+        .from('club_members')
+        .select('chip_balance')
+        .eq('user_id', unionOwnerId);
+      const wallet = ownerRows
+        ? {
+            balance: ownerRows.reduce((sum, r) => sum + (Number(r.chip_balance ?? 0) || 0), 0),
+          }
+        : null;
 
       return {
         success: true,
@@ -299,14 +302,17 @@ export const ChipFlowService = {
     userId: string,
     reason: string = 'Balance reset for proper funding chain'
   ): Promise<number> {
-    const { data: wallet } = await supabase
-      .from('wallets')
-      .select('balance')
-      .eq('user_id', userId)
-      .eq('wallet_type', 'PLAYER')
-      .maybeSingle();
+    // Live pool (2026-08-27): the old table is frozen; deducting against a
+    // six-day-stale figure would have reset the wrong amount.
+    const { data: resetRows } = await supabase
+      .from('club_members')
+      .select('chip_balance')
+      .eq('user_id', userId);
 
-    const currentBalance = wallet?.balance || 0;
+    const currentBalance = (resetRows || []).reduce(
+      (sum, r) => sum + (Number(r.chip_balance ?? 0) || 0),
+      0
+    );
 
     if (currentBalance > 0) {
       const { error: deductErr } = await retryAsync(
@@ -419,14 +425,33 @@ export const ChipFlowService = {
 
     while (hasMoreWallets && walletPages < MAX_PAGES) {
       walletPages++;
+      /* AN AUDIT THAT COUNTED A FROZEN POOL (fixed 2026-08-27): this paged
+         the retired table and reported its 732,591,994.33 stranded chips as
+         circulating - six times the real economy of 121,018,710.03 - inside
+         the one function whose job is to say how many chips exist. It counts
+         the live pool now, with locked_chips as the at-table portion. */
+      /* ORDERED, BECAUSE THIS IS PAGED. Without an explicit order Postgres may
+         return rows in any order it likes, so across pages a row can be served
+         twice or skipped entirely - and in a function that SUMS chips, that is
+         a total which is quietly wrong. The house rule in
+         tests/unit/clubMemberStatus.test.ts caught this in review, and it was
+         written after ten horses vanished from a cashier for the same reason.
+         Ordering by the composite key makes the paging deterministic.
+
+         The prose lives ABOVE the statement rather than inside the call chain:
+         that rule reads a chain by slicing to the next semicolon, so a comment
+         sitting between .select() and .order() both truncates the slice and
+         donates its own words to it. */
       const { data: wallets, error } = await supabase
-        .from('wallets')
-        .select('balance, locked_balance')
+        .from('club_members')
+        .select('chip_balance, locked_chips')
+        .order('user_id', { ascending: true })
+        .order('club_id', { ascending: true })
         .range(offsetWallets, offsetWallets + 999);
 
       if (error || !wallets) break;
-      totalInWallets += wallets.reduce((s, w) => s + Number(w.balance || 0), 0);
-      totalInLockedBalance += wallets.reduce((s, w) => s + Number(w.locked_balance || 0), 0);
+      totalInWallets += wallets.reduce((s, w) => s + Number(w.chip_balance || 0), 0);
+      totalInLockedBalance += wallets.reduce((s, w) => s + Number(w.locked_chips || 0), 0);
 
       if (wallets.length < 1000) hasMoreWallets = false;
       else offsetWallets += 1000;

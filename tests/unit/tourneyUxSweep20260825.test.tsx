@@ -800,16 +800,39 @@ describe('Second audit - the balance gate cannot lock out a funded player', () =
     const wallet = code(read('src/services/WalletService.ts'));
     expect(wallet).toMatch(/async readPlayerBalance\(/);
     expect(wallet).toMatch(/source: 'failed'/);
-    // and it must NOT collapse a failed legacy read into 0
-    expect(wallet).toMatch(/if \(wErr\) \{[\s\S]{0,200}return \{ balance: null/);
+    /* The legacy-read branch this used to pin is GONE (2026-08-27), and its
+       removal strengthens this spec rather than weakening it. That branch fell
+       back to the retired global wallet pool, frozen since 2026-08-21 — so on
+       an RPC failure the gate was answered by a six-day-old number that read
+       up to 95x high. "A read that never happened is not a balance of zero"
+       is the rule; a read that never happened is not a balance of THREE
+       MILLION either. There is now exactly one live source and one honest
+       failure value. */
+    expect(wallet).not.toMatch(/from\('wallets'\)/);
+    expect(wallet).toMatch(/return \{ balance: null, source: 'failed' \}/);
   });
 
-  it('a missing wallet row is still a genuine zero, not unknown', () => {
-    // Failing OPEN on a real zero would be its own bug.
+  it('a genuine zero still comes back as zero — from the LIVE source', () => {
+    /* Failing OPEN on a real zero would be its own bug, and that distinction
+       survives: it just has to be earned from the live pool rather than from a
+       frozen table. `fn_player_spendable_balance` returning 0 is a genuine
+       zero and is reported as `source: 'rpc'`; only an RPC that does not
+       ANSWER yields null. A missing row in a table nothing has written since
+       2026-08-21 was never evidence of anything, which is why the old
+       fallback that claimed it was is gone. */
     const wallet = code(read('src/services/WalletService.ts'));
-    expect(wallet).toMatch(
-      /return \{ balance: Number\(w\?\.balance \?\? 0\) \|\| 0, source: 'wallet' \}/
-    );
+    expect(wallet).toMatch(/fn_player_spendable_balance/);
+    expect(wallet).toMatch(/Number\(\(data as any\)\.balance\) \|\| 0, source: 'rpc'/);
+  });
+
+  it('and the busted-player rebuy no longer turns unknown into zero', () => {
+    /* Same rule, the site the 2026-08-25 audit did not reach: TablePage read
+       the balance for the bust-rebuy dialog and wrote `r.balance ?? 0`,
+       collapsing "could not find out" into "you have no chips" on a state
+       already typed `number | null`. */
+    const page = code(read('src/pages/TablePage.tsx'));
+    expect(page).not.toMatch(/setBustWalletBalance\(r\.balance \?\? 0\)/);
+    expect(page).toMatch(/setBustWalletBalance\(r\.balance\)/);
   });
 });
 

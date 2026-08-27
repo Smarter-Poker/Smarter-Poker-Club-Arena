@@ -15703,3 +15703,33 @@ Full write-up: `.agent/audits/2026-08-27-phase2-platform-audit-reconciler-and-gr
 - OPEN for Dan: seat exit #15448 (55 chips uncredited, direct postgres-role
   seat write, NOT player_leave_table) — returning chips is a financial call;
   and the 94-stuck-PRs triage (issue #375) — scope call.
+
+## 2026-08-27 — Phase-3 sweep: eleven more reads off the frozen chip pool (cowork-mobile)
+
+Full write-up: `.agent/audits/2026-08-27-phase3-frozen-pool-reads-swept.md`
+
+CLAUDE.md 11.5 says of `public.wallets`: "nothing reads it". Eleven sites did.
+The pool has taken no write since 2026-08-21 and holds 732,581,244.32 chips
+against a live economy of 121,018,710.03 — so the reads did not render zeros
+(which the deprecated-table gate would have caught), they rendered six-day-old
+plausible numbers. One sampled player read 3,313,727.73 against a true
+34,818.60.
+
+- Repointed to the live pools (`club_members.chip_balance` / `.promo_balance` /
+  `.locked_chips`, `agents.agent_wallet_balance`): `WalletService.getBalances`
+  (feeds `useCanAfford` and "Playable Now"), `ChipTransferModal` recipient
+  balances, four `ChipFlowService` sites including `auditTotals`, and the
+  SettingsPage data export.
+- `readPlayerBalance` no longer falls back to the frozen pool — it answers null
+  ("unknown"), which callers already fail open on.
+- `ensureWalletsExist` retired: it was provisioning rows in the dead pool.
+- `TablePage` bust-rebuy no longer collapses an unknown balance into 0.
+- `auditTotals` paging is now ordered (unordered `.range()` can double-count or
+  skip rows in a function that sums chips).
+- GUARDS: `wallets` added to the CI deprecated-table gate (proven to exit 1 on
+  a reintroduced read) and to the DB `deprecated_tables` registry; new
+  `tests/unit/BalancesComeFromTheLivePool.test.ts` (mutation-tested).
+- Verified healthy, not touched: `blacklists` and `messages` (both have live
+  writers), config/reference tables, no skipped-spec stubs.
+- OPEN: `union_clubs` at 6,590,684 reads on a 2-row table (hot-path re-query,
+  own task); seat exit #15448; the SECURITY DEFINER function backlog.

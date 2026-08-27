@@ -5129,9 +5129,17 @@ export default function TablePage({
          for exactly this reason. Same rule here, same table context. */
       try {
         const r = await WalletService.readPlayerBalance(userId, { tableId });
-        setBustWalletBalance(r.balance ?? 0);
+        /* NULL STAYS NULL (2026-08-27). This was `r.balance ?? 0`, which
+           collapsed "we could not find out" back into "you have no chips" —
+           the exact defect the 2026-08-25 audit removed from the tournament
+           sign-up gate, surviving here. The state is already typed
+           `number | null` so the dialog can say "unknown"; the ?? 0 was the
+           only thing stopping it. It matters more now that readPlayerBalance
+           no longer falls back to a frozen table: an unreachable RPC used to
+           answer with a stale number, and now honestly answers null. */
+        setBustWalletBalance(r.balance);
       } catch {
-        setBustWalletBalance(0);
+        setBustWalletBalance(null);
       }
       setBustRebuyOpen(true);
     })();

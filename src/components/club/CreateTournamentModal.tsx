@@ -805,7 +805,9 @@ export default function CreateTournamentModal({
             <select
               className={styles.select}
               value={gameVariant}
-              onChange={(e) => setGameVariant(e.target.value as any)}
+              onChange={(e) =>
+                setGameVariant(e.target.value as 'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'SHORT_DECK')
+              }
             >
               <option value="NLH">No-Limit Hold'em</option>
               <option value="PLO4">Pot-Limit Omaha (4-Card)</option>
@@ -877,7 +879,9 @@ export default function CreateTournamentModal({
                 <select
                   className={styles.select}
                   value={blindSpeed}
-                  onChange={(e) => setBlindSpeed(e.target.value as any)}
+                  onChange={(e) =>
+                    setBlindSpeed(e.target.value as 'turbo' | 'regular' | 'deepStack' | 'custom')
+                  }
                 >
                   <option value="turbo">Turbo (3M)</option>
                   <option value="regular">Regular (8M)</option>
@@ -1040,7 +1044,9 @@ export default function CreateTournamentModal({
                   <select
                     className={styles.select}
                     value={startTimeMode}
-                    onChange={(e) => setStartTimeMode(e.target.value as any)}
+                    onChange={(e) =>
+                      setStartTimeMode(e.target.value as 'now' | 'scheduled' | 'schedule_only')
+                    }
                   >
                     <option value="now">Start In 1 Min</option>
                     <option value="scheduled">Schedule</option>

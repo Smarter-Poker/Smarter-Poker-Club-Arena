@@ -49,7 +49,17 @@ describe('CashierModal reports what actually happened', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Add / }));
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
-    expect(screen.getByRole('alert').textContent).toMatch(/not added/i);
+    /* Cashier audit 2026-08-27 (P0-1): this used to pin the words "not
+       added" — i.e. the banner asserting the wallet was NOT charged. That
+       claim is true for a server refusal and FALSE for a transport failure
+       (the request may have committed before the response was lost), and
+       this modal only receives a boolean, so it cannot tell the two apart.
+       It must not make a claim it cannot back. What it MUST still do is
+       report the failure, stay open, and point at the figures that settle
+       it; the specific verdict comes from the handler's toast. */
+    expect(screen.getByRole('alert').textContent).toMatch(/did not complete/i);
+    expect(screen.getByRole('alert').textContent).toMatch(/check your stack and balance/i);
+    expect(screen.getByRole('alert').textContent).not.toMatch(/was not charged/i);
     expect(onClose).not.toHaveBeenCalled();
   });
 
@@ -98,12 +108,7 @@ describe('CashierModal reports what actually happened', () => {
     const gate = deferred<boolean>();
     const onAddChips = vi.fn().mockReturnValue(gate.promise);
     render(
-      <CashierModal
-        {...base}
-        onClose={vi.fn()}
-        onAddChips={onAddChips}
-        onWithdrawChips={vi.fn()}
-      />
+      <CashierModal {...base} onClose={vi.fn()} onAddChips={onAddChips} onWithdrawChips={vi.fn()} />
     );
 
     fireEvent.click(screen.getByText('50%'));

@@ -2,6 +2,71 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-08-27 — THE CASHIER, AUDITED TO THE MONEY STANDARD
+
+The table cashier and the wallet paths behind it, hunted for the six defect
+classes plus three money-specific ones (idempotency, un-rolled-back optimistic
+UI, client-named prices). Ten fixed; the rest were verified already-fixed at
+HEAD by intervening PRs (`internalTransfer`'s discarded boolean, the
+`retryAsync` on `fn_wallet_type_transfer`) and are not redone.
+
+1. **A lost response could double-charge a top-up, and the UI invited it.**
+   `/addchips` carried no client key: the engine's stable key only
+   de-duplicated the two attempts of ONE invocation, so a second HTTP request
+   minted a fresh key and a fresh debit. The window is exactly the one a
+   player retries in — commit, response lost, modal still open with the
+   amount intact. CashierModal now holds a per-ATTEMPT `opIdRef` (rotated on
+   amount/tab change and on success, deliberately NOT on failure), threaded
+   through `onAddChips(amount, opId)` → `GameServerAPI.addChips` →
+   `handlers/addchips.ts` (validated `^[A-Za-z0-9-]{8,64}$`) →
+   `engine.addChips(userId, amount, opId)` → the `atomic_table_addon` key.
+2. **And it told the charged player they had not been charged.** "Your wallet
+   was not charged" is true for a server refusal and false for a transport
+   failure. `GameServerAPI` now tags transport failures `code: 'TRANSPORT'`,
+   both handlers say the outcome is UNKNOWN and to check the stack first, and
+   the modal's banner — which only ever sees a boolean — no longer makes a
+   claim it cannot back.
+3. **The engine's `applied` was thrown away.** It caps a top-up to the seat's
+   headroom and reports what actually moved; the client accounted for the
+   REQUESTED amount in five places (account balance, session buy-in, rebuy
+   count, SessionStats, the CHIPS_ADDED bus event), so asking 5,000 with
+   1,200 of room drifted every session figure by 3,800 for the rest of the
+   session. `applied`/`queued` now propagate, all five use `applied`, and the
+   player is told when the table capped them or when chips land at hand end.
+4. **A failed club-balance read became a confident 0** —
+   `fetchClubChipBalances` returned an empty map on failure, which
+   `map.get(id) ?? 0` turned into "you have 0 chips in this club": Max
+   prefilled 0, every percent button zeroed, and the local check refused
+   cashouts the server would have allowed. Returns null now (stale cache
+   preferred when present); CashierPage keeps its existing "still loading"
+   null state.
+5. **Table chip moves did not invalidate the club-balance memo** —
+   `CHIPS_ADDED`/`CHIPS_WITHDRAWN` were missing from `CHIP_BALANCE_EVENTS`,
+   the two events the table cashier actually emits, so Max prefilled a
+   pre-transaction figure for up to 30s.
+6. **The cashier had no height ceiling** — `overflow: hidden`, no
+   `max-height`, and its media queries key on max-WIDTH so they never fire in
+   landscape (the table page's orientation on phones). A refused top-up added
+   the error banner, which pushed Confirm below the clip line: both the error
+   and the retry became invisible. Capped and scrollable now.
+7. **`getBalances` was the one wallet read with no `Number()` coercion**
+   (string columns would have made the summed hero figure concatenate).
+8. **`transferToUser` / `distributePromo` returned true for a REFUSED RPC** —
+   both discarded `data` while every other RPC here returns refusals as
+   `{ success: false }`. Latent behind a 42501 grant today, armed to fire the
+   moment the grant is fixed.
+9. **`src/components/chips/` deleted entirely** — six components and a barrel
+   nothing imported, carrying pre-fix versions of these same defects
+   (`Promise<void>` handlers, overlay-dismiss mid-request, unguarded
+   `.toLocaleString()`).
+
+Client 458 files / 7,301 tests green; server tsc + handler/entry suites green
+(94). One source-pin test updated in the same commit: cashier-honest-outcomes
+now pins the honest contract (reports failure, stays open, points at the
+figures) rather than the "was not charged" wording it replaced. No money RPC
+was called against production (§11.5); the idempotency claims are verified by
+reading the function signatures and the key construction.
+
 ## Cowork session 2026-08-27 — ITEM E: THE BUY-IN SURFACES, AUDITED TO THE TAB STANDARD
 
 The last open handoff item without a pending PR: GameLobbyPanel, LobbyTable,

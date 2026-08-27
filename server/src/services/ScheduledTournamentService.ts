@@ -34,7 +34,7 @@
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
-import { buyInFor, wholeChips } from '../config/buyIn.js';
+import { DEFAULT_RAKE_RATE, SNG_RAKE_RATE, buyInFor, wholeChips } from '../config/buyIn.js';
 import { TournamentRecurringService } from './TournamentRecurringService.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -779,7 +779,14 @@ export class ScheduledTournamentService {
     // freeroll with 0/0 columns, and a spin's fee lives in its multiplier
     // distribution rather than the fee column.
     const buyIn = wholeChips(cfg.buyIn);
-    const split = buyIn > 0 ? buyInFor(buyIn) : { total: 0, prize: 0, fee: 0 };
+    // Dan 2026-08-25: Heads-Up (the only SNG shape) is a 5% cut, not the 10%
+    // every other tournament pays. Before this, a Heads-Up created from a
+    // SCHEDULE was priced at 10% while the recurring generator priced the
+    // identical game at 5% — two prices for one product.
+    const split =
+      buyIn > 0
+        ? buyInFor(buyIn, isSng ? SNG_RAKE_RATE : DEFAULT_RAKE_RATE)
+        : { total: 0, prize: 0, fee: 0 };
     const buyInAmount = isSpin ? buyIn : split.prize;
     const buyInFee = isSpin ? 0 : split.fee;
 

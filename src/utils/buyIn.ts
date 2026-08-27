@@ -58,6 +58,13 @@
 export const DEFAULT_RAKE_RATE = 0.1;
 
 /**
+ * Heads-Up / SNG rake (Dan 2026-08-25): "HEADS UP EVENTS ARE ONLY A 5% RAKE".
+ * MIRROR of server/src/config/buyIn.ts — change one, change both;
+ * tests/unit/tournamentRakeMirror.test.ts pins the two together.
+ */
+export const SNG_RAKE_RATE = 0.05;
+
+/**
  * The buy-in levels a tournament may be priced at.
  *
  * Deliberately a fixed ladder rather than "any integer". Dan's examples were

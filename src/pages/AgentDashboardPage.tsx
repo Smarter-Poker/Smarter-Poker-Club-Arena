@@ -986,7 +986,10 @@ export default function AgentDashboardPage() {
                           color: 'var(--text-secondary)',
                         }}
                       >
-                        <span> {fmtChips(p.chip_balance)}</span>
+                        <span>
+                          {' '}
+                          {p.chip_balance !== undefined ? fmtChips(p.chip_balance) : '...'}
+                        </span>
                         <span> {timeAgo(p.profile?.last_seen)}</span>
                       </div>
                     </div>
@@ -1218,7 +1221,7 @@ export default function AgentDashboardPage() {
                               p.profile?.username ||
                               p.user_id?.substring(0, 8)}
                           </td>
-                          <td>{fmtChips(p.chip_balance)}</td>
+                          <td>{p.chip_balance !== undefined ? fmtChips(p.chip_balance) : '...'}</td>
                           <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                             {timeAgo(lastSeen)}
                           </td>
@@ -1256,7 +1259,7 @@ export default function AgentDashboardPage() {
                   {agents.map((a: DownlineMember) => (
                     <option key={a.user_id} value={a.user_id}>
                       {a.profile?.display_name || a.profile?.username || a.user_id?.slice(0, 8)} (
-                      {fmtChips(a.chip_balance)} Chips)
+                      {a.chip_balance !== undefined ? fmtChips(a.chip_balance) : '...'} Chips)
                     </option>
                   ))}
                 </select>
@@ -1344,10 +1347,13 @@ export default function AgentDashboardPage() {
                             style={{
                               textAlign: 'right',
                               fontWeight: 700,
-                              color: a.chip_balance > 0 ? '#31A24C' : 'var(--text-secondary)',
+                              color:
+                                a.chip_balance !== undefined && a.chip_balance > 0
+                                  ? '#31A24C'
+                                  : 'var(--text-secondary)',
                             }}
                           >
-                            {fmtChips(a.chip_balance)}
+                            {a.chip_balance !== undefined ? fmtChips(a.chip_balance) : '...'}
                           </td>
                         </tr>
                       ))}

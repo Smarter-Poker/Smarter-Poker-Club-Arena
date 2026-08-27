@@ -466,7 +466,10 @@ export default function AgentPromoPanel({
                 {downline.map((p) => (
                   <option key={p.user_id} value={p.user_id}>
                     {p.profiles?.display_name || p.profiles?.username || p.user_id.slice(0, 8)}
-                    {' - '}Chips: {(p.chip_balance || 0).toLocaleString()}
+                    {' - '}Chips:{' '}
+                    {p.chip_balance !== undefined && p.chip_balance !== null
+                      ? p.chip_balance.toLocaleString()
+                      : '...'}
                   </option>
                 ))}
               </select>
@@ -609,7 +612,9 @@ export default function AgentPromoPanel({
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <div style={{ fontSize: 11, color: FB.text, fontWeight: 700 }}>
-                        {(p.chip_balance || 0).toLocaleString()}
+                        {p.chip_balance !== undefined && p.chip_balance !== null
+                          ? p.chip_balance.toLocaleString()
+                          : '...'}
                       </div>
                     </div>
                   </div>

@@ -7,7 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   friendSuggestionService,
   type FriendSuggestion,
@@ -122,20 +122,21 @@ export default function FriendSuggestions() {
             >
               ✕
             </button>
-            <img
-              loading="lazy"
-              decoding="async"
-              src={suggestion.avatarUrl || generateDefaultAvatar()}
-              alt={suggestion.username}
-              className={styles.avatar}
-              onClick={() => navigate(`/profile/${suggestion.userId}`)}
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = generateDefaultAvatar();
-              }}
-            />
-            <span className={styles.name} onClick={() => navigate(`/profile/${suggestion.userId}`)}>
+            <Link to={`/profile/${suggestion.userId}`}>
+              <img
+                loading="lazy"
+                decoding="async"
+                src={suggestion.avatarUrl || generateDefaultAvatar()}
+                alt={suggestion.username}
+                className={styles.avatar}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = generateDefaultAvatar();
+                }}
+              />
+            </Link>
+            <Link to={`/profile/${suggestion.userId}`} className={styles.name}>
               {suggestion.displayName || suggestion.username}
-            </span>
+            </Link>
             <span className={styles.reason}>
               {suggestion.reasons[0]?.label || 'Suggested for you'}
             </span>

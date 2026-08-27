@@ -240,7 +240,10 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
     }, 1000);
 
     // Full refresh from DB every 30s
-    const refreshInterval = setInterval(refreshState, 30_000);
+    const refreshInterval = setInterval(() => {
+      if (document.hidden) return;
+      refreshState();
+    }, 30_000);
 
     // Eliminations and chip movements must reach the clock immediately, not up
     // to 30s later — the whole point of the fix above is that this footer

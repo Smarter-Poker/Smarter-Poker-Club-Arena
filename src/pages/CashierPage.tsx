@@ -214,6 +214,18 @@ export default function CashierPage() {
 
   // Rate limiting: minimum 2s between financial actions (beyond the 3s cooldown)
   const lastActionRef = useRef<number>(0);
+  /**
+   * 2026-08-27: idempotency keys for the CURRENT money intent, one per action.
+   * Minted per INTENT, not per call: held across a failed attempt so a retry
+   * of the same send/cashout/distribution replays server-side instead of
+   * debiting twice, and rotated when the inputs change (a corrected amount is
+   * a NEW intent - replaying the old key would move the wrong number). Every
+   * success path here clears the inputs, so success rotates them too via the
+   * effect below the input state. Pattern: WalletCashierModal.doSend.
+   */
+  const sendOpIdRef = useRef<string>(newOpId());
+  const cashoutOpIdRef = useRef<string>(newOpId());
+  const promoOpIdRef = useRef<string>(newOpId());
   const RATE_LIMIT_MS = 2000;
 
   // Connection status: track realtime channel health
@@ -321,6 +333,12 @@ export default function CashierPage() {
   // Send chips state
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [selectedRecipient, setSelectedRecipient] = useState('');
+  // Any change to what is being moved is a NEW intent - fresh keys.
+  useEffect(() => {
+    sendOpIdRef.current = newOpId();
+    cashoutOpIdRef.current = newOpId();
+    promoOpIdRef.current = newOpId();
+  }, [amount, selectedRecipient]);
   const [loadingRecipients, setLoadingRecipients] = useState(false);
   const [recipientSearch, setRecipientSearch] = useState('');
 
@@ -1449,7 +1467,12 @@ export default function CashierPage() {
           p_amount: value,
           p_destination: canHoldAgentWallet(recipient?.role) ? 'agent_wallet' : 'player_wallet',
           p_reason: `Cashier Send To ${recipient?.username || 'Member'}`,
-          p_op_id: newOpId(),
+          // Per-INTENT key (see sendOpIdRef). A key minted inside the call
+          // protects nothing: the dangerous shape is commit + lost response +
+          // user retry, and that retry must present the SAME key so the
+          // server replays instead of debiting again. The 30-line note above
+          // this call claimed that was already true. It was not.
+          p_op_id: sendOpIdRef.current,
         });
         if (sendError) throw sendError;
         const sendRes = (Array.isArray(sendData) ? sendData[0] : sendData) as {
@@ -1592,7 +1615,13 @@ export default function CashierPage() {
           let cashoutFailed = false;
           try {
             if (!clubId) throw new Error('Club ID is missing');
-            await cashoutService.requestCashout(user.id, clubId!, value);
+            await cashoutService.requestCashout(
+              user.id,
+              clubId!,
+              value,
+              undefined,
+              cashoutOpIdRef.current
+            );
             if (isMounted.current)
               setMessage({
                 type: 'success',
@@ -1636,6 +1665,14 @@ export default function CashierPage() {
   // Process high-value cashout after ConfirmModal approval
   const processHighValueCashout = async (value: number) => {
     if (!user?.id) return;
+    // 2026-08-27: this path had no double-submit guard. setIsProcessing is
+    // React state and applies after a render, so two taps on the confirm
+    // modal inside one frame both reached the RPC (with, before today, two
+    // different op ids). Same 2s ref limiter the non-modal cashout path
+    // already stamps.
+    const nowHV = Date.now();
+    if (nowHV - lastActionRef.current < 2000) return;
+    lastActionRef.current = nowHV;
     setCashoutConfirm({ show: false, value: 0 });
     setIsProcessing(true);
     try {
@@ -1657,7 +1694,13 @@ export default function CashierPage() {
       }
 
       // Use CashoutService directly (same as normal cashout path) — no World Hub API dependency
-      await cashoutService.requestCashout(user.id, clubId, value);
+      await cashoutService.requestCashout(
+        user.id,
+        clubId,
+        value,
+        undefined,
+        cashoutOpIdRef.current
+      );
       if (isMounted.current)
         setMessage({
           type: 'success',
@@ -2296,12 +2339,20 @@ export default function CashierPage() {
                   // needed, which also unblocks owners who have no agents row),
                   // enforces the promo caps, and writes the audit trail.
                   // Same call the Agent promo panel already uses.
-                  await callClubArenaApi('distribute-promo', {
-                    action: 'send',
-                    clubId: (await resolveClubUUID(clubId || '')) || clubId || '',
-                    targetUserId: selectedRecipient,
-                    amount: value,
-                  });
+                  // Per-INTENT idempotency key. Without it callClubArenaApi
+                  // mints uuid() per request - clubArenaApi.ts documents this
+                  // exact failure mode as the reason the option exists, and
+                  // the Distribute tab was not using it.
+                  await callClubArenaApi(
+                    'distribute-promo',
+                    {
+                      action: 'send',
+                      clubId: (await resolveClubUUID(clubId || '')) || clubId || '',
+                      targetUserId: selectedRecipient,
+                      amount: value,
+                    },
+                    { idempotencyKey: promoOpIdRef.current }
+                  );
                   const recipient = recipients.find((r) => r.id === selectedRecipient);
                   if (isMounted.current)
                     setMessage({

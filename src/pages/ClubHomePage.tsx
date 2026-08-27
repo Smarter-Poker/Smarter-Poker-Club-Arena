@@ -1852,7 +1852,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             supabase.from('unions').select('name').eq('id', unionId).maybeSingle(),
           ]);
 
-          if (allUcResult.data && allUcResult.data.length > 0) {
+          // Do NOT throw on allUcResult or memberCountResult error.
+          // A silent failure here degrades gracefully: unionClubIds defaults
+          // to [resolvedId] (showing only club tables) and member_count defaults
+          // to the stale DB row value. A throw here crashes the entire lobby!
+          if (!allUcResult.error && allUcResult.data && allUcResult.data.length > 0) {
             unionClubIds = allUcResult.data.map((r) => r.club_id);
           }
 
@@ -3390,7 +3394,18 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 {club.name}
               </h2>
               <div className="lobby-club__meta">
-                <span className="lobby-club__id">ID {club.club_id}</span>
+                <span
+                  className="lobby-club__id"
+                  style={{ userSelect: 'all', cursor: 'pointer' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(club.club_id.toString());
+                    toast.success('Club ID Copied');
+                  }}
+                  title="Click to copy"
+                >
+                  ID {club.club_id}
+                </span>
                 <span className="lobby-club__members">
                   <IconMembers />
                   {(club.member_count || 0).toLocaleString()}
@@ -3406,11 +3421,29 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 }}
               >
                 {currentUser?.player_number && (
-                  <span className="lobby-club__id" style={{ userSelect: 'all' }}>
+                  <span
+                    className="lobby-club__id"
+                    style={{ userSelect: 'all', cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigator.clipboard.writeText(currentUser.player_number!.toString());
+                      toast.success('Player Number Copied');
+                    }}
+                    title="Click to copy"
+                  >
                     Player {currentUser.player_number}
                   </span>
                 )}
-                <span className="lobby-club__id" style={{ userSelect: 'all', color: '#9aa5b6' }}>
+                <span
+                  className="lobby-club__id"
+                  style={{ userSelect: 'all', color: '#9aa5b6', cursor: 'pointer' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(club.name);
+                    toast.success('Club Name Copied');
+                  }}
+                  title="Click to copy"
+                >
                   {club.name}
                 </span>
               </div>
@@ -3465,6 +3498,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     onClick={async () => {
                       haptic.medium();
                       let refQuery = '';
+                      let profRefNum: number | null = null;
                       try {
                         // readLocalSession, not the auth SDK's remote user
                         // lookup: the pre-push guard blocks that call by name,
@@ -3485,9 +3519,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                             // code from the invite link.
                             .eq('id', session.userId)
                             .maybeSingle();
-                          refQuery = prof?.player_number
-                            ? `?ref=${prof.player_number}`
-                            : `?ref=${session.userId}`;
+                          if (prof?.player_number) {
+                            profRefNum = prof.player_number;
+                            refQuery = `?ref=${prof.player_number}`;
+                          } else {
+                            refQuery = `?ref=${session.userId}`;
+                          }
                         }
                       } catch (err) {
                         // The link still works without a referral code, so this
@@ -3496,17 +3533,22 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                         reportError(err, 'ClubHomePage.share_ref_lookup_failed');
                       }
                       const shareUrl = `${window.location.origin}/hub/club-arena/invite/${club.id}${refQuery}`;
+                      const inviterName =
+                        currentUser?.display_name || currentUser?.username || 'A player';
+                      const playerNumText = profRefNum
+                        ? `\nYour Referral Number: ${profRefNum}`
+                        : '';
+                      const shareText = `${inviterName} invited you to join ${club.name}!\n\nClub ID: ${club.club_id}${playerNumText}`;
+
                       try {
                         if (navigator.share) {
                           await navigator.share({
                             title: club.name,
-                            text: `${currentUser?.display_name || 'A player'} invited you to join ${club.name}`,
+                            text: shareText,
                             url: shareUrl,
                           });
                         } else {
-                          await navigator.clipboard.writeText(
-                            `${currentUser?.display_name || 'A player'} invited you to join ${club.name}\n\n${shareUrl}`
-                          );
+                          await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
                           toast.success('Club link copied!');
                         }
                       } catch (e) {

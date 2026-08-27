@@ -7659,9 +7659,24 @@ export default function TablePage({
                 // Fetch fresh wallet balance
                 (async () => {
                   try {
+                    /* 2026-08-27: was getPlayerBalance, which turns a refused
+                       read into 0 - and a 0 here reads as "cannot afford the
+                       add-on" for a funded player. Unknown is left as the
+                       existing 0 ONLY because the affordability check below
+                       fails closed to the server, which refuses an underfunded
+                       add-on anyway; the reportError makes the failed read
+                       visible instead of silent. */
                     let walBal = 0;
                     if (userId && userId !== 'guest') {
-                      walBal = await WalletService.getPlayerBalance(userId, { tableId });
+                      const rb = await WalletService.readPlayerBalance(userId, { tableId });
+                      if (rb.balance === null) {
+                        reportError(
+                          new Error('add-on affordability read failed; treating as unknown'),
+                          'TablePage.addOnBalance',
+                          { userId, tableId }
+                        );
+                      }
+                      walBal = rb.balance ?? 0;
                     }
                     // 2026-08-20: `addonData.addOnCost || 0` silently priced the
                     // add-on at ZERO whenever the broadcast omitted the field --
@@ -8334,8 +8349,12 @@ export default function TablePage({
 
         // Load user's Player Wallet balance for buy-in
         if (userId && userId !== 'guest') {
-          const balance = await WalletService.getPlayerBalance(userId, { tableId });
-          setAccountBalance(balance);
+          /* 2026-08-27: a failed read must not present itself as an empty
+             wallet on the buy-in sheet. Keep the last known figure on unknown;
+             the buy-in RPC is the authority either way and refuses an
+             underfunded entry. */
+          const rb = await WalletService.readPlayerBalance(userId, { tableId });
+          if (rb.balance !== null) setAccountBalance(rb.balance);
 
           // FIX 136: Check 2-hour re-entry restriction from recent cashout
           const { data: cashoutHistory } = await supabase
@@ -8626,8 +8645,13 @@ export default function TablePage({
       if (payload.balance !== undefined) {
         setAccountBalance(payload.balance);
       } else {
-        WalletService.getPlayerBalance(userId, { tableId })
-          .then(setAccountBalance)
+        /* 2026-08-27: same rule - .then(setAccountBalance) on a helper that
+           collapses failures wrote a 0 into the on-screen balance whenever a
+           resync was refused. */
+        WalletService.readPlayerBalance(userId, { tableId })
+          .then((rb) => {
+            if (rb.balance !== null) setAccountBalance(rb.balance);
+          })
           .catch((e) => reportError(e, 'TablePage.balanceSync'));
       }
     }

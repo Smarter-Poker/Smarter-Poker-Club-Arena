@@ -15815,3 +15815,25 @@ and the frozen-pool invariant reads drift 0.00. The 4 surviving criticals are
 REAL and are for Dan: Club JAQK treasury -78,057.05, SHARK CLUB treasury
 -32,320.73, Midway Union treasury negative at -1,202.80, and seat exit #15448
 (55 chips).
+
+## 2026-08-27 — Phase-4 sweep: the loaded gun the last audit left behind (cowork-mobile)
+
+Full write-up: `.agent/audits/2026-08-27-phase4-unknown-is-not-zero.md`
+
+Swept the three bug CLASSES from phases 2-3 rather than hunting instances, and
+control-tested every detector before believing its result.
+
+- CONSTRAINT-vs-WRITER drift (class B): swept DB functions (9 call sites of
+  log_wallet_transaction, all permitted) and the World Hub API (19 real literal
+  writes inspected, 0 violations). `ledger_reconcile_log` was the only
+  instance and is already fixed. Noted honestly: the CA-client run of this
+  detector returned an EMPTY that a control test proved worthless.
+- UNKNOWN-collapsed-to-ZERO (class C): the 2026-08-25 audit fixed one call site
+  and left `WalletService.getPlayerBalance`, whose body was `r.balance ?? 0`.
+  Five sites still used it - including `useGlobalBalanceSync` (blanked the
+  GLOBAL chip figure app-wide on one refused read) and `ChipTransferModal`
+  (blocked an agent from sending chips they held). All five now guard on null
+  and keep the last known good value; the helper is deleted.
+- New pin `tests/unit/UnknownBalanceIsNotZero.test.ts` (mutation-tested).
+
+Verified: tsc clean, 7,331/7,331 tests, deprecated-table gate green.

@@ -41,6 +41,8 @@ import { sweepIncompleteHorses } from './services/HorseOnboarding.js';
 import { startHorseLeague } from './benchmark/HorseLeague.js';
 import { startHorseDailyAudit } from './services/HorseDailyAudit.js';
 import { startBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
+import { startHorseLaneLoader } from './services/HorseLaneLoader.js';
+import { startHorseOverlayGuard } from './services/HorseOverlayGuard.js';
 import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -291,6 +293,12 @@ httpServer.listen(PORT, () => {
   // Proof of receipt (Dan 2026-08-26): live layer-fire counters, flushed to
   // horse_brain_telemetry every minute for the daily audit + admin panel.
   startBrainTelemetryFlush();
+  // Game lanes (Dan 2026-08-27): the exact 33/33/34 split lives in the
+  // database; this hydrates it and re-balances when the fleet grows.
+  startHorseLaneLoader();
+  // Overlay guard (Dan 2026-08-27): Midway Union guaranteed events get topped
+  // up with horses that are not already in them, so no overlay occurs.
+  startHorseOverlayGuard();
   // V7 (2026-07-24): humanlike session rhythms — horses stand up after real
   // sessions via the SAME hand-boundary-safe leaveTable() path humans use;
   // the fleet manager reseeds fresh horses within its 30s cycle.

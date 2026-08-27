@@ -87,10 +87,28 @@ export function BBJRulesPanel({
   return (
     <div className={`bbj-rules${embedded ? ' bbj-rules--embedded' : ''}`}>
       {section === 'both' && (
-        <div className="bbj-rules__tabs" role="tablist">
+        <div
+          className="bbj-rules__tabs"
+          role="tablist"
+          aria-label="Jackpot rules"
+          onKeyDown={(e) => {
+            // Half a tablist is worse than none: a reader announced "tab 1 of 2"
+            // and the arrow keys did nothing.
+            if (e.key === 'ArrowLeft' || e.key === 'Home') {
+              e.preventDefault();
+              setTab('qualifying');
+            } else if (e.key === 'ArrowRight' || e.key === 'End') {
+              e.preventDefault();
+              setTab('payout');
+            }
+          }}
+        >
           <button
             role="tab"
+            id="bbj-rules-tab-qualifying"
             aria-selected={tab === 'qualifying'}
+            aria-controls="bbj-rules-panel"
+            tabIndex={tab === 'qualifying' ? 0 : -1}
             className={`bbj-rules__tab${tab === 'qualifying' ? ' is-active' : ''}`}
             onClick={() => setTab('qualifying')}
           >
@@ -98,7 +116,10 @@ export function BBJRulesPanel({
           </button>
           <button
             role="tab"
+            id="bbj-rules-tab-payout"
             aria-selected={tab === 'payout'}
+            aria-controls="bbj-rules-panel"
+            tabIndex={tab === 'payout' ? 0 : -1}
             className={`bbj-rules__tab${tab === 'payout' ? ' is-active' : ''}`}
             onClick={() => setTab('payout')}
           >
@@ -108,7 +129,13 @@ export function BBJRulesPanel({
       )}
 
       {active === 'qualifying' && (
-        <div className="bbj-rules__body">
+        <div
+          className="bbj-rules__body"
+          id="bbj-rules-panel"
+          role="tabpanel"
+          aria-labelledby="bbj-rules-tab-qualifying"
+          tabIndex={0}
+        >
           <table className="bbj-rules__table">
             <thead>
               <tr>
@@ -156,7 +183,13 @@ export function BBJRulesPanel({
       )}
 
       {active === 'payout' && (
-        <div className="bbj-rules__body">
+        <div
+          className="bbj-rules__body"
+          id="bbj-rules-panel"
+          role="tabpanel"
+          aria-labelledby="bbj-rules-tab-payout"
+          tabIndex={0}
+        >
           <p className="bbj-rules__note">
             A Jackpot Hit Pays A Share Of The Main Pool Set By The Stakes You Were Playing &mdash;
             Not The Whole Pool. That Share Is Then Split 50% To The Bad-Beat Hand, 25% To The Hand

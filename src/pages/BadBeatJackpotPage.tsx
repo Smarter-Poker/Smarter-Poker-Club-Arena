@@ -270,13 +270,35 @@ export default function BadBeatJackpotPage() {
           prevAmountRef.current = jackpotData.main_balance || 0;
         }
 
-        // 2026-08-18: pool facts from the LEDGER (the pool counters have
-        // drifted: 161,442 counter vs 261,316 actual rows).
-        if (jackpotData?.id) {
-          const { data: factRows } = await supabase.rpc('fn_bbj_pool_facts', {
-            p_pool_id: jackpotData.id,
-          });
-          if (getIsMounted && !getIsMounted()) return;
+        /**
+         * The two reads below do not depend on each other and were awaited one
+         * after the other, so the page paid two full round trips in series on
+         * every load and every HAND_COMPLETED bus tick. They are the same two
+         * calls, issued together.
+         *
+         * 2026-08-18: pool facts come from the LEDGER, because the pool
+         * counters have drifted (161,442 counter vs 261,316 actual rows).
+         *
+         * "Your contribution" used to read bbj_contributions.player_id, which
+         * is NULL on all 550,782 rows — the card always computed 0 and never
+         * rendered, after pulling up to 10,000 rows to find that out. The BBJ
+         * fee comes out of the POT, so a player's honest share is
+         * fee x (their pot contribution / pot size), which is what the RPC
+         * returns, for the calling user only.
+         */
+        const wantsMine = Boolean(user?.id && jackpotData?.id);
+        const [factsRes, mineRes] = await Promise.all([
+          jackpotData?.id
+            ? supabase.rpc('fn_bbj_pool_facts', { p_pool_id: jackpotData.id })
+            : Promise.resolve({ data: null }),
+          wantsMine
+            ? supabase.rpc('fn_bbj_my_contribution', { p_pool_id: jackpotData!.id, p_days: 90 })
+            : Promise.resolve({ data: null }),
+        ]);
+        if (getIsMounted && !getIsMounted()) return;
+
+        {
+          const factRows = factsRes.data;
           const f = Array.isArray(factRows) ? factRows[0] : factRows;
           if (f) {
             setPoolFacts({
@@ -286,18 +308,8 @@ export default function BadBeatJackpotPage() {
           }
         }
 
-        // "Your contribution" used to read bbj_contributions.player_id, which
-        // is NULL on all 550,782 rows — the card always computed 0 and never
-        // rendered, after pulling up to 10,000 rows to find that out. The BBJ
-        // fee comes out of the POT, so a player's honest share is
-        // fee x (their pot contribution / pot size) — which is what this RPC
-        // returns, for the calling user only.
-        if (user?.id && jackpotData?.id) {
-          const { data: mineRows } = await supabase.rpc('fn_bbj_my_contribution', {
-            p_pool_id: jackpotData.id,
-            p_days: 90,
-          });
-          if (getIsMounted && !getIsMounted()) return;
+        if (wantsMine) {
+          const mineRows = mineRes.data;
           const mine = Array.isArray(mineRows) ? mineRows[0] : mineRows;
           if (mine) {
             setPlayerContribution(Number(mine.attributed_chips) || 0);

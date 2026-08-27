@@ -175,7 +175,6 @@ export function BBJInfoModal({
     // re-measured the scrollbar - a forced layout - on every engine tick while
     // the popup was open at a live table. The handler is held in a ref so the
     // effect depends only on whether the popup is open.
-     
   }, [isOpen]);
 
   // A reopened popup starts on the winners list, never inside the last hand
@@ -277,6 +276,7 @@ export function BBJInfoModal({
           id="bbj-tabpanel"
           role="tabpanel"
           aria-labelledby={`bbj-tab-${tab}`}
+          tabIndex={0}
         >
           {tab === 'winner' &&
             (openHandPayoutId ? (

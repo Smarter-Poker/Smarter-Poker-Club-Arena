@@ -121,7 +121,7 @@ export default function TransactionLedgerView({
   if (entries.length === 0) {
     return (
       <div style={{ padding: '24px', textAlign: 'center', color: '#666' }}>
-        <div style={{ fontSize: '32px', marginBottom: '8px', opacity: 0.5 }}>{'\u{1F4CB}'}</div>
+        <div style={{ fontSize: '32px', marginBottom: '8px', opacity: 0.5 }}>{'▤'}</div>
         <div>No Transactions Yet</div>
       </div>
     );

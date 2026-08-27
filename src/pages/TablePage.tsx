@@ -10826,6 +10826,16 @@ export default function TablePage({
           for (const [uid, idxs] of Object.entries(winHoleCardIndices)) {
             mergedHole[uid] = mergedHole[uid] ? [...new Set([...mergedHole[uid], ...idxs])] : idxs;
           }
+          // AUDIT FIX 2026-08-26 (post-#1368 review): a user winning the main
+          // pot AND a side pot arrives as two per-pot shares — spreading the
+          // second event's map over the first OVERWROTE the earlier share and
+          // understated awardedPot. SUM per user instead, the accumulator
+          // semantics heroHandOutcomeRef has always used for this exact
+          // multi-fire, fenced by the same hand-start resets.
+          const mergedAmounts: Record<string, number> = { ...prevWin.amounts };
+          for (const [uid, amt] of Object.entries(amounts)) {
+            mergedAmounts[uid] = (mergedAmounts[uid] ?? 0) + (Number(amt) || 0);
+          }
           const merged = {
             playerIds: [...new Set([...prevWin.playerIds, ...winnerIds])],
             handName: winHandName || prevWin.handName,
@@ -10834,7 +10844,7 @@ export default function TablePage({
             cardIndices: winCardIndices.length > 0 ? winCardIndices : prevWin.cardIndices,
             holeCardIndices: mergedHole,
             handNames: { ...prevWin.handNames, ...handNamesNow },
-            amounts: { ...prevWin.amounts, ...amounts },
+            amounts: mergedAmounts,
             boardHandNames: boardHandNames ?? prevWin.boardHandNames,
           };
           setWinnerInfo(merged);

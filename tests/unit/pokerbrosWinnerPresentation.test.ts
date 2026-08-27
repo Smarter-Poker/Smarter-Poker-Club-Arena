@@ -227,6 +227,13 @@ describe('multi-board and chopped pots get the same winner display', () => {
     );
   });
 
+  it('a user winning several pots SUMS their shares, never overwrites them', () => {
+    expect(TABLE_PAGE).toMatch(
+      /mergedAmounts\[uid\]\s*=\s*\(mergedAmounts\[uid\]\s*\?\?\s*0\)\s*\+/
+    );
+    expect(TABLE_PAGE).toMatch(/amounts:\s*mergedAmounts/);
+  });
+
   it('handNames resets with the rest of winnerInfo at hand start', () => {
     const clears = TABLE_PAGE.match(/handNames:\s*\{\}/g) || [];
     expect(clears.length).toBeGreaterThanOrEqual(3);

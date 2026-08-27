@@ -106,6 +106,7 @@ import { normalizeCardBack } from '../components/table/CardImage';
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import { useButtonImage } from '../hooks/useButtonImage';
 
+import { cashBuyInRange } from '../lib/cashBuyIn';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { parseBlindStructure } from '../utils/parseBlindStructure';
@@ -458,6 +459,8 @@ interface TableState {
   tableName: string;
   gameType: 'NLH' | 'PLO4' | 'PLO5' | 'PLO6' | 'PLO8' | 'SHORT_DECK' | string;
   blinds: string;
+  minBuyIn: number;
+  maxBuyIn: number;
   maxPlayers: 6 | 9;
   pot: number;
   sidePots: SidePot[];
@@ -1485,6 +1488,8 @@ export default function TablePage({
       tableName: init?.tableName || 'Loading...',
       gameType: init?.gameType || 'NLH',
       blinds: b,
+      minBuyIn: init?.minBuyIn || 0,
+      maxBuyIn: init?.maxBuyIn || 0,
       maxPlayers: maxP,
       pot: 0,
       sidePots: [],
@@ -6943,6 +6948,8 @@ export default function TablePage({
         big_blind: number | null;
         max_players: number | null;
         club_id: string | null;
+        min_buy_in: number | null;
+        max_buy_in: number | null;
         settings: unknown;
       };
       let table: TableBootstrapRow | null = null;
@@ -6955,7 +6962,7 @@ export default function TablePage({
         const res = await supabase
           .from('tables')
           .select(
-            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings'
+            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in'
           )
           .eq('id', tableId)
           .maybeSingle();
@@ -7000,6 +7007,16 @@ export default function TablePage({
           gameType: (table.game_variant || table.game_type || 'NLH') as any,
           isTournament: table.game_type === 'tournament' || !!table.tournament_id,
           tournamentId: table.tournament_id || undefined,
+          minBuyIn: cashBuyInRange({
+            big_blind: table.big_blind,
+            min_buy_in: table.min_buy_in,
+            max_buy_in: table.max_buy_in,
+          }).min,
+          maxBuyIn: cashBuyInRange({
+            big_blind: table.big_blind,
+            min_buy_in: table.min_buy_in,
+            max_buy_in: table.max_buy_in,
+          }).max,
           // Reconnects happen after the one-shot event. TournamentService
           // canonically names the consolidated table "Final Table".
           isFinalTable:
@@ -9285,7 +9302,7 @@ export default function TablePage({
       try {
         // null = read failed ("could not find out") — yield nothing on a guess.
         const entries = (await waitlistService.getTableWaitlist(tableId)) ?? [];
-        if (entries.length > 0) {
+        if (entries && entries.length > 0) {
           const yielded = await HydraService.checkWaitlistAndYield(tableId, entries.length);
           if (yielded) {
             console.debug('[Horses] Yielded horse seat for waiting real player');
@@ -13475,7 +13492,7 @@ export default function TablePage({
     try {
       const entries = await waitlistService.getTableWaitlist(tableId);
       if (entries === null) return; // read failed — keep what the modal has
-      if (entries.length === 0) {
+      if (!entries || entries.length === 0) {
         setWaitListPlayers([]);
         return;
       }
@@ -13640,7 +13657,7 @@ export default function TablePage({
       // authoritative, atomic debit, and it rejects anything over the table's
       // real cap without charging the wallet.
       if (isAutoRebuyEnabled && !tableState.isTournament && !autoTopUpInFlightRef.current) {
-        const maxBuyIn = safeBB(tableState.blinds) * 100;
+        const maxBuyIn = tableState.maxBuyIn;
         const currentStack = Number(heroSeatData.stack || 0);
 
         if (maxBuyIn > 0 && currentStack < maxBuyIn && accountBalance > 0) {
@@ -16383,6 +16400,8 @@ export default function TablePage({
         ambientSoundsAllowed={ambientSoundsAllowed}
         tableName={tableState.tableName}
         blinds={tableState.blinds}
+        minBuyIn={tableState.minBuyIn}
+        maxBuyIn={tableState.maxBuyIn}
         gameType={tableState.gameType}
         isTournament={tableState.isTournament}
         tournamentId={tableState.tournamentId}
@@ -16452,12 +16471,6 @@ export default function TablePage({
         ritChosenRuns={ritChosenRuns}
         ritMaxRuns={ritMaxRuns}
         ritPlayerCount={ritPlayerCount}
-        ritBoardCards={ritPanelBoardCards}
-        ritPotAmount={ritPotAmount}
-        ritPanelPlayers={ritPanelPlayers}
-        ritTotalSeconds={ritTotalSeconds}
-        ritHeroAccepted={ritHeroAccepted}
-        ritChooserHasDecided={ritChooserHasDecided}
         onRITChooserDecide={handleRITChooserDecide}
         onRITAccept={handleRITAccept}
         onRITDecline={handleRITDecline}
@@ -16522,12 +16535,7 @@ export default function TablePage({
            listens to (see the subscription above) — this is the direct path
            for the panel's own avatar row, so it updates without waiting on
            the bus round trip. */
-        onAvatarChanged={(url) => {
-          setTableState((prev) => ({
-            ...prev,
-            players: prev.players.map((p) => (p && p.id === userId ? { ...p, avatar: url } : p)),
-          }));
-        }}
+
         onCloseBuyInModal={() => {
           // Releasing the modal must release the optimistic seat too, or the
           // player is locked out of every seat at the table by their own
@@ -16775,8 +16783,8 @@ export default function TablePage({
             updateSetting('fourColorDeck', settingsUpdate.fourColorDeck);
           if (settingsUpdate.confirmAllIn !== undefined)
             updateSetting('confirmAllIn', settingsUpdate.confirmAllIn);
-          if (settingsUpdate.showBetSizePresets !== undefined)
-            updateSetting('showBetSizePresets', settingsUpdate.showBetSizePresets);
+          if ((settingsUpdate as any).showBetSizePresets !== undefined)
+            updateSetting('showBetSizePresets', (settingsUpdate as any).showBetSizePresets);
           if (settingsUpdate.animationSpeed !== undefined) {
             /* INVERTED UNTIL 2026-08-26. `--animation-speed` is a DURATION
                MULTIPLIER — bigger is slower — as utils/animationSpeed.ts and
@@ -16935,7 +16943,7 @@ export default function TablePage({
           }
         }}
         // Tournament Break
-        tournamentBreak={tournamentBreak}
+        tournamentBreak={tournamentBreak as any}
         // Announcement
         announcement={announcement}
         onDismissAnnouncement={() => setAnnouncement(null)}

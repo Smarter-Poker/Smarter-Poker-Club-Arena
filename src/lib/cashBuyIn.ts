@@ -33,7 +33,7 @@
 
 /** The standard band the table's BuyInModal offers, in big blinds. */
 export const CASH_MIN_BB = 40;
-export const CASH_MAX_BB = 100;
+export const CASH_MAX_BB = 200;
 
 export interface CashBuyInSource {
   big_blind?: number | null;
@@ -58,28 +58,18 @@ export function cashBuyInRange(row: CashBuyInSource): CashBuyInRange {
   const bandMin = bb * CASH_MIN_BB;
   const bandMax = bb * CASH_MAX_BB;
 
-  const rowMin = positive(row.min_buy_in) || bandMin;
-  const rowMax = positive(row.max_buy_in) || bandMax;
+  const rowMin = positive(row.min_buy_in);
+  const rowMax = positive(row.max_buy_in);
 
-  /**
-   * No blinds AND no columns means the row cannot say. Returning 0/0 printed
-   * the literal "0" on the card and "0 Min / 0 Max" in the panel — a claim
-   * about money that is not merely unknown but wrong. NaN was fixed here
-   * earlier; zero is the same bug wearing a number.
-   */
   if (bb <= 0) {
-    if (rowMin <= 0 && rowMax <= 0) return { min: 0, max: 0, unknown: true };
-    return { min: rowMin, max: Math.max(rowMin, rowMax) };
+    if (!rowMin && !rowMax) return { min: 0, max: 0, unknown: true };
+    return { min: rowMin || 0, max: Math.max(rowMin || 0, rowMax || 0) };
   }
 
-  const min = Math.max(rowMin, bandMin);
-  const max = Math.min(rowMax, bandMax);
+  const min = rowMin > 0 ? rowMin : bandMin;
+  const max = rowMax > 0 ? rowMax : bandMax;
 
-  // Empty intersection: the row is configured outside the standard band, and
-  // the row is what the database enforces.
-  if (max < min) return { min: rowMin, max: Math.max(rowMin, rowMax) };
-
-  return { min, max };
+  return { min, max: Math.max(min, max) };
 }
 
 /** "1,000 - 2,500", or a single figure when the range has collapsed. */

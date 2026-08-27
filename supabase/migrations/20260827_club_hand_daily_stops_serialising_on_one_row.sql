@@ -1,0 +1,30 @@
+-- Applied to production 2026-08-27 as `club_hand_daily_stops_serialising_on_one_row`.
+-- Authoritative bodies live in the database.
+--
+-- INSERT INTO hand_history was 8.1% of database CPU at 25.41ms mean for a
+-- SINGLE-ROW INSERT. Cause: trg_hand_history_club_member_stats upserts
+-- club_hand_daily, which held exactly ONE ROW PER CLUB PER DAY. Measured
+-- 2026-08-27: 1 row, 40,437 hands already contending on it, on course for
+-- ~460,000 by midnight. Every hand insert queued behind that one row lock.
+--
+-- 20260823340000 fought this one level up - its title is "hand_history stops
+-- serialising on one row" - by moving the upsert to the END of the trigger so
+-- the lock is held for less of the transaction. That helped. It could not fix
+-- the fact that there was only one row to lock.
+--
+-- FIX: 16 shards keyed by backend pid. `club_hand_daily` becomes a VIEW summing
+-- them, so all five reader functions and both app call sites are unchanged.
+-- Audited across both repos: no `.from('club_hand_daily')` exists anywhere;
+-- every application access is a read through an RPC.
+--
+-- security_invoker ON THE VIEW IS LOAD-BEARING. The base table is RLS ENABLED
+-- WITH ZERO POLICIES (deny-all) while its grants still list anon:SELECT. A
+-- default view runs as its OWNER and would have handed anon the whole table.
+--
+-- ca_backfill_club_hand_daily writes ABSOLUTE totals, so it REPLACES every
+-- shard rather than adding a seventeenth. DROP/CREATE rather than REPLACE,
+-- because CREATE OR REPLACE cannot remove the p_force DEFAULT and the
+-- signature must stay identical for /api/cron/club-stats-maintenance.
+--
+-- MEASURED ON LIVE TRAFFIC: 25.41ms -> 8.40ms, 67% faster.
+-- Rollback is pasted in full in the applied migration.

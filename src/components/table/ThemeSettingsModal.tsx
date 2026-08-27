@@ -30,6 +30,8 @@ import { useToast } from '../common/Toast';
 import './ThemeSettingsModal.css';
 import { reportError } from '../../utils/errorReporter';
 import { useSettingsStore } from '../../stores/useSettingsStore';
+import { avatarService } from '../../services/AvatarService';
+import TableStudioGameplayPreview from './TableStudioGameplayPreview';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -53,6 +55,7 @@ interface ThemeSelection {
 
 type ThemeTab = 'themes' | 'table' | 'button' | 'background' | 'cards';
 type BackgroundGroup = 'places-rooms' | 'skins';
+type AssetFilter = 'all' | 'free' | 'vip' | 'favorites' | 'recent';
 
 interface ThemeAsset {
   id: string;
@@ -354,6 +357,38 @@ const DEFAULT_SELECTION: ThemeSelection = {
   cards_id: 'classic_red',
 };
 
+function readLocalJson<T>(key: string, fallback: T): T {
+  try {
+    return JSON.parse(localStorage.getItem(key) || '') as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLocalJson(key: string, value: unknown): boolean {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeStoredSelection(value: unknown): ThemeSelection | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Partial<ThemeSelection>;
+  if (!raw.table_id || !raw.button_id || !raw.background_id || !raw.cards_id) return null;
+  return {
+    theme_id: raw.theme_id || DEFAULT_SELECTION.theme_id,
+    table_id: normalizeFeltId(raw.table_id),
+    button_id: BUTTON_ASSETS.some((asset) => asset.id === raw.button_id)
+      ? raw.button_id
+      : DEFAULT_SELECTION.button_id,
+    background_id: normalizeBackgroundId(raw.background_id),
+    cards_id: normalizeCardBack(raw.cards_id),
+  };
+}
+
 /**
  * Dan 2026-08-17 (STEP 8) — Tab 1 preset bundles. Picking a Theme fills the
  * other four categories with a coordinated set (each tab can still be
@@ -547,6 +582,7 @@ function renderAssetPreview(tab: ThemeTab, asset: ThemeAsset) {
 }
 
 export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSettingsModalProps) {
+  const modalRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
   const navigate = useNavigate();
   const [showVipPrompt, setShowVipPrompt] = useState(false);
@@ -555,6 +591,13 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   const [gameType, setGameType] = useState<string>('ALL');
   const [selection, setSelection] = useState<ThemeSelection>({ ...DEFAULT_SELECTION });
   const [saving, setSaving] = useState(false);
+  const [previewFinalTable, setPreviewFinalTable] = useState(false);
+  const [previewAvatars, setPreviewAvatars] = useState<string[]>([]);
+  const [assetFilter, setAssetFilter] = useState<AssetFilter>('all');
+  const [assetSearch, setAssetSearch] = useState('');
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [recentIds, setRecentIds] = useState<string[]>([]);
+  const [loadoutRevision, setLoadoutRevision] = useState(0);
   /** Card backs bought with diamonds in the store. See canAccessAsset. */
   const [ownedCardBacks, setOwnedCardBacks] = useState<string[]>([]);
   const uiMode = useSettingsStore((state) => state.theme);
@@ -567,6 +610,72 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   useEffect(() => {
     selectionRef.current = selection;
   }, [selection]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const modal = modalRef.current;
+    const focusable = () =>
+      Array.from(
+        modal?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]'
+        ) || []
+      );
+    focusable()[0]?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const controls = focusable();
+      if (!controls.length) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      previousFocus?.focus();
+    };
+  }, [isOpen, onClose]);
+
+  // The preview uses the same production library as AvatarGallery. No preview-
+  // only portraits are bundled or generated. The first six stable library
+  // entries become the representative table seats; a failed library request
+  // leaves neutral loading silhouettes instead of inventing replacement art.
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    let mounted = true;
+    avatarService
+      .getAvatarLibraryResult(userId)
+      .then(({ avatars }) => {
+        if (!mounted) return;
+        setPreviewAvatars(avatars.slice(0, 6).map((avatar) => avatar.thumbUrl || avatar.imageUrl));
+      })
+      .catch((error) => reportError(error, 'ThemeSettingsModal.Avatar_preview_load_failed'));
+    return () => {
+      mounted = false;
+    };
+  }, [isOpen, userId]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const owner = userId || 'guest';
+    const favorites = readLocalJson<unknown>(`table-studio-favorites:${owner}`, []);
+    const recent = readLocalJson<unknown>(`table-studio-recent:${owner}`, []);
+    setFavoriteIds(
+      Array.isArray(favorites) ? favorites.filter((id) => typeof id === 'string') : []
+    );
+    setRecentIds(Array.isArray(recent) ? recent.filter((id) => typeof id === 'string') : []);
+  }, [isOpen, userId]);
 
   // ── Which paid card backs has this player actually bought? ──
   // Without this the modal padlocks a design the player owns (see
@@ -778,6 +887,12 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
          FAILED write already restores `previous` inside handleSave. */
       const before = selectionRef.current;
       setSelection((prev) => ({ ...prev, ...newSel }));
+      const recentKey = `${tab}:${assetId}`;
+      setRecentIds((previous) => {
+        const next = [recentKey, ...previous.filter((id) => id !== recentKey)].slice(0, 12);
+        writeLocalJson(`table-studio-recent:${userId || 'guest'}`, next);
+        return next;
+      });
       void handleSave(newSel).then((ok) => {
         if (ok === false) setSelection(before);
       });
@@ -797,10 +912,75 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     handleSave({ ...DEFAULT_SELECTION });
   }, [handleSave]);
 
+  const toggleFavorite = useCallback(
+    (tab: ThemeTab, assetId: string) => {
+      const favoriteKey = `${tab}:${assetId}`;
+      setFavoriteIds((previous) => {
+        const next = previous.includes(favoriteKey)
+          ? previous.filter((id) => id !== favoriteKey)
+          : [favoriteKey, ...previous];
+        writeLocalJson(`table-studio-favorites:${userId || 'guest'}`, next);
+        return next;
+      });
+    },
+    [userId]
+  );
+
+  const randomizeAccessibleLook = useCallback(() => {
+    const pick = (assets: ThemeAsset[], tab: ThemeTab) => {
+      const accessible = assets.filter((asset) =>
+        canAccessAsset(tab, asset.id, isVip, asset.vipOnly, ownedCardBacks)
+      );
+      return accessible[Math.floor(Math.random() * accessible.length)]?.id;
+    };
+    const randomized: ThemeSelection = {
+      theme_id: selectionRef.current.theme_id,
+      table_id: pick(TABLE_ASSETS, 'table') || DEFAULT_SELECTION.table_id,
+      button_id: pick(BUTTON_ASSETS, 'button') || DEFAULT_SELECTION.button_id,
+      background_id: pick(BACKGROUND_ASSETS, 'background') || DEFAULT_SELECTION.background_id,
+      cards_id: pick(CARD_ASSETS, 'cards') || DEFAULT_SELECTION.cards_id,
+    };
+    setSelection(randomized);
+    void handleSave(randomized);
+  }, [handleSave, isVip, ownedCardBacks]);
+
+  const loadoutKey = `table-studio-loadouts:${userId || 'guest'}`;
+  const readLoadouts = useCallback((): Array<ThemeSelection | null> => {
+    const stored = readLocalJson<unknown>(loadoutKey, []);
+    if (!Array.isArray(stored)) return [null, null, null];
+    return [0, 1, 2].map((slot) => normalizeStoredSelection(stored[slot]));
+  }, [loadoutKey]);
+  const savedLoadouts = readLoadouts();
+  void loadoutRevision;
+
+  const saveLoadout = useCallback(
+    (slot: number) => {
+      const next = readLoadouts();
+      next[slot] = selectionRef.current;
+      if (!writeLocalJson(loadoutKey, next)) {
+        toast.error('Could Not Save This Loadout On This Device');
+        return;
+      }
+      setLoadoutRevision((value) => value + 1);
+      toast.success(`Loadout ${slot + 1} Saved`);
+    },
+    [loadoutKey, readLoadouts, toast]
+  );
+
+  const applyLoadout = useCallback(
+    (slot: number) => {
+      const saved = readLoadouts()[slot];
+      if (!saved) return;
+      setSelection(saved);
+      void handleSave(saved);
+    },
+    [handleSave, readLoadouts]
+  );
+
   if (!isOpen) return null;
 
   const currentField = TAB_TO_FIELD[activeTab];
-  const currentAssets =
+  const categoryAssets =
     activeTab === 'background'
       ? THEME_ASSETS.background.filter((asset) =>
           backgroundGroup === 'skins'
@@ -808,12 +988,19 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
             : !BACKGROUND_SKIN_IDS.has(asset.id)
         )
       : THEME_ASSETS[activeTab];
+  const currentAssets = categoryAssets.filter((asset) => {
+    const key = `${activeTab}:${asset.id}`;
+    if (assetSearch && !asset.name.toLowerCase().includes(assetSearch.trim().toLowerCase())) {
+      return false;
+    }
+    if (assetFilter === 'free') return !asset.vipOnly;
+    if (assetFilter === 'vip') return asset.vipOnly;
+    if (assetFilter === 'favorites') return favoriteIds.includes(key);
+    if (assetFilter === 'recent') return recentIds.includes(key);
+    return true;
+  });
   const currentSelected = selection[currentField];
 
-  const selectedTable =
-    TABLE_SKINS[normalizeFeltId(selection.table_id)] || TABLE_SKINS.classic_green;
-  const selectedBackground =
-    TABLE_BACKGROUNDS[normalizeBackgroundId(selection.background_id)] || TABLE_BACKGROUNDS.midnight;
   const selectedCardName =
     CARD_BACK_CATALOG.find((design) => design.id === normalizeCardBack(selection.cards_id))?.name ||
     'Classic Red';
@@ -821,6 +1008,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   return (
     <div className="theme-modal-overlay" onClick={onClose}>
       <div
+        ref={modalRef}
         className="theme-modal"
         role="dialog"
         aria-modal="true"
@@ -888,22 +1076,37 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           </span>
         </fieldset>
 
-        <div className="theme-modal__live-preview" aria-label="Current table appearance preview">
-          <img className="theme-modal__live-bg" src={selectedBackground} alt="" />
-          <div className="theme-modal__live-vignette" />
-          <img className="theme-modal__live-table" src={selectedTable} alt="" />
-          <div className="theme-modal__live-cards">
-            <CardBack style={normalizeCardBack(selection.cards_id)} size="sm" />
-            <CardBack style={normalizeCardBack(selection.cards_id)} size="sm" />
+        <div className="theme-modal__preview-shell">
+          <div className="theme-modal__preview-switch" aria-label="Preview table state">
+            <button
+              type="button"
+              className={!previewFinalTable ? 'active' : ''}
+              aria-pressed={!previewFinalTable}
+              onClick={() => setPreviewFinalTable(false)}
+            >
+              Standard
+            </button>
+            <button
+              type="button"
+              className={previewFinalTable ? 'active' : ''}
+              aria-pressed={previewFinalTable}
+              onClick={() => setPreviewFinalTable(true)}
+            >
+              Final Table
+            </button>
           </div>
-          <div className="theme-modal__live-button" data-button-theme={selection.button_id}>
-            D
-          </div>
-          <div className="theme-modal__live-caption">
-            <span>LIVE TABLE PREVIEW</span>
-            <strong>
-              {selectedCardName} · {GAME_TYPE_LABELS[gameType] ?? gameType}
-            </strong>
+          <div className="theme-modal__live-preview">
+            <TableStudioGameplayPreview
+              selection={selection}
+              avatarUrls={previewAvatars}
+              finalTable={previewFinalTable}
+            />
+            <div className="theme-modal__live-caption">
+              <span>{previewFinalTable ? 'AUTOMATIC MTT EVENT' : 'LIVE GAMEPLAY PREVIEW'}</span>
+              <strong>
+                {selectedCardName} · {GAME_TYPE_LABELS[gameType] ?? gameType}
+              </strong>
+            </div>
           </div>
         </div>
 
@@ -956,6 +1159,33 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           </div>
         )}
 
+        <div className="theme-modal__discovery">
+          <label>
+            <span className="sr-only">
+              Search {TABS.find((tab) => tab.key === activeTab)?.label}
+            </span>
+            <input
+              type="search"
+              value={assetSearch}
+              onChange={(event) => setAssetSearch(event.target.value)}
+              placeholder={`Search ${TABS.find((tab) => tab.key === activeTab)?.label}`}
+            />
+          </label>
+          <div className="theme-modal__filters" aria-label="Filter customization choices">
+            {(['all', 'free', 'vip', 'favorites', 'recent'] as const).map((filter) => (
+              <button
+                type="button"
+                key={filter}
+                className={assetFilter === filter ? 'active' : ''}
+                aria-pressed={assetFilter === filter}
+                onClick={() => setAssetFilter(filter)}
+              >
+                {filter === 'all' ? 'All' : filter[0].toUpperCase() + filter.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="theme-modal__section-heading">
           <div>
             <strong>{TABS.find((tab) => tab.key === activeTab)?.label}</strong>
@@ -966,6 +1196,12 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
 
         {/* Asset Grid */}
         <div className="theme-modal__grid">
+          {currentAssets.length === 0 && (
+            <div className="theme-modal__empty">
+              <strong>No Matching Designs</strong>
+              <span>Try Another Search Or Filter.</span>
+            </div>
+          )}
           {currentAssets.map((asset) => {
             const isSelected = currentSelected === asset.id;
             const isLocked = !canAccessAsset(
@@ -977,35 +1213,70 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
             );
 
             return (
-              <button
-                type="button"
-                key={asset.id}
-                className={`theme-asset ${isSelected ? 'theme-asset--selected' : ''} ${isLocked ? 'theme-asset--locked' : ''}`}
-                onClick={() => handleAssetSelect(activeTab, asset.id, asset.vipOnly)}
-                aria-pressed={isSelected}
-                aria-label={`${asset.name}${isLocked ? ', VIP required' : ''}`}
-              >
-                <div className="theme-asset__preview">
-                  {/* ── Dan 2026-08-18: show the actual thing, not a colour ──
+              <div className="theme-asset-wrap" key={asset.id}>
+                <button
+                  type="button"
+                  className={`theme-asset ${isSelected ? 'theme-asset--selected' : ''} ${isLocked ? 'theme-asset--locked' : ''}`}
+                  onClick={() => handleAssetSelect(activeTab, asset.id, asset.vipOnly)}
+                  aria-pressed={isSelected}
+                  aria-label={`${asset.name}${isLocked ? ', VIP required' : ''}`}
+                >
+                  <div className="theme-asset__preview">
+                    {/* ── Dan 2026-08-18: show the actual thing, not a colour ──
                       Every tab used to render `background: asset.thumbnail`,
                       a hand-written gradient that (in its own words)
                       "approximates each composite's palette" - so you picked a
                       table by looking at a colour smear. Each tab now renders
                       the real asset; the gradient survives only as a fallback
                       where no real asset exists for that id. */}
-                  {renderAssetPreview(activeTab, asset)}
-                  {isLocked && (
-                    <div className="theme-asset__lock">
-                      <span className="theme-asset__lock-icon">VIP</span>
-                    </div>
+                    {renderAssetPreview(activeTab, asset)}
+                    {isLocked && (
+                      <div className="theme-asset__lock">
+                        <span className="theme-asset__lock-icon">VIP</span>
+                      </div>
+                    )}
+                    {isSelected && !isLocked && <div className="theme-asset__check">✓</div>}
+                  </div>
+                  <span className="theme-asset__name">{asset.name}</span>
+                  {asset.vipOnly && !isLocked && (
+                    <span className="theme-asset__tier-badge">VIP</span>
                   )}
-                  {isSelected && !isLocked && <div className="theme-asset__check">✓</div>}
-                </div>
-                <span className="theme-asset__name">{asset.name}</span>
-                {asset.vipOnly && !isLocked && <span className="theme-asset__tier-badge">VIP</span>}
-              </button>
+                </button>
+                <button
+                  type="button"
+                  className={`theme-asset__favorite ${favoriteIds.includes(`${activeTab}:${asset.id}`) ? 'active' : ''}`}
+                  aria-label={`${favoriteIds.includes(`${activeTab}:${asset.id}`) ? 'Remove' : 'Add'} ${asset.name} ${favoriteIds.includes(`${activeTab}:${asset.id}`) ? 'from' : 'to'} favorites`}
+                  onClick={() => toggleFavorite(activeTab, asset.id)}
+                >
+                  {favoriteIds.includes(`${activeTab}:${asset.id}`) ? 'Saved' : 'Save'}
+                </button>
+              </div>
             );
           })}
+        </div>
+
+        <div className="theme-modal__loadouts" aria-label="Saved table loadouts">
+          <button
+            type="button"
+            className="theme-modal__randomize"
+            onClick={randomizeAccessibleLook}
+          >
+            Shuffle Look
+          </button>
+          {[0, 1, 2].map((slot) => (
+            <div key={slot} className="theme-modal__loadout">
+              <button type="button" onClick={() => saveLoadout(slot)}>
+                Save {slot + 1}
+              </button>
+              <button
+                type="button"
+                onClick={() => applyLoadout(slot)}
+                disabled={!savedLoadouts[slot]}
+              >
+                Use
+              </button>
+            </div>
+          ))}
         </div>
 
         {/* Footer */}

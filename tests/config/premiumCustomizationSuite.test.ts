@@ -1,0 +1,42 @@
+import { readFileSync } from 'node:fs';
+
+const read = (path: string) => readFileSync(path, 'utf8');
+
+describe('premium customization suite', () => {
+  const modal = read('src/components/table/ThemeSettingsModal.tsx');
+  const preview = read('src/components/table/TableStudioGameplayPreview.tsx');
+  const tablePage = read('src/pages/TablePage.tsx');
+  const assets = read('src/assets/tableAssets.ts');
+
+  it('uses the existing avatar service instead of a duplicate avatar catalog', () => {
+    expect(modal).toContain('.getAvatarLibraryResult(userId)');
+    expect(modal).toContain('avatar.thumbUrl || avatar.imageUrl');
+    expect(preview).not.toContain('/avatars/');
+  });
+
+  it('renders full gameplay and Final Table previews', () => {
+    expect(preview).toContain('studio-game-preview__seat');
+    expect(preview).toContain('studio-game-preview__board');
+    expect(preview).toContain('studio-game-preview__actions');
+    expect(modal).toContain('finalTable={previewFinalTable}');
+  });
+
+  it('keeps the Final Table arena event-only', () => {
+    expect(assets).toContain('final_table_broadcast: bgFinalTableBroadcast');
+    const selectableIds = assets.match(/TABLE_BACKGROUND_IDS: string\[\] = \[([\s\S]*?)\];/)?.[1];
+    expect(selectableIds).not.toContain('final_table_broadcast');
+    expect(tablePage).toContain("tableState.isFinalTable ? 'final_table_broadcast'");
+  });
+
+  it('provides mobile discovery and personal loadout controls', () => {
+    for (const feature of [
+      "'favorites'",
+      "'recent'",
+      'Shuffle Look',
+      'table-studio-loadouts:',
+      'table-studio-favorites:',
+    ]) {
+      expect(modal).toContain(feature);
+    }
+  });
+});

@@ -13676,7 +13676,9 @@ export default function TablePage({
           : v8Theme.table_id || v8Theme.theme_id || userSettings.theme || 'black'
       }
       data-final-table={tableState.isFinalTable ? 'true' : undefined}
-      data-background-theme={v8Theme.background_id || 'midnight'}
+      data-background-theme={
+        tableState.isFinalTable ? 'final_table_broadcast' : v8Theme.background_id || 'midnight'
+      }
       data-button-theme={v8Theme.button_id || 'classic-white'}
       data-cards-theme={activeCardBack}
       data-theme-preset={v8Theme.theme_id || 'default-dark'}
@@ -13702,7 +13704,9 @@ export default function TablePage({
         // designed backdrop, so a 404 / decode failure / slow first paint can
         // no longer leave the page empty — see lib/tableTheme.
         backgroundColor: DEFAULT_TABLE_BACKDROP_COLOR,
-        backgroundImage: resolveBackgroundLayers(v8Theme.background_id),
+        backgroundImage: resolveBackgroundLayers(
+          tableState.isFinalTable ? 'final_table_broadcast' : v8Theme.background_id
+        ),
         backgroundSize: `var(--sp-background-layers-size, ${TABLE_BACKGROUND_SIZE})`,
         backgroundPosition: `var(--sp-background-layers-position, ${TABLE_BACKGROUND_POSITION})`,
         backgroundRepeat: TABLE_BACKGROUND_REPEAT,
@@ -13715,6 +13719,13 @@ export default function TablePage({
                 .community-area { animation: boardFade 0.4s ease-out; }
                 .board-transition { animation: boardSlideIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
             `}</style>
+      {tableState.isFinalTable && (
+        <div className="final-table-broadcast-hud" aria-label="Final Table broadcast status">
+          <span>SMARTER POKER CHAMPIONSHIP</span>
+          <strong>FINAL TABLE</strong>
+          <b>{tableState.players.filter(Boolean).length} PLAYERS</b>
+        </div>
+      )}
       {/* AUDIT 2026-08-25 — THE ANSWER TO THE DEAD BOOKMARK.
           See the bootstrap loader for how a table that does not exist used to
           leave the player on a permanently blank felt. Rendered above the

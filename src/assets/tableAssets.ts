@@ -67,6 +67,7 @@ import bgSkinUltravioletSuits from '../assets/backgrounds/bg_skin_ultraviolet_su
 import bgSkinBlackGoldChips from '../assets/backgrounds/bg_skin_black_gold_chips.jpg';
 import bgSkinGoldenSparks from '../assets/backgrounds/bg_skin_golden_sparks.jpg';
 import bgSkinPlatinumDeco from '../assets/backgrounds/bg_skin_platinum_deco.jpg';
+import bgFinalTableBroadcast from '../assets/backgrounds/bg_final_table_broadcast.jpg';
 
 export const TABLE_SKINS: Record<string, string> = {
   classic_green: skinClassicGreen,
@@ -101,6 +102,9 @@ export const TABLE_SKINS: Record<string, string> = {
 };
 
 export const TABLE_BACKGROUNDS: Record<string, string> = {
+  // Event-only arena paired with the Final Table skin. It is intentionally
+  // absent from TABLE_BACKGROUND_IDS: game state activates it, not the picker.
+  final_table_broadcast: bgFinalTableBroadcast,
   midnight: bgMidnight,
   royal_indigo: bgRoyalIndigo,
   emerald_room: bgEmeraldRoom,

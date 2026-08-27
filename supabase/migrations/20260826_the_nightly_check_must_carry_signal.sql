@@ -1,0 +1,12 @@
+-- Applied to production 2026-08-26 as `the_nightly_check_must_carry_signal`.
+--
+-- reconcile_ledger_nightly reported 575 CRITICAL rows every night for ten-plus
+-- nights, all comparing frozen public.wallets against a dead ledger, differing
+-- by exactly 46,316,237.17 two nights running. That is why a 115-day outage of
+-- the audit trail went unseen.
+--
+-- fn_chip_integrity_report() is the five questions worth paging on:
+--   ledger_liveness, drift_since_baseline, ledger_write_failures,
+--   unaccounted_seat_exits, legacy_wallets_frozen.
+-- The frozen pool can never raise a critical for merely existing; only a NEW
+-- write to it is news.

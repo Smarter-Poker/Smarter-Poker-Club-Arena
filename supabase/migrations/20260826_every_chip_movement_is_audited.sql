@@ -1,0 +1,16 @@
+-- Applied to production 2026-08-26 as migration `every_chip_movement_is_audited`.
+-- See fn_club_members_ledger_writer() in the database for the authoritative body.
+--
+-- chip_ledger went silent on 2026-05-03 because not one of the 59 money-moving
+-- functions writes to it. The obvious repair is to edit those functions. This
+-- deliberately does NOT: 59 hand-edits will miss some, and do nothing for the
+-- money path somebody writes next month.
+--
+-- Instead the LIVE POOL is instrumented. club_members.chip_balance is where
+-- every chip actually lives, so a row-level trigger on that column sees every
+-- movement by construction.
+--
+-- THE TRIGGER CAN NEVER REFUSE THE WRITE (CLAUDE.md 11.5). Probed by forcing
+-- the insert to fail: balance moved 24979 -> 25029 with 0 ledger rows written,
+-- transaction rolled back. The swallow is COUNTED in ca_ledger_write_failures
+-- so a broken writer is loud without being fatal.

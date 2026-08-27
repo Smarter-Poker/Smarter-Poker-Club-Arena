@@ -439,42 +439,6 @@
   }
 }
 
-/* Close button */
-.table-tab-bar__close {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 0.75rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  flex-shrink: 0;
-  padding: 0;
-  line-height: 1;
-}
-
-/* Audit 2026-08-20: hover-only meant the close control was UNREACHABLE on
-   touch devices (no hover) and invisible to keyboard users (display:none is
-   out of the tab order). Show it on hover, whenever focus is inside the tab,
-   and always on the active tab so touch users can close the table they are
-   looking at. */
-.table-tab-bar__tab:hover .table-tab-bar__close,
-.table-tab-bar__tab:focus-within .table-tab-bar__close,
-.table-tab-bar__tab--active .table-tab-bar__close {
-  display: flex;
-}
-
-.table-tab-bar__close:hover {
-  background: rgba(239, 68, 68, 0.5);
-  color: #ffffff;
-}
-
 /* ─────────────────────────────────────────────────────────────────────────────
    ADD TABLE "+" BUTTON
    ───────────────────────────────────────────────────────────────────────────── */
@@ -707,40 +671,8 @@
     letter-spacing: 0;
   }
 
-  /* The close control used to sit in the pill's flow — an 18px circle plus a
-     6px gap, nearly half of a 55px pill, and the one thing a six-card preview
-     could not afford. Floated over the pill's right edge it costs the layout
-     nothing at all. The ::before is an invisible pad so the hit box is a
-     finger rather than a 12px circle; the pill's overflow:hidden trims ~2px
-     off its outer edge, leaving roughly 22x24 of live target.
-
-     12px at right:1px, down from 14px at right:3px (Dan 2026-08-25, round 2).
-     Its footprint is what the pill's now-SYMMETRIC label reserve has to clear
-     on BOTH sides, so every pixel shaved here is two pixels back for the
-     label: 13px of footprint against the old 17px is 8px of label width
-     recovered, which is most of what true centring cost. */
-  .table-tab-bar__close {
-    position: absolute;
-    top: 50%;
-    right: 1px;
-    transform: translateY(-50%);
-    width: 12px;
-    height: 12px;
-    font-size: 0.5625rem;
-    background: rgba(8, 10, 16, 0.85);
-    color: rgba(255, 255, 255, 0.9);
-    z-index: 3;
-  }
-
-  /* -6px against a 12px disc = a 24x24 hit box, the same finger-sized target
-     the 14px disc had at -5px. The disc shrank; the thing you actually aim at
-     did not. */
-  .table-tab-bar__close::before {
-    content: '';
-    position: absolute;
-    inset: -6px;
-    border-radius: 50%;
-  }
+  /* The inline × close control was removed 2026-08-26 (Dan: no off-button
+     inside the action pills) — its desktop and mobile rules went with it. */
 
   /* Turn badge and action chip share the pill with the label, so both shrink
      with it — at their desktop sizes either one ate more than half of a 55px

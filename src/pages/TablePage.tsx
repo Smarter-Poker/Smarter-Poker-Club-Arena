@@ -1411,8 +1411,15 @@ export default function TablePage({
     }
   }, [rawEngineSnapshot, rabbitHuntFreezeEnd]);
 
+  /* 2026-08-26 rabbit audit: `rabbitHuntFreezeEnd` is in this effect's deps,
+     so STARTING a freeze re-ran it with the SAME rawEngineLastEvent and pushed
+     a duplicate into the queue — every frozen event replayed twice. Track the
+     last event processed so each is routed exactly once. */
+  const lastRoutedEngineEventRef = useRef<any>(null);
   useEffect(() => {
     if (!rawEngineLastEvent) return;
+    if (lastRoutedEngineEventRef.current === rawEngineLastEvent) return;
+    lastRoutedEngineEventRef.current = rawEngineLastEvent;
     if (rabbitHuntFreezeEnd > Date.now()) {
       frozenEventQueueRef.current.push(rawEngineLastEvent);
     } else {
@@ -1422,8 +1429,11 @@ export default function TablePage({
 
   useEffect(() => {
     if (rabbitHuntFreezeEnd === 0) return;
-    const msLeft = rabbitHuntFreezeEnd - Date.now();
-    if (msLeft <= 0) return;
+    /* 2026-08-26 rabbit audit: an already-expired deadline used to `return`
+       without unfreezing — the freeze latched and the queue never drained if
+       this effect first evaluated late (background-tab throttling). Expired
+       now just means a zero-delay timer: the same unfreeze-and-replay runs. */
+    const msLeft = Math.max(0, rabbitHuntFreezeEnd - Date.now());
 
     const t = setTimeout(() => {
       setRabbitHuntFreezeEnd(0);
@@ -1567,6 +1577,12 @@ export default function TablePage({
       // scrubs their hole cards from the public broadcast (returns cards=[]).
       // Preserve the hero's previously-delivered cards in local state so the
       // UI can dim them rather than erase them.
+      /* `?? 0` on both: an unknown hand number must read as "cannot tell",
+         which the `<= 0` arms then treat as "keep the cards". */
+      const cardHoldNextHand = mapped.handNumber ?? 0;
+      const cardHoldPrevHand = prev.handNumber ?? 0;
+      const cardHoldSameHand =
+        cardHoldNextHand <= 0 || cardHoldPrevHand <= 0 || cardHoldNextHand === cardHoldPrevHand;
       const nextPlayers: (SeatPlayer | null)[] = mapped.players.map((p, i) => {
         if (!p) return null;
         const sp = p as unknown as SeatPlayer;
@@ -1604,21 +1620,41 @@ export default function TablePage({
              does this explicitly), and a stale holding can never outlive its
              hand, so the hero is never "covered by" a hand they do not hold. */
           const prevHero = prev.players[i];
-          /* `?? 0` on both: an unknown hand number must read as "cannot
-             tell", which the `<= 0` arms then treat as "keep the cards". The
-             hero seeing a stale hand for one frame is recoverable; the hero
-             seeing NOTHING is the bug being fixed. */
-          const nextHand = mapped.handNumber ?? 0;
-          const prevHand = prev.handNumber ?? 0;
-          const sameHand = nextHand <= 0 || prevHand <= 0 || nextHand === prevHand;
+          /* The hero seeing a stale hand for one frame is recoverable; the
+             hero seeing NOTHING is the bug being fixed. */
           if (
-            sameHand &&
+            cardHoldSameHand &&
             prevHero &&
             prevHero.isHero &&
             prevHero.holeCards &&
             prevHero.holeCards.length > 0
           ) {
             return { ...sp, holeCards: prevHero.holeCards };
+          }
+        }
+        /* ═══ SHOWDOWN 2026-08-26 (Dan: hands announced + displayed 100%) ═══
+           The same "no news is not no cards" rule, extended to OPPONENTS whose
+           hands were publicly revealed at showdown. The engine only carries
+           opponents' cards while stage === 'showdown' (or a runout reveal is
+           active); the first idle broadcast after HAND_COMPLETE carries none,
+           and it lands INSIDE the client's post-hand hold — so revealed hands
+           blanked off the felt mid-announcement, timing-dependently. Within
+           the same hand, a revealed opponent hand stays revealed; the next
+           hand's boundary reset clears it like everything else. */
+        if (
+          cardHoldSameHand &&
+          (!sp.holeCards || sp.holeCards.length === 0)
+        ) {
+          const prevPlayer = prev.players[i];
+          if (
+            prevPlayer &&
+            !prevPlayer.isHero &&
+            prevPlayer.id === sp.id &&
+            prevPlayer.showCards &&
+            prevPlayer.holeCards &&
+            prevPlayer.holeCards.length > 0
+          ) {
+            return { ...sp, holeCards: prevPlayer.holeCards, showCards: true };
           }
         }
         return sp;
@@ -2333,6 +2369,12 @@ export default function TablePage({
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   // Guards the entry-post overlay against a double tap billing two big blinds.
   const [isPostingBB, setIsPostingBB] = useState(false);
+  /* Dan 2026-08-26, binding: "as soon as you confirm your buy in at a cash
+     table, the next pop up must be Post Or Wait For BB. Then that decides if
+     the player will be dealt in or is waiting." Opened by the buy-in success
+     path; auto-closed if the engine stops holding the hero (they were the BB,
+     or already posted). */
+  const [postOrWaitOpen, setPostOrWaitOpen] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showBuyInModal, setShowBuyInModal] = useState(false);
   // 2026-04-14 per Dan: bust rebuy flow
@@ -4018,6 +4060,7 @@ export default function TablePage({
       if (bbjSeatCreditsTimerRef.current) clearTimeout(bbjSeatCreditsTimerRef.current);
       if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
       if (rabbitExpiryTimerRef.current) clearTimeout(rabbitExpiryTimerRef.current);
+      if (rabbitRevealClearTimerRef.current) clearTimeout(rabbitRevealClearTimerRef.current);
       if (potShipTimerRef.current) clearTimeout(potShipTimerRef.current);
       if (potPushDelayTimerRef.current) clearTimeout(potPushDelayTimerRef.current);
       for (const t of potAwardStaggerTimersRef.current) clearTimeout(t);
@@ -4345,6 +4388,11 @@ export default function TablePage({
   const rabbitHandNumberRef = useRef<number | null>(null);
   /** Takes the Rabbit Hunt button down when the server's offer TTL runs out. */
   const rabbitExpiryTimerRef = useRef<number | null>(null);
+  /** Dan 2026-08-26: the reveal itself must ALWAYS come down. Hand boundaries
+   *  are the primary clear, but an idle table has no next hand — this timer is
+   *  the unconditional backstop that removes the rabbit cards after they have
+   *  been seen. */
+  const rabbitRevealClearTimerRef = useRef<number | null>(null);
 
   const handleRabbitReveal = useCallback(async (): Promise<RabbitHuntRevealResult> => {
     if (!tableId) return { success: false, error: 'Table Not Ready' };
@@ -4373,6 +4421,14 @@ export default function TablePage({
     }));
     setRabbitRevealedCards(parsedCards);
     setRabbitHuntFreezeEnd(Date.now() + 3000);
+    // Unconditional dismissal: 3s frozen + 5s visible, then gone. Without
+    // this, a reveal on a table that never deals another hand stayed on the
+    // board forever (the only other clears are hand-boundary resets).
+    if (rabbitRevealClearTimerRef.current) clearTimeout(rabbitRevealClearTimerRef.current);
+    rabbitRevealClearTimerRef.current = window.setTimeout(() => {
+      rabbitRevealClearTimerRef.current = null;
+      setRabbitRevealedCards([]);
+    }, 8000);
     return {
       success: true,
       cards: parsedCards,
@@ -4923,14 +4979,14 @@ export default function TablePage({
     bustPromptFiredRef.current = true;
 
     (async () => {
+      /* Dan 2026-08-26 rebuy audit: this read the legacy `wallets` PLAYER row,
+         but `atomic_table_rebuy` debits club chips (club_members.chip_balance).
+         The prompt gated affordability on money the RPC never spends — the
+         normal buy-in path already reads through fn_player_spendable_balance
+         for exactly this reason. Same rule here, same table context. */
       try {
-        const { data } = await supabase
-          .from('wallets')
-          .select('balance')
-          .eq('user_id', userId)
-          .eq('wallet_type', 'PLAYER')
-          .maybeSingle();
-        setBustWalletBalance(Number(data?.balance ?? 0));
+        const r = await WalletService.readPlayerBalance(userId, { tableId });
+        setBustWalletBalance(r.balance ?? 0);
       } catch {
         setBustWalletBalance(0);
       }
@@ -4946,6 +5002,21 @@ export default function TablePage({
     bustRebuyOpen,
     showBuyInModal,
   ]);
+
+  /* Post-or-wait dialog resolves itself when the question stops applying:
+     the hero got dealt in (they were the incoming BB, or their post landed)
+     or their seat is gone. */
+  useEffect(() => {
+    if (!postOrWaitOpen) return;
+    if (tableState.heroSeat <= 0) {
+      setPostOrWaitOpen(false);
+      return;
+    }
+    const heroPlayer = tableState.players[tableState.heroSeat - 1];
+    if (heroPlayer && heroPlayer.holeCards && heroPlayer.holeCards.length > 0) {
+      setPostOrWaitOpen(false);
+    }
+  }, [postOrWaitOpen, tableState.heroSeat, tableState.players]);
 
   /**
    * `rebuyProcessing` readable from a timer's closure. The 120s backstop must
@@ -5169,7 +5240,12 @@ export default function TablePage({
             // honestly, while the player is watching.
             toast?.error('You Are Offline. Rebuy When Your Connection Returns.');
           } else {
-            toast?.error(error.message || 'Rebuy failed');
+            /* Dan 2026-08-26: a failed rebuy used to be invisible — the raw
+               Postgres error went to a toast and nowhere else, so "rebuy
+               silently fails, then boots you" shipped without a single Sentry
+               event. Report it, and show a message a player can act on. */
+            reportError(error, 'TablePage.confirmBustRebuy', { tableId, amount });
+            toast?.error('Rebuy Failed. Your Chips Were Not Taken. Try Again.');
           }
           setBustRebuyProcessing(false);
           return;
@@ -5188,13 +5264,19 @@ export default function TablePage({
     [tableId, userId, toast]
   );
 
-  // Forward-ref so cancelBustRebuy() (declared above) can invoke the real
-  // handleLeaveTable (declared below) without a circular definition.
-  const handleLeaveTableRef = useRef<(() => void) | null>(null);
   const cancelBustRebuy = useCallback(() => {
+    /* Dan 2026-08-26 rebuy audit: this used to call handleLeaveTable()
+       unconditionally. BuyInModal's only close affordances are the backdrop
+       and the X, so after a FAILED rebuy the modal stayed open and the
+       player's very next tap — anywhere — stood them up from the table.
+       That is the "then boots you from the table" half of the bug.
+
+       Dismissing the prompt is now just a dismissal. The seat stays; the
+       player can reopen a rebuy through the cashier, and if they never
+       reload, the engine's existing sit-out sweep cashes the empty seat out
+       through the proper refund path. Leaving remains an explicit act via
+       the table's Leave button. */
     setBustRebuyOpen(false);
-    // User chose to leave — trigger a real leave so their seat is cleared.
-    handleLeaveTableRef.current?.();
   }, []);
 
   /**
@@ -5391,11 +5473,6 @@ export default function TablePage({
     }
   };
 
-  // Bind the forward-ref used by cancelBustRebuy so the Decline button on
-  // the bust prompt invokes the real leave flow.
-  useEffect(() => {
-    handleLeaveTableRef.current = handleLeaveTable;
-  });
 
   // Handle force leave (triggered by closing tab 'X' button or when already cashed out)
   const handleForceLeaveTable = async () => {
@@ -6431,7 +6508,14 @@ export default function TablePage({
           ? handState.eligible_user_ids.map(String)
           : null;
         const heroMayHunt = !eligibleIds || (!!userId && eligibleIds.includes(String(userId)));
-        if (available > 0 && heroMayHunt) {
+        // Dan 2026-08-26: the offer is emitted from an async settlement task,
+        // so it can arrive AFTER the next hand has already started — and then
+        // sat as a live button for a hand it did not belong to. An offer for
+        // any hand other than the one that just ended is dead on arrival.
+        const offerHand = Number(handState.hand_number ?? 0) || 0;
+        const currentHand = Number(tableStateRef.current.handNumber ?? 0) || 0;
+        const offerIsStale = offerHand > 0 && currentHand > 0 && offerHand < currentHand;
+        if (available > 0 && heroMayHunt && !offerIsStale) {
           rabbitHandNumberRef.current = Number(handState.hand_number ?? 0) || null;
           setRabbitCardsAvailable(available);
           // The live price from feature_pricing, so a repricing reaches the
@@ -8121,10 +8205,11 @@ export default function TablePage({
               // useEffect had a chance to pop the RebuyModal, so the user was
               // booted with no chance to top up. New policy: keep the hero
               // seated with stack=0. The bust-rebuy useEffect watches for
-              // stack=0 + !isHandInProgress and pops the RebuyModal; if the
-              // user declines, cancelBustRebuy → handleLeaveTable stamps
-              // left_at. If they rebuy, atomic_table_rebuy refills the stack
-              // and play resumes.
+              // stack=0 + !isHandInProgress and pops the RebuyModal; if they
+              // rebuy, atomic_table_rebuy refills the stack and play resumes.
+              // Dismissing the prompt (2026-08-26) just closes it — leaving
+              // is explicit via the Leave button, and an abandoned 0-stack
+              // seat is cleaned up by the engine's sit-out sweep.
               if (isHero) {
                 const heroStack = Number(seat.stack || 0);
                 resolvedHeroSeat = seat.seat_number;
@@ -9453,6 +9538,24 @@ export default function TablePage({
         setShowRIT(false);
         clearRitRevealTimers();
         resetRitPanelState();
+        // RABBIT HUNT 2026-08-26 (Dan: "it can never ever linger"). The reveal
+        // used to be cleared in exactly one place — the hand-number-changed
+        // effect — which never fires if the table goes idle after the reveal
+        // (last player stands, break, socket drop). The hand boundary is the
+        // authoritative reset, so the previous hand's rabbit cards and offer
+        // die HERE too, before the new deal renders.
+        setIsRabbitAvailable(false);
+        setRabbitCardsAvailable(0);
+        setRabbitRevealedCards([]);
+        rabbitHandNumberRef.current = null;
+        if (rabbitExpiryTimerRef.current) {
+          clearTimeout(rabbitExpiryTimerRef.current);
+          rabbitExpiryTimerRef.current = null;
+        }
+        if (rabbitRevealClearTimerRef.current) {
+          clearTimeout(rabbitRevealClearTimerRef.current);
+          rabbitRevealClearTimerRef.current = null;
+        }
         // AUDIT-2 FIX 2026-08-20: the ALL IN banner timer was NOT cancelled at
         // the hand boundary — a hand starting inside the 1.8s window left
         // "ALL IN" splashed over the fresh deal.
@@ -11220,6 +11323,10 @@ export default function TablePage({
       if (rabbitExpiryTimerRef.current) {
         clearTimeout(rabbitExpiryTimerRef.current);
         rabbitExpiryTimerRef.current = null;
+      }
+      if (rabbitRevealClearTimerRef.current) {
+        clearTimeout(rabbitRevealClearTimerRef.current);
+        rabbitRevealClearTimerRef.current = null;
       }
       // NOTE: the deal animation is triggered by the discrete HAND_STARTED
       // handler (single source). AUDIT FIX 2026-07-19: the redundant bump that
@@ -15286,7 +15393,85 @@ export default function TablePage({
           they can pay the BB to enter the next hand instead of waiting for
           the BB to rotate to their seat naturally.
           ═══════════════════════════════════════════════════════════════════════ */}
-      {userId &&
+      {/* ═══════════════════════════════════════════════════════════════════════
+          POST OR WAIT FOR BB — the popup that follows the buy-in confirm.
+          Dan 2026-08-26, binding: "as soon as you confirm your buy in at a
+          cash table, the next pop up must be Post Or Wait For BB. Then that
+          decides if the player will be dealt in or is waiting."
+          The engine holds every cash entrant in waitingForBB until they post
+          or the blind reaches them; this dialog is that choice, asked once,
+          up front. The persistent pill below stays for anyone who dismissed
+          the dialog and changes their mind mid-wait.
+          ═══════════════════════════════════════════════════════════════════════ */}
+      {postOrWaitOpen && userId && tableId && !tableState.isTournament && (
+        <div className="post-or-wait__backdrop">
+          <div className="post-or-wait" role="dialog" aria-modal="true">
+            <h3 className="post-or-wait__title">Post Or Wait For The Big Blind?</h3>
+            <p className="post-or-wait__body">
+              Post The Big Blind Now And You Are Dealt Into The Next Hand. Or Wait, And You
+              Are Dealt In When The Big Blind Reaches Your Seat.
+            </p>
+            <div className="post-or-wait__actions">
+              <button
+                type="button"
+                className="post-or-wait__post"
+                disabled={isPostingBB}
+                onClick={async () => {
+                  if (isPostingBB || !tableId) return;
+                  setIsPostingBB(true);
+                  try {
+                    const res = await serverPostBBToEnter(tableId);
+                    if (res?.success) {
+                      toast.success('Posting The Big Blind. You Are In The Next Hand.');
+                      setPostOrWaitOpen(false);
+                    } else if (res?.error === 'Player is not waiting for BB') {
+                      /* The buy-in just landed and the dealing loop has not
+                         registered the hero yet (it does within one tick).
+                         One quiet retry covers the race. */
+                      await new Promise((r) => setTimeout(r, 2000));
+                      const retry = await serverPostBBToEnter(tableId);
+                      if (retry?.success) {
+                        toast.success('Posting The Big Blind. You Are In The Next Hand.');
+                      } else {
+                        toast.info(
+                          retry?.error === 'Player is not waiting for BB'
+                            ? 'You Are Being Dealt In. No Post Needed.'
+                            : retry?.error || 'Could Not Post The Big Blind. You Will Wait For It Instead.'
+                        );
+                      }
+                      setPostOrWaitOpen(false);
+                    } else {
+                      // Positional refusal (SB or button incoming): the wait is
+                      // mandatory there and cannot be bought.
+                      toast.info(
+                        res?.error || 'Could Not Post The Big Blind. You Will Wait For It Instead.'
+                      );
+                      setPostOrWaitOpen(false);
+                    }
+                  } catch (e) {
+                    reportError(e, 'TablePage.postOrWaitPostBB');
+                    toast.error('Could Not Post The Big Blind.');
+                  } finally {
+                    setIsPostingBB(false);
+                  }
+                }}
+              >
+                {isPostingBB ? 'Posting...' : 'Post Big Blind'}
+              </button>
+              <button
+                type="button"
+                className="post-or-wait__wait"
+                onClick={() => setPostOrWaitOpen(false)}
+              >
+                Wait For Big Blind
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!postOrWaitOpen &&
+        userId &&
         tableId &&
         !tableState.isTournament &&
         Array.isArray(tableState.waitingForBBUserIds) &&
@@ -16063,6 +16248,13 @@ export default function TablePage({
                   tableName: tableState.tableName,
                   userId,
                 });
+                // Dan 2026-08-26: the buy-in confirmation is immediately
+                // followed by the entry choice — post the big blind now, or
+                // wait for it to reach the seat. Cash only; a tournament
+                // entrant is engine-seated with no blind decision to make.
+                if (!tableStateRef.current.isTournament) {
+                  setPostOrWaitOpen(true);
+                }
               } catch (error) {
                 reportError(error, 'TablePage.Buyin_FAILED');
                 revertSeat();

@@ -293,7 +293,11 @@ describe('polish: per-pot awards ride the wire end to end (spec 16/19/33)', () =
   });
 
   it('pot_win carries ordered pot_awards groups and the client sequences from them', () => {
-    expect(EVENTS).toMatch(/pot_awards: this\.buildPotAwardGroups\(\)/);
+    /* 2026-08-26: the groups are captured BEFORE the settle hold — reading
+       them live after the sleep lost them to HAND_COMPLETE's reset, which is
+       how pot_win died on every contested showdown. */
+    expect(EVENTS).toMatch(/const capturedPotAwards = this\.buildPotAwardGroups\(\);/);
+    expect(EVENTS).toMatch(/pot_awards: capturedPotAwards/);
     expect(TABLE_PAGE).toMatch(/buildAwardGroups\(/);
     expect(TABLE_PAGE).toMatch(/boardLabelFromAwards\(/);
   });

@@ -372,6 +372,12 @@ export async function atomicCashout(
  * watching an empty queue that nothing ever joined, and no seat offer could
  * ever have fired. Both tables were empty, so the reconciliation cost no data.
  */
+/** An offer a player has not acted on in this long is dead — release the
+ *  queue head so the seat can be offered to the next person. Without this a
+ *  single unclaimed offer jammed the queue permanently (nothing anywhere
+ *  ever expired a 'notified' row). */
+const WAITLIST_OFFER_TTL_MS = 3 * 60 * 1000;
+
 export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
   try {
     // Only cash tables have waitlists
@@ -383,15 +389,38 @@ export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
     if (!tableRow || tableRow.tournament_id) return;
     if ((tableRow.current_players ?? 0) >= (tableRow.max_players ?? 9)) return;
 
-    const { data: next } = await supabase
+    // Reclaim dead offers first, or the queue head can jam forever behind
+    // one player (or horse) who never sat down.
+    await supabase
+      .from('table_waitlist')
+      .update({ status: 'expired' })
+      .eq('table_id', tableId)
+      .eq('status', 'notified')
+      .lt('notified_at', new Date(Date.now() - WAITLIST_OFFER_TTL_MS).toISOString());
+
+    // Dan 2026-08-26 waitlist fix: the queue can contain horses (the fleet
+    // seeds a short "atmosphere" queue behind hot tables). A horse can never
+    // act on a seat-open notification, so offering it the seat silently
+    // wasted the offer — regularly, since horses were often at the head.
+    // Fetch the oldest few and notify the first HUMAN.
+    const { data: nextBatch } = await supabase
       .from('table_waitlist')
       .select('id, user_id')
       .eq('table_id', tableId)
       .eq('status', 'waiting')
       .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (!next) return;
+      .limit(10);
+    if (!nextBatch || nextBatch.length === 0) return;
+
+    const ids = nextBatch.map((r) => r.user_id as string);
+    const { data: horseRows } = await supabase
+      .from('profiles')
+      .select('id')
+      .in('id', ids)
+      .eq('is_horse', true);
+    const horseIds = new Set((horseRows ?? []).map((r) => r.id as string));
+    const next = nextBatch.find((r) => !horseIds.has(r.user_id as string));
+    if (!next) return; // only horses are queued — nobody to seat
 
     const { data: claimed } = await supabase
       .from('table_waitlist')
@@ -408,6 +437,36 @@ export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
       message: `A Seat Just Opened At ${tableRow.name || 'Your Waitlisted Table'}. Sit Down Now To Claim It.`,
       data: { table_id: tableId },
     });
+
+    // Best-effort WEB PUSH so the alert reaches a player who has the app
+    // closed (Dan 2026-08-26: "you should receive a push notification").
+    // OneSignal external user ids are the Supabase user ids. Silently a
+    // no-op when the room has no OneSignal credentials configured.
+    const osAppId = process.env.ONESIGNAL_APP_ID;
+    const osKey = process.env.ONESIGNAL_REST_API_KEY;
+    if (osAppId && osKey && typeof fetch === 'function') {
+      try {
+        await fetch('https://onesignal.com/api/v1/notifications', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Basic ${osKey}`,
+          },
+          body: JSON.stringify({
+            app_id: osAppId,
+            include_external_user_ids: [next.user_id],
+            headings: { en: 'Seat Open' },
+            contents: {
+              en: `A Seat Just Opened At ${tableRow.name || 'Your Waitlisted Table'}. Tap To Claim It.`,
+            },
+            url: `https://smarter.poker/hub/club-arena/table/${tableId}`,
+            data: { type: 'waitlist_seat_open', table_id: tableId },
+          }),
+        });
+      } catch (pushErr) {
+        console.warn(`[Waitlist] push notify failed for ${next.user_id.slice(0, 8)}:`, pushErr);
+      }
+    }
     console.log(
       `[Waitlist] Notified ${next.user_id.slice(0, 8)} — seat open at ${tableId.slice(0, 8)}`
     );

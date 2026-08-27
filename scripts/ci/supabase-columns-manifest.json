@@ -853,6 +853,14 @@
       "user_id",
       "created_at"
     ],
+    "ca_chip_baseline": [
+      "club_id",
+      "user_id",
+      "opening_balance",
+      "ledger_at_baseline",
+      "unledgered_gap",
+      "taken_at"
+    ],
     "ca_hand_facts": [
       "hand_id",
       "user_id",
@@ -954,6 +962,15 @@
       "played_at",
       "club_id",
       "table_id"
+    ],
+    "ca_ledger_write_failures": [
+      "id",
+      "occurred_at",
+      "club_id",
+      "user_id",
+      "delta",
+      "sqlstate",
+      "message"
     ],
     "ca_seat_stack_exits": [
       "id",
@@ -9377,6 +9394,16 @@
       "club_id",
       "is_satellite_qualifier"
     ],
+    "tournament_rake_settlements": [
+      "tournament_id",
+      "club_id",
+      "union_id",
+      "amount",
+      "destination",
+      "source",
+      "created_at",
+      "settled_at"
+    ],
     "tournament_registration_approvals": [
       "tournament_id",
       "user_id",
@@ -10941,7 +10968,8 @@
       "multi_auto_switch",
       "multi_action_queue",
       "multi_desktop_alerts",
-      "multi_shared_socket"
+      "multi_shared_socket",
+      "blue_buttons_enabled"
     ],
     "user_theme_settings": [
       "id",

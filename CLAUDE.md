@@ -354,12 +354,33 @@ RPCs, and sits in the same seat as anybody else. Therefore a horse:
    and steers the fleet (`fn_register_horse_for_tournament`,
    `fn_seed_horses_to_floor`, `autoRebuyHorse`, HorseLogic, and so on). Those
    spawn and drive horses; they do not deny horses anything.
-2. **Equal outcome by a different mechanism.** A horse has no browser, so a
-   pause built for human reaction time is not owed to it — but the THING the
-   pause protects (the chance to rebuy before removal) absolutely is, and a
-   horse gets it through `autoRebuyHorse`. The test is never "did it run the
-   same code", it is **"did it get the same outcome"**. If the answer is no,
-   it is an exclusion and it is banned.
+2. **The horse's input device.** A horse has no browser, so the engine
+   supplies what a browser would: HorseLogic chooses its actions,
+   `scheduleHorseAction` submits them inside the SAME turn timer a human
+   gets, a synthetic heartbeat keeps its seat alive, and `autoRebuyHorse`
+   funds its rebuy. Those exist to make a horse EQUAL to a human, not to
+   give it a different deal. They are the only legitimate horse branch.
+
+**THERE IS NO "EQUAL OUTCOME BY A DIFFERENT MECHANISM" EXEMPTION.** I proposed
+one on 2026-08-27 — arguing a horse did not need the five-second rebuy pause
+because `autoRebuyHorse` got it back another way — and Dan rejected it
+outright:
+
+> "TABLES ARE DESIGNED TO BE USED BY EVERYONE, EVERY HORSE OR HUMAN PLAYER
+> NEEDS TO BE TREATED 100% EXACTLY THE SAME ALL ACROSS THE BOARD IN EVERYTHING
+> FOR THE CLUB ARENA. YES IT STILL NEEDS TO THE SAME 5 SECOND PAUSE TO REBUY.
+> NOT EVERY HORSE ALWAYS REBUYS IN THE CASH GAMES, AND IF YOU DIDN'T GIVE THEM
+> THE SAME EXACT FEATURES AND FUNCTIONALITY, PEOPLE WOULD NOTICE!"
+
+**TIMING IS PART OF THE TREATMENT.** The tell is never one hand, it is the
+RHYTHM: a table that stops for five seconds when one seat busts and rolls
+straight on when another has just told every watching player which seats are
+horses. And the pause is not ceremonial for a horse either — the stop-loss
+(two rebuys) and an empty club treasury both mean it genuinely may not come
+back, so the window it gets to decide has to be the same window.
+
+The test is therefore **"is it identical"**, not "is it equivalent". Same
+features, same functionality, same pauses, same timers, same rules.
 
 Anything where horses would be reported as opt-in (a `p_include_horses`
 parameter) MUST default to **true**.

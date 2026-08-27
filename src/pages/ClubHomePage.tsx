@@ -3613,6 +3613,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   haptic.medium();
                   setShowBBJInfo(true);
                 }}
+                onOpenUnionBank={(balance) => {
+                  setUnionWalletModal({ key: 'chips', label: 'Union Bank', balance });
+                }}
                 onOpenUnionRake={() => setUnionTreasuryModal('rake')}
                 onOpenUnionBackupBBJ={() => setUnionTreasuryModal('backup')}
                 onOpenUnionPromo={(balance) => {

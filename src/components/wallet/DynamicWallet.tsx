@@ -147,6 +147,7 @@ interface DynamicWalletProps {
   onOpenBBJ?: () => void;
   onOpenUnionRake?: (balance: number) => void;
   onOpenUnionBackupBBJ?: (balance: number) => void;
+  onOpenUnionBank?: (balance: number) => void;
   onOpenUnionPromo?: (balance: number) => void;
   onOpenUnionSpins?: (balance: number) => void;
   onOpenClubRake?: (balance: number) => void;
@@ -415,6 +416,7 @@ export default function DynamicWallet({
   onOpenBBJ,
   onOpenUnionRake,
   onOpenUnionBackupBBJ,
+  onOpenUnionBank,
   onOpenUnionPromo,
   onOpenUnionSpins,
   onOpenClubRake,
@@ -687,6 +689,7 @@ export default function DynamicWallet({
      Which OWNER the id resolves to is still the API's decision, untouched. */
   const spins = useSpinsWallet(resolvedId, variant !== 'union' && !isClubInUnion);
   const animSpins = useAnimatedCounter(spins.balance);
+  const animUnionBank = useAnimatedCounter(data.unionBank);
   const animUnionRake = useAnimatedCounter(data.unionRake);
 
   // ── Fetch data — uses resolvedId (UUID) for all Supabase queries ───────────
@@ -1310,6 +1313,14 @@ export default function DynamicWallet({
   };
 
   const UNION_ROWS: WalletRow[] = [
+    {
+      key: 'union_bank',
+      label: 'Union Bank',
+      icon: 'treasury',
+      value: animUnionBank,
+      known: unionFiguresKnown,
+      onOpen: () => onOpenUnionBank?.(data.unionBank || 0),
+    },
     {
       key: 'union_rake',
       label: 'Rake Treasury',

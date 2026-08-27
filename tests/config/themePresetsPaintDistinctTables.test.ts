@@ -26,7 +26,8 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { TABLE_SKINS, TABLE_SKIN_IDS } from '../../src/assets/tableAssets';
-import { resolveSkin, THEME_PRESET_SKINS } from '../../src/lib/tableTheme';
+import { feltDesign, resolveSkin, THEME_PRESET_SKINS } from '../../src/lib/tableTheme';
+import { THEME_PRESETS } from '../../src/components/table/ThemeSettingsModal';
 
 const root = process.cwd();
 const read = (p: string) => fs.readFileSync(path.join(root, p), 'utf8');
@@ -72,6 +73,16 @@ describe('a theme preset repaints the table', () => {
       ([, skin]) => !TABLE_SKIN_IDS.includes(skin)
     );
     expect(strays, `aliases pointing at non-canonical ids: ${JSON.stringify(strays)}`).toEqual([]);
+  });
+
+  it('a free preset never bundles a VIP felt that the database will reject', () => {
+    const invalid = THEME_PRESETS.filter((preset) => !preset.vipOnly).filter(
+      (preset) => feltDesign(THEME_PRESET_SKINS[preset.id]).tier !== 'standard'
+    );
+    expect(
+      invalid.map((preset) => preset.id),
+      'free preset tiles must be persistable by a non-VIP player'
+    ).toEqual([]);
   });
 
   it('the preset bundles read the shared map instead of typing table_id again', () => {

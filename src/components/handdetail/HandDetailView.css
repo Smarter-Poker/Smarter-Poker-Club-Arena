@@ -186,6 +186,21 @@
   color: rgba(255, 255, 255, 0.38);
 }
 
+/* `muck` and `discard` are both in ReplayVerb and neither had a rule, so a
+   Muck chip - and every pineapple Discard chip - rendered in the neutral
+   default while the fold beside it was greyed. Both are "this player gave up
+   cards", so both take the fold treatment; discard keeps a faint tint because
+   a pineapple discard is a mandatory move, not a surrender. */
+.hdv__act--muck {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.hdv__act--discard {
+  background: rgba(190, 150, 255, 0.13);
+  color: rgba(206, 178, 255, 0.9);
+}
+
 .hdv__act--check {
   background: rgba(120, 160, 255, 0.14);
   color: #86a9ff;
@@ -265,21 +280,6 @@
   color: #d5dae2;
   font-variant-numeric: tabular-nums;
 }
-
-.hdv__pots {
-  display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
-  padding: 6px 10px;
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.5);
-  font-variant-numeric: tabular-nums;
-}
-
-.hdv__pots strong {
-  color: rgba(255, 255, 255, 0.85);
-}
-
 .hdv__drop {
   display: flex;
   align-items: baseline;

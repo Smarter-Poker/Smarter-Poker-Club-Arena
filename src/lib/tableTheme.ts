@@ -40,13 +40,15 @@ import {
 // casino felt and "Casino Green" bundled the VIP jade neon felt. Each preset
 // now names the skin its label promises, and no two name the same one.
 export const THEME_PRESET_SKINS: Readonly<Record<string, string>> = {
-  // Neon City is also DEFAULT_SELECTION.table_id / DEFAULT_THEME.table_id - the
-  // app default felt, so the default preset must not disagree with it.
-  'default-dark': 'neon_city',
-  'classic-brown': 'mahogany_red',
+  // The three free presets must bundle the three free felts. The database
+  // validates every bundled field independently; a free preset pointing at a
+  // VIP felt can be selected in the UI and then is correctly rejected by the
+  // ownership trigger. These pairings keep UI access and persistence equal.
+  'default-dark': 'classic_green',
+  'classic-brown': 'carbon_red',
   'neon-blue': 'ice_cavern',
   'rustic-wood': 'golden_sand',
-  'casino-green': 'classic_green',
+  'casino-green': 'jade_city',
   'ocean-depths': 'ocean_blue',
   'crimson-club': 'crimson',
   'arctic-suite': 'arctic_white',

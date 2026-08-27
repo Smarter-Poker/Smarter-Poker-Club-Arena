@@ -43,7 +43,7 @@
  *    same screen. `error` is now returned so callers can tell them apart.
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 
@@ -65,9 +65,10 @@ export const THEME_FIELDS = [
 
 const DEFAULT_THEME: UserThemeSelection = {
   theme_id: 'default-dark',
-  // Dan 2026-08-17: default table skin is the Neon City composite ('dark-felt'
-  // still resolves to it via the TABLE_SKINS legacy alias in TablePage).
-  table_id: 'neon_city',
+  // Must match the database default. A first partial upsert fills untouched
+  // columns from schema defaults; disagreement here made a card-back-only
+  // change swap the felt underneath a brand-new player on the database echo.
+  table_id: 'classic_green',
   button_id: 'classic-white',
   background_id: 'midnight',
   cards_id: 'classic_red',
@@ -199,6 +200,7 @@ export function useUserThemeSettings(
    * see defect 3 in the header.
    */
   const [error, setError] = useState<string | null>(null);
+  const pendingMutationsRef = useRef(new Map<CanonicalGameType, Set<string>>());
 
   /**
    * null while a tournament's format is unresolved: the bucket is not yet
@@ -260,6 +262,13 @@ export function useUserThemeSettings(
     };
   }, [userId, gameType]);
 
+  useEffect(() => {
+    // A persisted hook can survive logout/login in the same shell. Pending
+    // writes belong to the old account and must never suppress the new
+    // account's first realtime row.
+    pendingMutationsRef.current.clear();
+  }, [userId]);
+
   /**
    * Dan 2026-08-19: apply theme changes LIVE. The modal broadcasts the
    * selection the moment it saves; any table currently mounted (including ones
@@ -275,6 +284,25 @@ export function useUserThemeSettings(
   useEffect(() => {
     let mounted = true;
 
+    const mutationOff = masterBus.subscribe('CUSTOMIZATION_MUTATION_STATE', (event) => {
+      if (event.payload.kind !== 'table-appearance') return;
+      const separator = event.payload.scope.lastIndexOf(':');
+      if (separator < 0) return;
+      const scopedUser = event.payload.scope.slice(0, separator);
+      if (scopedUser !== (userId || 'guest')) return;
+      const savedBucket = canonicalGameType(event.payload.scope.slice(separator + 1));
+      if (savedBucket !== 'ALL' && (!gameType || savedBucket !== gameType)) return;
+      if (event.payload.state === 'pending') {
+        const pending = pendingMutationsRef.current.get(savedBucket) ?? new Set<string>();
+        pending.add(event.payload.mutationId);
+        pendingMutationsRef.current.set(savedBucket, pending);
+      } else if (event.payload.state !== 'rolling-back') {
+        const pending = pendingMutationsRef.current.get(savedBucket);
+        pending?.delete(event.payload.mutationId);
+        if (pending?.size === 0) pendingMutationsRef.current.delete(savedBucket);
+      }
+    });
+
     const off = masterBus.subscribe('UI_THEME_CHANGED', (event) => {
       // AUDIT 2026-08-19 (P0): masterBus hands subscribers the EVENT WRAPPER
       // ({ type, payload, timestamp }), not the raw payload. Reading .key/.value
@@ -283,7 +311,10 @@ export function useUserThemeSettings(
       const body = (event as { payload?: unknown })?.payload ?? event;
       const savedFor = (body as { key?: string })?.key;
       const selection = (body as { value?: Partial<UserThemeSelection> })?.value;
+      const eventUserId = (body as { userId?: string })?.userId;
+      const mutationId = (body as { mutationId?: string })?.mutationId;
       if (!mounted || !selection) return;
+      if (eventUserId && eventUserId !== userId) return;
       // AUDIT 2026-08-19: UI_THEME_CHANGED is a SHARED event — useSettingsStore
       // emits it as { key: 'theme', value: '<theme name string>' }. The gameType
       // guard below already rejects that, but spreading a string into the
@@ -301,6 +332,16 @@ export function useUserThemeSettings(
         if (!gameType || savedBucket !== gameType) return;
       }
 
+      /* Optimistic paints and rollbacks carry their mutation id and are always
+         legitimate. A database echo carries none; suppress it while ANY write
+         for that bucket is pending. Tracking a set (not only the newest id)
+         also lets an older failed table-field mutation roll back while a newer
+         button-field mutation is still saving. */
+      if (savedBucket) {
+        const pending = pendingMutationsRef.current.get(savedBucket);
+        if (!mutationId && pending?.size) return;
+      }
+
       // Only the five theme fields, never whatever else rode along on the bus.
       const clean: Partial<UserThemeSelection> = {};
       for (const field of THEME_FIELDS) {
@@ -314,13 +355,14 @@ export function useUserThemeSettings(
 
     return () => {
       mounted = false;
+      mutationOff();
       try {
         off?.();
       } catch {
         /* listener already detached */
       }
     };
-  }, [gameType]);
+  }, [gameType, userId]);
 
   return { theme, loading, error };
 }

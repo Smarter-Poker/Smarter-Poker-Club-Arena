@@ -75,6 +75,42 @@
       "status",
       "created_at"
     ],
+    "ad_catalog": [
+      "id",
+      "ad_key",
+      "category",
+      "headline",
+      "body",
+      "glyph",
+      "target_url",
+      "cta_label",
+      "is_active",
+      "starts_at",
+      "ends_at",
+      "weight",
+      "created_by",
+      "created_at",
+      "updated_at"
+    ],
+    "ad_event": [
+      "id",
+      "ad_id",
+      "user_id",
+      "slot",
+      "event_type",
+      "club_id",
+      "created_at"
+    ],
+    "ad_placement": [
+      "id",
+      "ad_id",
+      "slot",
+      "club_id",
+      "audience",
+      "daily_cap",
+      "is_active",
+      "created_at"
+    ],
     "admin_audit_log": [
       "id",
       "admin_user_id",
@@ -716,6 +752,18 @@
       "hands",
       "computed_at"
     ],
+    "bbj_hand_evidence_log": [
+      "id",
+      "at",
+      "kind",
+      "payout_id",
+      "hand_id",
+      "table_id",
+      "hand_number",
+      "db_role",
+      "application",
+      "detail"
+    ],
     "bbj_payout_recipients": [
       "id",
       "payout_id",
@@ -860,6 +908,12 @@
       "ledger_at_baseline",
       "unledgered_gap",
       "taken_at"
+    ],
+    "ca_frozen_pool_baseline": [
+      "pool",
+      "frozen_total",
+      "frozen_at",
+      "note"
     ],
     "ca_hand_facts": [
       "hand_id",
@@ -3995,6 +4049,12 @@
       "is_pinned",
       "is_read_only",
       "created_by"
+    ],
+    "cosmetic_catalog": [
+      "category",
+      "asset_id",
+      "tier",
+      "created_at"
     ],
     "credit_assignments": [
       "id",
@@ -9025,6 +9085,13 @@
       "bomb_pot_double_board",
       "cap_bb"
     ],
+    "theme_asset_unlocks": [
+      "user_id",
+      "category",
+      "asset_id",
+      "unlock_method",
+      "created_at"
+    ],
     "theme_unlocks": [
       "id",
       "user_id",
@@ -9372,6 +9439,19 @@
       "user_id",
       "created_at"
     ],
+    "tournament_guarantee_overlays": [
+      "tournament_id",
+      "club_id",
+      "amount",
+      "pool_before",
+      "pool_after",
+      "treasury_after",
+      "source",
+      "funded_at",
+      "bank_type",
+      "bank_entity_id",
+      "union_id"
+    ],
     "tournament_payouts": [
       "id",
       "tournament_id",
@@ -9379,6 +9459,16 @@
       "position",
       "amount",
       "source",
+      "created_at"
+    ],
+    "tournament_place_collisions": [
+      "id",
+      "tournament_id",
+      "place",
+      "user_id",
+      "existing_user_id",
+      "db_role",
+      "application",
       "created_at"
     ],
     "tournament_players": [
@@ -11572,6 +11662,16 @@
       "month",
       "usage_count",
       "updated_at"
+    ],
+    "vip_plan_switches": [
+      "id",
+      "user_id",
+      "stripe_subscription_id",
+      "from_tier",
+      "to_tier",
+      "proration_behavior",
+      "next_invoice_total_cents",
+      "created_at"
     ],
     "vip_points": [
       "user_id",

@@ -16,6 +16,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import './BBJAdminAnalytics.css';
+import { money } from '../../utils/handFormat';
 
 export interface BBJAdminAnalyticsProps {
   poolId: string | null;
@@ -39,12 +40,6 @@ interface Analytics {
   days_since_last_hit: number | null;
   net_pool_position: number;
 }
-
-const money = (n: number | null | undefined, dp = 2): string =>
-  Number(n || 0).toLocaleString('en-US', {
-    minimumFractionDigits: dp,
-    maximumFractionDigits: dp,
-  });
 
 export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
   const [data, setData] = useState<Analytics | null>(null);

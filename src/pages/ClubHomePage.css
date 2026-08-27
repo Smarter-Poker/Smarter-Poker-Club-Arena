@@ -444,6 +444,19 @@
   padding: 10px 1rem 8px;
 }
 
+.lobby-controls {
+  display: block;
+  margin: 10px 1rem 8px;
+  border: 1px solid rgba(91, 131, 232, 0.18);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(19, 24, 36, 0.78), rgba(8, 10, 16, 0.92));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.lobby-controls .game-bar {
+  padding: 10px;
+}
+
 .game-bar__types {
   flex: 1 1 auto;
   min-width: 0;
@@ -522,7 +535,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 0 1rem 8px;
+  padding: 0 10px 10px;
 }
 
 .quickprefs__row {
@@ -535,6 +548,32 @@
   /* Same clip as .friends-tabs: a horizontal scroll row crops the vertical
      touch area its chips rely on. See club-engine.css. */
   padding-block: 6px;
+}
+
+.quickprefs__row--status {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.quickprefs__row--status .quickprefs__chip {
+  flex: 1 1 auto;
+  border: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0;
+  background: transparent;
+}
+
+.quickprefs__row--status .quickprefs__chip:last-child {
+  border-right: 0;
+}
+
+.quickprefs__row--status .quickprefs__chip.is-on {
+  background: linear-gradient(180deg, rgba(34, 92, 220, 0.9), rgba(24, 65, 160, 0.9));
+  box-shadow: inset 0 -2px 0 #4da3ff;
 }
 
 .quickprefs__row::-webkit-scrollbar {
@@ -678,10 +717,18 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 1rem 0;
+  padding: 0;
   font-size: 0.78rem;
   letter-spacing: 0.02em;
   color: #8b94a6;
+}
+
+.lobby-resultsbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 1rem 0;
 }
 
 .lobby-count__text strong {
@@ -723,7 +770,8 @@
 .lobby-createbtn {
   display: inline-flex;
   align-items: center;
-  padding: 6px 12px;
+  min-height: 38px;
+  padding: 7px 14px;
   border-radius: 8px;
   border: 1px solid rgba(65, 105, 225, 0.45);
   background: rgba(65, 105, 225, 0.1);
@@ -732,6 +780,7 @@
   font-weight: 700;
   letter-spacing: 0.03em;
   text-decoration: none;
+  cursor: pointer;
 }
 .lobby-createbtn:hover {
   background: rgba(65, 105, 225, 0.2);
@@ -1314,12 +1363,57 @@
    390px; at these sizes the same set lands inside it, and the scroller stays
    as the safety net for a club that declares more tiers than usual. */
 @media (max-width: 768px) {
+  .lobby-controls {
+    margin: 6px 8px;
+  }
+
+  .lobby-controls .game-bar {
+    align-items: flex-start;
+    padding: 8px;
+  }
+
+  .lobby-controls .game-bar__types {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-block: 6px;
+    scrollbar-width: none;
+  }
+
+  .lobby-controls .game-bar__types::-webkit-scrollbar {
+    display: none;
+  }
+
+  .lobby-controls .game-bar__type {
+    flex: 0 0 auto;
+    min-width: 68px;
+  }
+
   .quickprefs {
-    padding: 0 8px 6px;
+    padding: 0 8px 8px;
   }
 
   .quickprefs__row {
     gap: 4px;
+  }
+
+  .quickprefs__row--status {
+    padding: 0;
+  }
+
+  .quickprefs__row--status .quickprefs__chip {
+    min-width: 76px;
+    height: 36px;
+    border-radius: 0;
+  }
+
+  .lobby-resultsbar {
+    padding: 8px 8px 0;
+  }
+
+  .lobby-resultsbar .lobby-createbtn {
+    min-height: 40px;
+    padding-inline: 12px;
+    white-space: nowrap;
   }
 
   .quickprefs__label {

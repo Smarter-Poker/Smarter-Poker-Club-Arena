@@ -1415,11 +1415,27 @@
    The container also stops being width-constrained by the resting fan: at
    1.12 step the row is genuinely (n x 1.12) card widths wide, which is what
    --vh-fan-w already computes. */
+/* Dan 2026-08-26 (showdown pass): "Hold'em should be side by side, showing
+   the whole card images; PLO should be slightly stacked, but never hidden or
+   running off the edge of the screen." The step therefore depends on the
+   COUNT: a two-card hand gets a full card width plus a small gap (both faces
+   whole), a 3-6 card hand overlaps like the reference - every rank and suit
+   readable in the exposed column, and the row narrow enough to anchor inside
+   the seat (see the on-top-of-the-avatar anchors near the fan rules). Child
+   count is read with :has, the same device the hero fan uses. */
 .seat__cards--opponent.seat__cards--revealed {
   --vh-reveal: 1.6;
-  --vh-step-f: 1.12;
+  --vh-step-f: 1.06;
   --vh-rot-scale: 0;
   z-index: 14;
+}
+
+.seat__cards--opponent.seat__cards--revealed:has(> :nth-child(3)) {
+  --vh-step-f: 0.48;
+}
+
+.seat__cards--opponent.seat__cards--revealed:has(> :nth-child(5)) {
+  --vh-step-f: 0.4;
 }
 
 /* THE TOP ROW REVEALS DOWNWARD.
@@ -3500,6 +3516,39 @@
 .seat--cards-left .seat__cards--opponent .seat__card {
   left: auto;
   right: calc(var(--vh-i, 0) * var(--vh-step));
+}
+
+/* ═══ TABLED AT SHOWDOWN — ON TOP OF THE AVATAR, NEVER OFF SCREEN ═════════
+   Dan 2026-08-26: "when a hand is tabled at showdown, it must never ever be
+   offset. It must be fully shown on top of the avatar... never hidden or
+   running off the edge of the screen."
+
+   The resting fan hangs OUTBOARD - toward the screen edge - which is exactly
+   the direction a widened showdown row runs out of viewport, and the side
+   seats now hug the edges (x 8/92). So at reveal the row re-anchors: its
+   outboard edge is pinned to the avatar's own outboard edge, and the row
+   grows INBOARD across the art and onto the felt. The avatar is always fully
+   on screen, so a row anchored inside it cannot leave the screen either -
+   while its innermost card still lies squarely on the avatar, which is the
+   PokerBros read. Card stacking keeps the outboard card on top, matching the
+   reference close-ups. The top-cap override further down (0-4-0) still wins
+   for the seats under the banner, whose reveal drops below the plate. */
+.seat--cards-right .seat__cards--opponent.seat__cards--revealed {
+  left: auto;
+  right: calc(50% - var(--seat-avatar-size, 84px) / 2);
+}
+.seat--cards-right .seat__cards--opponent.seat__cards--revealed .seat__card {
+  left: auto;
+  right: calc(var(--vh-i, 0) * var(--vh-step));
+}
+
+.seat--cards-left .seat__cards--opponent.seat__cards--revealed {
+  right: auto;
+  left: calc(50% - var(--seat-avatar-size, 84px) / 2);
+}
+.seat--cards-left .seat__cards--opponent.seat__cards--revealed .seat__card {
+  right: auto;
+  left: calc(var(--vh-i, 0) * var(--vh-step));
 }
 
 /* The top row's REVEALED hand is centred under the pod (see the reveal rule

@@ -5,6 +5,7 @@ import { ClubsService } from '../../services/ClubsService';
 import haptic from '../../services/HapticService';
 import { useToast } from '../common/Toast';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { reportError } from '../../utils/errorReporter';
 import { isJoinableClubCode, parseClubCode } from '../../utils/clubCode';
 
@@ -40,6 +41,10 @@ export default function JoinClubModal({
   const navigate = useNavigate();
   const toast = useToast();
   const isMounted = useIsMounted();
+  // Trap Tab focus inside the dialog for as long as it is open. HomePage used
+  // to create this trap and never attach it; owning it here means every
+  // caller gets it for free.
+  const trapRef = useFocusTrap(isOpen);
 
   const [clubCode, setClubCode] = useState('');
   const [isJoining, setIsJoining] = useState(false);
@@ -135,7 +140,14 @@ export default function JoinClubModal({
 
   return (
     <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modalContainer} onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={trapRef}
+        className={styles.modalContainer}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Join A Club"
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
           className={styles.closeButton}
           onClick={() => {

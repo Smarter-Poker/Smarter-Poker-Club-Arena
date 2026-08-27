@@ -1399,6 +1399,16 @@
       "pot_total",
       "updated_at"
     ],
+    "club_hand_daily_shard": [
+      "club_id",
+      "stat_date",
+      "hands",
+      "rake",
+      "bbj",
+      "pot_total",
+      "updated_at",
+      "shard"
+    ],
     "club_leaderboard_settings": [
       "club_id",
       "payout_currency",

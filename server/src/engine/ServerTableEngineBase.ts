@@ -1156,22 +1156,26 @@ export abstract class ServerTableEngineBase {
       // of them, and no offer ever fired in live traffic. Owner intent:
       // OFF means at least one user-written column is false; the legacy
       // engine column is honored as an additional ON override.
-      // TOURNAMENT GATE 2026-08-18 — LIFTED 2026-08-26 (Dan: "publish this
-      // to the Club Arena for cash games, MTTs, Spins and heads up").
+      // TOURNAMENT GATE 2026-08-18 — CONFIRMED CASH-ONLY BY DAN 2026-08-26:
+      // "run it twice or 3 times is a cash game only area. it should never
+      // be in MTT, SPINS OR HEADS UP." The gate was briefly lifted the same
+      // day and reinstated within the hour on that ruling — RIT is a product
+      // decision, cash tables only, not merely a numeric limitation.
       //
-      // The gate existed because per-board splits produced fractional
-      // amounts while tournament_players.chips is INTEGER (the sync floors,
-      // destroying chips — a live 3-run tournament hand, 41627f9a, split
-      // 1760.88 into 586.96/1173.92 before the gate went in). That failure
-      // mode is now impossible: dealAndResolveRIT's tournament branch floors
-      // every credited total to whole chips and hands the odd chips out
-      // clockwise from the dealer (distributePot's own convention), so the
-      // split is integer-exact and pot-conserving on every tournament table.
-      // RIT therefore runs on cash, MTT, Spins and heads-up SNG alike,
-      // gated only by the table's own run-it-twice columns.
+      // (The original numeric reason still stands as history: per-board
+      // splits produce fractional amounts while tournament_players.chips is
+      // INTEGER — the sync floors, destroying chips; live 3-run tournament
+      // hand 41627f9a split 1760.88 into 586.96/1173.92 before the gate went
+      // in. dealAndResolveRIT now carries an integer-exact tournament branch
+      // as DEFENSE IN DEPTH: unreachable while this gate holds, but if the
+      // gate ever regresses, that branch makes the 41627f9a chip destruction
+      // impossible rather than merely unlikely.)
+      const ritIsTournament =
+        !!this.tableInfo.tournament_id || this.tableInfo.game_type === 'tournament';
       const ritEnabled =
-        ((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
-        (this.tableInfo.run_it_twice_enabled ?? false);
+        !ritIsTournament &&
+        (((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
+          (this.tableInfo.run_it_twice_enabled ?? false));
       const insuranceEnabled = this.tableInfo.insurance_enabled ?? false;
       // SEQUENCING 2026-08-26 (Dan's leader-seat recording): FIX 92 used to
       // force-disable RIT here whenever insurance was on ("insurance takes

@@ -65,7 +65,7 @@ describe('a partial answer is never returned as if it were complete', () => {
       .mockResolvedValueOnce({ data: Array.from({ length: 10 }, (_, i) => ({ i })), error: null })
       .mockResolvedValueOnce({ data: null, error: { message: 'connection reset' } });
     await expect(fetchAllRows(q, { pageSize: 10, label: 'roster' })).rejects.toThrow(
-      /roster: page 1 failed — connection reset/
+      /roster: page 1 failed - connection reset/
     );
   });
 

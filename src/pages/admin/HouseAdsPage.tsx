@@ -210,6 +210,7 @@ export default function HouseAdsPage() {
     }
     setSaving(true);
     try {
+      let created: { placed?: boolean; warning?: string } | null = null;
       if (editingId) {
         await callClubArenaApi(
           'house-ads',
@@ -228,7 +229,7 @@ export default function HouseAdsPage() {
           { method: 'PATCH' }
         );
       } else {
-        await callClubArenaApi(
+        created = await callClubArenaApi<{ placed?: boolean; warning?: string }>(
           'house-ads',
           {
             ad_key: form.ad_key,
@@ -249,7 +250,17 @@ export default function HouseAdsPage() {
         );
       }
       if (!isMounted.current) return;
-      setNotice(editingId ? 'Saved.' : 'Created. It Is Live In The Slot You Chose.');
+      /* "It Is Live" must be earned, not assumed. The server tells us whether
+         the placement actually landed; an ad with no placement runs NOWHERE,
+         and claiming otherwise is how you publish into a void and never learn
+         it. When it warns, that is the message worth reading, so it goes in
+         the error banner rather than the cheerful green one. */
+      if (created && created.placed === false) {
+        setActionError(created.warning || 'The Ad Was Saved But Is Not Running Anywhere Yet.');
+        setNotice(null);
+      } else {
+        setNotice(editingId ? 'Saved.' : 'Created. It Is Live In The Slot You Chose.');
+      }
       resetForm();
       await load();
     } catch (e) {

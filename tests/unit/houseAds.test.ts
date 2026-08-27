@@ -76,6 +76,22 @@ describe('impressions are counted honestly', () => {
   });
 });
 
+describe('a write that changed nothing never reports success', () => {
+  /* Caught by the World Hub Silent Write Guard on the first push of this
+     feature, naming both lines. PostgREST answers a zero-row match with
+     { error: null }, so a PATCH against an ad deleted in another tab would
+     have reported "Saved" and changed nothing. */
+  it('the panel does not claim an ad is live when placement failed', () => {
+    const save = ADMIN.slice(ADMIN.indexOf('const handleSave'), ADMIN.indexOf('// ── Delete'));
+    expect(save).toMatch(/created\.placed === false/);
+    // The warning must reach the eye, not the cheerful banner.
+    const warnBranch = save.slice(save.indexOf('created.placed === false'));
+    expect(warnBranch.indexOf('setActionError')).toBeLessThan(
+      warnBranch.indexOf('setNotice(editingId')
+    );
+  });
+});
+
 describe('the admin panel is platform staff only, and fails closed', () => {
   it('gates on the platform role, not club membership', () => {
     expect(ADMIN).toMatch(/\['admin', 'super_admin'\]/);

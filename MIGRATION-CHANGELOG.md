@@ -15934,3 +15934,41 @@ mutation-tested - and strengthened after a first mutation slipped past a pin
 that only required one of the two restore paths).
 Verified: client 7,516/7,516, server 1,991/1,991, both tsc clean, ui-text gate
 green.
+
+### Same day, deeper pass — the action bar reappearing for a split second
+
+Dan: "you make an action (check, call, raise or fold), the action happens, but
+then the action bar reappears for a split second."
+
+Root cause, and it is a race, not a rendering quirk. The bar renders on
+`currentPlayerSeat === heroSeat`. Acting optimistically sets that to 0, so it
+hides immediately - correct. But the engine snapshot merge then applied
+`currentPlayerSeat: mapped.currentPlayerSeat` UNCONDITIONALLY, and a snapshot
+generated BEFORE the server processed the action still names the hero as the
+actor. It lands a beat later, hands the turn back, the bar returns; the next
+snapshot moves the action on and it vanishes again. One flash per action, for
+as long as the round trip takes.
+
+Fixed with a narrow fence (heroActedFenceRef): while it is live for THIS hand
+and THIS seat, a snapshot may not hand the turn back to the seat that just
+acted. It releases on every other outcome so it can never outlive its purpose -
+the engine naming a different actor is the success signal, a new hand
+invalidates it, a rejected action clears it, and a 1.5s bound covers the case
+where none of those arrive. The same file already guards two fields this way
+(boardStage never goes backwards, a bet is held through its collect), so this
+is the established shape here.
+
+SECOND DEFECT FOUND IN THE SAME PATH: revert() restored lastActions,
+lastBetAmounts and player status but NOT `currentPlayerSeat`, which the
+optimistic update had zeroed. So a REJECTED fold or call left the hero still on
+the clock with NO ACTION BAR, unable to do anything until the next snapshot
+happened to arrive. It now clears the fence and gives the turn back.
+
+Checked and found correct, not changed: the PreActionBar requires
+`currentPlayerSeat > 0`, so it does not appear during the fence window either -
+the fence reuses the quiet state the code already relies on to stop the two
+bars flickering against each other.
+
+Guard: 7 more specs in LiveHandNeverDimsAndPreActionsLand.test.ts (16 total),
+mutation-tested. Verified: client 7,523/7,523, server 1,991/1,991, tsc clean
+both sides, ui-text gate green.

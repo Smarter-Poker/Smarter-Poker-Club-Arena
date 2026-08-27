@@ -285,7 +285,8 @@ export function SessionSummaryHost() {
       { label: 'Win Rate', value: `${winRate}%` },
     ];
     if (payload.totalBuyIn != null && payload.totalBuyIn > 0) {
-      out.push({ label: "Buy In's", value: formatChips(payload.totalBuyIn) });
+      /* Dan 2026-08-26 mobile pass, item 12: "Buy In", not "Buy In's". */
+      out.push({ label: 'Buy In', value: formatChips(payload.totalBuyIn) });
     }
     if (payload.totalRebuys > 0) {
       out.push({ label: 'Rebuys', value: String(payload.totalRebuys) });

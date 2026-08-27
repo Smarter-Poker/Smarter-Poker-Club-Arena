@@ -3523,7 +3523,10 @@
   letter-spacing: 0.04em;
   line-height: 1.1;
   text-transform: uppercase;
-  color: #ff3b30;
+  /* Dan 2026-08-26 (regression report): NO RED anywhere on the acting
+     seat's clock. The label reads in the same neon blue as the ring; the
+     blink alone carries the urgency. */
+  color: #00e5ff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
   white-space: nowrap;
   pointer-events: none;
@@ -3534,18 +3537,20 @@
   0%,
   100% {
     opacity: 1;
-    color: #ff3b30;
   }
   50% {
-    opacity: 0.1;
-    color: #ffcc00;
+    opacity: 0.15;
   }
 }
 
+/* Dan 2026-08-26 (regression report): "it should not be showing red after
+   the neon blue starts disappearing - it should just be the frame behind it
+   (no red color)." The red double box-shadow that used to sit here painted a
+   red outline around the plate the moment the bank engaged, while the blue
+   arc was still draining. The plate keeps its own frame; the TIME BANK label
+   above says what is happening. */
 .seat--time-bank-active .seat__info {
-  box-shadow:
-    0 0 0 2px rgba(255, 59, 48, 0.9),
-    0 0 15px rgba(255, 59, 48, 0.7);
+  box-shadow: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

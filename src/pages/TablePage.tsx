@@ -3761,9 +3761,8 @@ export default function TablePage({
 
   // Resolved pool id — the last-5-jackpots modal reads its history from this.
   const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
-  // Pinned once per table session so the felt masthead does not silently
-  // re-date itself on every render (2026-08-18).
-  const tableSessionDate = useMemo(() => new Date(), []);
+  // (tableSessionDate removed 2026-08-26 — item 5 dropped the date from the
+  // felt masthead, and nothing else read it.)
 
   /* The bottom-right hit notification (Dan 2026-08-26). Null when nothing is
      celebrating. `key` remounts the card if a second jackpot lands while the
@@ -8366,8 +8365,22 @@ export default function TablePage({
               const seatIdx = seat.seat_number - 1;
               if (seatIdx < 0 || seatIdx >= updatedPlayers.length) continue;
               // Seed the authoritative sit-out set from the seat rows.
-              if (seat.is_sitting_out) sittingOutIdsRef.current.add(seat.user_id);
-              else sittingOutIdsRef.current.delete(seat.user_id);
+              // Dan 2026-08-26 mobile pass, item 9: "the AWAY tag should only
+              // be applied when you click Sit Out, not when you just sit down
+              // at a table." A stale is_sitting_out=true on the hero's OWN
+              // freshly-acquired seat (pre-heartbeat race, or a row written
+              // before migration 20260826100000 forced inserts clean) must not
+              // paint the hero AWAY the moment they buy in. The grace window
+              // only ignores SERVER staleness on the hero's fresh join; an
+              // explicit Sit Out tap goes through handleSitOut, which adds the
+              // hero to this set directly and is unaffected.
+              const heroFreshJoin =
+                seat.user_id === userId &&
+                seatAcquiredAtRef.current != null &&
+                Date.now() - seatAcquiredAtRef.current < 15_000;
+              if (seat.is_sitting_out && !heroFreshJoin) {
+                sittingOutIdsRef.current.add(seat.user_id);
+              } else sittingOutIdsRef.current.delete(seat.user_id);
               const profile = profileMap.get(seat.user_id);
               // Only the FIRST matching seat gets isHero — prevents duplicates
               const isHero = seat.user_id === userId && !heroAlreadyAssigned;
@@ -8378,7 +8391,10 @@ export default function TablePage({
                 name: profile?.display_name || profile?.username || `Player ${seat.seat_number}`,
                 avatar: profile?.avatar_url || '',
                 stack: seat.stack || 0,
-                status: seat.is_sitting_out ? ('sitting_out' as const) : ('active' as const),
+                status:
+                  seat.is_sitting_out && !heroFreshJoin
+                    ? ('sitting_out' as const)
+                    : ('active' as const),
                 isHero,
                 showCards: isHero,
                 isHorse: profile?.is_horse || !!seat.horse_id,
@@ -9471,7 +9487,18 @@ export default function TablePage({
                     ? 'sitting_out'
                     : sp.is_folded
                       ? 'folded'
-                      : sp.is_sitting_out
+                      : /* Item 9 (Dan 2026-08-26): the engine's per-hand flag
+                           can mark a FRESHLY seated hero sitting-out before
+                           their first heartbeat lands — that is "just sat
+                           down", not "clicked Sit Out", so it must not paint
+                           the AWAY pill. Same 15s grace as the seat-row seed
+                           above. */
+                        sp.is_sitting_out &&
+                          !(
+                            sp.user_id === userId &&
+                            seatAcquiredAtRef.current != null &&
+                            Date.now() - seatAcquiredAtRef.current < 15_000
+                          )
                         ? 'sitting_out'
                         : 'active',
                 isHero: sp.user_id === userId,
@@ -11502,6 +11529,30 @@ export default function TablePage({
       heroFoldedInCurrentHandRef.current = true;
     }
   }, [tableState.players, tableState.heroSeat]);
+
+  /* Dan 2026-08-26 mobile pass, item 11: "end of card recap's VPIP is not
+     working or functional."
+
+     The only place VPIP was counted was inside handleActionPanelAction — the
+     PANEL click path. A hero acting through a PRE-ACTION (Call Any / Check),
+     a keyboard-armed pre-select, or the engine acting for them never touched
+     that path, so whole sessions could finish 0% VPIP while the hero was
+     calling hands all along. The server's own action broadcast is the truth
+     the recap should count: watch the hero's lastAction while the board is
+     preflop, and flag the hand VPIP on any voluntary chip-committing action.
+     The click path keeps its increment; the shared per-hand flag makes the
+     two sources idempotent. */
+  useEffect(() => {
+    if (tableState.boardStage !== 'preflop') return;
+    const idx = tableState.heroSeat - 1;
+    if (idx < 0) return;
+    const act = (tableState.lastActions[idx] || '').toLowerCase();
+    if (act === 'call' || act === 'bet' || act === 'raise' || act === 'allin' || act === 'all_in') {
+      if (!heroVpipThisHandRef.current) vpipCountRef.current++;
+      heroVpipThisHandRef.current = true;
+      if (act !== 'call') heroPfrThisHandRef.current = true;
+    }
+  }, [tableState.lastActions, tableState.boardStage, tableState.heroSeat]);
 
   // Detect hand number change → capture previous hand result
   useEffect(() => {
@@ -14004,7 +14055,7 @@ export default function TablePage({
           </div>
         }
         bottomLeft={
-          <div className="hud-ul-column hud-ul-column--stack">
+          <div className="hud-ul-column hud-bl-row">
             {/* Dan 2026-08-21: "the previous hand should be in the bottom left
                 corner, the time bank icon should be on top of it." Stacked in
                 that exact order — alarm clock above, previous-hand card below.
@@ -14027,7 +14078,12 @@ export default function TablePage({
                 `position: fixed; left: 50%; bottom: 22vh` in its own coordinate
                 system. Its fixed positioning is dropped in RabbitHunt.css so it
                 flows in this stack; it keeps its own `pointer-events: auto`,
-                which it needs because `.table-hud` sets `pointer-events: none`. */}
+                which it needs because `.table-hud` sets `pointer-events: none`.
+
+                Dan 2026-08-26 mobile pass, item 6 (round 2): the slot sits
+                BESIDE the previous-hand box, not on top of it - the container
+                is a row (.hud-bl-row, TablePage.css) with the previous-hand
+                box ordered first. */}
             {isHeroTurnContext && (
               <TimebankCounter
                 /* null = not loaded yet. The tile renders a dash rather
@@ -14163,14 +14219,11 @@ export default function TablePage({
                               ? 'FLH'
                               : (tableState.gameType || 'NLH').replace(/_/g, ' ')
                       ).toUpperCase();
-                      // Dan 2026-08-18: date pinned to when this table session
-                      // started, never `new Date()` per render -- a replay or
-                      // screenshot must show the day the hand was played.
-                      const dateLabel = tableSessionDate.toLocaleDateString(undefined, {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      });
+                      /* Dan 2026-08-26 mobile pass, item 5: the DATE is gone
+                         from the masthead. Line 1 is club · union, line 2 is
+                         game + stakes + hand number — and the hand number can
+                         never be cut off (it gets a no-shrink span; the club
+                         and union are what ellipsize). */
 
                       if (tableState.isTournament) {
                         // Dan 2026-08-20, from a seat at a live Spin: "1st
@@ -14192,40 +14245,37 @@ export default function TablePage({
                         return (
                           <>
                             <span className="table-brand__line">
-                              {dateLabel}
                               {tableState.clubName && (
-                                <span className="table-brand__club">
-                                  {' \u00B7 '}
-                                  {tableState.clubName}
-                                </span>
+                                <span className="table-brand__club">{tableState.clubName}</span>
                               )}
                               {tableState.unionName && (
                                 <span className="table-brand__union">
-                                  {' \u00B7 '}
+                                  {tableState.clubName ? ' - ' : ''}
                                   {tableState.unionName}
                                 </span>
                               )}
                             </span>
                             <span className="table-brand__line table-brand__line--level">
-                              {gameShort} {formatWord}
-                              {' \u00B7 '}
-                              Level {tableState.currentLevel || 1}
-                              {' \u00B7 '}
-                              {tableState.blinds || '10/20'}
-                              {levelClock && (
-                                <>
-                                  {' \u00B7 '}
-                                  <MastheadLevelClock
-                                    startedAtMs={levelClock.startedAtMs}
-                                    durationSec={levelClock.durationSec}
-                                  />
-                                </>
-                              )}
+                              <span className="table-brand__game">
+                                {gameShort} {formatWord}
+                                {' \u00B7 '}
+                                Level {tableState.currentLevel || 1}
+                                {' \u00B7 '}
+                                {tableState.blinds || '10/20'}
+                                {levelClock && (
+                                  <>
+                                    {' \u00B7 '}
+                                    <MastheadLevelClock
+                                      startedAtMs={levelClock.startedAtMs}
+                                      durationSec={levelClock.durationSec}
+                                    />
+                                  </>
+                                )}
+                              </span>
                               {(tableState.handNumber ?? 0) > 0 && (
-                                <>
-                                  {' '}
-                                  {' \u00B7 '}Hand #{tableState.handNumber}
-                                </>
+                                <span className="table-brand__hand">
+                                  {'\u00B7 '}Hand #{tableState.handNumber}
+                                </span>
                               )}
                             </span>
                           </>
@@ -14233,34 +14283,35 @@ export default function TablePage({
                       }
 
                       // Cash tables keep the two-line masthead.
-                      /* Dan 2026-08-24 two-line spec: line 1 date + club +
-                         union, line 2 game + stakes + hand number. */
+                      /* Dan 2026-08-26 mobile pass, item 5: NO date. Line 1 is
+                         "Club Name" - "Union Name"; line 2 is game + stakes +
+                         hand number, and the hand number may never be cut off
+                         \u2014 it sits in its own no-shrink span while the game
+                         label is the part that ellipsizes (see
+                         .table-brand__hand in TablePage.css). */
                       return (
                         <>
-                          <span className="table-brand__line">
-                            {dateLabel}
-                            {(tableState.clubName || tableState.unionName) && (
-                              <>
-                                {' \u00B7 '}
-                                <span className="table-brand__club">
-                                  {tableState.clubName}
-                                  {tableState.unionName && (
-                                    <span className="table-brand__union">
-                                      {tableState.clubName ? ' \u2022 ' : ''}
-                                      {tableState.unionName}
-                                    </span>
-                                  )}
-                                </span>
-                              </>
-                            )}
-                          </span>
+                          {(tableState.clubName || tableState.unionName) && (
+                            <span className="table-brand__line">
+                              <span className="table-brand__club">
+                                {tableState.clubName}
+                                {tableState.unionName && (
+                                  <span className="table-brand__union">
+                                    {tableState.clubName ? ' - ' : ''}
+                                    {tableState.unionName}
+                                  </span>
+                                )}
+                              </span>
+                            </span>
+                          )}
                           <span className="table-brand__line table-brand__line--level">
-                            {gameShort} {tableState.blinds || '1/2'}
+                            <span className="table-brand__game">
+                              {gameShort} {tableState.blinds || '1/2'}
+                            </span>
                             {(tableState.handNumber ?? 0) > 0 && (
-                              <>
-                                {' '}
-                                {' \u00B7 '}Hand #{tableState.handNumber}
-                              </>
+                              <span className="table-brand__hand">
+                                {'\u00B7 '}Hand #{tableState.handNumber}
+                              </span>
                             )}
                           </span>
                         </>
@@ -15141,6 +15192,23 @@ export default function TablePage({
                       allInEquities.find((e) => !e.userId && e.seat === seatNumber);
                     if (!eq) return null;
                     const isAhead = eq.equity >= 50;
+                    /* Dan 2026-08-26 mobile pass, item 13: "percentages can
+                       never cut off or block the hands from being revealed
+                       while all in." Revealed villain cards fan OUTWARD (away
+                       from the felt centre — tableSeatGeometry.seatCardSide),
+                       so the badge goes to the seat's INBOARD side, where
+                       there are never cards: left-half seats carry it on
+                       their right, right-half seats on their left. The
+                       top-centre seat's cards fan right (the x===50 default),
+                       so its badge goes left. The hero keeps the below-seat
+                       badge — hero cards render in the corner panel, not at
+                       the seat. */
+                    const isHeroSeat = pos.y >= 100 && pos.x === 50;
+                    const eqSide = isHeroSeat
+                      ? ''
+                      : pos.x < 50
+                        ? ' equity-overlay--inboard-right'
+                        : ' equity-overlay--inboard-left';
                     /* ANIMATION AUDIT 2026-08-19: styling moved to
                        TablePage.css (.equity-overlay) — the inline block had
                        no transition, so 72.4% snapped to 13.1% with zero
@@ -15150,7 +15218,7 @@ export default function TablePage({
                     return (
                       <div
                         key={`eq-${eq.equity}`}
-                        className={`equity-overlay ${isAhead ? 'equity-overlay--ahead' : 'equity-overlay--behind'}`}
+                        className={`equity-overlay ${isAhead ? 'equity-overlay--ahead' : 'equity-overlay--behind'}${eqSide}`}
                       >
                         {eq.equity}%
                         {/* Mini equity bar under the number.

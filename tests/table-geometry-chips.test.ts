@@ -41,6 +41,8 @@ import {
   FELT_MARKER_MARGIN_WIDTH_PCT,
   FELT_WINDOW,
   MARKER_MIN_GAP_WIDTH_PCT,
+  overlapsTopSeatBox,
+  TOP_CAP_SEAT_Y_MAX,
   type Pos,
   type Size,
 } from '../src/components/table/tableGeometry';
@@ -414,6 +416,37 @@ describe('item 13 - the chips and the button are never in the same place', () =>
             BUTTON_FELT_MARGIN_WIDTH_PCT
           );
           expect(btn, `seat ${JSON.stringify(seat)}`).toBeGreaterThanOrEqual(chips - 0.02);
+        }
+      });
+    }
+  }
+});
+
+describe('item 2 (2026-08-26) - the button never overlaps a top seat box', () => {
+  /* "The button is currently covering the top player's box. This needs to be
+     adjusted to never overlap anything." Every top-cap seat's rendered box
+     (avatar + nameplate) hangs down over the felt; the puck must land beside
+     it, never inside it. The keep-out is asserted with the same predicate the
+     placement uses, and the placement's other guarantees are asserted again
+     here so clearing the plate cannot silently cost them. */
+  for (const [label, table] of Object.entries(TABLES)) {
+    for (const [size, ring] of Object.entries(RINGS)) {
+      it(`${size}-max on a ${label} table: top-cap buttons clear their seat's box`, () => {
+        for (const seat of ring) {
+          if (seat.y >= TOP_CAP_SEAT_Y_MAX) continue;
+          const btn = dealerButtonPosition(seat, table);
+          expect(
+            overlapsTopSeatBox(btn, seat, table),
+            `seat ${JSON.stringify(seat)}: button ${JSON.stringify(btn)} is inside the seat box`
+          ).toBe(false);
+          // Still apart from the chips, and still on the felt with daylight.
+          const chips = chipRestPosition(seat, table);
+          expect(markerGapWidthPct(btn, chips, table)).toBeGreaterThanOrEqual(
+            MARKER_MIN_GAP_WIDTH_PCT - 1e-6
+          );
+          expect(feltEdgeClearanceWidthPct(btn, table)).toBeGreaterThanOrEqual(
+            BUTTON_FELT_MARGIN_WIDTH_PCT - 1e-6
+          );
         }
       });
     }

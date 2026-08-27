@@ -261,14 +261,25 @@
 @media (max-width: 768px) {
   .table-hud__corner--ur {
     position: fixed;
-    /* Dan 2026-08-24: "STATS BUTTON NEEDS TO BE IN THE UPPER RIGHT CORNER."
-       Tight under the tab bar, hugging the right edge.
-       2026-08-25: 42px of tab bar plus 12px, so the icon clears the BBJ
-       nameplate that hangs off the bar's bottom edge. Was 56px, measured
-       against a 44px tab bar; the bar is 42px now, so the old number left the
-       icon 2px high of where it belongs. Derived, not nudged: if the tab bar
-       changes height again, this is 42 + 12 and both numbers are named. */
+    /* Dan 2026-08-26 mobile pass, item 7: "move the messenger to the upper
+       right corner, and the stats bar to the upper left corner." This corner
+       (MiniStatsCard + TournamentHUD) hugs the LEFT edge now; the chat
+       button takes the right edge (TableChat.css, same breakpoint). The
+       54px = 42px tab bar + 12px clearance, unchanged from the 2026-08-25
+       derivation. */
     top: calc(env(safe-area-inset-top, 0px) + 54px);
-    right: 6px;
+    left: 6px;
+    right: auto;
+  }
+
+  /* The column right-aligned its children for the right corner; on the left
+     edge they left-align, and the tournament bar scales from its top-LEFT so
+     it hugs the corner instead of pushing off screen. */
+  .hud-ur-column {
+    align-items: flex-start;
+  }
+
+  .hud-ur-column > .tournament-hud-bar {
+    transform-origin: top left;
   }
 }

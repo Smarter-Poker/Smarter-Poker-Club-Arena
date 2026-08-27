@@ -129,7 +129,10 @@ describe('close-superseded-prs: the line filter stays blunt', () => {
     expect(script).toMatch(/STRIP_NOISE=/);
     // Stripping these made the "already in main" number look better and the
     // verdict less trustworthy. See the header note.
-    const filter = script.slice(script.indexOf('STRIP_NOISE='), script.indexOf('STRIP_NOISE=') + 200);
+    const filter = script.slice(
+      script.indexOf('STRIP_NOISE='),
+      script.indexOf('STRIP_NOISE=') + 200
+    );
     expect(filter).not.toMatch(/import|\/\/|export/);
   });
 });

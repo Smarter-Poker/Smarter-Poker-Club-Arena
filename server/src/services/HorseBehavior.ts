@@ -108,7 +108,45 @@ export function cashTableHeldEmpty(tableId: string, nowMs: number = Date.now()):
 
 export type HorseGameLane = 'events' | 'cash' | 'both';
 
+/**
+ * ASSIGNED lanes, hydrated from profiles.horse_profile->>'lane' at boot.
+ *
+ * The hash below produced 32.0 / 39.0 / 28.9 measured over the real 584
+ * horses - cash over-weighted by six points, and the fleet's tournament
+ * capacity short by the same amount. The cause is the trap this codebase
+ * already documented for horse tempo: `horseHash` is a weak multiply-add and
+ * a LOW-BIT modulo of it clusters on structured ids, which UUIDs are. A
+ * stronger mix reached 32.5 / 31.2 / 36.3 - honest sampling noise rather
+ * than a fix, because no hash gives an exact split at this fleet size.
+ *
+ * So the split is ASSIGNED (fn_assign_horse_lanes, exact by construction and
+ * visible in the database) and merely CACHED here. The hash remains the
+ * fallback for a horse created after the last assignment run, so a brand-new
+ * horse still has a lane the moment it is dealt in.
+ */
+const assignedLanes = new Map<string, HorseGameLane>();
+
+export function setHorseLanes(rows: Array<{ id: string; lane: string | null }>): number {
+  let n = 0;
+  for (const r of rows) {
+    if (!r?.id) continue;
+    const lane = r.lane === 'events' || r.lane === 'cash' || r.lane === 'both' ? r.lane : null;
+    if (!lane) continue;
+    assignedLanes.set(r.id, lane);
+    n++;
+  }
+  return n;
+}
+
+/** Test/ops hook: how many assigned lanes are loaded right now. */
+export function assignedLaneCount(): number {
+  return assignedLanes.size;
+}
+
 export function gameLaneFor(horseId: string): HorseGameLane {
+  const assigned = assignedLanes.get(horseId);
+  if (assigned) return assigned;
+  // Fallback only - see the note above on why this is not the source of truth.
   const h = horseHash(`${horseId}:lane`);
   const roll = h % 100;
   if (roll < 33) return 'events'; // tournaments, spins, heads-up only

@@ -365,9 +365,17 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
 
               <span className="et-marks">
                 {isSatellite && (
-                  <span className="tl-badge tl-badge--sat" title="Satellite Qualifier" style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', borderColor: 'rgba(59, 130, 246, 0.4)' }}>
-                    SAT
-                  </span>
+                  <img
+                    src="/images/satellite-icon.jpg"
+                    alt="Satellite Qualifier"
+                    title="Satellite Qualifier"
+                    style={{
+                      width: '20px',
+                      height: '20px',
+                      borderRadius: '50%',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                    }}
+                  />
                 )}
                 {isReentry && (
                   <span className="tl-badge tl-badge--action" title="Re-entry">

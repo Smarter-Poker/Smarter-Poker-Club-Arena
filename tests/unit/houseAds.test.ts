@@ -616,3 +616,78 @@ describe('impressions are not people, and a subset says so', () => {
     expect(ADMIN).toMatch(/truncated && \(truncated\.ads \|\| truncated\.placements\)/);
   });
 });
+
+describe('a lifetime total cannot show a campaign decaying', () => {
+  /* Every other figure on this page is a lifetime number, so a campaign that
+     worked for three weeks and has done nothing since reads the same as one
+     working today - the averages absorb the decline, and the longer it runs
+     the more inertia its own history gives it. `lastEventAt` catches a surface
+     that stopped dead. It says nothing about one quietly halving. */
+  const DAILY = read(
+    'supabase/migrations/20260828090000_a_campaign_decays_and_nothing_shows_it.sql'
+  );
+
+  it('groups by day as well as ad and slot', () => {
+    expect(DAILY).toMatch(/create or replace function public\.fn_ad_daily/);
+    expect(DAILY).toMatch(/GROUP BY e\.ad_id, e\.slot, \(e\.created_at AT TIME ZONE 'UTC'\)::date/);
+  });
+
+  it('clamps the window instead of trusting the caller', () => {
+    // A year of daily rows for one campaign is 365. Ten years is a mistake.
+    expect(DAILY).toMatch(/GREATEST\(1, LEAST\(COALESCE\(p_days, 30\), 365\)\)/);
+  });
+
+  it('checks its own days sum to the lifetime', () => {
+    /* If the two disagree, the panel shows a trend that contradicts its own
+       totals and there is no way to tell which is lying. */
+    expect(DAILY).toMatch(/fn_ad_daily impressions do not sum to ad_event over the same window/);
+  });
+
+  it('is staff-only, like every other aggregate over ad_event', () => {
+    expect(DAILY).toMatch(
+      /revoke all on function public\.fn_ad_daily\(integer\) from public, anon, authenticated/
+    );
+  });
+
+  it('says why it is computed live rather than rolled up by a cron', () => {
+    /* A rollup table is a second source of truth to keep in step, and a new
+       scheduled job is a governed change - Open Claw is the only sanctioned
+       scheduler. Worth writing down so the next person does not add one
+       casually. */
+    expect(DAILY).toMatch(/Open\s*\n?--\s*Claw is the only sanctioned scheduler/);
+  });
+
+  it('the panel draws it, and refuses to draw a trend from one day', () => {
+    // A single bar is not a trend, it is a number wearing one.
+    expect(ADMIN).toMatch(/const sparkline = \(values: number\[\]\)/);
+    expect(ADMIN).toMatch(/series && series\.length > 1/);
+  });
+});
+
+describe('two things the panel had been assuming about the catalog', () => {
+  const DAILY = read(
+    'supabase/migrations/20260828090000_a_campaign_decays_and_nothing_shows_it.sql'
+  );
+
+  it('a weight must be a positive number', () => {
+    /* Weight became the share of voice, and the draw guards the exponent with
+       GREATEST(weight, 1) because a 0 would divide by zero. That guard is
+       right and stays - but the database should not silently reinterpret what
+       somebody typed into a free-text box. A weight of 0 is a mistake, and the
+       save should say so where it happens. */
+    expect(DAILY).toMatch(/add constraint ad_catalog_weight_positive check \(weight > 0\)/);
+  });
+
+  it('a flight window cannot end before it begins', () => {
+    /* starts_at <= now() AND ends_at > now() can never both hold, so such a
+       campaign is live in the editor and dead everywhere else - the exact
+       silent-nothing this system keeps finding. */
+    expect(DAILY).toMatch(/add constraint ad_catalog_flight_window_ordered/);
+    expect(DAILY).toMatch(/ends_at > starts_at/);
+  });
+
+  it('refuses to constrain data it would retroactively reject', () => {
+    expect(DAILY).toMatch(/decide what they should be before constraining/);
+    expect(DAILY).toMatch(/those are live and dead at once, fix them before constraining/);
+  });
+});

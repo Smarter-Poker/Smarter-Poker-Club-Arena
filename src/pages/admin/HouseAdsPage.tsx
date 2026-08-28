@@ -116,6 +116,16 @@ type ConversionRow = {
 };
 type ConversionsBySlot = Record<string, Record<string, ConversionRow>>;
 
+/* IS IT STILL WORKING. Every other figure on this page is a lifetime total, so
+   a campaign that worked for three weeks and has done nothing since reads the
+   same as one working today - the averages absorb the decline, and the longer
+   it runs the more inertia its own history gives it. `lastEventAt` catches a
+   surface that stopped dead; it says nothing about one quietly halving.
+
+   Fourteen days, oldest first. */
+type DailyRow = { day: string; impressions: number; clicks: number; viewers: number };
+type DailyBySlot = Record<string, Record<string, DailyRow[]>>;
+
 const CATEGORIES = [
   'vip',
   'diamonds',
@@ -173,6 +183,7 @@ export default function HouseAdsPage() {
   const [statsBySlot, setStatsBySlot] = useState<StatsBySlot | null>(null);
   const [suppression, setSuppression] = useState<SuppressionBySlot | null>(null);
   const [conversions, setConversions] = useState<ConversionsBySlot | null>(null);
+  const [daily, setDaily] = useState<DailyBySlot | null>(null);
   const [truncated, setTruncated] = useState<{
     ads: number | null;
     placements: number | null;
@@ -224,6 +235,7 @@ export default function HouseAdsPage() {
         statsBySlot?: StatsBySlot | null;
         suppression?: SuppressionBySlot | null;
         conversions?: ConversionsBySlot | null;
+        daily?: DailyBySlot | null;
         truncated?: { ads: number | null; placements: number | null } | null;
       }>('house-ads', {}, { method: 'GET' });
       if (!isMounted.current) return;
@@ -236,6 +248,7 @@ export default function HouseAdsPage() {
       setStatsBySlot(res.statsBySlot ?? null);
       setSuppression(res.suppression ?? null);
       setConversions(res.conversions ?? null);
+      setDaily(res.daily ?? null);
       setTruncated(res.truncated ?? null);
     } catch (e) {
       reportError(e, 'HouseAdsPage.load');
@@ -417,6 +430,19 @@ export default function HouseAdsPage() {
       </div>
     );
   }
+
+  /* Eighths, because a sparkline made of block characters needs no canvas, no
+     library and no layout, and this panel is a dense table where a real chart
+     would cost more than it explains. Flat at the top when every day is equal:
+     a scale that shows noise as a mountain is worse than no chart. */
+  const sparkline = (values: number[]) => {
+    const bars = ['\u2581', '\u2582', '\u2583', '\u2584', '\u2585', '\u2586', '\u2587', '\u2588'];
+    const max = Math.max(...values, 0);
+    if (max <= 0) return bars[0].repeat(values.length);
+    return values
+      .map((v) => bars[Math.min(bars.length - 1, Math.round((v / max) * (bars.length - 1)))])
+      .join('');
+  };
 
   const rate = (s: StatRow | undefined) => {
     if (!s || s.impressions === 0) return '-';
@@ -786,6 +812,7 @@ export default function HouseAdsPage() {
                                 const ss = statsBySlot?.[ad.id]?.[p.slot];
                                 const sup = suppression?.[ad.id]?.[p.slot];
                                 const conv = conversions?.[ad.id]?.[p.slot];
+                                const series = daily?.[ad.id]?.[p.slot];
                                 return (
                                   <div key={p.id}>
                                     <span>{label}</span>
@@ -806,6 +833,28 @@ export default function HouseAdsPage() {
                                         Capped" on every row would be noise, and
                                         the number only means something next to
                                         the number it is a fraction of. */}
+                                    {/* THE LAST FOURTEEN DAYS, drawn in eighths.
+                                        A trend is the one thing a lifetime
+                                        total cannot show, and a campaign that
+                                        is halving looks healthy right up until
+                                        somebody plots it. Only drawn with two
+                                        or more days: a single bar is not a
+                                        trend, it is a number wearing one. */}
+                                    {series && series.length > 1 ? (
+                                      <span
+                                        className="admin-mono"
+                                        style={{ marginLeft: 6, letterSpacing: '-1px' }}
+                                        title={series
+                                          .map(
+                                            (d) =>
+                                              `${d.day}: ${d.impressions} views, ${d.clicks} clicks`
+                                          )
+                                          .join('\n')}
+                                        aria-label={`Last ${series.length} Days Of Views`}
+                                      >
+                                        {sparkline(series.map((d) => d.impressions))}
+                                      </span>
+                                    ) : null}
                                     {/* Did it work. Only shown once the
                                         placement has clicks to judge - a
                                         conversion line under a placement with

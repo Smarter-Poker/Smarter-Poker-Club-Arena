@@ -498,3 +498,69 @@ property, deliberately and visibly.
 
 Until 1 and 2 happen, the repo-side half is inert by design: the endpoint
 answers, the client asks, and both agree there is no relay.
+
+---
+
+## Monitoring (added 2026-08-28)
+
+Voice is relay-only, so `club-arena-turn` is a single point of failure for
+voice. Nothing was watching it when it was first provisioned. It is now a
+Prometheus target on the engine host's existing stack.
+
+### Why not a port check
+
+coturn 4.6.1 as packaged on Ubuntu 24.04 has no built-in Prometheus exporter,
+and a plain "is 3478 open" probe is actively misleading here. The failure mode
+that matters most is **secret drift**: if `/root/club-arena-turn-secret` on the
+relay and `TURN_STATIC_AUTH_SECRET` in `/opt/club-arena/server/.env` stop
+matching, the port still answers, the service still looks healthy, and the
+engine hands players credentials coturn rejects. Voice then dies in a way that
+looks like a network fault on the player's side.
+
+So the probe does what a player does.
+
+### What runs where
+
+On `club-arena-turn` (178.156.160.206):
+
+- `prometheus-node-exporter`, bound to the public IP, with the textfile
+  collector at `/var/lib/node_exporter/textfile_collector`. Port 9100 is open
+  in ufw **only** to 5.161.252.33.
+- `/usr/local/bin/turn-allocation-probe.sh`, run every 2 minutes by
+  `turn-probe.timer`. It mints a real short-lived HMAC credential the same way
+  the engine does, performs an actual UDP allocation with `turnutils_uclient`,
+  and writes `club_arena_turn_allocation_ok` (1/0) plus
+  `club_arena_turn_allocation_seconds` for node_exporter to publish.
+  A healthy allocation takes roughly 3.8s.
+
+On the engine host, in `/opt/smarter-poker-monitoring/`:
+
+- `prometheus.yml` — scrape job `turn_relay`, 30s interval.
+- `alert-rules.yml` — group `turn-relay`:
+  - `TurnRelayDown` (critical, 3m) — the box is unreachable. Voice is down for
+    every table, not degraded.
+  - `TurnRelayAllocationFailing` (critical, 5m) — up but refusing real
+    credentials. This is the secret-drift alarm.
+  - `TurnRelayProbeMissing` (warning, 10m) — the probe stopped reporting, so
+    the auth path is unmonitored. An absent metric must never read as healthy.
+
+Config was applied with `curl -X POST http://127.0.0.1:9090/-/reload`; the
+Prometheus container has `--web.enable-lifecycle`, so no restart is needed and
+the engine is never touched. Backups are written alongside as
+`prometheus.yml.bak.<epoch>` and `alert-rules.yml.bak.<epoch>`.
+
+### Checks
+
+    # target should be up
+    curl -s "http://127.0.0.1:9090/api/v1/targets?state=active" | grep turn_relay
+    # allocation should be 1
+    curl -s "http://127.0.0.1:9090/api/v1/query?query=club_arena_turn_allocation_ok"
+    # on the relay
+    systemctl status coturn turn-probe.timer prometheus-node-exporter
+
+### Firewall note
+
+The installer adds TURN rules but does **not** add an SSH rule and does not run
+`ufw enable`. Enabling ufw after a bare install therefore locks you out. Allow
+OpenSSH first. On this host that is done, and ufw is active with default deny
+inbound.

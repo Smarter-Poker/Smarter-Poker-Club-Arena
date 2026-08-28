@@ -694,6 +694,12 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'v23_river_reads', pairs: 6000, a: {}, b: { v23Reads: false } },
   { name: 'shortdeck_v23', variant: 'short_deck', pairs: 6000, a: {}, b: { v23Variants: false } },
   { name: 'plo8_v23_lowdraw', variant: 'plo8', pairs: 6000, a: {}, b: { v23Variants: false } },
+  // ── V24 (2026-08-28) ── Dan full-potted 8 PLO hands in a PKO and was never
+  // called once. The price defense is measurable on a PLO card; the bounty
+  // layer and the tempo floors only exist in tournament/live conditions the
+  // league cannot deal, so those ship scenario-tested with telemetry.
+  { name: 'plo4_v24_price', variant: 'plo4', pairs: 6000, a: {}, b: { v24PloDefense: false } },
+  { name: 'plo6_v24_price', variant: 'plo6', pairs: 6000, a: {}, b: { v24PloDefense: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
   { name: 'mind_layer', a: {}, b: { mind: false } },
@@ -736,6 +742,8 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v23Reads: false,
       v23Variants: false,
       v23Spin: false,
+      v24Bounty: false,
+      v24PloDefense: false,
       mind: false,
       streetIQ: false,
       handReading: false,

@@ -868,6 +868,15 @@ export interface HorseDecideOpts {
   /** disable the V23 spin overlay: winner-take-all hypers reward aggression —
    *  bluff volume up, value thresholds down a notch (default: enabled) */
   v23Spin?: boolean;
+  /** disable the V24 bounty layer (Dan 2026-08-28): PKO and mystery-bounty
+   *  awareness preflop — pots against a covered raiser are worth more than
+   *  their chips, so the call bar bends toward them (default: enabled) */
+  v24Bounty?: boolean;
+  /** disable the V24 Omaha price defense: in PLO the call bar bends toward
+   *  the POT ODDS rather than a fixed NLH-calibrated percentile, and the
+   *  survival premium scales with the fraction of stack actually at risk
+   *  (default: enabled) */
+  v24PloDefense?: boolean;
 }
 
 /**
@@ -1216,6 +1225,29 @@ export class HorseLogic {
           : undefined,
       // V21: deep-stack cash stack-off discipline.
       deepDiscipline: (opts.v21Deep ?? true) !== false,
+      ploPriceDefense: (opts.v24PloDefense ?? true) !== false,
+      // ═══ V24 BOUNTY (PKO / mystery) ═══ a bounty is prize money attached
+      // to a PLAYER and collected by busting them, so pots against opponents
+      // hero COVERS are worth more than their chips. Nothing preflop knew
+      // this existed before; icmRisk only trimmed its own premium slightly.
+      ...(() => {
+        const useV24 = (opts.v24Bounty ?? true) !== false;
+        const bf = useV24 ? (gs.tournament?.bountyFactor ?? 0) : 0;
+        if (!(bf > 0) || lastRaiserSeat < 0) return {};
+        const raiser = gs.players.find((p) => p.seat === lastRaiserSeat);
+        if (!raiser) return {};
+        const heroBehind = player.stack + player.bet;
+        const raiserTotal = (raiser.stack ?? 0) + (raiser.bet ?? 0);
+        const covers = heroBehind > raiserTotal;
+        if (telemetryOn(opts) && covers) noteFire('v24_bounty_pull');
+        return {
+          bountyFactor: bf,
+          coversRaiser: covers,
+          // Live this hand: what the raiser has left behind their own raise
+          // is already inside what hero would be putting in to call.
+          raiserBustable: covers && (raiser.stack ?? 0) <= toCall,
+        };
+      })(),
       // V23 BLIND CLOCK: jam BEFORE the level halves the M, not after.
       nextBlindInMin:
         (opts.v23Endgame ?? true) !== false
@@ -3272,6 +3304,26 @@ export class HorseLogic {
 
     const simple = d.action === 'check' || d.action === 'fold';
     const aggressive = d.action === 'raise' || d.action === 'all_in';
+    // ═══ V24 NO SNAP FOLDS (Dan 2026-08-28, binding) ═══════════════════════
+    // "I full potted 8 hands in a row in this PLO PKO tournament and never got
+    //  called once preflop, got all snap folds almost every time. Horses need
+    //  to NEVER snap fold - they should always take a couple seconds, even if
+    //  they already know they are going to fold."
+    //
+    // MEASURED against the old model: a preflop FOLD scored
+    // wSnap = 0.34 + 0.30 (simple) + 0.14 (preflop) = 0.78, multiplied by up
+    // to 2.1 for a fast-tempo horse -> a ~74% chance of the SNAP mode. SNAP
+    // drew 180-800ms, then `simple && preflop` cut it 20% and the tempo shaper
+    // cut it up to another 40%: roughly 180-400ms. Eight of those in a row is
+    // what Dan watched, and it is the single loudest tell a table can emit -
+    // no human folds to a pot-sized raise in a fifth of a second.
+    //
+    // FACING A BET IS A DECISION, even when the answer is obvious. A person
+    // still has to see the raise, read their four cards, and click. So when
+    // there is money to call, the snap mode is not instant any more: it is a
+    // human "quick fold" of well over a second, and the floor below holds it
+    // there no matter what the tempo multipliers do.
+    const facingBet = toCall > 0;
     const stage = gs.stage;
     const bigRiverCall = stage === 'river' && toCall > gs.pot * 0.5;
 
@@ -3309,8 +3361,9 @@ export class HorseLogic {
     const roll = fastRandom() * total;
     let think: number;
     if (roll < wSnap) {
-      // SNAP: the decision was made before the action arrived.
-      think = 180 + fastRandom() * 620;
+      // SNAP: the decision was made before the action arrived. With money to
+      // call that still means seeing the bet and acting - never a reflex.
+      think = facingBet ? 1150 + fastRandom() * 1450 : 180 + fastRandom() * 620;
     } else if (roll < wSnap + wBeat) {
       // A BEAT: read the board, count the pot, act.
       think = 1100 + fastRandom() * 3400;
@@ -3333,12 +3386,19 @@ export class HorseLogic {
     // mode still differ.
     think *= 0.6 + tempo * 0.85;
     if (difficulty > 0) think *= 1 + difficulty * 0.35;
-    if (simple && stage === 'preflop') think *= 0.8;
+    // V24: this 20% discount is for CHECKING a free flop preflop, not for
+    // folding to a raise - it was half of how folds reached 180ms.
+    if (simple && stage === 'preflop' && !facingBet) think *= 0.8;
     if (aggressive) think *= 1.1;
     const headsUp = gs.players.filter((p) => !p.is_folded).length === 2;
     if (headsUp) think *= 0.85;
 
-    return Math.round(Math.max(180, think));
+    // ═══ V24 FLOORS ═══ applied after every multiplier, because the tempo
+    // and heads-up shapers are exactly what dragged a 1.2s intention down to
+    // a 400ms reflex. Nothing that faces a bet may act inside FACING_FLOOR_MS.
+    const FACING_FLOOR_MS = 1250;
+    const FREE_FLOOR_MS = 350;
+    return Math.round(Math.max(facingBet ? FACING_FLOOR_MS : FREE_FLOOR_MS, think));
   }
 
   // ─────────────────────────────────────────────────────────────────────

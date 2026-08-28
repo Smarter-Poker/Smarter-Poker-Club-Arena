@@ -434,6 +434,9 @@ export class HorseFleetManager {
             (config.straddleEnabled === true)
           ) {
             updates.straddle_enabled = config.straddleEnabled === true;
+            // Keep the POST in step with the permission - see the note on
+            // auto_utg_straddle in the insert above.
+            updates.auto_utg_straddle = config.straddleEnabled === true;
           }
           if (Object.keys(updates).length > 0) {
             updates.current_players = 0;
@@ -468,6 +471,16 @@ export class HorseFleetManager {
           insurance_enabled: true,
           // V23: straddle tables are born straddling (see TableConfig).
           straddle_enabled: config.straddleEnabled === true,
+          // ═══ 2026-08-28: ENABLED IS NOT THE SAME AS HAPPENING ═══════════
+          // MEASURED: the V23 straddle table went live, seated 8 horses and
+          // dealt 107 hands in two hours - and v18_straddle telemetry stayed
+          // at ZERO. straddle_enabled only means players MAY straddle; the
+          // post itself comes from StraddleEngine, which needs either a
+          // player who toggled auto-straddle or mandatoryUtg. Horses never
+          // toggle anything, so nobody ever straddled and the V18 brain
+          // layer had nothing to read. auto_utg_straddle makes the UTG
+          // straddle mandatory, which is what a "straddle table" means.
+          auto_utg_straddle: config.straddleEnabled === true,
         });
 
         if (error) {
@@ -1017,6 +1030,13 @@ export class HorseFleetManager {
           status: 'waiting',
           // ALL-CASH INSURANCE 2026-08-26: overflow cash tables too.
           insurance_enabled: true,
+          // 2026-08-28: overflow tables inherit the CONFIG'S IDENTITY. The
+          // first straddle overflow ("NLH Straddle 1.00/2.00 #2") went live
+          // with straddle_enabled FALSE - a table named for a game it was
+          // not running, because this insert never learned about the flag
+          // the primary insert had just gained.
+          straddle_enabled: config.straddleEnabled === true,
+          auto_utg_straddle: config.straddleEnabled === true,
         });
         if (error) {
           // Unique-name races between cycles are expected and harmless.

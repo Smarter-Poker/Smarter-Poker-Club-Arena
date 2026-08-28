@@ -4881,7 +4881,9 @@
       "community_cards2",
       "pots",
       "showdown",
-      "rit_boards"
+      "rit_boards",
+      "community_cards3",
+      "bomb_pot"
     ],
     "hand_history_compaction_policy": [
       "id",
@@ -9083,7 +9085,12 @@
       "hands_dealt",
       "avg_pot",
       "bomb_pot_double_board",
-      "cap_bb"
+      "cap_bb",
+      "bomb_pot_board_count",
+      "bomb_pot_trigger_mode",
+      "bomb_pot_interval_seconds",
+      "bomb_pot_min_players",
+      "bomb_pot_ante_fixed"
     ],
     "theme_asset_unlocks": [
       "user_id",

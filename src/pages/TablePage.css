@@ -1291,6 +1291,24 @@
   color: rgba(77, 198, 96, 0.6);
 }
 
+/* Masthead line 3 — time left in the round (Dan 2026-08-28). Its own line on
+   MTT, Spin and Heads-Up tables, under the level and blinds.
+
+   `tabular-nums` on the whole line, not just the digits, so the label does not
+   shuffle sideways as the seconds tick from 9 to 10; the countdown sits still,
+   which is the entire point of putting it where a player can watch it. Dimmer
+   than line 2 for the same reason line 2 is dimmer than the felt: it is
+   reference, not action. */
+.table-brand__line--round {
+  display: block;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: rgba(198, 210, 228, 0.4);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
 /* Union name after the club on masthead line 1 — cooler tone than the club's
    gold so the two read as different things at a glance. */
 .table-brand__union {

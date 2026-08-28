@@ -78,7 +78,12 @@ describe('THE central invariant: the table implies the advertised rake', () => {
     const total = SPIN_TIERS.reduce((s, t) => s + t.freq, 0);
     // Dan's table sums to 10,000,099; the drift is rounding in the source and
     // is immaterial (1 part in 100k). Pinned so a real edit cannot hide in it.
-    expect(Math.abs(total - SPIN_FREQ_DENOMINATOR)).toBeLessThan(200);
+    /* EXACT, not within 200 (2026-08-28). The slack existed because the
+       denominator was a hand-written literal that had drifted 99 off the
+       ladder's real total; it is derived from the ladder now, so the only
+       honest assertion is equality — and a tolerance that hides a real
+       mismatch is how the drift survived in the first place. */
+    expect(total).toBe(SPIN_FREQ_DENOMINATOR);
   });
 });
 

@@ -941,8 +941,14 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         />
       )}
 
-      {/* Bible V8 §4.19: Show/Muck prompt when hero wins without showdown */}
-      {showHandRevealModal && tableId && (
+      {/* Bible V8 §4.19: Show/Muck prompt when hero wins without showdown.
+
+          NEVER IN A TOURNAMENT (Dan 2026-08-28, binding): "IN SPINS, ITS A
+          TOURNAMENT, SO THE 'SHOW CARDS' POP UP SHOULD NEVER EVER APPEAR, ALL
+          CARDS ARE ALWAYS SHOWN AT SHOWDOWN." The opener in TablePage carries
+          the same refusal; this is the render site, so a tournament cannot
+          show this modal no matter which path set the flag. */}
+      {showHandRevealModal && tableId && !isTournament && (
         <HandReveal
           isOpen={showHandRevealModal}
           isWinner={handRevealWinnerId === userId}

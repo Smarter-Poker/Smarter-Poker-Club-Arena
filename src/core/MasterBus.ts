@@ -577,6 +577,8 @@ export interface BusPayloadMap {
     anteAmount: number;
     doubleBoard: boolean;
     bbMultiplier: number;
+    /** TRIPLE-BOARD 2026-08-27: boards actually dealt (1-3); optional for old emitters. */
+    boardCount?: number;
   };
   BOMB_POT_COMPLETED: { tableId: string };
   // Disconnect protection events
@@ -1222,6 +1224,17 @@ class MasterBusCore {
     'SETTINGS_CHANGED',
     'USER_PROFILE_LOADED',
     'CUSTOMIZATION_MUTATION_STATE',
+    // ANIMATION AUDIT 2026-08-27: gameplay-animation events added. These are
+    // engine-fact relays whose payloads can legitimately repeat within 500ms
+    // (two identical antes, an engine re-emit after reconnect, back-to-back
+    // pots of the same size) — deduping them SKIPPED the second animation
+    // with only a console.debug. Dan's rule: no animation is ever skipped.
+    'BOMB_POT_TRIGGERED',
+    'BOMB_POT_COMPLETED',
+    'SHOWDOWN_CARDS_REVEALED',
+    'RIT_OFFERED',
+    'BBJ_HIT',
+    'POT_DISTRIBUTED',
   ];
 
   // #4b Channel factory registry for auto-recovery

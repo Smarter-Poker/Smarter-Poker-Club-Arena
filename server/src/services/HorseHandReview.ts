@@ -26,7 +26,7 @@
 
 import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
-import { variantInfo, omahaNutStatus } from '../engine/HorseEval.js';
+import { variantInfo, omahaNutStatus, nlhNutStatus } from '../engine/HorseEval.js';
 import type { Card } from '../types.js';
 
 export interface HorseReviewInput {
@@ -175,6 +175,47 @@ export function detectLeaks(row: {
   // or was called by better — worth human eyes when it repeats.
   if (row.wentToShowdown && raisedOrBet('river')) {
     tags.push('river_aggr_lost');
+
+    // V21 (2026-08-27): river_aggr_lost lumped ordinary value bets that ran
+    // into the top of the range together with RAISE WARS — and the wars are
+    // where the -500bb pots live. Two or more aggressive river actions from
+    // the horse in one hand is a war it kept escalating.
+    const riverAggrCount = row.heroActions.filter(
+      (a) =>
+        a.stage === 'river' && (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
+    ).length;
+    if (riverAggrCount >= 2) {
+      tags.push('river_raise_war');
+    }
+  }
+
+  // V21 NLH nut discipline at showdown — the holdem mirror of the Omaha
+  // block above. A 20bb+ showdown loss holding a hand the BOARD demotes:
+  // a straight on a three-flush board, a non-nut flush, the bottom boat.
+  if (
+    !vi.isOmaha &&
+    row.wentToShowdown &&
+    row.holeCards &&
+    row.board &&
+    row.board.length >= 5 &&
+    investedBB >= FLAG_BB
+  ) {
+    try {
+      const ns = nlhNutStatus(row.holeCards, row.board, vi.isShortDeck);
+      const flushCat = vi.isShortDeck ? 7 : 6;
+      const boatCat = vi.isShortDeck ? 6 : 7;
+      if (ns.cat === 5 && ns.flushPossible) {
+        tags.push('straight_into_flush_stackoff');
+      } else if (ns.cat === 5 && ns.heroStraightTop < ns.maxStraightTop) {
+        tags.push('nonnut_straight_stackoff');
+      } else if (ns.cat === flushCat && ns.higherFlushRanks >= 1) {
+        tags.push('nonnut_flush_stackoff');
+      } else if (ns.cat === boatCat && ns.underfull) {
+        tags.push('underfull_stackoff');
+      }
+    } catch {
+      /* detector is best-effort */
+    }
   }
 
   return tags;

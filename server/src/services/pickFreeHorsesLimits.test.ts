@@ -38,8 +38,16 @@ describe('pickFreeHorses — the fleet must not read as exhausted while idle', (
     ).toBeNull();
   });
 
-  it('sizes the fetch from the busy set, the way registerHorses does', () => {
-    expect(pickFreeHorsesBody()).toMatch(/\.limit\(\s*count \+ busy\.size/);
+  it('sizes the fetch from the busy set WITH headroom for the post-filters', () => {
+    // V22 (2026-08-27): `count + busy.size` accounted for the busy exclusions
+    // but not the LANE filter below the fetch, which drops a third of any
+    // page (and the freeroll activity window up to 60%). Postgres returns
+    // the same arbitrary rows for the same unordered query, so a page that
+    // filtered to zero was re-examined every guard cycle forever — the
+    // 2026-08-27 overlay bleed ($8,832 across 10 events, freerolls starting
+    // 1/100). The pinned shape is now count*4 + busy.size: still scaled from
+    // the busy set, never a bare constant, with post-filter headroom.
+    expect(pickFreeHorsesBody()).toMatch(/\.limit\(\s*count \* 4 \+ busy\.size/);
   });
 
   it('shuffles candidates so concurrent callers do not claim the same horses', () => {

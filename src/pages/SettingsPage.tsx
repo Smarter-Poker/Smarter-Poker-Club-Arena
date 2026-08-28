@@ -34,6 +34,7 @@ import {
   isIosStandalonePwa,
   isWebPushSupported,
   notificationPermission,
+  sendTestPush,
 } from '../lib/pushClient';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import UserProfileEdit from '../components/social/UserProfileEdit';
@@ -151,6 +152,7 @@ export default function SettingsPage() {
   // Push Notification state
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
+  const [pushTesting, setPushTesting] = useState(false);
 
   // Section refs for tab navigation
   const audioRef = useRef<HTMLElement>(null);
@@ -587,6 +589,36 @@ export default function SettingsPage() {
     setPushLoading(false);
   };
 
+  /**
+   * Prove the subscription actually delivers.
+   *
+   * A green "On for this device" row only means a subscription was persisted.
+   * It cannot tell anyone whether a notification will reach the phone, and the
+   * gap between those two is exactly where this stack has failed before. The
+   * toast reports the DEVICE COUNT rather than just success, because "sent to
+   * 0 devices" is the informative answer: it means the row exists and the push
+   * service rejected it, which is a different fault from never having enrolled.
+   */
+  const handleTestPush = async () => {
+    setPushTesting(true);
+    try {
+      const result = await sendTestPush();
+      if (result.ok) {
+        toast.success(
+          result.sent === 1
+            ? 'Test sent to 1 device. It should arrive in a moment'
+            : `Test sent to ${result.sent} devices. It should arrive in a moment`
+        );
+      } else {
+        toast.error(result.error || 'The test push was not delivered');
+      }
+    } catch (err) {
+      reportError(err, 'SettingsPage.Failed_to_send_test_push');
+      toast.error('Failed to send the test notification');
+    }
+    setPushTesting(false);
+  };
+
   const updateSetting = <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
     setHasChanges(true);
@@ -969,7 +1001,7 @@ export default function SettingsPage() {
               <button
                 className={styles.actionButton}
                 onClick={handleDisablePush}
-                disabled={pushLoading}
+                disabled={pushLoading || pushTesting}
               >
                 {pushLoading ? 'Turning Off...' : 'Turn Off'}
               </button>
@@ -983,6 +1015,28 @@ export default function SettingsPage() {
               </button>
             )}
           </div>
+
+          {/* Only shown once this device holds a subscription, because that is
+            the only state in which the answer means anything. Offered to a
+            device that never enrolled, a test that fails would say nothing the
+            row above has not already said. */}
+          {pushEnabled && (
+            <div className={styles.settingRow}>
+              <div className={styles.settingInfo}>
+                <span className={styles.settingLabel}>Send A Test Notification</span>
+                <span className={styles.settingDesc}>
+                  Check That Alerts Actually Reach This Device
+                </span>
+              </div>
+              <button
+                className={styles.actionButton}
+                onClick={handleTestPush}
+                disabled={pushTesting || pushLoading}
+              >
+                {pushTesting ? 'Sending...' : 'Send Test'}
+              </button>
+            </div>
+          )}
         </section>
 
         {/* Account */}

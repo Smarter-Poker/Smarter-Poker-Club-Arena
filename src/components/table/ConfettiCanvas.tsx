@@ -141,7 +141,27 @@ export function ConfettiCanvas({
     particlesRef.current = createParticles(window.innerWidth, window.innerHeight);
     startTimeRef.current = performance.now();
 
+    // Single completion path shared by the rAF loop and the hidden-tab
+    // backstop below — whichever fires first wins, the other is a no-op.
+    let completed = false;
+    const finish = () => {
+      if (completed) return;
+      completed = true;
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = 0;
+      }
+      try {
+        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      } catch {
+        /* canvas may be gone */
+      }
+      particlesRef.current = [];
+      onCompleteRef.current?.();
+    };
+
     const animate = (now: number) => {
+      if (completed) return;
       const elapsed = now - startTimeRef.current;
       const fadeProgress = Math.max(0, (elapsed - duration * 0.6) / (duration * 0.4));
 
@@ -169,16 +189,22 @@ export function ConfettiCanvas({
       if (elapsed < duration) {
         animFrameRef.current = requestAnimationFrame(animate);
       } else {
-        // Animation complete
-        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-        particlesRef.current = [];
-        onCompleteRef.current?.();
+        finish();
       }
     };
 
     animFrameRef.current = requestAnimationFrame(animate);
 
+    // ANIMATION AUDIT 2026-08-27: browsers stop delivering rAF in a hidden
+    // tab, so `onComplete` never fired there and the parent's gating state
+    // (showConfetti) stayed latched until the tab was foregrounded — which
+    // then swallowed the NEXT win's burst. This wall-clock backstop completes
+    // the burst on schedule whether or not frames were delivered.
+    const safety = setTimeout(finish, duration + 500);
+
     return () => {
+      clearTimeout(safety);
+      completed = true;
       if (animFrameRef.current) {
         cancelAnimationFrame(animFrameRef.current);
       }

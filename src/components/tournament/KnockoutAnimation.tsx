@@ -84,6 +84,12 @@ export default function KnockoutAnimation({
 
   const hasSplit = (data?.addedToHead ?? 0) > 0;
 
+  // ANIMATION AUDIT 2026-08-27: `playSounds` flips on every multi-table tab
+  // switch; as an effect dep it RESTARTED the whole 3.6s knockout from
+  // 'impact' mid-flight. It gates audio only — read it through a ref.
+  const playSoundsRef = useRef(playSounds);
+  playSoundsRef.current = playSounds;
+
   useEffect(() => {
     timersRef.current.forEach(clearTimeout);
     timersRef.current = [];
@@ -103,7 +109,7 @@ export default function KnockoutAnimation({
 
     setPhase('impact');
     setDisplayAmount(0);
-    if (playSounds) {
+    if (playSoundsRef.current) {
       try {
         soundService.playBountyCollected();
       } catch {
@@ -168,8 +174,9 @@ export default function KnockoutAnimation({
     };
     // `data` identity changes per knockout, which is exactly the retrigger we
     // want; onDone is held in a ref so a new callback identity cannot restart
-    // the sequence mid-flight.
-  }, [data, playSounds, hasSplit]);
+    // the sequence mid-flight. playSounds is read via ref (see above) and
+    // hasSplit is derived from data, so `data` is the only real dependency.
+  }, [data, hasSplit]);
 
   if (!data || phase === 'idle') return null;
 

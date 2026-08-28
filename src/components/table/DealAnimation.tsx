@@ -165,7 +165,13 @@ const MAX_DEAL_MS = 1500;
  * Bounded because TablePage holds the action panel until `onComplete`, and a
  * player frozen out of their own turn is worse than a missing animation.
  */
-const SEAT_WAIT_MS = 800;
+// ANIMATION AUDIT 2026-08-27: was 800ms — SHORTER than the roster race it
+// exists to absorb. When the snapshot carrying seat geometry arrived after
+// 800ms the run gave up, onComplete fired, and that hand silently got NO deal
+// animation with no retry. TablePage's action-panel hold has its own hard
+// 2600ms ceiling, so waiting longer cannot freeze a player out of their turn;
+// 1600ms covers the observed race with margin while staying inside the hold.
+const SEAT_WAIT_MS = 1600;
 /** Retry cadence while waiting for the roster / geometry. */
 const WAIT_POLL_MS = 60;
 
@@ -365,21 +371,17 @@ function DealAnimationComponent({
     setFrame({ id: run.id, cards, flightMs: flight });
 
     if (p.playSounds) {
-      cards.forEach((card) => {
-        timersRef.current.push(
-          setTimeout(
-            () => {
-              try {
-                soundService.playDeal();
-              } catch {
-                // A dead AudioContext must never stop the cards flying.
-              }
-            },
-            // +30ms so the sound lands just after the visual launch.
-            card.delay + 30
-          )
-        );
-      });
+      // SOUND AUDIT 2026-08-27: was one setTimeout per card calling
+      // playDeal() — under main-thread load two timers bunched inside the
+      // 50ms sound-priority window and cards went silent. The whole
+      // sequence is now scheduled once on the AudioContext clock, which
+      // cannot bunch. (+30ms so each slide lands just after its visual
+      // launch.)
+      try {
+        soundService.playDealSequence(cards.map((card) => card.delay + 30));
+      } catch {
+        // A dead AudioContext must never stop the cards flying.
+      }
     }
 
     const lastDelay = cards[cards.length - 1].delay;

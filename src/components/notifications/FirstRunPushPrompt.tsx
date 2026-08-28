@@ -33,6 +33,7 @@
  * Copy is Title Case with no em dashes, per CLAUDE.md section 5.7.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   enablePush,
   hasLocalSubscription,
@@ -49,7 +50,40 @@ const IOS_KEY_PREFIX = 'sp_firstrun_ios_install_';
 const IOS_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000; // a week is long enough not to nag
 const SHOW_DELAY_MS = 20_000; // let the player land before asking for anything
 
+/**
+ * Where the ask is DEFERRED, never spent.
+ *
+ * This prompt asks once per account per browser and then closes that door for
+ * good, so the twenty-second timer landing on the wrong screen does not cost a
+ * prompt, it costs the only prompt. `/table/:tableId` is the felt: a modal over
+ * a live hand is dismissed reflexively, by a person with a decision to make and
+ * a clock running, and `sp_firstrun_notif_<uid>` would then record that reflex
+ * as a considered no.
+ *
+ * Deliberately a DEFERRAL and not a suppression. The timer is not armed on
+ * these routes and is armed fresh when the player leaves for somewhere the
+ * question can actually be read. Somebody who only ever plays still gets asked,
+ * in the lobby, on the way out.
+ *
+ * Paths are basename-relative: BrowserRouter carries basename="/hub/club-arena"
+ * (src/main.tsx), so useLocation() reports "/table/abc", not the full URL.
+ */
+const SUPPRESSED_ROUTES = [
+  '/auth', // signed out, or mid sign-in: the subscribe endpoint would 401 anyway
+  '/table', // the felt
+  '/replay', // full-screen hand playback
+  '/sim',
+  '/share', // a shared hand, often opened by somebody with no account
+];
+
+function isSuppressedRoute(pathname: string): boolean {
+  return SUPPRESSED_ROUTES.some((r) => pathname === r || pathname.startsWith(`${r}/`));
+}
+
 type PromptState = null | 'ask' | 'install' | 'blocked' | 'success';
+
+/** What we have decided to ask, held until the route allows asking it. */
+type PendingAsk = null | 'ask' | 'install' | 'blocked';
 
 export default function FirstRunPushPrompt() {
   // Reads the session itself rather than taking a prop, so App.tsx can mount it
@@ -58,18 +92,23 @@ export default function FirstRunPushPrompt() {
   // authenticated, so prompting a signed-out visitor could only ever fail.
   const { user } = useAuthUser();
   const userId = user?.id ?? null;
+  const { pathname } = useLocation();
+  const suppressed = isSuppressedRoute(pathname);
 
   const [state, setState] = useState<PromptState>(null);
+  const [pending, setPending] = useState<PendingAsk>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
+  /** The eligibility check is one-shot: it reads storage and the subscription. */
+  const decided = useRef(false);
+  /** Once answered, nothing re-arms, whatever the player navigates to next. */
+  const answered = useRef(false);
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      if (timer.current) clearTimeout(timer.current);
     };
   }, []);
 
@@ -82,8 +121,11 @@ export default function FirstRunPushPrompt() {
     }
   }, [userId]);
 
+  /* ── Decide WHAT to ask. Runs once, and never on the route. ──────────── */
   useEffect(() => {
-    if (!userId || typeof window === 'undefined') return undefined;
+    if (!userId || typeof window === 'undefined') return;
+    if (decided.current || answered.current) return;
+    decided.current = true;
 
     let alreadyAsked = false;
     try {
@@ -91,7 +133,7 @@ export default function FirstRunPushPrompt() {
     } catch {
       /* private mode */
     }
-    if (alreadyAsked) return undefined;
+    if (alreadyAsked) return;
 
     if (!isWebPushSupported()) {
       if (isIos() && !isIosStandalonePwa()) {
@@ -101,17 +143,11 @@ export default function FirstRunPushPrompt() {
         } catch {
           /* private mode */
         }
-        if (Date.now() - lastAsked < IOS_COOLDOWN_MS) return undefined;
-
-        timer.current = setTimeout(() => {
-          if (mounted.current) setState('install');
-        }, SHOW_DELAY_MS);
-        return () => {
-          if (timer.current) clearTimeout(timer.current);
-        };
+        if (Date.now() - lastAsked < IOS_COOLDOWN_MS) return;
+        setPending('install');
       }
       // Any other browser without push support genuinely cannot do this.
-      return undefined;
+      return;
     }
 
     void (async () => {
@@ -120,16 +156,21 @@ export default function FirstRunPushPrompt() {
         markDone(); // nothing to ask for
         return;
       }
-      timer.current = setTimeout(() => {
-        if (!mounted.current) return;
-        setState(perm === 'denied' ? 'blocked' : 'ask');
-      }, SHOW_DELAY_MS);
+      if (mounted.current) setPending(perm === 'denied' ? 'blocked' : 'ask');
     })();
-
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
   }, [userId, markDone]);
+
+  /* ── Decide WHEN to ask. Re-arms on every route change. ──────────────── */
+  useEffect(() => {
+    // `suppressed` is a dependency, so leaving the felt re-runs this and starts
+    // a fresh delay. Nothing is consumed while the player is on a bad screen:
+    // the timer is simply never armed there.
+    if (!pending || state || suppressed) return undefined;
+    const t = setTimeout(() => {
+      if (mounted.current) setState(pending);
+    }, SHOW_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [pending, state, suppressed]);
 
   const handleEnable = async () => {
     if (busy) return;
@@ -139,6 +180,11 @@ export default function FirstRunPushPrompt() {
     if (!mounted.current) return;
     setBusy(false);
     markDone();
+    // The question has been put and answered. Clearing `pending` is what stops
+    // the re-arm effect from raising it again after the success card fades or
+    // the player navigates.
+    answered.current = true;
+    setPending(null);
     if (result.ok) {
       setState('success');
       setTimeout(() => {
@@ -166,6 +212,8 @@ export default function FirstRunPushPrompt() {
     } else {
       markDone();
     }
+    answered.current = true;
+    setPending(null);
     setState(null);
   };
 

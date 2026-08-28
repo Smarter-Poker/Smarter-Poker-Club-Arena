@@ -51,6 +51,15 @@ export async function logHandHistory(params: {
   communityCards: string[];
   /** DOUBLE-BOARD BOMB POT 2026-08-20: board 2 (empty on single-board hands). */
   communityCards2?: string[];
+  /** TRIPLE-BOARD BOMB POT 2026-08-27: board 3 (empty below three boards). */
+  communityCards3?: string[];
+  /**
+   * BOMB POT STANDARDIZATION 2026-08-27 (spec §20): the bomb facts frozen at
+   * trigger time — why the hand was a bomb, the equal forced ante, and how
+   * many boards were actually dealt. Written to hand_history.bomb_pot as
+   * jsonb; NULL on every normal hand.
+   */
+  bombPot?: { trigger_reason: string; ante_amount: number; board_count: number } | null;
   /**
    * COMPLETENESS PASS 2026-08-26: run-it-twice boards 2..N (engine card
    * strings, run order). Written to hand_history.rit_boards — NULL on every
@@ -193,6 +202,11 @@ export async function logHandHistory(params: {
     // so existing consumers see no change. Column added by migration
     // 20260820 bomb_pot_double_board.
     community_cards2: params.communityCards2?.length ? params.communityCards2 : null,
+    // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 + frozen bomb facts (spec
+    // §20). Both NULL on normal hands. Columns added by migration
+    // 20260827_bomb_pot_standardization.
+    community_cards3: params.communityCards3?.length ? params.communityCards3 : null,
+    bomb_pot: params.bombPot ?? null,
     // COMPLETENESS PASS 2026-08-26: RIT boards 2..N, first-class. NULL (not
     // []) on single-run hands so historical rows and normal hands look
     // identical. Column added by migration 20260826_hand_history_rit_boards.

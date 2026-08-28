@@ -39,6 +39,31 @@ class ThrowableSoundServiceClass {
   private bus: GainNode | null = null;
   /** Per-voice output set at the start of each play*() call (panner → bus). */
   private out: AudioNode | null = null;
+  private unlockInstalled = false;
+
+  /**
+   * SOUND AUDIT 2026-08-27: this context is created lazily at the FIRST throw
+   * — which, for a spectator, is an INCOMING broadcast, not a gesture. On
+   * mobile the context is then born 'suspended', the fire-and-forget resume()
+   * in ensureContext is rejected, and nothing retried: every subsequent throw
+   * landed silently. Mirror SoundService's unlock pattern — resume on the
+   * next user gesture and whenever the tab returns to the foreground.
+   */
+  private installUnlockListeners() {
+    if (this.unlockInstalled || typeof window === 'undefined') return;
+    this.unlockInstalled = true;
+    const tryResume = () => {
+      if (this.ctx && this.ctx.state === 'suspended') {
+        void this.ctx.resume();
+      }
+    };
+    window.addEventListener('pointerdown', tryResume, { passive: true });
+    window.addEventListener('touchstart', tryResume, { passive: true });
+    window.addEventListener('keydown', tryResume);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) tryResume();
+    });
+  }
 
   private ensureContext(): boolean {
     if (!soundService.isEnabled()) return false;
@@ -61,6 +86,7 @@ class ThrowableSoundServiceClass {
         this.bus.gain.value = 1;
         this.bus.connect(comp);
       }
+      this.installUnlockListeners();
       if (this.ctx.state === 'suspended') {
         void this.ctx.resume();
       }

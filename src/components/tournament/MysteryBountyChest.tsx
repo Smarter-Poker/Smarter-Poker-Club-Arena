@@ -423,10 +423,24 @@ export default function MysteryBountyChest({
     }
   };
 
+  // ANIMATION AUDIT 2026-08-27: `playSounds` (ambientSoundsAllowed) flips
+  // whenever the player switches multi-table tab. It sat in the arrival
+  // effect's and runOpen's dependency arrays, so a tab switch MID-CHEST tore
+  // the sequence down, reset the opened latch, and re-dropped the chest from
+  // the landing thump. It is a play-time gate, not sequence identity — read
+  // it through a ref.
+  const playSoundsRef = useRef(playSounds);
+  playSoundsRef.current = playSounds;
+
   /** Run the open -> explosion -> reveal sequence. Idempotent. */
   const runOpen = useCallback(() => {
     if (openedRef.current || !chestKey) return;
     openedRef.current = true;
+    // 2026-08-27: cancel the landing phase's pending `toLocked` — remote
+    // opens / the spectator failsafe can fire inside the 700ms landing
+    // window, and the stale timer then snapped the chest BACK to 'locked'
+    // mid-open before it jumped to explosion.
+    clearTimers();
 
     // Ask the server for the number, if it has not been asked already. This is
     // the TAP path and the AUTO-OPEN path in one line, which is what makes
@@ -455,7 +469,7 @@ export default function MysteryBountyChest({
       }
     }
 
-    if (playSounds) {
+    if (playSoundsRef.current) {
       try {
         soundService.playMysteryChestOpen();
       } catch {
@@ -469,7 +483,7 @@ export default function MysteryBountyChest({
 
     const toExplosion = setTimeout(() => {
       setPhase('explosion');
-      if (playSounds) {
+      if (playSoundsRef.current) {
         try {
           soundService.playMysteryChestExplosion();
         } catch {
@@ -481,7 +495,7 @@ export default function MysteryBountyChest({
 
     const toRevealed = setTimeout(() => {
       setPhase('revealed');
-      if (playSounds) {
+      if (playSoundsRef.current) {
         try {
           soundService.playMysteryBountyReveal();
         } catch {
@@ -531,7 +545,7 @@ export default function MysteryBountyChest({
     // Keyed on the chest, not the data object: the props change mid-sequence
     // when the amount lands, and a new `runOpen` identity on that render would
     // re-arm the failsafe effects below against a chest that is already open.
-  }, [chestKey, isJackpot, playSounds, requestReveal]);
+  }, [chestKey, isJackpot, requestReveal]);
 
   /** The winner's tap. Opens locally at once, and tells everyone else. */
   const handleOpenClick = useCallback(() => {
@@ -563,7 +577,7 @@ export default function MysteryBountyChest({
     const reduced = prefersReducedMotion();
 
     setPhase('landing');
-    if (playSounds) {
+    if (playSoundsRef.current) {
       try {
         soundService.playMysteryChestLand();
       } catch {
@@ -575,7 +589,8 @@ export default function MysteryBountyChest({
     timersRef.current.push(toLocked);
 
     return clearTimers;
-  }, [chestKey, playSounds]);
+    // playSounds deliberately NOT a dep — see playSoundsRef above.
+  }, [chestKey]);
 
   /**
    * The amount can land AFTER the count-up has already finished — a slow

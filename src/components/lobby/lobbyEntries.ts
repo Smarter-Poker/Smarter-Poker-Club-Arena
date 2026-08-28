@@ -352,6 +352,12 @@ export interface CashFeatureSource {
   bomb_pot_enabled?: boolean | null;
   bomb_pot_frequency?: number | null;
   bomb_pot_double_board?: boolean | null;
+  /* BOMB POT STANDARDIZATION 2026-08-27: canonical board count (1-3) and
+     trigger mode ('every_n_hands' | 'once_per_orbit' | 'timed' |
+     'bomb_pot_only'), plus the timed interval. */
+  bomb_pot_board_count?: number | null;
+  bomb_pot_trigger_mode?: string | null;
+  bomb_pot_interval_seconds?: number | null;
   ante_enabled?: boolean | null;
   ante?: number | null;
   seven_deuce_enabled?: boolean | null;
@@ -435,19 +441,57 @@ export function cashRuleMedallions(row: CashFeatureSource): RuleMedallion[] {
     });
   }
 
-  /* `bomb_pot_enabled` with a frequency of 0 deals no bomb pots — the engine
-     requires both (`bomb_pot_enabled && bomb_pot_frequency > 0`). */
+  /* `bomb_pot_enabled` with a frequency of 0 deals no bomb pots in the legacy
+     every-N-hands mode — the engine requires both. BOMB POT STANDARDIZATION
+     2026-08-27 (spec §15.1): the other trigger modes carry their own cadence,
+     so each mode gets its own badge detail — players must see the bomb
+     frequency, board count and mode BEFORE they sit. */
   const bombOn = col(row.bomb_pot_enabled) ?? on(s, 'bomb_pot_enabled', 'bombPot');
   const bombFreq =
     Number(row.bomb_pot_frequency) || num(s, 'bomb_pot_frequency', 'bombPotFrequency') || 0;
-  if (bombOn && bombFreq > 0) {
-    const dbl = col(row.bomb_pot_double_board) === true || s.bomb_pot_double_board === true;
-    rules.push({
-      key: 'bomb',
-      label: 'BOMB POTS',
-      detail: `1 IN ${bombFreq}`,
-      tip: `A bomb pot every ${bombFreq} hands${dbl ? ', dealt on two boards' : ''}`,
-    });
+  const bombMode =
+    (typeof row.bomb_pot_trigger_mode === 'string' && row.bomb_pot_trigger_mode) ||
+    (typeof s.bomb_pot_trigger_mode === 'string' && s.bomb_pot_trigger_mode) ||
+    'every_n_hands';
+  const bombBoards =
+    Number(row.bomb_pot_board_count) ||
+    num(s, 'bomb_pot_board_count') ||
+    (col(row.bomb_pot_double_board) === true || s.bomb_pot_double_board === true ? 2 : 1);
+  const bombIntervalMin = Math.round(
+    (Number(row.bomb_pot_interval_seconds) || num(s, 'bomb_pot_interval_seconds') || 0) / 60
+  );
+  const bombModeLive =
+    bombMode === 'bomb_pot_only' ||
+    bombMode === 'once_per_orbit' ||
+    (bombMode === 'timed' && bombIntervalMin > 0) ||
+    (bombMode === 'every_n_hands' && bombFreq > 0);
+  if (bombOn && bombModeLive) {
+    const boardsTip =
+      bombBoards >= 3 ? ', dealt on three boards' : bombBoards === 2 ? ', dealt on two boards' : '';
+    const byMode: Record<string, { label: string; detail?: string; tip: string }> = {
+      every_n_hands: {
+        label: 'BOMB POTS',
+        detail: `1 IN ${bombFreq}`,
+        tip: `A bomb pot every ${bombFreq} hands${boardsTip}`,
+      },
+      once_per_orbit: {
+        label: 'BOMB POTS',
+        detail: 'EVERY ORBIT',
+        tip: `A bomb pot once per dealer-button orbit${boardsTip}`,
+      },
+      timed: {
+        label: 'BOMB POTS',
+        detail: `EVERY ${bombIntervalMin} MIN`,
+        tip: `A bomb pot every ${bombIntervalMin} minutes${boardsTip}`,
+      },
+      bomb_pot_only: {
+        label: 'BOMB POT ONLY',
+        detail: bombBoards >= 3 ? 'TRIPLE BOARD' : bombBoards === 2 ? 'DOUBLE BOARD' : undefined,
+        tip: `Every hand is a bomb pot${boardsTip}`,
+      },
+    };
+    const b = byMode[bombMode] ?? byMode.every_n_hands;
+    rules.push({ key: 'bomb', label: b.label, detail: b.detail, tip: b.tip });
   }
 
   if (col(row.ante_enabled) ?? on(s, 'ante_enabled')) {

@@ -118,6 +118,19 @@ describe('exact-rate money math', () => {
   });
 });
 
+describe('preflop offer presentation (2026-08-28)', () => {
+  it('with no flop there are no outs — the strip labels the street instead', () => {
+    const { getByText, queryByText } = renderModal({ board: [], outs: [], outPct: undefined });
+    expect(getByText('Preflop All-In')).toBeTruthy();
+    expect(queryByText(/^Outs:/)).toBeNull();
+  });
+
+  it('with a flop the outs count renders as before', () => {
+    const { getByText } = renderModal();
+    expect(getByText('Outs: 6')).toBeTruthy();
+  });
+});
+
 describe('EV cashout wiring', () => {
   it('no handler => no tab (a dead money button must never render)', () => {
     const { queryByText } = renderModal();
@@ -126,10 +139,7 @@ describe('EV cashout wiring', () => {
 
   it("with a handler, the tab shows the SERVER'S quote verbatim and sends it on Cash Out", () => {
     const onEvCashout = vi.fn();
-    const { getByText, getAllByText } = renderModal(
-      { evCashoutAmount: 41.87 },
-      { onEvCashout }
-    );
+    const { getByText, getAllByText } = renderModal({ evCashoutAmount: 41.87 }, { onEvCashout });
     fireEvent.click(getByText('EV Cashout'));
     // The server's number, not a client recomputation.
     expect(getAllByText('41.87').length).toBeGreaterThan(0);

@@ -310,9 +310,15 @@ export function InsuranceModal({
             now lives in this scrollable body; the buttons are pinned below
             it and always on screen. */}
         <div className="insurance-modal__body">
-          {/* Info strip: outs count, pot, live countdown context */}
+          {/* Info strip: outs count, pot, live countdown context.
+            PREFLOP OFFER 2026-08-28: with no flop there are no "outs" — the
+            strip labels the street instead of showing a meaningless 0. */}
           <div className="insurance-modal__info-strip">
-            <span className="insurance-modal__info-item">Outs: {offer.outs?.length ?? 0}</span>
+            {offer.board.length >= 3 ? (
+              <span className="insurance-modal__info-item">Outs: {offer.outs?.length ?? 0}</span>
+            ) : (
+              <span className="insurance-modal__info-item">Preflop All-In</span>
+            )}
             <span className="insurance-modal__info-item">
               Pot: {currency}
               {offer.potAmount.toLocaleString()}

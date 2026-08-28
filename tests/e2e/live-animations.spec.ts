@@ -491,3 +491,108 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
     await ctx.close();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE INSURANCE DIALOG — layout contract at the PIXEL level (2026-08-28).
+//
+// Dan's recording (hand #3158299): on a phone the modal's content overflowed
+// `max-height: 90vh; overflow: hidden` and the Insure/No buttons rendered
+// below the clip line — a timed FINANCIAL decision with no visible controls,
+// expiring into a final auto-decline. The jsdom suite pins the DOM structure;
+// this beat pins what a real browser actually PAINTS: on a short viewport the
+// body scrolls, and the decision buttons are on screen and hittable.
+// ═══════════════════════════════════════════════════════════════════════════
+test.describe('LIVE E2E — the insurance dialog, on a short phone viewport', () => {
+  test('the decision buttons are painted on screen and hittable; the body scrolls', async ({
+    browser,
+  }) => {
+    // 375x480 — shorter than any phone this app supports, so the body is
+    // GUARANTEED to overflow and the scroll contract is genuinely exercised.
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 480 } });
+    const page = await ctx.newPage();
+    await loadLiveCss(page);
+
+    await page.evaluate(() => {
+      const row = (label: string) =>
+        `<div class="insurance-modal__player-row"><span class="insurance-modal__player-name">${label}</span>` +
+        `<span class="insurance-modal__player-equity">50.00%</span>` +
+        `<span class="insurance-modal__player-cards"><span class="insurance-modal__card">A</span>` +
+        `<span class="insurance-modal__card">K</span></span></div>`;
+      const outs = Array.from(
+        { length: 8 },
+        () =>
+          `<span class="insurance-modal__outs-card"><span class="insurance-modal__card">A</span></span>`
+      ).join('');
+      const overlay = document.createElement('div');
+      overlay.className = 'insurance-overlay';
+      overlay.innerHTML = `<div class="insurance-modal" id="insModal">
+        <div class="insurance-modal__header"><div class="insurance-modal__title-row">
+          <span class="insurance-modal__icon">S</span>
+          <h2 class="insurance-modal__title">All-In Insurance</h2></div>
+          <span class="insurance-modal__timer">23s</span></div>
+        <div class="insurance-modal__body" id="insBody">
+          <div class="insurance-modal__info-strip"><span class="insurance-modal__info-item">Outs: 6</span>
+            <span class="insurance-modal__info-item">Pot: 62</span></div>
+          <div class="insurance-modal__board"><span class="insurance-modal__board-label">Board:</span>
+            <span class="insurance-modal__board-card">9</span><span class="insurance-modal__board-card">Q</span>
+            <span class="insurance-modal__board-card">2</span></div>
+          <div class="insurance-modal__players">${row('kingfish')}${row('Ryan Thomas')}${row('Third Player')}</div>
+          <div class="insurance-modal__outs"><span class="insurance-modal__outs-label">Outs Against You (6)</span>
+            <div class="insurance-modal__outs-cards">${outs}</div></div>
+          <div class="insurance-modal__readouts">
+            <div class="insurance-modal__readout"><span class="insurance-modal__readout-label">Insurance Fee</span>
+              <span class="insurance-modal__readout-value insurance-modal__readout-value--fee">14.92</span></div>
+            <div class="insurance-modal__readout"><span class="insurance-modal__readout-label">Rate</span>
+              <span class="insurance-modal__readout-value">3.16</span></div>
+            <div class="insurance-modal__readout"><span class="insurance-modal__readout-label">Insured Pot</span>
+              <span class="insurance-modal__readout-value insurance-modal__readout-value--insured">47.10</span></div></div>
+          <div class="insurance-modal__coverage"><input type="range" class="insurance-modal__slider">
+            <div class="insurance-modal__slider-range"><span>0.15</span><span>19.64</span></div>
+            <div class="insurance-modal__presets">
+              <button class="insurance-modal__preset">Break Even</button>
+              <button class="insurance-modal__preset">Constant Profit</button></div></div>
+          <div class="insurance-modal__outcomes"><span class="insurance-modal__outcomes-label">With Insurance You Will Get:</span>
+            <div class="insurance-modal__outcomes-row"><span class="insurance-modal__outcome">For Winning: <strong>47.08</strong></span>
+              <span class="insurance-modal__outcome">For Losing: <strong>47.10</strong></span></div></div>
+        </div>
+        <div class="insurance-modal__actions">
+          <button class="insurance-modal__btn insurance-modal__btn--decline" id="insNo">No</button>
+          <button class="insurance-modal__btn insurance-modal__btn--accept" id="insYes">Insure</button>
+        </div>
+      </div>`;
+      document.body.appendChild(overlay);
+    });
+
+    const verdict = await page.evaluate(() => {
+      const modal = document.getElementById('insModal')!;
+      const body = document.getElementById('insBody')!;
+      const yes = document.getElementById('insYes')!;
+      const no = document.getElementById('insNo')!;
+      const yesBox = yes.getBoundingClientRect();
+      const noBox = no.getBoundingClientRect();
+      const hit = document.elementFromPoint(
+        yesBox.left + yesBox.width / 2,
+        yesBox.top + yesBox.height / 2
+      );
+      const fade = getComputedStyle(body, '::after');
+      return {
+        modalMaxH: getComputedStyle(modal).maxHeight,
+        bodyOverflowY: getComputedStyle(body).overflowY,
+        bodyScrolls: body.scrollHeight > body.clientHeight,
+        yesOnScreen: yesBox.top >= 0 && yesBox.bottom <= window.innerHeight && yesBox.height > 0,
+        noOnScreen: noBox.top >= 0 && noBox.bottom <= window.innerHeight && noBox.height > 0,
+        yesHittable: hit === yes || yes.contains(hit),
+        fadePosition: fade.position,
+      };
+    });
+
+    // The exact defect from the recording, in reverse:
+    expect(verdict.bodyOverflowY, 'the body must scroll, not clip').toBe('auto');
+    expect(verdict.bodyScrolls, 'this viewport must actually overflow the body').toBe(true);
+    expect(verdict.yesOnScreen, 'INSURE must be painted inside the viewport').toBe(true);
+    expect(verdict.noOnScreen, 'NO must be painted inside the viewport').toBe(true);
+    expect(verdict.yesHittable, 'nothing may cover the INSURE button').toBe(true);
+    expect(verdict.fadePosition, 'the scroll-affordance fade must ride the body').toBe('sticky');
+    await ctx.close();
+  });
+});

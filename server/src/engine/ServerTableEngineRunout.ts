@@ -340,9 +340,16 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         insuredAmount: accepted_offer?.insuredAmount,
       };
     } else {
-      // POKERBROS PARITY 2026-08-26 (Dan): every decline is final for the hand.
-      this.insuranceEngine.decline(this.tableId, userId, true);
-      return { success: true, status: 'declined_for_hand' };
+      // POKERBROS PARITY 2026-08-26 (Dan): a decline is final for the hand —
+      // EXCEPT preflop (Dan 2026-08-28: "OFFERED PRE FLOP, AND REOFFERED ON
+      // THE FLOP"): a preflop decline is street-only; the flop offer is where
+      // finality begins.
+      const pending = this.insuranceEngine
+        .getOffers(this.tableId)
+        .find((o) => o.playerId === userId && o.status === 'offered');
+      const forHand = (pending?.boardLength ?? 3) >= 3;
+      this.insuranceEngine.decline(this.tableId, userId, forHand);
+      return { success: true, status: forHand ? 'declined_for_hand' : 'declined_street' };
     }
   }
 
@@ -1785,11 +1792,6 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       });
     };
 
-    // Preflop all-in: no offer before the flop — deal up to the flop first.
-    if (board.length < 3) {
-      continueAfterResponses();
-      return;
-    }
     if (result.complete) {
       // Board already full — nothing left to insure; finish the hand.
       this.waitForInsuranceResponses(() => {
@@ -1806,25 +1808,57 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // - If players are TIED (same hand rank + kickers), NO insurance offered
     // - On later streets, re-evaluate — if a different player takes the lead,
     //   insurance is offered to THEM (if they haven't declined for hand)
+    //
+    // PREFLOP OFFER (Dan 2026-08-28: "THIS SHOULD BE OFFERED PRE FLOP, AND
+    // REOFFERED ON THE FLOP"): a preflop all-in used to deal straight to the
+    // flop and only offer there. It now offers on the EMPTY board first.
+    // Preflop there is no made hand to rank, so the leader is the exact
+    // EQUITY favorite (insuranceEquity's seeded 6,000-board sample — the same
+    // number the pricing uses); a dead-even matchup (within 0.05%) offers to
+    // nobody, mirroring the tied-hands rule.
     // ═══════════════════════════════════════════════════════════════════════
     const variant = this.tableInfo?.game_variant || 'nlh';
     const isOmaha = isOmahaVariant(variant);
     const handEvaluator = isOmaha ? evaluateOmahaHand : evaluateHand;
+    const isShortDeckPreflop = variant === 'short_deck';
 
-    // Evaluate all hands on current board
-    const playerEvals = offerPlayers.map((p) => ({
-      ...p,
-      hand: handEvaluator(p.holeCards, result.board),
-    }));
+    let bestHandPlayer: { playerId: string; holeCards: import('../types.js').Card[] } | null = null;
+    let isTied = false;
+    if (board.length < 3) {
+      let bestEq = -1;
+      for (const p of offerPlayers) {
+        const opps = offerPlayers.filter((o) => o.playerId !== p.playerId).map((o) => o.holeCards);
+        if (opps.length === 0 || p.holeCards.length < 2) continue;
+        try {
+          const r = insuranceEquity(p.holeCards, opps, result.board, variant, isShortDeckPreflop);
+          if (Math.abs(r.equity - bestEq) < 0.05) {
+            isTied = true;
+          } else if (r.equity > bestEq) {
+            bestEq = r.equity;
+            bestHandPlayer = p;
+            isTied = false;
+          }
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.preflop_leader_equity');
+        }
+      }
+      if (isTied) bestHandPlayer = null;
+    } else {
+      // Evaluate all hands on current board
+      const playerEvals = offerPlayers.map((p) => ({
+        ...p,
+        hand: handEvaluator(p.holeCards, result.board),
+      }));
 
-    // Sort by hand rank descending (best first)
-    playerEvals.sort((a, b) => compareHands(b.hand, a.hand));
+      // Sort by hand rank descending (best first)
+      playerEvals.sort((a, b) => compareHands(b.hand, a.hand));
 
-    // Check for tie: if top two players have identical hands, no insurance
-    const isTied =
-      playerEvals.length >= 2 && compareHands(playerEvals[0].hand, playerEvals[1].hand) === 0;
+      // Check for tie: if top two players have identical hands, no insurance
+      isTied =
+        playerEvals.length >= 2 && compareHands(playerEvals[0].hand, playerEvals[1].hand) === 0;
 
-    const bestHandPlayer = isTied ? null : playerEvals[0];
+      bestHandPlayer = isTied ? null : playerEvals[0];
+    }
 
     // FIX 139: Pass shortDeck to insurance engine for correct equity calculations
     const isShortDeckInsurance = this.tableInfo?.game_variant === 'short_deck';
@@ -1983,6 +2017,13 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       return;
     }
 
+    // STREET REVEAL PAUSE (Dan 2026-08-28: "IT MUST ACTUALLY SHOW THE FLOP
+    // FIRST, WAIT 1 SECONDS AFTER FLOP BEFORE THE OFFER POPS UP. USERS NEED
+    // TO SEE THE FLOPS, TURNS AND RIVERS"): the card just landed in the
+    // broadcast above — hold a full beat so every seat SEES the street
+    // before the next dialog covers the table.
+    await this.sleep(1000);
+
     // More cards to come — re-enter the flow on the new board (fresh leader
     // evaluation, fresh offer). The catch mirrors handleAllInRunout's: an
     // unhandled rejection must never leave the hand parked without a clock.
@@ -2037,7 +2078,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       context?.allInPlayers.find((p) => p.user_id === playerId)?.username ||
       this.seatedPlayers.find((p) => p.user_id === playerId)?.username ||
       'Player';
-    const street = !context ? '' : context.board.length === 3 ? 'flop' : 'turn';
+    // PREFLOP OFFER 2026-08-28: the empty board is a street of its own now.
+    const street = !context
+      ? ''
+      : context.board.length < 3
+        ? 'preflop'
+        : context.board.length === 3
+          ? 'flop'
+          : 'turn';
     // Outs as a probability of the NEXT card: outs / unseen cards. The popup
     // renders it next to the count ("10 Outs - 22.7%").
     let outPct = 0;

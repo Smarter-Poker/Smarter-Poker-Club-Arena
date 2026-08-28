@@ -6729,7 +6729,11 @@ export default function TablePage({
           // "your turn" so a multi-tabling leader looks over in time.
           playTurnAlert();
           setInsuranceWaitingOn(null);
-          setDecisionDeadline({ kind: 'insurance', at: Date.now() + insSecs * 1000 });
+          // COUNTDOWN HONESTY 2026-08-28: the multi-table tab's background
+          // countdown anchors to the ENGINE's deadline when it rides the
+          // offer, not a seconds figure that is stale on arrival.
+          const insDeadline = Number(heroOffer.deadlineAt) || Date.now() + insSecs * 1000;
+          setDecisionDeadline({ kind: 'insurance', at: insDeadline });
         } else {
           // Everyone else (players AND observers) sees the reference flow's
           // quiet status bar while the leader decides. Auto-expires with the

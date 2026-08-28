@@ -48,7 +48,9 @@ describe('fleet straddle table', () => {
   });
 
   it('the reuse path COMPARES before writing (an unconditional write would reset current_players every cycle)', () => {
-    expect(fleetSrc).toContain('straddle_enabled !== (config.straddleEnabled === true)');
+    // Whitespace-tolerant: the pre-commit Prettier wraps this line, and an
+    // exact-substring pin broke in CI the first time it did (run 33141442420).
+    expect(fleetSrc).toMatch(/straddle_enabled !==\s*\(config\.straddleEnabled === true\)/);
     expect(fleetSrc).toContain(
       "select('id, status, union_id, game_variant, small_blind, big_blind, straddle_enabled')"
     );

@@ -19,7 +19,10 @@ import { resolve } from 'node:path';
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MiniStatsCard } from '../../src/components/table/MiniStatsCard';
-import { sliceMethod, sliceMethod } from '../helpers/sourceWindow';
+// `sliceMethod` was imported twice here (a duplicate named import, TS2300).
+// Pre-existing on main and harmless only because tests/ sits outside the app
+// tsconfig; corrected in passing, 2026-08-28.
+import { sliceMethod } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const tsCode = (src: string) =>

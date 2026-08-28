@@ -13,24 +13,33 @@
    It is declared on `.table-page` rather than on `.table-hud` because chat is
    NOT inside the HUD: `<TableChat>` is a sibling further down TablePage's tree
    (TablePage.tsx ~13658). `.table-page` is the nearest common ancestor, and it
-   is also the element TablePage.tsx sets `--sp-action-h` on, so the input and
-   the derived value live together.
+   is also the element that declares `--sp-action-reserve`, so the input and the
+   derived value live together.
 
-   --sp-action-h is the action bar's MEASURED height, published by a
-   ResizeObserver on `.action-panel-wrapper`. Since 2026-08-25 that measurement
-   is the BORDER-BOX height, so it already contains the wrapper's
-   safe-area-inset-bottom padding — do NOT add env() on top of it here, which is
-   what the four old copies did and what made the two icons float a
-   home-indicator's worth too high on a notched phone. The FALLBACK still has to
-   carry the inset, because a browser with no ResizeObserver never gets the
-   measurement: it mirrors `.action-panel-wrapper`'s own min-height floor, which
-   is `var(--sp-bottom-row-h) + env(safe-area-inset-bottom)`.
+   --sp-action-reserve is how much of the screen the bottom chrome is ENTITLED
+   to, declared statically on `.table-page` (TablePage.css) — not how tall it
+   happens to be this instant. It already contains the wrapper's
+   safe-area-inset-bottom, so do NOT add env() on top of it here; that is what
+   the four old copies did and what made the two icons float a home-indicator's
+   worth too high on a notched phone. The fallback restates the same sum from
+   its parts for a stylesheet-order accident, nothing more.
+
+   IT USED TO BE A LIVE MEASUREMENT (`--sp-action-h`, a ResizeObserver on
+   `.action-panel-wrapper`) AND THAT IS WHY THE HUD USED TO WALK UP AND DOWN THE
+   SCREEN. The wrapper collapses to 1px whenever the hero has no action, so both
+   icons dropped ~90px to the bottom edge between hands and sprang back on the
+   hero's turn. Same root cause as the felt zooming (Dan 2026-08-27) and fixed
+   the same way. Do not point this back at a measurement.
 
    The 8px is the visual breathing gap between the bottom chrome and the two
    icons resting on it. */
 .table-page {
   --sp-hud-line: calc(
-    var(--sp-action-h, calc(var(--sp-bottom-row-h, 52px) + env(safe-area-inset-bottom, 0px))) + 8px
+    var(
+        --sp-action-reserve,
+        calc(var(--sp-bottom-row-h, 52px) + env(safe-area-inset-bottom, 0px))
+      ) +
+      8px
   );
 }
 
@@ -62,8 +71,8 @@
      to be `env(safe-area-inset-bottom, 8px)` while the reserve below counted
      the same strip again — so on a notched phone the home-indicator was counted
      TWICE and the bottom-left stack floated 34px higher than the chat button.
-     The strip is now counted exactly once, inside the measured --sp-action-h
-     that --sp-hud-line is built from (see the top of this file). */
+     The strip is now counted exactly once, inside the --sp-action-reserve that
+     --sp-hud-line is built from (see the top of this file). */
   padding: env(safe-area-inset-top, 8px) env(safe-area-inset-right, 8px) 0
     env(safe-area-inset-left, 8px);
 }
@@ -149,8 +158,10 @@
      "clears the collapsed 3-button action bar" - which is the bug stated as a
      feature. Open the raise slider and the panel is taller than that, so the
      previous-hand card was covered by it. Reported as the buttons being
-     missing; they were never removed. --sp-action-h is the panel's real
-     measured height, published by TablePage.
+     missing; they were never removed. --sp-action-reserve is the height the bar
+     is entitled to at this breakpoint, declared in TablePage.css — big enough
+     for the open slider, and constant, which the measured height it replaced on
+     2026-08-27 was not.
 
      ═══ THE BOTTOM-EDGE LINE (Dan 2026-08-25, item 6) ═══
      "The time bank button needs to be lower, same level as the chat button.

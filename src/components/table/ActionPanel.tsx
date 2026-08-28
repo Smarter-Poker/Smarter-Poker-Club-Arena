@@ -939,11 +939,14 @@ export default function ActionPanel({
    * `position: fixed; bottom: 0` panel, so the panel grows UPWARD over the hero
    * and the bottom of the felt and the row underneath never moves a pixel.
    *
-   * That also settles `--sp-action-h`, the reserve every other stylesheet reads:
-   * it is measured on `.action-panel-wrapper`, and this panel is `position:
-   * fixed`, so it is not part of that wrapper's flow. Opening the overlay
-   * cannot grow the published height, which is the whole point — the table must
-   * not reflow when the slider appears.
+   * The reserve every other stylesheet reads is `--sp-action-reserve`, and it
+   * is now a constant declared in TablePage.css rather than a measurement of
+   * `.action-panel-wrapper`, so opening the overlay cannot change it by any
+   * route at all. (It could not before either — this panel is `position: fixed`
+   * and not part of that wrapper's flow — but "cannot, because of where the
+   * markup happens to sit" is a fact somebody can edit away, and on 2026-08-27
+   * a different collapse of that same wrapper did resize the table twice a
+   * hand.) The table must not reflow when the slider appears.
    */
   const raiseOverlay = (() => {
     if (!isRaiseMode) return null;

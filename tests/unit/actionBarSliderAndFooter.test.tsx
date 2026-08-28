@@ -378,18 +378,22 @@ describe('the bottom reserve cannot move under a player mid-drag', () => {
    * "--sp-action-h is MEASURED from this panel's real height", so collapsing
    * the row would shrink the reserve and resize the table under the thumb.
    *
-   * It is not measured from the panel. `actionPanelRef` — and the name is what
-   * made it look that way — is attached to `.action-panel-wrapper`, and
-   * `.action-panel` is `position: fixed`, so it is out of that wrapper's flow
-   * and contributes nothing to its height whatever it contains. These three
-   * assertions are that argument, in the order it has to hold.
+   * It was not measured from the panel — the ref was on `.action-panel-wrapper`
+   * and the panel is `position: fixed`, out of that wrapper's flow.
+   *
+   * 2026-08-27: nothing is measured at all now. The wrapper's height was still
+   * reaching the felt by a different door — it collapses to 1px whenever the
+   * hero has no action, which rescaled the whole table twice a hand (Dan: "the
+   * screen is moving in and out constantly"). The reserve is a declared
+   * constant, so the guarantee this section is about no longer rests on an
+   * argument about which element a ref happens to be attached to.
    */
-  it('measures the WRAPPER, not the panel', () => {
-    expect(TABLE_TSX).toContain('className="action-panel-wrapper" ref={actionPanelRef}');
-    expect(TABLE_TSX).toContain("root.style.setProperty('--sp-action-h'");
+  it('takes no measurement of the bottom chrome at all', () => {
+    expect(TABLE_TSX).not.toContain('actionPanelRef');
+    expect(TABLE_TSX).not.toContain("setProperty('--sp-action-h'");
   });
 
-  it('keeps the panel out of the measured wrapper flow', () => {
+  it('keeps the panel out of the wrapper flow', () => {
     expect(rule(ACTION_CSS, '.action-panel')).toMatch(/position:\s*fixed/);
   });
 

@@ -87,8 +87,7 @@ describe('synchronized breaks run :55 -> :00', () => {
   });
 
   it('the liveness sweep does not rebuild engines during a break', () => {
-    const start = BASE.indexOf('protected async reviveDeadTableEngines');
-    const revive = BASE.slice(start, start + 1800);
+    const revive = sliceMethod(BASE, 'protected async reviveDeadTableEngines');
     // Paused is not dead: the sweep must bail out before the dead check.
     expect(revive).toMatch(/if \(this\.onBreak\) return;/);
     const guardAt = revive.indexOf('this.onBreak');
@@ -457,8 +456,8 @@ describe('the :55 break covers every format, not only the MTTs', () => {
        BEHAVIOURAL assertion, which is strictly stronger than the regex it
        replaces — a `toUpperCase()` compared against a lowercase literal would
        have passed the old pin and matched nothing in production. */
-    const fn = BASE.slice(BASE.indexOf('isMttOrXmtt(): boolean'));
-    expect(fn.slice(0, 400)).toMatch(/isShortFormat\(/);
+    const fn = sliceMethod(BASE, 'isMttOrXmtt(): boolean');
+    expect(fn).toMatch(/isShortFormat\(/);
 
     // Either column identifies the format, in any casing. See the docstring on
     // isShortFormat for why both are read: the two disagree in the wild.
@@ -577,8 +576,8 @@ describe('a paused table parks whatever it was doing', () => {
   });
 
   it('resuming clears the hold, so the next pause is judged on its own terms', () => {
-    const resume = ENGINE_BASE.slice(ENGINE_BASE.indexOf('resumeDealing()'));
-    expect(resume.slice(0, 800)).toMatch(/this\.holdBeforeNextHand = false/);
+    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing()');
+    expect(resume).toMatch(/this\.holdBeforeNextHand = false/);
   });
 
   it('the park is what areAllTablesParked reads, so an idle table counts', () => {

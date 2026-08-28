@@ -35,6 +35,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceEnclosingBlock, sliceStatement } from '../helpers/sourceWindow';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
@@ -47,8 +48,8 @@ const BOARD_CSS = read('src/components/table/CommunityCards.css');
 
 describe('the engine SENDS which board cards won', () => {
   it('pot_win carries card_indices', () => {
-    const potWin = EVENTS.slice(EVENTS.indexOf("type: 'pot_win'"));
-    expect(potWin.slice(0, 1200)).toMatch(/card_indices:/);
+    const potWin = sliceEnclosingBlock(EVENTS, "type: 'pot_win'");
+    expect(potWin).toMatch(/card_indices:/);
   });
 
   it("the indices are derived from the winners' evaluated cards", () => {
@@ -62,7 +63,7 @@ describe('the engine SENDS which board cards won', () => {
     // than slicing forward from winningBoardIndices.
     const at = EVENTS.indexOf('const capturedBoard');
     expect(at, 'capturedBoard not found').toBeGreaterThan(-1);
-    expect(EVENTS.slice(at, at + 400)).toMatch(/communityCards/);
+    expect(sliceStatement(EVENTS, 'const capturedBoard')).toMatch(/communityCards/);
     expect(EVENTS.indexOf('winningBoardIndices')).toBeGreaterThan(at);
   });
 
@@ -72,8 +73,8 @@ describe('the engine SENDS which board cards won', () => {
   });
 
   it('a highlight failure can never break the payout event', () => {
-    const block = EVENTS.slice(EVENTS.indexOf('winningBoardIndices'));
-    expect(block.slice(0, 900)).toMatch(/catch/);
+    const block = sliceEnclosingBlock(EVENTS, 'winningBoardIndices', 0, 2);
+    expect(block).toMatch(/catch/);
   });
 });
 

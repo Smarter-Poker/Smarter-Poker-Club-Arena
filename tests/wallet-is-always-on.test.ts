@@ -26,6 +26,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceBlockAfter } from './helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
@@ -84,8 +85,8 @@ describe('wallet survives a reload without going to zero', () => {
 
   it('never persists the transaction ledger', () => {
     // Large and genuinely sensitive, and no surface needs it on boot.
-    const partialize = STORE.slice(STORE.indexOf('partialize: (state)'));
-    expect(partialize.slice(0, 400)).not.toMatch(/transactions:/);
+    const partialize = sliceBlockAfter(STORE, 'partialize: (state)');
+    expect(partialize).not.toMatch(/transactions:/);
   });
 });
 

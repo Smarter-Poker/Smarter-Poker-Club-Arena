@@ -28,6 +28,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceSqlStatement, sliceMethod } from '../helpers/sourceWindow';
 
 const ROOT = resolve(__dirname, '../..');
 const SQL = readFileSync(
@@ -130,7 +131,7 @@ describe('the agent wallet is the account that moves', () => {
   });
 
   it('the unique index that settles a true race covers the new types', () => {
-    const idx = SQL.slice(SQL.indexOf('chip_transactions_agent_wallet_op_id_uidx'));
+    const idx = sliceSqlStatement(SQL, 'chip_transactions_agent_wallet_op_id_uidx');
     for (const t of [
       'agent_wallet_send',
       'agent_wallet_claim_back',
@@ -139,7 +140,7 @@ describe('the agent wallet is the account that moves', () => {
       'cashout_denied',
       'cashout_cancelled',
     ]) {
-      expect(idx.slice(0, 900)).toContain(`'${t}'`);
+      expect(idx).toContain(`'${t}'`);
     }
   });
 });
@@ -429,7 +430,7 @@ describe('the client asks the right server', () => {
   });
 
   it('and a failed push can never fail the money that already moved', () => {
-    const push = SERVICE.slice(SERVICE.indexOf('async function pushQuietly'));
-    expect(push.slice(0, 700)).toContain('catch');
+    const push = sliceMethod(SERVICE, 'async function pushQuietly');
+    expect(push).toContain('catch');
   });
 });

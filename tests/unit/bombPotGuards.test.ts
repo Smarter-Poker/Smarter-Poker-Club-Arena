@@ -11,6 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceMethod, sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -54,14 +55,13 @@ describe('the LIVE hand variant is the one seam (spec §10.1)', () => {
   });
 
   it('the snapshot betting structure reads the HAND variant', () => {
-    const fn = ENGINE.slice(ENGINE.indexOf('private bettingStructureFields'));
-    expect(fn.slice(0, 800)).toMatch(/this\.activeHandVariant\(\)/);
-    expect(fn.slice(0, 800)).not.toMatch(/tableInfo\?\.game_variant/);
+    const fn = sliceMethod(ENGINE, 'private bettingStructureFields');
+    expect(fn).toMatch(/this\.activeHandVariant\(\)/);
+    expect(fn).not.toMatch(/tableInfo\?\.game_variant/);
   });
 
   it('the legal-action pot-limit clamp reads the HAND variant', () => {
-    const idx = TURNS.indexOf('const structure = bettingStructureFor(variant)');
-    const window = TURNS.slice(Math.max(0, idx - 400), idx);
+    const window = sliceEnclosingBlock(TURNS, 'const structure = bettingStructureFor(variant)');
     expect(window).toMatch(/this\.activeHandVariant\(\)/);
   });
 

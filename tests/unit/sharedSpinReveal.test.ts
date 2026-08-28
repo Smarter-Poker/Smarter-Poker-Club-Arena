@@ -25,6 +25,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { SPIN_REVEAL, spinRevealTotalMs } from '../../src/config/spinSpec';
+import { sliceMethod, sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
@@ -93,9 +94,9 @@ describe('the ENGINE names the moment and holds the deal', () => {
   });
 
   it('the broadcast carries what the wheel needs to render the real draw', () => {
-    const block = BASE.slice(BASE.indexOf("type: 'spin_reveal'"));
+    const block = sliceEnclosingBlock(BASE, "type: 'spin_reveal'");
     for (const field of ['multiplier', 'buy_in', 'locked_tiers']) {
-      expect(block.slice(0, 800), `missing ${field}`).toContain(field);
+      expect(block, `missing ${field}`).toContain(field);
     }
   });
 
@@ -113,13 +114,13 @@ describe('the ENGINE names the moment and holds the deal', () => {
   });
 
   it('the hold only ever extends, so a second caller cannot shorten it', () => {
-    const fn = ENGINE_BASE.slice(ENGINE_BASE.indexOf('holdDealingUntil'));
-    expect(fn.slice(0, 300)).toMatch(/>\s*this\.dealHoldUntilMs/);
+    const fn = sliceMethod(ENGINE_BASE, 'holdDealingUntil');
+    expect(fn).toMatch(/>\s*this\.dealHoldUntilMs/);
   });
 
   it('a broadcast failure can never stop a game from starting', () => {
-    const block = BASE.slice(BASE.indexOf("type: 'spin_reveal'") - 600);
-    expect(block.slice(0, 1400)).toMatch(/catch/);
+    const block = sliceEnclosingBlock(BASE, "type: 'spin_reveal'", 0, 3);
+    expect(block).toMatch(/catch/);
   });
 });
 

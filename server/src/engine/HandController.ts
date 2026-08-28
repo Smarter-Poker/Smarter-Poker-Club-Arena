@@ -2058,6 +2058,25 @@ export class HandController {
       r.mucked = false;
     });
 
+    /**
+     * A TOURNAMENT SHOWDOWN IS ALWAYS FACE UP (Dan 2026-08-28, binding).
+     *
+     * "IN SPINS, ITS A TOURNAMENT, SO THE 'SHOW CARDS' POP UP SHOULD NEVER
+     * EVER APPEAR, ALL CARDS ARE ALWAYS SHOWN AT SHOWDOWN."
+     *
+     * The rules below are the cash-game courtesy: a hand that cannot win or
+     * tie any pot may keep its cards private. A tournament does not grant
+     * that — every hand that reaches showdown is tabled, which is also what
+     * makes the hand history and the rail honest about how a player busted.
+     *
+     * Placed beside the all-in lock because it is the same shape of rule:
+     * an early return leaves every `r.mucked = false` from the loop above
+     * standing, so nothing downstream has to special-case it. `is_mucked`
+     * in the snapshot, the MUCKED seat label, the withheld hole cards and
+     * the persisted showdown set all key off that one flag.
+     */
+    if (this.config.isTournament) return;
+
     // Spec section 8: all-in with no further betting possible — expose all.
     if (this.allInShowdownLocked) return;
 

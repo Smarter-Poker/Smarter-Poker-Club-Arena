@@ -2472,6 +2472,38 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     }
   }, [narrowing.fSpec, advFilters, gameType, resolvedClubId, selectFavoritesOnly, selectGameType]);
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A SAVED FILTER MAY NEVER EMPTY A LOBBY THAT HAS GAMES (2026-08-28)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Dan: "every single time i try to sit down at a spin, EVERY SINGLE ONE
+   * disappears from the spins lobby. and you can't sit or register for one."
+   *
+   * Reproduced on this club: the SPINS tab rendered "Nothing Matches Your
+   * Filters - 46 Games Are Open In This Club, But The Filters On This Tab
+   * Hide Them All" over a board that had forty-odd joinable spins on it. The
+   * filters were real and saved (`ca_advanced_filters_<club>` carried
+   * statuses and buy-in bands for SPIN), and `saveFilters` persists them
+   * per club per tab — so once a combination that matches nothing is stored,
+   * EVERY later visit to that tab opens empty. Nothing about it says
+   * "filter"; it just looks like the spins are gone, forever, which is
+   * exactly the report.
+   *
+   * The empty state does offer "Show All Games", and that is the right
+   * control to keep — but a remedy the player has to notice is not a fix for
+   * a lobby that lies about being empty. A filter set that hides EVERY game
+   * is not a preference, it is a dead end, so it is dropped automatically and
+   * announced. One shot per tab per club: the guard ref stops this fighting a
+   * player who is deliberately narrowing toward zero in the filter sheet,
+   * because a deliberate narrowing they can see and undo is not a dead end.
+   *
+   * Deliberately narrow — it fires only when the tab's own filters are what
+   * emptied it (`narrowing.filtered`), never for a genuinely empty club and
+   * never for the tab or Favorites, which are one visible tap to undo.
+   */
+  const autoUnfilteredRef = useRef<string | null>(null);
+
   const filteredTournaments = useMemo(() => {
     if (!showsTournaments) return [];
 
@@ -3176,6 +3208,40 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     waitlistCounts,
     club?.id,
     clubNames,
+  ]);
+
+  /* The auto-recovery declared above, placed here because it needs the two
+     values it judges: the rendered board and the club's real game count. */
+  useEffect(() => {
+    if (loading) return;
+    if (!narrowing.filtered || !narrowing.fSpec) return;
+    if (lobbyEntries.length > 0) return;
+    /* The same total `totalGameCount` reports further down, written out here
+       because that constant is declared below this effect. "The club has
+       games but this tab shows none" is the whole trigger. */
+    if (tables.length + tournaments.length <= 0) return;
+    const guardKey = `${resolvedClubId ?? 'unknown'}:${gameType}`;
+    if (autoUnfilteredRef.current === guardKey) return;
+    autoUnfilteredRef.current = guardKey;
+
+    const next: FilterStore = {
+      ...advFilters,
+      [gameType]: emptyFilterValue(narrowing.fSpec),
+    };
+    setAdvFilters(next);
+    if (resolvedClubId) saveFilters(resolvedClubId, next);
+    toast.info('Filters Cleared, They Were Hiding Every Game');
+  }, [
+    loading,
+    narrowing.filtered,
+    narrowing.fSpec,
+    lobbyEntries.length,
+    tables.length,
+    tournaments.length,
+    advFilters,
+    gameType,
+    resolvedClubId,
+    toast,
   ]);
 
   const selectedEntry = useMemo(

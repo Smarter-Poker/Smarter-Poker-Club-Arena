@@ -322,6 +322,17 @@ export interface SeatedPlayer {
 export interface HandConfig {
   tableId: string;
   handNumber: number;
+  /**
+   * Is this hand being played in a TOURNAMENT (spin, sit-n-go or MTT)?
+   *
+   * Dan 2026-08-28, binding: "IN SPINS, ITS A TOURNAMENT, SO THE 'SHOW CARDS'
+   * POP UP SHOULD NEVER EVER APPEAR, ALL CARDS ARE ALWAYS SHOWN AT SHOWDOWN."
+   *
+   * Read by applyShowdownRevealRules, which otherwise lets a hand that cannot
+   * win or tie any pot stay face-down. In a tournament every hand that reaches
+   * showdown is tabled, so the muck branch is skipped entirely.
+   */
+  isTournament?: boolean;
   gameVariant: GameVariant;
   smallBlind: number;
   bigBlind: number;

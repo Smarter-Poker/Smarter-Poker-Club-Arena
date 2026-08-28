@@ -10342,154 +10342,36 @@ export default function TablePage({
     return () => window.clearTimeout(t);
   }, [engineWsStatus, isActive, heroIsSeated, ambientSoundsAllowed]);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // HORSE LOADING — Load seated horses from DB into React table state
-  // ═══════════════════════════════════════════════════════════════════════════
-  const horsesLoadedRef = useRef(false);
-  // Track horse seat→profile mapping synchronously (not via React state)
-  // so TURN_CHANGE handler can check immediately without waiting for re-render
-  const horseMapRef = useRef<
-    Map<number, { id: string; profile: string; name: string; stack: number }>
-  >(new Map());
+  /* ═══════════════════════════════════════════════════════════════════════
+     THE CLIENT HORSE LOADER IS GONE (Dan 2026-08-28: "PROCEED AND REMOVE IT")
+     ═══════════════════════════════════════════════════════════════════════
 
-  useEffect(() => {
-    if (!tableId || horsesLoadedRef.current || _horsesLoadedForTable[tableId]) return;
-    // Wait for table info to load first (maxPlayers must be set)
-    if (tableState.blinds === '?/?') return;
-    /**
-     * ═══════════════════════════════════════════════════════════════════════
-     *  TOURNAMENT TABLES ARE OFF LIMITS TO THE CLIENT HORSE PATH (2026-08-28)
-     * ═══════════════════════════════════════════════════════════════════════
-     *
-     * This whole effect is a pre-migration relic: the SERVER seats, funds and
-     * steers every horse on a tournament table (HorseFleetManager,
-     * fn_seat_horse_in_seat_first_game). Left ungated, it did two separate
-     * kinds of damage on every Spin a player opened, both caught live on
-     * production while chasing Dan's "ALL THE BUTTONS ARE 'EMPTY' /
-     * 'SPECTATING'" report:
-     *
-     * 1. populateHorsePlayers paints a horse whose real stack is 0 with an
-     *    INVENTED `bigBlind * 100` (2,000 on a 10/20 spin). The playHasBegun
-     *    latch reads "a seat bought at zero chips now holds a stack" as THE
-     *    START SIGNAL — one fabricated frame and it latches, D8 tears down
-     *    seatFirstBuyIn, every open seat renders as an inert EMPTY plate and
-     *    the footer says plain "Spectating". The DB overwrite to 0 arrives a
-     *    second later; the latch is deliberately permanent.
-     *
-     * 2. Worse, when it found no horses it called HydraService.seedTable —
-     *    which INSERTS table_seats rows directly from the browser. A spin's
-     *    paid-seat count IS its live table_seats count, so client-seeded
-     *    unpaid seats are indistinguishable from bought ones to the start
-     *    gate. Horses on tournament tables enter through the same paid RPCs
-     *    as humans (section 10.5), never through a spectator's browser.
-     *
-     * The blinds gate above has already run, and the same mount write that
-     * resolves the blinds stamps isTournament/tournamentId (loadTableInfo,
-     * one setTableState), so this check cannot race them. The ref is left
-     * unset on purpose: if a stale cash read later corrects into a
-     * tournament id, the effect re-runs and still refuses.
-     */
-    if (tableState.isTournament || tableState.tournamentId) return;
+     ~150 lines lived here from before the server-authoritative migration.
+     They ran on every table once the blinds resolved and did three things,
+     all of them now wrong:
 
-    // Set IMMEDIATELY to prevent duplicate async calls on re-render AND remount
-    horsesLoadedRef.current = true;
-    _horsesLoadedForTable[tableId] = true;
+       1. INVENTED STACKS. A horse whose real stack was 0 was painted with
+          `bigBlind * 100` — 2,000 chips on a 10/20 game. On a pre-start Spin
+          that fabricated frame was read as "the game has started" and locked
+          the whole seat-first UI (fixed 2026-08-28 by gating it off
+          tournaments; this deletes the source instead).
+       2. WROTE SEATS FROM THE BROWSER. Finding no horses it called
+          HydraService.seedTable, which INSERTs table_seats rows and DELETEs
+          departed ones directly — unpaid seats indistinguishable from bought
+          ones, and a seat-row delete that the chips-cannot-leave-the-felt
+          ledger watch has to account for.
+       3. FED A MAP NOBODY READ. `horseMapRef` was written here and read in
+          exactly zero places; the TURN_CHANGE consumer it was built for went
+          with the client-side HandController.
 
-    const loadHorses = async () => {
-      try {
-        // Initialize Hydra
-        HydraService.initialize();
+     The server fleet owns horses on EVERY table now — cash included, measured
+     at 201 horses across 44 live cash tables at the time of this change — and
+     the roster reaches this page the same way every other player does: the
+     table_seats read at mount, the pre-start roster sync, and the engine
+     snapshot. Nothing was replacing this block, so nothing replaces it.
 
-        // Get all horses seated at this table via HydraService
-        const horses = await HydraService.getActiveHorses(tableId);
-
-        if (horses.length === 0) {
-          // No horses found, seed the table
-          const bbMatch = tableState.blinds.match(/\/(\d+)/);
-          const bigBlind = bbMatch ? parseInt(bbMatch[1]) : 2;
-          // Use seedTable return value directly — avoids RLS read issues on table_seats
-          const seededHorses = await HydraService.seedTable(tableId, bigBlind);
-          if (seededHorses.length > 0) {
-            console.debug(
-              '[Horses] seedTable returned',
-              seededHorses.length,
-              'horses, populating UI'
-            );
-            populateHorsePlayers(seededHorses);
-          } else {
-            // Fallback: try DB query in case horses were already seated by another client
-            const dbHorses = await HydraService.getActiveHorses(tableId);
-            if (dbHorses.length > 0) {
-              console.debug('[Horses] Fallback DB query found', dbHorses.length, 'horses');
-              populateHorsePlayers(dbHorses);
-            }
-          }
-        } else {
-          // Load horses into table state
-          populateHorsePlayers(horses);
-        }
-      } catch (err) {
-        reportError(err, 'TablePage.Failed_to_load_horses');
-        horsesLoadedRef.current = false; // Allow retry on error
-        if (tableId) _horsesLoadedForTable[tableId] = false;
-      }
-    };
-
-    const populateHorsePlayers = (horses: import('../services/HydraService').HorsePlayer[]) => {
-      // Set horse map SYNCHRONOUSLY before React state update
-      // This ensures TURN_CHANGE handler can detect horses immediately
-      for (const horse of horses) {
-        const bbMatch = tableState.blinds.match(/\/(\d+)/);
-        const bigBlind = bbMatch ? parseFloat(bbMatch[1]) : 2;
-        const stack = horse.stack > 0 ? horse.stack : bigBlind * 100;
-        horseMapRef.current.set(horse.seatNumber, {
-          id: horse.id,
-          profile: horse.profile,
-          name: horse.name || `Player ${horse.seatNumber}`,
-          stack,
-        });
-      }
-
-      setTableState((prev) => {
-        const updatedPlayers = [...prev.players];
-        let populated = 0;
-
-        for (const horse of horses) {
-          const seatIdx = horse.seatNumber - 1;
-          if (seatIdx >= 0 && seatIdx < updatedPlayers.length && !updatedPlayers[seatIdx]) {
-            const bbMatch = prev.blinds.match(/\/(\d+)/);
-            const bigBlind = bbMatch ? parseFloat(bbMatch[1]) : 2;
-            const stack = horse.stack > 0 ? horse.stack : bigBlind * 100;
-
-            updatedPlayers[seatIdx] = {
-              id: horse.id,
-              name: horse.name || `Player ${horse.playerNumber || seatIdx + 1}`,
-              avatar:
-                horse.avatar ||
-                generateAvatarSvg(horse.id || horse.name || 'horse', horse.name || 'Horse'),
-              stack,
-              status: 'active' as const,
-              isHero: false,
-              showCards: false,
-              // Extended horse properties for TURN_CHANGE auto-action
-              isHorse: true,
-              horseProfile: horse.profile,
-            } as any;
-            populated++;
-          }
-        }
-
-        // Horses populated into seats
-        return { ...prev, players: updatedPlayers };
-      });
-    };
-
-    loadHorses();
-    // isTournament/tournamentId are in the deps so a table whose tournament
-    // identity resolves after its blinds still re-evaluates the gate; the
-    // loaded-ref keeps a cash table from double-loading.
-  }, [tableId, tableState.blinds, tableState.isTournament, tableState.tournamentId]);
-  // ═══════════════════════════════════════════════════════════════════════════
+     HydraService keeps its read-only helpers (getActiveHorses, and the
+     waitlist yield below); its seat WRITERS refuse outright — see seedTable. */
 
   // REALTIME PROFILES — a seated player's avatar or cosmetics changed
   // ═══════════════════════════════════════════════════════════════════════════
@@ -12671,6 +12553,19 @@ export default function TablePage({
          */
         if (
           ASK_TO_SHOW_ON_UNCONTESTED_WIN &&
+          /* NEVER IN A TOURNAMENT (Dan 2026-08-28, binding): "IN SPINS, ITS A
+             TOURNAMENT, SO THE 'SHOW CARDS' POP UP SHOULD NEVER EVER APPEAR,
+             ALL CARDS ARE ALWAYS SHOWN AT SHOWDOWN."
+
+             The constant above is false today, so this prompt is dark
+             everywhere — but the constant exists precisely so somebody can
+             turn it back on for CASH in one line, and the next person to do
+             that would silently re-arm it for every Spin and MTT too. A
+             tournament is not a place where showing is a choice, so the rule
+             is written into the condition rather than left resting on a flag
+             that is documented as reversible. TableModalsLayer carries the
+             same refusal at the render site. */
+          !tableStateRef.current.isTournament &&
           winnerIds.length > 0 &&
           winnerIds.includes(userId) &&
           !heroHandOutcomeRef.current.showdown &&
@@ -16916,15 +16811,6 @@ export default function TablePage({
                                 Level {tableState.currentLevel || 1}
                                 {' \u00B7 '}
                                 {tableState.blinds || '10/20'}
-                                {levelClock && (
-                                  <>
-                                    {' \u00B7 '}
-                                    <MastheadLevelClock
-                                      startedAtMs={levelClock.startedAtMs}
-                                      durationSec={levelClock.durationSec}
-                                    />
-                                  </>
-                                )}
                               </span>
                               {(tableState.handNumber ?? 0) > 0 && (
                                 <span className="table-brand__hand">
@@ -16932,6 +16818,35 @@ export default function TablePage({
                                 </span>
                               )}
                             </span>
+                            {/* \u2500\u2500 LINE 3: TIME LEFT IN THE ROUND \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+                                Dan 2026-08-28: "ON MTT'S SPINS AND HEADS UP
+                                TABLES UNDER THE 2ND LINE, A 3RD LINE SHOULD
+                                APPEAR WITH THE AMOUNT OF TIME LEFT IN THE
+                                ROUND (COUNT DOWN CLOCK)."
+
+                                It used to be a dot-separated tail on line 2,
+                                behind the level and the blinds \u2014 the first
+                                thing to ellipsize on a 375px screen, which is
+                                the width this table is designed for, so the
+                                number a player most wants between hands was
+                                the one most likely to be cut. On its own line
+                                it always fits and always reads.
+
+                                Rendered only when a level clock exists: a
+                                seat-first game before it starts has no round
+                                running, and inventing a countdown there is the
+                                phantom "LEVEL 1 - 3:00" that restarted on
+                                every reload (fixed the same day). The clock
+                                starts when the round does. */}
+                            {levelClock && (
+                              <span className="table-brand__line table-brand__line--round">
+                                Round Ends In{' '}
+                                <MastheadLevelClock
+                                  startedAtMs={levelClock.startedAtMs}
+                                  durationSec={levelClock.durationSec}
+                                />
+                              </span>
+                            )}
                           </>
                         );
                       }

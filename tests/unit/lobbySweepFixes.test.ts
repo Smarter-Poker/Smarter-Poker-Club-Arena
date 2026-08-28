@@ -276,8 +276,16 @@ describe('the player-state chip is visibly three states', () => {
     const defs = CSS.match(/^\.lt-mine \{/gm) ?? [];
     expect(defs.length).toBe(1);
   });
-  it('does not swallow the hover on a row you are seated at', () => {
-    expect(CSS).toContain('.lt-row.is-mine:hover');
+  /* SUPERSEDED 2026-08-28 (Dan: "REMOVE ANY HOVER EFFECT FROM THE SPINS
+     LOBBY"). This pinned `.lt-row.is-mine:hover`, which existed only because
+     `.lt-row:hover` and `.lt-row.is-mine` were the same specificity and the
+     later one won — so the row you were seated at was the one row with no
+     hover. There is no hover anywhere in this stylesheet now, which resolves
+     that collision by removing both sides of it. What still has to be true is
+     that being seated at a row remains VISIBLE, and that is the green rail. */
+  it('still marks a row you are seated at, without any hover', () => {
+    expect(CSS).toContain('.lt-row.is-mine');
+    expect(CSS).not.toContain('.lt-row.is-mine:hover');
   });
   it('gives the primary action a 44px target', () => {
     expect(CSS).toMatch(/\.lt-act \{[^}]*min-height: 44px/);

@@ -133,9 +133,6 @@ export interface SpinTierSpec {
   reserveThresholdX: number;
 }
 
-/** Denominator for `freq`. */
-export const SPIN_FREQ_DENOMINATOR = 10_000_000;
-
 /**
  * The ladder. Frequencies are Dan's spec verbatim.
  *
@@ -251,6 +248,23 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     reserveThresholdX: 1.5,
   },
 ];
+
+/**
+ * Denominator for `freq` — DERIVED FROM THE LADDER, never written by hand.
+ *
+ * It was the literal `10_000_000` while the tiers below actually sum to
+ * 10,000,099 (this file's own 500x-retirement note says so in as many words:
+ * "total freq 10,000,099 (unchanged)"). Anything dividing a `freq` by the
+ * literal therefore described a distribution totalling 100.00099%, and the
+ * only reason no money moved is that the one real consumer
+ * (TournamentService's SPEC_TOTAL_FREQ) re-totals the array itself and treats
+ * this as a fallback it never reaches.
+ *
+ * A hand-maintained total of a hand-maintained table is a drift waiting to
+ * happen, and this one had already drifted. Summing the ladder makes the two
+ * incapable of disagreeing: retune a tier and the denominator follows.
+ */
+export const SPIN_FREQ_DENOMINATOR: number = SPIN_TIERS.reduce((sum, t) => sum + t.freq, 0);
 
 /**
  * Blind ladder. Identical at every multiplier — only the starting stack

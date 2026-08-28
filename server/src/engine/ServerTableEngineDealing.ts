@@ -1490,6 +1490,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const config: HandConfig = {
       tableId: this.tableId,
       handNumber,
+      /* Dan 2026-08-28, binding: a tournament showdown is always face up, so
+         applyShowdownRevealRules skips the cash-game muck courtesy entirely.
+         Same predicate every other tournament branch in this file uses. */
+      isTournament: this.isTournamentTable(),
       // VARIANT OVERRIDE (spec §10.1): a bomb hand may play a different
       // variant from the table. Everything downstream — evaluator, hole-card
       // count, betting structure, horse equity, hand history — reads the

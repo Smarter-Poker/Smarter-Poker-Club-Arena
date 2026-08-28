@@ -782,7 +782,7 @@ export abstract class TournamentManagerBase {
     const { data: freshRow } = await supabase
       .from('tournaments')
       .select(
-        'bounty_pool, prize_pool_finalized, mystery_bounty_stage, mystery_bounty_pool_percent, ' +
+        'bounty_pool, bounty_pool_paid, prize_pool_finalized, mystery_bounty_stage, mystery_bounty_pool_percent, ' +
           'mystery_bounty_regular_pool_percent, mystery_bounty_profile, mystery_bounty_activation, ' +
           'mystery_bounty_activation_value, payout_structure, current_players'
       )
@@ -803,7 +803,12 @@ export abstract class TournamentManagerBase {
       poolCents = mysteryPoolCents(
         poolCentsFromNumeric(fresh.bounty_pool),
         fresh.mystery_bounty_pool_percent,
-        fresh.mystery_bounty_regular_pool_percent
+        fresh.mystery_bounty_regular_pool_percent,
+        // What the REGULAR half has already paid out as flat pre-activation
+        // knockouts. fn_mystery_bounty_seed subtracts this before checking
+        // the inventory sum; not subtracting it here is what refused every
+        // seed this platform has ever attempted. See mysteryPoolCents.
+        poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0)
       );
     } catch (err) {
       // A bounty pool that is not a whole number of cents means something

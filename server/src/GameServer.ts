@@ -185,6 +185,10 @@ export class GameServer {
   private lastConservationAt = 0;
   /** Last fn_backpay_hu_winner_shortfalls pass (2026-08-27 phase 3d). */
   private lastHuBackpayAt = 0;
+  /** Last fn_charge_place_overpays pass (2026-08-28 duplicate-place overpay). */
+  private lastPlaceOverpayChargeAt = 0;
+  /** Last fn_repair_tournament_rake_attribution pass (2026-08-28). */
+  private lastRakeAttributionRepairAt = 0;
   private running: boolean = false;
   private startTime: number = Date.now();
 
@@ -2811,8 +2815,17 @@ export class GameServer {
         // share instead of two (the createSNG pool overwrite, ~230,561 chips
         // over 30 days) is repaid, evidence-based and idempotent
         // (fn_credit_and_log key per tournament+winner). Self-draining: paid
-        // events fall out of the scan, and the cutoff date means the backlog
-        // can only shrink.
+        // events fall out of the scan, so the backlog can only shrink.
+        //
+        // CORRECTED 2026-08-28: this used to say the backlog could only shrink
+        // "because of the cutoff date". That cutoff was a literal
+        // `ended_at < '2026-08-28T00:00:00Z'` inside the RPC, and on 2026-08-28
+        // it stopped matching anything at all - the sweep would have reported a
+        // clean paid:0 forever while new shortfalls piled up behind it. The
+        // window is a rolling 30 days now (with a 30-minute settling grace so
+        // an event still writing its prize credits is never back-paid
+        // mid-finalisation). What makes it drain is the idempotency key and the
+        // NOT EXISTS on the back-pay row, not a date that expires.
         //
         // ITS OWN TIMER (2026-08-27, phase 3d). This used to run inside a
         // 60-second window that opened only when the RAKE sweep had just
@@ -2870,6 +2883,69 @@ export class GameServer {
             }
           } catch (consEx) {
             reportError(consEx, 'GameServer.conservation_sweep_threw');
+          }
+        }
+
+        // ── DUPLICATE-PLACE OVERPAY CHARGE (2026-08-28) ──
+        // 259 duplicate finishing places were renumbered; 19 of the demoted
+        // rows had collected more than their corrected place is worth. Dan's
+        // call: no clawback from players, the hosting club absorbs it. The
+        // charge cannot always be taken on the spot - fn_debit_treasury
+        // refuses to overdraw, and a club that has been funding advertised
+        // guarantees can sit negative until the weekly rakeback close - so the
+        // obligation is a queue and this drains it. Its OWN timer: the lesson
+        // from the HU back-pay is that a repair gated on another job's clock
+        // runs once at boot and then effectively never.
+        if (Date.now() - this.lastPlaceOverpayChargeAt > 60 * 60 * 1000) {
+          this.lastPlaceOverpayChargeAt = Date.now();
+          try {
+            const { data: chg, error: chgErr } = await supabase.rpc('fn_charge_place_overpays', {
+              p_limit: 500,
+            });
+            if (chgErr) {
+              reportError(
+                new Error(`[GameServer] place overpay charge failed: ${chgErr.message}`),
+                'GameServer.place_overpay_charge_failed'
+              );
+            } else if (Number(chg?.charged) > 0 || Number(chg?.clubs_blocked) > 0) {
+              console.log(
+                `[GameServer] Place overpay charge: ${chg.charged} chips from ${chg.clubs_charged} club(s), ` +
+                  `${chg.blocked_insufficient_treasury} still owed by ${chg.clubs_blocked} (queue ${chg.owed_before} -> ${chg.owed_after})`
+              );
+            }
+          } catch (chgEx) {
+            reportError(chgEx, 'GameServer.place_overpay_charge_threw');
+          }
+        }
+
+        // ── RAKE ATTRIBUTION REPAIR (2026-08-28) ──
+        // fn_settle_tournament_rake banks the rake and then attributes it per
+        // player (VIP points, agent commission, rakeback stats). Attribution is
+        // allowed to fail without rolling the settlement back, which is right -
+        // but until now the whole remedy was a financial_alert, so a deadlock
+        // meant every player in that event lost their points permanently. The
+        // settle path records whether attribution happened; this retries the
+        // ones it did not. fn_attribute_tournament_rake is idempotent.
+        if (Date.now() - this.lastRakeAttributionRepairAt > 15 * 60 * 1000) {
+          this.lastRakeAttributionRepairAt = Date.now();
+          try {
+            const { data: att, error: attErr } = await supabase.rpc(
+              'fn_repair_tournament_rake_attribution',
+              { p_limit: 50 }
+            );
+            if (attErr) {
+              reportError(
+                new Error(`[GameServer] rake attribution repair failed: ${attErr.message}`),
+                'GameServer.rake_attribution_repair_failed'
+              );
+            } else if (Number(att?.repaired) > 0 || Number(att?.still_failing) > 0) {
+              console.log(
+                `[GameServer] Rake attribution repair: ${att.repaired} repaired, ` +
+                  `${att.still_failing} still failing (queue ${att.queue_before} -> ${att.queue_after})`
+              );
+            }
+          } catch (attEx) {
+            reportError(attEx, 'GameServer.rake_attribution_repair_threw');
           }
         }
 

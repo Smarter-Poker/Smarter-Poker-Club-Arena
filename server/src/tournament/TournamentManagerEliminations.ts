@@ -24,6 +24,7 @@ import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { computePlacePrize } from './payoutMath.js';
 import {
   resolvePayoutStructure,
+  parsePayoutStructure,
   isSpinTournament,
   remainingPoolAfterAwards,
 } from './payoutStructure.js';
@@ -556,18 +557,42 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               return; // the finally block clears isProcessingEliminations
             }
 
-            let payoutCount = 0;
-            if (this.tournamentCache.payout_structure) {
-              let payouts = this.tournamentCache.payout_structure;
-              if (typeof payouts === 'string') {
-                try {
-                  payouts = JSON.parse(payouts);
-                } catch {
-                  payouts = [];
-                }
+            // PAYOUT-INTEGRITY 2026-08-28: the guard immediately above says a
+            // count we could not read is UNKNOWN and must not read as zero.
+            // This block said the opposite about the payout STRUCTURE, four
+            // lines later: an unparseable column was caught and rewritten to
+            // `[]`, which is payoutCount 0, which is "no paid places" - and it
+            // did it silently, with no log and no alert.
+            //
+            // It is worse than not starting hand-for-hand. If the column
+            // becomes unreadable while the bubble is ALREADY active, the burst
+            // test is `playingNow <= payoutCount` -> `playingNow <= 0`, which a
+            // live field never satisfies. Line 591 is the only exit from
+            // hand-for-hand for a running tournament (the only other reset is
+            // on engine restart), so the event plays every remaining hand in
+            // lock-step, through the money, to the finish.
+            //
+            // It also disagreed with the code that pays. Every other site in
+            // this file resolves the structure through payoutStructure.ts,
+            // which rejects an array with no place 1 or percentages summing to
+            // zero - "valid JSON" and "a usable structure" are different
+            // questions. This counted the length of whatever parsed, so the
+            // bubble could be defended at a place count the payout path would
+            // never honour. One parser now, and it is the strict one.
+            const paidPlaces = parsePayoutStructure(this.tournamentCache.payout_structure);
+            if (this.tournamentCache.payout_structure != null && paidPlaces === null) {
+              if (!this.payoutStructureUnreadableReported) {
+                this.payoutStructureUnreadableReported = true;
+                reportError(
+                  new Error(
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] hand-for-hand: payout_structure is present but unusable - bubble state left unchanged`
+                  ),
+                  'Tournament.payout_structure_unusable'
+                );
               }
-              if (Array.isArray(payouts)) payoutCount = payouts.length;
+              return; // the finally block clears isProcessingEliminations
             }
+            const payoutCount = paidPlaces?.length ?? 0;
 
             if (payoutCount > 0 && playingNow === payoutCount + 1 && !this.handForHandActive) {
               this.handForHandActive = true;

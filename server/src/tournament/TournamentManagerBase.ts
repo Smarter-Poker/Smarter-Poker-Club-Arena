@@ -81,6 +81,12 @@ export abstract class TournamentManagerBase {
   // Hand-for-hand bubble
   protected handForHandActive: boolean = false;
   protected handForHandAnnounced: boolean = false;
+  /**
+   * Latch so an unusable payout_structure is reported once per tournament
+   * rather than on every elimination sweep. The condition is a stored column,
+   * not a transient read, so it is true on every pass until somebody fixes it.
+   */
+  protected payoutStructureUnreadableReported: boolean = false;
   // Final table detection
   protected isFinalTable: boolean = false;
   // Synchronized break state

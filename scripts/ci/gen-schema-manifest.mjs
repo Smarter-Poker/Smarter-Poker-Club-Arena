@@ -89,3 +89,32 @@ const colsManifest = {
 // idempotent under Prettier.
 writeFileSync(COLS_OUT, JSON.stringify(colsManifest, null, 2) + '\n');
 console.log(`Wrote ${COLS_OUT}: ${Object.keys(sortedCols).length} tables' columns`);
+
+// 3) REQUIRED-column manifest (required-column write gate)
+//
+// The column manifest above answers "does this column exist", which catches a
+// write that NAMES a column that is not there. It cannot catch a write that
+// OMITS one that must be there - Postgres refuses the statement just as
+// completely, the error lands in a catch, and the control silently does
+// nothing. club_announcements.author_id and credit_requests.club_id were both
+// found that way on 2026-08-28: creating an announcement and raising a credit
+// request had never once worked.
+//
+// REQUIRED means NOT NULL, no DEFAULT, not identity, not generated. A column
+// with a default or filled by a trigger is not the caller's problem, and
+// including it would produce noise that teaches people to ignore the gate.
+const REQ_OUT = join(process.cwd(), 'scripts/ci/supabase-required-columns-manifest.json');
+const reqData = await callRpc('fn_required_columns_manifest');
+const sortedReq = Object.fromEntries(Object.keys(reqData).sort().map((k) => [k, reqData[k]]));
+const reqManifest = {
+  _comment:
+    'Live public schema REQUIRED-COLUMN snapshot {table: [columns an INSERT must supply]}. ' +
+    'NOT NULL, no default, not identity, not generated. Source of truth for the ' +
+    'required-column CI gate. Do NOT hand-edit.',
+  required: sortedReq,
+};
+// 2-space for the same reason as the columns manifest above: lint-staged runs
+// prettier on *.json, and a compact write here would oscillate the file between
+// two forms and trip detect-silent-revert.
+writeFileSync(REQ_OUT, JSON.stringify(reqManifest, null, 2) + '\n');
+console.log(`Wrote ${REQ_OUT}: ${Object.keys(sortedReq).length} tables with required columns`);

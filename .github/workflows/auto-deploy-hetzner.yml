@@ -351,7 +351,32 @@ jobs:
           # interrupted hand. The hourly `schedule:` trigger retries the
           # deferred deploy and lands it in the first empty window, so in
           # practice the cap is rarely reached.
-          MAX_ENGINE_AGE_SEC=21600  # 6 hours
+          # 2026-08-28: WAS 21600 (6h), AND THAT CAP WAS THE ONLY PATH.
+          #
+          # The gate above waits for handsInFlightTotal to reach ZERO. On this
+          # platform that never happens: the horse fleet deals ~200 hands a
+          # minute across ~71 tables, so handsInFlightTotal sits near 70 at
+          # every instant of every day. All 16 polls fail, every time, and the
+          # staleness cap below is therefore not a rare backstop — it is the
+          # ONLY way a deploy ever lands. At six hours that meant the engine
+          # ran code up to six hours old while every run reported success.
+          # Measured 2026-08-28: engine pinned on 6aa60e39 for 3.5h across ~15
+          # merges, including the end-of-hand cadence change.
+          #
+          # This is the SAME defect the comment above records for
+          # humansSeatedTotal ("a table EMPTYING can take forever and, with
+          # horses seated, never happens") reproduced one level down: a fleet
+          # that always has hands in flight never reports zero either.
+          #
+          # Why a short cap is safe now: proceeding no longer voids hands. The
+          # engine drains itself on SIGTERM (GameServer.drainHands ->
+          # pauseAfterHand on every table, wait for hand boundaries), it runs
+          # on EVERY restart path, and engine-up.sh gives it `docker stop -t 45`
+          # of grace to finish. The wait loop above still takes a genuinely
+          # quiet window when one exists; this cap stops a busy fleet pinning
+          # production on stale code — including stale security fixes, which
+          # the note above already calls worse than one interrupted hand.
+          MAX_ENGINE_AGE_SEC=2700  # 45 minutes
           BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
           UPTIME=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("uptime"); print("ERR" if v is None else int(float(v)))' 2>/dev/null || echo ERR)
           if [ "$UPTIME" = "ERR" ]; then
@@ -359,7 +384,7 @@ jobs:
             exit 0
           fi
           if [ "$UPTIME" -ge "$MAX_ENGINE_AGE_SEC" ]; then
-            echo "::warning::Hands still in flight, but the engine is ${UPTIME}s old (>= ${MAX_ENGINE_AGE_SEC}s staleness cap) — proceeding (GameServer.drainHands parks tables at a hand boundary on SIGTERM)"
+            echo "::warning title=PROCEEDING ON STALENESS CAP::Hands still in flight (normal for a continuously-dealing fleet), but the engine is ${UPTIME}s old (>= ${MAX_ENGINE_AGE_SEC}s cap) — proceeding. GameServer.drainHands parks tables at a hand boundary on SIGTERM, inside docker stop -t 45."
             exit 0
           fi
           echo "skip=true" >> $GITHUB_OUTPUT

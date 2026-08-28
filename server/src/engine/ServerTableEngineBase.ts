@@ -17,6 +17,7 @@ import { DisconnectEngine } from './DisconnectEngine.js';
 import { PreActionEngine } from './PreActionEngine.js';
 import { AtomicStackService } from './AtomicStackService.js';
 import { StraddleEngine } from './StraddleEngine.js';
+import { BombPotScheduler, bombPotSettingsFromTable } from './BombPotScheduler.js';
 import { RunItTwiceEngine } from './RunItTwiceEngine.js';
 import { InsuranceEngine, type InsuranceSettlement } from './InsuranceEngine.js';
 import { ShadowRecorder } from './eventlog/ShadowRecorder.js';
@@ -28,6 +29,7 @@ import { ChipRaceEngine } from './ChipRaceEngine.js';
 import { TableBalancer } from './TableBalancer.js';
 import { TableBreakEngine } from './TableBreakEngine.js';
 import { EngineTelemetry } from './EngineTelemetry.js';
+import { getTournamentBrainContext } from '../services/TournamentBrainContext.js';
 import {
   getFullRakeConfig,
   getPlayerCountCaps,
@@ -66,6 +68,7 @@ import type {
   RakeConfig,
 } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { logInsuranceOfferEvent } from '../services/supabase/insuranceOfferLog.js';
 import type { TableStateHub } from '../transport/TableStateHub.js';
 import {
   createTableStateMachine,
@@ -127,9 +130,94 @@ export abstract class ServerTableEngineBase {
   protected seatedPlayers: SeatedPlayer[] = [];
   /** Tracks busted users who explicitly rejected a rebuy in the current hand (Dan 2026-08-24). */
   protected rejectedRebuys = new Set<string>();
+  /**
+   * Wakes an in-flight rebuy pause the instant a busted player answers.
+   *
+   * REBUY-PAUSE 2026-08-27: `rejectedRebuys` shipped as a WRITE-ONLY set. The
+   * whole decline chain — TablePage -> POST /reject_rebuy -> rejectRebuy() —
+   * terminated in a `.add()` that nothing ever read, and the pause itself was
+   * a bare `await this.sleep(5000)` with no handle. So "snap continues if they
+   * click no", which is half of Dan's rule, did not exist: the table sat out
+   * the full five seconds either way. This resolver is what makes the pause
+   * interruptible.
+   */
+  private rebuyPauseWake: (() => void) | null = null;
 
   public rejectRebuy(userId: string): void {
     this.rejectedRebuys.add(userId);
+    // Snap-continue: wake the pause loop now rather than at the next poll tick.
+    this.rebuyPauseWake?.();
+  }
+
+  /**
+   * Dan's Rebuy Pause, waited out properly.
+   *
+   * Holds the deal for up to `totalMs` after a bust, and returns EARLY the
+   * moment every busted seat has answered — declined (`rejectRebuy`) or
+   * rebought (a seat whose stack is positive again). Both halves of Dan's rule
+   * are here: the pause happens, and it ends the instant it is no longer doing
+   * anything for anybody.
+   *
+   * HORSES ARE PLAYERS. The caller passes EVERY busted seat, horse or human.
+   * The horse answers through its own input device (HorseLogic / autoRebuyHorse
+   * / tryTournamentRebuys) instead of through a modal, and that landing is
+   * detected here by the same stack read that detects a human's. What must not
+   * differ — and what did differ until this shipped — is the table's RHYTHM:
+   * a felt that stops for one seat and rolls straight on for another tells
+   * every watching player which seats are horses.
+   */
+  protected async waitForRebuyDecisions(userIds: string[], totalMs: number): Promise<void> {
+    const pending = new Set(userIds.filter(Boolean));
+    if (pending.size === 0) return;
+    // A decision from a PREVIOUS hand must not fast-forward this pause.
+    for (const id of pending) this.rejectedRebuys.delete(id);
+
+    const deadline = Date.now() + totalMs;
+    const POLL_MS = 250;
+
+    const drainAnswered = async (): Promise<void> => {
+      for (const id of Array.from(pending)) {
+        if (this.rejectedRebuys.has(id)) pending.delete(id);
+      }
+      if (pending.size === 0) return;
+      try {
+        const { data } = await supabase
+          .from('table_seats')
+          .select('user_id, stack')
+          .eq('table_id', this.tableId)
+          .in('user_id', Array.from(pending))
+          .is('left_at', null);
+        for (const row of (data ?? []) as Array<{ user_id: string; stack: number | null }>) {
+          if (Number(row.stack ?? 0) > 0) pending.delete(String(row.user_id));
+        }
+      } catch {
+        /* A failed read must never SHORTEN the pause — fall through and wait. */
+      }
+    };
+
+    try {
+      while (Date.now() < deadline) {
+        await drainAnswered();
+        if (pending.size === 0) return;
+        const slice = Math.min(POLL_MS, Math.max(0, deadline - Date.now()));
+        if (slice <= 0) return;
+        await new Promise<void>((resolve) => {
+          let done = false;
+          const finish = () => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            this.rebuyPauseWake = null;
+            resolve();
+          };
+          const timer = setTimeout(finish, slice);
+          this.rebuyPauseWake = finish;
+        });
+      }
+    } finally {
+      this.rebuyPauseWake = null;
+      for (const id of userIds) this.rejectedRebuys.delete(id);
+    }
   }
   protected dealerSeatIndex: number = 0;
   /**
@@ -159,6 +247,26 @@ export abstract class ServerTableEngineBase {
 
   // Bible V8 §4.2: Players waiting for BB position before they can play
   protected waitingForBB: Set<string> = new Set();
+
+  // B2 2026-08-27 — TOURNAMENT ARRIVALS OWE A BIG BLIND, AND NOTHING COLLECTED IT.
+  //
+  // Every entry mechanism this engine has was switched off for tournament
+  // tables: registerWaitForBB is a no-op for them, `deadBlinds` and
+  // `bbOnlyPosts` were both gated on `!isTournamentTable()`. So a late
+  // registrant, or a player the balancer moved in, was dealt in wherever they
+  // happened to land and paid NOTHING until the blinds reached them — up to a
+  // full free orbit if they landed on the seat the big blind had just passed,
+  // which the seat-number-order placement in TableBalancer handed out at random.
+  //
+  // This set is the tournament counterpart of `postingBBToEnter`: a live big
+  // blind (chip-conserving — it goes into the pot as a real bet), charged once,
+  // on the arrival's first dealt hand. HandController's bbOnlyPosts handler
+  // skips anyone sitting in the small or big blind that hand, so this can never
+  // produce two big blinds inside one orbit. Membership survives the hand a
+  // player spends in the small blind seat and is settled on the next one, which
+  // is the ordinary blind cycle run backwards (SB then BB) rather than an extra
+  // charge.
+  protected mustPostBB: Set<string> = new Set();
 
   // POST-TO-ENTER RACE FIX 2026-08-27 (Dan: "the post to get dealt in
   // feature in cash games isn't working"): a brand-new joiner is only
@@ -409,6 +517,27 @@ export abstract class ServerTableEngineBase {
   protected currentHandCommunityCards: string[] = [];
   /** DOUBLE-BOARD BOMB POT 2026-08-20: board 2 accumulator (empty unless active). */
   protected currentHandCommunityCards2: string[] = [];
+  /** TRIPLE-BOARD BOMB POT 2026-08-27: board 3 accumulator (empty unless active). */
+  protected currentHandCommunityCards3: string[] = [];
+  /**
+   * BOMB POT STANDARDIZATION 2026-08-27 (spec §20): the bomb-pot facts of the
+   * current hand, frozen at trigger time for hand_history.bomb_pot. Null on
+   * normal hands. Reset per hand alongside the accumulators above.
+   */
+  protected currentHandBombPot: {
+    trigger_reason: string;
+    ante_amount: number;
+    board_count: number;
+    /** VARIANT OVERRIDE 2026-08-28: the variant the bomb hand was dealt as. */
+    variant?: string;
+  } | null = null;
+  /**
+   * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant the CURRENT hand
+   * was dealt as, captured at hand start. Settlement writes hand_history from
+   * this rather than from tableInfo.game_variant, which lies on every
+   * variant-override bomb hand. Null between hands.
+   */
+  protected currentHandVariant: string | null = null;
   /**
    * Round 2: per-board winner breakdown from the WINNERS event (double board
    * only). Amounts are PRE-rake shares — clients use board + handName for
@@ -496,6 +625,12 @@ export abstract class ServerTableEngineBase {
   protected currentHandPots: { index: number; amount: number; eligible: string[] }[] = [];
   protected currentHandContributions: Map<string, number> = new Map(); // userId → totalInvested
   protected currentHandInsuranceSettlements: InsuranceSettlement[] = [];
+  /**
+   * EV CASHOUT 2026-08-28: pot winnings clawed back to the bank for each
+   * cashed-out player this hand (what the bank actually collected, post-
+   * clamp). Feeds the insurance ledger's bank-in side.
+   */
+  protected currentHandCashoutRedirects: Map<string, number> = new Map();
   protected currentHandBBJHit: BBJDetectionResult | null = null;
   protected currentHandBBJPayoutConfig: ServerRakeConfigResult | null = null;
   /**
@@ -949,7 +1084,9 @@ export abstract class ServerTableEngineBase {
       if (
         event.type === 'INSURANCE_ACCEPTED' ||
         event.type === 'INSURANCE_DECLINED' ||
-        event.type === 'INSURANCE_SETTLED'
+        event.type === 'INSURANCE_SETTLED' ||
+        // EV CASHOUT 2026-08-28: the third decision, table-wide like the others.
+        event.type === 'INSURANCE_CASHED_OUT'
       ) {
         try {
           const playerId = String((event as Record<string, unknown>).playerId ?? '');
@@ -957,12 +1094,44 @@ export abstract class ServerTableEngineBase {
             this.seatedPlayers.find((p) => p.user_id === playerId)?.username || 'Player';
           this.hub?.emitEvent(this.tableId, {
             ...(event as unknown as Record<string, unknown>),
-            type: event.type.toLowerCase(), // insurance_accepted / insurance_declined / insurance_settled
+            type: event.type.toLowerCase(), // insurance_accepted / _declined / _settled / _cashed_out
             username,
             table_id: this.tableId,
           });
         } catch {
           /* broadcast failure is non-fatal */
+        }
+        // OBSERVABILITY 2026-08-28: the decision funnel, durable. 'offered'
+        // rows come from broadcastInsuranceOffers; these are the outcomes.
+        // Fire-and-forget — the log must never touch gameplay.
+        try {
+          const ev = event as unknown as Record<string, unknown>;
+          logInsuranceOfferEvent({
+            tableId: this.tableId,
+            clubId: this.tableInfo?.club_id ?? null,
+            handNumber: this.handCount,
+            playerId: String(ev.playerId ?? ''),
+            event:
+              event.type === 'INSURANCE_ACCEPTED'
+                ? 'accepted'
+                : event.type === 'INSURANCE_DECLINED'
+                  ? (ev.source === 'timeout' ? 'timeout' : 'declined')
+                  : event.type === 'INSURANCE_CASHED_OUT'
+                    ? 'cashed_out'
+                    : 'settled',
+            equityPercent: typeof ev.equity === 'number' ? ev.equity : null,
+            premium: typeof ev.premium === 'number' ? ev.premium : null,
+            insuredAmount:
+              typeof ev.insuredAmount === 'number'
+                ? ev.insuredAmount
+                : typeof ev.cashoutAmount === 'number'
+                  ? ev.cashoutAmount
+                  : null,
+            pot: null,
+            street: null,
+          });
+        } catch {
+          /* observability failure is non-fatal */
         }
       }
     });
@@ -1088,6 +1257,21 @@ export abstract class ServerTableEngineBase {
    * "Pineapple PLO" is not a game and a stray flag must not silently turn a
    * PLO table into one.
    */
+  /**
+   * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant of the hand that is
+   * LIVE right now — the HandController's own config when a hand is running
+   * (which carries the bomb-pot override variant on override hands), the
+   * table's dealt variant otherwise. This is the ONE seam every "what game is
+   * this hand" consumer reads: bettingStructureFields (the snapshot the
+   * client's bet slider obeys), the legal-action clamps in Turns, the horse
+   * evaluator's variant, and the hand-history write. Reading
+   * tableInfo.game_variant directly at any of those sites would deal a PLO
+   * bomb hand and then price it like Hold'em.
+   */
+  protected activeHandVariant(): string {
+    return this.handController?.getGameVariant?.() ?? this.dealtGameVariant();
+  }
+
   protected dealtGameVariant(): string {
     const variant = String(this.tableInfo?.game_variant || 'nlh').toLowerCase();
     if (variant === 'pineapple') return 'pineapple';
@@ -1318,6 +1502,20 @@ export abstract class ServerTableEngineBase {
         }
       }
       this.tableInfo = tableData as TableInfo;
+
+      // V22 (2026-08-27, Phase 2): pre-warm the tournament ICM context the
+      // moment the engine knows which tournament it serves. The cache used to
+      // warm on the FIRST HORSE DECISION — with 7,000+ spins a day, the
+      // opening hands of every event ran on the flat premium while the fetch
+      // was still in flight. The call is synchronous-cheap: it only kicks the
+      // background refresh.
+      if (this.tableInfo?.tournament_id) {
+        try {
+          getTournamentBrainContext(String(this.tableInfo.tournament_id));
+        } catch {
+          /* warming is best-effort */
+        }
+      }
 
       // FIX 123: Bible V8 §6.2 + Dan's directive — Time bank auto-extend ONLY if:
       //   1. Table has time_bank_enabled = true
@@ -2576,18 +2774,36 @@ export abstract class ServerTableEngineBase {
   protected lastRakeRefreshAtMs = 0;
 
   /**
-   * ROUND 3 AUDIT FIX (2026-08-20): hands dealt at THIS table since the last
-   * bomb pot. The trigger used to be `handCount % frequency === 0`, but
-   * handCount is the GLOBAL hand-number allocator shared by every table —
-   * consecutive hands at one table draw numbers spaced by however many hands
-   * the whole fleet dealt in between, so divisibility was a ~1/N coin flip
-   * per hand. "Every 3 hands" produced back-to-back bomb pots and 15-hand
-   * droughts (observed live on the demo table). This counter makes the
-   * cadence exactly what the setting promises. Resets on engine restart —
-   * deterministic, no DB write, worst case the first bomb arrives N hands
-   * after a deploy.
+   * BOMB POT STANDARDIZATION 2026-08-27 (Dan's spec §4): the per-table trigger
+   * scheduler — every_n_hands, once_per_orbit, timed and bomb_pot_only modes,
+   * single pending-token semantics, and the minimum-players gate. Replaces the
+   * raw `handsSinceBombPot` counter (ROUND 3 AUDIT FIX 2026-08-20), whose
+   * history matters: the trigger before it was `handCount % frequency === 0`
+   * on the GLOBAL hand-number allocator, which made cadence a coin flip. The
+   * scheduler keeps the per-table counter as internal state. Same restart
+   * caveat as before: in-memory, resets on deploy, worst case the first bomb
+   * after a restart arrives one full cycle later.
    */
-  protected handsSinceBombPot = 0;
+  protected bombPotScheduler = new BombPotScheduler();
+
+  /**
+   * Snapshot fields for the felt's bomb-pot indicators, shared by every
+   * broadcast payload in ServerTableEngine. `bomb_pot_in` keeps its legacy
+   * contract (hands until the bomb, 1 = next hand, null = no countdown);
+   * `bomb_pot_next_at` is the timed mode's due timestamp (epoch ms) so the
+   * client can render a clock instead of a hand counter (spec §15.2).
+   */
+  protected bombPotSnapshotFields(): {
+    bomb_pot_in: number | null;
+    bomb_pot_next_at: number | null;
+  } {
+    if (!this.tableInfo) return { bomb_pot_in: null, bomb_pot_next_at: null };
+    const s = bombPotSettingsFromTable(this.tableInfo);
+    return {
+      bomb_pot_in: this.bombPotScheduler.handsUntilDue(s),
+      bomb_pot_next_at: this.bombPotScheduler.nextBombDueAt(s),
+    };
+  }
 
   /**
    * Re-read the table's and club's rake settings so an owner's change takes
@@ -2611,7 +2827,10 @@ export abstract class ServerTableEngineBase {
           // re-read — an owner toggling bomb pots (or double board) no longer
           // waits for an engine restart, same reason rake got this in
           // 2026-08-18.
-          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board'
+          // BOMB POT STANDARDIZATION 2026-08-27: the five new canonical
+          // columns ride along — board count, trigger mode, timed interval,
+          // minimum players and fixed ante.
+          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant'
         )
         .eq('id', this.tableId)
         .maybeSingle();
@@ -2622,6 +2841,13 @@ export abstract class ServerTableEngineBase {
         this.tableInfo.bomb_pot_frequency = (tableRow as any).bomb_pot_frequency ?? 0;
         this.tableInfo.bomb_pot_ante_multiplier = (tableRow as any).bomb_pot_ante_multiplier ?? 2;
         this.tableInfo.bomb_pot_double_board = (tableRow as any).bomb_pot_double_board ?? false;
+        this.tableInfo.bomb_pot_board_count = (tableRow as any).bomb_pot_board_count ?? undefined;
+        this.tableInfo.bomb_pot_trigger_mode = (tableRow as any).bomb_pot_trigger_mode ?? null;
+        this.tableInfo.bomb_pot_interval_seconds =
+          (tableRow as any).bomb_pot_interval_seconds ?? null;
+        this.tableInfo.bomb_pot_min_players = (tableRow as any).bomb_pot_min_players ?? undefined;
+        this.tableInfo.bomb_pot_ante_fixed = (tableRow as any).bomb_pot_ante_fixed ?? null;
+        this.tableInfo.bomb_pot_variant = (tableRow as any).bomb_pot_variant ?? null;
       }
       const clubId = this.tableInfo?.club_id;
       if (clubId) {

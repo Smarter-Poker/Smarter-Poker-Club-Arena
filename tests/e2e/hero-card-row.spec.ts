@@ -196,28 +196,36 @@ for (const bp of BREAKPOINTS) {
       }
     });
 
-    test('hold-em hole cards are NOT resized', async ({ page }) => {
-      /* The point of this test is that the PLO enlargement — a 50% jump — did
-         not leak into hold-em. It was written as exact pixel equality, so a
-         later 1px nudge to the card tokens (58 -> 59 at tablet, 44 -> 45 on a
-         small phone) failed it four times a run and read as "hold-em cards were
-         resized". A tolerance of 2px is wide enough to let the art be tuned and
-         nowhere near wide enough to hide the thing being guarded against: the
-         smallest leak this could miss is 2px, and the failure it exists to
-         catch is 15 or more. */
+    test('hold-em hole cards are the SAME SIZE as PLO', async ({ page }) => {
+      /* REPLACES "hold-em hole cards are NOT resized" (Dan 2026-08-27):
+         "THE CARDS INSIDE OF THE CLUB ARENA FOR HOLDEM GAMES WERE NEVER
+          CHANGED. THEY NEED TO BE THE SAME SIZE CARDS WE USE FOR PLO INSIDE OF
+          HOLDEM ... THE SAME AS PLO GLOBALLY."
+
+         The old test guarded the opposite invariant. When PLO went up 50% on
+         2026-08-19 the two-card set was left behind on the reasoning that the
+         enlargement must not "leak" into hold-em — and this test then held that
+         gap in place for eight days. It was the wrong reading of the constraint:
+         the PLO sizes are capped by ROW WIDTH, and a two-card row is the
+         narrowest on the felt, so hold-em always had the most room of anyone.
+
+         PLO4 is the reference: it is the largest of the three PLO sets, and
+         PLO5/6 step down from it only to hold the row width constant.
+
+         The 2px tolerance is inherited and still right — it lets the art be
+         nudged a pixel without four phantom failures a run, and is nowhere near
+         wide enough to hide a real divergence, which would be 15px or more. */
       const HOLDEM: Record<string, [number, number]> = {
-        desktop: [44, 62],
-        tablet: [42, 59],
-        phone: [36, 50],
-        'small phone': [32, 45],
+        desktop: [60, 84],
+        tablet: [57, 80],
+        phone: [51, 71],
+        'small phone': [45, 63],
       };
       /* Every height here is round(width x 1.4), the 2.5:3.5 playing-card ratio
-         made exact in 833a34d9a to kill the blur: 44->61.6->62, 42->58.8->59,
-         36->50.4->50, 32->44.8->45. Two of them moved by 1px in that commit
-         while this map still carried the pre-ratio values, and THAT is what
-         failed CI — not anything on the felt. Recompute rather than read off a
-         browser if these ever change again; this loop makes a copied value fail
-         here, next to the map, instead of downstream as a phantom resize. */
+         made exact in 833a34d9a to kill the blur: 60->84, 57->79.8->80,
+         51->71.4->71, 45->63. Recompute rather than read off a browser if these
+         ever change again; this loop makes a copied value fail here, next to
+         the map, instead of downstream as a phantom resize. */
       for (const [label, [mapW, mapH]] of Object.entries(HOLDEM)) {
         expect(Math.round(mapW * 1.4), `${label} height is not the 2.5:3.5 ratio`).toBe(mapH);
       }
@@ -226,6 +234,18 @@ for (const bp of BREAKPOINTS) {
       const m = await measure(page, 2);
       expect(Math.abs(m.cardW - w), `hold-em card width at ${bp.label}`).toBeLessThanOrEqual(2);
       expect(Math.abs(m.cardH - h), `hold-em card height at ${bp.label}`).toBeLessThanOrEqual(2);
+
+      /* The invariant itself, measured rather than asserted from a map: a
+         hold-em card and a PLO4 card are the same rectangle on the same felt. */
+      const plo4 = await measure(page, 4);
+      expect(
+        Math.abs(m.cardW - plo4.cardW),
+        `hold-em vs PLO4 width at ${bp.label}`
+      ).toBeLessThanOrEqual(2);
+      expect(
+        Math.abs(m.cardH - plo4.cardH),
+        `hold-em vs PLO4 height at ${bp.label}`
+      ).toBeLessThanOrEqual(2);
     });
   });
 }

@@ -6,7 +6,7 @@
  * if they signed in via a provider (Google) that skipped the Hub signup form.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useUserStore } from '../../stores/useUserStore';
 import { sanitizeInput } from '../../utils/sanitizeInput';
@@ -434,7 +434,7 @@ export function useCompleteProfile(user: any) {
     }
 
     setIsReady(true);
-  }, [user?.username, user?.avatar_url]);
+  }, [user]);
 
   const finishProfile = () => {
     localStorage.setItem('profile_alias_configured', 'true');

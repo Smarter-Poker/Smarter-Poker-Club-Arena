@@ -70,6 +70,17 @@ const GAMEPLAY_COLUMNS = [
   'insurance_enabled',
   'bomb_pot_enabled',
   'bomb_pot_frequency',
+  // BOMB POT STANDARDIZATION 2026-08-27 (Dan's spec §3): the canonical
+  // config surface — board count 1-3, trigger mode, timed interval, minimum
+  // players and fixed ante. Wired to BombPotScheduler + HandController.
+  'bomb_pot_board_count',
+  'bomb_pot_trigger_mode',
+  'bomb_pot_interval_seconds',
+  'bomb_pot_min_players',
+  'bomb_pot_ante_fixed',
+  // VARIANT OVERRIDE + TIMED PERSISTENCE 2026-08-28 (spec §10.1/§4.3)
+  'bomb_pot_variant',
+  'bomb_pot_next_due_at',
   'seven_deuce_enabled',
   'time_bank_enabled',
   'wait_for_big_blind',

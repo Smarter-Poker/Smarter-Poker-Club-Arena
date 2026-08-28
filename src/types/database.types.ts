@@ -125,6 +125,17 @@ export interface TableSettings {
   bomb_pot_ante_bb: number;
   /** DOUBLE-BOARD BOMB POT 2026-08-20: deal two boards, split pots across them. */
   bomb_pot_double_board?: boolean;
+  /* BOMB POT STANDARDIZATION 2026-08-27 (spec §3) — canonical config.
+     board_count (1-3) supersedes the double-board boolean. */
+  bomb_pot_board_count?: number;
+  bomb_pot_trigger_mode?: 'every_n_hands' | 'once_per_orbit' | 'timed' | 'bomb_pot_only';
+  bomb_pot_interval_seconds?: number | null;
+  bomb_pot_min_players?: number;
+  bomb_pot_ante_fixed?: number | null;
+  /** VARIANT OVERRIDE (spec §10.1): bomb hand variant; NULL = same as table. */
+  bomb_pot_variant?: 'nlh' | 'plo4' | 'plo5' | 'plo6' | null;
+  /** TIMED PERSISTENCE (spec §4.3): engine-written next due timestamp. */
+  bomb_pot_next_due_at?: string | null;
   // 2026-08-18: time_bank_seconds is gone. A time bank is a flat 20s grant,
   // 2 per street (Bible V8 s6.2) — there is no per-table "seconds per
   // activation" any more, and the engine never read the column. Whether a

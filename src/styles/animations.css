@@ -19,16 +19,6 @@
   }
 }
 
-@keyframes fadeOut {
-  from {
-    opacity: 1;
-  }
-
-  to {
-    opacity: 0;
-  }
-}
-
 @keyframes animationsFadeInUp {
   from {
     opacity: 0;
@@ -90,18 +80,6 @@
   to {
     opacity: 1;
     transform: scale(1);
-  }
-}
-
-@keyframes scaleOut {
-  from {
-    opacity: 1;
-    transform: scale(1);
-  }
-
-  to {
-    opacity: 0;
-    transform: scale(0.9);
   }
 }
 
@@ -222,17 +200,6 @@
   }
 }
 
-@keyframes goldGlow {
-  0%,
-  100% {
-    box-shadow: 0 0 15px rgba(255, 215, 0, 0.4);
-  }
-
-  50% {
-    box-shadow: 0 0 35px rgba(255, 215, 0, 0.7);
-  }
-}
-
 @keyframes shine {
   0% {
     background-position: -200% center;
@@ -256,17 +223,6 @@
 /* ─────────────────────────────────────────────────────────────────────────────
    SKELETON LOADER ANIMATIONS
    ───────────────────────────────────────────────────────────────────────────── */
-
-@keyframes skeletonPulse {
-  0%,
-  100% {
-    opacity: 0.4;
-  }
-
-  50% {
-    opacity: 0.8;
-  }
-}
 
 .skeleton {
   position: relative;
@@ -354,43 +310,6 @@
 
   100% {
     transform: scale(1);
-  }
-}
-
-@keyframes wiggle {
-  0%,
-  100% {
-    transform: rotate(0deg);
-  }
-
-  25% {
-    transform: rotate(-5deg);
-  }
-
-  75% {
-    transform: rotate(5deg);
-  }
-}
-
-@keyframes animationsShake {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-
-  10%,
-  30%,
-  50%,
-  70%,
-  90% {
-    transform: translateX(-5px);
-  }
-
-  20%,
-  40%,
-  60%,
-  80% {
-    transform: translateX(5px);
   }
 }
 
@@ -576,19 +495,21 @@
   }
 }
 
+/* 2026-08-28: six orphaned keyframes (fadeOut, scaleOut, wiggle,
+   animationsShake, goldGlow, skeletonPulse) deleted — zero references
+   repo-wide. Dead keyframes in a GLOBAL namespace are collision bait (see the
+   screenShake incident this file's history records). */
+
 /* ─────────────────────────────────────────────────────────────────────────────
    MOBILE RESPONSIVE ANIMATIONS
    ───────────────────────────────────────────────────────────────────────────── */
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
+/* 2026-08-27: the older global reduced-motion block that lived here is GONE.
+   reducedMotion.css (imported last in main.tsx) is the single authority: it
+   uses 1ms (not 0.01ms, which some engines skip without applying the fill),
+   zeroes animation-delay, and honours the data-motion="keep" escape hatch —
+   this block did none of that and would silently win if import order ever
+   changed. */
 
 /* Touch feedback for mobile */
 .touch-feedback {

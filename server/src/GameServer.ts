@@ -185,6 +185,10 @@ export class GameServer {
   private lastConservationAt = 0;
   /** Last fn_backpay_hu_winner_shortfalls pass (2026-08-27 phase 3d). */
   private lastHuBackpayAt = 0;
+  /** Last fn_charge_place_overpays pass (2026-08-28 duplicate-place overpay). */
+  private lastPlaceOverpayChargeAt = 0;
+  /** Last fn_repair_tournament_rake_attribution pass (2026-08-28). */
+  private lastRakeAttributionRepairAt = 0;
   private running: boolean = false;
   private startTime: number = Date.now();
 
@@ -362,6 +366,15 @@ export class GameServer {
       );
       this.discoverTournaments().catch((err) =>
         reportError(err, 'GameServer.Tournament_discovery_fatal_err')
+      );
+      /**
+       * The seat-first fast lane (Dan 2026-08-21: the wheel spins the MOMENT
+       * the 3rd seat is paid). discoverTournaments still carries the same
+       * start gate as a backstop; this loop just refuses to make a paid-up
+       * spin wait out the big loop's pass time. See discoverSeatFirstStarts.
+       */
+      this.discoverSeatFirstStarts().catch((err) =>
+        reportError(err, 'GameServer.seat_first_fast_start_fatal_err')
       );
 
       /**
@@ -2272,6 +2285,10 @@ export class GameServer {
   // ═════════════════════════════════════════════════════════════════════════════
   // TOURNAMENT DISCOVERY — Find and manage tournaments
   // ═════════════════════════════════════════════════════════════════════════════
+  // NOTE for the C20 wiring guard in engineStartBudget.test.ts: it slices the
+  // source from discoverCashTables to discoverTournaments, so nothing may sit
+  // between those two methods. The seat-first helpers live AFTER
+  // discoverTournaments for exactly that reason.
 
   private async discoverTournaments(): Promise<void> {
     while (this.running) {
@@ -2315,100 +2332,7 @@ export class GameServer {
         const seatFirstRows = (registering || []).filter(
           (t) => t.variant === 'spin' || (t.variant === 'sng' && Number(t.max_players) <= 2)
         );
-        const paidSeatsByTournament = new Map<string, number>();
-        if (seatFirstRows.length > 0) {
-          const { data: liveTables, error: liveTablesErr } = await supabase
-            .from('tables')
-            .select('id, tournament_id, created_at')
-            .in(
-              'tournament_id',
-              seatFirstRows.map((t) => t.id)
-            )
-            .neq('status', 'closed');
-          if (liveTablesErr) {
-            // A silent failure here read as paidSeats=0 fleet-wide and no
-            // seat-first game could start, with zero telemetry (2026-08-24).
-            reportError(
-              new Error(`[GameServer] seat-first live-table read failed: ${liveTablesErr.message}`),
-              'GameServer.seat_first_table_read_failed'
-            );
-          }
-
-          /**
-           * THE TABLE THE GAME IS ON, WHICH IS NOT ALWAYS THE NEWEST ONE.
-           *
-           * This used to take the freshest non-closed table, on the reasoning
-           * that the recycler leaves the newest open and an older sibling not
-           * yet stamped closed is a corpse. That is true of a RECYCLED table
-           * and false of a DUPLICATE one, and these games are created with two
-           * `waiting` tables about 0.6s apart: the players sit on the FIRST,
-           * and the empty one is NEWER.
-           *
-           * Measured 2026-08-24: of 31 seat-first games past their start time,
-           * 28 were blocked this way and in 12 an empty table had outranked a
-           * sibling holding every player in the game. Grouped by hour the
-           * count of games with a duplicate live table equalled the count of
-           * stuck games exactly - 2/2, 2/2, 9/9, 1/1, 1/1. One game had been
-           * waiting 486 minutes to deal.
-           *
-           * Occupancy first, oldest to break the tie. Identical to
-           * fn_tournament_primary_table in the database and to the ordering
-           * fn_seat_late_registrant already used, so the engine, the counter
-           * and the seating path cannot disagree about which table is the
-           * game. Seats are read for every live table rather than for one
-           * guessed table, which is what makes the choice possible at all.
-           */
-          const liveTableIds = (liveTables || [])
-            .map((row) => String((row as { id?: string }).id ?? ''))
-            .filter((id) => id.length > 0);
-          if (liveTableIds.length > 0) {
-            const { data: seatRows, error: seatRowsErr } = await supabase
-              .from('table_seats')
-              .select('table_id')
-              .in('table_id', liveTableIds)
-              .is('left_at', null);
-            if (seatRowsErr) {
-              reportError(
-                new Error(`[GameServer] seat-first seat-count read failed: ${seatRowsErr.message}`),
-                'GameServer.seat_first_seat_read_failed'
-              );
-            }
-
-            const seatsByTable = new Map<string, number>();
-            for (const s of seatRows || []) {
-              const tbl = String((s as { table_id: string }).table_id);
-              seatsByTable.set(tbl, (seatsByTable.get(tbl) ?? 0) + 1);
-            }
-            /* Most live seats wins; the oldest table breaks a tie so the
-               ORIGINAL survives a duplicate and the answer is stable between
-               passes. */
-            const primaryTable = new Map<
-              string,
-              { id: string; seats: number; createdAt: number }
-            >();
-            for (const row of liveTables || []) {
-              const tid = String((row as { tournament_id?: string }).tournament_id ?? '');
-              if (!tid) continue;
-              const id = String((row as { id?: string }).id ?? '');
-              if (!id) continue;
-              const createdAt = new Date(
-                String((row as { created_at?: string }).created_at ?? 0)
-              ).getTime();
-              const seats = seatsByTable.get(id) ?? 0;
-              const seen = primaryTable.get(tid);
-              if (
-                !seen ||
-                seats > seen.seats ||
-                (seats === seen.seats && createdAt < seen.createdAt)
-              ) {
-                primaryTable.set(tid, { id, seats, createdAt });
-              }
-            }
-            for (const [tid, tbl] of primaryTable) {
-              paidSeatsByTournament.set(tid, tbl.seats);
-            }
-          }
-        }
+        const paidSeatsByTournament = await this.readSeatFirstPaidSeats(seatFirstRows);
 
         for (const tournament of registering || []) {
           if (this.tournamentEngines.has(tournament.id)) continue;
@@ -2578,6 +2502,11 @@ export class GameServer {
               : maxReached
                 ? `full (${tournament.current_players}/${tournament.max_players})`
                 : `${tournament.current_players} players`;
+            /* Re-check in the same tick as the set: the seat-first fast lane
+               (discoverSeatFirstStarts) may have started this game while this
+               pass was busy with earlier rows. Both sites check-and-set with
+               no await in between, so one manager per id is structural. */
+            if (this.tournamentEngines.has(tournament.id)) continue;
             console.log(`[GameServer] Starting tournament: ${tournament.name} (${reason})`);
             const tm = new TournamentManager(tournament.id, this);
             this.tournamentEngines.set(tournament.id, tm);
@@ -2811,8 +2740,17 @@ export class GameServer {
         // share instead of two (the createSNG pool overwrite, ~230,561 chips
         // over 30 days) is repaid, evidence-based and idempotent
         // (fn_credit_and_log key per tournament+winner). Self-draining: paid
-        // events fall out of the scan, and the cutoff date means the backlog
-        // can only shrink.
+        // events fall out of the scan, so the backlog can only shrink.
+        //
+        // CORRECTED 2026-08-28: this used to say the backlog could only shrink
+        // "because of the cutoff date". That cutoff was a literal
+        // `ended_at < '2026-08-28T00:00:00Z'` inside the RPC, and on 2026-08-28
+        // it stopped matching anything at all - the sweep would have reported a
+        // clean paid:0 forever while new shortfalls piled up behind it. The
+        // window is a rolling 30 days now (with a 30-minute settling grace so
+        // an event still writing its prize credits is never back-paid
+        // mid-finalisation). What makes it drain is the idempotency key and the
+        // NOT EXISTS on the back-pay row, not a date that expires.
         //
         // ITS OWN TIMER (2026-08-27, phase 3d). This used to run inside a
         // 60-second window that opened only when the RAKE sweep had just
@@ -2870,6 +2808,69 @@ export class GameServer {
             }
           } catch (consEx) {
             reportError(consEx, 'GameServer.conservation_sweep_threw');
+          }
+        }
+
+        // ── DUPLICATE-PLACE OVERPAY CHARGE (2026-08-28) ──
+        // 259 duplicate finishing places were renumbered; 19 of the demoted
+        // rows had collected more than their corrected place is worth. Dan's
+        // call: no clawback from players, the hosting club absorbs it. The
+        // charge cannot always be taken on the spot - fn_debit_treasury
+        // refuses to overdraw, and a club that has been funding advertised
+        // guarantees can sit negative until the weekly rakeback close - so the
+        // obligation is a queue and this drains it. Its OWN timer: the lesson
+        // from the HU back-pay is that a repair gated on another job's clock
+        // runs once at boot and then effectively never.
+        if (Date.now() - this.lastPlaceOverpayChargeAt > 60 * 60 * 1000) {
+          this.lastPlaceOverpayChargeAt = Date.now();
+          try {
+            const { data: chg, error: chgErr } = await supabase.rpc('fn_charge_place_overpays', {
+              p_limit: 500,
+            });
+            if (chgErr) {
+              reportError(
+                new Error(`[GameServer] place overpay charge failed: ${chgErr.message}`),
+                'GameServer.place_overpay_charge_failed'
+              );
+            } else if (Number(chg?.charged) > 0 || Number(chg?.clubs_blocked) > 0) {
+              console.log(
+                `[GameServer] Place overpay charge: ${chg.charged} chips from ${chg.clubs_charged} club(s), ` +
+                  `${chg.blocked_insufficient_treasury} still owed by ${chg.clubs_blocked} (queue ${chg.owed_before} -> ${chg.owed_after})`
+              );
+            }
+          } catch (chgEx) {
+            reportError(chgEx, 'GameServer.place_overpay_charge_threw');
+          }
+        }
+
+        // ── RAKE ATTRIBUTION REPAIR (2026-08-28) ──
+        // fn_settle_tournament_rake banks the rake and then attributes it per
+        // player (VIP points, agent commission, rakeback stats). Attribution is
+        // allowed to fail without rolling the settlement back, which is right -
+        // but until now the whole remedy was a financial_alert, so a deadlock
+        // meant every player in that event lost their points permanently. The
+        // settle path records whether attribution happened; this retries the
+        // ones it did not. fn_attribute_tournament_rake is idempotent.
+        if (Date.now() - this.lastRakeAttributionRepairAt > 15 * 60 * 1000) {
+          this.lastRakeAttributionRepairAt = Date.now();
+          try {
+            const { data: att, error: attErr } = await supabase.rpc(
+              'fn_repair_tournament_rake_attribution',
+              { p_limit: 50 }
+            );
+            if (attErr) {
+              reportError(
+                new Error(`[GameServer] rake attribution repair failed: ${attErr.message}`),
+                'GameServer.rake_attribution_repair_failed'
+              );
+            } else if (Number(att?.repaired) > 0 || Number(att?.still_failing) > 0) {
+              console.log(
+                `[GameServer] Rake attribution repair: ${att.repaired} repaired, ` +
+                  `${att.still_failing} still failing (queue ${att.queue_before} -> ${att.queue_after})`
+              );
+            }
+          } catch (attEx) {
+            reportError(attEx, 'GameServer.rake_attribution_repair_threw');
           }
         }
 
@@ -3120,6 +3121,194 @@ export class GameServer {
         reportError(err, 'GameServer.Tournament_discovery_error');
       }
 
+      await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
+    }
+  }
+
+  /**
+   * PAID SEATS FOR EVERY SEAT-FIRST GAME, IN TWO QUERIES (2026-08-23).
+   *
+   * A Spin starts when its seats are BOUGHT, so both start gates have to know
+   * the live seat count. Asking per tournament meant two round trips each, and
+   * with ~33 Spins on the board this ran ~13 extra queries a second, forever,
+   * just to decide that nothing had changed. Batched here instead: one read
+   * for the live tables, one for their seats.
+   *
+   * Extracted from discoverTournaments on 2026-08-28 so the seat-first fast
+   * start loop (discoverSeatFirstStarts below) counts seats with EXACTLY the
+   * same rules — same primary-table election, same telemetry — and the two
+   * loops cannot drift apart.
+   *
+   * THE TABLE THE GAME IS ON, WHICH IS NOT ALWAYS THE NEWEST ONE.
+   *
+   * This used to take the freshest non-closed table, on the reasoning that the
+   * recycler leaves the newest open and an older sibling not yet stamped
+   * closed is a corpse. That is true of a RECYCLED table and false of a
+   * DUPLICATE one, and these games are created with two `waiting` tables
+   * about 0.6s apart: the players sit on the FIRST, and the empty one is
+   * NEWER.
+   *
+   * Measured 2026-08-24: of 31 seat-first games past their start time, 28
+   * were blocked this way and in 12 an empty table had outranked a sibling
+   * holding every player in the game. Grouped by hour the count of games with
+   * a duplicate live table equalled the count of stuck games exactly - 2/2,
+   * 2/2, 9/9, 1/1, 1/1. One game had been waiting 486 minutes to deal.
+   *
+   * Occupancy first, oldest to break the tie. Identical to
+   * fn_tournament_primary_table in the database and to the ordering
+   * fn_seat_late_registrant already used, so the engine, the counter and the
+   * seating path cannot disagree about which table is the game. Seats are
+   * read for every live table rather than for one guessed table, which is
+   * what makes the choice possible at all.
+   */
+  private async readSeatFirstPaidSeats(
+    seatFirstRows: Array<{ id: string }>
+  ): Promise<Map<string, number>> {
+    const paidSeatsByTournament = new Map<string, number>();
+    if (seatFirstRows.length === 0) return paidSeatsByTournament;
+
+    const { data: liveTables, error: liveTablesErr } = await supabase
+      .from('tables')
+      .select('id, tournament_id, created_at')
+      .in(
+        'tournament_id',
+        seatFirstRows.map((t) => t.id)
+      )
+      .neq('status', 'closed');
+    if (liveTablesErr) {
+      // A silent failure here read as paidSeats=0 fleet-wide and no
+      // seat-first game could start, with zero telemetry (2026-08-24).
+      reportError(
+        new Error(`[GameServer] seat-first live-table read failed: ${liveTablesErr.message}`),
+        'GameServer.seat_first_table_read_failed'
+      );
+    }
+
+    const liveTableIds = (liveTables || [])
+      .map((row) => String((row as { id?: string }).id ?? ''))
+      .filter((id) => id.length > 0);
+    if (liveTableIds.length > 0) {
+      const { data: seatRows, error: seatRowsErr } = await supabase
+        .from('table_seats')
+        .select('table_id')
+        .in('table_id', liveTableIds)
+        .is('left_at', null);
+      if (seatRowsErr) {
+        reportError(
+          new Error(`[GameServer] seat-first seat-count read failed: ${seatRowsErr.message}`),
+          'GameServer.seat_first_seat_read_failed'
+        );
+      }
+
+      const seatsByTable = new Map<string, number>();
+      for (const s of seatRows || []) {
+        const tbl = String((s as { table_id: string }).table_id);
+        seatsByTable.set(tbl, (seatsByTable.get(tbl) ?? 0) + 1);
+      }
+      /* Most live seats wins; the oldest table breaks a tie so the
+         ORIGINAL survives a duplicate and the answer is stable between
+         passes. */
+      const primaryTable = new Map<string, { id: string; seats: number; createdAt: number }>();
+      for (const row of liveTables || []) {
+        const tid = String((row as { tournament_id?: string }).tournament_id ?? '');
+        if (!tid) continue;
+        const id = String((row as { id?: string }).id ?? '');
+        if (!id) continue;
+        const createdAt = new Date(
+          String((row as { created_at?: string }).created_at ?? 0)
+        ).getTime();
+        const seats = seatsByTable.get(id) ?? 0;
+        const seen = primaryTable.get(tid);
+        if (!seen || seats > seen.seats || (seats === seen.seats && createdAt < seen.createdAt)) {
+          primaryTable.set(tid, { id, seats, createdAt });
+        }
+      }
+      for (const [tid, tbl] of primaryTable) {
+        paidSeatsByTournament.set(tid, tbl.seats);
+      }
+    }
+    return paidSeatsByTournament;
+  }
+
+  /**
+   * ── SEAT-FIRST FAST START (Dan 2026-08-21, verbatim: "THE WHEEL STARTS
+   * SPINNING THE MOMENT THE 3RD PLAYER PAYS FOR HIS SEAT") ──────────────────
+   *
+   * discoverTournaments carries the whole board on every pass: the MTT horse
+   * ramp, the past-start top-up, and an await per tournament in between. With
+   * ~180 games REGISTERING a full pass takes on the order of a minute under
+   * load, so a spin whose last seat was bought just after its row was read
+   * waited a whole pass to deal. Measured live 2026-08-28 against production:
+   * median 62 seconds from third paid seat to started_at across 684 spins in
+   * 24 hours, p90 88s, worst 3.5 minutes (the fully-paid stall watchdog) —
+   * and the shared wheel reveal, which is anchored to the third payment, had
+   * often expired before any client heard the game existed.
+   *
+   * This loop does exactly one job so its pass is three cheap reads: find
+   * REGISTERING seat-first games, count their paid seats through the same
+   * readSeatFirstPaidSeats the main loop uses, start the full ones. Every
+   * other duty deliberately stays in discoverTournaments.
+   *
+   * Double-start safety: both loops re-check tournamentEngines synchronously
+   * in the same tick they set it (no await between check and set), so two
+   * managers can never be created for one id. A held manager that is not
+   * running is the standdown zombie the fully-paid watchdog exists for —
+   * TournamentManager.start() sets running=true on entry synchronously, so a
+   * held-but-not-running manager has genuinely stood down or finished, and
+   * deleting it here just lets the retry happen in 5s instead of 3 minutes.
+   * start() itself re-validates the field and the payments, so a retry
+   * against a game that stood down for a real reason stands down again.
+   */
+  private async discoverSeatFirstStarts(): Promise<void> {
+    while (this.running) {
+      try {
+        const { data: registering, error: registeringErr } = await supabase
+          .from('tournaments')
+          .select('id, name, max_players, variant')
+          .eq('status', 'REGISTERING')
+          .in('variant', ['spin', 'sng']);
+        if (registeringErr) {
+          reportError(
+            new Error(
+              `[GameServer] seat-first fast-start board read failed: ${registeringErr.message}`
+            ),
+            'GameServer.seat_first_fast_board_read_failed'
+          );
+        } else {
+          // Same seat-first definition as discoverTournaments and
+          // fn_take_seat_and_buy_in: spin, or a 2-seat SNG (heads-up).
+          const seatFirstRows = (registering || []).filter(
+            (t) => t.variant === 'spin' || (t.variant === 'sng' && Number(t.max_players) <= 2)
+          );
+          const paidSeats = await this.readSeatFirstPaidSeats(seatFirstRows);
+          for (const t of seatFirstRows) {
+            const id = String(t.id);
+            const seats = Number(t.max_players) || 0;
+            const paid = paidSeats.get(id) ?? 0;
+            if (seats <= 0 || paid < seats) continue;
+
+            const held = this.tournamentEngines.get(id);
+            if (held && !held.isRunning()) {
+              this.tournamentEngines.delete(id);
+            }
+            if (this.tournamentEngines.has(id)) continue;
+
+            console.log(
+              `[GameServer] Fast-starting seat-first game: ${t.name} (${paid}/${seats} seats sold)`
+            );
+            const tm = new TournamentManager(id, this);
+            this.tournamentEngines.set(id, tm);
+            tm.start()
+              .then(() => this.holdIfBreakIsRunning(tm))
+              .catch((err) => {
+                reportError(err, 'GameServer.seat_first_fast_start_failed');
+                this.tournamentEngines.delete(id);
+              });
+          }
+        }
+      } catch (err) {
+        reportError(err, 'GameServer.seat_first_fast_start_error');
+      }
       await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
     }
   }

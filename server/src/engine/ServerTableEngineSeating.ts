@@ -724,6 +724,49 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   }
 
   /**
+   * B2 2026-08-27 — THE TOURNAMENT COUNTERPART OF registerWaitForBB.
+   *
+   * A tournament player cannot be held out of a hand the way a cash player can:
+   * tournament players must be dealt in and blinded off or the field never
+   * shrinks. So the cash rule ("wait one hand, pay nothing") has no tournament
+   * equivalent, and the two seats it exists to protect were simply unprotected
+   * here — a late registrant or a balanced-in player who landed on the button
+   * or the small blind for the coming hand played out most of an orbit before
+   * the big blind reached them, for free, while everyone already at the table
+   * had paid to be there.
+   *
+   * Those two seats — and ONLY those two — are the ones the big blind has just
+   * passed (one and two hands ago). Every other seat reaches the big blind
+   * inside the current orbit on its own and owes nothing. An arrival in the big
+   * blind seat itself posts it naturally and is likewise left alone.
+   *
+   * Fewer than three in the rotation is heads-up or a table about to be broken,
+   * where the button IS the small blind and both players pay every hand: there
+   * is no free orbit available to take, so nothing is charged.
+   *
+   * TableBalancer keeps moved players out of these two seats wherever another
+   * free seat exists (`findOpenSeat`), so in practice this fires for late
+   * registrants and for the tail of a table break that had nowhere else to sit.
+   */
+  protected noteTournamentArrival(seatNumber: number, userId: string): void {
+    if (!this.isTournamentTable()) return;
+    const rotationSize = this.seatedPlayers.filter((p) => p.stack > 0).length;
+    if (rotationSize < 3) return;
+
+    const sbSeatIndex = this.getSBSeatIndex();
+    const buttonSeatIndex = this.getButtonSeatIndex();
+    if (
+      (sbSeatIndex > 0 && seatNumber === sbSeatIndex) ||
+      (buttonSeatIndex > 0 && seatNumber === buttonSeatIndex)
+    ) {
+      this.mustPostBB.add(userId);
+      console.log(
+        `[ServerTableEngine:${this.tableId}] tournament arrival ${userId} took the seat the big blind just passed — owes one big blind`
+      );
+    }
+  }
+
+  /**
    * Bible V8 §4.2: Player opts to "Post BB" to enter immediately.
    *
    * Dan 2026-08-26, binding: a cash entrant either waits for the big blind or

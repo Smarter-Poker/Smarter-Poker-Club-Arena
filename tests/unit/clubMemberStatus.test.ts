@@ -58,6 +58,29 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+/**
+ * READ THE TREE ONCE (2026-08-28).
+ *
+ * Both scans below used to walk `src/` and read all ~990 files themselves, so
+ * one run of this file did that work TWICE - about 24MB off disk for a guard
+ * whose actual matching is microseconds. That is fine on an idle machine (each
+ * test measured ~400ms) and not fine under a sharded run: with several workers
+ * competing for the same filesystem the same two tests were measured at
+ * ~2150ms, and they failed together once inside a 63-file shard while the third
+ * test in this file - the only one that touches no disk - passed. Two I/O-bound
+ * tests timing out together and a pure-computation test surviving is the shape
+ * of a resource limit, not of a real offender appearing and vanishing.
+ *
+ * So the tree is read once and shared. NOTHING about what is asserted changes:
+ * the same files are scanned with the same patterns and the same expectations,
+ * and a genuine offender fails exactly as before. The explicit timeouts on the
+ * two tests are headroom for a loaded CI runner, not a way to pass.
+ */
+const SOURCES: { rel: string; text: string }[] = walk(SRC).map((file) => ({
+  rel: relative(SRC, file),
+  text: readFileSync(file, 'utf8'),
+}));
+
 describe('club_members status filters', () => {
   it('the detector actually detects', () => {
     // A guard nobody has seen fail is a guard nobody should trust.
@@ -69,14 +92,13 @@ describe('club_members status filters', () => {
     expect(findOffenders(unrelated)).toHaveLength(0);
   });
 
-  it('never narrows a membership read to one of the two words', () => {
-    const files = walk(SRC);
-    expect(files.length).toBeGreaterThan(100);
+  it('never narrows a membership read to one of the two words', { timeout: 30_000 }, () => {
+    expect(SOURCES.length).toBeGreaterThan(100);
 
     const offenders: string[] = [];
-    for (const file of files) {
-      for (const line of findOffenders(readFileSync(file, 'utf8'))) {
-        offenders.push(`${relative(SRC, file)}:${line}`);
+    for (const { rel, text } of SOURCES) {
+      for (const line of findOffenders(text)) {
+        offenders.push(`${rel}:${line}`);
       }
     }
 
@@ -89,7 +111,7 @@ describe('club_members status filters', () => {
 });
 
 describe('club_members row caps', () => {
-  it('never caps a membership read without ordering it', () => {
+  it('never caps a membership read without ordering it', { timeout: 30_000 }, () => {
     // A .limit() or .range() with no .order() returns an ARBITRARY slice. On a
     // 588-member club, `.limit(500)` silently drops 88 people, and which 88
     // can differ between two loads of the same page. That is how ten horses
@@ -98,11 +120,9 @@ describe('club_members row caps', () => {
     //
     // Skipped for reads that end in .single()/.maybeSingle(), where one row is
     // the whole point.
-    const files = walk(SRC);
     const offenders: string[] = [];
 
-    for (const file of files) {
-      const source = readFileSync(file, 'utf8');
+    for (const { rel, text: source } of SOURCES) {
       FROM_CLUB_MEMBERS.lastIndex = 0;
       let m: RegExpExecArray | null;
       while ((m = FROM_CLUB_MEMBERS.exec(source)) !== null) {
@@ -112,7 +132,7 @@ describe('club_members row caps', () => {
         const ordered = chain.includes('.order(');
         const single = /maybeSingle\(\)|\.single\(\)/.test(chain);
         if (capped && !ordered && !single) {
-          offenders.push(`${relative(SRC, file)}:${source.slice(0, m.index).split('\n').length}`);
+          offenders.push(`${rel}:${source.slice(0, m.index).split('\n').length}`);
         }
       }
     }

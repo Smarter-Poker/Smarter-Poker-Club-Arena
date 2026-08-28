@@ -225,6 +225,12 @@ export async function logInsuranceSettlement(params: {
   insuredAmount: number;
   payout: number;
   playerWon: boolean;
+  /**
+   * EV CASHOUT 2026-08-28: 'ev_cashout' rows log the redirected winnings in
+   * `premium` (bank in) and the locked cashout in `payout` (bank out); the
+   * RPC's bank_delta = premium − payout is unchanged. Default 'insurance'.
+   */
+  kind?: 'insurance' | 'ev_cashout';
 }): Promise<InsuranceLedgerResult> {
   const rpcArgs = {
     p_table_id: params.tableId,
@@ -236,6 +242,7 @@ export async function logInsuranceSettlement(params: {
     p_insured_amount: params.insuredAmount,
     p_payout: params.payout,
     p_player_won: params.playerWon,
+    p_kind: params.kind ?? 'insurance',
   };
 
   let attempts = 0;

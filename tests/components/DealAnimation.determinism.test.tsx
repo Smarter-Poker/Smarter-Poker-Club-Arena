@@ -30,12 +30,25 @@ vi.mock('../../src/services/SoundService', () => {
       played.push(name);
       void a;
     };
-  const soundService = new Proxy({ isEnabled: () => true } as Record<string, unknown>, {
-    get(target, prop: string) {
-      if (prop in target) return target[prop];
-      return make(prop);
-    },
-  });
+  const soundService = new Proxy(
+    {
+      isEnabled: () => true,
+      // SOUND AUDIT 2026-08-27: the deal's slides are now scheduled in ONE
+      // call on the AudioContext clock (playDealSequence) instead of one
+      // setTimeout+playDeal per card — record one 'playDeal' per scheduled
+      // slide so every per-card assertion below keeps meaning "a sound per
+      // card dealt".
+      playDealSequence: (delays: unknown) => {
+        (Array.isArray(delays) ? delays : []).forEach(() => played.push('playDeal'));
+      },
+    } as Record<string, unknown>,
+    {
+      get(target, prop: string) {
+        if (prop in target) return target[prop];
+        return make(prop);
+      },
+    }
+  );
   const haptic = new Proxy({} as Record<string, unknown>, {
     get: (_t, prop: string) => make(`haptic.${prop}`),
   });

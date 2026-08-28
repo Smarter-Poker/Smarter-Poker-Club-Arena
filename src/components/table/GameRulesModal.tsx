@@ -38,6 +38,14 @@ export interface GameRulesModalProps {
     frequency: number;
     anteBB: number;
     doubleBoard: boolean;
+    /** BOMB POT STANDARDIZATION 2026-08-27: boards per bomb hand (1-3). */
+    boardCount?: number;
+    /** 'every_n_hands' | 'once_per_orbit' | 'timed' | 'bomb_pot_only' */
+    triggerMode?: string;
+    /** Timed mode: seconds between bombs. */
+    intervalSeconds?: number;
+    /** VARIANT OVERRIDE (spec §10.1): bomb hand variant; null = same as table. */
+    variant?: string | null;
   } | null;
 }
 
@@ -440,7 +448,11 @@ export function GameRulesModal({
                     className={`rules-modal__feature ${bombPotRules?.enabled ? 'rules-modal__feature--active' : ''}`}
                   >
                     <span className="rules-modal__feature-text">
-                      {bombPotRules?.doubleBoard ? 'Double Board Bomb Pot' : 'Bomb Pot'}
+                      {(bombPotRules?.boardCount ?? 0) >= 3
+                        ? 'Triple Board Bomb Pot'
+                        : bombPotRules?.doubleBoard
+                          ? 'Double Board Bomb Pot'
+                          : 'Bomb Pot'}
                     </span>
                   </div>
                 </div>
@@ -451,9 +463,27 @@ export function GameRulesModal({
                   <h3 className="rules-modal__section-title">Bomb Pot</h3>
                   <div className="rules-modal__grid">
                     <div className="rules-modal__item">
-                      <span className="rules-modal__label">Every</span>
+                      <span className="rules-modal__label">
+                        {/* BOMB POT STANDARDIZATION 2026-08-27 (spec §15):
+                            the schedule line names the trigger mode. */}
+                        {bombPotRules.triggerMode === 'once_per_orbit' ||
+                        bombPotRules.triggerMode === 'timed' ||
+                        bombPotRules.triggerMode === 'bomb_pot_only'
+                          ? 'Schedule'
+                          : 'Every'}
+                      </span>
                       <span className="rules-modal__value">
-                        {bombPotRules.frequency > 0 ? `${bombPotRules.frequency} hands` : '-'}
+                        {bombPotRules.triggerMode === 'once_per_orbit'
+                          ? 'Once per orbit'
+                          : bombPotRules.triggerMode === 'timed'
+                            ? (bombPotRules.intervalSeconds ?? 0) > 0
+                              ? `Every ${Math.round((bombPotRules.intervalSeconds ?? 0) / 60)} min`
+                              : 'Timed'
+                            : bombPotRules.triggerMode === 'bomb_pot_only'
+                              ? 'Every hand'
+                              : bombPotRules.frequency > 0
+                                ? `${bombPotRules.frequency} hands`
+                                : '-'}
                       </span>
                     </div>
                     <div className="rules-modal__item">
@@ -465,9 +495,23 @@ export function GameRulesModal({
                     <div className="rules-modal__item">
                       <span className="rules-modal__label">Boards</span>
                       <span className="rules-modal__value">
-                        {bombPotRules.doubleBoard ? '2 (pot splits per board)' : '1'}
+                        {(bombPotRules.boardCount ?? 0) >= 3
+                          ? '3 (pot splits per board)'
+                          : bombPotRules.doubleBoard
+                            ? '2 (pot splits per board)'
+                            : '1'}
                       </span>
                     </div>
+                    {/* VARIANT OVERRIDE (spec §10.1): only shown when the bomb
+                        hand plays a different game from the table. */}
+                    {bombPotRules.variant && (
+                      <div className="rules-modal__item">
+                        <span className="rules-modal__label">Played As</span>
+                        <span className="rules-modal__value">
+                          {bombPotRules.variant.toUpperCase()}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

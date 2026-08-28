@@ -53,7 +53,31 @@ describe('the hold covers the whole sequence, not just the wheel', () => {
     // The distinction is the entire fix. `holdUntil = revealAt +
     // spinRevealTotalMs()` would expire the moment the wheel stops, which is
     // exactly when the chips are still being written.
-    expect(MANAGER).toMatch(/const holdUntil = revealAt \+ spinRevealToDealMs\(\)/);
+    //
+    /* UPDATED 2026-08-27, house rule 8. The arithmetic moved, the rule did not.
+       `holdUntil` is no longer computed at broadcast time: the hold is stamped
+       alongside the reveal in `stampSpinRevealAnchor` (from the third payment)
+       and returned by `resolveSpinReveal`, which also re-stamps both if the
+       start path overran the animation. That gave the single expression this
+       pin named three homes instead of one.
+
+       Pinning all three is what the pin should have done from the start. A
+       single-line assertion could never have caught a SECOND assignment that
+       used the wheel time, which is precisely the defect described above. */
+    const holdAssignments = MANAGER.match(/this\.spinHoldUntil =[^;]+;/g) ?? [];
+    // stampSpinRevealAnchor, plus the no-anchor and overrun paths in
+    // resolveSpinReveal. A refactor that loses one must fail here, not go quiet.
+    expect(holdAssignments.length).toBeGreaterThanOrEqual(3);
+    for (const assignment of holdAssignments) {
+      expect(assignment).toMatch(/spinRevealToDealMs\(\)/);
+      // The wheel time may not appear in ANY of them.
+      expect(assignment).not.toMatch(/spinRevealTotalMs\(\)/);
+    }
+    // And the number handed to the engine is that same stamped hold.
+    expect(MANAGER).toMatch(/const \{ revealAt, holdUntil \} = this\.resolveSpinReveal\(\)/);
+    expect(MANAGER).toMatch(
+      /return \{ revealAt: this\.spinRevealAt, holdUntil: this\.spinHoldUntil \}/
+    );
     expect(MANAGER).toMatch(/engine\.holdDealingUntil\(holdUntil\)/);
   });
 
@@ -144,9 +168,19 @@ describe('the three beats, in order, each announced', () => {
 describe('the button is drawn, not awarded to the low seat', () => {
   it('the tournament picks uniformly from the occupied seats', () => {
     const block = MANAGER.slice(MANAGER.indexOf('const seats = engine.getOccupiedSeatNumbers()'));
-    expect(block.slice(0, 800)).toMatch(
-      /seats\[Math\.floor\(Math\.random\(\) \* seats\.length\)\]/
-    );
+    /* UPDATED 2026-08-27, house rule 8. `Math.floor(Math.random() * n)` became
+       `secureRandomInt(n)`. Uniformity is the only thing this pin was ever
+       about, and it is not weakened: secureRandomInt rejection-samples against
+       `floor(0xffffffff / n) * n` to remove modulo bias, where the expression
+       it replaces is uniform only as far as Math.random is — a predictable
+       PRNG. The first button on a three-handed hyper is a real positional edge,
+       drawn once, in public, on a table where two of the three players are
+       horses, so it belongs on the same generator as the deck. */
+    expect(block.slice(0, 800)).toMatch(/seats\[secureRandomInt\(seats\.length\)\]/);
+    // And the predictable PRNG may not come back to this draw.
+    expect(block.slice(0, 800)).not.toMatch(/Math\.random\(\)/);
+    // From the engine's crypto module, not a local re-implementation.
+    expect(MANAGER).toMatch(/import \{ secureRandomInt \} from '\.\.\/engine\/CryptoRandom\.js'/);
     expect(block.slice(0, 800)).toMatch(/engine\.setFirstButtonSeat\(seat\)/);
   });
 

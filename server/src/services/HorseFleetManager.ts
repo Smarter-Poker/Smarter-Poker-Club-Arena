@@ -30,6 +30,11 @@ interface TableConfig {
   maxPlayers: number;
   horsesPerTable: number;
   gameVariant: string;
+  /** V23 (Dan 2026-08-28, "fully build all of these"): this table runs a UTG
+   *  straddle. The V18 straddle brain layer shipped 2026-08-26 and has fired
+   *  ZERO times in production because the fleet spawned no straddle tables —
+   *  this is the product half of that feature. NLH only. */
+  straddleEnabled?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -64,6 +69,17 @@ const DEFAULT_TABLES: TableConfig[] = [
     maxPlayers: 9,
     horsesPerTable: 5,
     gameVariant: 'nlh',
+  },
+  {
+    // V23: the fleet's first STRADDLE game — gives the V18 straddle brain
+    // layer live traffic and the lobby an action table.
+    name: 'NLH Straddle 1.00/2.00',
+    smallBlind: 1.0,
+    bigBlind: 2.0,
+    maxPlayers: 9,
+    horsesPerTable: 6,
+    gameVariant: 'nlh',
+    straddleEnabled: true,
   },
   {
     name: 'PLO4 1.00/2.00',
@@ -363,7 +379,9 @@ export class HorseFleetManager {
         // whole bug, not the .maybeSingle() call.
         const { data: matches, error: lookupError } = await supabase
           .from('tables')
-          .select('id, status, union_id, game_variant, small_blind, big_blind')
+          .select(
+            'id, status, union_id, game_variant, small_blind, big_blind, straddle_enabled, min_buy_in, max_buy_in'
+          )
           .eq('name', config.name)
           .is('tournament_id', null)
           .order('created_at', { ascending: true })
@@ -389,6 +407,34 @@ export class HorseFleetManager {
           if (Number(existing.small_blind) !== config.smallBlind)
             updates.small_blind = config.smallBlind;
           if (Number(existing.big_blind) !== config.bigBlind) updates.big_blind = config.bigBlind;
+          // Dan 2026-08-28: buy-ins resync WITH the blinds. This branch used
+          // to carry stale chip buy-ins forever after a blind bump — bump a
+          // config from 1/2 to 25/50 and the reactivated row kept a 40BB
+          // band computed against the OLD big blind (the exact shape of the
+          // "25/50 with buy-in 100-200" bug). 40BB-200BB, always.
+          //
+          // ROUNDED TO CENTS on purpose. bigBlind * 40 on a fractional stake
+          // can land off an exact cent in IEEE754; if a numeric(…,2) column
+          // then rounds it on write, read-back never equals the recomputed
+          // value, this comparison stays true forever, and the update path
+          // below resets current_players every cycle — the exact standing
+          // hazard the V23 note documents. Chips are cents; compare cents.
+          const wantMinBuyIn = Math.round(config.bigBlind * 40 * 100) / 100;
+          const wantMaxBuyIn = Math.round(config.bigBlind * 200 * 100) / 100;
+          if (Number((existing as { min_buy_in?: number }).min_buy_in) !== wantMinBuyIn)
+            updates.min_buy_in = wantMinBuyIn;
+          if (Number((existing as { max_buy_in?: number }).max_buy_in) !== wantMaxBuyIn)
+            updates.max_buy_in = wantMaxBuyIn;
+          // V23: a straddle config re-straddles a reused row. Compared, not
+          // written blind — an unconditional write would make `updates`
+          // non-empty every cycle, and the update path resets
+          // current_players to 0, which would strand a live table.
+          if (
+            (existing as { straddle_enabled?: boolean }).straddle_enabled !==
+            (config.straddleEnabled === true)
+          ) {
+            updates.straddle_enabled = config.straddleEnabled === true;
+          }
           if (Object.keys(updates).length > 0) {
             updates.current_players = 0;
             await supabase.from('tables').update(updates).eq('id', existing.id);
@@ -420,6 +466,8 @@ export class HorseFleetManager {
           // games") - fleet cash tables are born with insurance on; the
           // 20260827 migration flipped the existing fleet.
           insurance_enabled: true,
+          // V23: straddle tables are born straddling (see TableConfig).
+          straddle_enabled: config.straddleEnabled === true,
         });
 
         if (error) {

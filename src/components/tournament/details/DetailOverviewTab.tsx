@@ -453,6 +453,11 @@ export default function DetailOverviewTab({
       { key: 'stack', label: 'Starting Stack', value: chips(t.starting_chips) },
       { key: 'speed', label: 'Structure', value: speed },
       {
+        key: 'levels',
+        label: 'Levels',
+        value: firstDuration ? `${firstDuration} Min` : 'Standard',
+      },
+      {
         key: 'rebuy',
         label: 'Rebuy',
         value: t.is_rebuy

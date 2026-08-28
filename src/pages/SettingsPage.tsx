@@ -12,7 +12,30 @@ import { STORAGE_KEYS } from '../lib/storage';
 import { identityDNA } from '../core/IdentityDNA';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { notificationService } from '../services/NotificationService';
+/**
+ * Push, 2026-08-27. This page used to call
+ * `notificationService.requestPermission()`, which does nothing but await
+ * `Notification.requestPermission()` and hand back a boolean. It created no
+ * subscription, told the server nothing, and then toasted "Push notifications
+ * enabled!" and rendered a green Active badge. `pushEnabled` was read from
+ * `Notification.permission` alone, so the badge stayed Active forever while
+ * the account could not receive a single push. Every one of the 2,432 seat
+ * offers skipped for `no_subscription` in the week before this was fixed
+ * belonged to somebody who may well have pressed that button.
+ *
+ * It now drives the real VAPID flow, and its state comes from whether a
+ * subscription actually exists on this device.
+ */
+import {
+  disablePush,
+  enablePush,
+  hasLocalSubscription,
+  isIos,
+  isIosStandalonePwa,
+  isWebPushSupported,
+  notificationPermission,
+  sendTestPush,
+} from '../lib/pushClient';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import UserProfileEdit from '../components/social/UserProfileEdit';
 import { useSettingsStore } from '../stores/useSettingsStore';
@@ -129,6 +152,7 @@ export default function SettingsPage() {
   // Push Notification state
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
+  const [pushTesting, setPushTesting] = useState(false);
 
   // Section refs for tab navigation
   const audioRef = useRef<HTMLElement>(null);
@@ -501,29 +525,98 @@ export default function SettingsPage() {
     check2FAStatus();
   }, []);
 
-  // Check push notification status
+  // Does THIS device hold a push subscription? Not "did the OS dialog get
+  // accepted at some point", which is the question the old code asked.
   useEffect(() => {
-    if ('Notification' in window) {
-      setPushEnabled(Notification.permission === 'granted');
-    }
+    let cancelled = false;
+    void (async () => {
+      const subscribed = await hasLocalSubscription();
+      if (!cancelled) setPushEnabled(subscribed);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
+  /**
+   * DELIBERATE: enablePush() is awaited directly out of the click handler with
+   * nothing before it. iOS only honours Notification.requestPermission() while
+   * the originating tap gesture is alive, so any await placed ahead of it can
+   * eat the gesture window and the OS prompt then never appears at all.
+   */
   const handleEnablePush = async () => {
     setPushLoading(true);
     try {
-      const granted = await notificationService.requestPermission();
-      setPushEnabled(granted);
-      if (granted) {
-        // Push notifications enabled successfully
-        toast.success('Push notifications enabled!');
+      const result = await enablePush();
+      setPushEnabled(result.ok);
+      if (result.ok) {
+        toast.success('Push notifications are on for this device');
+      } else if (isIos() && !isIosStandalonePwa()) {
+        // The one instruction that unblocks an iPhone. Web push does not exist
+        // in mobile Safari until the site is installed to the Home Screen.
+        toast.error('Add Smarter Poker to your Home Screen first, then open it from there');
       } else {
-        toast.error('Push notifications denied. Please allow in browser settings.');
+        toast.error(result.error || 'Could not enable push notifications');
       }
     } catch (err) {
       reportError(err, 'SettingsPage.Failed_to_enable_push');
-      toast.error('Failed to enable push notifications.');
+      toast.error('Failed to enable push notifications');
     }
     setPushLoading(false);
+  };
+
+  /**
+   * Off means off. This unsubscribes locally, deactivates the row server-side,
+   * and records the opt-out marker that stops PushSubscriptionSync quietly
+   * re-subscribing the device on the next boot. Without that marker the
+   * repair loop would undo this within the hour, because the OS permission
+   * stays granted after an unsubscribe.
+   */
+  const handleDisablePush = async () => {
+    setPushLoading(true);
+    try {
+      const result = await disablePush();
+      if (result.ok) {
+        setPushEnabled(false);
+        toast.success('Push notifications are off for this device');
+      } else {
+        toast.error(result.error || 'Could not turn off push notifications');
+      }
+    } catch (err) {
+      reportError(err, 'SettingsPage.Failed_to_disable_push');
+      toast.error('Failed to turn off push notifications');
+    }
+    setPushLoading(false);
+  };
+
+  /**
+   * Prove the subscription actually delivers.
+   *
+   * A green "On for this device" row only means a subscription was persisted.
+   * It cannot tell anyone whether a notification will reach the phone, and the
+   * gap between those two is exactly where this stack has failed before. The
+   * toast reports the DEVICE COUNT rather than just success, because "sent to
+   * 0 devices" is the informative answer: it means the row exists and the push
+   * service rejected it, which is a different fault from never having enrolled.
+   */
+  const handleTestPush = async () => {
+    setPushTesting(true);
+    try {
+      const result = await sendTestPush();
+      if (result.ok) {
+        toast.success(
+          result.sent === 1
+            ? 'Test sent to 1 device. It should arrive in a moment'
+            : `Test sent to ${result.sent} devices. It should arrive in a moment`
+        );
+      } else {
+        toast.error(result.error || 'The test push was not delivered');
+      }
+    } catch (err) {
+      reportError(err, 'SettingsPage.Failed_to_send_test_push');
+      toast.error('Failed to send the test notification');
+    }
+    setPushTesting(false);
   };
 
   const updateSetting = <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => {
@@ -622,10 +715,35 @@ export default function SettingsPage() {
 
            It is also no longer fatal: a push-preferences hiccup must not
            fail the whole settings save. */
+        /* PHANTOM SETTING FIX 2026-08-28: this upsert also wrote
+           `live_notifications: settings.handWonNotifications ?? true`, and
+           every part of that line was wrong.
+
+           `handWonNotifications` has NO CONTROL anywhere in this page, or
+           anywhere in Club Arena. It is declared in settingsBridge.ts and
+           defaults to FALSE, and `??` only falls through on null or undefined
+           -- false is neither. So the expression evaluated to `false` on every
+           save, for every user, unconditionally.
+
+           `live_notifications` is not a Club Arena column in any meaningful
+           sense: World Hub's gate maps `live`, `live_invite` and `live_gift`
+           onto it (src/lib/push/push-prefs.js LEGACY_PREF_COLUMN), i.e. LIVE
+           STREAMING. It has nothing to do with winning a hand. So pressing
+           Save Changes here silently switched off a completely unrelated hub
+           feature, permanently, with nothing in this UI that said so, and no
+           way to switch it back on from Club Arena.
+
+           A settings page must only write what it actually offers a control
+           for. The three below each have a visible toggle in this section.
+           `live_notifications` is owned by the hub's own notification
+           settings, which is where a player can see and change it.
+
+           `handWonNotifications` itself still round-trips through
+           profiles.settings with the rest of the bridge; nothing reads it yet,
+           so it is inert rather than harmful. */
         const { error: notifErr } = await supabase.from('user_notification_preferences').upsert(
           {
             user_id: user.id,
-            live_notifications: settings.handWonNotifications ?? true,
             tournament_reminders: settings.tournamentReminders ?? true,
             friend_activity: settings.friendAlerts ?? true,
             club_updates: settings.clubActivity ?? true,
@@ -882,25 +1000,68 @@ export default function SettingsPage() {
             />
           </div>
 
+          {/* Push. The description states what is true of THIS device, and the
+            button is reachable in every state: an iPhone that has not been
+            installed to the Home Screen gets the instruction rather than a
+            dead control, a blocked browser is told where to unblock, and a
+            subscribed device can turn it back off. The previous version had
+            no off switch at all, so a player who enabled push had no way to
+            change their mind from inside the app. */}
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Push Notifications</span>
               <span className={styles.settingDesc}>
-                {pushEnabled ? 'Enabled' : 'Allow browser notifications'}
+                {pushEnabled
+                  ? 'On for this device'
+                  : !isWebPushSupported() && isIos() && !isIosStandalonePwa()
+                    ? 'Add to your Home Screen first, then open it from there'
+                    : !isWebPushSupported()
+                      ? 'Not supported by this browser'
+                      : notificationPermission() === 'denied'
+                        ? 'Blocked. Allow notifications in your browser settings'
+                        : 'Get alerted the moment your seat opens'}
               </span>
             </div>
             {pushEnabled ? (
-              <span className={styles.statusBadge}>Active</span>
+              <button
+                className={styles.actionButton}
+                onClick={handleDisablePush}
+                disabled={pushLoading || pushTesting}
+              >
+                {pushLoading ? 'Turning Off...' : 'Turn Off'}
+              </button>
             ) : (
               <button
                 className={styles.actionButton}
                 onClick={handleEnablePush}
-                disabled={pushLoading}
+                disabled={pushLoading || !isWebPushSupported()}
               >
                 {pushLoading ? 'Enabling...' : 'Enable'}
               </button>
             )}
           </div>
+
+          {/* Only shown once this device holds a subscription, because that is
+            the only state in which the answer means anything. Offered to a
+            device that never enrolled, a test that fails would say nothing the
+            row above has not already said. */}
+          {pushEnabled && (
+            <div className={styles.settingRow}>
+              <div className={styles.settingInfo}>
+                <span className={styles.settingLabel}>Send A Test Notification</span>
+                <span className={styles.settingDesc}>
+                  Check That Alerts Actually Reach This Device
+                </span>
+              </div>
+              <button
+                className={styles.actionButton}
+                onClick={handleTestPush}
+                disabled={pushTesting || pushLoading}
+              >
+                {pushTesting ? 'Sending...' : 'Send Test'}
+              </button>
+            </div>
+          )}
         </section>
 
         {/* Account */}

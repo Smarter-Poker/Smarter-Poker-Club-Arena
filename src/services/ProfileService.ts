@@ -231,8 +231,12 @@ class ProfileServiceClass {
       const { error: streakErr } = await supabase
         .from('profiles')
         .update({
-          current_streak: currentStreak,
-          longest_streak: longestStreak,
+          // The columns are `login_streak` and `streak_days`; the mapper below
+          // has always read them under those names. Writing `current_streak`
+          // and `longest_streak` was rejected every time, so a streak could be
+          // computed and displayed for one render and never persisted.
+          login_streak: currentStreak,
+          streak_days: longestStreak,
           last_login_date: new Date().toISOString(), // FIX: was `last_login` — column is `last_login_date`
         })
         .eq('id', userId);

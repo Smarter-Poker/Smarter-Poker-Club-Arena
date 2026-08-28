@@ -1779,11 +1779,17 @@ class TournamentService {
   }
 
   /**
-   * Process a rebuy for a player
+   * Process a rebuy for a player.
+   *
+   * `clientToken` is the IDEMPOTENCY TOKEN for one rebuy PROMPT (2026-08-27).
+   * It must be generated when the prompt OPENS and reused by every click of
+   * that same prompt; a new bust must generate a new one. See the note beside
+   * `p_client_token` in the RPC call below for what the server does without it.
    */
   async processRebuy(
     tournamentId: string,
-    userId: string
+    userId: string,
+    clientToken?: string
   ): Promise<{ success: boolean; newStack?: number }> {
     const canRebuyResult = await this.canRebuy(tournamentId, userId);
     if (!canRebuyResult.allowed) {
@@ -1824,6 +1830,24 @@ class TournamentService {
       p_cost: rebuyTotalCost,
       p_chips: rebuyChips,
       p_current_level: this.getCurrentLevelState(tournament).levelIndex,
+      /**
+       * IDEMPOTENCY, EXACTLY (2026-08-27).
+       *
+       * With a token the server keys the purchase on it, so every click of ONE
+       * prompt collapses to one charge and a SECOND, genuine bust in the same
+       * tournament is a different purchase.
+       *
+       * Without one it falls back to a rebuy-ordinal key plus a 1.5s
+       * double-submit collapse — and before that fallback existed, ANY second
+       * rebuy inside 30 seconds was swallowed and reported as success. In a
+       * turbo that meant a player who really did bust twice was charged
+       * nothing, granted nothing, shown "Rebuy Successful", and left sitting at
+       * 0 chips.
+       *
+       * The token is minted per PROMPT, never per click — see the callers in
+       * TablePage (`beginRebuyPrompt` / `endRebuyPrompt`).
+       */
+      p_client_token: clientToken ?? null,
     });
 
     if (error) {
@@ -1978,7 +2002,9 @@ class TournamentService {
    */
   async processReentry(
     tournamentId: string,
-    userId: string
+    userId: string,
+    /** Per-prompt idempotency token. See `processRebuy`. */
+    clientToken?: string
   ): Promise<{ success: boolean; newEntryId?: string }> {
     const tournament = await this.getTournament(tournamentId);
     if (!tournament) throw new Error('Tournament not found');
@@ -2046,6 +2072,8 @@ class TournamentService {
       p_cost: reentryTotalCost,
       p_chips: reentryChips,
       p_current_level: levelState.levelIndex,
+      /** Per-prompt idempotency token — see processRebuy. */
+      p_client_token: clientToken ?? null,
     });
 
     if (error) {

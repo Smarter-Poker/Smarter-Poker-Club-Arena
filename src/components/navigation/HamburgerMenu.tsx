@@ -27,6 +27,7 @@ import { ThemeSettingsModal } from '../table/ThemeSettingsModal';
 import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
+import { soundService } from '../../services/SoundService';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { isCardBackUnlocked } from '../table/CardImage';
@@ -416,6 +417,12 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     updateSetting(STORAGE_KEYS.SOUNDS, 'sounds_enabled', newValue, () =>
       setSoundsEnabled(!newValue)
     );
+    // SOUND AUDIT 2026-08-27: this toggle wrote only STORAGE_KEYS.SOUNDS.
+    // The shared gate fails closed on EITHER key, so a player who had muted
+    // in-table ('ca_sound_enabled'='false') and then flipped this switch ON
+    // got a switch reading ON with a still-silent app. setEnabled() persists
+    // the choice to BOTH gate keys so the switches always agree.
+    soundService.setEnabled(newValue);
     masterBus.emit('SETTINGS_CHANGED', { setting: 'isSoundEnabled', value: newValue });
   };
 
@@ -472,17 +479,15 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const handleResetTutorial = async () => {
     localStorage.removeItem(STORAGE_KEYS.INTRO_SHOWN);
     localStorage.removeItem(STORAGE_KEYS.TUTORIAL_COMPLETED);
-    if (user?.id) {
-      try {
-        const { error: resetErr } = await supabase
-          .from('profiles')
-          .update({ tutorial_completed: false })
-          .eq('id', user.id);
-        if (resetErr) reportError(resetErr, 'HamburgerMenu.Tutorial_reset_save_failed');
-      } catch (error) {
-        reportError(error, 'HamburgerMenu.Error_resetting_tutorial');
-      }
-    }
+    /**
+     * There is no `profiles.tutorial_completed` column and nothing anywhere
+     * reads one. This used to write it, which was rejected on every reset and
+     * reported as a failure the user never saw - and had the column existed,
+     * the reset would still have worked exactly as it does now, because
+     * localStorage above is the only thing the intro gate consults. Removing
+     * the write loses no behaviour; it removes a control that was never wired
+     * to anything. Making it a real cross-device flag needs a reader first.
+     */
     toast.info('Tutorial reset! Refresh the page to see the intro again.');
     onClose();
   };

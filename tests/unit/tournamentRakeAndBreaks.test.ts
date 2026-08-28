@@ -25,6 +25,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceMethod } from '../helpers/sourceWindow';
+import { isShortFormat } from '../../server/src/tournament/breakEligibility';
 
 const GAME_SERVER = readFileSync(resolve(__dirname, '../../server/src/GameServer.ts'), 'utf8');
 const BASE = readFileSync(
@@ -35,6 +37,28 @@ const RECURRING = readFileSync(
   resolve(__dirname, '../../server/src/services/TournamentRecurringService.ts'),
   'utf8'
 );
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A PIN MUST SLICE THE METHOD, NOT A FIXED NUMBER OF BYTES
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * 2026-08-28. The `registerHorses` pins below read a 7000-character window
+ * from the start of the signature. Comments were added inside that method and
+ * pushed the asserted code to offsets 7241, 7440, 7471 and 7695 - just past
+ * the end of the window. Three pins went red on main, and the code they guard
+ * had not changed by a character.
+ *
+ * That failure mode is worse than a false alarm. A pin whose window can drift
+ * off the thing it guards can ALSO drift off it silently in the other
+ * direction, going green while the invariant is gone, and the obvious way out
+ * of a red window is to make it bigger, which just moves the cliff.
+ *
+ * So take the whole method by matching braces from its opening one. Reading
+ * one byte past a string literal or a comment containing a brace is not
+ * possible here for a reason worth stating: both are stripped first, exactly
+ * as every other source-grep gate in this repo does it.
+ */
 
 describe('synchronized breaks run :55 -> :00', () => {
   const sched = GAME_SERVER.slice(
@@ -296,9 +320,53 @@ describe('the engine pause outlasts the break', () => {
   });
 });
 
+describe('the slicer these pins depend on', () => {
+  /**
+   * A helper that silently returns the wrong span turns every pin built on it
+   * into a pin that passes for the wrong reason, so it gets its own pins.
+   */
+  const SRC = [
+    'class X {',
+    '  private async registerHorses() {',
+    '    // a comment with a } brace in it',
+    "    const s = 'a string with { and } in it';",
+    '    if (true) {',
+    '      doThing();',
+    '    }',
+    '    return 1;',
+    '  }',
+    '  private async other() {',
+    '    NOT_IN_THE_SLICE;',
+    '  }',
+    '}',
+  ].join('\n');
+
+  it('stops at the end of the method, not at a byte count', () => {
+    const out = sliceMethod(SRC, 'private async registerHorses');
+    expect(out).toContain('doThing();');
+    expect(out).toContain('return 1;');
+    expect(out).not.toContain('NOT_IN_THE_SLICE');
+    expect(out.trimEnd().endsWith('}')).toBe(true);
+  });
+
+  it('is not fooled by a brace inside a comment or a string', () => {
+    // Both appear before the real closing brace; counting them would end the
+    // slice early and quietly drop the assertions that follow.
+    const out = sliceMethod(SRC, 'private async registerHorses');
+    expect(out).toContain('a string with { and }');
+    expect(out).toContain('return 1;');
+  });
+
+  it('fails loudly when the method is renamed', () => {
+    // Renaming the method must break the pin, not disarm it. A slicer that
+    // returned '' would make every assertion below vacuously... fail, but a
+    // slicer that returned the WHOLE FILE would make them vacuously pass.
+    expect(() => sliceMethod(SRC, 'private async notHere')).toThrow(/not found/);
+  });
+});
+
 describe('tournament rake is actually collected', () => {
-  const start = RECURRING.indexOf('private async registerHorses');
-  const registerFn = RECURRING.slice(start, start + 7000);
+  const registerFn = sliceMethod(RECURRING, 'private async registerHorses');
 
   it('horses register through the money path, not a raw insert', () => {
     expect(registerFn).toContain('fn_register_horse_for_tournament');
@@ -372,9 +440,37 @@ describe('the :55 break covers every format, not only the MTTs', () => {
   });
 
   it('isMttOrXmtt still exists but normalises case', () => {
+    /* UPDATED 2026-08-27, house rule 8 — the behaviour this pinned moved, it
+       was not removed.
+
+       The `toUpperCase()` / `toLowerCase()` literals left this method when the
+       format rule was lifted into `isShortFormat` in breakEligibility.ts, so
+       that ONE predicate could serve both `isMttOrXmtt()` and
+       `mayTakeSynchronizedBreak()` (the reason is in that file's docstring: a
+       rule stated twice is one forgotten edit away from disagreeing with
+       itself). Grepping this method for a literal it no longer contains says
+       nothing about whether case is still normalised.
+
+       So the INTENT is asserted instead, in two halves: this method still
+       delegates rather than growing a second copy of the rule, and the rule it
+       delegates to is genuinely case-insensitive. The second half is now a
+       BEHAVIOURAL assertion, which is strictly stronger than the regex it
+       replaces — a `toUpperCase()` compared against a lowercase literal would
+       have passed the old pin and matched nothing in production. */
     const fn = BASE.slice(BASE.indexOf('isMttOrXmtt(): boolean'));
-    expect(fn.slice(0, 400)).toMatch(/toUpperCase\(\)/);
-    expect(fn.slice(0, 400)).toMatch(/toLowerCase\(\)/);
+    expect(fn.slice(0, 400)).toMatch(/isShortFormat\(/);
+
+    // Either column identifies the format, in any casing. See the docstring on
+    // isShortFormat for why both are read: the two disagree in the wild.
+    for (const format of ['SPIN', 'spin', 'Spin', 'SNG', 'sng', 'Sng']) {
+      expect(isShortFormat(format, null)).toBe(true);
+      expect(isShortFormat(null, format)).toBe(true);
+    }
+    // And an MTT is an MTT whatever case it arrives in.
+    for (const format of ['MTT', 'mtt', 'XMTT', 'xmtt']) {
+      expect(isShortFormat(format, null)).toBe(false);
+      expect(isShortFormat(null, format)).toBe(false);
+    }
   });
 });
 

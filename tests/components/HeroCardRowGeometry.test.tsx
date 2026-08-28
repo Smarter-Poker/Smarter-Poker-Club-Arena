@@ -193,10 +193,86 @@ describe('hero hole-card row geometry', () => {
     }
   });
 
+  /**
+   * Dan 2026-08-27, verbatim: "THE CARDS INSIDE OF THE CLUB ARENA FOR HOLDEM
+   * GAMES WERE NEVER CHANGED. THEY NEED TO BE THE SAME SIZE CARDS WE USE FOR
+   * PLO INSIDE OF HOLDEM. MAKE SURE THAT THE HOLDEM CARDS (HERO CARDS AND
+   * BOARD CARDS) ARE THE SAME AS PLO GLOBALLY."
+   *
+   * The 50% PLO enlargement on 2026-08-19 retuned the three `:has()` guards and
+   * left the two-card set alone, so a hold'em hero drew a 44px card beside a
+   * PLO hero's 60px one. There was even an e2e test named "hold-em hole cards
+   * are NOT resized" guarding the gap — the reasoning being that the row had no
+   * room. It had MORE room than any PLO row: fewer cards.
+   *
+   * PLO4 is the reference because it is the largest of the three PLO sets;
+   * PLO5/6 step down from it to hold the row width constant, and a two-card row
+   * is narrower than all three at the same card size.
+   *
+   * Pinned per breakpoint rather than as four literals so that retuning PLO
+   * moves hold'em with it — which is what "globally" has to mean if it is not
+   * to drift apart again the next time one of them is touched.
+   */
+  it('draws a hold-em card at exactly the PLO4 size, at every breakpoint', () => {
+    const plo4 = rulesFor('.seat__cards--hero:has(> *:nth-child(4))')
+      .map((r) => r.body.match(/--sp-hero-card-(w|h):\s*(\d+)px/g))
+      .filter(Boolean) as RegExpMatchArray[];
+
+    const holdemW = [...cssNoComments.matchAll(/--sp-card2-w:\s*(\d+)px/g)].map((m) => +m[1]);
+    const holdemH = [...cssNoComments.matchAll(/--sp-card2-h:\s*(\d+)px/g)].map((m) => +m[1]);
+
+    expect(plo4.length, 'PLO4 must be tuned at all four breakpoints').toBe(4);
+    expect(holdemW.length, 'the two-card width must be tuned at all four breakpoints').toBe(4);
+
+    for (let i = 0; i < 4; i++) {
+      const w = +plo4[i].find((d) => d.startsWith('--sp-hero-card-w'))!.match(/(\d+)px/)![1];
+      const h = +plo4[i].find((d) => d.startsWith('--sp-hero-card-h'))!.match(/(\d+)px/)![1];
+      expect(holdemW[i], `hold-em card width must equal PLO4's at breakpoint ${i}`).toBe(w);
+      expect(holdemH[i], `hold-em card height must equal PLO4's at breakpoint ${i}`).toBe(h);
+    }
+  });
+
+  /**
+   * The showdown row is the ONE place hold'em and PLO legitimately size from
+   * different tokens, and it is not an exception to the rule above — a tabled
+   * hold'em hand is still the LARGEST hand on the felt (1.00 of its base,
+   * against PLO4's 0.92 and PLO6's 0.70).
+   *
+   * It has its own base because it lays out WHOLE cards with a 1px gap, so its
+   * row is n x w rather than w + (n-1) x step, and a PLO6 hand has to fit the
+   * same strip beside the seat. Inheriting the enlarged private size would have
+   * taken that row to 195px against 151px of room on a 375px phone.
+   */
+  it('sizes the tabled row from its own base, not the private two-card one', () => {
+    const revealed = RULES.filter((r) => r.selector.includes('.seat__cards--revealed')).filter(
+      (r) => /--sp-hero-card-w:/.test(r.body)
+    );
+
+    expect(revealed.length, 'the revealed row must set its own card width').toBeGreaterThan(0);
+    for (const rule of revealed) {
+      expect(
+        rule.body,
+        `${rule.selector} must read --sp-cardrev-w; --sp-card2-w now carries the PLO size ` +
+          'and would overflow a tabled PLO6 row'
+      ).not.toMatch(/--sp-card2-w/);
+      expect(rule.body).toMatch(/var\(--sp-cardrev-w,/);
+    }
+
+    const hits = cssNoComments.match(/--sp-cardrev-w:/g);
+    expect(hits, '--sp-cardrev-w is missing entirely').toBeTruthy();
+    expect(
+      hits!.length,
+      '--sp-cardrev-w must be tuned at every breakpoint that tunes --sp-card2-w'
+    ).toBe(4);
+  });
+
   it('row widths stay within the felt at every hand size', () => {
-    // Values from the base (widest) breakpoint block.
+    // Values from the base (widest) breakpoint block. The 2-card row carries
+    // the PLO4 card size since 2026-08-27 (Dan: "the same as PLO globally") —
+    // it is still the NARROWEST row on the felt, because it has the fewest
+    // cards in it.
     const sizes = [
-      { n: 2, w: 44, step: 32 },
+      { n: 2, w: 60, step: 43 },
       { n: 4, w: 60, step: 25 },
       { n: 5, w: 57, step: 23 },
       { n: 6, w: 54, step: 21 },

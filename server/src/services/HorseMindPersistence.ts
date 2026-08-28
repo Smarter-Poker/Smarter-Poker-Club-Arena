@@ -106,6 +106,9 @@ const fromDb = (r: DbRow): { user_id: string } & OpponentStats => ({
   f3bFolds: r.f3b_folds ?? 0,
   bigBetSD: r.bigbet_sd ?? 0,
   bigBetSDStrong: r.bigbet_sd_strong ?? 0,
+  // V23 river reads are memory-only (deliberately unpersisted) - hydrate zero.
+  riverBetOpps: 0,
+  riverBetFolds: 0,
   rHands: r.r_hands,
   rFolds: r.r_folds,
   rFacedAggr: r.r_faced_aggr,

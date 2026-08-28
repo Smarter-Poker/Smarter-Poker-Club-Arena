@@ -114,6 +114,9 @@ describe('logInsuranceSettlement', () => {
       p_insured_amount: PARAMS.insuredAmount,
       p_payout: PARAMS.payout,
       p_player_won: PARAMS.playerWon,
+      // EV CASHOUT 2026-08-28: kind rides every ledger row ('insurance'
+      // default; 'ev_cashout' logs redirected winnings in p_premium).
+      p_kind: 'insurance',
     });
     expect(mockReportError).not.toHaveBeenCalled();
   });

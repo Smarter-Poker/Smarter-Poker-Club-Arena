@@ -19,6 +19,8 @@ import { OfflineQueueService } from './services/OfflineQueueService';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
 import UnionSkinGuard from './components/common/UnionSkinGuard';
 import { ChallengeToastListener } from './components/notifications/ChallengeToastListener';
+import PushSubscriptionSync from './components/notifications/PushSubscriptionSync';
+import FirstRunPushPrompt from './components/notifications/FirstRunPushPrompt';
 import LastClubTracker from './components/common/LastClubTracker';
 import WaitlistBanner from './components/common/WaitlistBanner';
 import { addBreadcrumb } from './core/SentryInit';
@@ -370,6 +372,17 @@ export default function App() {
     <ErrorBoundary>
       <ToastProvider>
         <ChallengeToastListener />
+        {/* Web push enrolment. Club Arena had no path to a push subscription at
+          all until 2026-08-27: the prompt lived in the World Hub's _app.js,
+          which this SPA never loads, so 2,432 seat offers in seven days were
+          skipped for `no_subscription` against 2 subscribed accounts platform
+          wide. Both mount at the root because neither belongs to a route: the
+          sync repairs a rotated subscription on any page, and the prompt has
+          to be able to appear wherever the player actually is. See
+          src/lib/pushClient.ts for why enrolment targets the ROOT service
+          worker and not Club Arena's own sw-bus.js. */}
+        <PushSubscriptionSync />
+        <FirstRunPushPrompt />
         <GlobalBalanceSync />
         <LastClubTracker />
         {/* Dan 2026-08-23, binding: "players, agents, super agents, nobody

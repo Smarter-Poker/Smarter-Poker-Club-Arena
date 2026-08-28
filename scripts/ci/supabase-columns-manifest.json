@@ -109,7 +109,8 @@
       "audience",
       "daily_cap",
       "is_active",
-      "created_at"
+      "created_at",
+      "target_url"
     ],
     "admin_audit_log": [
       "id",

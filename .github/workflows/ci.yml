@@ -239,6 +239,13 @@ jobs:
       - name: UI copy — no emoji in player-facing code
         run: node scripts/ci/check-no-emoji.mjs
 
+      # Dan 2026-08-27 (binding, World Hub CLAUDE.md 10.5): horses are players.
+      # Every place the horse flag changes behaviour must be justified in the
+      # register inside this script. Added after the law's own first fix was
+      # found inert - see .agent/audits/2026-08-27-horses-are-players-sweep.md.
+      - name: Horses are players — every exclusion is registered
+        run: node scripts/ci/check-horses-are-players.mjs
+
       # A CSS module key with no matching class resolves to undefined, React
       # drops className={undefined} without a word, and the element ships with
       # no styling at all. Build green, tests green, page visibly broken. It

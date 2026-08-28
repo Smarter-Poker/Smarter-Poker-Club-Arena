@@ -1343,13 +1343,9 @@ export default function ClubSettingsPage() {
               className={`toggle-btn ${settings.is_public ? 'on' : ''}`}
               onClick={() => {
                 const nextPublic = !settings.is_public;
-                // Going private also switches approval on, matching what club
-                // creation already does (requires_approval = !isPublic).
-                // Without it the club is merely hidden, not closed.
                 setSettings((prev) => ({
                   ...prev,
                   is_public: nextPublic,
-                  requires_approval: nextPublic ? prev.requires_approval : true,
                 }));
               }}
               disabled={!isOwner}

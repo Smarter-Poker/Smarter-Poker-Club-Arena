@@ -82,6 +82,17 @@ describe('RIT unanimous consent', () => {
   it('a chooser pick above the table max is clamped, not honored', () => {
     engine.offer('t1', 't1:1', 'A', ['A', 'B'], 200); // maxRuns 2
     engine.chooserDecides('t1', 'A', 3);
+    // The clamp itself, read off the offer. This assertion used to go through
+    // getChosenRuns(), which answered a different question as of 2026-08-27:
+    // it is now "how many boards do we have CONSENT to run", and B has not
+    // accepted yet, so it is 1 here by design (see the next assertion). The
+    // clamp is a property of the chooser's pick and is asserted where the pick
+    // lives.
+    expect(engine.getState('t1')?.chosenRuns).toBe(2);
+    // And the consent gate: a live, unaccepted offer runs ONE board.
+    expect(engine.getChosenRuns('t1')).toBe(1);
+    // Once the last player consents, the clamped pick is what runs.
+    expect(engine.accept('t1', 'B')).toBe(true);
     expect(engine.getChosenRuns('t1')).toBe(2);
   });
 

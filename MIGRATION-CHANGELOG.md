@@ -15815,3 +15815,200 @@ and the frozen-pool invariant reads drift 0.00. The 4 surviving criticals are
 REAL and are for Dan: Club JAQK treasury -78,057.05, SHARK CLUB treasury
 -32,320.73, Midway Union treasury negative at -1,202.80, and seat exit #15448
 (55 chips).
+
+## 2026-08-27 — Phase-4 sweep: the loaded gun the last audit left behind (cowork-mobile)
+
+Full write-up: `.agent/audits/2026-08-27-phase4-unknown-is-not-zero.md`
+
+Swept the three bug CLASSES from phases 2-3 rather than hunting instances, and
+control-tested every detector before believing its result.
+
+- CONSTRAINT-vs-WRITER drift (class B): swept DB functions (9 call sites of
+  log_wallet_transaction, all permitted) and the World Hub API (19 real literal
+  writes inspected, 0 violations). `ledger_reconcile_log` was the only
+  instance and is already fixed. Noted honestly: the CA-client run of this
+  detector returned an EMPTY that a control test proved worthless.
+- UNKNOWN-collapsed-to-ZERO (class C): the 2026-08-25 audit fixed one call site
+  and left `WalletService.getPlayerBalance`, whose body was `r.balance ?? 0`.
+  Five sites still used it - including `useGlobalBalanceSync` (blanked the
+  GLOBAL chip figure app-wide on one refused read) and `ChipTransferModal`
+  (blocked an agent from sending chips they held). All five now guard on null
+  and keep the last known good value; the helper is deleted.
+- New pin `tests/unit/UnknownBalanceIsNotZero.test.ts` (mutation-tested).
+
+Verified: tsc clean, 7,331/7,331 tests, deprecated-table gate green.
+
+## 2026-08-27 — Phase-5: no ceiling on people; the flaky suite fixed (cowork-mobile)
+
+Full write-up: `.agent/audits/2026-08-27-phase5-no-ceiling-on-people.md`
+
+Dan: "there should never be a cap on the amount of players in the club, union
+or anywhere else." Correction first: none of these were caps on PLAYERS - they
+were page sizes on background reads. But each treated its slice as the whole
+room, so the effect was the same once the room outgrew them.
+
+- HorseSessionRotator: `.limit(400)` UNORDERED, with 348 live seats measured
+  that day (87% of it). Now pages the whole room, ordered.
+- horseLoadMap (both halves) and the same-tournament entrant guard: three
+  `.limit(20000)` ceilings removed; all page. A truncated entrant list is how a
+  horse gets registered into the same tournament twice.
+- Waitlist: took the oldest TEN and looked for a human among them - a
+  horse-heavy head notified nobody while humans waited behind. Now walks the
+  queue. Kept as two queries on purpose: `table_waitlist.user_id` has FKs to
+  BOTH profiles and auth.users, so an embedded filter is ambiguous and a 400
+  would silence every seat offer.
+- FLAKY SUITE FIXED: full runs failed 2, then 4, then 5 specs across different
+  files while each passed alone. Two CPU-bound describes were spending ~8.5s of
+  the 10s default, and EngineStartResilience left three collaborators unstubbed
+  against its own docstring. Proven pre-existing by reproducing on main with
+  these changes stashed. Now: two consecutive full runs, 1,941/1,941.
+
+Reported not changed: 31 further row ceilings on people-tables, of which ~8 are
+complete-set operations (StatsExport, AgentPromoPanel, member lists) that need
+the same treatment in their own pass.
+
+## 2026-08-27 — Phase-6: complete-set reads no longer truncate (cowork-mobile)
+
+Full write-up: `.agent/audits/2026-08-27-phase6-complete-set-reads.md`
+
+New tested helper `src/utils/fetchAllRows.ts` pages a query until the server
+returns a short page, and rejects on a failed page rather than returning a
+partial set.
+
+- LIVE BUG FIXED: ClubDetailPage's member list capped at 500 while SHARK CLUB
+  had 590 members and Club JAQK 584 - 90 and 84 members were missing from their
+  own club's list. It was ordered by created_at, so the invisible ones were
+  always the newest joiners.
+- Also paged (latent): StatsExport roster (5000), AgentAssignmentPanel (2000),
+  AgentPromoPanel (1000), TournamentResults myEntries (5000), and the
+  union-clubs lookup in server/src/handlers/admin.ts (100) - which is an
+  AUTHORIZATION path where truncation denies a legitimate union admin.
+- NOT removed on purpose: StatsExport.fetchOwnHands keeps its 200-table scope.
+  Every id rides in the next request's URL and ~1000 uuids is a 37 KB URL that
+  servers answer 414, so paging it would break the export. The silence was the
+  bug: the limit is now a named constant, the clip is detected, and the user is
+  told the file is scoped instead of getting a row count that reads complete.
+
+Guard: tests/unit/CompleteSetReadsDoNotTruncate.test.ts (13 specs,
+mutation-tested) plus tests/unit/fetchAllRows.test.ts (8 specs).
+Verified: client 7,422/7,422, server 1,967/1,967, both tsc clean.
+
+## 2026-08-27 — Two mobile felt bugs from Dan (cowork-mobile)
+
+1. "Sometimes cards dim like you folded, even though you are live in a hand.
+   That should never happen while you still have a hand."
+
+   The dim is `winnerDisplayActive`, which darkens every face-up card outside
+   the winning five. Its ONLY fence was a reset at hand start - and a reset
+   cannot fence an out-of-order event. A POT_WIN belonging to hand N arriving
+   after hand N+1 had started merged into the fresh hand and dimmed the hero's
+   brand-new hole cards. The merge comment claimed "the hand-start resets fence
+   the union to the current hand", which is true only while events arrive in
+   order.
+
+   winnerInfo now carries the hand number it belongs to, enforced at BOTH ends:
+   the merge drops a payload that is not for the live hand (fenced ABOVE the
+   derived maps, so a stale display's hole-card indices and amounts are not
+   carried forward), and the render refuses to dim for winners stamped with a
+   different hand. The legitimate showdown dim is untouched - the existing
+   pokerbrosWinnerPresentation pin was updated in the same commit to require
+   both the dim and its new fence.
+
+2. "There are bugs in the pre action buttons, they don't work and function all
+   the time, and sometimes stay engaged on future streets."
+
+   Both halves were single-shot calls. `setPreAction` resolves
+   { success: false } rather than throwing, including for a FULL 30 SECONDS
+   while GameServerAPI's circuit breaker is open, so an attempt inside that
+   window simply lost and the player was told to play it manually.
+
+   The clear direction is the one that costs a hand: the ENGINE disposes
+   pre-actions only at hand end while the CLIENT clears every street, so a
+   failed clear left the engine armed and the bar dark - the player saw nothing
+   engaged and the engine acted for them on a later street. Both directions now
+   retry (3 bounded attempts), and a failed clear puts the armed control BACK
+   on screen so the player can see and cancel what the engine is still holding.
+
+Guard: tests/unit/LiveHandNeverDimsAndPreActionsLand.test.ts (9 specs,
+mutation-tested - and strengthened after a first mutation slipped past a pin
+that only required one of the two restore paths).
+Verified: client 7,516/7,516, server 1,991/1,991, both tsc clean, ui-text gate
+green.
+
+### Same day, deeper pass — the action bar reappearing for a split second
+
+Dan: "you make an action (check, call, raise or fold), the action happens, but
+then the action bar reappears for a split second."
+
+Root cause, and it is a race, not a rendering quirk. The bar renders on
+`currentPlayerSeat === heroSeat`. Acting optimistically sets that to 0, so it
+hides immediately - correct. But the engine snapshot merge then applied
+`currentPlayerSeat: mapped.currentPlayerSeat` UNCONDITIONALLY, and a snapshot
+generated BEFORE the server processed the action still names the hero as the
+actor. It lands a beat later, hands the turn back, the bar returns; the next
+snapshot moves the action on and it vanishes again. One flash per action, for
+as long as the round trip takes.
+
+Fixed with a narrow fence (heroActedFenceRef): while it is live for THIS hand
+and THIS seat, a snapshot may not hand the turn back to the seat that just
+acted. It releases on every other outcome so it can never outlive its purpose -
+the engine naming a different actor is the success signal, a new hand
+invalidates it, a rejected action clears it, and a 1.5s bound covers the case
+where none of those arrive. The same file already guards two fields this way
+(boardStage never goes backwards, a bet is held through its collect), so this
+is the established shape here.
+
+SECOND DEFECT FOUND IN THE SAME PATH: revert() restored lastActions,
+lastBetAmounts and player status but NOT `currentPlayerSeat`, which the
+optimistic update had zeroed. So a REJECTED fold or call left the hero still on
+the clock with NO ACTION BAR, unable to do anything until the next snapshot
+happened to arrive. It now clears the fence and gives the turn back.
+
+Checked and found correct, not changed: the PreActionBar requires
+`currentPlayerSeat > 0`, so it does not appear during the fence window either -
+the fence reuses the quiet state the code already relies on to stop the two
+bars flickering against each other.
+
+Guard: 7 more specs in LiveHandNeverDimsAndPreActionsLand.test.ts (16 total),
+mutation-tested. Verified: client 7,523/7,523, server 1,991/1,991, tsc clean
+both sides, ui-text gate green.
+
+## Change #146 — Table Studio Never Edits Unknown Or Stale Customization State
+
+**File:** `src/components/table/ThemeSettingsModal.tsx`, `src/components/table/ThemeSettingsModal.css`, `src/lib/persistInterfaceTheme.ts`
+**Lines:** Before: modal component 585-1326, saved-theme read 718-775, asset writer 857-895, interface selector 1054-1063, VIP prompt 1297-1324
+**What existed:** The picker displayed writable defaults while the saved row was still loading or had failed, briefly marked purchased card backs as VIP-locked before ownership resolved, kept an open editor stale after another surface changed the same bucket, applied light/dark mode only to local Zustand state, and treated the VIP prompt as part of the parent focus trap.
+**What changed:** Added explicit loading/error/retry state with mutation locks, ownership verification state, exact-account/exact-bucket `UI_THEME_CHANGED` synchronization, ordered profile persistence with rollback for interface mode, a truthful device-only loadout note, and an independently labelled/focus-trapped VIP dialog. Guest sessions now reset to defaults instead of inheriting a prior account's in-memory selection.
+**Why:** A customization control must never overwrite a row it failed to read or claim an unsaved value is equipped. The live editor and live felt must consume the same discrete customization event.
+**Verified:** YES — re-read after formatting; component tests cover loading, ownership success/failure, dialog keyboard flow, mode rollback, and live editor synchronization.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #147 — All Ten Controls Designs Reach Real Mobile Action Buttons
+
+**File:** `src/components/table/ControlThemeTokens.css`, `src/components/table/ActionPanel.css`, `src/components/table/TableStudioGameplayPreview.tsx`, `src/components/table/TableStudioGameplayPreview.css`, `src/components/table/ThemeSettingsModal.tsx`, `src/components/table/ThemeSettingsModal.css`, `src/pages/TablePage.tsx`, `src/pages/TablePage.css`
+**Lines:** Before: TablePage.css 834-937 held dealer-only tokens; ActionPanel.css 473-552 ignored the selected design; the studio preview action row 185-201 used one generic finish
+**What existed:** The ten items labelled "Button" changed only the dealer marker. Fold, Check/Call, and Raise looked identical across all ten choices, and previews opened from non-table routes depended on a stylesheet that might not be loaded.
+**What changed:** Renamed the surface "Controls", extracted a shared route-safe token sheet, gave every design a distinct material/edge/radius/type treatment, wired those tokens into production ActionPanel and both studio previews, and retained the approved red/blue/green semantic action palette.
+**Why:** The user requested ten actual button/control designs that work mobile-first in previews and real gameplay, not ten dealer-puck aliases.
+**Verified:** YES — Chromium at 390x844 produced ten unique computed-style fingerprints, preserved Fold/Check/Raise semantic colors, and had no horizontal overflow.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #148 — Failed Card-Back And Cross-Device Mode Writes Stay Honest
+
+**File:** `src/pages/SettingsPage.tsx`, `src/lib/settingsBridge.ts`, `src/stores/useSettingsStore.ts`, `src/core/MasterBus.ts`
+**Lines:** Before: SettingsPage save path 533-628, settings store mode writer 29-40, MasterBus theme handler 1475-1494
+**What existed:** SettingsPage announced unconditional success and persisted the requested card back into local/profile settings even when the canonical appearance write failed. Its rollback read a ref after the optimistic table-store update, allowing the "previous" value to become the same failed value. Table Studio mode changes did not update the full Settings-page cache, and remote profile mode events repainted the DOM while leaving that cache stale.
+**What changed:** Captured the durable card back before optimistic mutation, rolls failed writes back across UI/local/profile state, reports partial failure explicitly, mirrors local mode changes into the full settings cache, and mirrors discrete cross-device `UI_THEME_CHANGED` events there before notifying mounted settings consumers.
+**Why:** No picker may claim a design saved when the durable writer rejected it, and a stale cache must not overwrite a valid realtime account preference later.
+**Verified:** YES — rollback, local-cache preservation, account isolation, and cross-device mode propagation are pinned by unit/integration tests.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #149 — Customization Wiring Regression Gate
+
+**File:** `tests/unit/ThemeSettingsModalHardening.test.tsx`, `tests/unit/persistInterfaceTheme.test.ts`, `tests/unit/SettingsPageBridge.test.ts`, `tests/unit/useSettingsStore.test.ts`, `tests/unit/liveCustomizationBus.test.ts`, `tests/unit/visualCustomizationContracts.test.ts`, `tests/config/tableAppearanceModesAndMobileBackgrounds.test.ts`, `tests/e2e/customization-controls.spec.ts`
+**Lines:** New coverage plus updated contracts for the implemented persistence path
+**What existed:** Catalog-count and static CSS checks existed, but no browser proof that ten control choices rendered distinctly on a phone, and no component-level hostile-state coverage for delayed/failed reads, ownership, mode rollback, or an already-open editor receiving a live event.
+**What changed:** Added behavior-level component, ordered-writer, cache, live-bus, rollback, shared-token, and mobile Chromium contracts.
+**Why:** Static inventory counts cannot prove a user tap reaches the live table or remains durable under delayed and failed requests.
+**Verified:** YES — 498 test files / 7,860 tests pass; focused mobile Playwright 1/1; production build passes; ESLint reports 0 errors (711 pre-existing warnings).
+**TypeScript:** PASS — `npx tsc --noEmit`.

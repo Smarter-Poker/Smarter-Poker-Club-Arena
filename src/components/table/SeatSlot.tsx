@@ -36,7 +36,7 @@ import RiveAvatar from './RiveAvatar';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { startMotionBudget } from '../../utils/motionBudget';
 import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
-import { sortCardsByRank } from '../../lib/tableCardDisplay';
+import { displayOrderWithDealtIndex } from '../../lib/tableCardDisplay';
 import { seatCardSide, type CardSide } from '../../lib/tableSeatGeometry';
 import './avatarChoreography.css';
 
@@ -826,13 +826,29 @@ export const SeatSlot = memo(
      * card, it is the per-card show picker saying "this one stays face down"
      * (2026-08-18) - so a slot's POSITION carries meaning there, and sorting
      * would move a face-down card away from the card it belongs beside.
+     *
+     * ── EACH CARD CARRIES ITS OWN INDEX, AND THAT IS NOT COSMETIC ───────────
+     * Dan 2026-08-27 asked that shown hands be "highlighted at showdown". They
+     * were - on the wrong cards, whenever the sort moved anything.
+     *
+     * This used to return a bare `Card[]` and the row rendered it with
+     * `.map((card, i) =>  ... winningHoleCardIndexes.includes(i))`. But `i` is
+     * the position in the SORTED row, while `winningHoleCardIndexes` arrives
+     * from the engine (`hole_card_indices` on the pot_win event) indexed
+     * against the DEALT order - the array this function is about to reorder. A
+     * villain dealt `6h As 9c Ad` renders as `As Ad 9c 6h`, so a winning index
+     * of 1 lit the ace of diamonds when the engine meant the ace of spades, and
+     * `--dimmed` darkened the wrong card in the same beat. The sort landed on
+     * 2026-08-23 and the highlight on 2026-08-25; each was right on its own.
+     *
+     * Pairing the card with the index it had BEFORE the sort makes the two
+     * orders explicit, so the row can be drawn in reading order while every
+     * per-card flag is still asked about the right card.
      */
-    const displayHoleCards = useMemo(() => {
-      const cards = player?.holeCards;
-      if (!cards || cards.length === 0) return cards ?? [];
-      if (cards.some((c) => c == null)) return cards;
-      return sortCardsByRank(cards as Card[]);
-    }, [player?.holeCards]);
+    const displayHoleCards = useMemo(
+      () => displayOrderWithDealtIndex(player?.holeCards),
+      [player?.holeCards]
+    );
 
     /**
      * WHICH SIDE THIS SEAT'S CARDS HANG OFF — see `seatCardSide` in
@@ -1560,6 +1576,49 @@ export const SeatSlot = memo(
       !isMucking;
 
     /**
+     * IS THE HERO'S HAND BEING SHOWN TO THE TABLE?
+     *
+     * Dan 2026-08-27: "cards ... need to be displayed left to right. These are
+     * the ONLY WAY they should be displayed at showdown, or when shown by the
+     * player. Clearly showing every single card in the hand."
+     *
+     * The hero's row is the one row on the table with two audiences, and it has
+     * only ever been drawn for the first. PRIVATELY it is the hero's own hand:
+     * overlapped and arced, because that is what a held hand looks like and
+     * because the compact row is what lets a PLO6 hand live in the strip of
+     * backdrop right of the seat on a 375px phone. The hero loses nothing to a
+     * covered card - they already know what they hold.
+     *
+     * TABLED it is being read by everybody else, and every one of those reasons
+     * evaporates. So the class below opens the row out and flattens it (see the
+     * `--revealed` block at the end of SeatSlot.css) - the same treatment a
+     * villain's shown hand gets, which is the point: Dan's rule is that a shown
+     * hand looks the same wherever it is sitting.
+     *
+     * DERIVED HERE RATHER THAN PASSED IN. `player.showCards` cannot answer this
+     * for the hero: TablePage sets it to `isHero` on every deal, because the
+     * hero can always see their own cards. The honest signal is a prop
+     * (`isShowdown`) from TablePage, which several other workstreams are inside
+     * right now, so this reads the three states the seat can already see:
+     *
+     *   isWinner            the hand was tabled and won - it is on display now
+     *   status === all_in   an all-in runout turns the hand face up to the table
+     *   winnerDisplayActive a showdown is being presented at this table
+     *
+     * and requires the hand to still be LIVE. A hero who folded keeps their
+     * cards on screen on purpose (TablePage substitutes the last-delivered
+     * array back in so the player can see what they mucked, Dan 2026-04-14),
+     * and that muck view is private - it must not fan itself open every time
+     * somebody else wins. Same for a hand the engine ruled muckable.
+     */
+    const heroHandIsTabled =
+      !!player.isHero &&
+      player.status !== 'folded' &&
+      lastAction !== 'fold' &&
+      !isMuckedShowdown &&
+      (isWinner || player.status === 'all_in' || !!winnerDisplayActive);
+
+    /**
      * How many cards a VILLAIN's fan is about to draw.
      *
      * Dan 2026-08-26 rebuild: this number is the ONLY thing game type changes
@@ -1841,9 +1900,18 @@ export const SeatSlot = memo(
               }
             >
               {player.holeCards && player.holeCards.length > 0
-                ? displayHoleCards.map((card, i) => (
+                ? /* TWO ORDERS, NEVER CONFLATED (Dan 2026-08-27, showdown
+                     highlighting). `row` is the position in the row as it is
+                     DRAWN - left to right, high card first - and drives the
+                     React key and `--vh-i`, which is what lays the card out.
+                     `dealtIndex` is the position the ENGINE numbers the card
+                     by, and is the only thing `winningHoleCardIndexes` may be
+                     asked about. They are equal only when the sort was a no-op;
+                     see `displayOrderWithDealtIndex` for the hand that proved
+                     they are not the same number. */
+                  displayHoleCards.map(({ card, dealtIndex }, row) => (
                     <HoleCard
-                      key={i}
+                      key={dealtIndex}
                       card={card}
                       /* Dan 2026-08-18: null = this specific card was not among
                        the ones the player chose to show, so it stays down even
@@ -1853,7 +1921,9 @@ export const SeatSlot = memo(
                       hidden={!player.showCards || card == null || revealHeld}
                       isWinner={
                         isWinner &&
-                        (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
+                        (winningHoleCardIndexes
+                          ? winningHoleCardIndexes.includes(dealtIndex)
+                          : true)
                       }
                       /* POKERBROS PARITY 2026-08-26: while a winner is on
                          display, every face-up card outside the winning five
@@ -1863,7 +1933,9 @@ export const SeatSlot = memo(
                         winnerDisplayActive &&
                         !(
                           isWinner &&
-                          (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
+                          (winningHoleCardIndexes
+                            ? winningHoleCardIndexes.includes(dealtIndex)
+                            : true)
                         )
                       }
                       deckStyle={deckStyle}
@@ -1872,7 +1944,7 @@ export const SeatSlot = memo(
                          showdown is the one moment a card face has to be on
                          screen the instant it flips. */
                       eager={player.showCards}
-                      fanIndex={i}
+                      fanIndex={row}
                     />
                   ))
                 : /* Dan 2026-08-23: this used to be exactly two hard-coded backs,
@@ -2186,6 +2258,12 @@ export const SeatSlot = memo(
           <div
             className={
               'seat__cards seat__cards--hero' +
+              /* Dan 2026-08-27: a hand that is being SHOWN opens out flat and
+                 left to right, hero and villain alike. `heroHandIsTabled`
+                 above says when that is; the geometry is the `--revealed`
+                 block at the end of SeatSlot.css. Never while the cards are
+                 still face down in the squeeze - there is nothing to show. */
+              (heroHandIsTabled && !squeezeDown ? ' seat__cards--revealed' : '') +
               (isDealing ? ' seat__cards--dealing' : '') +
               (isFolding ? ' seat__cards--folding' : '') +
               (lastAction === 'fold' || player.status === 'folded' ? ' seat__cards--folded' : '') +
@@ -2601,15 +2679,8 @@ export const SeatSlot = memo(
     if (pp.showCards !== np.showCards) return false;
     if (pp.avatar !== np.avatar) return false;
     /**
-     * AUDIT 2026-08-25 — the equipped cosmetics were compared by nothing.
-     *
-     * `frame` and `aura` are declared on SeatPlayer with the note "refreshed
-     * live by the table's profiles subscription", and `<AvatarCosmetics>` is
-     * rendered from them. The subscription rewrites the player object and
-     * changes ONLY these two fields, so the memo returned true and the seat
-     * never repainted: equipping a frame changed nothing at the table until
-     * something else about that player moved. The claim in the doc comment was
-     * simply not implemented on this side of the boundary.
+     * Compare cosmetics (frame and aura).
+     * These are refreshed live by the table's profiles subscription.
      */
     if (pp.frame !== np.frame) return false;
     if (pp.aura !== np.aura) return false;

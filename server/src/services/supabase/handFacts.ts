@@ -652,8 +652,16 @@ export interface HandFactsInput {
   contributions: Map<string, number>;
   winners: Array<{ userId: string; amount: number }>;
   actions: HandAction[];
-  /** Seat roster with horse flags — only humans get fact rows. */
+  /**
+   * Seat roster with horse flags. Humans always get fact rows; horses get them
+   * when the table runs NIT Game - see the note over `writeHandFacts`.
+   */
   roster: Array<{ userId: string; isHorse: boolean }>;
+  /**
+   * `tables.nit_game`. When the table enforces a VPIP minimum, horses need
+   * fact rows too, because those rows ARE the evidence the rule is judged on.
+   */
+  nitGame?: boolean;
 }
 
 /**
@@ -668,13 +676,38 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
   try {
     if (!input.handId) return;
 
-    const humanIds = new Set(
+    /**
+     * ── HORSES ARE PLAYERS, AND A RULE NEEDS EVIDENCE (Dan 2026-08-27) ──
+     *
+     * `fn_nit_evictions` had a horse-only predicate removed on 2026-08-27 so
+     * the fleet could be stood up by the maintain-VPIP rule like anybody else.
+     * That fix could never bite, because the rule is judged by `fn_nit_check`,
+     * which reads `ca_hand_facts`, and this function wrote rows for humans
+     * only. A horse's VPIP was therefore not "low", it was UNKNOWABLE: both
+     * branches of fn_nit_check compare a sample count against a floor, and a
+     * horse's sample was permanently zero, so `0 >= 100` was false and every
+     * horse returned `within_limits` for ever.
+     *
+     * Proved against production on 2026-08-27 inside a rolled-back
+     * transaction: with NIT Game set to demand a 99% VPIP - a threshold no
+     * player alive can meet - the human at the table was evicted on
+     * `career_vpip` (24.6% over 544 hands) and the horse beside them came back
+     * `ok: true, within_limits`.
+     *
+     * So horses get fact rows AT NIT TABLES: the rule and its evidence now
+     * cover exactly the same seats. It is scoped to those tables rather than
+     * switched on everywhere because horses play ~221k hands a day and this
+     * table carries one row per player per hand; writing every horse hand
+     * platform-wide is a storage decision with a real bill, and that is Dan's
+     * to make, not an agent's - the same line the retention policy draws.
+     */
+    const factIds = new Set(
       input.roster
-        .filter((p) => !p.isHorse)
+        .filter((p) => !p.isHorse || input.nitGame === true)
         .map((p) => p.userId)
         .filter(Boolean)
     );
-    if (humanIds.size === 0) return; // horse-only hand: nothing worth storing
+    if (factIds.size === 0) return; // nobody to store
 
     const dealtSeats: number[] = [];
     for (const v of input.holeCardsAll.values()) {
@@ -758,7 +791,7 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
     const factRows: Record<string, unknown>[] = [];
 
     for (const uid of participants) {
-      if (!humanIds.has(uid)) continue; // humans only
+      if (!factIds.has(uid)) continue; // humans, plus horses at NIT tables
 
       const seatInfo = input.holeCardsAll.get(uid);
       const invested = r2(input.contributions.get(uid) ?? 0);
@@ -883,7 +916,7 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
     // Head-to-head transfers. Only rows touching a human are stored — a horse
     // beating another horse is not a rivalry anybody will read about.
     const transfers = computeTransfers(nets)
-      .filter((t) => humanIds.has(t.winnerId) || humanIds.has(t.loserId))
+      .filter((t) => factIds.has(t.winnerId) || factIds.has(t.loserId))
       .map((t) => ({
         hand_id: input.handId,
         winner_id: t.winnerId,

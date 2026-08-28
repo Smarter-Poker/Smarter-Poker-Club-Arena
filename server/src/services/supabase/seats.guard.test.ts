@@ -1,25 +1,44 @@
 /**
  * REGRESSION GUARDS - a seat is never vacated while it still holds uncredited chips.
  *
- * WHY THIS FILE EXISTS
+ * ── 2026-08-27: THESE GUARDS WERE DELIBERATELY REPLACED ────────────────────
+ * The previous version of this file pinned `safeToClearSeat`, the catch-block
+ * branch, the seat_number scoping on each `left_at` write, and `cashoutKey(seat)`
+ * appearing in both functions. Its own header said: "If one of these rules is
+ * deliberately superseded, delete the guard IN THE SAME COMMIT and say why."
+ * So, why:
  *
- * fn_unaccounted_seat_exits() reported two exits on 2026-08-26 whose stacks had
- * no matching wallet credit: 85.85 chips at 09:38 UTC and 45.00 at 12:55. The
- * detector had been in place since the 2026-08-25 incident and nobody had read
- * it.
+ * Every one of those rules was an APPROXIMATION of a single property - that
+ * reading the stack, crediting it, and vacating the seat must not come apart.
+ * They approximated it because the three steps were three separate PostgREST
+ * round-trips, i.e. three transactions, and the only defence available in
+ * TypeScript was to sequence them carefully and track a boolean.
  *
- * markSeatAsLeft was the cause of the first. Its happy path is careful - every
- * credit failure returns without vacating - but its catch block vacated the seat
- * unconditionally. Any throw between reading the stack and crediting it (a
- * transport error on the RPC, a timeout) therefore erased the stack: the wallet
- * was never credited and the chips existed nowhere afterwards.
+ * Careful sequencing was not enough, and the reason is the bug this commit
+ * fixes: the first of those three round-trips took NO LOCK. `atomic_table_addon`
+ * could commit `stack = stack + n` between the read and the credit, so the
+ * credit paid the pre-add-on stack while the seat exit recorded the post-add-on
+ * one. Three times in 30 days, 205.68 chips, each reconstructing to the penny as
+ * `cash-out + add-on == stack`. `safeToClearSeat` was true and correct
+ * throughout - it is not a guard against reading the wrong number.
  *
- * atomicCashout, in the same file, has been guarded against exactly this since
- * SWEEP #4 P0-3 via its `safeToClearSeat` flag. markSeatAsLeft never received
- * the same fix. These guards make that asymmetry impossible to reintroduce.
+ * Read, credit and vacate now happen inside `atomic_seat_cashout_locked`, in ONE
+ * transaction, with the seat row held under FOR UPDATE. The old properties are
+ * no longer approximated, they are structural:
  *
- * If one of these rules is deliberately superseded, delete the guard IN THE SAME
- * COMMIT and say why.
+ *   - a failed credit cannot leave a vacated seat, because they roll back
+ *     together (this is what safeToClearSeat was for);
+ *   - the vacate cannot hit a seat the call never read, because it is scoped to
+ *     the row the RPC itself locked (this is what the seat_number scoping was
+ *     for);
+ *   - the two paths cannot dedupe differently, because the key is derived from
+ *     that same locked row (this is what cashoutKey(seat) was for).
+ *
+ * What is pinned below is therefore the stronger rule: NOTHING about cashing a
+ * seat out may happen in TypeScript any more. If a credit, a `left_at` write, or
+ * a stack read reappears in this file, the race is back - and it will not
+ * announce itself, because it only fires when an add-on lands in a window of a
+ * few hundred milliseconds.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
@@ -47,71 +66,42 @@ describe('seats.ts - chips cannot leave the felt uncredited', () => {
   const markSeatAsLeft = fnBody(SEATS, 'markSeatAsLeft');
   const atomicCashout = fnBody(SEATS, 'atomicCashout');
 
-  it('markSeatAsLeft declares the safeToClearSeat guard', () => {
-    expect(markSeatAsLeft).toContain('let safeToClearSeat = false');
+  it('both cash-out paths go through the locked RPC', () => {
+    expect(markSeatAsLeft).toContain('atomic_seat_cashout_locked');
+    expect(atomicCashout).toContain('atomic_seat_cashout_locked');
   });
 
-  it('markSeatAsLeft only arms the guard after the credit path has passed', () => {
-    const armed = markSeatAsLeft.indexOf('safeToClearSeat = true');
-    const softDelete = markSeatAsLeft.indexOf('leave_pending: false');
-    expect(armed, 'safeToClearSeat is never armed').toBeGreaterThan(-1);
-    expect(armed, 'the guard must be armed before the seat is soft-deleted').toBeLessThan(
-      softDelete
-    );
+  it('there is exactly ONE implementation of cashing a seat out', () => {
+    /* The two paths have already drifted apart twice while being patched
+       separately (2026-08-22 credited different wallets; 2026-08-26 fixed the
+       catch block in one and not the other). Sharing the RPC is what stops a
+       third time. */
+    const rpcs = [...SEATS.matchAll(/rpc\(\s*'([a-z_]+)'/g)].map((m) => m[1]);
+    expect(new Set(rpcs)).toEqual(new Set(['atomic_seat_cashout_locked']));
   });
 
-  it('markSeatAsLeft never vacates a seat from its catch block unguarded', () => {
-    const catchIdx = markSeatAsLeft.lastIndexOf('} catch (');
-    expect(catchIdx).toBeGreaterThan(-1);
-    const catchBlock = markSeatAsLeft.slice(catchIdx);
-    expect(catchBlock).toContain('if (safeToClearSeat)');
-    // the vacate must sit inside the guarded branch, not before it
-    expect(catchBlock.indexOf('if (safeToClearSeat)')).toBeLessThan(catchBlock.indexOf('left_at:'));
+  it('neither path credits a wallet itself', () => {
+    // A credit here is a second transaction, and a second transaction is the race.
+    expect(SEATS).not.toContain('atomic_credit_wallet_and_log');
+    expect(SEATS).not.toContain('credit_player_wallet');
   });
 
-  it('every left_at write in markSeatAsLeft is scoped to the seat it was asked about', () => {
-    // A write scoped only by table_id + user_id vacates EVERY active seat that
-    // player holds at the table, including one holding a stack this call never
-    // read and therefore never credited.
-    const writes = markSeatAsLeft.split('left_at: new Date().toISOString()');
-    // writes[0] is the text before the first write; each subsequent chunk is the
-    // filter chain that follows one write.
-    for (let i = 1; i < writes.length; i++) {
-      const chain = writes[i].slice(0, 400);
-      expect(chain, `left_at write #${i} in markSeatAsLeft is not scoped to seat_number`).toContain(
-        "eq('seat_number', seatNumber)"
-      );
-    }
+  it('neither path writes left_at itself', () => {
+    /* Vacating outside the RPC re-opens the gap even if the credit moved: the
+       seat could be cleared while an add-on is still in flight, and the add-on's
+       own zero-row guard would then be the only thing standing between a debited
+       wallet and nothing. */
+    expect(SEATS).not.toMatch(/left_at:\s*new Date\(\)\.toISOString\(\)/);
   });
 
-  it('atomicCashout keeps the guard it has had since SWEEP #4 P0-3', () => {
-    expect(atomicCashout).toContain('safeToClearSeat');
-    const catchIdx = atomicCashout.lastIndexOf('} catch (');
-    // Matched to the open paren, not 'if (safeToClearSeat)': 2026-08-26 the
-    // condition was widened to '&& exitingSeatNumber !== null' so the fallback
-    // cannot vacate a seat it never read. The guard must still be the thing
-    // that gates the vacate - this fails if anyone removes it - but it is
-    // allowed to be stricter than it was.
-    expect(atomicCashout.slice(catchIdx)).toContain('if (safeToClearSeat');
+  it('neither path reads the seat stack before cashing out', () => {
+    /* THE bug, stated directly. An unlocked `SELECT ... stack` followed by a
+       credit is what destroyed 205.68 chips. The stack must only ever be read
+       inside the transaction that holds the row. */
+    expect(SEATS).not.toMatch(/select\(\s*['"][^'"]*\bstack\b/);
   });
 
-  it('every left_at write in atomicCashout is scoped to the seat it credited', () => {
-    // The rule markSeatAsLeft got on 2026-08-26 and atomicCashout did not.
-    // atomicCashout SELECTs by seat_number when the caller supplies one, but
-    // both of its writes were scoped only by table_id + user_id - so a player
-    // holding two active seats had BOTH vacated while one stack was credited,
-    // and the other was destroyed.
-    const writes = atomicCashout.split('left_at: new Date().toISOString()');
-    for (let i = 1; i < writes.length; i++) {
-      const chain = writes[i].slice(0, 400);
-      expect(chain, `left_at write #${i} in atomicCashout is not scoped to seat_number`).toContain(
-        "eq('seat_number'"
-      );
-    }
-  });
-
-  it('both cash-out paths still dedupe on the same idempotency key', () => {
-    expect(markSeatAsLeft).toContain('cashoutKey(seat)');
-    expect(atomicCashout).toContain('cashoutKey(seat)');
+  it('records why the old guards went, so they are not "restored"', () => {
+    expect(SEATS).toContain('One side of a handshake is not a handshake');
   });
 });

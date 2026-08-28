@@ -39,7 +39,7 @@ step 'tsc --noEmit' npx tsc --noEmit
 
 echo '── House rules ─────────────────────────────────────────────'
 for g in check-css-modules check-title-case check-ui-text check-no-emoji check-esm-require \
-         check-allin-pointer-events check-monitoring-drift \
+         check-allin-pointer-events check-monitoring-drift check-horses-are-players \
          check-rake-schedule-parity check-seat-law-parity; do
   step "$g" node "scripts/ci/$g.mjs"
 done

@@ -34,6 +34,12 @@ import { HorseMind } from '../../engine/HorseMind.js';
  */
 export async function logHandHistory(params: {
   tableId: string;
+  /**
+   * `tables.nit_game`. Passed through to writeHandFacts so a horse at a NIT
+   * table produces the VPIP evidence the rule is judged on. See the note over
+   * writeHandFacts for why the rule could not bite without it.
+   */
+  nitGame?: boolean;
   tournamentId?: string;
   handNumber: number;
   gameVariant: string;
@@ -247,6 +253,8 @@ export async function logHandHistory(params: {
       winners: params.winners,
       actions: params.actions,
       roster: params.roster,
+      // The rule and its evidence must cover the same seats. See writeHandFacts.
+      nitGame: params.nitGame,
     });
     // V16 DEEP READS 2026-08-26: the completed hand feeds the fold-to-c-bet,
     // fold-to-3-bet and big-bet sizing-tell counters — reads the per-decision

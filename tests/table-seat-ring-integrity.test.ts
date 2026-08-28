@@ -39,7 +39,6 @@ import { SEAT_LAYOUTS, seatLayoutFor } from '../src/lib/tableSeatGeometry';
 import {
   FELT_WINDOW,
   FELT_MARKER_MARGIN_WIDTH_PCT,
-  feltCenter,
   dealerButtonPosition,
 } from '../src/components/table/tableGeometry';
 
@@ -90,10 +89,16 @@ describe('the seat box this file measures against is the one the stylesheet draw
 describe('no two seats collide, at any table size', () => {
   /**
    * The tightest table is the smallest one, so that is where this is measured.
-   * Observed minimums when this was written (2026-08-25): 141px on 9-max
-   * (the side rail's bottom-cap-to-low pair, and the 8-max equivalent at
-   * 166px), against a 96px box. The 45px of headroom is the margin a future
-   * ring nudge is spending.
+   *
+   * Observed minimums when this was written (2026-08-25): 141px on 9-max — the
+   * side rail's bottom-cap-to-low pair — against a 96px box, so 45px of
+   * headroom was the margin a future ring nudge had to spend.
+   *
+   * It spent 13 of them on 2026-08-27. The 95% board pushed every side seat out
+   * of the felt's middle, which drove the high seats up to y 26 and so closer
+   * to the top-cap diagonals: the tightest pair on the whole estate is now
+   * 7-max and 9-max's (10.5, 26) beside (27, 6) at 128px, with 8-max's
+   * bottom-cap-to-low pair next at 141px. 32px of headroom left.
    */
   const phone = TABLES['phone 375px'];
   const pxGap = (a: { x: number; y: number }, b: { x: number; y: number }) =>
@@ -133,30 +138,103 @@ describe('no two seats collide, at any table size', () => {
 describe('the dealer button is never on the community board', () => {
   /**
    * The same board rectangle tests/table-geometry-chips.test.ts measures the
-   * CHIPS against: the middle 68% of the felt's width, five cards at 64:92,
-   * centred on the felt. Restated here rather than shared because the two
-   * files assert about different markers and neither should be able to loosen
-   * the other's definition of where the cards are.
+   * CHIPS against: the middle 95% of the felt's width, five cards at 64:92,
+   * centred on the felt's midline and hung from `.community-area`'s own
+   * anchor. Restated here rather than shared because the two files assert
+   * about different markers and neither should be able to loosen the other's
+   * definition of where the cards are.
+   *
+   * ── THE AXIS CONVERSION WAS UPSIDE DOWN (fixed 2026-08-27) ────────────────
+   * A card's height is computed in percent of the table's WIDTH, so turning it
+   * into percent of the table's HEIGHT means multiplying by w/h (0.605). This
+   * used `(1000 / 605)` — h/w — which overstated the board's height by 2.73x,
+   * and it hung the rectangle on `feltCenter().y` (49.05%) when the board
+   * actually sits at 43.03%. The same two errors were in the chips file and
+   * are fixed there in the same commit. An over-tall model does not fail safe:
+   * it reports a collision that is not on the screen, against a marker
+   * position that is real, and the next reader believes it.
    */
-  const c = feltCenter();
-  const boardHalfW = 0.34 * FELT_WINDOW.width;
-  const cardW = (0.68 * FELT_WINDOW.width) / 5;
-  const boardHalfH = ((cardW * 92) / 64 / 2) * (1000 / 605);
+  const BOARD_FELT_FRACTION = 0.95;
+  const BOARD_GAP_PX = 2;
+  const BOARD_TOP_FELT_PCT = 42.5;
+  const boardCentreX = FELT_WINDOW.left + FELT_WINDOW.width / 2;
+  const boardCentreY = FELT_WINDOW.top + (BOARD_TOP_FELT_PCT / 100) * FELT_WINDOW.height;
+  const boardHalfW = (BOARD_FELT_FRACTION * FELT_WINDOW.width) / 2;
   // The puck's own radius, in percent of the table's width. Its centre being
   // off the board is not enough - the disc must be.
   const puckHalf = FELT_MARKER_MARGIN_WIDTH_PCT;
 
   for (const [label, table] of Object.entries(TABLES)) {
+    const gapPct = (BOARD_GAP_PX / table.w) * 100;
+    const cardW = (BOARD_FELT_FRACTION * FELT_WINDOW.width - 4 * gapPct) / 5;
+    const boardHalfH = (cardW * (92 / 64) * (table.w / table.h)) / 2;
+
     it(`${label}: no seat on any ring puts its puck on the cards`, () => {
       for (const n of SIZES) {
         for (const seat of SEAT_LAYOUTS[n]) {
           const b = dealerButtonPosition(seat, table);
-          const onBoardX = Math.abs(b.x - c.x) < boardHalfW + puckHalf;
-          const onBoardY = Math.abs(b.y - c.y) < boardHalfH + puckHalf * (1000 / 605);
+          const onBoardX = Math.abs(b.x - boardCentreX) < boardHalfW + puckHalf;
+          const onBoardY =
+            Math.abs(b.y - boardCentreY) < boardHalfH + puckHalf * (table.w / table.h);
           expect(
             onBoardX && onBoardY,
             `${n}-max ${label}: seat ${JSON.stringify(seat)} put its button at ` +
               `${b.x.toFixed(1)},${b.y.toFixed(1)} - on the board`
+          ).toBe(false);
+        }
+      }
+    });
+  }
+});
+
+describe('the seat BOXES stand clear of the cards, not just the markers', () => {
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   * Dan 2026-08-27, item 2: the board spans the felt "LIKE FELT WINDOW 95%",
+   * and the seats sit above and below it rather than beside it.
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * The two suites above measure a seat's CHIPS and its PUCK. Neither measures
+   * the seat, and the seat is the biggest thing on the rail: a fixed 96px box
+   * of avatar and nameplate that does not shrink with the phone. On a 375px
+   * screen a side seat at x 10.5% reaches x 24.3% of the scaler while a 95%
+   * board's left edge lands at x 15.1% — 32px of overlap that no chip rail and
+   * no vertical anchor can do anything about.
+   *
+   * That is why the board could never have reached 95% from the stylesheet, and
+   * it is the invariant the seat move has to keep: EVERY seat, on every ring,
+   * stands entirely above the cards or entirely below them.
+   *
+   * Measured on the phone because the box is a fixed pixel size on a table
+   * whose width is continuous, so the smallest table is the tightest fit. The
+   * box is treated as 96px SQUARE: the real villain seat is about 90px tall
+   * (a 52px avatar overlapping a ~43px plate), so this is conservative by a few
+   * pixels in the axis that matters, deliberately.
+   */
+  const BOARD_FELT_FRACTION = 0.95;
+  const BOARD_GAP_PX = 2;
+  const BOARD_TOP_FELT_PCT = 42.5;
+
+  for (const [label, table] of Object.entries(TABLES)) {
+    it(`${label}: no seat box on any ring overlaps the board`, () => {
+      const gapPct = (BOARD_GAP_PX / table.w) * 100;
+      const rowW = BOARD_FELT_FRACTION * FELT_WINDOW.width;
+      const cardW = (rowW - 4 * gapPct) / 5;
+      const halfH = (cardW * (92 / 64) * (table.w / table.h)) / 2;
+      const centreX = FELT_WINDOW.left + FELT_WINDOW.width / 2;
+      const centreY = FELT_WINDOW.top + (BOARD_TOP_FELT_PCT / 100) * FELT_WINDOW.height;
+      const seatHalfX = (SEAT_BOX_W_PX / 2 / table.w) * 100;
+      const seatHalfY = (SEAT_BOX_W_PX / 2 / table.h) * 100;
+
+      for (const n of SIZES) {
+        for (const seat of SEAT_LAYOUTS[n]) {
+          const overlapsX = Math.abs(seat.x - centreX) < rowW / 2 + seatHalfX;
+          const overlapsY = Math.abs(seat.y - centreY) < halfH + seatHalfY;
+          expect(
+            overlapsX && overlapsY,
+            `${n}-max ${label}: seat ${JSON.stringify(seat)} has its 96px box over the cards ` +
+              `(the board is x ${(centreX - rowW / 2).toFixed(1)}..${(centreX + rowW / 2).toFixed(1)}, ` +
+              `y ${(centreY - halfH).toFixed(1)}..${(centreY + halfH).toFixed(1)})`
           ).toBe(false);
         }
       }

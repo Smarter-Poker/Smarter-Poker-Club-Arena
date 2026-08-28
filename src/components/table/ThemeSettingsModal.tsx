@@ -5,7 +5,7 @@
  *
  * Theme customization modal with:
  *   - Game type selector dropdown (ALL, NLH, FLH, 6+, PLO, etc.)
- *   - 5-tab layout (Themes, Table, Button, Background, Cards)
+ *   - 5-tab layout (Themes, Table, Controls, Background, Cards)
  *   - Binary VIP gating (Free items vs VIP-only items)
  *   - Per-game-type persistence via user_theme_settings table
  *
@@ -25,11 +25,17 @@ import {
 import { CardBack, normalizeCardBack, CARD_BACK_CATALOG, isCardBackUnlocked } from './CardImage';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
+import './ControlThemeTokens.css';
 import './ThemeSettingsModal.css';
 import { reportError } from '../../utils/errorReporter';
 import { useSettingsStore } from '../../stores/useSettingsStore';
+import { avatarService } from '../../services/AvatarService';
+import TableStudioGameplayPreview from './TableStudioGameplayPreview';
+import { applyTableAppearance, type AppearancePatch } from '../../lib/applyTableAppearance';
+import { canonicalGameType, pickThemeRow } from '../../hooks/useUserThemeSettings';
+import { persistInterfaceTheme, type InterfaceTheme } from '../../lib/persistInterfaceTheme';
+import { masterBus } from '../../core/MasterBus';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -53,6 +59,7 @@ interface ThemeSelection {
 
 type ThemeTab = 'themes' | 'table' | 'button' | 'background' | 'cards';
 type BackgroundGroup = 'places-rooms' | 'skins';
+type AssetFilter = 'all' | 'free' | 'vip' | 'favorites' | 'recent';
 
 interface ThemeAsset {
   id: string;
@@ -82,7 +89,7 @@ const GAME_TYPE_LABELS: Record<string, string> = {
 const TABS: { key: ThemeTab; label: string }[] = [
   { key: 'themes', label: 'Themes' },
   { key: 'table', label: 'Table' },
-  { key: 'button', label: 'Button' },
+  { key: 'button', label: 'Controls' },
   { key: 'background', label: 'Background' },
   { key: 'cards', label: 'Cards' },
 ];
@@ -90,7 +97,7 @@ const TABS: { key: ThemeTab; label: string }[] = [
 const TAB_DESCRIPTIONS: Record<ThemeTab, string> = {
   themes: 'Complete, coordinated table looks',
   table: 'The felt and rail at the center of play',
-  button: 'Dealer marker finish and color',
+  button: 'Dealer marker and action-control finish',
   background: 'The room surrounding your table',
   cards: 'The design shown on every face-down card',
 };
@@ -110,10 +117,10 @@ const BACKGROUND_META: Record<string, { name: string; vipOnly: boolean }> = {
   midnight: { name: 'Midnight', vipOnly: false },
   royal_indigo: { name: 'Royal Indigo', vipOnly: false },
   emerald_room: { name: 'Emerald Room', vipOnly: false },
-  crimson_lounge: { name: 'Crimson Lounge', vipOnly: false },
-  ocean_abyss: { name: 'Ocean Abyss', vipOnly: false },
-  golden_dusk: { name: 'Golden Dusk', vipOnly: false },
-  galaxy: { name: 'Galaxy', vipOnly: false },
+  crimson_lounge: { name: 'Crimson Lounge', vipOnly: true },
+  ocean_abyss: { name: 'Ocean Abyss', vipOnly: true },
+  golden_dusk: { name: 'Golden Dusk', vipOnly: true },
+  galaxy: { name: 'Galaxy', vipOnly: true },
   carbon_grid: { name: 'Carbon Grid', vipOnly: true },
   ice_frost: { name: 'Ice Frost', vipOnly: true },
   jade_neon: { name: 'Jade Neon', vipOnly: true },
@@ -232,7 +239,7 @@ export const THEME_PRESETS: ThemeAsset[] = [
     id: 'crimson-club',
     name: 'Crimson Club',
     thumbnail: 'linear-gradient(135deg, #26070d, #8f142c)',
-    vipOnly: false,
+    vipOnly: true,
   },
   {
     id: 'arctic-suite',
@@ -291,7 +298,7 @@ export const BUTTON_ASSETS: ThemeAsset[] = [
   {
     id: 'sports-themed',
     name: 'Sports',
-    thumbnail: 'linear-gradient(135deg, #33691e, #558b2f)',
+    thumbnail: 'linear-gradient(135deg, #2ea043, #4dc660)',
     vipOnly: true,
   },
   {
@@ -348,11 +355,43 @@ const TAB_TO_FIELD: Record<ThemeTab, keyof ThemeSelection> = {
 
 const DEFAULT_SELECTION: ThemeSelection = {
   theme_id: 'default-dark',
-  table_id: 'neon_city',
+  table_id: 'classic_green',
   button_id: 'classic-white',
   background_id: 'midnight',
   cards_id: 'classic_red',
 };
+
+function readLocalJson<T>(key: string, fallback: T): T {
+  try {
+    return JSON.parse(localStorage.getItem(key) || '') as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLocalJson(key: string, value: unknown): boolean {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeStoredSelection(value: unknown): ThemeSelection | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Partial<ThemeSelection>;
+  if (!raw.table_id || !raw.button_id || !raw.background_id || !raw.cards_id) return null;
+  return {
+    theme_id: raw.theme_id || DEFAULT_SELECTION.theme_id,
+    table_id: normalizeFeltId(raw.table_id),
+    button_id: BUTTON_ASSETS.some((asset) => asset.id === raw.button_id)
+      ? raw.button_id
+      : DEFAULT_SELECTION.button_id,
+    background_id: normalizeBackgroundId(raw.background_id),
+    cards_id: normalizeCardBack(raw.cards_id),
+  };
+}
 
 /**
  * Dan 2026-08-17 (STEP 8) — Tab 1 preset bundles. Picking a Theme fills the
@@ -470,9 +509,8 @@ function canAccessAsset(
  * Per tab, what "real" means:
  *   table       the actual 896x1200 skin composite, object-fit cover
  *   background  the actual room .jpg
- *   button      a live dealer button carrying data-button-theme, so it picks
- *               up the very --dealer-btn-bg / --dealer-btn-color the table
- *               will use (TablePage.css)
+ *   button      the live dealer marker plus the Fold / Check / Raise control
+ *               finish driven by the same data-button-theme as gameplay
  *   cards       a real <CardBack>, the same component the felt renders
  *   themes      a composite mini-table: the preset's own table skin with its
  *               background behind it, which is the only honest way to show
@@ -503,10 +541,16 @@ function renderAssetPreview(tab: ThemeTab, asset: ThemeAsset) {
   }
 
   if (tab === 'button') {
-    // The real dealer button, styled by the same attribute the table sets.
+    // The real dealer marker and action-control finish, both driven by the
+    // same attribute the table sets.
     return (
       <div className="theme-asset__btnstage" data-button-theme={asset.id}>
         <span className="theme-asset__dealerbtn">D</span>
+        <span className="theme-asset__actionset" aria-hidden="true">
+          <i>F</i>
+          <i>C</i>
+          <i>R</i>
+        </span>
       </div>
     );
   }
@@ -547,6 +591,8 @@ function renderAssetPreview(tab: ThemeTab, asset: ThemeAsset) {
 }
 
 export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSettingsModalProps) {
+  const modalRef = useRef<HTMLDivElement>(null);
+  const vipPromptRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
   const navigate = useNavigate();
   const [showVipPrompt, setShowVipPrompt] = useState(false);
@@ -555,25 +601,168 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   const [gameType, setGameType] = useState<string>('ALL');
   const [selection, setSelection] = useState<ThemeSelection>({ ...DEFAULT_SELECTION });
   const [saving, setSaving] = useState(false);
+  const [previewFinalTable, setPreviewFinalTable] = useState(false);
+  const [previewAvatars, setPreviewAvatars] = useState<string[]>([]);
+  const [assetFilter, setAssetFilter] = useState<AssetFilter>('all');
+  const [assetSearch, setAssetSearch] = useState('');
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [recentIds, setRecentIds] = useState<string[]>([]);
+  const [loadoutRevision, setLoadoutRevision] = useState(0);
   /** Card backs bought with diamonds in the store. See canAccessAsset. */
   const [ownedCardBacks, setOwnedCardBacks] = useState<string[]>([]);
+  const [themeLoadState, setThemeLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
+    'idle'
+  );
+  const [themeLoadRevision, setThemeLoadRevision] = useState(0);
+  const [ownershipState, setOwnershipState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
+    'idle'
+  );
+  const [ownershipRevision, setOwnershipRevision] = useState(0);
+  const [modeSaving, setModeSaving] = useState(false);
   const uiMode = useSettingsStore((state) => state.theme);
   const setUiMode = useSettingsStore((state) => state.setTheme);
+  const modeRevisionRef = useRef(0);
 
   // The live selection, readable from a callback without making every callback
   // depend on it. handleSave needs the value it is replacing so it can put it
   // back if the write fails.
   const selectionRef = useRef(selection);
+  const gameTypeRef = useRef(gameType);
+  const userIdRef = useRef(userId);
+  userIdRef.current = userId;
+  const pendingSavesRef = useRef(0);
   useEffect(() => {
     selectionRef.current = selection;
   }, [selection]);
+
+  const replaceSelection = useCallback((next: ThemeSelection) => {
+    selectionRef.current = next;
+    setSelection(next);
+  }, []);
+
+  // Keep an already-open studio synchronized with every other appearance
+  // writer. The gameplay table already consumes this discrete event; without
+  // the matching editor subscription a card back changed from /settings (or a
+  // second customization surface) repainted the felt while this modal kept the
+  // old tile selected. Only the same account and exact editor bucket may touch
+  // the form — an ALL change must not overwrite a PLO-specific row being
+  // edited, even though gameplay may use ALL as a fallback.
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    return masterBus.subscribe('UI_THEME_CHANGED', (event) => {
+      const body = event.payload;
+      if (body.userId && body.userId !== userId) return;
+      if (!body.value || typeof body.value !== 'object' || Array.isArray(body.value)) return;
+      if (canonicalGameType(body.key) !== gameType) return;
+
+      const raw = body.value as Partial<ThemeSelection>;
+      const patch: Partial<ThemeSelection> = {};
+      if (
+        typeof raw.theme_id === 'string' &&
+        THEME_PRESETS.some((item) => item.id === raw.theme_id)
+      ) {
+        patch.theme_id = raw.theme_id;
+      }
+      if (typeof raw.table_id === 'string') patch.table_id = normalizeFeltId(raw.table_id);
+      if (
+        typeof raw.button_id === 'string' &&
+        BUTTON_ASSETS.some((item) => item.id === raw.button_id)
+      ) {
+        patch.button_id = raw.button_id;
+      }
+      if (typeof raw.background_id === 'string') {
+        patch.background_id = normalizeBackgroundId(raw.background_id);
+      }
+      if (typeof raw.cards_id === 'string') patch.cards_id = normalizeCardBack(raw.cards_id);
+      if (!Object.keys(patch).length) return;
+
+      setSelection((current) => {
+        const next = { ...current, ...patch };
+        selectionRef.current = next;
+        return next;
+      });
+    });
+  }, [gameType, isOpen, userId]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const activeDialog = showVipPrompt ? vipPromptRef.current : modalRef.current;
+    const focusable = () =>
+      Array.from(
+        activeDialog?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]'
+        ) || []
+      );
+    focusable()[0]?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (showVipPrompt) setShowVipPrompt(false);
+        else onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const controls = focusable();
+      if (!controls.length) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      previousFocus?.focus();
+    };
+  }, [isOpen, onClose, showVipPrompt]);
+
+  // The preview uses the same production library as AvatarGallery. No preview-
+  // only portraits are bundled or generated. The first six stable library
+  // entries become the representative table seats; a failed library request
+  // leaves neutral loading silhouettes instead of inventing replacement art.
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    let mounted = true;
+    avatarService
+      .getAvatarLibraryResult(userId)
+      .then(({ avatars }) => {
+        if (!mounted) return;
+        setPreviewAvatars(avatars.slice(0, 6).map((avatar) => avatar.thumbUrl || avatar.imageUrl));
+      })
+      .catch((error) => reportError(error, 'ThemeSettingsModal.Avatar_preview_load_failed'));
+    return () => {
+      mounted = false;
+    };
+  }, [isOpen, userId]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const owner = userId || 'guest';
+    const favorites = readLocalJson<unknown>(`table-studio-favorites:${owner}`, []);
+    const recent = readLocalJson<unknown>(`table-studio-recent:${owner}`, []);
+    setFavoriteIds(
+      Array.isArray(favorites) ? favorites.filter((id) => typeof id === 'string') : []
+    );
+    setRecentIds(Array.isArray(recent) ? recent.filter((id) => typeof id === 'string') : []);
+  }, [isOpen, userId]);
 
   // ── Which paid card backs has this player actually bought? ──
   // Without this the modal padlocks a design the player owns (see
   // canAccessAsset). Missing rows are not an error: nobody has bought one yet.
   useEffect(() => {
-    if (!isOpen || !userId) return;
+    if (!isOpen) return undefined;
+    setOwnedCardBacks([]);
+    if (!userId || isVip) {
+      setOwnershipState('ready');
+      return undefined;
+    }
     let mounted = true;
+    setOwnershipState('loading');
     supabase
       .from('feature_purchases')
       .select('feature')
@@ -585,30 +774,36 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           // Not fatal, and not silently swallowed either: a failure here means
           // paid designs read as locked, so it has to be visible somewhere.
           reportError(error, 'ThemeSettingsModal.Owned_card_backs_load_failed');
+          setOwnershipState('error');
           return;
         }
         setOwnedCardBacks(
           (data || []).map((r: { feature: string }) => r.feature.replace('card_back_', ''))
         );
+        setOwnershipState('ready');
       });
     return () => {
       mounted = false;
     };
-  }, [isOpen, userId]);
+  }, [isOpen, userId, isVip, ownershipRevision]);
 
   // Load existing theme for selected game type
   useEffect(() => {
-    if (!isOpen || !userId) return;
+    if (!isOpen) return undefined;
+    if (!userId) {
+      replaceSelection({ ...DEFAULT_SELECTION });
+      setThemeLoadState('ready');
+      return undefined;
+    }
 
     let mounted = true;
+    setThemeLoadState('loading');
     const load = async () => {
       try {
         const { data, error } = await supabase
           .from('user_theme_settings')
-          .select('theme_id, table_id, button_id, background_id, cards_id')
-          .eq('user_id', userId)
-          .eq('game_type', gameType)
-          .maybeSingle();
+          .select('game_type, theme_id, table_id, button_id, background_id, cards_id')
+          .eq('user_id', userId);
 
         if (error) {
           // A FAILED READ IS NOT "YOU HAVE THE DEFAULT THEME" (2026-08-25).
@@ -618,58 +813,44 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           // touched would overwrite the theme they could not see.
           console.warn('[ThemeSettings] Load failed:', error.message);
           reportError(error, 'ThemeSettingsModal.Load_failed');
-          if (mounted) toast.error('Could Not Load Your Saved Theme. Try Again In A Moment.');
+          if (mounted) {
+            setThemeLoadState('error');
+            toast.error('Could Not Load Your Saved Theme. Try Again In A Moment.');
+          }
           return;
         }
 
-        if (data && mounted) {
-          setSelection({
-            theme_id: data.theme_id || DEFAULT_SELECTION.theme_id,
+        if (mounted) {
+          /* The reader and this editor now use the same precedence: exact
+             bucket, then a legacy raw variant that canonicalises to it, then
+             ALL. A stored `plo4` row can no longer paint the table while this
+             modal confidently highlights unrelated defaults. */
+          const row = pickThemeRow(data || [], gameType as (typeof GAME_TYPES)[number]);
+          replaceSelection({
+            theme_id: row?.theme_id || DEFAULT_SELECTION.theme_id,
             // Normalised for the same reason cards_id is: rows hold legacy
             // aliases ('dark-felt', 'diamond-pattern' are both live in
             // production) which paint correctly but match no tile, so the tab
             // looked like it had forgotten the player's choice.
-            table_id: normalizeFeltId(data.table_id || DEFAULT_SELECTION.table_id),
-            button_id: data.button_id || DEFAULT_SELECTION.button_id,
+            table_id: normalizeFeltId(row?.table_id || DEFAULT_SELECTION.table_id),
+            button_id: row?.button_id || DEFAULT_SELECTION.button_id,
             background_id: normalizeBackgroundId(
-              data.background_id || DEFAULT_SELECTION.background_id
+              row?.background_id || DEFAULT_SELECTION.background_id
             ),
             // Dan 2026-08-20: normalise, or a row still holding one of the old
             // invented ids (standard-red, premium-platinum, ...) highlights no
             // tile at all and the tab looks like it forgot the user's choice.
-            cards_id: normalizeCardBack(data.cards_id || DEFAULT_SELECTION.cards_id),
+            cards_id: normalizeCardBack(row?.cards_id || DEFAULT_SELECTION.cards_id),
           });
-        } else if (mounted) {
-          // No saved theme for this game type — try ALL fallback
-          if (gameType !== 'ALL') {
-            const { data: fallback } = await supabase
-              .from('user_theme_settings')
-              .select('theme_id, table_id, button_id, background_id, cards_id')
-              .eq('user_id', userId)
-              .eq('game_type', 'ALL')
-              .maybeSingle();
-
-            if (fallback && mounted) {
-              setSelection({
-                theme_id: fallback.theme_id || DEFAULT_SELECTION.theme_id,
-                table_id: normalizeFeltId(fallback.table_id || DEFAULT_SELECTION.table_id),
-                button_id: fallback.button_id || DEFAULT_SELECTION.button_id,
-                background_id: normalizeBackgroundId(
-                  fallback.background_id || DEFAULT_SELECTION.background_id
-                ),
-                cards_id: normalizeCardBack(fallback.cards_id || DEFAULT_SELECTION.cards_id),
-              });
-            } else if (mounted) {
-              setSelection({ ...DEFAULT_SELECTION });
-            }
-          } else if (mounted) {
-            setSelection({ ...DEFAULT_SELECTION });
-          }
+          setThemeLoadState('ready');
         }
       } catch (err) {
         console.warn('[ThemeSettings] Unexpected error:', err);
         reportError(err, 'ThemeSettingsModal.Load_failed');
-        if (mounted) toast.error('Could Not Load Your Saved Theme. Try Again In A Moment.');
+        if (mounted) {
+          setThemeLoadState('error');
+          toast.error('Could Not Load Your Saved Theme. Try Again In A Moment.');
+        }
       }
     };
 
@@ -680,7 +861,28 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     // `toast` is stable for the life of the provider; listing it would re-run
     // the load on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, userId, gameType]);
+  }, [isOpen, userId, gameType, replaceSelection, themeLoadRevision]);
+
+  const handleUiModeChange = useCallback(
+    async (mode: InterfaceTheme) => {
+      if (mode === uiMode) return;
+      const previous = uiMode;
+      const revision = ++modeRevisionRef.current;
+      setUiMode(mode, userId || undefined);
+
+      if (!userId) return;
+
+      setModeSaving(true);
+      const result = await persistInterfaceTheme(userId, mode);
+      if (!result.ok && modeRevisionRef.current === revision) {
+        setUiMode(previous, userId);
+        toast.error('Could Not Save Interface Mode. Please Try Again.');
+        reportError(result.error, 'ThemeSettingsModal.Interface_mode_save_failed');
+      }
+      if (modeRevisionRef.current === revision) setModeSaving(false);
+    },
+    [setUiMode, toast, uiMode, userId]
+  );
 
   /**
    * APPLY NOW, PERSIST, AND UNDO IF THE PERSIST FAILED.
@@ -698,7 +900,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
    *      opened the modal their choice had silently reverted.
    */
   const handleSave = useCallback(
-    async (overrideSelection?: Partial<ThemeSelection>) => {
+    async (patch: AppearancePatch, previous: AppearancePatch) => {
       /* Dan 2026-08-26: "if a user changes their avatar, deck color, table,
          background, button or anything else, it needs to change, save and
          update in real time."
@@ -715,49 +917,53 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
          The caller (`handleAssetSelect`) reverts its optimistic state on a
          false return. */
       if (!userId) {
+        replaceSelection({ ...selectionRef.current, ...previous });
         toast.error('Please Sign In To Save Your Theme.');
         return false;
       }
-      const previous = selectionRef.current;
-      const currentToSave = { ...previous, ...(overrideSelection || {}) };
+      const savedFor = gameType;
+      pendingSavesRef.current += 1;
       setSaving(true);
-      // 1. Live, before the network.
-      masterBus.emit('UI_THEME_CHANGED', { key: gameType, value: currentToSave });
-      try {
-        const { error } = await supabase.from('user_theme_settings').upsert(
-          {
-            user_id: userId,
-            game_type: gameType,
-            ...currentToSave,
-          },
-          { onConflict: 'user_id,game_type' }
-        );
+      const result = await applyTableAppearance(patch, {
+        userId,
+        gameType: savedFor,
+        previous,
+      });
 
-        if (error) {
-          setSelection(previous);
-          masterBus.emit('UI_THEME_CHANGED', { key: gameType, value: previous });
-          toast.error('Could Not Save Your Theme. Please Try Again.');
-          reportError(error, 'ThemeSettingsModal.Save_failed');
-        } else {
-          toast.success('Theme Applied');
-          // No longer closing modal on auto-save
+      if (!result.ok) {
+        /* Reconcile only fields the ordered writer actually rolled back, and
+           only if this modal is still displaying the bucket that was saved.
+           An older failed request must not erase a newer tap or a newly chosen
+           game-type tab. */
+        if (userIdRef.current === userId && gameTypeRef.current === savedFor && result.reverted) {
+          const reverted = result.reverted;
+          setSelection((current) => {
+            const next = { ...current };
+            for (const field of Object.keys(reverted) as (keyof ThemeSelection)[]) {
+              if (current[field] === patch[field] && reverted[field]) {
+                next[field] = reverted[field] as string;
+              }
+            }
+            selectionRef.current = next;
+            return next;
+          });
         }
-        setSaving(false);
-        return !error;
-      } catch (err) {
-        setSelection(previous);
-        masterBus.emit('UI_THEME_CHANGED', { key: gameType, value: previous });
         toast.error('Could Not Save Your Theme. Please Try Again.');
-        reportError(err, 'ThemeSettingsModal.Unexpected_save_error');
-        setSaving(false);
-        return false;
+        reportError(result.error, 'ThemeSettingsModal.Save_failed');
+      } else {
+        toast.success('Theme Applied');
       }
+      pendingSavesRef.current = Math.max(0, pendingSavesRef.current - 1);
+      if (pendingSavesRef.current === 0) setSaving(false);
+      return result.ok;
     },
-    [userId, gameType, toast]
+    [userId, gameType, toast, replaceSelection]
   );
 
   const handleAssetSelect = useCallback(
     (tab: ThemeTab, assetId: string, vipOnly: boolean) => {
+      if (themeLoadState !== 'ready') return;
+      if (tab === 'cards' && vipOnly && !isVip && ownershipState !== 'ready') return;
       if (!canAccessAsset(tab, assetId, isVip, vipOnly, ownedCardBacks)) {
         setShowVipPrompt(true);
         return;
@@ -777,12 +983,21 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
          the player looking at a selection the server never received. A
          FAILED write already restores `previous` inside handleSave. */
       const before = selectionRef.current;
-      setSelection((prev) => ({ ...prev, ...newSel }));
-      void handleSave(newSel).then((ok) => {
-        if (ok === false) setSelection(before);
+      const next = { ...before, ...newSel };
+      replaceSelection(next);
+      const previousPatch: AppearancePatch = {};
+      for (const field of Object.keys(newSel) as (keyof ThemeSelection)[]) {
+        previousPatch[field] = before[field];
+      }
+      const recentKey = `${tab}:${assetId}`;
+      setRecentIds((previous) => {
+        const next = [recentKey, ...previous.filter((id) => id !== recentKey)].slice(0, 12);
+        writeLocalJson(`table-studio-recent:${userId || 'guest'}`, next);
+        return next;
       });
+      void handleSave(newSel, previousPatch);
     },
-    [isVip, ownedCardBacks, handleSave]
+    [isVip, ownedCardBacks, handleSave, replaceSelection, userId, themeLoadState, ownershipState]
   );
 
   /**
@@ -793,14 +1008,86 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
    * It now goes through exactly the same path as picking a tile.
    */
   const handleReset = useCallback(() => {
-    setSelection({ ...DEFAULT_SELECTION });
-    handleSave({ ...DEFAULT_SELECTION });
-  }, [handleSave]);
+    if (themeLoadState !== 'ready') return;
+    const previous = { ...selectionRef.current };
+    replaceSelection({ ...DEFAULT_SELECTION });
+    void handleSave({ ...DEFAULT_SELECTION }, previous);
+  }, [handleSave, replaceSelection, themeLoadState]);
+
+  const toggleFavorite = useCallback(
+    (tab: ThemeTab, assetId: string) => {
+      const favoriteKey = `${tab}:${assetId}`;
+      setFavoriteIds((previous) => {
+        const next = previous.includes(favoriteKey)
+          ? previous.filter((id) => id !== favoriteKey)
+          : [favoriteKey, ...previous];
+        writeLocalJson(`table-studio-favorites:${userId || 'guest'}`, next);
+        return next;
+      });
+    },
+    [userId]
+  );
+
+  const randomizeAccessibleLook = useCallback(() => {
+    if (themeLoadState !== 'ready') return;
+    const pick = (assets: ThemeAsset[], tab: ThemeTab) => {
+      const accessible = assets.filter((asset) =>
+        canAccessAsset(tab, asset.id, isVip, asset.vipOnly, ownedCardBacks)
+      );
+      return accessible[Math.floor(Math.random() * accessible.length)]?.id;
+    };
+    const randomized: ThemeSelection = {
+      theme_id: selectionRef.current.theme_id,
+      table_id: pick(TABLE_ASSETS, 'table') || DEFAULT_SELECTION.table_id,
+      button_id: pick(BUTTON_ASSETS, 'button') || DEFAULT_SELECTION.button_id,
+      background_id: pick(BACKGROUND_ASSETS, 'background') || DEFAULT_SELECTION.background_id,
+      cards_id: pick(CARD_ASSETS, 'cards') || DEFAULT_SELECTION.cards_id,
+    };
+    const previous = { ...selectionRef.current };
+    replaceSelection(randomized);
+    void handleSave(randomized, previous);
+  }, [handleSave, isVip, ownedCardBacks, replaceSelection, themeLoadState]);
+
+  const loadoutKey = `table-studio-loadouts:${userId || 'guest'}`;
+  const readLoadouts = useCallback((): Array<ThemeSelection | null> => {
+    const stored = readLocalJson<unknown>(loadoutKey, []);
+    if (!Array.isArray(stored)) return [null, null, null];
+    return [0, 1, 2].map((slot) => normalizeStoredSelection(stored[slot]));
+  }, [loadoutKey]);
+  const savedLoadouts = readLoadouts();
+  void loadoutRevision;
+
+  const saveLoadout = useCallback(
+    (slot: number) => {
+      if (themeLoadState !== 'ready') return;
+      const next = readLoadouts();
+      next[slot] = selectionRef.current;
+      if (!writeLocalJson(loadoutKey, next)) {
+        toast.error('Could Not Save This Loadout On This Device');
+        return;
+      }
+      setLoadoutRevision((value) => value + 1);
+      toast.success(`Loadout ${slot + 1} Saved`);
+    },
+    [loadoutKey, readLoadouts, themeLoadState, toast]
+  );
+
+  const applyLoadout = useCallback(
+    (slot: number) => {
+      if (themeLoadState !== 'ready') return;
+      const saved = readLoadouts()[slot];
+      if (!saved) return;
+      const previous = { ...selectionRef.current };
+      replaceSelection(saved);
+      void handleSave(saved, previous);
+    },
+    [handleSave, readLoadouts, replaceSelection, themeLoadState]
+  );
 
   if (!isOpen) return null;
 
   const currentField = TAB_TO_FIELD[activeTab];
-  const currentAssets =
+  const categoryAssets =
     activeTab === 'background'
       ? THEME_ASSETS.background.filter((asset) =>
           backgroundGroup === 'skins'
@@ -808,12 +1095,19 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
             : !BACKGROUND_SKIN_IDS.has(asset.id)
         )
       : THEME_ASSETS[activeTab];
+  const currentAssets = categoryAssets.filter((asset) => {
+    const key = `${activeTab}:${asset.id}`;
+    if (assetSearch && !asset.name.toLowerCase().includes(assetSearch.trim().toLowerCase())) {
+      return false;
+    }
+    if (assetFilter === 'free') return !asset.vipOnly;
+    if (assetFilter === 'vip') return asset.vipOnly;
+    if (assetFilter === 'favorites') return favoriteIds.includes(key);
+    if (assetFilter === 'recent') return recentIds.includes(key);
+    return true;
+  });
   const currentSelected = selection[currentField];
 
-  const selectedTable =
-    TABLE_SKINS[normalizeFeltId(selection.table_id)] || TABLE_SKINS.classic_green;
-  const selectedBackground =
-    TABLE_BACKGROUNDS[normalizeBackgroundId(selection.background_id)] || TABLE_BACKGROUNDS.midnight;
   const selectedCardName =
     CARD_BACK_CATALOG.find((design) => design.id === normalizeCardBack(selection.cards_id))?.name ||
     'Classic Red';
@@ -821,6 +1115,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   return (
     <div className="theme-modal-overlay" onClick={onClose}>
       <div
+        ref={modalRef}
         className="theme-modal"
         role="dialog"
         aria-modal="true"
@@ -849,7 +1144,10 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
               id="theme-game-type"
               className="theme-modal__game-select"
               value={gameType}
-              onChange={(e) => setGameType(e.target.value)}
+              onChange={(e) => {
+                gameTypeRef.current = e.target.value;
+                setGameType(e.target.value);
+              }}
             >
               {GAME_TYPES.map((gt) => (
                 <option key={gt} value={gt}>
@@ -860,7 +1158,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           </div>
           <span className="theme-modal__autosave" aria-live="polite">
             <span className="theme-modal__autosave-dot" />
-            {saving ? 'Saving selection' : 'Changes save automatically'}
+            {saving || modeSaving ? 'Saving selection' : 'Changes save automatically'}
           </span>
         </div>
 
@@ -873,7 +1171,8 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                 type="button"
                 className={`theme-modal__mode-option ${uiMode === mode ? 'theme-modal__mode-option--active' : ''}`}
                 aria-pressed={uiMode === mode}
-                onClick={() => setUiMode(mode)}
+                disabled={modeSaving}
+                onClick={() => void handleUiModeChange(mode)}
               >
                 <span
                   className={`theme-modal__mode-icon theme-modal__mode-icon--${mode}`}
@@ -888,22 +1187,37 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           </span>
         </fieldset>
 
-        <div className="theme-modal__live-preview" aria-label="Current table appearance preview">
-          <img className="theme-modal__live-bg" src={selectedBackground} alt="" />
-          <div className="theme-modal__live-vignette" />
-          <img className="theme-modal__live-table" src={selectedTable} alt="" />
-          <div className="theme-modal__live-cards">
-            <CardBack style={normalizeCardBack(selection.cards_id)} size="sm" />
-            <CardBack style={normalizeCardBack(selection.cards_id)} size="sm" />
+        <div className="theme-modal__preview-shell">
+          <div className="theme-modal__preview-switch" aria-label="Preview table state">
+            <button
+              type="button"
+              className={!previewFinalTable ? 'active' : ''}
+              aria-pressed={!previewFinalTable}
+              onClick={() => setPreviewFinalTable(false)}
+            >
+              Standard
+            </button>
+            <button
+              type="button"
+              className={previewFinalTable ? 'active' : ''}
+              aria-pressed={previewFinalTable}
+              onClick={() => setPreviewFinalTable(true)}
+            >
+              Final Table
+            </button>
           </div>
-          <div className="theme-modal__live-button" data-button-theme={selection.button_id}>
-            D
-          </div>
-          <div className="theme-modal__live-caption">
-            <span>LIVE TABLE PREVIEW</span>
-            <strong>
-              {selectedCardName} · {GAME_TYPE_LABELS[gameType] ?? gameType}
-            </strong>
+          <div className="theme-modal__live-preview">
+            <TableStudioGameplayPreview
+              selection={selection}
+              avatarUrls={previewAvatars}
+              finalTable={previewFinalTable}
+            />
+            <div className="theme-modal__live-caption">
+              <span>{previewFinalTable ? 'AUTOMATIC MTT EVENT' : 'LIVE GAMEPLAY PREVIEW'}</span>
+              <strong>
+                {selectedCardName} · {GAME_TYPE_LABELS[gameType] ?? gameType}
+              </strong>
+            </div>
           </div>
         </div>
 
@@ -956,6 +1270,33 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           </div>
         )}
 
+        <div className="theme-modal__discovery">
+          <label>
+            <span className="sr-only">
+              Search {TABS.find((tab) => tab.key === activeTab)?.label}
+            </span>
+            <input
+              type="search"
+              value={assetSearch}
+              onChange={(event) => setAssetSearch(event.target.value)}
+              placeholder={`Search ${TABS.find((tab) => tab.key === activeTab)?.label}`}
+            />
+          </label>
+          <div className="theme-modal__filters" aria-label="Filter customization choices">
+            {(['all', 'free', 'vip', 'favorites', 'recent'] as const).map((filter) => (
+              <button
+                type="button"
+                key={filter}
+                className={assetFilter === filter ? 'active' : ''}
+                aria-pressed={assetFilter === filter}
+                onClick={() => setAssetFilter(filter)}
+              >
+                {filter === 'all' ? 'All' : filter[0].toUpperCase() + filter.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="theme-modal__section-heading">
           <div>
             <strong>{TABS.find((tab) => tab.key === activeTab)?.label}</strong>
@@ -964,10 +1305,58 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           <span className="theme-modal__count">{currentAssets.length} Choices</span>
         </div>
 
+        {themeLoadState === 'loading' && (
+          <div className="theme-modal__state" role="status">
+            <strong>Loading Your Saved Design</strong>
+            <span>Choices Unlock When Your Current Table Is Ready.</span>
+          </div>
+        )}
+        {themeLoadState === 'error' && (
+          <div className="theme-modal__state theme-modal__state--error" role="alert">
+            <div>
+              <strong>Your Saved Design Could Not Be Loaded</strong>
+              <span>Choices Stay Locked So An Older Design Is Not Overwritten.</span>
+            </div>
+            <button type="button" onClick={() => setThemeLoadRevision((value) => value + 1)}>
+              Try Again
+            </button>
+          </div>
+        )}
+        {activeTab === 'cards' && !isVip && ownershipState === 'loading' && (
+          <div className="theme-modal__state" role="status">
+            <strong>Checking Your Card Back Purchases</strong>
+            <span>Premium Designs Unlock As Soon As Ownership Is Confirmed.</span>
+          </div>
+        )}
+        {activeTab === 'cards' && !isVip && ownershipState === 'error' && (
+          <div className="theme-modal__state theme-modal__state--error" role="alert">
+            <div>
+              <strong>Purchases Could Not Be Verified</strong>
+              <span>Premium Designs Stay Locked Until The Check Succeeds.</span>
+            </div>
+            <button type="button" onClick={() => setOwnershipRevision((value) => value + 1)}>
+              Try Again
+            </button>
+          </div>
+        )}
+
         {/* Asset Grid */}
-        <div className="theme-modal__grid">
+        <div
+          className={`theme-modal__grid${themeLoadState !== 'ready' ? ' theme-modal__grid--loading' : ''}`}
+          aria-busy={themeLoadState === 'loading'}
+        >
+          {currentAssets.length === 0 && (
+            <div className="theme-modal__empty">
+              <strong>No Matching Designs</strong>
+              <span>Try Another Search Or Filter.</span>
+            </div>
+          )}
           {currentAssets.map((asset) => {
             const isSelected = currentSelected === asset.id;
+            const ownershipPending =
+              activeTab === 'cards' && asset.vipOnly && !isVip && ownershipState === 'loading';
+            const ownershipUnavailable =
+              activeTab === 'cards' && asset.vipOnly && !isVip && ownershipState === 'error';
             const isLocked = !canAccessAsset(
               activeTab,
               asset.id,
@@ -977,59 +1366,126 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
             );
 
             return (
-              <button
-                type="button"
-                key={asset.id}
-                className={`theme-asset ${isSelected ? 'theme-asset--selected' : ''} ${isLocked ? 'theme-asset--locked' : ''}`}
-                onClick={() => handleAssetSelect(activeTab, asset.id, asset.vipOnly)}
-                aria-pressed={isSelected}
-                aria-label={`${asset.name}${isLocked ? ', VIP required' : ''}`}
-              >
-                <div className="theme-asset__preview">
-                  {/* ── Dan 2026-08-18: show the actual thing, not a colour ──
+              <div className="theme-asset-wrap" key={asset.id}>
+                <button
+                  type="button"
+                  className={`theme-asset ${isSelected ? 'theme-asset--selected' : ''} ${isLocked ? 'theme-asset--locked' : ''}`}
+                  onClick={() => handleAssetSelect(activeTab, asset.id, asset.vipOnly)}
+                  disabled={themeLoadState !== 'ready' || ownershipPending || ownershipUnavailable}
+                  aria-pressed={isSelected}
+                  aria-label={`${asset.name}${ownershipPending ? ', checking ownership' : ownershipUnavailable ? ', ownership unavailable' : isLocked ? ', VIP required' : ''}`}
+                >
+                  <div className="theme-asset__preview">
+                    {/* ── Dan 2026-08-18: show the actual thing, not a colour ──
                       Every tab used to render `background: asset.thumbnail`,
                       a hand-written gradient that (in its own words)
                       "approximates each composite's palette" - so you picked a
                       table by looking at a colour smear. Each tab now renders
                       the real asset; the gradient survives only as a fallback
                       where no real asset exists for that id. */}
-                  {renderAssetPreview(activeTab, asset)}
-                  {isLocked && (
-                    <div className="theme-asset__lock">
-                      <span className="theme-asset__lock-icon">VIP</span>
-                    </div>
+                    {renderAssetPreview(activeTab, asset)}
+                    {ownershipPending || ownershipUnavailable ? (
+                      <div className="theme-asset__lock theme-asset__lock--checking">
+                        <span className="theme-asset__lock-icon">
+                          {ownershipPending ? 'Checking' : 'Unavailable'}
+                        </span>
+                      </div>
+                    ) : isLocked ? (
+                      <div className="theme-asset__lock">
+                        <span className="theme-asset__lock-icon">VIP</span>
+                      </div>
+                    ) : null}
+                    {isSelected && !isLocked && <div className="theme-asset__check">✓</div>}
+                  </div>
+                  <span className="theme-asset__name">{asset.name}</span>
+                  {asset.vipOnly && !isLocked && (
+                    <span className="theme-asset__tier-badge">VIP</span>
                   )}
-                  {isSelected && !isLocked && <div className="theme-asset__check">✓</div>}
-                </div>
-                <span className="theme-asset__name">{asset.name}</span>
-                {asset.vipOnly && !isLocked && <span className="theme-asset__tier-badge">VIP</span>}
-              </button>
+                </button>
+                <button
+                  type="button"
+                  className={`theme-asset__favorite ${favoriteIds.includes(`${activeTab}:${asset.id}`) ? 'active' : ''}`}
+                  aria-label={`${favoriteIds.includes(`${activeTab}:${asset.id}`) ? 'Remove' : 'Add'} ${asset.name} ${favoriteIds.includes(`${activeTab}:${asset.id}`) ? 'from' : 'to'} favorites`}
+                  onClick={() => toggleFavorite(activeTab, asset.id)}
+                >
+                  {favoriteIds.includes(`${activeTab}:${asset.id}`) ? 'Saved' : 'Save'}
+                </button>
+              </div>
             );
           })}
         </div>
 
+        <div className="theme-modal__loadouts" aria-label="Saved table loadouts">
+          <span className="theme-modal__loadout-note">
+            Favorites And Loadouts Stay On This Device
+          </span>
+          <button
+            type="button"
+            className="theme-modal__randomize"
+            disabled={themeLoadState !== 'ready'}
+            onClick={randomizeAccessibleLook}
+          >
+            Shuffle Look
+          </button>
+          {[0, 1, 2].map((slot) => (
+            <div key={slot} className="theme-modal__loadout">
+              <button
+                type="button"
+                onClick={() => saveLoadout(slot)}
+                disabled={themeLoadState !== 'ready'}
+              >
+                Save {slot + 1}
+              </button>
+              <button
+                type="button"
+                onClick={() => applyLoadout(slot)}
+                disabled={themeLoadState !== 'ready' || !savedLoadouts[slot]}
+              >
+                Use
+              </button>
+            </div>
+          ))}
+        </div>
+
         {/* Footer */}
         <div className="theme-modal__footer">
-          <button className="theme-modal__btn theme-modal__btn--reset" onClick={handleReset}>
+          <button
+            className="theme-modal__btn theme-modal__btn--reset"
+            onClick={handleReset}
+            disabled={themeLoadState !== 'ready'}
+          >
             Restore Defaults
           </button>
           <button
             className="theme-modal__btn theme-modal__btn--save"
-            onClick={() => handleSave()}
-            disabled={saving}
+            /* Every tile auto-saves through the ordered writer. Done closes
+               the studio; it must not launch a redundant full-row write that
+               can race the final tap the player just made. */
+            onClick={onClose}
+            disabled={saving || modeSaving}
           >
-            {saving ? 'Saving...' : 'Done'}
+            {saving || modeSaving ? 'Saving...' : 'Done'}
           </button>
         </div>
 
         {/* FIX 221: VIP Upgrade Prompt — Bible V8 §11.2.3 */}
         {showVipPrompt && (
           <div className="theme-vip-prompt-overlay" onClick={() => setShowVipPrompt(false)}>
-            <div className="theme-vip-prompt" onClick={(e) => e.stopPropagation()}>
+            <div
+              ref={vipPromptRef}
+              className="theme-vip-prompt"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="theme-vip-title"
+              aria-describedby="theme-vip-description"
+              onClick={(e) => e.stopPropagation()}
+            >
               <div className="theme-vip-prompt__icon">VIP</div>
-              <h4 className="theme-vip-prompt__title">VIP Theme Unlocked</h4>
-              <p className="theme-vip-prompt__text">
-                This Theme Is Exclusive To VIP Members. Upgrade To Unlock Premium Themes, Tables,
+              <h4 id="theme-vip-title" className="theme-vip-prompt__title">
+                VIP Design
+              </h4>
+              <p id="theme-vip-description" className="theme-vip-prompt__text">
+                This Design Is Exclusive To VIP Members. Upgrade To Unlock Premium Themes, Tables,
                 And More.
               </p>
               <div className="theme-vip-prompt__actions">

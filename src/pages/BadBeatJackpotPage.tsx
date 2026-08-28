@@ -2,8 +2,8 @@
  *  BAD BEAT JACKPOT PAGE — Live Jackpot Updates
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -13,7 +13,6 @@ import './BadBeatJackpotPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import PageSkeleton from '../components/common/PageSkeleton';
-import { formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import BBJService from '../services/BBJService';
 import { confirmDialog } from '../components/common/confirmDialog';
@@ -21,6 +20,7 @@ import BBJAdminAnalytics from '../components/bbj/BBJAdminAnalytics';
 import { BBJRecentHits } from '../components/bbj/BBJRecentHits';
 import { BBJHandDetail } from '../components/bbj/BBJHandDetail';
 import BBJRulesPanel from '../components/bbj/BBJRulesPanel';
+import { ArenaJackpotDisplay } from '../components/club-buttons';
 
 interface JackpotInfo {
   id: string;
@@ -34,18 +34,7 @@ interface JackpotInfo {
   last_hit_amount?: number;
 }
 
-interface JackpotHistory {
-  id: string;
-  awarded_at: string;
-  total_payout: number;
-  winner_hand: string;
-  loser_hand: string;
-  winner_display_name?: string;
-  loser_display_name?: string;
-}
-
 export default function BadBeatJackpotPage() {
-  const navigate = useNavigate();
   useVisibilityRefresh(() => loadJackpotData());
   const { clubId } = useParams();
   const { user } = useAuthUser();
@@ -55,6 +44,8 @@ export default function BadBeatJackpotPage() {
   const [loading, setLoading] = useState(true);
   const [openHandPayoutId, setOpenHandPayoutId] = useState<string | null>(null);
   const [justUpdated, setJustUpdated] = useState(false);
+  /** True when the last read threw. Distinct from "this club has no pool". */
+  const [loadFailed, setLoadFailed] = useState(false);
   const [playerContribution, setPlayerContribution] = useState(0);
   // 2026-08-18: real hand count + own-contribution facts, from the ledger.
   const [poolFacts, setPoolFacts] = useState<{ hands: number; chips: number } | null>(null);
@@ -134,8 +125,31 @@ export default function BadBeatJackpotPage() {
   const prevAmountRef = useRef<number>(0);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /**
+   * THE REALTIME HANDLER MUST CALL THE CURRENT LOADER, NOT THE ONE IT CLOSED OVER.
+   *
+   * `loadJackpotData` is a useCallback over [clubId, user?.id, toast], and the
+   * effect below is keyed on [clubId] alone - deliberately, because adding the
+   * callback would tear down and re-subscribe the realtime channel every time
+   * auth resolved. The cost of that shortcut was a stale closure: on first
+   * mount `user` is null, so the captured loader skips the
+   * `fn_bbj_my_contribution` branch, and the "BAD BEAT JACKPOT HIT!" handler
+   * kept invoking THAT version forever. A player who was paid never saw their
+   * contribution figure appear, no matter how many hands or hits went by.
+   *
+   * A ref updated on every render is the fix that keeps both properties: one
+   * subscription per club, always the newest loader.
+   */
+  const loadRef = useRef<(getIsMounted?: () => boolean) => void>(() => {});
+
   useEffect(() => {
-    if (clubId) {
+    if (!clubId) {
+      // Nothing will ever call the loader, so nothing will ever clear the
+      // initial `loading: true` - the page sat on a skeleton for good.
+      setLoading(false);
+      return;
+    }
+    {
       let isMounted = true;
       loadJackpotData(() => isMounted);
 
@@ -195,10 +209,10 @@ export default function BadBeatJackpotPage() {
               table: 'bbj_winners',
               filter: winnersFilter,
             },
-            (payload) => {
+            () => {
               if (!isMounted) return;
-              toast.success(' BAD BEAT JACKPOT HIT!');
-              loadJackpotData(() => isMounted);
+              toast.success('Bad Beat Jackpot Hit');
+              loadRef.current(() => isMounted);
             }
           )
           .subscribe((status: string, err?: Error) => {
@@ -227,16 +241,34 @@ export default function BadBeatJackpotPage() {
 
   const loadingRef = useRef(false);
 
-  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  /**
+   * RESET PER-CLUB STATE WHEN NAVIGATING BETWEEN CLUBS.
+   *
+   * This cleared three things and left four behind: `jackpot`, `poolFacts`,
+   * `myHands` and `loadFailed`. The load below only assigns `if (jackpotData)`,
+   * so moving from a club WITH a pool to one WITHOUT left the previous club's
+   * main/backup/promo balances and hand counts on screen, presented as this
+   * club's - and the honest "No Jackpot Pool For This Club Yet" branch could
+   * never be reached. Showing one club's money under another club's name is
+   * the worst failure this page has.
+   */
   useEffect(() => {
     setJustUpdated(false);
     setPlayerContribution(0);
+    setJackpot(null);
+    setPoolFacts(null);
+    setMyHands(0);
+    setLoadFailed(false);
+    prevAmountRef.current = 0;
     loadingRef.current = false;
   }, [clubId]);
 
   const loadJackpotData = useCallback(
     async (getIsMounted?: () => boolean) => {
-      if (!clubId) return;
+      if (!clubId) {
+        setLoading(false);
+        return;
+      }
       if (loadingRef.current) return;
       loadingRef.current = true;
       if (!getIsMounted || getIsMounted()) setLoading(true);
@@ -268,13 +300,35 @@ export default function BadBeatJackpotPage() {
           prevAmountRef.current = jackpotData.main_balance || 0;
         }
 
-        // 2026-08-18: pool facts from the LEDGER (the pool counters have
-        // drifted: 161,442 counter vs 261,316 actual rows).
-        if (jackpotData?.id) {
-          const { data: factRows } = await supabase.rpc('fn_bbj_pool_facts', {
-            p_pool_id: jackpotData.id,
-          });
-          if (getIsMounted && !getIsMounted()) return;
+        /**
+         * The two reads below do not depend on each other and were awaited one
+         * after the other, so the page paid two full round trips in series on
+         * every load and every HAND_COMPLETED bus tick. They are the same two
+         * calls, issued together.
+         *
+         * 2026-08-18: pool facts come from the LEDGER, because the pool
+         * counters have drifted (161,442 counter vs 261,316 actual rows).
+         *
+         * "Your contribution" used to read bbj_contributions.player_id, which
+         * is NULL on all 550,782 rows — the card always computed 0 and never
+         * rendered, after pulling up to 10,000 rows to find that out. The BBJ
+         * fee comes out of the POT, so a player's honest share is
+         * fee x (their pot contribution / pot size), which is what the RPC
+         * returns, for the calling user only.
+         */
+        const wantsMine = Boolean(user?.id && jackpotData?.id);
+        const [factsRes, mineRes] = await Promise.all([
+          jackpotData?.id
+            ? supabase.rpc('fn_bbj_pool_facts', { p_pool_id: jackpotData.id })
+            : Promise.resolve({ data: null }),
+          wantsMine
+            ? supabase.rpc('fn_bbj_my_contribution', { p_pool_id: jackpotData!.id, p_days: 90 })
+            : Promise.resolve({ data: null }),
+        ]);
+        if (getIsMounted && !getIsMounted()) return;
+
+        {
+          const factRows = factsRes.data;
           const f = Array.isArray(factRows) ? factRows[0] : factRows;
           if (f) {
             setPoolFacts({
@@ -284,34 +338,37 @@ export default function BadBeatJackpotPage() {
           }
         }
 
-        // "Your contribution" used to read bbj_contributions.player_id, which
-        // is NULL on all 550,782 rows — the card always computed 0 and never
-        // rendered, after pulling up to 10,000 rows to find that out. The BBJ
-        // fee comes out of the POT, so a player's honest share is
-        // fee x (their pot contribution / pot size) — which is what this RPC
-        // returns, for the calling user only.
-        if (user?.id && jackpotData?.id) {
-          const { data: mineRows } = await supabase.rpc('fn_bbj_my_contribution', {
-            p_pool_id: jackpotData.id,
-            p_days: 90,
-          });
-          if (getIsMounted && !getIsMounted()) return;
+        if (wantsMine) {
+          const mineRows = mineRes.data;
           const mine = Array.isArray(mineRows) ? mineRows[0] : mineRows;
           if (mine) {
             setPlayerContribution(Number(mine.attributed_chips) || 0);
             setMyHands(Number(mine.hands_contributed) || 0);
           }
         }
+        if (!getIsMounted || getIsMounted()) setLoadFailed(false);
       } catch (error) {
         reportError(error, 'BadBeatJackpotPage.Failed_to_load_jackpot');
-        if (!getIsMounted || getIsMounted()) toast.error('Failed to load jackpot data.');
+        if (!getIsMounted || getIsMounted()) {
+          setLoadFailed(true);
+          toast.error('Failed to load jackpot data.');
+        }
       } finally {
         loadingRef.current = false;
         if (!getIsMounted || getIsMounted()) setLoading(false);
       }
     },
-    [clubId]
+    // `user?.id` is READ in this body (the fn_bbj_my_contribution block), and
+    // it was not a dependency. On first mount `user` is typically still null,
+    // so that block was skipped - and because the callback was never recreated
+    // when auth resolved, every later caller kept invoking the stale version.
+    // "Your Contribution (90D)" therefore never appeared until the club id
+    // itself changed. `toast` is captured for the same reason.
+    [clubId, user?.id, toast]
   );
+
+  // Keep the realtime handler pointed at the newest loader. See loadRef above.
+  loadRef.current = loadJackpotData;
 
   // Bus listener: reload jackpot data when a hand completes (BBJ contribution may have been added)
   useEffect(() => {
@@ -337,13 +394,52 @@ export default function BadBeatJackpotPage() {
     );
   }
 
+  /**
+   * NO POOL, OR THE READ FAILED.
+   *
+   * This used to fall straight through to the full jackpot screen built
+   * entirely out of zeros - "Main Jackpot 0", "0 Chips", a rules panel priced
+   * off a zero pool, an empty winners list - with a transient toast as the only
+   * signal that anything was wrong. A player cannot tell that from a club whose
+   * jackpot genuinely sits at zero. Say which it is, and give them a way to try
+   * again, because there was none anywhere on this page.
+   */
+  if (loadFailed || !jackpot) {
+    return (
+      <div className="bbj-page">
+        <div className="bbj-page__empty">
+          <h2 className="bbj-page__empty-title">
+            {loadFailed ? 'Could Not Load The Jackpot' : 'No Jackpot Pool For This Club Yet'}
+          </h2>
+          <p className="bbj-page__empty-body">
+            {loadFailed
+              ? 'The Jackpot Could Not Be Read Just Now. Nothing Is Lost - Try Again.'
+              : 'A Pool Starts Building As Soon As Hands Are Dealt With The Jackpot Drop Enabled.'}
+          </p>
+          {loadFailed && (
+            <button type="button" className="bbj-page__retry" onClick={() => loadJackpotData()}>
+              Try Again
+            </button>
+          )}
+        </div>
+        {clubId && <ClubBottomNav clubId={clubId} />}
+      </div>
+    );
+  }
+
   return (
     <div className="bbj-page">
       {/* Current Jackpot — Main Balance */}
-      <div className={`jackpot-display ${justUpdated ? 'just-updated' : ''}`}>
-        <div className="jackpot-glow" />
-        <span className="jackpot-label">Main Jackpot</span>
-        <span className="jackpot-amount">{(jackpot?.main_balance || 0).toLocaleString()}</span>
+      <div className="bbj-clubbuttons-hero-wrap">
+        <ArenaJackpotDisplay
+          className="bbj-clubbuttons-hero"
+          badge="BBJ"
+          eyebrow="Bad Beat Jackpot"
+          value={(jackpot?.main_balance || 0).toLocaleString()}
+          valueLabel={`Bad Beat Jackpot ${(jackpot?.main_balance || 0).toLocaleString()} Chips`}
+          label="Main Jackpot"
+          dataState={justUpdated ? 'updating' : 'loaded'}
+        />
       </div>
 
       {/* 100K Pivot Law Threshold Alert */}

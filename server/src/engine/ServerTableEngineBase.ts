@@ -457,6 +457,11 @@ export abstract class ServerTableEngineBase {
      *  hand_history replayable by HorseMind, which requires it to count an
      *  all-in as aggression at all. */
     isFullRaise?: boolean;
+    /** 2026-08-27: set on forced-money rows that are DEAD — an ante, or the
+     *  small-blind half of a dead blind. Dead money is in the pot but is not
+     *  part of the live bet level, so it never counts toward a call and must
+     *  not be differenced against a raise-TO level. */
+    dead?: boolean;
   }[] = [];
   protected currentHandWinners: {
     userId: string;
@@ -632,6 +637,29 @@ export abstract class ServerTableEngineBase {
    * outlast the short hand-for-hand window without self-resuming.
    */
   protected pauseMaxWaitMs: number | null = null;
+  /**
+   * DOES THIS PAUSE FORBID THE NEXT HAND, OR ONLY THE ONE AFTER IT?
+   *
+   * The two callers of pauseAfterHand want opposite things, and conflating
+   * them deadlocks one of them:
+   *
+   *   - A SYNCHRONIZED BREAK (and the add-on break, and a drain) means STOP.
+   *     The hand in flight finishes, and no further hand is dealt until the
+   *     break ends. A table that was idle at :55 must park without dealing.
+   *     -> beforeNextHand: true.
+   *
+   *   - HAND-FOR-HAND means DEAL EXACTLY ONE MORE HAND, THEN STOP. The bubble
+   *     sync resumes every table together and re-pauses them 500ms later,
+   *     deliberately, "to let dealing start" — it is arming the park for the
+   *     hand that is about to be dealt. If the top-of-loop gate honoured that
+   *     re-pause, the table would park BEFORE dealing, the sync would see
+   *     everyone parked, resume, re-pause, and park again — the bubble would
+   *     never burst and the tournament would freeze on the money.
+   *     -> beforeNextHand stays false, and only the post-deal gate parks.
+   *
+   * Cleared by resumeDealing along with the rest of the pause state.
+   */
+  protected holdBeforeNextHand: boolean = false;
 
   // Bible V8 §1.1.4: Action serialization lock — prevents parallel action processing
   protected actionLock: boolean = false;
@@ -1091,6 +1119,156 @@ export abstract class ServerTableEngineBase {
     return this.minPlayersToDeal();
   }
 
+  /**
+   * ── RIT CONFIG IS RE-READ, NOT REMEMBERED (2026-08-27) ──────────────────
+   *
+   * This block used to live inline in start(), which runs ONCE per engine
+   * process. So `run_it_twice`, `allow_run_it_twice`, `run_it_twice_enabled`,
+   * `insurance_enabled` and `run_it_mode` were sampled at boot and never
+   * looked at again: an owner turning insurance on, or run-it-twice off,
+   * changed nothing at all until the table's engine happened to restart.
+   *
+   * Production hand #3046089 is that defect: cash table d9d3c3b3 dealt three
+   * boards and split a 1470 pot without one player at the table being shown a
+   * prompt, off configuration the engine had been holding since it booted.
+   *
+   * ── WHAT THIS METHOD DOES *NOT* DO ANY MORE (merge note, 2026-08-27) ────
+   *
+   * The extraction was written when FIX 92 ended `ritEffective = ritEnabled &&
+   * !insuranceEnabled` — "insurance takes priority, RIT is disabled". That
+   * force-disable was RETIRED on 2026-08-26 by Dan's leader-seat ruling and
+   * the body below is the retired-it version, not the extracted one: when both
+   * features are on, the run-it-multi-times question comes FIRST and insurance
+   * engages only if the hand resolves to a single run ("THE INSURANCE PART
+   * PICKED UP ON THE TURN. AFTER THE RUN IT TWICE WAS DECLINED").
+   *
+   * Per-HAND exclusivity still holds absolutely — a hand that deals extra
+   * boards never carries an insurance contract, and an insured hand always
+   * runs exactly once — but it is enforced by the runout dispatch
+   * (`ritFirst` in handleAllInRunout), not by switching the feature off here.
+   * So do not restore the `&& !insuranceEnabled` term: hand #3046089 needed
+   * the configuration RE-READ, which is what this method is for, and did not
+   * need the table's RIT switch overridden.
+   *
+   * It is called from start() AND from ServerTableEngineRunout at the top of
+   * handleAllInRunout — the last instant before an offer can be made, and the
+   * only place in the hand where the answer matters. That is deliberately
+   * tighter than "hand start": there is no window between the re-read and the
+   * decision for the two to disagree, and no code path can reach the offer
+   * without passing through it.
+   *
+   * ONE CAVEAT, and it is the important one: `this.tableInfo` is itself a
+   * cached snapshot. It is assigned exactly once (start(), from loadTable) and
+   * the only thing that refreshes any part of it afterwards is refreshBlinds(),
+   * which copies back three columns — small_blind, big_blind, ante — and only
+   * for tournament tables. So this method re-reads the freshest values the
+   * PROCESS has; it does not re-read the DATABASE. Adding a per-hand
+   * `loadTable` for these five columns is a separate decision (an extra round
+   * trip on every hand, under the 90s deal watchdog) and is deliberately NOT
+   * taken here.
+   *
+   * Returns `insuranceEnabled` so start() can keep configuring the insurance
+   * engine from the same computation. The insurance engine is deliberately NOT
+   * re-configured per hand: start() sets only `enabled` on it, while other call
+   * sites set `houseMargin` and `offerTimeoutSeconds` too, so a partial
+   * re-configure mid-flow would silently drop them. The runout dispatch reads
+   * the RIT engine's own `isEnabled` for its sequencing, so the two cannot
+   * drift apart.
+   */
+  protected applyRunItTwiceConfig(): { ritEffective: boolean; insuranceEnabled: boolean } {
+    // No table row loaded yet: leave whatever configuration is already in
+    // place rather than reconfiguring from nothing.
+    if (!this.tableInfo) return { ritEffective: false, insuranceEnabled: false };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // FIX 92 (HISTORY): RIT and Insurance used to be mutually exclusive at
+    // CONFIGURE time — "RUN IT TWICE AND INSURANCE ARE NOT ALLOWED ON THE
+    // SAME TABLE", insurance taking priority and RIT being switched off. See
+    // the SEQUENCING note below for what replaced it on 2026-08-26.
+    // ═══════════════════════════════════════════════════════════════════════
+    // RIT INTENT FIX 2026-08-18: the engine read `run_it_twice_enabled`,
+    // a column NOTHING in the product ever writes (39 of 710 open tables
+    // true, likely a one-off script). The creation surfaces write
+    // `run_it_twice` (CreateTableModal) and `allow_run_it_twice`
+    // (TableCreationPage) - each defaulting the OTHER to true - and the
+    // lobby advertises the feature off `run_it_twice`. So the lobby said
+    // "run it twice" on ~every table while the engine had it off on 94%
+    // of them, and no offer ever fired in live traffic. Owner intent:
+    // OFF means at least one user-written column is false; the legacy
+    // engine column is honored as an additional ON override.
+    // TOURNAMENT GATE 2026-08-18 — CONFIRMED CASH-ONLY BY DAN 2026-08-26:
+    // "run it twice or 3 times is a cash game only area. it should never
+    // be in MTT, SPINS OR HEADS UP." The gate was briefly lifted the same
+    // day and reinstated within the hour on that ruling — RIT is a product
+    // decision, cash tables only, not merely a numeric limitation.
+    //
+    // (The original numeric reason still stands as history: per-board
+    // splits produce fractional amounts while tournament_players.chips is
+    // INTEGER — the sync floors, destroying chips; live 3-run tournament
+    // hand 41627f9a split 1760.88 into 586.96/1173.92 before the gate went
+    // in. dealAndResolveRIT now carries an integer-exact tournament branch
+    // as DEFENSE IN DEPTH: unreachable while this gate holds, but if the
+    // gate ever regresses, that branch makes the 41627f9a chip destruction
+    // impossible rather than merely unlikely.)
+    const ritIsTournament =
+      !!this.tableInfo.tournament_id || this.tableInfo.game_type === 'tournament';
+    const ritEnabled =
+      !ritIsTournament &&
+      (((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
+        (this.tableInfo.run_it_twice_enabled ?? false));
+    // ALL-CASH INSURANCE 2026-08-26 (Dan): insurance is a CASH feature.
+    // The ledger step was already cash-only (ServerTableEngineSettlement
+    // gates on !isTournamentTable), but the engine itself never refused a
+    // stray insurance_enabled flag on a tournament row - which would have
+    // moved seat chips with NO bank ledger behind them. Same gate as RIT.
+    const insuranceEnabled = (this.tableInfo.insurance_enabled ?? false) && !ritIsTournament;
+    // SEQUENCING 2026-08-26 (Dan's leader-seat recording): FIX 92 used to
+    // force-disable RIT here whenever insurance was on ("insurance takes
+    // priority"). The reference table runs BOTH: the run-it-multi-times
+    // question comes FIRST, and insurance engages only when the hand
+    // resolves to a single run ("THE INSURANCE PART PICKED UP ON THE TURN.
+    // AFTER THE RUN IT TWICE WAS DECLINED"). Per-HAND exclusivity still
+    // holds - a hand that deals extra boards never carries an insurance
+    // contract, and an insured hand always runs exactly once - it is now
+    // enforced by the runout dispatch (handleAllInRunout), not by turning
+    // the feature off.
+    const ritEffective = ritEnabled;
+
+    // Bible V8 §4.20 + FIX 98: Configure Run It Twice engine
+    /**
+     * Dan 2026-08-25: run_it_mode reaches the engine at last. Read
+     * DEFENSIVELY and additively — see RITConfig.mode. The column is the
+     * string 'none' on all 46 live tables while run-it-twice is genuinely on
+     * via the three boolean columns, so a mode that gated `enabled` would
+     * have switched the feature off across the whole platform. It can only
+     * ever REMOVE the question, never the feature.
+     */
+    const ritMode = String(this.tableInfo.run_it_mode || '').toLowerCase();
+    this.runItTwiceEngine.configure(this.tableId, {
+      enabled: ritEffective,
+      mode:
+        ritMode === 'mandatory_three'
+          ? 'mandatory_three'
+          : ritMode === 'mandatory_twice'
+            ? 'mandatory_twice'
+            : ritMode === 'player_choice'
+              ? 'player_choice'
+              : 'none',
+      // POKERBROS PARITY 2026-08-26 (Dan's reference recordings): one shared
+      // 25-second countdown covers the chooser AND every responder — the
+      // reference panel shows "Countdown: 25s" ticking for the whole
+      // decision, not 5s + 10s phases. The engine's DeadlineScheduler
+      // auto-declines at this same deadline, and the wire events now carry
+      // it (deadline_ts) so every client renders the same clock.
+      autoDeclineTimeout: 25,
+      maxRuns: 3, // Support up to 3 boards (Dan's rules: player can choose 1/2/3)
+      chooserTimeout: 25,
+      responderTimeout: 25,
+    });
+
+    return { ritEffective, insuranceEnabled };
+  }
+
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
@@ -1167,92 +1345,9 @@ export abstract class ServerTableEngineBase {
         reconnectGraceSeconds: 5,
       });
 
-      // ═══════════════════════════════════════════════════════════════════════
-      // FIX 92: MUTUAL EXCLUSION — RIT and Insurance CANNOT coexist on the
-      // same table. Per Dan: "RUN IT TWICE AND INSURANCE ARE NOT ALLOWED ON
-      // THE SAME TABLE." If both are enabled in DB, insurance takes priority
-      // (it's the more complex feature). RIT is disabled.
-      // ═══════════════════════════════════════════════════════════════════════
-      // RIT INTENT FIX 2026-08-18: the engine read `run_it_twice_enabled`,
-      // a column NOTHING in the product ever writes (39 of 710 open tables
-      // true, likely a one-off script). The creation surfaces write
-      // `run_it_twice` (CreateTableModal) and `allow_run_it_twice`
-      // (TableCreationPage) - each defaulting the OTHER to true - and the
-      // lobby advertises the feature off `run_it_twice`. So the lobby said
-      // "run it twice" on ~every table while the engine had it off on 94%
-      // of them, and no offer ever fired in live traffic. Owner intent:
-      // OFF means at least one user-written column is false; the legacy
-      // engine column is honored as an additional ON override.
-      // TOURNAMENT GATE 2026-08-18 — CONFIRMED CASH-ONLY BY DAN 2026-08-26:
-      // "run it twice or 3 times is a cash game only area. it should never
-      // be in MTT, SPINS OR HEADS UP." The gate was briefly lifted the same
-      // day and reinstated within the hour on that ruling — RIT is a product
-      // decision, cash tables only, not merely a numeric limitation.
-      //
-      // (The original numeric reason still stands as history: per-board
-      // splits produce fractional amounts while tournament_players.chips is
-      // INTEGER — the sync floors, destroying chips; live 3-run tournament
-      // hand 41627f9a split 1760.88 into 586.96/1173.92 before the gate went
-      // in. dealAndResolveRIT now carries an integer-exact tournament branch
-      // as DEFENSE IN DEPTH: unreachable while this gate holds, but if the
-      // gate ever regresses, that branch makes the 41627f9a chip destruction
-      // impossible rather than merely unlikely.)
-      const ritIsTournament =
-        !!this.tableInfo.tournament_id || this.tableInfo.game_type === 'tournament';
-      const ritEnabled =
-        !ritIsTournament &&
-        (((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
-          (this.tableInfo.run_it_twice_enabled ?? false));
-      // ALL-CASH INSURANCE 2026-08-26 (Dan): insurance is a CASH feature.
-      // The ledger step was already cash-only (ServerTableEngineSettlement
-      // gates on !isTournamentTable), but the engine itself never refused a
-      // stray insurance_enabled flag on a tournament row - which would have
-      // moved seat chips with NO bank ledger behind them. Same gate as RIT.
-      const insuranceEnabled = (this.tableInfo.insurance_enabled ?? false) && !ritIsTournament;
-      // SEQUENCING 2026-08-26 (Dan's leader-seat recording): FIX 92 used to
-      // force-disable RIT here whenever insurance was on ("insurance takes
-      // priority"). The reference table runs BOTH: the run-it-multi-times
-      // question comes FIRST, and insurance engages only when the hand
-      // resolves to a single run ("THE INSURANCE PART PICKED UP ON THE TURN.
-      // AFTER THE RUN IT TWICE WAS DECLINED"). Per-HAND exclusivity still
-      // holds - a hand that deals extra boards never carries an insurance
-      // contract, and an insured hand always runs exactly once - it is now
-      // enforced by the runout dispatch (handleAllInRunout), not by turning
-      // the feature off.
-      const ritEffective = ritEnabled;
-
-      // Bible V8 §4.20 + FIX 98: Configure Run It Twice engine
-      // Chooser gets 5s, responders get 10s — per Dan's rules
-      /**
-       * Dan 2026-08-25: run_it_mode reaches the engine at last. Read
-       * DEFENSIVELY and additively — see RITConfig.mode. The column is the
-       * string 'none' on all 46 live tables while run-it-twice is genuinely on
-       * via the three boolean columns, so a mode that gated `enabled` would
-       * have switched the feature off across the whole platform. It can only
-       * ever REMOVE the question, never the feature.
-       */
-      const ritMode = String(this.tableInfo.run_it_mode || '').toLowerCase();
-      this.runItTwiceEngine.configure(this.tableId, {
-        enabled: ritEffective,
-        mode:
-          ritMode === 'mandatory_three'
-            ? 'mandatory_three'
-            : ritMode === 'mandatory_twice'
-              ? 'mandatory_twice'
-              : ritMode === 'player_choice'
-                ? 'player_choice'
-                : 'none',
-        // POKERBROS PARITY 2026-08-26 (Dan's reference recordings): one shared
-        // 25-second countdown covers the chooser AND every responder — the
-        // reference panel shows "Countdown: 25s" ticking for the whole
-        // decision, not 5s + 10s phases. The engine's DeadlineScheduler
-        // auto-declines at this same deadline, and the wire events now carry
-        // it (deadline_ts) so every client renders the same clock.
-        autoDeclineTimeout: 25,
-        maxRuns: 3, // Support up to 3 boards (Dan's rules: player can choose 1/2/3)
-        chooserTimeout: 25,
-        responderTimeout: 25,
-      });
+      // Run It Twice — see applyRunItTwiceConfig(). Extracted 2026-08-27 so it
+      // can be re-evaluated per hand instead of once per process lifetime.
+      const { insuranceEnabled } = this.applyRunItTwiceConfig();
 
       // Bible V8 §4.19: Configure Insurance engine
       this.insuranceEngine.configure(this.tableId, {
@@ -1913,9 +2008,12 @@ export abstract class ServerTableEngineBase {
    * pause now say so; the safety net still exists, it is just sized to the
    * pause being requested.
    */
-  pauseAfterHand(maxWaitMs?: number): void {
+  pauseAfterHand(maxWaitMs?: number, opts?: { beforeNextHand?: boolean }): void {
     this.handForHandPaused = true;
     this.pauseMaxWaitMs = maxWaitMs && maxWaitMs > 0 ? maxWaitMs : null;
+    // See holdBeforeNextHand. Sticky within one pause: a break already holding
+    // the table must not be downgraded by a later ordinary pause request.
+    if (opts?.beforeNextHand) this.holdBeforeNextHand = true;
     if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
   }
 
@@ -1928,6 +2026,7 @@ export abstract class ServerTableEngineBase {
     // hand-for-hand pause gets its own short safety window rather than
     // inheriting a multi-minute one.
     this.pauseMaxWaitMs = null;
+    this.holdBeforeNextHand = false;
     // Bible V8 §3.1: Table FSM — paused → running
     if (this.tableFSM.state === 'paused') {
       this.tableFSM.transition('running');
@@ -1941,6 +2040,91 @@ export abstract class ServerTableEngineBase {
   /** Check if engine is currently waiting for hand-for-hand resume */
   isWaitingForHandForHand(): boolean {
     return this.handForHandPaused && this.handForHandResolve !== null;
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  THE PARK. A PAUSED TABLE STOPS, WHATEVER IT WAS DOING (2026-08-27)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Dan: "AT THE :55 BREAK HAS STARTED, AND ALL HANDS FINISH. ONCE A TABLE HAS
+   * FINISHED THE HAND, THEY STOP, AND DON'T RESTART UNTIL THE BREAK IS OVER."
+   *
+   * This block used to live INLINE in the dealing loop, immediately after
+   * `await this.dealHand(...)`. That is the one place in the loop a table only
+   * reaches when it actually dealt a hand, and every branch above it exits the
+   * iteration with `continue`:
+   *
+   *   - `activePlayers.length < minPlayersToDeal()`  (sleep 3s, continue)
+   *   - the spin-reveal hold                          (sleep <=1s, continue)
+   *   - the mystery-bounty reveal gate                (sleep 250ms, continue)
+   *   - the admin-pause / maintenance lock            (sleep 3s, continue)
+   *
+   * and the start-up wait loop hands control to the dealing loop without
+   * passing it at all. So a table that was NOT mid-hand at :55 — one short a
+   * player while the balancer moves somebody in, one holding for a spin wheel,
+   * one that just filled — never parked. Two things followed, both wrong:
+   *
+   *   1. `isWaitingForHandForHand()` stayed false, so `areAllTablesParked()`
+   *      was false, so the platform burned the whole LAST_HAND_GRACE_MS every
+   *      single hour and logged "last hand did not land within 120s" for a
+   *      table that had no hand in the air at all. Every break started two
+   *      minutes late and ran two minutes past the hour.
+   *
+   *   2. Far worse: the instant that table got its players back — a balanced
+   *      seat arriving, a wheel finishing — it went straight to `dealHand()`
+   *      and played a full hand IN THE MIDDLE OF THE BREAK, only parking
+   *      afterwards. That is precisely the thing the break exists to prevent.
+   *
+   * The gate is now a method and the loop awaits it at the TOP of every
+   * iteration, before any of those branches and before the deal. A table with
+   * cards in the air still finishes its hand first, because the loop cannot
+   * come back around until `dealHand()` resolves — "all hands finish" and "no
+   * new hand starts" are the same single check from here.
+   *
+   * The post-deal call site is retained so hand-for-hand still parks the
+   * instant a hand settles rather than after the showdown display pause.
+   */
+  protected async awaitPauseGate(): Promise<void> {
+    if (!this.handForHandPaused || !this.running) return;
+    // Bible V8 §3.1: Table FSM — running → paused. GUARDED: the FSM has no
+    // waiting → paused edge, and this gate is now reachable from the idle
+    // branches where the table sits in 'waiting'. An unguarded transition
+    // logged a false "Invalid transition" to Sentry on every idle park.
+    if (this.tableFSM.state === 'running') {
+      this.tableFSM.transition('paused');
+    }
+    console.log(
+      `[ServerTableEngine:${this.tableId}] Parked between hands — waiting for the pause to lift...`
+    );
+    await new Promise<void>((resolve) => {
+      this.handForHandResolve = resolve;
+      /**
+       * Safety timeout so a table can never wedge forever.
+       *
+       * Dan 2026-08-19: this was hard-coded to 120 seconds. A synchronized
+       * break is five minutes measured from AFTER the last hand completes, so
+       * every table silently self-resumed two minutes in and dealt through the
+       * rest of the break. The budget now comes from whoever requested the
+       * pause (pauseAfterHand), defaulting to the original two minutes for
+       * hand-for-hand.
+       */
+      const maxWaitMs = this.pauseMaxWaitMs ?? 120000;
+      const timer = setTimeout(() => {
+        if (this.handForHandResolve === resolve) {
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] Pause safety timeout after ${Math.round(
+              maxWaitMs / 1000
+            )}s — resuming to avoid a wedged table`
+          );
+          this.handForHandResolve = null;
+          resolve();
+        }
+      }, maxWaitMs);
+      // The break is minutes long and this timer is the only thing keeping a
+      // reference; unref so a shutdown inside a break is not held open by it.
+      (timer as { unref?: () => void }).unref?.();
+    });
   }
 
   /**

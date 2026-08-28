@@ -160,7 +160,7 @@
 
 .buy-in-modal__current-amount {
   flex: 1;
-  margin: 0 12px;
+  margin: 0 8px;
   height: 64px;
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(111, 220, 255, 0.2);
@@ -168,7 +168,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 16px;
+  padding: 0 4px;
   box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
   position: relative;
   overflow: hidden;
@@ -194,17 +194,11 @@
 }
 
 .buy-in-modal__amount-value {
-  font-size: 1.75rem;
+  font-size: clamp(1.25rem, 6vw, 1.75rem);
   font-weight: 700;
   color: #ffffff;
   margin: 0;
-}
-
-.buy-in-modal__chip-icon {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.5);
-  margin-left: 8px;
+  white-space: nowrap;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -606,10 +600,6 @@
 @media (max-width: 400px) {
   .buy-in-modal {
     padding: 16px;
-  }
-
-  .buy-in-modal__amount-value {
-    font-size: 1.5rem;
   }
 
   .buy-in-modal__quick-btn {

@@ -111,6 +111,7 @@ const WaitlistPage = lazyWithRetry(() => import('./pages/WaitlistPage'));
 const ClubRulesPage = lazyWithRetry(() => import('./pages/ClubRulesPage'));
 const NotificationCenter = lazyWithRetry(() => import('./pages/NotificationCenter'));
 const BusDevToolsPage = lazyWithRetry(() => import('./pages/BusDevToolsPage'));
+const ClubButtonsShowcasePage = lazyWithRetry(() => import('./pages/dev/ClubButtonsShowcasePage'));
 const FinancialAlertsPage = lazyWithRetry(() => import('./pages/FinancialAlertsPage'));
 const DisputeManagementPage = lazyWithRetry(() => import('./pages/DisputeManagementPage'));
 const FinancialHealthPage = lazyWithRetry(() => import('./pages/FinancialHealthPage'));
@@ -157,6 +158,9 @@ const PrivacyPolicyPage = lazyWithRetry(() => import('./pages/legal/PrivacyPolic
 // Admin Singletons
 const EngineDashboard = lazyWithRetry(() => import('./pages/admin/EngineDashboard'));
 const AnalyticsDashboard = lazyWithRetry(() => import('./pages/admin/AnalyticsDashboard'));
+/* House ads: smarter.poker's own promotions, platform-staff only. The page
+   gates on profiles.role and the API route behind it checks again. */
+const HouseAdsPage = lazyWithRetry(() => import('./pages/admin/HouseAdsPage'));
 
 // Loading fallback
 function LoadingSpinner() {
@@ -1572,6 +1576,16 @@ export default function App() {
                     </AuthGuard>
                   }
                 />
+                <Route
+                  path="dev/club-ui"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="ClubButtons UI Laboratory">
+                        <ClubButtonsShowcasePage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
 
                 {/* Health Check — public, no AuthGuard (for uptime monitors) */}
                 <Route
@@ -1618,6 +1632,16 @@ export default function App() {
                 />
 
                 {/* Engine Dashboard */}
+                <Route
+                  path="house-ads"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="House Ads">
+                        <HouseAdsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
                 <Route
                   path="engine"
                   element={

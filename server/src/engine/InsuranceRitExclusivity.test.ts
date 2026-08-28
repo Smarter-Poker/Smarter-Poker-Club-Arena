@@ -66,7 +66,22 @@ function runoutHarness(opts: { insurance: boolean; rit: boolean }) {
   engine.running = true;
   engine.handCount = 1;
   engine.handController = hc;
-  engine.tableInfo = { game_variant: 'nlh', big_blind: 10 };
+  /* The table ROW is the source of truth, not the engine's configure() call.
+     Since 2026-08-27 handleAllInRunout re-reads it through
+     applyRunItTwiceConfig() on every all-in — that is the fix for production
+     hand #3046089, which dealt three boards off a configuration sampled when
+     the engine booted. So a harness that only called runItTwiceEngine.configure
+     below would have its `enabled` overwritten a moment later by the columns
+     this row does not carry (`run_it_twice ?? true` — RIT defaults ON, see the
+     2026-08-18 intent fix). Both are set, and they agree. */
+  engine.tableInfo = {
+    game_variant: 'nlh',
+    big_blind: 10,
+    run_it_twice: opts.rit,
+    allow_run_it_twice: opts.rit,
+    run_it_twice_enabled: false,
+    insurance_enabled: opts.insurance,
+  };
   engine.allInStreetPauseMs = 1; // drive ordering, not real seconds
   engine.allInFirstPauseMs = 1;
   engine.seatedPlayers = players.map((p) => ({

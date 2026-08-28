@@ -316,6 +316,119 @@ CSS Modules + global CSS.
 
 ---
 
+---
+
+## 10.5 HORSES ARE PLAYERS (Dan, 2026-08-27, BINDING — NO EXCEPTIONS)
+
+**Dan, verbatim: "HORSES ARE NEVER EVER DISCLUDED BY DESIGN ON ANYTHING! THEY
+MUST ALWAYS BE TREATED LIKE REAL LIVE PLAYERS!"**
+
+This is a HARD LAW. It outranks any optimisation, any convenience, and any
+assumption you arrive with. If you are writing a filter, a report, a payout, a
+rule, a limit, a stat, a sweep or a guard, and you find yourself typing
+`is_horse` in order to leave horses OUT of something a human would get — stop.
+You are writing a bug.
+
+### The rule
+
+A horse pays the same buy-in, out of the same club wallet, through the same
+RPCs, and sits in the same seat as anybody else. Therefore a horse:
+
+- **EARNS** everything a human earns from the same action — VIP points, agent
+  and super-agent commissions, `player_stats`, rakeback basis, leaderboard
+  position, achievements, anything downstream of play or of rake;
+- **IS PAID** everything a human is paid — prizes, bounties, refunds,
+  shortfall back-pay, jackpots. Never "skip the horses" on a repayment;
+- **IS SUBJECT TO** every rule a human is subject to — nit/VPIP eviction,
+  limits, guards, integrity checks;
+- **COUNTS** everywhere a human counts — player counts, engine provisioning,
+  table liveness, conservation and reconciliation totals;
+- **IS NEVER** silently filtered out of a report, a total, or a ledger.
+
+### What is still allowed
+
+`is_horse` remains legitimate for exactly two things:
+
+1. **Identification** — surfacing the flag as DATA (a badge, a column, a
+   roster field), or the horse-specific plumbing that creates, seats, funds
+   and steers the fleet (`fn_register_horse_for_tournament`,
+   `fn_seed_horses_to_floor`, `autoRebuyHorse`, HorseLogic, and so on). Those
+   spawn and drive horses; they do not deny horses anything.
+2. **The horse's input device.** A horse has no browser, so the engine
+   supplies what a browser would: HorseLogic chooses its actions,
+   `scheduleHorseAction` submits them inside the SAME turn timer a human
+   gets, a synthetic heartbeat keeps its seat alive, and `autoRebuyHorse`
+   funds its rebuy. Those exist to make a horse EQUAL to a human, not to
+   give it a different deal. They are the only legitimate horse branch.
+
+**THERE IS NO "EQUAL OUTCOME BY A DIFFERENT MECHANISM" EXEMPTION.** I proposed
+one on 2026-08-27 — arguing a horse did not need the five-second rebuy pause
+because `autoRebuyHorse` got it back another way — and Dan rejected it
+outright:
+
+> "TABLES ARE DESIGNED TO BE USED BY EVERYONE, EVERY HORSE OR HUMAN PLAYER
+> NEEDS TO BE TREATED 100% EXACTLY THE SAME ALL ACROSS THE BOARD IN EVERYTHING
+> FOR THE CLUB ARENA. YES IT STILL NEEDS TO THE SAME 5 SECOND PAUSE TO REBUY.
+> NOT EVERY HORSE ALWAYS REBUYS IN THE CASH GAMES, AND IF YOU DIDN'T GIVE THEM
+> THE SAME EXACT FEATURES AND FUNCTIONALITY, PEOPLE WOULD NOTICE!"
+
+**TIMING IS PART OF THE TREATMENT.** The tell is never one hand, it is the
+RHYTHM: a table that stops for five seconds when one seat busts and rolls
+straight on when another has just told every watching player which seats are
+horses. And the pause is not ceremonial for a horse either — the stop-loss
+(two rebuys) and an empty club treasury both mean it genuinely may not come
+back, so the window it gets to decide has to be the same window.
+
+The test is therefore **"is it identical"**, not "is it equivalent". Same
+features, same functionality, same pauses, same timers, same rules.
+
+Anything where horses would be reported as opt-in (a `p_include_horses`
+parameter) MUST default to **true**.
+
+### Why this rule exists
+
+On 2026-08-27 I wrote `AND NOT COALESCE(p.is_horse, false)` into
+`fn_settle_tournament_rake` on my own assumption that horses are "house
+players" who should not earn. Nobody asked for it. Every tournament on this
+platform is horse-heavy, so the effect was that tournament rake attribution
+earned **nothing for anyone** — 39 settled events, zero VIP points, zero agent
+commissions — and I then reported that zero as "correct behaviour". It was my
+invention presented as a design decision, which is worse than a plain bug.
+
+Fixed and backfilled in `20260827_horses_are_players_law.sql`, along with two
+others found in the same sweep: horses were exempt from nit eviction, and a
+lone horse was denied a dealing engine that a lone human would have received.
+
+### Dan's rulings on the two collisions with physical constraints
+
+Both were put to Dan on 2026-08-27 with the costs stated. His answers are
+BINDING and are recorded here so nobody re-opens them as a "bug":
+
+**1. Hand-history retention: STAYS AT 7 DAYS.** Horse-only hands are pruned
+after `hand_history_retention_policy.horse_retention_days`; hands a human was
+dealt into are kept forever. Equalising would cost ~0.5 GB/day (~15 GB/month)
+on a table already at 3.6 GB — 221k hands/day, 99.95% of them horse-only. Dan
+chose to leave it at 7. **This is the one sanctioned asymmetry in the entire
+law, it is a STORAGE decision rather than a player-treatment one, and it is
+Dan's to change — it is a config row, not code. Do not "fix" it.**
+
+**2. The deploy drain gate: PROTECT THE HAND, NOT THE PLAYER.** The gate used
+to read `humansSeatedTotal` and wait for HUMANS to leave, so a horse's hand
+was voided by a restart without a second thought. It also waited for the wrong
+event — a table EMPTYING can take forever and, with horses seated, never
+happens, so it deferred for hours and then restarted under seated players
+anyway. Fixed both ways: `/health` publishes `handsInFlightTotal` (every
+player counted), the gate waits on that, and `GameServer.drainHands()` parks
+every table at a hand boundary on SIGTERM — so hands are protected on EVERY
+restart path, not just the deploy workflow that remembered to ask.
+
+### Previously open, now closed
+
+Both items above were open questions when this section was first written.
+They are now decided; see Dan's rulings.
+
+---
+
 ## 11. AGENT NETWORK + DEPLOY PLAYBOOK (added 2026-07-23, binding; corrected same day after live use)
 
 Cloud Cowork sessions have a locked-down sandbox. Learn the map ONCE and never

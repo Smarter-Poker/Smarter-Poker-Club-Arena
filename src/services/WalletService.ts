@@ -825,16 +825,31 @@ export const WalletService = {
   // escape, duplicated twice over. `getBalances` remains for the one caller
   // that needs the full set (useWalletStore).
 
-  /**
-   * Get player wallet balance (shorthand for the most common query)
-   */
-  async getPlayerBalance(
-    userId: string,
-    opts?: { clubId?: string | null; tableId?: string | null }
-  ): Promise<number> {
-    const r = await this.readPlayerBalance(userId, opts);
-    return r.balance ?? 0;
-  },
+  // AUDIT 2026-08-27: `getPlayerBalance` is DELETED, and it is the same
+  // deletion as `getWallet`/`getWallets` above for the same reason.
+  //
+  // Its whole body was `return r.balance ?? 0` - it existed to turn "we could
+  // not find out" into a definite zero, which its own docstring admitted and
+  // which the 2026-08-25 audit had already called out as the cause of
+  // "Insufficient Balance" on a funded player's sign-up dialog. That audit
+  // fixed the ONE call site it was looking at and left the helper, so five
+  // more sites kept the defect:
+  //
+  //   useGlobalBalanceSync   wrote the false 0 into useUserStore.totalChips -
+  //                          the GLOBAL figure the whole app renders, so one
+  //                          refused read blanked a funded player everywhere
+  //   ChipTransferModal      `senderBalance` gates the send, so a false 0
+  //                          BLOCKED AN AGENT FROM SENDING CHIPS THEY HELD
+  //   TablePage x3           buy-in sheet, add-on affordability, realtime
+  //                          balance resync
+  //
+  // All five now call `readPlayerBalance` and leave the last known good value
+  // in place when it answers null - the rule `useWalletStore.loadBalances`
+  // already states: "a transient network failure must not replace a good
+  // number with zeros on screen". A `number`-returning shorthand cannot
+  // express "unknown", so there is no safe version of this helper to keep.
+  // If you want the number, call readPlayerBalance and decide what null means
+  // AT THE CALL SITE, where the consequence is visible.
 
   /**
    * The same read, but it tells you whether it WORKED.

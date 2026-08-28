@@ -12,53 +12,49 @@
 import { supabase } from './client.js';
 
 /**
- * REVIEW FIX (2026-08-20): the cash-out idempotency key must identify an
- * OCCUPANCY, not a seat.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  CASHING A SEAT OUT LIVES IN THE DATABASE NOW (2026-08-27)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Both functions below call ONE rpc, `atomic_seat_cashout_locked`.
  *
- * `table_seats` has UNIQUE (table_id, seat_number) — one row per physical seat,
- * forever. On cash tables that is harmless because `atomic_table_buyin` deletes
- * the vacated row and inserts a new one, so every occupancy gets a fresh id.
- * The tournament balancer does NOT: it moves a player in by UPDATE-ing the
- * existing row's `left_at` back to null, so the id is REUSED across occupants.
+ * THE BUG THAT MOVED IT. Cash-out used to be three PostgREST round-trips here:
+ * read the stack, credit it, stamp `left_at`. Three round-trips are three
+ * TRANSACTIONS, and the read took no lock, so `atomic_table_addon` could commit
+ * `stack = stack + n` in the gap. The credit paid the PRE-add-on stack while
+ * the seat-exit trigger recorded the POST-add-on one, and the difference was
+ * destroyed. Three times in 30 days, 205.68 chips, each reconstructing to the
+ * penny as `cash-out + add-on == stack`.
  *
- * With a key of `cashout:<seat.id>` that meant the first player ever to cash
- * out of a tournament seat permanently poisoned the key. The next occupant's
- * cash-out would hit ON CONFLICT DO NOTHING, return with NO error, be treated
- * as credited, and have their seat cleared — silently destroying their whole
- * stack. Not yet triggered in production (zero seats have been re-joined after
- * their key was written), which is exactly why it is worth closing now.
+ * WHY THE 2026-08-26 FIX MISSED IT. That pass added `FOR UPDATE` to
+ * `atomic_table_addon` "so this serialises with atomic_table_cashout" - but the
+ * engine never calls `atomic_table_cashout`; its only callers are client-side.
+ * One side of a handshake is not a handshake, and the bug recurred the next
+ * day. The RPC takes the same lock, so both orderings are now safe: an add-on
+ * already in flight commits first and we refund the larger stack; an add-on
+ * arriving second finds `left_at` set, its own zero-row guard raises, and its
+ * debit rolls back.
  *
- * `joined_at` distinguishes occupancies of the same row.
+ * TWO THINGS THIS FILE LEARNED THE HARD WAY, now enforced inside the RPC:
+ *
+ *   1. THE IDEMPOTENCY KEY IS SCOPED TO AN OCCUPANCY, NOT A SEAT.
+ *      `table_seats` has UNIQUE (table_id, seat_number) - one row per physical
+ *      seat, forever. Cash tables are fine because the buy-in deletes and
+ *      re-inserts, but the tournament balancer moves a player in by setting an
+ *      existing row's `left_at` back to null, REUSING the id. A key of
+ *      `cashout:<id>` would let the first occupant to cash out poison that seat
+ *      for every occupant after them - their credit would dedupe away to
+ *      nothing and their seat would still be cleared. `joined_at` separates
+ *      them. The RPC derives that key from the row it locked, so the key can no
+ *      longer disagree with the seat being paid for.
+ *
+ *   2. THE LEGACY-KEY GUARD. Credits written before 2026-08-20 used the
+ *      unscoped `cashout:<id>`. A retry asking under the new format would miss
+ *      them and pay twice, so the RPC checks the legacy key too - and, being
+ *      under the lock, that check can no longer be separated from the credit it
+ *      guards. It skips only the CREDIT, never the seat exit: leaving the seat
+ *      occupied would double-count the chips in fn_club_chip_circulation.
+ * ═══════════════════════════════════════════════════════════════════════════
  */
-function cashoutKey(seat: { id: string; joined_at?: string | null }): string {
-  return seat.joined_at ? `cashout:${seat.id}:${seat.joined_at}` : `cashout:${seat.id}`;
-}
-
-/**
- * Transition guard for the key-format change above.
- *
- * A cash-out whose credit COMMITTED but whose response timed out before this
- * change would have written `cashout:<id>`; the retry after it lands would ask
- * for `cashout:<id>:<joined_at>`, match nothing, and pay a second time — the
- * fix causing the exact bug it exists to prevent, for a window of minutes.
- *
- * So: if the legacy key is already present, this seat was credited under the
- * old format and must not be credited again. One indexed point-read on a path
- * that runs per cash-out, not per hand.
- */
-async function alreadyCreditedUnderLegacyKey(seatId: string): Promise<boolean> {
-  try {
-    const { data, error } = await supabase
-      .from('wallet_credit_idempotency')
-      .select('key')
-      .eq('key', `cashout:${seatId}`)
-      .maybeSingle();
-    if (error) return false; // unknown -> fall through to the normal keyed path
-    return !!data;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Mark a seat as left, cash it out atomically, and sync the table's player count.
@@ -76,132 +72,37 @@ export async function markSeatAsLeft(
   userId: string,
   seatNumber: number
 ): Promise<void> {
-  // AUDIT 2026-08-26: mirrors the `safeToClearSeat` guard atomicCashout has had
-  // since SWEEP #4 P0-3. Without it the catch block below vacated the seat
-  // unconditionally, so any throw after the seat was read - a transport error on
-  // the credit RPC, a timeout - destroyed the stack. That is seat exit 6522:
-  // 85.85 chips, exit_kind 'left', no matching wallet credit.
-  let safeToClearSeat = false;
+  // 2026-08-27: same single locked transaction as atomicCashout. This function
+  // and that one had byte-for-byte the same read/credit/vacate gap, and they
+  // have already drifted apart twice while being patched separately (see the
+  // 2026-08-26 audit). Sharing one RPC is what stops them drifting a third
+  // time - there is now exactly one implementation of "cash a seat out", and it
+  // lives in the database where the lock is.
+  //
+  // Everything the old body defended is now structural rather than earned:
+  // a failed credit rolls back with the vacate, so the stack cannot be
+  // destroyed; the legacy-key guard runs under the lock; and the write is
+  // scoped to the seat the RPC itself locked, so it cannot vacate another seat
+  // this call never read.
   try {
-    // 1. Get the active seat and its stack
-    const { data: seat } = await supabase
-      .from('table_seats')
-      .select('id, stack, joined_at')
-      .eq('table_id', tableId)
-      .eq('user_id', userId)
-      .eq('seat_number', seatNumber)
-      .is('left_at', null)
-      .maybeSingle();
-
-    if (!seat) {
-      // Seat already gone — just update if stale.
-      // AUDIT 2026-08-26: scoped to seat_number. Without it this vacated EVERY
-      // active seat this player held at the table, including one still holding
-      // a stack that this call never read and therefore never credited.
-      await supabase
-        .from('table_seats')
-        .update({ left_at: new Date().toISOString() })
-        .eq('table_id', tableId)
-        .eq('user_id', userId)
-        .eq('seat_number', seatNumber)
-        .is('left_at', null);
+    const { error } = await supabase.rpc('atomic_seat_cashout_locked', {
+      p_user_id: userId,
+      p_table_id: tableId,
+      p_seat_number: seatNumber,
+    });
+    if (error) {
+      console.error(
+        `[markSeatAsLeft] Locked cash-out failed for ${userId} at ${tableId} seat ${seatNumber} - seat preserved so the stack is not destroyed:`,
+        error.message
+      );
       return;
     }
-
-    const stack = seat.stack ?? 0;
-
-    // 2. Credit wallet if stack > 0 — atomically (balance += stack AND the audit
-    //    log row in one transaction). The old read-then-upsert lost chips under
-    //    concurrent credits (e.g. leaving two tables at once, or a simultaneous
-    //    buy-in on the same wallet). If the credit fails we do NOT vacate the
-    //    seat below, so the player's stack is never destroyed — a retry re-runs
-    //    the leave and re-attempts the credit.
-    if (stack > 0) {
-      // Transition guard for the key-format change (see cashoutKey above): a
-      // cash-out credited under the legacy `cashout:<id>` key must not be paid
-      // again just because this retry asks under the new occupancy-scoped key.
-      if (await alreadyCreditedUnderLegacyKey(seat.id)) {
-        console.warn(
-          `[markSeatAsLeft] Seat ${seat.id} was already credited under the legacy cash-out key — skipping credit`
-        );
-        // AUDIT 2026-08-26 (second pass): this used to `return`, which skipped
-        // BOTH `safeToClearSeat = true` AND the soft-delete below. The legacy
-        // key is proof the wallet already holds these chips, so returning here
-        // left the seat occupied with a stack that is ALSO in the wallet -
-        // counted twice by fn_club_chip_circulation - and, because every retry
-        // re-enters this branch, the seat could never be vacated at all.
-        // atomicCashout's own legacy-key guard sets safeToClearSeat and falls
-        // through; the two functions are supposed to mirror each other.
-        // Skip only the CREDIT, never the seat exit.
-      } else {
-        const { error: creditErr } = await supabase.rpc('atomic_credit_wallet_and_log', {
-          p_user_id: userId,
-          p_amount: stack,
-          p_category: 'cashout',
-          p_description: 'Cash-out from table',
-          p_table_id: tableId,
-          p_hand_id: null,
-          p_related_entity_id: null,
-          // P1-2 FIX: keyed on the seat OCCUPANCY (see cashoutKey), IDENTICAL to
-          // the key atomicCashout writes, so a committed-but-timed-out credit here
-          // is a DB-side no-op on retry (no double-credit), and a seat cashed out
-          // by either path dedupes against the other.
-          p_idempotency_key: cashoutKey(seat),
-        });
-        if (creditErr) {
-          console.error(
-            `[markSeatAsLeft] cash-out credit failed for ${userId} — leaving seat occupied to avoid chip loss:`,
-            creditErr.message
-          );
-          return;
-        }
-      }
-    }
-
-    // Every failure path above returns, so reaching here means the credit
-    // committed or there was no stack to credit. Only now may the seat be cleared.
-    safeToClearSeat = true;
-
-    // 3. Soft-delete the seat
-    await supabase
-      .from('table_seats')
-      .update({ left_at: new Date().toISOString(), leave_pending: false })
-      .eq('table_id', tableId)
-      .eq('user_id', userId)
-      .eq('seat_number', seatNumber)
-      .is('left_at', null);
-
-    // 4. Update player count
-    const { count } = await supabase
-      .from('table_seats')
-      .select('*', { count: 'exact', head: true })
-      .eq('table_id', tableId)
-      .is('left_at', null);
-
-    await supabase
-      .from('tables')
-      .update({ current_players: count ?? 0 })
-      .eq('id', tableId);
+    void notifyWaitlistSeatOpen(tableId);
   } catch (err: any) {
-    // AUDIT 2026-08-26: this used to vacate the seat unconditionally. A throw
-    // between reading the stack and crediting it therefore erased the stack -
-    // the wallet was never credited and the chips existed nowhere afterwards.
-    // atomicCashout has guarded this since SWEEP #4 P0-3; this path had not.
-    if (safeToClearSeat) {
-      console.warn(`[DB] Failed to cash-out horse ${userId} at ${tableId}:`, err?.message);
-      await supabase
-        .from('table_seats')
-        .update({ left_at: new Date().toISOString() })
-        .eq('table_id', tableId)
-        .eq('user_id', userId)
-        .eq('seat_number', seatNumber)
-        .is('left_at', null);
-    } else {
-      console.error(
-        `[markSeatAsLeft] Exception before the cash-out credit committed for ${userId} at ${tableId} - preserving the seat so the stack is not destroyed:`,
-        err?.message
-      );
-    }
+    console.error(
+      `[markSeatAsLeft] Transport failure for ${userId} at ${tableId} seat ${seatNumber} - seat preserved:`,
+      err?.message
+    );
   }
 }
 
@@ -215,147 +116,44 @@ export async function atomicCashout(
   tableId: string,
   seatNumber?: number
 ): Promise<number> {
-  // SWEEP #4 P0-3: track whether it is SAFE to soft-delete the seat in the
-  // catch fallback. It is only safe once the wallet credit succeeded (or there
-  // was nothing to credit). If we throw before that, deleting the seat would
-  // destroy the stack, so the fallback must preserve it instead.
-  let safeToClearSeat = false;
-  // AUDIT 2026-08-26 (second pass): the seat this call actually read and
-  // credited. `seat` itself is scoped to the try, so the catch fallback below
-  // cannot see it, and without this the fallback's write was unscoped - it
-  // vacated every active seat the player held at this table.
-  let exitingSeatNumber: number | null = null;
+  // 2026-08-27: read + credit + vacate now happen in ONE transaction, with the
+  // seat row held under FOR UPDATE. See the block comment at the top of this
+  // file: the old three-round-trip sequence let an add-on commit between the
+  // read and the credit, and the difference was destroyed.
+  //
+  // The RPC derives the occupancy-scoped idempotency key and the legacy key
+  // from the row it locked, so this call cannot use a key that disagrees with
+  // the seat it is actually paying for.
   try {
-    // 1. Find active seat
-    let query = supabase
-      .from('table_seats')
-      .select('id, stack, seat_number, joined_at')
-      .eq('table_id', tableId)
-      .eq('user_id', userId)
-      .is('left_at', null);
+    const { data, error } = await supabase.rpc('atomic_seat_cashout_locked', {
+      p_user_id: userId,
+      p_table_id: tableId,
+      p_seat_number: seatNumber ?? null,
+    });
 
-    if (seatNumber !== undefined) {
-      query = query.eq('seat_number', seatNumber);
-    }
-
-    const { data: seat } = await query.maybeSingle();
-    if (!seat) return 0;
-    exitingSeatNumber = seat.seat_number;
-
-    const stack = seat.stack ?? 0;
-    if (stack <= 0) safeToClearSeat = true; // nothing at risk if there is no stack
-
-    // 2. Credit wallet — FIX-232: Atomic increment via RPC (eliminates race condition)
-    // SWEEP #4 P0-3 FIX (2026-07-23): the credit error was only logged, then the
-    // seat was soft-deleted UNCONDITIONALLY below — so a transient 502/timeout on
-    // credit_player_wallet destroyed the player's entire stack (seat gone, wallet
-    // not credited, unrecoverable). Sibling markSeatAsLeft already returns early
-    // on credit failure "to avoid chip loss"; mirror that here. On failure we
-    // preserve the seat (left_at stays null) so the cashout is retried next pass.
-    if (stack > 0 && (await alreadyCreditedUnderLegacyKey(seat.id))) {
-      // Legacy-key transition guard (see cashoutKey above). Already paid under
-      // the old format — clear the seat, do not credit a second time.
+    if (error) {
+      // The seat is untouched: the whole thing was one transaction, so a
+      // failure here rolled back the credit AND the vacate together. The stack
+      // is still on the seat and the next pass retries it. This is the property
+      // the old code needed `safeToClearSeat` to approximate.
       console.warn(
-        `[atomicCashout] Seat ${seat.id} was already credited under the legacy cash-out key — skipping credit`
+        `[atomicCashout] Locked cash-out failed for ${userId} at ${tableId} — seat preserved for retry:`,
+        error.message
       );
-      safeToClearSeat = true;
-    } else if (stack > 0) {
-      // LEDGER-INTEGRITY 2026-08-22: this used to be `credit_player_wallet`
-      // followed by an unconditional `wallet_transactions` insert, and it
-      // shares its idempotency key with markSeatAsLeft ON PURPOSE. Two
-      // consequences, both live:
-      //
-      //   1. DOUBLE LEDGER ROW. The shared key makes the CREDIT a no-op for
-      //      whichever path runs second — and this one then wrote a second
-      //      'cashout' row for chips it did not move. Same defect the
-      //      tournament prize paths carried until 2026-08-22.
-      //
-      //   2. THE TWO PATHS CREDITED DIFFERENT WALLETS. `credit_player_wallet`
-      //      resolves the club through fn_player_home_club only; the sibling's
-      //      `atomic_credit_wallet_and_log` resolves the SEAT's club first and
-      //      falls back to home. For a player seated at a club that is not
-      //      their home club those are different wallets, so which club's
-      //      books the stack landed in depended on which path happened to run.
-      //      It also skipped the `chip_transactions` row the sibling writes.
-      //
-      // Calling the same RPC the sibling calls fixes all of it: one credit,
-      // one ledger row, one club, written in one transaction. The RPC computes
-      // balance_after itself, so the extra wallet read is gone too.
-      const { error: walletErr } = await supabase.rpc('atomic_credit_wallet_and_log', {
-        p_user_id: userId,
-        p_amount: stack,
-        p_category: 'cashout',
-        p_description: 'Cash-out from table',
-        p_table_id: tableId,
-        p_hand_id: null,
-        p_related_entity_id: null,
-        // Keyed on the seat OCCUPANCY (see cashoutKey), IDENTICAL to the key
-        // markSeatAsLeft writes, so a committed-but-timed-out credit is a
-        // DB-side no-op on retry and the two paths dedupe against each other.
-        p_idempotency_key: cashoutKey(seat),
-      });
-      if (walletErr) {
-        console.warn(
-          `[atomicCashout] Wallet credit failed for ${userId} — preserving seat for retry:`,
-          walletErr.message
-        );
-        return 0; // do NOT soft-delete; stack stays on the seat, retryable
-      }
-      safeToClearSeat = true; // credit committed — safe to clear the seat now
+      return 0;
     }
 
-    // 3. Soft-delete seat
-    // AUDIT 2026-08-26 (second pass): scoped to the seat actually read and
-    // credited above. Unscoped, this vacated EVERY active seat the player held
-    // at this table while crediting only one of them - destroying the other
-    // stack. Same defect, same day, already fixed in markSeatAsLeft; it was
-    // never applied to this sibling. seat.seat_number comes from the SELECT,
-    // so this is right even when the caller supplied no seatNumber.
-    await supabase
-      .from('table_seats')
-      .update({ left_at: new Date().toISOString(), leave_pending: false })
-      .eq('table_id', tableId)
-      .eq('user_id', userId)
-      .eq('seat_number', seat.seat_number)
-      .is('left_at', null);
+    const stack = Number((data as any)?.stack ?? 0);
+    if ((data as any)?.reason === 'no_active_seat') return 0;
 
-    // 4. Update player count
-    const { count } = await supabase
-      .from('table_seats')
-      .select('*', { count: 'exact', head: true })
-      .eq('table_id', tableId)
-      .is('left_at', null);
-
-    await supabase
-      .from('tables')
-      .update({ current_players: count ?? 0 })
-      .eq('id', tableId);
-
-    // TOURNEY-AUDIT 2026-07-24 (sweep 6): seat opened — notify the waitlist.
+    // Seat opened — notify the waitlist. Unchanged behaviour.
     void notifyWaitlistSeatOpen(tableId);
-
-    return stack;
+    return Number.isFinite(stack) ? stack : 0;
   } catch (err: any) {
-    // SWEEP #4 P0-3 FIX: only soft-delete on exception if the credit already
-    // committed (or there was no stack). Otherwise preserve the seat so the
-    // stack is not destroyed on a transient failure — it will be retried.
-    // Scoped for the same reason as the soft-delete above. If we threw before
-    // even reading a seat there is nothing to clear, and an unscoped write here
-    // would vacate seats this call never looked at.
-    if (safeToClearSeat && exitingSeatNumber !== null) {
-      await supabase
-        .from('table_seats')
-        .update({ left_at: new Date().toISOString() })
-        .eq('table_id', tableId)
-        .eq('user_id', userId)
-        .eq('seat_number', exitingSeatNumber)
-        .is('left_at', null);
-    } else {
-      console.warn(
-        `[atomicCashout] Exception before credit committed for ${userId} — preserving seat:`,
-        err?.message
-      );
-    }
+    console.warn(
+      `[atomicCashout] Transport failure for ${userId} at ${tableId} — seat preserved for retry:`,
+      err?.message
+    );
     return 0;
   }
 }
@@ -403,24 +201,61 @@ export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
     // act on a seat-open notification, so offering it the seat silently
     // wasted the offer — regularly, since horses were often at the head.
     // Fetch the oldest few and notify the first HUMAN.
-    const { data: nextBatch } = await supabase
-      .from('table_waitlist')
-      .select('id, user_id')
-      .eq('table_id', tableId)
-      .eq('status', 'waiting')
-      .order('created_at', { ascending: true })
-      .limit(10);
-    if (!nextBatch || nextBatch.length === 0) return;
+    /* ═══ NO ARBITRARY WINDOW ON THE QUEUE (Dan 2026-08-27) ═══════════════
+       This fetched the ten oldest entries and then looked for a human among
+       them. If the ten oldest all happened to be horses, it returned without
+       notifying ANYBODY - while real people waited directly behind them. The
+       queue is deliberately horse-seeded ("atmosphere"), so a horse-heavy
+       head is the expected shape, not a freak one; the ten was simply a
+       number somebody hoped was big enough.
 
-    const ids = nextBatch.map((r) => r.user_id as string);
-    const { data: horseRows } = await supabase
-      .from('profiles')
-      .select('id')
-      .in('id', ids)
-      .eq('is_horse', true);
-    const horseIds = new Set((horseRows ?? []).map((r) => r.id as string));
-    const next = nextBatch.find((r) => !horseIds.has(r.user_id as string));
-    if (!next) return; // only horses are queued — nobody to seat
+       Measured 2026-08-27 before changing it: 12 tables with a queue, 22
+       people waiting, no queue longer than 10 and no table with a human
+       stranded behind ten horses - so this was latent, not live. Fixed
+       anyway, because "big enough today" is exactly the reasoning that
+       eventually is not.
+
+       The window is gone rather than raised: walk the queue in order, a page
+       at a time, until a human turns up or the queue runs out. No ceiling,
+       and on the normal queue (22 people across 12 tables today) it is still
+       exactly one round trip.
+
+       DELIBERATELY NOT an embedded `profiles!inner(is_horse)` filter, which
+       would have been one query instead of two: `table_waitlist.user_id`
+       carries TWO foreign keys - one to `profiles(id)` and one to
+       `auth.users(id)` - and an ambiguous embed resolves at PostgREST's
+       discretion. If it ever answered 400, `data` is null, this function
+       returns early, and seat offers stop going out ENTIRELY - silently, and
+       far worse than the horse-heavy-head case being fixed. Two plain reads
+       cannot fail that way. */
+    const QUEUE_PAGE = 25;
+    let next: { id: string; user_id: string } | undefined;
+    for (let page = 0; ; page++) {
+      if (page > 10_000) break; // anti-runaway assert, not a queue limit
+      const { data: batch } = await supabase
+        .from('table_waitlist')
+        .select('id, user_id')
+        .eq('table_id', tableId)
+        .eq('status', 'waiting')
+        .order('created_at', { ascending: true })
+        .range(page * QUEUE_PAGE, page * QUEUE_PAGE + QUEUE_PAGE - 1);
+      if (!batch || batch.length === 0) break;
+
+      const ids = batch.map((r) => r.user_id as string);
+      const { data: horseRows } = await supabase
+        .from('profiles')
+        .select('id')
+        .in('id', ids)
+        .eq('is_horse', true);
+      const horseIds = new Set((horseRows ?? []).map((r) => r.id as string));
+      const found = batch.find((r) => !horseIds.has(r.user_id as string));
+      if (found) {
+        next = found as { id: string; user_id: string };
+        break;
+      }
+      if (batch.length < QUEUE_PAGE) break; // queue exhausted, all horses
+    }
+    if (!next) return; // nobody human is queued — nothing to offer
 
     const { data: claimed } = await supabase
       .from('table_waitlist')
@@ -438,35 +273,46 @@ export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
       data: { table_id: tableId },
     });
 
-    // Best-effort WEB PUSH so the alert reaches a player who has the app
-    // closed (Dan 2026-08-26: "you should receive a push notification").
-    // OneSignal external user ids are the Supabase user ids. Silently a
-    // no-op when the room has no OneSignal credentials configured.
-    const osAppId = process.env.ONESIGNAL_APP_ID;
-    const osKey = process.env.ONESIGNAL_REST_API_KEY;
-    if (osAppId && osKey && typeof fetch === 'function') {
-      try {
-        await fetch('https://onesignal.com/api/v1/notifications', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Basic ${osKey}`,
-          },
-          body: JSON.stringify({
-            app_id: osAppId,
-            include_external_user_ids: [next.user_id],
-            headings: { en: 'Seat Open' },
-            contents: {
-              en: `A Seat Just Opened At ${tableRow.name || 'Your Waitlisted Table'}. Tap To Claim It.`,
-            },
-            url: `https://smarter.poker/hub/club-arena/table/${tableId}`,
-            data: { type: 'waitlist_seat_open', table_id: tableId },
-          }),
-        });
-      } catch (pushErr) {
-        console.warn(`[Waitlist] push notify failed for ${next.user_id.slice(0, 8)}:`, pushErr);
+    // WEB PUSH, via the platform's real delivery path.
+    //
+    // This used to POST straight to onesignal.com. OneSignal was REMOVED from
+    // this platform on 2026-08-19 and replaced by self-hosted VAPID web push —
+    // pages/api/notifications/send.js says so in its header and rejects
+    // OneSignal device ids outright. This block was written on 2026-08-26, a
+    // week after that, so it has never delivered anything: the engine
+    // container has no ONESIGNAL_APP_ID or ONESIGNAL_REST_API_KEY (verified
+    // 2026-08-27, `printenv | grep -c ONESIGNAL_APP_ID` returns 0 inside
+    // club-arena-engine) and 48h of its logs contain zero OneSignal lines.
+    //
+    // The correct path needs no credentials at all. push_outbox is the durable
+    // queue World Hub's /api/cron/push-dispatch drains every few minutes; it
+    // loads the consent gate and calls gateDecision() on every row before
+    // delivering, so a row written here is opt-out-respecting by construction
+    // rather than by this file remembering to check. That also closes the
+    // consent bypass the old raw insert had: send.js enforces preferences and
+    // the engine went around it.
+    //
+    // A crash between the notification insert and this write costs one push,
+    // never a duplicate: the outbox row is the only thing that sends.
+    try {
+      const { error: pushErr } = await supabase.from('push_outbox').insert({
+        recipient_user_id: next.user_id,
+        title: 'Seat Open',
+        body: `A Seat Just Opened At ${tableRow.name || 'Your Waitlisted Table'}. Tap To Claim It.`,
+        url: `/hub/club-arena/table/${tableId}`,
+        event: 'waitlist_seat_open',
+        related_entity_id: tableId,
+        // Collapses repeat offers for the same table into one notification
+        // shade entry rather than stacking them.
+        tag: `seat-open-${tableId}`,
+      });
+      if (pushErr) {
+        console.warn(`[Waitlist] push_outbox insert failed: ${pushErr.message}`);
       }
+    } catch (pushErr) {
+      console.warn(`[Waitlist] push enqueue threw for ${next.user_id.slice(0, 8)}:`, pushErr);
     }
+
     console.log(
       `[Waitlist] Notified ${next.user_id.slice(0, 8)} — seat open at ${tableId.slice(0, 8)}`
     );
@@ -479,9 +325,15 @@ export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
  * Process leave-pending players after hand completion
  */
 export async function processLeavePending(tableId: string, clubId: string): Promise<string[]> {
+  /* Deliberately does NOT select `stack`. This query only ENUMERATES which
+     seats asked to leave; the amount comes from the locked read inside
+     atomic_seat_cashout_locked. `stack` was selected here and never used, which
+     is precisely the shape that invites someone to "save a round-trip" by
+     passing it along - and an unlocked stack read handed to a credit is the
+     2026-08-27 race. Do not add it back. */
   const { data: pendingSeats } = await supabase
     .from('table_seats')
-    .select('user_id, stack, seat_number')
+    .select('user_id, seat_number')
     .eq('table_id', tableId)
     .eq('leave_pending', true)
     .is('left_at', null);

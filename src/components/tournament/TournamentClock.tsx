@@ -54,6 +54,13 @@ interface ClockState {
   tournamentName: string;
   isPaused: boolean;
   breakStartTime?: number; // Track when break started for countdown
+  /**
+   * Absolute end of the break, epoch ms, once the server has published one.
+   * Null through the :55 last-hand window, where no end time exists yet.
+   */
+  breakEndsAtMs?: number | null;
+  /** Seeded break length in seconds; the fallback when no end time is known. */
+  breakDurationSeconds?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -83,6 +90,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
     tournamentName: '',
     isPaused: false,
     breakStartTime: undefined,
+    breakEndsAtMs: null,
   });
 
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -166,6 +174,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         tournamentName: tournament.name || 'Tournament',
         isPaused: timerState?.isPaused || false,
         breakStartTime: undefined,
+        breakEndsAtMs: null,
       });
     } catch (err) {
       reportError(err, 'TournamentClock.Refresh_error');
@@ -181,8 +190,31 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
       setClock((prev) => {
         // Update break countdown if in a break
         if (prev.isBreak && prev.breakStartTime) {
+          /**
+           * COUNT TO THE REAL END, NOT TO A CONSTANT (2026-08-27).
+           *
+           * This measured elapsed time against a hardcoded 300 seconds, so:
+           *   - it ignored the durationMinutes the bus had just handed
+           *     handleBreakStart (which tournamentEventBridge goes out of its
+           *     way to derive), and
+           *   - because BOTH break events (`tournament_break` at :55 and
+           *     `tournament_break_started` when the last hand lands) re-stamp
+           *     breakStartTime, the clock counted down through the last-hand
+           *     wait and then visibly JUMPED BACK to 5:00 when the real
+           *     countdown began.
+           *
+           * `breakEndsAtMs` is the server's own end time and is authoritative
+           * when present. Until it arrives there is no countdown to show, and
+           * the seeded duration is the honest upper bound.
+           */
+          if (prev.breakEndsAtMs) {
+            return {
+              ...prev,
+              breakTimeRemaining: Math.max(0, Math.floor((prev.breakEndsAtMs - Date.now()) / 1000)),
+            };
+          }
           const elapsed = (Date.now() - prev.breakStartTime) / 1000;
-          const breakDuration = 300; // 5 minutes default
+          const breakDuration = prev.breakDurationSeconds || 300;
           const remaining = Math.max(0, breakDuration - elapsed);
           return {
             ...prev,
@@ -208,7 +240,10 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
     }, 1000);
 
     // Full refresh from DB every 30s
-    const refreshInterval = setInterval(refreshState, 30_000);
+    const refreshInterval = setInterval(() => {
+      if (document.hidden) return;
+      refreshState();
+    }, 30_000);
 
     // Eliminations and chip movements must reach the clock immediately, not up
     // to 30s later — the whole point of the fix above is that this footer
@@ -277,6 +312,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         isBreak: false, // Clear break status on new level
         breakTimeRemaining: 0,
         breakStartTime: undefined,
+        breakEndsAtMs: null,
       }));
       // Also do a full refresh to get timeRemaining for the new level
       refreshState();
@@ -288,11 +324,21 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
   const handleBreakStart = useCallback(
     (payload: any) => {
       if (payload?.tournamentId === tournamentId) {
+        const endsAt = payload?.breakEndsAt ? Date.parse(payload.breakEndsAt) : NaN;
+        const hasEnd = Number.isFinite(endsAt);
+        const seconds = payload.durationMinutes ? payload.durationMinutes * 60 : 300;
         setClock((prev) => ({
           ...prev,
           isBreak: true,
-          breakTimeRemaining: payload.durationMinutes ? payload.durationMinutes * 60 : 300,
-          breakStartTime: Date.now(),
+          breakDurationSeconds: seconds,
+          breakEndsAtMs: hasEnd ? endsAt : (prev.breakEndsAtMs ?? null),
+          breakTimeRemaining: hasEnd
+            ? Math.max(0, Math.floor((endsAt - Date.now()) / 1000))
+            : seconds,
+          // Only stamp a start on the FIRST break event. The :55 announcement
+          // and the countdown-start event both land here, and re-stamping on
+          // the second is what made the clock jump backwards mid-break.
+          breakStartTime: prev.isBreak && prev.breakStartTime ? prev.breakStartTime : Date.now(),
         }));
       }
     },
@@ -306,6 +352,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
           isBreak: false,
           breakTimeRemaining: 0,
           breakStartTime: undefined,
+          breakEndsAtMs: null,
         }));
         refreshState();
       }

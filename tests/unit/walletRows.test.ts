@@ -13,6 +13,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  clubLobbyWalletRows,
   clubWalletRows,
   canSeeClubBank,
   canMintInClubBank,
@@ -87,6 +88,18 @@ describe('club wallet rows by role', () => {
     }
   });
 
+  it('shows spins_wallet only for standalone clubs with spins active', () => {
+    for (const r of BANK_ROLES) {
+      expect(clubWalletRows(r, { standalone: true, spinsActive: true })).toContain('spins_wallet');
+      expect(clubWalletRows(r, { standalone: true, spinsActive: false })).not.toContain(
+        'spins_wallet'
+      );
+      expect(clubWalletRows(r, { standalone: false, spinsActive: true })).not.toContain(
+        'spins_wallet'
+      );
+    }
+  });
+
   it('REGRESSION: no non-bank role ever receives club_bank or rake_treasury', () => {
     for (const r of NON_BANK_ROLES) {
       for (const standalone of [true, false]) {
@@ -95,6 +108,30 @@ describe('club wallet rows by role', () => {
         expect(rows).not.toContain('rake_treasury');
       }
     }
+  });
+});
+
+describe('compact lobby wallet rows by role', () => {
+  it('keeps a player lobby to Diamond plus Player Wallet', () => {
+    expect(clubLobbyWalletRows('player')).toEqual(['player_wallet']);
+  });
+
+  it.each(['agent', 'sub_agent'] as const)(
+    'shows %s the Agent and Player wallets beneath Diamonds',
+    (role) => {
+      expect(clubLobbyWalletRows(role)).toEqual(['agent_wallet', 'player_wallet']);
+    }
+  );
+
+  it.each(['owner', 'co_owner', 'admin', 'super_agent'] as const)(
+    'shows %s the Club Bank and Agent Wallet beneath Diamonds',
+    (role) => {
+      expect(clubLobbyWalletRows(role)).toEqual(['club_bank', 'agent_wallet']);
+    }
+  );
+
+  it('fails closed for an unknown role', () => {
+    expect(clubLobbyWalletRows('legacy_member')).toEqual(['player_wallet']);
   });
 });
 

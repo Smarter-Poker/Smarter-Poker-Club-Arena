@@ -3219,8 +3219,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     ]
   );
 
-  const shownCount = lobbyEntries.length;
-
   /**
    * Everything the club is running, before ANY narrowing.
    *
@@ -3417,16 +3415,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 {club.name}
               </h2>
               {unionName && (
-                <div
-                  style={{
-                    marginTop: '1px',
-                    fontSize: '0.85rem',
-                    fontWeight: 600,
-                    color: '#9aa5b6',
-                    letterSpacing: '0.02em',
-                  }}
-                  title="Union This Club Plays Inside"
-                >
+                <div className="lobby-club__union" title="Union This Club Plays Inside">
                   {unionName}
                 </div>
               )}
@@ -3447,19 +3436,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   <IconMembers />
                   {(club.member_count || 0).toLocaleString()}
                 </span>
-              </div>
-              <div
-                className="lobby-club__meta"
-                style={{
-                  marginTop: '2px',
-                  flexDirection: 'column',
-                  alignItems: 'flex-start',
-                  gap: '2px',
-                }}
-              >
                 {currentUser?.player_number && (
                   <span
-                    className="lobby-club__id"
+                    className="lobby-club__id lobby-club__player"
                     style={{ userSelect: 'all', cursor: 'pointer' }}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -3473,14 +3452,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 )}
               </div>
 
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  marginTop: '6px',
-                  flexDirection: 'column',
-                }}
-              >
+              <div className="lobby-club__status">
                 {clubLevel && (
                   <div className="lobby-club__level">
                     <span
@@ -3494,12 +3466,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   </div>
                 )}
 
-                <div
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}
-                >
+                <div className="lobby-club__activity">
                   {playersPlaying !== null && (
-                    <div style={{ fontSize: '0.8rem', color: '#9aa5b6' }}>
-                      {playersPlaying.toLocaleString()} Players Currently Playing
+                    <div className="lobby-club__playing">
+                      <strong>{playersPlaying.toLocaleString()}</strong> Playing Now
                     </div>
                   )}
 
@@ -3576,6 +3546,33 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             </div>
           </div>
 
+          <button
+            type="button"
+            className="lobby-bbj"
+            onClick={() => {
+              haptic.medium();
+              setShowBBJInfo(true);
+            }}
+            aria-label={`Bad Beat Jackpot: ${
+              jackpotAmount > 0
+                ? jackpotAmount.toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })
+                : 'No Pool'
+            }`}
+          >
+            <span className="lobby-bbj__label">Bad Beat Jackpot</span>
+            <strong className="lobby-bbj__amount">
+              {jackpotAmount > 0
+                ? jackpotAmount.toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })
+                : '-'}
+            </strong>
+          </button>
+
           {/* ── Wallet ──
               WALLET SEPARATION LAW (Dan 2026-08-20): this is a CLUB screen, so
               it renders CLUB money. The variant used to become 'union' whenever
@@ -3585,22 +3582,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               them; one wallet never gets access to the other. Union figures are
               managed on the union's own surfaces and appear nowhere here.
 
-              The BBJ now leads the wallet stack (see showBBJ below) rather
-              than sitting in its own strip above the club card. */}
+              The compact lobby summary intentionally exposes only the three
+              role-approved balances requested for this surface. Every other
+              wallet remains available through its existing cashier flow. */}
           {currentUserId && resolvedClubId && (
             <div className="lobby-top__wallet">
-              {/* Dan 2026-08-20: "the BBJ amount should be on top of the rest
-                  of the wallet data." It was a full-width strip ABOVE the club
-                  card, which put it in a different column from the money it
-                  belongs with. showBBJ={true} renders it as the first row of
-                  the wallet stack instead, where it reads as the headline
-                  figure over the balances beneath it.
-
-                  Dan 2026-08-20: tapping that BBJ figure opens the jackpot
-                  POPUP (total + last 5 winners + fee schedule + qualifying
-                  hands), not a route change. It used to navigate to the BBJ
-                  page, which left showBBJInfo with no way to ever become true
-                  and no popup anywhere in the lobby. */}
+              {/* The lobby renders its own compact Bad Beat Jackpot tile next
+                  to the club identity. DynamicWallet therefore suppresses its
+                  duplicate jackpot banner and supplies only the role-safe
+                  balance tiles below it. */}
               <DynamicWallet
                 userId={currentUserId}
                 clubId={clubId || ''}
@@ -3611,7 +3601,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 // The club's owner_id outranks a stale club_members row, which
                 // is how a brand new owner sees their own Club Bank.
                 role={isOwner ? 'owner' : userRole}
-                showBBJ
+                compactLobby
+                showBBJ={false}
                 onBuyDiamonds={() => {
                   haptic.medium();
                   navigate(`/clubs/${clubId}/detail`);
@@ -3623,13 +3614,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 // INSIDE that cashier - there is no mint button out here any
                 // more, and no mint at all once the club is in a union.
                 onOpenPlayerWallet={() => setShowPlayerWallet(true)}
-                onOpenPromoWallet={() => {
-                  setUnionWalletModal({
-                    key: 'promo',
-                    label: 'Promo Wallet',
-                    balance: 0,
-                  });
-                }}
+                onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
                 onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
                 onOpenClubBank={() => setActiveCashier('club_bank')}
                 onOpenBBJ={() => {
@@ -3848,7 +3833,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             <strong className="lobby-controls__title">Find Your Game</strong>
           </div>
           <span className="lobby-controls__total">
-            <strong>{totalGameCount.toLocaleString()}</strong> Games
+            <strong>
+              {totalGameCount.toLocaleString()}
+              {countsCapped ? '+' : ''}
+            </strong>{' '}
+            Games
           </span>
         </div>
         <div className="game-bar">
@@ -4024,6 +4013,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           haptic.selection();
           navigate(`/clubs/${clubId}/announcements`);
         }}
+        /* A house ad carries its own destination (2026-08-27). Without this
+           every promo would land on the club's announcements page, where the
+           thing it advertised is not. */
+        onNavigate={(path) => {
+          haptic.selection();
+          navigate(path);
+        }}
       />
 
       {/* The standalone STATUS REFINEMENT row was folded into the quick
@@ -4047,15 +4043,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           filter or a search is actively hiding games — that one is not a
           statistic, it is the explanation for why the list looks short, and
           it carries the one-tap clear. */}
-      <div className="lobby-resultsbar">
-        <div className="lobby-count" aria-live="polite">
-          <span className="lobby-count__text">
-            Showing <strong>{shownCount.toLocaleString()}</strong> Of{' '}
-            {totalGameCount.toLocaleString()}
-            {countsCapped ? '+' : ''} Games
-          </span>
-        </div>
-        {(isOwner || userRole === 'admin') && club?.is_union === true && (
+      {(isOwner || userRole === 'admin') && club?.is_union === true && (
+        <div className="lobby-resultsbar lobby-resultsbar--create-only">
           <button
             type="button"
             className="lobby-createbtn"
@@ -4067,8 +4056,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           >
             + Create {TOURNAMENT_TYPES.includes(gameType) ? 'Tournament' : 'Cash Game'}
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════════
           LOBBY V2 — dense line-based game table + game lobby panel

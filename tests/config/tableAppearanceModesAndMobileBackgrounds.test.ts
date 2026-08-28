@@ -9,7 +9,8 @@ describe('table appearance modes and portrait-safe backgrounds', () => {
   it('offers both light and dark modes inside Table Studio', () => {
     const modal = read('src/components/table/ThemeSettingsModal.tsx');
     expect(modal).toContain("(['light', 'dark'] as const)");
-    expect(modal).toContain('setUiMode(mode)');
+    expect(modal).toContain('handleUiModeChange(mode)');
+    expect(modal).toContain('persistInterfaceTheme(userId, mode)');
   });
 
   it('applies a selected mode immediately to the document root', () => {

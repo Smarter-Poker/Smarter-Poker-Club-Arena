@@ -149,11 +149,6 @@
   flex-direction: column;
   gap: 12px;
 }
-
-.bbj-modal__rule-block {
-  margin-bottom: 14px;
-}
-
 .bbj-modal__rule-label {
   display: block;
   font-size: 10px;

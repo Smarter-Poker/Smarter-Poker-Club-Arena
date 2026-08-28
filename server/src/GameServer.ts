@@ -531,7 +531,8 @@ export class GameServer {
     if (engines.length > 0) {
       for (const engine of engines) {
         try {
-          engine.pauseAfterHand(DRAIN_BUDGET_MS);
+          // A drain is stopping the process: do not start another hand.
+          engine.pauseAfterHand(DRAIN_BUDGET_MS, { beforeNextHand: true });
         } catch {
           /* a table that cannot be asked to pause is stopped below regardless */
         }
@@ -810,6 +811,13 @@ export class GameServer {
       // routine server/ push waits (or is explicitly forced) while real people
       // are seated. Horses are excluded — they do not care.
       humansSeatedTotal: tableLiveness.reduce((n, t) => n + t.humans, 0),
+      // HANDS, NOT PEOPLE (2026-08-27). humansSeatedTotal drove the deploy
+      // drain gate and counted only humans, so a horse's hand could be voided
+      // by a restart while a human's could not. This counts tables actually
+      // mid-hand, whoever is sitting at them, and is what the gate reads now.
+      handsInFlightTotal: tableLiveness.filter(
+        (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress < 120_000
+      ).length,
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
       tableLiveness,
@@ -939,6 +947,75 @@ export class GameServer {
   }
 
   /** Per-table liveness, shared by /health and /metrics. */
+  /**
+   * ═══ DRAIN: FINISH THE HANDS, THEN GO ═══
+   *
+   * Dan 2026-08-27: "TABLES ARE DESIGNED TO BE USED BY EVERYONE, EVERY HORSE
+   * OR HUMAN PLAYER NEEDS TO BE TREATED 100% EXACTLY THE SAME."
+   *
+   * Restarting the engine mid-hand voids that hand. The only thing that ever
+   * protected against it was the deploy workflow's drain gate, and that gate
+   * counted HUMANS — it waited for humans to leave the table, and let a
+   * horse's hand be voided without a second thought. Two things were wrong
+   * with it:
+   *
+   *   1. It protected people rather than hands, which is the exclusion Dan
+   *      banned. A hand in flight is a hand in flight.
+   *   2. It waited for the wrong event. Waiting for a table to EMPTY can take
+   *      forever (and with horses seated it never happens), so the gate would
+   *      defer a deploy for hours and then give up and restart anyway — under
+   *      seated players. Waiting for the current HAND to end takes about a
+   *      minute and protects everyone.
+   *
+   * So the engine now drains itself, on EVERY restart path — deploy,
+   * healthcheck kill, supervisor bounce — instead of relying on one CI job to
+   * ask nicely first. pauseAfterHand() is the same mechanism synchronized
+   * breaks and hand-for-hand already use: the table finishes the hand it is
+   * playing and parks at the boundary.
+   *
+   * Bounded by design. A table stuck mid-hand must not hold the process open,
+   * so this returns when the budget expires and the caller proceeds to stop()
+   * regardless — a bounded wait that saves most hands beats an unbounded one
+   * that risks SIGKILL mid-flush.
+   */
+  async drainHands(
+    maxWaitMs = 8000
+  ): Promise<{ drained: number; total: number; timedOut: boolean }> {
+    const engines = [...this.tableEngines.values()];
+    const total = engines.length;
+    if (total === 0) return { drained: 0, total: 0, timedOut: false };
+
+    for (const engine of engines) {
+      try {
+        engine.pauseAfterHand();
+      } catch {
+        /* a table that refuses to pause must not stop the others draining */
+      }
+    }
+
+    const deadline = Date.now() + Math.max(maxWaitMs, 0);
+    const atBoundary = (e: (typeof engines)[number]): boolean => {
+      try {
+        return e.isWaitingForHandForHand() || e.isPausedByDesign() || !e.isRunning();
+      } catch {
+        return true; // unreadable: do not let it hold the drain open
+      }
+    };
+
+    let drained = engines.filter(atBoundary).length;
+    while (drained < total && Date.now() < deadline) {
+      await this.sleep(250);
+      drained = engines.filter(atBoundary).length;
+    }
+
+    const timedOut = drained < total;
+    console.log(
+      `[GameServer] Drain: ${drained}/${total} table(s) parked at a hand boundary` +
+        (timedOut ? ' — budget expired, stopping anyway' : '')
+    );
+    return { drained, total, timedOut };
+  }
+
   private tableLivenessSnapshot() {
     return [...this.tableEngines].map(([id, engine]) => ({
       tableId: id,
@@ -1080,19 +1157,29 @@ export class GameServer {
   private async triggerSynchronizedBreak(): Promise<void> {
     if (!this.running) return;
 
-    const mttEngines: TournamentManager[] = [];
+    /**
+     * EVERY FORMAT, NOT JUST THE MTTs (Dan 2026-08-27).
+     *
+     * This used to be gated on a multi-table-format predicate whose entire
+     * purpose is to return false for Spins and Sit-n-Gos — which is also how
+     * Heads-Up is stored (variant 'sng', max_players 2). So the whole Spin
+     * board and the whole Heads-Up board dealt through every break. Dan:
+     * "EVERY MTT, SPIN AND HEADS UP... THEY SHOULD START AT THE :55 OF THE
+     * HOUR EVERY HOUR."
+     *
+     * takesSynchronizedBreaks() is now the single gate, and the only opt-out
+     * it honours is the explicit per-tournament `synchronized_breaks` column
+     * (2026-08-22 parity) — never the format.
+     */
+    const breakEngines: TournamentManager[] = [];
     for (const tm of this.tournamentEngines.values()) {
-      // synchronized_breaks=false (2026-08-22 parity): the tournament opted out
-      // of the platform-wide :55 break and keeps playing straight through it.
-      // See TournamentManagerBase.synchronizedBreaksEnabled for the per-
-      // structure-break note.
-      if (tm.isRunning() && tm.isMttOrXmtt() && tm.synchronizedBreaksEnabled()) {
-        mttEngines.push(tm);
+      if (tm.isRunning() && tm.takesSynchronizedBreaks()) {
+        breakEngines.push(tm);
       }
     }
 
-    if (mttEngines.length === 0) {
-      console.log('[GameServer] Synchronized break: no running MTTs/XMTTs to pause');
+    if (breakEngines.length === 0) {
+      console.log('[GameServer] Synchronized break: no running tournaments to pause');
       return;
     }
 
@@ -1111,7 +1198,7 @@ export class GameServer {
      * every table across every tournament is parked between hands.
      */
     console.log(
-      `[GameServer] ═══ LAST HAND ═══ Announcing final hand on ${mttEngines.length} MTT/XMTT tournament(s) — break starts when every table finishes`
+      `[GameServer] ═══ LAST HAND ═══ Announcing final hand on ${breakEngines.length} tournament(s) (MTT / Spin / Heads-Up) — break starts when every table finishes`
     );
 
     /**
@@ -1123,7 +1210,7 @@ export class GameServer {
     this.breakEndsAt =
       Date.now() + TournamentManager.LAST_HAND_GRACE_MS + GameServer.BREAK_DURATION_MS;
 
-    for (const tm of mttEngines) {
+    for (const tm of breakEngines) {
       try {
         await tm.pauseForBreak(GameServer.BREAK_DURATION_MS);
       } catch (err: any) {
@@ -1132,7 +1219,7 @@ export class GameServer {
     }
 
     const waitStartedAt = Date.now();
-    const allParked = await this.waitForAllTablesParked(mttEngines);
+    const allParked = await this.waitForAllTablesParked(breakEngines);
     const lastHandMs = Date.now() - waitStartedAt;
 
     if (allParked) {
@@ -1150,7 +1237,7 @@ export class GameServer {
     // break is held for exactly as long as everyone else.
     this.breakEndsAt = Date.now() + GameServer.BREAK_DURATION_MS;
 
-    for (const tm of mttEngines) {
+    for (const tm of breakEngines) {
       try {
         await tm.beginBreakCountdown(GameServer.BREAK_DURATION_MS);
       } catch (err: any) {
@@ -1172,13 +1259,11 @@ export class GameServer {
       // Close the window FIRST. Anything starting from here on is not in a
       // break and must not be held.
       this.breakEndsAt = 0;
-      console.log(
-        `[GameServer] ═══ BREAK ENDED ═══ Resuming ${mttEngines.length} MTT/XMTT tournaments`
-      );
+      console.log(`[GameServer] ═══ BREAK ENDED ═══ Resuming ${breakEngines.length} tournament(s)`);
       // Resume everything on break, not just the :55 snapshot — a tournament
       // that started during the break was held by holdIfBreakIsRunning and is
-      // not in mttEngines. resumeFromBreak no-ops on anything not on break.
-      const toResume = new Set<TournamentManager>(mttEngines);
+      // not in breakEngines. resumeFromBreak no-ops on anything not on break.
+      const toResume = new Set<TournamentManager>(breakEngines);
       for (const tm of this.tournamentEngines.values()) toResume.add(tm);
       for (const tm of toResume) {
         try {
@@ -1211,7 +1296,10 @@ export class GameServer {
   private async holdIfBreakIsRunning(tm: TournamentManager): Promise<void> {
     const remaining = this.remainingBreakMs();
     if (remaining <= 1000) return;
-    if (!tm.isRunning() || !tm.isMttOrXmtt() || !tm.synchronizedBreaksEnabled()) return;
+    // Same single gate as triggerSynchronizedBreak — a Spin or Heads-Up that
+    // fills at :57 must sit on the break screen with everyone else, not open
+    // its first level alone.
+    if (!tm.isRunning() || !tm.takesSynchronizedBreaks()) return;
     try {
       console.log(
         `[GameServer] Tournament started during the break — holding it for the remaining ${Math.round(remaining / 1000)}s`
@@ -1850,13 +1938,19 @@ export class GameServer {
         // meet the threshold, which is the only thing the loop below cared about.
         //
         // 2026-08-22: `cash_tables_needing_engine` is `cash_tables_with_players`
-        // plus "...OR at least one seated human". Below two occupants no engine
+        // plus "...OR at least one seated player". Below two occupants no engine
         // existed, so the FIRST person to sit at an empty table got WS close
         // 4404 from the engine transport and sat on "connecting" until somebody
         // else arrived — there was nothing to connect TO. The engine is what
         // publishes the idle snapshot (stage 'waiting', seats, stacks), so its
         // mere existence is the difference between a real table and an eternal
-        // spinner. A table of horses alone still does not get one.
+        // spinner.
+        //
+        // HORSES ARE PLAYERS (Dan 2026-08-27). This comment used to end "A
+        // table of horses alone still does not get one." That was an exclusion
+        // stated outright: a lone human was given a dealer and a lone horse was
+        // denied one. Any occupied table gets an engine now — see CLAUDE.md
+        // section 10.5, which forbids this class of rule entirely.
         //
         // It returns `human_count` so the two ideas below can stay separate:
         // "needs an engine" is NOT "should be dealing". See seatedCounts.
@@ -2619,10 +2713,29 @@ export class GameServer {
           console.log(`[GameServer] Resuming tournament: ${tournament.name}`);
           const tm = new TournamentManager(tournament.id, this);
           this.tournamentEngines.set(tournament.id, tm);
-          tm.resume().catch((err) => {
-            reportError(err, 'GameServer.Tournament_resume_failed_for_t');
-            this.tournamentEngines.delete(tournament.id);
-          });
+          /**
+           * A RESTART DURING A BREAK MUST NOT DEAL THROUGH THE REST OF IT
+           * (2026-08-27).
+           *
+           * The two other TournamentManager construction sites both chain
+           * holdIfBreakIsRunning; this one did not. resume() has its own
+           * break-recovery block, but it can only recover a break the ROW
+           * knows about — it reads on_break / break_started_at. A tournament
+           * that was mid-break-window but not yet flagged (it started inside
+           * the last-hand wait, or its pauseForBreak write lost the race with
+           * the redeploy) came back believing nothing was happening and dealt
+           * out the remainder of the break alone, while every other table on
+           * the platform sat on the break screen.
+           *
+           * holdIfBreakIsRunning is idempotent: pauseForBreak no-ops on a
+           * tournament already on break, so the recovered case costs nothing.
+           */
+          tm.resume()
+            .then(() => this.holdIfBreakIsRunning(tm))
+            .catch((err) => {
+              reportError(err, 'GameServer.Tournament_resume_failed_for_t');
+              this.tournamentEngines.delete(tournament.id);
+            });
         }
 
         // The ramp map only ever holds tournaments still in REGISTERING.

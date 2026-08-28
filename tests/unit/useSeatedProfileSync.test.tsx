@@ -5,7 +5,17 @@ type Handler = (event: any) => void;
 
 const bus = {
   events: [] as string[],
-  handlers: [] as Handler[],
+  handlers: new Map<string, Handler[]>(),
+  removed: 0,
+};
+
+const emitBus = (event: string, payload: unknown) => {
+  for (const handler of bus.handlers.get(event) ?? []) handler({ payload });
+};
+
+const realtime = {
+  channelNames: [] as string[],
+  bindings: [] as Array<{ config: Record<string, string>; handler: Handler }>,
   removed: 0,
 };
 
@@ -13,10 +23,32 @@ vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
     subscribe: (event: string, handler: Handler) => {
       bus.events.push(event);
-      bus.handlers.push(handler);
+      const handlers = bus.handlers.get(event) ?? [];
+      handlers.push(handler);
+      bus.handlers.set(event, handlers);
       return () => {
         bus.removed += 1;
       };
+    },
+  },
+}));
+
+vi.mock('../../src/lib/supabase', () => ({
+  supabase: {
+    channel: (name: string) => {
+      realtime.channelNames.push(name);
+      const channel = {
+        on: (_kind: string, config: Record<string, string>, handler: Handler) => {
+          realtime.bindings.push({ config, handler });
+          return channel;
+        },
+        subscribe: () => channel,
+      };
+      return channel;
+    },
+    removeChannel: () => {
+      realtime.removed += 1;
+      return Promise.resolve();
     },
   },
 }));
@@ -30,15 +62,27 @@ const B = 'bbbbbbbb-1111-2222-3333-444444444444';
 
 beforeEach(() => {
   bus.events = [];
-  bus.handlers = [];
+  bus.handlers = new Map();
   bus.removed = 0;
+  realtime.channelNames = [];
+  realtime.bindings = [];
+  realtime.removed = 0;
 });
 
 describe('useSeatedProfileSync', () => {
-  it('subscribes to TABLE_PROFILES_UPDATE on the master bus', () => {
+  it('subscribes to the zero-latency player appearance event', () => {
     renderHook(() => useSeatedProfileSync('t1', [A, B], () => {}));
-    expect(bus.events).toHaveLength(1);
-    expect(bus.events[0]).toBe('TABLE_PROFILES_UPDATE');
+    expect(bus.events).toEqual(['CUSTOMIZATION_MUTATION_STATE', 'PLAYER_APPEARANCE_CHANGED']);
+  });
+
+  it('uses one channel with one user-filtered binding per seated player', () => {
+    renderHook(() => useSeatedProfileSync('t1', [A, B], () => {}));
+    expect(realtime.channelNames).toHaveLength(1);
+    expect(realtime.bindings.map((binding) => binding.config.filter)).toEqual([
+      `id=eq.${A}`,
+      `id=eq.${B}`,
+    ]);
+    expect(realtime.bindings.every((binding) => binding.config.table === 'profiles')).toBe(true);
   });
 
   it('does nothing without a table or without any seated player', () => {
@@ -46,6 +90,7 @@ describe('useSeatedProfileSync', () => {
     renderHook(() => useSeatedProfileSync('t1', [], () => {}));
     renderHook(() => useSeatedProfileSync('t1', [null, undefined], () => {}));
     expect(bus.events).toHaveLength(0);
+    expect(realtime.channelNames).toHaveLength(0);
   });
 
   it('drops anything that is not a uuid', () => {
@@ -57,30 +102,27 @@ describe('useSeatedProfileSync', () => {
   it('reads arena_avatar_url, because realtime carries raw column names', () => {
     const onChange = vi.fn();
     renderHook(() => useSeatedProfileSync('t1', [A], onChange));
-    bus.handlers[0]({
-      payload: {
-        newRow: {
-          id: A,
-          arena_avatar_url: '/avatars/table/vip_wolf@2x.webp',
-          avatar_url: '/social.jpg',
-        },
-      },
+    emitBus('PLAYER_APPEARANCE_CHANGED', {
+      userId: A,
+      avatar: '/avatars/table/vip_wolf@2x.webp',
+      source: 'avatar-picker',
     });
     expect(onChange).toHaveBeenCalledWith({
       userId: A,
       avatar: '/avatars/table/vip_wolf@2x.webp',
-      frame: null,
-      aura: null,
+      frame: undefined,
+      aura: undefined,
     });
   });
 
-  it('carries the cosmetics through alongside the avatar', () => {
+  it('carries optimistic cosmetics through alongside the avatar', () => {
     const onChange = vi.fn();
     renderHook(() => useSeatedProfileSync('t1', [A], onChange));
-    bus.handlers[0]({
-      payload: {
-        newRow: { id: A, equipped_frame: 'frame-gold', equipped_aura: 'aura-fire' },
-      },
+    emitBus('PLAYER_APPEARANCE_CHANGED', {
+      userId: A,
+      frame: 'frame-gold',
+      aura: 'aura-fire',
+      source: 'cosmetic-picker',
     });
     expect(onChange).toHaveBeenCalledWith({
       userId: A,
@@ -90,18 +132,70 @@ describe('useSeatedProfileSync', () => {
     });
   });
 
-  it('reports a missing avatar as undefined, never as an empty string', () => {
+  it('normalizes raw database columns from the scoped realtime binding', () => {
     const onChange = vi.fn();
     renderHook(() => useSeatedProfileSync('t1', [A], onChange));
-    bus.handlers[0]({ payload: { newRow: { id: A, arena_avatar_url: '' } } });
-    expect(onChange.mock.calls[0][0].avatar).toBeUndefined();
+    realtime.bindings[0].handler({
+      new: {
+        id: A,
+        arena_avatar_url: '/avatars/table/vip_wolf@2x.webp',
+        avatar_url: '/social.jpg',
+        equipped_frame: null,
+        equipped_aura: 'aura-fire',
+      },
+    });
+    expect(onChange).toHaveBeenCalledWith({
+      userId: A,
+      avatar: '/avatars/table/vip_wolf@2x.webp',
+      frame: null,
+      aura: 'aura-fire',
+    });
+  });
+
+  it('does not let an older database echo repaint over an optimistic avatar', () => {
+    const onChange = vi.fn();
+    renderHook(() => useSeatedProfileSync('t1', [A], onChange));
+    emitBus('CUSTOMIZATION_MUTATION_STATE', {
+      kind: 'player-appearance',
+      scope: A,
+      mutationId: 'avatar-2',
+      state: 'pending',
+    });
+    emitBus('PLAYER_APPEARANCE_CHANGED', {
+      userId: A,
+      avatar: '/avatars/table/new.webp',
+      mutationId: 'avatar-2',
+      source: 'avatar-picker',
+    });
+    onChange.mockClear();
+
+    realtime.bindings[0].handler({
+      new: { id: A, arena_avatar_url: '/avatars/table/old.webp' },
+    });
+    expect(onChange).not.toHaveBeenCalled();
+
+    emitBus('CUSTOMIZATION_MUTATION_STATE', {
+      kind: 'player-appearance',
+      scope: A,
+      mutationId: 'avatar-2',
+      state: 'confirmed',
+    });
+    realtime.bindings[0].handler({
+      new: { id: A, arena_avatar_url: '/avatars/table/new.webp' },
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: A, avatar: '/avatars/table/new.webp' })
+    );
   });
 
   it('ignores a payload with no id', () => {
     const onChange = vi.fn();
     renderHook(() => useSeatedProfileSync('t1', [A], onChange));
-    bus.handlers[0]({ payload: { newRow: { equipped_frame: 'frame-gold' } } });
-    bus.handlers[0]({ payload: { newRow: {} } });
+    emitBus('PLAYER_APPEARANCE_CHANGED', {
+      frame: 'frame-gold',
+      source: 'cosmetic-picker',
+    });
+    realtime.bindings[0].handler({ new: {} });
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -109,7 +203,11 @@ describe('useSeatedProfileSync', () => {
     const onChange = vi.fn();
     renderHook(() => useSeatedProfileSync('t1', [A], onChange));
     // B is not in the array [A]
-    bus.handlers[0]({ payload: { newRow: { id: B, equipped_frame: 'frame-gold' } } });
+    emitBus('PLAYER_APPEARANCE_CHANGED', {
+      userId: B,
+      frame: 'frame-gold',
+      source: 'cosmetic-picker',
+    });
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -119,7 +217,11 @@ describe('useSeatedProfileSync', () => {
     });
     renderHook(() => useSeatedProfileSync('t1', [A], onChange));
     expect(() =>
-      bus.handlers[0]({ payload: { newRow: { id: A, equipped_frame: 'frame-gold' } } })
+      emitBus('PLAYER_APPEARANCE_CHANGED', {
+        userId: A,
+        frame: 'frame-gold',
+        source: 'cosmetic-picker',
+      })
     ).not.toThrow();
   });
 
@@ -129,7 +231,7 @@ describe('useSeatedProfileSync', () => {
     });
     rerender({ cb: () => {} });
     rerender({ cb: () => {} });
-    expect(bus.events).toHaveLength(1);
+    expect(bus.events).toHaveLength(2);
     expect(bus.removed).toBe(0);
   });
 
@@ -138,7 +240,7 @@ describe('useSeatedProfileSync', () => {
       initialProps: { ids: [A, B] as (string | null | undefined)[] },
     });
     rerender({ ids: [B, A] });
-    expect(bus.events).toHaveLength(1);
+    expect(bus.events).toHaveLength(2);
     expect(bus.removed).toBe(0);
   });
 
@@ -147,13 +249,16 @@ describe('useSeatedProfileSync', () => {
       initialProps: { ids: [A] as (string | null | undefined)[] },
     });
     rerender({ ids: [A, B] });
-    expect(bus.events).toHaveLength(2);
-    expect(bus.removed).toBe(1);
+    expect(bus.events).toHaveLength(4);
+    expect(bus.removed).toBe(2);
+    expect(realtime.channelNames).toHaveLength(2);
+    expect(realtime.removed).toBe(1);
   });
 
   it('removes the subscription on unmount', () => {
     const { unmount } = renderHook(() => useSeatedProfileSync('t1', [A], () => {}));
     unmount();
-    expect(bus.removed).toBe(1);
+    expect(bus.removed).toBe(2);
+    expect(realtime.removed).toBe(1);
   });
 });

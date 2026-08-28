@@ -252,6 +252,84 @@ function readCachedSettings(userId: string | null | undefined): UserTableSetting
 // HOOK
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  ONE NETWORK READ PER USER, NOT ONE PER COMPONENT (2026-08-28)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * This hook is called from far more places than it looks. Counted on main:
+ *
+ *   TablePage (direct)                                            1
+ *   useButtonImage — which calls this hook — from TableMenu,
+ *     PreviousHandCard, MiniStatsCard, RabbitHunt, TableChat,
+ *     TimebankCounter, and twice more inside TablePage itself      8
+ *   MultiTablePage, HamburgerMenu, SettingsPanel                   3
+ *
+ * Nine of those live INSIDE a TablePage, and MultiTablePage keeps up to four
+ * TablePages mounted — so opening four tables fired roughly **37 identical
+ * `select('*') on user_table_settings`**, all for the same user, all within a
+ * second of each other, every one of them a round trip to Supabase before the
+ * felt could paint.
+ *
+ * Nothing was wrong with any single call. The hook is simply used the way a
+ * cheap selector is used, while doing the work of a fetch.
+ *
+ * WHAT THIS DOES, AND WHAT IT DELIBERATELY DOES NOT DO. It de-duplicates the
+ * READ and nothing else: concurrent callers for the same user share one
+ * in-flight promise, so N mounts cost one query. Every hook instance still
+ * keeps its own state, its own MasterBus subscriptions and its own write
+ * machinery (`writeTailsRef`, `durableValueRef`, `pendingEchoRef` and the
+ * rest), untouched.
+ *
+ * That restraint is the point. Sharing the STATE as well would be the bigger
+ * win and the bigger risk: this hook's write path is a documented minefield of
+ * echo suppression and revision counters — the notes above describe a latch
+ * that "swallows the next genuine cross-component change" — and collapsing N
+ * writers onto one store is a change that deserves its own commit and its own
+ * tests, not a line in a performance pass.
+ *
+ * THE CACHE IS THE IN-FLIGHT PROMISE, NOT THE RESULT. It is dropped as soon as
+ * it settles, so this can only ever collapse a burst of simultaneous mounts.
+ * A component that mounts later still reads the database, and a settings write
+ * is never served a stale row. There is no TTL to tune and no invalidation to
+ * forget, because nothing is retained.
+ */
+const settingsRowQuery = (userId: string) =>
+  supabase.from('user_table_settings').select('*').eq('user_id', userId).maybeSingle();
+
+type SettingsRowResult = Awaited<ReturnType<typeof settingsRowQuery>>;
+
+const inFlightSettingsReads = new Map<string, Promise<SettingsRowResult>>();
+
+export function fetchUserTableSettingsRow(userId: string): Promise<SettingsRowResult> {
+  const existing = inFlightSettingsReads.get(userId);
+  if (existing) return existing;
+
+  // `Promise.resolve` because a PostgREST builder is a THENABLE, not a Promise:
+  // it has `.then` but no `.catch`/`.finally`, so it cannot be stored or awaited
+  // as one. Resolving it once gives a real Promise that many callers can await.
+  const p = Promise.resolve(settingsRowQuery(userId)).then(
+    (res) => {
+      inFlightSettingsReads.delete(userId);
+      return res;
+    },
+    (err) => {
+      // Drop the entry on rejection too, or one network blip would wedge every
+      // future mount onto a permanently failed promise.
+      inFlightSettingsReads.delete(userId);
+      throw err;
+    }
+  );
+
+  inFlightSettingsReads.set(userId, p);
+  return p;
+}
+
+/** Test seam: prove the de-duplication rather than assume it. */
+export function __inFlightSettingsReadCount(): number {
+  return inFlightSettingsReads.size;
+}
+
 export function useUserTableSettings(userId: string | null | undefined) {
   const [settings, setSettings] = useState<UserTableSettings>(() => readCachedSettings(userId));
   const [loading, setLoading] = useState(true);
@@ -286,11 +364,7 @@ export function useUserTableSettings(userId: string | null | undefined) {
     let mounted = true;
     const load = async () => {
       try {
-        const { data, error } = await supabase
-          .from('user_table_settings')
-          .select('*')
-          .eq('user_id', userId)
-          .maybeSingle();
+        const { data, error } = await fetchUserTableSettingsRow(userId);
 
         if (error) {
           console.warn('[useUserTableSettings] Load failed, using cache:', error.message);

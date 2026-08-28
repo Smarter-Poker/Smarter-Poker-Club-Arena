@@ -36,6 +36,55 @@ const RECURRING = readFileSync(
   'utf8'
 );
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A PIN MUST SLICE THE METHOD, NOT A FIXED NUMBER OF BYTES
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * 2026-08-28. The `registerHorses` pins below read a 7000-character window
+ * from the start of the signature. Comments were added inside that method and
+ * pushed the asserted code to offsets 7241, 7440, 7471 and 7695 - just past
+ * the end of the window. Three pins went red on main, and the code they guard
+ * had not changed by a character.
+ *
+ * That failure mode is worse than a false alarm. A pin whose window can drift
+ * off the thing it guards can ALSO drift off it silently in the other
+ * direction, going green while the invariant is gone, and the obvious way out
+ * of a red window is to make it bigger, which just moves the cliff.
+ *
+ * So take the whole method by matching braces from its opening one. Reading
+ * one byte past a string literal or a comment containing a brace is not
+ * possible here for a reason worth stating: both are stripped first, exactly
+ * as every other source-grep gate in this repo does it.
+ */
+const sliceMethod = (src: string, signature: string): string => {
+  const start = src.indexOf(signature);
+  if (start < 0) throw new Error(`sliceMethod: "${signature}" not found`);
+
+  // Strings and comments can hold an unbalanced brace; behaviour cannot live
+  // in them, so neither counts toward the depth.
+  const cleaned = src
+    .slice(start)
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
+    .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length))
+    .replace(/'(?:\\.|[^'\\\n])*'/g, (m) => ' '.repeat(m.length))
+    .replace(/"(?:\\.|[^"\\\n])*"/g, (m) => ' '.repeat(m.length))
+    .replace(/`(?:\\.|[^`\\])*`/g, (m) => ' '.repeat(m.length));
+
+  const open = cleaned.indexOf('{');
+  if (open < 0) return src.slice(start);
+
+  let depth = 0;
+  for (let i = open; i < cleaned.length; i++) {
+    if (cleaned[i] === '{') depth++;
+    else if (cleaned[i] === '}') {
+      depth--;
+      if (depth === 0) return src.slice(start, start + i + 1);
+    }
+  }
+  return src.slice(start);
+};
+
 describe('synchronized breaks run :55 -> :00', () => {
   const sched = GAME_SERVER.slice(
     GAME_SERVER.indexOf('private scheduleSynchronizedBreaks'),
@@ -296,16 +345,53 @@ describe('the engine pause outlasts the break', () => {
   });
 });
 
+describe('the slicer these pins depend on', () => {
+  /**
+   * A helper that silently returns the wrong span turns every pin built on it
+   * into a pin that passes for the wrong reason, so it gets its own pins.
+   */
+  const SRC = [
+    'class X {',
+    '  private async registerHorses() {',
+    '    // a comment with a } brace in it',
+    "    const s = 'a string with { and } in it';",
+    '    if (true) {',
+    '      doThing();',
+    '    }',
+    '    return 1;',
+    '  }',
+    '  private async other() {',
+    '    NOT_IN_THE_SLICE;',
+    '  }',
+    '}',
+  ].join('\n');
+
+  it('stops at the end of the method, not at a byte count', () => {
+    const out = sliceMethod(SRC, 'private async registerHorses');
+    expect(out).toContain('doThing();');
+    expect(out).toContain('return 1;');
+    expect(out).not.toContain('NOT_IN_THE_SLICE');
+    expect(out.trimEnd().endsWith('}')).toBe(true);
+  });
+
+  it('is not fooled by a brace inside a comment or a string', () => {
+    // Both appear before the real closing brace; counting them would end the
+    // slice early and quietly drop the assertions that follow.
+    const out = sliceMethod(SRC, 'private async registerHorses');
+    expect(out).toContain('a string with { and }');
+    expect(out).toContain('return 1;');
+  });
+
+  it('fails loudly when the method is renamed', () => {
+    // Renaming the method must break the pin, not disarm it. A slicer that
+    // returned '' would make every assertion below vacuously... fail, but a
+    // slicer that returned the WHOLE FILE would make them vacuously pass.
+    expect(() => sliceMethod(SRC, 'private async notHere')).toThrow(/not found/);
+  });
+});
+
 describe('tournament rake is actually collected', () => {
-  const start = RECURRING.indexOf('private async registerHorses');
-  // 2026-08-28: slice to the NEXT method, not a character budget. The old
-  // `start + 7000` window went red the moment V22 added its paging/rotation
-  // commentary at the top of the function — every money-path guarantee this
-  // block asserts was still present, just past character 7000. A truncation
-  // artifact must never read as a lost guarantee (nor, worse, hide one that
-  // really is lost further down).
-  const nextMethod = RECURRING.indexOf('\n  private ', start + 10);
-  const registerFn = RECURRING.slice(start, nextMethod === -1 ? undefined : nextMethod);
+  const registerFn = sliceMethod(RECURRING, 'private async registerHorses');
 
   it('horses register through the money path, not a raw insert', () => {
     expect(registerFn).toContain('fn_register_horse_for_tournament');

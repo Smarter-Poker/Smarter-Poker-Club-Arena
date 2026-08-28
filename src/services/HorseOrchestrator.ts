@@ -1058,7 +1058,10 @@ const MAX_TABLES_PER_HORSE = 4;
 // Soft allocation targets for testing: 2 cash + 2 tournament for max game variety.
 // These are NOT hard limits — a horse CAN play 4 cash or 4 tournaments if needed.
 const TARGET_CASH_TABLES = 2;
-const TARGET_TOURNAMENT_TABLES = 2;
+// There is no tournament target any more: horse tournament seating belongs to
+// the engine, which registers them through fn_register_horse_for_tournament so
+// the buy-in, rake and prize-pool contribution are real. See the note in
+// ensureHorsesAt4Tables.
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ORCHESTRATOR SINGLETON
@@ -2167,7 +2170,11 @@ class HorseOrchestrator {
   }> {
     let horsesAdjusted = 0;
     let cashSeats = 0;
-    let tournamentRegs = 0;
+    // Always zero: this pass seats horses at CASH tables only. Tournament
+    // registration is the engine's, on the money path. Kept in the shape so
+    // callers and the log line keep reading, and so the number is honest rather
+    // than absent.
+    const tournamentRegs = 0;
 
     try {
       // 1. Get all active horses
@@ -2188,20 +2195,14 @@ class HorseOrchestrator {
         .neq('game_type', 'tournament')
         .order('current_players', { ascending: true });
 
-      // 3. Get registering tournaments with available spots
-      const { data: regTournaments } = await supabase
-        .from('tournaments')
-        .select('id, name, max_players, current_players, club_id')
-        .in('status', ['REGISTERING', 'LATE_REG'])
-        .order('start_time', { ascending: true })
-        .limit(20);
+      // (The registering-tournament query that used to live here is gone with
+      // the block that consumed it - one fewer round trip per pass.)
 
       // 4. For each horse, check allocation and fill gaps
       for (const horse of horses) {
         try {
           const activeTables = await this.getActiveTablesForHorse(horse.id);
           const cashCount = activeTables.filter((t) => t.type === 'cash').length;
-          const tourneyCount = activeTables.filter((t) => t.type === 'tournament').length;
 
           // Skip if already at 4 tables total
           if (activeTables.length >= MAX_TABLES_PER_HORSE) continue;
@@ -2267,54 +2268,36 @@ class HorseOrchestrator {
             }
           }
 
-          // Fill tournament seats (target: 2 for variety)
-          if (tourneyCount < TARGET_TOURNAMENT_TABLES && regTournaments?.length) {
-            const needed = TARGET_TOURNAMENT_TABLES - tourneyCount;
-            for (let i = 0; i < needed; i++) {
-              // Check which tournaments horse is already registered for
-              const { data: existingRegs } = await supabase
-                .from('tournament_players')
-                .select('tournament_id')
-                .eq('user_id', horse.id)
-                .in('status', ['registered', 'playing']);
-              const registeredIds = new Set((existingRegs || []).map((r) => r.tournament_id));
-
-              const availableTourney = regTournaments.find(
-                (t) => !registeredIds.has(t.id) && (t.current_players || 0) < (t.max_players || 999)
-              );
-              if (!availableTourney) break;
-
-              // Register horse for the tournament
-              const { error: regError } = await supabase.from('tournament_players').insert({
-                tournament_id: availableTourney.id,
-                user_id: horse.id,
-                status: 'registered',
-                chips: 0,
-                buy_in_amount: 0, // Horses play free
-              });
-              if (!regError) {
-                // Authoritative recount (prevents race with concurrent registrations)
-                const { count: regCount, error: regCountErr } = await supabase
-                  .from('tournament_players')
-                  .select('*', { count: 'exact', head: true })
-                  .eq('tournament_id', availableTourney.id)
-                  .in('status', ['registered', 'playing']);
-                if (!regCountErr) {
-                  const freshRegCount = regCount ?? 0;
-                  await supabase
-                    .from('tournaments')
-                    .update({ current_players: freshRegCount })
-                    .eq('id', availableTourney.id);
-                  availableTourney.current_players = freshRegCount;
-                } else {
-                  // Fallback: increment locally to keep loop consistent
-                  availableTourney.current_players = (availableTourney.current_players || 0) + 1;
-                }
-                tournamentRegs++;
-                adjusted = true;
-              }
-            }
-          }
+          /**
+           * ═══════════════════════════════════════════════════════════════
+           *  HORSE TOURNAMENT SEATING IS THE ENGINE'S JOB, ON THE MONEY PATH
+           * ═══════════════════════════════════════════════════════════════
+           *
+           * This block used to register horses for tournaments with a raw
+           * INSERT into tournament_players carrying `buy_in_amount: 0`.
+           *
+           * There is no `buy_in_amount` column on that table, so every insert
+           * was rejected at runtime and this has quietly registered nobody for
+           * as long as it has existed. That rejection is the only reason it was
+           * harmless. "Fixing" it by dropping the phantom column would have
+           * turned it on - and turning it on re-opens, in the browser, the
+           * exact bypass that was closed on the engine on 2026-08-19:
+           *
+           *   a raw INSERT skips the wallet debit, the rake_records row and the
+           *   prize_pool contribution, while prize pools are still paid in
+           *   full. Measured before that fix: cash games booked 12,506.44 of
+           *   rake in 90 minutes across 5,657 records while tournaments booked
+           *   ONE, and tournaments minted roughly 27,000 to 30,000 chips a day
+           *   out of nothing.
+           *
+           * server/src/services/TournamentRecurringService.ts registers horses
+           * through fn_register_horse_for_tournament, which performs the same
+           * entry split, debit, rake row and pool updates as the human path.
+           * That RPC is SECURITY DEFINER and granted to service_role only, so
+           * a browser cannot call it even deliberately - which is correct, and
+           * which is why the answer here is to remove the duplicate rather than
+           * repoint it. One money path, owned by the engine (RULE 12).
+           */
 
           if (adjusted) {
             horsesAdjusted++;

@@ -11271,8 +11271,7 @@ export default function TablePage({
         // "which pot, which half, whose share" reads these; the flat
         // winners[] stays the source of per-player totals.
         const potAwardsWire = (evt.data as any).pot_awards as
-          | import('../lib/showdownPresentation').PotAwardGroupWire[]
-          | undefined;
+          import('../lib/showdownPresentation').PotAwardGroupWire[] | undefined;
         const boardLabel = boardLabelFromAwards(
           potAwardsWire,
           ((evt.data as any).hand_name as string) ||

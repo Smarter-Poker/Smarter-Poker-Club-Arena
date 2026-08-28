@@ -623,26 +623,70 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                 // started. Nothing logged.
                 const { data: t, error: tErr } = await supabase
                   .from('tournaments')
-                  .select('is_rebuy, rebuy_levels, late_reg_levels, current_level')
+                  .select(
+                    'is_rebuy, is_reentry, rebuy_levels, late_reg_levels, addon_levels, add_on_available, current_level, prize_pool_finalized'
+                  )
                   .eq('id', this.tableInfo.tournament_id)
                   .maybeSingle();
 
-                if (tErr) {
-                  console.error(
-                    `[ServerTableEngine:${this.tableId}] Could not read tournament ${this.tableInfo.tournament_id} for the rebuy pause:`,
-                    tErr
-                  );
-                }
+                if (tErr) throw tErr;
 
-                if (t && t.is_rebuy) {
-                  const cap = t.rebuy_levels ?? t.late_reg_levels ?? 0;
-                  if (cap === 0 || (t.current_level ?? 1) <= cap) {
-                    needsRebuyPause = true;
+                if (t && (t.is_rebuy || (t as { is_reentry?: boolean }).is_reentry)) {
+                  /* REBUY-WINDOW 2026-08-27: this gate now does the same
+                     arithmetic process_tournament_rebuy does, because four
+                     sites were computing three different answers.
+
+                     Production config on the dominant template is
+                     rebuy_levels 6 / late_reg_levels 8 / addon_levels 1 /
+                     add_on_available true, and the four sites disagreed:
+
+                       SQL (the authority)   levels 0-6   (cap 6+1, closed >= 7)
+                       this gate             levels 0-6   by luck; ignored add-on
+                       client canRebuy       levels 0-8   late_reg_levels FIRST
+                       tryTournamentRebuys   levels 0-6   permissive by one
+
+                     So at levels 7-8 the client opened a modal, the table did
+                     NOT pause, and the RPC threw 'Rebuy period has closed'.
+
+                     Four corrections, all matching the SQL:
+                       - NULLIF(...,0) semantics, not `??`. `rebuy_levels = 0`
+                         yielded cap 0 here, which this code read as "no cap" —
+                         an unconditional 5s stall on every bust for the whole
+                         event. A stray pause is as much a tell as a missing one.
+                       - rebuy_levels FIRST, then late_reg_levels.
+                       - + addon_levels when add_on_available (migration
+                         20260823310000, rebuys stay open through the add-on
+                         window).
+                       - closed at `>= cap`, not `<= cap`. */
+                  const nz = (v: unknown): number | null => {
+                    const n = Number(v);
+                    return Number.isFinite(n) && n !== 0 ? n : null;
+                  };
+                  let cap = nz(t.rebuy_levels) ?? nz(t.late_reg_levels) ?? 0;
+                  if (cap > 0 && (t as { add_on_available?: boolean }).add_on_available) {
+                    cap += nz((t as { addon_levels?: number }).addon_levels) ?? 1;
                   }
+                  const level = Number(t.current_level ?? 0);
+                  const windowOpen = cap === 0 || level < cap;
+                  /* A finalized prize pool cannot take another chip — the RPC
+                     refuses it. Holding the felt for a purchase that is going
+                     to be refused helps nobody. */
+                  const poolOpen = !(t as { prize_pool_finalized?: boolean }).prize_pool_finalized;
+                  if (windowOpen && poolOpen) needsRebuyPause = true;
                 }
               } catch (err) {
+                /* FAIL OPEN, not closed (2026-08-27). This read decides whether
+                   a busted player gets the window they are entitled to. It used
+                   to log and leave `needsRebuyPause` false, so one transient
+                   Supabase blip silently deleted somebody's chance to buy back
+                   in and the next hand just started. Erring toward the pause
+                   costs five seconds; erring away from it costs a tournament
+                   life. Every other money-adjacent read in this codebase was
+                   converted to treat unreadable as UNKNOWN rather than as NO
+                   (see PAYOUT-INTEGRITY 2026-08-25); this one had not been. */
+                needsRebuyPause = true;
                 console.error(
-                  `[ServerTableEngine:${this.tableId}] Failed to check tournament rebuy status for pause:`,
+                  `[ServerTableEngine:${this.tableId}] Rebuy-window read failed — pausing anyway (fail-open):`,
                   err
                 );
               }
@@ -650,10 +694,30 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
             if (needsRebuyPause) {
               console.log(
-                `[ServerTableEngine:${this.tableId}] Pausing 5s for busted players to buy back in: ${justBustedPlayers.map((p) => p.username).join(', ')}`
+                `[ServerTableEngine:${this.tableId}] Rebuy pause (<=5s) for: ${justBustedPlayers.map((p) => p.username).join(', ')}`
               );
               this.setLoopPhase('rebuy_pause');
-              await this.sleep(5000);
+              /* SNAP-CONTINUE 2026-08-27. Dan's rule has two halves and only
+                 one of them was built: "...to allow the player to rebuy in,
+                 without skipping the hand, OR SNAP CONTINUES IF THEY CLICK NO
+                 TO THE REBUY."
+
+                 This was `await this.sleep(5000)` — a bare setTimeout with no
+                 handle. `rejectedRebuys` was a WRITE-ONLY Set: the entire
+                 decline chain (TablePage -> POST /reject_rebuy ->
+                 engine.rejectRebuy) ended in a `.add()` that nothing read, so
+                 the table sat out all five seconds whatever the player clicked.
+                 The handler's own docblock described the fast-forward it never
+                 got.
+
+                 waitForRebuyDecisions returns the instant every busted seat has
+                 answered — declined, or rebought (stack positive again). It
+                 covers horses by the same test, because the pause has to look
+                 identical from the outside either way. */
+              await this.waitForRebuyDecisions(
+                justBustedPlayers.map((p) => p.user_id).filter(Boolean),
+                5000
+              );
             }
           }
         }

@@ -127,9 +127,94 @@ export abstract class ServerTableEngineBase {
   protected seatedPlayers: SeatedPlayer[] = [];
   /** Tracks busted users who explicitly rejected a rebuy in the current hand (Dan 2026-08-24). */
   protected rejectedRebuys = new Set<string>();
+  /**
+   * Wakes an in-flight rebuy pause the instant a busted player answers.
+   *
+   * REBUY-PAUSE 2026-08-27: `rejectedRebuys` shipped as a WRITE-ONLY set. The
+   * whole decline chain — TablePage -> POST /reject_rebuy -> rejectRebuy() —
+   * terminated in a `.add()` that nothing ever read, and the pause itself was
+   * a bare `await this.sleep(5000)` with no handle. So "snap continues if they
+   * click no", which is half of Dan's rule, did not exist: the table sat out
+   * the full five seconds either way. This resolver is what makes the pause
+   * interruptible.
+   */
+  private rebuyPauseWake: (() => void) | null = null;
 
   public rejectRebuy(userId: string): void {
     this.rejectedRebuys.add(userId);
+    // Snap-continue: wake the pause loop now rather than at the next poll tick.
+    this.rebuyPauseWake?.();
+  }
+
+  /**
+   * Dan's Rebuy Pause, waited out properly.
+   *
+   * Holds the deal for up to `totalMs` after a bust, and returns EARLY the
+   * moment every busted seat has answered — declined (`rejectRebuy`) or
+   * rebought (a seat whose stack is positive again). Both halves of Dan's rule
+   * are here: the pause happens, and it ends the instant it is no longer doing
+   * anything for anybody.
+   *
+   * HORSES ARE PLAYERS. The caller passes EVERY busted seat, horse or human.
+   * The horse answers through its own input device (HorseLogic / autoRebuyHorse
+   * / tryTournamentRebuys) instead of through a modal, and that landing is
+   * detected here by the same stack read that detects a human's. What must not
+   * differ — and what did differ until this shipped — is the table's RHYTHM:
+   * a felt that stops for one seat and rolls straight on for another tells
+   * every watching player which seats are horses.
+   */
+  protected async waitForRebuyDecisions(userIds: string[], totalMs: number): Promise<void> {
+    const pending = new Set(userIds.filter(Boolean));
+    if (pending.size === 0) return;
+    // A decision from a PREVIOUS hand must not fast-forward this pause.
+    for (const id of pending) this.rejectedRebuys.delete(id);
+
+    const deadline = Date.now() + totalMs;
+    const POLL_MS = 250;
+
+    const drainAnswered = async (): Promise<void> => {
+      for (const id of Array.from(pending)) {
+        if (this.rejectedRebuys.has(id)) pending.delete(id);
+      }
+      if (pending.size === 0) return;
+      try {
+        const { data } = await supabase
+          .from('table_seats')
+          .select('user_id, stack')
+          .eq('table_id', this.tableId)
+          .in('user_id', Array.from(pending))
+          .is('left_at', null);
+        for (const row of (data ?? []) as Array<{ user_id: string; stack: number | null }>) {
+          if (Number(row.stack ?? 0) > 0) pending.delete(String(row.user_id));
+        }
+      } catch {
+        /* A failed read must never SHORTEN the pause — fall through and wait. */
+      }
+    };
+
+    try {
+      while (Date.now() < deadline) {
+        await drainAnswered();
+        if (pending.size === 0) return;
+        const slice = Math.min(POLL_MS, Math.max(0, deadline - Date.now()));
+        if (slice <= 0) return;
+        await new Promise<void>((resolve) => {
+          let done = false;
+          const finish = () => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            this.rebuyPauseWake = null;
+            resolve();
+          };
+          const timer = setTimeout(finish, slice);
+          this.rebuyPauseWake = finish;
+        });
+      }
+    } finally {
+      this.rebuyPauseWake = null;
+      for (const id of userIds) this.rejectedRebuys.delete(id);
+    }
   }
   protected dealerSeatIndex: number = 0;
   /**

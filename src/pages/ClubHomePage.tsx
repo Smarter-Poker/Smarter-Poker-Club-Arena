@@ -86,6 +86,7 @@ import { useUserStore } from '../stores/useUserStore';
 import LobbyAdStrip from '../components/lobby/LobbyAdStrip';
 import HouseAdCard from '../components/ads/HouseAdCard';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
+import { ClubIdentityCard } from '../components/club-buttons';
 import AdvancedFilters, {
   loadFilters,
   saveFilters,
@@ -99,7 +100,7 @@ import {
   variantKey,
   type FilterGameType,
 } from '../components/lobby/advancedFilterSpec';
-import { IconMembers, IconShareLink, IconSort } from '../components/icons/LobbyIcons';
+import { IconShareLink, IconSort } from '../components/icons/LobbyIcons';
 import { CLUB_HOME_CACHE_PREFIX } from '../utils/clearUserCaches';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { preloadRoute } from '../utils/ChunkPreloader';
@@ -631,7 +632,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null);
   const [, setIsInUnion] = useState(false);
-  const [unionName, setUnionName] = useState<string | null>(null);
+  const [, setUnionName] = useState<string | null>(null);
   /** Live seat count from get_club_home. Null until it answers; see the note
       where it is set - the stale clubs.online_count is never used. */
   const [playersPlaying, setPlayersPlaying] = useState<number | null>(null);
@@ -3487,156 +3488,78 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       <header className="lobby-top">
         {/* ── Club identity + wallet ── */}
         <div className="lobby-top__main">
-          <div className="lobby-club">
-            <div className="lobby-club__avatar">
-              {club.logo_url || club.avatar_url ? (
-                <img
-                  src={sizedStorageUrl(club.logo_url || club.avatar_url, 192)}
-                  alt={club.name}
-                  loading="lazy"
-                />
-              ) : Number(club.club_id) === SHARK_CLUB_ID ? (
-                <img src={SHARK_CLUB_FALLBACK_LOGO} alt="Shark Club" loading="lazy" />
-              ) : (
-                <span className="lobby-club__avatar-fallback">&#9824;</span>
-              )}
-            </div>
+          <ClubIdentityCard
+            className="lobby-top__identity"
+            clubName={club.name}
+            logoUrl={
+              club.logo_url || club.avatar_url
+                ? sizedStorageUrl(club.logo_url || club.avatar_url, 256)
+                : Number(club.club_id) === SHARK_CLUB_ID
+                  ? SHARK_CLUB_FALLBACK_LOGO
+                  : null
+            }
+            logoFallback={<span>&#9824;</span>}
+            pokerAlias={currentUser?.display_name || currentUser?.username || 'Player'}
+            clubId={club.club_id}
+            playerId={currentUser?.player_number}
+            level={clubLevel?.level}
+            playersPlaying={playersPlaying}
+            onCopyClubId={() => {
+              navigator.clipboard.writeText(club.club_id.toString());
+              toast.success('Club ID Copied');
+            }}
+            onCopyPlayerId={
+              currentUser?.player_number
+                ? () => {
+                    navigator.clipboard.writeText(currentUser.player_number!.toString());
+                    toast.success('Player Number Copied');
+                  }
+                : undefined
+            }
+            shareIcon={<IconShareLink />}
+            onShare={async () => {
+              haptic.medium();
+              let refQuery = '';
+              let profRefNum: number | null = null;
+              try {
+                // readLocalSession, not the auth SDK's remote user lookup: the
+                // session is already local and the referral action must open
+                // instantly when the player taps it.
+                const session = readLocalSession();
+                if (session?.userId) {
+                  const { data: prof } = await supabase
+                    .from('profiles')
+                    .select('player_number')
+                    .eq('id', session.userId)
+                    .maybeSingle();
+                  if (prof?.player_number) {
+                    profRefNum = prof.player_number;
+                    refQuery = `?ref=${prof.player_number}`;
+                  } else {
+                    refQuery = `?ref=${session.userId}`;
+                  }
+                }
+              } catch (err) {
+                reportError(err, 'ClubHomePage.share_ref_lookup_failed');
+              }
+              const shareUrl = `${window.location.origin}/hub/club-arena/invite/${club.id}${refQuery}`;
+              const inviterName = currentUser?.display_name || currentUser?.username || 'A player';
+              const playerNumText = profRefNum ? `\nYour Referral Number: ${profRefNum}` : '';
+              const shareText = `${inviterName} invited you to join ${club.name}!\n\nClub ID: ${club.club_id}${playerNumText}`;
 
-            <div className="lobby-club__info">
-              <h2 className="lobby-club__name" title={club.name}>
-                {club.name}
-              </h2>
-              {unionName && (
-                <div className="lobby-club__union" title="Union This Club Plays Inside">
-                  {unionName}
-                </div>
-              )}
-              <div className="lobby-club__meta">
-                <span
-                  className="lobby-club__id"
-                  style={{ userSelect: 'all', cursor: 'pointer' }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigator.clipboard.writeText(club.club_id.toString());
-                    toast.success('Club ID Copied');
-                  }}
-                  title="Click to copy"
-                >
-                  ID {club.club_id}
-                </span>
-                <span className="lobby-club__members">
-                  <IconMembers />
-                  {(club.member_count || 0).toLocaleString()}
-                </span>
-                {currentUser?.player_number && (
-                  <span
-                    className="lobby-club__id lobby-club__player"
-                    style={{ userSelect: 'all', cursor: 'pointer' }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigator.clipboard.writeText(currentUser.player_number!.toString());
-                      toast.success('Player Number Copied');
-                    }}
-                    title="Click to copy"
-                  >
-                    Player ID: {currentUser.player_number}
-                  </span>
-                )}
-              </div>
-
-              <div className="lobby-club__status">
-                {clubLevel && (
-                  <div className="lobby-club__level">
-                    <span
-                      className="club-level-badge"
-                      style={{ background: clubLevel.gradient }}
-                      title={`Level ${clubLevel.level} - ${clubLevel.tierLabel}`}
-                    >
-                      <span className="club-level-badge__number">Level {clubLevel.level}</span>
-                      <span className="club-level-badge__tier">{clubLevel.tierLabel}</span>
-                    </span>
-                  </div>
-                )}
-
-                <div className="lobby-club__activity">
-                  {playersPlaying !== null && (
-                    <div className="lobby-club__playing">
-                      <strong>{playersPlaying.toLocaleString()}</strong> Playing Now
-                    </div>
-                  )}
-
-                  <button
-                    className="lobby-club__share"
-                    aria-label="Share club invite link"
-                    title="Share"
-                    onClick={async () => {
-                      haptic.medium();
-                      let refQuery = '';
-                      let profRefNum: number | null = null;
-                      try {
-                        // readLocalSession, not the auth SDK's remote user
-                        // lookup: the pre-push guard blocks that call by name,
-                        // and it is right to. It is a network round trip to
-                        // GoTrue on every tap of Share, when the session is
-                        // already in localStorage, parsed and expiry-checked —
-                        // and this is a button a player expects to open the
-                        // share sheet instantly.
-                        const session = readLocalSession();
-                        if (session?.userId) {
-                          const { data: prof } = await supabase
-                            .from('profiles')
-                            .select('player_number')
-                            // .maybeSingle(), never .single(): a profile row that
-                            // does not exist yet is a normal state, and .single()
-                            // throws PGRST116 on zero rows — which this catch
-                            // would then swallow, silently dropping the referral
-                            // code from the invite link.
-                            .eq('id', session.userId)
-                            .maybeSingle();
-                          if (prof?.player_number) {
-                            profRefNum = prof.player_number;
-                            refQuery = `?ref=${prof.player_number}`;
-                          } else {
-                            refQuery = `?ref=${session.userId}`;
-                          }
-                        }
-                      } catch (err) {
-                        // The link still works without a referral code, so this
-                        // must never block the share — but it is a lost referral
-                        // credit, so it is reported rather than ignored.
-                        reportError(err, 'ClubHomePage.share_ref_lookup_failed');
-                      }
-                      const shareUrl = `${window.location.origin}/hub/club-arena/invite/${club.id}${refQuery}`;
-                      const inviterName =
-                        currentUser?.display_name || currentUser?.username || 'A player';
-                      const playerNumText = profRefNum
-                        ? `\nYour Referral Number: ${profRefNum}`
-                        : '';
-                      const shareText = `${inviterName} invited you to join ${club.name}!\n\nClub ID: ${club.club_id}${playerNumText}`;
-
-                      try {
-                        if (navigator.share) {
-                          await navigator.share({
-                            title: club.name,
-                            text: shareText,
-                            url: shareUrl,
-                          });
-                        } else {
-                          await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
-                          toast.success('Club link copied!');
-                        }
-                      } catch (e) {
-                        reportError(e, 'ClubHomePage.async');
-                        /* user cancelled share */
-                      }
-                    }}
-                  >
-                    <IconShareLink />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+              try {
+                if (navigator.share) {
+                  await navigator.share({ title: club.name, text: shareText, url: shareUrl });
+                } else {
+                  await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
+                  toast.success('Club link copied!');
+                }
+              } catch (e) {
+                reportError(e, 'ClubHomePage.async');
+                /* user cancelled share */
+              }
+            }}
+          />
 
           <button
             type="button"

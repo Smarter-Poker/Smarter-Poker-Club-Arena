@@ -6,6 +6,8 @@ const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8'
 
 const page = read('src/pages/ClubHomePage.tsx');
 const pageCss = read('src/pages/ClubHomePage.css');
+const identityCard = read('src/components/club-buttons/ClubIdentityCard.tsx');
+const identityCardCss = read('src/components/club-buttons/ClubIdentityCard.css');
 const wallet = read('src/components/wallet/DynamicWallet.tsx');
 const walletCss = read('src/components/wallet/DynamicWallet.css');
 const walletArtwork = read('src/components/wallet/ClubWalletArtwork.tsx');
@@ -15,10 +17,18 @@ const filtersCss = read('src/components/lobby/AdvancedFilters.css');
 const tableCss = read('src/components/lobby/LobbyTable.css');
 
 describe('Club Arena Tournament Board lobby design', () => {
-  it('keeps the global header and renders the club logo in the lobby identity', () => {
+  it('keeps the global header and renders the approved dynamic Club Identity Card', () => {
     expect(layout).toContain('{showGlobalHeader && <GlobalHeader />}');
-    expect(page).toContain('className="lobby-club__avatar"');
+    expect(page).toContain('<ClubIdentityCard');
+    expect(page).toContain('className="lobby-top__identity"');
     expect(page).toContain('club.logo_url || club.avatar_url');
+    expect(page).toContain("currentUser?.display_name || currentUser?.username || 'Player'");
+    expect(page).toContain('playerId={currentUser?.player_number}');
+    expect(page).toContain('playersPlaying={playersPlaying}');
+    expect(identityCard).toContain('club-identity-template-bbj-finish-v1.png');
+    expect(identityCard).toContain('Copy referral link');
+    expect(identityCardCss).toContain('aspect-ratio: 1650 / 953');
+    expect(identityCardCss).toContain('transform: translateY(1.44cqw)');
   });
 
   it('spells out Bad Beat Jackpot and opens the existing detail modal', () => {
@@ -69,12 +79,11 @@ describe('Club Arena Tournament Board lobby design', () => {
     expect(mobileConsole).toContain('overflow: visible');
   });
 
-  it('uses a compact mobile identity and smaller two-line club notice', () => {
+  it('uses the same self-contained identity card on mobile and a smaller two-line club notice', () => {
     const mobileConsole = pageCss.slice(pageCss.lastIndexOf('MOBILE LOBBY FINAL CONTRACT'));
-    expect(page).toContain('className="lobby-club__status"');
-    expect(page).toContain('className="lobby-club__playing"');
-    expect(mobileConsole).toContain('grid-template-columns: minmax(0, 1fr) 112px');
-    expect(mobileConsole).toContain('font-size: 0.64rem');
+    expect(pageCss).toContain('@media (max-width: 480px)');
+    expect(pageCss).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(identityCardCss).toContain('@media (max-width: 360px)');
     expect(mobileConsole).toContain('-webkit-line-clamp: 2');
   });
 

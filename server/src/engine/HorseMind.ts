@@ -70,6 +70,15 @@ export interface OpponentStats {
   bigBetSD: number;
   /** ... where the shown hand was two pair or better (value, not air) */
   bigBetSDStrong: number;
+  // ── V23 RIVER READS (2026-08-28) — MEMORY-ONLY, deliberately unpersisted.
+  // The most profitable read in the game: does this player fold rivers?
+  // Accumulates fast at fleet volume and decays in relevance, so it starts
+  // fresh each process life; persistence can follow once the league proves
+  // the read pays (toDb/fromDb in HorseMindPersistence simply omit these).
+  /** times they faced a river bet or raise */
+  riverBetOpps: number;
+  /** ... and folded to it */
+  riverBetFolds: number;
   /** V7 recency window (exponentially decayed) — detects counter-adaptation */
   rHands: number;
   rFolds: number;
@@ -93,6 +102,8 @@ const freshStats = (): OpponentStats => ({
   f3bFolds: 0,
   bigBetSD: 0,
   bigBetSDStrong: 0,
+  riverBetOpps: 0,
+  riverBetFolds: 0,
   rHands: 0,
   rFolds: 0,
   rFacedAggr: 0,
@@ -178,7 +189,12 @@ export interface HorseMindSandbox {
   pairs: Map<string, { n3: number; opp3: number; nR: number; oppR: number }>;
   dirtyPairs: Set<string>;
   plans: Map<string, boolean>;
+  /** V23: raise-response plans — see noteRaisePlan. Sandboxed like plans. */
+  raisePlans: Map<string, RaiseResponsePlan>;
 }
+
+/** V23: what hero decided AT BET TIME it would do about a raise. */
+export type RaiseResponsePlan = 'commit' | 'callOnce' | 'foldToRaise';
 
 export class HorseMind {
   private static stats = new Map<string, OpponentStats>();
@@ -366,6 +382,14 @@ export class HorseMind {
           } else if (isPassiveResponse) {
             pairOf(a.userId, streetBettor).oppR++;
           }
+          // ═══ V23 RIVER READS (2026-08-28) ═══ the same street-bettor
+          // attribution, read for one more thing: how this player answers
+          // RIVER aggression. Fold-to-river-bet is the read that prices both
+          // river bluffs and thin value against them.
+          if (curStage === 'river' && (isRaiseOver || isPassiveResponse)) {
+            s.riverBetOpps++;
+            if (a.action === 'fold') s.riverBetFolds++;
+          }
         }
         if (isAggr) streetBettor = a.userId;
       }
@@ -431,6 +455,7 @@ export class HorseMind {
     this.seenActions.clear();
     this.handFlags.clear();
     this.plans.clear();
+    this.raisePlans.clear();
     this.dirty.clear();
     this.pairs.clear();
     this.dirtyPairs.clear();
@@ -491,6 +516,8 @@ export class HorseMind {
         f3bFolds: num(r.f3bFolds),
         bigBetSD: num(r.bigBetSD),
         bigBetSDStrong: num(r.bigBetSDStrong),
+        riverBetOpps: num(r.riverBetOpps),
+        riverBetFolds: num(r.riverBetFolds),
         rHands: num(r.rHands),
         rFolds: num(r.rFolds),
         rFacedAggr: num(r.rFacedAggr),
@@ -618,6 +645,7 @@ export class HorseMind {
       pairs: new Map(),
       dirtyPairs: new Set(),
       plans: new Map(),
+      raisePlans: new Map(),
     };
   }
 
@@ -635,6 +663,7 @@ export class HorseMind {
       pairs: this.pairs,
       dirtyPairs: this.dirtyPairs,
       plans: this.plans,
+      raisePlans: this.raisePlans,
     };
     this.stats = sandbox.stats;
     this.seenActions = sandbox.seenActions;
@@ -643,6 +672,7 @@ export class HorseMind {
     this.pairs = sandbox.pairs;
     this.dirtyPairs = sandbox.dirtyPairs;
     this.plans = sandbox.plans;
+    this.raisePlans = sandbox.raisePlans;
     this.sandboxDepth = 1;
     try {
       return fn();
@@ -654,6 +684,7 @@ export class HorseMind {
       this.pairs = live.pairs;
       this.dirtyPairs = live.dirtyPairs;
       this.plans = live.plans;
+      this.raisePlans = live.raisePlans;
       this.sandboxDepth = 0;
     }
   }
@@ -965,6 +996,45 @@ export class HorseMind {
   static getPlan(handKey: string | null, userId: string): boolean | undefined {
     if (!handKey) return undefined;
     return this.plans.get(`${handKey}|${userId}`);
+  }
+
+  /**
+   * ═══ V23 RAISE-RESPONSE PLANS (2026-08-28) ═══
+   * When a horse bets or raises postflop, it decides THEN what a raise back
+   * would mean: commit (range top), call once (medium/draws — see a card,
+   * never escalate), or fold (this was a stab). Stored per (hand, player,
+   * street) so the answer to a check-raise is the one the bet already gave —
+   * the big_fold_river/bet_fold_line reviews are full of lines where the bet
+   * and the response to the raise were decided by two different dice rolls.
+   */
+  private static raisePlans = new Map<string, RaiseResponsePlan>();
+
+  static noteRaisePlan(
+    handKey: string | null,
+    userId: string,
+    street: string,
+    plan: RaiseResponsePlan
+  ): void {
+    if (!handKey) return;
+    if (this.raisePlans.size > this.MAX_PLANS) this.raisePlans.clear();
+    this.raisePlans.set(`${handKey}|${userId}|${street}`, plan);
+  }
+
+  static getRaisePlan(
+    handKey: string | null,
+    userId: string,
+    street: string
+  ): RaiseResponsePlan | undefined {
+    if (!handKey) return undefined;
+    return this.raisePlans.get(`${handKey}|${userId}|${street}`);
+  }
+
+  /** V23: fold-to-river-bet frequency (0..1), or null below an
+   *  8-opportunity sample. Memory-only — see the OpponentStats note. */
+  static riverFoldRate(id: string): number | null {
+    const s = this.stats.get(id);
+    if (!s || s.riverBetOpps < 8) return null;
+    return s.riverBetFolds / s.riverBetOpps;
   }
 
   // ───────────────────────────────────────────────────────────────────────

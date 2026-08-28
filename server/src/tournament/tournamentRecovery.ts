@@ -297,9 +297,26 @@ export async function recoverStuckCompletingTournaments(
     }
     for (const t of stuck ?? []) {
       try {
+        // SHORT-FIELD RESIDUAL 2026-08-27: the rescue must price by the same
+        // structure a normal finish would, and a normal finish now trims the
+        // structure to the size of the field so the residual lands on a place
+        // somebody actually reached. A stuck tournament is COMPLETING, so
+        // entry is long closed and this count can no longer move. Its own
+        // query rather than the roster fetched below, because that fetch has
+        // an error path which must keep reading exactly as it does; a failed
+        // count here simply leaves the structure untrimmed, which is the
+        // behaviour this rescue had before.
+        const { count: fieldCount } = await supabase
+          .from('tournament_players')
+          .select('id', { count: 'exact', head: true })
+          .eq('tournament_id', t.id);
+
         // Parse + normalize payout structure
         const payouts: Array<{ place: number; percentage: number }> =
-          resolvePayoutStructure(t as any) ?? [];
+          resolvePayoutStructure(
+            t as any,
+            typeof fieldCount === 'number' && fieldCount >= 1 ? fieldCount : undefined
+          ) ?? [];
         // PAYOUT-INTEGRITY 2026-08-20: this used to be a THIRD independent
         // prize formula (alongside eliminatePlayer and finishTournament), so a
         // tournament rescued here could be paid a cent differently from one

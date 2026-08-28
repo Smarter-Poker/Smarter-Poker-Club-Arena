@@ -542,7 +542,9 @@ class HandHistoryServiceClass {
         .insert({
           table_id: tableId,
           hand_number: handData.handNumber,
-          pot_size: handData.pot,
+          // `hands` names it `pot`. `hand_history` is the table with `pot_size`,
+          // and the two were crossed, so every save here was rejected.
+          pot: handData.pot,
           community_cards: handData.communityCards,
           created_at: new Date().toISOString(),
         })

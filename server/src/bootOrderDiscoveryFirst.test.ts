@@ -28,6 +28,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceStatement } from './testHelpers/sourceWindow.js';
 
 const SRC = readFileSync(join(process.cwd(), 'src/GameServer.ts'), 'utf8');
 const code = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -54,9 +55,9 @@ describe('boot order: nothing housekeeping may gate dealing', () => {
   });
 
   it('reports a fleet bootstrap failure instead of swallowing it', () => {
-    const seg = start.slice(start.indexOf('this.horseFleet'));
-    expect(seg.slice(0, 300)).toMatch(/\.catch\(/);
-    expect(seg.slice(0, 300)).toMatch(/reportError/);
+    const seg = sliceStatement(start, 'this.horseFleet');
+    expect(seg).toMatch(/\.catch\(/);
+    expect(seg).toMatch(/reportError/);
   });
 
   it('still awaits stale-data cleanup, which IS a prerequisite', () => {

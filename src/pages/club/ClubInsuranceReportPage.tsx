@@ -192,18 +192,18 @@ export default function ClubInsuranceReportPage() {
               <div className={styles.cardLabel}>Declined / Timed Out</div>
             </div>
             <div className={styles.card}>
-              <div className={styles.cardValue}>{acceptRate === null ? '—' : `${acceptRate}%`}</div>
+              <div className={styles.cardValue}>{acceptRate === null ? '-' : `${acceptRate}%`}</div>
               <div className={styles.cardLabel}>Take Rate</div>
             </div>
             <div className={styles.card}>
               <div className={styles.cardValue}>
-                {t?.avg_offer_equity == null ? '—' : `${t.avg_offer_equity}%`}
+                {t?.avg_offer_equity == null ? '-' : `${t.avg_offer_equity}%`}
               </div>
               <div className={styles.cardLabel}>Avg Offer Equity</div>
             </div>
             <div className={styles.card}>
               <div className={styles.cardValue}>
-                {t?.avg_offer_pot == null ? '—' : chips(t.avg_offer_pot)}
+                {t?.avg_offer_pot == null ? '-' : chips(t.avg_offer_pot)}
               </div>
               <div className={styles.cardLabel}>Avg Insurable Pot</div>
             </div>

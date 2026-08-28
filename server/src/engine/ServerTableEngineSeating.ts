@@ -381,6 +381,37 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       return { success: false, error: 'Player not found at this table', willFoldNextHand: false };
     }
 
+    /* PLAY A HAND BEFORE YOU CAN SIT OUT (Dan 2026-08-28, binding):
+     * "A PLAYER MUST ALSO PLAY AT LEAST ONE HAND, BEFORE THEY CAN SIT OUT."
+     *
+     * Without this, sitting down and immediately sitting out is a way to hold a
+     * seat at a table you never intend to play — the seat counts toward the
+     * table, blocks a paying player, and the only thing that ends it is the
+     * five-minute eviction clock, which the player can reset by sitting back in
+     * for one beat. The rule closes that door at the point of entry instead.
+     *
+     * `dealtInUserIds` is the right oracle and already exists for the button
+     * rule ("NEW PLAYERS NEVER GET THE BUTTON WHEN SITTING DOWN"): it is
+     * per-table, written at the deal, and pruned the moment a seat empties, so
+     * a player who leaves and comes back correctly counts as new again. It is
+     * also seeded on the engine's first loop pass from whoever is already
+     * seated, because anyone seated through a restart was playing before it.
+     *
+     * Only the OUTBOUND direction is gated. Sitting back IN is always allowed —
+     * a player must never be trapped in a sit-out they cannot leave.
+     *
+     * Tournaments are exempt: a tournament seat is bought and the player is
+     * already committed, they are dealt in and blinded off whether they sit out
+     * or not, and a late-registered entrant who has not yet been dealt a hand
+     * has an obvious legitimate reason to sit out immediately. */
+    if (sitOut && !this.isTournamentTable() && !this.dealtInUserIds.has(userId)) {
+      return {
+        success: false,
+        error: 'You Must Play At Least One Hand Before You Can Sit Out',
+        willFoldNextHand: false,
+      };
+    }
+
     if (sitOut) {
       // FIX 143: Bible V8 §7.12 — Can't fold mid-hand.
       // If a hand is in progress, defer the sit-out until after the hand completes.

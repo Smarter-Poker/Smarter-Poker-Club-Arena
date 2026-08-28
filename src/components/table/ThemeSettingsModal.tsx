@@ -1408,7 +1408,28 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                   aria-label={`${favoriteIds.includes(`${activeTab}:${asset.id}`) ? 'Remove' : 'Add'} ${asset.name} ${favoriteIds.includes(`${activeTab}:${asset.id}`) ? 'from' : 'to'} favorites`}
                   onClick={() => toggleFavorite(activeTab, asset.id)}
                 >
-                  {favoriteIds.includes(`${activeTab}:${asset.id}`) ? 'Saved' : 'Save'}
+                  {/* "Favorite", not "Save" (Dan 2026-08-28): "INSIDE THE THEME
+                      SETTINGS YOU SHOULDN'T HAVE TO CLICK SAVE ON EACH ONE, IT
+                      SHOULD AUTO SAVE WHEN YOU CLICK ON ONE AND THE CHECK MARK
+                      APPEARS."
+
+                      He is describing the LABEL, not the behaviour. Tapping a
+                      tile already saves: handleAssetSelect calls
+                      applyTableAppearance, the tick is painted only on a write
+                      that succeeded, and the header says "Changes save
+                      automatically". This button never had anything to do with
+                      that — it toggles the tile into the Favorites filter above,
+                      and its own aria-label has always said so.
+
+                      But a button labelled "Save" sitting on every tile, next to
+                      a tick, reads as "your pick is not kept until you press
+                      this" — which is why a selected tile showing "Saved" looked
+                      like confirmation of the selection rather than of a
+                      favourite. Naming it after what it does removes the
+                      contradiction without touching a working save path. The
+                      note under the grid already warns that favourites stay on
+                      this device. */}
+                  {favoriteIds.includes(`${activeTab}:${asset.id}`) ? 'Favorited' : 'Favorite'}
                 </button>
               </div>
             );

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { masterBus } from '../core/MasterBus';
 import { useUserStore } from '../stores/useUserStore';
 
@@ -109,117 +109,190 @@ const CSS_VAR_ANIMATION_SPEED = '--animation-speed';
  */
 const DOM_ATTR_THEME = 'data-color-theme';
 
-export function useTableSettings() {
-  // Load from localStorage on mount
-  const [settings, setSettings] = useState<TableUserSettings>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const merged = {
-          ...DEFAULT_SETTINGS,
-          ...JSON.parse(saved),
-        };
-        // SHOWDOWN AUDIT 2026-08-25 — hostile-state migration. autoMuck's
-        // default used to be false and rode along in every persisted write,
-        // so a stored false proves nothing about what the player wants. Only
-        // a false written by the user's own toggle (autoMuckExplicit) is
-        // honoured; every other stored value is lifted to the new default.
-        // Auto-muck is ON unless the user personally turned it off.
-        if (merged.autoMuckExplicit !== true) {
-          merged.autoMuck = true;
-        }
-        return merged;
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  ONE STORE, NOT ONE PER COMPONENT
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Dan 2026-08-28, binding: "WHEN YOU DO TURN THINGS ON OR OFF IN THE TABLE
+ * SETTINGS, THEY NEED TO SAVE GLOBALLY IN REAL TIME ON ALL TABLES, AND ALL
+ * PAGES. AND NEVER REGRESS OR AUTO CHANGE BACK UNLESS THE USER CHANGES THEM
+ * MANUALLY."
+ *
+ * THE MECHANISM BEHIND "AUTO CHANGE BACK", and it was structural rather than a
+ * bug in any one setting:
+ *
+ * This hook used to hold the settings in a per-instance `useState`, and persist
+ * the WHOLE object to one localStorage key on every change. It is called by
+ * TablePage, SettingsPage and TournamentStartingTicker — and MultiTablePage
+ * keeps up to SIX TablePages mounted at once. So there were commonly eight
+ * independent copies of the settings, each one writing its own complete blob
+ * over the same key.
+ *
+ * Live updates between them relied entirely on the `SETTINGS_CHANGED` bus
+ * message arriving everywhere. Miss one — and MasterBus drops a duplicate
+ * `{type, payload}` fingerprint inside 500ms, which happens whenever a value is
+ * set to what it already is — and that instance is now stale. It does not fail
+ * loudly. It waits. The next time ANY setting changes in that instance, its
+ * stale full object is written over the key, and every setting the user changed
+ * elsewhere in the meantime silently reverts. That is the reported symptom
+ * exactly: settings that change back on their own, with no error.
+ *
+ * A single module-level store removes the failure by construction. There is one
+ * object, so there is nothing to diverge; every consumer reads the same value
+ * through `useSyncExternalStore`, so a change is visible on every table and
+ * every page in the same tick, whether or not the bus message is delivered. The
+ * bus emit is kept for OTHER browser tabs, where it is still the only channel.
+ *
+ * LAZY, not initialised at import: the store reads localStorage on first use so
+ * a test (or any caller) that stubs storage before rendering still gets a
+ * truthful load. `__resetTableSettingsStoreForTest` is the seam for that.
+ */
+
+/** The one copy. `null` until first read — see the note above on laziness. */
+let sharedSettings: TableUserSettings | null = null;
+const listeners = new Set<() => void>();
+
+function loadFromStorage(): TableUserSettings {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const merged = {
+        ...DEFAULT_SETTINGS,
+        ...JSON.parse(saved),
+      };
+      // SHOWDOWN AUDIT 2026-08-25 — hostile-state migration. autoMuck's
+      // default used to be false and rode along in every persisted write,
+      // so a stored false proves nothing about what the player wants. Only
+      // a false written by the user's own toggle (autoMuckExplicit) is
+      // honoured; every other stored value is lifted to the new default.
+      // Auto-muck is ON unless the user personally turned it off.
+      if (merged.autoMuckExplicit !== true) {
+        merged.autoMuck = true;
       }
-      return DEFAULT_SETTINGS;
-    } catch (error) {
-      console.warn('Failed to load table settings from localStorage:', error);
-      return DEFAULT_SETTINGS;
+      return merged;
     }
-  });
+    return DEFAULT_SETTINGS;
+  } catch (error) {
+    console.warn('Failed to load table settings from localStorage:', error);
+    return DEFAULT_SETTINGS;
+  }
+}
 
-  // Persist settings to localStorage whenever they change
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-    } catch (error) {
-      console.warn('Failed to save table settings to localStorage:', error);
-    }
-  }, [settings]);
-
-  // Apply theme to DOM (data-theme attribute on root element)
-  useEffect(() => {
-    document.documentElement.setAttribute(DOM_ATTR_THEME, settings.theme);
-  }, [settings.theme]);
-
-  // Apply animation speed to DOM (CSS custom property)
-  useEffect(() => {
+/**
+ * Everything a settings value has to reach OUTSIDE React, done once per change
+ * rather than once per mounted component.
+ *
+ * These were three `useEffect`s keyed on individual fields. With eight mounted
+ * copies that was eight writers racing over the same DOM attribute and the same
+ * localStorage mirror on every render pass — the same collision class as the
+ * `data-theme` ownership fight documented above.
+ */
+function applySideEffects(next: TableUserSettings): void {
+  if (typeof document !== 'undefined') {
+    document.documentElement.setAttribute(DOM_ATTR_THEME, next.theme);
     document.documentElement.style.setProperty(
       CSS_VAR_ANIMATION_SPEED,
-      String(settings.animationSpeed)
+      String(next.animationSpeed)
     );
-  }, [settings.animationSpeed]);
+  }
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    // HapticService reads its own key.
+    localStorage.setItem('vibrationsEnabled', String(next.isHapticEnabled));
+  } catch (error) {
+    console.warn('Failed to save table settings to localStorage:', error);
+  }
+}
 
-  // Sync haptic setting to HapticService's localStorage key
-  useEffect(() => {
-    try {
-      localStorage.setItem('vibrationsEnabled', String(settings.isHapticEnabled));
-    } catch {
-      // localStorage unavailable
+function getSnapshot(): TableUserSettings {
+  if (sharedSettings === null) {
+    sharedSettings = loadFromStorage();
+    applySideEffects(sharedSettings);
+  }
+  return sharedSettings;
+}
+
+/** Replace the one copy, persist it, apply it, and wake every consumer. */
+function commit(update: (prev: TableUserSettings) => TableUserSettings): void {
+  const next = update(getSnapshot());
+  if (next === sharedSettings) return;
+  sharedSettings = next;
+  applySideEffects(next);
+  for (const listener of listeners) listener();
+}
+
+function subscribeToStore(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/**
+ * WHO EMITTED THIS — an identity, not a latch. Module-level now, because the
+ * store is: one store, one origin. Shaped as a `.current` box deliberately, so
+ * the emits below keep reading `origin: originIdRef.current` — the property
+ * `tests/unit/settingsEchoOrigin.test.ts` pins, for the reasons its header
+ * gives at length.
+ */
+const originIdRef = { current: `ts-${Math.random().toString(36).slice(2)}` };
+
+/**
+ * ONE bus subscription for the whole app, attached on first use.
+ *
+ * Previously every hook instance subscribed, so a cross-tab change woke eight
+ * handlers that each mutated their own copy. Now it wakes the single store.
+ */
+let busAttached = false;
+function attachBusOnce(): void {
+  if (busAttached) return;
+  busAttached = true;
+  masterBus.subscribe('SETTINGS_CHANGED', (event) => {
+    // Skip only OUR OWN echo (prevent a redundant commit).
+    if (event.payload?.origin === originIdRef.current) return;
+    const activeUserId = useUserStore.getState().user?.id;
+    if (event.payload.userId && event.payload.userId !== activeUserId) return;
+    const { setting, value } = event.payload;
+    if (setting && setting in DEFAULT_SETTINGS) {
+      commit((prev) => ({
+        ...prev,
+        [setting]: value,
+        // SHOWDOWN AUDIT 2026-08-25: cross-tab autoMuck toggles are just as
+        // deliberate as local ones — mark them explicit too, or the other
+        // tab's loader would lift the user's own choice back to true.
+        ...(setting === 'autoMuck' ? { autoMuckExplicit: true } : {}),
+      }));
     }
-  }, [settings.isHapticEnabled]);
+  });
+}
 
-  /**
-   * WHO EMITTED THIS — an identity, not a latch.
-   *
-   * Dan 2026-08-26 (settings audit). This used to be `localOriginRef =
-   * useRef(false)`: set true immediately before `masterBus.emit`, and cleared
-   * by this instance's own subscriber when the echo came back. That is a
-   * one-shot latch which depends on the echo ALWAYS arriving, and it does not:
-   * MasterBus drops a duplicate `{type, payload}` fingerprint inside 500ms
-   * (SETTINGS_CHANGED is not in DEDUP_BYPASS). Set a setting to the value it
-   * already has, or tap Reset twice, and the emit is suppressed — the echo
-   * never comes, the flag stays TRUE, and the very next genuine change from
-   * ANOTHER component or tab is silently swallowed. The symptom is the one
-   * being fixed across this whole pass: a setting that stops updating live,
-   * intermittently, with nothing in the console.
-   *
-   * A per-instance id has no state to get stuck in. Every emit says who sent
-   * it; every receiver ignores only its own. A suppressed emit now costs
-   * nothing at all.
-   */
-  const originIdRef = useRef<string>(`ts-${Math.random().toString(36).slice(2)}`);
-  useEffect(() => {
-    const unsub = masterBus.subscribe('SETTINGS_CHANGED', (event) => {
-      // Skip only OUR OWN echo (prevent redundant setSettings).
-      if (event.payload?.origin === originIdRef.current) return;
-      const activeUserId = useUserStore.getState().user?.id;
-      if (event.payload.userId && event.payload.userId !== activeUserId) return;
-      const { setting, value } = event.payload;
-      if (setting && setting in DEFAULT_SETTINGS) {
-        setSettings((prev) => ({
-          ...prev,
-          [setting]: value,
-          // SHOWDOWN AUDIT 2026-08-25: cross-tab autoMuck toggles are just as
-          // deliberate as local ones — mark them explicit too, or the other
-          // tab's loader would lift the user's own choice back to true.
-          ...(setting === 'autoMuck' ? { autoMuckExplicit: true } : {}),
-        }));
-      }
-    });
-    return unsub;
-  }, []);
+/**
+ * TEST SEAM. The store is a module singleton, so a suite that wants to assert
+ * load-time behaviour has to be able to forget it — the same way it already
+ * clears localStorage between cases.
+ */
+export function __resetTableSettingsStoreForTest(): void {
+  sharedSettings = null;
+  listeners.clear();
+}
+
+export function useTableSettings() {
+  attachBusOnce();
+  const settings = useSyncExternalStore(subscribeToStore, getSnapshot, getSnapshot);
 
   // Update a single setting by key
   const updateSetting = useCallback(
     <K extends keyof TableUserSettings>(key: K, value: TableUserSettings[K]) => {
-      setSettings((prev) => ({
+      commit((prev) => ({
         ...prev,
         [key]: value,
         // SHOWDOWN AUDIT 2026-08-25: a personal autoMuck toggle is the ONLY
         // thing that makes a stored false authoritative — see the loader.
         ...(key === 'autoMuck' ? { autoMuckExplicit: true } : {}),
       }));
-      // Broadcast for cross-tab / cross-component sync
+      // Broadcast for cross-TAB sync. Within this tab the shared store above
+      // has already updated every consumer, so a dropped message costs nothing.
       masterBus.emit('SETTINGS_CHANGED', {
         setting: key,
         value: value as string | number | boolean,
@@ -231,7 +304,7 @@ export function useTableSettings() {
 
   // Reset all settings to defaults
   const resetSettings = useCallback(() => {
-    setSettings(DEFAULT_SETTINGS);
+    commit(() => DEFAULT_SETTINGS);
     // Broadcast each default for cross-tab sync
     for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
       masterBus.emit('SETTINGS_CHANGED', {
@@ -244,7 +317,7 @@ export function useTableSettings() {
 
   // Bulk update multiple settings at once
   const updateSettings = useCallback((updates: Partial<TableUserSettings>) => {
-    setSettings((prev) => ({
+    commit((prev) => ({
       ...prev,
       ...updates,
       // SHOWDOWN AUDIT 2026-08-25: same rule as updateSetting — an autoMuck

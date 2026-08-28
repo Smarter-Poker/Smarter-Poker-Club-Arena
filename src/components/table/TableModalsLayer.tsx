@@ -306,6 +306,12 @@ export interface TableModalsLayerProps {
   showBuyInModal: boolean;
   selectedSeat: number | null;
   heroAvatarUrl: string;
+  /**
+   * Seconds left in the 60-second buy-in window, or null when none is running.
+   * Dan 2026-08-28: the seat is held while the player is buying in and released
+   * if they do not finish. TablePage owns the clock; this only displays it.
+   */
+  buyInSecondsLeft?: number | null;
   onCloseBuyInModal: () => void;
   onConfirmBuyIn: (amount: number, autoRebuy?: boolean) => Promise<void>;
 
@@ -568,6 +574,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     clubName,
     // Buy-In
     showBuyInModal,
+    buyInSecondsLeft,
     selectedSeat,
     heroAvatarUrl,
     onCloseBuyInModal,
@@ -1139,6 +1146,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         accountBalance={accountBalance}
         bigBlind={safeBB(blinds)}
         cashoutRestriction={cashoutMinBuyIn > 0 ? cashoutMinBuyIn : undefined}
+        countdown={buyInSecondsLeft ?? undefined}
         onTopUp={onTopUpAccount}
       />
 

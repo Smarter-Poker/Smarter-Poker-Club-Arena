@@ -214,6 +214,50 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     fi
   fi
 
+  # 0b. TYPE CHECK — added 2026-08-27.
+  #
+  #    Check 0 above explains why the two fast guards were pulled out of CI and
+  #    run here: making the repos private silently disabled rulesets and
+  #    required status checks, so CI still goes red and nothing server-side
+  #    refuses the merge. This is the third guard that belongs here, and it is
+  #    the one CLAUDE.md has demanded since the repo began — "run
+  #    `npx tsc --noEmit` before EVERY commit" — while nothing anywhere
+  #    enforced it.
+  #
+  #    ci.yml DOES run it, as the "TypeScript Check" job. But that job is
+  #    `if: github.event_name == 'pull_request'`, deliberately, for cost. So a
+  #    commit that reaches main any other way is type-checked by nothing:
+  #      - a direct push to main runs no typecheck job at all;
+  #      - the GitHub-API push path in CLAUDE.md section 11 skips husky too,
+  #        so it clears neither gate;
+  #      - and with no ruleset, a red PR check cannot block a merge anyway.
+  #
+  #    COST: about 40s cold, about 4s warm — tsconfig.json already sets
+  #    `incremental` with a tsBuildInfoFile, so only the first run pays. It
+  #    runs at all only when the push touches src/**.ts(x).
+  #
+  #    It SKIPS, loudly, when a worktree has no node_modules — same reasoning
+  #    as the formatter in .husky/pre-commit: a gate people wait on is a gate
+  #    people --no-verify past, and --no-verify also disables the rewind guard
+  #    in check 5, which must never be skipped.
+  if echo "$FILES" | grep -qE '^src/.*\.tsx?$'; then
+    TSC="$(git rev-parse --show-toplevel)/node_modules/.bin/tsc"
+    if [ -x "$TSC" ]; then
+      echo "[club-arena pre-push] type-checking src/ ..."
+      if ! "$TSC" --noEmit; then
+        echo ""
+        echo "[club-arena pre-push] BLOCKED: src/ does not type-check."
+        echo "                      Fix the errors above. Do not push past this:"
+        echo "                      CI's TypeScript Check cannot stop a broken"
+        echo "                      tree from landing on main, because no"
+        echo "                      ruleset is active to make it required."
+        FAIL=1
+      fi
+    else
+      echo "[club-arena pre-push] no local node_modules - skipped the type check."
+    fi
+  fi
+
   # 1. Merge conflict markers
   for f in $FILES; do
     if [ -f "$f" ]; then

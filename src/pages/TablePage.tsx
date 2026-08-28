@@ -10894,6 +10894,40 @@ export default function TablePage({
       case 'HAND_COMPLETE_EVENT':
       case 'HAND_COMPLETE': {
         /**
+         * DEALER NARRATION — WIRED 2026-08-28.
+         *
+         * `useTableChat` has always carried a complete `HAND_WON` subscriber
+         * that writes the "Ari & Sam split the pot - 4,200" dealer line into
+         * table chat. Nothing has ever emitted `HAND_WON`, so the chat panel
+         * never said who won a hand — every hand ended in silence. The dead
+         * subscription sat on `noDeadBusSubscriptions`' KNOWN_DEAD list under
+         * the justification "superseded by the server-authoritative
+         * snapshot", which cannot be right: a snapshot does not produce a
+         * chat line, and the only other route (a `message_type = 'dealer'`
+         * row) is forbidden by the chat RLS policy. The subscriber was fine;
+         * the emit was missing.
+         *
+         * Emitted HERE rather than in POT_WIN because POT_WIN fires once per
+         * POT — a side pot or a hi-lo split would narrate the same hand two
+         * or three times. By this event `winnerInfoRef` holds the MERGED
+         * winners and per-player amounts for the whole hand, so the line is
+         * announced exactly once with the true total.
+         */
+        {
+          const w = winnerInfoRef.current;
+          if (w && w.playerIds.length > 0) {
+            const total = Object.values(w.amounts || {}).reduce(
+              (sum: number, n) => sum + (typeof n === 'number' ? n : 0),
+              0
+            );
+            masterBus.emit('HAND_WON', {
+              tableId,
+              winners: w.playerIds,
+              pot: total > 0 ? total : tableStateRef.current.pot,
+            } as never);
+          }
+        }
+        /**
          * Dan 2026-08-21 (bug list item 10): "the last player folds, their
          * cards are mucked right away, no need for the countdown light to keep
          * going."
@@ -11395,6 +11429,41 @@ export default function TablePage({
           } catch {
             /* sound is decoration */
           }
+        }
+        /**
+         * DEALER NARRATION, second half — WIRED 2026-08-28 (see HAND_COMPLETE
+         * for the full note). `useTableChat`'s `SHOWDOWN_START` subscriber
+         * writes "Showdown: Ari (Flush) vs Sam (Two Pair)" and has never had
+         * a producer either. The subscriber reads `players[].isWinner`,
+         * `.username` and `.handName`, so shape the engine's showdown results
+         * into exactly that. Winners are not known yet at this instant, so
+         * every revealed (non-mucked) hand is announced — which is what a live
+         * dealer calls out, in reveal order.
+         */
+        try {
+          const sd =
+            ((evt.data as any).results as Array<{
+              user_id?: string;
+              username?: string;
+              hand_name?: string;
+              mucked?: boolean;
+            }>) || [];
+          const shown = sd
+            .filter((r) => r && r.mucked !== true)
+            .map((r) => ({
+              isWinner: true,
+              username:
+                r.username ||
+                tableStateRef.current.players.find((p) => p && p.id === r.user_id)?.name ||
+                'Player',
+              handName: r.hand_name || '',
+            }))
+            .filter((r) => r.handName);
+          if (shown.length > 0) {
+            masterBus.emit('SHOWDOWN_START', { tableId, players: shown } as never);
+          }
+        } catch {
+          /* narration is decoration — never let it break the showdown */
         }
         // Mark board stage so rendering picks up showdown card flips
         setTableState((prev) => ({

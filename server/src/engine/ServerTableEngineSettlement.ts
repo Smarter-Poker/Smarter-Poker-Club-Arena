@@ -290,7 +290,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // come", it is noise the player would be charged five diamonds for. There is
     // also nothing to rabbit hunt on a hand that ran out twice to showdown.
     const ranItTwice = (this.currentHandRitBoards ?? 0) >= 2;
-    if (this.handController && !ranItTwice) {
+    // A MULTI-BOARD BOMB POT IS NEVER OFFERED A RABBIT HUNT EITHER
+    // (Dan's bomb pot spec §19). Same defect shape as RIT: the boards were
+    // dealt interleaved from one deck, so `remainingDeck.slice(0, 5)` is not
+    // "what board 1 would have run" — it is noise the player would be charged
+    // five diamonds for, and there are two or three boards it could belong to.
+    const multiBoardBomb = this.handController?.isDoubleBoardActive?.() ?? false;
+    if (this.handController && !ranItTwice && !multiBoardBomb) {
       try {
         const state = this.handController.getState();
         const remainingDeck = this.handController.getRemainingDeck();

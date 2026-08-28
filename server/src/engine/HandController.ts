@@ -654,7 +654,11 @@ export class HandController {
     this.emit({
       type: 'BOMB_POT_TRIGGERED',
       anteAmount,
-      bbMultiplier: bombPot.anteMultiplier,
+      // POLISH 2026-08-28: in FIXED-ante mode the multiple did not set the
+      // price, so reporting it made the overlay caption a lie — "Everyone
+      // Antes 7 (2x BB)" on a 1/2 table. Zero here means "fixed amount" and
+      // the caption shows the amount alone.
+      bbMultiplier: bombPot.anteFixed && bombPot.anteFixed > 0 ? 0 : bombPot.anteMultiplier,
       doubleBoard: this.multiBoardActive,
       boardCount: this.activeBoardCount,
       triggerReason: bombPot.triggerReason,

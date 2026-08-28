@@ -92,6 +92,16 @@ interface WalletState {
   loadDiamonds: (userId: string, opts?: { force?: boolean }) => Promise<void>;
   /** Whose balances these are. Guards cross-user bleed on a shared device. */
   _balancesUserId: string | null;
+  /**
+   * DIAMONDS GET THEIR OWN CLOCK 2026-08-28. `loadDiamonds` was gated on
+   * `_balancesAt`, a stamp only `loadBalances` ever writes — and `refreshAll`
+   * fires both concurrently, so diamonds permanently inherited the balances'
+   * freshness window and any non-forced refresh inside it was a silent no-op.
+   * The header's diamond count could then sit stale indefinitely while chips
+   * updated beside it.
+   */
+  _diamondsUserId: string | null;
+  _diamondsAt: number;
   /** When the balances were last successfully loaded (ms epoch). */
   _balancesAt: number;
   loadTransactions: (userId: string, limit?: number) => Promise<void>;
@@ -141,6 +151,8 @@ const initialState = {
   _operationInFlight: false,
   _balancesUserId: null as string | null,
   _balancesAt: 0,
+  _diamondsUserId: null as string | null,
+  _diamondsAt: 0,
 };
 
 /**
@@ -220,20 +232,22 @@ export const useWalletStore = create<WalletState>()(
 
       loadDiamonds: async (userId: string, opts?: { force?: boolean }) => {
         const st = get();
+        // Diamonds' OWN freshness stamp — see the _diamondsAt note on the
+        // state shape for why reading the balances' stamp made this a no-op.
         if (
           !opts?.force &&
-          st._balancesUserId === userId &&
-          Date.now() - st._balancesAt < BALANCE_FRESH_MS
+          st._diamondsUserId === userId &&
+          Date.now() - st._diamondsAt < BALANCE_FRESH_MS
         ) {
           return;
         }
-        if (!(st._balancesUserId === userId && st._balancesAt > 0)) {
+        if (!(st._diamondsUserId === userId && st._diamondsAt > 0)) {
           set({ isLoadingDiamonds: true });
         }
         try {
           // Load diamonds via centralized DiamondService (profiles.diamonds source-of-truth)
           const wallet = await DiamondService.getBalance(userId);
-          set({ diamonds: wallet.balance || 0 });
+          set({ diamonds: wallet.balance || 0, _diamondsUserId: userId, _diamondsAt: Date.now() });
         } catch (error) {
           if (!_diamondBreaker.isOpen()) {
             _diamondBreaker.trip();

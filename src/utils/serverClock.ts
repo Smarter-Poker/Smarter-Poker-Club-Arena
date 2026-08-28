@@ -28,14 +28,36 @@
  *
  * The engine now stamps every state broadcast with its own `server_time_ms`.
  * On arrival we compare it to the local clock; the difference is the offset,
- * plus a little network latency. That latency is small and always errs the safe
- * way for a countdown - we believe slightly MORE time has passed than really
- * has, so the ring never claims time the player does not have.
+ * plus a little network latency.
  *
- * The offset is smoothed rather than replaced outright, so one delayed packet
- * cannot jerk the ring, and it is only applied once a sample has been seen.
- * Before that, serverNow() is just Date.now() - exactly the old behaviour, and
- * correct for any device whose clock is right.
+ * ── LATENCY SIGN CORRECTION 2026-08-28 ──
+ *
+ * This block used to claim that latency "always errs the safe way ... so the
+ * ring never claims time the player does not have". The arithmetic does the
+ * OPPOSITE, and on the action clock that is the expensive direction. Writing
+ * it out, with L = one-way latency and D = the true offset (client ahead of
+ * server):
+ *
+ *     sample      = Date.now() - server_time_ms = D + L
+ *     serverNow() = Date.now() - offset         = trueServerNow - L
+ *     remaining   = deadline - serverNow()      = trueRemaining + L
+ *
+ * So the countdown ran one latency BEHIND the engine and displayed time that
+ * did not exist. A player acting on the last instant the ring showed them
+ * could be folded by a deadline that had already passed.
+ *
+ * Every one-way sample overstates the offset by its own latency, so no amount
+ * of smoothing removes it — averaging just bakes in the AVERAGE latency, and
+ * jitter makes that worse than the best sample. The estimator now takes the
+ * MINIMUM sample in a rolling window (Cristian's algorithm): the smallest
+ * latency observed is the closest a one-way sample can get to the true offset.
+ * That shrinks the residual from average-plus-jitter to one best-case
+ * latency, and it is the tightest correction available without a round trip.
+ *
+ * The window resets so genuine clock drift is still tracked, and the value is
+ * still smoothed toward the window minimum so one delayed packet cannot jerk
+ * the ring. Before the first sample, serverNow() is just Date.now() - exactly
+ * the old behaviour, and correct for any device whose clock is right.
  */
 
 /** Exponential smoothing factor for offset updates. 1 = trust each sample fully. */
@@ -44,8 +66,18 @@ const SMOOTHING = 0.3;
 /** Ignore absurd samples (bad payload, or a clock caught mid-adjustment). */
 const MAX_PLAUSIBLE_OFFSET_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * How long a minimum-sample window lasts. Long enough that a quiet stretch
+ * still collects several samples, short enough that real clock drift (a phone
+ * waking from sleep, an NTP correction) is picked up promptly.
+ */
+const WINDOW_MS = 60_000;
+
 let offsetMs = 0;
 let haveSample = false;
+/** Smallest sample seen in the current window — the best offset estimate. */
+let windowMinMs = 0;
+let windowStartedAt = 0;
 
 /**
  * Feed the `server_time_ms` from a state snapshot.
@@ -58,8 +90,27 @@ export function recordServerTime(serverTimeMs: number | undefined | null): void 
   const sample = Date.now() - serverTimeMs;
   if (Math.abs(sample) > MAX_PLAUSIBLE_OFFSET_MS) return;
 
-  offsetMs = haveSample ? offsetMs + (sample - offsetMs) * SMOOTHING : sample;
-  haveSample = true;
+  const now = Date.now();
+  if (!haveSample) {
+    // First sample: adopt it outright, exactly as before. It carries this
+    // packet's latency, and the window below walks that back as more arrive.
+    windowMinMs = sample;
+    windowStartedAt = now;
+    offsetMs = sample;
+    haveSample = true;
+    return;
+  }
+  if (now - windowStartedAt >= WINDOW_MS) {
+    // New window — re-seed from this sample so a drifting clock is tracked
+    // rather than pinned to a minimum taken minutes ago.
+    windowMinMs = sample;
+    windowStartedAt = now;
+  } else if (sample < windowMinMs) {
+    windowMinMs = sample;
+  }
+  // Converge on the window's best (lowest-latency) sample, not on the raw
+  // one — see the LATENCY SIGN CORRECTION note at the top of this file.
+  offsetMs += (windowMinMs - offsetMs) * SMOOTHING;
 }
 
 /** Current time on the ENGINE's clock, in epoch ms. */
@@ -76,4 +127,6 @@ export function clockOffsetMs(): number {
 export function __resetServerClock(): void {
   offsetMs = 0;
   haveSample = false;
+  windowMinMs = 0;
+  windowStartedAt = 0;
 }

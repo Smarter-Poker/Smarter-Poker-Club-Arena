@@ -3714,11 +3714,25 @@ button.post-bb-overlay-button:hover {
    top of the slider (hiding the handle) and the chat button covered ALL IN.
    They are irrelevant while sizing a raise, so they yield to it.
    ═══════════════════════════════════════════════════════════════════════════ */
-body.ca-raising .table-hud__lower,
-body.ca-raising .tbc-widget,
-body.ca-raising .prev-hand-card-wrapper,
-body.ca-raising .chat-collapsed,
-body.ca-raising .bankroll-widget {
+/* SCOPED TO THE TABLE, NOT THE DOCUMENT (2026-08-28). These were
+   `body.ca-raising …`, and ActionPanel set the class on `document.body`. With
+   four tables mounted that is one flag for four panels: in tile view, opening
+   the slider on one table blanked these four widgets on all four, and either
+   view let a second panel's close (or unmount) strip the class out from under a
+   panel that was still open — putting the timebank pill back on top of the
+   slider handle, which is the defect this rule exists to prevent. The class now
+   goes on the panel's own `.table-page` ancestor. Specificity rises from 0,2,1
+   to 0,3,0, so nothing it used to beat can now beat it.
+
+   `.bankroll-widget` is kept in this list and it is DEAD as of this commit: no
+   component in src/ renders that class. Left in place rather than deleted
+   because it costs nothing and the widget may simply be unbuilt; if you are
+   auditing dead CSS, this one is confirmed and safe to remove. */
+.table-page.ca-raising .table-hud__lower,
+.table-page.ca-raising .tbc-widget,
+.table-page.ca-raising .prev-hand-card-wrapper,
+.table-page.ca-raising .chat-collapsed,
+.table-page.ca-raising .bankroll-widget {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease;

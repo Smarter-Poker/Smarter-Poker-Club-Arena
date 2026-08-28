@@ -4912,7 +4912,9 @@
       "community_cards2",
       "pots",
       "showdown",
-      "rit_boards"
+      "rit_boards",
+      "community_cards3",
+      "bomb_pot"
     ],
     "hand_history_compaction_policy": [
       "id",
@@ -9137,7 +9139,12 @@
       "hands_dealt",
       "avg_pot",
       "bomb_pot_double_board",
-      "cap_bb"
+      "cap_bb",
+      "bomb_pot_board_count",
+      "bomb_pot_trigger_mode",
+      "bomb_pot_interval_seconds",
+      "bomb_pot_min_players",
+      "bomb_pot_ante_fixed"
     ],
     "theme_asset_unlocks": [
       "user_id",
@@ -9506,6 +9513,14 @@
       "bank_entity_id",
       "union_id"
     ],
+    "tournament_payout_backfill_log": [
+      "id",
+      "tournament_id",
+      "top_up",
+      "delta_before",
+      "delta_after",
+      "applied_at"
+    ],
     "tournament_payouts": [
       "id",
       "tournament_id",
@@ -9569,7 +9584,8 @@
       "seat_number",
       "chip_count",
       "club_id",
-      "is_satellite_qualifier"
+      "is_satellite_qualifier",
+      "rebuy_prompt_until"
     ],
     "tournament_rake_settlements": [
       "tournament_id",
@@ -9676,6 +9692,15 @@
       "scrape_confidence",
       "scrape_batch_id",
       "is_suppressed"
+    ],
+    "tournament_survivor_rank_backfill": [
+      "id",
+      "tournament_id",
+      "user_id",
+      "new_position",
+      "new_status",
+      "chips_at_rank",
+      "ranked_at"
     ],
     "tournament_tickets": [
       "id",

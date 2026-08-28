@@ -2,11 +2,13 @@
 
 ## Runtime files
 
-| File                                                   | Role                      | Scaling                     |
-| ------------------------------------------------------ | ------------------------- | --------------------------- |
-| `public/assets/club-buttons/action-primary-shell.webp` | Wide primary action shell | Fixed 4.06:1 aspect ratio   |
-| `public/assets/club-buttons/wallet-row-shell.png`      | Stack-safe row shell      | CSS border-image cap insets |
-| `public/assets/club-buttons/jackpot-hero-shell.webp`   | Live BBJ hero shell       | Fixed 1.726:1 aspect ratio  |
+| File                                                   | Role                       | Scaling                     |
+| ------------------------------------------------------ | -------------------------- | --------------------------- |
+| `public/assets/club-buttons/action-primary-shell.webp` | Wide primary action shell  | Fixed 4.06:1 aspect ratio   |
+| `public/assets/club-buttons/club-utility-shell.webp`   | Square utility shell       | Fixed near-square ratio     |
+| `public/assets/club-buttons/club-nav-shell.webp`       | Connected navigation shell | Stretch-safe center         |
+| `public/assets/club-buttons/wallet-row-shell.png`      | Stack-safe row shell       | CSS border-image cap insets |
+| `public/assets/club-buttons/jackpot-hero-shell.webp`   | Live BBJ hero shell        | Fixed 1.726:1 aspect ratio  |
 
 Lossless PNG masters are stored beside the runtime files and copied into `production-shells/desktop/`.
 
@@ -29,6 +31,16 @@ Generate a single textless compact wallet-row shell. Match the high-authority ma
 ### Jackpot hero
 
 Generate a textless BBJ hero plaque shell. Image 01 is the absolute quality authority and Image 02 controls composition. Include empty raised badge, heading, large live-value, lower-caption, and bottom-medallion zones. Preserve stepped chrome/gunmetal construction, deep black glass, localized crystal-blue inserts, shadows, and realistic reflections. No letters, currency, values, suits, or logos; transparent background.
+
+### Utility control
+
+Generate one textless square or octagonal utility-control shell using the BBJ master as the material authority and the architecture board only for proportions. Use a recessed black-glass center, polished chrome perimeter, brushed-gunmetal chassis, machined bevel, restrained lower blue LED seam, and contained side crystal accents. Keep every part within the square bounding box. Orthographic front view, no icon, text, symbol, watermark, blue flood, or generic app-tile treatment; transparent background.
+
+### Navigation segment
+
+Generate one textless wide, low-profile connected navigation-tab shell using the BBJ master as the material authority and the architecture board only for proportions. Use a recessed black-glass center, chrome edge, compact angled metal end caps, restrained lower blue seam, and tiny corner energy points. Preserve end-cap geometry while allowing the center to stretch. Orthographic front view, no text, icon, symbol, watermark, pill styling, or blue flood; transparent background.
+
+The utility source was generated in built-in mode at `/Users/smarter.poker/.codex/generated_images/01a045b0-0d71-73c0-910f-ce9bfddc9086/exec-2f902a68-37fb-4352-9e10-e0a255f20162.png`. The navigation source was generated in built-in mode at `/Users/smarter.poker/.codex/generated_images/01a045b0-0d71-73c0-910f-ce9bfddc9086/exec-c50a3ba8-78df-4381-a9b3-458d40c5bc29.png`.
 
 ## State assets
 

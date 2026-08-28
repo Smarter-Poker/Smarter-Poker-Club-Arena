@@ -17,13 +17,21 @@
  * goes through `mediaUrl()` (Phase U5.3) so the base, and any future CDN
  * flip, is decided in one place.
  *
- * Dan 2026-08-28, second pass: the artwork is now the DYNAMIC dish chip he
- * supplied — a chrome-rimmed black chip with a blue neon dish and signal arcs,
- * already circular with a transparent surround, so nothing here crops or
- * rounds it. RENDER SIZE IS 30px, exactly 50% larger than the 20px this badge
- * first shipped at, because at 20px the arcs and the rim highlights read as
- * noise on a phone. The PNG ships at 120px — 4x the render size — so it stays
- * sharp on a 3x retina panel with room to grow again without a re-export.
+ * THE ARTWORK, third pass. Dan supplied a free-standing dish — brushed chrome
+ * mount, blue reflector, three neon signal arcs — with no chip or disc behind
+ * it. It is therefore NOT circle-cropped: the previous artwork was a round
+ * chip and got an alpha circle intersected over it to clean the rim, and
+ * doing that here would slice the arcs and the base clean off. It is trimmed
+ * to its own bounding box, centred on a square canvas, and resampled to
+ * 120px. Its silhouette is the mark; do not add a background plate.
+ *
+ * THE WORDS ARE "Satellite Winner" (Dan, same day). Both `alt` and `title`
+ * carry it, so the tooltip a mouse gets and the string a screen reader
+ * announces are the same phrase, and neither can drift from the other.
+ *
+ * RENDER SIZE IS 30px — 50% larger than the 20px this badge first shipped at,
+ * because at 20px the arcs and the rim highlights read as noise on a phone.
+ * The PNG ships at 4x the render size so it stays sharp on a 3x retina panel.
  *
  * IF YOU CHANGE THE SIZE, change `width`/`height` AND the inline style
  * together. The attributes reserve the box before the image loads (no layout
@@ -37,8 +45,8 @@ export default function SatelliteSeatBadge() {
   return (
     <img
       src={mediaUrl('images/satellite-seat-icon.png')}
-      alt="Satellite Qualifier"
-      title="Won Their Seat Via Satellite"
+      alt="Satellite Winner"
+      title="Satellite Winner"
       width={30}
       height={30}
       style={{ width: 30, height: 30, flex: '0 0 auto', verticalAlign: 'middle' }}

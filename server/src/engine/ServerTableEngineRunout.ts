@@ -26,6 +26,7 @@ import {
 import { isOmahaVariant } from './VariantRules.js';
 import type { SeatPlayer, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
 import { ServerTableEngineTurns } from './ServerTableEngineTurns.js';
 
 export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
@@ -50,6 +51,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   protected allInFirstPauseMs = 2000;
   protected allInStreetPauseMs = 1400;
   protected allInPreShowdownPauseMs = 1200;
+
+  /**
+   * The reveal gate: how long a run-out street is given to actually appear
+   * before its new equity is allowed to change. See
+   * HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS for the full reasoning and where
+   * the 1250ms comes from. Instance field, like its neighbours, so a test can
+   * drive the ORDERING without spending the seconds.
+   */
+  protected allInStreetRevealMs = HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS;
 
   /**
    * Dan 2026-08-20: the settle beat between a player's action landing and the
@@ -858,7 +868,23 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           break;
         }
 
+        // THE STREET MUST BE SEEN BEFORE THE NUMBERS MOVE (Dan 2026-08-28,
+        // verbatim: "EQUITY CHANGES ONLY AFTER THE FLOP IS DISPLAYED, (NOT
+        // BEFORE OR DURING)").
+        //
+        // broadcastCurrentState() above SENT the card; it has not been SEEN.
+        // The client is still animating it in — 1.25s for a flop in
+        // slow-reveal mode. Broadcasting the new equity in the same instant,
+        // which is what this did, flips the percentages to the outcome while
+        // the card that caused it is still turning over: on the reported hand
+        // the villain read 0% and the hero 100% before the river was face up.
+        // That tells the player how it ends and then shows them the card as a
+        // formality.
+        //
+        // Hold for the reveal FIRST, then let the numbers move.
         if (allInPlayers.length >= 2) {
+          await this.sleep(this.allInStreetRevealMs);
+          if (!this.running || this.handController !== controller) break;
           await this.broadcastAllInEquity(allInPlayers, result.board, pot);
         }
 
@@ -2057,7 +2083,12 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     this.broadcastCurrentState();
 
     // RE-BROADCAST EQUITY: all players and observers see updated percentages
-    // as each card is dealt.
+    // as each card is dealt — but only ONCE THE CARD IS FACE UP. Same defect
+    // as pacedAllInRunout: the state broadcast above sent the street, the
+    // client is still animating it, and moving the percentages now spoils the
+    // card that is still turning over (Dan 2026-08-28).
+    await this.sleep(this.allInStreetRevealMs);
+    if (!this.handController) return;
     await this.broadcastAllInEquity(allInPlayers, result.board, pot);
 
     if (result.complete) {

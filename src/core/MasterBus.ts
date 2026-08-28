@@ -579,6 +579,12 @@ export interface BusPayloadMap {
     bbMultiplier: number;
     /** TRIPLE-BOARD 2026-08-27: boards actually dealt (1-3); optional for old emitters. */
     boardCount?: number;
+    /**
+     * VARIANT OVERRIDE 2026-08-28 (spec §10.1): uppercase variant label
+     * (e.g. 'PLO4'), present ONLY when the bomb hand's variant differs from
+     * the table's own game — the intro badges it.
+     */
+    variantLabel?: string;
   };
   BOMB_POT_COMPLETED: { tableId: string };
   // Disconnect protection events

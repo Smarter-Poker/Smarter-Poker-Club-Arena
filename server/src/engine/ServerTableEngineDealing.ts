@@ -25,7 +25,7 @@ import {
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
-import { bombPotSettingsFromTable } from './BombPotScheduler.js';
+import { bombPotSettingsFromTable, resolveBombPotVariant } from './BombPotScheduler.js';
 
 import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
@@ -836,6 +836,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 + bomb metadata are per-hand.
     this.currentHandCommunityCards3 = [];
     this.currentHandBombPot = null;
+    this.currentHandVariant = null;
     this.currentHandWinnersByBoard = [];
     // SHOWDOWN POLISH 2026-08-25: per-pot award breakdown is per-hand.
     this.currentHandPerPotAwards = [];
@@ -1100,14 +1101,42 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // in. The decision is made HERE, once per hand, at the hand boundary; a
     // hand already in progress can never become a bomb pot (spec §4.1).
     let bombPotConfig: HandConfig['bombPot'];
+    let bombHandVariant: string | null = null;
     {
       const schedulerSettings = bombPotSettingsFromTable(this.tableInfo);
+      // TIMED PERSISTENCE (spec §4.3): resume the persisted clock on the
+      // scheduler's first hand after an engine restart. seedNextDueAt only
+      // fills an EMPTY clock, so this is a no-op every hand thereafter.
+      if (schedulerSettings.enabled && schedulerSettings.triggerMode === 'timed') {
+        const persisted = Date.parse(this.tableInfo.bomb_pot_next_due_at ?? '');
+        if (Number.isFinite(persisted)) this.bombPotScheduler.seedNextDueAt(persisted);
+      }
       const decision = this.bombPotScheduler.noteHandStart(
         schedulerSettings,
         dealerSeat,
         players.length,
         Date.now()
       );
+      // Persist the timed clock whenever it moved — the first sighting sets
+      // it, and a consumed bomb resets it. Fire-and-forget: a failed write
+      // costs at most one interval of drift after the NEXT restart, which is
+      // exactly what it costs today on every restart.
+      if (schedulerSettings.enabled && schedulerSettings.triggerMode === 'timed') {
+        const dueAt = this.bombPotScheduler.nextBombDueAt(schedulerSettings);
+        const dueAtIso = dueAt !== null ? new Date(dueAt).toISOString() : null;
+        if (dueAtIso !== (this.tableInfo.bomb_pot_next_due_at ?? null)) {
+          this.tableInfo.bomb_pot_next_due_at = dueAtIso;
+          void supabase
+            .from('tables')
+            .update({ bomb_pot_next_due_at: dueAtIso })
+            .eq('id', this.tableId)
+            .then(({ error }) => {
+              if (error) {
+                console.warn('[BombPot] timed due-at persistence failed:', error.message);
+              }
+            });
+        }
+      }
       if (decision.isBombPot) {
         // Board count: the canonical 1-3 column wins; the legacy double-board
         // boolean maps to 2. HandController still downgrades stepwise if the
@@ -1127,6 +1156,27 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           anteFixed: anteFixed > 0 ? anteFixed : undefined,
           triggerReason: decision.triggerReason,
         };
+        // VARIANT OVERRIDE (spec §10.1): an NLH table can deal PLO bomb
+        // hands. resolveBombPotVariant whitelists the value — anything
+        // unknown means "same as table", never a half-understood game.
+        const tableVariant = this.dealtGameVariant();
+        const resolved = resolveBombPotVariant(tableVariant, this.tableInfo.bomb_pot_variant);
+        if (resolved !== tableVariant) {
+          // Deck feasibility for the OVERRIDE variant: a 9-handed table
+          // overridden to PLO6 would need 54 hole cards from a 52-card deck.
+          // The multi-board downgrade in HandController assumes hole cards
+          // fit; hole cards that do not fit mean the override — not the
+          // boards — must yield, and the hand deals as the table's own game.
+          const holeNeed = players.length * holeCardCount(resolved) + 5;
+          if (holeNeed <= deckSizeFor(resolved)) {
+            bombHandVariant = resolved;
+          } else {
+            console.warn(
+              `[BombPot] variant override ${resolved} skipped: ${players.length} players need ` +
+                `${holeNeed} cards > ${deckSizeFor(resolved)}-card deck — dealing ${tableVariant}`
+            );
+          }
+        }
       }
     }
 
@@ -1185,7 +1235,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const config: HandConfig = {
       tableId: this.tableId,
       handNumber,
-      gameVariant: this.dealtGameVariant() as GameVariant,
+      // VARIANT OVERRIDE (spec §10.1): a bomb hand may play a different
+      // variant from the table. Everything downstream — evaluator, hole-card
+      // count, betting structure, horse equity, hand history — reads the
+      // HAND's variant, so this one assignment is the entire override.
+      gameVariant: (bombHandVariant ?? this.dealtGameVariant()) as GameVariant,
       smallBlind: this.tableInfo.small_blind,
       bigBlind: this.tableInfo.big_blind,
       /* FIX-219: Bible V8 §4.3 — Respect ante_enabled toggle; if disabled, zero
@@ -1269,6 +1323,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         minPlayersDealt: fullRakeConfig.rules.minPlayersDealt,
       },
     };
+
+    // VARIANT OVERRIDE (spec §10.1): remember what THIS hand is being played
+    // as — Settlement writes hand_history.game_variant from this, and it must
+    // say plo4 on a PLO4 bomb hand even at an NLH table.
+    this.currentHandVariant = config.gameVariant;
 
     this.handController = new HandController(config, hcPlayers, dealerSeat);
 

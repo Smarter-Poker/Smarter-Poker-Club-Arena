@@ -103,9 +103,25 @@ describe('there is exactly one route to a tournament lobby', () => {
   });
 
   it('the Details button and the post-registration hand-off use the same helper', () => {
-    expect(src).toContain(
-      "e.kind === 'cash' ? navigate(`/table/${e.id}`) : openTournamentLobby(e.id)"
+    /* UPDATED 2026-08-28, same commit as the behaviour change it pins: a
+       seat-first row (spin, or a 2-seat heads-up sng) has NO lobby screen —
+       Dan 2026-08-20: "there is 'no lobby' for a spin, you just start on a
+       table" — so its view action opens the live TABLE via spinQuickJoin.
+       Cash still goes to the table route, and everything else (MTTs and
+       multi-seat SNGs) still goes through the one openTournamentLobby
+       helper. The onViewTable ternary now carries three arms; pin each. */
+    const viewBody = (() => {
+      const start = src.indexOf('onViewTable: (e) =>');
+      expect(start, 'onViewTable has moved or been renamed').toBeGreaterThan(-1);
+      return src.slice(start, src.indexOf('}),', start));
+    })();
+    expect(viewBody).toContain("e.kind === 'cash'");
+    expect(viewBody).toContain('navigate(`/table/${e.id}`)');
+    expect(viewBody).toContain(
+      "e.kind === 'spin' || (e.kind === 'sng' && e.capacity > 0 && e.capacity <= 2)"
     );
+    expect(viewBody).toContain('spinQuickJoin(');
+    expect(viewBody).toContain('openTournamentLobby(e.id)');
     expect(src).toContain('setTimeout(() => openTournamentLobby(t.id), 0);');
   });
 });

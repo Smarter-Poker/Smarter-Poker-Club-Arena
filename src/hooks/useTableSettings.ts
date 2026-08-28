@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { masterBus } from '../core/MasterBus';
 import { useUserStore } from '../stores/useUserStore';
+import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -46,8 +48,22 @@ export interface TableUserSettings {
   cardBack: string; // Card back design ID
   showStackInBB: boolean;
   autoRebuy: boolean; // Auto-rebuy when stack drops below threshold
+  /**
+   * Dan 2026-08-28: "add a toggle in the table settings, and in the Club
+   * Arena settings, to turn the ticker on or off." The scrolling
+   * tournament/announcement marquee (TournamentStartingTicker's .mtt-ticker)
+   * reads this; default ON. The BBJ banner is a different element and is NOT
+   * governed by this.
+   */
+  showTicker: boolean;
 }
 
+/**
+ * Exported as `DEFAULT_TABLE_USER_SETTINGS` below so
+ * tests/user-table-settings-defaults.test.ts can pin each value against the
+ * column default it now has to match — the per-key upsert means a drift here
+ * silently rewrites a user's OTHER settings.
+ */
 const DEFAULT_SETTINGS: TableUserSettings = {
   isSoundEnabled: true,
   soundVolume: 70,
@@ -79,7 +95,11 @@ const DEFAULT_SETTINGS: TableUserSettings = {
   cardBack: 'classic_blue',
   showStackInBB: false,
   autoRebuy: false,
+  showTicker: true,
 };
+
+/** The client half of the default pairing the per-key upsert depends on. */
+export const DEFAULT_TABLE_USER_SETTINGS: Readonly<TableUserSettings> = DEFAULT_SETTINGS;
 
 import { STORAGE_KEYS } from '../lib/storage';
 const STORAGE_KEY = STORAGE_KEYS.TABLE_SETTINGS;
@@ -100,129 +120,403 @@ const CSS_VAR_ANIMATION_SPEED = '--animation-speed';
  */
 const DOM_ATTR_THEME = 'data-color-theme';
 
-export function useTableSettings() {
-  // Load from localStorage on mount
-  const [settings, setSettings] = useState<TableUserSettings>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const merged = {
-          ...DEFAULT_SETTINGS,
-          ...JSON.parse(saved),
-        };
-        // SHOWDOWN AUDIT 2026-08-25 — hostile-state migration. autoMuck's
-        // default used to be false and rode along in every persisted write,
-        // so a stored false proves nothing about what the player wants. Only
-        // a false written by the user's own toggle (autoMuckExplicit) is
-        // honoured; every other stored value is lifted to the new default.
-        // Auto-muck is ON unless the user personally turned it off.
-        if (merged.autoMuckExplicit !== true) {
-          merged.autoMuck = true;
-        }
-        return merged;
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  ONE STORE, NOT ONE PER COMPONENT
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Dan 2026-08-28, binding: "WHEN YOU DO TURN THINGS ON OR OFF IN THE TABLE
+ * SETTINGS, THEY NEED TO SAVE GLOBALLY IN REAL TIME ON ALL TABLES, AND ALL
+ * PAGES. AND NEVER REGRESS OR AUTO CHANGE BACK UNLESS THE USER CHANGES THEM
+ * MANUALLY."
+ *
+ * THE MECHANISM BEHIND "AUTO CHANGE BACK", and it was structural rather than a
+ * bug in any one setting:
+ *
+ * This hook used to hold the settings in a per-instance `useState`, and persist
+ * the WHOLE object to one localStorage key on every change. It is called by
+ * TablePage, SettingsPage and TournamentStartingTicker — and MultiTablePage
+ * keeps up to SIX TablePages mounted at once. So there were commonly eight
+ * independent copies of the settings, each one writing its own complete blob
+ * over the same key.
+ *
+ * Live updates between them relied entirely on the `SETTINGS_CHANGED` bus
+ * message arriving everywhere. Miss one — and MasterBus drops a duplicate
+ * `{type, payload}` fingerprint inside 500ms, which happens whenever a value is
+ * set to what it already is — and that instance is now stale. It does not fail
+ * loudly. It waits. The next time ANY setting changes in that instance, its
+ * stale full object is written over the key, and every setting the user changed
+ * elsewhere in the meantime silently reverts. That is the reported symptom
+ * exactly: settings that change back on their own, with no error.
+ *
+ * A single module-level store removes the failure by construction. There is one
+ * object, so there is nothing to diverge; every consumer reads the same value
+ * through `useSyncExternalStore`, so a change is visible on every table and
+ * every page in the same tick, whether or not the bus message is delivered. The
+ * bus emit is kept for OTHER browser tabs, where it is still the only channel.
+ *
+ * LAZY, not initialised at import: the store reads localStorage on first use so
+ * a test (or any caller) that stubs storage before rendering still gets a
+ * truthful load. `__resetTableSettingsStoreForTest` is the seam for that.
+ */
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  …AND THE STORE FOLLOWS THE USER, NOT THE BROWSER
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Same rule, second half: "THEY NEED TO SAVE GLOBALLY". Sharing one store fixed
+ * every table and page WITHIN a browser. These settings still lived only in one
+ * unscoped localStorage key, so signing in on a phone showed none of them, and
+ * two accounts on one machine shared one blob.
+ *
+ * Each key below is mirrored to a column on `user_table_settings` — already
+ * per-user (PK user_id, RLS auth.uid() = user_id) and already in the
+ * `supabase_realtime` publication, so `PostgresSyncHooks`'s existing
+ * subscription delivers a change made on another device without any new
+ * transport.
+ *
+ * localStorage is KEPT, as the offline cache and the signed-out store. It is
+ * what makes a hostile start safe: a cold load paints from cache immediately,
+ * the row arrives a moment later, and a player who is never signed in behaves
+ * exactly as before.
+ *
+ * `showTicker` maps onto the `show_ticker` column that already existed. Until
+ * now that column and this blob were two owners of one setting, which is its own
+ * quiet way for a value to change back.
+ *
+ * NOT MIRRORED: `showHUD` and `autoRebuy` (no control renders them), and
+ * `showStackInBB`, which `useUserTableSettings` already owns — a second writer
+ * is the bug, not the fix.
+ */
+const COLUMN_FOR_KEY: Partial<Record<keyof TableUserSettings, string>> = {
+  isSoundEnabled: 'sound_enabled',
+  soundVolume: 'sound_volume',
+  isHapticEnabled: 'haptic_enabled',
+  animationSpeed: 'animation_speed',
+  theme: 'color_theme',
+  fourColorDeck: 'four_color_deck',
+  showPotOdds: 'show_pot_odds',
+  showBetSizePresets: 'show_bet_size_presets',
+  showTicker: 'show_ticker',
+  autoMuck: 'auto_muck',
+  autoMuckExplicit: 'auto_muck_explicit',
+  autoMuckWinners: 'auto_muck_winners',
+  autoPostBlinds: 'auto_post_blinds',
+  confirmAllIn: 'confirm_all_in',
+  cardBack: 'card_back',
+};
+
+const KEY_FOR_COLUMN: Record<string, keyof TableUserSettings> = Object.fromEntries(
+  Object.entries(COLUMN_FOR_KEY).map(([key, column]) => [column, key as keyof TableUserSettings])
+) as Record<string, keyof TableUserSettings>;
+
+/** The one copy. `null` until first read — see the note above on laziness. */
+let sharedSettings: TableUserSettings | null = null;
+const listeners = new Set<() => void>();
+
+/** Whose row the store currently holds. Null when signed out. */
+let hydratedUserId: string | null = null;
+
+/**
+ * Keys the user has changed IN THIS SESSION.
+ *
+ * Hydration merges the server row over the local cache — except for these. A
+ * player who flips a switch during the second the row is in flight must not
+ * have it flipped back by an answer that was already stale when it was asked
+ * for. That is the "auto change back" failure in its most infuriating form,
+ * because it happens exactly when someone is actively using the panel.
+ */
+const locallyTouched = new Set<keyof TableUserSettings>();
+
+function loadFromStorage(): TableUserSettings {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const merged = {
+        ...DEFAULT_SETTINGS,
+        ...JSON.parse(saved),
+      };
+      // SHOWDOWN AUDIT 2026-08-25 — hostile-state migration. autoMuck's
+      // default used to be false and rode along in every persisted write,
+      // so a stored false proves nothing about what the player wants. Only
+      // a false written by the user's own toggle (autoMuckExplicit) is
+      // honoured; every other stored value is lifted to the new default.
+      // Auto-muck is ON unless the user personally turned it off.
+      if (merged.autoMuckExplicit !== true) {
+        merged.autoMuck = true;
       }
-      return DEFAULT_SETTINGS;
-    } catch (error) {
-      console.warn('Failed to load table settings from localStorage:', error);
-      return DEFAULT_SETTINGS;
+      return merged;
     }
-  });
+    return DEFAULT_SETTINGS;
+  } catch (error) {
+    console.warn('Failed to load table settings from localStorage:', error);
+    return DEFAULT_SETTINGS;
+  }
+}
 
-  // Persist settings to localStorage whenever they change
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-    } catch (error) {
-      console.warn('Failed to save table settings to localStorage:', error);
-    }
-  }, [settings]);
-
-  // Apply theme to DOM (data-theme attribute on root element)
-  useEffect(() => {
-    document.documentElement.setAttribute(DOM_ATTR_THEME, settings.theme);
-  }, [settings.theme]);
-
-  // Apply animation speed to DOM (CSS custom property)
-  useEffect(() => {
+/**
+ * Everything a settings value has to reach OUTSIDE React, done once per change
+ * rather than once per mounted component.
+ *
+ * These were three `useEffect`s keyed on individual fields. With eight mounted
+ * copies that was eight writers racing over the same DOM attribute and the same
+ * localStorage mirror on every render pass — the same collision class as the
+ * `data-theme` ownership fight documented above.
+ */
+function applySideEffects(next: TableUserSettings): void {
+  if (typeof document !== 'undefined') {
+    document.documentElement.setAttribute(DOM_ATTR_THEME, next.theme);
     document.documentElement.style.setProperty(
       CSS_VAR_ANIMATION_SPEED,
-      String(settings.animationSpeed)
+      String(next.animationSpeed)
     );
-  }, [settings.animationSpeed]);
+  }
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    // HapticService reads its own key.
+    localStorage.setItem('vibrationsEnabled', String(next.isHapticEnabled));
+  } catch (error) {
+    console.warn('Failed to save table settings to localStorage:', error);
+  }
+}
 
-  // Sync haptic setting to HapticService's localStorage key
-  useEffect(() => {
-    try {
-      localStorage.setItem('vibrationsEnabled', String(settings.isHapticEnabled));
-    } catch {
-      // localStorage unavailable
+function getSnapshot(): TableUserSettings {
+  if (sharedSettings === null) {
+    sharedSettings = loadFromStorage();
+    applySideEffects(sharedSettings);
+  }
+  return sharedSettings;
+}
+
+/** Replace the one copy, persist it, apply it, and wake every consumer. */
+function commit(update: (prev: TableUserSettings) => TableUserSettings): void {
+  const next = update(getSnapshot());
+  if (next === sharedSettings) return;
+  sharedSettings = next;
+  applySideEffects(next);
+  for (const listener of listeners) listener();
+}
+
+function subscribeToStore(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/**
+ * WHO EMITTED THIS — an identity, not a latch. Module-level now, because the
+ * store is: one store, one origin. Shaped as a `.current` box deliberately, so
+ * the emits below keep reading `origin: originIdRef.current` — the property
+ * `tests/unit/settingsEchoOrigin.test.ts` pins, for the reasons its header
+ * gives at length.
+ */
+const originIdRef = { current: `ts-${Math.random().toString(36).slice(2)}` };
+
+/**
+ * ONE bus subscription for the whole app, attached on first use.
+ *
+ * Previously every hook instance subscribed, so a cross-tab change woke eight
+ * handlers that each mutated their own copy. Now it wakes the single store.
+ */
+let busAttached = false;
+function attachBusOnce(): void {
+  if (busAttached) return;
+  busAttached = true;
+  masterBus.subscribe('SETTINGS_CHANGED', (event) => {
+    // Skip only OUR OWN echo (prevent a redundant commit).
+    if (event.payload?.origin === originIdRef.current) return;
+    const activeUserId = useUserStore.getState().user?.id;
+    if (event.payload.userId && event.payload.userId !== activeUserId) return;
+    /* An event can name the setting two ways. Another TAB emits the camelCase
+       key; `PostgresSyncHooks` relays a row change from ANOTHER DEVICE and
+       names the COLUMN. Both are this setting — translate before matching, or
+       cross-device changes arrive and are silently discarded. */
+    const rawSetting = event.payload.setting as string | undefined;
+    const setting =
+      rawSetting && rawSetting in DEFAULT_SETTINGS ? rawSetting : KEY_FOR_COLUMN[rawSetting ?? ''];
+    const { value } = event.payload;
+    if (setting && setting in DEFAULT_SETTINGS) {
+      commit((prev) => ({
+        ...prev,
+        [setting]: value,
+        // SHOWDOWN AUDIT 2026-08-25: cross-tab autoMuck toggles are just as
+        // deliberate as local ones — mark them explicit too, or the other
+        // tab's loader would lift the user's own choice back to true.
+        ...(setting === 'autoMuck' ? { autoMuckExplicit: true } : {}),
+      }));
     }
-  }, [settings.isHapticEnabled]);
+  });
+}
 
-  /**
-   * WHO EMITTED THIS — an identity, not a latch.
-   *
-   * Dan 2026-08-26 (settings audit). This used to be `localOriginRef =
-   * useRef(false)`: set true immediately before `masterBus.emit`, and cleared
-   * by this instance's own subscriber when the echo came back. That is a
-   * one-shot latch which depends on the echo ALWAYS arriving, and it does not:
-   * MasterBus drops a duplicate `{type, payload}` fingerprint inside 500ms
-   * (SETTINGS_CHANGED is not in DEDUP_BYPASS). Set a setting to the value it
-   * already has, or tap Reset twice, and the emit is suppressed — the echo
-   * never comes, the flag stays TRUE, and the very next genuine change from
-   * ANOTHER component or tab is silently swallowed. The symptom is the one
-   * being fixed across this whole pass: a setting that stops updating live,
-   * intermittently, with nothing in the console.
-   *
-   * A per-instance id has no state to get stuck in. Every emit says who sent
-   * it; every receiver ignores only its own. A suppressed emit now costs
-   * nothing at all.
-   */
-  const originIdRef = useRef<string>(`ts-${Math.random().toString(36).slice(2)}`);
-  useEffect(() => {
-    const unsub = masterBus.subscribe('SETTINGS_CHANGED', (event) => {
-      // Skip only OUR OWN echo (prevent redundant setSettings).
-      if (event.payload?.origin === originIdRef.current) return;
-      const activeUserId = useUserStore.getState().user?.id;
-      if (event.payload.userId && event.payload.userId !== activeUserId) return;
-      const { setting, value } = event.payload;
-      if (setting && setting in DEFAULT_SETTINGS) {
-        setSettings((prev) => ({
-          ...prev,
-          [setting]: value,
-          // SHOWDOWN AUDIT 2026-08-25: cross-tab autoMuck toggles are just as
-          // deliberate as local ones — mark them explicit too, or the other
-          // tab's loader would lift the user's own choice back to true.
-          ...(setting === 'autoMuck' ? { autoMuckExplicit: true } : {}),
-        }));
-      }
+/**
+ * Persist ONE key to the user's row.
+ *
+ * A per-key upsert, matching how `useUserTableSettings` writes the same table.
+ * That shape carries a known hazard — for a user with NO row it inserts one and
+ * every other column takes its SQL default — which is why the migration that
+ * added these columns sets each default to the matching value in
+ * `DEFAULT_SETTINGS` and asserts the pairing, and why
+ * tests/user-table-settings-defaults.test.ts pins them.
+ *
+ * Fire-and-forget by design: the local store and localStorage have already been
+ * updated, so a failed write costs the CROSS-DEVICE copy, not the setting. It
+ * deliberately does NOT roll the switch back — reverting a control the user just
+ * set, because a network call failed, is the exact behaviour Dan ruled out
+ * ("NEVER REGRESS OR AUTO CHANGE BACK UNLESS THE USER CHANGES THEM MANUALLY").
+ * The next change, or the next sign-in, reconciles it.
+ */
+function pushKeyToServer(key: keyof TableUserSettings, value: unknown): void {
+  const column = COLUMN_FOR_KEY[key];
+  if (!column || !hydratedUserId) return;
+  void supabase
+    .from('user_table_settings')
+    .upsert({ user_id: hydratedUserId, [column]: value }, { onConflict: 'user_id' })
+    .then(({ error }) => {
+      if (error) reportError(error, 'useTableSettings.Save_failed');
     });
-    return unsub;
-  }, []);
+}
+
+/**
+ * Adopt the signed-in user's row.
+ *
+ * MERGE, NOT REPLACE, and the direction matters. A player who has been using
+ * this browser signed out — or signed in before these columns existed — has
+ * real preferences in localStorage and a row full of defaults. Overwriting the
+ * former with the latter would look exactly like every setting resetting itself
+ * on login.
+ *
+ * So the row wins only where it actually differs from the column default: that
+ * is the signal the value was CHOSEN. Anything still at its default is left to
+ * the local value, and any local value the server has never seen is pushed up,
+ * which is what carries a returning player's existing settings onto their
+ * account the first time they sign in after this ships.
+ */
+async function hydrateFromServer(userId: string): Promise<void> {
+  const columns = Object.values(COLUMN_FOR_KEY).join(', ');
+  let row: Record<string, unknown> | null = null;
+  try {
+    const { data, error } = await supabase
+      .from('user_table_settings')
+      .select(columns)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) throw error;
+    row = (data as Record<string, unknown> | null) ?? null;
+  } catch (error) {
+    /* Unreadable is UNKNOWN, never "defaults". Keep the cached values and try
+       again on the next sign-in; a settings panel that empties itself because
+       one read timed out is worse than one that is briefly device-local. */
+    reportError(error, 'useTableSettings.Hydrate_failed');
+    return;
+  }
+
+  if (hydratedUserId !== userId) return; // signed out or switched mid-flight
+
+  const local = getSnapshot();
+  const merged: TableUserSettings = { ...local };
+  const toPush: Array<[keyof TableUserSettings, unknown]> = [];
+  let changed = false;
+
+  for (const [key, column] of Object.entries(COLUMN_FOR_KEY) as Array<
+    [keyof TableUserSettings, string]
+  >) {
+    const serverValue = row?.[column];
+    if (row === null || serverValue === null || serverValue === undefined) {
+      // No row, or a column this row predates: the local value is all there is.
+      if (local[key] !== DEFAULT_SETTINGS[key]) toPush.push([key, local[key]]);
+      continue;
+    }
+    if (locallyTouched.has(key)) continue; // a live edit outranks a stale read
+
+    const serverChose = serverValue !== DEFAULT_SETTINGS[key];
+    if (serverChose) {
+      if (merged[key] !== serverValue) {
+        (merged as unknown as Record<string, unknown>)[key] = serverValue;
+        changed = true;
+      }
+    } else if (local[key] !== DEFAULT_SETTINGS[key]) {
+      // Server never had an opinion; carry this browser's choice up to it.
+      toPush.push([key, local[key]]);
+    }
+  }
+
+  if (changed) commit(() => merged);
+  for (const [key, value] of toPush) pushKeyToServer(key, value);
+}
+
+/**
+ * Follow the signed-in user. Called from the hook so it runs inside React's
+ * lifecycle, but guarded so the work happens ONCE per user rather than once per
+ * mounted table.
+ */
+function syncToUser(userId: string | null): void {
+  if (userId === hydratedUserId) return;
+  hydratedUserId = userId;
+  locallyTouched.clear();
+  if (userId) void hydrateFromServer(userId);
+}
+
+/**
+ * TEST SEAM. The store is a module singleton, so a suite that wants to assert
+ * load-time behaviour has to be able to forget it — the same way it already
+ * clears localStorage between cases.
+ */
+export function __resetTableSettingsStoreForTest(): void {
+  sharedSettings = null;
+  listeners.clear();
+  hydratedUserId = null;
+  locallyTouched.clear();
+  busAttached = false;
+}
+
+export function useTableSettings() {
+  attachBusOnce();
+  const settings = useSyncExternalStore(subscribeToStore, getSnapshot, getSnapshot);
+
+  /* Adopt the signed-in user's row when auth resolves.
+     `syncToUser` is a no-op unless the id actually changed, so this costs one
+     comparison per render even with six tables mounted — and the hydrate itself
+     happens once per user, not once per table. */
+  const userId = useUserStore((state) => state.user?.id ?? null);
+  useEffect(() => {
+    syncToUser(userId);
+  }, [userId]);
 
   // Update a single setting by key
   const updateSetting = useCallback(
     <K extends keyof TableUserSettings>(key: K, value: TableUserSettings[K]) => {
-      setSettings((prev) => ({
+      commit((prev) => ({
         ...prev,
         [key]: value,
         // SHOWDOWN AUDIT 2026-08-25: a personal autoMuck toggle is the ONLY
         // thing that makes a stored false authoritative — see the loader.
         ...(key === 'autoMuck' ? { autoMuckExplicit: true } : {}),
       }));
-      // Broadcast for cross-tab / cross-component sync
+      // Broadcast for cross-TAB sync. Within this tab the shared store above
+      // has already updated every consumer, so a dropped message costs nothing.
       masterBus.emit('SETTINGS_CHANGED', {
         setting: key,
         value: value as string | number | boolean,
         origin: originIdRef.current,
       });
+      // …and up to the user's row, for cross-DEVICE.
+      locallyTouched.add(key);
+      pushKeyToServer(key, value);
+      if (key === 'autoMuck') {
+        // The explicit marker is what makes a stored OFF authoritative, so it
+        // has to travel with the setting rather than staying in one browser.
+        locallyTouched.add('autoMuckExplicit');
+        pushKeyToServer('autoMuckExplicit', true);
+      }
     },
     []
   );
 
   // Reset all settings to defaults
   const resetSettings = useCallback(() => {
-    setSettings(DEFAULT_SETTINGS);
+    commit(() => DEFAULT_SETTINGS);
     // Broadcast each default for cross-tab sync
     for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
       masterBus.emit('SETTINGS_CHANGED', {
@@ -230,12 +524,17 @@ export function useTableSettings() {
         value: value as string | number | boolean,
         origin: originIdRef.current,
       });
+      /* A reset is a manual choice, so it travels to the row like any other.
+         Marked locally-touched too, or an in-flight hydrate could answer with
+         the pre-reset values and undo it. */
+      locallyTouched.add(key as keyof TableUserSettings);
+      pushKeyToServer(key as keyof TableUserSettings, value);
     }
   }, []);
 
   // Bulk update multiple settings at once
   const updateSettings = useCallback((updates: Partial<TableUserSettings>) => {
-    setSettings((prev) => ({
+    commit((prev) => ({
       ...prev,
       ...updates,
       // SHOWDOWN AUDIT 2026-08-25: same rule as updateSetting — an autoMuck
@@ -249,6 +548,12 @@ export function useTableSettings() {
         value: value as string | number | boolean,
         origin: originIdRef.current,
       });
+      locallyTouched.add(key as keyof TableUserSettings);
+      pushKeyToServer(key as keyof TableUserSettings, value);
+    }
+    if ('autoMuck' in updates) {
+      locallyTouched.add('autoMuckExplicit');
+      pushKeyToServer('autoMuckExplicit', true);
     }
   }, []);
 

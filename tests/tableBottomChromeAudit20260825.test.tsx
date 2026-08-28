@@ -186,6 +186,61 @@ describe('a pre-action whose toggle disappears is disarmed, not stranded', () =>
     expect(onPreActionChange).toHaveBeenCalledWith(null);
   });
 
+  /**
+   * Dan 2026-08-28 (CRITICAL, verbatim): "I was in the small blind and
+   * clicked the Call 15 button (NOT the Call Any button), it auto called a
+   * raise which was more than the 15. THAT CAN NEVER EVER EVER HAPPEN."
+   * The engine now refuses it server-side; this is the client half — the
+   * armed toggle disarms on screen the moment the price rises.
+   */
+  it('clears an armed Call the moment the price RISES (a raise arrived)', () => {
+    const onPreActionChange = vi.fn();
+    const { rerender } = render(
+      <PreActionBar
+        canCheck={false}
+        isMyTurn={false}
+        preAction="call"
+        onPreActionChange={onPreActionChange}
+        currentBet={15}
+      />
+    );
+    expect(onPreActionChange).not.toHaveBeenCalled();
+
+    rerender(
+      <PreActionBar
+        canCheck={false}
+        isMyTurn={false}
+        preAction="call"
+        onPreActionChange={onPreActionChange}
+        currentBet={65}
+      />
+    );
+    expect(onPreActionChange).toHaveBeenCalledWith(null);
+  });
+
+  it('an armed Call survives an unchanged price', () => {
+    const onPreActionChange = vi.fn();
+    const { rerender } = render(
+      <PreActionBar
+        canCheck={false}
+        isMyTurn={false}
+        preAction="call"
+        onPreActionChange={onPreActionChange}
+        currentBet={15}
+      />
+    );
+    rerender(
+      <PreActionBar
+        canCheck={false}
+        isMyTurn={false}
+        preAction="call"
+        onPreActionChange={onPreActionChange}
+        currentBet={15}
+      />
+    );
+    expect(onPreActionChange).not.toHaveBeenCalled();
+  });
+
   it('leaves Fold and Call Any alone — they are on the bar in every state', () => {
     const onPreActionChange = vi.fn();
     const { rerender } = render(

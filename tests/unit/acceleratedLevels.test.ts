@@ -14,6 +14,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { acceleratedLevelMs } from '../../server/src/tournament/acceleratedLevels';
+import { sliceMethod } from '../helpers/sourceWindow';
 
 const MIN = 60_000;
 
@@ -51,7 +52,7 @@ describe('levelDurationMs applies the halving conditionally (source pin)', () =>
   it('halves only for accelerated_mtt tournaments after late reg closes', () => {
     const at = BASE.indexOf('protected levelDurationMs');
     expect(at).toBeGreaterThan(-1);
-    const body = BASE.slice(at, at + 1200);
+    const body = sliceMethod(BASE, 'protected levelDurationMs');
     expect(body).toMatch(/accelerated_mtt === true/);
     expect(body).toMatch(/isLateRegClosed\(\)/);
     expect(body).toMatch(/acceleratedLevelMs\(/);
@@ -60,7 +61,7 @@ describe('levelDurationMs applies the halving conditionally (source pin)', () =>
   it('isLateRegClosed uses the same cap the finalization gate uses', () => {
     const at = BASE.indexOf('protected isLateRegClosed');
     expect(at).toBeGreaterThan(-1);
-    const body = BASE.slice(at, at + 600);
+    const body = sliceMethod(BASE, 'protected isLateRegClosed');
     expect(body).toMatch(/prizePoolFinalized/);
     expect(body).toMatch(/late_reg_levels/);
   });

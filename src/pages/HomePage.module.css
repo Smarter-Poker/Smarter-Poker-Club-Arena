@@ -488,8 +488,6 @@
 
 /* Hover lift */
 .carouselCardFeatured:hover {
-  transform: scale(1.04) translateY(-4px);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
 }
 
 /* Tap/active feedback */
@@ -877,11 +875,7 @@
 /* ── CTA Card Hover/Focus States ──────────────────────────────────────── */
 
 .ctaCard:hover {
-  transform: translateY(-4px);
   border-color: rgba(0, 212, 255, 0.5);
-  box-shadow:
-    0 12px 36px rgba(0, 0, 0, 0.4),
-    0 0 20px rgba(0, 212, 255, 0.12);
   transition:
     transform 0.25s ease,
     border-color 0.25s ease,
@@ -1117,7 +1111,6 @@
 /* Hover lift on desktop — bevel intensifies as card rises */
 @media (hover: hover) {
   .tileCard:hover {
-    transform: translateY(-4px) scale(1.03);
     filter: brightness(1.08);
   }
   .tileCard:hover .tileImageWrapper {
@@ -1704,8 +1697,6 @@
 
 .modalButtonPrimary:hover {
   background: linear-gradient(135deg, #33ddff, #33aaff);
-  box-shadow: 0 12px 30px rgba(0, 212, 255, 0.3);
-  transform: translateY(-2px);
 }
 
 .modalButtonPrimary:disabled {
@@ -2155,8 +2146,6 @@
 }
 
 .errorBoundaryRetry:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 212, 255, 0.3);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -2582,7 +2571,6 @@
 
 .cashierSwitchBtn:hover {
   background: rgba(0, 212, 255, 0.2);
-  transform: scale(1.08);
 }
 
 .cashierSwitchBtn:focus-visible {

@@ -67,21 +67,42 @@ describe('a live hand is never dimmed by a finished one', () => {
 });
 
 describe('pre-actions reach the engine, and never hide an armed one', () => {
-  it('arming retries instead of losing to a 30s circuit breaker', () => {
-    expect(code).toMatch(/retryAsync\(\(\) => serverSetPreAction\(tableId, serverAction\)/);
+  /* Dan 2026-08-28 rewrite: serverSetPreAction NEVER throws, so the old
+     `retryAsync(() => serverSetPreAction(...))` shape resolved its first
+     `{success:false}` and retried NOTHING — the pin here used to require
+     exactly that broken shape. Both directions must now throw a retryable
+     error on a falsy result so retryAsync's attempts are real. */
+  it('arming retries for real: a falsy result is thrown as retryable', () => {
+    expect(code).toMatch(/await serverSetPreAction\(tableId, serverAction, armCap\)/);
+    expect(code).toMatch(/network\/preaction-arm/);
+  });
+
+  it('the armed CALL carries the price the player was looking at (Dan 2026-08-28)', () => {
+    // "Call 15" can never call a raise to 65 — the arm-time price rides to
+    // the engine as auto_call's cap, and only for auto_call.
+    expect(code).toMatch(
+      /serverAction === 'auto_call' \? preActionCallAmountRef\.current : undefined/
+    );
+    expect(code).toMatch(/preActionCallAmountRef\.current = Math\.max\(/);
   });
 
   it('clearing retries too - it is the direction that folds a live hand', () => {
-    expect(code).toMatch(/retryAsync\(\(\) => serverSetPreAction\(tableId, 'clear'\)/);
+    expect(code).toMatch(/await serverSetPreAction\(tableId, 'clear'\)/);
+    expect(code).toMatch(/network\/preaction-clear/);
   });
 
   it('a failed clear restores the armed control rather than going dark', () => {
     // If the engine is still holding it, the player must be able to SEE it.
-    // BOTH failure paths must restore it: the resolved-but-refused branch AND
-    // the thrown branch. Requiring only one let a mutation that removed the
-    // first still pass, which is how this pin was caught being too weak.
+    // The restore must read from lastArmedPreActionRef — `const armed =
+    // preAction` inside the clear branch is null by definition (dead code
+    // this repo shipped until 2026-08-28).
+    expect(code).toMatch(/const armed = lastArmedPreActionRef\.current/);
     const restores = code.match(/if \(armed\) setPreAction\(armed\)/g) ?? [];
-    expect(restores, 'expected the armed control restored in .then AND .catch').toHaveLength(2);
+    expect(
+      restores.length,
+      'expected the armed control restored on a failed clear'
+    ).toBeGreaterThanOrEqual(1);
+    expect(code).toMatch(/lastArmedPreActionRef\.current = preAction/);
   });
 
   it('a failed arm still disarms, so the bar never claims what the engine refused', () => {
@@ -89,9 +110,9 @@ describe('pre-actions reach the engine, and never hide an armed one', () => {
     expect(code).toMatch(/PreAction_set_refused/);
   });
 
-  it('both directions survive a thrown error, not just a falsy result', () => {
-    expect(code).toMatch(/PreAction_set_threw/);
-    expect(code).toMatch(/PreAction_clear_threw/);
+  it('both failure paths report', () => {
+    expect(code).toMatch(/PreAction_set_refused/);
+    expect(code).toMatch(/PreAction_clear_refused/);
   });
 });
 

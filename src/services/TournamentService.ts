@@ -38,6 +38,16 @@ const REGISTER_REASON_TEXT: Record<string, string> = {
   tournament_full: 'Tournament is full',
   already_registered: 'Already registered for this tournament',
   insufficient_balance: 'Insufficient chips in Player Wallet.',
+  // 2026-08-28: reasons fn_register_for_tournament actually returns but that
+  // rendered as their raw codes ("Could not register (seat_first_variant)").
+  // seat_first_variant is the guard that keeps lobby registration out of
+  // Spin/Heads-Up events - those are entered by taking a seat at the table.
+  seat_first_variant: 'This game is entered by taking a seat at its table',
+  not_authorized_to_register: 'This event needs registration approval from the club',
+  vip_only: 'This event is for VIP players only',
+  misconfigured_bounty: 'This event is misconfigured, please tell the club owner',
+  // The four-table cap, surfaced as a rule rather than a raw trigger message.
+  table_limit_reached: 'You are already in four games. Leave one to join another.',
 };
 
 /**
@@ -445,6 +455,12 @@ class TournamentService {
           .eq('id', unionClub.union_id)
           .maybeSingle();
 
+        // FAIL CLOSED (2026-08-28). This used to set `allowCrossClub = true` in
+        // the catch, with the comment "Default allow if parsing fails" - so a
+        // union that had explicitly turned cross-club tournaments OFF got them
+        // turned back ON by a malformed settings blob. A permission check that
+        // grants the permission when it cannot read the rule is not a check.
+        // The bound error was also never reported, so it failed open silently.
         let allowCrossClub = true;
         if (unionData?.settings) {
           try {
@@ -453,8 +469,11 @@ class TournamentService {
                 ? JSON.parse(unionData.settings)
                 : unionData.settings;
             allowCrossClub = settings.crossClubTournaments !== false;
-          } catch (e) {
-            allowCrossClub = true; // Default allow if parsing fails
+          } catch (e: unknown) {
+            allowCrossClub = false;
+            reportError(e, 'TournamentService.union_settings_unreadable_failing_closed', {
+              unionId: unionClub.union_id,
+            });
           }
         }
 
@@ -2123,27 +2142,44 @@ class TournamentService {
     const buyIn = tournament.buy_in_amount || 0;
     const guarantee = tournament.guaranteed_prize || 0;
 
-    // Count only REAL (non-horse) entries. Horses register free (buy_in 0) and
-    // must not inflate the prize pool — buy_in_amount is not populated on the
-    // tournament_players row for real players (atomic_tournament_register omits
-    // it), so exclusion is by the profiles.is_horse flag rather than by amount.
+    // HORSES ARE PLAYERS (Dan, binding). This block used to subtract every
+    // horse from the entry count, on the stated premise that "horses register
+    // free (buy_in 0) and must not inflate the prize pool". That premise is
+    // false, and it is false by a factor of five thousand: over the seven days
+    // to 2026-08-28 humans paid 18 tournament buy-ins worth 702 chips and
+    // horses paid 104,317 worth 2,313,221. Horses fund 99.97% of tournament
+    // prize money on this platform.
+    //
+    // fn_register_horse_for_tournament charges the horse through
+    // atomic_deduct_wallet_and_log and adds v_split.prize to prize_pool, on
+    // exactly the same terms as fn_register_for_tournament — its own comment
+    // says "a horse and a human must enter the same event on the same terms".
+    // So the pool the database builds is right, and this function recomputed
+    // it from scratch with every horse deleted and OVERWROTE it. It runs after
+    // every rebuy, add-on and re-entry, so one human re-entering a fifty-horse
+    // event rewrote that event's pool to a single entry's worth.
+    //
+    // Deleting the filter is the fix. An entry is an entry.
+    //
+    // THE READS ARE CHECKED NOW. `{ data }` was destructured without
+    // `{ error }`, and supabase-js does not throw on a PostgREST error — it
+    // returns `data: null`, so the try/catch below could never see one. A
+    // failed read therefore meant entryCount 0, and this function wrote that
+    // straight over a real prize pool. An unreadable count is UNKNOWN, never
+    // zero: on any read failure it now refuses to write at all and reports,
+    // leaving the pool the database already computed.
     let entryCount = 0;
-    const { data: entryRows } = await supabase
+    const { data: entryRows, error: entryErr } = await supabase
       .from('tournament_players')
       .select('user_id')
       .eq('tournament_id', tournamentId);
-    if (entryRows && entryRows.length > 0) {
-      const entryUserIds = entryRows.map((r) => r.user_id);
-      const { data: horseRows } = await supabase
-        .from('profiles')
-        .select('id')
-        .in('id', entryUserIds)
-        .eq('is_horse', true);
-      const horseIds = new Set((horseRows || []).map((h) => h.id));
-      // Each row is one paid entry (re-entries create additional rows); count
-      // rows whose user is not a horse.
-      entryCount = entryRows.filter((r) => !horseIds.has(r.user_id)).length;
+    if (entryErr) {
+      reportError(entryErr, 'TournamentService.recalculatePrizePool.entry_read_failed', {
+        tournamentId,
+      });
+      return tournament.prize_pool || 0;
     }
+    entryCount = entryRows?.length ?? 0;
 
     // Count rebuys and add-ons from wallet_transactions (always available).
     // Only the BASE cost feeds the prize pool.
@@ -2161,11 +2197,20 @@ class TournamentService {
     // head value out of each one the way registration does.
     let rebuyEntryCount = 0;
     try {
-      const { data: rebuyTxns } = await supabase
+      const { data: rebuyTxns, error: rebuyErr } = await supabase
         .from('wallet_transactions')
         .select('amount, category')
         .eq('related_entity_id', tournamentId)
         .in('category', ['rebuy', 'addon']);
+      // Same rule as the entry read: a rebuy ledger we could not read is not
+      // "no rebuys". Writing a pool that excludes chips players were already
+      // charged is the failure this guard exists to prevent.
+      if (rebuyErr) {
+        reportError(rebuyErr, 'TournamentService.recalculatePrizePool.rebuy_read_failed', {
+          tournamentId,
+        });
+        return tournament.prize_pool || 0;
+      }
 
       if (rebuyTxns) {
         for (const tx of rebuyTxns) {
@@ -2192,11 +2237,17 @@ class TournamentService {
       // rake_records holds the fee that was ACTUALLY booked, per purchase, in
       // the same transaction that charged it. Subtracting it is exact for both
       // eras and needs no knowledge of which rule was in force.
-      const { data: feeRows } = await supabase
+      const { data: feeRows, error: feeErr } = await supabase
         .from('rake_records')
         .select('rake_amount, metadata')
         .eq('tournament_id', tournamentId)
         .eq('source', 'process_tournament_rebuy');
+      if (feeErr) {
+        reportError(feeErr, 'TournamentService.recalculatePrizePool.fee_read_failed', {
+          tournamentId,
+        });
+        return tournament.prize_pool || 0;
+      }
       if (feeRows) {
         for (const row of feeRows) {
           const kind = String((row as { metadata?: { kind?: string } })?.metadata?.kind || '');

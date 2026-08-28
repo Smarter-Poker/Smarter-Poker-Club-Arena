@@ -163,7 +163,6 @@
 }
 
 .searchBar button:hover:not(:disabled) {
-  transform: scale(1.05);
 }
 
 .searchBar button:disabled {
@@ -200,7 +199,6 @@
 
 .resultCard:hover {
   background: rgba(255, 255, 255, 0.08);
-  transform: translateY(-1px);
 }
 
 .playerAvatar {
@@ -316,7 +314,6 @@
 }
 
 .generateBtn:hover:not(:disabled) {
-  transform: scale(1.02);
 }
 
 .generateBtn:disabled {

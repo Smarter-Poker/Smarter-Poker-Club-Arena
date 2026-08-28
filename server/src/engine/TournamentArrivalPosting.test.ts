@@ -17,6 +17,7 @@
  * two seats the big blind has just gone past.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { sliceBlockAfter, sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 vi.mock('../services/supabase.js', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('../services/supabase.js');
@@ -104,7 +105,7 @@ describe('B2 the charge itself', () => {
     expect(src).toMatch(/this\.isTournamentTable\(\)\s*&&\s*this\.mustPostBB\.size\s*>\s*0/);
     expect(src).toMatch(/bbOnlyPosts:\s*bbOnlyPostSeats\.length/);
     // deadBlinds stays cash-only.
-    const dead = src.slice(src.indexOf('deadBlinds:'), src.indexOf('deadBlinds:') + 200);
+    const dead = sliceEnclosingBlock(src, 'deadBlinds:');
     expect(dead).toMatch(/!this\.isTournamentTable\(\)/);
     expect(dead).not.toMatch(/mustPostBB/);
   });
@@ -113,7 +114,7 @@ describe('B2 the charge itself', () => {
     const src = await read();
     const at = src.indexOf('if (this.mustPostBB.size > 0) {');
     expect(at, 'mustPostBB settle block not found').toBeGreaterThan(-1);
-    const block = src.slice(at, at + 300);
+    const block = sliceBlockAfter(src, 'if (this.mustPostBB.size > 0) {');
     expect(block).toMatch(/p\.seat_number !== sbSeat/);
     expect(block).toMatch(/this\.mustPostBB\.delete/);
   });

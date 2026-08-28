@@ -1061,7 +1061,22 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       return { success: false, error: `Invalid pre-action: ${action}` };
     }
 
-    this.preActionEngine.setPreAction(this.tableId, userId, action as any, maxCallAmount);
+    /**
+     * Dan 2026-08-28 (CRITICAL): record the price the player is looking at
+     * RIGHT NOW, computed by the engine from its own authoritative state —
+     * never trusted from the client. PreActionEngine invalidates an
+     * `auto_call` whose price has risen past this by the time it fires, so
+     * "Call 15" can never call a raise to more than 15 even when the client
+     * sends no maxCallAmount at all.
+     */
+    const toCallAtSet = Math.max(0, state.currentBet - (player.bet ?? 0));
+    this.preActionEngine.setPreAction(
+      this.tableId,
+      userId,
+      action as any,
+      maxCallAmount,
+      toCallAtSet
+    );
 
     // LIVE E2E FIX 2026-08-15: a pre-action armed AFTER the player's turn had
     // already started used to sit queued until their NEXT turn — the only
@@ -1853,6 +1868,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         // Malmuth-Harville pressure model in HorseLogic.icmRisk.
         stacks: tctx.stacks,
         payoutPct: tctx.payoutPct,
+        // V26 PRIZE LANDSCAPE: what a bust is actually worth right now -
+        // how many chests are left, their mean, and whether the big one is
+        // still in the box.
+        mysteryChestsLeft: tctx.mysteryChestsLeft,
+        mysteryMeanCents: tctx.mysteryMeanCents,
+        mysteryTopCents: tctx.mysteryTopCents,
+        mysteryTopLive: tctx.mysteryTopLive,
+        meanBountyCents: tctx.meanBountyCents,
         // V23 ENDGAME: final-table flag + the blind clock (jam BEFORE the
         // blinds halve the M, not after).
         finalTable: tctx.finalTable,
@@ -1891,6 +1914,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const gameState = {
       players: state.players,
       communityCards: state.communityCards,
+      // MULTI-BOARD EQUITY 2026-08-28 (Horses Are Players law): on a
+      // double/triple-board bomb hand the fleet prices EVERY board — the
+      // brain averages per-board equity, exactly what the pot pays on.
+      communityCards2: fullState?.communityCards2 ?? [],
+      communityCards3: fullState?.communityCards3 ?? [],
       pot: state.pot,
       currentBet: state.currentBet,
       minRaise: state.minRaise,

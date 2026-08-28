@@ -33,6 +33,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceStatement, sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
@@ -203,9 +204,8 @@ describe('nobody busts before the chips arrive', () => {
        arithmetic as the fallback for a freeroll Spin whose paid gate never runs
        and so never stamps an anchor. The "+ one sweep interval of slack" this
        test exists for applies to whichever was used. */
-    const armAt = BASE.indexOf('this.bustingArmedAt =');
-    expect(armAt).toBeGreaterThan(-1);
-    const arm = BASE.slice(armAt, armAt + 300);
+    expect(BASE.indexOf('this.bustingArmedAt =')).toBeGreaterThan(-1);
+    const arm = sliceStatement(BASE, 'this.bustingArmedAt =');
     // Measured from the hold, which is anchored to the third payment...
     expect(arm).toMatch(/this\.spinHoldUntil > 0 \? this\.spinHoldUntil/);
     // ...falling back to the pre-anchor arithmetic when nothing was stamped...
@@ -266,8 +266,8 @@ describe('a tournament table reports the level and blinds it is actually playing
   });
 
   it('the engine keeps `stakes` in step on every level-up', () => {
-    const upd = BASE.slice(BASE.indexOf('const safeSmallBlind'));
-    expect(upd.slice(0, 900)).toMatch(/stakes: `\$\{safeSmallBlind\}\/\$\{safeBigBlind\}`/);
+    const upd = sliceEnclosingBlock(BASE, 'const safeSmallBlind');
+    expect(upd).toMatch(/stakes: `\$\{safeSmallBlind\}\/\$\{safeBigBlind\}`/);
   });
 
   it('blind_structure is PARSED, not cast — it is a text column of JSON', () => {
@@ -279,8 +279,7 @@ describe('a tournament table reports the level and blinds it is actually playing
   });
 
   it('the level number is set unconditionally, not only when the blind table parses', () => {
-    const at = TABLE_PAGE.indexOf('const tableHasLiveBlinds');
-    expect(at).toBeGreaterThan(-1);
-    expect(TABLE_PAGE.slice(at, at + 400)).toMatch(/currentLevel,/);
+    expect(TABLE_PAGE.indexOf('const tableHasLiveBlinds')).toBeGreaterThan(-1);
+    expect(sliceEnclosingBlock(TABLE_PAGE, 'const tableHasLiveBlinds')).toMatch(/currentLevel,/);
   });
 });

@@ -237,7 +237,7 @@ const LOCAL_CACHE_PREFIX = 'user_table_settings_cache:';
 
 const cacheKeyForUser = (userId: string) => `${LOCAL_CACHE_PREFIX}${userId}`;
 
-function readCachedSettings(userId: string | null | undefined): UserTableSettings {
+export function readCachedSettings(userId: string | null | undefined): UserTableSettings {
   if (!userId) return { ...DEFAULT_USER_TABLE_SETTINGS };
   try {
     const cached = localStorage.getItem(cacheKeyForUser(userId));

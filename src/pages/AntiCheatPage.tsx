@@ -440,14 +440,8 @@ export default function AntiCheatPage() {
     if (!clubId) return;
 
     const unsubs = [
-      masterBus.subscribeDebounced(
-        'ANTI_CHEAT_FLAG_CREATED',
-        () => {
-          loadStats(clubId);
-          setFlagsLoaded(false);
-        },
-        500
-      ),
+      // ANTI_CHEAT_FLAG_CREATED listener removed 2026-08-28: nothing emits it
+      // on the client bus (flags are created server-side), so it never fired.
       masterBus.subscribeDebounced(
         'PLAYER_KICKED',
         () => {

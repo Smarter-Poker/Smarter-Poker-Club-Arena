@@ -30,19 +30,21 @@ export interface MiniStatsCardProps {
   currentStack: number;
   /** Total chips bought in (sum of all buy-ins/rebuys) */
   totalBuyIn: number;
-  /** Hands played this session */
-  handsPlayed: number;
-  /** VPIP count (hands voluntarily put money in) */
-  vpipCount: number;
-  /** Hands won this session */
-  handsWon: number;
   /** Whether the hero is seated */
   isSeated: boolean;
-  /** Tap handler — opens full session stats modal */
+  /** Tap handler — session stats on cash, the tournament lobby on a tournament */
   onTap?: () => void;
   /** Whether the table is a tournament */
   isTournament?: boolean;
 }
+
+/* `handsPlayed`, `vpipCount` and `handsWon` were removed from this interface on
+   2026-08-28 along with the four-figure tournament bar that was their only
+   reader. Dan: "STATS SHOULD LIVE INSIDE THE HERO AVATAR." They are still
+   tracked in TablePage and still shown — in the session-stats surfaces the hero
+   hub launches — they are simply no longer passed to a corner button that does
+   not print them. Left in place they would have been three dead props that
+   every future reader had to check. */
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -51,9 +53,6 @@ export interface MiniStatsCardProps {
 export function MiniStatsCard({
   currentStack,
   totalBuyIn,
-  handsPlayed,
-  vpipCount,
-  handsWon,
   isSeated,
   onTap,
   isTournament = false,
@@ -65,47 +64,38 @@ export function MiniStatsCard({
   const pnl = currentStack - totalBuyIn;
   const pnlColor = pnl >= 0 ? 'var(--success, #3fb950)' : 'var(--danger, #F02849)';
   const pnlSign = pnl >= 0 ? '+' : '';
-  const vpipPct = handsPlayed > 0 ? Math.round((vpipCount / handsPlayed) * 100) : 0;
-  /* `winRate` deleted 2026-08-25: computed on every render and read by
-     nothing. `handsWon` is shown directly on the tournament bar instead. */
+  /* `vpipPct` deleted 2026-08-28 with the tournament bar that was its only
+     reader; `winRate` went the same way on 2026-08-25. */
 
   const handleClick = () => {
     onTap?.();
   };
 
   /**
-   * TOURNAMENT STATS BAR — Dan 2026-08-25 (binding): "tournaments are still
-   * missing the stats bar in the right corner."
+   * ═══ ON A TOURNAMENT THIS CONTROL IS THE LOBBY DOOR (Dan 2026-08-28) ═══
    *
-   * They were, and this early return is why. It short-circuited PAST every
-   * figure the card exists to show and rendered a bare chart glyph with the
-   * word STATS — a button that opens a panel, not a stats bar. A player in a
-   * tournament could see nothing about their own game without tapping.
+   * Dan, ruling on this exact corner: "ALL TOURNAMENTS NEED THE STATS ICON IN
+   * THE UPPER RIGHT HAND CORNER. IT SHOULDN'T SHOW THE STATS, BUT OPEN TO THE
+   * TOURNAMENT LOBBY PAGE AS AN IN GAME 3/4 POP UP", and then, asked whether
+   * the inline figures should stay: "STATS SHOULD LIVE INSIDE THE HERO AVATAR,
+   * WHEN YOU CLICK IT YOU SHOULD SEE STATS INSIDE THERE. STATS ICON IS NOT THE
+   * TOURNAMENT LOBBY BUTTON. USE THE EXACT BUTTON AS IT IS."
    *
-   * It now shows the numbers, in the corner, the way a cash table does. Buy-In
-   * and P&L are deliberately absent: in a tournament your buy-in is money and
-   * your stack is chips, so subtracting one from the other is meaningless. The
-   * four figures below are all genuinely session-tracked for tournament tables too
-   * (handsPlayed / vpipCount / handsWon are incremented in TablePage
-   * regardless of table kind), so none of this is invented.
+   * So the corner is ONE button, the existing artwork unchanged, and it opens
+   * the tournament lobby. It does not print figures at it. A player's own
+   * numbers are reached by tapping their own seat, which is where somebody
+   * looking for their stats actually looks.
    *
-   * The tap target is unchanged: it still opens the tournament lobby / info
-   * panel, which is where standings, payouts and the clock live in full.
+   * THIS REPLACES the four-figure bar added on 2026-08-25 in response to
+   * "tournaments are still missing the stats bar in the right corner." That
+   * complaint was about the corner being EMPTY-looking on a tournament, and it
+   * was answered by cramming Stack / Hands / VPIP / Won into a 375px-wide
+   * corner. Dan has now said where those belong instead. Seated and observing
+   * collapse to the same branch, which also retires the separate spectator case
+   * that existed only to avoid printing four zeroes at somebody who was
+   * watching rather than playing.
    */
-  /**
-   * A SPECTATOR HAS NO STATS, SO DO NOT PRINT FOUR ZEROES (fixed 2026-08-26).
-   *
-   * `currentStack` is `players[heroSeat - 1]?.stack || 0`, and an observer's
-   * `heroSeat` is 0 — so the tournament bar rendered
-   * `Stack 0 · Hands 0 · VPIP 0% · Won 0` to anyone WATCHING a tournament.
-   * That reads as a broken HUD, not as "you are not in this one", and watching
-   * a running event is a first-class route now (Dan 2026-08-25, item 1).
-   *
-   * The reason the tournament branch ignores `isSeated` at all is that this
-   * control is also the way into the tournament lobby, which an observer very
-   * much does want. So keep the button, drop the figures.
-   */
-  if (isTournament && !isSeated) {
+  if (isTournament) {
     return (
       <button
         type="button"
@@ -121,37 +111,6 @@ export function MiniStatsCard({
           aria-hidden="true"
           draggable={false}
         />
-      </button>
-    );
-  }
-
-  if (isTournament) {
-    return (
-      <button
-        type="button"
-        className="mini-stats-card mini-stats-card--tournament-stats"
-        onClick={handleClick}
-        aria-label={`Tournament stats. Stack ${currentStack.toLocaleString('en-US')}, ${handsPlayed} hands played. Opens tournament lobby.`}
-        title="Tournament Stats & Lobby"
-      >
-        <span className="mini-stats-card__tstat">
-          <span className="mini-stats-card__tstat-label">Stack</span>
-          <span className="mini-stats-card__tstat-value">
-            {currentStack.toLocaleString('en-US')}
-          </span>
-        </span>
-        <span className="mini-stats-card__tstat">
-          <span className="mini-stats-card__tstat-label">Hands</span>
-          <span className="mini-stats-card__tstat-value">{handsPlayed}</span>
-        </span>
-        <span className="mini-stats-card__tstat">
-          <span className="mini-stats-card__tstat-label">VPIP</span>
-          <span className="mini-stats-card__tstat-value">{vpipPct}%</span>
-        </span>
-        <span className="mini-stats-card__tstat">
-          <span className="mini-stats-card__tstat-label">Won</span>
-          <span className="mini-stats-card__tstat-value">{handsWon}</span>
-        </span>
       </button>
     );
   }

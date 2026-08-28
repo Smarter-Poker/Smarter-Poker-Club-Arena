@@ -19,7 +19,7 @@
  * VIP: 500 free throws/month, then 1 Diamond each; Non-VIP: 1 Diamond per throw.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   throwableService,
@@ -82,7 +82,32 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
     load();
   }, [userId]);
 
+  /**
+   * AUDIT 2026-08-28 — DOUBLE-TAP SPENT TWO DIAMONDS.
+   *
+   * The panel stayed open and tappable for the whole round trip (onClose is
+   * two awaits away), the grid buttons were never disabled, and
+   * fn_use_throwable carries no idempotency key — its advisory lock stops a
+   * concurrent double-spend of the last FREE throw but cannot deduplicate two
+   * legitimate sequential charges. A ref, not state, because two taps inside
+   * one commit both read stale state.
+   */
+  const sendingRef = useRef(false);
+  const [sending, setSending] = useState(false);
+
   const handleSelect = async (throwable: Throwable) => {
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
+    try {
+      await sendThrowable(throwable);
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+    }
+  };
+
+  const sendThrowable = async (throwable: Throwable) => {
     // Use the throwable (deducts from allowance or charges diamonds)
     const result = await throwableService.useThrowable(userId, throwable.id);
     if (!result.success) {
@@ -160,6 +185,8 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
               haptic.light();
               handleSelect(throwable);
             }}
+            disabled={sending}
+            aria-busy={sending}
             title={throwable.name}
           >
             <div className="throwable-selector__icon throwable-selector__icon--img">

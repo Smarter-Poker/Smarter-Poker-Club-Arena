@@ -4,6 +4,35 @@ import { reportError } from '../../../utils/errorReporter';
 import type { TournamentTabProps } from './types';
 import TournamentLobbyCard from '../TournamentLobbyCard';
 
+function mapSupabaseRowToCard(sat: any) {
+  const tournType = String(sat.tournament_type || '').toLowerCase();
+  let type: any = 'mtt';
+  if (sat.is_satellite || tournType === 'satellite') type = 'satellite';
+  else if (tournType === 'spin') type = 'spin';
+  else if (tournType === 'sng') type = 'sng';
+  else if (sat.is_mystery_bounty) type = 'mystery';
+  else if (sat.is_pko) type = 'pko';
+  else if (sat.is_bounty) type = 'bounty';
+  let status: any = 'finished';
+  const rawStatus = String(sat.status || '').toUpperCase();
+  if (['ANNOUNCED', 'REGISTERING', 'LATE_REG'].includes(rawStatus)) status = 'registering';
+  else if (['RUNNING'].includes(rawStatus)) status = 'running';
+  else if (['CANCELLED', 'ABORTED'].includes(rawStatus)) status = 'cancelled';
+  return {
+    id: sat.id,
+    name: sat.name || 'Satellite',
+    type,
+    buyIn: Number(sat.buy_in) || 0,
+    prizePool: Number(sat.guarantee) || 0,
+    blindStructure: 'regular',
+    maxPlayers: Number(sat.max_players) || 0,
+    registeredPlayers: Number(sat.current_players) || 0,
+    startsAt: sat.start_time,
+    status,
+    blindDuration: Number(sat.blind_duration) || undefined,
+  };
+}
+
 export default function SatellitesTab({ tournament }: TournamentTabProps) {
   const [satellites, setSatellites] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,7 +110,7 @@ export default function SatellitesTab({ tournament }: TournamentTabProps) {
     <div className="tab-pane-content" style={{ padding: '8px' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {satellites.map((sat) => (
-          <TournamentLobbyCard key={sat.id} tournament={sat} />
+          <TournamentLobbyCard key={sat.id} tournament={mapSupabaseRowToCard(sat)} />
         ))}
       </div>
     </div>

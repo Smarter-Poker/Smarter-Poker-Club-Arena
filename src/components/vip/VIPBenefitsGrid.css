@@ -72,8 +72,6 @@
 }
 
 .benefit-card.unlocked:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px var(--tier-color);
   border-color: var(--tier-color);
 }
 
@@ -108,8 +106,8 @@
 
 .checkmark {
   font-size: 18px;
-  color: #FFD700;
-  text-shadow: 0 0 8px #FFD700;
+  color: #ffd700;
+  text-shadow: 0 0 8px #ffd700;
   font-weight: 700;
 }
 
@@ -183,7 +181,7 @@
 .tier-benefits-section h4 {
   font-size: 16px;
   font-weight: 700;
-  color: #FFD700;
+  color: #ffd700;
   margin: 0;
   letter-spacing: 0.3px;
 }
@@ -217,7 +215,7 @@
 .tier-benefit-item .value {
   font-size: 18px;
   font-weight: 700;
-  color: #FFD700;
+  color: #ffd700;
 }
 
 /* Responsive */

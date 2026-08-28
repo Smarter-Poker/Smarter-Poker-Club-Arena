@@ -131,6 +131,8 @@ export interface TableModalsLayerProps {
     /* Dan 2026-08-28: read back into the settings panel instead of the old
        hardcoded `true` that snapped the toggle ON every render. */
     showBetSizePresets: boolean;
+    /** Dan 2026-08-28: scrolling announcement ticker on/off. */
+    showTicker: boolean;
     theme: string;
   };
   isSoundEnabled: boolean;
@@ -155,7 +157,18 @@ export interface TableModalsLayerProps {
     frequency: number;
     anteBB: number;
     doubleBoard: boolean;
+    boardCount?: number;
+    triggerMode?: string;
+    intervalSeconds?: number;
+    variant?: string | null;
+    announceSeconds?: number;
   } | null;
+  /**
+   * MANUAL_NEXT_HAND (spec §2.1/§15.3): drawn only for club staff; the RPC
+   * behind onManualBombPot is the real gate (role-checked + audited).
+   */
+  canManualBombPot?: boolean;
+  onManualBombPot?: () => void;
   onCloseGameRules: () => void;
 
   // Chip Animations
@@ -293,6 +306,12 @@ export interface TableModalsLayerProps {
   showBuyInModal: boolean;
   selectedSeat: number | null;
   heroAvatarUrl: string;
+  /**
+   * Seconds left in the 60-second buy-in window, or null when none is running.
+   * Dan 2026-08-28: the seat is held while the player is buying in and released
+   * if they do not finish. TablePage owns the clock; this only displays it.
+   */
+  buyInSecondsLeft?: number | null;
   onCloseBuyInModal: () => void;
   onConfirmBuyIn: (amount: number, autoRebuy?: boolean) => Promise<void>;
 
@@ -349,6 +368,8 @@ export interface TableModalsLayerProps {
       sitOutNextHand: boolean;
       tableTheme: string;
       hapticEnabled: boolean;
+      /** Dan 2026-08-28: announcement ticker on/off. */
+      showTicker: boolean;
     }>
   ) => void;
 
@@ -463,6 +484,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     showGameRules,
     isStraddleEnabled,
     bombPotRules,
+    canManualBombPot,
+    onManualBombPot,
     onCloseGameRules,
     // Chips
     chipAnimations,
@@ -551,6 +574,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     clubName,
     // Buy-In
     showBuyInModal,
+    buyInSecondsLeft,
     selectedSeat,
     heroAvatarUrl,
     onCloseBuyInModal,
@@ -815,6 +839,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         isStraddleEnabled={!isTournament && isStraddleEnabled}
         isRunItTwiceEnabled={runItTwice ?? true}
         bombPotRules={bombPotRules}
+        canManualBombPot={canManualBombPot}
+        onManualBombPot={onManualBombPot}
       />
 
       {/* Chip Animations - pass-through to parent's ChipAnimationManager */}
@@ -1120,6 +1146,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         accountBalance={accountBalance}
         bigBlind={safeBB(blinds)}
         cashoutRestriction={cashoutMinBuyIn > 0 ? cashoutMinBuyIn : undefined}
+        countdown={buyInSecondsLeft ?? undefined}
         onTopUp={onTopUpAccount}
       />
 
@@ -1206,6 +1233,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           /* Was hardcoded `true`, so the toggle snapped back ON on every
              render even though the table honoured the stored value. */
           showBetSizePresets: userSettings.showBetSizePresets,
+          showTicker: userSettings.showTicker,
           confirmAllIn: userSettings.confirmAllIn,
           sitOutNextHand,
           tableTheme: userSettings.theme,

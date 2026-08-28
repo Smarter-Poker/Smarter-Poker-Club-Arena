@@ -26,6 +26,7 @@ import { Suspense } from 'react';
 import { matchPath, useLocation } from 'react-router-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import ErrorBoundary from '../common/ErrorBoundary';
+import PortraitLock from './PortraitLock';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 const MultiTablePage = lazyWithRetry(() => import('../../pages/MultiTablePage'));
@@ -38,23 +39,35 @@ export default function PersistentTableLayer() {
   if (!user) return null;
 
   return (
-    <ErrorBoundary
-      // A crash in the (hidden) table layer must never paint a full-screen
-      // error over whatever page the player is actually browsing; on /table/*
-      // itself the default error UI is the right thing to show.
-      fallback={onTableRoute ? undefined : <span style={{ display: 'none' }} />}
-    >
-      <Suspense
-        fallback={
-          onTableRoute ? (
-            // Chunk still loading on a direct /table deep link: hold the
-            // table backdrop color so there is no white flash.
-            <div style={{ position: 'fixed', inset: 0, background: '#0a0c12', zIndex: 1 }} />
-          ) : null
-        }
+    <>
+      {/* PORTRAIT LOCK (Dan 2026-08-28: "lock it, portrait mode only").
+          It belongs HERE and nowhere else. MultiTablePage keeps up to four
+          TablePages mounted at once, so anything rendered inside a table would
+          paint four identical full-screen overlays and fire four orientation
+          lock requests. This layer is the one place that is mounted exactly
+          once and already knows whether a table is on screen — the same two
+          properties the overlay needs. It is OUTSIDE the ErrorBoundary
+          deliberately: if the table layer crashes while the phone is sideways,
+          the instruction to turn it back is the last thing that should go. */}
+      <PortraitLock active={onTableRoute} />
+      <ErrorBoundary
+        // A crash in the (hidden) table layer must never paint a full-screen
+        // error over whatever page the player is actually browsing; on /table/*
+        // itself the default error UI is the right thing to show.
+        fallback={onTableRoute ? undefined : <span style={{ display: 'none' }} />}
       >
-        <MultiTablePage />
-      </Suspense>
-    </ErrorBoundary>
+        <Suspense
+          fallback={
+            onTableRoute ? (
+              // Chunk still loading on a direct /table deep link: hold the
+              // table backdrop color so there is no white flash.
+              <div style={{ position: 'fixed', inset: 0, background: '#0a0c12', zIndex: 1 }} />
+            ) : null
+          }
+        >
+          <MultiTablePage />
+        </Suspense>
+      </ErrorBoundary>
+    </>
   );
 }

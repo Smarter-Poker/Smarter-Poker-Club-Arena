@@ -83,13 +83,33 @@ describe('prize ledger idempotency — the engine side', () => {
   it('the recovery watchdog still shares the finish path key format', () => {
     // If these two ever diverge the credit stops deduping and the double
     // PAYMENT of 2026-07-28 comes back — which is worse than the double entry.
+    //
+    // UPDATED 2026-08-28: the shared format is now PLACE-scoped,
+    // `tourney:{id}:prize:place:{position}`. It used to carry the user, which
+    // meant it deduped a repeated USER and not a repeated PLACE — so two
+    // different players stamped with the same place produced two different keys
+    // and both were paid. That is not hypothetical: Union PKO Afternoon (PLO4)
+    // 4f42d847 credited "Tournament prize: position 2" twice, an hour apart, to
+    // two players, and disbursed 720.00 against a 600.00 pool. Neither payment
+    // was mispriced — a late arrival shifted the field, the first player was
+    // renumbered 2nd -> 3rd, and the new 2nd place was paid place 2 again.
+    // This assertion pins the fix: no prize key may name a player.
     const recovery = tsCode(read('server/src/tournament/tournamentRecovery.ts'));
     const eliminations = tsCode(read('server/src/tournament/TournamentManagerEliminations.ts'));
-    expect(recovery).toMatch(/`tourney:\$\{t\.id\}:prize:\$\{[^}]+\}:\$\{[^}]+\}`/);
-    expect(eliminations).toMatch(
-      /`tourney:\$\{this\.tournamentId\}:prize:\$\{userId\}:\$\{position\}`/
-    );
-    expect(eliminations).toMatch(/`tourney:\$\{this\.tournamentId\}:prize:\$\{winnerId\}:1`/);
+    expect(recovery).toMatch(/`tourney:\$\{t\.id\}:prize:place:\$\{[^}]+\}`/);
+    expect(eliminations).toMatch(/`tourney:\$\{this\.tournamentId\}:prize:place:\$\{position\}`/);
+    expect(eliminations).toMatch(/`tourney:\$\{this\.tournamentId\}:prize:place:1`/);
+
+    // And neither path may reintroduce a user-scoped key.
+    for (const [name, src] of [
+      ['recovery', recovery],
+      ['eliminations', eliminations],
+    ] as const) {
+      for (const key of src.match(/`tourney:[^`]*:prize:[^`]*`/g) ?? []) {
+        if (!key.includes('${')) continue; // prose in comments, not a real key
+        expect(key, `${name}: user-scoped prize key`).toContain(':prize:place:');
+      }
+    }
   });
 });
 
@@ -136,11 +156,15 @@ describe('prize ledger idempotency — the database side', () => {
 
   it('neither new function is reachable by a player role', () => {
     for (const fn of ['fn_credit_player_wallet_once', 'fn_credit_and_log']) {
-      expect(migration).toMatch(new RegExp(`REVOKE ALL ON FUNCTION public\\.${fn}\\([^)]*\\) FROM anon`));
+      expect(migration).toMatch(
+        new RegExp(`REVOKE ALL ON FUNCTION public\\.${fn}\\([^)]*\\) FROM anon`)
+      );
       expect(migration).toMatch(
         new RegExp(`REVOKE ALL ON FUNCTION public\\.${fn}\\([^)]*\\) FROM authenticated`)
       );
-      expect(migration).toMatch(new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${fn}\\([^)]*\\) TO service_role`));
+      expect(migration).toMatch(
+        new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${fn}\\([^)]*\\) TO service_role`)
+      );
     }
   });
 });

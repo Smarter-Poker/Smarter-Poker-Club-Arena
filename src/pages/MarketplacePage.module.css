@@ -265,11 +265,7 @@
 }
 
 .itemCard:hover {
-  transform: translateY(-4px);
   border-color: rgba(69, 153, 255, 0.3);
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.4),
-    0 0 20px rgba(69, 153, 255, 0.08);
 }
 .itemImageArea {
   height: 148px;
@@ -662,8 +658,6 @@
 }
 .btnPrimary:hover {
   background: linear-gradient(135deg, #357ce6 0%, #1d4ed8 100%);
-  box-shadow: 0 4px 16px rgba(69, 153, 255, 0.35);
-  transform: translateY(-1px);
 }
 .btnPrimary:disabled {
   opacity: 0.45;
@@ -739,7 +733,6 @@
 .emptyButton:hover {
   background: rgba(69, 153, 255, 0.2);
   border-color: rgba(69, 153, 255, 0.4);
-  transform: translateY(-1px);
 }
 
 /* ═══ Purchase success flash ═══ */
@@ -1077,7 +1070,6 @@
 
 .pkgCard:hover {
   border-color: rgba(69, 153, 255, 0.5);
-  transform: translateY(-2px);
 }
 
 .pkgCardPopular {
@@ -1687,7 +1679,6 @@
 
 /* Slow parallax float gives the scene physical depth on hover. */
 .itemCard:hover .itemArt {
-  transform: scale(1.05) translateY(-2px);
 }
 
 .itemArt {
@@ -1721,7 +1712,6 @@
 }
 
 .pkgCard:hover .pkgArt {
-  transform: translateY(-3px) scale(1.03);
 }
 
 /* VIP plan shield art */

@@ -112,7 +112,6 @@
   background: rgba(248, 81, 73, 0.2);
   border-color: rgba(248, 81, 73, 0.3);
   color: #f85149;
-  transform: scale(1.05);
 }
 
 .settings-panel__close:active {
@@ -218,7 +217,6 @@
 
 .settings-item__slider::-webkit-slider-thumb:hover {
   background: #3591ff;
-  transform: scale(1.1);
 }
 
 .settings-item__slider:disabled {
@@ -376,7 +374,6 @@
 .settings-action-btn:hover {
   background: rgba(24, 119, 242, 0.2);
   border-color: rgba(24, 119, 242, 0.4);
-  transform: translateY(-1px);
 }
 .settings-avatar-preview {
   width: 28px;

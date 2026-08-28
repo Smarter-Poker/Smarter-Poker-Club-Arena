@@ -124,7 +124,6 @@
 .buy-in-modal__close:hover {
   background: #f85149;
   color: #ffffff;
-  transform: rotate(90deg);
 }
 
 .buy-in-modal__restriction-notice {
@@ -252,10 +251,6 @@
 }
 
 .buy-in-modal__slider::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.4),
-    0 0 16px rgba(111, 220, 255, 0.6);
 }
 
 /* Firefox Thumb */
@@ -275,10 +270,6 @@
 }
 
 .buy-in-modal__slider::-moz-range-thumb:hover {
-  transform: scale(1.15);
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.4),
-    0 0 16px rgba(111, 220, 255, 0.6);
 }
 
 .buy-in-modal__slider-labels {
@@ -472,10 +463,6 @@
 
 .buy-in-modal__confirm:hover {
   background: linear-gradient(135deg, #81e2ff, #0b6ad9);
-  transform: translateY(-2px);
-  box-shadow:
-    0 6px 24px rgba(111, 220, 255, 0.35),
-    0 0 40px rgba(111, 220, 255, 0.15);
 }
 
 .buy-in-modal__confirm--disabled {

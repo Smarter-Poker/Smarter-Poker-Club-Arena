@@ -39,6 +39,7 @@ import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
 import { displayOrderWithDealtIndex } from '../../lib/tableCardDisplay';
 import { seatCardSide, type CardSide } from '../../lib/tableSeatGeometry';
 import './avatarChoreography.css';
+import { formatTableChips } from '../../utils/format';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -309,6 +310,23 @@ export interface SeatSlotProps {
    * rather than rendering nothing.
    */
   holeCardCount?: number;
+  /**
+   * Is there a HAND at this table right now?
+   *
+   * Dan 2026-08-28, on a Spin still selling its third seat: the two players
+   * who had bought seats were each drawn holding a fan of face-down cards,
+   * before a single card had been dealt — a table that looks mid-hand while
+   * it is plainly waiting for a player. The villain fan below renders for any
+   * seat whose status is 'active', which every seated player is from the
+   * moment they sit, so the cards were furniture rather than a hand.
+   *
+   * Defaults TRUE so a caller that does not pass it keeps today's behaviour
+   * exactly. The gate is deliberately permissive — holeCards present, a deal
+   * animating, a fold or muck flying out all still draw regardless — so no
+   * animation the law protects can be suppressed by it. It removes exactly
+   * one thing: backs drawn for a hand that does not exist.
+   */
+  handInPlay?: boolean;
   showStackInBB?: boolean;
   onSit?: () => void;
   /**
@@ -409,23 +427,25 @@ export interface SeatSlotProps {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Dan 2026-08-28: a stack on the felt is never abbreviated. This used to
+// render 117000 as "117K", which is a range 500 chips wide standing in for a
+// number the player is about to act on. One formatter, shared with every
+// other chip surface on the table.
 function formatStack(amount: number): string {
-  if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
-  if (amount >= 100000) return `${(amount / 1000).toFixed(0)}K`;
-  if (amount >= 10000) return `${(amount / 1000).toFixed(1)}K`;
-  // For any amount >= 1, always show as a rounded whole number.
-  // Fractional cents on big stacks are rake/split artifacts that look ugly.
-  if (amount >= 1) return Math.round(amount).toLocaleString();
-  // Sub-dollar amounts (micro-stakes like 0.25/0.50) — show 2 decimals
-  if (amount > 0) return amount.toFixed(2);
-  return '0';
+  // Same reason as ChipAnimation: fractional cents on a big stack are rake
+  // and split artifacts, not chips anyone can bet. Squared off for display
+  // only, and only above 1 so micro-stakes keep their cents.
+  return formatTableChips(amount >= 1 ? Math.round(amount) : amount);
 }
 
+// Dan 2026-08-28: the same rule as chips. A 1,500 BB stack read "1.5K BB",
+// which is the abbreviation complaint wearing a different unit. Deep counts
+// stay whole and separated; shallow ones keep the one decimal that decides
+// whether you are shoving.
 function formatStackAsBB(stack: number, bigBlind: number): string {
   if (bigBlind <= 0) return '0 BB';
   const bb = stack / bigBlind;
-  if (bb >= 1000) return `${(bb / 1000).toFixed(1)}K BB`;
-  if (bb >= 100) return `${Math.round(bb)} BB`;
+  if (bb >= 100) return `${Math.round(bb).toLocaleString('en-US')} BB`;
   return `${bb.toFixed(1)} BB`;
 }
 
@@ -691,6 +711,7 @@ export const SeatSlot = memo(
       deckStyle,
       cardBack = 'classic_blue',
       holeCardCount = 2,
+      handInPlay = true,
       showStackInBB = false,
       onSit,
       canSit = true,
@@ -1935,7 +1956,20 @@ export const SeatSlot = memo(
             before unmount; the pod itself never reflows when the cluster
             goes, because it is absolutely positioned. */}
         {!player.isHero &&
-          (player.status === 'active' || player.status === 'all_in' || isFolding || isMucking) && (
+          (player.status === 'active' || player.status === 'all_in' || isFolding || isMucking) &&
+          /* A HAND, NOT FURNITURE (Dan 2026-08-28). See `handInPlay`. Every
+             arm after the first is an escape hatch so this can never swallow
+             a real hand or a protected animation: cards actually delivered,
+             an all-in that is by definition mid-hand, a deal sliding in, a
+             fold or muck flying out. What is left — a seated player, no
+             hand, nothing animating — is the pre-start Spin that drew two
+             players holding cards before the game had a third. */
+          (handInPlay ||
+            (player.holeCards?.length ?? 0) > 0 ||
+            player.status === 'all_in' ||
+            isDealing ||
+            isFolding ||
+            isMucking) && (
             <div
               className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length && !revealHeld ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
               style={
@@ -2197,6 +2231,22 @@ export const SeatSlot = memo(
             player.status !== 'all_in' && (
               <span className={`seat__status-dot seat__status-dot--${player.status}`} />
             )}
+          {/* SITTING OUT tag (Dan 2026-08-28): "you also need to add a SITTING
+              OUT tag that other users can see at the table when a player is
+              sitting out, or is forced to sit out from connection issues."
+
+              A real element rather than the `.seat__info::after` pill that used
+              to carry this, because that pill said AWAY for both states and
+              there was no way to tell the two apart — nor to assert on it from
+              a test. AWAY still exists and still means away; this says what it
+              means. The disconnect overlay below is the third state and takes
+              precedence over neither: a dropped player reads DISCONNECTED until
+              the engine formally sits them out, and SITTING OUT after. */}
+          {player.status === 'sitting_out' && (
+            <div className="seat__sitout-badge" title="This player is sitting out">
+              SITTING OUT
+            </div>
+          )}
           {/* FIX 186: Disconnected overlay — shows DISCONNECTED label + countdown */}
           {player.status === 'disconnected' && (
             <div className="seat__disconnect-overlay" title="Player disconnected">
@@ -2628,6 +2678,10 @@ export const SeatSlot = memo(
      * seat is supposed to read YOUR SEAT instead of EMPTY, and it never did.
      */
     if (prev.holeCardCount !== next.holeCardCount) return false;
+    /* The first hand of a Spin flips this from false to true, and it is what
+       puts every villain's cards on the felt. Swallowed here, the table would
+       stay card-less through the whole hand. */
+    if (prev.handInPlay !== next.handInPlay) return false;
     if (prev.isHeroReservedSeat !== next.isHeroReservedSeat) return false;
     if (prev.position !== next.position) return false;
     if (prev.isTournament !== next.isTournament) return false;

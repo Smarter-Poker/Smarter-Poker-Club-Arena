@@ -38,6 +38,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { sliceBlockAfter } from '../helpers/sourceWindow';
 
 const src = readFileSync(path.resolve(__dirname, '../..', 'src/pages/ClubHomePage.tsx'), 'utf8');
 
@@ -45,11 +46,11 @@ const src = readFileSync(path.resolve(__dirname, '../..', 'src/pages/ClubHomePag
 const allBranch = (() => {
   const start = src.indexOf("if (gameType === 'ALL') {");
   expect(start, 'the ALL branch of lobbyEntries has moved or been renamed').toBeGreaterThan(-1);
-  const end = src.indexOf('return [...selectedTourns, ...cash];', start);
-  expect(end, 'the ALL branch no longer ends by returning tournaments then cash').toBeGreaterThan(
-    start
-  );
-  return src.slice(start, end + 60);
+  expect(
+    src.indexOf('return [...selectedTourns, ...cash];', start),
+    'the ALL branch no longer ends by returning tournaments then cash'
+  ).toBeGreaterThan(start);
+  return sliceBlockAfter(src, "if (gameType === 'ALL') {");
 })();
 
 describe('the ALL tab shows every cash game', () => {

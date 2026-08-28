@@ -97,7 +97,6 @@
     border-color 0.3s;
 }
 .bdt-stat-card:hover {
-  transform: translateY(-2px);
   border-color: rgba(0, 212, 255, 0.3);
 }
 
@@ -399,7 +398,6 @@
 }
 .bdt-btn:hover {
   background: rgba(255, 255, 255, 0.08);
-  transform: scale(1.02);
 }
 .bdt-btn:disabled {
   opacity: 0.4;

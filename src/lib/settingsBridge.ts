@@ -42,6 +42,8 @@ export interface UserSettings {
   fourColorDeck: boolean;
   animationSpeed: 'slow' | 'normal' | 'fast';
   showPotOdds: boolean;
+  /** Dan 2026-08-28: the scrolling tournament/announcement ticker. */
+  showTicker: boolean;
 
   // Gameplay
   confirmAllIn: boolean;
@@ -66,6 +68,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   fourColorDeck: false,
   animationSpeed: 'normal',
   showPotOdds: false,
+  showTicker: true,
 
   confirmAllIn: true,
   autoMuckWinners: false,
@@ -111,6 +114,7 @@ export function validateSettings(raw: unknown): UserSettings {
     fourColorDeck: bool('fourColorDeck'),
     animationSpeed: enumVal('animationSpeed', ['slow', 'normal', 'fast']),
     showPotOdds: bool('showPotOdds'),
+    showTicker: bool('showTicker'),
     confirmAllIn: bool('confirmAllIn'),
     autoMuckWinners: bool('autoMuckWinners'),
     tournamentReminders: bool('tournamentReminders'),
@@ -179,6 +183,8 @@ export function toTableSettings(s: UserSettings): Partial<TableUserSettings> {
     animationSpeed: s.animationSpeed === 'slow' ? 1.5 : s.animationSpeed === 'fast' ? 0.5 : 1,
     // ActionPanel showPotOdds
     showPotOdds: s.showPotOdds,
+    // TournamentStartingTicker — Dan 2026-08-28 ticker on/off
+    showTicker: s.showTicker,
     // ActionPanel confirmAllIn
     confirmAllIn: s.confirmAllIn,
     // TablePage: suppress the show/muck prompt on an uncontested win
@@ -200,6 +206,7 @@ export function fromTableSettings(t: TableUserSettings, base: UserSettings): Use
     fourColorDeck: t.fourColorDeck,
     animationSpeed: t.animationSpeed >= 1.5 ? 'slow' : t.animationSpeed <= 0.5 ? 'fast' : 'normal',
     showPotOdds: t.showPotOdds,
+    showTicker: t.showTicker,
     confirmAllIn: t.confirmAllIn,
     autoMuckWinners: t.autoMuckWinners,
   };

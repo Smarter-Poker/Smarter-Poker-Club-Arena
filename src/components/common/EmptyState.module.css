@@ -54,8 +54,6 @@
 }
 
 .actionButton:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(65, 105, 225, 0.4);
 }
 
 /* Loading State */

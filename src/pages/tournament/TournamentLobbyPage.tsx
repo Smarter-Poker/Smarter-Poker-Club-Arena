@@ -83,7 +83,6 @@ export default function TournamentLobbyPage() {
     setTypeFilter(currentType);
   }, [searchParams]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [visibleTournaments, setVisibleTournaments] = useState<Set<string>>(new Set());
   const [isInUnion, setIsInUnion] = useState(false);
 
   const isMounted = useIsMounted();
@@ -120,17 +119,6 @@ export default function TournamentLobbyPage() {
     tournamentsRef.current = tournaments;
   }, [tournaments]);
 
-  // Stagger animation for tournament cards
-  useEffect(() => {
-    if (tournaments.length === 0) return;
-    setVisibleTournaments(new Set());
-    tournaments.forEach((tourn, index) => {
-      setTimeout(() => {
-        setVisibleTournaments((prev) => new Set(prev).add(tourn.id));
-      }, index * 60);
-    });
-  }, [tournaments]);
-
   useEffect(() => {
     loadTournaments();
   }, [clubId, statusFilter]);
@@ -163,14 +151,8 @@ export default function TournamentLobbyPage() {
       300
     );
 
-    const unsubMerge = masterBus.subscribeDebounced(
-      'TABLE_MERGED',
-      () => {
-        // Refresh tournament list to reflect table changes
-        loadTournamentsRef.current();
-      },
-      500
-    );
+    // TABLE_MERGED listener removed 2026-08-28: nothing emits it client-side
+    // (see TournamentDetails for the full note).
 
     // Refresh profile/wallet when balance changes (e.g., after register/unregister)
     const unsubBalance = masterBus.subscribeDebounced(
@@ -192,7 +174,6 @@ export default function TournamentLobbyPage() {
 
     return () => {
       unsubElim();
-      unsubMerge();
       unsubBalance();
       unsubTableCreated();
     };
@@ -842,15 +823,7 @@ export default function TournamentLobbyPage() {
 
               {/* Tournaments in Group */}
               {group.tournaments.map((tournament) => (
-                <div
-                  key={tournament.id}
-                  className={`${visibleTournaments.has(tournament.id) ? styles.fadeInUp : styles.hidden}`}
-                  style={
-                    visibleTournaments.has(tournament.id)
-                      ? undefined
-                      : { opacity: 0, transform: 'translateY(8px)' }
-                  }
-                >
+                <div key={tournament.id} className={styles.fadeInUp}>
                   <TournamentLobbyCard
                     tournament={{
                       id: tournament.id,

@@ -561,18 +561,59 @@ export class DisconnectEngine {
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
-   * Player requests to sit out (voluntary or forced by consecutive timeouts)
+   * Player requests to sit out (voluntary or forced by consecutive timeouts).
+   *
+   * `sinceMs` seeds the eviction clock from a stamp that already exists —
+   * `table_seats.sit_out_at` — rather than from now(). Only the restore path
+   * passes it. See restoreSitOutsFromSeats().
    */
-  sitOut(tableId: string, playerId: string, reason: 'voluntary' | 'forced' = 'voluntary'): void {
+  sitOut(
+    tableId: string,
+    playerId: string,
+    reason: 'voluntary' | 'forced' = 'voluntary',
+    sinceMs?: number
+  ): void {
     const key = `${tableId}:${playerId}`;
-    const state = this.playerStates.get(key);
-    if (!state) return;
+    let state = this.playerStates.get(key);
+
+    /* REGISTRATION GAP 2026-08-28 — half of why the 5-minute boot never fired.
+     *
+     * This was `if (!state) return;`. `playerStates` is populated by
+     * registerPlayer(), and registerPlayer() had exactly two callers: inside
+     * dealHand(), and inside restoreSitOutsFromSeats() — which itself only runs
+     * for a seat that is ALREADY flagged is_sitting_out in the database.
+     *
+     * So a player who tapped Sit Out at a table that had not dealt a hand since
+     * the engine booted hit this guard and fell straight out. No state, no
+     * PLAYER_SAT_OUT event, therefore no `is_sitting_out` write to table_seats,
+     * therefore nothing for restoreSitOutsFromSeats to bootstrap from on the
+     * next pass, therefore tickSitOutsAndCollectEvictions skipped them forever
+     * (`if (!state || !state.isSittingOut) continue`).
+     *
+     * A chicken-and-egg deadlock, and it was SILENT in both directions: the
+     * HTTP handler still answered `{ success: true }` and the client happily
+     * rendered them as sitting out. The seat was then held indefinitely — which
+     * is exactly the bug reported. It bit hardest on a quiet table, which is
+     * also precisely where a seat being held forever matters most.
+     *
+     * Registering on demand is correct rather than merely convenient: being
+     * asked to sit a player out IS the proof that they are at this table. */
+    if (!state) {
+      this.registerPlayer(tableId, playerId);
+      state = this.playerStates.get(key);
+      if (!state) return;
+    }
 
     // Stamp the clock only on the TRANSITION into sitting out, so a repeated
     // sitOut() call cannot keep resetting the 5-minute eviction window.
     if (!state.isSittingOut) {
-      state.sitOutSince = Date.now();
+      state.sitOutSince = Number.isFinite(sinceMs as number) ? (sinceMs as number) : Date.now();
       state.sitOutOrbits = 0;
+    } else if (Number.isFinite(sinceMs as number)) {
+      /* A restore for somebody already marked sitting out in memory must not
+         push the clock FORWARD, but it may pull it back to the persisted truth:
+         the database stamp is older than anything this process invented. */
+      state.sitOutSince = Math.min(state.sitOutSince ?? Infinity, sinceMs as number);
     }
     state.isSittingOut = true;
 

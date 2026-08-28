@@ -109,8 +109,34 @@ export default function PreActionBar({
    * hooks cannot be conditional, and this is exactly the case where the bar is
    * about to stop rendering.
    */
+  /**
+   * Dan 2026-08-28 (CRITICAL, companion to the engine guard): the moment the
+   * armed 'call' price RISES — a raise arrived — the toggle disarms on
+   * screen, immediately, through the parent (which also tells the engine to
+   * clear). The engine independently refuses to fire an auto_call past the
+   * armed price, so this is the visible half of that guarantee, not the only
+   * half. The price at arm time is snapshotted here because `currentBet` is
+   * a live prop: comparing it to itself would never trip.
+   */
+  const armedCallPriceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (preAction === 'call') {
+      if (armedCallPriceRef.current === null) armedCallPriceRef.current = currentBet;
+    } else {
+      armedCallPriceRef.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preAction]);
+
   useEffect(() => {
     if (preAction && !visibleOrder.includes(preAction)) {
+      onPreActionChange(null);
+    } else if (
+      preAction === 'call' &&
+      armedCallPriceRef.current !== null &&
+      currentBet > armedCallPriceRef.current
+    ) {
+      // The price went up — the button the player pressed no longer exists.
       onPreActionChange(null);
     }
     // visibleOrder is rebuilt every render; depend on what actually decides it.

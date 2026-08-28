@@ -72,7 +72,6 @@
 
 .settings-btn:hover {
   background: rgba(255, 255, 255, 0.15);
-  transform: translateY(-2px);
 }
 
 .toggle-settings {
@@ -131,5 +130,4 @@
 
 .save-settings-btn:hover {
   background: rgba(255, 215, 0, 0.3);
-  transform: translateY(-2px);
 }

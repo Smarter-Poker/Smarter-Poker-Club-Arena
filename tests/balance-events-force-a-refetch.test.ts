@@ -23,6 +23,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceBlockAfter, sliceEnclosingBlock, sliceBetween, sliceCall } from './helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
@@ -47,20 +48,20 @@ describe('event-driven refreshes force past the window', () => {
   it('GlobalHeader forces on WALLET_REFRESHED', () => {
     const at = HEADER.indexOf("'WALLET_REFRESHED'");
     expect(at).toBeGreaterThan(-1);
-    expect(HEADER.slice(at, at + 260)).toMatch(/loadBalances\([^)]*\{\s*force:\s*true\s*\}\)/);
+    expect(sliceEnclosingBlock(HEADER, "'WALLET_REFRESHED'")).toMatch(/loadBalances\([^)]*\{\s*force:\s*true\s*\}\)/);
   });
 
   it('GlobalHeader forces on BALANCE_UPDATED', () => {
     const at = HEADER.indexOf("'BALANCE_UPDATED'");
     expect(at).toBeGreaterThan(-1);
-    expect(HEADER.slice(at, at + 260)).toMatch(/loadDiamonds\([^)]*\{\s*force:\s*true\s*\}\)/);
+    expect(sliceEnclosingBlock(HEADER, "'BALANCE_UPDATED'")).toMatch(/loadDiamonds\([^)]*\{\s*force:\s*true\s*\}\)/);
   });
 
   it('MasterBus forces on DIAMOND_BALANCE_CHANGED and DIAMOND_SPENT', () => {
     for (const event of ["'DIAMOND_BALANCE_CHANGED'", "'DIAMOND_SPENT'"]) {
       const at = BUS.indexOf(`this.subscribe(${event}`);
       expect(at, `${event} subscriber not found`).toBeGreaterThan(-1);
-      expect(BUS.slice(at, at + 420)).toMatch(/loadDiamonds\([^)]*\{\s*force:\s*true\s*\}\)/);
+      expect(sliceEnclosingBlock(BUS, `this.subscribe(${event}`)).toMatch(/loadDiamonds\([^)]*\{\s*force:\s*true\s*\}\)/);
     }
   });
 
@@ -70,13 +71,17 @@ describe('event-driven refreshes force past the window', () => {
     // hidden - by definition a moment when the cached number may be old.
     const busAt = WALLET_PAGE.indexOf('// ── Bus Listeners ──');
     expect(busAt).toBeGreaterThan(-1);
-    const busBlock = WALLET_PAGE.slice(busAt, busAt + 2400);
+    const busBlock = sliceBetween(
+      WALLET_PAGE,
+      '// ── Bus Listeners ──',
+      '// ── Keyboard navigation'
+    );
     const unforced = busBlock.match(/load(?:Balances|Diamonds)\(user\.id\)(?!\s*,)/g) || [];
     expect(unforced, 'unforced refresh inside a bus listener').toEqual([]);
 
     const visAt = WALLET_PAGE.indexOf('useVisibilityRefresh(');
     expect(visAt).toBeGreaterThan(-1);
-    expect(WALLET_PAGE.slice(visAt, visAt + 300)).toMatch(
+    expect(sliceCall(WALLET_PAGE, 'useVisibilityRefresh(')).toMatch(
       /loadBalances\([^)]*\{\s*force:\s*true\s*\}\)/
     );
   });
@@ -87,7 +92,7 @@ describe('event-driven refreshes force past the window', () => {
     // refresh that actually calls loadBalances, rather than the first match.
     const candidates = [...HOOKS.matchAll(/refresh: \(\) => \{/g)].map((m) => m.index ?? -1);
     const walletRefresh = candidates
-      .map((i) => HOOKS.slice(i, i + 320))
+      .map((i) => sliceBlockAfter(HOOKS.slice(i), 'refresh: () => {'))
       .find((block) => /loadBalances\(/.test(block));
     expect(walletRefresh, 'no refresh() calling loadBalances found').toBeDefined();
     expect(walletRefresh!).toMatch(/loadBalances\([^)]*\{\s*force:\s*true\s*\}\)/);
@@ -101,7 +106,7 @@ describe('mount paths deliberately do NOT force', () => {
     // starts re-fetching again and the always-on work is undone.
     const at = HEADER.indexOf('loadOnce(authUser.id);');
     expect(at).toBeGreaterThan(-1);
-    const mountBlock = HEADER.slice(at, at + 200);
+    const mountBlock = sliceEnclosingBlock(HEADER, 'loadOnce(authUser.id);');
     expect(mountBlock).toMatch(/loadBalances\(authUser\.id\);/);
     expect(mountBlock).not.toMatch(/force:\s*true/);
   });

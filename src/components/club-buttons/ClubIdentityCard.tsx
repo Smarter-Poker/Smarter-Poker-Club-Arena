@@ -1,0 +1,120 @@
+import type { ReactNode } from 'react';
+import './ClubIdentityCard.css';
+
+const CLUB_IDENTITY_SHELL = `${import.meta.env.BASE_URL}assets/club-buttons/club/club-identity-template-bbj-finish-v1.png`;
+
+export interface ClubIdentityCardProps {
+  clubName: string;
+  logoUrl?: string | null;
+  logoFallback?: ReactNode;
+  pokerAlias: string;
+  clubId: string | number;
+  playerId?: string | number | null;
+  level?: number | null;
+  playersPlaying?: number | null;
+  onCopyClubId?: () => void;
+  onCopyPlayerId?: () => void;
+  onShare?: () => void;
+  shareIcon: ReactNode;
+  className?: string;
+}
+
+function IdentityLine({
+  label,
+  accessibleLabel,
+  value,
+  onCopy,
+}: {
+  label: string;
+  accessibleLabel: string;
+  value: string | number;
+  onCopy?: () => void;
+}) {
+  const content = (
+    <>
+      <span>{label}:</span>
+      <strong>{value}</strong>
+    </>
+  );
+
+  return onCopy ? (
+    <button
+      type="button"
+      className="club-identity__line"
+      onClick={onCopy}
+      title={`Copy ${accessibleLabel}`}
+      aria-label={`Copy ${accessibleLabel} ${value}`}
+    >
+      {content}
+    </button>
+  ) : (
+    <div className="club-identity__line">{content}</div>
+  );
+}
+
+export function ClubIdentityCard({
+  clubName,
+  logoUrl,
+  logoFallback,
+  pokerAlias,
+  clubId,
+  playerId,
+  level,
+  playersPlaying,
+  onCopyClubId,
+  onCopyPlayerId,
+  onShare,
+  shareIcon,
+  className = '',
+}: ClubIdentityCardProps) {
+  return (
+    <section
+      className={`club-identity ${className}`.trim()}
+      aria-label={`${clubName} club identity`}
+    >
+      <picture className="club-identity__shell" aria-hidden="true">
+        <img src={CLUB_IDENTITY_SHELL} alt="" />
+      </picture>
+
+      <div className="club-identity__logo">
+        {logoUrl ? <img src={logoUrl} alt={`${clubName} logo`} loading="lazy" /> : logoFallback}
+      </div>
+
+      <div className="club-identity__details">
+        <h2 title={clubName}>{clubName}</h2>
+        <p className="club-identity__alias" title={pokerAlias}>
+          {pokerAlias}
+        </p>
+        <IdentityLine label="ID" accessibleLabel="Club ID" value={clubId} onCopy={onCopyClubId} />
+        <IdentityLine
+          label="ID"
+          accessibleLabel="Player ID"
+          value={playerId ?? '-'}
+          onCopy={onCopyPlayerId}
+        />
+      </div>
+
+      {level != null && (
+        <span className="club-identity__level">
+          <span>Level {level}</span>
+        </span>
+      )}
+
+      <div className="club-identity__footer">
+        <span className="club-identity__playing" aria-live="polite">
+          <strong>{playersPlaying == null ? '-' : playersPlaying.toLocaleString()}</strong>
+          <span>Playing Now</span>
+        </span>
+        <button
+          type="button"
+          className="club-identity__share"
+          onClick={onShare}
+          aria-label="Copy referral link"
+          title="Copy Referral Link"
+        >
+          {shareIcon}
+        </button>
+      </div>
+    </section>
+  );
+}

@@ -17,6 +17,7 @@ import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react'
 import TableMenu, { createDefaultMenuSections } from './TableMenu';
 import { masterBus } from '../../core/MasterBus';
 import { formatGameTitle } from '../../utils/formatGameTitle';
+import { useButtonImage } from '../../hooks/useButtonImage';
 import './TableTabBar.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -201,6 +202,17 @@ export function TableTabBar({
   const emptySlots = maxTables - tabs.length;
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  /* Dan 2026-08-28 round 2: the add-table + is the EXACT artwork from his
+     reference image — assets/buttons/{black|blue}/icon-addscreen.webp, the
+     same asset the in-table HUD add-screen button renders, so the two entry
+     points are pixel-identical and both follow the blue-buttons setting.
+     (The storage copies were re-exported with real alpha on 2026-08-28, so
+     no black canvas rides along.) ButtonImagePreloader already warms this
+     file. If the image fails to load — offline, storage outage — the inline
+     metallic SVG below takes over rather than leaving a dead blank control. */
+  const addScreenIcon = useButtonImage('icon-addscreen');
+  const [addIconFailed, setAddIconFailed] = useState(false);
 
   // ─── Transient last-action chips (PokerBros parity, Dan 2026-08-20) ───
   // When a tab's lastAction changes to a new non-empty value, flash it on the
@@ -822,66 +834,76 @@ export function TableTabBar({
             // table", so both entry points announce the same thing.
             aria-label="Open another table"
           >
-            {/* Dan 2026-08-28: the + is the metallic circled plus from his
-                reference image — a brushed-silver ring and cross, no dashed
-                outline, no background. Drawn inline so it scales crisply at
-                both the 36px desktop and 32px phone sizes and needs no asset
-                fetch before it is visible. */}
-            <svg
-              className="table-tab-bar__add-icon"
-              viewBox="0 0 48 48"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <defs>
-                <linearGradient id="spAddMetal" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stopColor="#f4f6f8" />
-                  <stop offset="35%" stopColor="#b9bfc7" />
-                  <stop offset="60%" stopColor="#7e858f" />
-                  <stop offset="80%" stopColor="#a7adb6" />
-                  <stop offset="100%" stopColor="#5f666f" />
-                </linearGradient>
-                <linearGradient id="spAddMetalDark" x1="1" y1="1" x2="0" y2="0">
-                  <stop offset="0%" stopColor="#d7dbe0" />
-                  <stop offset="50%" stopColor="#868d97" />
-                  <stop offset="100%" stopColor="#4c525a" />
-                </linearGradient>
-              </defs>
-              <circle
-                cx="24"
-                cy="24"
-                r="20"
-                fill="none"
-                stroke="url(#spAddMetal)"
-                strokeWidth="5"
+            {/* Dan 2026-08-28: the + is the metallic circled-plus from his
+                reference image — the real icon-addscreen asset (same one the
+                in-table HUD renders), with the inline SVG below as the
+                offline/load-failure fallback. */}
+            {!addIconFailed && (
+              <img
+                className="table-tab-bar__add-icon"
+                src={addScreenIcon}
+                alt=""
+                draggable={false}
+                onError={() => setAddIconFailed(true)}
               />
-              <circle
-                cx="24"
-                cy="24"
-                r="17.2"
-                fill="none"
-                stroke="rgba(0, 0, 0, 0.35)"
-                strokeWidth="0.8"
-              />
-              <rect x="21" y="12" width="6" height="24" rx="2.6" fill="url(#spAddMetalDark)" />
-              <rect x="12" y="21" width="24" height="6" rx="2.6" fill="url(#spAddMetalDark)" />
-              <rect
-                x="21.8"
-                y="12.8"
-                width="1.6"
-                height="22.4"
-                rx="0.8"
-                fill="rgba(255, 255, 255, 0.35)"
-              />
-              <rect
-                x="12.8"
-                y="21.8"
-                width="22.4"
-                height="1.6"
-                rx="0.8"
-                fill="rgba(255, 255, 255, 0.35)"
-              />
-            </svg>
+            )}
+            {addIconFailed && (
+              <svg
+                className="table-tab-bar__add-icon"
+                viewBox="0 0 48 48"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <defs>
+                  <linearGradient id="spAddMetal" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#f4f6f8" />
+                    <stop offset="35%" stopColor="#b9bfc7" />
+                    <stop offset="60%" stopColor="#7e858f" />
+                    <stop offset="80%" stopColor="#a7adb6" />
+                    <stop offset="100%" stopColor="#5f666f" />
+                  </linearGradient>
+                  <linearGradient id="spAddMetalDark" x1="1" y1="1" x2="0" y2="0">
+                    <stop offset="0%" stopColor="#d7dbe0" />
+                    <stop offset="50%" stopColor="#868d97" />
+                    <stop offset="100%" stopColor="#4c525a" />
+                  </linearGradient>
+                </defs>
+                <circle
+                  cx="24"
+                  cy="24"
+                  r="20"
+                  fill="none"
+                  stroke="url(#spAddMetal)"
+                  strokeWidth="5"
+                />
+                <circle
+                  cx="24"
+                  cy="24"
+                  r="17.2"
+                  fill="none"
+                  stroke="rgba(0, 0, 0, 0.35)"
+                  strokeWidth="0.8"
+                />
+                <rect x="21" y="12" width="6" height="24" rx="2.6" fill="url(#spAddMetalDark)" />
+                <rect x="12" y="21" width="24" height="6" rx="2.6" fill="url(#spAddMetalDark)" />
+                <rect
+                  x="21.8"
+                  y="12.8"
+                  width="1.6"
+                  height="22.4"
+                  rx="0.8"
+                  fill="rgba(255, 255, 255, 0.35)"
+                />
+                <rect
+                  x="12.8"
+                  y="21.8"
+                  width="22.4"
+                  height="1.6"
+                  rx="0.8"
+                  fill="rgba(255, 255, 255, 0.35)"
+                />
+              </svg>
+            )}
           </button>
         ))}
       </div>

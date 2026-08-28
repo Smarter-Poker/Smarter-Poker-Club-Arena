@@ -33,6 +33,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceEnclosingBlock, sliceCssRule, sliceBetween } from '../helpers/sourceWindow';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
@@ -53,7 +54,7 @@ describe('the whole scene steps back behind the winner (measured 0.73)', () => {
       );
     }
     const at = TABLE_CSS.indexOf('.table-page--winner-flash .table-art');
-    expect(TABLE_CSS.slice(at, at + 400)).toMatch(/brightness\(0\.73\)/);
+    expect(sliceCssRule(TABLE_CSS, '.table-page--winner-flash .table-art')).toMatch(/brightness\(0\.73\)/);
   });
 
   it('every seat chrome element dims — cards, +N float and sparkles excluded', () => {
@@ -69,7 +70,7 @@ describe('the whole scene steps back behind the winner (measured 0.73)', () => {
   it('the page backdrop and the dealer button dim with the scene', () => {
     expect(TABLE_CSS).toMatch(/\.table-page--winner-flash::before/);
     const at = TABLE_CSS.indexOf('.table-page--winner-flash::before');
-    expect(TABLE_CSS.slice(at, at + 400)).toMatch(/rgba\(0,\s*0,\s*0,\s*0\.27\)/);
+    expect(sliceCssRule(TABLE_CSS, '.table-page--winner-flash::before')).toMatch(/rgba\(0,\s*0,\s*0,\s*0\.27\)/);
     expect(TABLE_CSS).toMatch(/\.table-page--winner-flash \.dealer-button/);
   });
 
@@ -184,7 +185,7 @@ describe('the state lands as a CUT — nothing slower than 120ms', () => {
     expect(BOARD_CSS).toMatch(/ccBannerCut/);
     expect(BOARD_CSS).not.toMatch(/ccHandNameShimmer/);
     const at = BOARD_CSS.indexOf('animation: ccBannerCut');
-    expect(BOARD_CSS.slice(at, at + 60)).toMatch(/0\.0?9\d*s|0\.1[0-2]?s/);
+    expect(sliceBetween(BOARD_CSS, 'animation: ccBannerCut', ';')).toMatch(/0\.0?9\d*s|0\.1[0-2]?s/);
   });
 
   it('the seat chrome dim carries no transition — filters snap', () => {
@@ -276,7 +277,7 @@ describe('the banner is the reference banner (measured geometry)', () => {
   it('hugs the board from below', () => {
     const at = BOARD_CSS.indexOf('.community-cards__hand-name {');
     expect(at).toBeGreaterThan(-1);
-    expect(BOARD_CSS.slice(at, at + 800)).toMatch(/top:\s*calc\(100%\s*\+\s*4px\)/);
+    expect(sliceCssRule(BOARD_CSS, '.community-cards__hand-name {')).toMatch(/top:\s*calc\(100%\s*\+\s*4px\)/);
   });
 
   it('the hand name is a gradient-gold span over the band, sized off the card height', () => {
@@ -287,14 +288,14 @@ describe('the banner is the reference banner (measured geometry)', () => {
     expect(body).toMatch(/background-clip:\s*text/);
     expect(body).toMatch(/#ffe097/i);
     const nameAt = BOARD_CSS.indexOf('.community-cards__hand-name {');
-    expect(BOARD_CSS.slice(nameAt, nameAt + 1200)).toMatch(
+    expect(sliceCssRule(BOARD_CSS, '.community-cards__hand-name {')).toMatch(
       /font-size:\s*clamp\([^;]*--cc-card-h[^;]*0\.33/
     );
   });
 
   it('the orange lens-flare streak rides the band bottom', () => {
     const flareAt = BOARD_CSS.indexOf('.community-cards__hand-name::before');
-    const body = BOARD_CSS.slice(flareAt, flareAt + 900);
+    const body = sliceCssRule(BOARD_CSS, '.community-cards__hand-name::before');
     expect(body).toMatch(/bottom:\s*2px/);
     expect(body).toMatch(/255,\s*158,\s*64/);
   });

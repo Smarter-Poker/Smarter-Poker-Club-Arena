@@ -158,7 +158,6 @@
 .toggle-btn:hover {
   border-color: #4a5a6a;
   color: #8a9aaa;
-  transform: translateY(-2px);
 }
 
 .toggle-btn.on {
@@ -201,10 +200,6 @@
 }
 
 .save-btn:hover:not(:disabled) {
-  transform: translateY(-3px);
-  box-shadow:
-    0 0 30px rgba(0, 212, 255, 0.7),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .save-btn:disabled {
@@ -264,10 +259,6 @@
 }
 
 .btn-danger:hover {
-  box-shadow:
-    0 0 20px rgba(239, 68, 68, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  transform: translateY(-2px);
 }
 
 .btn-danger:disabled {
@@ -357,10 +348,6 @@
 .btn-secondary:hover {
   border-color: #4a5a6a;
   color: #fff;
-  transform: translateY(-2px);
-  box-shadow:
-    0 0 12px rgba(0, 212, 255, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 /* ─────────────────────────────────────────────────────────────────────────────
    MOBILE RESPONSIVE

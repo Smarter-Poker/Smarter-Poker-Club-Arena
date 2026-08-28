@@ -96,6 +96,17 @@ export interface LobbyRowContext {
      any other surface can keep rendering the table read-only — a card with no
      handler simply shows no button rather than a dead one. */
   onRegister?: (e: LobbyEntry) => void;
+  /**
+   * SEAT-FIRST games only (a Spin, or a 2-seat Heads-Up SNG). Dan 2026-08-21,
+   * binding: "A PLAYER SITS DOWN AT A TABLE AND BUYS INTO THE SPIN OR HEADS
+   * UP, LIKE A CASH GAME." Their Sit Down must OPEN THE TABLE where the seats
+   * are visible and one tap buys the chosen seat — it must never run the MTT
+   * register flow, which charges the entry fee before any seat is picked and
+   * leaves the player a paid, seatless "Spectating" entrant (the exact bug
+   * Dan reported on 2026-08-28: the card's Sit Down was wired to onRegister).
+   * Multi-seat SNGs are registration games and stay on onRegister.
+   */
+  onSpinJoin?: (e: LobbyEntry, variant: 'spin' | 'sng') => void;
   onJoinTable?: (e: LobbyEntry) => void;
   onViewTable?: (e: LobbyEntry) => void;
   onToggleFavorite?: (tableId: string, next: boolean) => void;
@@ -818,6 +829,7 @@ const COL_ACTIONS: ColumnDef = {
       ev.stopPropagation();
       const which = (ev.currentTarget as HTMLElement).dataset.act;
       if (which === 'register') ctx.onRegister?.(e);
+      else if (which === 'spinjoin') ctx.onSpinJoin?.(e, e.kind === 'sng' ? 'sng' : 'spin');
       else if (which === 'join') ctx.onJoinTable?.(e);
       else if (which === 'view') ctx.onViewTable?.(e);
       else if (which === 'waitlist') ctx.onWaitlistToggle?.(e.id, !ctx.waitlistedIds.has(e.id));
@@ -904,13 +916,24 @@ const COL_ACTIONS: ColumnDef = {
         );
       }
 
+      /* WHICH FLOW SELLS THIS SEAT. Seat-first (a Spin, or a Heads-Up SNG
+         with 2 chairs) opens the TABLE and the player buys the seat they
+         tap — fn_take_seat_and_buy_in, money moves only on the seat
+         confirm. Every other SNG is a registration game and keeps the Sign
+         Up card. This split must agree with fn_take_seat_and_buy_in and the
+         engine's isSngOrSpin gate: variant spin, or sng with capacity <= 2.
+         Before 2026-08-28 BOTH went to onRegister, so a spin's Sit Down
+         charged the buy-in from the lobby with no seat attached. */
+      const seatFirst =
+        e.kind === 'spin' || (e.kind === 'sng' && e.capacity > 0 && e.capacity <= 2);
+      const act = seatFirst && ctx.onSpinJoin ? 'spinjoin' : 'register';
       return (
         <span className="lt-actions">
-          {ctx.onRegister && (
+          {(ctx.onRegister || (seatFirst && ctx.onSpinJoin)) && (
             <button
               type="button"
               className="lt-act lt-act--primary"
-              data-act="register"
+              data-act={act}
               onClick={run}
               aria-label={`Sit Down At ${e.name}`}
             >

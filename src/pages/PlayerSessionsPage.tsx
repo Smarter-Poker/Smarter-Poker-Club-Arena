@@ -490,7 +490,9 @@ export default function PlayerSessionsPage() {
     const refresh = () => loadSessions(clubId, true);
     const unsubs = [
       masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', refresh, 500),
-      masterBus.subscribeDebounced('PLAYER_JOINED', refresh, 500),
+      // PLAYER_JOINED removed 2026-08-28: nothing emits it as a BUS event —
+      // RoomService's 'PLAYER_JOINED' is a room MESSAGE type, a name
+      // collision that made this look wired. It never fired.
       masterBus.subscribeDebounced('CASHOUT_APPROVED', refresh, 500),
       masterBus.subscribeDebounced('CASHOUT_REQUESTED', refresh, 500),
     ];

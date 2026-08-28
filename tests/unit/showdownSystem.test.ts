@@ -18,6 +18,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { HAND_COMPLETION } from '../../src/config/handCompletionSpec';
+import { sliceEnclosingBlock, sliceBlockAfter } from '../helpers/sourceWindow';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
@@ -32,23 +33,21 @@ const BOARD_CSS = read('src/components/table/CommunityCards.css');
 
 describe('the engine PUBLISHES the showdown sequence and muck ruling', () => {
   it('the showdown event carries reveal_order and mucked per result', () => {
-    const sd = EVENTS.slice(EVENTS.indexOf("type: 'showdown',"));
-    expect(sd.slice(0, 1200)).toMatch(/reveal_order:/);
-    expect(sd.slice(0, 1200)).toMatch(/mucked/);
+    const sd = sliceEnclosingBlock(EVENTS, "type: 'showdown',");
+    expect(sd).toMatch(/reveal_order:/);
+    expect(sd).toMatch(/mucked/);
   });
 
   it('pot_win winners carry hand_description and hole_card_indices', () => {
-    const potWin = EVENTS.slice(EVENTS.indexOf("type: 'pot_win'"));
-    expect(potWin.slice(0, 2600)).toMatch(/hand_description:/);
-    expect(potWin.slice(0, 2600)).toMatch(/hole_card_indices:/);
+    const potWin = sliceEnclosingBlock(EVENTS, "type: 'pot_win'");
+    expect(potWin).toMatch(/hand_description:/);
+    expect(potWin).toMatch(/hole_card_indices:/);
   });
 
   it('a mucked hand is excluded from showdown_cards_revealed', () => {
-    const at = EVENTS.indexOf("type: 'showdown_cards_revealed'");
-    expect(at).toBeGreaterThan(-1);
     // The reveals list is filtered by the muck ruling before the emit.
-    const before = EVENTS.slice(Math.max(0, at - 1500), at);
-    expect(before).toMatch(/isMuckedAtShowdown/);
+    const emit = sliceEnclosingBlock(EVENTS, "type: 'showdown_cards_revealed'", 0, 3);
+    expect(emit).toMatch(/isMuckedAtShowdown/);
   });
 
   it('the snapshot reveal gate and the resync gate both respect the muck', () => {
@@ -59,9 +58,8 @@ describe('the engine PUBLISHES the showdown sequence and muck ruling', () => {
   });
 
   it('pot_distributed reads the real eligiblePlayers field', () => {
-    const at = EVENTS.indexOf("type: 'pot_distributed'");
-    const before = EVENTS.slice(Math.max(0, at - 1600), at);
-    expect(before).toMatch(/p\.eligiblePlayers/);
+    const emit = sliceEnclosingBlock(EVENTS, "type: 'pot_distributed'", 0, 3);
+    expect(emit).toMatch(/p\.eligiblePlayers/);
   });
 });
 
@@ -163,8 +161,8 @@ describe('the client RENDERS the sequence, the muck, and the description', () =>
  */
 describe('follow-up: pots are AWARDED as a sequence (spec 16/19)', () => {
   it("the engine names each winner's pot in pot_win", () => {
-    const potWin = EVENTS.slice(EVENTS.indexOf("type: 'pot_win'"));
-    expect(potWin.slice(0, 3400)).toMatch(/pot_index:/);
+    const potWin = sliceEnclosingBlock(EVENTS, "type: 'pot_win'");
+    expect(potWin).toMatch(/pot_index:/);
   });
 
   it('the client staggers award groups by the shared spec constant', () => {
@@ -225,9 +223,7 @@ describe('follow-up: AUTO-MUCK is a real setting, with no prompt (spec 37)', () 
  */
 describe('audit: the snapshot winners wire actually matches at both ends', () => {
   it('the engine emits user_id on snapshot winners (the key the mapper reads)', () => {
-    const at = ENGINE.indexOf('winners:');
-    expect(at).toBeGreaterThan(-1);
-    expect(ENGINE.slice(at, at + 700)).toMatch(/user_id:\s*w\.userId/);
+    expect(sliceEnclosingBlock(ENGINE, 'winners:')).toMatch(/user_id:\s*w\.userId/);
   });
 
   it('the mapper accepts both user_id and legacy userId', () => {
@@ -387,8 +383,7 @@ describe('polish: deterministic event ordering + consumed reveal event', () => {
 
 describe('polish: rank-aware cue and replay reveal record', () => {
   it('quads-or-better at reveal gets the big-win fanfare, muck-safe', () => {
-    const at = TABLE_PAGE.indexOf("case 'SHOWDOWN'");
-    const body = TABLE_PAGE.slice(at, at + 4000);
+    const body = sliceBlockAfter(TABLE_PAGE, "case 'SHOWDOWN'");
     expect(body).toMatch(/hand_ranking \?\? 0\) >= 8/);
     expect(body).toMatch(/playBigWin\(\)/);
   });

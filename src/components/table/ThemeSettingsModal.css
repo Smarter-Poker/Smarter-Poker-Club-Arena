@@ -342,7 +342,6 @@
 }
 
 .theme-asset:hover {
-  transform: scale(1.05);
 }
 
 .theme-asset--locked {
@@ -772,7 +771,6 @@
   background: rgba(72, 191, 255, 0.13);
   border-color: rgba(72, 191, 255, 0.48);
   outline: none;
-  transform: rotate(4deg);
 }
 
 .theme-modal__studio-bar {
@@ -1235,7 +1233,6 @@
   cursor: default;
 }
 .theme-asset:hover {
-  transform: translateY(-2px);
   border-color: rgba(116, 183, 226, 0.38);
 }
 .theme-asset:focus-visible {

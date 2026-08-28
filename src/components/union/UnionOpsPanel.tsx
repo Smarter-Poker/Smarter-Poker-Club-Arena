@@ -466,8 +466,10 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
             </button>
           )}
           <p style={{ color: '#66787f', fontSize: '0.78rem', margin: 0 }}>
-            Scored By Agent, Not By Player: A Bot Or Colluding Ring Has To Be Funded And Settled By
-            Someone, And That Is The Accountable Layer.
+            {/* 2026-08-28: said "A Bot Or Colluding Ring". House rule, binding:
+                AI players are never called bots — they are horses. */}
+            Scored By Agent, Not By Player: A Horse Or Colluding Ring Has To Be Funded And Settled
+            By Someone, And That Is The Accountable Layer.
           </p>
         </div>
       )}

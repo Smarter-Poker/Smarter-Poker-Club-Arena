@@ -22,6 +22,7 @@ import styles from './ChipAnimation.module.css';
 // Dan 2026-08-14 live E2E visual hotfix pack — bundled here because this
 // component is always in the table bundle (avatars, chips, felt, pot column).
 import './TableVisualHotfix.css';
+import { formatTableChips } from '../../utils/format';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -460,21 +461,15 @@ function getChipCount(amount: number): number {
   return Math.max(1, Math.min(totalChipCount(amount) || 1, 5));
 }
 
+// Dan 2026-08-28: the pot flying to its winner shows the real number.
+// The 2026-08-25 note below is superseded — the K/M ladder it was fixing is
+// gone entirely rather than given a ceiling, because "1.5K" was never the
+// right label for a pot in the first place. formatTableChips keeps the
+// 2026-08-14 rule that mattered: whole chips at >= 1, cents below it.
 function formatAmount(amount: number): string {
-  // AUDIT 2026-08-25: the K branch had no ceiling, so a 1,000,000 pot flew to
-  // its winner labelled "1000.0K" and a 5M pot "5000.0K". Every other money
-  // label on this table (formatStack in SeatSlot, formatChipAmount in
-  // ChipPhysics, the pot pill) switches to M at a million; the one label that
-  // appears at the moment a player wins the biggest pot of their session did
-  // not.
-  if (amount >= 1000000) {
-    return `${(amount / 1000000).toFixed(1)}M`;
-  }
-  if (amount >= 1000) {
-    return `${(amount / 1000).toFixed(1)}K`;
-  }
-  // Dan 2026-08-14 live E2E: a 23 bet rendered as "23.08" mid-flight (engine
-  // amounts carry sub-chip decimals). Whole chips for >= 1, cents below 1.
-  if (amount >= 1) return Math.round(amount).toLocaleString('en-US');
-  return amount.toFixed(2);
+  // Rounded before formatting, not by the formatter. Dan 2026-08-14 live
+  // E2E: a 23 bet rendered as "23.08" mid-flight because engine amounts
+  // carry sub-chip decimals. That is noise on a label that exists for
+  // ~400ms, so it is squared off here — the amount itself is untouched.
+  return formatTableChips(amount >= 1 ? Math.round(amount) : amount);
 }

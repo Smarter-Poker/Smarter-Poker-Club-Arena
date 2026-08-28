@@ -10,6 +10,7 @@
 import { useState, useEffect, memo, useCallback, useMemo, useRef } from 'react';
 import { toCardCodes } from '../../utils/cardCode';
 import './HandHistoryPanel.css';
+import { formatTableChips } from '../../utils/format';
 
 export interface HandHistoryAction {
   playerName: string;
@@ -146,9 +147,8 @@ function formatTime(ts: number): string {
 }
 
 function formatAmount(amount: number): string {
-  if (Math.abs(amount) >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
-  if (Math.abs(amount) >= 10000) return `${(amount / 1000).toFixed(1)}K`;
-  return amount.toLocaleString();
+  // Dan 2026-08-28: hand history is a record — it shows the real number.
+  return formatTableChips(amount);
 }
 
 /**

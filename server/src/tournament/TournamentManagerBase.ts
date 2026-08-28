@@ -1145,11 +1145,30 @@ export abstract class TournamentManagerBase {
       if (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') {
         const buyIn = Number(tournament.buy_in_amount || 0);
         if (buyIn > 0) {
-          const { data: regs } = await supabase
+          /* THE GATE MUST NOT DISABLE ITSELF ON A FAILED READ (2026-08-28).
+             This discarded its `error`. On failure `regs` is null, so
+             `regIds` is [], the debits query below falls to its sentinel
+             UUID, `debits` is [], and `unpaid` is [] — the gate PASSES,
+             having verified exactly zero payments. That is the precise hole
+             this block exists to close (the free-spin incident recorded
+             above), reopened by any transient failure. The very next read
+             already treats unreadable evidence as a stand-down; these two
+             adjacent reads had opposite failure policies. */
+          const { data: regs, error: regsErr } = await supabase
             .from('tournament_players')
             .select('user_id')
             .eq('tournament_id', this.tournamentId)
             .in('status', ['registered', 'playing']);
+          if (regsErr) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Paid-entry roster unreadable (${regsErr.message}) — standing down, will retry`
+              ),
+              'Tournament.spin_paid_roster_unreadable'
+            );
+            this.running = false;
+            return;
+          }
           const regIds = (regs ?? []).map((r: any) => r.user_id).filter(Boolean);
 
           const { data: debits, error: debitErr } = await supabase
@@ -1197,10 +1216,53 @@ export abstract class TournamentManagerBase {
               .delete()
               .eq('tournament_id', this.tournamentId)
               .in('user_id', unpaid);
-            await supabase
-              .from('tournaments')
-              .update({ current_players: Math.max(0, (regCount || 0) - unpaid.length) })
-              .eq('id', this.tournamentId);
+            /**
+             * RELEASE THEIR SEATS TOO, OR THIS GAME NEVER RUNS AGAIN
+             * (2026-08-28).
+             *
+             * Removing the registration alone left the `table_seats` row
+             * standing, and a seat-first game's fill is counted from those
+             * rows — `readSeatFirstPaidSeats`, `fn_sync_seat_first_player_count`
+             * and the stall watchdog all read `left_at IS NULL`. So the game
+             * still read 3/3 SOLD with only 2 registrations:
+             *
+             *   - the fast lane force-starts it, `start()` now fails the
+             *     field check ABOVE this gate (2 < 3) and stands down before
+             *     ever reaching here again;
+             *   - `topUpWithHorses` sees no shortfall — the seats are full —
+             *     and adds nobody;
+             *   - the stall watchdog is gated on `paid < seats`, so it is
+             *     silent too.
+             *
+             * The result was a 5-second loop, forever, with money taken and
+             * a single console.log as the only trace. Vacating the seat is
+             * what lets a paying horse take it on the next pass, which is
+             * what the comment below has always promised.
+             */
+            const { error: seatReleaseErr } = await supabase
+              .from('table_seats')
+              .update({ left_at: new Date().toISOString(), is_sitting_out: false })
+              .in('user_id', unpaid)
+              .is('left_at', null)
+              .in(
+                'table_id',
+                (
+                  await supabase.from('tables').select('id').eq('tournament_id', this.tournamentId)
+                ).data?.map((r: { id: string }) => r.id) ?? []
+              );
+            if (seatReleaseErr) {
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Could not release unpaid seat(s): ${seatReleaseErr.message}. The game will read full and cannot refill until this clears.`
+                ),
+                'Tournament.spin_unpaid_seat_release_failed'
+              );
+            }
+            // Both counters derive from the seat rows; resync rather than
+            // arithmetic on a counter this gate has just proven unreliable.
+            await supabase.rpc('fn_sync_seat_first_player_count', {
+              p_tournament_id: this.tournamentId,
+            });
             this.running = false;
             return; // discovery refills with PAYING horses and restarts
           }
@@ -1310,7 +1372,18 @@ export abstract class TournamentManagerBase {
                   reserveThresholdX: t.reserveThresholdX,
                 })),
                 p_rake_rate: spinRakeRate(tournament.buy_in_amount || 0),
-                p_seats: tournament.current_players || SPEC_SPIN_SEATS,
+                /* A SPIN HAS THREE SEATS BY DEFINITION (2026-08-28). This
+                   read `current_players`, the registration counter that
+                   GameServer's own start gate refuses to trust — "it drifts
+                   badly: the live lobby was carrying spins reading 3/3 with
+                   two seats actually sold, and others reading 0/3 with three
+                   sold". `p_seats` is what `collected = seats x buy_in` is
+                   computed from, so a drifted counter mis-books the house
+                   rake and the reserve contribution while the prize
+                   (buy_in x multiplier) stays correct — the two halves of
+                   the pool identity disagreeing by exactly the drift.
+                   SPIN_SEATS is forced at creation and is the honest number. */
+                p_seats: SPEC_SPIN_SEATS,
               });
               // The error is READ now. It was the whole defect.
               if (drawErr) throw new Error(drawErr.message || 'draw_rpc_error');
@@ -1362,7 +1435,8 @@ export abstract class TournamentManagerBase {
         }
 
         const buyIn = tournament.buy_in_amount || 0;
-        const seats = tournament.current_players || SPEC_SPIN_SEATS;
+        // Same reasoning as p_seats on the draw above: three seats, always.
+        const seats = SPEC_SPIN_SEATS;
         const tier = spinTier(spinMultiplier);
         const prizePool = Math.round(buyIn * spinMultiplier * 100) / 100;
 
@@ -2206,11 +2280,28 @@ export abstract class TournamentManagerBase {
   protected async creditSeatStacks(tournament: any): Promise<number> {
     const target = Number(tournament?.starting_chips) || 0;
     if (target <= 0) return 0;
-    const { data: seatRows } = await supabase
+    /* A FAILED READ IS NOT "EVERY SEAT IS ALREADY FUNDED" (2026-08-28).
+       This discarded its error, so a failure produced `seatRows = null` ->
+       `stale = []` -> an immediate `return 0` that is byte-for-byte the
+       success-with-nothing-to-do answer, silently. This function is the ONLY
+       thing that turns a spin's zero-chip reservations into real stacks (the
+       reveal beat, and the safety net a couple of seconds later, both call
+       it). If the read fails across that window every seat stays at 0 and
+       the dealing loop parks at idle_not_enough_players indefinitely —
+       recoverable only by a process restart. Report it and return, so the
+       caller's retry and the watchdogs have something to see. */
+    const { data: seatRows, error: seatReadErr } = await supabase
       .from('table_seats')
       .select('id, stack, tables!inner(tournament_id)')
       .is('left_at', null)
       .eq('tables.tournament_id', this.tournamentId);
+    if (seatReadErr) {
+      reportError(
+        new Error(`seat stack credit could not read seats: ${seatReadErr.message}`),
+        'Tournament.' + this.tournamentId.slice(0, 8) + '.seat_stack_read_failed'
+      );
+      return 0;
+    }
     // Strictly RAISE, never lower: the legitimate case is a reservation seat
     // holding 0 (or a smaller placeholder tier) waiting on the drawn stack.
     // An early-bird seat (starting chips + bonus, 2026-08-22) sits ABOVE the

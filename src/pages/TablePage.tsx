@@ -3208,6 +3208,12 @@ export default function TablePage({
   seatFirstOpenRef.current = seatFirstBuyIn !== null;
   const [seatFirstPending, setSeatFirstPending] = useState(false);
   /**
+   * Which tournament the seat-first recovery has already settled, so it asks
+   * once per game rather than on every render that leaves seat-first null. A
+   * ref, not state: settling it must not itself cause a render.
+   */
+  const seatFirstRecoveryDoneRef = useRef<string | null>(null);
+  /**
    * ═══════════════════════════════════════════════════════════════════════════
    *  AM I A PAID ENTRANT WHO IS NOT SITTING DOWN? (Dan 2026-08-23)
    * ═══════════════════════════════════════════════════════════════════════════
@@ -4804,7 +4810,19 @@ export default function TablePage({
   // Cashier state
   const [showCashier, setShowCashier] = useState(false);
   const [showDiamondWallet, setShowDiamondWallet] = useState(false);
-  const [accountBalance, setAccountBalance] = useState(0); // Player Wallet balance from wallets table
+  /**
+   * Player Wallet balance, or NULL for "we have not been able to read it".
+   *
+   * 2026-08-28: this was `useState(0)`, which made an unread wallet
+   * indistinguishable from an empty one. The reader deliberately keeps the
+   * last known figure on failure ("a failed read must not present itself as
+   * an empty wallet on the buy-in sheet") — but on FIRST load the last known
+   * figure was 0, so a single transient failure disabled the seat-first Buy
+   * In button with the words "Not Enough Chips" for a funded player, on a
+   * page with no refresh path. Null says the honest thing, and the buy-in
+   * RPC remains the authority that actually refuses an underfunded entry.
+   */
+  const [accountBalance, setAccountBalance] = useState<number | null>(null);
   // FIX 136: 2-hour re-entry restriction — minimum buy-in from recent cashout
   const [cashoutMinBuyIn, setCashoutMinBuyIn] = useState(0);
 
@@ -4871,7 +4889,9 @@ export default function TablePage({
         }
       }
       // Engine ack'd the single debit -- reflect it locally + in session trackers.
-      setAccountBalance((prev) => Math.max(0, prev - applied));
+      /* A local delta on an UNKNOWN balance would invent a number. Stay
+         unknown until a real read lands (see the accountBalance decl). */
+      setAccountBalance((prev) => (prev === null ? null : Math.max(0, prev - applied)));
       totalBuyInRef.current += applied; // Track for session P/L
       totalRebuysRef.current += 1; // Track rebuy count for session summary
       // Dan 2026-08-15: feed the top-up into SessionStatsService too, otherwise
@@ -4946,7 +4966,7 @@ export default function TablePage({
       // Engine ack'd \u2014 the wallet was credited; reflect it locally. We do
       // NOT optimistic-update tableState; the next engine broadcast carries the
       // authoritative stack.
-      setAccountBalance((prev) => prev + amount);
+      setAccountBalance((prev) => (prev === null ? null : prev + amount));
       const estimatedNewStack = Math.max(
         0,
         (tableState.players[tableState.heroSeat - 1]?.stack || 0) - amount
@@ -6301,6 +6321,68 @@ export default function TablePage({
   const handleLeaveTable = async () => {
     if (!tableId || !userId) return;
     setLeaveNotice(null);
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A PRE-START SEAT-FIRST SEAT LEAVES THROUGH ITS REFUND (2026-08-28)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Two "leave" controls reach one seat, and until now only the hidden one
+     * worked. The menu's Leave Table and the felt's leave button both land
+     * here, and `tableService.leaveTable` begins by asking the ENGINE to
+     * release the seat — but a Spin or Heads-Up before its game starts HAS NO
+     * ENGINE GAME, by design (see the 4404 note beside `seatFirstOpenRef`).
+     * So the call could only fail, and the player was told "your chips were
+     * not moved, please try again" — forever, on the one exit they are
+     * actually likely to find. Worse, had it succeeded, the tournament branch
+     * of leaveTable only writes `sitting_out`: no refund, no `left_at`, so
+     * the seat would still count toward the fill while the page booked a
+     * full-buy-in loss.
+     *
+     * `fn_leave_seat_and_refund` is the seat-first exit — Dan 2026-08-21,
+     * "IF THEY LEAVE THE SEAT THEY ARE FULLY REFUNDED" — and it is what the
+     * footer's Leave Seat button has always called. Route both doors to it so
+     * there is ONE way out of a reserved seat rather than two that disagree.
+     */
+    if (seatFirstBuyIn && tableState.heroSeat > 0) {
+      try {
+        const { data, error } = await supabase.rpc('fn_leave_seat_and_refund', {
+          p_table_id: tableId,
+        });
+        const res = (data ?? {}) as { ok?: boolean; reason?: string; refunded?: number };
+        if (error || !res.ok) {
+          const reason = error?.message || res.reason || '';
+          if (!/already_started/.test(reason)) {
+            reportError(
+              new Error(`leave_seat_refund refused: ${reason || 'unknown'}`),
+              'TablePage.leave_table_seat_first_refused',
+              { tableId, tournamentId: tableState.tournamentId, reason }
+            );
+          }
+          setLeaveNotice(
+            /already_started/.test(reason)
+              ? 'The Game Has Started, Your Seat Is In Play'
+              : 'Could Not Release That Seat, Please Try Again'
+          );
+          return;
+        }
+        heroSeatRef.current = 0;
+        setPendingSeat(null);
+        setSeatFirstConfirm(null);
+        setTableState((prev) => ({ ...prev, heroSeat: 0 }));
+        toast?.success?.(
+          `Seat Released, ${Number(res.refunded ?? 0).toLocaleString()} Chips Refunded`
+        );
+        masterBus.emit('SESSION_ENDED', { tableId, userId });
+        playerStatusService.clearPlayingAt(userId);
+        const backTo = lobbyClubIdRef.current;
+        if (backTo) navigate(`/clubs/${backTo}`);
+      } catch (err) {
+        reportError(err as Error, 'TablePage.leave_table_seat_first');
+        setLeaveNotice('Could Not Release That Seat, Please Try Again');
+      }
+      return;
+    }
 
     // Capture hero stack BEFORE leave (seat data may be cleared by leaveTable)
     const heroPlayer = tableState.players[tableState.heroSeat - 1];
@@ -8172,7 +8254,14 @@ export default function TablePage({
               const openForSeats =
                 String(tournData.status ?? '') === 'REGISTERING' ||
                 String(tournData.status ?? '') === 'ANNOUNCED';
-              const isSeatFirst = fmt === 'spin' || maxP <= 2;
+              /* A MISSING CAP IS NOT A HEADS-UP (2026-08-28). `max_players ??
+                 0` makes a null cap read as 0, and `0 <= 2` called every
+                 uncapped tournament a two-seat game — the identical mistake
+                 classifyTournament was fixed for ("A MISSING cap is not a
+                 small field"), which then offered seat-first buy-ins on a
+                 table whose RPC answers not_a_seat_first_game. A cap only
+                 means something when it is a real number. */
+              const isSeatFirst = fmt === 'spin' || (maxP > 0 && maxP <= 2);
               if (isSeatFirst && openForSeats) {
                 const cost =
                   Number(tournData.buy_in_amount ?? 0) + Number(tournData.buy_in_fee ?? 0);
@@ -13654,11 +13743,20 @@ export default function TablePage({
         } else {
           // Dan 2026-08-21: "THEY ARE SIMPLY SECURING A SEAT." Say exactly
           // that — chips arrive when the spin resolves and play begins.
-          const left = Math.max(0, (res.seats_needed ?? 0) - (res.seats_taken ?? 0));
+          /* The idempotent re-seat answer ({ok, already_seated, seat_number})
+             carries no counts, so `?? 0` made both sides zero and the player
+             was told "Waiting For 0 More Players" (2026-08-28). Fall back to
+             what this page already knows — the seat-first cap and the live
+             roster — and say the plain thing when even that is unavailable. */
+          const needed = Number(res.seats_needed ?? seatFirstBuyIn?.seats ?? 0);
+          const taken = Number(res.seats_taken ?? tableState.players.filter(Boolean).length);
+          const left = Math.max(0, needed - taken);
           toast?.success?.(
             left === 1
               ? 'Seat Bought, Waiting For 1 More Player'
-              : `Seat Bought, Waiting For ${left} More Players`
+              : left > 1
+                ? `Seat Bought, Waiting For ${left} More Players`
+                : 'Seat Bought, Waiting For More Players'
           );
         }
       } catch (err) {
@@ -13721,6 +13819,112 @@ export default function TablePage({
     setSeatFirstBuyIn(null);
     setSeatFirstConfirm(null);
   }, [playHasBegun, seatFirstBuyIn, seatFirstPending]);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  D8's MISSING HALF: SEAT-FIRST COULD ONLY EVER TURN OFF (2026-08-28)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * `seatFirstBuyIn` is written in exactly one place — the mount effect, whose
+   * deps are [tableId, userId] — and the effect above can only ever clear it.
+   * So the answer this table gives to "are these seats for sale?" is decided
+   * by one read, once, and if that read was unlucky it is wrong for the whole
+   * session. Three ordinary ways to be unlucky:
+   *
+   *   - the tournament row read failed or was RLS-denied (the `else` branch
+   *     of the mount effect leaves seat-first null);
+   *   - the page mounted a heartbeat before the row flipped to REGISTERING —
+   *     the recycler creates the table and the tournament separately;
+   *   - the row was momentarily in a status neither REGISTERING nor ANNOUNCED.
+   *
+   * The symptom is the one Dan reported and it is indistinguishable from the
+   * bugs already fixed: `canSit` is false, so every seat renders as an inert
+   * EMPTY plate, and the footer reads a bare "Spectating" at a table that is
+   * plainly selling seats. Nothing recovers it but a manual reload, because
+   * the realtime channel that would notice is itself gated on seat-first
+   * being truthy — it can only ever watch the door close.
+   *
+   * This is the other direction, and it is deliberately bounded rather than a
+   * standing poll: it asks only while the answer could still change (play has
+   * not begun, seats not already for sale), at most a handful of times, and
+   * stops for good the moment it gets an answer either way.
+   */
+  useEffect(() => {
+    const tournId = tableState.tournamentId;
+    if (!tournId || seatFirstBuyIn || playHasBegun) return;
+    if (seatFirstRecoveryDoneRef.current === tournId) return;
+
+    const MAX_ATTEMPTS = 4;
+    const RETRY_MS = 2500;
+    let cancelled = false;
+    let attempts = 0;
+    let timer = 0;
+
+    const check = async () => {
+      if (cancelled) return;
+      attempts += 1;
+      const { data, error } = await supabase
+        .from('tournaments')
+        .select('status, variant, tournament_type, max_players, buy_in_amount, buy_in_fee')
+        .eq('id', tournId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        /* Could not ask is not an answer. Retry within the budget and report
+           once we are out of them, rather than settling on "not for sale". */
+        if (attempts >= MAX_ATTEMPTS) {
+          reportError(error, 'TablePage.seat_first_recovery_unreadable', { tournamentId: tournId });
+          return;
+        }
+        timer = window.setTimeout(() => void check(), RETRY_MS);
+        return;
+      }
+
+      const row = data as {
+        status?: string;
+        variant?: string;
+        tournament_type?: string;
+        max_players?: number;
+        buy_in_amount?: number;
+        buy_in_fee?: number;
+      } | null;
+      if (!row) return; // no such tournament: nothing to recover, stop asking.
+
+      const status = String(row.status ?? '').toUpperCase();
+      const openForSeats = status === 'REGISTERING' || status === 'ANNOUNCED';
+      if (!openForSeats) {
+        // It has started (or finished). That IS the answer — stop.
+        seatFirstRecoveryDoneRef.current = tournId;
+        return;
+      }
+
+      const isSpin =
+        String(row.variant ?? '').toLowerCase() === 'spin' ||
+        String(row.tournament_type ?? '').toUpperCase() === 'SPIN';
+      const maxP = Number(row.max_players ?? 0);
+      // Same seat-first test as fn_take_seat_and_buy_in and the engine's gate.
+      const isSeatFirst = isSpin || (maxP > 0 && maxP <= 2);
+      if (!isSeatFirst) {
+        seatFirstRecoveryDoneRef.current = tournId;
+        return;
+      }
+
+      seatFirstRecoveryDoneRef.current = tournId;
+      console.debug('[Seat] Seat-first recovered for tournament', tournId);
+      setSeatFirstBuyIn({
+        cost: Number(row.buy_in_amount ?? 0) + Number(row.buy_in_fee ?? 0),
+        seats: maxP || (isSpin ? 3 : 2),
+        label: isSpin ? 'Spin' : 'Heads Up',
+      });
+    };
+
+    // One beat of grace so the mount read wins the ordinary case uncontested.
+    timer = window.setTimeout(() => void check(), 1200);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [tableState.tournamentId, seatFirstBuyIn, playHasBegun]);
 
   /**
    * D2: the DB fallback for the Spin wheel lived in the mount-only effect
@@ -15393,8 +15597,10 @@ export default function TablePage({
         const maxBuyIn = tableState.maxBuyIn;
         const currentStack = Number(heroSeatData.stack || 0);
 
-        if (maxBuyIn > 0 && currentStack < maxBuyIn && accountBalance > 0) {
-          const topUpAmount = Math.min(maxBuyIn - currentStack, accountBalance);
+        /* An unknown balance never auto-tops-up: spending on a number we
+           could not read is exactly the risk the null now expresses. */
+        if (maxBuyIn > 0 && currentStack < maxBuyIn && (accountBalance ?? 0) > 0) {
+          const topUpAmount = Math.min(maxBuyIn - currentStack, accountBalance ?? 0);
           if (topUpAmount > 0) {
             autoTopUpInFlightRef.current = true;
             handleAddChips(topUpAmount)
@@ -17411,12 +17617,25 @@ export default function TablePage({
               <button
                 type="button"
                 className="seat-buyin-confirm__btn seat-buyin-confirm__btn--go"
-                disabled={seatFirstPending || Number(accountBalance || 0) < seatFirstBuyIn.cost}
+                /* AN UNKNOWN BALANCE IS NOT AN EMPTY ONE (2026-08-28).
+                   `accountBalance` starts at 0 and is only ever written when
+                   the wallet read SUCCEEDS ("keep the last known figure on
+                   unknown") — but on first load the last known figure IS
+                   zero, so one transient read failure left a funded player
+                   staring at a permanently disabled button reading "Not
+                   Enough Chips", on a page with no refresh path. The RPC is
+                   the real authority and refuses an underfunded entry with a
+                   toast, so a known-short balance still blocks the tap while
+                   an unknown one lets them try. */
+                disabled={
+                  seatFirstPending ||
+                  (accountBalance !== null && Number(accountBalance) < seatFirstBuyIn.cost)
+                }
                 onClick={() => void commitSeatFirstBuyIn(seatFirstConfirm)}
               >
                 {seatFirstPending
                   ? 'Taking Your Chips'
-                  : Number(accountBalance || 0) < seatFirstBuyIn.cost
+                  : accountBalance !== null && Number(accountBalance) < seatFirstBuyIn.cost
                     ? 'Not Enough Chips'
                     : `Buy In ${seatFirstBuyIn.cost.toLocaleString()}`}
               </button>
@@ -17473,7 +17692,18 @@ export default function TablePage({
                   : 'Spectating, Tap An Open Seat To Join'}
             </span>
           </div>
-        ) : !tableState.players.some((p) => p?.isHero) ? (
+        ) : !tableState.players.some((p) => p?.isHero) &&
+          /* ── THIS GUARD IS WHY LEAVE SEAT IS REACHABLE (2026-08-28) ──────
+             commitSeatFirstBuyIn sets `heroSeat` and nothing else; `players[]`
+             only catches up when the roster round-trip lands (realtime, a
+             250ms coalesce, then a query). In that window this branch matched
+             — `players` has no hero yet — and it SHADOWED the seat-first
+             branch below, so a player who had just been DEBITED read the bare
+             word "Spectating" with no way to release the seat they had paid
+             for. If the roster read then failed or was RLS-denied, that state
+             lasted the whole session. A held seat-first seat is never a
+             spectator; say so here rather than racing a query. */
+          !(seatFirstBuyIn && tableState.heroSeat > 0) ? (
           /* Dan 2026-08-17 (audit): heroSeat is reserved but the server hasn't
              dealt the hero in yet (waiting on next hand / BB post). The old
              branch fell through to "Spectating - tap an open seat" which
@@ -17525,6 +17755,24 @@ export default function TablePage({
                     };
                     if (error || !res.ok) {
                       const reason = error?.message || res.reason || '';
+                      /* OUTAGE VISIBILITY, the refund half (2026-08-28). The
+                         BUY-IN path was hardened for exactly this on
+                         2026-08-25 — "the next unknown refusal is a
+                         searchable event instead of a dead end" — and the
+                         refund path never got the same treatment. This is a
+                         MONEY path: `not_seated`, `table_not_found`, an RLS
+                         denial and a 500 all collapsed into one generic
+                         toast and vanished, which is how a seat that cannot
+                         be released runs for a day with nobody able to name
+                         it. `already_started` is the one expected refusal
+                         and stays quiet. */
+                      if (!/already_started/.test(reason)) {
+                        reportError(
+                          new Error(`leave_seat_refund refused: ${reason || 'unknown'}`),
+                          'TablePage.leave_seat_refund_refused',
+                          { tableId, tournamentId: tableState.tournamentId, reason }
+                        );
+                      }
                       toast?.error?.(
                         /already_started/.test(reason)
                           ? 'The Game Has Started, Your Seat Is In Play'
@@ -17533,6 +17781,20 @@ export default function TablePage({
                       return;
                     }
                     heroSeatRef.current = 0;
+                    /* THE SEAT IS RELEASED, SO NOTHING MAY STILL CLAIM IT
+                       (2026-08-28). `pendingSeat` is set by the successful
+                       buy-in and had no clear on this path — only the CASH
+                       BuyInModal callbacks ever cleared it. Left set after a
+                       refund it does two visible wrongs: `canSit` requires
+                       `pendingSeat === null`, so EVERY seat at the table
+                       renders as an inert EMPTY plate the player can never
+                       tap again; and `isHeroReservedSeat` matches it, so the
+                       seat they just refunded keeps reading YOUR SEAT while
+                       the database has it vacated. On a direct /table/:id
+                       link there is no navigation away, so that contradiction
+                       is where the player stays. */
+                    setPendingSeat(null);
+                    setSeatFirstConfirm(null);
                     setTableState((prev) => ({ ...prev, heroSeat: 0 }));
                     toast?.success?.(
                       `Seat Released, ${Number(res.refunded ?? 0).toLocaleString()} Chips Refunded`
@@ -18552,7 +18814,9 @@ export default function TablePage({
         onCloseDiamondWallet={() => setShowDiamondWallet(false)}
         // Cashier
         showCashier={showCashier}
-        accountBalance={accountBalance}
+        /* The cashier renders a figure rather than gating an action, so an
+           unknown balance shows as 0 there exactly as it always has. */
+        accountBalance={accountBalance ?? 0}
         cashoutMinBuyIn={cashoutMinBuyIn}
         buyInProcessingRef={buyInProcessingRef}
         onCloseCashier={() => setShowCashier(false)}
@@ -18738,7 +19002,7 @@ export default function TablePage({
                 // RPC committed — clear the key. The seat is taken; any future
                 // buy-in at this table is a distinct transaction.
                 buyInIdempotencyKeyRef.current = null;
-                setAccountBalance((prev) => Math.max(0, prev - amount));
+                setAccountBalance((prev) => (prev === null ? null : Math.max(0, prev - amount)));
                 totalBuyInRef.current += amount;
                 if (amount > peakStackRef.current) peakStackRef.current = amount;
                 // The seat + stack were already painted above, before this RPC

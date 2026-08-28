@@ -28,6 +28,7 @@ import { addBreadcrumb } from './core/SentryInit';
 // Intro Video — lazy-loaded (only shown once per session, not needed for initial paint)
 const IntroVideo = lazyWithRetry(() => import('./components/IntroVideo'));
 import { useSettingsStore } from './stores/useSettingsStore';
+import { useShellUpdateGate } from './hooks/useShellUpdateGate';
 
 // Layouts
 import AppLayout from './components/layouts/AppLayout';
@@ -106,9 +107,7 @@ const InvitePage = lazyWithRetry(() => import('./pages/InvitePage'));
 const ReportPlayerPage = lazyWithRetry(() => import('./pages/ReportPlayerPage'));
 const ReportReviewPage = lazyWithRetry(() => import('./pages/ReportReviewPage'));
 // INSURANCE REPORT 2026-08-28: staff-facing funnel + P&L for all-in insurance.
-const ClubInsuranceReportPage = lazyWithRetry(
-  () => import('./pages/club/ClubInsuranceReportPage')
-);
+const ClubInsuranceReportPage = lazyWithRetry(() => import('./pages/club/ClubInsuranceReportPage'));
 const ClubAnnouncementsPage = lazyWithRetry(() => import('./pages/ClubAnnouncementsPage'));
 const VIPPage = lazyWithRetry(() => import('./pages/VIPPage'));
 const ClubFinancialsPage = lazyWithRetry(() => import('./pages/ClubFinancialsPage'));
@@ -197,6 +196,13 @@ import { reportError } from './utils/errorReporter';
 import SlugEnforcer from './components/common/SlugEnforcer';
 
 export default function App() {
+  /* The listener the service worker has always been posting SHELL_UPDATED to
+     and never had. Without it a cache-first shell — and the exact hashed
+     chunks it names — is served for the life of the session, so a player can
+     run a days-old bundle while production serves the fix. Applies the update
+     only away from a table and only with the tab visible; see the hook. */
+  useShellUpdateGate();
+
   // Check if intro video has been shown this session
   // DISABLED — intro video turned off. To re-enable, restore the original useState initializer.
   const [showIntro, setShowIntro] = useState(false);

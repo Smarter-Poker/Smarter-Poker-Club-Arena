@@ -90,6 +90,22 @@ type SuppressionRow = {
 };
 type SuppressionBySlot = Record<string, Record<string, SuppressionRow>>;
 
+/* DID IT WORK. A click is attention, not a result — `vip_upsell` having clicks
+   says nothing about whether anybody subscribed. This is whether the same
+   player did the thing the campaign promotes within 24 hours of clicking:
+   correlation inside a window, not proof of cause, which is why it is named
+   after what it measures.
+
+   `clicksFollowedBy` is null, never 0, where no outcome is defined for the
+   campaign. A confident zero would read as "converts nobody" when the truth is
+   "success is undefined here". */
+type ConversionRow = {
+  clicks: number;
+  clicksFollowedBy: number | null;
+  conversionRule: string | null;
+};
+type ConversionsBySlot = Record<string, Record<string, ConversionRow>>;
+
 const CATEGORIES = [
   'vip',
   'diamonds',
@@ -146,6 +162,7 @@ export default function HouseAdsPage() {
   const [stats, setStats] = useState<Record<string, StatRow> | null>(null);
   const [statsBySlot, setStatsBySlot] = useState<StatsBySlot | null>(null);
   const [suppression, setSuppression] = useState<SuppressionBySlot | null>(null);
+  const [conversions, setConversions] = useState<ConversionsBySlot | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -192,6 +209,7 @@ export default function HouseAdsPage() {
         stats: Record<string, StatRow> | null;
         statsBySlot?: StatsBySlot | null;
         suppression?: SuppressionBySlot | null;
+        conversions?: ConversionsBySlot | null;
       }>('house-ads', {}, { method: 'GET' });
       if (!isMounted.current) return;
       setAds(res.ads || []);
@@ -202,6 +220,7 @@ export default function HouseAdsPage() {
          render an empty breakdown that looks like "no views on any surface". */
       setStatsBySlot(res.statsBySlot ?? null);
       setSuppression(res.suppression ?? null);
+      setConversions(res.conversions ?? null);
     } catch (e) {
       reportError(e, 'HouseAdsPage.load');
       if (isMounted.current) setActionError(safeErrorMessage(e, 'Could not load the ad catalog.'));
@@ -733,6 +752,7 @@ export default function HouseAdsPage() {
                                 const label = SLOTS.find((x) => x.id === p.slot)?.label || p.slot;
                                 const ss = statsBySlot?.[ad.id]?.[p.slot];
                                 const sup = suppression?.[ad.id]?.[p.slot];
+                                const conv = conversions?.[ad.id]?.[p.slot];
                                 return (
                                   <div key={p.id}>
                                     <span>{label}</span>
@@ -751,6 +771,25 @@ export default function HouseAdsPage() {
                                         Capped" on every row would be noise, and
                                         the number only means something next to
                                         the number it is a fraction of. */}
+                                    {/* Did it work. Only shown once the
+                                        placement has clicks to judge - a
+                                        conversion line under a placement with
+                                        no clicks is arithmetic on nothing. */}
+                                    {conv && conv.clicks > 0 ? (
+                                      <span
+                                        className="admin-text-secondary"
+                                        style={{ marginLeft: 6, fontSize: 11 }}
+                                        title={
+                                          conv.conversionRule
+                                            ? `${conv.conversionRule}, within 24 hours of the click. Correlation, not proof of cause.`
+                                            : 'No outcome is defined for this campaign, so this is deliberately not counted'
+                                        }
+                                      >
+                                        {conv.clicksFollowedBy === null
+                                          ? 'No Outcome Defined'
+                                          : `${conv.clicksFollowedBy} Followed Through`}
+                                      </span>
+                                    ) : null}
                                     {sup && sup.cappedUsers24h > 0 ? (
                                       <span
                                         className="admin-badge-yellow"

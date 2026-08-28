@@ -32,10 +32,12 @@
  *      so they out-specify the `*` below and win on their own; both existing
  *      cases are marked `!important` for the same reason.
  *   2. DURATION-CARRYING animation, where the length IS the information — a
- *      progress ring or timer bar driven by CSS rather than state. Nothing in
- *      the app does this today (the turn clock's animations are decorative
- *      pulses; the countdown itself is state-driven), but when one appears,
- *      mark it `data-motion="keep"` rather than weakening this rule.
+ *      progress ring or timer bar driven by CSS rather than state. The seat
+ *      turn-clock ring (SeatSlot's .seat__info, spTimerRingShrink) is exactly
+ *      this and carries `data-motion="keep"` since 2026-08-27 — this file's
+ *      original claim that "nothing in the app does this today" was wrong,
+ *      and collapsing it finished every countdown instantly for
+ *      reduced-motion players.
  *
  * The attribute exempts the element AND its subtree, so a marked container
  * keeps its children animating too.

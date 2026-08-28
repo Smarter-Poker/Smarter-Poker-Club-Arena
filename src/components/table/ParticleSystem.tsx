@@ -184,7 +184,27 @@ export function ParticleSystem({
     startTimeRef.current = performance.now();
     lastTimeRef.current = startTimeRef.current;
 
+    // Single completion path shared by the rAF loop and the hidden-tab
+    // backstop below (see ConfettiCanvas for the reasoning).
+    let completed = false;
+    const finish = () => {
+      if (completed) return;
+      completed = true;
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = 0;
+      }
+      try {
+        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      } catch {
+        /* canvas may be gone */
+      }
+      particlesRef.current = [];
+      onCompleteRef.current?.();
+    };
+
     const animate = (now: number) => {
+      if (completed) return;
       const elapsed = now - startTimeRef.current;
       // UI-AUDIT #12: delta-time the loop so motion is refresh-rate independent.
       // Clamp the delta so a hidden/janky tab doesn't teleport particles.
@@ -253,15 +273,20 @@ export function ParticleSystem({
       if (elapsed < duration && aliveCount > 0) {
         animFrameRef.current = requestAnimationFrame(animate);
       } else {
-        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-        particlesRef.current = [];
-        onCompleteRef.current?.();
+        finish();
       }
     };
 
     animFrameRef.current = requestAnimationFrame(animate);
 
+    // ANIMATION AUDIT 2026-08-27: hidden tabs get no rAF — without this the
+    // burst never completed there and the parent's `winnerParticle.active`
+    // stayed latched, swallowing the next win's burst.
+    const safety = setTimeout(finish, duration + 500);
+
     return () => {
+      clearTimeout(safety);
+      completed = true;
       if (animFrameRef.current) {
         cancelAnimationFrame(animFrameRef.current);
       }

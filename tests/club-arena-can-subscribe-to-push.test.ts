@@ -156,6 +156,33 @@ describe('a Club Arena player can enrol this device for push', () => {
     }
   });
 
+  it('explains a test push that was accepted by the server but suppressed', async () => {
+    // The server answers 200 with ok:false when a real switch stopped the push
+    // (mute_all, push_enabled). Reporting that as a bare failure would send the
+    // player hunting a broken subscription that is working perfectly, so the
+    // hint has to survive into the toast.
+    installBrowser();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: false,
+          sent: 0,
+          reason: 'mute_all',
+          hint: 'Mute All is switched on in your notification settings.',
+        }),
+      }))
+    );
+    const { sendTestPush } = await import('../src/lib/pushClient');
+
+    const result = await sendTestPush();
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('Mute All');
+  });
+
   it('refuses to re-subscribe a device the player switched off', async () => {
     // The OS permission stays 'granted' after an unsubscribe, so without the
     // opt-out marker the hourly repair loop would silently undo a deliberate
@@ -206,6 +233,28 @@ describe('the enrolment path is actually reachable', () => {
     expect(SETTINGS).toContain('hasLocalSubscription');
     expect(SETTINGS).toContain('enablePush');
     expect(SETTINGS).toContain('disablePush');
+  });
+
+  it('never puts the one-time prompt on the felt', () => {
+    // The prompt asks once per account per browser and then closes that door
+    // for good. Landing on a live table means a person mid-hand dismisses it
+    // reflexively and sp_firstrun_notif_<uid> records that reflex as a
+    // considered no. It must DEFER, not spend the ask.
+    const PROMPT = read('src/components/notifications/FirstRunPushPrompt.tsx');
+    expect(PROMPT).toContain('SUPPRESSED_ROUTES');
+    expect(PROMPT).toMatch(/'\/table'/);
+    expect(PROMPT).toContain('useLocation');
+    // The route must be a dependency of the arming effect, or leaving the
+    // table would never re-arm and a player who only plays is never asked.
+    expect(PROMPT).toMatch(/\[pending, state, suppressed\]/);
+  });
+
+  it('gives a subscribed device a way to prove push actually arrives', () => {
+    const SETTINGS = read('src/pages/SettingsPage.tsx');
+    const CLIENT = read('src/lib/pushClient.ts');
+    expect(CLIENT).toContain('/api/push/test');
+    expect(SETTINGS).toContain('sendTestPush');
+    expect(SETTINGS).toContain('Send Test');
   });
 
   it('records why sw-bus.js is not the push worker', () => {

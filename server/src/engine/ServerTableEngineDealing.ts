@@ -25,6 +25,7 @@ import {
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
+import { bombPotSettingsFromTable } from './BombPotScheduler.js';
 
 import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
@@ -832,6 +833,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandBBJFee = 0;
     this.currentHandCommunityCards = [];
     this.currentHandCommunityCards2 = [];
+    // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 + bomb metadata are per-hand.
+    this.currentHandCommunityCards3 = [];
+    this.currentHandBombPot = null;
     this.currentHandWinnersByBoard = [];
     // SHOWDOWN POLISH 2026-08-25: per-pot award breakdown is per-hand.
     this.currentHandPerPotAwards = [];
@@ -1086,29 +1090,44 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
     // FIX-218: Bible V8 §4.22 — Bomb pot detection based on table settings.
     // ROUND 3 AUDIT FIX (2026-08-20): the modulo ran on handNumber, which is
-    // the GLOBAL allocator (see handsSinceBombPot in Base) — cadence was a
-    // coin flip, not a schedule. Dedicated per-table counter now.
-    let bombPotConfig: { anteMultiplier: number; doubleBoard?: boolean } | undefined;
-    if (
-      this.tableInfo.bomb_pot_enabled &&
-      this.tableInfo.bomb_pot_frequency &&
-      this.tableInfo.bomb_pot_frequency > 0
-    ) {
-      this.handsSinceBombPot++;
-    }
-    if (
-      this.tableInfo.bomb_pot_enabled &&
-      this.tableInfo.bomb_pot_frequency &&
-      this.tableInfo.bomb_pot_frequency > 0 &&
-      this.handsSinceBombPot >= this.tableInfo.bomb_pot_frequency
-    ) {
-      this.handsSinceBombPot = 0;
-      bombPotConfig = {
-        anteMultiplier: this.tableInfo.bomb_pot_ante_multiplier ?? 2,
-        // DOUBLE-BOARD BOMB POT 2026-08-20: table opt-in for the two-board
-        // variant. HandController still downgrades if the deck can't cover it.
-        doubleBoard: this.tableInfo.bomb_pot_double_board ?? false,
-      };
+    // the GLOBAL allocator — cadence was a coin flip, not a schedule.
+    //
+    // BOMB POT STANDARDIZATION 2026-08-27 (Dan's spec §4): the raw counter is
+    // replaced by BombPotScheduler, which adds once_per_orbit, timed and
+    // bomb_pot_only trigger modes, single pending-token semantics (a paused
+    // table owes ONE bomb, never a backlog) and the minimum-players gate — a
+    // due bomb stays pending until bomb_pot_min_players (default 3) are dealt
+    // in. The decision is made HERE, once per hand, at the hand boundary; a
+    // hand already in progress can never become a bomb pot (spec §4.1).
+    let bombPotConfig: HandConfig['bombPot'];
+    {
+      const schedulerSettings = bombPotSettingsFromTable(this.tableInfo);
+      const decision = this.bombPotScheduler.noteHandStart(
+        schedulerSettings,
+        dealerSeat,
+        players.length,
+        Date.now()
+      );
+      if (decision.isBombPot) {
+        // Board count: the canonical 1-3 column wins; the legacy double-board
+        // boolean maps to 2. HandController still downgrades stepwise if the
+        // deck cannot cover players × holeCards + 5 × boards (spec §3.1).
+        const rawBoardCount =
+          this.tableInfo.bomb_pot_board_count ??
+          ((this.tableInfo.bomb_pot_double_board ?? false) ? 2 : 1);
+        const boardCount = (rawBoardCount >= 3 ? 3 : rawBoardCount === 2 ? 2 : 1) as 1 | 2 | 3;
+        const anteFixed = this.tableInfo.bomb_pot_ante_fixed ?? 0;
+        bombPotConfig = {
+          anteMultiplier: this.tableInfo.bomb_pot_ante_multiplier ?? 2,
+          // Legacy flag kept in lockstep so older consumers keep working.
+          doubleBoard: boardCount >= 2,
+          boardCount,
+          // FIXED ante mode (spec §3): a positive fixed amount overrides the
+          // BB multiple. Zero/null means BB-multiple mode.
+          anteFixed: anteFixed > 0 ? anteFixed : undefined,
+          triggerReason: decision.triggerReason,
+        };
+      }
     }
 
     // ── Dan 2026-08-23: bill this hand's blinds against the away-blind cap ──

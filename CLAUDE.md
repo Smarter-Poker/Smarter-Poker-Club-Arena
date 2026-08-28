@@ -69,7 +69,7 @@ For post-deploy verification that production is serving your commit, follow up
 with `bash scripts/git-safe-push.sh` in the WH repo — but `sync-club-arena.sh`
 already exits non-zero on build/push failure.
 
-### 1.1.5 SERVER-SIDE PROTECTION (prepared, not yet active)
+### 1.1.5 SERVER-SIDE PROTECTION (APPLIED - this section is history)
 
 `.husky/pre-push` is a seatbelt on an unlocked door: `--no-verify` skips it and
 a push made through the GitHub API never runs it. The lock is a ruleset, which
@@ -103,34 +103,41 @@ The command is unchanged:
 
     bash scripts/git-safe-push.sh "feat(ca): what changed"
 
-What it does underneath is not. The script pushes a branch, opens a pull
-request, waits for the required checks and merges it. You do not open the PR
-yourself and you do not push to main directly.
+What it does underneath is not. main is protected by a ruleset now, so the
+script pushes a branch, opens a pull request, waits for the required checks and
+merges it. You do not open the PR yourself and you do not push to main directly.
 
-CORRECTED 2026-08-27. This paragraph used to open "main is protected by a
-ruleset now". IT IS NOT, and believing it is dangerous. Section 1.1.5 above is
-the accurate one: a ruleset needs GitHub Pro on a private repo, and making
-these repos private - correctly, after keys leaked into history - SILENTLY
-disabled every ruleset and required status check. `.husky/pre-push` says the
-same thing under check 0: "CI still runs and still goes red; nothing enforces
-it server-side any more."
+VERIFIED AGAINST THE LIVE API 2026-08-28, because two other places in this repo
+say the opposite and they are the stale ones. Ruleset `main protection`
+(id 21163380) on `refs/heads/main` is `enforcement: active`, with
+`bypass_actors: []` - nobody, including a repo admin, merges around it. Its
+rules are `deletion`, `non_fast_forward`, `pull_request` (squash only, 0
+approvals) and `required_status_checks`:
 
-What that means in practice, and why the PR flow above is still the right
-habit even though nothing compels it:
+    TypeScript Check
+    Client Unit Tests (vitest)
+    Server Engine (typecheck + tests)
+    Production Build
+    CSS Beat E2E (multi-table + animations)
+    Silent Revert Guard
 
-  - A RED CHECK CANNOT BLOCK A MERGE. `scripts/ci/apply-main-ruleset.mjs`
-    names `TypeScript Check` and `Client Unit Tests (vitest)` as required.
-    Nothing is reading that list today.
-  - A DIRECT PUSH TO main IS NOT TYPE-CHECKED AT ALL. ci.yml's typecheck job
-    is `if: github.event_name == 'pull_request'`, for cost. No pull request,
-    no typecheck - and no ruleset to insist on one.
-  - THE GitHub-API PATH IN SECTION 11 SKIPS `.husky` ENTIRELY. push_files and
-    create_or_update_file run no hook, so a commit that lands that way clears
-    neither gate.
+So: a direct push to main is refused, a red check cannot be merged, and
+`ci.yml`'s `if: github.event_name == 'pull_request'` gating is SAFE precisely
+because the ruleset makes the pull-request path the only path.
 
-So the enforcement that actually exists is `.husky/pre-push`, on the machine
-doing the push, and nothing else. Do not `--no-verify` past it, and do not
-assume a green PR means anything checked it.
+Two documents disagree with the API and are wrong. Believe the API.
+
+  - Section 1.1.5 above is titled "prepared, not yet active". It is active.
+  - `.husky/pre-push` check 0 says "making the repos private ... silently
+    disabled required status checks and rulesets ... nothing enforces it
+    server-side any more". That was true when it was written and is not true
+    now.
+
+THE ONE REAL GAP, and it is a live one: `ci.yml` gates `unit`, `server` and
+`build` behind the `changes` job, and A RULESET COUNTS A SKIPPED REQUIRED CHECK
+AS SATISFIED. Those jobs already fail closed when `changes` cannot determine
+the diff - read the comments on them before touching that logic. `typecheck`
+and `stub_gate` are deliberately ungated for the same reason.
 
 WHY, because the old path caused three separate incidents in one day:
 

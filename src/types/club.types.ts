@@ -320,6 +320,14 @@ export interface TableSettings {
   bomb_pot_ante_bb: number; // In big blinds
   /** DOUBLE-BOARD BOMB POT 2026-08-20: deal two boards, split pots across them. */
   bomb_pot_double_board?: boolean;
+  /* BOMB POT STANDARDIZATION 2026-08-27 (spec §3): canonical config — board
+     count 1-3 supersedes the boolean; trigger mode, timed interval, minimum
+     players and optional fixed ante. */
+  bomb_pot_board_count?: number;
+  bomb_pot_trigger_mode?: 'every_n_hands' | 'once_per_orbit' | 'timed' | 'bomb_pot_only';
+  bomb_pot_interval_seconds?: number | null;
+  bomb_pot_min_players?: number;
+  bomb_pot_ante_fixed?: number | null;
   double_board: boolean;
 
   // Table Rules

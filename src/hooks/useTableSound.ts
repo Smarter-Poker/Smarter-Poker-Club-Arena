@@ -14,6 +14,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { soundService } from '../services/SoundService';
+import { isSoundAllowed } from '../utils/soundGate';
 
 export interface UseTableSoundReturn {
   /** Whether sound effects are active. Read this for UI toggle state. */
@@ -93,13 +94,20 @@ export function useTableSound(): UseTableSoundReturn {
   }, [isAutoRebuyEnabled]);
 
   // Mount-only sync: align soundService singleton with the stored preference.
-  // We use a ref guard so this only executes once (not on every toggle).
-  // Subsequent changes are handled synchronously inside setIsSoundEnabled().
+  // SOUND AUDIT 2026-08-27: two fixes here.
+  // 1. This ran in the RENDER BODY — setEnabled() writes localStorage via
+  //    persistSoundPreference, and under StrictMode/concurrent rendering a
+  //    discarded render could still fire that side effect. Now an effect.
+  // 2. It seeded from STORAGE_SOUND alone, but setEnabled persists to BOTH
+  //    gate keys — so a mute recorded only in 'club_arena_sounds' (Settings /
+  //    HamburgerMenu) was clobbered back to audible on every table mount.
+  //    Seed from the shared gate, which fails closed on either key.
   const mountedRef = useRef(false);
-  if (!mountedRef.current) {
+  useEffect(() => {
+    if (mountedRef.current) return;
     mountedRef.current = true;
-    soundService.setEnabled(readBool(STORAGE_SOUND, true));
-  }
+    soundService.setEnabled(isSoundAllowed());
+  }, []);
 
   const setIsSoundEnabled = (v: boolean) => {
     setIsSoundEnabledRaw(v);

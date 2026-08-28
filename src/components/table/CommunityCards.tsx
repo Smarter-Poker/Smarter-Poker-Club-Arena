@@ -298,6 +298,8 @@ function CommunityCardsComponent({
   const prevVisibleCountRef = useRef(visibleCount);
   const [showdownMode, setShowdownMode] = useState(false);
   const [newlyDealtIndices, setNewlyDealtIndices] = useState<Set<number>>(new Set());
+  /** When the current newly-dealt window opened (see re-arm branch below). */
+  const dealtAtRef = useRef(0);
   const [stageLabel, setStageLabel] = useState<string | null>(null);
 
   // FIX 184: Removed duplicate haptic here — stage transition useEffect below already
@@ -329,9 +331,21 @@ function CommunityCardsComponent({
       for (let i = prevCount; i < visibleCount; i++) {
         newIndices.add(i);
       }
+      dealtAtRef.current = Date.now();
       setNewlyDealtIndices(newIndices);
       const timer = setTimeout(() => setNewlyDealtIndices(new Set()), windowMs);
       prevVisibleCountRef.current = visibleCount;
+      return () => clearTimeout(timer);
+    }
+    // ANIMATION AUDIT 2026-08-27: `slowReveal` flips true when the FIRST
+    // all-in equity broadcast lands — often inside the newly-dealt window.
+    // The dep change re-ran this effect, the cleanup cancelled the pending
+    // clear, and neither count branch rescheduled it (count unchanged), so
+    // the deal-in class stayed welded to those board cards until the next
+    // street. Re-arm the clear for the REMAINDER of the window.
+    if (visibleCount === prevCount && newlyDealtIndices.size > 0) {
+      const remaining = Math.max(50, dealtAtRef.current + windowMs - Date.now());
+      const timer = setTimeout(() => setNewlyDealtIndices(new Set()), remaining);
       return () => clearTimeout(timer);
     }
     if (visibleCount < prevCount) {
@@ -342,13 +356,17 @@ function CommunityCardsComponent({
         for (let i = 0; i < visibleCount; i++) {
           newIndices.add(i);
         }
+        dealtAtRef.current = Date.now();
         setNewlyDealtIndices(newIndices);
         const timer = setTimeout(() => setNewlyDealtIndices(new Set()), windowMs);
         return () => clearTimeout(timer);
       }
     }
     prevVisibleCountRef.current = visibleCount;
-  }, [visibleCount, slowReveal]);
+    // newlyDealtIndices is in the deps ONLY so the re-arm branch above runs
+    // after a mid-window dep change; the set-then-clear cycle terminates
+    // because the clear writes an empty set (size 0 skips the branch).
+  }, [visibleCount, slowReveal, newlyDealtIndices]);
 
   // Bible V8 §5.1: Stage label + haptic feedback on stage transitions
   useEffect(() => {

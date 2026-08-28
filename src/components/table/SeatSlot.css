@@ -2571,7 +2571,9 @@
 }
 
 .seat__cards--folding .seat__card:nth-child(2) {
-  animation-delay: 55ms;
+  /* 2026-08-27: scaled — an unscaled 55ms ate the JS window's whole safety
+     margin at Fast (245ms of animation vs a 250ms removal). */
+  animation-delay: calc(55ms * var(--animation-speed, 1));
   /* Second card rotates the opposite direction for visual variety */
   --fold-spin: -20deg;
 }
@@ -2749,7 +2751,8 @@
 }
 
 .seat__cards--showdown .seat__card:nth-child(2) {
-  animation-delay: 120ms;
+  /* 2026-08-27: scaled — see the folding delay note above. */
+  animation-delay: calc(120ms * var(--animation-speed, 1));
 }
 
 @keyframes cardShowdownFlip {
@@ -3054,9 +3057,12 @@
   }
 }
 
-/* All-in shake */
+/* All-in shake
+   2026-08-27: now scales with --animation-speed like its JS removal window
+   (SeatSlot.tsx removed the class at 400ms * speed while this ran a fixed
+   0.4s — at Fast the shake was cut at 50% and the seat snapped back). */
 .seat--allin-shake {
-  animation: seatAllinShake 0.4s ease-out;
+  animation: seatAllinShake calc(0.4s * var(--animation-speed, 1)) ease-out;
 }
 
 @keyframes seatAllinShake {
@@ -3160,11 +3166,12 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .seat__bbj-credit {
-    animation: none;
-  }
-}
+/* 2026-08-27: `animation: none` here left the pill welded above the seat at
+   full opacity forever under Reduce Motion — the float animation is the ONLY
+   thing that fades it out, and the prop that mounts it has no timer. Let the
+   global reducedMotion.css collapse (1ms + forwards) run it instead, which
+   lands on the 100% frame: opacity 0. The pill appears for a frame and is
+   gone — motion removed, meaning kept. */
 
 /* ─────────────────────────────────────────────────────────────────────────
    TOP-RAIL SEATS — Dan 2026-08-19, bug list item 10:

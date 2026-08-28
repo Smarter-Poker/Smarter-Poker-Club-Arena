@@ -187,10 +187,11 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       pot: state.pot ?? 0,
       community_cards: state.communityCards ?? [],
       community_cards2: state.communityCards2 ?? [],
-      bomb_pot_in:
-        this.tableInfo?.bomb_pot_enabled && (this.tableInfo?.bomb_pot_frequency ?? 0) > 0
-          ? Math.max(1, (this.tableInfo!.bomb_pot_frequency ?? 0) - this.handsSinceBombPot)
-          : null,
+      // TRIPLE-BOARD BOMB POT 2026-08-27: third board (empty unless active).
+      community_cards3: state.communityCards3 ?? [],
+      // BOMB POT STANDARDIZATION 2026-08-27: countdown + timed due timestamp
+      // now come from the scheduler (all trigger modes), not raw arithmetic.
+      ...this.bombPotSnapshotFields(),
       current_bet: state.currentBet ?? 0,
       current_player: currentSeatPlayer?.user_id ?? null,
       dealer_seat: state.dealerSeat ?? this.currentHandDealerSeat,
@@ -329,12 +330,13 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       community_cards: state.communityCards ?? [],
       // DOUBLE-BOARD BOMB POT 2026-08-20: second board (empty unless active).
       community_cards2: state.communityCards2 ?? [],
+      // TRIPLE-BOARD BOMB POT 2026-08-27: third board (empty unless active).
+      community_cards3: state.communityCards3 ?? [],
       // ROUND 3 (2026-08-20): hands until the next bomb pot (1 = next hand).
       // null when the table doesn't run bomb pots. Drives the felt countdown.
-      bomb_pot_in:
-        this.tableInfo?.bomb_pot_enabled && (this.tableInfo?.bomb_pot_frequency ?? 0) > 0
-          ? Math.max(1, (this.tableInfo!.bomb_pot_frequency ?? 0) - this.handsSinceBombPot)
-          : null,
+      // BOMB POT STANDARDIZATION 2026-08-27: scheduler-derived, all modes,
+      // plus bomb_pot_next_at (epoch ms) for the timed mode's clock.
+      ...this.bombPotSnapshotFields(),
       current_bet: state.currentBet ?? 0,
       current_player: currentSeatPlayer?.user_id ?? null,
       dealer_seat: state.dealerSeat ?? this.currentHandDealerSeat,
@@ -551,10 +553,8 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       pot: 0,
       community_cards: [],
       community_cards2: [],
-      bomb_pot_in:
-        this.tableInfo?.bomb_pot_enabled && (this.tableInfo?.bomb_pot_frequency ?? 0) > 0
-          ? Math.max(1, (this.tableInfo!.bomb_pot_frequency ?? 0) - this.handsSinceBombPot)
-          : null,
+      community_cards3: [],
+      ...this.bombPotSnapshotFields(),
       current_bet: 0,
       current_player: null,
       dealer_seat: this.currentHandDealerSeat,

@@ -975,10 +975,27 @@ export default function TablePage({
   // MultiTablePage wrapper) defaults isActive=true so behavior is unchanged.
   const ambientSoundsAllowed = (!isMultiTable || isActive) && !muted;
 
+  /* This instance's own `.table-page` element. Anything that has to touch the
+     page root must come through here: `document.querySelector('.table-page')`
+     returns the FIRST one in the document, and MultiTablePage keeps up to four
+     mounted and laid out at once. */
+  const pageRootRef = useRef<HTMLDivElement | null>(null);
+
   // Prevent Chrome from throttling this tab (keeps horse timers alive)
   useTabKeepAlive();
-  useTableEnvironment(tableId);
-  useTableEnvironment(tableId);
+  /* ONCE. This read `useTableEnvironment(tableId);` on two consecutive lines,
+     and the duplicate was not harmless: the hook's viewport effect saves the
+     meta tag's original content so it can restore it on unmount, and the second
+     copy ran after the first had already replaced it — so it saved the POKER
+     viewport as the original and wrote that back on the way out. Leaving a table
+     left the whole app at `maximum-scale=1, user-scalable=no`. The hook is
+     refcounted now as well, because four tables mount it at once, but a hook
+     called twice from one component is a bug wherever it appears.
+
+     The ref is the second half of the same pass: the hook's background-tab
+     effect used to write its class onto `document.querySelector('.table-page')`,
+     which is table one's root no matter which instance is asking. */
+  useTableEnvironment(tableId, pageRootRef);
 
   // Get current user
   const [userId, setUserId] = useState<string>('guest');
@@ -3111,86 +3128,43 @@ export default function TablePage({
     return () => ro.disconnect();
   }, []);
 
-  /**
-   * Dan 2026-08-23: "the bottom bar is covering the hero's box so they cant see
-   * how many chips they have", and "the previous hand buttons are missing."
+  /* ─── THE BOTTOM RESERVE IS NOT MEASURED. IT IS DECLARED. ─────────────────
    *
-   * One cause. The action panel is `position: fixed; bottom: 0`, so it is out of
-   * flow and nothing below it reserves space automatically. Two places therefore
-   * reserved space for it BY HAND, and disagreed about how much:
+   * A ResizeObserver on `.action-panel-wrapper` used to live here and publish
+   * its height as `--sp-action-h`. It is DELETED, and the deletion is the fix
+   * for Dan 2026-08-27: "the screen is moving in and out constantly ... it's
+   * happening on all tables."
    *
-   *     .table-container   padding-bottom: 104px
-   *     .table-hud__lower  padding-bottom: 112px   "clears the COLLAPSED bar"
+   * WHY MEASURING WAS THE BUG, not the implementation of it. Four rules read
+   * that variable, and the first of them was `--sp-table-bottom`, which is not a
+   * padding: `.table-scaler` derives its WIDTH from the height left over, so
+   * every pixel in that expression rescales the entire felt. The wrapper's
+   * height legitimately changes several times a hand — it collapses to 1px when
+   * the hero has no action, drops to the 22px spectator line, stands back up on
+   * its `--sp-bottom-row-h` floor on the hero's turn, and grows again when the
+   * Show Hand bar enters it at showdown. Measured on production the felt swung
+   * 606x1002 -> 664x1098 across that range. The observer was doing exactly what
+   * it was written to do; what it was written to do was resize the table under
+   * the player twice a hand.
    *
-   * Two different numbers for one bar is what a guess looks like. Worse, that
-   * second comment states the constraint it fails: the panel is only ~112px
-   * while COLLAPSED. Open the raise slider and it grows well past both figures,
-   * so the previous-hand card goes under it - it was never removed, it was
-   * covered - and the hero's name plate, which hangs below the scaler because
-   * the hero avatar's CENTRE sits on the scaler's bottom edge, goes with it.
+   * A reserve for a box that comes and goes cannot be a measurement of that box.
+   * `--sp-action-reserve` (TablePage.css, on `.table-page`) is the most the
+   * bottom chrome may ever occupy, in CSS, changing only between "seated" and
+   * "spectating". Every one of the four consumers now reads that.
    *
-   * Measure it instead. The panel publishes its own height and both reserves
-   * read that, so the table and the HUD get out of the way of whatever the
-   * panel actually is right now, at any breakpoint, in any state.
+   * IT WAS ALSO WIRED TO THE WRONG ELEMENT, and that was a second, independent
+   * defect worth recording: it published onto `document.querySelector('.table-
+   * page')` — the FIRST such element in the document. MultiTablePage keeps up to
+   * four tables mounted and laid out at once (inactive slots are only
+   * `pointer-events: none`), so all four instances wrote their own wrapper's
+   * height onto table one's root, and tables two through four were never given a
+   * value at all. Scoping it to the instance would have fixed that; deleting it
+   * ends it.
    *
-   * ─── 2026-08-25 round 2: MEASURE THE BORDER BOX, NOT THE CONTENT BOX ───
-   *
-   * Dan, item 5: "that padding is way too much on the bottom." Part of it was
-   * here, and it was the opposite of a padding — it was a reserve that went
-   * MISSING.
-   *
-   * The first publish used `getBoundingClientRect().height` (border box) but
-   * every later one used `entry.contentRect.height` (content box). The wrapper
-   * carries `padding-bottom: env(safe-area-inset-bottom)` and a 1px top border,
-   * so on a notched iPhone the two differ by 35px, and the second number is the
-   * one that survived: `--sp-action-h` reported 95px for a bar that occupied
-   * 130px. Everything downstream then had to guess the missing strip back.
-   * TableHUD.css and TableChat.css did, by adding `env(safe-area-inset-bottom)`
-   * on top of the variable — which was right only because the variable was
-   * wrong, and became a double count the moment anybody fixed it. TablePage.css
-   * did NOT, and says so in --sp-table-bottom ("the home-indicator strip is
-   * already inside this number"): it wasn't, so the felt sat 34px lower than
-   * that rule believed, over the top of the bar.
-   *
-   * `borderBoxSize` is what both of those comments describe. With it,
-   * --sp-action-h means exactly "how much of the screen the bottom chrome
-   * occupies, home-indicator strip included", one definition, and the
-   * `+ env()` in the two HUD stylesheets is gone in the same change. The
-   * `getBoundingClientRect()` arm is for Safari 14, which fires ResizeObserver
-   * without ever populating borderBoxSize.
+   * If you are about to add another ResizeObserver whose output reaches CSS,
+   * read `tests/unit/feltReserveIsStatic.test.ts` first — it fails if any
+   * property the felt's geometry depends on is written from JavaScript.
    */
-  const actionPanelRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const el = actionPanelRef.current;
-    const root = document.querySelector('.table-page') as HTMLElement | null;
-    if (!el || !root || typeof ResizeObserver === 'undefined') return;
-    const publish = (h: number) => {
-      // Sub-pixel noise would thrash a layout-affecting variable, and this one
-      // feeds padding that moves the very seats the panel sits under.
-      const next = Math.round(h);
-      if (root.dataset.spActionH === String(next)) return;
-      root.dataset.spActionH = String(next);
-      root.style.setProperty('--sp-action-h', next + 'px');
-    };
-    publish(el.getBoundingClientRect().height);
-    const ro = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      // Spec says borderBoxSize is an array; Firefox shipped it as a bare
-      // object for a while, and Safari 14 omits it entirely.
-      const raw = entry.borderBoxSize as unknown;
-      const box = Array.isArray(raw)
-        ? (raw[0] as ResizeObserverSize | undefined)
-        : (raw as ResizeObserverSize | undefined);
-      const h = box?.blockSize ?? entry.target.getBoundingClientRect().height;
-      // The guard stays. A zero here would strand every consumer of
-      // --sp-action-h on a reserve of nothing, and the wrapper is briefly
-      // unmeasurable while the page is being torn down.
-      if (h > 0) publish(h);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
 
   // Actual club_id from the table record (NOT the tableId)
   const actualClubIdRef = useRef<string>('');
@@ -14595,6 +14569,7 @@ export default function TablePage({
 
   return (
     <div
+      ref={pageRootRef}
       /* `--embedded` (Dan 2026-08-23: "+ does not create the action box for
          that game"). `.table-page` is `position: fixed; inset: 0; z-index:
          1100` because as a ROUTE it is the whole screen. Inside
@@ -16439,7 +16414,10 @@ export default function TablePage({
       {/* ═══════════════════════════════════════════════════════════════════════
           BOTTOM CONTROLS + ACTION PANEL
           ═══════════════════════════════════════════════════════════════════════ */}
-      <div className="action-panel-wrapper" ref={actionPanelRef}>
+      {/* No ref. Nothing measures this box any more, and nothing may: its height
+          changes several times a hand and four rules used to resize the felt and
+          the HUD from it. See the note where the observer used to be, above. */}
+      <div className="action-panel-wrapper">
         {/* POKERBROS-spec: persistent footer bar — NEVER empty. Dan rule
             2026-04-17: action bar fixed to footer at all times, every state. */}
         {!tableState.players.some((p) => p?.isHero) &&

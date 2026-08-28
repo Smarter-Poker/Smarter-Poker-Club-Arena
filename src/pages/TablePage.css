@@ -32,7 +32,87 @@
    PAGE LAYOUT
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE FELT DOES NOT RESIZE DURING A HAND (Dan 2026-08-27, binding)
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Dan, verbatim: "THE CLUB ARENA GAME TABLE IS DOING THIS WEIRD THING WHERE THE
+   SCREEN IS MOVING IN AND OUT CONSTANTLY ... THAT SHOULD NEVER BE HAPPENING.
+   IT'S HAPPENING ON ALL TABLES."
+
+   It was, and this variable is the fix. Read this before you touch any of the
+   four rules that consume it.
+
+   ─── WHAT WAS ACTUALLY HAPPENING ──────────────────────────────────────────
+
+   `.table-scaler` derives its WIDTH from the height it is allowed to have:
+
+       --sp-table-h      = --sp-page-h - --sp-table-top - --sp-table-bottom
+       .table-scaler     width: --sp-table-h * 605/1000, aspect-ratio 605/1000
+
+   That is a good design — the 605:1000 aspect then holds by construction. It
+   also means `--sp-table-bottom` is not a padding. It is the table's SIZE. Any
+   pixel that moves in that expression rescales the entire felt, every seat, the
+   pot and the board with it.
+
+   `--sp-table-bottom` read `--sp-action-h`, which was the LIVE, ResizeObserver'd
+   height of `.action-panel-wrapper`. That box legitimately changes height
+   several times in every single hand:
+
+     - `[data-hero-action='none'] .action-panel-wrapper:not(:has(*))` collapses
+       it to 1px whenever the hero has nothing to do — between hands, after a
+       fold, while all-in, while away (ActionPanel.css);
+     - `[data-hero='false']` drops it to the 22px spectator line;
+     - the hero's turn arrives and it stands back up on its
+       `--sp-bottom-row-h` floor;
+     - `.footer-action-bar` (Show Hand) is FLOW content in that wrapper and
+       enters it at every showdown.
+
+   Measured on production (Chromium, 1204px wide, table
+   f2c86e7a-e7c9-4d3c-b496-cd09ab33215d) by setting the variable by hand:
+
+       --sp-action-h: 1px    ->  scaler 664.3 x 1098
+       --sp-action-h: 53px   ->  scaler 632.8 x 1046
+       --sp-action-h: 97px   ->  scaler 606.2 x 1002
+
+   So the felt swung about a tenth of its own size, with no transition, at least
+   twice per hand, on every table. That is the thing Dan is looking at.
+
+   ─── THE RULE, AND WHY IT IS A CONSTANT ───────────────────────────────────
+
+   A reserve for a box that comes and goes CANNOT be a measurement of that box.
+   If it were, the reserve would move exactly when the box does, which is exactly
+   when nothing on screen may move. So the reserve is the MOST the bottom chrome
+   can ever occupy, declared statically, and it changes only when the player sits
+   down or stands up — a change they made themselves.
+
+   The action bar is `position: fixed`, so it was never in flow and never needed
+   the felt to move for it; the reserve exists solely so the hero's name plate
+   (which hangs below the scaler, in `--sp-hero-clear`) is not covered when the
+   bar IS there. Reserving for the bar's presence at all times costs the felt
+   nothing it can perceive — because a size you cannot see change is not a size
+   you can miss — and it is the only arrangement in which the table holds still.
+
+   ─── WHAT THIS DOES NOT UNDO ──────────────────────────────────────────────
+
+   Dan 2026-08-27 items 3 and 6, "the bottom action bar should not be dark when
+   the hero doesn't have a hand ... not a dark void", are a PAINT concern and
+   they are untouched: the empty wrapper still drops its background, its border
+   and its pointer-events (ActionPanel.css). What that rule may no longer do is
+   change the felt's size, and it no longer can — nothing downstream reads its
+   height any more.
+
+   ─── DO NOT REINTRODUCE A MEASUREMENT HERE ────────────────────────────────
+
+   `--sp-action-h` and its ResizeObserver are DELETED, not merely unused, so the
+   next reader cannot find a live variable and assume it is safe to read.
+   `tests/unit/feltReserveIsStatic.test.ts` fails if any custom property the
+   felt's geometry depends on is ever written from JavaScript again. */
 .table-page {
+  /* Seated: the action bar's own floor, plus the home-indicator strip its
+     wrapper pads itself by. Identical to the wrapper's `min-height`
+     (ActionPanel.css), which is what it is standing in for. */
+  --sp-action-reserve: calc(var(--sp-bottom-row-h, 96px) + env(safe-area-inset-bottom, 0px));
   position: fixed;
   inset: 0;
   z-index: 1100;
@@ -56,6 +136,25 @@
   -webkit-touch-callout: none;
   user-select: none;
   overscroll-behavior: none;
+}
+
+/* Spectating: no action bar can ever appear, so reserving for one would be a
+   band of dead page under the felt for a viewer who will never see a button.
+   What the wrapper carries instead is the one-line footer, and its height is
+   declared next to the padding that produces it (`--sp-spectator-line-h`,
+   ActionPanel.css).
+
+   This is the ONLY thing that moves the felt now, and it moves it exactly once:
+   at the moment the player takes a seat or leaves one. That is a change they
+   made themselves, in response to their own tap, and it is the difference
+   between a table that responds and a table that twitches.
+
+   Declared on `.table-page`, not on `.table-container`, because the HUD stack,
+   the chat button and the post-BB pill are all `position: fixed` OUTSIDE the
+   container and read this same reserve. Specificity 0,2,0 beats the 0,1,0
+   declaration above on the same element. */
+.table-page[data-hero='false'] {
+  --sp-action-reserve: calc(var(--sp-spectator-line-h, 22px) + env(safe-area-inset-bottom, 0px));
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -545,21 +644,16 @@
 
      THE HOME-INDICATOR STRIP IS INSIDE THIS NUMBER ALREADY, so there is no
      env(safe-area-inset-bottom) term of its own here and adding one is always
-     a double-count. --sp-action-h is the BORDER-BOX height of
-     .action-panel-wrapper, measured by the ResizeObserver in TablePage.tsx,
-     and that wrapper's own `padding-bottom: env(safe-area-inset-bottom)` is
-     part of the box it measures. (Until 2026-08-25 the observer reported the
-     content box, which under-stated the bar by exactly that inset - the
-     opposite error, and the reason three stylesheets used to add env() back on
-     top of it.) The FALLBACK still carries the inset, because a browser with
-     no ResizeObserver never receives the measurement and has to reserve the
-     same truth from the parts: the bar's own floor plus the strip under it.
-     --sp-bottom-row-h is that floor, declared in ActionPanel.css - 96px on
-     desktop, 52px at <=640px. */
-  --sp-table-bottom: calc(
-    var(--sp-action-h, calc(var(--sp-bottom-row-h, 52px) + env(safe-area-inset-bottom, 0px))) +
-      var(--sp-hero-clear)
-  );
+     a double-count: --sp-action-reserve carries it, exactly as
+     .action-panel-wrapper's own `padding-bottom: env(safe-area-inset-bottom)`
+     does in the box it stands in for.
+
+     THIS TERM USED TO BE A LIVE MEASUREMENT (`--sp-action-h`) AND THAT IS WHAT
+     MADE THE WHOLE TABLE ZOOM IN AND OUT THROUGHOUT EVERY HAND. Read the note
+     on --sp-action-reserve at `.table-page`, at the top of this file, before
+     changing anything in this expression. The short version: this is not a
+     padding, it is the felt's size, so nothing transient may appear in it. */
+  --sp-table-bottom: calc(var(--sp-action-reserve) + var(--sp-hero-clear));
 
   /* What is left for the felt. Read by .table-scaler to derive its WIDTH, so
      the 605/1000 aspect is honoured by construction instead of being left to
@@ -589,10 +683,15 @@
   /* Dan 2026-08-22 mobile audit item 1: top padding must clear the notch
      (safe-area-inset-top) so nothing is cut off, and the bottom reserve was
      too deep — trimmed so the table sits lower on the screen. */
-  /* Dan 2026-08-23: the bottom reserve is MEASURED now, not guessed. It was a
+  /* Dan 2026-08-23: the bottom reserve is DERIVED now, not guessed. It was a
      flat 104px, while the HUD reserved 112px for the same bar - and the bar is
-     only that short when collapsed. --sp-action-h is published by the panel
-     itself (see TablePage.tsx), so this follows it open or closed.
+     only that short when collapsed. --sp-action-reserve restates the bar's own
+     `--sp-bottom-row-h` floor (ActionPanel.css), so the two cannot disagree and
+     neither can drift at a breakpoint.
+
+     Dan 2026-08-27: it was MEASURED between those two dates, and that was the
+     "screen moving in and out" — see the note on --sp-action-reserve at the top
+     of this file. Do not put a measurement back in here.
 
      --sp-hero-clear is on top of it because the hero's plate is not inside the
      scaler: the hero avatar's CENTRE sits on the scaler's bottom edge, so half
@@ -1792,9 +1891,12 @@
 
      THE MIN-HEIGHT FLOOR IS STILL LOAD-BEARING - IT JUST NO LONGER LIVES HERE.
      Both bottom rows are position:fixed, so this box has no flow content while
-     it is the hero's turn; with no floor at all --sp-action-h collapses, the
-     bar covers the hero plate again, and that is exactly the 2026-08-23
-     regression. The floor is now `--sp-bottom-row-h` in ActionPanel.css,
+     it is the hero's turn; with no floor at all the bar itself sits on nothing,
+     covers the hero plate again, and that is exactly the 2026-08-23
+     regression. (The FELT's reserve no longer depends on this box's height at
+     all — see --sp-action-reserve at the top of this file — but the box still
+     has to stand somewhere, and the two rows still size their own row to it.)
+     The floor is `--sp-bottom-row-h` in ActionPanel.css,
      applied by `.table-page .action-panel-wrapper` in that same file, because
      the number has to agree with the two rows ActionPanel owns and it changes
      with the breakpoint. A second copy here could only ever disagree with
@@ -2231,7 +2333,7 @@
     /* The `padding: calc(80px + inset) 10px calc(108px + inset)` shorthand that
        used to sit here is GONE (Dan 2026-08-25, item 3). Two things were wrong
        with it beyond the numbers. It restated the whole box, so the 108px
-       bottom silently replaced the MEASURED --sp-action-h reserve on every
+       bottom silently replaced the derived --sp-action-reserve on every
        phone between 381 and 768px — the exact regression
        tests/unit/bottomBarReserve.test.ts exists to catch, reintroduced through
        a shorthand instead of a longhand. And its top/side values were already
@@ -3374,12 +3476,19 @@
      40.5-88px above the bar, pill 8-64px, a 24px overlap). position:fixed puts
      it outside the layout, so no reserve can protect the hero from it.
 
-     Clearing the WHOLE strip is the fix: --sp-action-h + --sp-hero-clear is
-     precisely the reserve .table-container makes for the hero, so adding 8px
-     of air puts this pill above the hero instead of on them, at every
-     viewport, and it follows the bar open or closed. */
+     Clearing the WHOLE strip is the fix: --sp-action-reserve + --sp-hero-clear
+     is precisely the reserve .table-container makes for the hero, so adding 8px
+     of air puts this pill above the hero instead of on them, at every viewport.
+
+     2026-08-27: this read the MEASURED --sp-action-h, so the pill jumped 50-95px
+     up and down the screen every time the bar came or went — on the one surface
+     that renders precisely when the hero has no hand, i.e. precisely when the
+     wrapper collapses. Reading the static reserve pins it. */
   bottom: calc(
-    var(--sp-action-h, calc(var(--sp-bottom-row-h, 52px) + env(safe-area-inset-bottom, 0px))) +
+    var(
+        --sp-action-reserve,
+        calc(var(--sp-bottom-row-h, 52px) + env(safe-area-inset-bottom, 0px))
+      ) +
       var(--sp-hero-clear, 60px) + 8px
   );
   left: 50%;
@@ -3907,7 +4016,7 @@ body.ca-raising .bankroll-widget {
 
        Those three widgets are not in the HUD's gift to move: `.table-hud__lower`
        is `align-items: flex-end` resting on --sp-hud-line, which is
-       `--sp-action-h + 8px` (TableHUD.css), and the bottom-left corner then
+       `--sp-action-reserve + 8px` (TableHUD.css), and the bottom-left corner then
        STACKS UPWARD from that line into whatever is above it. So the only way
        they stop crossing the felt is for the felt's bottom edge to sit above
        the top of that stack. That is this number.

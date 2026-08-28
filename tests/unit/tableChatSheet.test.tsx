@@ -169,7 +169,13 @@ describe('the collapsed chat button is untouched by the sheet', () => {
     // button jumps to the top of the screen. The fallback deliberately repeats
     // TableHUD.css's expression.
     expect(block).toContain('--sp-hud-line');
-    expect(block).toContain('--sp-action-h');
+    // 2026-08-27: --sp-action-reserve, not the deleted --sp-action-h. The line
+    // still follows the bar; it follows the height the bar is ENTITLED to,
+    // which is the part that does not change several times a hand.
+    expect(block).toContain('--sp-action-reserve');
+    // The deleted variable may still be NAMED in the block's comment — that is
+    // the history of why the line moved. It may not be READ.
+    expect(block).not.toContain('var(--sp-action-h');
     expect(block).toContain('--sp-bottom-row-h');
     expect(block).toContain('env(safe-area-inset-bottom, 0px)');
   });

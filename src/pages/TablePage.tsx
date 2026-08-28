@@ -1568,7 +1568,21 @@ export default function TablePage({
 
   // State - initialize with empty data (no demo data!)
   const [tableState, setTableState] = useState<TableState>(() => {
-    const init = location.state?.initialTableState;
+    /**
+     * IDENTITY GUARD (Dan 2026-08-28, "shows a DIFFERENT table for a split
+     * second"). `location.state` belongs to the CURRENT history entry, not to
+     * this table: a TablePage mounted without its own navigation — the
+     * TABLE_SEATED append, tournament auto-seat, the lobby-tab in-place
+     * conversion — inherits whatever payload the last navigation left behind,
+     * i.e. ANOTHER table's name, game type, blinds and seat count. The felt
+     * then drew the wrong table (wrong seat ring included, since maxPlayers
+     * seeds createEmptySeats) until the first real snapshot arrived. The
+     * producer (ClubHomePage.handleJoinTable) stamps `tableId` into the
+     * payload for exactly this comparison; a payload without one is legacy
+     * and still accepted, since it can only come from a direct navigation.
+     */
+    const rawInit = location.state?.initialTableState;
+    const init = rawInit && (!rawInit.tableId || rawInit.tableId === tableId) ? rawInit : undefined;
     const maxP = init?.maxPlayers || 6;
     let b = '?/?';
     if (init?.buyInAmount) {

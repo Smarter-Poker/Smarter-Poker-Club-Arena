@@ -142,6 +142,107 @@ function dependencies(root: string): Set<string> {
   return seen;
 }
 
+/**
+ * Every (selector, declaration) pair in the CSS that declares `prop`.
+ *
+ * Crude but adequate: from each `--prop:` occurrence, walk back to the `{` that
+ * opens its rule, then back again to the end of the previous block to recover
+ * the selector text.
+ */
+function declarationsOf(prop: string): Array<{ selector: string; value: string }> {
+  const out: Array<{ selector: string; value: string }> = [];
+  const re = new RegExp(`(^|[;{\\s])${prop}\\s*:([^;}]*)`, 'g');
+  for (const m of ALL_CSS.matchAll(re)) {
+    const at = m.index ?? 0;
+    const brace = ALL_CSS.lastIndexOf('{', at);
+    if (brace === -1) continue;
+    const prev = Math.max(ALL_CSS.lastIndexOf('}', brace), ALL_CSS.lastIndexOf('{', brace - 1));
+    out.push({
+      selector: ALL_CSS.slice(prev + 1, brace)
+        .replace(/\s+/g, ' ')
+        .trim(),
+      value: m[2].trim(),
+    });
+  }
+  return out;
+}
+
+/**
+ * The whole var() graph the oval's size resolves through. Anything in here that
+ * a component STATE can change is a table that resizes under the player.
+ */
+const GEOMETRY_PROPS = [
+  '--sp-table-bottom',
+  '--sp-table-h',
+  '--sp-page-h',
+  '--sp-table-top',
+  '--sp-action-reserve',
+  '--sp-hero-clear',
+];
+
+describe('the felt is ONE size — no state may change it (Dan 2026-08-28)', () => {
+  /* "NO, THAT SHOULD NEVER HAPPEN, PREVENT IT AND FIX IT. THAT'S A GLITCH, NOT
+     CODE."
+     Two rules keyed on `[data-hero='false']` used to shrink --sp-action-reserve
+     and --sp-hero-clear for a spectator. Between them the felt jumped 128px on
+     desktop the instant somebody took a seat, and jumped back when they stood
+     up. Both are deleted. This test is what stops the next one. */
+
+  it('declares no geometry property behind a component-state selector', () => {
+    // A BREAKPOINT may change these — that is the viewport changing, which is
+    // the one legitimate reason the oval may be a different size. A STATE may
+    // not: attribute selectors, state classes and :has() all describe what the
+    // table is doing right now, and the table must look the same doing any of it.
+    const STATE =
+      /\[data-|:has\(|\.ca-raising|--hero-turn|--allin|--winner|--active|--open|:hover|:focus|:active|\bbody\./;
+    const offenders: string[] = [];
+    for (const prop of GEOMETRY_PROPS) {
+      for (const d of declarationsOf(prop)) {
+        if (STATE.test(d.selector)) offenders.push(`${prop} declared on "${d.selector}"`);
+      }
+    }
+    expect(
+      offenders,
+      'a property the felt sizes itself from is declared behind a state selector. ' +
+        'The oval will change size when that state flips.'
+    ).toEqual([]);
+  });
+
+  it('sizes the felt from a viewport unit that does not move', () => {
+    /* `dvh` grows and shrinks as a phone browser's URL bar collapses — sizing
+       the felt from it means the oval rescales on a scroll gesture. `svh` is the
+       viewport with chrome shown, and is constant. Every dvh declaration of
+       --sp-page-h must therefore have an svh partner in the @supports block. */
+    const decls = declarationsOf('--sp-page-h');
+    /* NOT `/\bdvh\b/`. There is no word boundary between the `0` and the `d` of
+       `100dvh`, so that pattern matches nothing and the whole assertion passes
+       vacuously — which is exactly what it did until a mutation test (delete
+       every svh declaration; expect red) came back green. A guard that cannot
+       fail is worse than no guard, because it is also a claim. */
+    const dvh = decls.filter((d) => /\d+dvh\b/.test(d.value));
+    const svh = decls.filter((d) => /\d+svh\b/.test(d.value));
+    expect(decls.length, 'no --sp-page-h declaration found — the walk is broken').toBeGreaterThan(
+      0
+    );
+    // Floor: proves the pattern matches something, so the equality below cannot
+    // be satisfied by both sides being zero.
+    expect(dvh.length, 'no dvh fallback found — the walk or the pattern is broken').toBeGreaterThan(
+      0
+    );
+    expect(
+      svh.length,
+      `${dvh.length} --sp-page-h declaration(s) use dvh but only ${svh.length} use svh. ` +
+        'Every dvh fallback needs its svh override or the felt resizes with the URL bar.'
+    ).toBe(dvh.length);
+  });
+
+  it('keeps the spectator collapse deleted', () => {
+    // Named explicitly: these two exact rules were the sit-down jump.
+    expect(ALL_CSS).not.toMatch(/\[data-hero='false'\][^{]*\{[^}]*--sp-hero-clear/);
+    expect(ALL_CSS).not.toMatch(/\[data-hero='false'\][^{]*\{[^}]*--sp-action-reserve/);
+  });
+});
+
 describe("the felt's geometry is declared, never measured", () => {
   it('resolves --sp-table-bottom through nothing that JavaScript writes', () => {
     const deps = dependencies('--sp-table-bottom');

@@ -210,8 +210,6 @@
 }
 
 .pd-claim-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.3);
 }
 
 .pd-claimed {

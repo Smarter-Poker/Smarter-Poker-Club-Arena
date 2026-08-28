@@ -80,3 +80,86 @@ export function cashBuyInLabel(row: CashBuyInSource): string {
   if (max <= min) return min.toLocaleString();
   return `${min.toLocaleString()} - ${max.toLocaleString()}`;
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * CASH BUY-IN REFUSALS — say which rule stopped you
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * 2026-08-28. `atomic_table_buyin` refuses a seat for SIXTEEN distinct reasons,
+ * and six of them are already tagged for a machine to read: IS_TEMPLATE,
+ * VIP_ONLY, NIT_GAME, TABLE_SIZE, NO_RATHOLE, TABLE_CAP_REACHED. Nothing ever
+ * read them. Every one of those refusals — banned from the club, VIP-only
+ * table, career VPIP below the table's floor, table full, buy-in under the
+ * minimum or over the maximum, club treasury short — arrived at the player as
+ * one sentence:
+ *
+ *     "Buy-in failed. Please try again or check your balance."
+ *
+ * Which is wrong in the specific way that wastes somebody's evening: it names
+ * the one thing that is NOT the problem, and sends them to the cashier to look
+ * for it. A player refused for a 200-chip minimum tops up, tries again, and is
+ * refused identically.
+ *
+ * This maps a refusal to the rule that actually fired. It returns null for
+ * anything it does not recognise, so an unknown refusal keeps the generic text
+ * AND still reaches error reporting rather than being quietly relabelled.
+ *
+ * The messages carry the server's own numbers wherever the server sent them —
+ * a minimum a player cannot see is a minimum they cannot meet.
+ */
+export function cashBuyInRefusalText(raw: unknown): string | null {
+  const m = String((raw as { message?: string })?.message ?? raw ?? '');
+  if (!m) return null;
+
+  /* The four-table cap, raised by fn_enforce_four_table_limit /
+     fn_enforce_booking_game_cap as a 23514 that used to escape untranslated. */
+  if (/FOUR TABLE LIMIT|table_limit_reached/.test(m)) {
+    return 'You Are Already In Four Games, Leave One To Join Another';
+  }
+  if (/TABLE_CAP_REACHED/.test(m)) {
+    const seated = m.match(/already seated at (\d+) cash tables \(max (\d+)\)/);
+    return seated
+      ? `You Are Already At ${seated[1]} Cash Tables, The Limit Is ${seated[2]}`
+      : 'You Are Already At The Maximum Number Of Cash Tables';
+  }
+  if (/NIT_GAME/.test(m)) {
+    const vpip = m.match(/at least ([\d.]+)/);
+    return vpip
+      ? `This Table Requires A Career VPIP Of At Least ${vpip[1]} Percent`
+      : 'This Table Has A Minimum Career VPIP You Do Not Meet Yet';
+  }
+  if (/NO_RATHOLE/.test(m)) {
+    const amt = m.match(/return with the ([\d,.]+)/);
+    return amt
+      ? `This Table Requires You To Return With The ${amt[1]} You Left With`
+      : 'This Table Requires You To Return With The Stack You Left With';
+  }
+  if (/VIP_ONLY/.test(m)) return 'This Table Is Open To VIP Members Only';
+  if (/IS_TEMPLATE/.test(m)) return 'This Is A Saved Table Template, Not A Live Game';
+  if (/TABLE_SIZE: table is full/.test(m)) return 'This Table Is Full';
+  if (/TABLE_SIZE: seat/.test(m)) return 'That Seat Does Not Exist At This Table';
+  if (/Player already seated at this table/i.test(m)) {
+    return 'You Are Already Seated At This Table';
+  }
+  if (/Banned from this club/i.test(m)) return 'You Cannot Buy In At This Club';
+  if (/Buy-in below table minimum/i.test(m)) {
+    const min = m.match(/min ([\d,.]+)/);
+    return min
+      ? `The Minimum Buy In At This Table Is ${min[1]}`
+      : 'Your Buy In Is Below This Table Minimum';
+  }
+  if (/Buy-in above table maximum/i.test(m)) {
+    const max = m.match(/max ([\d,.]+)/);
+    return max
+      ? `The Maximum Buy In At This Table Is ${max[1]}`
+      : 'Your Buy In Is Above This Table Maximum';
+  }
+  if (/Invalid buy-in amount/i.test(m)) return 'That Buy In Amount Is Not Valid';
+  /* Both wallet shortfalls. The player's own balance is the ONLY case where
+     "check your balance" was ever the right advice, so it is the only case
+     that still says it. */
+  if (/Insufficient club chips/i.test(m)) return 'The Club Treasury Cannot Cover This Buy In';
+  if (/No club wallet resolves/i.test(m)) return 'No Club Wallet Was Found For You At This Table';
+  return null;
+}

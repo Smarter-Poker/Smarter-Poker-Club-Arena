@@ -621,8 +621,14 @@ export default function ProfilePage() {
     // Gamification bus listeners: refresh balance when rewards earned on other pages
     const unsubDailyReward = masterBus.subscribeDebounced(
       'DAILY_REWARD_CLAIMED',
-      (payload: any) => {
+      (event: any) => {
         if (!isMounted) return;
+        // WRAPPER BUG (fixed 2026-08-28): subscribers receive the event
+        // WRAPPER ({ type, payload, timestamp }), not the raw payload.
+        // Reading .rewardType off the wrapper was always undefined, so the
+        // diamond rain celebration never fired. Same class as the 2026-08-19
+        // UI_THEME_CHANGED audit.
+        const payload = event?.payload ?? event;
         if (payload?.rewardType === 'diamonds') setShowDiamondRain(true);
         supabase.auth
           .getUser()
@@ -647,8 +653,10 @@ export default function ProfilePage() {
     );
     const unsubMissionClaim = masterBus.subscribeDebounced(
       'MISSION_CLAIMED',
-      (payload: any) => {
+      (event: any) => {
         if (!isMounted) return;
+        // Wrapper unwrap — see the DAILY_REWARD_CLAIMED note above.
+        const payload = event?.payload ?? event;
         if (payload?.rewardType === 'diamonds') setShowDiamondRain(true);
         supabase.auth
           .getUser()
@@ -670,8 +678,15 @@ export default function ProfilePage() {
     );
     const unsubWheelSpin = masterBus.subscribeDebounced(
       'WHEEL_SPIN_RESULT',
-      (payload: any) => {
+      (event: any) => {
         if (!isMounted) return;
+        // Wrapper unwrap — the most insidious variant of the class: the
+        // WRAPPER has a real `.type` field holding the event NAME
+        // ('WHEEL_SPIN_RESULT'), so `payload?.type === 'diamonds'` was
+        // silently, permanently false with no undefined to trip a guard.
+        // The payload's own `type` (LuckyDrawWheel emits segment type) is
+        // what this comparison was written for.
+        const payload = event?.payload ?? event;
         if (payload?.type === 'diamonds') setShowDiamondRain(true);
         supabase.auth
           .getUser()

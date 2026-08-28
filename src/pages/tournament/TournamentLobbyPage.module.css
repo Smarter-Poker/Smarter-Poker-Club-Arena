@@ -111,13 +111,6 @@
   font-size: 0.75rem;
   padding: 0.35rem 0.75rem;
 }
-
-.filterBtn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-  transform: translateY(-1px);
-}
-
 .filterBtn.active {
   background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
   border-color: transparent;
@@ -203,11 +196,6 @@
   font-weight: 600;
   transition: transform 0.2s;
 }
-
-.createBtn:hover {
-  transform: scale(1.05);
-}
-
 /* ═══════ TABLET ═══════ */
 @media (max-width: 768px) {
   .quickStats {

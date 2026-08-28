@@ -19,6 +19,7 @@ import { useWalletStore } from '../../stores/useWalletStore';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { applyTableAppearance } from '../../lib/applyTableAppearance';
+import { persistIdentity } from '../../lib/cachedIdentity';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { preloadRoute } from '../../utils/ChunkPreloader';
 import { useUserTableSettings } from '../../hooks/useUserTableSettings';
@@ -111,15 +112,39 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const toast = useToast();
   const touchStartRef = useRef<number | null>(null);
 
-  const [soundsEnabled, setSoundsEnabled] = useState(true);
-  const [vibrationsEnabled, setVibrationsEnabled] = useState(true);
-  const [showBBEnabled, setShowBBEnabled] = useState(false);
+  /**
+   * LAZY INITIALIZERS (2026-08-28, first-paint flash sweep): these four
+   * toggles began at hard-coded defaults and read localStorage one tick
+   * later in the load effect — so an open drawer could flash the wrong
+   * switch positions. The read is synchronous; do it before the first
+   * paint, exactly as selectedCardColor below already does. The load
+   * effect's async profile fetch still refines them afterwards.
+   */
+  const readStoredBool = (key: string, fallback: boolean): boolean => {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw === null ? fallback : raw === 'true';
+    } catch {
+      return fallback;
+    }
+  };
+  const [soundsEnabled, setSoundsEnabled] = useState(() =>
+    readStoredBool(STORAGE_KEYS.SOUNDS, true)
+  );
+  const [vibrationsEnabled, setVibrationsEnabled] = useState(() =>
+    readStoredBool(STORAGE_KEYS.VIBRATIONS, true)
+  );
+  const [showBBEnabled, setShowBBEnabled] = useState(() =>
+    readStoredBool(STORAGE_KEYS.SHOW_STACK_BB, false)
+  );
   // Avatar from persistent header store (avoids duplicate Supabase query)
   const avatarUrl = useHeaderDataStore((s) => s.avatarUrl);
   const equippedFrame = useHeaderDataStore((s) => s.equippedFrame);
   const equippedAura = useHeaderDataStore((s) => s.equippedAura);
   const [userName, setUserName] = useState<string>('');
-  const [useRealName, setUseRealName] = useState(false);
+  const [useRealName, setUseRealName] = useState(() =>
+    readStoredBool(STORAGE_KEYS.USE_REAL_NAME, false)
+  );
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
   const [isVIP, setIsVIP] = useState(false);
   /** Paid card backs this player has actually bought (feature_purchases). */
@@ -282,6 +307,13 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ? data.display_name || data.username || 'Player'
                 : data.username || data.display_name || 'Player'
             );
+            // First-paint identity cache (2026-08-28 flash sweep): what the
+            // database just said is what the header and hero seat should wear
+            // on the NEXT cold open, before any round trip.
+            persistIdentity(user.id, {
+              displayName: data.display_name || data.username || null,
+              avatarUrl: data.avatar_url || null,
+            });
             // These columns may not exist on profiles — use optional chaining with defaults
             if (data.sounds_enabled !== undefined && data.sounds_enabled !== null) {
               setSoundsEnabled(data.sounds_enabled);
@@ -827,7 +859,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onMouseEnter={(e) => {
               handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
+              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
@@ -868,7 +900,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onMouseEnter={(e) => {
               handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
+              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
@@ -904,7 +936,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onMouseEnter={(e) => {
               handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
+              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
@@ -950,7 +982,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onMouseEnter={(e) => {
               handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
+              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
@@ -975,7 +1007,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = colors.bgHover;
-            e.currentTarget.style.transform = 'translateX(4px)';
+            /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.background = 'transparent';
@@ -1014,7 +1046,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onMouseEnter={(e) => {
               handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
+              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
@@ -1371,7 +1403,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onMouseEnter={(e) => {
               handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
+              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
@@ -1457,7 +1489,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onMouseEnter={(e) => {
               handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
+              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
@@ -1482,7 +1514,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = colors.bgHover;
-            e.currentTarget.style.transform = 'translateX(4px)';
+            /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.background = 'transparent';
@@ -1509,7 +1541,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = colors.bgHover;
-            e.currentTarget.style.transform = 'translateX(4px)';
+            /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.background = 'transparent';

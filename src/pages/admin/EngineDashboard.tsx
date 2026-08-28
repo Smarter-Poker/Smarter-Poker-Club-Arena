@@ -77,14 +77,9 @@ export default function EngineDashboard() {
       },
       500
     );
-    // Phase 4: Refresh stats on table break completions (tournament rebalancing)
-    const unsubTableBreak = masterBus.subscribeDebounced(
-      'TABLE_BREAK_COMPLETED',
-      async () => {
-        setTStats(await refreshTournamentStats());
-      },
-      500
-    );
+    // TABLE_BREAK_COMPLETED listener removed 2026-08-28: the server emits it
+    // only on the engine channel; it is never relayed onto the client bus, so
+    // this refresh never fired. Revive via a relay if wanted.
     // Phase 4: Refresh stats on bomb pot triggers (cash game activity)
     const unsubBombPot = masterBus.subscribeDebounced(
       'BOMB_POT_TRIGGERED',
@@ -99,7 +94,6 @@ export default function EngineDashboard() {
       unsubTournament();
       unsubHorseSeated();
       unsubHorseRemoved();
-      unsubTableBreak();
       unsubBombPot();
     };
   }, []);

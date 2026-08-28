@@ -103,6 +103,24 @@ export interface PreflopCtx {
   /** V21 DEEP-STACK DISCIPLINE: scale cash 4-bet/5-bet stack-off thresholds
    *  with depth past 120bb. Undefined/false = legacy behavior. */
   deepDiscipline?: boolean;
+  /** V24: enable the Omaha price defense + risk-scaled survival premium.
+   *  Undefined/false keeps the exact pre-V24 arithmetic (ablation). */
+  ploPriceDefense?: boolean;
+  /** V25: enable PLO TOURNAMENT play — the pot-limit commitment zone, the
+   *  Omaha reshove, price-driven all-in calls, and the no-raise-fold rule.
+   *  Undefined/false keeps the pre-V25 arithmetic (ablation). */
+  ploTourney?: boolean;
+  /** V24 BOUNTY (PKO / mystery): share of the prize pool sitting in bounties
+   *  (0 = not a bounty event). A bounty is equity you collect by ELIMINATING
+   *  someone, so it pays to play pots against players you cover. */
+  bountyFactor?: number;
+  /** V24 BOUNTY: hero covers the current raiser, so busting them collects
+   *  their bounty and risks none of hero's own. Undefined = unknown. */
+  coversRaiser?: boolean;
+  /** V24 BOUNTY: the raiser is short enough that this pot can eliminate them
+   *  outright (their stack is inside what is already committed + hero's
+   *  call). The bounty is not just possible, it is LIVE this hand. */
+  raiserBustable?: boolean;
   /** V23 BLIND CLOCK: minutes until the next blind level (undefined = unknown). */
   nextBlindInMin?: number;
   /** V23 BLIND CLOCK: next level's bb over the current bb (1/undefined = flat). */
@@ -218,8 +236,28 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     rand,
   } = ctx;
 
-  // Tournament survival premium tightens everything a notch.
+  // ═══ V24 ICM IS ABOUT RISKING A LIFE, NOT A BLIND (Dan 2026-08-28) ═══════
+  // "I full potted 8 hands in a row and never got called once."
+  //
+  // riskAdd is the survival premium, and it was added to EVERY threshold at
+  // full strength no matter how little the decision risked. Near the money it
+  // reaches 0.12, which pushed the PLO call bar to t(0.54)+0.12 ~= 0.70: a
+  // horse folded 70% of hands rather than call 3.5bb of a 100bb stack getting
+  // better than 3:1. That is not ICM, it is a bug wearing ICM's name.
+  //
+  // ICM prices the chance of BUSTING. A call worth 3% of a stack cannot bust
+  // anybody, so it earns almost none of the premium; a call that puts the
+  // stack in earns all of it. Scaling by the fraction at risk is the whole
+  // fix, and it leaves every jam/stack-off threshold exactly where it was
+  // (those risk everything, so the multiplier is 1).
+  const atRisk = stack > 0 ? Math.min(1, Math.max(0, toCall) / stack) : 1;
+  // Square-root so meaningful-but-not-fatal prices still carry real weight:
+  // 4% of stack -> 20% of the premium, 25% -> 50%, all-in -> 100%.
+  const riskScaled = ctx.ploPriceDefense === true ? ctx.riskAdd * Math.sqrt(atRisk) : ctx.riskAdd;
+  // Thresholds that decide whether to COMMIT keep the full premium; the
+  // price-scaled one is for calls that merely continue.
   const t = (x: number) => clamp01(x * ctx.tightness + ctx.riskAdd);
+  const tCall = (x: number) => clamp01(x * ctx.tightness + riskScaled);
   const strength = raw;
   const bluffBudget = ctx.bluffFreq * ctx.aggression * Math.max(0.4, 1 - 4 * ctx.riskAdd);
 
@@ -296,13 +334,95 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   }
   const v20Wired = ctx.anteBB !== undefined; // layer on (cash or tournament)
 
+  // ═══ V25 PLO TOURNAMENTS ARE NOT PUSH/FOLD (Dan 2026-08-28) ═════════════
+  // THE STRUCTURAL FACT the brain did not model: POT LIMIT MEANS YOU CANNOT
+  // SHOVE. A preflop pot-sized raise is ~3.5bb, so an "all-in" is legal only
+  // at roughly 3.5bb or less. Every M-zone jam gate above is holdem thinking:
+  // a 12bb PLO stack that "jams" actually raises 3.5bb and sits there with
+  // 8.5bb behind, facing a 3-bet it never planned for. legalize() quietly
+  // clamps the intent, so the horse acted on a plan the game does not allow.
+  //
+  // What short-stack PLO really is: a COMMITMENT decision. Raising pot with
+  // a stack this shallow means the rest is going in, so the only question is
+  // whether the hand is one you will stack off with - and having decided
+  // that, you must never fold to the re-raise you invited. That is the
+  // difference between a PLO tournament regular and a holdem player using
+  // holdem rules in the wrong game.
+  //
+  // commitRatio = what one pot-sized raise costs as a share of the stack.
+  // At >= 0.25 the raise IS the commitment, whatever the bb count says: a
+  // 3.5bb pot raise is a quarter of a 14bb stack, and raising a quarter of
+  // your tournament life and then folding is the worst line in poker. (The
+  // first cut used 0.35, which put a 12bb stack OUTSIDE the zone - and the
+  // test caught the 12bb stack limp-calling junk through the deep-stack
+  // fallback instead, which is precisely the hole this layer exists to fill.)
+  const ploT = ctx.isOmaha && isTourney && ctx.ploTourney === true;
+  // A pot raise from an unopened pot is ~3.5bb; facing a raise it is
+  // roughly 3*currentBet + pot (the pot-limit formula), which is what the
+  // engine's own legalize() will clamp to.
+  const potRaiseCost = unopened
+    ? bb * 3.5
+    : Math.min(stack, 3 * currentBet + Math.max(0, pot - currentBet));
+  const commitRatio = stack > 0 ? potRaiseCost / stack : 1;
+  const ploCommitZone = ploT && commitRatio >= 0.25;
+  // Already-invested commitment: chips in the middle this hand as a share of
+  // everything hero started with. Past ~30% a fold surrenders a stake big
+  // enough that folding is worse than the worst call.
+  const investedShare = stack + toCall > 0 ? (currentBet - toCall) / (stack + currentBet) : 0;
+
   // ── Short stacks: push/fold and reshove stacks ──
   // V20: the gate is M-based in tournaments (red zone M<5 and most of
   // orange enter jam-or-fold even when stackBB reads above 12), and Omaha
   // short stacks finally HAVE a jam-or-fold posture instead of falling
   // through to deep-stack pot-limit logic.
+  // ═══ V25 PLO COMMITMENT ZONE ═══ raise-or-fold, and having raised, commit.
+  if (ploCommitZone) {
+    if (unopened) {
+      // The raise IS the stack, so the bar is a STACK-OFF bar, not an open.
+      // Late position and a burnt M widen it exactly as the NLH gate does;
+      // Omaha starts tighter because four cards make everyone's range wide,
+      // so the fold equity a holdem shove buys is simply not there.
+      let commitBar = position === 'late' || position === 'sb' ? 0.56 : 0.64;
+      commitBar -= anteWiden;
+      if (mzOn && effM < 5) commitBar -= effM < 3 ? 0.1 : 0.05;
+      // The shallower the stack relative to one pot raise, the closer this is
+      // to a true shove and the wider it should be.
+      if (commitRatio >= 0.75) commitBar -= 0.06;
+      if (strength >= t(commitBar)) {
+        // Sized as a pot raise; the engine clamps it, and at this depth that
+        // clamp IS the all-in.
+        return { a: 'raiseTo', to: unopened ? bb * 3.5 : potRaiseCost };
+      }
+      if (toCall === 0) return { a: 'check' };
+      return { a: 'fold' };
+    }
+    // Facing action. In PLO the all-in call is far more price-driven than in
+    // holdem: equities compress (the worst four cards still hold ~30% against
+    // the best, where the worst two hold ~12%), so being "crushed" is rare
+    // and the pot odds carry most of the decision.
+    let callOff = raises >= 2 ? 0.8 : 0.66;
+    if (guardOdds <= 0.4) callOff -= (0.4 - guardOdds) * 1.2; // 3:1 -> -0.18
+    if (callers >= 1) callOff += Math.min(0.08, callers * 0.04);
+    if (mzOn && effM >= 5) callOff += ctx.riskAdd * 0.5;
+    // CHIPS ALREADY IN ARE NOT A FRESH DECISION. When hero raised and got
+    // re-raised, this branch was pricing the call as if the money in the
+    // middle belonged to somebody else - and folded a third of a stack it
+    // had voluntarily committed a moment earlier. That is the raise-fold
+    // this layer is named after, and it hid inside the layer itself until a
+    // test drove the sequence end to end.
+    if (investedShare >= 0.28) callOff -= 0.18;
+    if (strength >= t(Math.max(0.34, callOff))) {
+      return { a: 'raiseTo', to: potRaiseCost };
+    }
+    if (toCall === 0) return { a: 'check' };
+    return { a: 'fold' };
+  }
+
   const pushFoldNlh = !ctx.isOmaha && (stackBB <= 12 || (mzOn && effM < 6));
-  const pushFoldOmaha = ctx.isOmaha && mzOn && (stackBB <= 8 || effM < 4);
+  // V25: the old Omaha gate (<=8bb / M<4) is superseded by the commitment
+  // zone above, which triggers on the pot-limit arithmetic rather than a bb
+  // count. It stays for the ablation path (ploTourney off).
+  const pushFoldOmaha = ctx.isOmaha && !ploT && mzOn && (stackBB <= 8 || effM < 4);
   if (pushFoldNlh || pushFoldOmaha) {
     if (unopened) {
       // V11: tournament jam ranges follow push/fold math — wider from late
@@ -354,6 +474,29 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     // V11: antes widen the reshove (dead money + first-in fold equity).
     return { a: 'jam' };
   }
+  // ═══ V25 OMAHA RESHOVE ═══ what this actually adds, stated honestly after
+  // a test proved the first claim wrong: the generic 3-bet below ALREADY
+  // fires on a late open at 0.74, so this is not "a stack with no move".
+  // Two real contributions:
+  //   1. SIZING. The generic 3-bet multiplies currentBet by 2.2-2.6, which
+  //      pot limit then clamps - so the horse asks for a number the game
+  //      refuses and takes whatever it is given. A pot-sized re-raise is the
+  //      largest legal raise, which at this depth is also the committing one.
+  //   2. A slightly wider band, and a MIDDLE-position open included at 0.78
+  //      where the generic bar is 0.80.
+  // Deliberately tight either way: a PLO 3-bet gets called far more often
+  // than a holdem one, so this needs real equity rather than fold equity.
+  if (
+    ploT &&
+    stackBB <= 25 &&
+    raises === 1 &&
+    callers === 0 &&
+    (raiserPosition === 'late' || raiserPosition === 'middle') &&
+    strength >= t((raiserPosition === 'late' ? 0.72 : 0.78) - anteWiden)
+  ) {
+    return { a: 'raiseTo', to: potRaiseCost };
+  }
+
   // V20 YELLOW ZONE RESHOVE: at M<12 the reshove is the whole playbook —
   // flatting an open leaves a stack that can only check-fold. Extend it to
   // middle-position opens on a stronger band (their range is tighter, so the
@@ -425,7 +568,10 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   if (raises === 1) {
     const vs = raiserPosition ?? 'middle';
     let threeBetThresh = t(THREEBET_VS[vs] - (ctx.aggression - 1) * 0.08);
-    let callThresh = t(CALL_VS[vs]) + callers * 0.025 + depthTighten - depthLoosen;
+    // V24: a CALL of a single raise continues the hand, it does not commit
+    // the stack - so it carries the price-scaled survival premium (tCall),
+    // not the full one. See the note on riskScaled above.
+    let callThresh = tCall(CALL_VS[vs]) + callers * 0.025 + depthTighten - depthLoosen;
 
     // Blinds facing a LATE steal prefer 3-bet-or-fold over cold-calling
     // out of position: shift part of the call band into the 3-bet.
@@ -515,7 +661,49 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };
     }
 
-    if (strength >= callThresh - bbDiscount && priceOK) return { a: 'call' };
+    // ═══ V24 OMAHA PRICE DEFENSE (Dan 2026-08-28) ═══════════════════════
+    // PLO equities are COMPRESSED: the worst four cards hold roughly 30%
+    // against the best, where the worst two hold about 12% in holdem. A bar
+    // tuned in NLH percentile space therefore folds hands that are getting a
+    // fine price.
+    //
+    // THE ARITHMETIC, STATED HONESTLY (the first cut of this comment got it
+    // wrong and the test caught it). A pot-sized PLO open to 3.5bb builds a
+    // 5bb pot, so:
+    //   - a COLD CALLER puts in 3.5 to win 8.5  -> 0.41, needs 41% equity.
+    //     Folding a lot there is CORRECT; pot-raise pots are not cheap.
+    //   - the BIG BLIND already has 1bb in, so it puts in 2.5 to win 7.5
+    //     -> 0.33, and folding 70% of hands to that price is a real leak.
+    // The relief below therefore scales with how far the price sits below
+    // even money: the blind gets a lot of it, a cold caller gets a little.
+    // Nothing in NLH changes - there the equity spread is real, and a fixed
+    // percentile means what it says.
+    let callBar = callThresh - bbDiscount;
+    if (ctx.isOmaha && ctx.ploPriceDefense === true) {
+      const odds = toCall / Math.max(1e-9, pot + toCall);
+      const priceRelief = Math.max(0, 0.5 - odds); // BB ~0.17, cold call ~0.09
+      callBar -= priceRelief;
+    }
+
+    // ═══ V24 BOUNTY PULL (PKO / mystery) ════════════════════════════════
+    // A bounty is prize money attached to a PLAYER, and it is collected by
+    // busting them. That makes pots against a covered opponent worth more
+    // than their chips - the exact reason PKO play is looser than a
+    // freezeout - and the brain had NO preflop bounty adjustment at all.
+    const bf = Math.max(0, Math.min(1, ctx.bountyFactor ?? 0));
+    if (bf > 0 && ctx.coversRaiser === true) {
+      // Covering means hero's own bounty is never at risk in this pot.
+      callBar -= Math.min(0.06, bf * 0.14);
+      // If the raiser can actually be eliminated here, the bounty is live
+      // this hand rather than theoretical.
+      if (ctx.raiserBustable === true) callBar -= Math.min(0.05, bf * 0.12);
+    }
+
+    // A floor, applied after every discount: hands that flop nothing are a
+    // fold at any price, and a bounty is not a licence to play four napkins.
+    if (ctx.isOmaha && ctx.ploPriceDefense === true) callBar = Math.max(0.28, callBar);
+
+    if (strength >= callBar && priceOK) return { a: 'call' };
     if (position === 'bb' && toCall <= bb * 2.5 && strength >= 0.3) return { a: 'call' };
     return { a: 'fold' };
   }
@@ -543,6 +731,17 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     const fourBetThresh =
       t(0.93 - (ctx.aggression - 1) * 0.04) - 0.04 * hunted3 - 0.03 * sq + deepT;
     const callThresh = t(ip ? 0.74 : 0.78) - 0.03 * hunted3 - 0.02 * sq + deepT * 0.5;
+
+    // ═══ V25 NEVER RAISE-FOLD A COMMITTED PLO STACK ═══════════════════
+    // Having raised a short PLO stack, the chips in the middle are already a
+    // large share of it, and the pot is laying a price no reasonable hand
+    // can refuse. Folding here is the worst of both worlds: it buys the
+    // fold equity of a raise and then declines the equity it paid for. This
+    // fires only when hero PUT the money in (raises >= 2 means hero's raise
+    // got re-raised) and the price is genuinely committing.
+    if (ploT && investedShare >= 0.28 && guardOdds <= 0.45 && strength >= t(0.42)) {
+      return { a: 'call' };
+    }
 
     if (strength >= fourBetThresh) {
       // V21: deep, a 4-bet is no longer automatically a stack-off — jam only

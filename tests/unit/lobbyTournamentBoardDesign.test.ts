@@ -6,18 +6,29 @@ const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8'
 
 const page = read('src/pages/ClubHomePage.tsx');
 const pageCss = read('src/pages/ClubHomePage.css');
+const identityCard = read('src/components/club-buttons/ClubIdentityCard.tsx');
+const identityCardCss = read('src/components/club-buttons/ClubIdentityCard.css');
 const wallet = read('src/components/wallet/DynamicWallet.tsx');
 const walletCss = read('src/components/wallet/DynamicWallet.css');
+const walletArtwork = read('src/components/wallet/ClubWalletArtwork.tsx');
 const layout = read('src/components/layouts/AppLayout.tsx');
 const filters = read('src/components/lobby/AdvancedFilters.tsx');
 const filtersCss = read('src/components/lobby/AdvancedFilters.css');
 const tableCss = read('src/components/lobby/LobbyTable.css');
 
 describe('Club Arena Tournament Board lobby design', () => {
-  it('keeps the global header and renders the club logo in the lobby identity', () => {
+  it('keeps the global header and renders the approved dynamic Club Identity Card', () => {
     expect(layout).toContain('{showGlobalHeader && <GlobalHeader />}');
-    expect(page).toContain('className="lobby-club__avatar"');
+    expect(page).toContain('<ClubIdentityCard');
+    expect(page).toContain('className="lobby-top__identity"');
     expect(page).toContain('club.logo_url || club.avatar_url');
+    expect(page).toContain("currentUser?.display_name || currentUser?.username || 'Player'");
+    expect(page).toContain('playerId={currentUser?.player_number}');
+    expect(page).toContain('playersPlaying={playersPlaying}');
+    expect(identityCard).toContain('club-identity-template-bbj-finish-v1.png');
+    expect(identityCard).toContain('Copy referral link');
+    expect(identityCardCss).toContain('aspect-ratio: 1650 / 953');
+    expect(identityCardCss).toContain('transform: translateY(1.44cqw)');
   });
 
   it('spells out Bad Beat Jackpot and opens the existing detail modal', () => {
@@ -27,22 +38,32 @@ describe('Club Arena Tournament Board lobby design', () => {
     expect(page).toContain('showBBJ={false}');
   });
 
-  it('uses the compact live wallet with icon-and-label above each balance', () => {
+  it('stacks the approved long wallet art beneath the BBJ with live values', () => {
     expect(page).toContain('compactLobby');
     expect(wallet).toContain('clubLobbyWalletRows(rowRole)');
     expect(wallet).toContain("row.key === 'union_bank' || row.key === 'union_rake'");
-    expect(wallet).toContain("icon: 'bank'");
-    expect(wallet).toContain("compactLobby ? 'Diamond Wallet' : 'Diamonds'");
-    expect(wallet).toContain("row.key === 'club_bank' ? 'Club Balance'");
+    expect(wallet).toContain('ClubWalletShell');
+    expect(walletArtwork).toContain('CLUB_WALLET_ARTWORK');
+    expect(walletArtwork).toContain('wallets/desktop/${filename}-v1.webp');
+    expect(walletArtwork).toContain('wallets/mobile/${filename}-v1.webp');
+    expect(pageCss).toContain('grid-column: 2');
 
-    const lobbyWalletCss = walletCss.slice(walletCss.indexOf('CLUB LOBBY TOURNAMENT BOARD'));
-    expect(lobbyWalletCss).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
-    expect(lobbyWalletCss).toContain('grid-row: 1');
-    expect(lobbyWalletCss).toContain('grid-row: 2');
-    expect(lobbyWalletCss).toContain('@media (max-width: 480px)');
-    expect(lobbyWalletCss).toContain('grid-template-columns: 11px minmax(0, auto)');
-    expect(lobbyWalletCss).toContain('font-size: 0.48rem');
+    const lobbyWalletCss = walletCss.slice(
+      walletCss.indexOf('APPROVED CLUB ARENA WALLET + BBJ ART')
+    );
+    expect(lobbyWalletCss).toContain('flex-direction: column');
+    expect(lobbyWalletCss).toContain('aspect-ratio: 1800 / 380');
+    expect(lobbyWalletCss).toContain('@media (min-width: 641px)');
+    expect(lobbyWalletCss).toContain('aspect-ratio: 1800 / 273');
+    expect(lobbyWalletCss).toContain('font-variant-numeric: tabular-nums');
     expect(lobbyWalletCss).not.toContain('linear-gradient');
+  });
+
+  it('uses the approved BBJ plaque without baking the live jackpot amount into the image', () => {
+    expect(page).toContain('<ClubBBJShell className="lobby-bbj__shell" />');
+    expect(walletArtwork).toContain('bbj-dynamic-plaque-v1.webp');
+    expect(page).toContain('className="lobby-bbj__amount"');
+    expect(pageCss).toContain('aspect-ratio: 1600 / 560');
   });
 
   it('removes the redundant result-count strip and cashier prompt', () => {
@@ -58,12 +79,11 @@ describe('Club Arena Tournament Board lobby design', () => {
     expect(mobileConsole).toContain('overflow: visible');
   });
 
-  it('uses a compact mobile identity and smaller two-line club notice', () => {
+  it('uses the same self-contained identity card on mobile and a smaller two-line club notice', () => {
     const mobileConsole = pageCss.slice(pageCss.lastIndexOf('MOBILE LOBBY FINAL CONTRACT'));
-    expect(page).toContain('className="lobby-club__status"');
-    expect(page).toContain('className="lobby-club__playing"');
-    expect(mobileConsole).toContain('grid-template-columns: minmax(0, 1fr) 112px');
-    expect(mobileConsole).toContain('font-size: 0.64rem');
+    expect(pageCss).toContain('@media (max-width: 480px)');
+    expect(pageCss).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(identityCardCss).toContain('@media (max-width: 360px)');
     expect(mobileConsole).toContain('-webkit-line-clamp: 2');
   });
 

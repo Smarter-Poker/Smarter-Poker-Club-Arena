@@ -134,6 +134,32 @@ export const HAND_COMPLETION = {
    * post-hand hold from these same numbers (handCompletionHoldMs), so the
    * next hand can never deal over a board that is still being revealed.
    */
+  /**
+   * ALL_IN_STREET_REVEAL_MS — the gap between a run-out street reaching the
+   * client and that street's new equity being allowed to change.
+   *
+   * Dan 2026-08-28, verbatim: "EQUITY CHANGES ONLY AFTER THE FLOP IS
+   * DISPLAYED, (NOT BEFORE OR DURING)".
+   *
+   * The run-out used to call broadcastCurrentState() and broadcastAllInEquity()
+   * back to back, in the same instant. The card had been SENT but had not been
+   * SEEN — the client was still mid-animation — so the percentages flipped to
+   * the outcome while the card that caused it was still turning over. On the
+   * reported hand the villain read 0% and the hero 100% before the river was
+   * face up, which tells the player how the hand ends and then shows them the
+   * card as a formality.
+   *
+   * Sized from the board animation itself, in slow-reveal mode (what a paced
+   * all-in run-out uses), per CommunityCards.css: the card lands face down at
+   * 0.30s, holds to 0.75s, and its flip completes at 1.25s. Turn (0.55s) and
+   * river (0.70s) are quicker, so this one number covers every street with the
+   * flop as the worst case.
+   *
+   * This is the REVEAL gate and is separate from allInStreetPauseMs, the beat
+   * AFTER the equity settles and before the next card. Both are needed: the
+   * first stops the spoiler, the second gives the player time to read it.
+   */
+  ALL_IN_STREET_REVEAL_MS: 1250,
   /** Beat after the consent panel closes before the first card turns. */
   RIT_REVEAL_LEAD_MS: 600,
   /** One street landing on a RIT board (matches allInStreetPauseMs). */
@@ -200,8 +226,7 @@ export function handCompletionHoldMs(opts: HandCompletionOpts): number {
   // multi-winner case because the arithmetic only ever described one.
   const groups = Math.max(1, Math.floor(opts.potAwardGroups ?? 1));
   const staggerTail = (groups - 1) * H.POT_AWARD_STAGGER_MS;
-  const push =
-    H.BETS_SWEEP_MS + H.POT_PUSH_MS + H.MUCK_MS + H.POST_PUSH_PAUSE_MS + staggerTail;
+  const push = H.BETS_SWEEP_MS + H.POT_PUSH_MS + H.MUCK_MS + H.POST_PUSH_PAUSE_MS + staggerTail;
 
   if (!opts.wentToShowdown) return push;
 

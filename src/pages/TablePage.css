@@ -447,8 +447,6 @@
   background: rgba(255, 255, 255, 0.15);
   color: #e2e8f0;
   border-color: rgba(255, 255, 255, 0.12);
-  transform: scale(1.05);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .header-btn:active {
@@ -2174,8 +2172,6 @@
   background: rgba(255, 255, 255, 0.12);
   color: rgba(255, 255, 255, 0.9);
   border-color: rgba(255, 255, 255, 0.15);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  transform: translateY(-1px);
 }
 
 .control-strip__icon {
@@ -3244,15 +3240,23 @@
     min-height: 34px;
   }
 
-  /* Landscape action buttons — shorter but still tappable */
-  .action-btn {
-    height: 48px;
-    min-height: 44px;
-  }
+  /* DELETED 2026-08-28 — `.action-btn { height: 48px; min-height: 44px }`.
+     It never applied: (0,1,0) against the base `.action-panel .action-btn`
+     (0,2,0) in ActionPanel.css, so landscape rendered the full desktop 72px for
+     as long as this rule existed. The height term of --sp-action-btn-h does the
+     job it was written for, continuously and without a specificity race. */
 
-  /* Landscape pre-action — compact */
+  /* Landscape pre-action — compact type only.
+     `min-height: 40px` DELETED 2026-08-28. It was the shortest tappable row in
+     the product and the only one BELOW the 44px minimum touch target, on the
+     orientation where a thumb has least room to be accurate. It also
+     contradicted `.pre-action-btn`'s own token, which floors at 46px, and it
+     was live rather than dead — both selectors are (0,1,0), so this one won on
+     cascade order alone.
+     Nothing replaces it: --sp-action-btn-h already answers landscape through
+     its height term (min() of a vw and a vh curve), which is why the sibling
+     `.action-btn` rule in this same block could be deleted outright. */
   .pre-action-btn {
-    min-height: 40px;
     font-size: 0.6875rem;
   }
 }
@@ -3288,9 +3292,12 @@
     font-size: 0.8125rem;
   }
 
-  .action-btn {
-    height: 56px;
-  }
+  /* DELETED 2026-08-28 — `.action-btn { height: 56px }`. Same specificity trap
+     as the landscape copy above, and it is the rule Dan's report was actually
+     about: a tablet was supposed to get 56px here and got the desktop 72px
+     instead, every time, since the day the base rule was scoped compound.
+     --sp-action-btn-h now resolves to 56px at exactly 768px wide, by
+     construction rather than by a rule that has to win a fight to be seen. */
 }
 
 @media (min-width: 1024px) {
@@ -3470,8 +3477,15 @@
   background: rgba(0, 0, 0, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: #fff;
-  width: 38px;
-  height: 38px;
+  /* 2026-08-28: the @media(max-width:768px) rule earlier in this file sets
+     44px for exactly this button, and it LOST — same specificity, and this
+     base rule comes later, so source order decided it and every phone got a
+     38px target. That is under the 44px tap minimum this file enforces eight
+     lines above it for .control-strip__btn. Sized from the same floor here so
+     the media block and the base agree instead of fighting; the button is
+     absolutely positioned, so growing it cannot reflow the felt. */
+  width: 44px;
+  height: 44px;
   border-radius: 10px;
   display: flex;
   align-items: center;
@@ -4358,4 +4372,55 @@ button.post-bb-overlay-button:hover {
 .control-strip__btn--icon-img::after,
 .control-strip__btn::after {
   display: none !important;
+}
+
+/* ── SCOOP LABELS (spec 9.2/13.3, 2026-08-28) ──────────────────────────────
+   One player swept every board of a multi-board bomb pot. Lands after the
+   chip pushes, holds a few seconds, and leaves. Gold on dark, same family
+   as the bomb ETA pill; scales with the felt, never captures the pointer. */
+.bomb-scoop-banner {
+  position: absolute;
+  top: 21%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 22px;
+  border-radius: 14px;
+  background: rgba(12, 12, 20, 0.85);
+  border: 1px solid rgba(255, 205, 90, 0.55);
+  box-shadow: 0 0 24px rgba(255, 180, 40, 0.35);
+  pointer-events: none;
+  z-index: 60;
+  animation: bombScoopIn 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+.bomb-scoop-banner__label {
+  font-size: clamp(18px, 2.6vw, 30px);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: #ffd76a;
+  text-shadow: 0 2px 10px rgba(255, 160, 30, 0.55);
+}
+.bomb-scoop-banner__name {
+  font-size: clamp(11px, 1.4vw, 15px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(255, 235, 200, 0.9);
+}
+@keyframes bombScoopIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bomb-scoop-banner {
+    animation: none;
+  }
 }

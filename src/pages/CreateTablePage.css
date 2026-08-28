@@ -79,8 +79,6 @@
 }
 
 .game-type-card:hover {
-  transform: scale(1.02) translateY(-2px);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
 }
 
 .game-type-card.locked {
@@ -205,7 +203,6 @@
 .template-button:hover {
   background: rgba(255, 255, 255, 0.15);
   border-color: rgba(255, 255, 255, 0.3);
-  transform: translateY(-2px);
 }
 
 .template-icon {

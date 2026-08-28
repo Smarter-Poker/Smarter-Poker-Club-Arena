@@ -17,6 +17,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { sliceEnclosingBlock, sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -60,8 +61,8 @@ describe('A1: the cached blind structure is never mutated', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 describe('A2: the break gate is where the break starts, not only in the caller', () => {
   it('pauseForBreak refuses on its own', () => {
-    const fn = BASE.slice(BASE.indexOf('async pauseForBreak('));
-    expect(fn.slice(0, 900)).toMatch(/await this\.breakApplies\(\)/);
+    const fn = sliceEnclosingBlock(BASE, 'async pauseForBreak(');
+    expect(fn).toMatch(/await this\.breakApplies\(\)/);
   });
 
   it('breakApplies re-reads the row when the cache is not populated yet', () => {
@@ -69,8 +70,8 @@ describe('A2: the break gate is where the break starts, not only in the caller',
     // start() until the row lands, and everything that reads the cache alone
     // calls that manager an MTT.
     const fn = BASE.slice(BASE.indexOf('protected async breakApplies('));
-    expect(fn.slice(0, 700)).toMatch(/from\('tournaments'\)/);
-    expect(fn.slice(0, 700)).toMatch(/maybeSingle\(\)/);
+    expect(fn).toMatch(/from\('tournaments'\)/);
+    expect(fn).toMatch(/maybeSingle\(\)/);
   });
 
   it('the format rule is stated once and reused', () => {
@@ -86,24 +87,24 @@ describe('A2: the break gate is where the break starts, not only in the caller',
 // ═══════════════════════════════════════════════════════════════════════════
 describe('A3: the spin reveal', () => {
   it('is not stamped with Date.now() after the draw, settle, write and seating', () => {
-    const reveal = BASE.slice(BASE.indexOf('revealIsSpin && revealMultiplier > 0'));
-    expect(reveal.slice(0, 400)).not.toMatch(/const revealAt = Date\.now\(\)/);
-    expect(reveal.slice(0, 400)).toMatch(/this\.resolveSpinReveal\(\)/);
+    const reveal = sliceEnclosingBlock(BASE, 'revealIsSpin && revealMultiplier > 0');
+    expect(reveal).not.toMatch(/const revealAt = Date\.now\(\)/);
+    expect(reveal).toMatch(/this\.resolveSpinReveal\(\)/);
   });
 
   it('is stamped from the last buy-in debit, at the paid-seat gate', () => {
     expect(BASE).toMatch(/stampSpinRevealAnchor\(/);
-    const stamp = BASE.slice(BASE.indexOf('protected stampSpinRevealAnchor('));
-    expect(stamp.slice(0, 800)).toMatch(/SPIN_REVEAL\.LEAD_IN_MS/);
-    expect(stamp.slice(0, 800)).toMatch(/spinRevealToDealMs\(\)/);
+    const stamp = sliceMethod(BASE, 'protected stampSpinRevealAnchor(');
+    expect(stamp).toMatch(/SPIN_REVEAL\.LEAD_IN_MS/);
+    expect(stamp).toMatch(/spinRevealToDealMs\(\)/);
   });
 
   it('exposes the hold to the client as an absolute instant', () => {
-    const emit = BASE.slice(BASE.indexOf("type: 'spin_reveal'"));
-    expect(emit.slice(0, 900)).toMatch(/hold_until:\s*holdUntil/);
-    expect(emit.slice(0, 900)).toMatch(/reveal_at:\s*revealAt/);
+    const emit = sliceEnclosingBlock(BASE, "type: 'spin_reveal'");
+    expect(emit).toMatch(/hold_until:\s*holdUntil/);
+    expect(emit).toMatch(/reveal_at:\s*revealAt/);
     // The hub retention still ends at the same instant (D3, 2026-08-25).
-    expect(emit.slice(0, 900)).toMatch(/replay_until:\s*holdUntil/);
+    expect(emit).toMatch(/replay_until:\s*holdUntil/);
   });
 
   it('MEASURES the gap instead of letting it come off the wheel', () => {
@@ -120,8 +121,10 @@ describe('A4: the drawn first button', () => {
     // Every shuffle in this engine already goes through CryptoRandom. The first
     // button on a 3-handed hyper is a real positional edge.
     expect(BASE).not.toMatch(/Math\.random\(\)/);
-    const draw = BASE.slice(BASE.indexOf("type: 'spin_button'") - 1500);
-    expect(draw.slice(0, 1500)).toMatch(/secureRandomInt\(seats\.length\)/);
+    // The draw sits ABOVE the emit, so climb out of the object literal to the
+    // block that computes the seat as well as publishing it.
+    const draw = sliceEnclosingBlock(BASE, "type: 'spin_button'", 0, 2);
+    expect(draw).toMatch(/secureRandomInt\(seats\.length\)/);
   });
 
   it('is persisted, because a restart before the first hand reverted it', () => {
@@ -133,7 +136,7 @@ describe('A4: the drawn first button', () => {
     // Past the first hand a forced seat BEATS the live rotation, so re-applying
     // it would throw the button backwards and re-take the blinds.
     const fn = BASE.slice(BASE.indexOf('protected async restoreDrawnFirstButtons('));
-    const body = fn.slice(0, 2200);
+    const body = fn;
     expect(body).toMatch(/from\('hand_history'\)/);
     expect(body).toMatch(/count:\s*'exact'/);
     expect(body).toMatch(/setFirstButtonSeat\(/);
@@ -161,14 +164,14 @@ describe('A5: overlays move real chips', () => {
 
   it('uses the pool the RPC returns rather than one computed beside it', () => {
     const fn = BASE.slice(BASE.indexOf('protected async applyPrizeGuarantee('));
-    expect(fn.slice(0, 2600)).toMatch(/Number\(res\.prize_pool\)/);
-    expect(fn.slice(0, 2600)).not.toMatch(/Math\.max\(/);
+    expect(fn).toMatch(/Number\(res\.prize_pool\)/);
+    expect(fn).not.toMatch(/Math\.max\(/);
   });
 
   it('a failed funding call returns null rather than a locally invented pool', () => {
     const fn = BASE.slice(BASE.indexOf('protected async applyPrizeGuarantee('));
-    expect(fn.slice(0, 2600)).toMatch(/prize_guarantee_unfunded/);
-    expect(fn.slice(0, 2600)).toMatch(/return null/);
+    expect(fn).toMatch(/prize_guarantee_unfunded/);
+    expect(fn).toMatch(/return null/);
   });
 });
 
@@ -178,7 +181,7 @@ describe('A5: overlays move real chips', () => {
 describe('A6: a headcount is not a final table', () => {
   it('the shared predicate exists and fails closed on an unreadable layout', () => {
     const fn = BASE.slice(BASE.indexOf('protected async countLiveTablesWithPlayers('));
-    const body = fn.slice(0, 1600);
+    const body = fn;
     expect(body).toMatch(/from\('tables'\)/);
     expect(body).toMatch(/is\('left_at',\s*null\)/);
     expect(body).toMatch(/return null/);
@@ -186,7 +189,7 @@ describe('A6: a headcount is not a final table', () => {
 
   it('the final-table announcement requires exactly one live table', () => {
     const fn = MANAGER.slice(MANAGER.indexOf('protected async checkTableBalance('));
-    const window = fn.slice(0, 3000);
+    const window = fn;
     expect(window).toMatch(/countLiveTablesWithPlayers\(\)/);
     expect(window).toMatch(/liveTables === 1/);
     // The bare count is no longer sufficient on its own.
@@ -200,6 +203,6 @@ describe('A6: a headcount is not a final table', () => {
     expect(gate).toBeGreaterThan(-1);
     expect(deal).toBeGreaterThan(-1);
     expect(gate).toBeLessThan(deal);
-    expect(fn.slice(gate, gate + 200)).toMatch(/liveTables !== 1/);
+    expect(sliceEnclosingBlock(fn, 'liveTables')).toMatch(/liveTables !== 1/);
   });
 });

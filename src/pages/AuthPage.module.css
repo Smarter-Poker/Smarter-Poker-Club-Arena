@@ -180,8 +180,6 @@
 
 .submitButton:hover:not(:disabled) {
   background: #0d5dc7;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(24, 119, 242, 0.3);
 }
 
 .submitButton:disabled {

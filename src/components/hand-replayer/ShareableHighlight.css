@@ -42,7 +42,8 @@
 }
 
 @keyframes gradientShift {
-  0%, 100% {
+  0%,
+  100% {
     background-position: 0% 50%;
   }
   50% {
@@ -160,8 +161,6 @@
 }
 
 .highlight-card:hover {
-  transform: translateY(-6px) scale(1.05);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
 }
 
 .highlight-card.red {
@@ -245,8 +244,6 @@
 .action-btn:hover {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(6, 182, 212, 0.5);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.2);
 }
 
 .action-btn:active {

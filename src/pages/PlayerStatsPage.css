@@ -276,8 +276,6 @@
 
 .stat-row:hover {
   border-color: rgba(0, 212, 255, 0.2);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(0, 212, 255, 0.08);
 }
 
 .stat-row.highlight {
@@ -400,8 +398,6 @@
 .view-hands-btn:hover {
   background: linear-gradient(135deg, rgba(65, 105, 225, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%);
   border-color: rgba(65, 105, 225, 0.4);
-  box-shadow: 0 0 16px rgba(65, 105, 225, 0.15);
-  transform: translateY(-1px);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -617,8 +613,6 @@
 .assistant-export-btn:hover:not(:disabled) {
   background: linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(6, 182, 212, 0.22) 100%);
   border-color: rgba(16, 185, 129, 0.5);
-  box-shadow: 0 0 16px rgba(16, 185, 129, 0.15);
-  transform: translateY(-1px);
 }
 
 .assistant-export-btn:disabled {
@@ -1042,12 +1036,7 @@
 }
 
 .hero-stat:hover {
-  transform: translateY(-3px);
   border-color: rgba(0, 212, 255, 0.35);
-  box-shadow:
-    0 16px 34px rgba(0, 0, 0, 0.55),
-    0 0 26px rgba(0, 212, 255, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .hero-stat-value {
@@ -1134,12 +1123,7 @@
 }
 
 .stat-row:hover {
-  transform: translateY(-2px);
   border-color: rgba(0, 212, 255, 0.3);
-  box-shadow:
-    0 12px 26px rgba(0, 0, 0, 0.5),
-    0 0 20px rgba(0, 212, 255, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .stat-row.highlight {
@@ -1206,10 +1190,6 @@
 }
 
 .tournament-item:hover {
-  transform: translateY(-2px);
-  box-shadow:
-    0 12px 26px rgba(0, 0, 0, 0.5),
-    0 0 18px rgba(139, 92, 246, 0.12);
 }
 
 /* ── Charts: glass frames ── */
@@ -1269,12 +1249,7 @@
 .view-hands-btn:hover,
 .assistant-export-btn:hover:not(:disabled),
 .empty-cta:hover {
-  transform: translateY(-2px);
   filter: brightness(1.08);
-  box-shadow:
-    0 12px 26px rgba(22, 104, 230, 0.5),
-    0 0 34px rgba(0, 212, 255, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 .view-hands-btn:active,

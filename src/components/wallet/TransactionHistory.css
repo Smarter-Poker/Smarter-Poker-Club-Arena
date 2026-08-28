@@ -60,7 +60,6 @@
 
 .transaction-row:hover {
   background: rgba(255, 255, 255, 0.02);
-  transform: translateY(-1px);
 }
 
 .transaction-row .icon {
@@ -267,7 +266,6 @@
 .tx-retry-btn:hover {
   background: rgba(59, 130, 246, 0.25);
   border-color: rgba(59, 130, 246, 0.5);
-  transform: translateY(-1px);
 }
 
 /* ── 375px ──

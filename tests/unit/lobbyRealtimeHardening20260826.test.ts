@@ -15,6 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceEnclosingBlock, sliceStatement } from '../helpers/sourceWindow';
 
 const PAGE = readFileSync(resolve(__dirname, '../../src/pages/ClubHomePage.tsx'), 'utf8');
 const WALLET = readFileSync(
@@ -56,7 +57,7 @@ describe('the lobby realtime channel can come back from the dead', () => {
   it('reports the subscribe status without touching a torn-down component', () => {
     const sub = PAGE.indexOf('channel.subscribe((status: string');
     expect(sub).toBeGreaterThan(-1);
-    const body = PAGE.slice(sub, sub + 400);
+    const body = sliceEnclosingBlock(PAGE, 'channel.subscribe((status: string');
     expect(body, 'a late CHANNEL_ERROR must not setState after unmount').toContain(
       'if (!isMounted) return;'
     );
@@ -67,7 +68,7 @@ describe('a failed union lookup is not a standalone club', () => {
   it('checks the error on the union_clubs read instead of discarding it', () => {
     const start = PAGE.indexOf('const { data: ucCheck');
     expect(start, 'the setupRealtime union lookup is gone').toBeGreaterThan(-1);
-    const block = PAGE.slice(start, start + 1600);
+    const block = sliceEnclosingBlock(PAGE, 'const { data: ucCheck');
     expect(block, 'the error is destructured away again').toContain('error: ucError');
     expect(block, 'a failed read must not be read as "no union"').toContain('if (ucError) throw');
   });
@@ -80,7 +81,7 @@ describe('a failed union lookup is not a standalone club', () => {
     // subscription at the retired club-level pool.
     const idx = PAGE.indexOf('ClubHomePage.setupRealtime');
     expect(idx).toBeGreaterThan(-1);
-    const afterCatch = PAGE.slice(idx, idx + 700);
+    const afterCatch = sliceEnclosingBlock(PAGE, 'ClubHomePage.setupRealtime');
     expect(afterCatch, 'no cached-union fallback on the failure path').toContain(
       'sessionStorage.getItem(`ca_union_of_'
     );

@@ -169,8 +169,6 @@
 }
 
 .rebuyConfirmBtn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 24px rgba(63, 185, 80, 0.35);
 }
 
 .rebuyConfirmBtn:disabled {

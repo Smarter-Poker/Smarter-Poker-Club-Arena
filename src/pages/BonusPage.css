@@ -115,8 +115,6 @@
 }
 
 .claim-btn:hover:not(:disabled) {
-  box-shadow: 0 0 30px rgba(0, 212, 255, 0.6);
-  transform: translateY(-2px);
 }
 
 .claim-btn:disabled {
@@ -152,10 +150,6 @@
 .special-card:hover {
   border-color: #3a4a5a;
   border-left-color: #f59e0b;
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 8px 24px rgba(245, 158, 11, 0.15);
 }
 
 .special-card.claimed {
@@ -211,8 +205,6 @@
 }
 
 .btn-sm:hover {
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.4);
-  transform: translateY(-2px);
 }
 
 .loading-state {

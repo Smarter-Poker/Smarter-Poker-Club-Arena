@@ -55,8 +55,12 @@ export interface BombPotSchedulerSettings {
 
 export interface BombPotDecision {
   isBombPot: boolean;
-  /** Present when isBombPot — frozen into the hand config for hand history. */
-  triggerReason?: BombPotTriggerMode;
+  /**
+   * Present when isBombPot — frozen into the hand config for hand history.
+   * 'manual_next_hand' (spec §2.1 MANUAL_NEXT_HAND) is produced by the
+   * engine's role-gated manual path, never by the scheduler itself.
+   */
+  triggerReason?: BombPotTriggerMode | 'manual_next_hand';
 }
 
 /** Normalize raw table-row values into scheduler settings with spec defaults. */
@@ -137,6 +141,7 @@ export class BombPotScheduler {
     dealtInCount: number,
     nowMs: number = Date.now()
   ): BombPotDecision {
+    this.started = true;
     if (!s.enabled) {
       // Off-switch mid-session: drop all pending state so re-enabling starts
       // a fresh schedule rather than detonating a stale token.
@@ -271,6 +276,57 @@ export class BombPotScheduler {
   seedNextDueAt(ms: number): void {
     if (this.nextDueAtMs === null && Number.isFinite(ms) && ms > 0) {
       this.nextDueAtMs = ms;
+    }
+  }
+
+  /** True until the first noteHandStart — the only window restoreState fills. */
+  private started = false;
+
+  /**
+   * FULL PERSISTENCE (2026-08-28): the scheduler's complete trigger state,
+   * serialized for tables.bomb_pot_sched_state. Written by the engine when it
+   * changes; restored once at boot so a deploy costs the orbit tracker and
+   * the every-N counter nothing — the same guarantee the timed clock already
+   * had. Keys are terse on purpose (one row write per hand on bomb tables).
+   */
+  exportState(): Record<string, unknown> {
+    return {
+      h: this.handsSinceBomb,
+      p: this.pending,
+      r: this.pendingReason ?? null,
+      d: this.nextDueAtMs,
+      a: this.orbitAnchorSeat,
+      l: this.lastDealerSeat,
+    };
+  }
+
+  /**
+   * Restore a persisted state onto a FRESH scheduler (before its first
+   * noteHandStart). Anything malformed is ignored field-by-field — a corrupt
+   * row degrades to the old restart-resets-the-cycle behaviour, never a
+   * crash and never a stuck token from a bad type.
+   */
+  restoreState(s: unknown): void {
+    if (this.started || !s || typeof s !== 'object') return;
+    const o = s as Record<string, unknown>;
+    if (typeof o.h === 'number' && Number.isFinite(o.h) && o.h >= 0) {
+      this.handsSinceBomb = Math.floor(o.h);
+    }
+    if (typeof o.p === 'boolean') this.pending = o.p;
+    if (
+      o.r === 'every_n_hands' ||
+      o.r === 'once_per_orbit' ||
+      o.r === 'timed' ||
+      o.r === 'bomb_pot_only'
+    ) {
+      this.pendingReason = o.r;
+    }
+    if (typeof o.d === 'number' && Number.isFinite(o.d) && o.d > 0) this.nextDueAtMs = o.d;
+    if (typeof o.a === 'number' && Number.isFinite(o.a) && o.a > 0) {
+      this.orbitAnchorSeat = Math.floor(o.a);
+    }
+    if (typeof o.l === 'number' && Number.isFinite(o.l) && o.l > 0) {
+      this.lastDealerSeat = Math.floor(o.l);
     }
   }
 

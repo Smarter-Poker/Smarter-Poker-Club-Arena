@@ -1115,7 +1115,9 @@ export abstract class ServerTableEngineBase {
               event.type === 'INSURANCE_ACCEPTED'
                 ? 'accepted'
                 : event.type === 'INSURANCE_DECLINED'
-                  ? (ev.source === 'timeout' ? 'timeout' : 'declined')
+                  ? ev.source === 'timeout'
+                    ? 'timeout'
+                    : 'declined'
                   : event.type === 'INSURANCE_CASHED_OUT'
                     ? 'cashed_out'
                     : 'settled',
@@ -2787,6 +2789,21 @@ export abstract class ServerTableEngineBase {
   protected bombPotScheduler = new BombPotScheduler();
 
   /**
+   * FULL SCHEDULER PERSISTENCE (2026-08-28): last serialized scheduler state
+   * written to tables.bomb_pot_sched_state — the change detector that keeps
+   * the per-hand write down to one row only when something actually moved.
+   */
+  protected bombPotSchedPersistedJson: string | null = null;
+
+  /**
+   * SEPARATE BOMB BUTTON (spec §5.3): the bomb hands' own button seat when
+   * bomb_pot_button_policy = 'separate'. Advances clockwise per bomb hand;
+   * the regular rotation never sees bomb hands. Persisted in the scheduler
+   * state jsonb (key `b`) so it survives restarts like everything else.
+   */
+  protected bombButtonSeat: number | null = null;
+
+  /**
    * Snapshot fields for the felt's bomb-pot indicators, shared by every
    * broadcast payload in ServerTableEngine. `bomb_pot_in` keeps its legacy
    * contract (hands until the bomb, 1 = next hand, null = no countdown);
@@ -2830,7 +2847,7 @@ export abstract class ServerTableEngineBase {
           // BOMB POT STANDARDIZATION 2026-08-27: the five new canonical
           // columns ride along — board count, trigger mode, timed interval,
           // minimum players and fixed ante.
-          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant'
+          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds'
         )
         .eq('id', this.tableId)
         .maybeSingle();
@@ -2848,6 +2865,9 @@ export abstract class ServerTableEngineBase {
         this.tableInfo.bomb_pot_min_players = (tableRow as any).bomb_pot_min_players ?? undefined;
         this.tableInfo.bomb_pot_ante_fixed = (tableRow as any).bomb_pot_ante_fixed ?? null;
         this.tableInfo.bomb_pot_variant = (tableRow as any).bomb_pot_variant ?? null;
+        this.tableInfo.bomb_pot_button_policy = (tableRow as any).bomb_pot_button_policy ?? null;
+        this.tableInfo.bomb_pot_announce_seconds =
+          (tableRow as any).bomb_pot_announce_seconds ?? null;
       }
       const clubId = this.tableInfo?.club_id;
       if (clubId) {
@@ -3234,7 +3254,29 @@ export abstract class ServerTableEngineBase {
       if (p.is_sitting_out !== true) continue;
       if (this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) continue;
       this.disconnectEngine.registerPlayer(this.tableId, p.user_id);
-      this.disconnectEngine.sitOut(this.tableId, p.user_id, 'voluntary');
+      /* THE CLOCK COMES FROM THE DATABASE, NOT FROM now() (2026-08-28).
+       *
+       * This call used to omit the fourth argument, so sitOut() stamped
+       * `sitOutSince = Date.now()`. That single line is why the five-minute
+       * cash eviction never fired in production: this method runs on every
+       * pass of BOTH the start-up wait loop and the dealing loop, so every
+       * engine restart — deploy, lease change, killForRestart, watchdog —
+       * silently handed every sat-out seat a fresh five minutes. A table whose
+       * engine recycled more often than that could never evict anyone, and the
+       * player kept the seat indefinitely.
+       *
+       * `sit_out_at` is written by a database trigger on the transition into
+       * sitting out and cleared on the way out, so it is the only stamp in the
+       * system that a restart cannot move. Falling back to now() when it is
+       * absent keeps a pre-migration row working rather than pinning it at
+       * epoch 0 and evicting it instantly. */
+      const stampedAt = p.sit_out_at ? Date.parse(p.sit_out_at) : NaN;
+      this.disconnectEngine.sitOut(
+        this.tableId,
+        p.user_id,
+        'voluntary',
+        Number.isFinite(stampedAt) ? stampedAt : undefined
+      );
       // Report the OUTCOME, not the attempt.
       if (this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) {
         console.log(

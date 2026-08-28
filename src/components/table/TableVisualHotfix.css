@@ -132,6 +132,46 @@
    custom property's var()s are substituted where it is DECLARED. Redefining the
    two inputs here without redefining the overlap leaves the stack spaced for a
    24px chip while drawing a 12px one. */
+/* ═══════════════════════════════════════════════════════════════════════════
+   --table-w IS A REGISTERED <length>, NOT AN UNTYPED TOKEN (2026-08-28)
+   ═══════════════════════════════════════════════════════════════════════════
+
+   An unregistered custom property computes to its TOKEN STREAM with var()s
+   substituted, not to a value. Nothing on screen cares, but two things do:
+
+   1. ANYTHING THAT READS IT BACK. `getComputedStyle(el).getPropertyValue(
+      '--sp-card2-w')` on an unregistered property returns the literal string
+      "clamp(44px, calc(...), 100px)", and parseFloat of that is NaN. That is
+      not hypothetical: on the day the card tokens became proportional it broke
+      the measurement in `scripts/dev/measure-felt.mjs` (which printed a
+      confident 0px card for every device) AND 38 beats in
+      `tests/e2e/hero-card-row.spec.ts`, whose step probe had read the token as
+      text since it was written. Both were fixed by resolving through a real
+      property; registering the source is the fix one level up.
+
+   2. INTERPOLATION. A registered <length> animates; a token stream jumps. The
+      felt's width changes on rotation and on a window resize, and every card,
+      avatar and chip on the felt is now a fraction of it, so this is the one
+      property whose smoothness the whole table rides on.
+
+   INITIAL-VALUE IS LOAD-BEARING, AND IT IS THE TRAP HERE. A registered
+   property ALWAYS has a value, so the fallback in `var(--table-w, 360px)`
+   becomes unreachable — it only applies to a guaranteed-invalid property, and
+   a registered one never is. Every one of those fallbacks in SeatSlot.css
+   would silently stop meaning anything. 360px is therefore declared here
+   instead: it is the same number those fallbacks carry, so a `.seat` rendered
+   outside a scaler (a preview, a replay, a test harness) lands exactly where it
+   landed before. If you change it, change them together — or better, delete
+   them, because they are now decorative.
+
+   `inherits: true` because `.seat` reads it from `.table-scaler`, which is its
+   ancestor and not itself. */
+@property --table-w {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 360px;
+}
+
 .table-page .table-scaler {
   /* THE TABLE'S OWN WIDTH, and the only place a marker size may come from.
      `.table-scaler` is `min(100% - 8px, 360px)` inside a container padded 10px
@@ -155,7 +195,30 @@
      this element, that inline declaration wins over all three below and every
      marker follows the real measured table at any viewport, including the
      landscape case none of these describe. */
-  --table-w: min(100vw - 28px, 360px);
+  /* ── 2026-08-28: THE FALLBACK IS THE SCALER'S OWN FORMULA NOW ─────────────
+     This was `min(100vw - 28px, 360px)`, with 600px and 720px rungs below, and
+     every one of the three was a GUESS at a number the stylesheet can compute
+     exactly. Measured with scripts/dev/measure-felt.mjs, the guesses were not
+     close: on a 1280x800 laptop the real felt is 324px wide and this said 720px,
+     an overstatement of 122%; on a 768x1024 iPad it is 491px and this said 600.
+
+     That did not matter much when only the chip and the puck read it — both are
+     clamped into a narrow band. It matters now that cards and avatars are
+     fractions of it: for the frame before the ResizeObserver publishes the real
+     width, a laptop would draw a 100px card and then snap it to 45px.
+
+     `--sp-table-h * 0.605` is not an approximation of the scaler's width, it is
+     the scaler's width — the same expression `.table-scaler` uses, reading the
+     same inherited variable from `.table-container`. So first paint is already
+     correct and the observer only confirms it. It is still a fallback rather
+     than the source of truth, because the scaler additionally caps against its
+     container's percentage width, which is what binds on a phone (~351px against
+     this formula's 374px) and what only layout can know.
+
+     This reads --sp-table-h; it is NOT read BY anything --sp-table-h depends on,
+     so it adds no cycle and tests/unit/feltReserveIsStatic.test.ts still passes.
+     Check that before reversing the direction of this dependency. */
+  --table-w: clamp(200px, calc(var(--sp-table-h, 100dvh) * 0.605), 720px);
 
   /* 3.6% of the table's width. Desktop lands on 25.9px against today's 24px -
      the same chip, to the eye - and a 375px phone on 12.5px against today's
@@ -187,16 +250,12 @@
    (TablePage.css: 600px in tablet portrait, 720px from 1024px up). Landscape is
    height-driven and has no width to mirror, which is one more reason the
    measured value from TablePage.tsx should replace all three. */
-@media (min-width: 768px) and (orientation: portrait) {
-  .table-page .table-scaler {
-    --table-w: 600px;
-  }
-}
-@media (min-width: 1024px) {
-  .table-page .table-scaler {
-    --table-w: 720px;
-  }
-}
+/* The 600px and 720px rungs that were here are DELETED (2026-08-28). They were
+   mirroring `.table-scaler`'s max-width ladder, and a max-width is a CEILING,
+   not a width — neither rung ever bound on a real device (an iPad Pro 12.9 in
+   portrait, the largest tablet sold, reaches 670px against the 720px cap), so
+   both were simply wrong by 10-120% wherever they applied. The single derived
+   declaration above is exact at every width and needs no rungs. */
 
 /* The puck. Position is inline (DealerButton.tsx); everything else, including
    this, belongs to the class - see `.dealer-button` in TablePage.css, whose own

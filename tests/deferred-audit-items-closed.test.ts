@@ -18,6 +18,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceStatement } from './helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 const STATS = read('src/pages/PlayerStatsPage.tsx');
@@ -73,9 +74,9 @@ describe('the two items that were NOT bugs stay unchanged', () => {
     // answer only requests ADDRESSED to them, so the badge now scopes its
     // count the same way and legitimately depends on myRole and user?.id too.
     // All three are declared above the callback, so there is still no TDZ.
-    const i = CASHIER.indexOf('const loadPendingCount = useCallback');
-    expect(i).toBeGreaterThan(-1);
-    expect(CASHIER.slice(i, i + 1400)).toMatch(/\}, \[clubUuid, myRole, user\?\.id\]\);/);
+    expect(sliceStatement(CASHIER, 'const loadPendingCount = useCallback')).toMatch(
+      /\}, \[clubUuid, myRole, user\?\.id\]\);/
+    );
   });
 
   it('the aria-controls targets still exist, so nothing was "fixed" there', () => {

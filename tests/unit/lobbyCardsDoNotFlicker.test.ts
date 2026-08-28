@@ -42,6 +42,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { mergeFastRows } from '../../src/pages/ClubHomePage';
+import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const PAGE = readFileSync(join(process.cwd(), 'src/pages/ClubHomePage.tsx'), 'utf8');
 const PAGE_CSS = readFileSync(join(process.cwd(), 'src/pages/ClubHomePage.css'), 'utf8');
@@ -165,7 +166,7 @@ describe('the fast path cannot repaint a warm lobby', () => {
     );
     // Cleared in the per-club reset, beside the other per-club refs.
     const reset = PAGE.indexOf('hasDataRef.current = false;');
-    expect(PAGE.slice(reset, reset + 200)).toContain('listsPaintedRef.current = false;');
+    expect(sliceEnclosingBlock(PAGE, 'hasDataRef.current = false;')).toContain('listsPaintedRef.current = false;');
   });
 
   it('the boot cache still carries no tournaments, which is what makes the above necessary', () => {

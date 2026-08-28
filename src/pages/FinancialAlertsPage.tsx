@@ -90,20 +90,10 @@ export default function FinancialAlertsPage() {
       },
       1000
     );
-    const unsub2 = masterBus.subscribeDebounced(
-      'COLLUSION_DETECTED',
-      () => {
-        if (isMounted) loadAlerts(() => isMounted);
-      },
-      1000
-    );
-    const unsub3 = masterBus.subscribeDebounced(
-      'VALIDATION_MISMATCH',
-      () => {
-        if (isMounted) loadAlerts(() => isMounted);
-      },
-      1000
-    );
+    // COLLUSION_DETECTED and VALIDATION_MISMATCH listeners removed
+    // 2026-08-28: nothing emits either on the client bus (both are
+    // server-side detections), so these "live" anti-cheat feeds never fired
+    // once. Revive via a server->client bridge if wanted.
     const unsub4 = masterBus.subscribeDebounced(
       'CHIPS_ADDED',
       () => {
@@ -121,8 +111,6 @@ export default function FinancialAlertsPage() {
     return () => {
       isMounted = false;
       unsub1();
-      unsub2();
-      unsub3();
       unsub4();
       unsub5();
     };

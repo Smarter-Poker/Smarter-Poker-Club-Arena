@@ -24,6 +24,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceMethod } from '../helpers/sourceWindow';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
@@ -166,10 +167,10 @@ describe('an early sitter is not left on the placeholder stack', () => {
     // CHIP STACKS GET ADDED"). It is the same write, made idempotent and
     // reusable; tests/unit/spinPostReveal.test.ts pins the new ordering.
     expect(BASE).toMatch(/seat_stack_credit_failed|Credited .* seat\(s\) to/);
-    const credit = BASE.slice(BASE.indexOf('protected async creditSeatStacks'));
+    const credit = sliceMethod(BASE, 'protected async creditSeatStacks');
     expect(credit).toMatch(/from\('table_seats'\)/);
     expect(credit).toMatch(/\.update\(\{ stack: target \}\)/);
-    expect(credit.slice(0, 900)).toMatch(/Number\(tournament\?\.starting_chips\)/);
+    expect(credit).toMatch(/Number\(tournament\?\.starting_chips\)/);
   });
 
   it('a seat still holds ZERO chips until the tier is known', () => {

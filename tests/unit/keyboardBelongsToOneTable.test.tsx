@@ -30,6 +30,7 @@ import { renderHook } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { useTableKeyboard, type UseTableKeyboardOptions } from '../../src/hooks/useTableKeyboard';
+import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const TABLE_TSX = readFileSync(resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8');
 
@@ -211,7 +212,7 @@ describe('nothing app-wide is written by four tables at once (2026-08-28)', () =
       const at = code.indexOf(`useMasterBusSubscription('${evt}'`);
       expect(at, `${evt} subscription not found`).toBeGreaterThan(-1);
       // The guard must be the first statement of the handler.
-      const head = code.slice(at, at + 260);
+      const head = sliceEnclosingBlock(code, `useMasterBusSubscription('${evt}'`);
       expect(head, `${evt} does not guard on tableId`).toMatch(
         /payload\.tableId\s*!==\s*tableId\)\s*return/
       );

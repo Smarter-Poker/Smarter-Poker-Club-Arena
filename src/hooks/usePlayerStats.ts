@@ -46,14 +46,37 @@ export function usePlayerStats() {
 
   // Persist to localStorage periodically
   useEffect(() => {
-    const interval = setInterval(() => {
+    const flush = () => {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(statsRef.current));
       } catch {
         /* quota exceeded — ignore */
       }
-    }, 30000); // Every 30 seconds
-    return () => clearInterval(interval);
+    };
+    const interval = setInterval(flush, 30000); // Every 30 seconds
+    /**
+     * FLUSH ON THE WAY OUT 2026-08-28.
+     *
+     * The 30s timer was the ONLY writer: leaving the table, or having the tab
+     * reclaimed on mobile, discarded up to thirty seconds of accumulated
+     * opponent HUD counters — VPIP, 3-bet, hands played — that the player had
+     * already been shown. `pagehide` is the reliable mobile signal (iOS often
+     * never fires `beforeunload`), `visibilitychange -> hidden` covers a
+     * backgrounded tab that may never come back, and the cleanup covers a
+     * normal unmount. `lib/walletCache.ts` solves the same problem the same
+     * way and explains why; this hook never got it.
+     */
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onHide);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onHide);
+      flush();
+    };
   }, []);
 
   const getStats = useCallback((playerId: string): MiniHUDStats | null => {

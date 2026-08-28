@@ -118,14 +118,21 @@
    couple of characters. Below 420px the two stack instead. */
 .lobby-top__main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(190px, 250px);
+  grid-template-columns: minmax(0, 1.731fr) minmax(0, 2.857fr);
   align-items: stretch;
   gap: 10px;
 }
 
 .lobby-top__wallet {
-  grid-column: 1 / -1;
+  grid-column: 2;
   min-width: 0;
+  align-self: start;
+}
+
+.lobby-top__identity {
+  width: 100%;
+  justify-self: stretch;
+  align-self: start;
 }
 
 .lobby-club {
@@ -233,12 +240,6 @@
     color 0.2s ease,
     border-color 0.2s ease;
 }
-
-.lobby-club__share:hover {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
 .lobby-club__share:active {
   transform: translateY(2px);
   box-shadow:
@@ -268,11 +269,6 @@
     transform 0.12s ease,
     border-color 0.15s ease;
 }
-
-.lobby-bbj:hover {
-  border-color: #4baeff;
-}
-
 .lobby-bbj:active {
   transform: translateY(3px);
   box-shadow:
@@ -443,14 +439,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
   transition: all 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.wallet-row:hover {
-  transform: translateY(-1px);
-  box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
 .wallet-row.gold {
   border-color: rgba(255, 255, 255, 0.08);
 }
@@ -493,13 +481,7 @@
   justify-content: center;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
-}
-
-.wallet-add-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 0 15px rgba(16, 185, 129, 0.5);
-}
-/* The .club-home__intro block moved into the header as .lobby-top__notice
+} /* The .club-home__intro block moved into the header as .lobby-top__notice
    (line-clamped), and the three-row .club-home__filters / .filter-tab stack was
    replaced by the single .game-bar below. Both sets of markup are gone. */
 
@@ -593,12 +575,6 @@
     color 0.2s ease,
     border-color 0.2s ease;
 }
-
-.game-bar__type:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #dfe5ee;
-}
-
 .game-bar__type.is-active {
   background: linear-gradient(135deg, #0088ff, #0055ff);
   border-color: rgba(0, 136, 255, 0.75);
@@ -692,12 +668,6 @@
   white-space: nowrap;
   cursor: pointer;
 }
-
-.quickprefs__chip:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-  color: #fff;
-}
-
 .quickprefs__chip.is-on {
   background: linear-gradient(135deg, #0088ff, #0055ff);
   border-color: rgba(0, 136, 255, 0.75);
@@ -727,12 +697,6 @@
   transition: all 0.2s ease;
   cursor: pointer;
 }
-
-.quickprefs__more:hover {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.05);
-}
-
 .quickprefs__more:focus-visible {
   outline: 2px solid rgba(255, 255, 255, 0.3);
   outline-offset: 2px;
@@ -759,12 +723,6 @@
     border-color 0.2s ease,
     background 0.2s ease;
 }
-
-.game-bar__filter-btn:hover {
-  color: #dfe6ef;
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
 /* Saved filters are invisible narrowing - a player who set "Bomb Pot only"
    last week and comes back to a short list must be able to see WHY. Gold
    fill plus a dot, matching how the sort control signals a non-default. */
@@ -871,9 +829,6 @@
   text-decoration: none;
   cursor: pointer;
 }
-.lobby-createbtn:hover {
-  background: rgba(65, 105, 225, 0.2);
-}
 .club-home__games {
   animation: gamesGridFade 0.5s ease-out;
 }
@@ -910,15 +865,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-
-.table-card:hover {
-  border-color: #1877f2;
-  transform: translateY(-2px);
-  box-shadow:
-    0 8px 24px rgba(24, 119, 242, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
 .table-card__header {
   display: flex;
   justify-content: space-between;
@@ -1002,12 +948,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-
-.tournament-card:hover {
-  border-color: #3b82f6;
-  transform: translateY(-2px);
-}
-
 .tournament-card.live {
   border-color: rgba(239, 68, 68, 0.4);
   box-shadow:
@@ -1145,12 +1085,6 @@
     filter 0.16s ease,
     transform 0.16s ease;
 }
-
-.empty-action:hover {
-  filter: brightness(1.08);
-  transform: translateY(-1px);
-}
-
 .empty-action:focus-visible {
   outline: 2px solid rgba(24, 119, 242, 0.85);
   outline-offset: 2px;
@@ -1163,15 +1097,7 @@
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: #ffce5c;
 }
-
-.empty-action--ghost:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .empty-action:hover {
-    transform: none;
-  }
   /* This block covered ONE hover transform. The animations a
      motion-sensitive player actually meets on this page were all declared
      after it and untouched: the games grid fades and slides on every filter
@@ -1360,10 +1286,6 @@
 .lobby-top__notice--editable:focus-visible {
   outline: 2px solid rgba(0, 200, 255, 0.6);
   outline-offset: 2px;
-}
-
-.lobby-top__notice--editable:hover {
-  background: rgba(0, 0, 0, 0.5);
 }
 .lobby-top__notice-editor {
   display: flex;
@@ -2121,4 +2043,146 @@
   .lobby-bbj__amount {
     font-size: 0.82rem;
   }
+}
+
+/* Approved Club Arena BBJ plaque. The amount remains dynamic text in the
+   plaque's blank right-hand bay; the title and frame come from the asset. */
+.lobby-bbj {
+  position: relative;
+  container-type: inline-size;
+  width: 100%;
+  max-width: 100%;
+  align-self: center;
+  min-height: 0;
+  aspect-ratio: 1600 / 560;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.lobby-bbj:active {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.lobby-bbj:active {
+  transform: scale(0.99);
+}
+
+.lobby-bbj__shell {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.lobby-bbj__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.lobby-bbj__amount {
+  position: absolute;
+  z-index: 1;
+  left: 42%;
+  right: 5%;
+  top: 29%;
+  bottom: 17%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #eef2f7;
+  font-size: clamp(0.72rem, 8cqw, 1.55rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  text-shadow:
+    0 2px 2px #000,
+    0 0 8px rgba(82, 167, 255, 0.2);
+}
+
+@media (max-width: 480px) {
+  .lobby-top__main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lobby-top__wallet {
+    grid-column: 1;
+  }
+
+  .lobby-bbj {
+    width: 100%;
+    min-height: 0;
+  }
+}
+
+@media (min-width: 481px) and (max-width: 640px) {
+  .lobby-top__main {
+    grid-template-columns: minmax(0, 1.731fr) minmax(0, 2.857fr);
+  }
+
+  .lobby-top__wallet {
+    grid-column: 2;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   NO HOVER, ANYWHERE IN THE LOBBY (Dan, 2026-08-28)
+   -------------------------------------------------------------------------
+   "REMOVE ANY AND ALL HOVER EFFECT FROM THE ALL, MTT, NLH, PLO, LIMIT,
+   SPINS, AND HEADS UP LOBBY PAGES."
+
+   All seven of those are the same screen - `.club-home` with a different
+   category selected - so this is one surface, not seven.
+
+   The 34 hover rules that lived in the lobby's own stylesheets (this file,
+   LobbyTable, GameLobbyPanel, AdvancedFilters, CasinoPlaque, LobbyAdStrip,
+   TournamentLobbyCard, TournamentLobbyPage) are DELETED, not overridden.
+   Where a selector list paired `:hover` with `:focus-visible`, only the
+   `:hover` half was dropped: keyboard focus has to stay visible, it is how
+   someone tabbing through the lobby knows where they are, and it is not a
+   hover effect.
+
+   What is left below is the part deletion cannot reach. Three global
+   stylesheets carry hover rules keyed on generic names, and a lobby element
+   that happens to use one would pick the effect up from outside this file.
+   Audited one by one; after the estate-wide popout sweep, exactly two still
+   change anything a lobby element can match:
+
+     design-system.css  .btn-primary:hover:not(:disabled) -> background
+     globals.css / design-system.css  ::-webkit-scrollbar-thumb:hover
+
+   Both are pinned back to their resting value here rather than guessed at.
+   The rest (`.card:hover`, `.tab:hover`, `.hover-lift`, `.poker-card:hover`,
+   `a:hover`) are left alone deliberately: no lobby component renders those
+   classes - verified by grep, not by assumption - so a blanket reset would
+   be dead CSS that reads like protection.
+
+   IF YOU ADD a `.btn`, `.card`, `.tab` or bare `<a>` to the lobby, the hover
+   comes back with it from those global files. Add it to this block.
+   ------------------------------------------------------------------------- */
+.club-home .btn-primary:hover:not(:disabled) {
+  background: var(--fb-blue);
+}
+
+.club-home ::-webkit-scrollbar-thumb:hover {
+  background: var(--bg-tertiary);
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);
 }

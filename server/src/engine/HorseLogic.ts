@@ -518,6 +518,13 @@ export interface HorseGameStateV2 extends HorseGameState {
     /** V16 ICM: live stacks (chips, desc) + payout percentages by place. */
     stacks?: number[];
     payoutPct?: number[];
+    /** V26 PRIZE LANDSCAPE: the mystery-bounty inventory as it stands. */
+    mysteryChestsLeft?: number;
+    mysteryMeanCents?: number;
+    mysteryTopCents?: number;
+    mysteryTopLive?: boolean;
+    /** V26: mean live PKO bounty per remaining player, in cents. */
+    meanBountyCents?: number;
     /** V23 ENDGAME: at the final table (MTT, <= 9 left). */
     finalTable?: boolean;
     /** V23 BLIND CLOCK: minutes to the next level (null/undefined = unknown). */
@@ -868,6 +875,25 @@ export interface HorseDecideOpts {
   /** disable the V23 spin overlay: winner-take-all hypers reward aggression —
    *  bluff volume up, value thresholds down a notch (default: enabled) */
   v23Spin?: boolean;
+  /** disable the V24 bounty layer (Dan 2026-08-28): PKO and mystery-bounty
+   *  awareness preflop — pots against a covered raiser are worth more than
+   *  their chips, so the call bar bends toward them (default: enabled) */
+  v24Bounty?: boolean;
+  /** disable the V24 Omaha price defense: in PLO the call bar bends toward
+   *  the POT ODDS rather than a fixed NLH-calibrated percentile, and the
+   *  survival premium scales with the fraction of stack actually at risk
+   *  (default: enabled) */
+  v24PloDefense?: boolean;
+  /** disable the V25 PLO tournament layer (Dan 2026-08-28): pot limit means
+   *  you cannot shove, so short-stack PLO is a COMMITMENT decision rather
+   *  than push/fold — plus the Omaha reshove, price-driven all-in calls, and
+   *  the rule against raise-folding a committed stack (default: enabled) */
+  v25PloTourney?: boolean;
+  /** disable the V26 prize-landscape layer (Dan 2026-08-28): the horse reads
+   *  the LIVE bounty inventory — how many chests are left, what one is worth
+   *  on average, and whether the top prize is still in the box — and prices a
+   *  bust in BIG BLINDS instead of guessing from a pool ratio (default: on) */
+  v26Prizes?: boolean;
 }
 
 /**
@@ -1216,6 +1242,63 @@ export class HorseLogic {
           : undefined,
       // V21: deep-stack cash stack-off discipline.
       deepDiscipline: (opts.v21Deep ?? true) !== false,
+      ploPriceDefense: (opts.v24PloDefense ?? true) !== false,
+      // V25: PLO tournament play — the pot-limit commitment zone and its
+      // consequences. Tournament-only by construction inside the engine.
+      ploTourney: (opts.v25PloTourney ?? true) !== false,
+      // ═══ V24 BOUNTY (PKO / mystery) ═══ a bounty is prize money attached
+      // to a PLAYER and collected by busting them, so pots against opponents
+      // hero COVERS are worth more than their chips. Nothing preflop knew
+      // this existed before; icmRisk only trimmed its own premium slightly.
+      ...(() => {
+        const useV24 = (opts.v24Bounty ?? true) !== false;
+        const bf = useV24 ? (gs.tournament?.bountyFactor ?? 0) : 0;
+        if (!(bf > 0) || lastRaiserSeat < 0) return {};
+        const raiser = gs.players.find((p) => p.seat === lastRaiserSeat);
+        if (!raiser) return {};
+        const heroBehind = player.stack + player.bet;
+        const raiserTotal = (raiser.stack ?? 0) + (raiser.bet ?? 0);
+        const covers = heroBehind > raiserTotal;
+        if (telemetryOn(opts) && covers) noteFire('v24_bounty_pull');
+        // ═══ V26 PRICE THE BUST IN BIG BLINDS ═══════════════════════════
+        // V24 guessed from bountyFactor (a pool RATIO), which says nothing
+        // about what one elimination actually pays. The chest inventory
+        // does: the mean live chest IS the EV of a bust, and comparing it
+        // to the pot in the same unit turns "there is a bounty" into a
+        // number the thresholds can use.
+        const t26 = gs.tournament;
+        const useV26 = (opts.v26Prizes ?? true) !== false;
+        // Cents -> chips is not a conversion the engine can make (real money
+        // and tournament chips are different scales), so the bust is priced
+        // RELATIVE to the average remaining bounty: a chest worth well above
+        // the mean is worth chasing, one below it is not. Expressed as a
+        // multiplier on the existing pull rather than a new currency.
+        const meanCents = Math.max(0, t26?.mysteryMeanCents ?? t26?.meanBountyCents ?? 0);
+        const chestsLeft = Math.max(0, t26?.mysteryChestsLeft ?? 0);
+        let bountyScale = 1;
+        if (useV26 && meanCents > 0) {
+          // The top chest still in the box makes every bust a lottery
+          // ticket: the mean understates it, because the tail is the prize.
+          if (t26?.mysteryTopLive === true) bountyScale *= 1.35;
+          // A nearly-empty inventory is a freezeout wearing a bounty badge.
+          if (chestsLeft > 0 && chestsLeft <= 3) bountyScale *= 0.6;
+          // A top chest far above the mean is a fat tail worth chasing.
+          const top = Math.max(0, t26?.mysteryTopCents ?? 0);
+          if (top > meanCents * 3) bountyScale *= 1.15;
+        } else if (useV26 && chestsLeft === 0 && (t26?.mysteryTopCents ?? 0) > 0) {
+          // Inventory known and EXHAUSTED: the bounty half of this event is
+          // over, whatever the pool ratio still says.
+          bountyScale = 0.35;
+        }
+        if (telemetryOn(opts) && useV26 && meanCents > 0) noteFire('v26_prize_read');
+        return {
+          bountyFactor: Math.min(1, bf * bountyScale),
+          coversRaiser: covers,
+          // Live this hand: what the raiser has left behind their own raise
+          // is already inside what hero would be putting in to call.
+          raiserBustable: covers && (raiser.stack ?? 0) <= toCall,
+        };
+      })(),
       // V23 BLIND CLOCK: jam BEFORE the level halves the M, not after.
       nextBlindInMin:
         (opts.v23Endgame ?? true) !== false
@@ -1549,17 +1632,85 @@ export class HorseLogic {
     const hiLoSplit: HiLoSplit | undefined = useHiLo
       ? { hi: 0, lo: 0, scoop: 0, quarter: 0 }
       : undefined;
-    const equity = simulateEquity(
-      player.cards,
-      gs.communityCards,
-      Math.min(oppCount, 4),
-      vi,
-      vi.iterations,
-      bands,
-      useAdaptiveMC,
-      hiLoSplit,
-      oppReads
-    );
+    /**
+     * MULTI-BOARD EQUITY 2026-08-28 (Horses Are Players law): on a
+     * double/triple-board bomb hand every board pays an equal share of every
+     * pot layer, so the horse's true equity is the AVERAGE of its per-board
+     * equities. The fleet used to price board 1 alone and systematically
+     * misplayed the other half (or two-thirds) of the pot. The iteration
+     * budget is split across boards so a bomb decision costs what a normal
+     * decision always has. Texture/blockers/nut-status stay board-1 reads —
+     * they steer style, not the money.
+     *
+     * PLO8 2026-08-28: the hi-lo decomposition is averaged per board too.
+     * Passing `undefined` here (the first cut) left the accumulator at all
+     * zeros on every multi-board hand, and the strategy below reads it —
+     * `scoopy`, the quarter check and the V23 low-only branch all saw "no
+     * hi, no lo" and played the hand as if it had no low potential at all.
+     * Each board pays an equal share of every pot layer, so the mean of the
+     * per-board hi/lo/scoop/quarter probabilities is exactly the right
+     * expectation for the money.
+     */
+    const extraBoards: Card[][] = [];
+    if (Array.isArray(gs.communityCards2) && gs.communityCards2.length >= 3) {
+      extraBoards.push(gs.communityCards2);
+    }
+    if (Array.isArray(gs.communityCards3) && gs.communityCards3.length >= 3) {
+      extraBoards.push(gs.communityCards3);
+    }
+    let equity: number;
+    if (extraBoards.length === 0) {
+      equity = simulateEquity(
+        player.cards,
+        gs.communityCards,
+        Math.min(oppCount, 4),
+        vi,
+        vi.iterations,
+        bands,
+        useAdaptiveMC,
+        hiLoSplit,
+        oppReads
+      );
+    } else {
+      const boards = [gs.communityCards, ...extraBoards];
+      const perBoardIters = Math.max(150, Math.ceil(vi.iterations / boards.length));
+      let sum = 0;
+      const loAcc: HiLoSplit | undefined = hiLoSplit
+        ? { hi: 0, lo: 0, scoop: 0, quarter: 0 }
+        : undefined;
+      for (const b of boards) {
+        // A FRESH accumulator per board — simulateEquity adds into the one it
+        // is handed, so reusing a single object across boards would sum four
+        // probabilities into fields that must stay in 0..1.
+        const perBoardSplit: HiLoSplit | undefined = hiLoSplit
+          ? { hi: 0, lo: 0, scoop: 0, quarter: 0 }
+          : undefined;
+        sum += simulateEquity(
+          player.cards,
+          b,
+          Math.min(oppCount, 4),
+          vi,
+          perBoardIters,
+          bands,
+          useAdaptiveMC,
+          perBoardSplit,
+          oppReads
+        );
+        if (loAcc && perBoardSplit) {
+          loAcc.hi += perBoardSplit.hi;
+          loAcc.lo += perBoardSplit.lo;
+          loAcc.scoop += perBoardSplit.scoop;
+          loAcc.quarter += perBoardSplit.quarter;
+        }
+      }
+      equity = sum / boards.length;
+      if (hiLoSplit && loAcc) {
+        hiLoSplit.hi = loAcc.hi / boards.length;
+        hiLoSplit.lo = loAcc.lo / boards.length;
+        hiLoSplit.scoop = loAcc.scoop / boards.length;
+        hiLoSplit.quarter = loAcc.quarter / boards.length;
+      }
+    }
 
     // V9 TIMING: how CLOSE is this decision? Distance of the MC equity from
     // the nearest strategy threshold. Razor-thin spots read as difficulty ~1
@@ -3233,6 +3384,26 @@ export class HorseLogic {
 
     const simple = d.action === 'check' || d.action === 'fold';
     const aggressive = d.action === 'raise' || d.action === 'all_in';
+    // ═══ V24 NO SNAP FOLDS (Dan 2026-08-28, binding) ═══════════════════════
+    // "I full potted 8 hands in a row in this PLO PKO tournament and never got
+    //  called once preflop, got all snap folds almost every time. Horses need
+    //  to NEVER snap fold - they should always take a couple seconds, even if
+    //  they already know they are going to fold."
+    //
+    // MEASURED against the old model: a preflop FOLD scored
+    // wSnap = 0.34 + 0.30 (simple) + 0.14 (preflop) = 0.78, multiplied by up
+    // to 2.1 for a fast-tempo horse -> a ~74% chance of the SNAP mode. SNAP
+    // drew 180-800ms, then `simple && preflop` cut it 20% and the tempo shaper
+    // cut it up to another 40%: roughly 180-400ms. Eight of those in a row is
+    // what Dan watched, and it is the single loudest tell a table can emit -
+    // no human folds to a pot-sized raise in a fifth of a second.
+    //
+    // FACING A BET IS A DECISION, even when the answer is obvious. A person
+    // still has to see the raise, read their four cards, and click. So when
+    // there is money to call, the snap mode is not instant any more: it is a
+    // human "quick fold" of well over a second, and the floor below holds it
+    // there no matter what the tempo multipliers do.
+    const facingBet = toCall > 0;
     const stage = gs.stage;
     const bigRiverCall = stage === 'river' && toCall > gs.pot * 0.5;
 
@@ -3270,8 +3441,9 @@ export class HorseLogic {
     const roll = fastRandom() * total;
     let think: number;
     if (roll < wSnap) {
-      // SNAP: the decision was made before the action arrived.
-      think = 180 + fastRandom() * 620;
+      // SNAP: the decision was made before the action arrived. With money to
+      // call that still means seeing the bet and acting - never a reflex.
+      think = facingBet ? 1150 + fastRandom() * 1450 : 180 + fastRandom() * 620;
     } else if (roll < wSnap + wBeat) {
       // A BEAT: read the board, count the pot, act.
       think = 1100 + fastRandom() * 3400;
@@ -3294,12 +3466,19 @@ export class HorseLogic {
     // mode still differ.
     think *= 0.6 + tempo * 0.85;
     if (difficulty > 0) think *= 1 + difficulty * 0.35;
-    if (simple && stage === 'preflop') think *= 0.8;
+    // V24: this 20% discount is for CHECKING a free flop preflop, not for
+    // folding to a raise - it was half of how folds reached 180ms.
+    if (simple && stage === 'preflop' && !facingBet) think *= 0.8;
     if (aggressive) think *= 1.1;
     const headsUp = gs.players.filter((p) => !p.is_folded).length === 2;
     if (headsUp) think *= 0.85;
 
-    return Math.round(Math.max(180, think));
+    // ═══ V24 FLOORS ═══ applied after every multiplier, because the tempo
+    // and heads-up shapers are exactly what dragged a 1.2s intention down to
+    // a 400ms reflex. Nothing that faces a bet may act inside FACING_FLOOR_MS.
+    const FACING_FLOOR_MS = 1250;
+    const FREE_FLOOR_MS = 350;
+    return Math.round(Math.max(facingBet ? FACING_FLOOR_MS : FREE_FLOOR_MS, think));
   }
 
   // ─────────────────────────────────────────────────────────────────────

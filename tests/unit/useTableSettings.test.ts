@@ -29,13 +29,24 @@ vi.mock('../../src/core/MasterBus', () => ({
   masterBus: { emit: vi.fn(), subscribe: vi.fn(() => vi.fn()) },
 }));
 
-import { useTableSettings } from '../../src/hooks/useTableSettings';
+import {
+  useTableSettings,
+  __resetTableSettingsStoreForTest,
+} from '../../src/hooks/useTableSettings';
 import { STORAGE_KEYS } from '../../src/lib/storage';
 
 const KEY = STORAGE_KEYS.TABLE_SETTINGS;
 
 beforeEach(() => {
   for (const k of Object.keys(store)) delete store[k];
+  /* 2026-08-28: the settings now live in ONE module-level store shared by every
+     consumer, because a per-instance `useState` meant up to eight copies (six
+     MultiTablePage tables, SettingsPage, the ticker) each rewriting the whole
+     blob over one localStorage key — the mechanism behind Dan's "settings auto
+     change back". A singleton has to be forgotten between cases the same way
+     localStorage is, or the second test in this file asserts against the first
+     test's load. */
+  __resetTableSettingsStoreForTest();
 });
 
 describe('useTableSettings', () => {
@@ -71,6 +82,13 @@ describe('useTableSettings', () => {
     expect(first.result.current.settings.autoMuck).toBe(false);
     expect(first.result.current.settings.autoMuckExplicit).toBe(true);
     first.unmount();
+
+    /* A REAL reload, not just a remount. The store is a module singleton now,
+       so a second renderHook would otherwise read the copy still in memory and
+       this case would pass without ever exercising the load-time migration it
+       exists to pin. Forgetting the store is what makes the next line read
+       localStorage again — which is the whole assertion. */
+    __resetTableSettingsStoreForTest();
 
     // Reload: the persisted explicit false must NOT be migrated away.
     const second = renderHook(() => useTableSettings());

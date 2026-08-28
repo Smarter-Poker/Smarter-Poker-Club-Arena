@@ -142,8 +142,6 @@
 }
 
 .btn-start:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(34, 197, 94, 0.4);
 }
 
 .btn-stop {
@@ -153,8 +151,6 @@
 }
 
 .btn-stop:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(239, 68, 68, 0.4);
 }
 
 .btn-secondary {

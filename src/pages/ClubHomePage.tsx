@@ -44,6 +44,7 @@ import {
   withClubLabel,
 } from '../components/lobby/lobbyEntries';
 import { tournamentService } from '../services/TournamentService';
+import { tableService } from '../services/TableService';
 import { getClubLevel, ClubLevelInfo } from '../utils/clubLevels';
 import { useToast } from '../components/common/Toast';
 import { applyClubScope, inClubScope, type ClubScope } from '../utils/clubScope';
@@ -84,6 +85,8 @@ import {
 import { useUserStore } from '../stores/useUserStore';
 import LobbyAdStrip from '../components/lobby/LobbyAdStrip';
 import HouseAdCard from '../components/ads/HouseAdCard';
+import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
+import { ClubIdentityCard } from '../components/club-buttons';
 import AdvancedFilters, {
   loadFilters,
   saveFilters,
@@ -97,7 +100,7 @@ import {
   variantKey,
   type FilterGameType,
 } from '../components/lobby/advancedFilterSpec';
-import { IconMembers, IconShareLink, IconSort } from '../components/icons/LobbyIcons';
+import { IconShareLink, IconSort } from '../components/icons/LobbyIcons';
 import { CLUB_HOME_CACHE_PREFIX } from '../utils/clearUserCaches';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { preloadRoute } from '../utils/ChunkPreloader';
@@ -629,7 +632,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null);
   const [, setIsInUnion] = useState(false);
-  const [unionName, setUnionName] = useState<string | null>(null);
+  const [, setUnionName] = useState<string | null>(null);
   /** Live seat count from get_club_home. Null until it answers; see the note
       where it is set - the stale clubs.online_count is never used. */
   const [playersPlaying, setPlayersPlaying] = useState<number | null>(null);
@@ -1148,23 +1151,17 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         for (let attempt = 0; attempt < 4 && !tableId; attempt++) {
           if (spinJoinCancelRef.current) return;
           if (attempt > 0) await new Promise((r) => setTimeout(r, 700));
-          const { data: tbls } = await supabase
-            .from('tables')
-            .select('id, status, created_at')
-            .eq('tournament_id', t.id)
-            .neq('status', 'closed')
-            // Newest first: the recycler leaves the freshest table live, and
-            // an older sibling not yet stamped closed is a corpse whose seats
-            // are already full — landing there is the "That Seat Was Just
-            // Taken" dead end on a seat that looks empty.
-            .order('created_at', { ascending: false })
-            .limit(3);
+          /* The DATABASE's own primary-table election (occupancy first,
+             oldest to break the tie — identical to the engine's choice), so
+             a duplicate's empty NEWER table can never outrank the one the
+             players are sitting on. See resolveTournamentLiveTable. */
+          const resolved = await tableService.resolveTournamentLiveTable(t.id);
           /* Cancel is checked AFTER the await as well as before it. Checking
              only at the top of the iteration meant a Cancel pressed while a
              lookup was in flight closed the overlay and then navigated anyway
              — the player was dropped at a table they had just backed out of. */
           if (spinJoinCancelRef.current) return;
-          tableId = (tbls || [])[0]?.id ?? null;
+          tableId = resolved;
         }
 
         if (tableId) {
@@ -1198,15 +1195,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         }
         const sibId = (sibs || [])[0]?.id as string | undefined;
         if (sibId && !spinJoinCancelRef.current) {
-          const { data: sibTbls } = await supabase
-            .from('tables')
-            .select('id, created_at')
-            .eq('tournament_id', sibId)
-            .neq('status', 'closed')
-            .order('created_at', { ascending: false })
-            .limit(1);
+          const sibTableId = await tableService.resolveTournamentLiveTable(sibId);
           if (spinJoinCancelRef.current) return;
-          const sibTableId = (sibTbls || [])[0]?.id as string | undefined;
           if (sibTableId) {
             setSpinJoin(null);
             navigate(`/table/${sibTableId}`);
@@ -2026,7 +2016,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands'
         );
       // ONE rule, applied. Union clubs see the UNION's tables plus their OWN
       // private games; another club's private game is never visible.
@@ -2974,6 +2964,26 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
   const handleRegister = useCallback(
     (t: LobbyTournamentRow) => {
+      /* THE LAST DOOR A SEAT-FIRST GAME COULD SNEAK THROUGH (Dan 2026-08-28).
+         A Spin or Heads-Up must never reach the Sign Up dialog: it charges
+         the buy-in with no seat attached, and Dan's binding rule is the seat
+         IS the entry ("A PLAYER SITS DOWN AT A TABLE AND BUYS INTO THE SPIN
+         OR HEADS UP, LIKE A CASH GAME"). Every surface routes these through
+         spinQuickJoin now, but register paths have re-grown before — this
+         gate makes the wrong wiring land on the right flow instead of on a
+         charge. Same definition as fn_take_seat_and_buy_in: variant spin,
+         or a 2-seat sng. */
+      const variantWord = String((t as { variant?: unknown }).variant ?? '').toLowerCase();
+      const seatFirst =
+        variantWord === 'spin' ||
+        (variantWord === 'sng' && Number(t.max_players) > 0 && Number(t.max_players) <= 2);
+      if (seatFirst) {
+        spinQuickJoin(
+          { id: t.id, name: t.name, buy_in_amount: Number(t.buy_in_amount) || 0 },
+          variantWord === 'sng' ? 'sng' : 'spin'
+        );
+        return;
+      }
       registerMtt(
         {
           id: t.id,
@@ -3008,7 +3018,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       );
     },
     // `navigate` is not used in this callback; `openTournamentLobby` is.
-    [registerMtt, openTournamentLobby]
+    [registerMtt, openTournamentLobby, spinQuickJoin]
   );
 
   const handleUnregister = useCallback(
@@ -3225,6 +3235,25 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         if (row) handleRegister(row);
         else openEntry(e);
       },
+      /* SEAT-FIRST (Dan 2026-08-21, binding): a Spin or Heads-Up card's Sit
+         Down opens the TABLE — the seat is bought there, by the tap that
+         picks it. Same flow the game-lobby panel already runs; the card was
+         the one surface still routing these to the MTT Sign Up dialog, which
+         charged the buy-in with no seat attached. buy_in_amount comes from
+         the row when the board still has it — the sibling hop inside
+         spinQuickJoin matches on it — and falls back to the entry's own
+         sort value, which is the same number. */
+      onSpinJoin: (e, variant) => {
+        const row = filteredTournamentsRef.current.find((t) => t.id === e.id);
+        spinQuickJoin(
+          {
+            id: e.id,
+            name: e.name,
+            buy_in_amount: Number(row?.buy_in_amount ?? e.buyInValue ?? 0),
+          },
+          variant
+        );
+      },
       onJoinTable: (e) => handleJoinTable(e.id),
       /* A full table's primary action is the waitlist, not a join that cannot
          succeed. The page already owns this flow for the panel; the card runs
@@ -3242,7 +3271,29 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                "THE DETAILS BUTTON SHOULD TAKE YOU TO THE TOURNAMENT LOBBY
                SCREEN" — unconditionally, not only once it is running. */
       onViewTable: (e) =>
-        e.kind === 'cash' ? navigate(`/table/${e.id}`) : openTournamentLobby(e.id),
+        e.kind === 'cash'
+          ? navigate(`/table/${e.id}`)
+          : /* Dan 2026-08-20: "there is 'no lobby' for a spin, you just start
+               on a table." Watch and Return To Game on a spin therefore open
+               the game's live TABLE (spinQuickJoin resolves the current one,
+               stale ids and recycled siblings included) — an MTT keeps its
+               own lobby screen. Heads-up SNGs ride the same table route for
+               the same reason; multi-seat SNGs are registration games and
+               keep the lobby. */
+            e.kind === 'spin' || (e.kind === 'sng' && e.capacity > 0 && e.capacity <= 2)
+            ? spinQuickJoin(
+                {
+                  id: e.id,
+                  name: e.name,
+                  buy_in_amount: Number(
+                    filteredTournamentsRef.current.find((t) => t.id === e.id)?.buy_in_amount ??
+                      e.buyInValue ??
+                      0
+                  ),
+                },
+                e.kind === 'sng' ? 'sng' : 'spin'
+              )
+            : openTournamentLobby(e.id),
     }),
     [
       waitlistedTableIds,
@@ -3257,6 +3308,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       navigate,
       handleWaitlistToggle,
       openTournamentLobby,
+      spinQuickJoin,
     ]
   );
 
@@ -3436,156 +3488,78 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       <header className="lobby-top">
         {/* ── Club identity + wallet ── */}
         <div className="lobby-top__main">
-          <div className="lobby-club">
-            <div className="lobby-club__avatar">
-              {club.logo_url || club.avatar_url ? (
-                <img
-                  src={sizedStorageUrl(club.logo_url || club.avatar_url, 192)}
-                  alt={club.name}
-                  loading="lazy"
-                />
-              ) : Number(club.club_id) === SHARK_CLUB_ID ? (
-                <img src={SHARK_CLUB_FALLBACK_LOGO} alt="Shark Club" loading="lazy" />
-              ) : (
-                <span className="lobby-club__avatar-fallback">&#9824;</span>
-              )}
-            </div>
+          <ClubIdentityCard
+            className="lobby-top__identity"
+            clubName={club.name}
+            logoUrl={
+              club.logo_url || club.avatar_url
+                ? sizedStorageUrl(club.logo_url || club.avatar_url, 256)
+                : Number(club.club_id) === SHARK_CLUB_ID
+                  ? SHARK_CLUB_FALLBACK_LOGO
+                  : null
+            }
+            logoFallback={<span>&#9824;</span>}
+            pokerAlias={currentUser?.display_name || currentUser?.username || 'Player'}
+            clubId={club.club_id}
+            playerId={currentUser?.player_number}
+            level={clubLevel?.level}
+            playersPlaying={playersPlaying}
+            onCopyClubId={() => {
+              navigator.clipboard.writeText(club.club_id.toString());
+              toast.success('Club ID Copied');
+            }}
+            onCopyPlayerId={
+              currentUser?.player_number
+                ? () => {
+                    navigator.clipboard.writeText(currentUser.player_number!.toString());
+                    toast.success('Player Number Copied');
+                  }
+                : undefined
+            }
+            shareIcon={<IconShareLink />}
+            onShare={async () => {
+              haptic.medium();
+              let refQuery = '';
+              let profRefNum: number | null = null;
+              try {
+                // readLocalSession, not the auth SDK's remote user lookup: the
+                // session is already local and the referral action must open
+                // instantly when the player taps it.
+                const session = readLocalSession();
+                if (session?.userId) {
+                  const { data: prof } = await supabase
+                    .from('profiles')
+                    .select('player_number')
+                    .eq('id', session.userId)
+                    .maybeSingle();
+                  if (prof?.player_number) {
+                    profRefNum = prof.player_number;
+                    refQuery = `?ref=${prof.player_number}`;
+                  } else {
+                    refQuery = `?ref=${session.userId}`;
+                  }
+                }
+              } catch (err) {
+                reportError(err, 'ClubHomePage.share_ref_lookup_failed');
+              }
+              const shareUrl = `${window.location.origin}/hub/club-arena/invite/${club.id}${refQuery}`;
+              const inviterName = currentUser?.display_name || currentUser?.username || 'A player';
+              const playerNumText = profRefNum ? `\nYour Referral Number: ${profRefNum}` : '';
+              const shareText = `${inviterName} invited you to join ${club.name}!\n\nClub ID: ${club.club_id}${playerNumText}`;
 
-            <div className="lobby-club__info">
-              <h2 className="lobby-club__name" title={club.name}>
-                {club.name}
-              </h2>
-              {unionName && (
-                <div className="lobby-club__union" title="Union This Club Plays Inside">
-                  {unionName}
-                </div>
-              )}
-              <div className="lobby-club__meta">
-                <span
-                  className="lobby-club__id"
-                  style={{ userSelect: 'all', cursor: 'pointer' }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigator.clipboard.writeText(club.club_id.toString());
-                    toast.success('Club ID Copied');
-                  }}
-                  title="Click to copy"
-                >
-                  ID {club.club_id}
-                </span>
-                <span className="lobby-club__members">
-                  <IconMembers />
-                  {(club.member_count || 0).toLocaleString()}
-                </span>
-                {currentUser?.player_number && (
-                  <span
-                    className="lobby-club__id lobby-club__player"
-                    style={{ userSelect: 'all', cursor: 'pointer' }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigator.clipboard.writeText(currentUser.player_number!.toString());
-                      toast.success('Player Number Copied');
-                    }}
-                    title="Click to copy"
-                  >
-                    Player ID: {currentUser.player_number}
-                  </span>
-                )}
-              </div>
-
-              <div className="lobby-club__status">
-                {clubLevel && (
-                  <div className="lobby-club__level">
-                    <span
-                      className="club-level-badge"
-                      style={{ background: clubLevel.gradient }}
-                      title={`Level ${clubLevel.level} - ${clubLevel.tierLabel}`}
-                    >
-                      <span className="club-level-badge__number">Level {clubLevel.level}</span>
-                      <span className="club-level-badge__tier">{clubLevel.tierLabel}</span>
-                    </span>
-                  </div>
-                )}
-
-                <div className="lobby-club__activity">
-                  {playersPlaying !== null && (
-                    <div className="lobby-club__playing">
-                      <strong>{playersPlaying.toLocaleString()}</strong> Playing Now
-                    </div>
-                  )}
-
-                  <button
-                    className="lobby-club__share"
-                    aria-label="Share club invite link"
-                    title="Share"
-                    onClick={async () => {
-                      haptic.medium();
-                      let refQuery = '';
-                      let profRefNum: number | null = null;
-                      try {
-                        // readLocalSession, not the auth SDK's remote user
-                        // lookup: the pre-push guard blocks that call by name,
-                        // and it is right to. It is a network round trip to
-                        // GoTrue on every tap of Share, when the session is
-                        // already in localStorage, parsed and expiry-checked —
-                        // and this is a button a player expects to open the
-                        // share sheet instantly.
-                        const session = readLocalSession();
-                        if (session?.userId) {
-                          const { data: prof } = await supabase
-                            .from('profiles')
-                            .select('player_number')
-                            // .maybeSingle(), never .single(): a profile row that
-                            // does not exist yet is a normal state, and .single()
-                            // throws PGRST116 on zero rows — which this catch
-                            // would then swallow, silently dropping the referral
-                            // code from the invite link.
-                            .eq('id', session.userId)
-                            .maybeSingle();
-                          if (prof?.player_number) {
-                            profRefNum = prof.player_number;
-                            refQuery = `?ref=${prof.player_number}`;
-                          } else {
-                            refQuery = `?ref=${session.userId}`;
-                          }
-                        }
-                      } catch (err) {
-                        // The link still works without a referral code, so this
-                        // must never block the share — but it is a lost referral
-                        // credit, so it is reported rather than ignored.
-                        reportError(err, 'ClubHomePage.share_ref_lookup_failed');
-                      }
-                      const shareUrl = `${window.location.origin}/hub/club-arena/invite/${club.id}${refQuery}`;
-                      const inviterName =
-                        currentUser?.display_name || currentUser?.username || 'A player';
-                      const playerNumText = profRefNum
-                        ? `\nYour Referral Number: ${profRefNum}`
-                        : '';
-                      const shareText = `${inviterName} invited you to join ${club.name}!\n\nClub ID: ${club.club_id}${playerNumText}`;
-
-                      try {
-                        if (navigator.share) {
-                          await navigator.share({
-                            title: club.name,
-                            text: shareText,
-                            url: shareUrl,
-                          });
-                        } else {
-                          await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
-                          toast.success('Club link copied!');
-                        }
-                      } catch (e) {
-                        reportError(e, 'ClubHomePage.async');
-                        /* user cancelled share */
-                      }
-                    }}
-                  >
-                    <IconShareLink />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+              try {
+                if (navigator.share) {
+                  await navigator.share({ title: club.name, text: shareText, url: shareUrl });
+                } else {
+                  await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
+                  toast.success('Club link copied!');
+                }
+              } catch (e) {
+                reportError(e, 'ClubHomePage.async');
+                /* user cancelled share */
+              }
+            }}
+          />
 
           <button
             type="button"
@@ -3603,6 +3577,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 : 'No Pool'
             }`}
           >
+            <ClubBBJShell className="lobby-bbj__shell" />
             <span className="lobby-bbj__label">Bad Beat Jackpot</span>
             <strong className="lobby-bbj__amount">
               {jackpotAmount > 0

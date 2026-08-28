@@ -43,10 +43,6 @@
 .nav-toggle:hover {
   background: rgba(255, 215, 0, 0.15);
   color: #ffd700;
-  transform: scale(1.1);
-  box-shadow:
-    0 0 12px rgba(255, 215, 0, 0.3),
-    0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .nav-content {

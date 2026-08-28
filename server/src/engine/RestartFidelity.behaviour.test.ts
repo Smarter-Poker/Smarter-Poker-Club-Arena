@@ -43,13 +43,42 @@ function makeDisconnectEngine() {
 }
 
 describe('sitOut() is the reason the restore silently did nothing', () => {
-  it('REFUSES a player it has never registered — the trap', () => {
-    // Pinning the actual behaviour of the dependency. If this ever changes to
-    // auto-register, the restore below becomes belt-and-braces rather than
-    // load-bearing, and whoever changes it should see this test say so.
+  /**
+   * ── 2026-08-28: THE TRAP IS CLOSED, AND THIS SPEC INVERTS ─────────────────
+   *
+   * The version of this test above said, in its own words: "If this ever
+   * changes to auto-register, the restore below becomes belt-and-braces rather
+   * than load-bearing, and whoever changes it should see this test say so."
+   * This is that change, so here is the note.
+   *
+   * `sitOut()` now registers an unknown player instead of returning. The
+   * restore's explicit `registerPlayer` call is therefore redundant rather than
+   * load-bearing — it is kept, because idempotent and explicit is better than
+   * relying on a side effect two files away, and the spec below still proves
+   * the ordering is harmless.
+   *
+   * WHY IT HAD TO CHANGE. The 2026-08-25 work found this trap and worked around
+   * it in ONE caller, restoreSitOutsFromSeats. It left the other caller alone,
+   * and that other caller is the live one: POST /sitout ->
+   * ServerTableEngineSeating.sitOut() -> DisconnectEngine.sitOut(). At a table
+   * that had not dealt since the engine booted, `playerStates` is empty, so a
+   * player tapping Sit Out hit the guard and vanished — no state, no
+   * PLAYER_SAT_OUT event, no `is_sitting_out` written, and therefore nothing
+   * for the restore to bootstrap from on any later sweep. The eviction sweep
+   * skips anyone without state, so the seat was held forever. That is the bug
+   * Dan reported on 2026-08-28: "for some reason this never kicks the user off
+   * the cash game after the 5 min."
+   *
+   * Pinning "refuses" as correct behaviour is what let that survive a green
+   * suite for three days.
+   */
+  it('ACCEPTS a player it has never registered, and starts their clock', () => {
     const de = makeDisconnectEngine();
     de.sitOut(TABLE, SITTER, 'voluntary');
-    expect(de.isSittingOut(TABLE, SITTER)).toBe(false);
+    expect(de.isSittingOut(TABLE, SITTER)).toBe(true);
+    // And they are genuinely evictable, not merely flagged — a sit-out with no
+    // clock behind it is the same seat-held-forever bug wearing a true.
+    expect(de.tickSitOutsAndCollectEvictions(TABLE, [SITTER])).toEqual([]);
   });
 
   it('ACCEPTS the same player once registered', () => {

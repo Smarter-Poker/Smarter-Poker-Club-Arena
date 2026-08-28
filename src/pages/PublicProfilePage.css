@@ -157,7 +157,6 @@
 
 .action-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.12);
-  transform: translateY(-1px);
 }
 
 .action-btn:disabled {
@@ -232,7 +231,6 @@
 
 .playing-at-badge:hover {
   background: rgba(52, 199, 89, 0.2);
-  transform: translateY(-1px);
 }
 
 .player-status-text {

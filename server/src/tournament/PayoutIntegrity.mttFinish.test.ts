@@ -294,6 +294,62 @@ describe('finishing places must be distinct — in the rescue path too', () => {
   });
 });
 
+/**
+ * A BUSTED PLAYER IS ALWAYS ELIMINATED (2026-08-28).
+ *
+ * Union PKO Afternoon (PLO4) 4f42d847 hung heads-up for hours: 39 entrants,
+ * places 2..38 gapless and collision-free, place 39 never used, and the last
+ * busted player left `status='playing'` at 0 chips because the walk down the
+ * ladder found nothing free and `break`-ed. `remainingCount` can then never
+ * reach 1, so finishTournament is unreachable and the event never closes —
+ * blinds escalating, table dead, champion uncrowned, first prize unpaid.
+ *
+ * The ladder was one place short from the very first bust because it was
+ * seeded off a live `playing` count, which does not include an entrant still
+ * sitting in `registered` while ensureLateRegSeated catches up.
+ */
+describe('the finishing ladder cannot drift, and cannot strand a busted player', () => {
+  it('seeds the ladder from players who hold no place yet, not from a live playing count', () => {
+    // `playingCount` misses `registered` entrants, so it drifts SHORT and the
+    // shortfall is only discovered when the last player has nowhere to go.
+    // Unplaced = still in contention + busting now, registered included.
+    expect(code(ELIM)).toMatch(/\.is\('position', null\)/);
+    expect(code(ELIM)).toMatch(
+      /nextPosition\s*=\s*Math\.max\(\s*unplacedCount\s*,\s*playingCount\s*,\s*bustedOrdered\.length \+ 1\s*\)/
+    );
+  });
+
+  it('an unreadable unplaced count defers the eliminations instead of guessing', () => {
+    expect(code(ELIM)).toMatch(
+      /if\s*\(\s*unplacedErr[\s\S]{0,500}?unplaced_count_unavailable[\s\S]{0,120}?\n\s*return;/
+    );
+  });
+
+  it('an unreadable taken-places list is UNKNOWN, not "every place is free"', () => {
+    // `takenRows || []` meant a failed read handed out a place that may
+    // already have been paid — the exact collision this block exists to stop.
+    expect(code(ELIM)).not.toMatch(/\(\s*takenRows\s*\|\|\s*\[\]\s*\)/);
+    expect(code(ELIM)).toMatch(
+      /if\s*\(\s*takenErr\s*\|\|\s*!takenRows\s*\)\s*\{[\s\S]{0,400}?taken_places_unavailable[\s\S]{0,120}?\n\s*return;/
+    );
+  });
+
+  it('never abandons a busted player when the ladder is exhausted downward', () => {
+    // THE DEADLOCK. Leaving a 0-chip player `playing` makes finishTournament
+    // unreachable for the life of the process. A mislabelled place is a
+    // bookkeeping error; refusing to eliminate strands the whole field's money.
+    expect(code(ELIM)).toMatch(/finishing_ladder_exhausted/);
+    // The up-walk must actually place the player, not just log.
+    expect(code(ELIM)).toMatch(/place\s*=\s*up;/);
+  });
+
+  it('still hands out strictly decreasing, distinct places in the normal case', () => {
+    expect(code(ELIM)).toMatch(/while\s*\(place >= 2 && takenPositions\.has\(place\)\) place--;/);
+    expect(code(ELIM)).toMatch(/takenPositions\.add\(place\);/);
+    expect(code(ELIM)).toMatch(/nextPosition = Math\.min\(nextPosition, place\) - 1;/);
+  });
+});
+
 describe('a write that decides a payout is checked', () => {
   it('the elimination status write asks for a row count, so its CAS can actually fire', () => {
     // Defect: PostgREST only returns a count when asked. `updateCount` was
@@ -343,9 +399,47 @@ describe('one player, one stack', () => {
     // Defect: `if (seats)` skipped a table whose read failed exactly as if it
     // had no seats, and the sweep went on to decide who was out.
     // Reached, not merely present.
+    //
+    // 2026-08-28: the condition was widened from `if (seatsErr)` to
+    // `if (seatsErr || !chunk)` when the per-table loop became one paged read.
+    // A null page is the same UNKNOWN as an errored one and must bail the same
+    // way — a page that came back as nothing would otherwise end the paging
+    // loop early and hand the sweep a SHORT chip picture, which is the exact
+    // failure this test exists to prevent, wearing a different hat.
     expect(code(ELIM)).toMatch(
       /if\s*\(\s*seatsErr\s*\|\|\s*!chunk\s*\)\s*\{[\s\S]{0,600}?seat_read_failed[\s\S]*?return;/
     );
+  });
+
+  /**
+   * THE SWEEP MUST NOT GET SLOWER AS THE FIELD GETS BIGGER (2026-08-28).
+   *
+   * Reported: a horse at 0 chips, unmarked, for 22 minutes in a running
+   * 326-player freeroll with zero eliminations recorded. The cause was this
+   * read: one AWAITED round-trip PER TABLE, and that event had 37 tables. At
+   * even 150ms apiece the "5-second" sweep needed 5.5s just to read seats, so
+   * `isProcessingEliminations` dropped tick after tick. The bigger the field
+   * the later the sweep — exactly backwards, since a big field is where busts
+   * come fastest.
+   */
+  it('reads seats once for the tournament, not once per table', () => {
+    expect(code(ELIM)).not.toMatch(/for\s*\(const\s*\[tableId\]\s*of\s*this\.tableEngines\)/);
+    expect(code(ELIM)).toMatch(/\.eq\('tables\.tournament_id', this\.tournamentId\)/);
+  });
+
+  it('pages that read, so a big field cannot silently truncate it', () => {
+    // A ceiling here understates the chip picture, and an understated stack is
+    // what the bust sweep below eliminates people for.
+    expect(code(ELIM)).toMatch(/SEAT_PAGE/);
+    expect(code(ELIM)).toMatch(/seat_paging_runaway/);
+  });
+
+  it('covers tables this process holds no engine for', () => {
+    // The old loop read an IN-MEMORY map. A table adopted late, created by the
+    // balancer between hydrations, or orphaned by a restart was invisible: its
+    // players' chips never synced, so they could never appear in the bust list,
+    // so they could never be eliminated, so their seats sat there permanently.
+    expect(code(ELIM)).toMatch(/tables!inner\(tournament_id\)/);
   });
 });
 

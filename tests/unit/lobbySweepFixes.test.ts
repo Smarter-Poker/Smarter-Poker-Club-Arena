@@ -31,6 +31,7 @@ import {
 } from '../../src/components/lobby/lobbyEntries';
 import { tournamentLevel } from '../../src/components/lobby/tournamentFigures';
 import { cashBuyInLabel, cashBuyInRange } from '../../src/lib/cashBuyIn';
+import { sliceStatement } from '../helpers/sourceWindow';
 import {
   FILTER_SPECS,
   rowPassesFilter,
@@ -263,8 +264,8 @@ describe('keyboard navigation does not navigate', () => {
   it('moves a cursor rather than selecting, because selecting can route away', () => {
     expect(TABLE).toContain('setKeyboardFocusId');
     expect(TABLE).toContain('aria-activedescendant');
-    const handler = TABLE.slice(TABLE.indexOf('const handleKeyDown'));
-    expect(handler.slice(0, 1800)).not.toContain('onSelect(sorted[next])');
+    const handler = sliceStatement(TABLE, 'const handleKeyDown');
+    expect(handler).not.toContain('onSelect(sorted[next])');
   });
 });
 
@@ -275,8 +276,21 @@ describe('the player-state chip is visibly three states', () => {
     const defs = CSS.match(/^\.lt-mine \{/gm) ?? [];
     expect(defs.length).toBe(1);
   });
-  it('does not swallow the hover on a row you are seated at', () => {
-    expect(CSS).toContain('.lt-row.is-mine:hover');
+  // REPLACED 2026-08-28, in the commit that removed the behaviour it pinned.
+  // This used to assert `.lt-row.is-mine:hover` existed, so that a row you are
+  // seated at still lit up under the pointer like every other row. Dan then
+  // removed hover from the lobby outright: "REMOVE ANY AND ALL HOVER EFFECT
+  // FROM THE ALL, MTT, NLH, PLO, LIMIT, SPINS, AND HEADS UP LOBBY PAGES."
+  //
+  // The original worry has not gone away, it has changed shape. It was never
+  // really about hover; it was that a seated row must not end up looking
+  // DIFFERENT from its neighbours by accident. So the assertion now pins the
+  // rule that actually matters after the removal: no row in the lobby has a
+  // hover state, seated or not, and the seated row is therefore still exactly
+  // as consistent with its neighbours as the day this test was written.
+  it('has no hover state on any lobby row, seated or not', () => {
+    const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(withoutComments).not.toContain(':hover');
   });
   it('gives the primary action a 44px target', () => {
     expect(CSS).toMatch(/\.lt-act \{[^}]*min-height: 44px/);

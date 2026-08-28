@@ -25,6 +25,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../src', p), 'utf8');
 
@@ -68,6 +69,6 @@ describe('the producer stamps the table identity the guard compares against', ()
     const src = read('pages/ClubHomePage.tsx');
     const payloadStart = src.indexOf('initialTableState: entry');
     expect(payloadStart).toBeGreaterThan(-1);
-    expect(src.slice(payloadStart, payloadStart + 400)).toContain('tableId: entry.id');
+    expect(sliceEnclosingBlock(src, 'initialTableState: entry')).toContain('tableId: entry.id');
   });
 });

@@ -1,0 +1,142 @@
+/**
+ * PORTRAIT LOCK — see PortraitLock.tsx for why this exists and why the
+ * visibility decision is made here rather than in JavaScript.
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WHO GETS LOCKED, AND WHY THE TEST IS NOT "IS IT LANDSCAPE"
+   ═══════════════════════════════════════════════════════════════════════════
+
+   `(orientation: landscape)` alone would catch every desktop ever made. Every
+   desktop is landscape, and a desktop cannot be rotated, so it would show an
+   un-dismissable "turn your phone" screen to a player with no phone.
+
+   `(hover: none) and (pointer: coarse)` is the interaction-media test for a
+   TOUCH-PRIMARY device: no hover-capable pointer, and the primary pointer is a
+   finger. A desktop reports `(hover: hover) and (pointer: fine)`. A laptop with
+   a touchscreen also reports fine/hover, because its PRIMARY pointer is the
+   trackpad — which is the property that makes this the right test rather than
+   `@media (max-width)`, and the reason it does not need a device list to
+   maintain.
+
+   THIS DOES CATCH AN iPAD IN LANDSCAPE, which is a deliberate reading of
+   "portrait mode only" and is the one judgement call in this file. An iPad in
+   landscape is not as broken as a phone (a 308px felt against a phone's 96px,
+   measured) but it is still a portrait oval squeezed by height. If iPads should
+   keep landscape, add `and (max-height: 600px)` to the query below: phones are
+   390-430px tall in landscape and would still lock, iPads are 768px+ and would
+   not. One line, and it is Dan's call rather than a bug.
+
+   NOT `@media (orientation: landscape) and (max-height: 500px)`, which is what
+   TablePage.css uses for its own landscape block: that misses a 430x932 phone
+   turned sideways by 32px, and the whole point here is that nobody reaches a
+   96px table. */
+.portrait-lock {
+  display: none;
+}
+
+@media (orientation: landscape) and (hover: none) and (pointer: coarse) {
+  .portrait-lock {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    /* Above the table (--z-table..--z-header) and above its modals, but BELOW
+       the toast layer on purpose: a toast that fires while the phone is sideways
+       is still worth seeing, and it cannot be acted on anyway. */
+    z-index: 550;
+    align-items: center;
+    justify-content: center;
+    padding: 16px calc(16px + env(safe-area-inset-right, 0px)) 16px
+      calc(16px + env(safe-area-inset-left, 0px));
+
+    /* Opaque, and the same ground the table backdrop paints, so the transition
+       in and out reads as the table being covered rather than as a new screen
+       arriving. */
+    background: radial-gradient(ellipse 120% 100% at 50% 50%, #131a26 0%, #080d15 100%);
+    color: #e8eef7;
+    /* Stated rather than inherited. This overlay is a SIBLING of the table
+       rather than a child of it, so it does not pick up `.table-page`'s
+       typography, and it is the one screen in the product that must be legible
+       when everything behind it has gone wrong. */
+    font-family: var(--font-sans, 'Inter', -apple-system, BlinkMacSystemFont, sans-serif);
+    text-align: center;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    /* It is not dismissable, and nothing behind it is reachable. Both are the
+       point: the table underneath is unusable at this size. */
+    touch-action: none;
+  }
+}
+
+.portrait-lock__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  /* 375px first. A phone in landscape is short, not narrow, so the constraint
+     here is HEIGHT — this whole block has to clear ~390px minus the browser
+     chrome, which is why the icon is 88px and not the 140px a portrait splash
+     would use. */
+  max-width: 420px;
+}
+
+.portrait-lock__icon {
+  width: 88px;
+  height: 88px;
+  color: var(--sp-gold, #d4af37);
+  /* ANIMATION LAW (CLAUDE.md 10.6): this plays every time it is owed, for its
+     full duration, and no toggle may disable it. It carries the instruction, so
+     it is duration-carrying rather than decorative. */
+  animation: portraitLockTurn 2.6s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) infinite;
+  transform-origin: 50% 50%;
+}
+
+/* Starts on its side, turns upright, HOLDS there, repeats. The hold is the
+   informative part — a phone that spins continuously reads as a loading
+   spinner, which is the opposite of the message. */
+@keyframes portraitLockTurn {
+  0%,
+  12% {
+    transform: rotate(-90deg);
+  }
+  38%,
+  88% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(-90deg);
+  }
+}
+
+.portrait-lock__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #ffffff;
+}
+
+.portrait-lock__body {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: rgba(232, 238, 247, 0.82);
+}
+
+.portrait-lock__note {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: var(--sp-gold, #d4af37);
+}
+
+/* Reduced motion collapses the MOTION and never the MEANING (CLAUDE.md 10.6).
+   The phone stops turning; it stays in the upright position it was turning
+   towards, which is the half of the animation that carries the instruction. */
+@media (prefers-reduced-motion: reduce) {
+  .portrait-lock__icon {
+    animation: none;
+    transform: rotate(0deg);
+  }
+}

@@ -61,9 +61,6 @@
 .lobby-table thead th.is-sortable {
   cursor: pointer;
 }
-.lobby-table thead th.is-sortable:hover {
-  color: var(--text-secondary, #c8ccd4);
-}
 .lobby-table thead th.is-sorted {
   color: var(--club-blue-light, #5b83e8);
 }
@@ -108,10 +105,6 @@
    edge now; the heading above it stays centred with all the others. */
 .lobby-table td.lt-col-name {
   text-align: left;
-}
-.lt-row:hover {
-  background: rgba(65, 105, 225, 0.07);
-  box-shadow: inset 2px 0 0 rgba(65, 105, 225, 0.35);
 }
 .lt-row.is-selected {
   background: linear-gradient(90deg, rgba(65, 105, 225, 0.22), rgba(65, 105, 225, 0.08));
@@ -249,11 +242,8 @@
 .lt-row.is-mine {
   box-shadow: inset 3px 0 0 #2ed573;
 }
-/* ...but it must not eat the hover. `.lt-row:hover` and `.lt-row.is-mine` are
-   both (0,2,0), so the later one won unconditionally and the ONE row a player
-   most wants to click was the only row with no hover feedback at all. The
-   green rail stays; the blue wash comes back on top of it. */
-.lt-row.is-mine:hover {
+2,
+0) {
   background: rgba(65, 105, 225, 0.07);
 }
 .lt-row.is-mine.is-selected {
@@ -528,10 +518,6 @@ abbr.lt-variant[title] {
   background: transparent;
   color: var(--text-disabled, #565a63);
   cursor: pointer;
-}
-.lt-fav:hover {
-  color: var(--warning-gold, #ffd700);
-  background: rgba(255, 215, 0, 0.08);
 }
 .lt-fav.is-on {
   color: var(--warning-gold, #ffd700);
@@ -1636,15 +1622,6 @@ abbr.lt-variant[title] {
   .lt-row td:last-child {
     border-radius: 0 9px 9px 0;
   }
-
-  .lt-row:hover {
-    background: #172844;
-    box-shadow:
-      inset 4px 0 0 #50baff,
-      0 5px 16px rgba(0, 0, 0, 0.34);
-    transform: translateY(-1px);
-  }
-
   .lt-row.is-featured {
     background: #162b50;
     box-shadow:

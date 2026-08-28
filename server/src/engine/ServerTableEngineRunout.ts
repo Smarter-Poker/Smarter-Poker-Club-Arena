@@ -26,6 +26,7 @@ import {
 import { isOmahaVariant } from './VariantRules.js';
 import type { SeatPlayer, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
 import { ServerTableEngineTurns } from './ServerTableEngineTurns.js';
 
 export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
@@ -50,6 +51,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   protected allInFirstPauseMs = 2000;
   protected allInStreetPauseMs = 1400;
   protected allInPreShowdownPauseMs = 1200;
+
+  /**
+   * The reveal gate: how long a run-out street is given to actually appear
+   * before its new equity is allowed to change. See
+   * HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS for the full reasoning and where
+   * the 1250ms comes from. Instance field, like its neighbours, so a test can
+   * drive the ORDERING without spending the seconds.
+   */
+  protected allInStreetRevealMs = HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS;
 
   /**
    * Dan 2026-08-20: the settle beat between a player's action landing and the
@@ -340,9 +350,16 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         insuredAmount: accepted_offer?.insuredAmount,
       };
     } else {
-      // POKERBROS PARITY 2026-08-26 (Dan): every decline is final for the hand.
-      this.insuranceEngine.decline(this.tableId, userId, true);
-      return { success: true, status: 'declined_for_hand' };
+      // POKERBROS PARITY 2026-08-26 (Dan): a decline is final for the hand —
+      // EXCEPT preflop (Dan 2026-08-28: "OFFERED PRE FLOP, AND REOFFERED ON
+      // THE FLOP"): a preflop decline is street-only; the flop offer is where
+      // finality begins.
+      const pending = this.insuranceEngine
+        .getOffers(this.tableId)
+        .find((o) => o.playerId === userId && o.status === 'offered');
+      const forHand = (pending?.boardLength ?? 3) >= 3;
+      this.insuranceEngine.decline(this.tableId, userId, forHand);
+      return { success: true, status: forHand ? 'declined_for_hand' : 'declined_street' };
     }
   }
 
@@ -536,12 +553,21 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // ═══════════════════════════════════════════════════════════════════════
     // EQUITY DISPLAY: Calculate and broadcast equity for ALL all-in players
     // This is shown on every table (insurance or not) for all players/observers.
-    // ROUND 3 AUDIT FIX (2026-08-20): suppressed on double-board hands — the
-    // solver runs board 1 only, so the percentages it would show players are
-    // simply wrong for a pot that half-rides on board 2.
+    // ROUND 3 AUDIT FIX (2026-08-20): was suppressed on double-board hands
+    // because the solver ran board 1 only. MULTI-BOARD EQUITY 2026-08-28
+    // (spec §14): the solver now prices EVERY live board and averages —
+    // each board carries an equal share of every pot layer, so the average
+    // per-board equity IS the player's true share of the money. The most
+    // dramatic runouts on the platform get their percentages back.
     // ═══════════════════════════════════════════════════════════════════════
-    if (allInPlayers.length >= 2 && !doubleBoardHand) {
-      void this.broadcastAllInEquity(allInPlayers, board, pot);
+    if (allInPlayers.length >= 2) {
+      const hcState = doubleBoardHand ? this.handController.getState?.() : null;
+      const extraBoards = hcState
+        ? [hcState.communityCards2, hcState.communityCards3].filter(
+            (b): b is import('../types.js').Card[] => Array.isArray(b) && b.length > 0
+          )
+        : undefined;
+      void this.broadcastAllInEquity(allInPlayers, board, pot, extraBoards);
     }
     const insuranceEnabled = this.insuranceEngine.isEnabled(this.tableId) && !doubleBoardHand;
     // SEQUENCING 2026-08-26 (Dan's leader-seat recording): when BOTH features
@@ -842,7 +868,23 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           break;
         }
 
+        // THE STREET MUST BE SEEN BEFORE THE NUMBERS MOVE (Dan 2026-08-28,
+        // verbatim: "EQUITY CHANGES ONLY AFTER THE FLOP IS DISPLAYED, (NOT
+        // BEFORE OR DURING)").
+        //
+        // broadcastCurrentState() above SENT the card; it has not been SEEN.
+        // The client is still animating it in — 1.25s for a flop in
+        // slow-reveal mode. Broadcasting the new equity in the same instant,
+        // which is what this did, flips the percentages to the outcome while
+        // the card that caused it is still turning over: on the reported hand
+        // the villain read 0% and the hero 100% before the river was face up.
+        // That tells the player how it ends and then shows them the card as a
+        // formality.
+        //
+        // Hold for the reveal FIRST, then let the numbers move.
         if (allInPlayers.length >= 2) {
+          await this.sleep(this.allInStreetRevealMs);
+          if (!this.running || this.handController !== controller) break;
           await this.broadcastAllInEquity(allInPlayers, result.board, pot);
         }
 
@@ -1604,7 +1646,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         if (p.eligiblePlayers.includes(leaderId)) eligible += p.amount;
       }
       if (!(total > 0) || !(eligible > 0)) return grossPot;
-      const { rake, bbjFee } = this.handController.computeRakeAndBBJ();
+      // PREFLOP INSURANCE FIX 2026-08-28: an all-in runout always reaches the
+      // flop, so price the deductions as if it is already seen — a preflop
+      // offer on sawFlop=false claimed zero rake and overstated the winnings.
+      const { rake, bbjFee } = this.handController.computeRakeAndBBJ(true);
       const netFrac = Math.max(0, (total - rake - bbjFee) / total);
       return Math.round(eligible * netFrac * 100) / 100;
     } catch {
@@ -1634,7 +1679,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   protected async broadcastAllInEquity(
     allInPlayers: import('../types.js').SeatPlayer[],
     board: import('../types.js').Card[],
-    pot: number
+    pot: number,
+    /**
+     * MULTI-BOARD EQUITY 2026-08-28 (spec §14): boards 2..N of a multi-board
+     * bomb pot. When present, equity is computed per board and AVERAGED —
+     * every board carries an equal share of every pot layer, so the average
+     * is the player's true share of the money. Absent on single-board hands.
+     */
+    extraBoards?: import('../types.js').Card[][]
   ): Promise<void> {
     // PERF FIX (2026-07-24): equity now runs on the EquityWorkerPool (worker
     // threads) instead of a synchronous monteCarloEquity(...,5000) with a crypto
@@ -1643,19 +1695,43 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // hand against the KNOWN others in ONE simulation (the true all-in equity),
     // off the main event loop. Degrades to a synchronous compute only if the pool
     // is unavailable.
-    const isShortDeck = this.tableInfo?.game_variant === 'short_deck';
-    const isOmaha = isOmahaVariant(this.tableInfo?.game_variant || '');
+    // VARIANT OVERRIDE 2026-08-28 (spec §10.1): the LIVE hand's variant — a
+    // PLO bomb hand at an NLH table must be priced with the Omaha evaluator.
+    const equityVariant = this.activeHandVariant() || this.tableInfo?.game_variant || 'nlh';
+    const isShortDeck = equityVariant === 'short_deck';
+    const isOmaha = isOmahaVariant(equityVariant);
     const valid = allInPlayers.filter((p) => (p.cards || []).length >= 2);
     const equities: Array<{ userId: string; username: string; equity: number; seat: number }> = [];
+    // MULTI-BOARD EQUITY 2026-08-28: all live boards, board 1 first.
+    const allBoards = [board, ...(extraBoards ?? [])];
     // ── ADDITIVE observability (#5): time the all-in equity computation ──
     const equityComputeStartMs = Date.now();
 
     try {
       const hands = valid.map((p) => p.cards || []);
-      const fractions = await getEquityPool().estimateEquity(hands, board, [], 1000, {
-        shortDeck: isShortDeck,
-        omaha: isOmaha,
-      });
+      // Per-board fractions, then the equal-share average. The iteration
+      // budget is split across boards so a triple-board hand costs what a
+      // single-board hand always has.
+      const perBoardIters = Math.max(400, Math.ceil(1000 / allBoards.length));
+      // PARALLEL 2026-08-28: the boards were priced one after another with an
+      // `await` inside the loop, so a triple-board all-in cost three times the
+      // latency it needed to. That latency sits between the reveal gate and
+      // the percentages appearing — exactly the window Dan's "equity only
+      // AFTER the street lands" rule is measured in, so a slow computation
+      // there pushes the numbers further from the card that caused them. The
+      // worker pool is concurrent by construction; ask it for every board at
+      // once.
+      const perBoard: number[][] = await Promise.all(
+        allBoards.map((b) =>
+          getEquityPool().estimateEquity(hands, b, [], perBoardIters, {
+            shortDeck: isShortDeck,
+            omaha: isOmaha,
+          })
+        )
+      );
+      const fractions = hands.map(
+        (_, i) => perBoard.reduce((s, f) => s + (f[i] ?? 0), 0) / allBoards.length
+      );
       for (let i = 0; i < valid.length; i++) {
         equities.push({
           userId: valid[i].user_id,
@@ -1671,17 +1747,27 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       // no Omaha branch — its numbers were wrong for PLO and noisy everywhere.
       // insuranceEquity is exact vs the known hands and variant-aware
       // (flop/turn enumerate <=990 boards; preflop samples 6,000 seeded).
-      const variantName = this.tableInfo?.game_variant || 'nlh';
+      const variantName = equityVariant;
       for (const player of valid) {
         try {
           const opponents = valid
             .filter((o) => o.user_id !== player.user_id)
             .map((o) => o.cards || []);
-          const r = insuranceEquity(player.cards || [], opponents, board, variantName, isShortDeck);
+          // MULTI-BOARD 2026-08-28: exact per-board equity, averaged.
+          let sum = 0;
+          for (const b of allBoards) {
+            sum += insuranceEquity(
+              player.cards || [],
+              opponents,
+              b,
+              variantName,
+              isShortDeck
+            ).equity;
+          }
           equities.push({
             userId: player.user_id,
             username: player.username || 'Unknown',
-            equity: Math.round(r.equity * 10) / 10,
+            equity: Math.round((sum / allBoards.length) * 10) / 10,
             seat: player.seat,
           });
         } catch {
@@ -1720,6 +1806,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       table_id: this.tableId,
       hand_number: this.handCount,
       board: board.map((c) => `${c.rank}${c.suit}`),
+      // MULTI-BOARD 2026-08-28: how many boards the percentages average over
+      // (1 on normal hands) — clients may caption "avg across N boards".
+      board_count: allBoards.length,
       pot,
       equities,
     });
@@ -1785,11 +1874,6 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       });
     };
 
-    // Preflop all-in: no offer before the flop — deal up to the flop first.
-    if (board.length < 3) {
-      continueAfterResponses();
-      return;
-    }
     if (result.complete) {
       // Board already full — nothing left to insure; finish the hand.
       this.waitForInsuranceResponses(() => {
@@ -1806,25 +1890,57 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // - If players are TIED (same hand rank + kickers), NO insurance offered
     // - On later streets, re-evaluate — if a different player takes the lead,
     //   insurance is offered to THEM (if they haven't declined for hand)
+    //
+    // PREFLOP OFFER (Dan 2026-08-28: "THIS SHOULD BE OFFERED PRE FLOP, AND
+    // REOFFERED ON THE FLOP"): a preflop all-in used to deal straight to the
+    // flop and only offer there. It now offers on the EMPTY board first.
+    // Preflop there is no made hand to rank, so the leader is the exact
+    // EQUITY favorite (insuranceEquity's seeded 6,000-board sample — the same
+    // number the pricing uses); a dead-even matchup (within 0.05%) offers to
+    // nobody, mirroring the tied-hands rule.
     // ═══════════════════════════════════════════════════════════════════════
     const variant = this.tableInfo?.game_variant || 'nlh';
     const isOmaha = isOmahaVariant(variant);
     const handEvaluator = isOmaha ? evaluateOmahaHand : evaluateHand;
+    const isShortDeckPreflop = variant === 'short_deck';
 
-    // Evaluate all hands on current board
-    const playerEvals = offerPlayers.map((p) => ({
-      ...p,
-      hand: handEvaluator(p.holeCards, result.board),
-    }));
+    let bestHandPlayer: { playerId: string; holeCards: import('../types.js').Card[] } | null = null;
+    let isTied = false;
+    if (board.length < 3) {
+      let bestEq = -1;
+      for (const p of offerPlayers) {
+        const opps = offerPlayers.filter((o) => o.playerId !== p.playerId).map((o) => o.holeCards);
+        if (opps.length === 0 || p.holeCards.length < 2) continue;
+        try {
+          const r = insuranceEquity(p.holeCards, opps, result.board, variant, isShortDeckPreflop);
+          if (Math.abs(r.equity - bestEq) < 0.05) {
+            isTied = true;
+          } else if (r.equity > bestEq) {
+            bestEq = r.equity;
+            bestHandPlayer = p;
+            isTied = false;
+          }
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.preflop_leader_equity');
+        }
+      }
+      if (isTied) bestHandPlayer = null;
+    } else {
+      // Evaluate all hands on current board
+      const playerEvals = offerPlayers.map((p) => ({
+        ...p,
+        hand: handEvaluator(p.holeCards, result.board),
+      }));
 
-    // Sort by hand rank descending (best first)
-    playerEvals.sort((a, b) => compareHands(b.hand, a.hand));
+      // Sort by hand rank descending (best first)
+      playerEvals.sort((a, b) => compareHands(b.hand, a.hand));
 
-    // Check for tie: if top two players have identical hands, no insurance
-    const isTied =
-      playerEvals.length >= 2 && compareHands(playerEvals[0].hand, playerEvals[1].hand) === 0;
+      // Check for tie: if top two players have identical hands, no insurance
+      isTied =
+        playerEvals.length >= 2 && compareHands(playerEvals[0].hand, playerEvals[1].hand) === 0;
 
-    const bestHandPlayer = isTied ? null : playerEvals[0];
+      bestHandPlayer = isTied ? null : playerEvals[0];
+    }
 
     // FIX 139: Pass shortDeck to insurance engine for correct equity calculations
     const isShortDeckInsurance = this.tableInfo?.game_variant === 'short_deck';
@@ -1974,7 +2090,12 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     this.broadcastCurrentState();
 
     // RE-BROADCAST EQUITY: all players and observers see updated percentages
-    // as each card is dealt.
+    // as each card is dealt — but only ONCE THE CARD IS FACE UP. Same defect
+    // as pacedAllInRunout: the state broadcast above sent the street, the
+    // client is still animating it, and moving the percentages now spoils the
+    // card that is still turning over (Dan 2026-08-28).
+    await this.sleep(this.allInStreetRevealMs);
+    if (!this.handController) return;
     await this.broadcastAllInEquity(allInPlayers, result.board, pot);
 
     if (result.complete) {
@@ -1982,6 +2103,13 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       this.handController.finalizeRunout();
       return;
     }
+
+    // STREET REVEAL PAUSE (Dan 2026-08-28: "IT MUST ACTUALLY SHOW THE FLOP
+    // FIRST, WAIT 1 SECONDS AFTER FLOP BEFORE THE OFFER POPS UP. USERS NEED
+    // TO SEE THE FLOPS, TURNS AND RIVERS"): the card just landed in the
+    // broadcast above — hold a full beat so every seat SEES the street
+    // before the next dialog covers the table.
+    await this.sleep(1000);
 
     // More cards to come — re-enter the flow on the new board (fresh leader
     // evaluation, fresh offer). The catch mirrors handleAllInRunout's: an
@@ -2037,7 +2165,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       context?.allInPlayers.find((p) => p.user_id === playerId)?.username ||
       this.seatedPlayers.find((p) => p.user_id === playerId)?.username ||
       'Player';
-    const street = !context ? '' : context.board.length === 3 ? 'flop' : 'turn';
+    // PREFLOP OFFER 2026-08-28: the empty board is a street of its own now.
+    const street = !context
+      ? ''
+      : context.board.length < 3
+        ? 'preflop'
+        : context.board.length === 3
+          ? 'flop'
+          : 'turn';
     // Outs as a probability of the NEXT card: outs / unseen cards. The popup
     // renders it next to the count ("10 Outs - 22.7%").
     let outPct = 0;

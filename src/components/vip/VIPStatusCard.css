@@ -26,11 +26,6 @@
 }
 
 .vip-status-card:hover {
-  transform: translateY(-4px) rotateX(2deg) rotateY(-1deg);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.06),
-    0 16px 48px rgba(0, 0, 0, 0.5),
-    0 0 60px color-mix(in srgb, var(--tier-color) 25%, transparent);
 }
 
 /* Holographic rainbow shimmer overlay */

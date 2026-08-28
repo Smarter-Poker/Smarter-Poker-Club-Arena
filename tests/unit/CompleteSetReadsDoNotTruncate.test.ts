@@ -36,6 +36,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceCall } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8');
 /** Strip comments so prose about the old ceilings cannot satisfy a pin. */
@@ -103,7 +104,7 @@ describe('paged complete-set reads stay ordered', () => {
     expect(idx, 'expected a fetchAllRows call').toBeGreaterThan(-1);
     // The factory body follows the call; it must contain an .order() before
     // its .range().
-    const body = src.slice(idx, idx + 900);
+    const body = sliceCall(src.slice(idx), 'fetchAllRows');
     expect(body).toMatch(/\.order\(/);
     expect(body).toMatch(/\.range\(/);
   });

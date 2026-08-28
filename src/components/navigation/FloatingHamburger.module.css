@@ -24,7 +24,6 @@
 }
 
 .floatingButton:hover {
-  transform: translateY(-2px) scale(1.08);
 }
 
 .floatingButton:active {

@@ -423,8 +423,6 @@
 
 .btn-save:hover {
   background: rgba(24, 119, 242, 0.1);
-  transform: translateY(-2px);
-  box-shadow: 0 0 15px rgba(24, 119, 242, 0.3);
 }
 
 .btn-start {
@@ -436,8 +434,6 @@
 .btn-start:hover {
   background: #166fe5;
   border-color: #166fe5;
-  transform: translateY(-2px);
-  box-shadow: 0 0 20px rgba(24, 119, 242, 0.5);
 }
 
 .btn-save:disabled,
@@ -571,7 +567,6 @@
   background: rgba(255, 255, 255, 0.15);
   border-color: rgba(255, 255, 255, 0.5);
   color: white;
-  transform: translateY(-2px);
 }
 
 .btn-template:disabled {
@@ -593,8 +588,6 @@
 
 .btn-delete:hover {
   background: rgba(220, 38, 38, 0.1);
-  transform: translateY(-2px);
-  box-shadow: 0 0 15px rgba(220, 38, 38, 0.4);
 }
 
 /* DELETE MODAL */
@@ -715,4 +708,20 @@
   .config-section h3 {
     font-size: 0.9rem;
   }
+}
+
+/* HOST PRESETS (spec 3.2, 2026-08-28): one-tap bomb pot bundles. */
+.config-preset-chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 158, 44, 0.45);
+  background: rgba(38, 24, 8, 0.6);
+  color: #ffcf7d;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.config-preset-chip:hover {
+  filter: brightness(1.2);
 }

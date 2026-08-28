@@ -276,7 +276,15 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             cards: showCards ? (p.cards ?? []) : [],
             is_folded: p.is_folded ?? false,
             is_all_in: p.is_all_in ?? false,
-            is_sitting_out: p.is_sitting_out ?? false,
+            /* THE ENGINE, NOT THE ROSTER (2026-08-28). `p.is_sitting_out` is the
+               HAND roster's copy, and ServerTableEngineDealing builds that field
+               hardcoded `false` on purpose so HandController deals a sat-out
+               tournament player in and blinds them off. Publishing it meant every
+               snapshot told every client that nobody was ever sitting out, which
+               is why the tag was invisible to other players. publishIdleState has
+               always read the engine here; this is the same read, so the live and
+               idle payloads finally agree. */
+            is_sitting_out: this.disconnectEngine.isSittingOut(this.tableId, p.user_id),
             // SHOWDOWN SYSTEM 2026-08-25: resync parity with the broadcast.
             is_mucked:
               state.stage === 'showdown' && !p.is_folded && this.isMuckedAtShowdown(p.user_id),
@@ -508,7 +516,10 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             cards: cardsOut,
             is_folded: p.is_folded ?? false,
             is_all_in: p.is_all_in ?? false,
-            is_sitting_out: p.is_sitting_out ?? false,
+            /* See the identical read in getTableState(): the hand roster's copy
+               of this flag is deliberately always false, so it could never tell
+               a watching client that somebody had sat out. */
+            is_sitting_out: this.disconnectEngine.isSittingOut(this.tableId, p.user_id),
             is_disconnected: !this.disconnectEngine.isConnected(this.tableId, p.user_id), // Bible V8 §2.3
             time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id), // Bible V8 §2.3
             time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id), // Bible V8 §2.3

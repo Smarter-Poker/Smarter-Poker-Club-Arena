@@ -40,6 +40,9 @@ const TABLE_CONSUMES = [
   'showPotOdds',
   'confirmAllIn',
   'autoMuckWinners',
+  // Dan 2026-08-28: consumed by TournamentStartingTicker (the scrolling
+  // announcement marquee bails out when this is false).
+  'showTicker',
 ] as const;
 
 /**

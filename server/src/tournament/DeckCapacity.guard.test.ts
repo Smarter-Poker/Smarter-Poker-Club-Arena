@@ -19,6 +19,7 @@ import fs from 'fs';
 import path from 'path';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
 import { holeCardCount, deckSizeFor } from '../engine/VariantRules.js';
+import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -65,7 +66,7 @@ describe('a deliberate refusal must not read as a wedged loop', () => {
     const src = code(DEALING);
     const guardAt = src.indexOf('deck_capacity_exceeded');
     expect(guardAt).toBeGreaterThan(-1);
-    const window = src.slice(guardAt, guardAt + 600);
+    const window = sliceEnclosingBlock(src, 'deck_capacity_exceeded');
     // markProgress must come BEFORE the sleep, or the watchdog kills the engine
     const progressAt = window.indexOf('this.markProgress()');
     const sleepAt = window.indexOf('this.sleep(30000)');

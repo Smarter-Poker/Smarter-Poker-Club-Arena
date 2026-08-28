@@ -694,6 +694,12 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'v23_river_reads', pairs: 6000, a: {}, b: { v23Reads: false } },
   { name: 'shortdeck_v23', variant: 'short_deck', pairs: 6000, a: {}, b: { v23Variants: false } },
   { name: 'plo8_v23_lowdraw', variant: 'plo8', pairs: 6000, a: {}, b: { v23Variants: false } },
+  // ── V24 (2026-08-28) ── Dan full-potted 8 PLO hands in a PKO and was never
+  // called once. The price defense is measurable on a PLO card; the bounty
+  // layer and the tempo floors only exist in tournament/live conditions the
+  // league cannot deal, so those ship scenario-tested with telemetry.
+  { name: 'plo4_v24_price', variant: 'plo4', pairs: 6000, a: {}, b: { v24PloDefense: false } },
+  { name: 'plo6_v24_price', variant: 'plo6', pairs: 6000, a: {}, b: { v24PloDefense: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
   { name: 'mind_layer', a: {}, b: { mind: false } },
@@ -736,6 +742,9 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v23Reads: false,
       v23Variants: false,
       v23Spin: false,
+      v24Bounty: false,
+      v24PloDefense: false,
+      v25PloTourney: false,
       mind: false,
       streetIQ: false,
       handReading: false,
@@ -822,15 +831,94 @@ let leagueRunning = false;
  * almost certainly is. (The date guard below fails OPEN, deliberately — there,
  * nobody is holding the work and both writers upsert.)
  */
+/**
+ * A DEAD CLAIM MUST NOT BURN THE DAY (2026-08-28).
+ *
+ * MEASURED, on the day the PM window shipped. The 04:04 UTC league run
+ * claimed 2026-08-28 and wrote ZERO rows: the engine container was recreated
+ * at 04:06, two minutes in. The claim is the lock, so nothing retried, and
+ * the AM slot was simply gone - the only reason that day has any measurement
+ * at all is that the new 16:00 window happened to exist.
+ *
+ * Every ingredient of that failure is routine here. `server/**` merges deploy
+ * automatically, the engine restarts several times a day, and a league run
+ * takes ~20 minutes; a restart landing inside one is expected, not exotic.
+ *
+ * So a claim now carries a LIVENESS test: it owns the day only while it is
+ * either fresh or has something to show for itself. A claim older than
+ * CLAIM_STALE_MS whose job wrote no rows for that date is a crashed run, and
+ * the next instance takes the work over by stamping its own name on the row.
+ *
+ * The takeover is a CONDITIONAL update - `.eq('claimed_by', dead.claimed_by)`
+ * - so when two instances notice the same corpse simultaneously, exactly one
+ * UPDATE matches and the loser stands down. That is the same
+ * one-winner property the INSERT gives, applied to the second attempt.
+ */
+const CLAIM_STALE_MS = 60 * 60 * 1000;
+
+/** Rows already written for this job+date - the proof a claim did work. */
+async function claimProducedRows(job: string, date: string): Promise<boolean | null> {
+  // Only the league jobs write horse_league_results; anything else is asked
+  // to prove nothing and keeps the old all-or-nothing claim.
+  if (job !== 'league' && job !== 'league_pm') return null;
+  const { data, error } = await supabase
+    .from('horse_league_results')
+    .select('matchup')
+    .eq('run_date', date)
+    .limit(1);
+  if (error) throw new Error(error.message);
+  return (data?.length ?? 0) > 0;
+}
+
 export async function claimNightlyJob(job: string, date: string): Promise<boolean> {
+  const me = process.env.HOSTNAME ?? 'engine';
   try {
     const { error } = await supabase
       .from('horse_job_runs')
-      .insert({ job, run_date: date, claimed_by: process.env.HOSTNAME ?? 'engine' });
+      .insert({ job, run_date: date, claimed_by: me });
     if (!error) return true;
     const code = (error as { code?: string }).code;
-    if (code === '23505') return false; // unique_violation: another instance owns tonight
-    throw new Error(error.message);
+    if (code !== '23505') throw new Error(error.message);
+
+    // Somebody owns it. Is that owner alive?
+    const { data: existing, error: readErr } = await supabase
+      .from('horse_job_runs')
+      .select('claimed_at, claimed_by')
+      .eq('job', job)
+      .eq('run_date', date)
+      .maybeSingle();
+    if (readErr) throw new Error(readErr.message);
+    if (!existing) return false; // vanished under us - let the next tick retry
+
+    const claimedAtMs = Date.parse(String(existing.claimed_at));
+    const ageMs = isFinite(claimedAtMs) ? Date.now() - claimedAtMs : 0;
+    if (ageMs < CLAIM_STALE_MS) return false; // still plausibly working
+
+    const produced = await claimProducedRows(job, date);
+    if (produced !== false) return false; // it delivered, or cannot be judged
+
+    // Snapshot the owner BEFORE the update: the row object may be a live
+    // reference (a test double, a future client that returns the same
+    // object), and reading it afterwards would report OUR name as the
+    // corpse's - which is exactly the confusing message this line exists to
+    // avoid emitting.
+    const prevOwner = String(existing.claimed_by);
+    const { data: taken, error: takeErr } = await supabase
+      .from('horse_job_runs')
+      .update({ claimed_by: me, claimed_at: new Date().toISOString() })
+      .eq('job', job)
+      .eq('run_date', date)
+      .eq('claimed_by', prevOwner) // the race-loser matches nothing
+      .select('job');
+    if (takeErr) throw new Error(takeErr.message);
+    if (!taken || taken.length === 0) return false;
+
+    console.warn(
+      `[HorseLeague] ${job} ${date} was claimed by ${prevOwner} ` +
+        `${Math.round(ageMs / 60000)} min ago and wrote NOTHING - taking it over. ` +
+        `A restart inside a run is the usual cause.`
+    );
+    return true;
   } catch (err) {
     reportError(err, 'HorseLeague.claimNightlyJob');
     return false;
@@ -875,6 +963,10 @@ async function maybeRunLeague(): Promise<void> {
       lastLeagueDate = today; // remember for the rest of this process's life
       return;
     }
+    // NOTE: lastLeagueDate is per-process, so a RESTARTED instance arrives
+    // here with it empty and reaches the claim - which is exactly how a
+    // crashed run gets taken over by its own replacement.
+
     // V13.1: leader/standby means TWO containers boot the full engine path and
     // both reach this line within seconds. Claim the night before working it.
     if (!(await claimNightlyJob('league', today))) {

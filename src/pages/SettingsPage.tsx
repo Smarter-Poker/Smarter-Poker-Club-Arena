@@ -40,6 +40,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import UserProfileEdit from '../components/social/UserProfileEdit';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useTableSettings } from '../hooks/useTableSettings';
+import { soundService } from '../services/SoundService';
 import {
   CARD_BACKS,
   DEFAULT_SETTINGS,
@@ -128,7 +129,25 @@ export default function SettingsPage() {
   const tableSettingsRef = useRef(tableSettings);
   tableSettingsRef.current = tableSettings;
 
-  const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  /**
+   * LAZY INITIALIZER (2026-08-28, first-paint flash sweep): this began at
+   * DEFAULT_SETTINGS and the real values arrived in a passive effect — the
+   * read is SYNCHRONOUS localStorage, so every visit to /settings painted
+   * every toggle, the theme selector and the card-back dropdown at their
+   * defaults for one frame and then snapped to the saved state. Same class
+   * as the table-theme first-paint fix. The mount effect below still runs
+   * (it re-merges and loads the email); it now confirms rather than swaps.
+   */
+  const [settings, setSettings] = useState<UserSettings>(() => {
+    let initial = DEFAULT_SETTINGS;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+      if (saved) initial = validateSettings(JSON.parse(saved));
+    } catch {
+      /* hostile storage: defaults */
+    }
+    return fromTableSettings(tableSettingsRef.current, initial);
+  });
   const [hasChanges, setHasChanges] = useState(false);
   const [saving, setSaving] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
@@ -643,6 +662,19 @@ export default function SettingsPage() {
       // table already on screen picks these up without a reload.
       updateTableSettings(toTableSettings(settings));
 
+      /* Dan 2026-08-28: the Sound Effects switch on this page never reached
+         the sound engine. It persisted soundEnabled into
+         club-arena-table-settings, but the gate that actually silences
+         playback (utils/soundGate, consulted by SoundService.shouldPlay)
+         reads 'club_arena_sounds' / 'ca_sound_enabled' — neither of which
+         this page wrote. So muting here said "Settings saved!", the felt
+         kept playing, and the in-table switch still read ON: two switches
+         permanently disagreeing. setEnabled() updates the live engine AND
+         persists BOTH gate keys (the HamburgerMenu path); volume is applied
+         live for the same reason rather than waiting for a table mount. */
+      soundService.setEnabled(settings.soundEnabled);
+      soundService.setMasterVolume(Math.max(0, Math.min(100, settings.soundVolume)) / 100);
+
       /* Sync theme to Zustand store so Shell.tsx applies it immediately.
          2026-08-26: "Auto (System)" was offered in the dropdown, accepted by
          validation, saved, and then DROPPED here by an
@@ -876,6 +908,22 @@ export default function SettingsPage() {
             />
           </div>
 
+          {/* Dan 2026-08-28: "add a toggle... in the Club Arena settings to
+              turn the ticker on or off." Same stored setting the in-table
+              panel writes, so either surface flips the live bar. */}
+          <div className={styles.settingRow}>
+            <div className={styles.settingInfo}>
+              <span className={styles.settingLabel}>Announcement Ticker</span>
+              <span className={styles.settingDesc}>
+                Show The Scrolling Tournament And Announcement Ticker
+              </span>
+            </div>
+            <Toggle
+              checked={settings.showTicker}
+              onChange={(v) => updateSetting('showTicker', v)}
+            />
+          </div>
+
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Animation Speed</span>
@@ -913,16 +961,12 @@ export default function SettingsPage() {
         >
           <h2>Gameplay</h2>
 
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Confirm All-In</span>
-              <span className={styles.settingDesc}>Require Confirmation Before Going All-In</span>
-            </div>
-            <Toggle
-              checked={settings.confirmAllIn}
-              onChange={(v) => updateSetting('confirmAllIn', v)}
-            />
-          </div>
+          {/* Confirm All-In toggle REMOVED 2026-08-28: it saved and synced,
+              but ActionPanel destructures the prop to _confirmAllInDeprecated
+              and never reads it — the in-table SettingsPanel removed its copy
+              for the same documented reason ("accept the action"). A toggle
+              that does nothing is worse than no toggle. The stored field
+              stays for compatibility with old saves. */}
 
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>

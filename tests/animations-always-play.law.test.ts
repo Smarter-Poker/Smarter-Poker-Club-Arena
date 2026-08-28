@@ -34,7 +34,14 @@ const DEALER_BTN = read('src/components/table/DealerButton.tsx');
 const CONFETTI = read('src/components/table/ConfettiCanvas.tsx');
 const PARTICLES = read('src/components/table/ParticleSystem.tsx');
 const CHEST = read('src/components/tournament/MysteryBountyChest.tsx');
-const KO = read('src/components/tournament/KnockoutAnimation.tsx');
+/* The full-screen KnockoutAnimation these pins were written against was
+   DELETED on 2026-08-28 and replaced by a seat-anchored layer (Dan, PokerBros
+   parity). Per this file's own rule — "if you are DELIBERATELY replacing a
+   mechanism with a better one, move the pin to the new mechanism in the same
+   commit and say so" — every knockout pin below now reads the new component,
+   and the ones the new shape makes possible have been added beside them. */
+const KO = read('src/components/table/SeatKnockout.tsx');
+const KO_CSS = read('src/components/table/SeatKnockout.css');
 const BUS = read('src/core/MasterBus.ts');
 const REDUCED = read('src/styles/reducedMotion.css');
 const REACTIONS = read('src/components/table/TableReactions.tsx');
@@ -100,7 +107,35 @@ describe('LAW: no animation may be skipped by state plumbing', () => {
     expect(CHEST).toContain('playSoundsRef');
     expect(CHEST).not.toMatch(/\}, \[chestKey, playSounds\]/);
     expect(KO).toContain('playSoundsRef');
-    expect(KO).not.toMatch(/\}, \[data, playSounds/);
+    expect(KO).not.toMatch(/\}, \[hit\.id, hit\.isHero, placed, playSounds\]/);
+  });
+
+  it('simultaneous knockouts are not serialised behind each other', () => {
+    // Two heads in one hand. The retired full-screen overlay was fed through
+    // useAnimationQueue — correct for one 3.6s centre-stage ceremony, wrong
+    // for an effect drawn on a chair, because the second knockout then stamped
+    // a seat that had been empty for three seconds. An ARRAY of live hits, one
+    // per busted chair, is what the reference does and what this pins.
+    expect(TABLE_PAGE).toMatch(/useState<SeatKnockoutHit\[\]>\(\[\]\)/);
+    expect(TABLE_PAGE).not.toMatch(/useAnimationQueue<KnockoutData>/);
+  });
+
+  it('the KO stamp outlives the seat it was stamped on', () => {
+    // player_eliminated nulls that seat within milliseconds — deliberately, the
+    // server only stamps left_at at the END of eliminatePlayer. A knockout
+    // rendered as a child of SeatSlot would be unmounted mid-punch, so the
+    // layer is a SIBLING of the seat ring and positions itself from the same
+    // percentages. If this moves inside the seat map, the animation dies.
+    expect(TABLE_PAGE).toMatch(/<SeatKnockoutLayer/);
+    expect(TABLE_PAGE).toContain('lastSeatOfUserRef');
+  });
+
+  it('the bounty ships on the same beat as the stamp, summed once per winner', () => {
+    // Busting two players pays two bounties and the reference shows ONE
+    // number. Two floats stacked on one seat is the bug this prevents; the
+    // coalescing window IS the stamp beat, so the chips leave as KO lands.
+    expect(TABLE_PAGE).toContain('SKO_STAMP_AT_MS * getAnimationSpeed()');
+    expect(TABLE_PAGE).toContain('bountyAwardAccRef');
   });
 
   it('the room-message handler reads live refs, not first-commit closures', () => {
@@ -155,6 +190,13 @@ describe('LAW: animations land where they aim, at the speed the player chose', (
     expect(SEAT_CSS).toContain('seatStackGlow calc(0.6s * var(--animation-speed, 1))');
     expect(SEAT_CSS).toContain('stackDeltaFloat calc(2s * var(--animation-speed, 1))');
     expect(DEALER_BTN).toContain('calc(0.6s * var(--animation-speed, 1))');
+    // The knockout is the newest pair and the easiest to break: the glove, the
+    // star and the stamp are three CSS animations whose delays have to stay in
+    // step with SKO_IMPACT_AT_MS / SKO_STAMP_AT_MS on the JS side.
+    expect(KO_CSS).toContain('skoGloveStrike calc(0.93s * var(--animation-speed, 1))');
+    expect(KO_CSS).toContain('calc(0.46s * var(--animation-speed, 1))'); // impact delay
+    expect(KO_CSS).toContain('calc(0.93s * var(--animation-speed, 1))'); // stamp delay
+    expect(KO).toContain('SKO_IMPACT_AT_MS) * speed');
   });
 
   it('throw flinch and shake are scoped to their own table', () => {
@@ -180,6 +222,16 @@ describe('LAW: reduced motion removes motion, never meaning', () => {
     // information. Collapsing it finished every countdown instantly.
     expect(REDUCED).toContain("data-motion='keep'");
     expect(SEAT_TSX).toContain('data-motion="keep"');
+  });
+
+  it('the KO stamp keeps a readable hold when everything else collapses', () => {
+    // The glove and the star are drama and may go. The stamp is the ANSWER to
+    // "why did that chair just empty" — under the global 1ms collapse it
+    // flashes for a single frame, which is the same as deleting it.
+    expect(KO).toContain('data-motion="keep"');
+    const reduced = KO_CSS.slice(KO_CSS.indexOf('prefers-reduced-motion'));
+    expect(reduced).toMatch(/\.sko__glove[\s\S]*animation:\s*none/);
+    expect(reduced).toContain('skoStampReduced');
   });
 });
 

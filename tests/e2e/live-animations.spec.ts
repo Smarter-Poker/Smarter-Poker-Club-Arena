@@ -274,23 +274,33 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
     expect(result.swConfFall, 'a big multiplier must rain confetti').toBe(1800);
   });
 
-  test('the KNOCKOUT: vignette, shockwave, the head cracks and FALLS', async ({ page }) => {
+  test('the KNOCKOUT: the glove swings, the star breaks, KO stamps the seat', async ({ page }) => {
+    // Replaced 2026-08-28. The full-screen knockout this used to measure
+    // (vignette / shockwave / falling head) was deleted for a seat-anchored
+    // one, so the pin moves to the new mechanism — same rule the law test
+    // states. Every number below is measured off Dan's PokerBros capture.
     const b = await beat(
       page,
-      `const ko=document.createElement('div');ko.className='ko ko--impact';
-       ko.innerHTML='<div class="ko__vignette"></div>'+
-         '<div class="ko__shockwave"></div>'+
-         '<div class="ko__stack"><div class="ko__head"><div class="ko__head-disc">'+
-         '<img class="ko__head-img" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt=""></div></div></div>';
-       document.querySelector('.table-page').appendChild(ko);`
+      `const l=document.createElement('div');l.className='sko-layer';
+       const k=document.createElement('div');k.className='sko';
+       k.style.setProperty('--sko-x','30%');k.style.setProperty('--sko-y','40%');
+       k.innerHTML='<div class="sko__glove"><svg viewBox="0 0 128 96"></svg></div>'+
+         '<div class="sko__burst"><span class="sko__ray" style="--sko-ray-i:0"></span></div>'+
+         '<div class="sko__core"></div>'+
+         '<span class="sko__ember" style="--sko-ember-x:0.2;--sko-ember-y:0.3"></span>'+
+         '<div class="sko__stamp" data-motion="keep">KO</div>';
+       l.appendChild(k);document.querySelector('.table-page').appendChild(l);`
     );
-    expect(b.koVignetteIn, 'the table must darken on impact').toBe(340);
-    expect(b.koShockwave, 'the hit must throw a shockwave').toBe(620);
-    expect(b.koHeadIn, 'the head must slam in').toBe(420);
-    // The centrepiece: the head falls 500ms AFTER it lands. Both the duration
-    // and the delay are the drama — a fall that starts instantly reads as a
-    // glitch, not a knockout.
-    expect(b.koHeadFall, 'the head must FALL').toBe(1100);
+    // The glove creeps, then strikes through inside one 930ms pass — the creep
+    // is what makes the strike read as a strike rather than a pan.
+    expect(b.skoGloveStrike, 'the glove must swing THROUGH the seat').toBe(930);
+    expect(b.skoCoreFlash, 'the hit must flash white-hot').toBe(340);
+    expect(b.skoRay, 'the flash must be a spiked STAR, not a ring').toBe(320);
+    expect(b.skoEmber, 'the star must come apart, not switch off').toBe(440);
+    // The centrepiece: KO lands 930ms after the glove appears, and then HOLDS.
+    // Both the delay and the length are the drama — a stamp that arrives with
+    // the punch reads as a label, and one that leaves with it is unreadable.
+    expect(b.skoStampLife, 'KO must slam on and BURN').toBe(1470);
   });
 
   test('the MYSTERY CHEST: drop, breathe under tension, lid opens', async ({ page }) => {

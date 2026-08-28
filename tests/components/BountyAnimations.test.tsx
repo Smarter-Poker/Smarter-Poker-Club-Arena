@@ -23,7 +23,11 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import KnockoutAnimation from '../../src/components/tournament/KnockoutAnimation';
+import SeatKnockoutLayer, {
+  type SeatKnockoutHit,
+  SKO_DURATION_MS,
+  SKO_IMPACT_AT_MS,
+} from '../../src/components/table/SeatKnockout';
 import MysteryBountyChest, { getTier } from '../../src/components/tournament/MysteryBountyChest';
 
 // canvas-confetti is stubbed globally via the alias in vitest.config.ts
@@ -32,6 +36,8 @@ import MysteryBountyChest, { getTier } from '../../src/components/tournament/Mys
 vi.mock('../../src/services/SoundService', () => ({
   soundService: {
     playBountyCollected: vi.fn(),
+    playKnockoutSwing: vi.fn(),
+    playKnockoutImpact: vi.fn(),
     playMysteryChestLand: vi.fn(),
     playMysteryChestOpen: vi.fn(),
     playMysteryChestExplosion: vi.fn(),
@@ -43,12 +49,15 @@ vi.mock('../../src/services/SoundService', () => ({
 
 import { soundService } from '../../src/services/SoundService';
 
-const KO = {
-  knockerName: 'Alice',
+/** Nine seats' worth of the hero-rotated percentages TablePage renders from. */
+const SEATS = Array.from({ length: 9 }, (_, i) => ({ x: 10 + i * 9, y: 20 + i * 7 }));
+
+const hit = (over: Partial<SeatKnockoutHit> = {}): SeatKnockoutHit => ({
+  id: 'bob',
+  seatIndex: 3,
   eliminatedName: 'Bob',
-  amount: 2500,
-  addedToHead: 1250,
-};
+  ...over,
+});
 
 const CHEST = {
   knockerUserId: 'user-winner',
@@ -81,120 +90,123 @@ afterEach(() => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-describe('KnockoutAnimation', () => {
-  it('renders nothing until a knockout arrives', () => {
-    const { container } = render(<KnockoutAnimation data={null} onDone={() => {}} />);
-    expect(container.querySelector('.ko')).toBeNull();
+describe('SeatKnockout — the glove, the star, the stamp', () => {
+  const layer = (hits: SeatKnockoutHit[], props: Record<string, unknown> = {}) =>
+    render(<SeatKnockoutLayer hits={hits} seatPositions={SEATS} onDone={() => {}} {...props} />);
+
+  it('renders nothing until somebody busts', () => {
+    const { container } = layer([]);
+    expect(container.querySelector('.sko-layer')).toBeNull();
   });
 
-  it('shows both players and plays the bounty cue', () => {
-    render(<KnockoutAnimation data={KO} onDone={() => {}} />);
-    expect(screen.getByText('Alice')).toBeTruthy();
-    expect(screen.getByText('Bob')).toBeTruthy();
-    expect(soundService.playBountyCollected).toHaveBeenCalledTimes(1);
+  it('draws the knockout ON the busted seat, not in the middle of the felt', () => {
+    // The whole point of the rewrite. The percentages are the same
+    // hero-rotated ones the seat ring renders from, so the glove lands on that
+    // player's plate at every breakpoint.
+    const { container } = layer([hit({ seatIndex: 3 })]);
+    const el = container.querySelector('.sko') as HTMLElement;
+    expect(el).toBeTruthy();
+    expect(el.style.getPropertyValue('--sko-x')).toBe(`${SEATS[3].x}%`);
+    expect(el.style.getPropertyValue('--sko-y')).toBe(`${SEATS[3].y}%`);
+  });
+
+  it('SIMULTANEOUS knockouts are simultaneous', () => {
+    // The retired full-screen overlay was fed through useAnimationQueue, so a
+    // three-way all-in showed the second knockout 3.6s after the first — by
+    // which time that seat had been empty for three seconds. Two heads, two
+    // chairs, same frames.
+    const { container } = layer([
+      hit({ id: 'bob', seatIndex: 3 }),
+      hit({ id: 'carol', seatIndex: 6, eliminatedName: 'Carol' }),
+    ]);
+    const all = container.querySelectorAll('.sko');
+    expect(all.length).toBe(2);
+    expect((all[0] as HTMLElement).style.getPropertyValue('--sko-x')).toBe(`${SEATS[3].x}%`);
+    expect((all[1] as HTMLElement).style.getPropertyValue('--sko-x')).toBe(`${SEATS[6].x}%`);
+  });
+
+  it('swings first and connects later — the travel is not silent', () => {
+    layer([hit()]);
+    expect(soundService.playKnockoutSwing).toHaveBeenCalledTimes(1);
+    expect(soundService.playKnockoutImpact).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(SKO_IMPACT_AT_MS + 20);
+    });
+    expect(soundService.playKnockoutImpact).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells the impact cue whose knockout it is', () => {
+    layer([hit({ isHero: true })]);
+    act(() => {
+      vi.advanceTimersByTime(SKO_IMPACT_AT_MS + 20);
+    });
+    expect(soundService.playKnockoutImpact).toHaveBeenCalledWith(true);
   });
 
   it('NEVER blocks input — it fires while you may be in a hand', () => {
-    const { container } = render(<KnockoutAnimation data={KO} onDone={() => {}} />);
-    const overlay = container.querySelector('.ko') as HTMLElement;
     // Asserted on the stylesheet contract rather than computed style, because
     // jsdom does not apply the imported CSS. The class must exist and the rule
     // must say pointer-events: none — checked in the CSS test below.
-    expect(overlay).toBeTruthy();
-    expect(overlay.className).toContain('ko');
+    const { container } = layer([hit()]);
+    expect(container.querySelector('.sko-layer')).toBeTruthy();
   });
 
-  it('delays the payout so the hit and the money are separate beats', () => {
-    render(<KnockoutAnimation data={KO} onDone={() => {}} />);
-    // Immediately after impact the bounty has not landed yet.
-    expect(screen.queryByText('BOUNTY')).toBeNull();
-    act(() => {
-      vi.advanceTimersByTime(900);
-    });
-    expect(screen.getByText('BOUNTY')).toBeTruthy();
+  it('draws every piece of the reference: glove, star, embers, stamp', () => {
+    const { container } = layer([hit()]);
+    expect(container.querySelector('.sko__glove svg'), 'the glove is inline SVG').toBeTruthy();
+    expect(container.querySelectorAll('.sko__ray').length).toBe(12);
+    expect(container.querySelector('.sko__core')).toBeTruthy();
+    expect(container.querySelectorAll('.sko__ember').length).toBeGreaterThan(0);
+    expect(container.querySelector('.sko__stamp')!.textContent).toBe('KO');
   });
 
-  it('counts the bounty UP rather than printing it', () => {
-    const { container } = render(<KnockoutAnimation data={KO} onDone={() => {}} />);
-    const amount = () =>
-      (container.querySelector('.ko__bounty-amount') as HTMLElement | null)?.textContent;
-
-    act(() => {
-      vi.advanceTimersByTime(900);
-    });
-    // Mid-climb it must NOT already read the final figure.
-    act(() => {
-      vi.advanceTimersByTime(120);
-    });
-    expect(amount()).not.toBe('2,500');
-
-    // ...and it must arrive exactly, not approximately. Scoped to the bounty
-    // element because the PKO split beat renders the same figure again.
-    act(() => {
-      vi.advanceTimersByTime(800);
-    });
-    expect(amount()).toBe('2,500');
+  it('exempts the stamp from the global reduced-motion collapse', () => {
+    // Everything else here is drama and may collapse. The stamp is the ANSWER
+    // to "why did that chair just empty" — collapsed to 1ms it flashes for one
+    // frame, which is the same as deleting it.
+    const { container } = layer([hit()]);
+    expect(container.querySelector('.sko__stamp')!.getAttribute('data-motion')).toBe('keep');
+    expect(container.querySelector('.sko__glove')!.getAttribute('data-motion')).toBeNull();
   });
 
-  it('shows the PKO split with BOTH destinations, which players consistently miss', () => {
-    render(<KnockoutAnimation data={KO} onDone={() => {}} />);
-    act(() => {
-      vi.advanceTimersByTime(1600);
-    });
-    expect(screen.getByText(/paid to you/i)).toBeTruthy();
-    expect(screen.getByText(/onto your head/i)).toBeTruthy();
-    expect(screen.getByText('1,250')).toBeTruthy();
-  });
-
-  it('omits the split entirely for a flat bounty', () => {
-    render(<KnockoutAnimation data={{ ...KO, addedToHead: 0 }} onDone={() => {}} />);
-    act(() => {
-      vi.advanceTimersByTime(1600);
-    });
-    expect(screen.queryByText(/onto your head/i)).toBeNull();
-  });
-
-  it('shows the eliminated head, which is what the bounty actually is', () => {
-    const { container } = render(<KnockoutAnimation data={KO} onDone={() => {}} />);
-    expect(container.querySelector('.ko__head')).toBeTruthy();
-    // No avatar in the payload -> falls back to the initial rather than a gap.
-    expect(screen.getByText('B')).toBeTruthy();
-  });
-
-  it('uses the eliminated avatar when the payload carries one', () => {
-    const { container } = render(
-      <KnockoutAnimation
-        data={{ ...KO, eliminatedAvatar: 'https://example.test/a.webp' }}
-        onDone={() => {}}
+  it('expires itself and reports done, per seat', () => {
+    const onDone = vi.fn();
+    render(
+      <SeatKnockoutLayer
+        hits={[hit({ id: 'bob' }), hit({ id: 'carol', seatIndex: 6 })]}
+        seatPositions={SEATS}
+        onDone={onDone}
       />
     );
-    const img = container.querySelector('.ko__head-img') as HTMLImageElement;
-    expect(img).toBeTruthy();
-    expect(img.getAttribute('src')).toBe('https://example.test/a.webp');
-  });
-
-  it('tells the player more knockouts are queued behind this one', () => {
-    render(<KnockoutAnimation data={KO} onDone={() => {}} queuedBehind={2} />);
-    expect(screen.getByText(/\+2 more knockouts/i)).toBeTruthy();
-  });
-
-  it('says nothing about a queue when there is none', () => {
-    render(<KnockoutAnimation data={KO} onDone={() => {}} queuedBehind={0} />);
-    expect(screen.queryByText(/more knockout/i)).toBeNull();
-  });
-
-  it('clears itself and reports done', () => {
-    const onDone = vi.fn();
-    render(<KnockoutAnimation data={KO} onDone={onDone} />);
     act(() => {
-      vi.advanceTimersByTime(3700);
+      vi.advanceTimersByTime(SKO_DURATION_MS + 50);
     });
-    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onDone.mock.calls.map((c) => c[0]).sort()).toEqual(['bob', 'carol']);
+  });
+
+  it('a knockout it cannot place still EXPIRES', () => {
+    // A bust at another table, or one whose seat this client never saw. It
+    // draws nothing — a 50/50 fallback would put a boxing glove on the board —
+    // but it must still tell the parent, or it leaks in the hits array forever.
+    const onDone = vi.fn();
+    const { container } = render(
+      <SeatKnockoutLayer hits={[hit({ seatIndex: 42 })]} seatPositions={SEATS} onDone={onDone} />
+    );
+    expect(container.querySelector('.sko')).toBeNull();
+    expect(soundService.playKnockoutSwing, 'invisible means inaudible too').not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(SKO_DURATION_MS + 50);
+    });
+    expect(onDone).toHaveBeenCalledWith('bob');
   });
 
   it('stays silent on a background table', () => {
-    render(<KnockoutAnimation data={KO} onDone={() => {}} playSounds={false} />);
-    expect(soundService.playBountyCollected).not.toHaveBeenCalled();
+    layer([hit()], { playSounds: false });
+    act(() => {
+      vi.advanceTimersByTime(SKO_IMPACT_AT_MS + 20);
+    });
+    expect(soundService.playKnockoutSwing).not.toHaveBeenCalled();
+    expect(soundService.playKnockoutImpact).not.toHaveBeenCalled();
   });
 });
 
@@ -556,7 +568,7 @@ describe('MysteryBountyChest — suspense and context', () => {
 // properties that actually matter for correctness are asserted at the source.
 describe('CSS contracts', () => {
   const koCss = readFileSync(
-    resolve(__dirname, '../../src/components/tournament/KnockoutAnimation.css'),
+    resolve(__dirname, '../../src/components/table/SeatKnockout.css'),
     'utf8'
   );
   const mbcCss = readFileSync(
@@ -564,13 +576,28 @@ describe('CSS contracts', () => {
     'utf8'
   );
 
-  it('the knockout overlay does not capture pointer events', () => {
-    const rule = koCss.match(/\n\.ko \{([^}]*)\}/);
-    expect(rule, 'expected a top-level .ko rule').toBeTruthy();
+  it('the knockout layer does not capture pointer events', () => {
+    const rule = koCss.match(/\n\.sko-layer \{([^}]*)\}/);
+    expect(rule, 'expected a top-level .sko-layer rule').toBeTruthy();
     expect(
       rule![1],
       'a knockout fires while you may be in a hand — it must never eat the fold button'
     ).toMatch(/pointer-events:\s*none/);
+  });
+
+  it('every knockout duration is scaled by the speed the player chose', () => {
+    // The retired overlay scaled only its JS beats, so at 0.5x its CSS ran at
+    // double speed against its own timers and the stamp was stripped
+    // mid-keyframe. Both halves multiply by the same variable now.
+    const durations = [...koCss.matchAll(/animation:[^;]*?(\d+(?:\.\d+)?)s/g)];
+    expect(durations.length).toBeGreaterThan(4);
+    for (const m of [...koCss.matchAll(/animation:\s*([^;]+);/g)]) {
+      // `animation: none` is the reduced-motion switch-off and has no duration
+      // to scale; everything that DOES run a duration must scale it.
+      expect(m[1], `"${m[1].trim()}" must scale with --animation-speed`).toMatch(
+        /var\(--animation-speed, 1\)|^\s*none\b/
+      );
+    }
   });
 
   it('the chest DOES capture pointer events — it is asking to be tapped', () => {
@@ -594,7 +621,7 @@ describe('CSS contracts', () => {
     ];
     expect(names.length).toBeGreaterThan(10);
     for (const n of names) {
-      expect(n, `${n} must be prefixed — @keyframes is a GLOBAL namespace`).toMatch(/^(ko|mbc)/);
+      expect(n, `${n} must be prefixed — @keyframes is a GLOBAL namespace`).toMatch(/^(sko|mbc)/);
     }
   });
 

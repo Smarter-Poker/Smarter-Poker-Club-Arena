@@ -202,7 +202,10 @@ import {
 } from '../components/table/TableMenuIcons';
 import { useToast } from '../components/common/Toast';
 import { isVibrationAllowed, setVibrationAllowed } from '../utils/vibrationGate';
-import KnockoutAnimation, { type KnockoutData } from '../components/tournament/KnockoutAnimation';
+import SeatKnockoutLayer, {
+  type SeatKnockoutHit,
+  SKO_STAMP_AT_MS,
+} from '../components/table/SeatKnockout';
 import MysteryBountyChest, {
   formatBountyTierLabel,
   type MysteryChestData,
@@ -1041,15 +1044,78 @@ export default function TablePage({
   // TAPS it open and the other nine players must see that same tap. That is
   // `chestChannelRef` below.
   //
-  // QUEUED, not a plain useState. A three-way all-in busts two players, the
-  // engine processes eliminations one at a time, so two broadcasts land
-  // milliseconds apart — a single state slot meant the second overwrote the
-  // first and one of the two knockouts was never shown. Two heads taken, one
-  // celebration. See src/hooks/useAnimationQueue.ts.
-  const knockoutQueue = useAnimationQueue<KnockoutData>();
   const chestQueue = useAnimationQueue<MysteryChestData>();
-  const knockout = knockoutQueue.current;
   const [chestRemoteOpened, setChestRemoteOpened] = useState(false);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  KNOCKOUTS — PARALLEL, AND AT THE SEAT (Dan 2026-08-28, PokerBros parity)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * An ARRAY, deliberately not `useAnimationQueue`.
+   *
+   * The queue was the right answer for the full-screen overlay this replaces:
+   * one 3.6s centre-stage ceremony cannot be shown twice at once, so a
+   * three-way all-in played the second knockout after the first had finished.
+   * Dan's capture shows the reference doing the opposite — both victims get
+   * their own glove, their own star and their own stamp ON THE SAME FRAMES,
+   * because each one is drawn on its own chair and two chairs do not collide.
+   * Serialising them here would mean the second knockout stamped a seat that
+   * had already been empty for two and a half seconds, which reads as a bug.
+   *
+   * See src/components/table/SeatKnockout.tsx.
+   */
+  const [koHits, setKoHits] = useState<SeatKnockoutHit[]>([]);
+  /**
+   * Eliminated players already stamped. A knockout is one per busted player,
+   * and the engine can repeat a broadcast (reconnect, or the elimination sweep
+   * re-running); a ref rather than state because the decision is made
+   * synchronously inside the broadcast handler, where a state read would still
+   * see the pre-broadcast snapshot and stamp the same seat twice.
+   */
+  const koSeenRef = useRef<Set<string>>(new Set());
+  /**
+   * WHERE EVERY PLAYER LAST SAT, and the reason this exists.
+   *
+   * The bounty ships ~930ms after the glove appears, on the same beat as the
+   * stamp. By then `player_eliminated` has already vacated the busted seat —
+   * TablePage does that immediately and on purpose, because the server only
+   * stamps `table_seats.left_at` at the END of eliminatePlayer. So at the
+   * moment the chips need somewhere to fly FROM, the roster no longer knows
+   * where the player was. This does.
+   *
+   * Never pruned during a table session: it is bounded by the number of
+   * distinct people who have ever sat here, and a stale entry can only ever
+   * be overwritten by a real one. Cleared when the table itself changes.
+   */
+  const lastSeatOfUserRef = useRef<Map<string, number>>(new Map());
+  /**
+   * Bounties won by the same player, waiting to be shown as ONE number.
+   *
+   * The reference is explicit about this: busting two players in one hand
+   * produces a single summed "+4,175" at the winner, not two labels stacked on
+   * one seat. The engine broadcasts once per elimination, so the two arrive
+   * milliseconds apart and are added up here. Keyed by the knocker, because
+   * two different players can each take a head in the same three-way pot and
+   * those are two separate numbers at two separate seats.
+   */
+  const bountyAwardAccRef = useRef<Map<string, { amount: number; fromUserIds: string[] }>>(
+    new Map()
+  );
+  const bountyAwardTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  /**
+   * Handed to the effect that owns the seat geometry. The broadcast handler is
+   * defined hundreds of lines above `seatPositions` / `tableScalerRef`, so it
+   * cannot fly a chip itself — same split as `insurancePayoutFly`.
+   */
+  const [bountyAwardFly, setBountyAwardFly] = useState<{
+    nonce: number;
+    knockerUserId: string;
+    amount: number;
+    fromUserIds: string[];
+    isHero: boolean;
+  } | null>(null);
+  const bountyAwardNonceRef = useRef(0);
 
   /**
    * ═══════════════════════════════════════════════════════════════════════
@@ -9377,14 +9443,98 @@ export default function TablePage({
                     setChestRemoteOpened(false);
                   }
                 } else {
-                  knockoutQueue.enqueue({
-                    knockerName: b.knockerName || 'Player',
-                    eliminatedName: b.eliminatedName || 'Player',
-                    amount: Number(b.amount) || 0,
-                    addedToHead: Number(b.addedToHead) || 0,
-                    isHero: !!b.knockerUserId && b.knockerUserId === userId,
-                    eliminatedAvatar: b.eliminatedAvatar || undefined,
-                  });
+                  /* ── THE KNOCKOUT (Dan 2026-08-28, PokerBros parity) ──────
+                     Two things happen, on two beats, and they are separate
+                     because the reference separates them: the glove lands on
+                     the BUSTED player's chair now, and the money reaches the
+                     WINNER's chair ~930ms later, on the same frame as the KO
+                     stamp. See src/components/table/SeatKnockout.tsx. */
+
+                  /* TABLE SCOPE. `bounty_collected` rides the TOURNAMENT
+                     channel, which every table in the event is subscribed to.
+                     The mystery branch above has always filtered on this; the
+                     knockout branch never did, so until now a bust on table 3
+                     played a knockout animation on tables 1 and 2 as well —
+                     for strangers, over a live hand. Older engine builds send
+                     no tableId, and those fall through to the seat lookup
+                     below, which cannot resolve a player who is not here. */
+                  if (b.tableId && b.tableId !== tableId) return;
+
+                  const eliminatedUserId = String(b.eliminatedUserId || '');
+                  const knockerUserId = String(b.knockerUserId || '');
+                  const koIsHero = !!knockerUserId && knockerUserId === userId;
+
+                  /* ONE STAMP PER BUSTED PLAYER. A reconnect replays the
+                     broadcast and the 5s elimination sweep can re-emit it;
+                     without this the same chair is punched twice. */
+                  const koKey = eliminatedUserId || `${b.eliminatedName}-${Date.now()}`;
+                  if (!koSeenRef.current.has(koKey)) {
+                    koSeenRef.current.add(koKey);
+
+                    /* The roster still holds the busted player at THIS moment
+                       — the engine broadcasts the bounty before it broadcasts
+                       `player_eliminated`. The ref is the fallback for the
+                       race where it does not, and for a client that joined
+                       mid-elimination. */
+                    const liveSeat = eliminatedUserId
+                      ? (tableStateRef.current?.players?.findIndex(
+                          (p) => p?.id === eliminatedUserId
+                        ) ?? -1)
+                      : -1;
+                    const seatIndex =
+                      liveSeat >= 0
+                        ? liveSeat
+                        : (lastSeatOfUserRef.current.get(eliminatedUserId) ?? -1);
+
+                    if (seatIndex >= 0) {
+                      setKoHits((prev) => [
+                        ...prev,
+                        {
+                          id: koKey,
+                          seatIndex,
+                          eliminatedName: b.eliminatedName || 'Player',
+                          isHero: koIsHero,
+                        },
+                      ]);
+                    }
+                  }
+
+                  /* THE MONEY, SUMMED. Busting two players in one hand pays
+                     two bounties and the reference shows ONE number for them.
+                     Accumulate under the knocker and let the first one's timer
+                     ship the total; anything that arrives inside that window
+                     joins it rather than opening a second float on the same
+                     seat. The window IS the stamp beat, so the chips leave as
+                     the KO lands rather than on an unrelated schedule. */
+                  const koAmount = Number(b.amount) || 0;
+                  if (knockerUserId && koAmount > 0) {
+                    const acc = bountyAwardAccRef.current.get(knockerUserId) || {
+                      amount: 0,
+                      fromUserIds: [] as string[],
+                    };
+                    acc.amount += koAmount;
+                    if (eliminatedUserId && !acc.fromUserIds.includes(eliminatedUserId)) {
+                      acc.fromUserIds.push(eliminatedUserId);
+                    }
+                    bountyAwardAccRef.current.set(knockerUserId, acc);
+
+                    if (!bountyAwardTimersRef.current.has(knockerUserId)) {
+                      const t = setTimeout(() => {
+                        bountyAwardTimersRef.current.delete(knockerUserId);
+                        const pending = bountyAwardAccRef.current.get(knockerUserId);
+                        bountyAwardAccRef.current.delete(knockerUserId);
+                        if (!pending || !(pending.amount > 0)) return;
+                        setBountyAwardFly({
+                          nonce: ++bountyAwardNonceRef.current,
+                          knockerUserId,
+                          amount: pending.amount,
+                          fromUserIds: pending.fromUserIds,
+                          isHero: knockerUserId === userId,
+                        });
+                      }, SKO_STAMP_AT_MS * getAnimationSpeed());
+                      bountyAwardTimersRef.current.set(knockerUserId, t);
+                    }
+                  }
                 }
                 setTableState((prev) => {
                   const next = { ...prev.bountyMap };
@@ -13458,6 +13608,115 @@ export default function TablePage({
     haptic.medium();
   }, [insurancePayoutFly, seatPositions, spawnPotWinFloat]);
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  KNOCKOUT — WHERE EVERYONE LAST SAT (Dan 2026-08-28)
+   * ═══════════════════════════════════════════════════════════════════════
+   * Recorded on every roster change so that the bounty, which ships ~930ms
+   * after the punch lands, still knows which chair to fly the chips out of.
+   * By then `player_eliminated` has vacated that seat — see the note on
+   * lastSeatOfUserRef for why that vacate is immediate and correct.
+   */
+  useEffect(() => {
+    const seen = lastSeatOfUserRef.current;
+    tableState.players.forEach((p, i) => {
+      if (p?.id) seen.set(p.id, i);
+    });
+  }, [tableState.players]);
+
+  /** A different table is a different set of chairs, and a different event. */
+  useEffect(() => {
+    lastSeatOfUserRef.current.clear();
+    koSeenRef.current.clear();
+    setKoHits([]);
+  }, [tableId]);
+
+  /* Pending bounty totals must not outlive the page. Without this, hopping
+     tables inside the 930ms coalescing window fires setBountyAwardFly on an
+     unmounted component. */
+  useEffect(
+    () => () => {
+      for (const t of bountyAwardTimersRef.current.values()) clearTimeout(t);
+      bountyAwardTimersRef.current.clear();
+      bountyAwardAccRef.current.clear();
+    },
+    []
+  );
+
+  /** A stamp that has finished burning. Frees the seat for the next knockout. */
+  const handleSeatKnockoutDone = useCallback((id: string) => {
+    setKoHits((prev) => prev.filter((h) => h.id !== id));
+  }, []);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  KNOCKOUT — THE BOUNTY SHIPS (Dan 2026-08-28, PokerBros parity)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Chips leave EACH busted seat and land on the winner's, and ONE summed
+   * "+N" rides with them. Both halves of that sentence are the reference:
+   * two heads in one hand throw two streams of chips and produce a single
+   * number, which is how a player can tell at a glance what the hand was
+   * worth without adding two labels together mid-animation.
+   *
+   * `.pot-win-float` is reused rather than reinvented — it is already the
+   * measured PokerBros yellow (#ffe94a) at the measured size, and a bounty
+   * that looked different from a pot award would imply a difference that does
+   * not exist. Both are money arriving at your seat.
+   *
+   * Lives here rather than in the broadcast handler because it needs the seat
+   * geometry defined above; identical split to `insurancePayoutFly`.
+   */
+  useEffect(() => {
+    if (!bountyAwardFly) return;
+    const { knockerUserId, amount, fromUserIds, isHero } = bountyAwardFly;
+    setBountyAwardFly(null);
+    if (!(amount > 0)) return;
+
+    const players = tableStateRef.current?.players;
+    const liveKnockerSeat = players?.findIndex((p) => p?.id === knockerUserId) ?? -1;
+    const knockerSeat =
+      liveKnockerSeat >= 0 ? liveKnockerSeat : (lastSeatOfUserRef.current.get(knockerUserId) ?? -1);
+    // The winner is not at this table (their bust happened elsewhere in the
+    // event, or they have already been moved by a table balance). Nothing to
+    // fly the money to, so nothing is drawn — never a 50/50 fallback.
+    if (knockerSeat < 0) return;
+
+    const toPos = seatPctToViewportPx(
+      tableScalerRef.current,
+      seatPositions[knockerSeat] || { x: 50, y: 50 }
+    );
+
+    /* One stream per head taken. Falling back to the pot anchor covers the
+       knockout whose victim this client never saw seated — the money still
+       visibly arrives, it just has no chair to leave. */
+    const origins = fromUserIds
+      .map((uid) => {
+        const seat = lastSeatOfUserRef.current.get(uid);
+        return typeof seat === 'number' && seat >= 0 ? seatPositions[seat] : null;
+      })
+      .filter((p): p is { x: number; y: number } => !!p);
+    const sources = origins.length ? origins : [POT_ANCHOR_PCT];
+
+    const perStream = amount / sources.length;
+    const events = sources.flatMap((pct) =>
+      createPotToWinnerEvent(seatPctToViewportPx(tableScalerRef.current, pct), toPos, perStream)
+    );
+    setChipAnimations((prev) => [...prev, ...events]);
+
+    // ONE float, carrying the TOTAL, from the first stream's origin.
+    const fromPos = seatPctToViewportPx(tableScalerRef.current, sources[0]);
+    spawnPotWinFloat(fromPos.x, fromPos.y, toPos.x, toPos.y, amount);
+
+    if (isHero && ambientSoundsAllowedRef.current) {
+      try {
+        soundService.playBountyCollected();
+      } catch {
+        /* audio is best-effort — it never gets to break the visual */
+      }
+    }
+  }, [bountyAwardFly, seatPositions, spawnPotWinFloat]);
+
   /* PERF 2026-08-25. Both of these were computed INSIDE the seat map, so each
      ran once per seat per render — and at the time this component re-rendered
      for the whole of anybody's turn, because it owned the action clock's state.
@@ -15993,15 +16252,12 @@ export default function TablePage({
 
       {/* Phase 1.2 PR-F: hero disconnect banner. Only renders when the
           engine FSM reports MISSING or DISCONNECTED for this user. */}
-      {/* ── Bounty knockout (2026-08-20) ───────────────────────────────────
-          Non-blocking: it sits over the felt while you may still be in a
-          hand, so it must never eat a click on the action buttons. */}
-      <KnockoutAnimation
-        data={knockout}
-        queuedBehind={knockoutQueue.pending}
-        onDone={knockoutQueue.complete}
-        playSounds={ambientSoundsAllowed}
-      />
+      {/* ── Bounty knockout ────────────────────────────────────────────────
+          The full-screen KnockoutAnimation that used to mount here was
+          DELETED on 2026-08-28 (Dan, PokerBros parity). A knockout is now
+          drawn on the busted player's own chair by SeatKnockoutLayer, which
+          mounts inside .table-scaler with the seat ring — see the note there.
+          Nothing takes the felt over for it any more. */}
 
       {/* ── Mystery bounty chest (2026-08-20) ──────────────────────────────
           The opposite case: a takeover, because it is ASKING the winner to
@@ -16998,6 +17254,28 @@ export default function TablePage({
             events={activeThrows}
             seatPositions={throwSeatPositions}
             onEventComplete={handleThrowComplete}
+          />
+
+          {/* ── The knockout, on the chair it happened to (Dan 2026-08-28) ──
+              INSIDE .table-scaler, and that placement is the whole design.
+              It reads the same hero-rotated `seatPositions` percentages the
+              seat ring, the dealer button and the deal animation render from,
+              so the glove lands on the busted player's plate at every
+              breakpoint and follows the table through a resize or a
+              multi-table rescale. A sibling of the scaler — where the retired
+              full-screen overlay lived — would resolve those percentages
+              against the wrong box and put the glove on the board.
+
+              A SIBLING OF THE SEATS, not a child of one. The stamp has to
+              outlive the seat: `player_eliminated` sets that seat to null
+              within milliseconds, and a child of SeatSlot would be unmounted
+              mid-punch. Here, the chair empties underneath a KO that is still
+              burning — exactly what the reference does. */}
+          <SeatKnockoutLayer
+            hits={koHits}
+            seatPositions={seatPositions}
+            onDone={handleSeatKnockoutDone}
+            playSounds={ambientSoundsAllowed}
           />
 
           {/* Deal Animation — card backs flying from dealer to players on new hand */}

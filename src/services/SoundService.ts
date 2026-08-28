@@ -1837,6 +1837,72 @@ class SoundService {
 
   /**
    * ═══════════════════════════════════════════════════════════════════════
+   *  THE KNOCKOUT, IN TWO CUES (2026-08-28)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Dan's PokerBros capture has TWO separate bursts of audio per knockout,
+   * not one: a wind-up from the frame the glove appears (t0..+250ms) and the
+   * hit itself (+460ms..+1000ms). Firing a single cue on impact leaves the
+   * 460ms the glove spends travelling completely silent, and the swing is
+   * what makes the hit land — the ear is told something is coming before the
+   * eye has finished reading it.
+   *
+   * These pair with SeatKnockout.tsx: SKO_IMPACT_AT_MS schedules the second.
+   */
+
+  /** The wind-up — air moving past a glove, before it connects. */
+  playKnockoutSwing() {
+    // 'showdown' rather than 'big_win': the swing must never win a frame
+    // against the hit it is announcing, and it is a lead-in, not a payoff.
+    if (!this.shouldPlay('showdown', 'event') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // Band-limited noise, opening as it comes through — a whoosh is a filter
+    // sweep, and two short bursts read as one moving object.
+    this.createNoiseBurst(t, 0.16, 0.09, 900);
+    this.createNoiseBurst(t + 0.09, 0.14, 0.07, 1900);
+
+    // The body behind the air, dropping in pitch as it passes.
+    this.playTone(210.0, 0.22, 0.1, 'sine', 0.0);
+    this.playTone(140.0, 0.26, 0.08, 'sine', 0.12);
+  }
+
+  /**
+   * The hit, and the stamp that lands after it.
+   *
+   * The stamp's tick is scheduled HERE, on the AudioContext clock, rather than
+   * as a third cue behind a setTimeout. Same reasoning as playDealSequence:
+   * a main thread busy laying out a table that just lost a seat will drift a
+   * timer by tens of milliseconds, and the 50ms priority window then eats the
+   * late arrival outright. The audio clock does not drift and does not care
+   * what React is doing.
+   *
+   * @param isHero true when the viewer threw the punch — louder, not different.
+   */
+  playKnockoutImpact(isHero = false) {
+    if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // The crack: broadband and very short, over a body thump low enough to be
+    // felt on a phone speaker that cannot reproduce it.
+    this.createNoiseBurst(t, 0.09, isHero ? 0.34 : 0.26, 3600);
+    this.playTone(70.0, 0.34, isHero ? 0.36 : 0.28, 'sine', 0.0);
+    this.playTone(112.0, 0.2, 0.2, 'triangle', 0.01);
+
+    // The KO stamp slamming on, 470ms later — the same offset as the
+    // skoStampLife delay in SeatKnockout.css. Keep the two together.
+    this.playTone(880.0, 0.14, 0.22, 'square', 0.47);
+    this.playTone(440.0, 0.2, 0.16, 'triangle', 0.48);
+
+    if (isHero) {
+      haptic.strong();
+    } else {
+      haptic.medium();
+    }
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
    *  SPIN WHEEL — the multiplier draw (2026-08-20)
    * ═══════════════════════════════════════════════════════════════════════
    * In a Spin the draw IS the product, and the ticking is most of the drama.

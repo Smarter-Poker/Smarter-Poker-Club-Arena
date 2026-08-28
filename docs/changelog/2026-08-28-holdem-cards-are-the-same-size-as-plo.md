@@ -27,12 +27,12 @@ a 60px PLO4 card, for nine days.
 `--sp-card2-*` on `.seat` now carries the **PLO4** numbers at every breakpoint.
 PLO4 is the reference because it is the largest of the three PLO sets.
 
-| Breakpoint          | was (w/h/step) | now (w/h/step) | PLO4 guard |
-| ------------------- | -------------- | -------------- | ---------- |
-| base (desktop)      | 44 / 62 / 32   | 60 / 84 / 43   | 60 / 84    |
-| `max-width: 640px`  | 42 / 59 / 30   | 57 / 80 / 41   | 57 / 80    |
-| `max-width: 480px`  | 36 / 50 / 26   | 51 / 71 / 37   | 51 / 71    |
-| `max-width: 380px`  | 32 / 45 / 23   | 45 / 63 / 32   | 45 / 63    |
+| Breakpoint         | was (w/h/step) | now (w/h/step) | PLO4 guard |
+| ------------------ | -------------- | -------------- | ---------- |
+| base (desktop)     | 44 / 62 / 32   | 60 / 84 / 43   | 60 / 84    |
+| `max-width: 640px` | 42 / 59 / 30   | 57 / 80 / 41   | 57 / 80    |
+| `max-width: 480px` | 36 / 50 / 26   | 51 / 71 / 37   | 51 / 71    |
+| `max-width: 380px` | 32 / 45 / 23   | 45 / 63 / 32   | 45 / 63    |
 
 Heights stay `round(w * 1.4)` — the 2.5:3.5 playing-card ratio, exact so the
 card art is never resampled.

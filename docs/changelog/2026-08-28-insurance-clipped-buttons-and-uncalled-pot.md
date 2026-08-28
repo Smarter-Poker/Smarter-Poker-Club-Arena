@@ -61,7 +61,7 @@ for full PokerBros parity:
   (premium reported/charged 0); only a WIN pays the fee; chop still voids.
 - **`InsuranceEngine.createOffers()`** — repriced so the 20% house edge
   survives the waived-fee branch: `premium = insured × pLoss/pWin ×
-  houseMargin` (probabilities conditional on not-push). House EV per
+houseMargin` (probabilities conditional on not-push). House EV per
   contract is unchanged at 20% of fair cost. Rates shown to players drop
   (3.16 → 2.32 in the recorded spot).
 - **Uninsurable guard** — when the fee would reach the payout (rate ≤ 1,

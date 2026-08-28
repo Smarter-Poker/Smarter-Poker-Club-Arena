@@ -86,7 +86,9 @@ describe('ALL_IN_RUNOUT carries the CONTESTED pot (uncalled bet returned first)'
     expect(eventSeat2.totalInvested).toBe(31);
 
     // The refund is announced exactly once, with the right amount.
-    const refunds = events.filter((e) => e.type === ('UNCALLED_BET_RETURNED' as never)) as never as {
+    const refunds = events.filter(
+      (e) => e.type === ('UNCALLED_BET_RETURNED' as never)
+    ) as never as {
       seat: number;
       amount: number;
     }[];

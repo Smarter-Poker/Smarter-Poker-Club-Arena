@@ -117,7 +117,7 @@ describe('theme first paint comes from the cache', () => {
     expect(second.current.theme.table_id).toBe('carbon_ion');
   });
 
-  it('never paints one account\'s cache onto another account or a guest', () => {
+  it("never paints one account's cache onto another account or a guest", () => {
     localStorage.setItem(CACHE_KEY, JSON.stringify(cachedRows));
     expect(resolveCachedTheme('user-2', 'NLH')).toBeNull();
     expect(resolveCachedTheme(null, 'NLH')).toBeNull();

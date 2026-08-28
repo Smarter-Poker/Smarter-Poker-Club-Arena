@@ -1134,26 +1134,31 @@
   width: calc(var(--seat-avatar-size) * 8 / 7) !important;
 }
 
-@media (max-width: 640px) {
-  .seat.seat--hero {
-    --seat-avatar-size: calc(66px * var(--seat-avatar-hero-ratio, 1.3333)) !important;
-    width: calc(66px * var(--seat-avatar-hero-ratio, 1.3333) * 8 / 7) !important;
-  }
-}
+/* ── 2026-08-28: THREE `!important` HERO RUNGS DELETED HERE ────────────────
+   `@media (max-width: 640|480|380px) .seat.seat--hero { --seat-avatar-size:
+   calc(66|58|52px * ratio) !important; width: ... !important }`.
 
-@media (max-width: 480px) {
-  .seat.seat--hero {
-    --seat-avatar-size: calc(58px * var(--seat-avatar-hero-ratio, 1.3333)) !important;
-    width: calc(58px * var(--seat-avatar-hero-ratio, 1.3333) * 8 / 7) !important;
-  }
-}
+   THIS WAS THE LADDER, STILL RUNNING, INSIDE THE PASS THAT REMOVED IT. The base
+   rule above was converted to derive from --seat-avatar-base (now a fraction of
+   --table-w) and these three were missed, so on every viewport up to 640px the
+   HERO — the one seat the player is actually looking at — was still pinned to
+   66 / 58 / 52px. `!important` meant nothing could reach past them.
 
-@media (max-width: 380px) {
-  .seat.seat--hero {
-    --seat-avatar-size: calc(52px * var(--seat-avatar-hero-ratio, 1.3333)) !important;
-    width: calc(52px * var(--seat-avatar-hero-ratio, 1.3333) * 8 / 7) !important;
-  }
-}
+   It was worse than a leftover, because --seat-avatar-size is not a leaf:
+   `.seat__avatar-wrap`, `.seat__avatar`, the initials glyph, the bust
+   anchoring, and --vh-card-h -> --vh-card-w — EVERY VILLAIN HOLE CARD — derive
+   from it. So a rung on the hero put the villains' cards back on a ladder too,
+   indirectly, after --sp-card2-w had been converted.
+
+   Nothing replaces them. The base `.seat.seat--hero` rule reads
+   --seat-avatar-base, which is proportional, so the 1.3333 hero ratio and the
+   8/7 name-box ratio now hold at every width by construction — which is what
+   the note above this rule already claimed they did.
+
+   WHY THE GUARD DID NOT CATCH IT, and what changed so it would:
+   tests/e2e/table-proportions.spec.ts measured `.seat`, the villain slot, and
+   these rules only ever matched `.seat--hero`. It measures both now. A guard
+   that checks one of two seats is a guard for one of two seats. */
 
 .seat--hero .seat__avatar {
   border-color: #ffd700;
@@ -1875,7 +1880,14 @@
   left: calc(100% + 1px);
   right: auto;
   top: 0;
-  bottom: calc(50% - var(--sp-hero-clear, 34px) - env(safe-area-inset-bottom, 0px));
+  /* Fallback 60px, not 34px (corrected 2026-08-28). --sp-hero-clear is declared
+     on `.table-container` as 60px, and 68px at <=480px (TablePage.css). A 34px
+     fallback is roughly HALF the real value, so on any render where this
+     element is outside a `.table-container` — a preview, a replay, SimPage, a
+     test harness — the hero plate sat 26px off its true position, and the
+     number looked deliberate enough that nobody would question it.
+     A fallback that disagrees with every declared value is not a safety net. */
+  bottom: calc(50% - var(--sp-hero-clear, 60px) - env(safe-area-inset-bottom, 0px));
   transform: none;
   display: flex;
   align-items: center;
@@ -1890,10 +1902,25 @@
 }
 
 /* Base card size (opponents) */
+/* ── 2026-08-28: THE SIZE DECLARATIONS HERE WERE DEAD ──────────────────────
+   `width: 30px; height: 42px; border-radius: 4px` are removed, not retuned.
+
+   Every `.seat__card` in the DOM lives inside exactly one of two clusters, and
+   both cluster rules are (0,2,0) and both set width, height and radius:
+     `.seat__cards--opponent .seat__card` -> --vh-card-w / --vh-card-h
+     `.seat__cards--hero .seat__card`     -> --sp-hero-card-w / -h
+   This selector is (0,1,0), and a media query adds no specificity, so these
+   three declarations could never win for either kind of card. They described a
+   30x42 card that has not been drawn since the two clusters were introduced.
+
+   Keeping them was actively harmful, not merely untidy: they read as the base
+   the proportional tokens step down from, so anyone auditing card sizing found
+   a px literal at the top of the chain and reasonably concluded the conversion
+   was incomplete.
+
+   What survives is what actually applies: overflow, the shadow and the
+   transition (and even those are overridden per-cluster in places). */
 .seat__card {
-  width: 30px;
-  height: 42px;
-  border-radius: 4px;
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   transition:
@@ -2747,11 +2774,33 @@
   will-change: transform, opacity;
 }
 
-.seat__cards--dealing .seat__card:nth-child(1) {
+/* ── 2026-08-28: THE HERO'S DEAL STAGGER DID NOT EXIST ─────────────────────
+   These were `.seat__cards--dealing .seat__card:nth-child(1|2)`, and
+   `seat__cards--dealing` is applied to BOTH clusters — the opponent row
+   (SeatSlot.tsx:1974) and the hero row (:2374).
+
+   In the opponent row `.seat__card` IS the flex child, so both rules worked. In
+   the hero row every card is wrapped in a `.seat__card-pick` span (added
+   2026-08-18 for click-to-show), so each card is the ONLY child of its own
+   wrapper: `:nth-child(1)` matched EVERY hero card and `:nth-child(2)` matched
+   NONE. The hero's two cards arrived at the same instant, with no 1-2 stagger,
+   on every hand this client has ever dealt since the wrapper landed.
+
+   This is the exact trap the file's own notes at the hero row geometry describe
+   and that HeroCardRowGeometry.test.ts pins for SIZE. The geometry rules were
+   fixed for it; the animation rules were not, so the bug survived in the half
+   nobody was measuring.
+
+   The fix is the same shape: match the ROW'S OWN CHILD and then the card inside
+   it, plus the bare form so an unwrapped card keeps its delay. ANIMATION LAW
+   (CLAUDE.md 10.6): the stagger is owed on every deal and now actually plays. */
+.seat__cards--dealing > *:nth-child(1) .seat__card,
+.seat__cards--dealing > .seat__card:nth-child(1) {
   animation-delay: var(--deal-delay-1, 0ms);
 }
 
-.seat__cards--dealing .seat__card:nth-child(2) {
+.seat__cards--dealing > *:nth-child(2) .seat__card,
+.seat__cards--dealing > .seat__card:nth-child(2) {
   animation-delay: var(--deal-delay-2, 100ms);
 }
 
@@ -2805,7 +2854,13 @@
   will-change: transform, opacity, filter;
 }
 
-.seat__cards--folding .seat__card:nth-child(2) {
+/* Wrapper-proof for the same reason as the deal stagger above: this was
+   `.seat__cards--folding .seat__card:nth-child(2)`, and in the hero row every
+   card is the only child of its own `.seat__card-pick`, so it matched nothing.
+   The hero's "satisfying 1-2 toss" the comment above describes has never fired —
+   both cards left together, both spinning the same way. */
+.seat__cards--folding > *:nth-child(2) .seat__card,
+.seat__cards--folding > .seat__card:nth-child(2) {
   /* 2026-08-27: scaled — an unscaled 55ms ate the JS window's whole safety
      margin at Fast (245ms of animation vs a 250ms removal). */
   animation-delay: calc(55ms * var(--animation-speed, 1));
@@ -3058,10 +3113,10 @@
     font-size: 0.625rem;
   }
 
-  .seat__card {
-    width: 28px;
-    height: 38px;
-  }
+  /* `.seat__card { width: 28px; height: 38px }` DELETED 2026-08-28 — dead on
+     specificity against both cluster rules, exactly as the comment eight lines
+     below already warned ("never restate width/height/margin on .seat__card").
+     The rule and the warning against it sat in the same block. */
   /* tablet — right of the name/chip box, centred on that box (see base rule).
      The two-card size now lives on `.seat` above (Dan 2026-08-25 round 2, item
      10 — the hero and a hold'em villain must read one set of numbers); the
@@ -3131,10 +3186,8 @@
     font-size: 0.5625rem;
   }
 
-  .seat__card {
-    width: 24px;
-    height: 34px;
-  }
+  /* `.seat__card { width: 24px; height: 34px }` DELETED 2026-08-28 — see the
+     640px block. Dead on specificity against both cluster rules. */
   /* phone — right of the name/chip box, centred on that box (see base rule).
      On a 375px viewport the scaler is capped at 320px wide and the 66px hero
      seat is centred, so the row starts ~200px in and has ~100px of felt to the
@@ -3194,10 +3247,8 @@
     font-size: 0.5rem;
   }
 
-  .seat__card {
-    width: 22px;
-    height: 30px;
-  }
+  /* `.seat__card { width: 22px; height: 30px }` DELETED 2026-08-28 — see the
+     640px block. Dead on specificity against both cluster rules. */
   /* small phone — right of the name/chip box, centred on it (see base rule).
      Tightest budget of the four breakpoints: ~90px of felt to the right. The
      two-card size lives on `.seat` above; the anchor lives in the single
@@ -3603,7 +3654,14 @@
   right: auto;
   /* The band: hero block top -> action bar top, cards centred inside it. */
   top: 0;
-  bottom: calc(50% - var(--sp-hero-clear, 34px) - env(safe-area-inset-bottom, 0px));
+  /* Fallback 60px, not 34px (corrected 2026-08-28). --sp-hero-clear is declared
+     on `.table-container` as 60px, and 68px at <=480px (TablePage.css). A 34px
+     fallback is roughly HALF the real value, so on any render where this
+     element is outside a `.table-container` — a preview, a replay, SimPage, a
+     test harness — the hero plate sat 26px off its true position, and the
+     number looked deliberate enough that nobody would question it.
+     A fallback that disagrees with every declared value is not a safety net. */
+  bottom: calc(50% - var(--sp-hero-clear, 60px) - env(safe-area-inset-bottom, 0px));
   transform: none;
   align-items: center;
   justify-content: flex-start;

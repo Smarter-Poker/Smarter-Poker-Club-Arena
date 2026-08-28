@@ -50,6 +50,19 @@ export const buildHtml = (css) => `<!doctype html><html><head><style>${css}</sty
     <div class="table-container">
       <div class="table-scaler">
         <div class="seat"><div class="seat__cards seat__cards--hero"></div></div>
+        <!-- THE HERO IS A SECOND SEAT AND MUST BE MEASURED SEPARATELY.
+             Until 2026-08-28 this harness rendered only .seat, the villain
+             slot, and three "@media ... .seat.seat--hero { ... !important }"
+             rungs survived the proportional conversion untouched because
+             nothing here ever matched them. The hero is the one seat the player
+             looks at, and its slot feeds every villain hole card through
+             --vh-card-h, so a blind spot here is a blind spot over most of the
+             felt. (No backticks in this comment: it lives inside a JS template
+             literal, and a backtick here ends the string.) -->
+        <div class="seat seat--hero seat--in-hand">
+          <div class="seat__avatar-wrap"><div class="seat__avatar"></div></div>
+          <div class="seat__cards seat__cards--hero"></div>
+        </div>
       </div>
     </div>
     <div class="action-panel-wrapper"><div class="action-panel"><div class="action-row">
@@ -118,11 +131,18 @@ export const CALIBRATION = {
  */
 export const PROBE = () => {
   const scaler = document.querySelector('.table-scaler');
-  const seat = document.querySelector('.seat');
+  const seat = document.querySelector('.seat:not(.seat--hero)');
+  const heroSeat = document.querySelector('.seat--hero');
   const btn = document.querySelector('.action-btn');
 
   const feltW = scaler.getBoundingClientRect().width;
   scaler.style.setProperty('--table-w', feltW + 'px');
+
+  /* The hero's avatar is measured as a rendered ELEMENT rather than through the
+     token probe: `.seat__avatar` is what actually gets drawn, and reading its
+     used width catches an override anywhere in the chain — including one that
+     sets the element's width directly instead of the token. */
+  const heroAvatarEl = heroSeat.querySelector('.seat__avatar');
 
   const probe = document.createElement('div');
   probe.style.position = 'absolute';
@@ -142,6 +162,12 @@ export const PROBE = () => {
     cardRevW: resolve_('var(--sp-cardrev-w)'),
     avatar: resolve_('var(--seat-avatar-size)'),
     seatW: +parseFloat(getComputedStyle(seat).width).toFixed(1),
+    /* The hero slot, measured on the hero's own element. --seat-avatar-size is
+       redeclared on `.seat.seat--hero` (x1.3333), so reading it from the
+       villain tells you nothing about the hero — which is exactly how three
+       !important rungs survived a conversion that claimed to delete them. */
+    heroAvatar: +parseFloat(getComputedStyle(heroAvatarEl).width).toFixed(1),
+    heroSeatW: +parseFloat(getComputedStyle(heroSeat).width).toFixed(1),
     // PLO4 is the widest private row: w + 3 x step.
     plo4Row: resolve_('calc(var(--sp-card2-w) + 3 * var(--sp-card2-w) * 0.4167)'),
   };

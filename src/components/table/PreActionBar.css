@@ -28,7 +28,10 @@
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
-  padding: 8px 16px;
+  /* --sp-action-pad-top, not a literal 8px (2026-08-28). This row and the
+     action row share one wrapper and one reserve; see the note on
+     `.pre-action-btn` below for what the literals were costing. */
+  padding: var(--sp-action-pad-top, 8px) 16px;
   padding-bottom: env(safe-area-inset-bottom, 0px);
   background: linear-gradient(180deg, rgba(20, 24, 32, 0.92) 0%, rgba(14, 17, 24, 0.96) 100%);
   backdrop-filter: blur(12px) saturate(1.2);
@@ -197,7 +200,33 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  min-height: 52px;
+  /* ── 2026-08-28: THE TWO BOTTOM ROWS AGREE BY CONSTRUCTION NOW ───────────
+     This was `min-height: 52px`, with rungs of 44px at <=768 and 46px at
+     640/480/380 below.
+
+     ActionPanel.css has claimed since it was written that "the height is named
+     ONCE and the three consumers read it", listing `.pre-action-bar` as the
+     second. IT NEVER DID: this file contained no reference to
+     --sp-bottom-row-h at all, only literals that happened to agree on a phone.
+
+     They stopped agreeing on 2026-08-28, when the action button became
+     `clamp(46px … 72px)` and this stayed a literal. Measured against the
+     wrapper floor the felt reserves:
+
+       1440px   floor 1 + 12 + 72 = 85px   this row 1 + 8 + 52 = 61px   24px dead
+        768px   floor 1 + 8.1 + 56 = 65px  this row 1 + 8 + 44 = 53px   12px dead
+        375px   floor 1 + 5 + 46 = 52px    this row 1 + 5 + 46 = 52px   exact
+
+     Only the phone — the one case the comment does the arithmetic for — was
+     right. Everywhere else the player got a strip of dead black under the
+     pre-action pills, which is the exact defect Dan reported about the action
+     bar on 2026-08-25 ("too much wasted space at the bottom"), surviving in the
+     row nobody re-measured.
+
+     Reading the token makes the claim true instead of aspirational, and the
+     four rungs below are deleted because the token already interpolates through
+     every one of their values. */
+  min-height: var(--sp-action-btn-h, 52px);
   padding: 6px 14px;
   font-size: 0.8125rem;
   font-weight: 700;
@@ -260,11 +289,23 @@
   transform: scale(0.96);
 }
 
-/* Phase 2 T1-08: legacy .pre-action-btn__check removed — dot now lives on
-   .pre-action-btn__dot above. Selectors targeting .pre-action-btn__check
-   inside .active states are kept for backward-compat in case downstream
-   styling references them, but are no-ops since the markup no longer
-   produces this element. */
+/* Phase 2 T1-08: legacy .pre-action-btn__check removed — the dot lives on
+   .pre-action-btn__dot above.
+
+   2026-08-28: THE SIX "BACKWARD-COMPAT" RULES ARE DELETED. This note used to
+   end "kept for backward-compat in case downstream styling references them,
+   but are no-ops since the markup no longer produces this element" — which
+   states plainly that they do nothing, and keeps them anyway.
+
+   Nothing can reference them: `pre-action-btn__check` appears in zero .tsx and
+   .ts files in the repo, so no component can emit the element and CSS cannot
+   be "referenced downstream" by anything but more CSS. What the rules actually
+   did was cost the next reader the time to work that out, twice — once for the
+   four `.active` colour rules and once for the two that set a 16px/14px SIZE
+   inside media queries, which read as live responsive geometry.
+
+   Backward-compat for a class no component can emit is not a safety net; it is
+   a trap for the next person who greps. */
 
 /* ═══════════════════════════════════════════════════════════════
    FOLD — Red tint
@@ -287,12 +328,6 @@
   box-shadow:
     0 0 16px rgba(239, 68, 68, 0.25),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
-.pre-action-btn.fold.active .pre-action-btn__check {
-  background: #ef4444;
-  border-color: #ef4444;
-  color: #fff;
 }
 
 .pre-action-btn.fold.active .pre-action-btn__dot--on {
@@ -324,12 +359,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
-.pre-action-btn.check.active .pre-action-btn__check {
-  background: #3fb950;
-  border-color: #3fb950;
-  color: #fff;
-}
-
 .pre-action-btn.check.active .pre-action-btn__dot--on {
   background: #3fb950;
   border-color: #3fb950;
@@ -357,12 +386,6 @@
   box-shadow:
     0 0 16px rgba(245, 158, 11, 0.25),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
-.pre-action-btn.call.active .pre-action-btn__check {
-  background: #f59e0b;
-  border-color: #f59e0b;
-  color: #fff;
 }
 
 .pre-action-btn.call.active .pre-action-btn__dot--on {
@@ -394,12 +417,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
-.pre-action-btn.call-any.active .pre-action-btn__check {
-  background: #f59e0b;
-  border-color: #f59e0b;
-  color: #fff;
-}
-
 .pre-action-btn.call-any.active .pre-action-btn__dot--on {
   background: #f59e0b;
   border-color: #f59e0b;
@@ -422,16 +439,13 @@
   }
 
   .pre-action-btn {
-    min-height: 44px;
+    /* `min-height: 44px` DELETED 2026-08-28. It was the worst of the four
+       rungs: below the token AND below the 46px this file calls its minimum in
+       three other places, so the 641-768px band drew the shortest row on the
+       platform while the reserve above it was the tallest. */
     padding: 8px 12px;
     font-size: 0.75rem;
     border-radius: 20px;
-  }
-
-  .pre-action-btn__check {
-    width: 16px;
-    height: 16px;
-    font-size: 10px;
   }
 }
 
@@ -456,9 +470,9 @@
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
-  .pre-action-btn {
-    min-height: 46px;
-  }
+  /* `.pre-action-btn { min-height: 46px }` DELETED 2026-08-28 — the token's
+     clamp floor IS 46px and it reaches that floor at 373px, so this rung and
+     the two below it restated a value the base rule already produces. */
 }
 
 @media (max-width: 480px) {
@@ -473,28 +487,19 @@
   }
 
   .pre-action-btn {
-    /* 46px, matching the <=640px block above and the action row it stands in
-       for. It used to be 44px here, which made this row 2px shorter than the
-       one the floor is measured against. */
-    min-height: 46px;
+    /* `min-height: 46px` DELETED 2026-08-28 — see the 640px block. The token
+       already floors at 46px here. Only the padding and type tighten. */
     padding: 6px 10px;
     font-size: 0.6875rem;
     border-radius: 18px;
     gap: 4px;
   }
-
-  .pre-action-btn__check {
-    width: 14px;
-    height: 14px;
-    font-size: 9px;
-    border-width: 1.5px;
-  }
 }
 
 @media (max-width: 380px) {
   .pre-action-btn {
-    /* Same 46px. Only the side padding and the type tighten at 375px. */
-    min-height: 46px;
+    /* `min-height: 46px` DELETED 2026-08-28 — see the 640px block. Only the
+       side padding and the type tighten at 375px. */
     padding: 6px 8px;
     font-size: 0.625rem;
     border-radius: 16px;

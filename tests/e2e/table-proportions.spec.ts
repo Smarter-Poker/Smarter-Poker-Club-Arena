@@ -143,6 +143,53 @@ test.describe('every device gets the same proportions', () => {
     expect(offenders).toEqual([]);
   });
 
+  test('the HERO slot scales too, and stays 1.3333x the villain', async ({ page }) => {
+    /* ADDED 2026-08-28 after this file missed a live regression it existed to
+       catch. It rendered only `.seat`, the villain slot, so three
+       `@media ... .seat.seat--hero { --seat-avatar-size: calc(66|58|52px * …)
+       !important }` rungs survived the conversion untouched: below 641px the
+       hero — the one seat the player is looking at — was still on the px ladder
+       while every villain beside it was proportional.
+
+       It was not a cosmetic miss either. --seat-avatar-size feeds --vh-card-h
+       and thence --vh-card-w, so a rung on the hero puts every VILLAIN HOLE
+       CARD back on a ladder indirectly, after --sp-card2-w had been converted.
+
+       Two assertions, because either alone can be satisfied while the bug is
+       present: the hero must hold the 1.3333 ratio to the villain (a rung that
+       pinned both equally would pass a ratio check), and it must itself be a
+       fraction of the felt (a rung that scaled both together would pass that). */
+    const rows = await measureAll(page, css);
+    const HERO_RATIO = 1.3333;
+
+    const offenders: string[] = [];
+    for (const r of rows) {
+      const ratio = r.heroAvatar / r.avatar;
+      if (Math.abs(ratio - HERO_RATIO) > 0.02) {
+        offenders.push(
+          `${r.device} (${r.vp}): hero avatar ${r.heroAvatar}px vs villain ${r.avatar}px = ` +
+            `x${ratio.toFixed(3)}, expected x${HERO_RATIO}`
+        );
+      }
+      // ...and the hero must ride the felt, not a rung.
+      if (r.feltW * AVATAR_FRACTION * HERO_RATIO < AVATAR_FLOOR * HERO_RATIO) continue;
+      const pct = r.heroAvatar / r.feltW;
+      const want = AVATAR_FRACTION * HERO_RATIO;
+      if (Math.abs(pct - want) > 0.006) {
+        offenders.push(
+          `${r.device} (${r.vp}): hero avatar is ${r.heroAvatar}px on a ${r.feltW}px felt = ` +
+            `${(pct * 100).toFixed(1)}%, expected ${(want * 100).toFixed(1)}%`
+        );
+      }
+    }
+    expect(
+      offenders,
+      'the hero slot is on a different sizing rule from the villains. Check for an ' +
+        '@media rule on .seat--hero — that is where three !important rungs hid through ' +
+        'an entire conversion.'
+    ).toEqual([]);
+  });
+
   test('the widest hole-card row keeps a constant share of the felt', async ({ page }) => {
     /* The fit guarantee, expressed the way it is now true. Every worked example
        in SeatSlot.css used to be a hand-checked sum at four fixed widths — the

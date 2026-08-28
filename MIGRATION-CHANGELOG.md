@@ -15972,3 +15972,43 @@ bars flickering against each other.
 Guard: 7 more specs in LiveHandNeverDimsAndPreActionsLand.test.ts (16 total),
 mutation-tested. Verified: client 7,523/7,523, server 1,991/1,991, tsc clean
 both sides, ui-text gate green.
+
+## Change #146 — Table Studio Never Edits Unknown Or Stale Customization State
+
+**File:** `src/components/table/ThemeSettingsModal.tsx`, `src/components/table/ThemeSettingsModal.css`, `src/lib/persistInterfaceTheme.ts`
+**Lines:** Before: modal component 585-1326, saved-theme read 718-775, asset writer 857-895, interface selector 1054-1063, VIP prompt 1297-1324
+**What existed:** The picker displayed writable defaults while the saved row was still loading or had failed, briefly marked purchased card backs as VIP-locked before ownership resolved, kept an open editor stale after another surface changed the same bucket, applied light/dark mode only to local Zustand state, and treated the VIP prompt as part of the parent focus trap.
+**What changed:** Added explicit loading/error/retry state with mutation locks, ownership verification state, exact-account/exact-bucket `UI_THEME_CHANGED` synchronization, ordered profile persistence with rollback for interface mode, a truthful device-only loadout note, and an independently labelled/focus-trapped VIP dialog. Guest sessions now reset to defaults instead of inheriting a prior account's in-memory selection.
+**Why:** A customization control must never overwrite a row it failed to read or claim an unsaved value is equipped. The live editor and live felt must consume the same discrete customization event.
+**Verified:** YES — re-read after formatting; component tests cover loading, ownership success/failure, dialog keyboard flow, mode rollback, and live editor synchronization.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #147 — All Ten Controls Designs Reach Real Mobile Action Buttons
+
+**File:** `src/components/table/ControlThemeTokens.css`, `src/components/table/ActionPanel.css`, `src/components/table/TableStudioGameplayPreview.tsx`, `src/components/table/TableStudioGameplayPreview.css`, `src/components/table/ThemeSettingsModal.tsx`, `src/components/table/ThemeSettingsModal.css`, `src/pages/TablePage.tsx`, `src/pages/TablePage.css`
+**Lines:** Before: TablePage.css 834-937 held dealer-only tokens; ActionPanel.css 473-552 ignored the selected design; the studio preview action row 185-201 used one generic finish
+**What existed:** The ten items labelled "Button" changed only the dealer marker. Fold, Check/Call, and Raise looked identical across all ten choices, and previews opened from non-table routes depended on a stylesheet that might not be loaded.
+**What changed:** Renamed the surface "Controls", extracted a shared route-safe token sheet, gave every design a distinct material/edge/radius/type treatment, wired those tokens into production ActionPanel and both studio previews, and retained the approved red/blue/green semantic action palette.
+**Why:** The user requested ten actual button/control designs that work mobile-first in previews and real gameplay, not ten dealer-puck aliases.
+**Verified:** YES — Chromium at 390x844 produced ten unique computed-style fingerprints, preserved Fold/Check/Raise semantic colors, and had no horizontal overflow.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #148 — Failed Card-Back And Cross-Device Mode Writes Stay Honest
+
+**File:** `src/pages/SettingsPage.tsx`, `src/lib/settingsBridge.ts`, `src/stores/useSettingsStore.ts`, `src/core/MasterBus.ts`
+**Lines:** Before: SettingsPage save path 533-628, settings store mode writer 29-40, MasterBus theme handler 1475-1494
+**What existed:** SettingsPage announced unconditional success and persisted the requested card back into local/profile settings even when the canonical appearance write failed. Its rollback read a ref after the optimistic table-store update, allowing the "previous" value to become the same failed value. Table Studio mode changes did not update the full Settings-page cache, and remote profile mode events repainted the DOM while leaving that cache stale.
+**What changed:** Captured the durable card back before optimistic mutation, rolls failed writes back across UI/local/profile state, reports partial failure explicitly, mirrors local mode changes into the full settings cache, and mirrors discrete cross-device `UI_THEME_CHANGED` events there before notifying mounted settings consumers.
+**Why:** No picker may claim a design saved when the durable writer rejected it, and a stale cache must not overwrite a valid realtime account preference later.
+**Verified:** YES — rollback, local-cache preservation, account isolation, and cross-device mode propagation are pinned by unit/integration tests.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #149 — Customization Wiring Regression Gate
+
+**File:** `tests/unit/ThemeSettingsModalHardening.test.tsx`, `tests/unit/persistInterfaceTheme.test.ts`, `tests/unit/SettingsPageBridge.test.ts`, `tests/unit/useSettingsStore.test.ts`, `tests/unit/liveCustomizationBus.test.ts`, `tests/unit/visualCustomizationContracts.test.ts`, `tests/config/tableAppearanceModesAndMobileBackgrounds.test.ts`, `tests/e2e/customization-controls.spec.ts`
+**Lines:** New coverage plus updated contracts for the implemented persistence path
+**What existed:** Catalog-count and static CSS checks existed, but no browser proof that ten control choices rendered distinctly on a phone, and no component-level hostile-state coverage for delayed/failed reads, ownership, mode rollback, or an already-open editor receiving a live event.
+**What changed:** Added behavior-level component, ordered-writer, cache, live-bus, rollback, shared-token, and mobile Chromium contracts.
+**Why:** Static inventory counts cannot prove a user tap reaches the live table or remains durable under delayed and failed requests.
+**Verified:** YES — 498 test files / 7,860 tests pass; focused mobile Playwright 1/1; production build passes; ESLint reports 0 errors (711 pre-existing warnings).
+**TypeScript:** PASS — `npx tsc --noEmit`.

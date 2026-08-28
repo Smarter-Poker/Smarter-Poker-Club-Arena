@@ -37,12 +37,20 @@ describe('live customization bus', () => {
     masterBus.reset();
     masterBus.init();
     useSettingsStore.setState({ theme: 'dark' });
+    localStorage.setItem(
+      'club-arena-user-settings',
+      JSON.stringify({ theme: 'dark', soundEnabled: false })
+    );
 
     masterBus.emit('UI_THEME_CHANGED', { key: 'theme', value: 'light' });
 
     expect(useSettingsStore.getState().theme).toBe('light');
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');
     expect(document.documentElement.style.colorScheme).toBe('light');
+    expect(JSON.parse(localStorage.getItem('club-arena-user-settings') || '{}')).toEqual({
+      theme: 'light',
+      soundEnabled: false,
+    });
   });
 
   it("does not apply another account's light/dark event", async () => {

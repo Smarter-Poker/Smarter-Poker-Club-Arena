@@ -38,6 +38,7 @@ export function TableStudioGameplayPreview({ selection, avatarUrls, finalTable }
   return (
     <div
       className={`studio-game-preview${finalTable ? ' studio-game-preview--final' : ''}`}
+      data-button-theme={selection.button_id}
       aria-label={
         finalTable
           ? 'Final Table gameplay preview using avatars from your avatar library'

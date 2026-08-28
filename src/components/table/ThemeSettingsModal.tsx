@@ -5,7 +5,7 @@
  *
  * Theme customization modal with:
  *   - Game type selector dropdown (ALL, NLH, FLH, 6+, PLO, etc.)
- *   - 5-tab layout (Themes, Table, Button, Background, Cards)
+ *   - 5-tab layout (Themes, Table, Controls, Background, Cards)
  *   - Binary VIP gating (Free items vs VIP-only items)
  *   - Per-game-type persistence via user_theme_settings table
  *
@@ -26,13 +26,16 @@ import { CardBack, normalizeCardBack, CARD_BACK_CATALOG, isCardBackUnlocked } fr
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
+import './ControlThemeTokens.css';
 import './ThemeSettingsModal.css';
 import { reportError } from '../../utils/errorReporter';
 import { useSettingsStore } from '../../stores/useSettingsStore';
 import { avatarService } from '../../services/AvatarService';
 import TableStudioGameplayPreview from './TableStudioGameplayPreview';
 import { applyTableAppearance, type AppearancePatch } from '../../lib/applyTableAppearance';
-import { pickThemeRow } from '../../hooks/useUserThemeSettings';
+import { canonicalGameType, pickThemeRow } from '../../hooks/useUserThemeSettings';
+import { persistInterfaceTheme, type InterfaceTheme } from '../../lib/persistInterfaceTheme';
+import { masterBus } from '../../core/MasterBus';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -86,7 +89,7 @@ const GAME_TYPE_LABELS: Record<string, string> = {
 const TABS: { key: ThemeTab; label: string }[] = [
   { key: 'themes', label: 'Themes' },
   { key: 'table', label: 'Table' },
-  { key: 'button', label: 'Button' },
+  { key: 'button', label: 'Controls' },
   { key: 'background', label: 'Background' },
   { key: 'cards', label: 'Cards' },
 ];
@@ -94,7 +97,7 @@ const TABS: { key: ThemeTab; label: string }[] = [
 const TAB_DESCRIPTIONS: Record<ThemeTab, string> = {
   themes: 'Complete, coordinated table looks',
   table: 'The felt and rail at the center of play',
-  button: 'Dealer marker finish and color',
+  button: 'Dealer marker and action-control finish',
   background: 'The room surrounding your table',
   cards: 'The design shown on every face-down card',
 };
@@ -295,7 +298,7 @@ export const BUTTON_ASSETS: ThemeAsset[] = [
   {
     id: 'sports-themed',
     name: 'Sports',
-    thumbnail: 'linear-gradient(135deg, #33691e, #558b2f)',
+    thumbnail: 'linear-gradient(135deg, #2ea043, #4dc660)',
     vipOnly: true,
   },
   {
@@ -506,9 +509,8 @@ function canAccessAsset(
  * Per tab, what "real" means:
  *   table       the actual 896x1200 skin composite, object-fit cover
  *   background  the actual room .jpg
- *   button      a live dealer button carrying data-button-theme, so it picks
- *               up the very --dealer-btn-bg / --dealer-btn-color the table
- *               will use (TablePage.css)
+ *   button      the live dealer marker plus the Fold / Check / Raise control
+ *               finish driven by the same data-button-theme as gameplay
  *   cards       a real <CardBack>, the same component the felt renders
  *   themes      a composite mini-table: the preset's own table skin with its
  *               background behind it, which is the only honest way to show
@@ -539,10 +541,16 @@ function renderAssetPreview(tab: ThemeTab, asset: ThemeAsset) {
   }
 
   if (tab === 'button') {
-    // The real dealer button, styled by the same attribute the table sets.
+    // The real dealer marker and action-control finish, both driven by the
+    // same attribute the table sets.
     return (
       <div className="theme-asset__btnstage" data-button-theme={asset.id}>
         <span className="theme-asset__dealerbtn">D</span>
+        <span className="theme-asset__actionset" aria-hidden="true">
+          <i>F</i>
+          <i>C</i>
+          <i>R</i>
+        </span>
       </div>
     );
   }
@@ -584,6 +592,7 @@ function renderAssetPreview(tab: ThemeTab, asset: ThemeAsset) {
 
 export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSettingsModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
+  const vipPromptRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
   const navigate = useNavigate();
   const [showVipPrompt, setShowVipPrompt] = useState(false);
@@ -601,8 +610,18 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   const [loadoutRevision, setLoadoutRevision] = useState(0);
   /** Card backs bought with diamonds in the store. See canAccessAsset. */
   const [ownedCardBacks, setOwnedCardBacks] = useState<string[]>([]);
+  const [themeLoadState, setThemeLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
+    'idle'
+  );
+  const [themeLoadRevision, setThemeLoadRevision] = useState(0);
+  const [ownershipState, setOwnershipState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
+    'idle'
+  );
+  const [ownershipRevision, setOwnershipRevision] = useState(0);
+  const [modeSaving, setModeSaving] = useState(false);
   const uiMode = useSettingsStore((state) => state.theme);
   const setUiMode = useSettingsStore((state) => state.setTheme);
+  const modeRevisionRef = useRef(0);
 
   // The live selection, readable from a callback without making every callback
   // depend on it. handleSave needs the value it is replacing so it can put it
@@ -621,20 +640,65 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     setSelection(next);
   }, []);
 
+  // Keep an already-open studio synchronized with every other appearance
+  // writer. The gameplay table already consumes this discrete event; without
+  // the matching editor subscription a card back changed from /settings (or a
+  // second customization surface) repainted the felt while this modal kept the
+  // old tile selected. Only the same account and exact editor bucket may touch
+  // the form — an ALL change must not overwrite a PLO-specific row being
+  // edited, even though gameplay may use ALL as a fallback.
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    return masterBus.subscribe('UI_THEME_CHANGED', (event) => {
+      const body = event.payload;
+      if (body.userId && body.userId !== userId) return;
+      if (!body.value || typeof body.value !== 'object' || Array.isArray(body.value)) return;
+      if (canonicalGameType(body.key) !== gameType) return;
+
+      const raw = body.value as Partial<ThemeSelection>;
+      const patch: Partial<ThemeSelection> = {};
+      if (
+        typeof raw.theme_id === 'string' &&
+        THEME_PRESETS.some((item) => item.id === raw.theme_id)
+      ) {
+        patch.theme_id = raw.theme_id;
+      }
+      if (typeof raw.table_id === 'string') patch.table_id = normalizeFeltId(raw.table_id);
+      if (
+        typeof raw.button_id === 'string' &&
+        BUTTON_ASSETS.some((item) => item.id === raw.button_id)
+      ) {
+        patch.button_id = raw.button_id;
+      }
+      if (typeof raw.background_id === 'string') {
+        patch.background_id = normalizeBackgroundId(raw.background_id);
+      }
+      if (typeof raw.cards_id === 'string') patch.cards_id = normalizeCardBack(raw.cards_id);
+      if (!Object.keys(patch).length) return;
+
+      setSelection((current) => {
+        const next = { ...current, ...patch };
+        selectionRef.current = next;
+        return next;
+      });
+    });
+  }, [gameType, isOpen, userId]);
+
   useEffect(() => {
     if (!isOpen) return undefined;
     const previousFocus = document.activeElement as HTMLElement | null;
-    const modal = modalRef.current;
+    const activeDialog = showVipPrompt ? vipPromptRef.current : modalRef.current;
     const focusable = () =>
       Array.from(
-        modal?.querySelectorAll<HTMLElement>(
+        activeDialog?.querySelectorAll<HTMLElement>(
           'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]'
         ) || []
       );
     focusable()[0]?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        onClose();
+        if (showVipPrompt) setShowVipPrompt(false);
+        else onClose();
         return;
       }
       if (event.key !== 'Tab') return;
@@ -655,7 +719,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
       document.removeEventListener('keydown', onKeyDown);
       previousFocus?.focus();
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, showVipPrompt]);
 
   // The preview uses the same production library as AvatarGallery. No preview-
   // only portraits are bundled or generated. The first six stable library
@@ -691,8 +755,14 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   // Without this the modal padlocks a design the player owns (see
   // canAccessAsset). Missing rows are not an error: nobody has bought one yet.
   useEffect(() => {
-    if (!isOpen || !userId) return;
+    if (!isOpen) return undefined;
+    setOwnedCardBacks([]);
+    if (!userId || isVip) {
+      setOwnershipState('ready');
+      return undefined;
+    }
     let mounted = true;
+    setOwnershipState('loading');
     supabase
       .from('feature_purchases')
       .select('feature')
@@ -704,22 +774,30 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           // Not fatal, and not silently swallowed either: a failure here means
           // paid designs read as locked, so it has to be visible somewhere.
           reportError(error, 'ThemeSettingsModal.Owned_card_backs_load_failed');
+          setOwnershipState('error');
           return;
         }
         setOwnedCardBacks(
           (data || []).map((r: { feature: string }) => r.feature.replace('card_back_', ''))
         );
+        setOwnershipState('ready');
       });
     return () => {
       mounted = false;
     };
-  }, [isOpen, userId]);
+  }, [isOpen, userId, isVip, ownershipRevision]);
 
   // Load existing theme for selected game type
   useEffect(() => {
-    if (!isOpen || !userId) return;
+    if (!isOpen) return undefined;
+    if (!userId) {
+      replaceSelection({ ...DEFAULT_SELECTION });
+      setThemeLoadState('ready');
+      return undefined;
+    }
 
     let mounted = true;
+    setThemeLoadState('loading');
     const load = async () => {
       try {
         const { data, error } = await supabase
@@ -735,7 +813,10 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           // touched would overwrite the theme they could not see.
           console.warn('[ThemeSettings] Load failed:', error.message);
           reportError(error, 'ThemeSettingsModal.Load_failed');
-          if (mounted) toast.error('Could Not Load Your Saved Theme. Try Again In A Moment.');
+          if (mounted) {
+            setThemeLoadState('error');
+            toast.error('Could Not Load Your Saved Theme. Try Again In A Moment.');
+          }
           return;
         }
 
@@ -761,11 +842,15 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
             // tile at all and the tab looks like it forgot the user's choice.
             cards_id: normalizeCardBack(row?.cards_id || DEFAULT_SELECTION.cards_id),
           });
+          setThemeLoadState('ready');
         }
       } catch (err) {
         console.warn('[ThemeSettings] Unexpected error:', err);
         reportError(err, 'ThemeSettingsModal.Load_failed');
-        if (mounted) toast.error('Could Not Load Your Saved Theme. Try Again In A Moment.');
+        if (mounted) {
+          setThemeLoadState('error');
+          toast.error('Could Not Load Your Saved Theme. Try Again In A Moment.');
+        }
       }
     };
 
@@ -776,7 +861,28 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     // `toast` is stable for the life of the provider; listing it would re-run
     // the load on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, userId, gameType, replaceSelection]);
+  }, [isOpen, userId, gameType, replaceSelection, themeLoadRevision]);
+
+  const handleUiModeChange = useCallback(
+    async (mode: InterfaceTheme) => {
+      if (mode === uiMode) return;
+      const previous = uiMode;
+      const revision = ++modeRevisionRef.current;
+      setUiMode(mode, userId || undefined);
+
+      if (!userId) return;
+
+      setModeSaving(true);
+      const result = await persistInterfaceTheme(userId, mode);
+      if (!result.ok && modeRevisionRef.current === revision) {
+        setUiMode(previous, userId);
+        toast.error('Could Not Save Interface Mode. Please Try Again.');
+        reportError(result.error, 'ThemeSettingsModal.Interface_mode_save_failed');
+      }
+      if (modeRevisionRef.current === revision) setModeSaving(false);
+    },
+    [setUiMode, toast, uiMode, userId]
+  );
 
   /**
    * APPLY NOW, PERSIST, AND UNDO IF THE PERSIST FAILED.
@@ -856,6 +962,8 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
 
   const handleAssetSelect = useCallback(
     (tab: ThemeTab, assetId: string, vipOnly: boolean) => {
+      if (themeLoadState !== 'ready') return;
+      if (tab === 'cards' && vipOnly && !isVip && ownershipState !== 'ready') return;
       if (!canAccessAsset(tab, assetId, isVip, vipOnly, ownedCardBacks)) {
         setShowVipPrompt(true);
         return;
@@ -889,7 +997,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
       });
       void handleSave(newSel, previousPatch);
     },
-    [isVip, ownedCardBacks, handleSave, replaceSelection, userId]
+    [isVip, ownedCardBacks, handleSave, replaceSelection, userId, themeLoadState, ownershipState]
   );
 
   /**
@@ -900,10 +1008,11 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
    * It now goes through exactly the same path as picking a tile.
    */
   const handleReset = useCallback(() => {
+    if (themeLoadState !== 'ready') return;
     const previous = { ...selectionRef.current };
     replaceSelection({ ...DEFAULT_SELECTION });
     void handleSave({ ...DEFAULT_SELECTION }, previous);
-  }, [handleSave, replaceSelection]);
+  }, [handleSave, replaceSelection, themeLoadState]);
 
   const toggleFavorite = useCallback(
     (tab: ThemeTab, assetId: string) => {
@@ -920,6 +1029,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   );
 
   const randomizeAccessibleLook = useCallback(() => {
+    if (themeLoadState !== 'ready') return;
     const pick = (assets: ThemeAsset[], tab: ThemeTab) => {
       const accessible = assets.filter((asset) =>
         canAccessAsset(tab, asset.id, isVip, asset.vipOnly, ownedCardBacks)
@@ -936,7 +1046,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     const previous = { ...selectionRef.current };
     replaceSelection(randomized);
     void handleSave(randomized, previous);
-  }, [handleSave, isVip, ownedCardBacks, replaceSelection]);
+  }, [handleSave, isVip, ownedCardBacks, replaceSelection, themeLoadState]);
 
   const loadoutKey = `table-studio-loadouts:${userId || 'guest'}`;
   const readLoadouts = useCallback((): Array<ThemeSelection | null> => {
@@ -949,6 +1059,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
 
   const saveLoadout = useCallback(
     (slot: number) => {
+      if (themeLoadState !== 'ready') return;
       const next = readLoadouts();
       next[slot] = selectionRef.current;
       if (!writeLocalJson(loadoutKey, next)) {
@@ -958,18 +1069,19 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
       setLoadoutRevision((value) => value + 1);
       toast.success(`Loadout ${slot + 1} Saved`);
     },
-    [loadoutKey, readLoadouts, toast]
+    [loadoutKey, readLoadouts, themeLoadState, toast]
   );
 
   const applyLoadout = useCallback(
     (slot: number) => {
+      if (themeLoadState !== 'ready') return;
       const saved = readLoadouts()[slot];
       if (!saved) return;
       const previous = { ...selectionRef.current };
       replaceSelection(saved);
       void handleSave(saved, previous);
     },
-    [handleSave, readLoadouts, replaceSelection]
+    [handleSave, readLoadouts, replaceSelection, themeLoadState]
   );
 
   if (!isOpen) return null;
@@ -1046,7 +1158,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           </div>
           <span className="theme-modal__autosave" aria-live="polite">
             <span className="theme-modal__autosave-dot" />
-            {saving ? 'Saving selection' : 'Changes save automatically'}
+            {saving || modeSaving ? 'Saving selection' : 'Changes save automatically'}
           </span>
         </div>
 
@@ -1059,7 +1171,8 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                 type="button"
                 className={`theme-modal__mode-option ${uiMode === mode ? 'theme-modal__mode-option--active' : ''}`}
                 aria-pressed={uiMode === mode}
-                onClick={() => setUiMode(mode)}
+                disabled={modeSaving}
+                onClick={() => void handleUiModeChange(mode)}
               >
                 <span
                   className={`theme-modal__mode-icon theme-modal__mode-icon--${mode}`}
@@ -1192,8 +1305,46 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           <span className="theme-modal__count">{currentAssets.length} Choices</span>
         </div>
 
+        {themeLoadState === 'loading' && (
+          <div className="theme-modal__state" role="status">
+            <strong>Loading Your Saved Design</strong>
+            <span>Choices Unlock When Your Current Table Is Ready.</span>
+          </div>
+        )}
+        {themeLoadState === 'error' && (
+          <div className="theme-modal__state theme-modal__state--error" role="alert">
+            <div>
+              <strong>Your Saved Design Could Not Be Loaded</strong>
+              <span>Choices Stay Locked So An Older Design Is Not Overwritten.</span>
+            </div>
+            <button type="button" onClick={() => setThemeLoadRevision((value) => value + 1)}>
+              Try Again
+            </button>
+          </div>
+        )}
+        {activeTab === 'cards' && !isVip && ownershipState === 'loading' && (
+          <div className="theme-modal__state" role="status">
+            <strong>Checking Your Card Back Purchases</strong>
+            <span>Premium Designs Unlock As Soon As Ownership Is Confirmed.</span>
+          </div>
+        )}
+        {activeTab === 'cards' && !isVip && ownershipState === 'error' && (
+          <div className="theme-modal__state theme-modal__state--error" role="alert">
+            <div>
+              <strong>Purchases Could Not Be Verified</strong>
+              <span>Premium Designs Stay Locked Until The Check Succeeds.</span>
+            </div>
+            <button type="button" onClick={() => setOwnershipRevision((value) => value + 1)}>
+              Try Again
+            </button>
+          </div>
+        )}
+
         {/* Asset Grid */}
-        <div className="theme-modal__grid">
+        <div
+          className={`theme-modal__grid${themeLoadState !== 'ready' ? ' theme-modal__grid--loading' : ''}`}
+          aria-busy={themeLoadState === 'loading'}
+        >
           {currentAssets.length === 0 && (
             <div className="theme-modal__empty">
               <strong>No Matching Designs</strong>
@@ -1202,6 +1353,10 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           )}
           {currentAssets.map((asset) => {
             const isSelected = currentSelected === asset.id;
+            const ownershipPending =
+              activeTab === 'cards' && asset.vipOnly && !isVip && ownershipState === 'loading';
+            const ownershipUnavailable =
+              activeTab === 'cards' && asset.vipOnly && !isVip && ownershipState === 'error';
             const isLocked = !canAccessAsset(
               activeTab,
               asset.id,
@@ -1216,8 +1371,9 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                   type="button"
                   className={`theme-asset ${isSelected ? 'theme-asset--selected' : ''} ${isLocked ? 'theme-asset--locked' : ''}`}
                   onClick={() => handleAssetSelect(activeTab, asset.id, asset.vipOnly)}
+                  disabled={themeLoadState !== 'ready' || ownershipPending || ownershipUnavailable}
                   aria-pressed={isSelected}
-                  aria-label={`${asset.name}${isLocked ? ', VIP required' : ''}`}
+                  aria-label={`${asset.name}${ownershipPending ? ', checking ownership' : ownershipUnavailable ? ', ownership unavailable' : isLocked ? ', VIP required' : ''}`}
                 >
                   <div className="theme-asset__preview">
                     {/* ── Dan 2026-08-18: show the actual thing, not a colour ──
@@ -1228,11 +1384,17 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                       the real asset; the gradient survives only as a fallback
                       where no real asset exists for that id. */}
                     {renderAssetPreview(activeTab, asset)}
-                    {isLocked && (
+                    {ownershipPending || ownershipUnavailable ? (
+                      <div className="theme-asset__lock theme-asset__lock--checking">
+                        <span className="theme-asset__lock-icon">
+                          {ownershipPending ? 'Checking' : 'Unavailable'}
+                        </span>
+                      </div>
+                    ) : isLocked ? (
                       <div className="theme-asset__lock">
                         <span className="theme-asset__lock-icon">VIP</span>
                       </div>
-                    )}
+                    ) : null}
                     {isSelected && !isLocked && <div className="theme-asset__check">✓</div>}
                   </div>
                   <span className="theme-asset__name">{asset.name}</span>
@@ -1254,22 +1416,30 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
         </div>
 
         <div className="theme-modal__loadouts" aria-label="Saved table loadouts">
+          <span className="theme-modal__loadout-note">
+            Favorites And Loadouts Stay On This Device
+          </span>
           <button
             type="button"
             className="theme-modal__randomize"
+            disabled={themeLoadState !== 'ready'}
             onClick={randomizeAccessibleLook}
           >
             Shuffle Look
           </button>
           {[0, 1, 2].map((slot) => (
             <div key={slot} className="theme-modal__loadout">
-              <button type="button" onClick={() => saveLoadout(slot)}>
+              <button
+                type="button"
+                onClick={() => saveLoadout(slot)}
+                disabled={themeLoadState !== 'ready'}
+              >
                 Save {slot + 1}
               </button>
               <button
                 type="button"
                 onClick={() => applyLoadout(slot)}
-                disabled={!savedLoadouts[slot]}
+                disabled={themeLoadState !== 'ready' || !savedLoadouts[slot]}
               >
                 Use
               </button>
@@ -1279,7 +1449,11 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
 
         {/* Footer */}
         <div className="theme-modal__footer">
-          <button className="theme-modal__btn theme-modal__btn--reset" onClick={handleReset}>
+          <button
+            className="theme-modal__btn theme-modal__btn--reset"
+            onClick={handleReset}
+            disabled={themeLoadState !== 'ready'}
+          >
             Restore Defaults
           </button>
           <button
@@ -1288,20 +1462,30 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                the studio; it must not launch a redundant full-row write that
                can race the final tap the player just made. */
             onClick={onClose}
-            disabled={saving}
+            disabled={saving || modeSaving}
           >
-            {saving ? 'Saving...' : 'Done'}
+            {saving || modeSaving ? 'Saving...' : 'Done'}
           </button>
         </div>
 
         {/* FIX 221: VIP Upgrade Prompt — Bible V8 §11.2.3 */}
         {showVipPrompt && (
           <div className="theme-vip-prompt-overlay" onClick={() => setShowVipPrompt(false)}>
-            <div className="theme-vip-prompt" onClick={(e) => e.stopPropagation()}>
+            <div
+              ref={vipPromptRef}
+              className="theme-vip-prompt"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="theme-vip-title"
+              aria-describedby="theme-vip-description"
+              onClick={(e) => e.stopPropagation()}
+            >
               <div className="theme-vip-prompt__icon">VIP</div>
-              <h4 className="theme-vip-prompt__title">VIP Theme Unlocked</h4>
-              <p className="theme-vip-prompt__text">
-                This Theme Is Exclusive To VIP Members. Upgrade To Unlock Premium Themes, Tables,
+              <h4 id="theme-vip-title" className="theme-vip-prompt__title">
+                VIP Design
+              </h4>
+              <p id="theme-vip-description" className="theme-vip-prompt__text">
+                This Design Is Exclusive To VIP Members. Upgrade To Unlock Premium Themes, Tables,
                 And More.
               </p>
               <div className="theme-vip-prompt__actions">

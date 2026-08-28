@@ -8070,7 +8070,7 @@ export default function TablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, buy_in_amount, buy_in_fee, max_players, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type'
+              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, buy_in_amount, buy_in_fee, max_players, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, final_table_triggered'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -8078,6 +8078,24 @@ export default function TablePage({
             reportError(tournError, 'TablePage.loadTableInfo_tournament_row', {
               tournamentId: table.tournament_id,
             });
+          }
+
+          /**
+           * FINAL TABLE IS ASKED FOR, NOT INFERRED (Dan 2026-08-28, bug 7).
+           *
+           * `isFinalTable` above falls back to a regex on the table NAME,
+           * because the engine's `final_table` broadcast is one-shot and a
+           * reconnecting client misses it. That fallback assumed the
+           * consolidated table gets renamed "Final Table"; production names it
+           * "Union PKO Afternoon (PLO4) - Table 2", so it matched nothing and
+           * the final-table background never loaded.
+           *
+           * The engine now persists `final_table_triggered`, so ask. Only ever
+           * turns the theme ON: the name regex and the live broadcast stay as
+           * they were, and an unreadable row leaves whatever they decided.
+           */
+          if (tournData?.final_table_triggered) {
+            setTableState((prev) => (prev.isFinalTable ? prev : { ...prev, isFinalTable: true }));
           }
 
           // ─── Resolve initial tournament blind level ───

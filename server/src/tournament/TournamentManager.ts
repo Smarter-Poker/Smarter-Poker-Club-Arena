@@ -62,6 +62,52 @@ export class TournamentManager extends TournamentManagerEliminations {
           console.log(
             `[Tournament:${this.tournamentId.slice(0, 8)}] FINAL TABLE reached with ${remainingPlayers} players on one table`
           );
+          /**
+           * ═══════════════════════════════════════════════════════════════
+           *  A ONE-SHOT BROADCAST IS NOT A STATE (Dan 2026-08-28, bug 7)
+           * ═══════════════════════════════════════════════════════════════
+           *
+           * Reported: "you can not see the final table background either."
+           *
+           * `this.isFinalTable` is an in-memory flag on this process and the
+           * announcement below is sent ONCE. Anyone not listening at that
+           * instant never learns the tournament reached its final table:
+           * a player who reconnects (which is exactly what happened — see
+           * bug 1), a second device, a spectator arriving later, or every
+           * client at once if the engine restarts.
+           *
+           * The client had a fallback, and it was a REGEX ON THE TABLE NAME:
+           *   /\bfinal table\b/i.test(table.name)
+           * on the stated grounds that "TournamentService canonically names
+           * the consolidated table 'Final Table'". Production disagrees —
+           * 4f42d847's final table is named "Union PKO Afternoon (PLO4) -
+           * Table 2" — so the fallback matched nothing and the background
+           * never loaded.
+           *
+           * `tournaments.final_table_triggered` has existed as a column the
+           * whole time and NOTHING EVER WROTE IT: 0 of 1,286 completed MTTs
+           * in thirty days had it set. Writing it makes the state durable and
+           * lets any client, at any time, ask the tournament rather than
+           * guess from a name.
+           *
+           * A failed write is logged and nothing else: the broadcast below
+           * still goes out, so the live table is unaffected, and the next
+           * sweep re-enters this branch only if the process restarts —
+           * `.eq('final_table_triggered', false)` keeps that idempotent.
+           */
+          const { error: flagErr } = await supabase
+            .from('tournaments')
+            .update({ final_table_triggered: true })
+            .eq('id', this.tournamentId)
+            .eq('final_table_triggered', false);
+          if (flagErr) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] could not persist final_table_triggered (${flagErr.message}) — the announcement still went out, but a reconnecting client will not see the final-table theme`
+              ),
+              'Tournament.final_table_flag_write_failed'
+            );
+          }
           await this.broadcast('final_table', { playerCount: remainingPlayers || 0 });
         } else if (liveTables !== null && liveTables > 1) {
           console.log(

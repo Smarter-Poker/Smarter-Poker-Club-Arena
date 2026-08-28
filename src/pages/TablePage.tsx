@@ -13354,6 +13354,25 @@ export default function TablePage({
             }
           }
 
+          /* OUTAGE VISIBILITY (2026-08-28). A reason none of the branches
+             below recognize collapses into the generic toast and vanishes:
+             that is exactly how the seat_first_variant regression (the
+             2026-08-27 guard refusing its own internal caller) ran for a
+             full day with every seat purchase failing and nothing reported
+             anywhere. The toast stays generic for the player, but the RAW
+             reason now reaches error reporting, so the next unknown refusal
+             is a searchable event instead of a dead end. */
+          const mappedReason =
+            /seat_taken|insufficient|already_started|game_already_started|tournament_full/.test(
+              reason
+            );
+          if (!mappedReason) {
+            reportError(
+              new Error(`seat_first_buy_in refused: ${reason || 'no_reason_given'}`),
+              'TablePage.seat_first_buy_in_refused',
+              { tableId, seatNumber, reason }
+            );
+          }
           toast?.error?.(
             /seat_taken/.test(reason)
               ? 'That Seat Was Just Taken'

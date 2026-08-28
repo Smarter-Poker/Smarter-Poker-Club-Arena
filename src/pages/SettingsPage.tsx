@@ -759,6 +759,19 @@ export default function SettingsPage() {
          the same number a second time. `setEnabled` stays because the gate keys
          are a different owner from the store and this page has to write both. */
 
+      /* Dan 2026-08-28: the Sound Effects switch on this page never reached
+         the sound engine. It persisted soundEnabled into
+         club-arena-table-settings, but the gate that actually silences
+         playback (utils/soundGate, consulted by SoundService.shouldPlay)
+         reads 'club_arena_sounds' / 'ca_sound_enabled' — neither of which
+         this page wrote. So muting here said "Settings saved!", the felt
+         kept playing, and the in-table switch still read ON: two switches
+         permanently disagreeing. setEnabled() updates the live engine AND
+         persists BOTH gate keys (the HamburgerMenu path); volume is applied
+         live for the same reason rather than waiting for a table mount. */
+      soundService.setEnabled(settings.soundEnabled);
+      soundService.setMasterVolume(Math.max(0, Math.min(100, settings.soundVolume)) / 100);
+
       /* Sync theme to Zustand store so Shell.tsx applies it immediately.
          2026-08-26: "Auto (System)" was offered in the dropdown, accepted by
          validation, saved, and then DROPPED here by an
@@ -1049,6 +1062,36 @@ export default function SettingsPage() {
               checked={settings.showPotOdds}
               onChange={(v) => updateSetting('showPotOdds', v)}
               label="Show Pot Odds"
+            />
+          </div>
+        </section>
+
+        {/* Gameplay Settings */}
+        <section
+          ref={gameplayRef}
+          className={styles.section}
+          style={settingsSectionAnimationStyle(2)}
+        >
+          <h2>Gameplay</h2>
+
+          {/* Confirm All-In toggle REMOVED 2026-08-28: it saved and synced,
+              but ActionPanel destructures the prop to _confirmAllInDeprecated
+              and never reads it — the in-table SettingsPanel removed its copy
+              for the same documented reason ("accept the action"). A toggle
+              that does nothing is worse than no toggle. The stored field
+              stays for compatibility with old saves. */}
+
+          <div className={styles.settingRow}>
+            <div className={styles.settingInfo}>
+              <span className={styles.settingLabel}>Auto-Muck My Winning Hand</span>
+              <span className={styles.settingDesc}>
+                Skip The Show-Or-Muck Prompt When You Win Without A Showdown
+              </span>
+            </div>
+            <Toggle
+              checked={settings.autoMuckWinners}
+              onChange={(v) => updateSetting('autoMuckWinners', v)}
+              label="Auto-Muck My Winning Hand"
             />
           </div>
         </section>

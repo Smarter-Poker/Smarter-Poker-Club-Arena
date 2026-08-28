@@ -141,6 +141,56 @@ describe('a stale replay is not announced at all', () => {
   });
 });
 
+describe('requireStamp — the login-path banner refuses unprovable hits (Dan 2026-08-28)', () => {
+  it('refuses an unstamped event when the caller demands a stamp', () => {
+    expect(
+      shouldAnnounceBbjHit({ tableId: 't1', handNumber: 7, requireStamp: true, now: NOW })
+    ).toBe(false);
+  });
+
+  it('does NOT mark an unstamped refusal as seen — a stamped copy may still announce', () => {
+    shouldAnnounceBbjHit({ tableId: 't1', handNumber: 8, requireStamp: true, now: NOW });
+    expect(
+      shouldAnnounceBbjHit({
+        tableId: 't1',
+        handNumber: 8,
+        emittedAt: NOW - 1_000,
+        requireStamp: true,
+        now: NOW,
+      })
+    ).toBe(true);
+  });
+
+  it('a fresh stamped event still announces with requireStamp', () => {
+    expect(
+      shouldAnnounceBbjHit({
+        tableId: 't1',
+        handNumber: 9,
+        emittedAt: NOW - 5_000,
+        requireStamp: true,
+        now: NOW,
+      })
+    ).toBe(true);
+  });
+
+  it('a stale stamped event is still refused with requireStamp', () => {
+    expect(
+      shouldAnnounceBbjHit({
+        tableId: 't1',
+        handNumber: 10,
+        emittedAt: NOW - 10 * 60_000,
+        requireStamp: true,
+        now: NOW,
+      })
+    ).toBe(false);
+  });
+
+  it('without requireStamp an unstamped event keeps the legacy identity-only path', () => {
+    expect(shouldAnnounceBbjHit({ tableId: 't1', handNumber: 11, now: NOW })).toBe(true);
+    expect(shouldAnnounceBbjHit({ tableId: 't1', handNumber: 11, now: NOW })).toBe(false);
+  });
+});
+
 describe('it never takes the table down', () => {
   it('still de-duplicates when storage throws (Safari private mode)', () => {
     const original = Object.getOwnPropertyDescriptor(window, 'sessionStorage');

@@ -169,7 +169,12 @@ export function resolveThemeBucket(
   return getThemeGameType(gameVariant, isTournament, tournamentType);
 }
 
-type ThemeRow = Partial<UserThemeSelection> & { game_type?: string | null };
+type ThemeRow = Partial<UserThemeSelection> & {
+  game_type?: string | null;
+  /** Row timestamp — lets a NEWER 'Apply To: ALL' save beat an older
+   *  per-variant row (Dan 2026-08-28, see pickThemeRow). */
+  updated_at?: string | null;
+};
 
 /** Fill every field, so a row with a NULL column cannot blank the felt. */
 function toSelection(row: ThemeRow): UserThemeSelection {
@@ -183,27 +188,43 @@ function toSelection(row: ThemeRow): UserThemeSelection {
 }
 
 /**
- * exact bucket  >  a row that canonicalises INTO the bucket  >  the 'ALL' row.
+ * exact bucket  >  a row that canonicalises INTO the bucket  >  the 'ALL' row
+ * — EXCEPT that a strictly NEWER 'ALL' row beats a stale bucket row.
+ *
+ * Dan 2026-08-28 ("settings need to update and refresh in real time"): the
+ * Theme Studio's Apply-To selector defaults to 'ALL', and the live listener
+ * applies an ALL save to every mounted table — but this resolver used to
+ * prefer any per-variant row unconditionally, so a player who once saved an
+ * NLH row watched their new everywhere-theme take effect and then VANISH on
+ * the next rejoin. Last write wins now: whichever of the bucket row and the
+ * ALL row was saved most recently is the player's current intent. A bucket
+ * row still wins ties and rows with no timestamp, which is exactly the old
+ * precedence — the fixtures that pin it carry no updated_at.
  *
  * Exported for the test that pins the 'plo4' recovery, and because the same
  * precedence has to hold anywhere else this table is read.
  */
 export function pickThemeRow(rows: ThemeRow[], gameType: CanonicalGameType): ThemeRow | null {
   if (!rows.length) return null;
-  const exact = rows.find((r) => (r.game_type || '') === gameType);
-  if (exact) return exact;
+  const allRow = rows.find((r) => (r.game_type || '') === 'ALL') ?? null;
   // The alias step is deliberately NOT applied to 'ALL'. canonicalGameType
   // answers 'ALL' for anything it does not recognise, so allowing it here
   // would let a row keyed on junk ('', 'not_a_variant', a typo) become the
   // player's global default — the everywhere-bucket must be claimed by a
   // literal 'ALL' row and nothing else.
-  if (gameType !== 'ALL') {
-    const canonical = rows.find(
-      (r) => (r.game_type || '') !== 'ALL' && canonicalGameType(r.game_type) === gameType
-    );
-    if (canonical) return canonical;
+  const bucketRow =
+    rows.find((r) => (r.game_type || '') === gameType) ??
+    (gameType !== 'ALL'
+      ? (rows.find(
+          (r) => (r.game_type || '') !== 'ALL' && canonicalGameType(r.game_type) === gameType
+        ) ?? null)
+      : null);
+  if (bucketRow && allRow && bucketRow !== allRow) {
+    const bucketTs = Date.parse(bucketRow.updated_at || '') || 0;
+    const allTs = Date.parse(allRow.updated_at || '') || 0;
+    return allTs > bucketTs ? allRow : bucketRow;
   }
-  return rows.find((r) => (r.game_type || '') === 'ALL') ?? null;
+  return bucketRow ?? allRow;
 }
 
 /* ─── First-paint cache (2026-08-28) ────────────────────────────────────────
@@ -320,7 +341,7 @@ export function useUserThemeSettings(
         // and the only way to see a row stored under a raw variant key.
         const { data, error: queryError } = await supabase
           .from('user_theme_settings')
-          .select('game_type, theme_id, table_id, button_id, background_id, cards_id')
+          .select('game_type, theme_id, table_id, button_id, background_id, cards_id, updated_at')
           .eq('user_id', userId);
 
         if (!mounted) return;

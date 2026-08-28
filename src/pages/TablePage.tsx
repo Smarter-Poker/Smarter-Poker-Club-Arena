@@ -640,14 +640,15 @@ const _win = window as any;
  *
  * LIVE E2E FIX 2026-08-20: this was {x:49.9, y:33} to mirror `.pot-area`'s
  * base rule (top:32.99%) in TablePage.css. But TableVisualHotfix.css ships
- * `.table-page .pot-area { top: 19% !important }` (Dan 2026-08-17 — pot moved
- * up for clear air above the board), which ALWAYS wins (two-class specificity
- * + !important). So the pot actually renders at 19% and chips aimed at 33
- * landed ~14% of table-height below it. `.pot-area` is a zero-size anchor
- * with translate(-50%,-50%), so its top% IS the pot's centre. Aim there.
+ * `.table-page .pot-area { top: 23% !important }` (Dan 2026-08-28 — pot moved
+ * DOWN so the top seat's bet chips can never touch the pot pill), which
+ * ALWAYS wins (two-class specificity + !important). So the pot actually
+ * renders at 23% and chips aimed anywhere else land off the pill.
+ * `.pot-area` is a zero-size anchor with translate(-50%,-50%), so its top%
+ * IS the pot's centre. Aim there.
  * If either the base rule or the hotfix moves the pot, move this with it.
  */
-const POT_ANCHOR_PCT = { x: 49.9, y: 19 };
+const POT_ANCHOR_PCT = { x: 49.9, y: 23 };
 
 /**
  * How long a multi-board reveal that was still playing when the NEXT hand
@@ -1429,6 +1430,23 @@ export default function TablePage({
     horseBugReporter.startCapturing();
     return () => horseBugReporter.stopCapturing();
   }, []);
+
+  /* Dan 2026-08-28 (settings must apply live): heroAvatarUrl was written
+     exactly once, by the mount effect above — a comment at the settings
+     handler claimed "the felt now listens to USER_PROFILE_LOADED", and no
+     such subscription existed. So a new avatar picked in the gallery updated
+     the seats (useSeatedProfileSync) but the buy-in modal, the settings
+     panel's own avatar row and the winner overlay all held the stale URL
+     until a reload. This IS that subscription. AvatarGallery emits
+     USER_PROFILE_LOADED on save (and it is in MasterBus's DEDUP_BYPASS, so
+     repeats are safe). */
+  useMasterBusSubscription('USER_PROFILE_LOADED', (payload: any) => {
+    if (!payload || payload.userId !== userId) return;
+    const url = payload.avatarUrl ?? payload.avatar_url;
+    if (typeof url === 'string' && url && isMounted.current) {
+      setHeroAvatarUrl(url);
+    }
+  });
 
   /** Safely extract big blind from blinds string (e.g. "1/2" → 2). Never crashes on undefined/null. */
   const safeBB = (blindsStr?: string | null, fallback = 2): number =>
@@ -4810,6 +4828,47 @@ export default function TablePage({
         setBbjAmount(Number(pool.main_balance) || 0);
         setBbjPoolId(pool.pool_id);
 
+        /* ── SEED THE HIT-COUNT BASELINE (Dan 2026-08-28) ──────────────────
+           "This old bad beat jackpot comes up every single time you log in,
+           and it's the same one."
+
+           WHY IT REPLAYED. The guard below announces when the pool row's
+           hit_count exceeds what this page has seen — but `_LAST_BBJ_HIT_
+           COUNT` is a module variable that restarts at 0 on every page load,
+           and `payload.old` carries ONLY the primary key (bbj_pools has
+           default replica identity), so `prevHitCount` is ALWAYS 0 too. The
+           pool row updates constantly (every raked hand contributes), so the
+           FIRST update after login always read as "hit_count went from 0 to
+           N" and re-announced the most recent HISTORICAL hit as though it
+           had just happened. Freshness could not save it either:
+           fn_bbj_recent_hits has no `hit_at` column (the code read one), so
+           the event went out unstamped.
+
+           The fix: before subscribing, read the pool's CURRENT hit_count and
+           make it the baseline. Only an increment that happens while this
+           page is live — an actual jackpot, landing right now — can exceed
+           it. If the read fails the baseline stays unseeded and the
+           freshness stamp below (now the ledger's real `awarded_at`) is the
+           second, independent gate. */
+        try {
+          const { data: poolRow } = await supabase
+            .from('bbj_pools')
+            .select('hit_count')
+            .eq('id', pool.pool_id)
+            .maybeSingle();
+          const liveHitCount = Number(poolRow?.hit_count);
+          if (
+            Number.isFinite(liveHitCount) &&
+            liveHitCount > (_LAST_BBJ_HIT_COUNT[pool.pool_id] || 0)
+          ) {
+            _LAST_BBJ_HIT_COUNT[pool.pool_id] = liveHitCount;
+          }
+        } catch {
+          /* Baseline stays unseeded — the awarded_at freshness gate still
+             stops a stale replay from announcing. */
+        }
+        if (cancelled || !isMounted.current) return;
+
         channel = supabase
           .channel(`bbj-pool-${pool.pool_id}-${tableId}`)
           .on(
@@ -4881,16 +4940,19 @@ export default function TablePage({
                       winnerName: hit.bad_beat_name || 'A player',
                       amount: hit.bad_beat_amount || hit.total_payout || 0,
                       /* Carried so the receiver can de-duplicate on the hit's
-                         own identity rather than on arrival time. This path
-                         is a postgres UPDATE, which does NOT replay on
-                         refresh — but it reaches the same notification as the
-                         engine path, and two producers feeding one gate must
-                         speak the same shape or the gate silently degrades to
-                         "unknown:0" for one of them. `hit_at` is the ledger's
-                         own timestamp; absent, freshness simply does not
-                         apply and identity still does. */
+                         own identity rather than on arrival time.
+
+                         Dan 2026-08-28: this used to read `hit.hit_at`, a
+                         column fn_bbj_recent_hits HAS NEVER RETURNED — so
+                         every event this path emitted was unstamped and the
+                         freshness gate never applied. The ledger's real
+                         timestamp is `awarded_at` (verified against the live
+                         function signature). With the stamp in place, a
+                         stale hit re-read at login is rejected by
+                         shouldAnnounceBbjHit's 90s window even if every
+                         other guard misfires. */
                       handNumber: hit.hand_number ?? 0,
-                      emittedAt: hit.hit_at ? new Date(hit.hit_at).getTime() : undefined,
+                      emittedAt: hit.awarded_at ? new Date(hit.awarded_at).getTime() : undefined,
                     });
                   }
                 } catch (err) {
@@ -9466,12 +9528,20 @@ export default function TablePage({
 
     /* Dan 2026-08-26: "it should only display once, and at the actual time it
        happens." The gate owns both halves — see lib/bbjHitOnce for why a
-       connection-scoped seq could never have covered a page refresh. */
+       connection-scoped seq could never have covered a page refresh.
+
+       Dan 2026-08-28: `requireStamp` — this is the login-path banner about a
+       hit SOMEWHERE ELSE, and an event with no timestamp cannot be proven
+       live. Both emitters now stamp their events (the ledger's awarded_at,
+       or Date.now() on the detail-less fallback), so the only thing this
+       refuses is exactly the unprovable case that was replaying Valentina's
+       days-old jackpot on every login. */
     if (
       !shouldAnnounceBbjHit({
         tableId: payload.tableId,
         handNumber: payload.handNumber,
         emittedAt: payload.emittedAt,
+        requireStamp: true,
       })
     ) {
       return;
@@ -16480,7 +16550,12 @@ export default function TablePage({
             // converge on the same place however far out they started.
             const collectOffset = chipCollectOffsetPx(pos, scalerSize, seatPod);
             const collectDx = collectOffset.x;
-            const collectDy = collectOffset.y;
+            /* Dan 2026-08-28: the HERO's bet chips render 30px above their
+               geometry rest point (SeatSlot.css `.seat--hero .seat__bet-chips`
+               — the badge/chips swap), so their remaining flight to the pot is
+               30px shorter. Without this term the collect animation overshoots
+               the pot pill by exactly that lift. */
+            const collectDy = collectOffset.y + (pos.y >= 100 && pos.x === 50 ? 30 : 0);
 
             return (
               <div
@@ -16528,9 +16603,31 @@ export default function TablePage({
 
                      A card face-up at showdown is the most important thing on
                      the table, so the seat showing one is lifted out of the tie
-                     entirely. Scoped to the moment of showdown: nothing moves
-                     while cards are face down. */
-                  player?.showCards && player?.holeCards?.length ? ' seat-wrapper--showing' : ''
+                     entirely.
+
+                     Dan 2026-08-28: "ALL CARDS SHOULD ALWAYS BE DISPLAYED ON
+                     TOP OF VILLAIN AVATAR, NEVER BELOW THEM." The gate used to
+                     be showCards alone, and showCards can drop for a frame
+                     mid-runout on the partial-player merge path — the seat
+                     fell from 30 back to 10 and a DOM-later neighbour's avatar
+                     painted over its face-up hand. An all-in seat with dealt
+                     cards is tabling its hand by definition (the same rule
+                     heroHandIsTabled applies), so it holds the lift for the
+                     whole runout regardless of merge jitter. */
+                  player?.holeCards?.length && (player?.showCards || player?.status === 'all_in')
+                    ? ' seat-wrapper--showing'
+                    : ''
+                }${
+                  /* Dan 2026-08-28 (equity smart placement): a seat showing
+                     an all-in equity badge lifts above the neighbouring
+                     wrappers (z 28, under --showing's 30) so the badge is
+                     never sealed beneath a DOM-later neighbour's avatar. */
+                  allInEquities.length > 0 &&
+                  player &&
+                  (allInEquities.some((e) => e.userId === player.id) ||
+                    allInEquities.some((e) => !e.userId && e.seat === seatNumber))
+                    ? ' seat-wrapper--equity'
+                    : ''
                 }`}
                 style={
                   {
@@ -16791,23 +16888,49 @@ export default function TablePage({
                       allInEquities.find((e) => !e.userId && e.seat === seatNumber);
                     if (!eq) return null;
                     const isAhead = eq.equity >= 50;
-                    /* Dan 2026-08-26 mobile pass, item 13: "percentages can
-                       never cut off or block the hands from being revealed
-                       while all in." Revealed villain cards fan OUTWARD (away
-                       from the felt centre — tableSeatGeometry.seatCardSide),
-                       so the badge goes to the seat's INBOARD side, where
-                       there are never cards: left-half seats carry it on
-                       their right, right-half seats on their left. The
-                       top-centre seat's cards fan right (the x===50 default),
-                       so its badge goes left. The hero keeps the below-seat
-                       badge — hero cards render in the corner panel, not at
-                       the seat. */
-                    const isHeroSeat = pos.y >= 100 && pos.x === 50;
-                    const eqSide = isHeroSeat
-                      ? ''
-                      : pos.x < 50
-                        ? ' equity-overlay--inboard-right'
-                        : ' equity-overlay--inboard-left';
+                    /* Dan 2026-08-28 (smart placement): "PERCENTAGES SHOULD
+                       ALWAYS BE ABOVE THE AVATAR WHEN POSSIBLE, NOT BELOW,
+                       AND NOT TO THE RIGHT. ONLY EXCEPTION IS THE TOP AVATAR
+                       — LEFT OR RIGHT — BUT IF A PLAYER TO THEIR LEFT OR
+                       RIGHT IS ALSO ALL IN, IT NEEDS TO BE SMART ENOUGH TO
+                       PUT IT ON THE OPEN SPACE."
+
+                       So: every seat defaults to a badge ABOVE the avatar
+                       (the felt above a seat is the one strip no cards, no
+                       plate and no chips ever occupy — the `--above` rule in
+                       TablePage.css clears the action badge's slot too). The
+                       top-cap seats cannot go above — the BBJ banner is
+                       there — so they dock to a side, and the side is CHOSEN:
+                       prefer the inboard side, but if another all-in badge is
+                       already showing on a top seat in that direction, swing
+                       to the open side. Runs only while equities are on
+                       screen, so the scan costs nothing in normal play. */
+                    const isTopCap = pos.y < 20;
+                    let eqSide = ' equity-overlay--above';
+                    if (isTopCap) {
+                      const sideBusy = (side: 'left' | 'right') =>
+                        seatPositions.some((p2, i2) => {
+                          if (i2 === idx || p2.y >= 35) return false;
+                          const pl2 = getPlayerAtSeat(i2 + 1);
+                          const otherHasEq =
+                            !!pl2 &&
+                            (allInEquities.some((e2) => e2.userId === pl2.id) ||
+                              allInEquities.some((e2) => !e2.userId && e2.seat === i2 + 1));
+                          if (!otherHasEq) return false;
+                          return side === 'left' ? p2.x < pos.x : p2.x > pos.x;
+                        });
+                      const inboard: 'left' | 'right' = pos.x <= 50 ? 'right' : 'left';
+                      const outboard: 'left' | 'right' = inboard === 'right' ? 'left' : 'right';
+                      const chosen = !sideBusy(inboard)
+                        ? inboard
+                        : !sideBusy(outboard)
+                          ? outboard
+                          : inboard;
+                      eqSide =
+                        chosen === 'right'
+                          ? ' equity-overlay--inboard-right'
+                          : ' equity-overlay--inboard-left';
+                    }
                     /* ANIMATION AUDIT 2026-08-19: styling moved to
                        TablePage.css (.equity-overlay) — the inline block had
                        no transition, so 72.4% snapped to 13.1% with zero

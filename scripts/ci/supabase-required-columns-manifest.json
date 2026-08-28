@@ -254,6 +254,20 @@
       "blocker_id",
       "blocked_id"
     ],
+    "bomb_pot_award_units": [
+      "hand_history_id",
+      "table_id",
+      "hand_number",
+      "pot_index",
+      "board",
+      "user_id",
+      "amount"
+    ],
+    "bomb_pot_manual_requests": [
+      "table_id",
+      "club_id",
+      "requested_by"
+    ],
     "bot_profiles": [
       "id",
       "username",

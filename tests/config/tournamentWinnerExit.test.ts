@@ -174,7 +174,16 @@ describe("The champion's exit", () => {
     // that had already been PAID (206 duplicates across 138 tournaments).
     // The invariant this test actually cares about is unchanged and is now
     // enforced structurally: neither loop can ever hand out place 1.
-    expect(engine).toMatch(/while \(nextPosition >= 2 && takenPositions\.has\(nextPosition\)\)/);
+    // 2026-08-28: the bust sweep's down-walk was renamed `nextPosition` ->
+    // `place` when the seed moved off the live playing count and the
+    // exhaustion `break` was replaced by an up-walk (Union PKO Afternoon
+    // 4f42d847 deadlocked heads-up because that break left a 0-chip player
+    // `status='playing'` forever, so finishTournament was unreachable). The
+    // invariant is unchanged and still structural: the down-walk stops at 2,
+    // and the up-walk starts ABOVE the seed, so neither can reach place 1.
+    expect(engine).toMatch(/while \(place >= 2 && takenPositions\.has\(place\)\) place--;/);
+    expect(engine).toMatch(/let up = nextPosition \+ 1;/);
+    expect(engine).not.toMatch(/eliminatePlayer\([^)]*,\s*1\s*\)/);
     expect(engine).toMatch(/while \(finishNext >= 2 && finishTakenPositions\.has\(finishNext\)\)/);
     expect(engine).toMatch(/no_free_finishing_place/);
   });

@@ -884,6 +884,11 @@ export interface HorseDecideOpts {
    *  survival premium scales with the fraction of stack actually at risk
    *  (default: enabled) */
   v24PloDefense?: boolean;
+  /** disable the V25 PLO tournament layer (Dan 2026-08-28): pot limit means
+   *  you cannot shove, so short-stack PLO is a COMMITMENT decision rather
+   *  than push/fold — plus the Omaha reshove, price-driven all-in calls, and
+   *  the rule against raise-folding a committed stack (default: enabled) */
+  v25PloTourney?: boolean;
   /** disable the V26 prize-landscape layer (Dan 2026-08-28): the horse reads
    *  the LIVE bounty inventory — how many chests are left, what one is worth
    *  on average, and whether the top prize is still in the box — and prices a
@@ -1238,6 +1243,9 @@ export class HorseLogic {
       // V21: deep-stack cash stack-off discipline.
       deepDiscipline: (opts.v21Deep ?? true) !== false,
       ploPriceDefense: (opts.v24PloDefense ?? true) !== false,
+      // V25: PLO tournament play — the pot-limit commitment zone and its
+      // consequences. Tournament-only by construction inside the engine.
+      ploTourney: (opts.v25PloTourney ?? true) !== false,
       // ═══ V24 BOUNTY (PKO / mystery) ═══ a bounty is prize money attached
       // to a PLAYER and collected by busting them, so pots against opponents
       // hero COVERS are worth more than their chips. Nothing preflop knew

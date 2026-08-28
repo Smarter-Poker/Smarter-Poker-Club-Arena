@@ -77,6 +77,66 @@ describe('horse load counting', () => {
   });
 });
 
+/**
+ * ONE GAME IS ONE GAME (2026-08-28).
+ *
+ * The old counter summed the two lists blindly. Its comment argued that a
+ * RUNNING tournament's entrants arrive only through the seat list, so nothing
+ * could be counted twice — true, and not enough. A SEAT-FIRST game sells the
+ * chair BEFORE it starts, so a spin sitting at REGISTERING has both a seat row
+ * and a pending registration for the same horse and the same game.
+ *
+ * Measured against production the day this was written: 20 accounts read as
+ * over the four-game cap, and only 3 actually were. Seventeen horses were held
+ * out of every board by a game they were playing once.
+ */
+describe('a seat-first chair is not two games', () => {
+  it('drops the registration when a seat at that tournament is already held', () => {
+    const load = buildHorseLoadMap(
+      [{ user_id: 'h1', tournament_id: 't1' }],
+      [{ user_id: 'h1', tournament_id: 't1' }]
+    );
+    expect(load.get('h1')).toBe(1);
+  });
+
+  it('a spin plus three cash tables is four games, not five', () => {
+    const load = buildHorseLoadMap(
+      [
+        { user_id: 'h1', tournament_id: 't1' },
+        { user_id: 'h1', tournament_id: null },
+        { user_id: 'h1', tournament_id: null },
+        { user_id: 'h1', tournament_id: null },
+      ],
+      [{ user_id: 'h1', tournament_id: 't1' }]
+    );
+    expect(load.get('h1')).toBe(4);
+    expect(horseAtCapacity(load.get('h1') ?? 0)).toBe(true);
+  });
+
+  it('still counts a booking for a DIFFERENT tournament', () => {
+    // The dedupe must not become a licence to double-book.
+    const load = buildHorseLoadMap(
+      [{ user_id: 'h1', tournament_id: 't1' }],
+      [{ user_id: 'h1', tournament_id: 't2' }]
+    );
+    expect(load.get('h1')).toBe(2);
+  });
+
+  it('counts an unattributed booking rather than guessing it away', () => {
+    // Under-counting hands out a horse that is already full and the database
+    // refuses the claim. Over-counting only costs a pass. Prefer the cheap
+    // mistake when the pairing is unknown.
+    const load = buildHorseLoadMap([{ user_id: 'h1', tournament_id: 't1' }], ['h1']);
+    expect(load.get('h1')).toBe(2);
+  });
+
+  it('accepts bare ids exactly as before', () => {
+    // Every existing caller and test passes plain strings; widening the input
+    // must not change what they measure.
+    expect(buildHorseLoadMap(['h1', 'h1'], ['h1']).get('h1')).toBe(3);
+  });
+});
+
 describe('the double-count rule, which is the one that fails silently', () => {
   /**
    * A RUNNING tournament's entrants hold SEATS, so they reach the load map

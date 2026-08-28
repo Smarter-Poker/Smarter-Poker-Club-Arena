@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import {
   BombPotScheduler,
   bombPotSettingsFromTable,
+  resolveBombPotVariant,
   type BombPotSchedulerSettings,
 } from './BombPotScheduler.js';
 
@@ -192,6 +193,51 @@ describe('bomb_pot_only (spec §4.4)', () => {
     expect(sch.noteHandStart(s, 2, 3, 0).isBombPot).toBe(true);
     expect(sch.noteHandStart(s, 3, 2, 0).isBombPot).toBe(false);
     expect(sch.noteHandStart(s, 1, 3, 0).isBombPot).toBe(true);
+  });
+});
+
+describe('resolveBombPotVariant (spec §10.1)', () => {
+  it('whitelisted overrides win; everything else means same-as-table', () => {
+    expect(resolveBombPotVariant('nlh', 'plo4')).toBe('plo4');
+    expect(resolveBombPotVariant('plo4', 'nlh')).toBe('nlh');
+    expect(resolveBombPotVariant('nlh', 'PLO5')).toBe('plo5');
+    expect(resolveBombPotVariant('nlh', null)).toBe('nlh');
+    expect(resolveBombPotVariant('nlh', '')).toBe('nlh');
+    // Unknown or unsupported values must NEVER deal a half-understood game.
+    expect(resolveBombPotVariant('nlh', 'plo8')).toBe('nlh');
+    expect(resolveBombPotVariant('nlh', 'short_deck')).toBe('nlh');
+    expect(resolveBombPotVariant('nlh', 'DROP TABLE tables')).toBe('nlh');
+  });
+});
+
+describe('timed persistence seed (spec §4.3)', () => {
+  const MIN = 60_000;
+
+  it('resumes a persisted future due time instead of restarting the cycle', () => {
+    const sch = new BombPotScheduler();
+    const s = base({ triggerMode: 'timed', intervalSeconds: 1800 }); // 30 min
+    // Engine restarts at t=0; the row says the bomb is due at t=5min.
+    sch.seedNextDueAt(5 * MIN);
+    expect(sch.noteHandStart(s, 1, 4, 0).isBombPot).toBe(false);
+    expect(sch.nextBombDueAt(s)).toBe(5 * MIN); // NOT re-set to 0 + 30min
+    expect(sch.noteHandStart(s, 2, 4, 6 * MIN).isBombPot).toBe(true);
+  });
+
+  it('a due time that passed during the deploy detonates at the first boundary', () => {
+    const sch = new BombPotScheduler();
+    const s = base({ triggerMode: 'timed', intervalSeconds: 1800 });
+    sch.seedNextDueAt(5 * MIN);
+    const d = sch.noteHandStart(s, 1, 4, 10 * MIN); // restart took a while
+    expect(d.isBombPot).toBe(true);
+    expect(d.triggerReason).toBe('timed');
+  });
+
+  it('never overwrites a running clock', () => {
+    const sch = new BombPotScheduler();
+    const s = base({ triggerMode: 'timed', intervalSeconds: 1800 });
+    sch.noteHandStart(s, 1, 4, 0); // clock set to 30min
+    sch.seedNextDueAt(5 * MIN); // stale persisted value arrives late
+    expect(sch.nextBombDueAt(s)).toBe(30 * MIN);
   });
 });
 

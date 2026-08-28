@@ -58,11 +58,71 @@
 export const DEFAULT_RAKE_RATE = 0.1;
 
 /**
- * Heads-Up / SNG rake (Dan 2026-08-25): "HEADS UP EVENTS ARE ONLY A 5% RAKE".
- * MIRROR of server/src/config/buyIn.ts — change one, change both;
- * tests/unit/tournamentRakeMirror.test.ts pins the two together.
+ * Dan 2026-08-25: "HEADS UP EVENTS ARE ONLY A 5% RAKE, SO A 1 CHIP BUY IN X 2
+ * PLAYERS = 5% OF 2 CHIPS, SO WINNER TAKES ALL = 1.90 PAYOUT."
  */
-export const SNG_RAKE_RATE = 0.05;
+export const HEADS_UP_RAKE_RATE = 0.05;
+
+/**
+ * A Spin charges the buy-in and NOTHING else — its rake is engineered into the
+ * multiplier distribution (src/config/spinSpec.ts), and `buy_in_fee` must be 0.
+ * A database constraint (tournaments_spin_no_extra_rake) refuses a fee-bearing
+ * Spin, so a writer that quotes one is quoting a row the database will reject.
+ */
+export const SPIN_RAKE_RATE = 0;
+
+/**
+ * Enough of a tournament to know what it costs to enter it. Every field is
+ * optional because the six creation paths each hold a different subset: a
+ * schedule row has `variant`, the owner modal has a format string, the
+ * recurring generator has a config with seats.
+ */
+export interface RakeSubject {
+  /** tournaments.tournament_type — 'MTT' | 'SNG' | 'SPIN'. Any case. */
+  tournamentType?: string | null;
+  /** tournaments.variant, or a creation form's format string. Any case. */
+  variant?: string | null;
+  /** Seats in the game. tournaments.max_players, or a form's field size. */
+  maxPlayers?: number | null;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE SINGLE SOURCE OF TRUTH FOR WHICH RATE A FORMAT PAYS
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * 2026-08-27 audit: `SNG_RAKE_RATE = 0.05` was declared in
+ * server/src/services/TournamentRecurringService.ts and had exactly ONE
+ * consumer. The other five creation paths — the owner create modal, the legacy
+ * tournament-page form, the table-config path, the client horse orchestrator
+ * and the SCHEDULED tournament service — all called `splitBuyIn` at the 10%
+ * default on a two-seat game.
+ *
+ * For four of those the damage was a lie rather than a loss: `fn_create_tournament`
+ * is authoritative, knows the rule, and rewrites the split. The owner was
+ * QUOTED "18 + 2 fee" on a 20-chip duel that was then written 19 + 1.
+ *
+ * ScheduledTournamentService was the money bug: it writes `buy_in_amount` and
+ * `buy_in_fee` DIRECTLY, bypassing the RPC entirely, so a schedule row with
+ * `type: 'sng'` produced a real 10% heads-up game.
+ *
+ * The rule is keyed on SEATS, not on the word "SNG". A two-handed game is a
+ * duel whatever its label says, and a label is exactly the thing that varies
+ * between six writers.
+ */
+export function rakeRateFor(subject: RakeSubject): number {
+  const type = String(subject?.tournamentType ?? '').toUpperCase();
+  const variant = String(subject?.variant ?? '').toLowerCase();
+  if (type === 'SPIN' || variant === 'spin') return SPIN_RAKE_RATE;
+
+  const seats = Number(subject?.maxPlayers);
+  // `> 0` matters: the modal sends 0 for "unlimited" on an MTT, and 0 is not a
+  // heads-up game. An unknown seat count falls through to the default rate —
+  // never to the cheaper one, so a misconfigured writer cannot hand away margin.
+  if (Number.isFinite(seats) && seats > 0 && seats <= 2) return HEADS_UP_RAKE_RATE;
+
+  return DEFAULT_RAKE_RATE;
+}
 
 /**
  * The buy-in levels a tournament may be priced at.

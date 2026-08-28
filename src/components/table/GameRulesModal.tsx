@@ -42,6 +42,10 @@ export interface GameRulesModalProps {
     boardCount?: number;
     /** 'every_n_hands' | 'once_per_orbit' | 'timed' | 'bomb_pot_only' */
     triggerMode?: string;
+    /** Timed mode: seconds between bombs. */
+    intervalSeconds?: number;
+    /** VARIANT OVERRIDE (spec §10.1): bomb hand variant; null = same as table. */
+    variant?: string | null;
   } | null;
 }
 
@@ -472,7 +476,9 @@ export function GameRulesModal({
                         {bombPotRules.triggerMode === 'once_per_orbit'
                           ? 'Once per orbit'
                           : bombPotRules.triggerMode === 'timed'
-                            ? 'Timed'
+                            ? (bombPotRules.intervalSeconds ?? 0) > 0
+                              ? `Every ${Math.round((bombPotRules.intervalSeconds ?? 0) / 60)} min`
+                              : 'Timed'
                             : bombPotRules.triggerMode === 'bomb_pot_only'
                               ? 'Every hand'
                               : bombPotRules.frequency > 0
@@ -496,6 +502,16 @@ export function GameRulesModal({
                             : '1'}
                       </span>
                     </div>
+                    {/* VARIANT OVERRIDE (spec §10.1): only shown when the bomb
+                        hand plays a different game from the table. */}
+                    {bombPotRules.variant && (
+                      <div className="rules-modal__item">
+                        <span className="rules-modal__label">Played As</span>
+                        <span className="rules-modal__value">
+                          {bombPotRules.variant.toUpperCase()}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

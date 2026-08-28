@@ -127,6 +127,9 @@ describe('TRIPLE-BOARD BOMB POT — dealing', () => {
     const trigger = h.events.find((e) => e.type === 'BOMB_POT_TRIGGERED') as any;
     expect(trigger.anteAmount).toBe(7);
     expect(trigger.postings.every((p: any) => p.amount === 7)).toBe(true);
+    // POLISH 2026-08-28: fixed mode must not advertise a BB multiple the
+    // price was never derived from — zero tells the overlay "fixed amount".
+    expect(trigger.bbMultiplier).toBe(0);
   });
 
   it('conserves chips exactly and splits the pot across three boards', () => {

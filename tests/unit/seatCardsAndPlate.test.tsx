@@ -162,11 +162,73 @@ describe('a revealed hand reads left to right at every seat', () => {
     ).toEqual([]);
   });
 
-  it('the top-cap seats keep their own left-to-right rule (they reveal downward)', () => {
+  it('the top-cap seats keep their own left-to-right rule', () => {
     const top = rulesFor('.seat-wrapper--top .seat .seat__cards--revealed .seat__card');
     expect(top.length, 'the top-cap reveal rule went missing').toBe(1);
     expect(top[0].body).toMatch(/left:\s*calc\(/);
     expect(top[0].body).toMatch(/right:\s*auto/);
+  });
+
+  /**
+   * Dan 2026-08-28, verbatim: "THE SHOW DOWN CARDS MUST ALWAYS BE ON TOP OF THE
+   * AVATAR, NEVER BELOW, THE TOP VILLAINS CARDS ARE COVERING THE POT."
+   *
+   * The top-cap rule used to read `top: auto; bottom: calc(-1 * var(--vh-card-h)
+   * - 6px)`, dropping a tabled hand a full card height below its own nameplate
+   * and onto the felt — where the pot lives, and where `.seat-wrapper--showing`
+   * at z-index 30 paints over the pot's 20.
+   *
+   * Pinned as a SHAPE rather than as pixel values: whatever the numbers become,
+   * the revealed cluster must be anchored from its `top` edge and pulled up by
+   * translateY(-100%), which is what makes it grow upward over the avatar. A
+   * `bottom:` anchor on any revealed villain cluster is the regression itself.
+   */
+  it('never anchors a revealed villain row from its BOTTOM edge - that is the one that ate the pot', () => {
+    const revealedClusters = RULES.filter(
+      (r) =>
+        r.selector.includes('seat__cards--opponent') &&
+        r.selector.includes('seat__cards--revealed') &&
+        // The CLUSTER, not the cards inside it. `.seat__card` is a prefix of
+        // `.seat__cards`, so a plain `includes` here matches everything and the
+        // loop below silently checks nothing.
+        !/\.seat__card(?!s)/.test(r.selector)
+    );
+    expect(
+      revealedClusters.length,
+      'the revealed villain cluster rules went missing'
+    ).toBeGreaterThan(0);
+
+    for (const rule of revealedClusters) {
+      const bottom = rule.body.match(/(?:^|[;{]|\s)bottom:\s*([^;]+);/);
+      if (bottom) {
+        expect(
+          bottom[1].trim(),
+          `${rule.selector} anchors the tabled hand from its bottom edge, which grows it ` +
+            'DOWNWARD off the seat and onto the pot'
+        ).toBe('auto');
+      }
+    }
+  });
+
+  it('grows the top-cap tabled hand UP over the avatar, from the same edge as every other seat', () => {
+    const top = rulesFor('.seat-wrapper--top .seat .seat__cards--opponent.seat__cards--revealed');
+    expect(top.length, 'the top-cap reveal anchor went missing').toBe(1);
+    const body = top[0].body;
+
+    // The base cluster's anchor: bottom edge 1px above the nameplate.
+    expect(body, 'must anchor from `top`, like the base cluster does').toMatch(
+      /top:\s*calc\(var\(--seat-avatar-size/
+    );
+    expect(body, 'a `bottom` anchor is what put the row on the pot').toMatch(/bottom:\s*auto/);
+
+    /* The transform is ONE property. Centring with a bare translateX(-50%)
+       silently drops the translateY(-100%) the base rule relies on, which puts
+       the row back across the nameplate — so both parts must be restated here. */
+    const transform = body.match(/transform:\s*([^;]+);/);
+    expect(transform, 'the top-cap reveal must declare its transform').toBeTruthy();
+    expect(transform![1], 'centring must not drop the bottom-edge anchoring').toMatch(
+      /translate\(\s*-50%\s*,\s*-100%\s*\)/
+    );
   });
 });
 
@@ -202,17 +264,29 @@ describe('the hero row opens out when the hand is shown, and only then', () => {
     ).toBe(true);
   });
 
-  it('scales the revealed card off --sp-card2-w, so it retunes at every breakpoint', () => {
-    // --sp-card2-* is already retuned in all four responsive blocks on `.seat`
+  it('scales the revealed card off --sp-cardrev-w, so it retunes at every breakpoint', () => {
+    // --sp-cardrev-* is retuned in all four responsive blocks on `.seat`
     // (pinned by HeroCardRowGeometry). Deriving from it means the revealed row
     // needs no breakpoint block of its own - and cannot acquire three copies
     // of the same number.
+    //
+    // IT WAS --sp-card2-w UNTIL 2026-08-27, and the split is the point of this
+    // beat now. Dan asked for hold-em hole cards to be the same size as PLO's,
+    // so --sp-card2-* took the PLO4 numbers - a 36% jump. The tabled row lays
+    // out WHOLE cards with a 1px gap rather than overlapping them, so the same
+    // jump there would have taken a tabled PLO6 hand on a 375px phone from
+    // 137px to 195px against 151px of room: the row would run off the screen
+    // at exactly the moment other players are trying to read it.
     for (const n of [4, 5, 6]) {
       const rule = rulesFor(`.seat__cards--hero.seat__cards--revealed:has(> :nth-child(${n}))`);
       expect(rule.length, `the revealed hero size for ${n} cards is missing`).toBe(1);
-      expect(rule[0].body, `${n}-card revealed width must derive from --sp-card2-w`).toMatch(
-        /--sp-hero-card-w:\s*calc\(var\(--sp-card2-w[^)]*\)\s*\*\s*0?\.\d+\)/
+      expect(rule[0].body, `${n}-card revealed width must derive from --sp-cardrev-w`).toMatch(
+        /--sp-hero-card-w:\s*calc\(var\(--sp-cardrev-w[^)]*\)\s*\*\s*0?\.\d+\)/
       );
+      expect(
+        rule[0].body,
+        `${n}-card revealed width must NOT read the private two-card token`
+      ).not.toMatch(/--sp-card2-w/);
     }
   });
 

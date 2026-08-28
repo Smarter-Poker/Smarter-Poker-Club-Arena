@@ -157,9 +157,17 @@
      copies byte-identical, which is a wish, not a mechanism.
 
      Do not replace this with a number, and do not inline the calc() back. The
-     line is derived from a ResizeObserver measurement published on
-     `.table-page` (TablePage.tsx); a literal is only ever right for one state
-     of one phone, which is the defect this replaces.
+     line is derived from `--sp-action-reserve` on `.table-page`; a literal is
+     only ever right for one state of one phone, which is the defect this
+     replaces.
+
+     2026-08-27: that reserve is now a DECLARED CONSTANT rather than the
+     ResizeObserver measurement it used to be. Following the bar's real height
+     sounded right and was not — the wrapper collapses to 1px whenever the hero
+     has no action, so this button fell to the bottom edge and jumped back on
+     every turn, several times a hand. See the note on --sp-action-reserve in
+     TablePage.css. The line still follows the bar; it follows the bar's
+     ENTITLEMENT, which is the part that does not move.
 
      The fallback is NOT a second answer to "where is the line". It is the
      last-resort case where `--sp-hud-line` never resolves at all - this button
@@ -175,7 +183,10 @@
   bottom: var(
     --sp-hud-line,
     calc(
-      var(--sp-action-h, calc(var(--sp-bottom-row-h, 52px) + env(safe-area-inset-bottom, 0px))) +
+      var(
+          --sp-action-reserve,
+          calc(var(--sp-bottom-row-h, 52px) + env(safe-area-inset-bottom, 0px))
+        ) +
         8px
     )
   );

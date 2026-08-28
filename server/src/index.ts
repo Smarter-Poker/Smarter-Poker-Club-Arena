@@ -338,8 +338,20 @@ const shutdown = async () => {
       // species of whoever is holding it, and it runs on every restart path.
       // Bounded at 8s and still inside the 20s cap below, so a table stuck
       // mid-hand cannot hold the process open and get us SIGKILLed mid-flush.
+      // 2026-08-28: BUDGET RAISED 8s -> 18s, and the outer cap with it.
+      //
+      // 8 seconds could not do the job it was written for. `pauseAfterHand`
+      // parks a table at the END of its current hand, and a hand on this
+      // platform runs ~20s, so an 8s budget expired with most tables still
+      // mid-hand — the drain logged "budget expired, stopping anyway" and
+      // stopped them, which is the voided hand it exists to prevent. The
+      // container gets `docker stop -t 45` of grace (server/scripts/
+      // engine-up.sh), so 18s of drain inside a 30s race leaves 12s for the
+      // state flush and still finishes 15s before Docker would SIGKILL.
+      // The drain returns EARLY the moment every table has parked, so a quiet
+      // fleet pays nothing for the larger budget.
       try {
-        await gameServer.drainHands(8000);
+        await gameServer.drainHands(18000);
       } catch (err) {
         console.error('[GameServer] drain failed, stopping anyway:', err);
       }
@@ -347,7 +359,7 @@ const shutdown = async () => {
       // reads from the last few minutes survive the restart.
       await Promise.allSettled([gameServer.stop(), channelWs.close(), stopHorseMindPersistence()]);
     })(),
-    new Promise((r) => setTimeout(r, 20_000)),
+    new Promise((r) => setTimeout(r, 30_000)),
   ]);
   process.exit(0);
 };

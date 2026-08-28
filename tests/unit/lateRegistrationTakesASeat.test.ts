@@ -188,9 +188,30 @@ describe('nobody busts before the chips arrive', () => {
   });
 
   it('a deferred Spin credit arms the bust sweep to the same instant, plus slack', () => {
-    expect(BASE).toMatch(
-      /this\.bustingArmedAt =\s*\n?\s*Date\.now\(\) \+ spinRevealToDealMs\(\) \+ TournamentManagerBase\.ELIMINATION_SWEEP_MS;/
-    );
+    /* UPDATED 2026-08-27, house rule 8. The rule this test is named for is
+       unchanged; the instant it measures from was corrected.
+
+       `Date.now() + spinRevealToDealMs()` assumed the reveal had not started
+       yet. It has: `stampSpinRevealAnchor` anchors the wheel to the THIRD
+       PAYMENT, several RPCs and a table build before this line runs, so by the
+       time the arming happens the hold is already partly spent. Adding a whole
+       fresh reveal to `Date.now()` therefore pushed the first bustable sweep
+       past the moment the chips actually land — the opposite of a safety
+       margin, and it grows with however slow the start path was.
+
+       Both branches are pinned: the hold when there is one, and the old
+       arithmetic as the fallback for a freeroll Spin whose paid gate never runs
+       and so never stamps an anchor. The "+ one sweep interval of slack" this
+       test exists for applies to whichever was used. */
+    const armAt = BASE.indexOf('this.bustingArmedAt =');
+    expect(armAt).toBeGreaterThan(-1);
+    const arm = BASE.slice(armAt, armAt + 300);
+    // Measured from the hold, which is anchored to the third payment...
+    expect(arm).toMatch(/this\.spinHoldUntil > 0 \? this\.spinHoldUntil/);
+    // ...falling back to the pre-anchor arithmetic when nothing was stamped...
+    expect(arm).toMatch(/Date\.now\(\) \+ spinRevealToDealMs\(\)/);
+    // ...plus one full sweep interval either way.
+    expect(arm).toMatch(/\+\s*\n?\s*TournamentManagerBase\.ELIMINATION_SWEEP_MS;/);
   });
 
   it('a sweep inside that window busts nobody', () => {

@@ -681,10 +681,30 @@ export function TableTabBar({
                     }
               }
             >
-              {/* PokerBros parity (Dan 2026-08-20): a tab where the hero holds
+              {/* ── CARDS WIN, ALWAYS (Dan 2026-08-28, mobile pass item 3) ──
+                  Verbatim: "THE ACTION PILL SHOULD ONLY EVER SHOW THE CARDS
+                  (CENTERED IN THE PILL) AND THE DISAPPEARING TIMER BAR...
+                  THATS IT, NO COUNTDOWN CLOCK OR ANYTHING ELSE."
+
+                  `hasCards` is now the FIRST branch. It used to be third, so a
+                  decision prompt or an engaged time bank REPLACED the hero's
+                  hand with a text countdown — and both of those only ever fire
+                  while the hero is holding cards, which made them the common
+                  case rather than the exception.
+
+                  Nothing is lost by it: the pill already flashes
+                  (`--flash` under 5s) and the timer bar already drains and goes
+                  red, so the urgency those labels carried is on the pill twice
+                  over without a digit on it. The label branches below still
+                  render when there is genuinely no hand to show, so a state can
+                  never fall through to a blank pill.
+
+                  PokerBros parity (Dan 2026-08-20): a tab where the hero holds
                   live cards previews THOSE CARDS; the name only shows between
                   hands / after folding. */}
-              {decisionLabel ? (
+              {hasCards ? (
+                <MiniCards cards={tab.holeCards!} />
+              ) : decisionLabel ? (
                 <span className="table-tab-bar__tab-label">
                   <span className="table-tab-bar__tab-name">{decisionLabel}</span>
                   <span className="table-tab-bar__tab-sub">
@@ -699,8 +719,6 @@ export function TableTabBar({
                   <span className="table-tab-bar__tab-name">TIME BANK</span>
                   <span className="table-tab-bar__tab-sub">{timeBankLeft}s</span>
                 </span>
-              ) : hasCards ? (
-                <MiniCards cards={tab.holeCards!} />
               ) : (
                 <span className="table-tab-bar__tab-label">
                   {/* Dan 2026-08-21: no hand here, so say WHAT GAME THIS IS.
@@ -723,19 +741,31 @@ export function TableTabBar({
                 </span>
               )}
 
-              {/* Transient last-action chip ("Fold", "Call", ...) */}
+              {/* Transient last-action chip ("Fold", "Call", ...). Only ever on
+                  a tab where it is NOT the hero's turn, so it never shares the
+                  pill with the timer bar and never pushes the cards off centre
+                  at the moment Dan is looking at them. */}
               {flash && !isMyTurn && (
                 <span className="table-tab-bar__action-chip">{ACTION_LABEL[flash] ?? flash}</span>
               )}
 
-              {/* Turn indicator — show timer or pulsing dot */}
-              {!isActive && isMyTurn && (
-                <span className="table-tab-bar__turn-dot">
-                  {tab.timeRemaining !== undefined && tab.timeRemaining < 15
-                    ? `${tab.timeRemaining}s`
-                    : ''}
-                </span>
-              )}
+              {/* ── THE COUNTDOWN BADGE IS GONE (Dan 2026-08-28, item 3) ──────
+                  There used to be a `.table-tab-bar__turn-dot` here rendering
+                  `${tab.timeRemaining}s` — the green "14s" pill in Dan's
+                  screenshot. Two things were wrong with it:
+
+                    1. He asked for no countdown clock on this pill at all. The
+                       draining bar below IS the clock, and it reads faster than
+                       a number does when you are watching four tables.
+                    2. It was an in-flow sibling of the mini-cards inside a pill
+                       that centres its children, so the cards sat OFF CENTRE
+                       exactly while it was the hero's turn — the one moment the
+                       pill is being looked at. That is the "(CENTERED IN THE
+                       PILL)" half of the same sentence: it is fixed by deleting
+                       this, not by adding alignment.
+
+                  `isUrgent` still drives `--urgent` on the pill and on the bar,
+                  so nothing about urgency was carried by the badge alone. */}
 
               {/* Depleting turn-timer bar (PokerBros parity): rides the bottom
                   edge of the pill whenever it is the hero's turn at this
@@ -792,7 +822,66 @@ export function TableTabBar({
             // table", so both entry points announce the same thing.
             aria-label="Open another table"
           >
-            +
+            {/* Dan 2026-08-28: the + is the metallic circled plus from his
+                reference image — a brushed-silver ring and cross, no dashed
+                outline, no background. Drawn inline so it scales crisply at
+                both the 36px desktop and 32px phone sizes and needs no asset
+                fetch before it is visible. */}
+            <svg
+              className="table-tab-bar__add-icon"
+              viewBox="0 0 48 48"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <defs>
+                <linearGradient id="spAddMetal" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor="#f4f6f8" />
+                  <stop offset="35%" stopColor="#b9bfc7" />
+                  <stop offset="60%" stopColor="#7e858f" />
+                  <stop offset="80%" stopColor="#a7adb6" />
+                  <stop offset="100%" stopColor="#5f666f" />
+                </linearGradient>
+                <linearGradient id="spAddMetalDark" x1="1" y1="1" x2="0" y2="0">
+                  <stop offset="0%" stopColor="#d7dbe0" />
+                  <stop offset="50%" stopColor="#868d97" />
+                  <stop offset="100%" stopColor="#4c525a" />
+                </linearGradient>
+              </defs>
+              <circle
+                cx="24"
+                cy="24"
+                r="20"
+                fill="none"
+                stroke="url(#spAddMetal)"
+                strokeWidth="5"
+              />
+              <circle
+                cx="24"
+                cy="24"
+                r="17.2"
+                fill="none"
+                stroke="rgba(0, 0, 0, 0.35)"
+                strokeWidth="0.8"
+              />
+              <rect x="21" y="12" width="6" height="24" rx="2.6" fill="url(#spAddMetalDark)" />
+              <rect x="12" y="21" width="24" height="6" rx="2.6" fill="url(#spAddMetalDark)" />
+              <rect
+                x="21.8"
+                y="12.8"
+                width="1.6"
+                height="22.4"
+                rx="0.8"
+                fill="rgba(255, 255, 255, 0.35)"
+              />
+              <rect
+                x="12.8"
+                y="21.8"
+                width="22.4"
+                height="1.6"
+                rx="0.8"
+                fill="rgba(255, 255, 255, 0.35)"
+              />
+            </svg>
           </button>
         ))}
       </div>

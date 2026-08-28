@@ -51,6 +51,8 @@ export type InvoiceStatus = 'pending' | 'partial' | 'paid' | 'overdue' | 'disput
 
 export interface CreditAccount {
   agentId: string;
+  /** The club this agent belongs to. Required by every credit_requests row. */
+  clubId: string | null;
   agentName: string;
   creditLimit: number;
   currentBalance: number;
@@ -127,7 +129,9 @@ export const CreditService = {
   async getCreditAccount(agentId: string): Promise<CreditAccount | null> {
     const { data: agent, error } = await supabase
       .from('agents')
-      .select('id, user_id, credit_limit, agent_wallet_balance, is_prepaid, status')
+      // club_id is selected because credit_requests.club_id is NOT NULL with no
+      // default, and requestCreditIncrease had nowhere else to get it.
+      .select('id, user_id, club_id, credit_limit, agent_wallet_balance, is_prepaid, status')
       .eq('id', agentId)
       .maybeSingle();
 
@@ -156,6 +160,7 @@ export const CreditService = {
 
     return {
       agentId: agent.id,
+      clubId: (agent as { club_id?: string | null }).club_id ?? null,
       agentName,
       creditLimit: agent.credit_limit || 0,
       currentBalance: agent.agent_wallet_balance || 0,
@@ -214,12 +219,20 @@ export const CreditService = {
   ): Promise<CreditLimitRequest> {
     const account = await this.getCreditAccount(agentId);
     if (!account) throw new Error('Agent not found');
+    // club_id is NOT NULL with no default. Omitting it made EVERY credit
+    // increase request a rejected statement: the caller saw a thrown error with
+    // a Postgres message and no request was ever recorded. Refuse with
+    // something readable instead of sending a write that cannot land.
+    if (!account.clubId) {
+      throw new Error('This agent has no club, so a credit request cannot be raised');
+    }
 
     const { data, error } = await supabase
       .from('credit_requests')
       .insert({
         // credit_requests schema: requester_id, requested_amount (NOT agent_id, current_limit, requested_limit)
         requester_id: agentId,
+        club_id: account.clubId,
         requested_amount: requestedLimit,
         reason,
         status: 'pending',

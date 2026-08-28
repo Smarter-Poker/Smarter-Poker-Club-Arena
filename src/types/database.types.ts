@@ -132,6 +132,10 @@ export interface TableSettings {
   bomb_pot_interval_seconds?: number | null;
   bomb_pot_min_players?: number;
   bomb_pot_ante_fixed?: number | null;
+  /** VARIANT OVERRIDE (spec §10.1): bomb hand variant; NULL = same as table. */
+  bomb_pot_variant?: 'nlh' | 'plo4' | 'plo5' | 'plo6' | null;
+  /** TIMED PERSISTENCE (spec §4.3): engine-written next due timestamp. */
+  bomb_pot_next_due_at?: string | null;
   // 2026-08-18: time_bank_seconds is gone. A time bank is a flat 20s grant,
   // 2 per street (Bible V8 s6.2) — there is no per-table "seconds per
   // activation" any more, and the engine never read the column. Whether a

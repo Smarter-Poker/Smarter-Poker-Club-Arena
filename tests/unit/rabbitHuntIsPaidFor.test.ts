@@ -36,6 +36,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceMethod, sliceBlockAfter, sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -52,7 +53,7 @@ describe('the cards never go out in a broadcast', () => {
   it('rabbit_hunt_available carries no cards', () => {
     const at = SETTLEMENT.indexOf("type: 'rabbit_hunt_available'");
     expect(at, 'the availability event was not found').toBeGreaterThan(-1);
-    const event = SETTLEMENT.slice(at, at + 500);
+    const event = sliceEnclosingBlock(SETTLEMENT, "type: 'rabbit_hunt_available'");
     // The exact field that leaked. Its absence is the whole fix.
     expect(event).not.toMatch(/rabbit_cards/);
     expect(event).toMatch(/cards_available/);
@@ -61,7 +62,7 @@ describe('the cards never go out in a broadcast', () => {
   it('the client cannot read cards off the event even if one reappears', () => {
     const at = TABLE_PAGE.indexOf("eventType === 'rabbit_hunt_available'");
     expect(at, 'the client handler was not found').toBeGreaterThan(-1);
-    const handler = TABLE_PAGE.slice(at, at + 700);
+    const handler = sliceBlockAfter(TABLE_PAGE, "eventType === 'rabbit_hunt_available'");
     expect(handler).not.toMatch(/rabbit_cards/);
   });
 
@@ -74,7 +75,7 @@ describe('the cards are sold, not given', () => {
   it('the reveal charges before it answers', () => {
     const at = SETTLEMENT.indexOf('revealRabbitHunt');
     expect(at, 'revealRabbitHunt was not found').toBeGreaterThan(-1);
-    const body = SETTLEMENT.slice(at, at + 4000);
+    const body = sliceMethod(SETTLEMENT, 'public async revealRabbitHunt(');
     const charge = body.indexOf('fn_consume_rabbit_hunt');
     const answer = body.indexOf('offer.revealed.add');
     expect(charge, 'the reveal does not call the billing RPC').toBeGreaterThan(-1);
@@ -83,7 +84,7 @@ describe('the cards are sold, not given', () => {
 
   it('a failed charge reveals nothing', () => {
     const at = SETTLEMENT.indexOf('revealRabbitHunt');
-    const body = SETTLEMENT.slice(at, at + 4000);
+    const body = sliceMethod(SETTLEMENT, 'public async revealRabbitHunt(');
     // The refusal branch must return before any `cards` are attached.
     expect(body).toMatch(/charge\.success !== true/);
     // Bound the window at the START of the success path rather than by a
@@ -144,7 +145,7 @@ describe('the price is what Dan said it is', () => {
 
   it('a double tap does not bill twice', () => {
     const at = SETTLEMENT.indexOf('revealRabbitHunt');
-    const body = SETTLEMENT.slice(at, at + 4000);
+    const body = sliceMethod(SETTLEMENT, 'public async revealRabbitHunt(');
     const already = body.indexOf('offer.revealed.has(userId)');
     const charge = body.indexOf('fn_consume_rabbit_hunt');
     expect(already, 'no repeat-reveal short circuit').toBeGreaterThan(-1);
@@ -157,7 +158,7 @@ describe('who is offered a hunt, and for how many cards', () => {
     // Gating on heroFolded excluded the player who WON when everyone else
     // folded - the one person most likely to want to see the run-out.
     const at = TABLE_PAGE.indexOf("eventType === 'rabbit_hunt_available'");
-    const handler = TABLE_PAGE.slice(at, at + 700);
+    const handler = sliceBlockAfter(TABLE_PAGE, "eventType === 'rabbit_hunt_available'");
     expect(handler).not.toMatch(/heroFoldedInCurrentHandRef/);
   });
 
@@ -189,7 +190,7 @@ describe('who is offered a hunt, and for how many cards', () => {
     // quietly stopped working on that table with nothing to say why — the exact
     // blind spot that would have hidden the RIT bug above.
     const at = SETTLEMENT.indexOf('rabbitHuntOffers.set');
-    const block = SETTLEMENT.slice(at, at + 1200);
+    const block = sliceMethod(SETTLEMENT, 'protected async handleHandCompleteEvent(');
     expect(block).toMatch(/reportError\(err, 'ServerTableEngine\.rabbit_hunt_capture_error'\)/);
   });
 

@@ -21,10 +21,22 @@
 
 /**
  * The pool a tournament actually pays: the accrued entries or the advertised
- * guarantee, whichever is larger. The recurring service pre-applied this at
- * creation; scheduled tournaments accrue per-entry through the register RPCs
- * and apply it when the pool stops moving (late-reg close / add-on end, or at
- * start when there is no late registration at all).
+ * guarantee, whichever is larger.
+ *
+ * DISPLAY ONLY. DO NOT WIRE THIS BACK INTO A WRITE PATH (2026-08-27).
+ *
+ * The three engine sites that closed a prize pool used to compute this max and
+ * UPDATE `tournaments.prize_pool` with it. That is not applying a guarantee, it
+ * is inventing chips: no treasury was debited, no overlay row was written, and
+ * the difference was then paid to real wallets. 2,823 completed guaranteed
+ * events carry no overlay row, 1,492 of them accounting for 98,253.32 chips,
+ * and one club treasury went negative. Every one of those sites now calls
+ * `fn_apply_prize_guarantee`, which moves the money and returns the pool —
+ * see `TournamentManagerBase.applyPrizeGuarantee`.
+ *
+ * This function survives because the CLIENT shows the advertised pool before
+ * the guarantee is funded, and because the arithmetic is still worth pinning.
+ * Nothing on the server may write its result.
  */
 export function effectivePrizePool(prizePool: unknown, guaranteedPrize: unknown): number {
   const pool = Number(prizePool);

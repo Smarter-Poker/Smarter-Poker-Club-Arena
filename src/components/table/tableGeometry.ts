@@ -566,6 +566,73 @@ export const MARKER_MIN_GAP_WIDTH_PCT = 6;
  */
 export const FELT_MARKER_MARGIN_WIDTH_PCT = 2.5;
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE ONE SEAT OFF THE OVAL — THE HERO (Dan 2026-08-27, round 3)
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Dan, first: "hero's chips need to be moved up higher on the table when they
+   are put into the pot, and the action pill should be below them above the
+   hero's head."
+
+   That collides head-on with his own round-2 item 13, which is the rule this
+   whole module was built to keep:
+
+     "All chips should all appear to be in the same position and distance in
+      front of them. Imagine an imaginary oval, and all chips must appear
+      equally on that line for all players at all tables."
+
+   The collision was put to him with the cost stated rather than resolved by an
+   agent, and he ruled:
+
+     "All chips in all other positions and seats should sit in the same
+      position except for the hero, they need to be raised up more."
+
+   SO THE OVAL SURVIVES, WITH EXACTLY ONE NAMED EXCEPTION. This is a per-seat
+   term and it is a deliberate one — the first and only one in this file — so it
+   is written where it can be seen rather than folded into a margin that would
+   quietly move the two bottom-cap seats along with it.
+
+   WHY THE HERO IS DIFFERENT, AND WHY THE EXCEPTION IS NOT ARBITRARY. Every
+   other chair stands just off the painted felt and its bet lands by walking the
+   common rail inward. The hero's chair is at y=100 — about 10.8% of the table's
+   HEIGHT below the felt, further out than any other seat, because the hero is
+   drawn half on the rail where the player's own hands would be. Its rail walk
+   therefore overshoots the felt entirely and `clampIntoFelt` projects the bet
+   back onto the boundary, so the hero's bet is the one bet on the table that
+   the rail does not place: it is pinned to the felt's edge whatever the rail
+   says. The seat that is furthest out is the seat whose bet ends up lowest, and
+   it is also the only seat with something stacked between its bet and its head
+   — the action pill. Equal treatment of unequal geometry is what produced the
+   crowding Dan photographed.
+
+   HOW MUCH. 6% of the table's width, ~21px on a 375px phone, measured along the
+   line the bet already walks (seat -> felt centre), applied AFTER the clamp so
+   it is a lift off the boundary rather than a longer rail. That is the room the
+   pill needs: it was sitting in about 17px of space between the bet's underside
+   and the top of the hero's avatar, and `.seat--hero .seat__action` in
+   SeatSlot.css reads `--bet-offset-y`, so the pill follows this number and the
+   gap opens by exactly what is added here.
+
+   The lift cannot push the bet onto anything: at 375px it moves the hero's bet
+   from y 87.7% to y 84.1% of the scaler, and the nearest thing above it is the
+   felt masthead at y 51-60%. */
+
+/** How far the HERO's bet is lifted off the felt boundary, in % of table width. */
+export const HERO_CHIP_LIFT_WIDTH_PCT = 6;
+
+/**
+ * Is this the hero's chair?
+ *
+ * The same test `TablePage.tsx` and `DealerButton.tsx` already use to pick the
+ * hero's seat pod (`pos.y >= 100 && pos.x === 50`), so the three cannot disagree
+ * about which seat is the hero. Every ring in `src/lib/tableSeatGeometry.ts`
+ * puts the hero at exactly {50, 100}; the `>=` is for a future ring that seats
+ * the hero further out still, which would need the lift more, not less.
+ */
+export function isHeroSeat(seat: Pos): boolean {
+  return seat.y >= 100 && seat.x === 50;
+}
+
 /**
  * How much CLEAR FELT the button keeps between its own edge and the painted
  * rail, as a percentage of the table's width.
@@ -1042,7 +1109,28 @@ export function chipRestPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod?: S
 
   const step = chipStepWidthPct(seat, size, pod);
   const walked = unsq({ x: s.x + (dx / len) * step, y: s.y + (dy / len) * step }, size);
-  return clampIntoFelt(walked, size);
+  const onFelt = clampIntoFelt(walked, size);
+
+  /* THE HERO'S LIFT — the one seat off the oval, by Dan's ruling. See
+     HERO_CHIP_LIFT_WIDTH_PCT for why this seat and no other.
+
+     AFTER the clamp, not before, and that is the whole trick: the hero's walk
+     already overshoots the felt, so anything added to `step` is swallowed by
+     the projection and the bet does not move at all. Adding it here lifts the
+     bet OFF the boundary it was pinned to. Re-clamped so a small table or a
+     future ring cannot push it past the far edge, though at every size that
+     ships this lands well inside. */
+  if (isHeroSeat(seat)) {
+    const lifted = unsq(
+      {
+        x: sq(onFelt, size).x + (dx / len) * HERO_CHIP_LIFT_WIDTH_PCT,
+        y: sq(onFelt, size).y + (dy / len) * HERO_CHIP_LIFT_WIDTH_PCT,
+      },
+      size
+    );
+    return clampIntoFelt(lifted, size);
+  }
+  return onFelt;
 }
 
 /**

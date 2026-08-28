@@ -61,6 +61,7 @@
 
 import React, { useCallback, useEffect, useRef, useState, memo } from 'react';
 import { soundService } from '../../services/SoundService';
+import { reportError } from '../../utils/errorReporter';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
 import './DealAnimation.css';
 
@@ -354,6 +355,20 @@ function DealAnimationComponent({
     if (cards.length === 0) {
       // Not ready. Do NOT latch -- retry until the roster and geometry land.
       if (Date.now() >= run.waitUntil) {
+        // ANIMATION LAW TELEMETRY 2026-08-28: this is the ONE path where a
+        // hand can open with no deal animation (the roster/geometry never
+        // arrived inside SEAT_WAIT_MS). It used to happen in total silence —
+        // report it so a regression here is SEEN in Sentry, not discovered by
+        // a player. The give-up itself stays: a player frozen out of their
+        // turn is worse than a missing animation.
+        try {
+          reportError(
+            new Error(`DealAnimation gave up waiting for seat geometry (${SEAT_WAIT_MS}ms)`),
+            'AnimationLaw.deal_gave_up'
+          );
+        } catch {
+          /* telemetry must never break the table */
+        }
         finishRun(run);
         return;
       }

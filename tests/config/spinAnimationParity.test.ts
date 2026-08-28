@@ -184,11 +184,23 @@ describe('4. the two beats after the wheel are animated on the engine clock', ()
 
   it('keeps the stack-arrival animations the chip beat relies on', () => {
     expect(seatCss).toMatch(/\.seat__stack--up\s*\{[^}]*animation:\s*stackBounceUp 0\.4s/);
-    // 2026-08-28: the float now honours --animation-speed (2s * the user's
-    // multiplier); the pin follows the calc form so the beat stays asserted.
+    /* UPDATED 2026-08-28. `stackDeltaFloat 2s` became
+       `stackDeltaFloat calc(2s * var(--animation-speed, 1))` so the float
+       honours the table-wide speed setting, like every other keyframe on this
+       felt. The 2s BASE this pin was protecting is intact; only the multiplier
+       is new.
+
+       The update comes with a second assertion, because the drift it allows is
+       exactly what had already happened: --animation-speed is a DURATION
+       multiplier running to 3, and the JS that unmounts the indicator was still
+       a flat 2000ms, so on "slow" the node was removed after two seconds of a
+       six-second animation and the +/- simply disappeared. A CSS-only pin
+       cannot see that. Pin the pair. */
     expect(seatCss).toMatch(
       /animation:\s*stackDeltaFloat calc\(2s \* var\(--animation-speed, 1\)\)/
     );
+    // The React window that clears it must scale on the same multiplier.
+    expect(seat).toMatch(/setStackDelta\(0\), 2000 \* getAnimationSpeed\(\)/);
   });
 });
 

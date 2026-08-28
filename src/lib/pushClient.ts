@@ -539,6 +539,67 @@ export async function disablePush(): Promise<PushResult> {
   }
 }
 
+export interface TestPushResult {
+  ok: boolean;
+  /** How many of this account's devices the push service accepted. */
+  sent: number;
+  error?: string;
+}
+
+/**
+ * Fire a test push at this account and report how many devices accepted it.
+ *
+ * WHY THIS IS WORTH A BUTTON. Every other signal about push health is a proxy.
+ * `Notification.permission` says the OS dialog was accepted. A row in
+ * push_subscriptions says a subscription was persisted. Neither tells anybody
+ * whether a notification will actually arrive on the phone in their hand, and
+ * the gap between those two things is precisely where this stack has failed
+ * before: a rotated endpoint the server still believes in, a worker with no
+ * push handler, a vendor switched off a week earlier. Without a test the next
+ * confirmation is an unpredictable real event, which is no way to debug.
+ *
+ * The server deliberately bypasses the per-type preference gate for this, so a
+ * category toggle cannot make a healthy subscription look broken. `mute_all`
+ * and `push_enabled` still apply, because those are the player saying stop,
+ * and the response explains which one fired.
+ */
+export async function sendTestPush(): Promise<TestPushResult> {
+  try {
+    const res = await withTimeout(
+      fetch('/api/push/test', { method: 'POST', headers: authHeaders(), body: JSON.stringify({}) }),
+      15_000,
+      'Test push'
+    );
+    const json = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      sent?: number;
+      error?: string;
+      hint?: string;
+      reason?: string;
+    };
+    if (res.status === 401) {
+      return { ok: false, sent: 0, error: 'You need to be signed in to send a test.' };
+    }
+    if (res.status === 503) {
+      return { ok: false, sent: 0, error: 'Push is not configured on this deployment yet.' };
+    }
+    if (!res.ok) {
+      return { ok: false, sent: 0, error: json?.error || `Test failed (${res.status})` };
+    }
+    if (json.ok === true) return { ok: true, sent: json.sent || 0 };
+    return {
+      ok: false,
+      sent: 0,
+      // `hint` is the server's plain-English reading of `reason`. Prefer it,
+      // and fall back to the raw reason rather than to nothing: an unexplained
+      // failure here is the exact ambiguity the button exists to remove.
+      error: json.hint || json.reason || 'The test push was not delivered.',
+    };
+  } catch (e) {
+    return { ok: false, sent: 0, error: (e as Error)?.message || 'Test push failed.' };
+  }
+}
+
 /**
  * Is this specific device currently subscribed?
  *
@@ -571,6 +632,7 @@ export async function hasLocalSubscription(): Promise<boolean> {
 export default {
   enablePush,
   disablePush,
+  sendTestPush,
   hasLocalSubscription,
   isWebPushSupported,
   notificationPermission,

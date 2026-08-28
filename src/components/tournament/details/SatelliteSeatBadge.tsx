@@ -33,6 +33,24 @@
  * because at 20px the arcs and the rim highlights read as noise on a phone.
  * The PNG ships at 4x the render size so it stays sharp on a 3x retina panel.
  *
+ * THE FILENAME CARRIES A VERSION, AND THAT IS NOT DECORATION. Files under
+ * `public/` are copied through the build verbatim — Vite hashes code chunks,
+ * it does NOT hash these — and production serves them
+ * `cache-control: public, max-age=2592000`. So on 2026-08-28 the artwork was
+ * replaced twice AT THE SAME PATH, the bytes on the CDN changed both times,
+ * and every browser that had already loaded the old icon kept painting it
+ * from disk for the next thirty days. The deploy was correct and the screen
+ * was wrong, which is the worst shape a bug can have. Bumping the filename
+ * changes the URL, and a URL that has never been requested cannot be stale.
+ * `btn-hamburger-v4.png` and `header-help-v4.png` in this same folder are the
+ * same lesson already learned once.
+ *
+ * `satellite-seat-icon.png` is kept beside it, holding the SAME bytes, purely
+ * so a browser still running the previous JS chunk renders the new art rather
+ * than a broken-image box for the few minutes before it picks up this build.
+ * It has no importer left in `src/`; when the next person is confident no
+ * stale bundle is in flight, it can go.
+ *
  * IF YOU CHANGE THE SIZE, change `width`/`height` AND the inline style
  * together. The attributes reserve the box before the image loads (no layout
  * shift in a long entries list); the style is what actually paints. One
@@ -44,7 +62,7 @@ import { mediaUrl } from '../../../utils/mediaBase';
 export default function SatelliteSeatBadge() {
   return (
     <img
-      src={mediaUrl('images/satellite-seat-icon.png')}
+      src={mediaUrl('images/satellite-winner-v3.png')}
       alt="Satellite Winner"
       title="Satellite Winner"
       width={30}

@@ -89,6 +89,9 @@ if (!existsSync(BASELINE)) {
 }
 const baseline = JSON.parse(readFileSync(BASELINE, 'utf8'));
 const allowed = new Set(Object.keys(baseline.reviewedExceptions ?? {}));
+// Tables in `public` with RLS off that a browser role can write. Separate list
+// because the remedy is different: there is no guard to fix, only a grant.
+const allowedTables = new Set(Object.keys(baseline.reviewedTables ?? {}));
 
 if (!URL_ || !KEY) {
   console.error(
@@ -121,12 +124,15 @@ try {
 // honestly instead of throwing.
 const found = Array.isArray(live) ? live : (live?.unauthenticated_writers ?? []);
 const anonWriters = Array.isArray(live) ? [] : (live?.anon_writers ?? []);
+const rlsOffWritable = Array.isArray(live) ? [] : (live?.rls_disabled_writable ?? []);
+const newTables = rlsOffWritable.filter((t) => !allowedTables.has(t.table));
 const newly = found.filter((f) => !allowed.has(f.function));
 const goneQuiet = [...allowed].filter((name) => !found.some((f) => f.function === name));
 
 console.log(
   `[definer-exposure] live: ${found.length}, baselined: ${allowed.size}, new: ${newly.length}; ` +
-    `anon-executable writers: ${anonWriters.length} (must be 0)`
+    `anon-executable writers: ${anonWriters.length} (must be 0); ` +
+    `RLS-off writable tables: ${rlsOffWritable.length} (${newTables.length} new)`
 );
 
 if (goneQuiet.length > 0) {
@@ -162,12 +168,42 @@ if (anonWriters.length > 0) {
   process.exit(1);
 }
 
+// A table with RLS off that a browser can write has no guard in front of it at
+// all: the grant is the whole story. A new one is the most expensive single
+// mistake available in this schema, and it is completely silent.
+if (newTables.length > 0) {
+  console.error('');
+  console.error('[definer-exposure] A TABLE WITH RLS OFF IS WRITABLE FROM A BROWSER.');
+  console.error('');
+  summary('### Live exposure: RLS OFF AND WRITABLE');
+  summary('');
+  for (const t of newTables) {
+    const roles = [t.anon_write ? 'anon' : null, t.authenticated_write ? 'authenticated' : null]
+      .filter(Boolean)
+      .join(', ');
+    console.error(`  ${t.table}  writable by: ${roles}  (owner ${t.owner})`);
+    summary(`- \`${t.table}\` writable by ${roles}, owner \`${t.owner}\``);
+  }
+  console.error('');
+  console.error('  Enable RLS and give it a policy, or revoke the writes:');
+  console.error('');
+  console.error('    ALTER TABLE public.<name> ENABLE ROW LEVEL SECURITY;');
+  console.error('    REVOKE INSERT, UPDATE, DELETE ON TABLE public.<name> FROM PUBLIC, anon, authenticated;');
+  console.error('');
+  console.error('  Check the OWNER first. A REVOKE only removes grants YOU made: postgres');
+  console.error('  cannot revoke what supabase_admin granted, and the attempt fails silently.');
+  console.error('  That is why spatial_ref_sys is baselined rather than fixed.');
+  console.error('');
+  process.exit(1);
+}
+
 if (newly.length === 0) {
   summary('### Live DEFINER exposure: OK');
   summary('');
   summary(
-    `${found.length} function(s) exposed, all of them reviewed and baselined, and ` +
-      'no writing function a logged-out caller can execute. Nothing unaccounted for.'
+    `${found.length} function(s) exposed, all reviewed and baselined; no writing function a ` +
+      `logged-out caller can execute; ${rlsOffWritable.length} RLS-off writable table(s), all ` +
+      'baselined. Nothing unaccounted for.'
   );
   process.exit(0);
 }

@@ -2998,11 +2998,17 @@ export class TournamentRecurringService {
        *    turns a near-certain collision into an unlikely one, which is the
        *    difference between systematic and occasional.
        */
+      // V22 (2026-08-27): the old `count + busy.size + 50` sizing ignored the
+      // LANE filter below, which excludes a third of any page (and the
+      // freeroll activity window up to 60%) — a stable arbitrary page that
+      // filtered to zero was re-examined forever. 4x headroom for the
+      // post-filters, still sized from the busy set per the
+      // pickFreeHorsesLimits convention.
       const { data: horses, error: horsesErr } = await supabase
         .from('profiles')
         .select('id')
         .eq('is_horse', true)
-        .limit(count + busy.size + 50);
+        .limit(count * 4 + busy.size + 50);
       if (horsesErr) {
         // The fleet read failing used to read as "the fleet is empty", which
         // is indistinguishable in the logs from a genuinely exhausted pool.
@@ -3731,25 +3737,59 @@ export class TournamentRecurringService {
        * anything at all. At four it is excluded exactly as before.
        */
 
+      /**
+       * V22 (2026-08-27, Phase 2) — THE PAGE THAT STARVED THE OVERLAY GUARD.
+       *
+       * This read `.limit(count + busyIds.size)` with no ORDER BY, then
+       * filtered by lane and load AFTERWARD. Postgres returns the same
+       * arbitrary rows for the same query, so every 2-minute guard cycle
+       * re-examined the same small page — and when that page happened to be
+       * cash-lane or at-capacity horses, the guard added NONE, forever, while
+       * hundreds of eligible horses sat beyond the limit. Measured cost on
+       * 2026-08-27 alone: $8,832 of overlay across 10 events, plus freerolls
+       * starting 1/100. The fetch still sizes itself from the busy set (the
+       * pickFreeHorsesLimits convention — a constant is a time bomb on a
+       * growing fleet), but now carries 4x headroom for the LANE and activity
+       * filters the old sizing ignored: the lane hash alone excludes a third
+       * of any page, the freeroll activity window up to 60%. Then rotate the
+       * pick window by hour so the same horses are not always first in line.
+       */
       const { data: horsePool } = await supabase
         .from('profiles')
         .select('id, display_name, username, use_real_name')
         .eq('is_horse', true)
         .eq('horse_status', 'available')
-        .limit(count + busyIds.size);
-      const horses = (horsePool ?? [])
-        .filter((h) => {
-          if (busyIds.has(h.id)) return false;
-          // Freeroll override (Dan 2026-08-27): free money is not a lane
-          // decision - every horse currently playing enters. Otherwise the
-          // 2026-08-26 rule stands: cash-only horses never register for
-          // events.
-          if (allLanes) return isActiveNow(h.id, new Date().getUTCHours());
-          return gameLaneFor(h.id) !== 'cash';
-        })
-        .slice(0, count);
+        .limit(count * 4 + busyIds.size + 50);
+      const poolAll = horsePool ?? [];
+      let busyDropped = 0;
+      let laneDropped = 0;
+      const eligible = poolAll.filter((h) => {
+        if (busyIds.has(h.id)) {
+          busyDropped++;
+          return false;
+        }
+        // Freeroll override (Dan 2026-08-27): free money is not a lane
+        // decision - every horse currently playing enters. Otherwise the
+        // 2026-08-26 rule stands: cash-only horses never register for
+        // events.
+        const ok = allLanes
+          ? isActiveNow(h.id, new Date().getUTCHours())
+          : gameLaneFor(h.id) !== 'cash';
+        if (!ok) laneDropped++;
+        return ok;
+      });
+      const rot = eligible.length > 0 ? (new Date().getUTCHours() * 7919) % eligible.length : 0;
+      const horses = eligible.slice(rot).concat(eligible.slice(0, rot)).slice(0, count);
 
-      if (!horses || horses.length === 0) return 0;
+      if (!horses || horses.length === 0) {
+        // Say WHY the pool came up empty — "added NONE" with no numbers is
+        // how this starved silently for a day.
+        console.warn(
+          `[TournamentRecurring] registerHorses found no candidates: fleet ${poolAll.length}, ` +
+            `at-capacity/entered ${busyDropped}, lane/window-excluded ${laneDropped}`
+        );
+        return 0;
+      }
 
       /**
        * Dan 2026-08-19: horses BUY IN like everyone else — this used to be a

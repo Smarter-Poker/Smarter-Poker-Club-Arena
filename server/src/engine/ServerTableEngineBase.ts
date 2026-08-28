@@ -29,6 +29,7 @@ import { ChipRaceEngine } from './ChipRaceEngine.js';
 import { TableBalancer } from './TableBalancer.js';
 import { TableBreakEngine } from './TableBreakEngine.js';
 import { EngineTelemetry } from './EngineTelemetry.js';
+import { getTournamentBrainContext } from '../services/TournamentBrainContext.js';
 import {
   getFullRakeConfig,
   getPlayerCountCaps,
@@ -1416,6 +1417,20 @@ export abstract class ServerTableEngineBase {
         }
       }
       this.tableInfo = tableData as TableInfo;
+
+      // V22 (2026-08-27, Phase 2): pre-warm the tournament ICM context the
+      // moment the engine knows which tournament it serves. The cache used to
+      // warm on the FIRST HORSE DECISION — with 7,000+ spins a day, the
+      // opening hands of every event ran on the flat premium while the fetch
+      // was still in flight. The call is synchronous-cheap: it only kicks the
+      // background refresh.
+      if (this.tableInfo?.tournament_id) {
+        try {
+          getTournamentBrainContext(String(this.tableInfo.tournament_id));
+        } catch {
+          /* warming is best-effort */
+        }
+      }
 
       // FIX 123: Bible V8 §6.2 + Dan's directive — Time bank auto-extend ONLY if:
       //   1. Table has time_bank_enabled = true

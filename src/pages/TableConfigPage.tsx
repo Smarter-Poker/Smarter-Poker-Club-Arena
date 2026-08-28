@@ -121,6 +121,10 @@ interface TableConfig {
   bombPotAnteFixed: number;
   /** VARIANT OVERRIDE (spec §10.1): '' = same as table, else nlh/plo4/plo5/plo6. */
   bombPotVariant: '' | 'nlh' | 'plo4' | 'plo5' | 'plo6';
+  /** ANNOUNCE WINDOW (spec §3): minutes before a timed bomb the clock appears; 0 = always. */
+  bombPotAnnounceMinutes: number;
+  /** SEPARATE BOMB BUTTON (spec §5.3): bomb hands rotate their own button. */
+  bombPotSeparateButton: boolean;
   pineappleHoldem: boolean;
   sevenDeuceEnabled: boolean;
   sevenDeuceAmountBB: number;
@@ -291,6 +295,8 @@ const DEFAULT_CONFIG: TableConfig = {
   bombPotMinPlayers: 3,
   bombPotAnteFixed: 0,
   bombPotVariant: '',
+  bombPotAnnounceMinutes: 0,
+  bombPotSeparateButton: false,
   // Bible V8 section 4.22 defaults, previously hard-coded in buildTableData.
   bombPotFrequency: 10,
   bombPotAnteBB: 2,
@@ -897,6 +903,16 @@ export default function TableConfigPage() {
     // VARIANT OVERRIDE (spec §10.1): NULL = bomb hands play the table's own
     // game. The engine whitelists; the DB CHECK mirrors it.
     bomb_pot_variant: config.bombPotEnabled && config.bombPotVariant ? config.bombPotVariant : null,
+    // ANNOUNCE WINDOW (spec §3): 0 = always show the timed clock.
+    bomb_pot_announce_seconds:
+      config.bombPotEnabled &&
+      config.bombPotTriggerMode === 'timed' &&
+      config.bombPotAnnounceMinutes > 0
+        ? Math.round(config.bombPotAnnounceMinutes * 60)
+        : null,
+    // SEPARATE BOMB BUTTON (spec §5.3).
+    bomb_pot_button_policy:
+      config.bombPotEnabled && config.bombPotSeparateButton ? 'separate' : 'regular',
     // DOUBLE-BOARD BOMB POT 2026-08-20 (legacy pair, kept in sync): the
     // engine used to read bomb_pot_double_board; board_count supersedes it.
     bomb_pot_double_board: config.bombPotEnabled && config.bombPotBoards >= 2,
@@ -1400,6 +1416,71 @@ export default function TableConfigPage() {
             />
             {config.bombPotEnabled && (
               <>
+                {/* HOST PRESETS (spec §3.2, 2026-08-28): one tap sets the
+                    whole bomb configuration; every control below still works
+                    for fine-tuning afterwards. */}
+                <div className="config-radio-group">
+                  <span className="radio-group-label">Bomb Pot Presets</span>
+                  <div className="radio-options">
+                    {(
+                      [
+                        [
+                          'Classic Double Board',
+                          {
+                            bombPotTriggerMode: 'once_per_orbit' as const,
+                            bombPotBoards: 2,
+                            bombPotAnteBB: 3,
+                            bombPotAnteFixed: 0,
+                            bombPotVariant: '' as const,
+                          },
+                        ],
+                        [
+                          'Timed Bomb',
+                          {
+                            bombPotTriggerMode: 'timed' as const,
+                            bombPotIntervalMinutes: 30,
+                            bombPotBoards: 2,
+                            bombPotAnteBB: 2,
+                            bombPotAnteFixed: 0,
+                            bombPotAnnounceMinutes: 5,
+                            bombPotVariant: '' as const,
+                          },
+                        ],
+                        [
+                          'Triple Board Special',
+                          {
+                            bombPotTriggerMode: 'timed' as const,
+                            bombPotIntervalMinutes: 60,
+                            bombPotBoards: 3,
+                            bombPotAnteBB: 2,
+                            bombPotAnteFixed: 0,
+                            bombPotAnnounceMinutes: 5,
+                            bombPotVariant: '' as const,
+                          },
+                        ],
+                        [
+                          'PLO Bomb Only',
+                          {
+                            bombPotTriggerMode: 'bomb_pot_only' as const,
+                            bombPotBoards: 2,
+                            bombPotAnteBB: 2,
+                            bombPotAnteFixed: 0,
+                            bombPotVariant: 'plo4' as const,
+                          },
+                        ],
+                      ] as const
+                    ).map(([label, preset]) => (
+                      <button
+                        key={label}
+                        type="button"
+                        className="config-preset-chip"
+                        onClick={() => setConfig((prev) => ({ ...prev, ...preset }))}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 {/* BOMB POT STANDARDIZATION 2026-08-27 (spec §2.1): the host
                     picks WHEN bombs fire — the legacy every-N-hands cadence,
                     once per dealer-button orbit, on a timer, or every hand
@@ -1454,6 +1535,17 @@ export default function TableConfigPage() {
                     max={50}
                     step={5}
                     suffix=" hands"
+                  />
+                )}
+                {config.bombPotTriggerMode === 'timed' && (
+                  <Slider
+                    label="Bomb Pot Countdown Shows"
+                    value={config.bombPotAnnounceMinutes}
+                    onChange={(v) => updateConfig('bombPotAnnounceMinutes', v)}
+                    min={0}
+                    max={15}
+                    step={1}
+                    suffix=" min before (0 = always)"
                   />
                 )}
                 {config.bombPotTriggerMode === 'timed' && (
@@ -1593,6 +1685,16 @@ export default function TableConfigPage() {
                     </label>
                   </div>
                 </div>
+                {/* SEPARATE BOMB BUTTON (spec §5.3): bomb hands rotate their
+                    own button; the regular button never sees bomb hands. The
+                    spec's own default is the regular button for ordinary cash
+                    tables — this is for structured formats. */}
+                <Toggle
+                  label="Separate Bomb Button"
+                  value={config.bombPotSeparateButton}
+                  onChange={(v) => updateConfig('bombPotSeparateButton', v)}
+                  tooltip="Bomb pots rotate their own dealer button, and the regular button does not move on bomb hands"
+                />
               </>
             )}
             {/* The freestanding Double Board toggle moved into the Bomb Pot

@@ -1199,6 +1199,23 @@ class MasterBusCore {
   // SUPABASE CHANNEL REGISTRY — Prevents duplicate subscriptions
   // ═══════════════════════════════════════════════════════════════════════════
   private channelRegistry: Map<string, RealtimeChannel> = new Map();
+  /**
+   * SHARED-CHANNEL REFCOUNT 2026-08-28.
+   *
+   * `getOrCreateChannel` hands the SAME Supabase channel to every consumer of
+   * a key, and `removeRegisteredChannel` used to tear it down unconditionally
+   * — so the first component to unmount silenced it for everyone still
+   * listening. Live shape: a player with the tournament lobby open beside a
+   * table in the same event closes the lobby, and the table stops receiving
+   * `t-break-<id>` break countdowns, add-on windows and bounty reveals for the
+   * rest of the event, with no error anywhere. Four consumers bind that one
+   * key (useMysteryBounty, MysteryBountyCelebration, TournamentLobbyPage,
+   * TablePage), and only one of them even attempted a guard — "I created it"
+   * is not "nobody else is reading it", which is why the guard could not work.
+   *
+   * The count belongs HERE, with the map it protects, not in each caller.
+   */
+  private channelRefs: Map<string, number> = new Map();
   private debouncedTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   // #4: Channel health monitor interval
@@ -1642,6 +1659,7 @@ class MasterBusCore {
   reset(): void {
     this.subscribers.clear();
     // Clean up all registered Supabase channels
+    this.channelRefs.clear();
     this.channelRegistry.forEach((channel) => {
       supabase.removeChannel(channel);
     });
@@ -1715,6 +1733,8 @@ class MasterBusCore {
    * If a channel with the same key already exists, returns it.
    */
   getOrCreateChannel(key: string): RealtimeChannel {
+    // Every handout takes a reference; removeRegisteredChannel gives one back.
+    this.channelRefs.set(key, (this.channelRefs.get(key) ?? 0) + 1);
     const existing = this.channelRegistry.get(key);
     if (existing) return existing;
 
@@ -1726,9 +1746,30 @@ class MasterBusCore {
   }
 
   /**
-   * Remove a registered channel by key
+   * Release one reference to a registered channel. The channel is torn down
+   * only when the LAST consumer lets go — see the channelRefs note above.
    */
   removeRegisteredChannel(key: string): void {
+    const remaining = (this.channelRefs.get(key) ?? 0) - 1;
+    if (remaining > 0) {
+      this.channelRefs.set(key, remaining);
+      return;
+    }
+    this.channelRefs.delete(key);
+    const channel = this.channelRegistry.get(key);
+    if (channel) {
+      supabase.removeChannel(channel);
+      this.channelRegistry.delete(key);
+    }
+  }
+
+  /**
+   * Force a channel down regardless of who still holds it. For teardown paths
+   * that own the whole surface (a full bus reset, sign-out) — never for a
+   * component unmount, which is what the refcounted release above is for.
+   */
+  forceRemoveRegisteredChannel(key: string): void {
+    this.channelRefs.delete(key);
     const channel = this.channelRegistry.get(key);
     if (channel) {
       supabase.removeChannel(channel);

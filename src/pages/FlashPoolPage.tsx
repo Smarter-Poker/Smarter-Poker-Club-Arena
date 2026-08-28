@@ -145,29 +145,9 @@ export default function FlashPoolPage() {
     return () => unsub();
   }, [user?.id]);
 
-  // ── Bus listener for pool updates (debounced) ──
-  useEffect(() => {
-    const unsub = masterBus.subscribeDebounced(
-      'GAME_STATE_UPDATED',
-      (event) => {
-        const data = event.payload;
-        if (!data) return;
-        setPools((prev) =>
-          prev.map((p) =>
-            p.poolId === data.poolId
-              ? {
-                  ...p,
-                  activePlayers: data.activePlayers ?? p.activePlayers,
-                  tablesRunning: data.tablesRunning ?? p.tablesRunning,
-                }
-              : p
-          )
-        );
-      },
-      500
-    );
-    return () => unsub();
-  }, []);
+  // GAME_STATE_UPDATED listener removed 2026-08-28: nothing emits it on the
+  // client bus, so this pool-stats patch never ran. The Supabase realtime
+  // channel below is the live path that actually works.
 
   // ── Supabase real-time for live pool stats ──
   useEffect(() => {

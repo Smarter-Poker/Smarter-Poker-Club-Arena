@@ -394,7 +394,8 @@ function DashboardTab({ clubId }: { clubId: string }) {
       masterBus.subscribeDebounced('CLUB_UPDATED', load, 500),
       masterBus.subscribeDebounced('SETTINGS_CHANGED', load, 500),
       masterBus.subscribeDebounced('CLUB_SETTINGS_UPDATED', load, 500),
-      masterBus.subscribeDebounced('COLLUSION_DETECTED', load, 500),
+      // COLLUSION_DETECTED removed 2026-08-28: nothing emits it on the client
+      // bus (detection is server-side), so the refresh could never fire.
       // Financial events: medium debounce (1500ms)
       masterBus.subscribeDebounced('CASHOUT_REQUESTED', load, 1500),
       masterBus.subscribeDebounced('CASHOUT_APPROVED', load, 1500),

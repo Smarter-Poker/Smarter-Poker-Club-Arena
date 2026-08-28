@@ -74,6 +74,7 @@ import { useState, useEffect, useCallback, useRef, startTransition, useMemo } fr
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
 import { SeatSlot } from '../components/table/SeatSlot';
 import { PotDisplay } from '../components/table/PotDisplay';
@@ -1369,8 +1370,22 @@ export default function TablePage({
       }
     };
   }, [tableId]);
-  const [username, setUsername] = useState<string>('Player');
-  const [heroAvatarUrl, setHeroAvatarUrl] = useState<string>('');
+  /**
+   * FIRST-PAINT IDENTITY (2026-08-28, flash sweep): these began at
+   * 'Player' / '' and the real name and avatar arrived only after
+   * getAuthUser() PLUS a profiles round trip — so the hero's own seat opened
+   * as an anonymous stranger on every table mount. The persisted session
+   * gives us the user id synchronously (a paint hint, not authentication),
+   * and lib/cachedIdentity keys the cached name/face to that id so another
+   * account's identity can never paint. initUser below still fetches the
+   * profile and overwrites both state and cache — the database stays truth.
+   */
+  const [username, setUsername] = useState<string>(
+    () => hydrateIdentity(cachedAuthUserId()).displayName || 'Player'
+  );
+  const [heroAvatarUrl, setHeroAvatarUrl] = useState<string>(
+    () => hydrateIdentity(cachedAuthUserId()).avatarUrl || ''
+  );
   // ANIMATION AUDIT 2026-08-19: boardStageKey is GONE. It re-keyed (and so
   // unmounted + remounted) the whole .community-area on every stage change —
   // one frame after CommunityCards had marked the new cards as newly dealt.
@@ -1417,8 +1432,15 @@ export default function TablePage({
           .eq('id', user.id)
           .maybeSingle();
         if (isMounted.current) {
-          setUsername(profile?.display_name || profile?.username || 'Player');
+          const resolvedName = profile?.display_name || profile?.username || 'Player';
+          setUsername(resolvedName);
           setHeroAvatarUrl(profile?.avatar_url || '');
+          // Refresh the first-paint cache with what the database just said,
+          // so the NEXT table open (and the header) wear it immediately.
+          persistIdentity(user.id, {
+            displayName: resolvedName === 'Player' ? null : resolvedName,
+            avatarUrl: profile?.avatar_url || null,
+          });
         }
       } catch (err) {
         reportError(err, 'TablePage.initUser_profile_failed');
@@ -1445,6 +1467,8 @@ export default function TablePage({
     const url = payload.avatarUrl ?? payload.avatar_url;
     if (typeof url === 'string' && url && isMounted.current) {
       setHeroAvatarUrl(url);
+      // Keep the first-paint cache current with the newly picked avatar.
+      persistIdentity(userId, { avatarUrl: url });
     }
   });
 
@@ -2887,7 +2911,10 @@ export default function TablePage({
   const rebuyPromptDeadlineRef = useRef<number | null>(null);
   const rebuyPromptTokenRef = useRef<string | null>(null);
   const beginRebuyPrompt = useCallback((): string => {
-    const token = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `rebuy-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const token =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `rebuy-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     rebuyPromptTokenRef.current = token;
     return token;
   }, []);
@@ -4263,9 +4290,29 @@ export default function TablePage({
         reportError(result.error, 'TablePage.Decline_for_hand_failed');
       }
     }
-    if (ritOpponent !== 'Opponent') {
-      setShowRIT(true);
-    }
+    /* ─── THE CLIENT DOES NOT OPEN THE RIT PANEL. THE ENGINE DOES. (2026-08-28)
+     *
+     * `if (ritOpponent !== 'Opponent') setShowRIT(true);` used to sit here — a
+     * legacy second way into the Run-It-Twice panel, gated on a DISPLAY STRING
+     * being something other than its initial value.
+     *
+     * It opened a panel with none of the context the panel needs. The countdown
+     * reads `ritDeadlineRef.current`, which the hand-boundary reset had zeroed,
+     * so it appeared already expired; `ritIsChooser`, `ritMaxRuns` and
+     * `ritPlayerCount` were stale from an earlier hand; and its Accept, Decline
+     * and choose-runs buttons all call `respondToRIT(tableId, …)` — POSTing a
+     * response to the engine for an offer that does not exist.
+     *
+     * The engine is the authority and always was. `handleAllInRunout` broadcasts
+     * `rit_offer` (server/src/engine — see RunItTwice.offerpath.test.ts, "THE
+     * OFFER FIRES: a 2-way all-in on a RIT cash table emits rit_offer"), and the
+     * `eventType === 'rit_offer'` handler further down THIS file sets chooserId,
+     * the real deadline, maxRuns, playerCount and isChooser before opening the
+     * panel on a deliberate 1500ms cadence.
+     *
+     * So declining insurance no longer opens anything. If RIT applies, the
+     * engine offers it — after the insurance decision, which is exactly what the
+     * old comment beside `handleAllIn` described this hook as doing. */
   };
 
   // Insurance auto-decline timeout — prevents hand from stalling if player AFK
@@ -4570,6 +4617,8 @@ export default function TablePage({
     intervalSeconds: number;
     /** VARIANT OVERRIDE (spec §10.1): bomb hand variant; null = same as table. */
     variant: string | null;
+    /** ANNOUNCE WINDOW (spec §3): clock shows within this many seconds; 0 = always. */
+    announceSeconds: number;
   } | null>(null);
 
   /**
@@ -4578,6 +4627,26 @@ export default function TablePage({
    * down to it in m:ss. The one-second tick runs ONLY while a due timestamp
    * exists — every other table pays nothing for this.
    */
+  /**
+   * SCOOP LABELS (spec §9.2/§13.3, 2026-08-28): the felt banner for a player
+   * sweeping a multi-board bomb pot. Set on a delay after the per-board
+   * winner record arrives (so it lands after the chip pushes), self-clears,
+   * and is fenced to its own hand number so a late event cannot label a
+   * newer hand.
+   */
+  const [scoopBanner, setScoopBanner] = useState<{
+    text: string;
+    name: string;
+    handNumber: number;
+  } | null>(null);
+  const scoopBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (scoopBannerTimerRef.current) clearTimeout(scoopBannerTimerRef.current);
+    },
+    []
+  );
+
   const [bombClockNowMs, setBombClockNowMs] = useState(() => Date.now());
   const bombPotNextAtLive = tableState.bombPotNextAt;
   useEffect(() => {
@@ -4589,11 +4658,74 @@ export default function TablePage({
     if (bombPotNextAtLive == null) return null;
     const remainMs = bombPotNextAtLive - bombClockNowMs;
     if (remainMs <= 0) return 'NEXT HAND';
+    // ANNOUNCE WINDOW (spec §3): the host can keep the clock quiet until the
+    // bomb is close — 0/absent means always show.
+    const announce = bombPotRules?.announceSeconds ?? 0;
+    if (announce > 0 && remainMs > announce * 1000) return null;
     const totalSec = Math.ceil(remainMs / 1000);
     const m = Math.floor(totalSec / 60);
     const s = totalSec % 60;
     return `${m}:${String(s).padStart(2, '0')}`;
-  }, [bombPotNextAtLive, bombClockNowMs]);
+  }, [bombPotNextAtLive, bombClockNowMs, bombPotRules?.announceSeconds]);
+
+  /**
+   * MANUAL_NEXT_HAND (spec §2.1/§15.3): club staff can arm one bomb for the
+   * next valid hand. The RPC is the authority (role-gated + audited); this
+   * check only decides whether the button is DRAWN, so an ordinary player is
+   * never shown a control that would refuse them.
+   */
+  const [isClubStaff, setIsClubStaff] = useState(false);
+  useEffect(() => {
+    if (!userId || userId === 'guest' || !actualClubIdLoaded) return;
+    const clubId = actualClubIdRef.current;
+    if (!clubId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [{ data: membership }, { data: club }] = await Promise.all([
+          supabase
+            .from('club_members')
+            .select('role')
+            .eq('club_id', clubId)
+            .eq('user_id', userId)
+            .maybeSingle(),
+          supabase.from('clubs').select('owner_id').eq('id', clubId).maybeSingle(),
+        ]);
+        if (cancelled) return;
+        const role = membership?.role?.toLowerCase() || '';
+        setIsClubStaff(club?.owner_id === userId || ['owner', 'co_owner', 'admin'].includes(role));
+      } catch {
+        /* staff check is a UI nicety — the RPC still enforces */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, actualClubIdLoaded]);
+
+  const handleManualBombPot = useCallback(async () => {
+    if (!tableId) return;
+    try {
+      const { data, error } = await supabase.rpc('fn_request_manual_bomb_pot', {
+        p_table_id: tableId,
+      });
+      const ok = !error && (data as { ok?: boolean } | null)?.ok === true;
+      if (ok) {
+        toast.success('Bomb Pot Armed For The Next Hand');
+      } else {
+        const reason = (data as { reason?: string } | null)?.reason || error?.message || 'refused';
+        toast.error(
+          reason === 'not_authorized'
+            ? 'Only Club Staff Can Trigger A Bomb Pot'
+            : reason === 'bomb_pots_disabled'
+              ? 'Bomb Pots Are Not Enabled On This Table'
+              : 'Could Not Arm The Bomb Pot'
+        );
+      }
+    } catch {
+      toast.error('Could Not Arm The Bomb Pot');
+    }
+  }, [tableId]);
 
   // Straddle state
   const [isStraddleEnabled, setIsStraddleEnabled] = useState(false);
@@ -7557,11 +7689,15 @@ export default function TablePage({
       // registration and stopped responding after the first press.
       setIsAutoRebuyEnabled((prev) => !prev);
     } else if (event.action === 'TOGGLE_SOUNDS') {
-      // Toggle sound
-      const muted = localStorage.getItem('table_sound_muted') === 'true';
-      localStorage.setItem('table_sound_muted', muted ? 'false' : 'true');
-      // trigger re-render by emitting settings change or forcing state update
-      masterBus.emit('SETTINGS_CHANGED', { setting: 'sound_muted', value: !muted });
+      /* Fixed 2026-08-28: this wrote 'table_sound_muted' — a key NOTHING
+         reads (soundGate documents it as outside the contract) — and emitted
+         a 'sound_muted' bus field no settings store accepts, so the tab-bar
+         Sounds item did nothing at all: no mute, no badge change, no error.
+         Route through the real path instead: soundService.isEnabled() is the
+         live truth (engine flag AND both persisted gate keys), and
+         setIsSoundEnabled updates state, the engine, and both keys — exactly
+         what the in-table sound switch does. */
+      setIsSoundEnabled(!soundService.isEnabled());
     } else if (event.action === 'TOGGLE_VIBRATIONS') {
       const enabled = isVibrationAllowed();
       if (enabled) {
@@ -7650,6 +7786,7 @@ export default function TablePage({
         bomb_pot_trigger_mode: string | null;
         bomb_pot_interval_seconds: number | null;
         bomb_pot_variant: string | null;
+        bomb_pot_announce_seconds: number | null;
       };
       let table: TableBootstrapRow | null = null;
       let error: unknown = null;
@@ -7661,7 +7798,7 @@ export default function TablePage({
         const res = await supabase
           .from('tables')
           .select(
-            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant'
+            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_announce_seconds'
           )
           .eq('id', tableId)
           .maybeSingle();
@@ -7811,6 +7948,12 @@ export default function TablePage({
                   (typeof table.bomb_pot_variant === 'string' && table.bomb_pot_variant) ||
                   (typeof settings.bomb_pot_variant === 'string' && settings.bomb_pot_variant) ||
                   null,
+                // ANNOUNCE WINDOW (spec §3): show the timed clock only within
+                // this many seconds of the due time. 0/null = always show.
+                announceSeconds:
+                  Number(table.bomb_pot_announce_seconds) ||
+                  Number(settings.bomb_pot_announce_seconds) ||
+                  0,
               }
             : null
         );
@@ -9886,6 +10029,40 @@ export default function TablePage({
     if (!tableId || horsesLoadedRef.current || _horsesLoadedForTable[tableId]) return;
     // Wait for table info to load first (maxPlayers must be set)
     if (tableState.blinds === '?/?') return;
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  TOURNAMENT TABLES ARE OFF LIMITS TO THE CLIENT HORSE PATH (2026-08-28)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * This whole effect is a pre-migration relic: the SERVER seats, funds and
+     * steers every horse on a tournament table (HorseFleetManager,
+     * fn_seat_horse_in_seat_first_game). Left ungated, it did two separate
+     * kinds of damage on every Spin a player opened, both caught live on
+     * production while chasing Dan's "ALL THE BUTTONS ARE 'EMPTY' /
+     * 'SPECTATING'" report:
+     *
+     * 1. populateHorsePlayers paints a horse whose real stack is 0 with an
+     *    INVENTED `bigBlind * 100` (2,000 on a 10/20 spin). The playHasBegun
+     *    latch reads "a seat bought at zero chips now holds a stack" as THE
+     *    START SIGNAL — one fabricated frame and it latches, D8 tears down
+     *    seatFirstBuyIn, every open seat renders as an inert EMPTY plate and
+     *    the footer says plain "Spectating". The DB overwrite to 0 arrives a
+     *    second later; the latch is deliberately permanent.
+     *
+     * 2. Worse, when it found no horses it called HydraService.seedTable —
+     *    which INSERTS table_seats rows directly from the browser. A spin's
+     *    paid-seat count IS its live table_seats count, so client-seeded
+     *    unpaid seats are indistinguishable from bought ones to the start
+     *    gate. Horses on tournament tables enter through the same paid RPCs
+     *    as humans (section 10.5), never through a spectator's browser.
+     *
+     * The blinds gate above has already run, and the same mount write that
+     * resolves the blinds stamps isTournament/tournamentId (loadTableInfo,
+     * one setTableState), so this check cannot race them. The ref is left
+     * unset on purpose: if a stale cash read later corrects into a
+     * tournament id, the effect re-runs and still refuses.
+     */
+    if (tableState.isTournament || tableState.tournamentId) return;
 
     // Set IMMEDIATELY to prevent duplicate async calls on re-render AND remount
     horsesLoadedRef.current = true;
@@ -9981,7 +10158,10 @@ export default function TablePage({
     };
 
     loadHorses();
-  }, [tableId, tableState.blinds]);
+    // isTournament/tournamentId are in the deps so a table whose tournament
+    // identity resolves after its blinds still re-evaluates the gate; the
+    // loaded-ref keeps a cash table from double-loading.
+  }, [tableId, tableState.blinds, tableState.isTournament, tableState.tournamentId]);
   // ═══════════════════════════════════════════════════════════════════════════
 
   // REALTIME PROFILES — a seated player's avatar or cosmetics changed
@@ -11880,6 +12060,64 @@ export default function TablePage({
               ]
             : null;
 
+        /* SCOOP LABELS (spec §9.2/§13.3, 2026-08-28): derived AFTER settlement
+           from the per-board winner record — one player sole-winning every
+           board is a SCOOP (TRIPLE SCOOP on three boards); sole-winning two of
+           three is a 2-BOARD SWEEP. Shown on a short delay so the label lands
+           after the chip pushes, never before (spec: "show SCOOP only after
+           the final award is complete"). */
+        {
+          const boardsSeen = [...new Set(winnersByBoard.map((w) => w.board))];
+          if (boardsSeen.length >= 2) {
+            const winnersPerBoard = new Map<number, Set<string>>();
+            for (const w of winnersByBoard) {
+              if (!winnersPerBoard.has(w.board)) winnersPerBoard.set(w.board, new Set());
+              winnersPerBoard.get(w.board)!.add(w.user_id);
+            }
+            let label: string | null = null;
+            let scoopUserId: string | null = null;
+            const soleWinners = [...winnersPerBoard.values()].map((s) =>
+              s.size === 1 ? [...s][0] : null
+            );
+            if (soleWinners.every((u) => u !== null && u === soleWinners[0])) {
+              label = boardsSeen.length >= 3 ? 'TRIPLE SCOOP!' : 'SCOOP!';
+              scoopUserId = soleWinners[0];
+            } else if (boardsSeen.length >= 3) {
+              const soleCount = new Map<string, number>();
+              for (const u of soleWinners) {
+                if (u) soleCount.set(u, (soleCount.get(u) ?? 0) + 1);
+              }
+              for (const [u, n] of soleCount) {
+                if (n === 2) {
+                  label = '2-BOARD SWEEP!';
+                  scoopUserId = u;
+                  break;
+                }
+              }
+            }
+            if (label) {
+              const scooper = tableStateRef.current.players.find((p) => p?.id === scoopUserId);
+              const scoopHand = tableStateRef.current.handNumber ?? 0;
+              if (scoopBannerTimerRef.current) clearTimeout(scoopBannerTimerRef.current);
+              scoopBannerTimerRef.current = setTimeout(() => {
+                scoopBannerTimerRef.current = null;
+                // A late label must never land on a newer hand's felt.
+                if ((tableStateRef.current.handNumber ?? 0) !== scoopHand) return;
+                setScoopBanner({
+                  text: label!,
+                  name: scooper?.name || '',
+                  handNumber: scoopHand,
+                });
+                // Self-clears with the celebration.
+                scoopBannerTimerRef.current = setTimeout(() => {
+                  scoopBannerTimerRef.current = null;
+                  setScoopBanner(null);
+                }, 5000 * getAnimationSpeed());
+              }, 2200 * getAnimationSpeed());
+            }
+          }
+        }
+
         // Bible V8 §5.1: Set winner info for seat highlight + hand name display
         if (winnerIds.length > 0) {
           // Use per-winner amounts from server when available (accurate for split pots)
@@ -13293,6 +13531,25 @@ export default function TablePage({
             }
           }
 
+          /* OUTAGE VISIBILITY (2026-08-28). A reason none of the branches
+             below recognize collapses into the generic toast and vanishes:
+             that is exactly how the seat_first_variant regression (the
+             2026-08-27 guard refusing its own internal caller) ran for a
+             full day with every seat purchase failing and nothing reported
+             anywhere. The toast stays generic for the player, but the RAW
+             reason now reaches error reporting, so the next unknown refusal
+             is a searchable event instead of a dead end. */
+          const mappedReason =
+            /seat_taken|insufficient|already_started|game_already_started|tournament_full/.test(
+              reason
+            );
+          if (!mappedReason) {
+            reportError(
+              new Error(`seat_first_buy_in refused: ${reason || 'no_reason_given'}`),
+              'TablePage.seat_first_buy_in_refused',
+              { tableId, seatNumber, reason }
+            );
+          }
           toast?.error?.(
             /seat_taken/.test(reason)
               ? 'That Seat Was Just Taken'
@@ -14667,55 +14924,37 @@ export default function TablePage({
   // ActionPanel's own confirm -> handleActionPanelAction('raise', amount), which
   // does the same clamping and optimistic update. Two copies of a money-moving
   // path, one of them unreachable, is how they drift.
-  const handleAllIn = async () => {
-    if (actionLockRef.current) return;
-    const heroSeat = tableState.heroSeat;
-    const hero = getPlayerAtSeat(heroSeat);
-    const heroStack = hero?.stack || 0;
-    if (heroStack <= 0) return;
-    if (!validateAndExecuteAction('allin')) return;
-    actionLockRef.current = true;
-    setTimeout(() => {
-      actionLockRef.current = false;
-    }, 300);
-    try {
-      //Local engine call removed — server is authoritative
-      soundService.playAllIn(); // SoundService handles haptic (strong) per Bible V8 §5.4
-      setIsAllInMode(true);
-      // BUG 026: optimistic update for instant visual feedback
-      const revert = applyOptimisticHeroAction('allin', heroStack);
-      if (tableId) {
-        const ok = await submitActionWithToast(tableId, userId, 'allin', heroStack, 'handleAllIn');
-        if (!ok) revert();
-      }
-    } catch (err) {
-      console.warn('[TablePage] All-in error:', err);
-    }
+  /* ─── `handleAllIn` USED TO BE HERE. THERE IS ONE SHOVE PATH NOW. ──────────
+   *
+   * The comment directly above says it: "Two copies of a money-moving path, one
+   * of them unreachable, is how they drift." That was written about
+   * handleConfirmRaise. The same sentence applied, unnoticed, to the function
+   * that used to sit right below it.
+   *
+   * The ALL IN BUTTON ran `handleActionPanelAction('allin')`. The A KEY ran
+   * `handleAllIn`. They had drifted in both directions:
+   *
+   *   - the button's path counts VPIP and PFR (the hero-stats block inside it);
+   *     `handleAllIn` did not, so a player who shoved by keyboard had their own
+   *     HUD stats under-count every one of those hands;
+   *   - `handleAllIn` armed the legacy client-side RIT prompt (`setRitOpponent`
+   *     + `setRitTimer`) and the button never did — so whether a later insurance
+   *     decline opened a RIT panel depended on WHICH CONTROL you shoved with.
+   *
+   * That arming is gone with it. The engine broadcasts `rit_offer` from
+   * `handleAllInRunout` and the `eventType === 'rit_offer'` handler in this file
+   * opens the panel with the real chooser, deadline, maxRuns and playerCount —
+   * see the note in `handleInsuranceDeclineForHand` above.
+   *
+   * Everything `handleAllIn` did that MATTERED is in the panel path already: the
+   * debounce lock, `validateAndExecuteAction('allin')`, the all-in sound,
+   * `setIsAllInMode(true)`, the optimistic update and the revert-on-refusal. The
+   * only behaviour deleted is the drift.
+   */
 
-    // Check for all-in scenario triggers (after slight delay to let state update)
-    workerTimeout(() => {
-      if (!isMounted.current) return;
-      // Use tableStateRef.current instead of stale tableState closure
-      const currentState = tableStateRef.current;
-      const activePlayers = currentState.players.filter(
-        (p) => p && p.status === 'active' && p.stack > 0
-      );
-      const allInPlayers = currentState.players.filter((p) => p && p.status === 'all_in');
-
-      // FIX 89: Insurance offers are now SERVER-AUTHORITATIVE.
-      // The server's InsuranceEngine creates offers and broadcasts via Realtime
-      // (event type: 'insurance_offers'). The client listens in the subscribeToHandState
-      // callback and shows InsuranceModal when the hero receives an offer.
-      // No local insurance calculation — server uses MonteCarloEquity with 5000 iterations.
-      //
-      // RIT prompt: triggered after insurance decision completes (in handleInsuranceDecline)
-      if (activePlayers.length === 0 && allInPlayers.length >= 2) {
-        const opponent = allInPlayers.find((p) => p?.id !== hero?.id);
-        setRitOpponent(opponent?.name || 'Opponent');
-        setRitTimer(10);
-      }
-    }, 500);
-  };
+  // handleConfirmRaise was removed on 2026-08-20 for the same reason — it was
+  // the confirm handler for a slider that never existed, so nothing could reach
+  // it, while the live path did the same clamping and optimistic update.
 
   // Keyboard Shortcuts — wired to table actions (Phase 8)
   // ONE keyboard system since 2026-08-28; TablePage's own duplicate listener is
@@ -14763,11 +15002,12 @@ export default function TablePage({
       void handleActionPanelAction(canCheckRightNow() ? 'check' : 'call');
     },
     onRaise: handleRaise,
-    /* NOT handleActionPanelAction('allin') — see the note above handleCheck.
-       The two all-in paths genuinely differ (VPIP counting vs the client RIT
-       prompt) and merging them is its own decision. This keeps the A key doing
-       exactly what it did before this commit. */
-    onAllIn: handleAllIn,
+    /* The SAME function the ALL IN button runs. Until 2026-08-28 this was
+       `handleAllIn`, a second implementation that skipped VPIP/PFR counting and
+       armed a legacy client-side RIT prompt the button never armed — so a shove
+       meant something different depending on which control you used. Deleted;
+       see the gravestone where it stood. */
+    onAllIn: () => void handleActionPanelAction('allin'),
     onToggleSound: () => setIsSoundEnabled(!isSoundEnabled),
     // FIX 199: onToggleHandStrength REMOVED — not allowed for live online gameplay
     onToggleStats: () => updateSetting('showHUD', !userSettings.showHUD),
@@ -16181,6 +16421,18 @@ export default function TablePage({
                         : tableState.bombPotIn === 1
                           ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
                           : `BOMB POT IN ${tableState.bombPotIn}`}
+                  </div>
+                )}
+
+                {/* SCOOP LABELS (spec §9.2/§13.3): one player swept the
+                    multi-board bomb pot — announced only after the awards
+                    have pushed, never before. */}
+                {scoopBanner && scoopBanner.handNumber === tableState.handNumber && (
+                  <div className="bomb-scoop-banner" aria-live="polite">
+                    <span className="bomb-scoop-banner__label">{scoopBanner.text}</span>
+                    {scoopBanner.name && (
+                      <span className="bomb-scoop-banner__name">{scoopBanner.name}</span>
+                    )}
                   </div>
                 )}
 
@@ -18070,6 +18322,8 @@ export default function TablePage({
         showGameRules={showGameRules}
         isStraddleEnabled={isStraddleEnabled}
         bombPotRules={bombPotRules}
+        canManualBombPot={isClubStaff && bombPotRules?.enabled === true}
+        onManualBombPot={handleManualBombPot}
         onCloseGameRules={() => setShowGameRules(false)}
         // Chips
         chipAnimations={chipAnimations}

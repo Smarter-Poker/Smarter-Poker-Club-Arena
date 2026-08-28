@@ -1248,6 +1248,48 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         });
         v_handHistoryId = result.handId;
 
+        // ── AWARD-UNIT LEDGER (2026-08-28, spec §16.2/§17) ──────────────────
+        // One row per (pot layer, board, hi/lo side, winner) for every
+        // MULTI-BOARD bomb hand — the settlements that are genuinely hard to
+        // reconstruct from the merged winners list. Amounts are the same
+        // post-rake display shares perPotAwards broadcast. Idempotency is the
+        // table's UNIQUE key (hand + pot + board + side + winner): a retried
+        // insert conflicts and does nothing, exactly as spec §17.2 demands.
+        // Fire-and-forget: the ledger narrates money that logHandHistory has
+        // already recorded; it must never be able to fail a hand.
+        if (
+          v_handHistoryId &&
+          this.currentHandBombPot &&
+          (this.currentHandBombPot.board_count ?? 1) >= 2 &&
+          this.currentHandPerPotAwards.length > 0
+        ) {
+          const ledgerRows = this.currentHandPerPotAwards.map((a) => ({
+            hand_history_id: v_handHistoryId,
+            table_id: this.tableId,
+            hand_number: this.handCount,
+            pot_index: a.potIndex,
+            board: a.board ?? 1,
+            side: a.low ? 'low' : 'high',
+            user_id: a.userId,
+            amount: a.amount,
+            hand_name: a.hand?.name ?? null,
+          }));
+          void Promise.resolve(
+            supabase.from('bomb_pot_award_units').upsert(ledgerRows, {
+              onConflict: 'hand_history_id,pot_index,board,side,user_id',
+              ignoreDuplicates: true,
+            })
+          )
+            .then(({ error }) => {
+              if (error) {
+                console.warn('[BombPot] award-unit ledger write failed:', error.message);
+              }
+            })
+            .catch((err: unknown) => {
+              console.warn('[BombPot] award-unit ledger write threw:', err);
+            });
+        }
+
         // ── Dan 2026-08-15 (item 3): tell the clients the hand's row id ──
         //
         // The discrete `hand_complete` event fires earlier in this file, and
@@ -1748,22 +1790,48 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
 
     // SETTLEMENT STEP 15: Unlock table — authoritative recount, ready for next hand
     await runStep('table_unlock', true, async () => {
-      const { count: dbPlayerCount } = await supabase
+      // PAYOUT-INTEGRITY 2026-08-28: this ran `dbPlayerCount ?? 0` on a count
+      // whose error was never destructured. It is the AUTHORITATIVE recount at
+      // the end of EVERY hand, so a single failed read wrote
+      // current_players = 0 on a live table, flipped it to 'waiting', and
+      // broadcast seated_count 0 to everyone sitting at it. TableService does
+      // the identical recount and checks the error first (TableService.ts:465);
+      // this path was the one without the guard.
+      //
+      // Same house rule as everywhere else in this engine: a count we could not
+      // read is UNKNOWN, not zero. Leave the table's status exactly as it is
+      // and let the next hand's recount settle it.
+      const { count: dbPlayerCount, error: countErr } = await supabase
         .from('table_seats')
         .select('*', { count: 'exact', head: true })
         .eq('table_id', this.tableId)
         .is('left_at', null);
-      const finalCount = dbPlayerCount ?? 0;
-      await updateTableStatus(this.tableId, finalCount, finalCount >= 2 ? 'running' : 'waiting');
+      let finalCount: number | null = null;
+      if (countErr || dbPlayerCount === null || dbPlayerCount === undefined) {
+        reportError(
+          new Error(
+            `[Table:${this.tableId.slice(0, 8)}] table_unlock: seat count unavailable (${countErr?.message ?? 'null count'}) - table status left unchanged`
+          ),
+          'ServerTableEngine.table_unlock_count_unavailable'
+        );
+      } else {
+        finalCount = dbPlayerCount;
+        await updateTableStatus(this.tableId, finalCount, finalCount >= 2 ? 'running' : 'waiting');
+      }
 
       // Phase X5 (2026-04-28): emit table_unlocked event paired with the
       // table_locked emitted at the start of settlement. Bible V8 §1.16.
+      // If the DB recount was unavailable, fall back to the engine's in-memory
+      // seat list for the event only: the unlock event must still pair with
+      // table_locked, and the in-memory roster is known state, not a
+      // fabricated zero. Table status itself was left unchanged above.
+      const unlockedCount = finalCount ?? this.seatedPlayers.length;
       this.hub?.emitEvent(this.tableId, {
         type: 'table_unlocked',
         table_id: this.tableId,
         hand_number: this.handCount,
-        seated_count: finalCount,
-        next_state: finalCount >= 2 ? 'running' : 'waiting',
+        seated_count: unlockedCount,
+        next_state: unlockedCount >= 2 ? 'running' : 'waiting',
         timestamp: Date.now(),
       });
     });

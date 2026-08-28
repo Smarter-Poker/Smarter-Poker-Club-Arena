@@ -270,7 +270,18 @@ export function TableMenu({
      nobody and read by nobody since the file was written. */
   const menuRef = useRef<HTMLDivElement>(null);
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
-  const [useRealName, setUseRealName] = useState(false);
+  // LAZY INITIALIZER (2026-08-28): the stored value was read one tick later
+  // in an effect, so the menu's "Real Name / Username" badge flashed wrong on
+  // mount. TablePage reads the very same key in its initializer — TableMenu
+  // now matches. (isVip stays async by design: entitlements are not cached
+  // locally, see useHeaderDataStore's cosmetics note.)
+  const [useRealName, setUseRealName] = useState(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME) === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [isVip, setIsVip] = useState(false);
   const { user } = useAuthUser();
   const avatarUrl = useHeaderDataStore((s) => s.avatarUrl);

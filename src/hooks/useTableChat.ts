@@ -215,6 +215,31 @@ export function useTableChat(
       const m = payload.newRow as any;
       if (!isMounted) return;
 
+      /**
+       * SIDE EFFECTS LIVE OUTSIDE THE UPDATER 2026-08-28.
+       *
+       * The unread bump and the incoming-message chime used to run INSIDE the
+       * `setChatMessages` updater. Under React 18 concurrent rendering an
+       * updater can be re-invoked on a discarded or rebased render, so one
+       * arriving message could tick the badge twice and play the chime twice.
+       * A state updater must be pure; these are effects, so they happen here,
+       * once, on the event itself.
+       */
+      if (isChatCollapsedRef.current && m.user_id !== userId) {
+        setUnreadCount((c) => c + 1);
+      }
+      // Warm notification ping for incoming messages from other players
+      // (skip our own echoes, system/dealer injections, and reaction/throw encodings)
+      const isRealPlayerMsg =
+        m.user_id !== userId &&
+        m.message_type !== 'system' &&
+        m.message_type !== 'dealer' &&
+        !REACTION_MSG_REGEX.test(m.message || '') &&
+        !THROW_MSG_REGEX.test(m.message || '');
+      if (isRealPlayerMsg && !isChatMutedRef.current) {
+        soundService.playChatMessage();
+      }
+
       setChatMessages((prev) => {
         // Deduplicate: remove the optimistic local clone, and append the real Supabase record
         let removedOne = false;
@@ -244,21 +269,6 @@ export function useTableChat(
           content: m.message,
           timestamp: new Date(m.created_at),
         };
-        // Track unread if chat is collapsed
-        if (isChatCollapsedRef.current && m.user_id !== userId) {
-          setUnreadCount((c) => c + 1);
-        }
-        // Warm notification ping for incoming messages from other players
-        // (skip our own echoes, system/dealer injections, and reaction/throw encodings)
-        const isRealPlayerMsg =
-          m.user_id !== userId &&
-          m.message_type !== 'system' &&
-          m.message_type !== 'dealer' &&
-          !REACTION_MSG_REGEX.test(m.message || '') &&
-          !THROW_MSG_REGEX.test(m.message || '');
-        if (isRealPlayerMsg && !isChatMutedRef.current) {
-          soundService.playChatMessage();
-        }
         return [...filtered.slice(-49), newMsg];
       });
     });

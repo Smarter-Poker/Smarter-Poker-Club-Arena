@@ -13496,6 +13496,15 @@ export default function TablePage({
             setSeatFirstBuyIn(null);
           }
 
+          /* The server says this table does not sell seats: the client
+             believed it was a pre-start Spin/Heads-Up table and it is not
+             (or no longer is). Retire the seat-first sheet so the page falls
+             back to the ordinary tournament view - leaving it up invites the
+             player to retry into the same refusal forever. */
+          if (/not_a_seat_first_game/.test(reason)) {
+            setSeatFirstBuyIn(null);
+          }
+
           // Stale table: the recycler replaced it while this page was open.
           // Follow the tournament to whatever table is live now.
           const stale =
@@ -13536,7 +13545,7 @@ export default function TablePage({
              reason now reaches error reporting, so the next unknown refusal
              is a searchable event instead of a dead end. */
           const mappedReason =
-            /seat_taken|insufficient|already_started|game_already_started|tournament_full/.test(
+            /seat_taken|insufficient|already_started|game_already_started|tournament_full|not_a_seat_first_game/.test(
               reason
             );
           if (!mappedReason) {
@@ -13555,7 +13564,9 @@ export default function TablePage({
                   ? 'This Game Has Already Started'
                   : /tournament_full/.test(reason)
                     ? 'This Game Is Full'
-                    : 'Could Not Take That Seat, Please Try Again'
+                    : /not_a_seat_first_game/.test(reason)
+                      ? 'Seats Are Not For Sale At This Table'
+                      : 'Could Not Take That Seat, Please Try Again'
           );
           return;
         }

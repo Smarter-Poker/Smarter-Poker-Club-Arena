@@ -38,6 +38,14 @@ const REGISTER_REASON_TEXT: Record<string, string> = {
   tournament_full: 'Tournament is full',
   already_registered: 'Already registered for this tournament',
   insufficient_balance: 'Insufficient chips in Player Wallet.',
+  // 2026-08-28: reasons fn_register_for_tournament actually returns but that
+  // rendered as their raw codes ("Could not register (seat_first_variant)").
+  // seat_first_variant is the guard that keeps lobby registration out of
+  // Spin/Heads-Up events - those are entered by taking a seat at the table.
+  seat_first_variant: 'This game is entered by taking a seat at its table',
+  not_authorized_to_register: 'This event needs registration approval from the club',
+  vip_only: 'This event is for VIP players only',
+  misconfigured_bounty: 'This event is misconfigured, please tell the club owner',
 };
 
 /**

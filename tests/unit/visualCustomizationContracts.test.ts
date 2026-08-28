@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { BUTTON_ASSETS } from '../../src/components/table/ThemeSettingsModal';
 
 const read = (path: string) => readFileSync(path, 'utf8');
 
@@ -54,6 +55,29 @@ describe('visual customization integration contracts', () => {
     expect(table).toContain("data-button-theme={v8Theme.button_id || 'classic-white'}");
     expect(table).toContain('data-cards-theme={activeCardBack}');
     expect(table).toContain("data-theme-preset={v8Theme.theme_id || 'default-dark'}");
+  });
+
+  it('makes every selectable control theme reach the gameplay action buttons', () => {
+    const controlCss = read('src/components/table/ControlThemeTokens.css');
+    const actionCss = read('src/components/table/ActionPanel.css');
+    const preview = read('src/components/table/TableStudioGameplayPreview.tsx');
+    const tablePage = read('src/pages/TablePage.tsx');
+
+    for (const asset of BUTTON_ASSETS) {
+      const selector = `[data-button-theme='${asset.id}']`;
+      expect(
+        (controlCss.match(new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || [])
+          .length
+      ).toBe(1);
+    }
+    expect(controlCss).toContain('--dealer-btn-bg:');
+    expect(controlCss).toContain('--action-control-overlay:');
+    expect(actionCss).toContain('var(--action-control-overlay, transparent)');
+    expect(actionCss).toContain('var(--action-control-radius, 14px)');
+    expect(studio).toContain('theme-asset__actionset');
+    expect(studio).toContain("import './ControlThemeTokens.css'");
+    expect(tablePage).toContain("import '../components/table/ControlThemeTokens.css'");
+    expect(preview).toContain('data-button-theme={selection.button_id}');
   });
 
   it('mounts a real TablePage for every persistent multi-table slot', () => {

@@ -478,8 +478,8 @@ body.ca-raising .table-page .action-panel-wrapper {
   justify-content: center;
   height: 72px;
   min-height: 64px;
-  border: none;
-  border-radius: 14px;
+  border: var(--action-control-border, none);
+  border-radius: var(--action-control-radius, 14px);
   cursor: pointer;
   transition:
     transform 0.12s var(--ease-spring),
@@ -490,6 +490,24 @@ body.ca-raising .table-page .action-panel-wrapper {
   -webkit-tap-highlight-color: transparent;
   position: relative;
   overflow: hidden;
+}
+
+/* Material layer supplied by the selected Controls theme. It deliberately
+   sits over the semantic red / blue / green paint without replacing it. */
+.action-panel .action-btn::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--action-control-overlay, transparent);
+  box-shadow: var(--action-control-inset, none);
+  pointer-events: none;
+}
+
+.action-panel .action-btn > *:not(.action-btn__shortcut) {
+  position: relative;
+  z-index: 2;
 }
 
 /* Shimmer sweep on buttons */
@@ -530,7 +548,7 @@ body.ca-raising .table-page .action-panel-wrapper {
   font-size: 1.125rem;
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 1.2px;
+  letter-spacing: var(--action-control-letter-spacing, 1.2px);
   color: white;
   line-height: 1.1;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
@@ -1675,6 +1693,8 @@ body.ca-raising .table-page .action-panel-wrapper {
 
 /* Keyboard shortcut hints */
 .action-panel .action-btn__shortcut {
+  position: relative;
+  z-index: 2;
   font-size: 0.5625rem;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.25);

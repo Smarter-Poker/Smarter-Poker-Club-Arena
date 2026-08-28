@@ -23,6 +23,7 @@ import { resolve } from 'node:path';
 import {
   toTableSettings,
   fromTableSettings,
+  rollbackFailedCardBack,
   CARD_BACKS,
   DEFAULT_SETTINGS,
   type UserSettings,
@@ -120,13 +121,29 @@ describe('the settings page writes into the store the table reads', () => {
     const table = { ...toTableSettings(sample), cardBack: 'not_a_real_back' } as TableUserSettings;
     expect(fromTableSettings(table, DEFAULT_SETTINGS).cardBack).toBe(DEFAULT_SETTINGS.cardBack);
   });
+
+  it('restores the durable card back when the cloud appearance write fails', () => {
+    const restored = rollbackFailedCardBack({ ...sample, cardBack: 'gold' }, 'classic_red');
+    expect(restored.cardBack).toBe('classic_red');
+    expect(restored.soundVolume).toBe(sample.soundVolume);
+  });
+
+  it('does not announce an unqualified success after a card-back sync failure', () => {
+    const page = readFileSync(resolve(__dirname, '../../src/pages/SettingsPage.tsx'), 'utf-8');
+    expect(page).toContain('if (cardBackSyncFailed)');
+    expect(page).toContain(
+      'Settings Saved, But Card Back Could Not Sync. Choose It Again To Retry.'
+    );
+    expect(page).toContain('const previousCardBack = tableSettingsRef.current.cardBack');
+    expect(page).toContain('rollbackFailedCardBack(settings, previousCardBack)');
+    expect(page.indexOf('const previousCardBack')).toBeLessThan(
+      page.indexOf('updateTableSettings(toTableSettings(settings))')
+    );
+  });
 });
 
 describe('every card back on offer is one the renderer can actually draw', () => {
-  const css = readFileSync(
-    resolve(__dirname, '../../src/components/table/CardImage.css'),
-    'utf-8'
-  );
+  const css = readFileSync(resolve(__dirname, '../../src/components/table/CardImage.css'), 'utf-8');
 
   it('has a .card-back--<id> rule for each option', () => {
     expect(CARD_BACKS.length).toBeGreaterThan(0);

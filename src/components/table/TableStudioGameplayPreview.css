@@ -185,14 +185,32 @@
   gap: 4px;
 }
 .studio-game-preview__actions span {
+  position: relative;
+  overflow: hidden;
   padding: 4px;
-  border-radius: 4px;
+  border: var(--action-control-border, 0);
+  border-radius: var(--action-control-radius, 4px);
   text-align: center;
   background: linear-gradient(#303945, #121820);
   font: 800 6px/1 system-ui;
+  letter-spacing: var(--action-control-letter-spacing, normal);
+  box-shadow: var(--action-control-inset, none);
 }
-.studio-game-preview__actions span:last-child {
+.studio-game-preview__actions span:nth-child(1) {
+  background: linear-gradient(#f0524d, #9c1717);
+}
+.studio-game-preview__actions span:nth-child(2) {
+  background: linear-gradient(#1587f8, #004bbd);
+}
+.studio-game-preview__actions span:nth-child(3) {
   background: linear-gradient(#4dc660, #2ea043);
+}
+.studio-game-preview__actions span::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--action-control-overlay, transparent);
+  pointer-events: none;
 }
 .studio-game-preview__broadcast {
   left: 50%;

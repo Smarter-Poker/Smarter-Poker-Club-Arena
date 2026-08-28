@@ -1,0 +1,183 @@
+/*
+ * Shared visual tokens for the ten selectable Controls designs.
+ *
+ * Table Studio is reachable from the global hamburger, including routes that
+ * have never loaded TablePage.css. Keeping these variables in a small shared
+ * sheet makes the dealer marker and Fold / Check / Raise previews identical to
+ * live gameplay without pulling the full table stylesheet into navigation.
+ * Semantic action colors remain in ActionPanel.css; these tokens change only
+ * material, edge, radius and typography.
+ */
+
+:where(
+  .table-page,
+  .theme-asset__btnstage,
+  .studio-game-preview
+)[data-button-theme='classic-white'] {
+  --dealer-btn-bg: linear-gradient(145deg, #ffffff 0%, #e8e8e8 50%, #d0d0d0 100%);
+  --dealer-btn-color: #111;
+  --action-control-radius: 14px;
+  --action-control-border: 1px solid rgba(255, 255, 255, 0.2);
+  --action-control-overlay: linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 42%);
+  --action-control-inset: inset 0 1px rgba(255, 255, 255, 0.34);
+  --action-control-letter-spacing: 1.2px;
+}
+
+:where(.table-page, .theme-asset__btnstage, .studio-game-preview)[data-button-theme='red-d-gear'] {
+  --dealer-btn-bg: linear-gradient(135deg, #c62828, #e53935);
+  --dealer-btn-color: #fff;
+  --action-control-radius: 8px;
+  --action-control-border: 1px solid rgba(255, 218, 218, 0.3);
+  --action-control-overlay: repeating-linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.1) 0 2px,
+    transparent 2px 8px
+  );
+  --action-control-inset: inset 0 0 0 2px rgba(80, 0, 0, 0.16);
+  --action-control-letter-spacing: 1.6px;
+}
+
+:where(.table-page, .theme-asset__btnstage, .studio-game-preview)[data-button-theme='gray-d-gear'] {
+  --dealer-btn-bg: linear-gradient(135deg, #616161, #757575);
+  --dealer-btn-color: #fff;
+  --action-control-radius: 8px;
+  --action-control-border: 1px solid rgba(226, 232, 236, 0.32);
+  --action-control-overlay: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.08) 0 1px,
+    transparent 1px 5px
+  );
+  --action-control-inset: inset 0 0 0 2px rgba(17, 23, 28, 0.2);
+  --action-control-letter-spacing: 1.4px;
+}
+
+:where(
+  .table-page,
+  .theme-asset__btnstage,
+  .studio-game-preview
+)[data-button-theme='blue-crystal'] {
+  --dealer-btn-bg: linear-gradient(135deg, #1565c0, #42a5f5);
+  --dealer-btn-color: #fff;
+  --action-control-radius: 6px;
+  --action-control-border: 1px solid rgba(184, 229, 255, 0.46);
+  --action-control-overlay: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.26) 0 18%,
+    transparent 19% 68%,
+    rgba(164, 220, 255, 0.12) 69%
+  );
+  --action-control-inset: inset 0 0 12px rgba(151, 221, 255, 0.13);
+  --action-control-letter-spacing: 1.7px;
+}
+
+:where(.table-page, .theme-asset__btnstage, .studio-game-preview)[data-button-theme='gold-star'] {
+  --dealer-btn-bg: linear-gradient(135deg, #f57f17, #fbc02d);
+  --dealer-btn-color: #1a1a1e;
+  --action-control-radius: 12px;
+  --action-control-border: 1px solid rgba(255, 222, 137, 0.52);
+  --action-control-overlay: linear-gradient(
+    120deg,
+    transparent 18%,
+    rgba(255, 222, 137, 0.2) 36%,
+    transparent 54%
+  );
+  --action-control-inset: inset 0 1px rgba(255, 238, 184, 0.34);
+  --action-control-letter-spacing: 1.3px;
+}
+
+:where(
+  .table-page,
+  .theme-asset__btnstage,
+  .studio-game-preview
+)[data-button-theme='sports-themed'] {
+  --dealer-btn-bg: linear-gradient(135deg, #2ea043, #4dc660);
+  --dealer-btn-color: #fff;
+  --action-control-radius: 4px;
+  --action-control-border: 2px solid rgba(236, 255, 224, 0.3);
+  --action-control-overlay: repeating-linear-gradient(
+    90deg,
+    transparent 0 12px,
+    rgba(255, 255, 255, 0.1) 12px 15px
+  );
+  --action-control-inset: inset 0 -3px rgba(0, 0, 0, 0.24);
+  --action-control-letter-spacing: 2px;
+}
+
+:where(.table-page, .theme-asset__btnstage, .studio-game-preview)[data-button-theme='jade-seal'] {
+  --dealer-btn-bg: radial-gradient(
+    circle at 34% 28%,
+    #d6f7df 0%,
+    #4dc660 35%,
+    #145039 74%,
+    #09271d 100%
+  );
+  --dealer-btn-color: #f4fff8;
+  --action-control-radius: 18px;
+  --action-control-border: 1px solid rgba(77, 198, 96, 0.42);
+  --action-control-overlay: radial-gradient(
+    circle at 26% 12%,
+    rgba(231, 255, 239, 0.3),
+    transparent 34%
+  );
+  --action-control-inset: inset 0 0 0 2px rgba(8, 60, 38, 0.18);
+  --action-control-letter-spacing: 1px;
+}
+
+:where(
+  .table-page,
+  .theme-asset__btnstage,
+  .studio-game-preview
+)[data-button-theme='amethyst-chip'] {
+  --dealer-btn-bg: radial-gradient(
+    circle at 34% 28%,
+    #ecdfff 0%,
+    #9c69d2 34%,
+    #4a2476 72%,
+    #1e0d34 100%
+  );
+  --dealer-btn-color: #fff;
+  --action-control-radius: 10px;
+  --action-control-border: 1px solid rgba(229, 207, 255, 0.46);
+  --action-control-overlay: conic-gradient(
+    from 28deg at 50% 0%,
+    rgba(255, 255, 255, 0.2),
+    transparent 24% 76%,
+    rgba(229, 207, 255, 0.16)
+  );
+  --action-control-inset: inset 0 0 14px rgba(110, 57, 165, 0.15);
+  --action-control-letter-spacing: 1.5px;
+}
+
+:where(.table-page, .theme-asset__btnstage, .studio-game-preview)[data-button-theme='carbon-ion'] {
+  --dealer-btn-bg: conic-gradient(from 20deg, #12181b, #38464a, #0d1214, #263438, #12181b);
+  --dealer-btn-color: #65ead8;
+  --action-control-radius: 6px;
+  --action-control-border: 1px solid rgba(101, 234, 216, 0.34);
+  --action-control-overlay: repeating-linear-gradient(
+    135deg,
+    rgba(0, 0, 0, 0.2) 0 3px,
+    rgba(255, 255, 255, 0.05) 3px 6px
+  );
+  --action-control-inset: inset 0 0 0 2px rgba(4, 18, 20, 0.32);
+  --action-control-letter-spacing: 1.8px;
+}
+
+:where(.table-page, .theme-asset__btnstage, .studio-game-preview)[data-button-theme='ocean-pearl'] {
+  --dealer-btn-bg: radial-gradient(
+    circle at 32% 25%,
+    #ffffff 0%,
+    #dff5fb 30%,
+    #71b8d2 70%,
+    #2c708d 100%
+  );
+  --dealer-btn-color: #092b3d;
+  --action-control-radius: 999px;
+  --action-control-border: 1px solid rgba(219, 248, 255, 0.5);
+  --action-control-overlay: radial-gradient(
+    ellipse at 34% 8%,
+    rgba(255, 255, 255, 0.34),
+    transparent 42%
+  );
+  --action-control-inset: inset 0 0 12px rgba(133, 219, 242, 0.14);
+  --action-control-letter-spacing: 1.1px;
+}

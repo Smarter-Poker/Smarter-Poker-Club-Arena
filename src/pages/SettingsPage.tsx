@@ -21,6 +21,7 @@ import {
   CARD_BACKS,
   DEFAULT_SETTINGS,
   fromTableSettings,
+  rollbackFailedCardBack,
   toTableSettings,
   validateSettings,
   type UserSettings,
@@ -533,6 +534,13 @@ export default function SettingsPage() {
   const saveSettings = async () => {
     setSaving(true);
     try {
+      let settingsToPersist = settings;
+      let cardBackSyncFailed = false;
+      /* Capture before updateTableSettings schedules its local state update.
+         By the time getAuthUser resolves, tableSettingsRef may already point
+         at the optimistic new value; using it then would make a failed cloud
+         write "roll back" to the same unsaved card back. */
+      const previousCardBack = tableSettingsRef.current.cardBack;
       // Save to localStorage
       localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
 
@@ -581,16 +589,24 @@ export default function SettingsPage() {
         { cards_id: normalizeCardBack(settings.cardBack) },
         {
           userId: user?.id,
-          previous: { cards_id: normalizeCardBack(tableSettingsRef.current.cardBack) },
+          previous: { cards_id: normalizeCardBack(previousCardBack) },
         }
       );
       if (!appearance.ok && user?.id) {
+        cardBackSyncFailed = true;
         reportError(appearance.error, 'SettingsPage.cardBackSaveFailed');
+        /* The canonical writer already repainted every open table with the
+           previous card back. Keep this page and its local cache honest too:
+           a failed cloud write must not leave the dropdown claiming the new
+           design is equipped, nor write that claim into profiles.settings. */
+        settingsToPersist = rollbackFailedCardBack(settings, previousCardBack);
+        setSettings(settingsToPersist);
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settingsToPersist));
       }
       if (user) {
         const { error: profileErr } = await supabase
           .from('profiles')
-          .update({ settings: settings })
+          .update({ settings: settingsToPersist })
           .eq('id', user.id);
         if (profileErr) throw profileErr;
 
@@ -623,9 +639,13 @@ export default function SettingsPage() {
 
       // Notify other components that settings changed
       masterBus.emit('SETTINGS_UPDATED', {
-        settings: settings as unknown as Record<string, unknown>,
+        settings: settingsToPersist as unknown as Record<string, unknown>,
       });
-      toast.success('Settings saved!');
+      if (cardBackSyncFailed) {
+        toast.error('Settings Saved, But Card Back Could Not Sync. Choose It Again To Retry.');
+      } else {
+        toast.success('Settings saved!');
+      }
     } catch (error) {
       reportError(error, 'SettingsPage.Failed_to_sync_settings');
       toast.error('Failed to save settings. Please try again.');

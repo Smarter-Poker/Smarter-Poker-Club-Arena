@@ -518,6 +518,13 @@ export interface HorseGameStateV2 extends HorseGameState {
     /** V16 ICM: live stacks (chips, desc) + payout percentages by place. */
     stacks?: number[];
     payoutPct?: number[];
+    /** V26 PRIZE LANDSCAPE: the mystery-bounty inventory as it stands. */
+    mysteryChestsLeft?: number;
+    mysteryMeanCents?: number;
+    mysteryTopCents?: number;
+    mysteryTopLive?: boolean;
+    /** V26: mean live PKO bounty per remaining player, in cents. */
+    meanBountyCents?: number;
     /** V23 ENDGAME: at the final table (MTT, <= 9 left). */
     finalTable?: boolean;
     /** V23 BLIND CLOCK: minutes to the next level (null/undefined = unknown). */
@@ -877,6 +884,11 @@ export interface HorseDecideOpts {
    *  survival premium scales with the fraction of stack actually at risk
    *  (default: enabled) */
   v24PloDefense?: boolean;
+  /** disable the V26 prize-landscape layer (Dan 2026-08-28): the horse reads
+   *  the LIVE bounty inventory — how many chests are left, what one is worth
+   *  on average, and whether the top prize is still in the box — and prices a
+   *  bust in BIG BLINDS instead of guessing from a pool ratio (default: on) */
+  v26Prizes?: boolean;
 }
 
 /**
@@ -1240,8 +1252,39 @@ export class HorseLogic {
         const raiserTotal = (raiser.stack ?? 0) + (raiser.bet ?? 0);
         const covers = heroBehind > raiserTotal;
         if (telemetryOn(opts) && covers) noteFire('v24_bounty_pull');
+        // ═══ V26 PRICE THE BUST IN BIG BLINDS ═══════════════════════════
+        // V24 guessed from bountyFactor (a pool RATIO), which says nothing
+        // about what one elimination actually pays. The chest inventory
+        // does: the mean live chest IS the EV of a bust, and comparing it
+        // to the pot in the same unit turns "there is a bounty" into a
+        // number the thresholds can use.
+        const t26 = gs.tournament;
+        const useV26 = (opts.v26Prizes ?? true) !== false;
+        // Cents -> chips is not a conversion the engine can make (real money
+        // and tournament chips are different scales), so the bust is priced
+        // RELATIVE to the average remaining bounty: a chest worth well above
+        // the mean is worth chasing, one below it is not. Expressed as a
+        // multiplier on the existing pull rather than a new currency.
+        const meanCents = Math.max(0, t26?.mysteryMeanCents ?? t26?.meanBountyCents ?? 0);
+        const chestsLeft = Math.max(0, t26?.mysteryChestsLeft ?? 0);
+        let bountyScale = 1;
+        if (useV26 && meanCents > 0) {
+          // The top chest still in the box makes every bust a lottery
+          // ticket: the mean understates it, because the tail is the prize.
+          if (t26?.mysteryTopLive === true) bountyScale *= 1.35;
+          // A nearly-empty inventory is a freezeout wearing a bounty badge.
+          if (chestsLeft > 0 && chestsLeft <= 3) bountyScale *= 0.6;
+          // A top chest far above the mean is a fat tail worth chasing.
+          const top = Math.max(0, t26?.mysteryTopCents ?? 0);
+          if (top > meanCents * 3) bountyScale *= 1.15;
+        } else if (useV26 && chestsLeft === 0 && (t26?.mysteryTopCents ?? 0) > 0) {
+          // Inventory known and EXHAUSTED: the bounty half of this event is
+          // over, whatever the pool ratio still says.
+          bountyScale = 0.35;
+        }
+        if (telemetryOn(opts) && useV26 && meanCents > 0) noteFire('v26_prize_read');
         return {
-          bountyFactor: bf,
+          bountyFactor: Math.min(1, bf * bountyScale),
           coversRaiser: covers,
           // Live this hand: what the raiser has left behind their own raise
           // is already inside what hero would be putting in to call.

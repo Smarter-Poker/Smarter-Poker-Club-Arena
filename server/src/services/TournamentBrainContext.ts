@@ -39,6 +39,29 @@ export interface TournamentBrainContext {
   stacks: number[];
   /** V16 ICM: payout percentages by place (1st first), capped at 9 places. */
   payoutPct: number[];
+  // ═══ V26 THE PRIZE LANDSCAPE (Dan 2026-08-28) ═══════════════════════════
+  // "Horses should be able to see and have access to the prizes, and which
+  //  bounties are left still, if top prizes are gone, or still there - that
+  //  changes play."
+  //
+  // It does, and it is the sharpest read in a mystery bounty. Busting someone
+  // draws a CHEST from a shrinking inventory: while the big ones are still in
+  // there every elimination is a lottery ticket worth far more than its
+  // average, and once they are claimed the same bust pays scraps and the
+  // event collapses back toward a freezeout. A horse that cannot see the
+  // inventory is playing the wrong tournament for half the night.
+  /** mystery bounty: chests still unclaimed ('available') */
+  mysteryChestsLeft: number;
+  /** mystery bounty: MEAN value of an unclaimed chest, in cents — the honest
+   *  EV of one elimination right now */
+  mysteryMeanCents: number;
+  /** mystery bounty: the largest chest still unclaimed, in cents */
+  mysteryTopCents: number;
+  /** mystery bounty: is the tournament's single biggest chest STILL LIVE?
+   *  The difference between a lottery and a grind. */
+  mysteryTopLive: boolean;
+  /** PKO/mystery: mean live bounty per remaining player, in cents (0 = none) */
+  meanBountyCents: number;
   /** V23: at the final table (MTT, nine or fewer left, in or at the money) */
   finalTable: boolean;
   /** V23 BLIND CLOCK: minutes until the next level (null = unknown/last level) */
@@ -163,6 +186,58 @@ export function seatsAtOneTable(row: {
   return asserted.length > 0 ? Math.min(...asserted) : 9;
 }
 
+/** V26: one chest row as the inventory query returns it. */
+export interface ChestRow {
+  status?: string | null;
+  amount_cents?: number | null;
+}
+
+/**
+ * V26 pure: what the mystery-bounty inventory looks like RIGHT NOW.
+ * Exported for tests. Everything degrades to zeros when there is no chest
+ * system, which reads as "not a mystery bounty" downstream rather than as a
+ * jackpot that happens to be empty.
+ */
+export function deriveBountyLandscape(chests: ChestRow[] | null | undefined): {
+  mysteryChestsLeft: number;
+  mysteryMeanCents: number;
+  mysteryTopCents: number;
+  mysteryTopLive: boolean;
+} {
+  const none = {
+    mysteryChestsLeft: 0,
+    mysteryMeanCents: 0,
+    mysteryTopCents: 0,
+    mysteryTopLive: false,
+  };
+  if (!Array.isArray(chests) || chests.length === 0) return none;
+  let left = 0;
+  let sum = 0;
+  let top = 0;
+  let topEver = 0;
+  for (const c of chests) {
+    const amt = Number(c?.amount_cents) || 0;
+    if (amt <= 0) continue;
+    // 'void' chests were never in play (the event ended early, or the
+    // inventory was trimmed) - they are not part of any landscape.
+    if (c?.status === 'void') continue;
+    if (amt > topEver) topEver = amt;
+    if (c?.status === 'available') {
+      left++;
+      sum += amt;
+      if (amt > top) top = amt;
+    }
+  }
+  if (left === 0) return { ...none, mysteryTopLive: false };
+  return {
+    mysteryChestsLeft: left,
+    mysteryMeanCents: Math.round(sum / left),
+    mysteryTopCents: top,
+    // The single biggest chest the tournament ever held is still unclaimed.
+    mysteryTopLive: topEver > 0 && top >= topEver,
+  };
+}
+
 /** Pure derivation — unit-tested. */
 export function deriveContext(
   row: TournamentRowLite,
@@ -170,7 +245,11 @@ export function deriveContext(
   entrants: number,
   chipSum: number,
   /** V16 ICM: live stack list (any order; stored sorted desc, capped). */
-  liveStacks: number[] = []
+  liveStacks: number[] = [],
+  /** V26: the mystery-bounty chest inventory, if this event has one. */
+  chests: ChestRow[] = [],
+  /** V26: live per-player bounties in cents (PKO), any order. */
+  liveBounties: number[] = []
 ): TournamentBrainContext {
   const type = (row.tournament_type || '').toUpperCase();
   const variant = (row.variant || '').toLowerCase();
@@ -235,6 +314,11 @@ export function deriveContext(
     bountyFactor: Math.max(0, Math.min(1, bountyFactor)),
     stacks,
     payoutPct,
+    ...deriveBountyLandscape(chests),
+    meanBountyCents:
+      liveBounties.length > 0
+        ? Math.round(liveBounties.reduce((a, b) => a + (Number(b) || 0), 0) / liveBounties.length)
+        : 0,
     finalTable: format === 'mtt' && playersLeft >= 2 && playersLeft <= 9,
     nextBlindInMin: clock.nextBlindInMin,
     nextBlindMult: clock.nextBlindMult,
@@ -301,26 +385,46 @@ async function refresh(tournamentId: string, e: CacheEntry): Promise<void> {
         REFRESH_TIMEOUT_MS
       ).unref?.()
     );
-    const [tRes, pRes] = await Promise.race([
+    const [tRes, pRes, cRes] = await Promise.race([
       deadline,
       Promise.all([
         supabase
           .from('tournaments')
           .select(
-            'tournament_type, variant, max_players, table_size, payout_structure, spin_multiplier, prize_pool, bounty_pool, is_pko, is_bounty, blind_structure, current_level, level_started_at'
+            'tournament_type, variant, max_players, table_size, payout_structure, spin_multiplier, prize_pool, bounty_pool, is_pko, is_bounty, is_mystery_bounty, blind_structure, current_level, level_started_at'
           )
           .eq('id', tournamentId)
           .maybeSingle(),
         supabase
           .from('tournament_players')
-          .select('chips, status')
+          .select('chips, status, current_bounty')
           .eq('tournament_id', tournamentId)
           .order('id', { ascending: true })
           .limit(5000),
+        // V26: the mystery-bounty chest inventory. Cheap (a few hundred rows
+        // at most) and only meaningful for mystery events, but asked
+        // unconditionally so a mid-event activation cannot be missed - the
+        // aggregate is empty for every other tournament, which reads as
+        // "no chest system" rather than "an empty jackpot".
+        supabase
+          .from('tournament_bounty_chests')
+          .select('status, amount_cents')
+          .eq('tournament_id', tournamentId)
+          .limit(2000),
       ]),
     ]);
     if (tRes.error) throw new Error(tRes.error.message);
     if (pRes.error) throw new Error(pRes.error.message);
+    // V26: a failed CHEST read must not sink the whole context - the ICM and
+    // blind-clock halves are still good. Treat it as "no inventory known",
+    // which degrades to the pre-V26 flat bounty handling.
+    const chestRows = cRes?.error ? [] : ((cRes?.data ?? []) as ChestRow[]);
+    if (cRes?.error) {
+      reportError(
+        new Error(`chest inventory read failed: ${cRes.error.message}`),
+        'TournamentBrainContext.chests_unavailable'
+      );
+    }
     if (!tRes.data) {
       // V13: maybeSingle() returns null for zero rows, which includes a
       // read-replica blip or an RLS hiccup — not only a genuinely absent
@@ -335,7 +439,12 @@ async function refresh(tournamentId: string, e: CacheEntry): Promise<void> {
         );
       return;
     }
-    const rows = (pRes.data ?? []) as Array<{ chips: number | null; status: string | null }>;
+    const rows = (pRes.data ?? []) as Array<{
+      chips: number | null;
+      status: string | null;
+      current_bounty: number | null;
+    }>;
+    const liveBounties: number[] = [];
     const entrants = rows.length;
     let playersLeft = 0;
     let chipSum = 0;
@@ -347,13 +456,17 @@ async function refresh(tournamentId: string, e: CacheEntry): Promise<void> {
       const chips = Number(r.chips) || 0;
       chipSum += chips;
       if (chips > 0) liveStacks.push(chips);
+      const b = Number(r.current_bounty) || 0;
+      if (b > 0) liveBounties.push(b);
     }
     e.ctx = deriveContext(
       tRes.data as TournamentRowLite,
       playersLeft,
       entrants,
       chipSum,
-      liveStacks
+      liveStacks,
+      chestRows,
+      liveBounties
     );
   } catch (err) {
     reportError(err, 'TournamentBrainContext.refresh');

@@ -951,6 +951,14 @@ const _LAST_BBJ_HIT_COUNT: Record<string, number> = {};
    (lib/bbjHitOnce) replaces it and covers both, because it keys on the hit's
    own identity and persists across the reload. */
 
+/**
+ * How many mounted tables are currently asserting `data-enhanced-view` on
+ * `document.documentElement`. Module scope on purpose: the attribute is a
+ * property of the DOCUMENT and up to four TablePages share it, so the count has
+ * to live somewhere all of them can see. See the effect that maintains it.
+ */
+let enhancedViewHolders = 0;
+
 export default function TablePage({
   embeddedTableId,
   onTableInfoUpdate,
@@ -5198,14 +5206,34 @@ export default function TablePage({
   // Bible V8 §11.1: enhanced_view → document-level flag so themes and
   // component CSS can branch on body[data-enhanced-view="1"]. Single source
   // so future visual effects can opt in without plumbing the prop through.
+  /* REFCOUNTED, because `document.documentElement` is one element and up to four
+     TablePages assert this flag (2026-08-28).
+
+     The cleanup used to be an unconditional `removeAttribute`. So closing one of
+     four tables — or ANY instance re-running this effect because its own
+     `enhanced_view` changed — switched the enhanced-view layer off for every
+     table still open, and nothing put it back: the surviving instances' effects
+     do not re-run when a sibling unmounts. The player sees the felt sheen, the
+     card faces and the pot type quietly revert on tables they never touched.
+
+     Same shape as the viewport lock in useTableEnvironment.ts, and refcounted
+     the same way: the flag is on while at least one mounted table wants it, and
+     the last one to let go is the one that clears it. */
   useEffect(() => {
-    if (v8Settings.enhanced_view) {
-      document.documentElement.setAttribute('data-enhanced-view', '1');
-    } else {
-      document.documentElement.removeAttribute('data-enhanced-view');
+    if (!v8Settings.enhanced_view) {
+      // Not asserting it — and not clearing anyone else's assertion either.
+      if (enhancedViewHolders === 0) {
+        document.documentElement.removeAttribute('data-enhanced-view');
+      }
+      return;
     }
+    enhancedViewHolders += 1;
+    document.documentElement.setAttribute('data-enhanced-view', '1');
     return () => {
-      document.documentElement.removeAttribute('data-enhanced-view');
+      enhancedViewHolders -= 1;
+      if (enhancedViewHolders === 0) {
+        document.documentElement.removeAttribute('data-enhanced-view');
+      }
     };
   }, [v8Settings.enhanced_view]);
 
@@ -13806,17 +13834,30 @@ export default function TablePage({
     }
   }, [tableId, userId, submitActionWithToast, applyOptimisticHeroAction]);
 
-  const handleFold = async () => {
-    if (actionLockRef.current) return;
-    // Spec §5.6: when checking is free, defer the fold behind a confirmation
-    // dialog. The dialog lives in JSX below and calls commitFold() on confirm.
-    if (canCheckRightNow()) {
-      setFoldProtectOpen(true);
-      return;
-    }
-    await commitFold();
-  };
+  /* `handleFold` and `handleCall` used to live here, beside handleCheck, and
+     NOTHING but the keyboard ever called them. That is why they are gone
+     (2026-08-28): F/Q and C/W now go through `handleActionPanelAction`, the same
+     function the on-screen buttons call.
 
+     It is not tidying. They were a SECOND implementation of fold and call, and
+     it had drifted: `handleActionPanelAction` counts VPIP and PFR (see the
+     hero-stats block inside it) and this pair did not, so a player who acted by
+     keyboard had their own HUD stats quietly under-count every hand they played
+     that way. It also takes the debounce lock on the way IN rather than after
+     the decision, which is the ordering the fold-protection dialog depends on.
+
+     `handleCheck` stays: FoldProtectionDialog's "check instead" button calls it
+     directly, and that path must not re-enter the dialog it is dismissing.
+
+     `handleAllIn` (further down) ALSO stays, and that is a KNOWN, DELIBERATE
+     inconsistency rather than an oversight — it is the one remaining pair of
+     money paths that disagree, and merging them is a separate decision:
+       - `handleActionPanelAction('allin')` — what the ALL IN button runs.
+         Counts VPIP/PFR. Does NOT fire the client-side Run-It-Twice prompt.
+       - `handleAllIn` — what the A key runs. Fires the RIT prompt from a
+         `workerTimeout` after the shove. Does NOT count VPIP/PFR.
+     Whichever is merged into the other changes behaviour for the other half of
+     the players, so it is not being done inside a sweep. */
   const handleCheck = async () => {
     if (actionLockRef.current) return;
     if (!validateAndExecuteAction('check')) return;
@@ -13835,98 +13876,34 @@ export default function TablePage({
     }
   };
 
-  const handleCall = async () => {
-    if (actionLockRef.current) return;
-    if (!validateAndExecuteAction('call')) return;
-    actionLockRef.current = true;
-    setTimeout(() => {
-      actionLockRef.current = false;
-    }, 300);
-    closeRaisePanel();
-    //Local engine call removed — server is authoritative
-    soundService.playChips(); // SoundService handles haptic (light) per Bible V8 §5.4
-    // BUG 026: optimistic update for instant visual feedback
-    const callAmt = tableState.currentBet || 0;
-    const revert = applyOptimisticHeroAction('call', callAmt);
-    if (tableId) {
-      const ok = await submitActionWithToast(tableId, userId, 'call', undefined, 'handleCall');
-      if (!ok) revert();
-    }
-  };
-
   const handleRaise = () => {
     openRaisePanel();
   };
 
-  /**
-   * The all-in hotkey has to reach `handleActionPanelAction`, which is declared
-   * further down this component — naming it in the effect's dep array below
-   * would be a temporal-dead-zone error, not merely a lint complaint. A ref
-   * kept current by its own effect breaks the ordering cycle without moving
-   * either block.
+  /* ─── THE SECOND KEYBOARD LISTENER USED TO BE HERE (deleted 2026-08-28) ────
+   *
+   * A `window.addEventListener('keydown')` of its own handling F/Q, C/W, R/E
+   * and A, alongside `useTableKeyboard` — which handles the same keys. Both
+   * were live, so every one of those keys ran two code paths per press and the
+   * only thing between that and a double-submitted action was `actionLockRef`
+   * being taken synchronously by whichever handler ran first.
+   *
+   * Its dependency array was `[isHeroTurnContext, handleFold, handleCheck,
+   * handleCall, handleRaise, canCheckRightNow]`, and four of those are plain
+   * `const fn = async () => {}` — a new identity on every render. So it tore
+   * down and re-subscribed a window listener on EVERY engine snapshot, and the
+   * note it carried admitted the hotkey's correctness depended on that churn.
+   * A keypress landing between the remove and the add was simply lost.
+   *
+   * Worst of all it had no idea which table the player was looking at. Four
+   * mounted TablePages meant four of these listeners plus four hook listeners,
+   * and one press of F folded every hand hero had action on. See the header of
+   * useTableKeyboard.ts.
+   *
+   * Q/W/E moved into that hook; the all-in ref this block needed is gone with
+   * it, because the hook is called after `handleActionPanelAction` is declared
+   * and can name it directly.
    */
-  const allInHotkeyRef = useRef<(() => void) | null>(null);
-
-  // ── Keyboard Shortcuts for Table Actions ──
-  // Two key sets coexist (Phase 2 T1-10 / spec §5.5 "MUST IMPROVE"):
-  //   F / C / R / A — original mnemonic (Fold / Check-Call / Raise / All-in)
-  //   Q / W / E      — PokerBros-style left-hand row (Q=Fold, W=Check-Call, E=Raise)
-  // Both reach the same handlers; downstream behavior is identical.
-  // Active only when it's hero's turn and the user isn't typing in an input.
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (!isHeroTurnContext) return;
-      if (actionLockRef.current) return;
-
-      const key = e.key.toLowerCase();
-      if (key === 'f' || key === 'q') {
-        e.preventDefault();
-        handleFold();
-      } else if (key === 'c' || key === 'w') {
-        e.preventDefault();
-        // Bible V8 + spec §5.5: Check is legal when currentBet <= hero's current bet.
-        //
-        // 2026-08-26: this used to inline that comparison against `tableState`,
-        // which is NOT in this effect's dependency array. It read fresh values
-        // only because handleFold/handleCheck/handleCall are recreated every
-        // render and re-run the effect - so the correctness of a hotkey that
-        // COMMITS CHIPS depended on a re-subscribe happening on every snapshot.
-        // canCheckRightNow() is the same memoised helper handleFold already
-        // uses, so there is now one derivation instead of two and the deps
-        // below can be honest.
-        if (canCheckRightNow()) {
-          handleCheck();
-        } else {
-          handleCall();
-        }
-      } else if (key === 'r' || key === 'e') {
-        e.preventDefault();
-        handleRaise();
-      } else if (key === 'a') {
-        // 2026-08-20: the comment above has advertised "F / C / R / A —
-        // (Fold / Check-Call / Raise / All-in)" since this block was written,
-        // and A was never implemented. Three of the four documented keys
-        // worked; the fourth did nothing. Now it shoves, through the same
-        // handler the ALL IN button uses, so there is one code path.
-        e.preventDefault();
-        allInHotkeyRef.current?.();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isHeroTurnContext, handleFold, handleCheck, handleCall, handleRaise, canCheckRightNow]);
-
-  // Keep the all-in hotkey pointed at the current handler (see allInHotkeyRef).
-  useEffect(() => {
-    allInHotkeyRef.current = () => {
-      void handleActionPanelAction('allin');
-    };
-    return () => {
-      allInHotkeyRef.current = null;
-    };
-  });
 
   // Unified action handler for ActionPanel component
   //Server is authoritative — all actions go through submitAction
@@ -14155,8 +14132,23 @@ export default function TablePage({
   };
 
   // Keyboard Shortcuts — wired to table actions (Phase 8)
+  // ONE keyboard system since 2026-08-28; TablePage's own duplicate listener is
+  // deleted. See the gravestone above handleActionPanelAction.
   useTableKeyboard({
-    isHeroTurn: tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress,
+    /* WHICH TABLE IS THE PLAYER LOOKING AT. Without this every mounted
+       TablePage answered the keyboard, so hero with action on two tables folded
+       BOTH with one press of F. `isActive` is the prop MultiTablePage already
+       computes as `idx === activeIndex && !hidden`; as a standalone route it
+       defaults to true, which is correct — there is only one table. */
+    isActive,
+    /* `isHeroTurnContext`, NOT a second hand-rolled copy of it. The copy that
+       used to be inlined here was `currentPlayerSeat === heroSeat &&
+       isHandInProgress` — missing the `> 0` guards, so between hands, when both
+       fields are 0, `0 === 0` made this true and the number keys armed a raise
+       on a table where hero had no hand. That is the identical false-trigger the
+       note on isHeroTurnContext documents. */
+    isHeroTurn: isHeroTurnContext,
+    isSizingOpen: raiseIntent.open,
     isSpectator: !tableState.players.some((p) => p?.isHero),
     isModalOpen:
       showSettings ||
@@ -14167,23 +14159,28 @@ export default function TablePage({
       showPlayerNotes ||
       showWaitList ||
       isSideMenuOpen,
-    onFold: handleFold,
+    /* Every action key runs the SAME function the on-screen button runs.
+       2026-08-28: these pointed at `handleFold` / `handleCall`, a parallel pair
+       that skipped the VPIP/PFR counting inside handleActionPanelAction — so a
+       keyboard player's own HUD stats under-counted every hand. Fold protection
+       is unchanged: the panel path opens FoldProtectionDialog on a free check,
+       exactly as handleFold did. */
+    onFold: () => void handleActionPanelAction('fold'),
     onCallCheck: () => {
       // Bible V8: Check is legal when currentBet <= hero's current bet.
       //
       // 2026-08-26: this used to inline that comparison. It was the last of
-      // several copies of the same derivation on this page - this file has TWO
-      // keyboard systems (the raw keydown useEffect and this hook) and both
-      // hand-rolled it. canCheckRightNow() is the memoised helper the fold
-      // path already uses. One derivation means the switch to the engine's
-      // authoritative legal-action set is one line, not six.
-      if (canCheckRightNow()) {
-        handleCheck();
-      } else {
-        handleCall();
-      }
+      // several copies of the same derivation on this page. canCheckRightNow()
+      // is the memoised helper the panel path already uses. One derivation
+      // means the switch to the engine's authoritative legal-action set is one
+      // line, not six.
+      void handleActionPanelAction(canCheckRightNow() ? 'check' : 'call');
     },
     onRaise: handleRaise,
+    /* NOT handleActionPanelAction('allin') — see the note above handleCheck.
+       The two all-in paths genuinely differ (VPIP counting vs the client RIT
+       prompt) and merging them is its own decision. This keeps the A key doing
+       exactly what it did before this commit. */
     onAllIn: handleAllIn,
     onToggleSound: () => setIsSoundEnabled(!isSoundEnabled),
     // FIX 199: onToggleHandStrength REMOVED — not allowed for live online gameplay

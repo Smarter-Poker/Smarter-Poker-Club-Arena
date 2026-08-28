@@ -109,18 +109,24 @@
    overlay, and collapsing the button row underneath it, are both invisible to
    the measurement.
 
-   That is a fact about the current markup, not a guarantee. `body.ca-raising`
-   is set by ActionPanel for exactly as long as the sizing overlay is open, so
-   pin the height to the same figure the floor already resolves to for exactly
-   that long. It changes nothing that renders today, and it means a future
-   change that puts a row back in flow — or adds one — still cannot resize the
-   table mid-drag. It can only fail loudly, in the panel, where whoever made
-   the change will see it.
+   That is a fact about the current markup, not a guarantee. `ca-raising` is set
+   by ActionPanel for exactly as long as the sizing overlay is open, so pin the
+   height to the same figure the floor already resolves to for exactly that
+   long. It changes nothing that renders today, and it means a future change
+   that puts a row back in flow — or adds one — still cannot resize the table
+   mid-drag. It can only fail loudly, in the panel, where whoever made the
+   change will see it.
 
    `height`, not `max-height`: the point is that it can move neither way.
    Border-box everywhere (globals.css), so this is the identical computation to
-   the floor and the env() inset is inside it, not on top of it. */
-body.ca-raising .table-page .action-panel-wrapper {
+   the floor and the env() inset is inside it, not on top of it.
+
+   2026-08-28: the selector was `body.ca-raising .table-page …` and the class was
+   on `document.body`, so with four tables mounted one panel's flag pinned every
+   table's wrapper and one panel's close released them all. ActionPanel writes it
+   on its own `.table-page` ancestor now. 0,3,0 still beats the 0,2,0 floor rule
+   above, which is the comparison that has to hold. */
+.table-page.ca-raising .action-panel-wrapper {
   height: calc(var(--sp-bottom-row-h, 96px) + env(safe-area-inset-bottom, 0px));
 }
 

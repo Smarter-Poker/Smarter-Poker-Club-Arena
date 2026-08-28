@@ -559,9 +559,35 @@ export default function ActionPanel({
    * TablePage.css). Body class, not React state, because those overlays are
    * siblings mounted far away in the tree.
    */
+  /* ─── THIS TABLE'S ROOT, NOT `document.body` (fixed 2026-08-28) ───────────
+   *
+   * The flag used to be `document.body.classList.toggle('ca-raising', …)` and
+   * every rule that read it was `body.ca-raising …`. One body, four tables:
+   *
+   *   - in TILE VIEW all four tables are painted at once, so opening the raise
+   *     slider on one hid the timebank pill, previous-hand card, bankroll widget
+   *     and chat button on ALL FOUR;
+   *   - in either view the panels raced each other. Table two closing its
+   *     slider ran `toggle(..., false)` — or its unmount ran the cleanup's
+   *     unconditional `remove` — and stripped the class while table one's
+   *     overlay was still open, putting the timebank pill straight back on top
+   *     of table one's slider handle. That is the exact z-order defect this
+   *     flag was added to fix, reappearing whenever a second table was open.
+   *
+   * The class goes on this panel's own `.table-page` ancestor instead, and the
+   * five selectors are `.table-page.ca-raising …`. `.action-panel` is
+   * `position: fixed`, but fixed positioning does not change where an element
+   * sits in the DOM, so `closest()` still finds the right root.
+   *
+   * Falls back to `document.body` only when there is no `.table-page` above the
+   * panel — a harness or a Storybook-style mount. Losing the flag entirely there
+   * would silently drop the behaviour under test.
+   */
+  const panelRootRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    document.body.classList.toggle('ca-raising', isRaiseMode);
-    return () => document.body.classList.remove('ca-raising');
+    const host = panelRootRef.current?.closest('.table-page') ?? document.body;
+    host.classList.toggle('ca-raising', isRaiseMode);
+    return () => host.classList.remove('ca-raising');
   }, [isRaiseMode]);
   // Phase 2 T1-03: spec §5.2 — tapping the amount opens a numeric keyboard.
   // amountTyping toggles the inline input; amountDraft holds the raw text
@@ -1210,6 +1236,7 @@ export default function ActionPanel({
   // The sizing overlay above it is a sibling, not a replacement.
   return (
     <div
+      ref={panelRootRef}
       className={`action-panel${isMyTurn ? ' action-panel--active' : ''}${
         turnPulse ? ' action-panel--attention' : ''
       }${isRaiseMode ? ' action-panel--raise action-panel--raise-vertical' : ''}`}

@@ -326,3 +326,19 @@
 .inputValid {
   border-color: var(--success-500, #10b981) !important;
 }
+
+.localErrorText {
+  color: var(--error-500, #ef4444);
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+  font-weight: 500;
+}
+
+.submitSuccess {
+  background: linear-gradient(
+    135deg,
+    var(--success-500, #10b981) 0%,
+    var(--success-700, #047857) 100%
+  ) !important;
+  pointer-events: none;
+}

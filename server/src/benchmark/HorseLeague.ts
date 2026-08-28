@@ -744,6 +744,7 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v23Spin: false,
       v24Bounty: false,
       v24PloDefense: false,
+      v25PloTourney: false,
       mind: false,
       streetIQ: false,
       handReading: false,

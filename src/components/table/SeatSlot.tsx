@@ -309,6 +309,23 @@ export interface SeatSlotProps {
    * rather than rendering nothing.
    */
   holeCardCount?: number;
+  /**
+   * Is there a HAND at this table right now?
+   *
+   * Dan 2026-08-28, on a Spin still selling its third seat: the two players
+   * who had bought seats were each drawn holding a fan of face-down cards,
+   * before a single card had been dealt — a table that looks mid-hand while
+   * it is plainly waiting for a player. The villain fan below renders for any
+   * seat whose status is 'active', which every seated player is from the
+   * moment they sit, so the cards were furniture rather than a hand.
+   *
+   * Defaults TRUE so a caller that does not pass it keeps today's behaviour
+   * exactly. The gate is deliberately permissive — holeCards present, a deal
+   * animating, a fold or muck flying out all still draw regardless — so no
+   * animation the law protects can be suppressed by it. It removes exactly
+   * one thing: backs drawn for a hand that does not exist.
+   */
+  handInPlay?: boolean;
   showStackInBB?: boolean;
   onSit?: () => void;
   /**
@@ -691,6 +708,7 @@ export const SeatSlot = memo(
       deckStyle,
       cardBack = 'classic_blue',
       holeCardCount = 2,
+      handInPlay = true,
       showStackInBB = false,
       onSit,
       canSit = true,
@@ -1935,7 +1953,20 @@ export const SeatSlot = memo(
             before unmount; the pod itself never reflows when the cluster
             goes, because it is absolutely positioned. */}
         {!player.isHero &&
-          (player.status === 'active' || player.status === 'all_in' || isFolding || isMucking) && (
+          (player.status === 'active' || player.status === 'all_in' || isFolding || isMucking) &&
+          /* A HAND, NOT FURNITURE (Dan 2026-08-28). See `handInPlay`. Every
+             arm after the first is an escape hatch so this can never swallow
+             a real hand or a protected animation: cards actually delivered,
+             an all-in that is by definition mid-hand, a deal sliding in, a
+             fold or muck flying out. What is left — a seated player, no
+             hand, nothing animating — is the pre-start Spin that drew two
+             players holding cards before the game had a third. */
+          (handInPlay ||
+            (player.holeCards?.length ?? 0) > 0 ||
+            player.status === 'all_in' ||
+            isDealing ||
+            isFolding ||
+            isMucking) && (
             <div
               className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length && !revealHeld ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
               style={
@@ -2628,6 +2659,10 @@ export const SeatSlot = memo(
      * seat is supposed to read YOUR SEAT instead of EMPTY, and it never did.
      */
     if (prev.holeCardCount !== next.holeCardCount) return false;
+    /* The first hand of a Spin flips this from false to true, and it is what
+       puts every villain's cards on the felt. Swallowed here, the table would
+       stay card-less through the whole hand. */
+    if (prev.handInPlay !== next.handInPlay) return false;
     if (prev.isHeroReservedSeat !== next.isHeroReservedSeat) return false;
     if (prev.position !== next.position) return false;
     if (prev.isTournament !== next.isTournament) return false;

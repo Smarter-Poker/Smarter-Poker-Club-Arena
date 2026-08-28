@@ -580,15 +580,12 @@
    MOBILE RESPONSIVE ANIMATIONS
    ───────────────────────────────────────────────────────────────────────────── */
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
+/* 2026-08-27: the older global reduced-motion block that lived here is GONE.
+   reducedMotion.css (imported last in main.tsx) is the single authority: it
+   uses 1ms (not 0.01ms, which some engines skip without applying the fill),
+   zeroes animation-delay, and honours the data-motion="keep" escape hatch —
+   this block did none of that and would silently win if import order ever
+   changed. */
 
 /* Touch feedback for mobile */
 .touch-feedback {

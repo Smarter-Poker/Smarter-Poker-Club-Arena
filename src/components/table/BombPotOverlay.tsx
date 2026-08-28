@@ -137,10 +137,12 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSou
     });
     at(T_EXPLODE, () => {
       setPhase('explode');
-      if (playSounds) {
-        soundService.playBombExplosion();
-        triggerScreenShake('heavy', containerRef.current);
-      }
+      if (playSounds) soundService.playBombExplosion();
+      // ANIMATION AUDIT 2026-08-27: the shake lived INSIDE the sound gate — a
+      // muted (or background-tab) player lost the screen shake along with the
+      // audio. The shake is motion, not sound; it plays regardless of mute.
+      // (reducedMotion.css flattens the keyframe for reduced-motion players.)
+      triggerScreenShake('heavy', containerRef.current);
     });
     at(T_TITLE, () => setPhase('title'));
     at(T_HIDE, () => setPhase('idle'));

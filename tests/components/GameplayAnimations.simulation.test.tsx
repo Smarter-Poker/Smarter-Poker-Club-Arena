@@ -26,16 +26,23 @@ import React from 'react';
 // ── Sound spy ────────────────────────────────────────────────────────────────
 const played: string[] = [];
 vi.mock('../../src/services/SoundService', () => {
-  const make = (name: string) => (...a: unknown[]) => {
-    played.push(name);
-    void a;
-  };
+  const make =
+    (name: string) =>
+    (...a: unknown[]) => {
+      played.push(name);
+      void a;
+    };
   const soundService = new Proxy(
     {
       isEnabled: () => true,
       setEnabled: () => {},
       startTimerWarning: make('startTimerWarning'),
       stopTimerWarning: make('stopTimerWarning'),
+      // SOUND AUDIT 2026-08-27: see DealAnimation.determinism.test.tsx — one
+      // 'playDeal' per slide scheduled through the single-call sequence API.
+      playDealSequence: (delays: unknown) => {
+        (Array.isArray(delays) ? delays : []).forEach(() => played.push('playDeal'));
+      },
     } as Record<string, unknown>,
     {
       get(target, prop: string) {
@@ -124,13 +131,7 @@ describe('ANIMATION 2/16 — fold: cards fly to the muck (cardFoldOut)', () => {
       <SeatSlot seatNumber={1} player={seat()} position={null} isActive={false} lastAction={null} />
     );
     rerender(
-      <SeatSlot
-        seatNumber={1}
-        player={seat()}
-        position={null}
-        isActive={false}
-        lastAction="fold"
-      />
+      <SeatSlot seatNumber={1} player={seat()} position={null} isActive={false} lastAction="fold" />
     );
     expect(container.querySelector('.seat__cards--folding')).toBeTruthy();
   });

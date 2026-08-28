@@ -1023,7 +1023,10 @@ export const SeatSlot = memo(
       // --animation-speed, the same multiplier the keyframes use.
       if (lastAction === 'all_in' && prevActionRef.current !== 'all_in') {
         setAllinShake(true);
-        const timer = setTimeout(() => setAllinShake(false), 400 * getAnimationSpeed());
+        // 2026-08-27: +50ms cushion — the keyframe now scales with
+        // --animation-speed (SeatSlot.css), and an exact tie races the last
+        // frame at speed 1.
+        const timer = setTimeout(() => setAllinShake(false), 400 * getAnimationSpeed() + 50);
         prevActionRef.current = lastAction;
         return () => clearTimeout(timer);
       }
@@ -1211,35 +1214,69 @@ export const SeatSlot = memo(
     // stagger), then the flip plays exactly as before.
     const [revealHeld, setRevealHeld] = useState(false);
     const prevShowCardsRef = React.useRef<boolean>(player?.showCards ?? false);
+    // ANIMATION AUDIT 2026-08-27: the old effect kept its timers in effect
+    // scope and CANCELLED them in cleanup — but showdownRevealDelayMs is
+    // recomputed when SHOWDOWN_CARDS_REVEALED reconciles the reveal order
+    // mid-hold, and that dep change re-ran the effect: cleanup killed the
+    // hold timer, and because prevShowCardsRef was already latched true the
+    // rising-edge guard refused to reschedule — NO flip played and the cards
+    // snapped face-up. Timers now live in component-scope refs, survive dep
+    // changes, and are torn down only on unmount or when the cards go back
+    // face-down (new hand). Once a hold is pending it is never cancelled by
+    // a reorder — the first-scheduled stagger plays out.
+    const flipPlayedRef = React.useRef(false);
+    const flipHoldTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const flipEndTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(
+      () => () => {
+        if (flipHoldTimerRef.current) clearTimeout(flipHoldTimerRef.current);
+        if (flipEndTimerRef.current) clearTimeout(flipEndTimerRef.current);
+      },
+      []
+    );
     useEffect(() => {
       if (!player) return;
-      // Trigger 3D flip when showCards transitions false → true
-      if (player.showCards && !prevShowCardsRef.current) {
-        prevShowCardsRef.current = player.showCards;
-        let flipEndTimer: ReturnType<typeof setTimeout> | null = null;
-        const beginFlip = () => {
-          setRevealHeld(false);
-          setIsShowdownFlip(true);
-          // ANIMATION AUDIT 2026-08-19: was 400ms, but card 2 runs 120ms delay
-          // + 350ms flip = 470ms — it snapped face-up at 85%. 600ms covers it.
-          flipEndTimer = setTimeout(() => setIsShowdownFlip(false), 600 * getAnimationSpeed());
-        };
-        const holdMs = Math.max(0, showdownRevealDelayMs) * getAnimationSpeed();
-        if (holdMs > 0) {
-          setRevealHeld(true);
-          const holdTimer = setTimeout(beginFlip, holdMs);
-          return () => {
-            clearTimeout(holdTimer);
-            if (flipEndTimer) clearTimeout(flipEndTimer);
-            setRevealHeld(false);
-          };
+      const showing = !!player.showCards;
+      if (!showing) {
+        // Cards hidden again (new hand) — re-arm for the next reveal.
+        prevShowCardsRef.current = false;
+        flipPlayedRef.current = false;
+        if (flipHoldTimerRef.current) {
+          clearTimeout(flipHoldTimerRef.current);
+          flipHoldTimerRef.current = null;
         }
-        beginFlip();
-        return () => {
-          if (flipEndTimer) clearTimeout(flipEndTimer);
-        };
+        if (flipEndTimerRef.current) {
+          clearTimeout(flipEndTimerRef.current);
+          flipEndTimerRef.current = null;
+        }
+        setRevealHeld(false);
+        return;
       }
-      prevShowCardsRef.current = player.showCards ?? false;
+      // Already played, or a hold is pending — let it run.
+      if (flipPlayedRef.current || flipHoldTimerRef.current) {
+        prevShowCardsRef.current = true;
+        return;
+      }
+      prevShowCardsRef.current = true;
+      const beginFlip = () => {
+        flipHoldTimerRef.current = null;
+        flipPlayedRef.current = true;
+        setRevealHeld(false);
+        setIsShowdownFlip(true);
+        // ANIMATION AUDIT 2026-08-19: was 400ms, but card 2 runs 120ms delay
+        // + 350ms flip = 470ms — it snapped face-up at 85%. 600ms covers it.
+        flipEndTimerRef.current = setTimeout(() => {
+          setIsShowdownFlip(false);
+          flipEndTimerRef.current = null;
+        }, 600 * getAnimationSpeed());
+      };
+      const holdMs = Math.max(0, showdownRevealDelayMs) * getAnimationSpeed();
+      if (holdMs > 0) {
+        setRevealHeld(true);
+        flipHoldTimerRef.current = setTimeout(beginFlip, holdMs);
+      } else {
+        beginFlip();
+      }
     }, [player?.showCards, showdownRevealDelayMs]);
 
     // ── COMPETITOR-PARITY 2026-08-19: Card Squeeze ─────────────────────────
@@ -2172,7 +2209,14 @@ export const SeatSlot = memo(
         {/* Info Box — name + stack, with neon timer border when active.
             The React `key` forces a fresh mount per turn so the CSS
             @property animation restarts from 100%. */}
-        <div className="seat__info" style={timerStyle} key={`info-${timerKey}`}>
+        {/* ANIMATION AUDIT 2026-08-27: data-motion="keep" — the countdown ring
+            IS duration-carrying CSS animation (spTimerRingShrink runs the whole
+            turn; its length is the information). reducedMotion.css collapses
+            every unmarked animation to 1ms, which made the ring finish
+            instantly on every turn for reduced-motion players — the exact case
+            the escape hatch was built for. The ring is informational, not
+            vestibular motion (it shrinks in place). */}
+        <div className="seat__info" style={timerStyle} key={`info-${timerKey}`} data-motion="keep">
           {/* Neon border overlay (rendered via CSS ::before when --active) */}
           <span className="seat__name">{player.name}</span>
           <span

@@ -12144,6 +12144,14 @@ export default function TablePage({
                   name: scooper?.name || '',
                   handNumber: scoopHand,
                 });
+                /* A sweep is the biggest moment a bomb pot has, and the
+                   banner was landing in SILENCE — the pot-award fanfare has
+                   already finished by the time it appears. Reuse the big-win
+                   cue, gated for a muted player and for background
+                   multi-table tabs (#175). */
+                if (soundService.isEnabled() && ambientSoundsAllowedRef.current) {
+                  soundService.playBigWin();
+                }
                 // Self-clears with the celebration.
                 scoopBannerTimerRef.current = setTimeout(() => {
                   scoopBannerTimerRef.current = null;

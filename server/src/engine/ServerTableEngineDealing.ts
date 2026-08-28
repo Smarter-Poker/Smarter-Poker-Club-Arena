@@ -1178,16 +1178,35 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
       }
 
+      // The scheduler decides FIRST. Two reasons, both learned here:
+      //
+      //  1. COST. The manual-pending flag needs a FRESH read (the throttled
+      //     tableInfo re-read is far too slow for "next hand"), and that is
+      //     one extra round trip per hand per bomb table. Asking the
+      //     scheduler first means the read is skipped entirely on hands that
+      //     are already bombs.
+      //  2. THE HOST'S REQUEST IS NOT SWALLOWED. Reading first consumed and
+      //     cleared the manual flag even when the scheduler was about to fire
+      //     anyway — the host asked for an EXTRA bomb, got the one that was
+      //     already coming, and their request vanished with nothing to show
+      //     for it. Spec §4.3 collapses two SCHEDULED triggers into one; a
+      //     manual request is a separate intent, so it is preserved for the
+      //     next hand that is not already a bomb.
+      let decision: BombPotDecision = this.bombPotScheduler.noteHandStart(
+        schedulerSettings,
+        dealerSeat,
+        players.length,
+        Date.now()
+      );
+
       // MANUAL_NEXT_HAND (spec §2.1/§15.3): an authorized host can schedule
       // exactly one bomb for the next valid hand via
-      // fn_request_manual_bomb_pot (role-gated + audited server-side). The
-      // flag is read FRESH each hand — the throttled tableInfo re-read is too
-      // slow for "next hand" — and only on bomb-enabled tables, so the rest
-      // of the fleet pays nothing. Fail closed: if the flag cannot be cleared
-      // the bomb does not fire, because a bomb that fires twice is worse than
-      // one that arrives a hand late.
-      let manualBomb = false;
-      if (this.tableInfo.bomb_pot_enabled === true) {
+      // fn_request_manual_bomb_pot (role-gated + audited server-side). Only
+      // consulted on a bomb-enabled table that is not ALREADY dealing a bomb.
+      // Fail closed: if the flag cannot be cleared the bomb does not fire,
+      // because a bomb that fires twice is worse than one that arrives a hand
+      // late.
+      if (!decision.isBombPot && this.tableInfo.bomb_pot_enabled === true) {
         try {
           const { data: manualRow } = await supabase
             .from('tables')
@@ -1207,7 +1226,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               if (clearErr) {
                 console.warn('[BombPot] manual flag clear failed — deferring:', clearErr.message);
               } else {
-                manualBomb = true;
+                decision = { isBombPot: true, triggerReason: 'manual_next_hand' };
               }
             }
             // Below the floor the request simply stays pending (spec §3.1).
@@ -1216,15 +1235,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           console.warn('[BombPot] manual-pending read failed:', err);
         }
       }
-
-      const decision: BombPotDecision = manualBomb
-        ? { isBombPot: true, triggerReason: 'manual_next_hand' }
-        : this.bombPotScheduler.noteHandStart(
-            schedulerSettings,
-            dealerSeat,
-            players.length,
-            Date.now()
-          );
 
       // Persist the scheduler whenever its serialized state moved (counter
       // ticks, token set/consumed, clock reset, bomb button advanced). One

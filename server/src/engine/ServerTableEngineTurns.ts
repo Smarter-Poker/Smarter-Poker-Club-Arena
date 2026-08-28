@@ -1891,6 +1891,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const gameState = {
       players: state.players,
       communityCards: state.communityCards,
+      // MULTI-BOARD EQUITY 2026-08-28 (Horses Are Players law): on a
+      // double/triple-board bomb hand the fleet prices EVERY board — the
+      // brain averages per-board equity, exactly what the pot pays on.
+      communityCards2: fullState?.communityCards2 ?? [],
+      communityCards3: fullState?.communityCards3 ?? [],
       pot: state.pot,
       currentBet: state.currentBet,
       minRaise: state.minRaise,

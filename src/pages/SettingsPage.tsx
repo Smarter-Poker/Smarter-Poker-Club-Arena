@@ -129,7 +129,25 @@ export default function SettingsPage() {
   const tableSettingsRef = useRef(tableSettings);
   tableSettingsRef.current = tableSettings;
 
-  const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  /**
+   * LAZY INITIALIZER (2026-08-28, first-paint flash sweep): this began at
+   * DEFAULT_SETTINGS and the real values arrived in a passive effect — the
+   * read is SYNCHRONOUS localStorage, so every visit to /settings painted
+   * every toggle, the theme selector and the card-back dropdown at their
+   * defaults for one frame and then snapped to the saved state. Same class
+   * as the table-theme first-paint fix. The mount effect below still runs
+   * (it re-merges and loads the email); it now confirms rather than swaps.
+   */
+  const [settings, setSettings] = useState<UserSettings>(() => {
+    let initial = DEFAULT_SETTINGS;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+      if (saved) initial = validateSettings(JSON.parse(saved));
+    } catch {
+      /* hostile storage: defaults */
+    }
+    return fromTableSettings(tableSettingsRef.current, initial);
+  });
   const [hasChanges, setHasChanges] = useState(false);
   const [saving, setSaving] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');

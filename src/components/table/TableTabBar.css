@@ -794,6 +794,22 @@
   flex: 0 0 auto;
 }
 
+/* Same source-order trap as __tab-sub above (2026-08-28). The <=480px block
+   earlier in this file shrinks the chip to `3px 5px` + `4px` margin, and the
+   four-tab width reserve is computed from that: `calc((100vw - 176px) / 4)`,
+   where the 176 is 154 + 22 and the comment states the 22 outright — "even
+   shrunk to its dot the offline chip is 18px plus a 4px margin". The base
+   rule was winning at ~28px + 8px, overrunning the reserve by 14px, and the
+   same comment names the consequence: the fourth table's tab scrolls out of
+   reach — while the player is reconnecting, which is the worst moment to
+   lose a table. Re-stated after the base so the phone value holds. */
+@media (max-width: 480px) {
+  .table-tab-bar__offline {
+    padding: 3px 5px;
+    margin-right: 4px;
+  }
+}
+
 .table-tab-bar__offline-dot {
   font-size: 0.6rem;
   line-height: 1;
@@ -850,6 +866,27 @@
   color: rgba(255, 255, 255, 0.45);
   letter-spacing: 0.02em;
   white-space: nowrap;
+  /* 2026-08-28: `nowrap` with no ellipsis inside a `.table-tab-bar__tab` that
+     is `overflow: hidden` cut "Pot 12,500" mid-CHARACTER. Its sibling
+     __tab-name has ellipsised since it was written, and the <=480px block
+     above explicitly assumes this line does too ("the lines that do not fit —
+     'DISCARD', 'Pot 12,500' — ellipsised"). Now it does. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* The <=480px block above tunes this line to 8px with no letter-spacing so a
+   ten-glyph pot fits the pill's 47.25px of inner width. That block sits
+   EARLIER in the file at equal specificity, so the base rule was overriding
+   it on every phone — the exact source-order trap. Re-stated here, after the
+   base, so the phone value is the one that survives. */
+@media (max-width: 480px) {
+  .table-tab-bar__tab-sub {
+    font-size: 0.5rem;
+    letter-spacing: 0;
+  }
 }
 
 .table-tab-bar__tab--active .table-tab-bar__tab-sub {

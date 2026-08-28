@@ -170,8 +170,15 @@ export function useMysteryBounty(
     }
 
     return () => {
-      /* Only the creator tears it down. See the header. */
-      if (!preExisting) masterBus.removeRegisteredChannel(key);
+      /* REFCOUNTED 2026-08-28: `removeRegisteredChannel` now releases ONE
+         reference and tears the channel down only when the last consumer lets
+         go, so every consumer must release exactly once — including this one.
+         The old `if (!preExisting)` guard was an attempt at the same
+         protection from the wrong side ("I created it" is not "nobody else is
+         reading it"), and with a real refcount underneath it would now LEAK:
+         a non-creator took a reference at getOrCreateChannel and never gave
+         it back, so the channel could never reach zero. */
+      masterBus.removeRegisteredChannel(key);
     };
   }, [tournamentId, enabled, scheduleRefresh]);
 

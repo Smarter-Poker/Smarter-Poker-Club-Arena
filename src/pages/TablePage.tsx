@@ -74,6 +74,7 @@ import { useState, useEffect, useCallback, useRef, startTransition, useMemo } fr
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
 import { SeatSlot } from '../components/table/SeatSlot';
 import { PotDisplay } from '../components/table/PotDisplay';
@@ -1369,8 +1370,22 @@ export default function TablePage({
       }
     };
   }, [tableId]);
-  const [username, setUsername] = useState<string>('Player');
-  const [heroAvatarUrl, setHeroAvatarUrl] = useState<string>('');
+  /**
+   * FIRST-PAINT IDENTITY (2026-08-28, flash sweep): these began at
+   * 'Player' / '' and the real name and avatar arrived only after
+   * getAuthUser() PLUS a profiles round trip — so the hero's own seat opened
+   * as an anonymous stranger on every table mount. The persisted session
+   * gives us the user id synchronously (a paint hint, not authentication),
+   * and lib/cachedIdentity keys the cached name/face to that id so another
+   * account's identity can never paint. initUser below still fetches the
+   * profile and overwrites both state and cache — the database stays truth.
+   */
+  const [username, setUsername] = useState<string>(
+    () => hydrateIdentity(cachedAuthUserId()).displayName || 'Player'
+  );
+  const [heroAvatarUrl, setHeroAvatarUrl] = useState<string>(
+    () => hydrateIdentity(cachedAuthUserId()).avatarUrl || ''
+  );
   // ANIMATION AUDIT 2026-08-19: boardStageKey is GONE. It re-keyed (and so
   // unmounted + remounted) the whole .community-area on every stage change —
   // one frame after CommunityCards had marked the new cards as newly dealt.
@@ -1417,8 +1432,15 @@ export default function TablePage({
           .eq('id', user.id)
           .maybeSingle();
         if (isMounted.current) {
-          setUsername(profile?.display_name || profile?.username || 'Player');
+          const resolvedName = profile?.display_name || profile?.username || 'Player';
+          setUsername(resolvedName);
           setHeroAvatarUrl(profile?.avatar_url || '');
+          // Refresh the first-paint cache with what the database just said,
+          // so the NEXT table open (and the header) wear it immediately.
+          persistIdentity(user.id, {
+            displayName: resolvedName === 'Player' ? null : resolvedName,
+            avatarUrl: profile?.avatar_url || null,
+          });
         }
       } catch (err) {
         reportError(err, 'TablePage.initUser_profile_failed');
@@ -1445,6 +1467,8 @@ export default function TablePage({
     const url = payload.avatarUrl ?? payload.avatar_url;
     if (typeof url === 'string' && url && isMounted.current) {
       setHeroAvatarUrl(url);
+      // Keep the first-paint cache current with the newly picked avatar.
+      persistIdentity(userId, { avatarUrl: url });
     }
   });
 
@@ -4593,6 +4617,8 @@ export default function TablePage({
     intervalSeconds: number;
     /** VARIANT OVERRIDE (spec §10.1): bomb hand variant; null = same as table. */
     variant: string | null;
+    /** ANNOUNCE WINDOW (spec §3): clock shows within this many seconds; 0 = always. */
+    announceSeconds: number;
   } | null>(null);
 
   /**
@@ -4601,6 +4627,26 @@ export default function TablePage({
    * down to it in m:ss. The one-second tick runs ONLY while a due timestamp
    * exists — every other table pays nothing for this.
    */
+  /**
+   * SCOOP LABELS (spec §9.2/§13.3, 2026-08-28): the felt banner for a player
+   * sweeping a multi-board bomb pot. Set on a delay after the per-board
+   * winner record arrives (so it lands after the chip pushes), self-clears,
+   * and is fenced to its own hand number so a late event cannot label a
+   * newer hand.
+   */
+  const [scoopBanner, setScoopBanner] = useState<{
+    text: string;
+    name: string;
+    handNumber: number;
+  } | null>(null);
+  const scoopBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (scoopBannerTimerRef.current) clearTimeout(scoopBannerTimerRef.current);
+    },
+    []
+  );
+
   const [bombClockNowMs, setBombClockNowMs] = useState(() => Date.now());
   const bombPotNextAtLive = tableState.bombPotNextAt;
   useEffect(() => {
@@ -4612,11 +4658,74 @@ export default function TablePage({
     if (bombPotNextAtLive == null) return null;
     const remainMs = bombPotNextAtLive - bombClockNowMs;
     if (remainMs <= 0) return 'NEXT HAND';
+    // ANNOUNCE WINDOW (spec §3): the host can keep the clock quiet until the
+    // bomb is close — 0/absent means always show.
+    const announce = bombPotRules?.announceSeconds ?? 0;
+    if (announce > 0 && remainMs > announce * 1000) return null;
     const totalSec = Math.ceil(remainMs / 1000);
     const m = Math.floor(totalSec / 60);
     const s = totalSec % 60;
     return `${m}:${String(s).padStart(2, '0')}`;
-  }, [bombPotNextAtLive, bombClockNowMs]);
+  }, [bombPotNextAtLive, bombClockNowMs, bombPotRules?.announceSeconds]);
+
+  /**
+   * MANUAL_NEXT_HAND (spec §2.1/§15.3): club staff can arm one bomb for the
+   * next valid hand. The RPC is the authority (role-gated + audited); this
+   * check only decides whether the button is DRAWN, so an ordinary player is
+   * never shown a control that would refuse them.
+   */
+  const [isClubStaff, setIsClubStaff] = useState(false);
+  useEffect(() => {
+    if (!userId || userId === 'guest' || !actualClubIdLoaded) return;
+    const clubId = actualClubIdRef.current;
+    if (!clubId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [{ data: membership }, { data: club }] = await Promise.all([
+          supabase
+            .from('club_members')
+            .select('role')
+            .eq('club_id', clubId)
+            .eq('user_id', userId)
+            .maybeSingle(),
+          supabase.from('clubs').select('owner_id').eq('id', clubId).maybeSingle(),
+        ]);
+        if (cancelled) return;
+        const role = membership?.role?.toLowerCase() || '';
+        setIsClubStaff(club?.owner_id === userId || ['owner', 'co_owner', 'admin'].includes(role));
+      } catch {
+        /* staff check is a UI nicety — the RPC still enforces */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, actualClubIdLoaded]);
+
+  const handleManualBombPot = useCallback(async () => {
+    if (!tableId) return;
+    try {
+      const { data, error } = await supabase.rpc('fn_request_manual_bomb_pot', {
+        p_table_id: tableId,
+      });
+      const ok = !error && (data as { ok?: boolean } | null)?.ok === true;
+      if (ok) {
+        toast.success('Bomb Pot Armed For The Next Hand');
+      } else {
+        const reason = (data as { reason?: string } | null)?.reason || error?.message || 'refused';
+        toast.error(
+          reason === 'not_authorized'
+            ? 'Only Club Staff Can Trigger A Bomb Pot'
+            : reason === 'bomb_pots_disabled'
+              ? 'Bomb Pots Are Not Enabled On This Table'
+              : 'Could Not Arm The Bomb Pot'
+        );
+      }
+    } catch {
+      toast.error('Could Not Arm The Bomb Pot');
+    }
+  }, [tableId]);
 
   // Straddle state
   const [isStraddleEnabled, setIsStraddleEnabled] = useState(false);
@@ -7673,6 +7782,7 @@ export default function TablePage({
         bomb_pot_trigger_mode: string | null;
         bomb_pot_interval_seconds: number | null;
         bomb_pot_variant: string | null;
+        bomb_pot_announce_seconds: number | null;
       };
       let table: TableBootstrapRow | null = null;
       let error: unknown = null;
@@ -7684,7 +7794,7 @@ export default function TablePage({
         const res = await supabase
           .from('tables')
           .select(
-            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant'
+            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_announce_seconds'
           )
           .eq('id', tableId)
           .maybeSingle();
@@ -7834,6 +7944,12 @@ export default function TablePage({
                   (typeof table.bomb_pot_variant === 'string' && table.bomb_pot_variant) ||
                   (typeof settings.bomb_pot_variant === 'string' && settings.bomb_pot_variant) ||
                   null,
+                // ANNOUNCE WINDOW (spec §3): show the timed clock only within
+                // this many seconds of the due time. 0/null = always show.
+                announceSeconds:
+                  Number(table.bomb_pot_announce_seconds) ||
+                  Number(settings.bomb_pot_announce_seconds) ||
+                  0,
               }
             : null
         );
@@ -10041,7 +10157,6 @@ export default function TablePage({
     // isTournament/tournamentId are in the deps so a table whose tournament
     // identity resolves after its blinds still re-evaluates the gate; the
     // loaded-ref keeps a cash table from double-loading.
-     
   }, [tableId, tableState.blinds, tableState.isTournament, tableState.tournamentId]);
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -11941,6 +12056,64 @@ export default function TablePage({
               ]
             : null;
 
+        /* SCOOP LABELS (spec §9.2/§13.3, 2026-08-28): derived AFTER settlement
+           from the per-board winner record — one player sole-winning every
+           board is a SCOOP (TRIPLE SCOOP on three boards); sole-winning two of
+           three is a 2-BOARD SWEEP. Shown on a short delay so the label lands
+           after the chip pushes, never before (spec: "show SCOOP only after
+           the final award is complete"). */
+        {
+          const boardsSeen = [...new Set(winnersByBoard.map((w) => w.board))];
+          if (boardsSeen.length >= 2) {
+            const winnersPerBoard = new Map<number, Set<string>>();
+            for (const w of winnersByBoard) {
+              if (!winnersPerBoard.has(w.board)) winnersPerBoard.set(w.board, new Set());
+              winnersPerBoard.get(w.board)!.add(w.user_id);
+            }
+            let label: string | null = null;
+            let scoopUserId: string | null = null;
+            const soleWinners = [...winnersPerBoard.values()].map((s) =>
+              s.size === 1 ? [...s][0] : null
+            );
+            if (soleWinners.every((u) => u !== null && u === soleWinners[0])) {
+              label = boardsSeen.length >= 3 ? 'TRIPLE SCOOP!' : 'SCOOP!';
+              scoopUserId = soleWinners[0];
+            } else if (boardsSeen.length >= 3) {
+              const soleCount = new Map<string, number>();
+              for (const u of soleWinners) {
+                if (u) soleCount.set(u, (soleCount.get(u) ?? 0) + 1);
+              }
+              for (const [u, n] of soleCount) {
+                if (n === 2) {
+                  label = '2-BOARD SWEEP!';
+                  scoopUserId = u;
+                  break;
+                }
+              }
+            }
+            if (label) {
+              const scooper = tableStateRef.current.players.find((p) => p?.id === scoopUserId);
+              const scoopHand = tableStateRef.current.handNumber ?? 0;
+              if (scoopBannerTimerRef.current) clearTimeout(scoopBannerTimerRef.current);
+              scoopBannerTimerRef.current = setTimeout(() => {
+                scoopBannerTimerRef.current = null;
+                // A late label must never land on a newer hand's felt.
+                if ((tableStateRef.current.handNumber ?? 0) !== scoopHand) return;
+                setScoopBanner({
+                  text: label!,
+                  name: scooper?.name || '',
+                  handNumber: scoopHand,
+                });
+                // Self-clears with the celebration.
+                scoopBannerTimerRef.current = setTimeout(() => {
+                  scoopBannerTimerRef.current = null;
+                  setScoopBanner(null);
+                }, 5000 * getAnimationSpeed());
+              }, 2200 * getAnimationSpeed());
+            }
+          }
+        }
+
         // Bible V8 §5.1: Set winner info for seat highlight + hand name display
         if (winnerIds.length > 0) {
           // Use per-winner amounts from server when available (accurate for split pots)
@@ -13354,6 +13527,25 @@ export default function TablePage({
             }
           }
 
+          /* OUTAGE VISIBILITY (2026-08-28). A reason none of the branches
+             below recognize collapses into the generic toast and vanishes:
+             that is exactly how the seat_first_variant regression (the
+             2026-08-27 guard refusing its own internal caller) ran for a
+             full day with every seat purchase failing and nothing reported
+             anywhere. The toast stays generic for the player, but the RAW
+             reason now reaches error reporting, so the next unknown refusal
+             is a searchable event instead of a dead end. */
+          const mappedReason =
+            /seat_taken|insufficient|already_started|game_already_started|tournament_full/.test(
+              reason
+            );
+          if (!mappedReason) {
+            reportError(
+              new Error(`seat_first_buy_in refused: ${reason || 'no_reason_given'}`),
+              'TablePage.seat_first_buy_in_refused',
+              { tableId, seatNumber, reason }
+            );
+          }
           toast?.error?.(
             /seat_taken/.test(reason)
               ? 'That Seat Was Just Taken'
@@ -16228,6 +16420,18 @@ export default function TablePage({
                   </div>
                 )}
 
+                {/* SCOOP LABELS (spec §9.2/§13.3): one player swept the
+                    multi-board bomb pot — announced only after the awards
+                    have pushed, never before. */}
+                {scoopBanner && scoopBanner.handNumber === tableState.handNumber && (
+                  <div className="bomb-scoop-banner" aria-live="polite">
+                    <span className="bomb-scoop-banner__label">{scoopBanner.text}</span>
+                    {scoopBanner.name && (
+                      <span className="bomb-scoop-banner__name">{scoopBanner.name}</span>
+                    )}
+                  </div>
+                )}
+
                 {/* Dan 2026-08-15: the "Game Info Strip" that lived here is
                     gone. It printed the stakes a second and third time
                     ("NLH 2.00/5.00", then "2/5 NLH" in yellow) right under the
@@ -18114,6 +18318,8 @@ export default function TablePage({
         showGameRules={showGameRules}
         isStraddleEnabled={isStraddleEnabled}
         bombPotRules={bombPotRules}
+        canManualBombPot={isClubStaff && bombPotRules?.enabled === true}
+        onManualBombPot={handleManualBombPot}
         onCloseGameRules={() => setShowGameRules(false)}
         // Chips
         chipAnimations={chipAnimations}

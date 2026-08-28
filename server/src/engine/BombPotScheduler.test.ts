@@ -241,6 +241,64 @@ describe('timed persistence seed (spec §4.3)', () => {
   });
 });
 
+describe('full scheduler persistence (2026-08-28)', () => {
+  it('a restart mid-orbit resumes the orbit instead of restarting it', () => {
+    const s = base({ triggerMode: 'once_per_orbit' });
+    const sch1 = new BombPotScheduler();
+    // Button walked 1 → 2 → 3 of a 1-anchored orbit, then the engine died.
+    sch1.noteHandStart(s, 1, 3, 0);
+    sch1.noteHandStart(s, 2, 3, 0);
+    sch1.noteHandStart(s, 3, 3, 0);
+    const saved = sch1.exportState();
+
+    const sch2 = new BombPotScheduler();
+    sch2.restoreState(saved);
+    // Next hand wraps 3 → 1, crossing the restored anchor: the bomb fires
+    // exactly where it would have without the restart.
+    expect(sch2.noteHandStart(s, 1, 3, 0).isBombPot).toBe(true);
+  });
+
+  it('a restart with a pending token keeps the token', () => {
+    const s = base({ frequency: 2, minPlayers: 3 });
+    const sch1 = new BombPotScheduler();
+    sch1.noteHandStart(s, 1, 2, 0);
+    sch1.noteHandStart(s, 2, 2, 0); // due, held by the player floor
+    expect(sch1.isPending()).toBe(true);
+
+    const sch2 = new BombPotScheduler();
+    sch2.restoreState(sch1.exportState());
+    expect(sch2.isPending()).toBe(true);
+    // Third player arrives after the deploy: the surviving token detonates.
+    expect(sch2.noteHandStart(s, 3, 3, 0).isBombPot).toBe(true);
+  });
+
+  it('every-N counter survives the restart', () => {
+    const s = base({ frequency: 5 });
+    const sch1 = new BombPotScheduler();
+    for (let i = 0; i < 3; i++) sch1.noteHandStart(s, 1 + i, 4, 0);
+    const sch2 = new BombPotScheduler();
+    sch2.restoreState(sch1.exportState());
+    expect(sch2.handsUntilDue(s)).toBe(2);
+  });
+
+  it('restore is refused after the scheduler has started', () => {
+    const s = base({ frequency: 5 });
+    const sch = new BombPotScheduler();
+    sch.noteHandStart(s, 1, 4, 0);
+    sch.restoreState({ h: 4, p: true });
+    expect(sch.isPending()).toBe(false);
+    expect(sch.handsUntilDue(s)).toBe(4); // 5 - 1, not 5 - 4
+  });
+
+  it('a corrupt persisted row degrades gracefully, field by field', () => {
+    const s = base({ frequency: 3 });
+    const sch = new BombPotScheduler();
+    sch.restoreState({ h: 'garbage', p: 'yes', a: -2, d: NaN, r: 'DROP TABLE' });
+    expect(sch.isPending()).toBe(false);
+    expect(sch.noteHandStart(s, 1, 4, 0).isBombPot).toBe(false);
+  });
+});
+
 describe('disable mid-session', () => {
   it('drops all pending state so re-enabling starts a fresh schedule', () => {
     const sch = new BombPotScheduler();

@@ -103,6 +103,16 @@
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+/* A thin status strip, for a standing fact plus its action - quieter and far
+   tighter than .admin-card, whose 24px padding is meant for a whole section.
+   Used by the house-ads retention row. */
+.admin-panel-soft {
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
 .admin-card-title {
   margin: 0 0 24px;
   font-size: 16px;

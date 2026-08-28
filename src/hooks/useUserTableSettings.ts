@@ -88,6 +88,9 @@ export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
   skip_animations: false,
   use_alias: false,
   table_alias: '',
+  // DEAD under the NO AUTO TABLE SWITCHING law (Dan 2026-08-28) — kept only
+  // so the pinned client-default/DB-default equality holds and existing rows
+  // parse. No code reads these; none may again.
   multi_auto_switch: true,
   multi_action_queue: true,
   // ── THESE TWO MUST MATCH THE DATABASE ──
@@ -210,16 +213,13 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
     label: 'Use Club Alias',
     description: 'Display Your Club Alias Instead Of Your Smarter.Poker Name At The Table',
   },
-  {
-    key: 'multi_auto_switch',
-    label: 'Multi-Table Auto-Switch',
-    description: 'Jump To A Table Automatically When Its Turn Clock Is Nearly Out',
-  },
-  {
-    key: 'multi_action_queue',
-    label: 'Multi-Table Action Queue',
-    description: 'After You Act, Advance To The Next Table Already Waiting On You',
-  },
+  /* NO AUTO TABLE SWITCHING — LAW (Dan 2026-08-28): the Multi-Table
+     Auto-Switch and Action Queue toggles were REMOVED from this panel and
+     their consuming effects deleted from MultiTablePage. "YOU CAN NEVER EVER
+     AUTO CHANGE TABLES FOR A USER, THEY MUST CHANGE IT BY THEM SELF." The DB
+     columns and the keys below survive only so existing rows keep parsing;
+     nothing may ever read them to move the active table again. Pinned by
+     tests/no-auto-table-switch.law.test.ts. */
   {
     key: 'multi_desktop_alerts',
     label: 'Desktop Turn Alerts',

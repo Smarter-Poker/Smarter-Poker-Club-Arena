@@ -281,6 +281,13 @@
   .trophy-bounce {
     animation: none !important;
   }
+  /* 2026-08-27: the base .sparkle rule is opacity 0 and relied on its
+     keyframe to become visible — `animation: none` above therefore made the
+     sparkles permanently invisible under Reduce Motion. Show them statically
+     instead: motion removed, decoration kept. */
+  .sparkle {
+    opacity: 0.5;
+  }
   .winnerTitle {
     -webkit-text-fill-color: #fbbf24;
   }

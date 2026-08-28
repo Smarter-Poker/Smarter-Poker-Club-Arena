@@ -638,17 +638,29 @@ describe('items 3 and 6 - an empty bottom bar is the table, not a black band', (
     );
   });
 
-  it('never collapses all the way to zero, or the reserve freezes', () => {
-    /* The ResizeObserver in TablePage.tsx drops a height of 0 by design, so a
-       wrapper that measured nothing would strand --sp-action-h at the height of
-       the bar that just disappeared and the felt would never take the space
-       back. The point of the whole change is that it does. */
+  it('collapses the PAINT and never the felt', () => {
+    /* 2026-08-27, and this is the assertion that changed. This rule used to
+       claim the space as well as the paint: --sp-action-h was the wrapper's
+       measured height, so collapsing the box grew the felt by ~90px — and the
+       hero's next turn shrank it again, every hand, on every table. Dan: "the
+       screen is moving in and out constantly ... that should never be
+       happening."
+
+       The felt's reserve is a declared constant now (--sp-action-reserve), so
+       this rule may hide the bar and may not resize anything. The min-height is
+       still small and non-zero, but for a different reason: a full-width fixed
+       box swallows taps over the hero's seat for every pixel it keeps. */
     const body = COLLAPSE_RULE![2];
     const m = body.match(/min-height:\s*([\d.]+)px/);
     expect(m, 'the collapsed wrapper declares no min-height').not.toBeNull();
-    expect(Number(m![1])).toBeGreaterThan(0);
     expect(Number(m![1])).toBeLessThanOrEqual(2);
-    expect(TABLE_TSX, 'the observer no longer guards against a zero').toMatch(/if\s*\(h\s*>\s*0\)/);
+    // Nothing about the felt's size may be derived from this box any more.
+    expect(TABLE_TSX, 'a measurement of the bottom chrome is back').not.toContain(
+      "setProperty('--sp-action-h'"
+    );
+    expect(TABLE_CSS, 'the felt reserve reads a measurement again').not.toContain(
+      'var(--sp-action-h'
+    );
   });
 
   it('does not swallow taps in a strip it is no longer painting', () => {
@@ -660,8 +672,9 @@ describe('items 3 and 6 - an empty bottom bar is the table, not a black band', (
   it('leaves the hero strip alone - it is not the bar', () => {
     /* --sp-hero-clear holds the hero's name plate, hole cards and the
        bottom-corner HUD stack, all of which are on screen in every state this
-       rule fires in. The bar's own reserve shrinks by itself, because it is
-       measured. */
+       rule fires in. The bar's own reserve does not shrink with it, and since
+       2026-08-27 that is deliberate: a reserve that comes and goes with the bar
+       is a table that resizes twice a hand. */
     expect(COLLAPSE_RULE![2]).not.toMatch(/--sp-hero-clear/);
     const declared = TABLE_CSS.split('\n').filter((l) => /^\s*--sp-hero-clear\s*:/.test(l));
     expect(declared.length, '--sp-hero-clear is read but never declared').toBeGreaterThan(0);

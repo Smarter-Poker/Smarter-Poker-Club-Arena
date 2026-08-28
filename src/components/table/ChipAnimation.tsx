@@ -129,8 +129,29 @@ export default function ChipAnimation({
   useEffect(() => {
     onCompleteRef.current = onComplete;
   });
+  /** The chip's own DOM node — used to detect a hidden (background) table. */
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    // ANIMATION AUDIT 2026-08-28 (multi-table): a background table is
+    // display:none, not unmounted — every chip flight there still drove a
+    // full rAF bezier loop nobody could see. If this chip's container has no
+    // client rects, land it instantly and complete on the flight's own
+    // wall-clock so parent sequencing (award staggers, holds) stays truthful.
+    if (containerRef.current && containerRef.current.getClientRects().length === 0) {
+      setPosition(to);
+      hideTimerRef.current = setTimeout(
+        () => {
+          hideTimerRef.current = null;
+          setIsVisible(false);
+          onCompleteRef.current?.();
+        },
+        delay + duration + 100
+      );
+      return () => {
+        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      };
+    }
     // IMPROVEMENT PASS 2026-08-19: honor prefers-reduced-motion. The CSS
     // media query flattens every keyframe on the table, but it cannot reach
     // this rAF loop — chips were the ONE thing still flying for
@@ -215,6 +236,7 @@ export default function ChipAnimation({
 
   return (
     <div
+      ref={containerRef}
       className={styles.chipContainer}
       style={{
         transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,

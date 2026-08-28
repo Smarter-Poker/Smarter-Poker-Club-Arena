@@ -42,8 +42,8 @@ describe('computeRaisePresets - rule 7: multiples of the bet being faced', () =>
       minRaise: 4,
       maxRaise: BIG,
     });
-    expect(p.map((x) => x.label)).toEqual(['2X', '2.5X', '3X', '4X', '5X']);
-    expect(p.map((x) => x.value)).toEqual([4, 5, 6, 8, 10]);
+    expect(p.map((x) => x.label)).toEqual(['2.5X', '3X', '3.5X', '4X']);
+    expect(p.map((x) => x.value)).toEqual([5, 6, 7, 8]);
   });
 
   it('uses the live bet as the baseline when hero is facing an open', () => {
@@ -56,10 +56,10 @@ describe('computeRaisePresets - rule 7: multiples of the bet being faced', () =>
       minRaise: 30,
       maxRaise: BIG,
     });
-    expect(p.map((x) => x.value)).toEqual([30, 37.5, 45, 60, 75]);
+    expect(p.map((x) => x.value)).toEqual([37.5, 45, 52.5, 60]);
   });
 
-  it('gives five DIFFERENT numbers when facing a bet (the original symptom)', () => {
+  it('gives a DIFFERENT number for every multiple faced (the original symptom)', () => {
     const p = computeRaisePresets({
       isPreflop: true,
       bigBlind: 5,
@@ -69,12 +69,13 @@ describe('computeRaisePresets - rule 7: multiples of the bet being faced', () =>
       minRaise: 30,
       maxRaise: BIG,
     });
-    expect(new Set(p.map((x) => x.value)).size).toBe(5);
+    // Four multiples since 2026-08-28 (Dan: remove 2X and 5X, add 3.5X).
+    expect(new Set(p.map((x) => x.value)).size).toBe(4);
   });
 
   it('does NOT collapse preflop opens onto the pot in no-limit', () => {
-    // Regression guard: capping presets at the pot would make 2X..5X identical
-    // preflop, which is the dead-buttons bug all over again.
+    // Regression guard: capping presets at the pot would make 2.5X..4X
+    // identical preflop, which is the dead-buttons bug all over again.
     const p = computeRaisePresets({
       isPreflop: true,
       bigBlind: 2,
@@ -84,7 +85,7 @@ describe('computeRaisePresets - rule 7: multiples of the bet being faced', () =>
       minRaise: 4,
       maxRaise: BIG,
     });
-    expect(new Set(p.map((x) => x.value)).size).toBe(5);
+    expect(new Set(p.map((x) => x.value)).size).toBe(4);
   });
 });
 
@@ -159,9 +160,14 @@ describe('computeRaisePresets - 2.5X', () => {
     expect(p.map((x) => x.label)).toEqual(['33%', '50%', '75%', 'POT']);
   });
 
-  it('never puts more than seven buttons in the row, including ALL IN', () => {
-    // The row is `flex-wrap: nowrap` on a 375px phone. Seven is what the CSS
-    // was sized for; an eighth would be invisible rather than merely cramped.
+  it('never puts more than six buttons in the row, including ALL IN', () => {
+    /* The row is `flex-wrap: nowrap` on a 375px phone, so an extra button is
+       not merely cramped — it is off the right edge and unreachable.
+       At SEVEN that is exactly what happened to ALL IN, which is the
+       screenshot Dan sent on 2026-08-28 and the reason 2X and 5X are gone.
+       Tightened from seven to six in the same commit: leaving the bound at
+       seven would let the row silently grow back into the state that
+       clipped the one button a player most needs to reach. */
     const rows = [
       { isPreflop: true, isPotLimit: false },
       { isPreflop: true, isPotLimit: true },
@@ -179,7 +185,7 @@ describe('computeRaisePresets - 2.5X', () => {
         maxRaise: BIG,
       });
       // +1 for the ALL IN button the panel always appends.
-      expect(p.length + 1).toBeLessThanOrEqual(7);
+      expect(p.length + 1, `${JSON.stringify(row)} row is too wide`).toBeLessThanOrEqual(6);
     }
   });
 });
@@ -206,7 +212,7 @@ describe('computeRaisePresets - item 9: NX is the exact multiple', () => {
       minRaise: 5,
       maxRaise: BIG,
     });
-    expect(p.map((x) => x.value)).toEqual([5, 6.25, 7.5, 10, 12.5]);
+    expect(p.map((x) => x.value)).toEqual([6.25, 7.5, 8.75, 10]);
   });
 
   it('3X of a 2.5 bet is 7.5, not 8', () => {
@@ -223,7 +229,7 @@ describe('computeRaisePresets - item 9: NX is the exact multiple', () => {
   });
 
   it('a multiple is only moved by legality, and then it says so', () => {
-    // PLO pot cap of 27.5. 2X/2.5X/3X/4X of a 6 bet are 12/15/18/24 — all
+    // PLO pot cap of 27.5. 2.5X/3X/3.5X/4X of a 6 bet are 15/18/21/24 — all
     // exact and all legal. Nothing may be rounded away from those.
     const p = computeRaisePresets({
       isPreflop: true,
@@ -234,7 +240,7 @@ describe('computeRaisePresets - item 9: NX is the exact multiple', () => {
       minRaise: 12,
       maxRaise: 27.5,
     });
-    expect(p.slice(0, 4).map((x) => x.value)).toEqual([12, 15, 18, 24]);
+    expect(p.slice(0, 4).map((x) => x.value)).toEqual([15, 18, 21, 24]);
     for (const x of p) expect(x.value).toBeLessThanOrEqual(27.5);
     // Anything the ceiling had to move is flagged, so the UI can mark it.
     for (const x of p) {
@@ -261,7 +267,7 @@ describe('computeRaisePresets - item 9: NX is the exact multiple', () => {
 });
 
 describe('computeRaisePresets - never exceeds the pot in a pot-limit game', () => {
-  it('caps 4X and 5X at the PLO pot cap', () => {
+  it('caps every multiple above the PLO pot cap, and says which', () => {
     // 1/2 PLO, opener to 6, hero owes 6, pot 9 -> pot cap 21.
     const cap = potSizedRaiseTo(6, 9, 6);
     expect(cap).toBe(21);
@@ -273,10 +279,16 @@ describe('computeRaisePresets - never exceeds the pot in a pot-limit game', () =
       pot: 9,
       minRaise: 12,
       maxRaise: cap,
+      // Was missing, and the describe block says "in a pot-limit game": without
+      // it this exercised the no-limit branch with a clamped ceiling and never
+      // saw the POT button the pot-limit row is defined by.
+      isPotLimit: true,
     });
-    expect(p.map((x) => x.value)).toEqual([12, 15, 18, 21, 21]);
-    expect(p[3].cappedByMax).toBe(true);
-    expect(p[4].cappedByMax).toBe(true);
+    // 2.5X/3X/3.5X/4X of a 6 bet are 15/18/21/24. Only 4X is past the cap.
+    expect(p.map((x) => x.label)).toEqual(['2.5X', '3X', '3.5X', '4X', 'POT']);
+    expect(p.map((x) => x.value)).toEqual([15, 18, 21, 21, 21]);
+    expect(p[2].cappedByMax, '3.5X lands exactly ON the cap, so it is not capped').toBe(false);
+    expect(p[3].cappedByMax, '4X is past the cap and must say so').toBe(true);
     for (const x of p) expect(x.value).toBeLessThanOrEqual(cap);
   });
 });
@@ -385,7 +397,7 @@ describe('computeRaisePresets - rule 4b: PLO always offers RAISE POT', () => {
       maxRaise: 7,
       isPotLimit: true,
     });
-    expect(p.map((x) => x.label)).toEqual(['2X', '2.5X', '3X', '4X', 'POT']);
+    expect(p.map((x) => x.label)).toEqual(['2.5X', '3X', '3.5X', '4X', 'POT']);
     expect(p[4].value).toBe(7);
     expect(p[4].value).toBe(Math.floor(potSizedRaiseTo(2, 3, 2)));
   });
@@ -406,7 +418,7 @@ describe('computeRaisePresets - rule 4b: PLO always offers RAISE POT', () => {
     expect(p[4].value).toBe(21);
   });
 
-  it('keeps 5X preflop in no-limit, where POT is not the defining sizing', () => {
+  it('offers NO POT preflop in no-limit, where it would undercut every multiple', () => {
     const p = computeRaisePresets({
       isPreflop: true,
       bigBlind: 2,
@@ -417,7 +429,7 @@ describe('computeRaisePresets - rule 4b: PLO always offers RAISE POT', () => {
       maxRaise: BIG,
       isPotLimit: false,
     });
-    expect(p.map((x) => x.label)).toEqual(['2X', '2.5X', '3X', '4X', '5X']);
+    expect(p.map((x) => x.label)).toEqual(['2.5X', '3X', '3.5X', '4X']);
   });
 
   it('replaces a button that was already a silent POT', () => {
@@ -452,15 +464,16 @@ describe('computeRaisePresets - rule 4b: PLO always offers RAISE POT', () => {
       maxRaise: 60,
       isPotLimit: true,
     });
-    expect(p.map((x) => x.label)).toEqual(['2X', '2.5X', '3X', 'POT']);
-    expect(p[3].value).toBe(60); // POT = 10 + (40 + 10)
+    // Pot-limit stops at 3X: with maxRaise pinned to the pot cap, 3.5X and 4X
+    // would both clamp onto that same number and draw two dead buttons.
+    expect(p.map((x) => x.label)).toEqual(['2.5X', '3X', 'POT']);
+    expect(p[2].value).toBe(60); // POT = 10 + (40 + 10)
   });
 
-  // Dan 2026-08-21 (item 9) named 3X/4X/5X explicitly, so 5X joins the row
-  // postflop in no-limit. Pot-limit still stops at 3X — see the test above:
-  // with maxRaise pinned to the pot cap, every higher multiple clamps onto the
-  // same number and the extra buttons would all do the same thing.
-  it('postflop FACING A BET offers 2X/3X/4X/5X of the bet plus POT (no-limit)', () => {
+  // THE ROW DAN ASKED FOR, 2026-08-28: "2.5X 3X 3.5X 4X POT AND ALL IN ARE
+  // FINE. (REMOVE 2X AND 5X)". This is the exact row in his screenshot, and
+  // ALL IN is appended by the renderer, so the felt shows six buttons.
+  it('postflop FACING A BET offers 2.5X/3X/3.5X/4X of the bet plus POT (no-limit)', () => {
     const p = computeRaisePresets({
       isPreflop: false,
       bigBlind: 2,
@@ -470,8 +483,8 @@ describe('computeRaisePresets - rule 4b: PLO always offers RAISE POT', () => {
       minRaise: 20,
       maxRaise: BIG,
     });
-    expect(p.map((x) => x.label)).toEqual(['2X', '2.5X', '3X', '4X', '5X', 'POT']);
+    expect(p.map((x) => x.label)).toEqual(['2.5X', '3X', '3.5X', '4X', 'POT']);
     // Exactly N x the bet faced (10), then the pot-sized raise.
-    expect(p.map((x) => x.value)).toEqual([20, 25, 30, 40, 50, 60]);
+    expect(p.map((x) => x.value)).toEqual([25, 30, 35, 40, 60]);
   });
 });

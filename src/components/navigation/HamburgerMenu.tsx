@@ -479,17 +479,15 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const handleResetTutorial = async () => {
     localStorage.removeItem(STORAGE_KEYS.INTRO_SHOWN);
     localStorage.removeItem(STORAGE_KEYS.TUTORIAL_COMPLETED);
-    if (user?.id) {
-      try {
-        const { error: resetErr } = await supabase
-          .from('profiles')
-          .update({ tutorial_completed: false })
-          .eq('id', user.id);
-        if (resetErr) reportError(resetErr, 'HamburgerMenu.Tutorial_reset_save_failed');
-      } catch (error) {
-        reportError(error, 'HamburgerMenu.Error_resetting_tutorial');
-      }
-    }
+    /**
+     * There is no `profiles.tutorial_completed` column and nothing anywhere
+     * reads one. This used to write it, which was rejected on every reset and
+     * reported as a failure the user never saw - and had the column existed,
+     * the reset would still have worked exactly as it does now, because
+     * localStorage above is the only thing the intro gate consults. Removing
+     * the write loses no behaviour; it removes a control that was never wired
+     * to anything. Making it a real cross-device flag needs a reader first.
+     */
     toast.info('Tutorial reset! Refresh the page to see the intro again.');
     onClose();
   };

@@ -296,6 +296,67 @@ describe('cash tables show what makes them different from each other (Dan 3, 4)'
     ).not.toContain('bomb');
   });
 
+  /* BOMB POT STANDARDIZATION 2026-08-27 (spec §15.1): each trigger mode
+     carries its own cadence, so the medallion must not depend on the
+     every-N-hands frequency once another mode is live — and it must SAY the
+     mode and board count before the player sits. */
+  it('a once-per-orbit bomb table shows its medallion with frequency 0', () => {
+    const rules = cashEntry(
+      tableRow({
+        bomb_pot_enabled: true,
+        bomb_pot_frequency: 0,
+        bomb_pot_trigger_mode: 'once_per_orbit',
+        bomb_pot_board_count: 2,
+      })
+    ).rules;
+    const bomb = rules.find((r) => r.key === 'bomb');
+    expect(bomb).toBeTruthy();
+    expect(bomb!.detail).toBe('EVERY ORBIT');
+    expect(bomb!.tip).toContain('two boards');
+  });
+
+  it('a timed bomb table prints the interval in minutes', () => {
+    const bomb = cashEntry(
+      tableRow({
+        bomb_pot_enabled: true,
+        bomb_pot_frequency: 0,
+        bomb_pot_trigger_mode: 'timed',
+        bomb_pot_interval_seconds: 1800,
+        bomb_pot_board_count: 3,
+      })
+    ).rules.find((r) => r.key === 'bomb');
+    expect(bomb).toBeTruthy();
+    expect(bomb!.detail).toBe('EVERY 30 MIN');
+    expect(bomb!.tip).toContain('three boards');
+  });
+
+  it('a bomb-pot-only table wears its identity as the label', () => {
+    const bomb = cashEntry(
+      tableRow({
+        bomb_pot_enabled: true,
+        bomb_pot_frequency: 0,
+        bomb_pot_trigger_mode: 'bomb_pot_only',
+        bomb_pot_board_count: 3,
+      })
+    ).rules.find((r) => r.key === 'bomb');
+    expect(bomb).toBeTruthy();
+    expect(bomb!.label).toBe('BOMB POT ONLY');
+    expect(bomb!.detail).toBe('TRIPLE BOARD');
+  });
+
+  it('a timed mode with no interval set stays silent rather than lying', () => {
+    expect(
+      cashEntry(
+        tableRow({
+          bomb_pot_enabled: true,
+          bomb_pot_frequency: 0,
+          bomb_pot_trigger_mode: 'timed',
+          bomb_pot_interval_seconds: 0,
+        })
+      ).rules.map((r) => r.key)
+    ).not.toContain('bomb');
+  });
+
   it('prints no chip for a rule the platform does not enforce', () => {
     // VPIP has no column at all; maintain_hands, no_rathole and calltime are
     // written by the config page and read by nothing.

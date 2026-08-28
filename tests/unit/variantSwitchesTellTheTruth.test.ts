@@ -45,7 +45,13 @@ describe('Pineapple Hold’em', () => {
 
   it('is used by BOTH HandController builders, not one', () => {
     expect(BASE).toContain('gameVariant: this.dealtGameVariant() as GameVariant');
-    expect(DEALING).toContain('gameVariant: this.dealtGameVariant() as GameVariant');
+    // BOMB POT VARIANT OVERRIDE 2026-08-28 (spec §10.1): the dealing builder
+    // routes through dealtGameVariant with the bomb override in front — a
+    // whitelisted bomb variant wins on bomb hands, dealtGameVariant (and so
+    // pineapple_holdem) decides everything else.
+    expect(DEALING).toContain(
+      'gameVariant: (bombHandVariant ?? this.dealtGameVariant()) as GameVariant'
+    );
     expect(BASE).not.toContain('gameVariant: this.tableInfo.game_variant as GameVariant');
     expect(DEALING).not.toContain('gameVariant: this.tableInfo.game_variant as GameVariant');
   });

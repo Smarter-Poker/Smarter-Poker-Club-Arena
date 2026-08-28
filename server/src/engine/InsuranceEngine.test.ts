@@ -65,13 +65,17 @@ describe('InsuranceEngine.createOffers', () => {
     // The leader's committed chips still ride the offer for Break Even.
     expect(o.atRisk).toBe(100);
 
-    // Premium = insured * lossProbability * 1.20 (the 20% house edge).
+    // POKERBROS PARITY 2026-08-28 (Dan's ruling): the fee is charged only
+    // when the leader WINS; a loss pays the insured amount fee-free. Fair
+    // fee satisfies fee*pWin = insured*pLoss, margin 1.2 on top:
+    // premium = insured * pLoss/pWin * 1.2.
     const lossProb = 1 - o.equity / 100;
-    const expectedPremium = Math.round(300 * lossProb * 1.2 * 100) / 100;
+    const winProb = o.equity / 100;
+    const expectedPremium = Math.round(((300 * lossProb * 1.2) / winProb) * 100) / 100;
     expect(o.premium).toBeCloseTo(expectedPremium, 2);
 
     // Player EV is negative (fair premium would be without the 1.2 margin).
-    const fairPremium = 300 * lossProb;
+    const fairPremium = (300 * lossProb) / winProb;
     expect(o.premium).toBeGreaterThan(fairPremium);
     expect(o.premium / fairPremium).toBeCloseTo(1.2, 2);
   });
@@ -114,7 +118,7 @@ describe('InsuranceEngine.createOffers', () => {
     expect(s.premium - s.payout).toBeGreaterThan(0);
   });
 
-  it('settlement: leader LOSES => insured amount paid out', () => {
+  it('settlement: leader LOSES => insured amount paid out, fee WAIVED (parity 2026-08-28)', () => {
     const offers = offerLeader(e);
     const insured = offers[0].insuredAmount;
     expect(e.accept('t1', LEADER)).toBe(true);
@@ -122,6 +126,8 @@ describe('InsuranceEngine.createOffers', () => {
     const s = settlements[0];
     expect(s.won).toBe(true);
     expect(s.payout).toBe(insured);
+    // Dan's ruling: "For Losing: <insured pot>" is literal — no fee on a loss.
+    expect(s.premium).toBe(0);
   });
 
   it('per-street: accepted coverage is preserved (leader not re-offered)', () => {
@@ -168,7 +174,7 @@ describe('InsuranceEngine pricing — chop-aware (PRICING FIX 2026-08-18)', () =
     expect(offers).toHaveLength(0);
   });
 
-  it('a chop-dominated spot prices conditional on the hand being live (push refunds)', () => {
+  it('a coinflip-given-live spot is UNINSURABLE — fee would reach the payout (2026-08-28)', () => {
     // AsKs vs AdKd, board 2d 7s 9c: each side has exactly ONE live suit
     // (one board card of it) - runner-runner flush either way, ~91% chop.
     // The contract refunds the premium on every chop, so the price is
@@ -199,15 +205,12 @@ describe('InsuranceEngine pricing — chop-aware (PRICING FIX 2026-08-18)', () =
       200,
       'nlh'
     );
-    expect(offers).toHaveLength(1);
-    const premium = offers[0].fullPremium;
-    // REFERENCE PARITY 2026-08-26: insured = the pot (200), not the stake.
-    const expected = Math.round(200 * (r.strictLossPct / (100 - r.pushPct)) * 1.2 * 100) / 100;
-    expect(premium).toBeCloseTo(expected, 2);
-    // Symmetric live-suit spot: loss-given-not-push is a coinflip -> ~120 on
-    // a 200 insured pot.
-    expect(premium).toBeGreaterThan(110);
-    expect(premium).toBeLessThan(130);
+    // POKERBROS PARITY 2026-08-28: with the fee collected only on a WIN,
+    // pricing this coinflip-given-live spot gives fee = insured * 0.5/0.5 *
+    // 1.2 = 1.2x the payout. A contract where you pay more than the most you
+    // can ever get back is not a product — the engine refuses to offer it
+    // (uninsurable guard: fee >= insured means no offer).
+    expect(offers).toHaveLength(0);
   });
 
   it('a leader who cannot strictly lose gets no offer (free premium is not a product)', () => {
@@ -274,7 +277,8 @@ describe('settlement — chop shapes (Dan: chopped pot voids insurance)', () => 
     const s = settlements[0];
     expect(s.won).toBe(true);
     expect(s.payout).toBe(offers[0].insuredAmount);
-    expect(s.premium).toBeGreaterThan(0);
+    // POKERBROS PARITY 2026-08-28: a loss pays the insured amount fee-free.
+    expect(s.premium).toBe(0);
   });
 
   it('a timed-out offer is a FINAL decline (POKERBROS PARITY 2026-08-26)', () => {

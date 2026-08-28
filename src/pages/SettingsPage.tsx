@@ -715,10 +715,35 @@ export default function SettingsPage() {
 
            It is also no longer fatal: a push-preferences hiccup must not
            fail the whole settings save. */
+        /* PHANTOM SETTING FIX 2026-08-28: this upsert also wrote
+           `live_notifications: settings.handWonNotifications ?? true`, and
+           every part of that line was wrong.
+
+           `handWonNotifications` has NO CONTROL anywhere in this page, or
+           anywhere in Club Arena. It is declared in settingsBridge.ts and
+           defaults to FALSE, and `??` only falls through on null or undefined
+           -- false is neither. So the expression evaluated to `false` on every
+           save, for every user, unconditionally.
+
+           `live_notifications` is not a Club Arena column in any meaningful
+           sense: World Hub's gate maps `live`, `live_invite` and `live_gift`
+           onto it (src/lib/push/push-prefs.js LEGACY_PREF_COLUMN), i.e. LIVE
+           STREAMING. It has nothing to do with winning a hand. So pressing
+           Save Changes here silently switched off a completely unrelated hub
+           feature, permanently, with nothing in this UI that said so, and no
+           way to switch it back on from Club Arena.
+
+           A settings page must only write what it actually offers a control
+           for. The three below each have a visible toggle in this section.
+           `live_notifications` is owned by the hub's own notification
+           settings, which is where a player can see and change it.
+
+           `handWonNotifications` itself still round-trips through
+           profiles.settings with the rest of the bridge; nothing reads it yet,
+           so it is inert rather than harmful. */
         const { error: notifErr } = await supabase.from('user_notification_preferences').upsert(
           {
             user_id: user.id,
-            live_notifications: settings.handWonNotifications ?? true,
             tournament_reminders: settings.tournamentReminders ?? true,
             friend_activity: settings.friendAlerts ?? true,
             club_updates: settings.clubActivity ?? true,

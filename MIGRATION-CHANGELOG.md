@@ -2,6 +2,35 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-08-28 — BOMB POT VARIANT OVERRIDE + TIMED PERSISTENCE
+
+Round 3 of the bomb pot spec work (rounds 1-2 below). Two features, both to
+Dan's spec, migration `bomb_pot_variant_and_timed_persistence` APPLIED to
+production before merge.
+
+1. **Variant override (spec §10.1).** An NLH table can now deal PLO bomb
+   hands (`tables.bomb_pot_variant`, whitelisted nlh/plo4/plo5/plo6, DB CHECK
+   mirrored). The whole override is one assignment — HandConfig.gameVariant —
+   plus ONE new seam, `ServerTableEngineBase.activeHandVariant()`, now read by
+   the four places that used to ask the TABLE what game a HAND was: the
+   snapshot's betting structure (client slider goes pot-limit on the bomb
+   hand), the legal-action pot-limit clamps, the horses' evaluator variant,
+   and the hand-history write (records plo4, not the table label). The
+   snapshot ships `hand_variant`; the client sizes villain card-backs and
+   winner-highlight evaluation from it, the intro badges "PLO4 DOUBLE BOARD",
+   the lobby tip says "played as PLO4", the rules modal shows "Played As".
+   Guard: an override the deck cannot cover for the seated count (9-handed
+   PLO6 = 54 hole cards) yields to the table's own game, logged.
+2. **Timed clock survives restarts (spec §4.3).** The timed mode's due
+   timestamp now persists to `tables.bomb_pot_next_due_at` (engine-written,
+   fire-and-forget) and seeds the scheduler at boot — a deploy no longer
+   restarts the 30-minute cycle; a due time that passed during the deploy
+   detonates at the first hand boundary.
+
+Pins: bombPotGuards grew a six-pin suite locking every activeHandVariant
+consumer; scheduler tests cover the whitelist and the seed (never overwrites
+a running clock). 38 server + 165 client tests green, tsc clean both.
+
 ## Cowork session 2026-08-27 — BOMB POTS, AUDITED AND STANDARDIZED TO DAN'S SPEC
 
 Full audit of the bomb pot feature against the Bomb Pot Rules + Architecture

@@ -55,6 +55,7 @@ import { supabase } from '../../../lib/supabase';
 import { reportError } from '../../../utils/errorReporter';
 import type { TournamentTabProps, TournamentEntry } from './types';
 import { initials } from './types';
+import SatelliteSeatBadge from './SatelliteSeatBadge';
 import '../../../styles/tournament-lobby-3d.css';
 import './EntriesTab.css';
 
@@ -364,11 +365,7 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
               </span>
 
               <span className="et-marks">
-                {isSatellite && (
-                  <span className="tl-badge tl-badge--sat" title="Satellite Qualifier" style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', borderColor: 'rgba(59, 130, 246, 0.4)' }}>
-                    SAT
-                  </span>
-                )}
+                {isSatellite && <SatelliteSeatBadge />}
                 {isReentry && (
                   <span className="tl-badge tl-badge--action" title="Re-entry">
                     RE

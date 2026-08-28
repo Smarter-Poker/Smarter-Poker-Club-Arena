@@ -184,7 +184,11 @@ describe('4. the two beats after the wheel are animated on the engine clock', ()
 
   it('keeps the stack-arrival animations the chip beat relies on', () => {
     expect(seatCss).toMatch(/\.seat__stack--up\s*\{[^}]*animation:\s*stackBounceUp 0\.4s/);
-    expect(seatCss).toMatch(/animation:\s*stackDeltaFloat 2s/);
+    // 2026-08-28: the float now honours --animation-speed (2s * the user's
+    // multiplier); the pin follows the calc form so the beat stays asserted.
+    expect(seatCss).toMatch(
+      /animation:\s*stackDeltaFloat calc\(2s \* var\(--animation-speed, 1\)\)/
+    );
   });
 });
 

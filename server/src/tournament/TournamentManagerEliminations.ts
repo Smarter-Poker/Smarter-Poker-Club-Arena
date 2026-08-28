@@ -702,6 +702,66 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * exactly how "the busted player is still sitting there" reaches a player
    * with nothing in the logs to explain it.
    */
+  /**
+   * The table this user is LIVE at inside this tournament, or null.
+   *
+   * BOUNTY-INTEGRITY 2026-08-27. Knockout attribution needs the table the
+   * busted player was sitting at, and the only place that fact exists is the
+   * seat row that `releaseTournamentSeat` is about to stamp `left_at` on. This
+   * is deliberately a separate call made BEFORE the release rather than a
+   * `left_at`-filtered query made after it — the latter is what has been
+   * returning null on every knockout since 2026-08-24.
+   */
+  protected async tournamentTableForUser(userId: string): Promise<string | null> {
+    try {
+      const { data, error } = await supabase
+        .from('table_seats')
+        .select('table_id, tables!inner(tournament_id)')
+        .eq('user_id', userId)
+        .eq('tables.tournament_id', this.tournamentId)
+        .is('left_at', null)
+        .limit(1)
+        .maybeSingle(); // FIX 168: Bible safety rule — maybeSingle over single
+      if (error) {
+        reportError(error, 'Tournament.knockout_table_lookup_failed');
+        return null;
+      }
+      return (data as { table_id?: string } | null)?.table_id ?? null;
+    } catch (err) {
+      reportError(err, 'Tournament.knockout_table_lookup_threw');
+      return null;
+    }
+  }
+
+  /**
+   * Fallback for a player whose seat was already released by some other path
+   * (the recovery watchdog, an admin removal, a raced sweep): the most
+   * recently vacated seat this user held at a table of THIS tournament.
+   *
+   * Scoped to the tournament for the same reason the live lookup is — an
+   * unscoped seat query returns any open cash seat, which is how bounties were
+   * routed to strangers before 2026-08-18.
+   */
+  protected async lastTournamentTableForUser(userId: string): Promise<string | null> {
+    try {
+      const { data, error } = await supabase
+        .from('table_seats')
+        .select('table_id, left_at, tables!inner(tournament_id)')
+        .eq('user_id', userId)
+        .eq('tables.tournament_id', this.tournamentId)
+        .order('left_at', { ascending: false, nullsFirst: true })
+        .limit(1);
+      if (error) {
+        reportError(error, 'Tournament.knockout_table_fallback_failed');
+        return null;
+      }
+      return (data?.[0] as { table_id?: string } | undefined)?.table_id ?? null;
+    } catch (err) {
+      reportError(err, 'Tournament.knockout_table_fallback_threw');
+      return null;
+    }
+  }
+
   protected async releaseTournamentSeat(userId: string): Promise<void> {
     try {
       const { data: tournamentTables, error: tablesErr } = await supabase
@@ -900,7 +960,23 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
        seated for the duration, and the 5s sweep can already lag the bust by
        hands. The seat is not payment and it is not attribution: it is the one
        thing another player is waiting on. Release it the instant the status
-       write commits. */
+       write commits.
+
+       BOUNTY-INTEGRITY 2026-08-27: but READ THE SEAT FIRST. Moving the release
+       up here (2026-08-23) silently killed every bounty on the platform. The
+       bounty block below finds the knocker by looking up the busted player's
+       table with `.is('left_at', null)` — and this call has just stamped
+       `left_at` on that exact row, so the lookup returned null on every single
+       knockout from 2026-08-24 onward. `knockerId` stayed null, the warn at
+       the bottom of the bounty block fired instead, and 100% of every bounty
+       pool was swept to the champion by fn_finalize_bounty_pool. Production
+       confirms it: `tournament_bounties` has 0 rows since 2026-08-25 and
+       `tournament_bounty_awards` has never had one.
+
+       The seat still gets released here — that part was right. The table id is
+       simply captured before it goes, so attribution survives the release. */
+    const bustedTableId = await this.tournamentTableForUser(userId);
+
     await this.releaseTournamentSeat(userId);
 
     if (prize > 0) {
@@ -1015,14 +1091,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // was then derived from an unrelated cash hand, so the bounty went to a
         // stranger or (more often) to someone not in the tournament at all, and
         // fn_collect_bounty rejected it and logged bounty_not_collected.
-        const { data: seat } = await supabase
-          .from('table_seats')
-          .select('table_id, tables!inner(tournament_id)')
-          .eq('user_id', userId)
-          .eq('tables.tournament_id', this.tournamentId)
-          .is('left_at', null)
-          .limit(1)
-          .maybeSingle();
+        //
+        // BOUNTY-INTEGRITY 2026-08-27: `bustedTableId` was captured ABOVE, before
+        // releaseTournamentSeat() stamped `left_at`. The inline query that used
+        // to live here filtered on `left_at IS NULL` and therefore always
+        // returned null once the release moved ahead of it. The fallback below
+        // reads the most recently vacated tournament seat, so a player released
+        // by some other path (recovery, admin removal, a raced sweep) still gets
+        // their knockout attributed instead of silently skipped.
+        const knockoutTableId = bustedTableId ?? (await this.lastTournamentTableForUser(userId));
 
         // Find the busted player's LAST HAND at that table to determine the knocker.
         // TOURNEY-AUDIT 2026-07-24: (a) The old query took the most recent hand
@@ -1054,11 +1131,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
          * being selected.
          */
         let knockoutHandId: string | null = null;
-        if (seat?.table_id) {
+        if (knockoutTableId) {
           const { data: recentHands } = await supabase
             .from('hand_history')
             .select('id, winners, players, pots')
-            .eq('table_id', seat.table_id)
+            .eq('table_id', knockoutTableId)
             .order('created_at', { ascending: false })
             .limit(10);
 
@@ -1090,7 +1167,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             tournament,
             userId,
             knockerId,
-            seat?.table_id ?? null,
+            knockoutTableId,
             claimants,
             knockoutHandId
           );

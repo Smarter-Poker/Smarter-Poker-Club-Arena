@@ -1248,6 +1248,48 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         });
         v_handHistoryId = result.handId;
 
+        // ── AWARD-UNIT LEDGER (2026-08-28, spec §16.2/§17) ──────────────────
+        // One row per (pot layer, board, hi/lo side, winner) for every
+        // MULTI-BOARD bomb hand — the settlements that are genuinely hard to
+        // reconstruct from the merged winners list. Amounts are the same
+        // post-rake display shares perPotAwards broadcast. Idempotency is the
+        // table's UNIQUE key (hand + pot + board + side + winner): a retried
+        // insert conflicts and does nothing, exactly as spec §17.2 demands.
+        // Fire-and-forget: the ledger narrates money that logHandHistory has
+        // already recorded; it must never be able to fail a hand.
+        if (
+          v_handHistoryId &&
+          this.currentHandBombPot &&
+          (this.currentHandBombPot.board_count ?? 1) >= 2 &&
+          this.currentHandPerPotAwards.length > 0
+        ) {
+          const ledgerRows = this.currentHandPerPotAwards.map((a) => ({
+            hand_history_id: v_handHistoryId,
+            table_id: this.tableId,
+            hand_number: this.handCount,
+            pot_index: a.potIndex,
+            board: a.board ?? 1,
+            side: a.low ? 'low' : 'high',
+            user_id: a.userId,
+            amount: a.amount,
+            hand_name: a.hand?.name ?? null,
+          }));
+          void Promise.resolve(
+            supabase.from('bomb_pot_award_units').upsert(ledgerRows, {
+              onConflict: 'hand_history_id,pot_index,board,side,user_id',
+              ignoreDuplicates: true,
+            })
+          )
+            .then(({ error }) => {
+              if (error) {
+                console.warn('[BombPot] award-unit ledger write failed:', error.message);
+              }
+            })
+            .catch((err: unknown) => {
+              console.warn('[BombPot] award-unit ledger write threw:', err);
+            });
+        }
+
         // ── Dan 2026-08-15 (item 3): tell the clients the hand's row id ──
         //
         // The discrete `hand_complete` event fires earlier in this file, and

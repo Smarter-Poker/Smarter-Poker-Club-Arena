@@ -1115,7 +1115,9 @@ export abstract class ServerTableEngineBase {
               event.type === 'INSURANCE_ACCEPTED'
                 ? 'accepted'
                 : event.type === 'INSURANCE_DECLINED'
-                  ? (ev.source === 'timeout' ? 'timeout' : 'declined')
+                  ? ev.source === 'timeout'
+                    ? 'timeout'
+                    : 'declined'
                   : event.type === 'INSURANCE_CASHED_OUT'
                     ? 'cashed_out'
                     : 'settled',
@@ -2787,6 +2789,21 @@ export abstract class ServerTableEngineBase {
   protected bombPotScheduler = new BombPotScheduler();
 
   /**
+   * FULL SCHEDULER PERSISTENCE (2026-08-28): last serialized scheduler state
+   * written to tables.bomb_pot_sched_state — the change detector that keeps
+   * the per-hand write down to one row only when something actually moved.
+   */
+  protected bombPotSchedPersistedJson: string | null = null;
+
+  /**
+   * SEPARATE BOMB BUTTON (spec §5.3): the bomb hands' own button seat when
+   * bomb_pot_button_policy = 'separate'. Advances clockwise per bomb hand;
+   * the regular rotation never sees bomb hands. Persisted in the scheduler
+   * state jsonb (key `b`) so it survives restarts like everything else.
+   */
+  protected bombButtonSeat: number | null = null;
+
+  /**
    * Snapshot fields for the felt's bomb-pot indicators, shared by every
    * broadcast payload in ServerTableEngine. `bomb_pot_in` keeps its legacy
    * contract (hands until the bomb, 1 = next hand, null = no countdown);
@@ -2830,7 +2847,7 @@ export abstract class ServerTableEngineBase {
           // BOMB POT STANDARDIZATION 2026-08-27: the five new canonical
           // columns ride along — board count, trigger mode, timed interval,
           // minimum players and fixed ante.
-          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant'
+          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds'
         )
         .eq('id', this.tableId)
         .maybeSingle();
@@ -2848,6 +2865,9 @@ export abstract class ServerTableEngineBase {
         this.tableInfo.bomb_pot_min_players = (tableRow as any).bomb_pot_min_players ?? undefined;
         this.tableInfo.bomb_pot_ante_fixed = (tableRow as any).bomb_pot_ante_fixed ?? null;
         this.tableInfo.bomb_pot_variant = (tableRow as any).bomb_pot_variant ?? null;
+        this.tableInfo.bomb_pot_button_policy = (tableRow as any).bomb_pot_button_policy ?? null;
+        this.tableInfo.bomb_pot_announce_seconds =
+          (tableRow as any).bomb_pot_announce_seconds ?? null;
       }
       const clubId = this.tableInfo?.club_id;
       if (clubId) {

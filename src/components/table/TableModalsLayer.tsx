@@ -155,7 +155,18 @@ export interface TableModalsLayerProps {
     frequency: number;
     anteBB: number;
     doubleBoard: boolean;
+    boardCount?: number;
+    triggerMode?: string;
+    intervalSeconds?: number;
+    variant?: string | null;
+    announceSeconds?: number;
   } | null;
+  /**
+   * MANUAL_NEXT_HAND (spec §2.1/§15.3): drawn only for club staff; the RPC
+   * behind onManualBombPot is the real gate (role-checked + audited).
+   */
+  canManualBombPot?: boolean;
+  onManualBombPot?: () => void;
   onCloseGameRules: () => void;
 
   // Chip Animations
@@ -463,6 +474,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     showGameRules,
     isStraddleEnabled,
     bombPotRules,
+    canManualBombPot,
+    onManualBombPot,
     onCloseGameRules,
     // Chips
     chipAnimations,
@@ -815,6 +828,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         isStraddleEnabled={!isTournament && isStraddleEnabled}
         isRunItTwiceEnabled={runItTwice ?? true}
         bombPotRules={bombPotRules}
+        canManualBombPot={canManualBombPot}
+        onManualBombPot={onManualBombPot}
       />
 
       {/* Chip Animations - pass-through to parent's ChipAnimationManager */}

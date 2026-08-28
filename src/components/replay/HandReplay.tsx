@@ -72,6 +72,13 @@ export interface HandData {
   community_cards2?: Card[];
   /** TRIPLE-BOARD BOMB POT 2026-08-27: board 3, absent below three boards. */
   community_cards3?: Card[];
+  /** BOMB POT FACTS (spec §20): trigger reason / ante / boards / variant. */
+  bomb_pot?: {
+    trigger_reason?: string;
+    ante_amount?: number;
+    board_count?: number;
+    variant?: string;
+  } | null;
   /**
    * COMPLETENESS PASS 2026-08-26: Run It Twice boards 2..N in run order
    * (board 1 is community_cards). Dealt AFTER the all-in locked, so they
@@ -234,6 +241,7 @@ export default function HandReplay({
             community_cards: data.community_cards,
             community_cards2: data.community_cards2 ?? [],
             community_cards3: data.community_cards3 ?? [],
+            bomb_pot: data.bomb_pot ?? null,
             // COMPLETENESS PASS 2026-08-26: Run It Twice boards 2..N (board
             // 1 is community_cards) — rendered as RUN rows at showdown.
             rit_boards: data.rit_boards ?? [],
@@ -523,6 +531,44 @@ export default function HandReplay({
                     )}
                   </div>
                 ) : null}
+
+                {/* BOMB POT FACTS (spec §20, 2026-08-28): the frozen trigger
+                    record, so a replay says what KIND of hand this was. */}
+                {handData.bomb_pot && (
+                  <div
+                    className="replay-bomb-facts"
+                    style={{
+                      display: 'flex',
+                      gap: 6,
+                      flexWrap: 'wrap',
+                      margin: '2px 0 6px',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      letterSpacing: '0.05em',
+                      color: '#ffcf7d',
+                    }}
+                  >
+                    <span>BOMB POT</span>
+                    {(handData.bomb_pot.board_count ?? 1) >= 2 && (
+                      <span>
+                        {(handData.bomb_pot.board_count ?? 2) >= 3
+                          ? 'TRIPLE BOARD'
+                          : 'DOUBLE BOARD'}
+                      </span>
+                    )}
+                    {handData.bomb_pot.variant && (
+                      <span>{handData.bomb_pot.variant.toUpperCase()}</span>
+                    )}
+                    {(handData.bomb_pot.ante_amount ?? 0) > 0 && (
+                      <span>{`ANTE ${handData.bomb_pot.ante_amount}`}</span>
+                    )}
+                    {handData.bomb_pot.trigger_reason && (
+                      <span>
+                        {String(handData.bomb_pot.trigger_reason).replace(/_/g, ' ').toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {/* Community Cards (repeated per row for visual) */}
                 <div className="community-cards-row">

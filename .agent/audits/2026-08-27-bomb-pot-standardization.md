@@ -76,3 +76,19 @@ in PR `agent/cowork-bombpot/feat/bomb-pot-standardization`.
 - Server: 30/30 vitest green (BombPotScheduler 16, tripleboard 9,
   doubleboard 5). Client: 183/183 green in touched areas. `tsc --noEmit`
   clean, both tsconfigs.
+
+## Round 4 — BOMB POT MAX (2026-08-28)
+
+Every remaining audit item shipped in one pass (branch
+`agent/cowork-bombpot/feat/bomb-pot-max`): full scheduler persistence
+(`bomb_pot_sched_state`), MANUAL_NEXT_HAND with `fn_request_manual_bomb_pot`
+
+- audit table, SEPARATE*BOMB_BUTTON with regular-rotation rewind, the timed
+  announce window, host presets, the `bomb_pot_award_units` idempotent ledger,
+  horse multi-board equity averaging, multi-board all-in equity display
+  (per-board average, unsuppressed), scoop/sweep felt labels, replay bomb
+  facts, the three `v_bomb_pot*\*` analytics views, lobby ante disclosure + the
+  Multi-Board Bomb filter chip, and the 375px 3-board CSS review. The former
+  DEFERRED rows (§2.1 manual, §5.3 separate button, §16.2 ledger) are all PASS
+  as of this round. On-device mobile verification remains the one recommended
+  manual step.

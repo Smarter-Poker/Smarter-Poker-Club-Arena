@@ -1549,17 +1549,56 @@ export class HorseLogic {
     const hiLoSplit: HiLoSplit | undefined = useHiLo
       ? { hi: 0, lo: 0, scoop: 0, quarter: 0 }
       : undefined;
-    const equity = simulateEquity(
-      player.cards,
-      gs.communityCards,
-      Math.min(oppCount, 4),
-      vi,
-      vi.iterations,
-      bands,
-      useAdaptiveMC,
-      hiLoSplit,
-      oppReads
-    );
+    /**
+     * MULTI-BOARD EQUITY 2026-08-28 (Horses Are Players law): on a
+     * double/triple-board bomb hand every board pays an equal share of every
+     * pot layer, so the horse's true equity is the AVERAGE of its per-board
+     * equities. The fleet used to price board 1 alone and systematically
+     * misplayed the other half (or two-thirds) of the pot. The iteration
+     * budget is split across boards so a bomb decision costs what a normal
+     * decision always has. Texture/blockers/nut-status stay board-1 reads —
+     * they steer style, not the money — and the plo8 hi-lo decomposition
+     * stays single-board (its accumulator cannot be averaged meaningfully).
+     */
+    const extraBoards: Card[][] = [];
+    if (Array.isArray(gs.communityCards2) && gs.communityCards2.length >= 3) {
+      extraBoards.push(gs.communityCards2);
+    }
+    if (Array.isArray(gs.communityCards3) && gs.communityCards3.length >= 3) {
+      extraBoards.push(gs.communityCards3);
+    }
+    let equity: number;
+    if (extraBoards.length === 0) {
+      equity = simulateEquity(
+        player.cards,
+        gs.communityCards,
+        Math.min(oppCount, 4),
+        vi,
+        vi.iterations,
+        bands,
+        useAdaptiveMC,
+        hiLoSplit,
+        oppReads
+      );
+    } else {
+      const boards = [gs.communityCards, ...extraBoards];
+      const perBoardIters = Math.max(150, Math.ceil(vi.iterations / boards.length));
+      let sum = 0;
+      for (const b of boards) {
+        sum += simulateEquity(
+          player.cards,
+          b,
+          Math.min(oppCount, 4),
+          vi,
+          perBoardIters,
+          bands,
+          useAdaptiveMC,
+          undefined,
+          oppReads
+        );
+      }
+      equity = sum / boards.length;
+    }
 
     // V9 TIMING: how CLOSE is this decision? Distance of the MC equity from
     // the nearest strategy threshold. Razor-thin spots read as difficulty ~1

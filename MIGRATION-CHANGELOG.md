@@ -2,6 +2,58 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-08-28 — BOMB POT MAX (round 4: every remaining item)
+
+Dan: "GO AHEAD AND FULLY BUILD ALL OF THESE." All thirteen open items from the
+bomb pot audit, built and wired. Migration `bomb_pot_max` APPLIED to
+production and verified (4 columns, 2 tables, 3 views, 1 RPC) before merge.
+
+1. **Full scheduler persistence** — `tables.bomb_pot_sched_state` jsonb holds
+   the every-N counter, orbit anchor, pending token, timed clock and separate
+   bomb button; restored once at boot. A deploy now costs NO trigger mode
+   anything (previously only timed survived). Corrupt rows degrade
+   field-by-field, restore refuses a started scheduler; five new tests.
+2. **MANUAL_NEXT_HAND (spec §2.1/§15.3)** — `fn_request_manual_bomb_pot`
+   (SECURITY DEFINER, club owner/co_owner/admin only, audit row in
+   `bomb_pot_manual_requests`), consumed by the engine on a fresh per-hand
+   read, FAIL-CLOSED if the flag cannot be cleared. Staff-only "Bomb Pot Next
+   Hand" button in the Game Rules modal; the RPC is the gate, the button is
+   presentation.
+3. **SEPARATE_BOMB_BUTTON (spec §5.3)** — bomb hands rotate their own button;
+   the regular rotation is rewound on bomb hands so intervening normal hands
+   resume exactly where they would have been. Host toggle; persisted with the
+   scheduler state.
+4. **Announce window (spec §3)** — `bomb_pot_announce_seconds`: the timed felt
+   clock appears only within the window (0/null = always). Host slider.
+5. **Host presets (spec §3.2)** — one-tap Classic Double Board / Timed Bomb /
+   Triple Board Special / PLO Bomb Only chips in TableConfigPage.
+6. **Award-unit ledger (spec §16.2/§17)** — `bomb_pot_award_units`: one row
+   per (pot, board, side, winner) for every multi-board bomb hand, UNIQUE
+   idempotency key, written fire-and-forget at settlement.
+7. **Horse multi-board equity (Horses Are Players)** — the fleet now averages
+   per-board equity on double/triple-board hands (iteration budget split so a
+   bomb decision costs what a normal one does). Boards ride HorseGameState.
+8. **Multi-board all-in equity display** — no longer suppressed: per-board
+   equity averaged (equal pot shares make the average exact), pool and exact
+   fallback paths both, variant-override aware; `board_count` in the payload.
+9. **Scoop labels (spec §9.2/§13.3)** — TRIPLE SCOOP / SCOOP / 2-BOARD SWEEP
+   felt banner, derived from the per-board winner record, shown only after
+   the awards push, hand-number fenced, reduced-motion safe.
+10. **Replay bomb facts (spec §20)** — HandReplay shows BOMB POT · boards ·
+    variant · ante · trigger; HandHistoryService ships `bomb_pot`.
+11. **Analytics (spec §22.3)** — `v_bomb_pot_daily`, `v_bomb_pot_vs_normal`,
+    `v_bomb_pot_outcomes` (scoop/split frequency off the award ledger).
+12. **Lobby** — medallion tip now names the ante (fixed or ×BB; get_club_home
+    ships both columns) and a Multi-Board Bomb filter chip that really
+    narrows (column-backed).
+13. **Mobile review** — 3-board stack reuses the shipped RIT-3 CSS
+    (data-boards=3: community 36%, masthead 84%); scoop banner clamps its
+    type and yields to reduced motion. Device pass still recommended.
+
+Pins: six new bombPotGuards suites lock the fail-closed manual clear, the
+button rewind, persistence restore, equity unsuppression, horse averaging and
+ledger idempotency. 45 server + 228 client tests green, tsc clean both.
+
 ## Cowork session 2026-08-28 — BOMB POT VARIANT OVERRIDE + TIMED PERSISTENCE
 
 Round 3 of the bomb pot spec work (rounds 1-2 below). Two features, both to

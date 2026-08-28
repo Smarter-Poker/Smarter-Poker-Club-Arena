@@ -4366,3 +4366,54 @@ button.post-bb-overlay-button:hover {
 .control-strip__btn::after {
   display: none !important;
 }
+
+/* ── SCOOP LABELS (spec 9.2/13.3, 2026-08-28) ──────────────────────────────
+   One player swept every board of a multi-board bomb pot. Lands after the
+   chip pushes, holds a few seconds, and leaves. Gold on dark, same family
+   as the bomb ETA pill; scales with the felt, never captures the pointer. */
+.bomb-scoop-banner {
+  position: absolute;
+  top: 21%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 22px;
+  border-radius: 14px;
+  background: rgba(12, 12, 20, 0.85);
+  border: 1px solid rgba(255, 205, 90, 0.55);
+  box-shadow: 0 0 24px rgba(255, 180, 40, 0.35);
+  pointer-events: none;
+  z-index: 60;
+  animation: bombScoopIn 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+.bomb-scoop-banner__label {
+  font-size: clamp(18px, 2.6vw, 30px);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: #ffd76a;
+  text-shadow: 0 2px 10px rgba(255, 160, 30, 0.55);
+}
+.bomb-scoop-banner__name {
+  font-size: clamp(11px, 1.4vw, 15px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(255, 235, 200, 0.9);
+}
+@keyframes bombScoopIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bomb-scoop-banner {
+    animation: none;
+  }
+}

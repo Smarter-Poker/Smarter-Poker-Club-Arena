@@ -36,6 +36,21 @@
  *   something NEW appears        -> fail, and say exactly what and how to close it
  *   something baselined is gone  -> succeed, and say the baseline can shrink
  *
+ * IT ASKS TWO QUESTIONS, and the second exists because the first missed a live
+ * exploit. `unauthenticated_writers` finds functions that never reference
+ * auth.uid(), auth.role() or auth.jwt(). process_tournament_rebuy DOES
+ * reference auth.uid() - just uselessly:
+ *
+ *     IF auth.uid() IS NOT NULL AND auth.uid() <> p_user_id THEN ... refuse
+ *
+ * which skips the check for a caller who has no auth.uid() at all. `anon` had
+ * EXECUTE, so an unauthenticated call bought a rebuy for a real seated player
+ * and took the chips out of their balance. Mentioning the request is not the
+ * same as being bound by it, and no predicate about guard TEXT can tell those
+ * apart. So `anon_writers` asks a blunter question that needs no reasoning at
+ * all: can a logged-out caller execute a SECURITY DEFINER function that writes?
+ * The live answer is zero, and it should stay zero.
+ *
  * IT NEVER FAILS ON AN UNREADABLE DATABASE. A network problem is not a security
  * finding, and a script that cries wolf when Supabase hiccups is one whose red
  * runs get waved through - which is precisely how the alarm this replaces would
@@ -101,11 +116,18 @@ try {
   process.exit(0);
 }
 
-const found = Array.isArray(live) ? live : [];
+// The RPC returned a bare array before it learned its second question. Accept
+// both shapes so a manifest-refresh run against an older database reports
+// honestly instead of throwing.
+const found = Array.isArray(live) ? live : (live?.unauthenticated_writers ?? []);
+const anonWriters = Array.isArray(live) ? [] : (live?.anon_writers ?? []);
 const newly = found.filter((f) => !allowed.has(f.function));
 const goneQuiet = [...allowed].filter((name) => !found.some((f) => f.function === name));
 
-console.log(`[definer-exposure] live: ${found.length}, baselined: ${allowed.size}, new: ${newly.length}`);
+console.log(
+  `[definer-exposure] live: ${found.length}, baselined: ${allowed.size}, new: ${newly.length}; ` +
+    `anon-executable writers: ${anonWriters.length} (must be 0)`
+);
 
 if (goneQuiet.length > 0) {
   console.log(
@@ -113,12 +135,39 @@ if (goneQuiet.length > 0) {
   );
 }
 
+// A logged-out caller executing a writing function is never acceptable, so this
+// one has no baseline and no exception. It is separate from the list above
+// because it needs no judgement: the grant IS the finding.
+if (anonWriters.length > 0) {
+  console.error('');
+  console.error('[definer-exposure] A LOGGED-OUT CALLER CAN EXECUTE A WRITING FUNCTION.');
+  console.error('');
+  summary('### Live DEFINER exposure: ANON CAN WRITE');
+  summary('');
+  for (const f of anonWriters) {
+    console.error(`  ${f.function}(${f.args})  executable by anon`);
+    summary(`- \`${f.function}(${f.args})\` executable by **anon**`);
+  }
+  console.error('');
+  console.error('  Whatever its internal checks say, revoke it. The rebuy hole of');
+  console.error('  2026-08-28 was a guard that read auth.uid() and skipped itself when');
+  console.error('  there was none, and the only thing between that and a live exploit');
+  console.error('  was this grant:');
+  console.error('');
+  console.error('    REVOKE ALL ON FUNCTION public.<name>(<types>) FROM PUBLIC, anon;');
+  console.error('    GRANT EXECUTE ON FUNCTION public.<name>(<types>) TO authenticated, service_role;');
+  console.error('');
+  console.error('  There is no allowlist for this one. The live answer is zero and it stays zero.');
+  console.error('');
+  process.exit(1);
+}
+
 if (newly.length === 0) {
   summary('### Live DEFINER exposure: OK');
   summary('');
   summary(
-    `${found.length} function(s) exposed, all of them reviewed and baselined. ` +
-      'No SECURITY DEFINER writer a browser can reach is unaccounted for.'
+    `${found.length} function(s) exposed, all of them reviewed and baselined, and ` +
+      'no writing function a logged-out caller can execute. Nothing unaccounted for.'
   );
   process.exit(0);
 }

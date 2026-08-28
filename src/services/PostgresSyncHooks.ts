@@ -25,6 +25,26 @@ const USER_TABLE_SETTING_COLUMNS = [
   'multi_action_queue',
   'multi_desktop_alerts',
   'multi_shared_socket',
+  'show_ticker',
+  /* The Table Settings panel's own keys, moved onto this row 2026-08-28 (Dan:
+     "THEY NEED TO SAVE GLOBALLY IN REAL TIME ON ALL TABLES, AND ALL PAGES").
+     Listing them here is what makes a change on one device arrive on another:
+     the subscription below only relays columns named in this array, and
+     useTableSettings translates the column back to its camelCase key. */
+  'sound_enabled',
+  'sound_volume',
+  'haptic_enabled',
+  'animation_speed',
+  'color_theme',
+  'four_color_deck',
+  'show_pot_odds',
+  'show_bet_size_presets',
+  'auto_muck',
+  'auto_muck_explicit',
+  'auto_muck_winners',
+  'auto_post_blinds',
+  'confirm_all_in',
+  'card_back',
 ] as const;
 
 const THEME_SETTING_COLUMNS = [

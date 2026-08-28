@@ -83,6 +83,8 @@ import {
   type OmahaDrawInfo,
   omahaNutStatus,
   type OmahaNutStatus,
+  nlhNutStatus,
+  type NlhNutStatus,
   preflopEquity,
   holdemPreflopScore,
   omahaPreflopScore,
@@ -783,6 +785,16 @@ export interface HorseDecideOpts {
    *  when committed), ICM-priced shove-calling, and Omaha short-stack jams
    *  (default: enabled) */
   v20Mzone?: boolean;
+  /** disable the V21 river-endgame layer (Dan 2026-08-27, Phase 2): NLH nut
+   *  status (which straight, which flush, whose boat), equity caps for
+   *  board-dominated cat-5/6/7 hands under pressure, the river raise-war
+   *  governor (non-nut hands never re-raise a river raise), and the
+   *  scare-runout premium on committed calls (default: enabled) */
+  v21River?: boolean;
+  /** disable the V21 deep-stack preflop discipline: 150bb+ cash stack-off
+   *  thresholds scale with depth — 4-bet/5-bet pots demand closer to the
+   *  nuts at 250bb than at 100bb (default: enabled) */
+  v21Deep?: boolean;
 }
 
 /**
@@ -1123,6 +1135,8 @@ export class HorseLogic {
         (opts.v20Mzone ?? true) !== false
           ? gs.players.filter((p) => !p.is_sitting_out).length
           : undefined,
+      // V21: deep-stack cash stack-off discipline.
+      deepDiscipline: (opts.v21Deep ?? true) !== false,
       // V12: table format — spins widen (winner-take-all chip EV), HU SNGs
       // ride the heads-up ranges.
       // V13: `format` is a V12 field and now answers to the v12 flag.
@@ -1622,6 +1636,31 @@ export class HorseLogic {
       (nuts15 != null &&
         ((cat === 6 && nuts15.higherFlushRanks === 0 && !boardPaired15) ||
           (cat === 5 && nuts15.straightIsNut && !boardMono15)));
+
+    // ═══ V21 NLH NUT DISCIPLINE (Dan 2026-08-27, Phase 2) ═══
+    // The NLH mirror of nuts15: which straight, which flush, WHOSE boat.
+    // Fed by the review table's worst hands: a T7 straight four-bet into a
+    // three-club board, sixes-full re-raising JJ66x into any jack.
+    const useV21 = opts.v21River !== false;
+    let ns21: NlhNutStatus | null = null;
+    if (useV21 && !vi.isOmaha && cat >= 4 && cat <= 7) {
+      try {
+        ns21 = nlhNutStatus(player.cards, gs.communityCards, vi.isShortDeck);
+        if (tele15) noteFire('v21_nut_status');
+      } catch {
+        ns21 = null;
+      }
+    }
+    /** V21: hands above hero's are ON this board — hero is a bluff-catcher,
+     *  not a raising hand, whatever the category number says. */
+    const dominated21 =
+      ns21 != null &&
+      ((cat === 5 && (ns21.flushPossible || ns21.heroStraightTop < ns21.maxStraightTop)) ||
+        (cat === 6 && !vi.isShortDeck && ns21.higherFlushRanks >= 1) ||
+        (cat === 7 && !vi.isShortDeck && ns21.underfull) ||
+        // short deck swaps the ladder: flush is cat 7, full house cat 6
+        (vi.isShortDeck && cat === 7 && ns21.higherFlushRanks >= 1) ||
+        (vi.isShortDeck && cat === 6 && ns21.underfull));
     // Did hero bet/raise THIS street and then get raised? The strongest
     // possible "they have it" signal, and the exact line Dan flagged.
     let raisedAfterAggr = false;
@@ -2258,6 +2297,61 @@ export class HorseLogic {
       }
     }
 
+    // ═══ V21 CAP FOR BOARD-DOMINATED "BIG" HANDS ═══ the V20 cap stopped at
+    // cat 4 because straights and better looked like range-tops. The review
+    // table says otherwise when the BOARD demotes them: a straight on a
+    // three-flush board, a non-nut flush, the bottom boat. Under the same
+    // structural pressure, those cap too — nut versions are untouched.
+    if (
+      useV21 &&
+      !vi.isOmaha &&
+      dominated21 &&
+      ns21 != null &&
+      (pressure20 >= 1 || (isRiver && potFrac >= 0.8))
+    ) {
+      let cap21 = Infinity;
+      const heavy = pressure20 >= 2;
+      if (cat === 5 && ns21.flushPossible) {
+        // straight into a possible flush: the raiser HAS it most of the time
+        cap21 = heavy ? 0.35 : ns21.fourFlushBoard ? 0.4 : 0.5;
+      } else if (cat === 5) {
+        // a bigger straight is live
+        cap21 = heavy ? 0.4 : 0.55;
+      } else if (ns21.higherFlushRanks >= 1 && (cat === 6 || (vi.isShortDeck && cat === 7))) {
+        const hf = ns21.higherFlushRanks;
+        cap21 = heavy ? (hf >= 3 ? 0.32 : 0.42) : hf >= 3 ? 0.45 : 0.55;
+        if (ns21.fourFlushBoard) cap21 -= 0.07; // one-card flushes everywhere
+      } else if (ns21.underfull) {
+        // the bottom boat: any single card of the higher board pair beats it
+        cap21 = heavy ? 0.4 : 0.55;
+      }
+      if (cap21 !== Infinity) {
+        if (!isRiver) cap21 += 0.08;
+        eq15 = Math.min(eq15, Math.max(0.05, cap21));
+        if (tele15 && eq15 < equity) noteFire('v21_dominated_cap');
+      }
+    }
+    // ═══ V21 SCARE-RUNOUT CAP ═══ the river completed a flush or straight
+    // hero cannot beat and does not block, and a serious all-in (or a
+    // near-pot bet) arrived ON it. The MC still prices the jammer by a range
+    // from before the runout — two-pair-and-below reads 70% against ranges
+    // that in reality just made their hand. (The A4-on-three-diamonds jam
+    // call from the review table.) The premium alone cannot fix a 25-point
+    // lie; the cap can.
+    if (
+      useV21 &&
+      !vi.isOmaha &&
+      isRiver &&
+      dangered &&
+      cat <= 3 &&
+      (seriousAllIns20 >= 1 || potFrac >= 0.9)
+    ) {
+      if (eq15 > 0.45) {
+        eq15 = 0.45;
+        if (tele15) noteFire('v21_scare_cap');
+      }
+    }
+
     // Low-SPR commitment: with the money effectively in, play equity directly.
     const committed = spr < 1.2 || toCall >= stack;
     if (committed) {
@@ -2272,14 +2366,23 @@ export class HorseLogic {
             Math.max(0, mw) * 0.5 + seriousAllIns20 * 0.04 + (pressure20 >= 2 ? 0.03 : 0)
           );
       if (tele15 && commit20 > 0.04) noteFire('v20_commit_bar');
-      const required = potOdds + 0.02 + dominationPenalty * 0.5 + commit20;
+      // V21 SCARE RUNOUT: the committed branch ignored `dangered` entirely —
+      // a fresh flush/straight completion hero does not beat (and cannot
+      // block) got the same call bar as a blank. The A4-two-pair-calls-a-jam
+      // -on-a-three-diamond-river hand from the review table pays this.
+      const scare21 = useV21 && dangered ? 0.05 : 0;
+      if (tele15 && scare21 > 0) noteFire('v21_scare_commit');
+      const required = potOdds + 0.02 + dominationPenalty * 0.5 + commit20 + scare21;
       if (eq15 >= Math.max(required, 0.42 + mw + dominationPenalty * 0.5)) {
         // V15: a dominated flush/straight that still clears the (penalized)
         // bar CALLS rather than jams — shoving it has zero fold equity
         // against the range that just raised, and the raise-shove line with
         // a nine-high flush is the exact hand Dan watched. Sets and boats
         // keep the jam.
-        const preferFlat15 = useV15 && vi.isOmaha && nuts15 != null && !nutClass15;
+        // V21: a board-dominated NLH hand that still clears the bar CALLS
+        // rather than jams — the same zero-fold-equity logic as Omaha's.
+        const preferFlat15 =
+          (useV15 && vi.isOmaha && nuts15 != null && !nutClass15) || (useV21 && dominated21);
         return toCall >= stack || preferFlat15
           ? { action: 'call', amount: toCall, thinkTime: 0 }
           : { action: 'all_in', thinkTime: 0 };
@@ -2323,6 +2426,28 @@ export class HorseLogic {
       ) {
         if (tele15) noteFire('v15_raise_gate');
         return { action: 'call', amount: toCall, thinkTime: 0 };
+      }
+      // ═══ V21 RIVER RAISE-WAR GOVERNOR ═══ once hero's river aggression
+      // has been raised, only the effective nuts keeps raising. Every 500bb
+      // river war in the review table was a board-dominated hand re-raising:
+      // the T7 straight four-betting a three-club board, sixes-full
+      // re-raising JJ66x. A dominated hand that clears the bar CALLS; the
+      // capped equity above decides call-vs-fold, never a re-raise.
+      // A pocket set on a board with no possible flush or straight stays a
+      // raising hand; everything below it — and a set on a board where
+      // bigger hands are live — does not.
+      const set21 =
+        cat === 4 && player.cards.length === 2 && player.cards[0].rank === player.cards[1].rank;
+      const dryTop21 = ns21 != null && !ns21.flushPossible && ns21.maxStraightTop === 0;
+      if (
+        useV21 &&
+        !vi.isOmaha &&
+        (dominated21 || (raisedAfterAggr && (cat <= 3 || (cat === 4 && !(set21 && dryTop21)))))
+      ) {
+        if (isRiver || raisedAfterAggr || pressure20 >= 2) {
+          if (tele15) noteFire('v21_war_gate');
+          return { action: 'call', amount: toCall, thinkTime: 0 };
+        }
       }
       const oopBoost = useIQ && !ip ? params.checkRaiseFreq * 0.6 : 0;
       if (

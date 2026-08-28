@@ -100,6 +100,9 @@ export interface PreflopCtx {
   /** V20 M-ZONES: players dealt in (for the orbit cost and Harrington's
    *  effective-M table-size scaling). Undefined = layer off. */
   tableSize?: number;
+  /** V21 DEEP-STACK DISCIPLINE: scale cash 4-bet/5-bet stack-off thresholds
+   *  with depth past 120bb. Undefined/false = legacy behavior. */
+  deepDiscipline?: boolean;
   /** V18 STRADDLE: the pot is straddled (2xBB posted blind, no
    *  ActionRecord). The unopened test and open sizing key off the straddle
    *  instead of the big blind. */
@@ -509,11 +512,31 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     // attacking the CALLER'S capped range, not the opener's. The opener
     // defends wider on both branches.
     const sq = ctx.squeezed === true ? 1 : 0;
-    const fourBetThresh = t(0.93 - (ctx.aggression - 1) * 0.04) - 0.04 * hunted3 - 0.03 * sq;
-    const callThresh = t(ip ? 0.74 : 0.78) - 0.03 * hunted3 - 0.02 * sq;
+    // ═══ V21 DEEP-STACK DISCIPLINE (Dan 2026-08-27, Phase 2) ═══
+    // The review table's preflop stack-offs average -82bb: 150bb+ cash pots
+    // where 4-bet/5-bet thresholds tuned at 100bb put the whole stack in.
+    // Depth scales the bar: at 250bb a 4-bet war demands closer to the top
+    // of the deck, because the hand that stacks off is playing for 2.5x
+    // more than the number the thresholds were calibrated against.
+    // Tournaments are untouched (shallow, and the M-zones own short play).
+    const deepT =
+      ctx.deepDiscipline === true && ctx.mode === 'cash' && stackBB > 120
+        ? Math.min(0.05, (stackBB - 120) / 2600)
+        : 0;
+    const fourBetThresh =
+      t(0.93 - (ctx.aggression - 1) * 0.04) - 0.04 * hunted3 - 0.03 * sq + deepT;
+    const callThresh = t(ip ? 0.74 : 0.78) - 0.03 * hunted3 - 0.02 * sq + deepT * 0.5;
 
     if (strength >= fourBetThresh) {
-      if (raises >= 3 || currentBet * 2.3 >= stack * 0.4) return { a: 'jam' };
+      // V21: deep, a 4-bet is no longer automatically a stack-off — jam only
+      // when the money is already committed on normal sizing, and demand a
+      // premium above the 4-bet floor before jamming 150bb+.
+      if (raises >= 3 || currentBet * 2.3 >= stack * 0.4) {
+        if (deepT > 0 && strength < fourBetThresh + deepT && toCall < stack * 0.5) {
+          return { a: 'call' };
+        }
+        return { a: 'jam' };
+      }
       const mult = 2.2 + rand() * 0.4;
       return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };
     }
@@ -535,9 +558,12 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     }
 
     // 5-bet pots: jam-or-fold on true premiums only.
+    // V21: deeper stacks push the premium bar higher still — a 5-bet pot at
+    // 250bb is QQ+/AK at best, and QQ is already a coin flip against the
+    // range that builds it.
     if (raises >= 3) {
-      if (strength >= t(0.95)) return { a: 'jam' };
-      if (strength >= t(0.88) && toCall <= stack * 0.3) return { a: 'call' };
+      if (strength >= t(Math.min(0.98, 0.95 + deepT))) return { a: 'jam' };
+      if (strength >= t(0.88 + deepT) && toCall <= stack * 0.3) return { a: 'call' };
       if (toCall === 0) return { a: 'check' };
       return { a: 'fold' };
     }

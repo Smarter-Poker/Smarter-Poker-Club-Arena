@@ -27,6 +27,7 @@ import {
   type Size,
 } from './tableGeometry';
 import { soundService } from '../../services/SoundService';
+import { getAnimationSpeed } from '../../utils/animationSpeed';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    THE PUCK NEVER STANDS ON A NAME PLATE
@@ -288,7 +289,13 @@ export function DealerButton({
     prevIndexRef.current = dealerVisualIndex;
     if (prev == null || prev === dealerVisualIndex) return;
     if (!playSounds) return;
-    const t = setTimeout(() => soundService.playDealerButtonMove(), 600);
+    // 2026-08-27: scaled with --animation-speed like the CSS glide below, so
+    // the tock still lands exactly when the puck does at every speed. The
+    // 600ms glide + landing is the BUTTON_MOVE_MS beat in handCompletionSpec.
+    const t = setTimeout(
+      () => soundService.playDealerButtonMove(),
+      Math.round(600 * getAnimationSpeed())
+    );
     return () => clearTimeout(t);
   }, [dealerVisualIndex, isVisible, playSounds]);
 
@@ -340,8 +347,10 @@ export function DealerButton({
         left: `${btnX}%`,
         top: `${btnY}%`,
         transform: 'translate(-50%, -50%)',
+        // 2026-08-27: the glide honours the player's Animation Speed like
+        // every other table animation (it was the last hardcoded mover).
         transition:
-          'left 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94), top 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+          'left calc(0.6s * var(--animation-speed, 1)) cubic-bezier(0.25, 0.46, 0.45, 0.94), top calc(0.6s * var(--animation-speed, 1)) cubic-bezier(0.25, 0.46, 0.45, 0.94)',
       }}
     >
       D

@@ -298,7 +298,14 @@ describe('the engine pause outlasts the break', () => {
 
 describe('tournament rake is actually collected', () => {
   const start = RECURRING.indexOf('private async registerHorses');
-  const registerFn = RECURRING.slice(start, start + 7000);
+  // 2026-08-28: slice to the NEXT method, not a character budget. The old
+  // `start + 7000` window went red the moment V22 added its paging/rotation
+  // commentary at the top of the function — every money-path guarantee this
+  // block asserts was still present, just past character 7000. A truncation
+  // artifact must never read as a lost guarantee (nor, worse, hide one that
+  // really is lost further down).
+  const nextMethod = RECURRING.indexOf('\n  private ', start + 10);
+  const registerFn = RECURRING.slice(start, nextMethod === -1 ? undefined : nextMethod);
 
   it('horses register through the money path, not a raw insert', () => {
     expect(registerFn).toContain('fn_register_horse_for_tournament');

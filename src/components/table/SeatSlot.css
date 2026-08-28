@@ -711,7 +711,8 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
-  animation: stackDeltaFloat 2s ease-out forwards;
+  /* 2026-08-27: honours --animation-speed (JS window scales with it too). */
+  animation: stackDeltaFloat calc(2s * var(--animation-speed, 1)) ease-out forwards;
   z-index: 10;
 }
 
@@ -3039,7 +3040,9 @@
 
 /* Winner pop — scale bounce triggered by TSX */
 .seat--winner-pop {
-  animation: seatWinnerPop 0.6s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  /* 2026-08-27: honours --animation-speed (JS window scales with it too). */
+  animation: seatWinnerPop calc(0.6s * var(--animation-speed, 1))
+    var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
 @keyframes seatWinnerPop {
@@ -3089,7 +3092,8 @@
 
 /* Stack change glow pulse */
 .seat--stack-glow {
-  animation: seatStackGlow 0.6s ease-out;
+  /* 2026-08-27: honours --animation-speed (JS window scales with it too). */
+  animation: seatStackGlow calc(0.6s * var(--animation-speed, 1)) ease-out;
 }
 
 @keyframes seatStackGlow {

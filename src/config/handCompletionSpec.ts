@@ -98,6 +98,32 @@ export const HAND_COMPLETION = {
   /** The next hand's dealing animation (cardDealIn / heroCardDeal). */
   DEAL_MS: 700,
   /**
+   * ── THE END-OF-HAND CADENCE, COMPLETED (Dan 2026-08-27) ──
+   *
+   * Verbatim: "IDENTIFY WINNING HAND(S), DISPLAY THE NAME OF THE WINNING
+   * HAND(S), PUSH POT ANIMATION PLUS THE +XXX TOTAL ANIMATION, PAUSE 1
+   * SECOND, MOVE THE BUTTON ANIMATION... START DEALING NEXT HAND."
+   *
+   * The first three beats already existed (SHOWDOWN_READ / POT_PUSH with the
+   * riding "+N" float). These two complete the sentence:
+   *
+   * POST_PUSH_PAUSE_MS — one full second of rest after the pot has landed and
+   * the cards are mucked, BEFORE anything about the next hand happens. The
+   * engine's hold includes it, so the next hand physically cannot start
+   * inside the pause.
+   */
+  POST_PUSH_PAUSE_MS: 1000,
+  /**
+   * BUTTON_MOVE_MS — the dealer puck's glide to its new seat is its own beat,
+   * played by the CLIENT at HAND_STARTED (the button's new seat is only known
+   * once the new hand's state arrives): the puck slides (600ms CSS transition
+   * + 100ms settle) and ONLY THEN do the cards fly. TablePage delays the deal
+   * animation start by this much; it is deliberately NOT part of the engine
+   * hold, because adding it there would double-count the beat (the engine
+   * would wait 700ms in which no client can yet know where the button goes).
+   */
+  BUTTON_MOVE_MS: 700,
+  /**
    * ── RUN IT TWICE reveal timeline (PokerBros parity, 2026-08-26) ──
    *
    * A run-it-twice hand settles synchronously on the server, but the CLIENT
@@ -149,8 +175,11 @@ export function handCompletionHoldMs(opts: HandCompletionOpts): number {
   if (opts.bbjHit) return H.BBJ_CELEBRATION_MS;
 
   // Beats 2-4 happen on every hand, showdown or not: the bets sweep in, the
-  // pot travels with its total, the cards are mucked.
-  const push = H.BETS_SWEEP_MS + H.POT_PUSH_MS + H.MUCK_MS;
+  // pot travels with its total, the cards are mucked — and then the table
+  // RESTS for a full second (Dan 2026-08-27) before the next hand may open.
+  // (The button glide is the client's beat at HAND_STARTED — see
+  // BUTTON_MOVE_MS above for why it is not added here.)
+  const push = H.BETS_SWEEP_MS + H.POT_PUSH_MS + H.MUCK_MS + H.POST_PUSH_PAUSE_MS;
 
   if (!opts.wentToShowdown) return push;
 

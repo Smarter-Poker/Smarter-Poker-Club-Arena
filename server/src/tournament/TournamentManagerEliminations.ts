@@ -162,25 +162,79 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
          * by the table-move path in TournamentManager, which this layer does
          * not own. It stops them from moving money here.
          */
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  ONE READ FOR THE TOURNAMENT, NOT ONE PER TABLE (2026-08-28)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * This was a `for (const [tableId] of this.tableEngines)` loop issuing
+         * one AWAITED round-trip per table, and it is why the "5-second"
+         * elimination sweep is not a 5-second sweep on a big field.
+         *
+         * MEASURED. `$100 Freeroll 12:00 AM` on 2026-08-28: 326 entrants
+         * across 37 tables. Thirty-seven sequential round-trips at even 150ms
+         * apiece is 5.5 seconds — the sweep could not finish inside its own
+         * interval, so `isProcessingEliminations` dropped the next tick, and
+         * the next. That is the reported symptom exactly: a horse sitting at
+         * 0 chips, not marked eliminated, for 22 minutes, in an event that had
+         * recorded no eliminations at all. Nothing was stuck. The sweep was
+         * simply arriving minutes late, and the bigger the field the later it
+         * arrives — precisely backwards, because a big field is where busts
+         * come fastest.
+         *
+         * One paged query over `tables.tournament_id` instead. Cost no longer
+         * scales with table count, and the lag it was causing goes with it.
+         *
+         * IT ALSO CLOSES A BLIND SPOT. The old loop read `this.tableEngines`,
+         * an IN-MEMORY map. A table this process holds no engine for — adopted
+         * late, created by the balancer between hydrations, or orphaned by a
+         * restart — was invisible: its players' chips were never synced, so
+         * they could never appear in the bust list below, so they could never
+         * be eliminated. Their seats sat there permanently. Reading by
+         * tournament_id covers every table the tournament actually has,
+         * whether or not this process happens to be dealing it.
+         */
         // null = this player holds seats we cannot rank; skip them, do not guess.
         const bestSeat = new Map<string, { chips: number; joinedAt: number } | null>();
-        for (const [tableId] of this.tableEngines) {
-          const { data: seats, error: seatsErr } = await supabase
-            .from('table_seats')
-            .select('user_id, stack, joined_at')
-            .eq('table_id', tableId)
-            .is('left_at', null);
-
-          if (seatsErr) {
+        const SEAT_PAGE = 1000;
+        const seatRows: Array<{
+          user_id: string;
+          stack: number | null;
+          joined_at: string | null;
+        }> = [];
+        for (let page = 0; ; page++) {
+          if (page > 10_000) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] seat read failed on table ${tableId.slice(0, 8)} (${seatsErr.message}) — skipping the whole sweep rather than busting on a partial chip picture`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] seat paging did not terminate — skipping this sweep`
+              ),
+              'Tournament.seat_paging_runaway'
+            );
+            return; // the finally block clears isProcessingEliminations
+          }
+          const { data: chunk, error: seatsErr } = await supabase
+            .from('table_seats')
+            .select('user_id, stack, joined_at, tables!inner(tournament_id)')
+            .eq('tables.tournament_id', this.tournamentId)
+            .is('left_at', null)
+            .order('user_id', { ascending: true })
+            .range(page * SEAT_PAGE, page * SEAT_PAGE + SEAT_PAGE - 1);
+
+          if (seatsErr || !chunk) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] seat read failed (${seatsErr?.message ?? 'null chunk'}) — skipping the whole sweep rather than busting on a partial chip picture`
               ),
               'Tournament.seat_read_failed'
             );
             return; // the finally block clears isProcessingEliminations
           }
+          seatRows.push(...(chunk as unknown as typeof seatRows));
+          if (chunk.length < SEAT_PAGE) break;
+        }
 
+        {
+          const seats = seatRows;
           for (const seat of seats ?? []) {
             // Guard against corrupted stack values (NaN, negative, undefined).
             const stackValue =
@@ -414,33 +468,131 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // Places are now taken from the set that is actually still FREE,
           // walking down, so a collision is impossible by construction rather
           // than by arithmetic that assumed a stable count.
-          const { data: takenRows } = await supabase
+          /**
+           * ═══════════════════════════════════════════════════════════════
+           *  THE LADDER IS COUNTED FROM UNPLACED PLAYERS, AND IT NEVER
+           *  RUNS OUT (2026-08-28)
+           * ═══════════════════════════════════════════════════════════════
+           *
+           * Union PKO Afternoon (PLO4) 4f42d847 deadlocked heads-up and sat
+           * there: 39 entrants, places 2..38 handed out with no gap and no
+           * duplicate, place 39 never used, one player at 0 chips left
+           * `status='playing'` forever. Blinds kept escalating through four
+           * levels, the table stopped dealing after the final hand, the
+           * champion was never crowned and nobody was paid first prize.
+           *
+           * TWO DEFECTS, and it takes both to hang an event.
+           *
+           * (a) THE SEED WAS A LIVE `playing` COUNT. `playingCount` reads
+           *     `status='playing'`, and an entrant who has not yet been
+           *     promoted out of `registered` by ensureLateRegSeated is not in
+           *     it. On 4f42d847 the first bust was seeded at 38 while 39
+           *     players were in the event, so the WHOLE ladder was short by
+           *     one from that moment on. Nothing detected it, because a
+           *     ladder that is uniformly one place high is gapless and
+           *     collision-free — it looks perfect right up until the last
+           *     busted player asks for a place and there is none left.
+           *
+           *     The count that cannot drift is the number of players who
+           *     hold NO place yet: exactly the field still in contention
+           *     plus the ones busting in this sweep, `registered` entrants
+           *     included. If the ladder is healthy the free places are
+           *     precisely 1..unplaced, so the worst finisher takes
+           *     `unplaced`. Over-counting (a withdrawn row that keeps
+           *     position NULL) is the SAFE direction: it leaves an unclaimed
+           *     gap, which the payout trim already handles, instead of a
+           *     collision that pays a place twice.
+           *
+           * (b) EXHAUSTION WAS A `break`. When the walk down found nothing
+           *     free it logged and abandoned the player MID-SWEEP, leaving
+           *     them `status='playing'` at 0 chips. `remainingCount` can then
+           *     never reach 1, so finishTournament is unreachable — for the
+           *     rest of the process's life, every 5 seconds, forever. One
+           *     mislabelled place is a bookkeeping error a human can renumber.
+           *     Refusing to eliminate anybody strands the entire field's
+           *     money, the champion's included. So a busted player is ALWAYS
+           *     eliminated: if no place is free at or below the seed, take
+           *     the lowest free place above it and shout about it.
+           *
+           * (c) THE TAKEN-PLACES READ WAS UNCHECKED. `takenRows || []` turned
+           *     a failed query into "every place is free", which is the
+           *     collision this block exists to prevent. An unreadable list is
+           *     UNKNOWN — defer the eliminations to the next sweep.
+           */
+          const { data: takenRows, error: takenErr } = await supabase
             .from('tournament_players')
             .select('position')
             .eq('tournament_id', this.tournamentId)
             .not('position', 'is', null);
+
+          if (takenErr || !takenRows) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] taken-places list unreadable (${takenErr?.message ?? 'null rows'}) — deferring ${bustedOrdered.length} elimination(s) rather than assigning a place that may already be paid`
+              ),
+              'Tournament.taken_places_unavailable'
+            );
+            return; // the finally block clears isProcessingEliminations
+          }
+
           const takenPositions = new Set<number>(
-            (takenRows || [])
+            takenRows
               .map((r) => Number((r as { position: unknown }).position))
               .filter((n) => Number.isFinite(n))
           );
 
-          let nextPosition = Math.max(playingCount, bustedOrdered.length + 1);
+          // Players who hold no finishing place yet. Monotonic, and immune to
+          // the late-reg promotion that made `playingCount` drift.
+          const { count: unplacedCount, error: unplacedErr } = await supabase
+            .from('tournament_players')
+            .select('*', { count: 'exact', head: true })
+            .eq('tournament_id', this.tournamentId)
+            .is('position', null);
+
+          if (unplacedErr || unplacedCount === null || unplacedCount === undefined) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] unplaced-player count unavailable (${unplacedErr?.message ?? 'null count'}) — deferring ${bustedOrdered.length} elimination(s)`
+              ),
+              'Tournament.unplaced_count_unavailable'
+            );
+            return; // the finally block clears isProcessingEliminations
+          }
+
+          let nextPosition = Math.max(unplacedCount, playingCount, bustedOrdered.length + 1);
           for (let i = 0; i < bustedOrdered.length; i++) {
             // Place 1 belongs to the winner and is never handed out here.
-            while (nextPosition >= 2 && takenPositions.has(nextPosition)) nextPosition--;
-            if (nextPosition < 2) {
+            let place = nextPosition;
+            while (place >= 2 && takenPositions.has(place)) place--;
+
+            if (place < 2) {
+              // The ladder is already corrupt — every place from the seed down
+              // to 2 is spoken for. Do NOT abandon the player: that is the
+              // deadlock. Take the lowest place above the seed that is free.
+              let up = nextPosition + 1;
+              const ceiling = nextPosition + takenPositions.size + 2;
+              while (up <= ceiling && takenPositions.has(up)) up++;
+              if (up > ceiling) {
+                reportError(
+                  new Error(
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: no finishing place free in [2, ${ceiling}] for ${bustedOrdered[i].user_id.slice(0, 8)} — cannot eliminate, tournament will not finish without intervention`
+                  ),
+                  'TournamentManager.no_free_finishing_place'
+                );
+                break;
+              }
+              place = up;
               reportError(
                 new Error(
-                  `No free finishing place left for ${bustedOrdered[i].user_id} in tournament ${this.tournamentId}`
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] finishing ladder exhausted downward at seed ${nextPosition} — ${bustedOrdered[i].user_id.slice(0, 8)} placed at ${place} instead. Places already handed out are one or more too high; the event will still finish but the standings need renumbering.`
                 ),
-                'TournamentManager.no_free_finishing_place'
+                'TournamentManager.finishing_ladder_exhausted'
               );
-              break;
             }
-            await this.eliminatePlayer(bustedOrdered[i].user_id, nextPosition);
-            takenPositions.add(nextPosition);
-            nextPosition--;
+
+            await this.eliminatePlayer(bustedOrdered[i].user_id, place);
+            takenPositions.add(place);
+            nextPosition = Math.min(nextPosition, place) - 1;
           }
         }
 
@@ -2422,6 +2574,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         .eq('status', 'playing');
       if (aliveErr || !alive) return; // fail closed
       if (alive.length < 2 || alive.length > tableSize) return; // not at final table
+
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  A DEAL NEEDS ONE TABLE, NOT A SHORT HEADCOUNT (2026-08-27, P0)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * The count above is necessary and NOT sufficient. Nine players spread
+       * three-three-three across three felts satisfy it, and unanimity among
+       * those nine would then run `fn_final_table_deal` — an even chip-chop
+       * of the whole undistributed pool — between players sitting at three
+       * separate tables, mid-hand, with two thirds of them unaware the vote
+       * was open. That is the most expensive single write in this file and it
+       * cannot be undone.
+       *
+       * Same gate as the `final_table` announcement in TournamentManager, and
+       * the same UNKNOWN rule: `null` means we could not read the table
+       * layout, and an unreadable layout never authorizes a chop.
+       */
+      const liveTables = await this.countLiveTablesWithPlayers();
+      if (liveTables !== 1) return; // fail closed: not one table, or unknown
 
       const { data: votes, error: votesErr } = await supabase
         .from('tournament_deal_votes')

@@ -944,7 +944,20 @@ export const SeatSlot = memo(
       // Only animate for a player who was already sitting here.
       if (diff !== 0 && sameOccupant) {
         setStackDelta(diff);
-        const t = setTimeout(() => setStackDelta(0), 2000);
+        /* 2026-08-28: scaled, because the keyframe is. `stackDeltaFloat` became
+           `calc(2s * var(--animation-speed, 1))` in SeatSlot.css and this window
+           stayed at a flat 2000ms, so the two disagreed the moment a player
+           changed animation speed — and --animation-speed is a DURATION
+           multiplier that runs up to 3 (see utils/animationSpeed.ts), so on the
+           "slow" setting the float ran six seconds while React unmounted the
+           node after two. The +/- indicator simply vanished a third of the way
+           through its own animation, on the setting chosen by the players most
+           likely to want to read it.
+
+           Same +50ms cushion as the all-in shake below: an exact tie races the
+           final frame at speed 1. Overshooting is harmless — the keyframe ends
+           at opacity 0 with `forwards`, so the extra moments are invisible. */
+        const t = setTimeout(() => setStackDelta(0), 2000 * getAnimationSpeed() + 50);
         return () => clearTimeout(t);
       }
       // A new occupant must not inherit the last one's floating delta.

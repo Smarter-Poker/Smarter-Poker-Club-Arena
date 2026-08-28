@@ -12,7 +12,7 @@ import { BLIND_STRUCTURES, SPIN_BLIND_STRUCTURE } from '../config/blindStructure
 // client that TournamentService constructs at import.
 import type { TournamentConfig } from '../services/TournamentService';
 import { payoutEngine } from '../services/PayoutEngine';
-import { splitBuyIn } from '../utils/buyIn';
+import { rakeRateFor, splitBuyIn } from '../utils/buyIn';
 import { maxSeatsTheDeckAllows } from '../config/tableSeating';
 
 /**
@@ -179,15 +179,20 @@ export function buildTournamentConfig(
   // buy-ins must never be decimal buy-ins, whole numbers only." The Buy-in
   // slider on the create-table form already steps in whole chips; rounding here
   // is the backstop for a restored draft or a programmatic config. `buyIn` is
-  // the TOTAL the player pays and the fee is a cut OUT of it.
-  //
-  // THE RATE IS PER FORMAT (2026-08-27): fn_create_tournament charges 5% on
-  // an SNG, 0 on a Spin, 10% otherwise. This split previously assumed a flat
-  // 10%, so the `rake` figure the UI showed for an SNG was double what the
-  // server actually took. The server recomputes regardless; this is display
-  // and derived-default truthfulness.
+  // the TOTAL the player pays and the fee is a cut OUT of it, so the total the
+  // player is charged is always a whole number.
   const buyIn = Math.max(0, Math.round(Number(config.buyIn) || 0));
-  const split = splitBuyIn(buyIn, isSpins ? 0 : isSng ? 0.05 : 0.1);
+  // The rate depends on the FORMAT (2026-08-27). A 2-seat SNG pays 5% and a
+  // Spin pays nothing at all — its rake is engineered into the multiplier
+  // distribution and `buy_in_fee` must be 0 or the
+  // tournaments_spin_no_extra_rake constraint refuses the row. This path used a
+  // flat 10% for all three, so an owner building a duel or a Spin from the
+  // table-config form was shown a fee that fn_create_tournament then wrote
+  // differently. rakeRateFor is the single source of truth.
+  const split = splitBuyIn(
+    buyIn,
+    rakeRateFor({ variant: isSpins ? 'spin' : isSng ? 'sng' : 'mtt', maxPlayers })
+  );
 
   const isMtt = config.gameMode === 'mtt';
   const clampInt = (v: number, lo: number, hi: number) =>
@@ -221,9 +226,10 @@ export function buildTournamentConfig(
             ? 'bounty'
             : 'mtt',
     buyIn: split.total,
-    // The house takes 10% of the buy-in on every tournament, rounded to a whole
-    // number. It is recomputed identically server-side in fn_create_tournament;
-    // this is only what the UI shows.
+    // The house cut, floored to cents, at the rate THIS format pays: 10% on an
+    // MTT, 5% on a two-seat duel, nothing on a Spin. It is recomputed
+    // identically server-side in fn_create_tournament; this is only what the UI
+    // shows, which is exactly why it has to agree with it.
     rake: split.fee,
     startingStack: config.startingChips,
     maxPlayers,

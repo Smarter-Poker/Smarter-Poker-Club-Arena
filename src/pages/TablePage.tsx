@@ -476,6 +476,13 @@ interface TableState {
   bombPotIn: number | null;
   /** BOMB POT STANDARDIZATION 2026-08-27: timed mode — epoch ms of next due bomb. */
   bombPotNextAt: number | null;
+  /**
+   * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is played
+   * as — differs from gameType on a variant-override bomb pot (e.g. a PLO4
+   * bomb at an NLH table). Null until the engine reports one; every consumer
+   * falls back to gameType.
+   */
+  handVariant: string | null;
   boardStage: BoardStage;
   /**
    * The engine's OWN stage string, unnormalised.
@@ -951,6 +958,14 @@ const _LAST_BBJ_HIT_COUNT: Record<string, number> = {};
    (lib/bbjHitOnce) replaces it and covers both, because it keys on the hit's
    own identity and persists across the reload. */
 
+/**
+ * How many mounted tables are currently asserting `data-enhanced-view` on
+ * `document.documentElement`. Module scope on purpose: the attribute is a
+ * property of the DOCUMENT and up to four TablePages share it, so the count has
+ * to live somewhere all of them can see. See the effect that maintains it.
+ */
+let enhancedViewHolders = 0;
+
 export default function TablePage({
   embeddedTableId,
   onTableInfoUpdate,
@@ -975,10 +990,27 @@ export default function TablePage({
   // MultiTablePage wrapper) defaults isActive=true so behavior is unchanged.
   const ambientSoundsAllowed = (!isMultiTable || isActive) && !muted;
 
+  /* This instance's own `.table-page` element. Anything that has to touch the
+     page root must come through here: `document.querySelector('.table-page')`
+     returns the FIRST one in the document, and MultiTablePage keeps up to four
+     mounted and laid out at once. */
+  const pageRootRef = useRef<HTMLDivElement | null>(null);
+
   // Prevent Chrome from throttling this tab (keeps horse timers alive)
   useTabKeepAlive();
-  useTableEnvironment(tableId);
-  useTableEnvironment(tableId);
+  /* ONCE. This read `useTableEnvironment(tableId);` on two consecutive lines,
+     and the duplicate was not harmless: the hook's viewport effect saves the
+     meta tag's original content so it can restore it on unmount, and the second
+     copy ran after the first had already replaced it — so it saved the POKER
+     viewport as the original and wrote that back on the way out. Leaving a table
+     left the whole app at `maximum-scale=1, user-scalable=no`. The hook is
+     refcounted now as well, because four tables mount it at once, but a hook
+     called twice from one component is a bug wherever it appears.
+
+     The ref is the second half of the same pass: the hook's background-tab
+     effect used to write its class onto `document.querySelector('.table-page')`,
+     which is table one's root no matter which instance is asking. */
+  useTableEnvironment(tableId, pageRootRef);
 
   // Get current user
   const [userId, setUserId] = useState<string>('guest');
@@ -1533,6 +1565,7 @@ export default function TablePage({
       communityCards3: [],
       bombPotIn: null,
       bombPotNextAt: null,
+      handVariant: null,
       boardStage: 'preflop',
       engineStage: 'preflop',
       dealerSeat: 0,
@@ -1828,6 +1861,7 @@ export default function TablePage({
         communityCards3: nextCards3,
         bombPotIn: mapped.bombPotIn,
         bombPotNextAt: mapped.bombPotNextAt,
+        handVariant: mapped.handVariant,
         boardStage: nextStage,
         engineStage: mapped.boardStage,
         dealerSeat: mapped.dealerSeat,
@@ -1994,6 +2028,23 @@ export default function TablePage({
 
   // Deal Animation State — triggers card dealing visual at start of new hand
   const [dealAnimationKey, setDealAnimationKey] = useState(0);
+  /**
+   * THE BUTTON BEAT (Dan 2026-08-27): "...PAUSE 1 SECOND, MOVE THE BUTTON
+   * ANIMATION... START DEALING NEXT HAND." The dealer puck's new seat arrives
+   * WITH the HAND_STARTED state, and until today the deal animation started in
+   * the same frame — the puck glided underneath the flying cards instead of
+   * being its own beat. This timer holds the deal (and its shuffle/deal
+   * sounds) for BUTTON_MOVE_MS x speed so the sequence reads: pot pushed →
+   * one-second rest (engine hold, POST_PUSH_PAUSE_MS) → button glides to its
+   * seat → cards fly.
+   */
+  const dealStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (dealStartTimerRef.current) clearTimeout(dealStartTimerRef.current);
+    },
+    []
+  );
   /**
    * Dan 2026-08-23: "before any single hand is started there MUST BE a deal
    * animation, where all players (small blind first) get dealt cards from the
@@ -3094,86 +3145,43 @@ export default function TablePage({
     return () => ro.disconnect();
   }, []);
 
-  /**
-   * Dan 2026-08-23: "the bottom bar is covering the hero's box so they cant see
-   * how many chips they have", and "the previous hand buttons are missing."
+  /* ─── THE BOTTOM RESERVE IS NOT MEASURED. IT IS DECLARED. ─────────────────
    *
-   * One cause. The action panel is `position: fixed; bottom: 0`, so it is out of
-   * flow and nothing below it reserves space automatically. Two places therefore
-   * reserved space for it BY HAND, and disagreed about how much:
+   * A ResizeObserver on `.action-panel-wrapper` used to live here and publish
+   * its height as `--sp-action-h`. It is DELETED, and the deletion is the fix
+   * for Dan 2026-08-27: "the screen is moving in and out constantly ... it's
+   * happening on all tables."
    *
-   *     .table-container   padding-bottom: 104px
-   *     .table-hud__lower  padding-bottom: 112px   "clears the COLLAPSED bar"
+   * WHY MEASURING WAS THE BUG, not the implementation of it. Four rules read
+   * that variable, and the first of them was `--sp-table-bottom`, which is not a
+   * padding: `.table-scaler` derives its WIDTH from the height left over, so
+   * every pixel in that expression rescales the entire felt. The wrapper's
+   * height legitimately changes several times a hand — it collapses to 1px when
+   * the hero has no action, drops to the 22px spectator line, stands back up on
+   * its `--sp-bottom-row-h` floor on the hero's turn, and grows again when the
+   * Show Hand bar enters it at showdown. Measured on production the felt swung
+   * 606x1002 -> 664x1098 across that range. The observer was doing exactly what
+   * it was written to do; what it was written to do was resize the table under
+   * the player twice a hand.
    *
-   * Two different numbers for one bar is what a guess looks like. Worse, that
-   * second comment states the constraint it fails: the panel is only ~112px
-   * while COLLAPSED. Open the raise slider and it grows well past both figures,
-   * so the previous-hand card goes under it - it was never removed, it was
-   * covered - and the hero's name plate, which hangs below the scaler because
-   * the hero avatar's CENTRE sits on the scaler's bottom edge, goes with it.
+   * A reserve for a box that comes and goes cannot be a measurement of that box.
+   * `--sp-action-reserve` (TablePage.css, on `.table-page`) is the most the
+   * bottom chrome may ever occupy, in CSS, changing only between "seated" and
+   * "spectating". Every one of the four consumers now reads that.
    *
-   * Measure it instead. The panel publishes its own height and both reserves
-   * read that, so the table and the HUD get out of the way of whatever the
-   * panel actually is right now, at any breakpoint, in any state.
+   * IT WAS ALSO WIRED TO THE WRONG ELEMENT, and that was a second, independent
+   * defect worth recording: it published onto `document.querySelector('.table-
+   * page')` — the FIRST such element in the document. MultiTablePage keeps up to
+   * four tables mounted and laid out at once (inactive slots are only
+   * `pointer-events: none`), so all four instances wrote their own wrapper's
+   * height onto table one's root, and tables two through four were never given a
+   * value at all. Scoping it to the instance would have fixed that; deleting it
+   * ends it.
    *
-   * ─── 2026-08-25 round 2: MEASURE THE BORDER BOX, NOT THE CONTENT BOX ───
-   *
-   * Dan, item 5: "that padding is way too much on the bottom." Part of it was
-   * here, and it was the opposite of a padding — it was a reserve that went
-   * MISSING.
-   *
-   * The first publish used `getBoundingClientRect().height` (border box) but
-   * every later one used `entry.contentRect.height` (content box). The wrapper
-   * carries `padding-bottom: env(safe-area-inset-bottom)` and a 1px top border,
-   * so on a notched iPhone the two differ by 35px, and the second number is the
-   * one that survived: `--sp-action-h` reported 95px for a bar that occupied
-   * 130px. Everything downstream then had to guess the missing strip back.
-   * TableHUD.css and TableChat.css did, by adding `env(safe-area-inset-bottom)`
-   * on top of the variable — which was right only because the variable was
-   * wrong, and became a double count the moment anybody fixed it. TablePage.css
-   * did NOT, and says so in --sp-table-bottom ("the home-indicator strip is
-   * already inside this number"): it wasn't, so the felt sat 34px lower than
-   * that rule believed, over the top of the bar.
-   *
-   * `borderBoxSize` is what both of those comments describe. With it,
-   * --sp-action-h means exactly "how much of the screen the bottom chrome
-   * occupies, home-indicator strip included", one definition, and the
-   * `+ env()` in the two HUD stylesheets is gone in the same change. The
-   * `getBoundingClientRect()` arm is for Safari 14, which fires ResizeObserver
-   * without ever populating borderBoxSize.
+   * If you are about to add another ResizeObserver whose output reaches CSS,
+   * read `tests/unit/feltReserveIsStatic.test.ts` first — it fails if any
+   * property the felt's geometry depends on is written from JavaScript.
    */
-  const actionPanelRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const el = actionPanelRef.current;
-    const root = document.querySelector('.table-page') as HTMLElement | null;
-    if (!el || !root || typeof ResizeObserver === 'undefined') return;
-    const publish = (h: number) => {
-      // Sub-pixel noise would thrash a layout-affecting variable, and this one
-      // feeds padding that moves the very seats the panel sits under.
-      const next = Math.round(h);
-      if (root.dataset.spActionH === String(next)) return;
-      root.dataset.spActionH = String(next);
-      root.style.setProperty('--sp-action-h', next + 'px');
-    };
-    publish(el.getBoundingClientRect().height);
-    const ro = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      // Spec says borderBoxSize is an array; Firefox shipped it as a bare
-      // object for a while, and Safari 14 omits it entirely.
-      const raw = entry.borderBoxSize as unknown;
-      const box = Array.isArray(raw)
-        ? (raw[0] as ResizeObserverSize | undefined)
-        : (raw as ResizeObserverSize | undefined);
-      const h = box?.blockSize ?? entry.target.getBoundingClientRect().height;
-      // The guard stays. A zero here would strand every consumer of
-      // --sp-action-h on a reserve of nothing, and the wrapper is briefly
-      // unmeasurable while the page is being torn down.
-      if (h > 0) publish(h);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
 
   // Actual club_id from the table record (NOT the tableId)
   const actualClubIdRef = useRef<string>('');
@@ -3682,7 +3690,7 @@ export default function TablePage({
         const rawHole = winnerPlayer?.holeCards ?? [];
         const hole = rawHole.filter((c): c is Card => c != null);
         if (hole.length > 0) {
-          const evalResult = bestFive(hole, cards, tableState.gameType);
+          const evalResult = bestFive(hole, cards, tableState.handVariant || tableState.gameType);
           if (evalResult) {
             winnerHandName = evalResult.name;
             const playedKeySet = new Set(evalResult.cards.map(cardKey));
@@ -3704,7 +3712,7 @@ export default function TablePage({
         for (const p of tableState.players) {
           const hole = (p?.holeCards ?? []).filter((c): c is Card => c != null);
           if (hole.length > 0) {
-            const evalResult = bestFive(hole, cards, tableState.gameType);
+            const evalResult = bestFive(hole, cards, tableState.handVariant || tableState.gameType);
             if (evalResult) {
               winnerHandName = evalResult.name;
               const playedKeySet = new Set(evalResult.cards.map(cardKey));
@@ -3742,6 +3750,7 @@ export default function TablePage({
   }, [
     ritResult,
     tableState.players,
+    tableState.handVariant,
     tableState.gameType,
     ritRevealCounts,
     ritRevealDone,
@@ -3774,7 +3783,11 @@ export default function TablePage({
       const winnerPlayer = tableState.players.find((p) => p?.id === wid);
       const hole = (winnerPlayer?.holeCards ?? []).filter((c): c is Card => c != null);
       if (hole.length === 0) continue;
-      const evalResult = bestFive(hole, tableState.communityCards2, tableState.gameType);
+      const evalResult = bestFive(
+        hole,
+        tableState.communityCards2,
+        tableState.handVariant || tableState.gameType
+      );
       if (evalResult) {
         const playedKeySet = new Set(evalResult.cards.map(cardKey));
         return tableState.communityCards2
@@ -3783,7 +3796,13 @@ export default function TablePage({
       }
     }
     return [];
-  }, [tableState.communityCards2, winnerInfo.playerIds, tableState.players, tableState.gameType]);
+  }, [
+    tableState.communityCards2,
+    winnerInfo.playerIds,
+    tableState.players,
+    tableState.handVariant,
+    tableState.gameType,
+  ]);
 
   // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 highlights, same derivation.
   const board3HighlightedIndices = useMemo(() => {
@@ -3792,7 +3811,11 @@ export default function TablePage({
       const winnerPlayer = tableState.players.find((p) => p?.id === wid);
       const hole = (winnerPlayer?.holeCards ?? []).filter((c): c is Card => c != null);
       if (hole.length === 0) continue;
-      const evalResult = bestFive(hole, tableState.communityCards3, tableState.gameType);
+      const evalResult = bestFive(
+        hole,
+        tableState.communityCards3,
+        tableState.handVariant || tableState.gameType
+      );
       if (evalResult) {
         const playedKeySet = new Set(evalResult.cards.map(cardKey));
         return tableState.communityCards3
@@ -3801,7 +3824,13 @@ export default function TablePage({
       }
     }
     return [];
-  }, [tableState.communityCards3, winnerInfo.playerIds, tableState.players, tableState.gameType]);
+  }, [
+    tableState.communityCards3,
+    winnerInfo.playerIds,
+    tableState.players,
+    tableState.handVariant,
+    tableState.gameType,
+  ]);
 
   // ─── Multi-table info reporting ─────────────────────────────────────
   // When embedded in MultiTablePage, report table name/pot/turn status
@@ -4074,6 +4103,20 @@ export default function TablePage({
     await handleInsuranceDeclineForHand();
   };
 
+  // EV CASHOUT 2026-08-28: the third answer — lock pot x equity (minus the
+  // 1% fee) now. Server-authoritative: the amount shown rode the offer from
+  // the engine and the engine recomputes it on accept; the client sends only
+  // the decision.
+  const handleInsuranceEvCashout = async () => {
+    setShowInsurance(false);
+    if (tableId) {
+      const result = await respondToInsurance(tableId, 'cashout');
+      if (!result.success) {
+        reportError(result.error, 'TablePage.Ev_cashout_failed');
+      }
+    }
+  };
+
   // A decline is final: never re-offered on later streets. Per-street pacing
   // continues for any OTHER all-in player who has not declined - if they take
   // the lead on a later street, the offer goes to them.
@@ -4094,9 +4137,12 @@ export default function TablePage({
   const insuranceTimeoutRef = useRef<number | null>(null);
   useEffect(() => {
     if (showInsurance) {
-      // Auto-decline when the SERVER'S offer window ends (the engine sends
-      // timeoutSeconds with the offer; 15s only as a fallback).
-      const windowMs = (insuranceOffer?.timeoutSeconds || 15) * 1000;
+      // Auto-decline when the SERVER'S offer window ends. COUNTDOWN HONESTY
+      // 2026-08-28: prefer the engine's absolute deadline (survives transit
+      // delay and reconnects); timeoutSeconds only as a fallback.
+      const windowMs = insuranceOffer?.deadlineAt
+        ? Math.max(0, insuranceOffer.deadlineAt - Date.now())
+        : (insuranceOffer?.timeoutSeconds || 15) * 1000;
       insuranceTimeoutRef.current = workerTimeout(() => {
         if (!isMounted.current) return;
         console.debug('[Insurance] Auto-declined after offer window elapsed');
@@ -4385,7 +4431,34 @@ export default function TablePage({
     boardCount: number;
     /** 'every_n_hands' | 'once_per_orbit' | 'timed' | 'bomb_pot_only' */
     triggerMode: string;
+    /** Timed mode: seconds between bombs (0 in other modes). */
+    intervalSeconds: number;
+    /** VARIANT OVERRIDE (spec §10.1): bomb hand variant; null = same as table. */
+    variant: string | null;
   } | null>(null);
+
+  /**
+   * TIMED BOMB CLOCK 2026-08-28 (spec §15.2): the engine publishes
+   * bomb_pot_next_at (epoch ms) for timed-mode tables; the felt pill counts
+   * down to it in m:ss. The one-second tick runs ONLY while a due timestamp
+   * exists — every other table pays nothing for this.
+   */
+  const [bombClockNowMs, setBombClockNowMs] = useState(() => Date.now());
+  const bombPotNextAtLive = tableState.bombPotNextAt;
+  useEffect(() => {
+    if (bombPotNextAtLive == null) return;
+    const t = window.setInterval(() => setBombClockNowMs(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [bombPotNextAtLive == null]);
+  const bombClockLabel = useMemo(() => {
+    if (bombPotNextAtLive == null) return null;
+    const remainMs = bombPotNextAtLive - bombClockNowMs;
+    if (remainMs <= 0) return 'NEXT HAND';
+    const totalSec = Math.ceil(remainMs / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }, [bombPotNextAtLive, bombClockNowMs]);
 
   // Straddle state
   const [isStraddleEnabled, setIsStraddleEnabled] = useState(false);
@@ -5207,14 +5280,34 @@ export default function TablePage({
   // Bible V8 §11.1: enhanced_view → document-level flag so themes and
   // component CSS can branch on body[data-enhanced-view="1"]. Single source
   // so future visual effects can opt in without plumbing the prop through.
+  /* REFCOUNTED, because `document.documentElement` is one element and up to four
+     TablePages assert this flag (2026-08-28).
+
+     The cleanup used to be an unconditional `removeAttribute`. So closing one of
+     four tables — or ANY instance re-running this effect because its own
+     `enhanced_view` changed — switched the enhanced-view layer off for every
+     table still open, and nothing put it back: the surviving instances' effects
+     do not re-run when a sibling unmounts. The player sees the felt sheen, the
+     card faces and the pot type quietly revert on tables they never touched.
+
+     Same shape as the viewport lock in useTableEnvironment.ts, and refcounted
+     the same way: the flag is on while at least one mounted table wants it, and
+     the last one to let go is the one that clears it. */
   useEffect(() => {
-    if (v8Settings.enhanced_view) {
-      document.documentElement.setAttribute('data-enhanced-view', '1');
-    } else {
-      document.documentElement.removeAttribute('data-enhanced-view');
+    if (!v8Settings.enhanced_view) {
+      // Not asserting it — and not clearing anyone else's assertion either.
+      if (enhancedViewHolders === 0) {
+        document.documentElement.removeAttribute('data-enhanced-view');
+      }
+      return;
     }
+    enhancedViewHolders += 1;
+    document.documentElement.setAttribute('data-enhanced-view', '1');
     return () => {
-      document.documentElement.removeAttribute('data-enhanced-view');
+      enhancedViewHolders -= 1;
+      if (enhancedViewHolders === 0) {
+        document.documentElement.removeAttribute('data-enhanced-view');
+      }
     };
   }, [v8Settings.enhanced_view]);
 
@@ -6439,6 +6532,11 @@ export default function TablePage({
             outs: mapCards(handState.outs),
             outPct: Number(handState.outPct) || undefined,
             timeoutSeconds: insSecs,
+            // COUNTDOWN HONESTY 2026-08-28: absolute deadline from the engine;
+            // the popup counts down to THIS instead of a stale seconds figure.
+            deadlineAt: Number(heroOffer.deadlineAt) || Number(handState.deadlineAt) || undefined,
+            // EV CASHOUT 2026-08-28: server-priced third choice.
+            evCashoutAmount: Number(heroOffer.evCashoutAmount) || undefined,
             // REFERENCE PARITY 2026-08-26: the dialog's Rate readout and the
             // Break Even preset ride the offer.
             rate: Number(heroOffer.rate) || undefined,
@@ -6450,7 +6548,11 @@ export default function TablePage({
           // "your turn" so a multi-tabling leader looks over in time.
           playTurnAlert();
           setInsuranceWaitingOn(null);
-          setDecisionDeadline({ kind: 'insurance', at: Date.now() + insSecs * 1000 });
+          // COUNTDOWN HONESTY 2026-08-28: the multi-table tab's background
+          // countdown anchors to the ENGINE's deadline when it rides the
+          // offer, not a seconds figure that is stale on arrival.
+          const insDeadline = Number(heroOffer.deadlineAt) || Date.now() + insSecs * 1000;
+          setDecisionDeadline({ kind: 'insurance', at: insDeadline });
         } else {
           // Everyone else (players AND observers) sees the reference flow's
           // quiet status bar while the leader decides. Auto-expires with the
@@ -6484,11 +6586,39 @@ export default function TablePage({
         return;
       }
 
+      // EV CASHOUT 2026-08-28: the third decision, announced table-wide like
+      // accept/decline. The waiting bar drops; the payout itself lands with
+      // insurance_settled at the end of the hand.
+      if (eventType === 'insurance_cashed_out') {
+        setInsuranceWaitingOn(null);
+        const who = String((handState as Record<string, unknown>).username || 'Player');
+        const actorId = String((handState as Record<string, unknown>).playerId || '');
+        const amount = Number((handState as Record<string, unknown>).cashoutAmount || 0);
+        if (actorId === userId) {
+          if (amount > 0) toast.success(`Cashout Locked: $${amount.toLocaleString()}`, 4000);
+        } else {
+          toast.info(`${who} Has Cashed Out`, 3000);
+        }
+        return;
+      }
+
       if (eventType === 'insurance_settled') {
         const actorId = String((handState as Record<string, unknown>).playerId || '');
         const payout = Number((handState as Record<string, unknown>).payout || 0);
         const won = Boolean((handState as Record<string, unknown>).won);
         const settledName = String((handState as Record<string, unknown>).username || 'Player');
+        // EV CASHOUT 2026-08-28: a locked cashout pays REGARDLESS of the
+        // board's outcome, and it is not "insurance paid" — label it right.
+        const settledKind = String((handState as Record<string, unknown>).kind || 'insurance');
+        if (settledKind === 'ev_cashout' && payout > 0) {
+          setInsurancePayoutFly({ playerId: actorId, amount: payout });
+          if (actorId === userId) {
+            toast.success(`Cashout Paid You $${payout.toLocaleString()}`, 5000);
+          } else {
+            toast.info(`Cashout Paid ${settledName} $${payout.toLocaleString()}`, 4000);
+          }
+          return;
+        }
         if (won && payout > 0) {
           // REFERENCE PARITY 2026-08-26 (Dan): "an insurance paid animation
           // should fly over to my avatar with some animation and toast
@@ -7323,6 +7453,22 @@ export default function TablePage({
         min_buy_in: number | null;
         max_buy_in: number | null;
         settings: unknown;
+        /* WIRING FIX 2026-08-28: the straddle flag and the bomb pot rules
+           were read from `settings` alone, and every live table carries
+           `settings = {}` (verified in engineSelectIsTheContract) — so the
+           straddle control and the Game Rules bomb section were dead on
+           every column-configured table. The COLUMNS are the contract the
+           engine plays by; fetch them and prefer them, with the settings
+           spellings kept as fallback for old rows. */
+        straddle_enabled: boolean | null;
+        bomb_pot_enabled: boolean | null;
+        bomb_pot_frequency: number | null;
+        bomb_pot_ante_multiplier: number | null;
+        bomb_pot_double_board: boolean | null;
+        bomb_pot_board_count: number | null;
+        bomb_pot_trigger_mode: string | null;
+        bomb_pot_interval_seconds: number | null;
+        bomb_pot_variant: string | null;
       };
       let table: TableBootstrapRow | null = null;
       let error: unknown = null;
@@ -7334,7 +7480,7 @@ export default function TablePage({
         const res = await supabase
           .from('tables')
           .select(
-            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in'
+            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant'
           )
           .eq('id', tableId)
           .maybeSingle();
@@ -7439,25 +7585,51 @@ export default function TablePage({
         }));
 
         const settings = (table.settings as any) || {};
-        setTableStraddleEnabled(settings.straddle_enabled === true);
+        /* WIRING FIX 2026-08-28: COLUMNS FIRST, settings jsonb as fallback.
+           These read `settings` alone, and all live tables carry
+           `settings = {}` — so the straddle availability flag and bombPotRules
+           (Game Rules modal + the felt pill's mode/board labels) were null on
+           every column-configured table. The columns are what the engine
+           actually plays by; the settings spellings survive for old rows. */
+        setTableStraddleEnabled(
+          table.straddle_enabled === true || settings.straddle_enabled === true
+        );
+        const bombOn = table.bomb_pot_enabled === true || settings.bomb_pot_enabled === true;
+        const bombBoards =
+          Number(table.bomb_pot_board_count) ||
+          Number(settings.bomb_pot_board_count) ||
+          (table.bomb_pot_double_board === true || settings.bomb_pot_double_board === true ? 2 : 1);
         setBombPotRules(
-          settings.bomb_pot_enabled === true
+          bombOn
             ? {
                 enabled: true,
-                frequency: Number(settings.bomb_pot_frequency) || 0,
-                anteBB: Number(settings.bomb_pot_ante_bb || settings.bomb_pot_ante_multiplier) || 0,
-                doubleBoard:
-                  settings.bomb_pot_double_board === true ||
-                  Number(settings.bomb_pot_board_count) >= 2,
+                frequency:
+                  Number(table.bomb_pot_frequency) || Number(settings.bomb_pot_frequency) || 0,
+                anteBB:
+                  Number(table.bomb_pot_ante_multiplier) ||
+                  Number(settings.bomb_pot_ante_bb || settings.bomb_pot_ante_multiplier) ||
+                  0,
+                doubleBoard: bombBoards >= 2,
                 // BOMB POT STANDARDIZATION 2026-08-27: canonical board count
                 // (1-3) and trigger mode, defaulting to the legacy shapes.
-                boardCount:
-                  Number(settings.bomb_pot_board_count) ||
-                  (settings.bomb_pot_double_board === true ? 2 : 1),
+                boardCount: bombBoards,
                 triggerMode:
-                  typeof settings.bomb_pot_trigger_mode === 'string'
-                    ? settings.bomb_pot_trigger_mode
-                    : 'every_n_hands',
+                  (typeof table.bomb_pot_trigger_mode === 'string' &&
+                    table.bomb_pot_trigger_mode) ||
+                  (typeof settings.bomb_pot_trigger_mode === 'string' &&
+                    settings.bomb_pot_trigger_mode) ||
+                  'every_n_hands',
+                // Timed mode: interval for the rules modal + felt clock.
+                intervalSeconds:
+                  Number(table.bomb_pot_interval_seconds) ||
+                  Number(settings.bomb_pot_interval_seconds) ||
+                  0,
+                // VARIANT OVERRIDE (spec §10.1): the bomb hand's game when it
+                // differs from the table's. Null = same as table.
+                variant:
+                  (typeof table.bomb_pot_variant === 'string' && table.bomb_pot_variant) ||
+                  (typeof settings.bomb_pot_variant === 'string' && settings.bomb_pot_variant) ||
+                  null,
               }
             : null
         );
@@ -10452,37 +10624,51 @@ export default function TablePage({
         setWinnerParticle((prev) => ({ ...prev, active: false }));
         setIsAllInMode(false);
         setAllInEquities([]);
-        // Trigger deal animation (legacy DealAnimation already wired to
-        // dealAnimationKey; bump it so the cards fly from the dealer).
-        setDealAnimationKey((k) => k + 1);
+        // Hold the action panel from this instant — the button beat below is
+        // part of the deal, and a player must not act into it.
         beginDealHold();
-        // Bible V8 §10.1: per-seat card slide-in animation
-        setIsSeatDealing(true);
-        // CA-19: track so unmount can cancel — prevents setIsSeatDealing on dead page
-        if (seatDealTimerRef.current) clearTimeout(seatDealTimerRef.current);
-        seatDealTimerRef.current = setTimeout(
+        // THE BUTTON BEAT (Dan 2026-08-27, see dealStartTimerRef): the puck's
+        // CSS glide to its new seat (0.6s x speed) plays FIRST, alone. Only
+        // then do the cards fly. The snapshot that carries the new dealerSeat
+        // landed in this same frame, so the glide is already running.
+        if (dealStartTimerRef.current) clearTimeout(dealStartTimerRef.current);
+        const heardHere = ambientSoundsAllowed;
+        dealStartTimerRef.current = setTimeout(
           () => {
-            seatDealTimerRef.current = null;
-            setIsSeatDealing(false);
+            dealStartTimerRef.current = null;
+            // Trigger deal animation (legacy DealAnimation already wired to
+            // dealAnimationKey; bump it so the cards fly from the dealer).
+            setDealAnimationKey((k) => k + 1);
+            // Bible V8 §10.1: per-seat card slide-in animation
+            setIsSeatDealing(true);
+            // CA-19: track so unmount can cancel — prevents setIsSeatDealing on dead page
+            if (seatDealTimerRef.current) clearTimeout(seatDealTimerRef.current);
+            seatDealTimerRef.current = setTimeout(
+              () => {
+                seatDealTimerRef.current = null;
+                setIsSeatDealing(false);
+              },
+              // IMPROVEMENT PASS 2026-08-19: scales with --animation-speed like
+              // the cardDealIn keyframe it gates.
+              700 * getAnimationSpeed()
+            );
+            // Bible V8 §5.3: new hand indicator + card dealing sound
+            // #175 gated for multi-table: only play on the active tab
+            if (soundService.isEnabled() && heardHere) {
+              // COMPETITOR-PARITY 2026-08-19: shuffle riffle before the deal —
+              // every major room marks the fresh hand with a shuffle.
+              soundService.playShuffle();
+              setTimeout(() => soundService.playNewHand(), 260);
+              // DealAnimation owns the per-card deal sounds (staggered with its
+              // visuals). Only when the card-slide animation is disabled does the
+              // page play a single deal slide as the audio fallback.
+              /* The single-deal audio fallback for `card_slide: false` is gone with
+                 the branch that could disable the animation: DealAnimation always
+                 runs now and owns the per-card deal sounds. */
+            }
           },
-          // IMPROVEMENT PASS 2026-08-19: scales with --animation-speed like
-          // the cardDealIn keyframe it gates.
-          700 * getAnimationSpeed()
+          Math.round(HAND_COMPLETION.BUTTON_MOVE_MS * getAnimationSpeed())
         );
-        // Bible V8 §5.3: new hand indicator + card dealing sound
-        // #175 gated for multi-table: only play on the active tab
-        if (soundService.isEnabled() && ambientSoundsAllowed) {
-          // COMPETITOR-PARITY 2026-08-19: shuffle riffle before the deal —
-          // every major room marks the fresh hand with a shuffle.
-          soundService.playShuffle();
-          setTimeout(() => soundService.playNewHand(), 260);
-          // DealAnimation owns the per-card deal sounds (staggered with its
-          // visuals). Only when the card-slide animation is disabled does the
-          // page play a single deal slide as the audio fallback.
-          /* The single-deal audio fallback for `card_slide: false` is gone with
-             the branch that could disable the animation: DealAnimation always
-             runs now and owns the per-card deal sounds. */
-        }
         break;
       }
       case 'BOMB_POT_TRIGGERED': {
@@ -10522,6 +10708,15 @@ export default function TablePage({
               bbMultiplier: Number(d?.bb_multiplier) || 0,
               // TRIPLE-BOARD 2026-08-27: actual boards dealt (post-downgrade).
               boardCount: Number(d?.board_count) || (d?.double_board ? 2 : 1),
+              // VARIANT OVERRIDE 2026-08-28 (spec §10.1): badge the intro
+              // with the bomb variant when it differs from the table's game.
+              variantLabel:
+                typeof d?.variant === 'string' &&
+                d.variant &&
+                d.variant.toLowerCase() !==
+                  String(tableStateRef.current.gameType || '').toLowerCase()
+                  ? String(d.variant).toUpperCase()
+                  : undefined,
             });
           } catch {
             /* bus publish is best-effort */
@@ -12554,9 +12749,13 @@ export default function TablePage({
      variant. Neither depends on the seat. One table-wide value each, recomputed
      only when the input actually changes. */
   const seatBigBlind = useMemo(() => safeBB(tableState.blinds), [tableState.blinds]);
+  /* VARIANT OVERRIDE 2026-08-28 (spec §10.1): the LIVE hand's variant wins —
+     a PLO4 bomb hand at an NLH table draws four card-backs per villain, and
+     the winner-highlight evaluators below pick the right combination rule. */
+  const effectiveHandVariant = tableState.handVariant || tableState.gameType;
   const seatHoleCardCount = useMemo(
-    () => holeCardCountFor(tableState.gameType),
-    [tableState.gameType]
+    () => holeCardCountFor(effectiveHandVariant),
+    [effectiveHandVariant]
   );
 
   // Throw targets in scaler pixels, keyed by 1-indexed seat number to match
@@ -12641,7 +12840,7 @@ export default function TablePage({
       }
     } else {
       try {
-        const best = bestFive(hole, board, tableState.gameType);
+        const best = bestFive(hole, board, tableState.handVariant || tableState.gameType);
         strength = best?.name ?? null;
       } catch {
         strength = null;
@@ -12652,6 +12851,7 @@ export default function TablePage({
     tableState.players,
     tableState.heroSeat,
     tableState.communityCards,
+    tableState.handVariant,
     tableState.gameType,
     tableState.isHandInProgress,
     cachedHandStrength,
@@ -13801,17 +14001,30 @@ export default function TablePage({
     }
   }, [tableId, userId, submitActionWithToast, applyOptimisticHeroAction]);
 
-  const handleFold = async () => {
-    if (actionLockRef.current) return;
-    // Spec §5.6: when checking is free, defer the fold behind a confirmation
-    // dialog. The dialog lives in JSX below and calls commitFold() on confirm.
-    if (canCheckRightNow()) {
-      setFoldProtectOpen(true);
-      return;
-    }
-    await commitFold();
-  };
+  /* `handleFold` and `handleCall` used to live here, beside handleCheck, and
+     NOTHING but the keyboard ever called them. That is why they are gone
+     (2026-08-28): F/Q and C/W now go through `handleActionPanelAction`, the same
+     function the on-screen buttons call.
 
+     It is not tidying. They were a SECOND implementation of fold and call, and
+     it had drifted: `handleActionPanelAction` counts VPIP and PFR (see the
+     hero-stats block inside it) and this pair did not, so a player who acted by
+     keyboard had their own HUD stats quietly under-count every hand they played
+     that way. It also takes the debounce lock on the way IN rather than after
+     the decision, which is the ordering the fold-protection dialog depends on.
+
+     `handleCheck` stays: FoldProtectionDialog's "check instead" button calls it
+     directly, and that path must not re-enter the dialog it is dismissing.
+
+     `handleAllIn` (further down) ALSO stays, and that is a KNOWN, DELIBERATE
+     inconsistency rather than an oversight — it is the one remaining pair of
+     money paths that disagree, and merging them is a separate decision:
+       - `handleActionPanelAction('allin')` — what the ALL IN button runs.
+         Counts VPIP/PFR. Does NOT fire the client-side Run-It-Twice prompt.
+       - `handleAllIn` — what the A key runs. Fires the RIT prompt from a
+         `workerTimeout` after the shove. Does NOT count VPIP/PFR.
+     Whichever is merged into the other changes behaviour for the other half of
+     the players, so it is not being done inside a sweep. */
   const handleCheck = async () => {
     if (actionLockRef.current) return;
     if (!validateAndExecuteAction('check')) return;
@@ -13830,98 +14043,34 @@ export default function TablePage({
     }
   };
 
-  const handleCall = async () => {
-    if (actionLockRef.current) return;
-    if (!validateAndExecuteAction('call')) return;
-    actionLockRef.current = true;
-    setTimeout(() => {
-      actionLockRef.current = false;
-    }, 300);
-    closeRaisePanel();
-    //Local engine call removed — server is authoritative
-    soundService.playChips(); // SoundService handles haptic (light) per Bible V8 §5.4
-    // BUG 026: optimistic update for instant visual feedback
-    const callAmt = tableState.currentBet || 0;
-    const revert = applyOptimisticHeroAction('call', callAmt);
-    if (tableId) {
-      const ok = await submitActionWithToast(tableId, userId, 'call', undefined, 'handleCall');
-      if (!ok) revert();
-    }
-  };
-
   const handleRaise = () => {
     openRaisePanel();
   };
 
-  /**
-   * The all-in hotkey has to reach `handleActionPanelAction`, which is declared
-   * further down this component — naming it in the effect's dep array below
-   * would be a temporal-dead-zone error, not merely a lint complaint. A ref
-   * kept current by its own effect breaks the ordering cycle without moving
-   * either block.
+  /* ─── THE SECOND KEYBOARD LISTENER USED TO BE HERE (deleted 2026-08-28) ────
+   *
+   * A `window.addEventListener('keydown')` of its own handling F/Q, C/W, R/E
+   * and A, alongside `useTableKeyboard` — which handles the same keys. Both
+   * were live, so every one of those keys ran two code paths per press and the
+   * only thing between that and a double-submitted action was `actionLockRef`
+   * being taken synchronously by whichever handler ran first.
+   *
+   * Its dependency array was `[isHeroTurnContext, handleFold, handleCheck,
+   * handleCall, handleRaise, canCheckRightNow]`, and four of those are plain
+   * `const fn = async () => {}` — a new identity on every render. So it tore
+   * down and re-subscribed a window listener on EVERY engine snapshot, and the
+   * note it carried admitted the hotkey's correctness depended on that churn.
+   * A keypress landing between the remove and the add was simply lost.
+   *
+   * Worst of all it had no idea which table the player was looking at. Four
+   * mounted TablePages meant four of these listeners plus four hook listeners,
+   * and one press of F folded every hand hero had action on. See the header of
+   * useTableKeyboard.ts.
+   *
+   * Q/W/E moved into that hook; the all-in ref this block needed is gone with
+   * it, because the hook is called after `handleActionPanelAction` is declared
+   * and can name it directly.
    */
-  const allInHotkeyRef = useRef<(() => void) | null>(null);
-
-  // ── Keyboard Shortcuts for Table Actions ──
-  // Two key sets coexist (Phase 2 T1-10 / spec §5.5 "MUST IMPROVE"):
-  //   F / C / R / A — original mnemonic (Fold / Check-Call / Raise / All-in)
-  //   Q / W / E      — PokerBros-style left-hand row (Q=Fold, W=Check-Call, E=Raise)
-  // Both reach the same handlers; downstream behavior is identical.
-  // Active only when it's hero's turn and the user isn't typing in an input.
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (!isHeroTurnContext) return;
-      if (actionLockRef.current) return;
-
-      const key = e.key.toLowerCase();
-      if (key === 'f' || key === 'q') {
-        e.preventDefault();
-        handleFold();
-      } else if (key === 'c' || key === 'w') {
-        e.preventDefault();
-        // Bible V8 + spec §5.5: Check is legal when currentBet <= hero's current bet.
-        //
-        // 2026-08-26: this used to inline that comparison against `tableState`,
-        // which is NOT in this effect's dependency array. It read fresh values
-        // only because handleFold/handleCheck/handleCall are recreated every
-        // render and re-run the effect - so the correctness of a hotkey that
-        // COMMITS CHIPS depended on a re-subscribe happening on every snapshot.
-        // canCheckRightNow() is the same memoised helper handleFold already
-        // uses, so there is now one derivation instead of two and the deps
-        // below can be honest.
-        if (canCheckRightNow()) {
-          handleCheck();
-        } else {
-          handleCall();
-        }
-      } else if (key === 'r' || key === 'e') {
-        e.preventDefault();
-        handleRaise();
-      } else if (key === 'a') {
-        // 2026-08-20: the comment above has advertised "F / C / R / A —
-        // (Fold / Check-Call / Raise / All-in)" since this block was written,
-        // and A was never implemented. Three of the four documented keys
-        // worked; the fourth did nothing. Now it shoves, through the same
-        // handler the ALL IN button uses, so there is one code path.
-        e.preventDefault();
-        allInHotkeyRef.current?.();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isHeroTurnContext, handleFold, handleCheck, handleCall, handleRaise, canCheckRightNow]);
-
-  // Keep the all-in hotkey pointed at the current handler (see allInHotkeyRef).
-  useEffect(() => {
-    allInHotkeyRef.current = () => {
-      void handleActionPanelAction('allin');
-    };
-    return () => {
-      allInHotkeyRef.current = null;
-    };
-  });
 
   // Unified action handler for ActionPanel component
   //Server is authoritative — all actions go through submitAction
@@ -14150,8 +14299,23 @@ export default function TablePage({
   };
 
   // Keyboard Shortcuts — wired to table actions (Phase 8)
+  // ONE keyboard system since 2026-08-28; TablePage's own duplicate listener is
+  // deleted. See the gravestone above handleActionPanelAction.
   useTableKeyboard({
-    isHeroTurn: tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress,
+    /* WHICH TABLE IS THE PLAYER LOOKING AT. Without this every mounted
+       TablePage answered the keyboard, so hero with action on two tables folded
+       BOTH with one press of F. `isActive` is the prop MultiTablePage already
+       computes as `idx === activeIndex && !hidden`; as a standalone route it
+       defaults to true, which is correct — there is only one table. */
+    isActive,
+    /* `isHeroTurnContext`, NOT a second hand-rolled copy of it. The copy that
+       used to be inlined here was `currentPlayerSeat === heroSeat &&
+       isHandInProgress` — missing the `> 0` guards, so between hands, when both
+       fields are 0, `0 === 0` made this true and the number keys armed a raise
+       on a table where hero had no hand. That is the identical false-trigger the
+       note on isHeroTurnContext documents. */
+    isHeroTurn: isHeroTurnContext,
+    isSizingOpen: raiseIntent.open,
     isSpectator: !tableState.players.some((p) => p?.isHero),
     isModalOpen:
       showSettings ||
@@ -14162,23 +14326,28 @@ export default function TablePage({
       showPlayerNotes ||
       showWaitList ||
       isSideMenuOpen,
-    onFold: handleFold,
+    /* Every action key runs the SAME function the on-screen button runs.
+       2026-08-28: these pointed at `handleFold` / `handleCall`, a parallel pair
+       that skipped the VPIP/PFR counting inside handleActionPanelAction — so a
+       keyboard player's own HUD stats under-counted every hand. Fold protection
+       is unchanged: the panel path opens FoldProtectionDialog on a free check,
+       exactly as handleFold did. */
+    onFold: () => void handleActionPanelAction('fold'),
     onCallCheck: () => {
       // Bible V8: Check is legal when currentBet <= hero's current bet.
       //
       // 2026-08-26: this used to inline that comparison. It was the last of
-      // several copies of the same derivation on this page - this file has TWO
-      // keyboard systems (the raw keydown useEffect and this hook) and both
-      // hand-rolled it. canCheckRightNow() is the memoised helper the fold
-      // path already uses. One derivation means the switch to the engine's
-      // authoritative legal-action set is one line, not six.
-      if (canCheckRightNow()) {
-        handleCheck();
-      } else {
-        handleCall();
-      }
+      // several copies of the same derivation on this page. canCheckRightNow()
+      // is the memoised helper the panel path already uses. One derivation
+      // means the switch to the engine's authoritative legal-action set is one
+      // line, not six.
+      void handleActionPanelAction(canCheckRightNow() ? 'check' : 'call');
     },
     onRaise: handleRaise,
+    /* NOT handleActionPanelAction('allin') — see the note above handleCheck.
+       The two all-in paths genuinely differ (VPIP counting vs the client RIT
+       prompt) and merging them is its own decision. This keeps the A key doing
+       exactly what it did before this commit. */
     onAllIn: handleAllIn,
     onToggleSound: () => setIsSoundEnabled(!isSoundEnabled),
     // FIX 199: onToggleHandStrength REMOVED — not allowed for live online gameplay
@@ -14273,8 +14442,15 @@ export default function TablePage({
           // MID-FLIGHT. Extract the epoch-millis token regardless of format.
           const m = a.id.match(/(\d{13,})/);
           const ts = m ? parseInt(m[1], 10) : 0;
-          // Unparseable id → keep (never destroy an animation we can't date).
-          return ts === 0 || ts > cutoff;
+          if (ts === 0) {
+            // Unparseable id → never destroy an animation we can't date, but
+            // 2026-08-27: START its clock now instead of keeping it forever.
+            // A future id format without an epoch token would otherwise be
+            // immortal and the array would grow for the session.
+            chipAnimStartedAtRef.current.set(a.id, Date.now());
+            return true;
+          }
+          return ts > cutoff;
         });
         if (fresh.length === prev.length) return prev;
         // Stop the map growing for the life of the session.
@@ -14557,6 +14733,7 @@ export default function TablePage({
 
   return (
     <div
+      ref={pageRootRef}
       /* `--embedded` (Dan 2026-08-23: "+ does not create the action box for
          that game"). `.table-page` is `position: fixed; inset: 0; z-index:
          1100` because as a ROUTE it is the whole screen. Inside
@@ -15503,11 +15680,16 @@ export default function TablePage({
                           directly under board 1 like the reference — no label,
                           same stage (both boards deal in lockstep), silent so
                           each street sounds once. */}
+                      {/* RABBIT FIX 2026-08-28 (spec §19): a rabbit hunt is
+                          board-1's would-have-come cards — appending them to
+                          board 2/3 drew the same cards on two boards. The
+                          engine no longer offers rabbits on multi-board hands
+                          at all; the empty rabbitCards here are defence. */}
                       {tableState.communityCards2.length > 0 && (
                         <div className="community-area__board2">
                           <CommunityCards
                             cards={tableState.communityCards2}
-                            rabbitCards={rabbitRevealedCards}
+                            rabbitCards={[]}
                             stage={
                               bombPotHoldFlop && tableState.boardStage === 'flop'
                                 ? 'preflop'
@@ -15530,7 +15712,7 @@ export default function TablePage({
                         <div className="community-area__board2 community-area__board3">
                           <CommunityCards
                             cards={tableState.communityCards3}
-                            rabbitCards={rabbitRevealedCards}
+                            rabbitCards={[]}
                             stage={
                               bombPotHoldFlop && tableState.boardStage === 'flop'
                                 ? 'preflop'
@@ -15557,19 +15739,29 @@ export default function TablePage({
                     goes non-null the moment an owner enables bomb pots, while
                     bombPotRules is a one-shot fetch that would hold the pill
                     hostage until a page reload. */}
-                {tableState.bombPotIn != null && !bombPotActive && (
+                {(tableState.bombPotIn != null || bombClockLabel != null) && !bombPotActive && (
                   <div
-                    className={`bomb-pot-eta ${tableState.bombPotIn === 1 ? 'bomb-pot-eta--next' : ''}`}
+                    className={`bomb-pot-eta ${
+                      tableState.bombPotIn === 1 || bombClockLabel === 'NEXT HAND'
+                        ? 'bomb-pot-eta--next'
+                        : ''
+                    }`}
                   >
                     <span className="bomb-pot-eta__dot" />
                     {/* BOMB POT STANDARDIZATION 2026-08-27: badge names the
                         board count (spec §15.2); bomb-only tables show a
-                        permanent identity pill rather than a countdown. */}
+                        permanent identity pill rather than a countdown.
+                        TIMED CLOCK 2026-08-28: timed tables count down in
+                        m:ss to the engine's bomb_pot_next_at. */}
                     {bombPotRules?.triggerMode === 'bomb_pot_only'
                       ? `${bombPotRules.boardCount >= 3 ? 'TRIPLE BOARD ' : bombPotRules.boardCount === 2 ? 'DOUBLE BOARD ' : ''}BOMB POT ONLY`
-                      : tableState.bombPotIn === 1
-                        ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
-                        : `BOMB POT IN ${tableState.bombPotIn}`}
+                      : bombClockLabel != null
+                        ? bombClockLabel === 'NEXT HAND'
+                          ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
+                          : `BOMB POT IN ${bombClockLabel}`
+                        : tableState.bombPotIn === 1
+                          ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
+                          : `BOMB POT IN ${tableState.bombPotIn}`}
                   </div>
                 )}
 
@@ -16401,7 +16593,10 @@ export default function TablePage({
       {/* ═══════════════════════════════════════════════════════════════════════
           BOTTOM CONTROLS + ACTION PANEL
           ═══════════════════════════════════════════════════════════════════════ */}
-      <div className="action-panel-wrapper" ref={actionPanelRef}>
+      {/* No ref. Nothing measures this box any more, and nothing may: its height
+          changes several times a hand and four rules used to resize the felt and
+          the HUD from it. See the note where the observer used to be, above. */}
+      <div className="action-panel-wrapper">
         {/* POKERBROS-spec: persistent footer bar — NEVER empty. Dan rule
             2026-04-17: action bar fixed to footer at all times, every state. */}
         {!tableState.players.some((p) => p?.isHero) &&
@@ -17427,6 +17622,7 @@ export default function TablePage({
         onInsuranceAccept={handleInsuranceAccept}
         onInsuranceDecline={handleInsuranceDecline}
         onInsuranceDeclineForHand={handleInsuranceDeclineForHand}
+        onInsuranceEvCashout={handleInsuranceEvCashout}
         // Hand Reveal
         showHandRevealModal={showHandRevealModal}
         handRevealWinnerId={handRevealWinnerId}

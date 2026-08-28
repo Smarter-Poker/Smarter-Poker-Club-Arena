@@ -1657,6 +1657,25 @@ export default function ClubDashboard() {
                   ))}
                 </div>
 
+                {/* INSURANCE REPORT 2026-08-28: the headline net above raises
+                    questions only the funnel can answer — take rate, timeouts,
+                    cashouts, per-day money. That lives on its own page. */}
+                {revenue.insurance && (
+                  <Link
+                    to={`/clubs/${clubId}/insurance-report`}
+                    style={{
+                      display: 'inline-block',
+                      marginBottom: 14,
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      color: '#1877f2',
+                      textDecoration: 'none',
+                    }}
+                  >
+                    View Full Insurance Report
+                  </Link>
+                )}
+
                 <Suspense fallback={<p className={styles.empty}>Loading Chart...</p>}>
                   <ClubActivityChart
                     data={revenue.daily.map((d) => ({ d: d.d, hands: d.hands, rake: d.rake }))}

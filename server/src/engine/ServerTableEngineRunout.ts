@@ -15,6 +15,7 @@ import { monteCarloEquity } from './MonteCarloEquity.js';
 import { getEquityPool } from './equity/EquityWorkerPool.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { insuranceEquity, leaderOuts } from './InsuranceEquity.js';
+import { logInsuranceOfferEvent } from '../services/supabase/insuranceOfferLog.js';
 import {
   evaluateHand,
   evaluateOmahaHand,
@@ -293,7 +294,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    */
   public respondToInsurance(
     userId: string,
-    response: 'accept' | 'decline',
+    response: 'accept' | 'decline' | 'cashout',
     coveragePercent: number = 100,
     // POKERBROS PARITY 2026-08-26 (Dan): "IF A PLAYER DECLINES, THEY DON'T GET
     // OFFERED AGAIN." There is no street-only decline any more. The parameter
@@ -308,6 +309,17 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   } {
     if (!this.insuranceEngine.isEnabled(this.tableId)) {
       return { success: false, error: 'Insurance is not enabled at this table' };
+    }
+
+    // EV CASHOUT 2026-08-28: third answer to the offer — lock pot x equity
+    // (minus the fee) now. The hand still runs out; settlement pays the
+    // locked amount and redirects the player's actual winnings to the bank.
+    if (response === 'cashout') {
+      const r = this.insuranceEngine.acceptEvCashout(this.tableId, userId);
+      if (!r.ok) {
+        return { success: false, error: 'No pending EV cashout offer for this player' };
+      }
+      return { success: true, status: 'cashed_out', insuredAmount: r.amount };
     }
 
     if (response === 'accept') {
@@ -328,9 +340,16 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         insuredAmount: accepted_offer?.insuredAmount,
       };
     } else {
-      // POKERBROS PARITY 2026-08-26 (Dan): every decline is final for the hand.
-      this.insuranceEngine.decline(this.tableId, userId, true);
-      return { success: true, status: 'declined_for_hand' };
+      // POKERBROS PARITY 2026-08-26 (Dan): a decline is final for the hand —
+      // EXCEPT preflop (Dan 2026-08-28: "OFFERED PRE FLOP, AND REOFFERED ON
+      // THE FLOP"): a preflop decline is street-only; the flop offer is where
+      // finality begins.
+      const pending = this.insuranceEngine
+        .getOffers(this.tableId)
+        .find((o) => o.playerId === userId && o.status === 'offered');
+      const forHand = (pending?.boardLength ?? 3) >= 3;
+      this.insuranceEngine.decline(this.tableId, userId, forHand);
+      return { success: true, status: forHand ? 'declined_for_hand' : 'declined_street' };
     }
   }
 
@@ -1565,6 +1584,44 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * exact (<=990 boards) and preflop samples 6,000 boards with a seeded
    * PRNG - the CSPRNG syscall storm that motivated the worker is gone.
    */
+  /**
+   * INSURABLE POT 2026-08-28 (Dan's recording follow-up): the number the
+   * dialog calls "Pot" is the amount the LEADER actually collects by winning,
+   * so two corrections on top of the contested pot:
+   *
+   *   1. SIDE POTS — a short-stacked leader is only eligible for the pots
+   *      their chips are in. computeLivePots() gives per-pot eligibility;
+   *      insure only the leader's eligible share.
+   *   2. RAKE + BBJ — the winner is paid pot minus rake minus the jackpot
+   *      drop. Winners are scaled proportionally at settlement
+   *      (scaleWinnerCentsForRake), so the leader's net share is
+   *      eligible x (total - rake - bbj) / total.
+   *
+   * Falls back to the gross pot if the controller cannot answer (never
+   * refuse an offer over a display refinement).
+   */
+  public computeInsurablePot(leaderId: string, grossPot: number): number {
+    try {
+      if (!this.handController || grossPot <= 0) return grossPot;
+      const pots = this.handController.computeLivePots();
+      let total = 0;
+      let eligible = 0;
+      for (const p of pots) {
+        total += p.amount;
+        if (p.eligiblePlayers.includes(leaderId)) eligible += p.amount;
+      }
+      if (!(total > 0) || !(eligible > 0)) return grossPot;
+      // PREFLOP INSURANCE FIX 2026-08-28: an all-in runout always reaches the
+      // flop, so price the deductions as if it is already seen — a preflop
+      // offer on sawFlop=false claimed zero rake and overstated the winnings.
+      const { rake, bbjFee } = this.handController.computeRakeAndBBJ(true);
+      const netFrac = Math.max(0, (total - rake - bbjFee) / total);
+      return Math.round(eligible * netFrac * 100) / 100;
+    } catch {
+      return grossPot;
+    }
+  }
+
   protected computeInsurancePricing(
     leaderId: string,
     allInForOffer: Array<{
@@ -1738,11 +1795,6 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       });
     };
 
-    // Preflop all-in: no offer before the flop — deal up to the flop first.
-    if (board.length < 3) {
-      continueAfterResponses();
-      return;
-    }
     if (result.complete) {
       // Board already full — nothing left to insure; finish the hand.
       this.waitForInsuranceResponses(() => {
@@ -1759,25 +1811,59 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // - If players are TIED (same hand rank + kickers), NO insurance offered
     // - On later streets, re-evaluate — if a different player takes the lead,
     //   insurance is offered to THEM (if they haven't declined for hand)
+    //
+    // PREFLOP OFFER (Dan 2026-08-28: "THIS SHOULD BE OFFERED PRE FLOP, AND
+    // REOFFERED ON THE FLOP"): a preflop all-in used to deal straight to the
+    // flop and only offer there. It now offers on the EMPTY board first.
+    // Preflop there is no made hand to rank, so the leader is the exact
+    // EQUITY favorite (insuranceEquity's seeded 6,000-board sample — the same
+    // number the pricing uses); a dead-even matchup (within 0.05%) offers to
+    // nobody, mirroring the tied-hands rule.
     // ═══════════════════════════════════════════════════════════════════════
     const variant = this.tableInfo?.game_variant || 'nlh';
     const isOmaha = isOmahaVariant(variant);
     const handEvaluator = isOmaha ? evaluateOmahaHand : evaluateHand;
+    const isShortDeckPreflop = variant === 'short_deck';
 
-    // Evaluate all hands on current board
-    const playerEvals = offerPlayers.map((p) => ({
-      ...p,
-      hand: handEvaluator(p.holeCards, result.board),
-    }));
+    let bestHandPlayer: { playerId: string; holeCards: import('../types.js').Card[] } | null = null;
+    let isTied = false;
+    if (board.length < 3) {
+      let bestEq = -1;
+      for (const p of offerPlayers) {
+        const opps = offerPlayers
+          .filter((o) => o.playerId !== p.playerId)
+          .map((o) => o.holeCards);
+        if (opps.length === 0 || p.holeCards.length < 2) continue;
+        try {
+          const r = insuranceEquity(p.holeCards, opps, result.board, variant, isShortDeckPreflop);
+          if (Math.abs(r.equity - bestEq) < 0.05) {
+            isTied = true;
+          } else if (r.equity > bestEq) {
+            bestEq = r.equity;
+            bestHandPlayer = p;
+            isTied = false;
+          }
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.preflop_leader_equity');
+        }
+      }
+      if (isTied) bestHandPlayer = null;
+    } else {
+      // Evaluate all hands on current board
+      const playerEvals = offerPlayers.map((p) => ({
+        ...p,
+        hand: handEvaluator(p.holeCards, result.board),
+      }));
 
-    // Sort by hand rank descending (best first)
-    playerEvals.sort((a, b) => compareHands(b.hand, a.hand));
+      // Sort by hand rank descending (best first)
+      playerEvals.sort((a, b) => compareHands(b.hand, a.hand));
 
-    // Check for tie: if top two players have identical hands, no insurance
-    const isTied =
-      playerEvals.length >= 2 && compareHands(playerEvals[0].hand, playerEvals[1].hand) === 0;
+      // Check for tie: if top two players have identical hands, no insurance
+      isTied =
+        playerEvals.length >= 2 && compareHands(playerEvals[0].hand, playerEvals[1].hand) === 0;
 
-    const bestHandPlayer = isTied ? null : playerEvals[0];
+      bestHandPlayer = isTied ? null : playerEvals[0];
+    }
 
     // FIX 139: Pass shortDeck to insurance engine for correct equity calculations
     const isShortDeckInsurance = this.tableInfo?.game_variant === 'short_deck';
@@ -1804,6 +1890,13 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       );
     }
 
+    // INSURABLE POT 2026-08-28: the offer prices what the leader can actually
+    // COLLECT — their eligible side-pot share, net of rake + BBJ drop — not
+    // the gross contested pot. "For Winning: pot − fee" is now literal.
+    const insurablePot = bestHandPlayer
+      ? this.computeInsurablePot(bestHandPlayer.playerId, pot)
+      : pot;
+
     // Check if this is the first street of offers or a recalculation
     const existingOffers = this.insuranceEngine.getOffers(this.tableId);
 
@@ -1816,14 +1909,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           bestHandPlayer.playerId, // ONLY the leader is offered; priced vs the rest
           allInForOffer,
           result.board,
-          pot,
+          insurablePot,
           variant,
           isShortDeckInsurance,
           leaderPricing
         );
 
         if (offers.length > 0) {
-          this.broadcastInsuranceOffers(offers, pot, offerTimeout, {
+          this.broadcastInsuranceOffers(offers, insurablePot, offerTimeout, {
             board: result.board,
             allInPlayers,
             outs: leaderOuts(
@@ -1863,14 +1956,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
             bestHandPlayer.playerId,
             allInForOffer,
             result.board,
-            pot,
+            insurablePot,
             variant,
             isShortDeckInsurance,
             leaderPricing
           );
 
           if (offers.length > 0) {
-            this.broadcastInsuranceOffers(offers, pot, offerTimeout, {
+            this.broadcastInsuranceOffers(offers, insurablePot, offerTimeout, {
               board: result.board,
               allInPlayers,
               outs: leaderOuts(
@@ -1929,6 +2022,13 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       return;
     }
 
+    // STREET REVEAL PAUSE (Dan 2026-08-28: "IT MUST ACTUALLY SHOW THE FLOP
+    // FIRST, WAIT 1 SECONDS AFTER FLOP BEFORE THE OFFER POPS UP. USERS NEED
+    // TO SEE THE FLOPS, TURNS AND RIVERS"): the card just landed in the
+    // broadcast above — hold a full beat so every seat SEES the street
+    // before the next dialog covers the table.
+    await this.sleep(1000);
+
     // More cards to come — re-enter the flow on the new board (fresh leader
     // evaluation, fresh offer). The catch mirrors handleAllInRunout's: an
     // unhandled rejection must never leave the hand parked without a clock.
@@ -1983,7 +2083,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       context?.allInPlayers.find((p) => p.user_id === playerId)?.username ||
       this.seatedPlayers.find((p) => p.user_id === playerId)?.username ||
       'Player';
-    const street = !context ? '' : context.board.length === 3 ? 'flop' : 'turn';
+    // PREFLOP OFFER 2026-08-28: the empty board is a street of its own now.
+    const street = !context
+      ? ''
+      : context.board.length < 3
+        ? 'preflop'
+        : context.board.length === 3
+          ? 'flop'
+          : 'turn';
     // Outs as a probability of the NEXT card: outs / unseen cards. The popup
     // renders it next to the count ("10 Outs - 22.7%").
     let outPct = 0;
@@ -1994,6 +2101,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       const unseen = Math.max(1, deckSize - known);
       outPct = Math.round((context.outs.length / unseen) * 1000) / 10;
     }
+    // COUNTDOWN HONESTY 2026-08-28: the popup used to count down from a
+    // seconds-remaining number that was already stale by the time it rendered
+    // (the recording opened at 23s of a 25s window). An absolute deadline
+    // survives transit and reconnects; timeoutSeconds stays for old clients.
+    const deadlineAt = Date.now() + timeoutSeconds * 1000;
     this.hub?.emitEvent(this.tableId, {
       type: 'insurance_offers',
       table_id: this.tableId,
@@ -2004,6 +2116,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       outs: context?.outs ?? [],
       outCount: context?.outs.length ?? 0,
       outPct,
+      deadlineAt,
       offers: offers.map((o) => ({
         playerId: o.playerId,
         username: nameOf(o.playerId),
@@ -2028,8 +2141,29 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         atRisk: o.atRisk,
         rate: o.fullPremium > 0 ? Math.round((o.fullInsuredAmount / o.fullPremium) * 10) / 10 : 0,
         timeoutSeconds,
+        deadlineAt,
+        // EV CASHOUT 2026-08-28: the third choice, server-priced.
+        evCashoutAmount: o.evCashoutAmount,
       })),
     });
+
+    // OBSERVABILITY 2026-08-28: record the offer itself. Accept/decline/
+    // timeout/cashout/settle are logged from the engine event forwarder in
+    // ServerTableEngineBase; without this row the funnel has no denominator.
+    for (const o of offers) {
+      logInsuranceOfferEvent({
+        tableId: this.tableId,
+        clubId: this.tableInfo?.club_id ?? null,
+        handNumber: this.handCount,
+        playerId: o.playerId,
+        event: 'offered',
+        equityPercent: o.equity,
+        premium: o.fullPremium,
+        insuredAmount: o.fullInsuredAmount,
+        pot,
+        street,
+      });
+    }
   }
 
   /**
@@ -2063,7 +2197,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           reportError(err, 'ServerTableEngine.' + this.tableId + '.horse_insurance_response');
         }
       },
-      900 + (this.handCount % 4) * 150
+      // HORSES ARE PLAYERS 2026-08-28 (section 10.5 — "TIMING IS PART OF THE
+      // TREATMENT"): the old ~1s decline was a TELL. A human leader stops the
+      // table for up to 25s while they read the dialog; a table that rolled on
+      // after one second told every watching player which seat was a horse —
+      // the exact rhythm leak Dan rejected on the rebuy pause. A horse now
+      // "reads the offer" for a humanlike 5-12s before declining. Pace cost is
+      // bounded: a decline is FINAL for the hand (2026-08-26), so a hand pays
+      // this pause once per leader, not once per street.
+      5000 + Math.floor(Math.random() * 7000)
     );
   }
 

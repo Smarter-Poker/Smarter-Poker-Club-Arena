@@ -53,6 +53,47 @@ interface TournamentRowLite {
   is_bounty: boolean | null;
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  HOW MANY PLAYERS ARE ACTUALLY AT THE TABLE
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * This used to read `row.table_size ?? row.max_players ?? 9`, and that one
+ * expression made every Heads-Up duel on the platform play MTT strategy.
+ *
+ * `tournaments.table_size` is `NOT NULL DEFAULT 9`, and no creation path wrote
+ * it (fixed for the two that matter on 2026-08-27). `??` falls through on NULL
+ * only — never on a DEFAULTED 9 — so the second operand was UNREACHABLE and
+ * `max_players = 2` could not be seen. 10,315 heads-up rows sit at
+ * `table_size = 9`, every one of them resolving to 'mtt', so HorseLogic applied
+ * ICM pressure and bubble ranges to a two-handed game where one spot pays and
+ * there is no bubble to be on.
+ *
+ * The fix is not to swap the operand order — that would have the same shape of
+ * failure the other way round the moment a real MTT arrives with a bad
+ * max_players. It is to stop treating either column as authoritative and take
+ * the SMALLEST seat count the row actually asserts:
+ *
+ *   - a duel is a duel if EITHER column says two, so a legacy row whose
+ *     table_size was defaulted to 9 is still read correctly from max_players.
+ *     That is what makes this robust rather than merely correct going forward —
+ *     the 10,315 existing rows are read right without a data migration;
+ *   - a 100-player MTT with table_size 9 still yields 9, and 9 is not <= 2;
+ *   - non-positive, NaN and NULL values are DISCARDED rather than winning, so a
+ *     zero or a junk value cannot pull a full field down to a duel.
+ *
+ * Only when the row asserts nothing usable does it fall back to 9.
+ */
+export function seatsAtOneTable(row: {
+  table_size?: number | null;
+  max_players?: number | null;
+}): number {
+  const asserted = [row?.table_size, row?.max_players]
+    .map((n) => Number(n))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return asserted.length > 0 ? Math.min(...asserted) : 9;
+}
+
 /** Pure derivation — unit-tested. */
 export function deriveContext(
   row: TournamentRowLite,
@@ -65,11 +106,7 @@ export function deriveContext(
   const type = (row.tournament_type || '').toUpperCase();
   const variant = (row.variant || '').toLowerCase();
   const format: TournamentFormat =
-    type === 'SPIN' || variant === 'spin'
-      ? 'spin'
-      : (row.table_size ?? row.max_players ?? 9) <= 2
-        ? 'hu_sng'
-        : 'mtt';
+    type === 'SPIN' || variant === 'spin' ? 'spin' : seatsAtOneTable(row) <= 2 ? 'hu_sng' : 'mtt';
 
   // V13: use the CANONICAL parser instead of a local JSON.parse. The old code
   // only understood the array shape [{place, percentage}] and silently scored

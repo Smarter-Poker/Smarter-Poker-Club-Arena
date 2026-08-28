@@ -48,6 +48,18 @@ export interface InsuranceOffer {
   /** Server-published offer window in seconds (drives the popup countdown). */
   timeoutSeconds?: number;
   /**
+   * COUNTDOWN HONESTY 2026-08-28: the engine's absolute deadline (epoch ms).
+   * When present the countdown derives from it every tick — no transit-lag
+   * drift, and a reconnect resumes at the true remaining time.
+   */
+  deadlineAt?: number;
+  /**
+   * EV CASHOUT 2026-08-28: the server-priced guaranteed payout (insurable pot
+   * x pot-share equity x (1 - fee)). When present it is displayed verbatim —
+   * the client never invents a money number the server didn't quote.
+   */
+  evCashoutAmount?: number;
+  /**
    * REFERENCE PARITY 2026-08-26: payout multiple on the fee (insured = fee x
    * rate). Server-computed; derived from premiumRate when absent.
    */
@@ -109,7 +121,17 @@ export function InsuranceModal({
   // POKERBROS PARITY 2026-08-26: a LIVE countdown. The prop used to be a
   // static number that rendered "15s" for the whole window; the reference
   // popup visibly counts down to its auto-decline.
-  const [secondsLeft, setSecondsLeft] = useState(offer.timeoutSeconds ?? timeRemaining);
+  // COUNTDOWN HONESTY 2026-08-28: when the engine publishes its absolute
+  // deadline, every tick derives from Date.now() against it — the seconds
+  // shown are the seconds the server will actually wait.
+  const remainingNow = useCallback(
+    () =>
+      offer.deadlineAt
+        ? Math.max(0, Math.ceil((offer.deadlineAt - Date.now()) / 1000))
+        : (offer.timeoutSeconds ?? timeRemaining),
+    [offer.deadlineAt, offer.timeoutSeconds, timeRemaining]
+  );
+  const [secondsLeft, setSecondsLeft] = useState(remainingNow);
 
   useEffect(() => {
     if (isOpen) {
@@ -126,12 +148,15 @@ export function InsuranceModal({
   // offer replaces this one (offer identity changes).
   useEffect(() => {
     if (!isOpen) return;
-    setSecondsLeft(offer.timeoutSeconds ?? timeRemaining);
+    setSecondsLeft(remainingNow());
     const iv = setInterval(() => {
-      setSecondsLeft((s) => (s > 0 ? s - 1 : 0));
+      // Deadline-anchored when available (drift-proof); simple decrement
+      // otherwise (legacy offers without deadlineAt).
+      if (offer.deadlineAt) setSecondsLeft(remainingNow());
+      else setSecondsLeft((s) => (s > 0 ? s - 1 : 0));
     }, 1000);
     return () => clearInterval(iv);
-  }, [isOpen, offer, timeRemaining]);
+  }, [isOpen, offer, timeRemaining, remainingNow]);
 
   // ── Insurance calculations — REFERENCE PARITY 2026-08-26 ──
   // The reference dialog is FEE-first: the player slides the Insurance Fee,
@@ -139,9 +164,16 @@ export function InsuranceModal({
   // stays the contract with TablePage's accept path; the fee is the visible
   // parameter. Rate = insured/premium is constant across the slider.
   const cents = (n: number) => Math.round(n * 100) / 100;
+  // EXACT-RATE FIX 2026-08-28 (Dan's recording, hand #3158299): all MONEY math
+  // must use the exact multiple 1/premiumRate, never the 1-decimal display
+  // rate. The insured pot used to be fee x rate(1dp) — 75.62 x 3.2 = 241.98 —
+  // while the server derives the premium from that coverage at the EXACT
+  // premiumRate, charging 76.66 for a dialog that said 75.62. "What is
+  // displayed is what is bought, to the cent" (acceptPartial's own audit
+  // note). insuredPot = fee / premiumRate round-trips to the shown fee.
   const rate = useMemo(() => {
-    if (offer.rate && offer.rate > 0) return offer.rate;
-    return offer.premiumRate > 0 ? Math.round((1 / offer.premiumRate) * 10) / 10 : 0;
+    if (offer.premiumRate > 0) return 1 / offer.premiumRate;
+    return offer.rate && offer.rate > 0 ? offer.rate : 0;
   }, [offer.rate, offer.premiumRate]);
   const feeMax = useMemo(
     () => cents(offer.maxCoverage * offer.premiumRate),
@@ -193,10 +225,15 @@ export function InsuranceModal({
     () => Math.round(offer.potAmount * (offer.equityPercent / 100) * 100) / 100,
     [offer.potAmount, offer.equityPercent]
   );
-  const evCashoutAmount = useMemo(
-    () => Math.round(evRaw * (1 - evCashoutRake) * 100) / 100,
-    [evRaw, evCashoutRake]
-  );
+  // EV CASHOUT 2026-08-28: the server's quote wins — the engine computed it
+  // on the same insurable pot and exact equity it will settle with. The
+  // client formula remains only as a fallback for offers without one.
+  const evCashoutAmount = useMemo(() => {
+    if (typeof offer.evCashoutAmount === 'number' && offer.evCashoutAmount > 0) {
+      return offer.evCashoutAmount;
+    }
+    return Math.round(evRaw * (1 - evCashoutRake) * 100) / 100;
+  }, [offer.evCashoutAmount, evRaw, evCashoutRake]);
   const evRakeAmount = useMemo(() => evRaw - evCashoutAmount, [evRaw, evCashoutAmount]);
 
   // FIX 187: Insurance accept is a financial decision — dedicated sound + haptic
@@ -264,9 +301,24 @@ export function InsuranceModal({
           </span>
         </div>
 
-        {/* Info strip: outs count, pot, live countdown context */}
+        {/* CLIPPED-BUTTONS FIX 2026-08-28 (Dan's recording, hand #3158299):
+            the modal is `max-height: 90vh; overflow: hidden` and on a phone
+            the content above the actions row is TALLER than 90vh — so the
+            No/Insure buttons rendered below the clip line and could not be
+            seen or tapped. The 25s window then expired into an auto-decline,
+            final for the hand. Everything except the header and the actions
+            now lives in this scrollable body; the buttons are pinned below
+            it and always on screen. */}
+        <div className="insurance-modal__body">
+        {/* Info strip: outs count, pot, live countdown context.
+            PREFLOP OFFER 2026-08-28: with no flop there are no "outs" — the
+            strip labels the street instead of showing a meaningless 0. */}
         <div className="insurance-modal__info-strip">
-          <span className="insurance-modal__info-item">Outs: {offer.outs?.length ?? 0}</span>
+          {offer.board.length >= 3 ? (
+            <span className="insurance-modal__info-item">Outs: {offer.outs?.length ?? 0}</span>
+          ) : (
+            <span className="insurance-modal__info-item">Preflop All-In</span>
+          )}
           <span className="insurance-modal__info-item">
             Pot: {currency}
             {offer.potAmount.toLocaleString()}
@@ -379,7 +431,9 @@ export function InsuranceModal({
               </div>
               <div className="insurance-modal__readout">
                 <span className="insurance-modal__readout-label">Rate</span>
-                <span className="insurance-modal__readout-value">{rate.toFixed(1)}</span>
+                {/* EXACT-RATE FIX 2026-08-28: 2 decimals so Fee x Rate matches
+                    the Insured Pot readout instead of drifting ~1.4%. */}
+                <span className="insurance-modal__readout-value">{rate.toFixed(2)}</span>
               </div>
               <div className="insurance-modal__readout">
                 <span className="insurance-modal__readout-label">Insured Pot</span>
@@ -456,23 +510,6 @@ export function InsuranceModal({
                 </span>
               </div>
             </div>
-
-            {/* A decline is FINAL for the hand (Dan 2026-08-26). */}
-            <div className="insurance-modal__actions">
-              <button
-                className="insurance-modal__btn insurance-modal__btn--decline"
-                onClick={handleDeclineForHand}
-                title="Decline insurance for the rest of this hand"
-              >
-                No
-              </button>
-              <button
-                className="insurance-modal__btn insurance-modal__btn--accept"
-                onClick={handleAccept}
-              >
-                Insure
-              </button>
-            </div>
           </>
         )}
 
@@ -527,22 +564,46 @@ export function InsuranceModal({
                 Take Your Guaranteed Equity Now. The Hand Will Continue But Your Payout Is Locked.
               </p>
             </div>
-
-            <div className="insurance-modal__actions">
-              <button
-                className="insurance-modal__btn insurance-modal__btn--decline"
-                onClick={handleDecline}
-              >
-                Play It Out
-              </button>
-              <button
-                className="insurance-modal__btn insurance-modal__btn--cashout"
-                onClick={handleEvCashout}
-              >
-                Cash Out
-              </button>
-            </div>
           </>
+        )}
+        </div>
+
+        {/* CLIPPED-BUTTONS FIX 2026-08-28: actions pinned OUTSIDE the
+            scrollable body — a timed financial decision's buttons must never
+            depend on scroll position or viewport height. */}
+        {activeTab === 'insurance' && (
+          /* A decline is FINAL for the hand (Dan 2026-08-26). */
+          <div className="insurance-modal__actions">
+            <button
+              className="insurance-modal__btn insurance-modal__btn--decline"
+              onClick={handleDeclineForHand}
+              title="Decline insurance for the rest of this hand"
+            >
+              No
+            </button>
+            <button
+              className="insurance-modal__btn insurance-modal__btn--accept"
+              onClick={handleAccept}
+            >
+              Insure
+            </button>
+          </div>
+        )}
+        {activeTab === 'ev-cashout' && evCashoutAvailable && (
+          <div className="insurance-modal__actions">
+            <button
+              className="insurance-modal__btn insurance-modal__btn--decline"
+              onClick={handleDecline}
+            >
+              Play It Out
+            </button>
+            <button
+              className="insurance-modal__btn insurance-modal__btn--cashout"
+              onClick={handleEvCashout}
+            >
+              Cash Out
+            </button>
+          </div>
         )}
       </div>
     </div>

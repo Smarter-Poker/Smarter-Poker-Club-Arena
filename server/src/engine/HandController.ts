@@ -654,7 +654,11 @@ export class HandController {
     this.emit({
       type: 'BOMB_POT_TRIGGERED',
       anteAmount,
-      bbMultiplier: bombPot.anteMultiplier,
+      // POLISH 2026-08-28: in FIXED-ante mode the multiple did not set the
+      // price, so reporting it made the overlay caption a lie — "Everyone
+      // Antes 7 (2x BB)" on a 1/2 table. Zero here means "fixed amount" and
+      // the caption shows the amount alone.
+      bbMultiplier: bombPot.anteFixed && bombPot.anteFixed > 0 ? 0 : bombPot.anteMultiplier,
       doubleBoard: this.multiBoardActive,
       boardCount: this.activeBoardCount,
       triggerReason: bombPot.triggerReason,
@@ -1098,6 +1102,18 @@ export class HandController {
         // possible betting with cards still to come. Every live hand must be
         // exposed at showdown — no muck option. completeHandInner reads this.
         this.allInShowdownLocked = true;
+        // INSURANCE POT FIX 2026-08-28 (Dan's recording, hand #3158299): the
+        // pot emitted here fed insurance pricing while still holding the
+        // UNCALLED portion of the final bet. A shove over a micro all-in was
+        // therefore "insured" against the shover's own returned chips: the
+        // dialog priced a 62-chip contested pot as 317.61 (fee 75.62,
+        // "For Winning: 241.99" — an amount the hand could never pay).
+        // Betting is over the moment this branch is taken, so the textbook
+        // refund is determinable NOW. returnUncalledBet() also decrements the
+        // bettor's totalInvested, which fixes the offer's atRisk (Break Even
+        // preset) in the same stroke. Idempotent: completeHand/RIT call it
+        // again later and get 0.
+        this.returnUncalledBet();
         this.emit({
           type: 'ALL_IN_RUNOUT',
           board: [...this.state.communityCards],
@@ -2685,18 +2701,20 @@ export class HandController {
     return calculatePots(this.state.players);
   }
 
-  /** Rake + BBJ fee for the current pot, using the same rules as completeHand. */
-  public computeRakeAndBBJ(): { rake: number; bbjFee: number } {
+  /** Rake + BBJ fee for the current pot, using the same rules as completeHand.
+   *
+   * PREFLOP INSURANCE FIX 2026-08-28: `assumeFlop` prices the deductions as
+   * if the flop is already seen. An all-in runout ALWAYS deals to the river,
+   * so a PREFLOP insurance offer priced on sawFlop=false claimed zero rake
+   * and overstated "For Winning" by the full rake + BBJ drop. Default false
+   * keeps every other caller (RIT settlement, etc.) exactly as before. */
+  public computeRakeAndBBJ(assumeFlop: boolean = false): { rake: number; bbjFee: number } {
+    const flopSeen = this.state.sawFlop || assumeFlop;
     const playerCount = this.state.players.filter((p) => !p.is_sitting_out).length;
-    const rake = calculateRake(
-      this.state.pot,
-      this.state.sawFlop,
-      this.config.rakeConfig,
-      playerCount
-    );
+    const rake = calculateRake(this.state.pot, flopSeen, this.config.rakeConfig, playerCount);
     let bbjFee = 0;
     const bbjCfg = this.config.bbjConfig;
-    if (bbjCfg && bbjCfg.enabled && this.state.sawFlop) {
+    if (bbjCfg && bbjCfg.enabled && flopSeen) {
       const playersDealt = this.state.players.filter((p) => !p.is_sitting_out).length;
       const potInBB = this.state.pot / this.config.bigBlind;
       if (playersDealt >= bbjCfg.minPlayersDealt && potInBB >= bbjCfg.minPotBB) {

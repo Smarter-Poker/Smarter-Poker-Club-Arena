@@ -222,51 +222,16 @@
   line-height: 1.2;
 }
 
-/* Turn dot / timer badge */
-.table-tab-bar__turn-dot {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 8px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: 9px;
-  background: #3fb950;
-  color: #ffffff;
-  font-size: 0.625rem;
-  font-weight: 700;
-  animation: turnDotPulse 1s ease-in-out infinite;
-  flex-shrink: 0;
-}
+/* The turn badge and its two keyframes were DELETED 2026-08-28 (Dan, mobile
+   pass item 3: "THE ACTION PILL SHOULD ONLY EVER SHOW THE CARDS (CENTERED IN
+   THE PILL) AND THE DISAPPEARING TIMER BAR... THATS IT, NO COUNTDOWN CLOCK OR
+   ANYTHING ELSE.").
 
-.table-tab-bar__tab--urgent .table-tab-bar__turn-dot {
-  background: #ef4444;
-  animation: turnDotUrgent 0.5s ease-in-out infinite;
-}
-
-@keyframes turnDotPulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.7;
-    transform: scale(0.85);
-  }
-}
-
-@keyframes turnDotUrgent {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.6;
-    transform: scale(0.8);
-  }
-}
+   `.table-tab-bar__turn-dot` was a green "14s" badge that sat in flow beside
+   the mini-cards, which pushed them off the pill's centre for exactly as long
+   as it was the hero's turn. The clock it carried is the `__timer-bar` below,
+   which drains and turns red on its own. Removed here rather than left as dead
+   CSS so nothing can render it back into the row by accident. */
 
 /* ─────────────────────────────────────────────────────────────────────────────
    MINI HOLE-CARD PREVIEW (PokerBros parity — Dan 2026-08-20)
@@ -681,17 +646,10 @@
   /* The inline × close control was removed 2026-08-26 (Dan: no off-button
      inside the action pills) — its desktop and mobile rules went with it. */
 
-  /* Turn badge and action chip share the pill with the label, so both shrink
-     with it — at their desktop sizes either one ate more than half of a 55px
-     pill and pushed the game code into an ellipsis. */
-  .table-tab-bar__turn-dot {
-    min-width: 6px;
-    height: 14px;
-    padding: 0 3px;
-    font-size: 0.5rem;
-    border-radius: 7px;
-  }
-
+  /* The action chip shares the pill with the label, so it shrinks with it — at
+     its desktop size it ate more than half of a 55px pill and pushed the game
+     code into an ellipsis. (The turn badge that used to be tuned here too was
+     deleted 2026-08-28; see the note where its base rule was.) */
   .table-tab-bar__action-chip {
     height: 13px;
     padding: 0 3px;

@@ -82,7 +82,22 @@ describe('the seat box this file measures against is the one the stylesheet draw
     // If this fails, `.seat`'s width changed and SEAT_BOX_W_PX above is stale -
     // which would make every separation assertion below quietly wrong rather
     // than red. Fix the constant, then re-read the failures.
-    expect(SEAT_CSS).toMatch(/\n\.seat\s*\{[\s\S]{0,4000}?\n\s*width:\s*96px;/);
+    //
+    // READ THE RULE, DO NOT COUNT CHARACTERS. This was
+    // `/\n\.seat\s*\{[\s\S]{0,4000}?\n\s*width:\s*96px;/` — the declaration had
+    // to fall within 4000 characters of the opening brace. `.seat` is where
+    // every seat-wide design token is declared, and every one of them arrives
+    // with the paragraph explaining why, so on 2026-08-27 documenting one token
+    // pushed `width` past the budget and failed this beat. Nothing about the
+    // seat box had changed; the comment above it had got longer, which is the
+    // opposite of a regression.
+    //
+    // Stripping comments first and then matching the rule's own body pins
+    // exactly what the constant depends on and cannot be moved by prose.
+    const cssNoComments = SEAT_CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    const seatRule = cssNoComments.match(/\n\.seat\s*\{([^{}]*)\}/);
+    expect(seatRule, 'the base `.seat` rule went missing entirely').toBeTruthy();
+    expect(seatRule![1]).toMatch(/\n\s*width:\s*96px;/);
   });
 });
 

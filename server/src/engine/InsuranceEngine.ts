@@ -6,7 +6,12 @@
  * Manages insurance offers when players go all-in:
  * - Triggered when 2+ players are all-in before the river
  * - Uses MonteCarloEquity to calculate real equity percentages
- * - Premium = (1 - equity%) × insuredAmount × houseMargin (20% edge)
+ * - POKERBROS PARITY 2026-08-28 (Dan's ruling): the fee is charged ONLY when
+ *   the insured leader WINS. A loss pays the insured amount with NO fee, so
+ *   the dialog's "For Losing: <insured pot>" is literally what lands, and
+ *   Constant Profit is actually constant. Premium = insured × pLoss/pWin ×
+ *   houseMargin (all probabilities conditional on not-push; 20% edge intact:
+ *   EV_house = fee×pWin − insured×pLoss = 0.2 × fair cost)
  * - Offer/accept/decline flow with configurable timeout
  * - Partial coverage: player can insure 1-100% via slider (default 100%)
  * - Per-street recalculation: equity changes as board cards are dealt
@@ -38,6 +43,14 @@ export interface InsuranceConfig {
   offerTimeoutSeconds: number;
   minPotForInsurance: number;
   equityIterations: number;
+  /**
+   * EV CASHOUT 2026-08-28: the leader may take pot x equity now instead of
+   * insuring. The hand still runs out; whatever the cashed-out player would
+   * have collected goes to the club/union bank at settlement.
+   */
+  evCashoutEnabled: boolean;
+  /** Fee (%) shaved off the equity payout (default 1). */
+  evCashoutFeePercent: number;
 }
 
 export interface InsuranceOffer {
@@ -63,9 +76,23 @@ export interface InsuranceOffer {
    * this amount.
    */
   atRisk: number;
-  status: 'offered' | 'accepted' | 'declined' | 'settled';
+  status: 'offered' | 'accepted' | 'declined' | 'settled' | 'cashed_out';
   /** If true, player declined for the entire hand (won't be re-offered on later streets) */
   declinedForHand: boolean;
+  /**
+   * EV CASHOUT 2026-08-28: the guaranteed payout on offer — insurable pot x
+   * pot-share equity x (1 - fee). Undefined when cashout is disabled.
+   */
+  evCashoutAmount?: number;
+  /** Set when the player takes the cashout (status 'cashed_out'). */
+  cashoutAmount?: number;
+  /**
+   * PREFLOP OFFER 2026-08-28: the board size this offer was made on. Decline
+   * finality depends on it — a PREFLOP decline is street-only (the flop
+   * changes everything; Dan: "OFFERED PRE FLOP, AND REOFFERED ON THE FLOP"),
+   * while flop/turn declines stay FINAL for the hand (Dan 2026-08-26).
+   */
+  boardLength: number;
   // Phase 1.2 PR-G-real: timeouts routed through DeadlineScheduler singleton via
   // the engine's private `scheduler` ref, keyed by
   // eventId = `insurance_offer:${playerId}` on the offer's tableId. The raw
@@ -81,6 +108,13 @@ export interface InsuranceSettlement {
   equity: number;
   /** true = insurance paid out (player lost the hand) */
   won: boolean;
+  /**
+   * EV CASHOUT 2026-08-28: 'ev_cashout' settlements pay `payout` (the locked
+   * cashout) regardless of outcome, and the settlement layer redirects the
+   * player's actual pot winnings to the bank. 'insurance' is the classic
+   * contract.
+   */
+  kind: 'insurance' | 'ev_cashout';
 }
 
 export type InsuranceEventType =
@@ -88,7 +122,8 @@ export type InsuranceEventType =
   | 'INSURANCE_ACCEPTED'
   | 'INSURANCE_DECLINED'
   | 'INSURANCE_SETTLED'
-  | 'INSURANCE_RECALCULATED';
+  | 'INSURANCE_RECALCULATED'
+  | 'INSURANCE_CASHED_OUT';
 
 export interface InsuranceEvent {
   type: InsuranceEventType;
@@ -121,6 +156,9 @@ export class InsuranceEngine {
     offerTimeoutSeconds: 25,
     minPotForInsurance: 0,
     equityIterations: 5000,
+    // EV CASHOUT 2026-08-28: on wherever insurance is on; 1% fee.
+    evCashoutEnabled: true,
+    evCashoutFeePercent: 1,
   };
 
   constructor(
@@ -183,9 +221,16 @@ export class InsuranceEngine {
 
     const existing = this.activeOffers.get(tableId) ?? [];
     // If the leader already locked coverage on an earlier street, don't re-offer.
+    // EV CASHOUT RE-OFFER GUARD 2026-08-28: 'cashed_out' belongs here too —
+    // without it a leader who cashed out on the flop was offered AGAIN on the
+    // turn and could double-dip (cash out twice, or cash out AND insure) on
+    // equity the bank had already bought. Found in line-by-line review, pinned
+    // by InsuranceEvCashout.test.ts before any real chips could hit it.
     if (
       existing.some(
-        (o) => o.playerId === leader.playerId && (o.status === 'accepted' || o.status === 'settled')
+        (o) =>
+          o.playerId === leader.playerId &&
+          (o.status === 'accepted' || o.status === 'settled' || o.status === 'cashed_out')
       )
     ) {
       return [];
@@ -235,16 +280,40 @@ export class InsuranceEngine {
     // the offer as `atRisk` - the Break Even preset needs them.
     const maxInsurable = pot * (config.maxInsurablePercent / 100);
     const fullInsuredAmount = Math.round(maxInsurable * 100) / 100;
-    // Premium = fair cost x houseMargin. houseMargin 1.20 => a 20% edge banked by
-    // the club/union. Player EV = payout*pLoss - premium = -(margin-1)*fair < 0.
+    // POKERBROS PARITY 2026-08-28 (Dan's ruling): the fee is only ever
+    // COLLECTED when the leader wins (loss pays the insured amount fee-free,
+    // push voids). Fair fee therefore satisfies fee×pWin = insured×pLoss, and
+    // the 20% margin rides on top: fee = insured × pLoss/pWin × houseMargin.
+    // House EV per contract = fee×pWin − insured×pLoss = (margin−1) × fair
+    // cost — the same 20% edge the old always-charged pricing banked.
+    const winGivenNotPush = 1 - lossGivenNotPush;
+    if (winGivenNotPush <= 0) return [];
     const fullPremium =
-      Math.round(fullInsuredAmount * lossGivenNotPush * config.houseMargin * 100) / 100;
+      Math.round(
+        ((fullInsuredAmount * lossGivenNotPush * config.houseMargin) / winGivenNotPush) * 100
+      ) / 100;
 
     if (fullInsuredAmount <= 0) return [];
+    // UNINSURABLE 2026-08-28: if the fee reaches the payout (rate <= 1 — the
+    // "leader" loses too often, lossGivenNotPush >= 1/(1+margin)), the
+    // contract cannot be rational for anyone: you would pay >= the most you
+    // can ever get back. No offer.
+    if (fullPremium >= fullInsuredAmount) return [];
     // FINAL AUDIT 2026-08-26: at dust stakes the cents-rounded premium can hit
     // 0.00 while the insured amount is positive - a FREE payout contract the
     // union bank would fund. Uninsurable at this granularity: no offer.
     if (fullPremium <= 0) return [];
+
+    // EV CASHOUT 2026-08-28: the alternative to insuring — take your equity
+    // now. Priced on the same insurable pot, from the same exact-enumeration
+    // pot-share equity (chop shares included, which is exactly what a
+    // cashout buys), minus the configured fee. Zero/dust offers are omitted.
+    let evCashoutAmount: number | undefined;
+    if (config.evCashoutEnabled) {
+      const feeFrac = Math.max(0, Math.min(100, config.evCashoutFeePercent)) / 100;
+      const ev = Math.round(fullInsuredAmount * (equity / 100) * (1 - feeFrac) * 100) / 100;
+      if (ev > 0) evCashoutAmount = ev;
+    }
 
     const offer: InsuranceOffer = {
       tableId,
@@ -260,6 +329,8 @@ export class InsuranceEngine {
       atRisk: Math.round(leader.atRisk * 100) / 100,
       status: 'offered',
       declinedForHand: false,
+      evCashoutAmount,
+      boardLength: board.length,
     };
 
     // Phase 1.2 PR-G-real: expiry via DeadlineScheduler.
@@ -272,7 +343,10 @@ export class InsuranceEngine {
           // POKERBROS PARITY 2026-08-26 (Dan): a decline is FINAL for the hand.
           // "IF A PLAYER DECLINES, THEY DON'T GET OFFERED AGAIN." A timeout is
           // a decline, so it is final too - the player had their window.
-          this.decline(tableId, leader.playerId, true);
+          // PREFLOP OFFER 2026-08-28 (Dan): a PREFLOP decline/timeout is
+          // street-only — the same leader is re-offered on the flop, where
+          // the finality rule takes over.
+          this.decline(tableId, leader.playerId, offer.boardLength >= 3, 'timeout');
         }
       },
     });
@@ -297,9 +371,41 @@ export class InsuranceEngine {
       insuredAmount: fullInsuredAmount,
       coveragePercent: 100,
       pot,
+      evCashoutAmount,
     });
 
     return [offer];
+  }
+
+  /**
+   * EV CASHOUT 2026-08-28: lock the equity payout instead of insuring.
+   * The offer resolves (the runout pause ends); the hand still runs out; the
+   * settlement layer pays `cashoutAmount` from the bank and redirects the
+   * player's actual pot winnings to the bank.
+   */
+  acceptEvCashout(tableId: string, playerId: string): { ok: boolean; amount?: number } {
+    const offers = this.activeOffers.get(tableId);
+    if (!offers) return { ok: false };
+    const offer = offers.find((o) => o.playerId === playerId && o.status === 'offered');
+    if (!offer) return { ok: false };
+    if (typeof offer.evCashoutAmount !== 'number' || offer.evCashoutAmount <= 0) {
+      return { ok: false };
+    }
+
+    offer.status = 'cashed_out';
+    offer.cashoutAmount = offer.evCashoutAmount;
+    this.scheduler.cancel(tableId, this.offerEventId(playerId));
+
+    this.emitEvent({
+      type: 'INSURANCE_CASHED_OUT',
+      tableId,
+      handId: offer.handId,
+      playerId,
+      cashoutAmount: offer.cashoutAmount,
+      equity: offer.equity,
+    });
+
+    return { ok: true, amount: offer.cashoutAmount };
   }
 
   /**
@@ -359,7 +465,14 @@ export class InsuranceEngine {
    * FINAL for the hand, so the default is now `true` and no caller passes
    * anything else. The parameter survives only so tests can pin the flag.
    */
-  decline(tableId: string, playerId: string, forHand: boolean = true): void {
+  decline(
+    tableId: string,
+    playerId: string,
+    forHand: boolean = true,
+    // OBSERVABILITY 2026-08-28: 'timeout' when the offer window expired,
+    // 'player' when a decline was chosen. Same finality either way.
+    source: 'player' | 'timeout' = 'player'
+  ): void {
     const offers = this.activeOffers.get(tableId);
     if (!offers) return;
 
@@ -377,6 +490,7 @@ export class InsuranceEngine {
       handId: offer.handId,
       playerId,
       declinedForHand: forHand,
+      source,
     });
   }
 
@@ -423,6 +537,38 @@ export class InsuranceEngine {
     const settlements: InsuranceSettlement[] = [];
 
     for (const offer of offers) {
+      // EV CASHOUT 2026-08-28: a cashed-out offer pays the locked amount
+      // REGARDLESS of the board's outcome. The settlement layer credits it
+      // from the bank and separately redirects the player's actual pot
+      // winnings back to the bank (it knows the amounts; this engine doesn't).
+      if (offer.status === 'cashed_out') {
+        const cashout = Math.round((offer.cashoutAmount ?? 0) * 100) / 100;
+        const settlement: InsuranceSettlement = {
+          playerId: offer.playerId,
+          insuredAmount: 0,
+          premium: 0,
+          payout: cashout,
+          equity: offer.equity,
+          won: !winners.includes(offer.playerId),
+          kind: 'ev_cashout',
+        };
+        settlements.push(settlement);
+        offer.status = 'settled';
+        this.emitEvent({
+          type: 'INSURANCE_SETTLED',
+          tableId,
+          handId: offer.handId,
+          playerId: offer.playerId,
+          payout: cashout,
+          premium: 0,
+          insuredAmount: 0,
+          coveragePercent: 100,
+          won: settlement.won,
+          kind: 'ev_cashout',
+        });
+        continue;
+      }
+
       if (offer.status !== 'accepted') continue;
 
       const playerIsWinner = winners.includes(offer.playerId);
@@ -436,6 +582,7 @@ export class InsuranceEngine {
           payout: 0, // PUSH — no payout
           equity: offer.equity,
           won: false,
+          kind: 'insurance',
         };
         settlements.push(settlement);
         offer.status = 'settled';
@@ -455,14 +602,20 @@ export class InsuranceEngine {
 
       const playerLost = !playerIsWinner;
       const payout = playerLost ? offer.insuredAmount : 0;
+      // POKERBROS PARITY 2026-08-28 (Dan's ruling): the fee is charged ONLY
+      // when the insured leader WINS. On a loss the insured amount is paid
+      // out whole — "For Losing: <insured pot>" in the dialog is literal.
+      // Pricing in createOffers builds the waived-fee branch into the rate.
+      const premiumCharged = playerLost ? 0 : offer.premium;
 
       const settlement: InsuranceSettlement = {
         playerId: offer.playerId,
         insuredAmount: offer.insuredAmount,
-        premium: offer.premium,
+        premium: premiumCharged,
         payout,
         equity: offer.equity,
         won: playerLost,
+        kind: 'insurance',
       };
 
       settlements.push(settlement);
@@ -474,7 +627,7 @@ export class InsuranceEngine {
         handId: offer.handId,
         playerId: offer.playerId,
         payout,
-        premium: offer.premium,
+        premium: premiumCharged,
         insuredAmount: offer.insuredAmount,
         coveragePercent: offer.coveragePercent,
         won: playerLost,

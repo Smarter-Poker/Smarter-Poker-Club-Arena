@@ -133,7 +133,14 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
       case 'BOMB_POT_TRIGGERED' as any: {
         // Fan the engine's bomb-pot announcement out to the table so
         // BombPotOverlay can explain the forced ante before the flop lands.
-        const bpBoardCount = (event as any).boardCount ?? ((event as any).doubleBoard ? 2 : 1);
+        // Board count, in preference order: the event's own figure (post
+        // deck-feasibility downgrade), the controller's live count (covers an
+        // older HandController build emitting without the field), then the
+        // legacy boolean.
+        const bpBoardCount =
+          (event as any).boardCount ??
+          this.handController?.getActiveBoardCount?.() ??
+          ((event as any).doubleBoard ? 2 : 1);
         this.hub?.emitEvent(this.tableId, {
           type: 'bomb_pot_triggered',
           table_id: this.tableId,

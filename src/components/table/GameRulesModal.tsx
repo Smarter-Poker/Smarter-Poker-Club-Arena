@@ -42,6 +42,8 @@ export interface GameRulesModalProps {
     boardCount?: number;
     /** 'every_n_hands' | 'once_per_orbit' | 'timed' | 'bomb_pot_only' */
     triggerMode?: string;
+    /** Timed mode: seconds between bombs. */
+    intervalSeconds?: number;
   } | null;
 }
 
@@ -472,7 +474,9 @@ export function GameRulesModal({
                         {bombPotRules.triggerMode === 'once_per_orbit'
                           ? 'Once per orbit'
                           : bombPotRules.triggerMode === 'timed'
-                            ? 'Timed'
+                            ? (bombPotRules.intervalSeconds ?? 0) > 0
+                              ? `Every ${Math.round((bombPotRules.intervalSeconds ?? 0) / 60)} min`
+                              : 'Timed'
                             : bombPotRules.triggerMode === 'bomb_pot_only'
                               ? 'Every hand'
                               : bombPotRules.frequency > 0

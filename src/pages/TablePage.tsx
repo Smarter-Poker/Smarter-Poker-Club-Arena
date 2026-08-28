@@ -4402,7 +4402,32 @@ export default function TablePage({
     boardCount: number;
     /** 'every_n_hands' | 'once_per_orbit' | 'timed' | 'bomb_pot_only' */
     triggerMode: string;
+    /** Timed mode: seconds between bombs (0 in other modes). */
+    intervalSeconds: number;
   } | null>(null);
+
+  /**
+   * TIMED BOMB CLOCK 2026-08-28 (spec §15.2): the engine publishes
+   * bomb_pot_next_at (epoch ms) for timed-mode tables; the felt pill counts
+   * down to it in m:ss. The one-second tick runs ONLY while a due timestamp
+   * exists — every other table pays nothing for this.
+   */
+  const [bombClockNowMs, setBombClockNowMs] = useState(() => Date.now());
+  const bombPotNextAtLive = tableState.bombPotNextAt;
+  useEffect(() => {
+    if (bombPotNextAtLive == null) return;
+    const t = window.setInterval(() => setBombClockNowMs(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [bombPotNextAtLive == null]);
+  const bombClockLabel = useMemo(() => {
+    if (bombPotNextAtLive == null) return null;
+    const remainMs = bombPotNextAtLive - bombClockNowMs;
+    if (remainMs <= 0) return 'NEXT HAND';
+    const totalSec = Math.ceil(remainMs / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }, [bombPotNextAtLive, bombClockNowMs]);
 
   // Straddle state
   const [isStraddleEnabled, setIsStraddleEnabled] = useState(false);
@@ -7340,6 +7365,21 @@ export default function TablePage({
         min_buy_in: number | null;
         max_buy_in: number | null;
         settings: unknown;
+        /* WIRING FIX 2026-08-28: the straddle flag and the bomb pot rules
+           were read from `settings` alone, and every live table carries
+           `settings = {}` (verified in engineSelectIsTheContract) — so the
+           straddle control and the Game Rules bomb section were dead on
+           every column-configured table. The COLUMNS are the contract the
+           engine plays by; fetch them and prefer them, with the settings
+           spellings kept as fallback for old rows. */
+        straddle_enabled: boolean | null;
+        bomb_pot_enabled: boolean | null;
+        bomb_pot_frequency: number | null;
+        bomb_pot_ante_multiplier: number | null;
+        bomb_pot_double_board: boolean | null;
+        bomb_pot_board_count: number | null;
+        bomb_pot_trigger_mode: string | null;
+        bomb_pot_interval_seconds: number | null;
       };
       let table: TableBootstrapRow | null = null;
       let error: unknown = null;
@@ -7351,7 +7391,7 @@ export default function TablePage({
         const res = await supabase
           .from('tables')
           .select(
-            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in'
+            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds'
           )
           .eq('id', tableId)
           .maybeSingle();
@@ -7456,25 +7496,45 @@ export default function TablePage({
         }));
 
         const settings = (table.settings as any) || {};
-        setTableStraddleEnabled(settings.straddle_enabled === true);
+        /* WIRING FIX 2026-08-28: COLUMNS FIRST, settings jsonb as fallback.
+           These read `settings` alone, and all live tables carry
+           `settings = {}` — so the straddle availability flag and bombPotRules
+           (Game Rules modal + the felt pill's mode/board labels) were null on
+           every column-configured table. The columns are what the engine
+           actually plays by; the settings spellings survive for old rows. */
+        setTableStraddleEnabled(
+          table.straddle_enabled === true || settings.straddle_enabled === true
+        );
+        const bombOn = table.bomb_pot_enabled === true || settings.bomb_pot_enabled === true;
+        const bombBoards =
+          Number(table.bomb_pot_board_count) ||
+          Number(settings.bomb_pot_board_count) ||
+          (table.bomb_pot_double_board === true || settings.bomb_pot_double_board === true ? 2 : 1);
         setBombPotRules(
-          settings.bomb_pot_enabled === true
+          bombOn
             ? {
                 enabled: true,
-                frequency: Number(settings.bomb_pot_frequency) || 0,
-                anteBB: Number(settings.bomb_pot_ante_bb || settings.bomb_pot_ante_multiplier) || 0,
-                doubleBoard:
-                  settings.bomb_pot_double_board === true ||
-                  Number(settings.bomb_pot_board_count) >= 2,
+                frequency:
+                  Number(table.bomb_pot_frequency) || Number(settings.bomb_pot_frequency) || 0,
+                anteBB:
+                  Number(table.bomb_pot_ante_multiplier) ||
+                  Number(settings.bomb_pot_ante_bb || settings.bomb_pot_ante_multiplier) ||
+                  0,
+                doubleBoard: bombBoards >= 2,
                 // BOMB POT STANDARDIZATION 2026-08-27: canonical board count
                 // (1-3) and trigger mode, defaulting to the legacy shapes.
-                boardCount:
-                  Number(settings.bomb_pot_board_count) ||
-                  (settings.bomb_pot_double_board === true ? 2 : 1),
+                boardCount: bombBoards,
                 triggerMode:
-                  typeof settings.bomb_pot_trigger_mode === 'string'
-                    ? settings.bomb_pot_trigger_mode
-                    : 'every_n_hands',
+                  (typeof table.bomb_pot_trigger_mode === 'string' &&
+                    table.bomb_pot_trigger_mode) ||
+                  (typeof settings.bomb_pot_trigger_mode === 'string' &&
+                    settings.bomb_pot_trigger_mode) ||
+                  'every_n_hands',
+                // Timed mode: interval for the rules modal + felt clock.
+                intervalSeconds:
+                  Number(table.bomb_pot_interval_seconds) ||
+                  Number(settings.bomb_pot_interval_seconds) ||
+                  0,
               }
             : null
         );
@@ -15541,11 +15601,16 @@ export default function TablePage({
                           directly under board 1 like the reference — no label,
                           same stage (both boards deal in lockstep), silent so
                           each street sounds once. */}
+                      {/* RABBIT FIX 2026-08-28 (spec §19): a rabbit hunt is
+                          board-1's would-have-come cards — appending them to
+                          board 2/3 drew the same cards on two boards. The
+                          engine no longer offers rabbits on multi-board hands
+                          at all; the empty rabbitCards here are defence. */}
                       {tableState.communityCards2.length > 0 && (
                         <div className="community-area__board2">
                           <CommunityCards
                             cards={tableState.communityCards2}
-                            rabbitCards={rabbitRevealedCards}
+                            rabbitCards={[]}
                             stage={
                               bombPotHoldFlop && tableState.boardStage === 'flop'
                                 ? 'preflop'
@@ -15568,7 +15633,7 @@ export default function TablePage({
                         <div className="community-area__board2 community-area__board3">
                           <CommunityCards
                             cards={tableState.communityCards3}
-                            rabbitCards={rabbitRevealedCards}
+                            rabbitCards={[]}
                             stage={
                               bombPotHoldFlop && tableState.boardStage === 'flop'
                                 ? 'preflop'
@@ -15595,19 +15660,29 @@ export default function TablePage({
                     goes non-null the moment an owner enables bomb pots, while
                     bombPotRules is a one-shot fetch that would hold the pill
                     hostage until a page reload. */}
-                {tableState.bombPotIn != null && !bombPotActive && (
+                {(tableState.bombPotIn != null || bombClockLabel != null) && !bombPotActive && (
                   <div
-                    className={`bomb-pot-eta ${tableState.bombPotIn === 1 ? 'bomb-pot-eta--next' : ''}`}
+                    className={`bomb-pot-eta ${
+                      tableState.bombPotIn === 1 || bombClockLabel === 'NEXT HAND'
+                        ? 'bomb-pot-eta--next'
+                        : ''
+                    }`}
                   >
                     <span className="bomb-pot-eta__dot" />
                     {/* BOMB POT STANDARDIZATION 2026-08-27: badge names the
                         board count (spec §15.2); bomb-only tables show a
-                        permanent identity pill rather than a countdown. */}
+                        permanent identity pill rather than a countdown.
+                        TIMED CLOCK 2026-08-28: timed tables count down in
+                        m:ss to the engine's bomb_pot_next_at. */}
                     {bombPotRules?.triggerMode === 'bomb_pot_only'
                       ? `${bombPotRules.boardCount >= 3 ? 'TRIPLE BOARD ' : bombPotRules.boardCount === 2 ? 'DOUBLE BOARD ' : ''}BOMB POT ONLY`
-                      : tableState.bombPotIn === 1
-                        ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
-                        : `BOMB POT IN ${tableState.bombPotIn}`}
+                      : bombClockLabel != null
+                        ? bombClockLabel === 'NEXT HAND'
+                          ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
+                          : `BOMB POT IN ${bombClockLabel}`
+                        : tableState.bombPotIn === 1
+                          ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
+                          : `BOMB POT IN ${tableState.bombPotIn}`}
                   </div>
                 )}
 

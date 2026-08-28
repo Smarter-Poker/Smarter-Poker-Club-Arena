@@ -44,6 +44,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceStatement } from '../helpers/sourceWindow';
 
 const TABLE_TSX = readFileSync(resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8');
 /* Comments in this file quote its own bugs at length, so every scan runs on
@@ -108,7 +109,7 @@ describe('there is one shove path', () => {
     // must still take the lock, validate, mark all-in mode and revert on refusal.
     const at = CODE.indexOf('const handleActionPanelAction');
     expect(at).toBeGreaterThan(-1);
-    const body = CODE.slice(at, at + 6000);
+    const body = sliceStatement(CODE, 'const handleActionPanelAction');
     expect(body).toMatch(/validateAndExecuteAction\('allin'\)/);
     expect(body).toMatch(/setIsAllInMode\(true\)/);
     expect(body).toMatch(/applyOptimisticHeroAction\('allin'/);

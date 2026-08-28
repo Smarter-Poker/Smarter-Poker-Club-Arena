@@ -91,9 +91,10 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
 
   it('the manual trigger fails CLOSED when the flag cannot be cleared', () => {
     // A bomb that fires twice is worse than one that arrives a hand late.
-    const idx = DEALING.indexOf('bomb_pot_manual_pending: false');
-    expect(idx).toBeGreaterThan(-1);
-    const window = DEALING.slice(idx, idx + 700);
+    expect(DEALING.indexOf('bomb_pot_manual_pending: false')).toBeGreaterThan(-1);
+    // The clear and its error branch are siblings in the same handler, so the
+    // bound is that block - not however many bytes the update happens to take.
+    const window = sliceEnclosingBlock(DEALING, 'bomb_pot_manual_pending: false', 0, 2);
     expect(window).toMatch(/if \(clearErr\)/);
     expect(window).toMatch(/deferring/);
   });

@@ -31,6 +31,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { CARD_BACK_CATALOG, CARD_BACK_IDS } from '@/components/table/CardImage';
+import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
@@ -52,7 +53,7 @@ function realCardBackIds(): Set<string> {
 function offeredIds(src: string, afterMarker: string): string[] {
   const at = src.indexOf(afterMarker);
   expect(at, `marker ${afterMarker} not found`).toBeGreaterThan(-1);
-  const window = src.slice(at, at + 2600);
+  const window = sliceEnclosingBlock(src, afterMarker);
   return [...window.matchAll(/id: '([a-z0-9_-]+)'/g)].map((m) => m[1]);
 }
 

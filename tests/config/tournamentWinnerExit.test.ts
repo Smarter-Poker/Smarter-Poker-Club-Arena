@@ -44,6 +44,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceEnclosingBlock, sliceStatement } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -104,7 +105,7 @@ describe("The champion's exit", () => {
   it('carries the winner identity and the prize', () => {
     const body = finishTournamentBody();
     const at = body.indexOf("this.broadcast('tournament_winner'");
-    const payload = body.slice(at, at + 400);
+    const payload = sliceEnclosingBlock(body, "this.broadcast('tournament_winner'");
     // TablePage matches on userId to decide whether this result is the local
     // player's; without it every seat at the table takes the champion's card.
     expect(payload).toMatch(/userId:\s*winnerId/);
@@ -123,7 +124,7 @@ describe("The champion's exit", () => {
   it('TablePage handles tournament_winner and routes it to the lobby exit', () => {
     expect(tablePage).toMatch(/data\?\.type === 'tournament_winner'/);
     const at = tablePage.indexOf("data?.type === 'tournament_winner'");
-    const branch = tablePage.slice(at, at + 900);
+    const branch = sliceEnclosingBlock(tablePage, "data?.type === 'tournament_winner'");
     // Only the local player leaves. Everyone else at the table is a spectator
     // of someone else's result.
     expect(branch).toMatch(/winData\.userId === userId/);
@@ -150,7 +151,7 @@ describe("The champion's exit", () => {
     // publishes and two navigations. The guard lives at the subscription's
     // lifetime because a player finishes a tournament exactly once.
     const at = tablePage.indexOf('const goToLobbyWithResult =');
-    const fn = tablePage.slice(at, at + 300);
+    const fn = sliceStatement(tablePage, 'const goToLobbyWithResult =');
     expect(fn).toMatch(/if \(exitStarted\) return;/);
     expect(fn).toMatch(/exitStarted = true;/);
   });

@@ -19,6 +19,7 @@ import { resolve } from 'node:path';
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MiniStatsCard } from '../../src/components/table/MiniStatsCard';
+import { sliceMethod, sliceMethod } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const tsCode = (src: string) =>
@@ -51,7 +52,7 @@ describe('Tournament Table Engine Seating & Dealing Rules', () => {
     // off a house rule.
     const at = code.indexOf('public registerWaitForBB');
     expect(at).toBeGreaterThan(-1);
-    const body = code.slice(at, at + 300);
+    const body = sliceMethod(code, 'public registerWaitForBB');
     expect(body).toMatch(
       /if \(!this\.isTournamentTable\(\)\)\s*\{\s*this\.waitingForBB\.add\(userId\)/
     );
@@ -97,9 +98,9 @@ describe('Tournament Table Engine Seating & Dealing Rules', () => {
     );
     // And mustPostBB is only ever added to on a tournament table.
     const seating = tsCode(read(SEATING_SRC));
-    const note = seating.slice(seating.indexOf('protected noteTournamentArrival'));
-    expect(note.slice(0, 900)).toMatch(/if \(!this\.isTournamentTable\(\)\) return;/);
-    expect(note.slice(0, 900)).toMatch(/this\.mustPostBB\.add\(userId\)/);
+    const note = sliceMethod(seating, 'protected noteTournamentArrival');
+    expect(note).toMatch(/if \(!this\.isTournamentTable\(\)\) return;/);
+    expect(note).toMatch(/this\.mustPostBB\.add\(userId\)/);
   });
 });
 

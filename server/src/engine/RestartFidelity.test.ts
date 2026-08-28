@@ -46,6 +46,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceEnclosingBlock, sliceBlockAfter, sliceMethod, sliceStatement } from '../testHelpers/sourceWindow.js';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
@@ -69,7 +70,7 @@ describe('the button comes back to where it was', () => {
   it('reads the column that is actually populated', () => {
     // button_seat is written on every settled hand and was read by nobody.
     const at = BASE.indexOf('private async restoreButtonFromHistory');
-    const body = BASE.slice(at, at + 1400);
+    const body = sliceMethod(BASE, 'private async restoreButtonFromHistory');
     expect(body).toMatch(/from\('hand_history'\)/);
     expect(body).toMatch(/select\('button_seat'\)/);
     expect(body).toMatch(/order\('hand_number', \{ ascending: false \}\)/);
@@ -79,7 +80,7 @@ describe('the button comes back to where it was', () => {
     // Losing the button costs one orbit of position. Refusing to start costs
     // the whole table, which is strictly worse.
     const at = BASE.indexOf('private async restoreButtonFromHistory');
-    const body = BASE.slice(at, at + 1800);
+    const body = sliceMethod(BASE, 'private async restoreButtonFromHistory');
     expect(body).toMatch(/catch/);
     expect(body).not.toMatch(/throw/);
   });
@@ -89,7 +90,7 @@ describe('nobody is treated as a stranger at their own table', () => {
   it('everyone seated at boot is already a button-eligible veteran', () => {
     const at = DEALING.indexOf('if (this.dealingLoopFirstIteration)');
     expect(at).toBeGreaterThan(-1);
-    const block = DEALING.slice(at, at + 500);
+    const block = sliceBlockAfter(DEALING, 'if (this.dealingLoopFirstIteration)');
     expect(block).toMatch(/this\.dealtInUserIds\.add\(p\.user_id\)/);
   });
 });
@@ -109,7 +110,7 @@ describe('the time bank restore stays REVERTED until the schema can support it',
     // costs seconds of clock; the broken version overcharged real VIP quota.
     const at = DEALING.indexOf('const tbTotal = this.timeBankBaseSeconds');
     expect(at, 'time bank initialisation not found').toBeGreaterThan(-1);
-    const block = DEALING.slice(at, at + 2200);
+    const block = sliceEnclosingBlock(DEALING, 'const tbTotal = this.timeBankBaseSeconds');
     expect(block).not.toMatch(/hasPersisted/);
     expect(block).toMatch(/remainingSeconds: tbTotal/);
     expect(block).toMatch(/dbConsumedSeconds: 0/);
@@ -137,7 +138,7 @@ describe('a restart does not deal cards to someone who sat out', () => {
     // Map is only populated by registerPlayer inside dealHand. At boot it is
     // empty. See RestartFidelity.behaviour.test.ts, which drives this for real.
     const at = BASE.indexOf('protected restoreSitOutsFromSeats');
-    const body = BASE.slice(at, at + 900);
+    const body = sliceMethod(BASE, 'protected restoreSitOutsFromSeats');
     const reg = body.indexOf('registerPlayer');
     const sit = body.indexOf('sitOut(');
     expect(reg, 'registerPlayer is not called before sitOut').toBeGreaterThan(-1);
@@ -148,7 +149,7 @@ describe('a restart does not deal cards to someone who sat out', () => {
     // The original logged "Restored sit-out for X" unconditionally — including
     // on every sweep where it had restored nothing at all.
     const at = BASE.indexOf('protected restoreSitOutsFromSeats');
-    const body = BASE.slice(at, at + 1200);
+    const body = sliceMethod(BASE, 'protected restoreSitOutsFromSeats');
     expect(body).toMatch(/sit_out_restore_no_effect/);
   });
 
@@ -156,7 +157,7 @@ describe('a restart does not deal cards to someone who sat out', () => {
     // Sitting back in is a player action. A stale `false` from a row read
     // moments before a live sit-out must not override it.
     const at = BASE.indexOf('protected restoreSitOutsFromSeats');
-    const body = BASE.slice(at, at + 600);
+    const body = sliceMethod(BASE, 'protected restoreSitOutsFromSeats');
     expect(body).toMatch(/if \(p\.is_sitting_out !== true\) continue;/);
     expect(body).not.toMatch(/sitBack|satBack/);
   });
@@ -169,7 +170,7 @@ describe('chips survive the write, or somebody is told', () => {
     // or a constraint violation counted as a successful chip write and the
     // alarm could only ever fire on a network throw.
     const at = TABLES.indexOf('export async function syncStacks');
-    const body = TABLES.slice(at, at + 2600);
+    const body = sliceMethod(TABLES, 'export async function syncStacks');
     expect(body).toMatch(/const \{ error \}\s*=\s*await supabase/);
     expect(body).toMatch(/if \(!error\) return null;/);
     expect(body).not.toMatch(/r\.status === 'rejected'/);
@@ -177,7 +178,7 @@ describe('chips survive the write, or somebody is told', () => {
 
   it('a failed seat is retried, and named if it still fails', () => {
     const at = TABLES.indexOf('export async function syncStacks');
-    const body = TABLES.slice(at, at + 2600);
+    const body = sliceMethod(TABLES, 'export async function syncStacks');
     expect(body).toMatch(/attempt <= 3/);
     // Named, not counted: "2/6 failed" cannot be reconciled after the fact.
     expect(body).toMatch(/\$\{player\.user_id\}/);
@@ -186,7 +187,7 @@ describe('chips survive the write, or somebody is told', () => {
 
   it('the retry is bounded, because settlement cannot wait forever', () => {
     const at = TABLES.indexOf('export async function syncStacks');
-    const body = TABLES.slice(at, at + 2600);
+    const body = sliceMethod(TABLES, 'export async function syncStacks');
     expect(body).toMatch(/attempt < 3/);
     expect(body).toMatch(/setTimeout/);
   });

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceBlockAfter, sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 /**
  * Dan 2026-08-24, two reports about one button:
@@ -110,7 +111,7 @@ describe('a time bank reports on the hero seat, not through a popup', () => {
   it('clears the arm when the engine actually redeems the bank', () => {
     const redeem = TABLE_PAGE.indexOf('if (evtPlayerId === userId) {');
     expect(redeem).toBeGreaterThan(-1);
-    expect(TABLE_PAGE.slice(redeem, redeem + 600)).toContain('setTimeBankArmed(false)');
+    expect(sliceBlockAfter(TABLE_PAGE, 'if (evtPlayerId === userId) {')).toContain('setTimeBankArmed(false)');
   });
 
   it('SeatSlot renders the armed state and repaints when it changes', () => {
@@ -131,7 +132,7 @@ describe('an already-granted bank must not be auto-folded away', () => {
      assumed: the bank was granted and ~20 fresh seconds are on the clock.
      The client folded. Only a 6-second failsafe grace hid how often. */
   const start = TABLE_PAGE.indexOf('void GameServerAPI.activateTimeBank(tableId, userId).then');
-  const onTimeout = TABLE_PAGE.slice(start, start + 1600);
+  const onTimeout = sliceEnclosingBlock(TABLE_PAGE, 'void GameServerAPI.activateTimeBank(tableId, userId).then');
 
   it('treats "already running" as a grant rather than a refusal', () => {
     expect(start).toBeGreaterThan(-1);

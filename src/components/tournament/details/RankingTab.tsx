@@ -231,9 +231,17 @@ const RankRow = React.memo(function RankRow({
         <span className="rk-nameline">
           <span className="tl-name">{entry.username}</span>
           {entry.is_satellite_qualifier && (
-            <span className="tl-badge tl-badge--sat" title="Satellite Qualifier" style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', borderColor: 'rgba(59, 130, 246, 0.4)' }}>
-              SAT
-            </span>
+            <img
+              src="/images/satellite-icon.jpg"
+              alt="Satellite Qualifier"
+              title="Satellite Qualifier"
+              style={{
+                width: '20px',
+                height: '20px',
+                borderRadius: '50%',
+                border: '1px solid rgba(255,255,255,0.1)',
+              }}
+            />
           )}
           {isHero && <span className="tl-badge tl-badge--action">You</span>}
           {isDownline && !isHero && <span className="tl-badge">Yours</span>}

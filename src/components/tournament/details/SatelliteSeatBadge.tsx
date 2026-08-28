@@ -25,9 +25,16 @@
  * to its own bounding box, centred on a square canvas, and resampled to
  * 120px. Its silhouette is the mark; do not add a background plate.
  *
- * THE WORDS ARE "Satellite Winner" (Dan, same day). Both `alt` and `title`
- * carry it, so the tooltip a mouse gets and the string a screen reader
- * announces are the same phrase, and neither can drift from the other.
+ * THE WORDS ARE "Satellite Winner" (Dan, same day), and since 2026-08-28
+ * they are ON SCREEN, before the dish, not hidden in a tooltip: "ADD
+ * 'SATELLITE WINNER' BEFORE EACH SATELITTE ICON." A tooltip was the wrong
+ * home for them anyway - it needs a hover to appear, and hover has just been
+ * removed from these surfaces, so on a phone the meaning was unreachable.
+ *
+ * The visible text is now the label, so the image is marked `alt=""` and
+ * `aria-hidden`: it is decoration beside words that already say the thing.
+ * Giving both the same string makes a screen reader read "Satellite Winner
+ * Satellite Winner", which is why the alt is empty rather than duplicated.
  *
  * RENDER SIZE IS 30px — 50% larger than the 20px this badge first shipped at,
  * because at 20px the arcs and the rim highlights read as noise on a phone.
@@ -51,25 +58,30 @@
  * It has no importer left in `src/`; when the next person is confident no
  * stale bundle is in flight, it can go.
  *
- * IF YOU CHANGE THE SIZE, change `width`/`height` AND the inline style
- * together. The attributes reserve the box before the image loads (no layout
- * shift in a long entries list); the style is what actually paints. One
- * without the other is the bug that makes the row jump.
+ * IF YOU CHANGE THE SIZE, change `width`/`height` here AND `.sw-badge__icon`
+ * in the stylesheet together. The attributes reserve the box before the
+ * image loads, so a long entries list does not reflow as icons arrive; the
+ * CSS is what actually paints. One without the other is the bug that makes
+ * every row jump once.
  */
 
 import { mediaUrl } from '../../../utils/mediaBase';
+import './SatelliteSeatBadge.css';
 
 export default function SatelliteSeatBadge() {
   return (
-    <img
-      src={mediaUrl('images/satellite-winner-v3.png')}
-      alt="Satellite Winner"
-      title="Satellite Winner"
-      width={30}
-      height={30}
-      style={{ width: 30, height: 30, flex: '0 0 auto', verticalAlign: 'middle' }}
-      loading="lazy"
-      decoding="async"
-    />
+    <span className="sw-badge">
+      <span className="sw-badge__text">Satellite Winner</span>
+      <img
+        className="sw-badge__icon"
+        src={mediaUrl('images/satellite-winner-v3.png')}
+        alt=""
+        aria-hidden="true"
+        width={30}
+        height={30}
+        loading="lazy"
+        decoding="async"
+      />
+    </span>
   );
 }

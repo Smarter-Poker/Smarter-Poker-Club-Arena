@@ -322,10 +322,6 @@
   cursor: pointer;
   transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.registerBtn:hover:not(:disabled) {
-}
-
 .registerBtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -343,10 +339,6 @@
   cursor: pointer;
   transition: transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.unregisterBtn:hover {
-}
-
 .playBtn {
   width: 100%;
   padding: 14px;
@@ -361,10 +353,6 @@
     transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)),
     box-shadow 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.playBtn:hover {
-}
-
 /* ── Mobile ≤480px ── */
 @media (max-width: 480px) {
   .card {

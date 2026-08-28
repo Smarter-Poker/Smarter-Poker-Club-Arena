@@ -117,7 +117,13 @@
   }
 
   .et-marks {
-    max-width: 84px;
+    /* 84px until 2026-08-28, which fitted RE / RB / ADD-ON and nothing else.
+       The satellite mark now carries the words "Satellite Winner" beside its
+       dish (Dan's request), and 84px would have wrapped that onto a second
+       line and doubled the height of one row in a list of 52px rows. The
+       name column ellipses into the difference, which is the cheaper loss:
+       a truncated name is still recognisable, a missing mark is not there. */
+    max-width: 148px;
     flex-wrap: wrap;
     row-gap: 3px;
   }

@@ -113,8 +113,6 @@
 }
 
 .applyButton:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);
 }
 
 .applyButton:disabled {
@@ -834,7 +832,6 @@
 
 .saveButton:hover:not(:disabled) {
   filter: brightness(1.1);
-  transform: translateY(-1px);
 }
 
 .saveButton:disabled {

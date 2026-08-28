@@ -324,10 +324,6 @@
 }
 
 .registerBtn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow:
-    0 8px 20px rgba(111, 220, 255, 0.3),
-    0 0 12px rgba(111, 220, 255, 0.2);
 }
 
 .registerBtn:disabled {
@@ -349,7 +345,6 @@
 }
 
 .unregisterBtn:hover {
-  transform: translateY(-1px);
 }
 
 .playBtn {
@@ -368,8 +363,6 @@
 }
 
 .playBtn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(16, 185, 129, 0.3);
 }
 
 /* ── Mobile ≤480px ── */

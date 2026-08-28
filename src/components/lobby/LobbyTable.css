@@ -1639,10 +1639,6 @@ abbr.lt-variant[title] {
 
   .lt-row:hover {
     background: #172844;
-    box-shadow:
-      inset 4px 0 0 #50baff,
-      0 5px 16px rgba(0, 0, 0, 0.34);
-    transform: translateY(-1px);
   }
 
   .lt-row.is-featured {

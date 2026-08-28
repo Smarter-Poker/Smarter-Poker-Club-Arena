@@ -280,12 +280,7 @@
 }
 
 .podium-place:hover {
-  transform: translateY(-6px) scale(1.03);
   border-color: #4a5a6a;
-  box-shadow:
-    0 8px 30px rgba(0, 0, 0, 0.4),
-    0 0 20px rgba(0, 212, 255, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .podium-1st {
@@ -700,11 +695,7 @@
 }
 
 .leaderboard-entry:hover {
-  transform: translateX(6px) translateY(-2px);
   border-color: #3a5a6a;
-  box-shadow:
-    0 0 18px rgba(0, 212, 255, 0.15),
-    -4px 0 0 #00d4ff;
 }
 
 .leaderboard-entry.current-user {
@@ -968,8 +959,6 @@
 }
 
 .join-club-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 0 25px rgba(0, 212, 255, 0.7);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -1197,9 +1186,7 @@
 }
 
 .tournament-stats-entry:hover {
-  transform: translateX(4px) translateY(-2px);
   border-color: #3a4a5a;
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.15);
 }
 
 .tournament-stats-entry.current-user {
@@ -1481,7 +1468,6 @@
   border-color: rgba(0, 212, 255, 0.4);
   color: #00d4ff;
   background: rgba(0, 212, 255, 0.08);
-  transform: translateY(-1px);
 }
 
 .lb-filter-chip.active {

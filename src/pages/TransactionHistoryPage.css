@@ -85,8 +85,6 @@
 
 .transaction-row:hover {
   border-color: #3a4a5a;
-  transform: translateY(-2px);
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.15);
 }
 
 .tx-icon {
@@ -224,8 +222,6 @@
 }
 
 .export-btn:hover {
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.7);
-  transform: translateY(-2px);
 }
 
 .load-more-btn {

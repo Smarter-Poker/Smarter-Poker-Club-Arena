@@ -241,8 +241,6 @@
 
 .dov-deal__btn:hover:not(:disabled),
 .dov-deal__btn:focus-visible:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: var(--tl-bevel-strong), var(--tl-cast-high), var(--tl-glow);
   outline: none;
 }
 

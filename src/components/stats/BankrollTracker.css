@@ -217,8 +217,6 @@
 
 .stat-card:hover {
   border-color: rgba(0, 212, 255, 0.3);
-  transform: translateY(-2px);
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.1);
 }
 
 .stat-icon {

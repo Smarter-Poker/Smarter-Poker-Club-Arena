@@ -139,7 +139,6 @@
 }
 
 .colorBtn:hover {
-  transform: scale(1.1);
 }
 
 .colorBtn.selected {

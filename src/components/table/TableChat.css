@@ -570,7 +570,6 @@
 
 .table-chat__emoji-btn:hover {
   background: rgba(255, 255, 255, 0.15);
-  transform: scale(1.1);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -707,7 +706,6 @@
 
 .table-chat__scroll-fab:hover {
   background: rgba(24, 119, 242, 1);
-  transform: translateX(-50%) scale(1.1);
 }
 
 @keyframes fabBounceIn {

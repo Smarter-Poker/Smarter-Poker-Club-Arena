@@ -252,8 +252,6 @@
 .friend-row:hover,
 .request-row:hover {
   border-color: #00d4ff;
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
-  transform: translateY(-2px);
 }
 
 .friend-avatar,
@@ -366,8 +364,6 @@
 }
 
 .accept-btn:hover {
-  box-shadow: 0 0 20px rgba(16, 185, 129, 0.8);
-  transform: translateY(-2px) scale(1.05);
 }
 
 .decline-btn {

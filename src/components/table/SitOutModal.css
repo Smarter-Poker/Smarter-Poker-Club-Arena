@@ -83,10 +83,6 @@
 
 .sitout-modal__im-back-btn:hover {
   background: linear-gradient(135deg, #4dc660 0%, #3fb950 100%);
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 4px 12px rgba(63, 185, 80, 0.3);
 }
 
 /* Leave Table, alongside "I'm Back". Added 2026-08-25 with the button itself —
@@ -111,8 +107,6 @@
 
 .sitout-modal__leave-btn:hover {
   background: rgba(248, 81, 73, 0.12);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(248, 81, 73, 0.25);
 }
 
 /* =================================================================================

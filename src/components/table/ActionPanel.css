@@ -705,11 +705,6 @@
 
 .action-panel .action-btn--fold:hover:not(:disabled) {
   filter: brightness(1.15);
-  box-shadow:
-    0 3px 0 #4c0a0a,
-    0 8px 32px rgba(220, 38, 38, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-  transform: translateY(-1px);
 }
 
 /* ─── CHECK ────────────────────────────────────────────────── */
@@ -724,11 +719,6 @@
 
 .action-panel .action-btn--check:hover:not(:disabled) {
   filter: brightness(1.15);
-  box-shadow:
-    0 3px 0 #002070,
-    0 8px 32px rgba(21, 135, 248, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-  transform: translateY(-1px);
 }
 
 /* ─── CALL ─────────────────────────────────────────────────── */
@@ -743,11 +733,6 @@
 
 .action-panel .action-btn--call:hover:not(:disabled) {
   filter: brightness(1.15);
-  box-shadow:
-    0 3px 0 #002070,
-    0 8px 32px rgba(21, 135, 248, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-  transform: translateY(-1px);
 }
 
 /* ─── RAISE / BET (Green — item 8) ───────────────────────────
@@ -767,11 +752,6 @@
 
 .action-panel .action-btn--raise:hover:not(:disabled) {
   filter: brightness(1.15);
-  box-shadow:
-    0 3px 0 #063317,
-    0 8px 32px rgba(63, 185, 80, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-  transform: translateY(-1px);
 }
 
 /* The raise button while its sizing overlay is open. It stays on the row now
@@ -800,11 +780,6 @@
 
 .action-panel .action-btn--allin:hover:not(:disabled) {
   filter: brightness(1.15);
-  box-shadow:
-    0 3px 0 #063317,
-    0 8px 32px rgba(63, 185, 80, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-  transform: translateY(-1px);
 }
 
 @keyframes allinPulse {
@@ -858,7 +833,6 @@
 
 .raise-adjust:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.18);
-  transform: scale(1.05);
 }
 
 .raise-adjust:active:not(:disabled) {
@@ -1339,11 +1313,6 @@
 }
 
 .raise-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.5),
-    0 0 0 3px rgba(255, 255, 255, 0.25),
-    0 0 24px rgba(47, 128, 237, 0.6);
 }
 
 .raise-slider:active::-webkit-slider-thumb {
@@ -1390,7 +1359,6 @@
 }
 
 .raise-slider::-moz-range-thumb:hover {
-  transform: scale(1.2);
 }
 
 /* Preset Buttons Row */
@@ -1445,8 +1413,6 @@
 .raise-preset:hover:not(:disabled) {
   background: linear-gradient(180deg, rgba(21, 135, 248, 0.45) 0%, rgba(0, 58, 158, 0.45) 100%);
   border-color: rgba(21, 135, 248, 0.65);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(21, 135, 248, 0.3);
 }
 
 .raise-preset:active:not(:disabled) {
@@ -1546,10 +1512,6 @@
 
 .raise-confirm:hover {
   filter: brightness(1.1);
-  transform: translateY(-1px);
-  box-shadow:
-    0 4px 0 #14468f,
-    0 6px 20px rgba(47, 128, 237, 0.4);
 }
 
 .raise-confirm:active {

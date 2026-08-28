@@ -247,7 +247,6 @@
   filter: brightness(1.15);
 }
 .seat--empty:hover {
-  transform: scale(1.1);
 }
 .seat--empty:active {
   transform: scale(0.94);
@@ -354,7 +353,6 @@
 
 /* Avatar hover — subtle zoom + brightness lift for interactive seats */
 .seat:not(.seat--empty):not(.seat--folded) .seat__avatar:hover .seat__avatar-img {
-  transform: scale(1.08);
   filter: brightness(1.1);
 }
 
@@ -537,8 +535,6 @@
    shared --sp-bust-effective-scale makes hover exactly 8% larger than rest for
    everyone, and there is no second copy of the formula to forget. */
 .seat:not(.seat--empty):not(.seat--folded) .seat__avatar--bust:hover .seat__avatar-img {
-  transform: translateY(var(--sp-bust-clip))
-    scale(calc(var(--sp-bust-effective-scale, 1.45) * 1.08));
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.6)) brightness(1.1);
 }
 
@@ -679,11 +675,6 @@
 }
 
 .seat__position-chip:hover {
-  transform: scale(1.15);
-  box-shadow:
-    0 3px 8px rgba(0, 0, 0, 0.5),
-    inset 0 1px 2px rgba(255, 255, 255, 0.25),
-    0 0 12px rgba(255, 255, 255, 0.1);
 }
 
 @keyframes dealerButtonAppear {
@@ -2120,10 +2111,6 @@
 
 /* Hero card hover — subtle 3D tilt peek */
 .seat__cards--hero .seat__card--face:hover {
-  transform: translateY(-6px) scale(1.05);
-  box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.7),
-    0 0 16px rgba(255, 215, 0, 0.12);
   z-index: 25;
 }
 
@@ -3552,7 +3539,6 @@
     filter 0.16s ease;
 }
 .seat__card-pick:hover {
-  transform: translateY(-3px);
 }
 .seat__card-pick:focus-visible {
   outline: 2px solid #4a9eff;

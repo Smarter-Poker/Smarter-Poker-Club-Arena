@@ -64,11 +64,11 @@
 }
 
 .summary-card.earned .summary-value {
-  color: #4ADE80;
+  color: #4ade80;
 }
 
 .summary-card.spent .summary-value {
-  color: #FFD700;
+  color: #ffd700;
 }
 
 .summary-card.count .summary-value {
@@ -103,7 +103,7 @@
 .filter-tab.active {
   background: linear-gradient(135deg, rgba(255, 215, 0, 0.15), rgba(255, 215, 0, 0.05));
   border-color: rgba(255, 215, 0, 0.4);
-  color: #FFD700;
+  color: #ffd700;
   box-shadow: 0 0 12px rgba(255, 215, 0, 0.2);
 }
 
@@ -229,12 +229,12 @@
 }
 
 .points-value.earned {
-  color: #4ADE80;
+  color: #4ade80;
 }
 
 .points-value.spent,
 .points-value.redeemed {
-  color: #FFD700;
+  color: #ffd700;
 }
 
 .points-label {
@@ -333,15 +333,13 @@
 }
 
 .month-card:hover {
-  transform: translateY(-2px);
   border-color: rgba(255, 215, 0, 0.3);
-  box-shadow: 0 4px 12px rgba(255, 215, 0, 0.1);
 }
 
 .month-label {
   font-size: 12px;
   font-weight: 700;
-  color: #FFD700;
+  color: #ffd700;
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
@@ -365,11 +363,11 @@
 }
 
 .stat-value.earned {
-  color: #4ADE80;
+  color: #4ade80;
 }
 
 .stat-value.spent {
-  color: #FFD700;
+  color: #ffd700;
 }
 
 .stat-label {

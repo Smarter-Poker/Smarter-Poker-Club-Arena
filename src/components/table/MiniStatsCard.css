@@ -91,7 +91,6 @@
 .mini-stats-card--tournament-stats:hover {
   background: rgba(255, 215, 0, 0.14);
   border-color: #ffd700;
-  transform: translateY(-1px);
 }
 
 .mini-stats-card--tournament-stats:active {

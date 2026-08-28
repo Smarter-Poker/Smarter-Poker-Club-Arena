@@ -213,10 +213,6 @@
 
 .stat-card:hover {
   border-color: rgba(0, 212, 255, 0.3);
-  transform: translateY(-2px);
-  box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.2),
-    0 0 12px rgba(0, 212, 255, 0.06);
 }
 
 .stat-card .stat-value {
@@ -269,8 +265,6 @@
 
 .quick-stat:hover {
   border-color: rgba(0, 212, 255, 0.3);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 .quick-icon {

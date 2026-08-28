@@ -55,8 +55,6 @@
 }
 
 .summary-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
 .summary-card .label {
@@ -380,7 +378,6 @@
 
 .export-btn:hover:not(:disabled) {
   background: rgba(34, 197, 94, 0.2);
-  transform: translateY(-1px);
 }
 
 .export-btn:disabled {

@@ -292,7 +292,6 @@ export default function LobbyAdStrip({
         >
           ✕
         </button>
-        
       </div>
     );
   }
@@ -324,8 +323,6 @@ export default function LobbyAdStrip({
       >
         ✕
       </button>
-
-      
     </div>
   );
 }

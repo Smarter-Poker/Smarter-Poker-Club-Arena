@@ -3186,6 +3186,13 @@ export default function TablePage({
    */
   const handleSitOut = useCallback(async () => {
     if (!tableId) return;
+
+    // Enforce minimum one hand played before sitting out
+    if (handsPlayedRef.current === 0) {
+      toast?.error?.('You must play at least one hand before you can sit out.');
+      return;
+    }
+
     const res = await setSitOut(tableId, true);
     if (res?.success) {
       setSitOutSince(Date.now());
@@ -3193,7 +3200,7 @@ export default function TablePage({
     } else {
       toast?.error?.(res?.error || 'Could not sit out - you are still in the game');
     }
-  }, [tableId, toast]);
+  }, [tableId, toast, handsPlayedRef]);
 
   // ─── Table Menu Actions ────────────────────────────────────────────────
   useMasterBusSubscription('TABLE_MENU_ACTION', (event) => {
@@ -3338,6 +3345,30 @@ export default function TablePage({
    * until the player confirms the price, and nothing is charged until they do.
    */
   const [seatFirstConfirm, setSeatFirstConfirm] = useState<number | null>(null);
+
+  // Buy-in 60s timeout enforcement
+  useEffect(() => {
+    if (!showBuyInModal && seatFirstConfirm === null) return;
+
+    const timer = setTimeout(() => {
+      if (showBuyInModal) {
+        setShowBuyInModal(false);
+        setPendingSeat(null);
+        setSelectedSeat(null);
+        if (buyInIdempotencyKeyRef.current) {
+          buyInIdempotencyKeyRef.current = null;
+        }
+      }
+      if (seatFirstConfirm !== null) {
+        setSeatFirstConfirm(null);
+      }
+
+      toast?.error?.('Buy-in timed out. You have been removed from the table.');
+      navigate('/hub/club-arena');
+    }, 60000);
+
+    return () => clearTimeout(timer);
+  }, [showBuyInModal, seatFirstConfirm, navigate, toast]);
   /**
    * Synchronous twin of `seatFirstPending`, mirroring `buyInProcessingRef` on
    * the cash path. State updates are batched, so two Buy In presses landing in

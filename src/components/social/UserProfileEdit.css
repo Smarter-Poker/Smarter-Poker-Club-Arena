@@ -216,9 +216,9 @@
   font-weight: 600;
 }
 
-.save-btn {
+.save-btn-blue {
   padding: 10px 20px;
-  background: #3fb950;
+  background: #0088cc;
   border: none;
   border-radius: 8px;
   color: #fff;
@@ -226,6 +226,6 @@
   font-weight: 600;
 }
 
-.save-btn:hover {
-  background: #2ea043;
+.save-btn-blue:hover {
+  background: #0077b3;
 }

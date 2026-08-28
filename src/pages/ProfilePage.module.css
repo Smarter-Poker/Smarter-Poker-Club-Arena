@@ -82,6 +82,34 @@
   margin: 0 0 0.5rem;
 }
 
+.bio {
+  color: #c3cbd8;
+  font-size: 0.85rem;
+  margin-top: 8px;
+  max-width: 400px;
+  line-height: 1.4;
+}
+
+.tagsContainer {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.playerTag {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  color: #e4e6eb;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 .memberSince {
   font-size: 0.8rem;
   color: var(--text-muted);

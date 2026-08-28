@@ -379,7 +379,9 @@ export class HorseFleetManager {
         // whole bug, not the .maybeSingle() call.
         const { data: matches, error: lookupError } = await supabase
           .from('tables')
-          .select('id, status, union_id, game_variant, small_blind, big_blind, straddle_enabled')
+          .select(
+            'id, status, union_id, game_variant, small_blind, big_blind, straddle_enabled, min_buy_in, max_buy_in'
+          )
           .eq('name', config.name)
           .is('tournament_id', null)
           .order('created_at', { ascending: true })
@@ -405,6 +407,17 @@ export class HorseFleetManager {
           if (Number(existing.small_blind) !== config.smallBlind)
             updates.small_blind = config.smallBlind;
           if (Number(existing.big_blind) !== config.bigBlind) updates.big_blind = config.bigBlind;
+          // Dan 2026-08-28: buy-ins resync WITH the blinds. This branch used
+          // to carry stale chip buy-ins forever after a blind bump — bump a
+          // config from 1/2 to 25/50 and the reactivated row kept a 40BB
+          // band computed against the OLD big blind (the exact shape of the
+          // "25/50 with buy-in 100-200" bug). 40BB-200BB, always.
+          const wantMinBuyIn = config.bigBlind * 40;
+          const wantMaxBuyIn = config.bigBlind * 200;
+          if (Number((existing as { min_buy_in?: number }).min_buy_in) !== wantMinBuyIn)
+            updates.min_buy_in = wantMinBuyIn;
+          if (Number((existing as { max_buy_in?: number }).max_buy_in) !== wantMaxBuyIn)
+            updates.max_buy_in = wantMaxBuyIn;
           // V23: a straddle config re-straddles a reused row. Compared, not
           // written blind — an unconditional write would make `updates`
           // non-empty every cycle, and the update path resets

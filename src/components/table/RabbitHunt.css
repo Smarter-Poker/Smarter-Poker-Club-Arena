@@ -233,3 +233,18 @@
     transition: none !important;
   }
 }
+
+/* Dan 2026-08-28: strip the dark tile — same 2026-08-26 treatment as every
+   other HUD icon button. The pre-load visibility the tile used to provide is
+   carried by the button's own drop shadow on the artwork instead. */
+.rabbit-hunt__button {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.rabbit-hunt__button:hover:not(:disabled) {
+  background: transparent !important;
+  filter: brightness(1.1);
+}

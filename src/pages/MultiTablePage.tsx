@@ -1140,13 +1140,20 @@ export default function MultiTablePage() {
   const [showSessionAgg, setShowSessionAgg] = useState(false);
 
   useEffect(() => {
-    if (hidden || tables.length < 2) {
+    /* Dan 2026-08-28: the P&L tracker "should only appear once a user is
+       playing MULTIPLE tables. It should never engage while playing 1 table."
+       The old gate counted `tables.length`, which includes LOBBY tabs — one
+       real table plus the lobby tab read as 2 and the chip appeared during
+       single-table play. Count actual game tables only, here AND inside
+       compute() (a tab closing between ticks must retire the chip too). */
+    const liveTableCount = tables.filter((t) => !isLobbyTab(t)).length;
+    if (hidden || liveTableCount < 2) {
       setSessionAgg(null);
       return;
     }
     const compute = () => {
       const live = tablesRef.current.filter((t) => !isLobbyTab(t));
-      if (live.length === 0) {
+      if (live.length < 2) {
         setSessionAgg(null);
         return;
       }
@@ -1178,7 +1185,9 @@ export default function MultiTablePage() {
     compute();
     const iv = setInterval(compute, 5000);
     return () => clearInterval(iv);
-  }, [hidden, tables.length]);
+    // `tables`, not `tables.length`: a lobby tab converting into a game table
+    // keeps the length constant while the live-table count changes.
+  }, [hidden, tables]);
 
   // ─── Batch 4: playable tile view ──────────────────────────────────────
   // Fold / Check / Call directly from a 2x2 tile - true simultaneous play on

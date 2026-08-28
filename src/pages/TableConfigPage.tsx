@@ -312,7 +312,11 @@ const DEFAULT_CONFIG: TableConfig = {
   smallBlind: 0.05,
   bigBlind: 0.1,
   minBuyInBB: 40,
-  maxBuyInBB: 100,
+  /* Dan 2026-08-28: cash buy-ins are 40BB-200BB across the platform (the
+     fleet, the horse launcher and the create-table API all write bb*40 /
+     bb*200). This default was 100BB, so every table a club owner created
+     through this page was born capped at half the platform ceiling. */
+  maxBuyInBB: 200,
   anteBB: 0,
   careerPercentMin: 0,
   maintainPercentMin: 0,
@@ -1729,9 +1733,13 @@ export default function TableConfigPage() {
                 </span>
               </div>
               <div className="buyin-sliders">
+                {/* Dan 2026-08-28: cash buy-ins are 40BB-200BB. The min
+                    slider used to reach down to 2BB, which is precisely the
+                    shape of the broken "NLH 25/50, buy-in 100-200" row — a
+                    2BB/4BB band nobody could play. 40BB is the floor. */}
                 <input
                   type="range"
-                  min={2}
+                  min={40}
                   max={config.maxBuyInBB}
                   value={config.minBuyInBB}
                   onChange={(e) => updateConfig('minBuyInBB', Number(e.target.value))}
@@ -1739,7 +1747,7 @@ export default function TableConfigPage() {
                 />
                 <input
                   type="range"
-                  min={config.minBuyInBB}
+                  min={Math.max(config.minBuyInBB, 40)}
                   max={500}
                   value={config.maxBuyInBB}
                   onChange={(e) => updateConfig('maxBuyInBB', Number(e.target.value))}

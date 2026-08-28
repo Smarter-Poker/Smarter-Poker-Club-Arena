@@ -1835,6 +1835,15 @@
   z-index: 10;
 }
 
+/* Dan 2026-08-28 (equity smart placement): a seat carrying an all-in equity
+   badge rises above the neighbouring wrappers so the badge cannot be sealed
+   under a DOM-later neighbour's avatar (every wrapper is a stacking context
+   — the badge's own z-index: 50 only counts INSIDE its wrapper). 28, so a
+   seat actually tabling its cards (--showing, z 30) still wins. */
+.seat-wrapper--equity:not(.seat-wrapper--showing) {
+  z-index: 28;
+}
+
 /* HERO LIFT — the HOOK survives; the values are retired (Dan 2026-08-25 r2).
 
    Hero is the only seat at y:100 (see SEAT_LAYOUTS in lib/tableSeatGeometry.ts),
@@ -2692,11 +2701,28 @@
   transition: background-color 0.4s ease;
   animation: equityPop calc(0.45s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.3, 1.4);
 }
-/* Dan 2026-08-26 mobile pass, item 13: the badge may never block a revealed
-   hand. Villain cards fan OUTBOARD (tableSeatGeometry.seatCardSide), so the
-   badge docks on the seat's INBOARD side — vertically centred on the seat,
-   fully off the card fan's airspace. The hero seat keeps the below-seat
-   position (its cards render in the corner panel, not at the seat). */
+/* Dan 2026-08-28 (smart placement): "PERCENTAGES SHOULD ALWAYS BE ABOVE THE
+   AVATAR WHEN POSSIBLE, NOT BELOW, AND NOT TO THE RIGHT." Every seat now
+   defaults to `--above`: the badge rides the strip above the seat box, past
+   the action badge's -26..-3px slot so ALL IN and the percentage can both
+   show. The side docks below remain for the TOP-CAP seats only — the BBJ
+   banner owns the space above those — and TablePage.tsx picks WHICH side at
+   render time, swinging away from a neighbouring all-in badge. */
+.equity-overlay--above {
+  bottom: calc(100% + 28px);
+  top: auto;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+@media (max-width: 640px) {
+  .equity-overlay--above {
+    /* Phone action badges are shorter; hug the seat a little closer so the
+       badge stays inside the felt on the shallow top rows. */
+    bottom: calc(100% + 22px);
+  }
+}
+
 .equity-overlay--inboard-right {
   bottom: auto;
   top: 50%;
@@ -4317,4 +4343,19 @@ button.post-bb-overlay-button:hover {
 .add-chips-icon-btn:hover {
   background: transparent !important;
   filter: brightness(1.1);
+}
+
+/* Dan 2026-08-28 (icon backgrounds sweep): two leftovers the 2026-08-26 pass
+   missed. The :active rule at line ~3407 still flashed a white box on every
+   tap of the add-screen button, and the control strip's ::after "glass"
+   gradient repainted a faint tile over buttons whose own background had been
+   stripped — a pseudo-element is untouched by `background: none` on the
+   button itself. */
+.add-chips-icon-btn:active {
+  background: transparent !important;
+  filter: brightness(0.9);
+}
+.control-strip__btn--icon-img::after,
+.control-strip__btn::after {
+  display: none !important;
 }

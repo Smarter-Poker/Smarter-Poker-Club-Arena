@@ -674,6 +674,13 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // against playing without size reads at all - if the repair helps, this
   // matchup should grow relative to its own history.
   { name: 'v19_size_reads', pairs: 6000, a: {}, b: { v7SizeReads: false } },
+  // ── V20 (2026-08-27) ──
+  // Multiway discipline lives postflop in every variant; measure it on the
+  // standard NLH card where multiway all-in chains actually occur. The
+  // M-zone layer only fires in tournament mode, which the league does not
+  // deal (gameMode: 'cash'), so it is validated by scenario tests instead —
+  // same position V16 real ICM shipped from.
+  { name: 'v20_multiway', pairs: 6000, a: {}, b: { v20Multiway: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
   { name: 'mind_layer', a: {}, b: { mind: false } },
@@ -707,6 +714,8 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v18SelfImage: false,
       v18ExploitSize: false,
       v18Families: false,
+      v20Multiway: false,
+      v20Mzone: false,
       mind: false,
       streetIQ: false,
       handReading: false,

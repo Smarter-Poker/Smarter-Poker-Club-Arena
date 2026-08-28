@@ -1,0 +1,7 @@
+{
+  "_comment": "SECURITY DEFINER functions that a browser role may execute, that write, and that do not consult auth.uid()/auth.role()/auth.jwt(). Compared daily against the LIVE database by scripts/ci/audit-live-definer-exposure.mjs. Anything not listed here is a finding. This list must only ever SHRINK: nineteen were closed on 2026-08-27 and two more on 2026-08-28, and each entry that remains was read line by line.",
+  "reviewedExceptions": {
+    "get_current_settlement_period": "Takes no arguments at all, so there is nothing for a caller to aim. It returns the one open weekly settlement period and creates it only when none is open, refuses outright when there is not exactly one union to own it, and inserts ON CONFLICT DO NOTHING. The worst an attacker achieves is causing the current week's period to exist, which the platform creates anyway. Caller: src/services/SettlementService.ts:122.",
+    "recalculate_leaderboard_ranks": "Recomputes dense_rank() over scores that are already in promotion_leaderboards for one promotion. It reads no input beyond the promotion id, writes no new value, moves no money, and is idempotent, so the worst an attacker achieves is the correct answer. Caller: src/services/PromotionService.ts:365, immediately after the RLS-gated score upsert."
+  }
+}

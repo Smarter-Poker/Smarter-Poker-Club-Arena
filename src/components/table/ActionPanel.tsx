@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { haptic } from '../../services/SoundService';
 import './ActionPanel.css';
+import { formatTableChips } from '../../utils/format';
 
 interface ActionPanelProps {
   canFold: boolean;
@@ -132,11 +133,10 @@ interface ActionPanelProps {
   showStackInBB?: boolean;
 }
 
+// Dan 2026-08-28: bet/raise amounts are never abbreviated — see
+// formatTableChips. A player cannot size a raise off "1.5K".
 function formatChips(amount: number): string {
-  if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
-  if (amount >= 10000) return `${(amount / 1000).toFixed(1)}K`;
-  if (amount === Math.floor(amount)) return amount.toLocaleString();
-  return amount.toFixed(2);
+  return formatTableChips(amount);
 }
 
 /**

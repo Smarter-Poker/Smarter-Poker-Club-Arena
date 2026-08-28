@@ -32,6 +32,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceCssRule } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -70,7 +71,7 @@ describe('LeaveTableConfirm is actually visible', () => {
     expect(tsx).toMatch(/className="leave-confirm__backdrop"/);
     const at = css.indexOf('.leave-confirm__backdrop');
     expect(at).toBeGreaterThan(-1);
-    expect(css.slice(at, at + 260)).toMatch(/position:\s*fixed/);
+    expect(sliceCssRule(css, '.leave-confirm__backdrop')).toMatch(/position:\s*fixed/);
   });
 
   it('the dead class names never come back', () => {

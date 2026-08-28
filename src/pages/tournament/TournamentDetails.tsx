@@ -572,16 +572,11 @@ export default function TournamentDetails({
       300
     );
 
-    const unsubMerge = masterBus.subscribeDebounced(
-      'TABLE_MERGED',
-      (event) => {
-        if (event.payload.tournamentId !== tournamentId) return;
-        // Remove the closed source table from the tables list
-        setTables((prev) => prev.filter((t) => t.id !== event.payload.sourceTableId));
-        toast.info(`Table merged - ${event.payload.playersMoved} players moved`);
-      },
-      300
-    );
+    // TABLE_MERGED listener removed 2026-08-28: nothing emits it on the
+    // client bus — merges happen in the server's TableBalancer and were never
+    // relayed, so the "table merged" toast and list update never once fired.
+    // Revive through tournamentEventBridge (the t-break pattern) if wanted;
+    // the tables list already refreshes from server truth on poll/visibility.
 
     // ── Blind level changes: update tournament state immediately ──
     const unsubBlind = masterBus.subscribeDebounced(
@@ -617,7 +612,6 @@ export default function TournamentDetails({
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
       unsubElim();
-      unsubMerge();
       unsubBlind();
       unsubBreak();
       unsubBreakEnd();

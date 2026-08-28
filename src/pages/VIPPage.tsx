@@ -100,24 +100,12 @@ export default function VIPPage() {
     return unsubDiamond;
   }, [user?.id]);
 
-  // Bus listener: update VIP points when awarded locally (debounced)
-  useEffect(() => {
-    if (!user?.id) return;
-    const unsubVIP = masterBus.subscribeDebounced(
-      'VIP_POINTS_UPDATED',
-      (event: any) => {
-        if (event?.payload?.added && event.payload.userId === user.id) {
-          setVipPoints((prev) => ({
-            ...prev,
-            current: prev.current + event.payload.added,
-            lifetime: prev.lifetime + event.payload.added,
-          }));
-        }
-      },
-      500
-    );
-    return unsubVIP;
-  }, [user?.id]);
+  // Removed 2026-08-28: a VIP_POINTS_UPDATED listener lived here, but NOTHING
+  // emits that event on the client bus — points are awarded server-side
+  // (rake settlement), so the handler could never run and "live" VIP points
+  // silently did not exist. Found when noDeadBusSubscriptions learned to see
+  // subscribeDebounced. If live points are wanted, they need a server->client
+  // bridge (tournamentEventBridge pattern), not a dead subscription.
 
   const loadingRef = useRef(false);
 

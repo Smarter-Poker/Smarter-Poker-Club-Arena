@@ -86,7 +86,6 @@
 }
 
 .details-header .back-btn:hover {
-  transform: scale(1.1);
   text-shadow: 0 0 12px rgba(111, 220, 255, 0.6);
 }
 
@@ -133,11 +132,6 @@
 .details-tabs .tab:hover {
   color: #e8eaf0;
   border-color: #6fdcff;
-  transform: translateY(-2px);
-  box-shadow:
-    0 6px 12px rgba(0, 0, 0, 0.3),
-    0 0 8px rgba(111, 220, 255, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .details-tabs .tab.active {
@@ -203,11 +197,7 @@
 }
 
 .qr-btn:hover {
-  transform: translateY(-1px);
   border-color: #6fdcff;
-  box-shadow:
-    0 4px 12px rgba(111, 220, 255, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .tournament-desc {
@@ -272,13 +262,8 @@
 }
 
 .quick-stats .stat:hover {
-  transform: translateY(-4px) scale(1.02);
   border-color: #6fdcff;
   background: linear-gradient(180deg, #223046 0%, #1a2436 100%);
-  box-shadow:
-    0 8px 16px rgba(0, 0, 0, 0.4),
-    0 0 12px rgba(111, 220, 255, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .quick-stats .stat-label {
@@ -405,12 +390,7 @@
 }
 
 .table-card:hover {
-  transform: translateY(-4px);
   border-color: #6fdcff;
-  box-shadow:
-    0 12px 24px rgba(0, 0, 0, 0.4),
-    0 0 16px rgba(111, 220, 255, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 /* -------------------------------------------------------------------------
@@ -501,8 +481,6 @@
 
 .details-footer button:hover,
 .details-footer .btn-enter-table:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
 }
 
 .details-footer button:active {

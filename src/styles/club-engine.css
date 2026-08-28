@@ -289,8 +289,6 @@ pre {
 }
 
 .btn-primary:hover:not(:disabled) {
-  box-shadow: var(--shadow-glow-blue);
-  transform: translateY(-2px);
 }
 
 /* Success - Green */
@@ -300,8 +298,6 @@ pre {
 }
 
 .btn-success:hover:not(:disabled) {
-  box-shadow: var(--shadow-glow-green);
-  transform: translateY(-2px);
 }
 
 /* Danger - Red */
@@ -311,8 +307,6 @@ pre {
 }
 
 .btn-danger:hover:not(:disabled) {
-  box-shadow: var(--shadow-glow-red);
-  transform: translateY(-2px);
 }
 
 /* Ghost */
@@ -336,7 +330,6 @@ pre {
 
 .btn-white:hover:not(:disabled) {
   background: var(--off-white);
-  transform: translateY(-2px);
 }
 
 /* Sizes */
@@ -370,7 +363,6 @@ pre {
 
 .card:hover {
   border-color: var(--border-hover);
-  transform: translateY(-2px);
 }
 
 .card-elevated {
@@ -409,10 +401,6 @@ pre {
 }
 
 .poker-card:hover {
-  transform: translateY(-8px) rotateZ(2deg);
-  box-shadow:
-    0 8px 16px rgba(0, 0, 0, 0.2),
-    0 16px 32px rgba(0, 0, 0, 0.1);
 }
 
 .poker-card.red {

@@ -376,8 +376,6 @@ a:hover {
 }
 
 .btn-primary:hover:not(:disabled) {
-  box-shadow: var(--shadow-glow-blue);
-  transform: translateY(-2px);
 }
 
 .btn-success {
@@ -386,8 +384,6 @@ a:hover {
 }
 
 .btn-success:hover:not(:disabled) {
-  box-shadow: var(--shadow-glow-success);
-  transform: translateY(-2px);
 }
 
 .btn-danger {
@@ -441,7 +437,6 @@ a:hover {
 
 .card:hover {
   border-color: var(--border-blue);
-  transform: translateY(-2px);
 }
 
 .card-glass {
@@ -700,7 +695,6 @@ a:hover {
 }
 
 .spring-hover:hover {
-  transform: translateY(-2px);
 }
 
 .press-scale {

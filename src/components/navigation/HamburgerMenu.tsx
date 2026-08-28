@@ -859,7 +859,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onMouseEnter={(e) => {
               handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
+              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
@@ -900,7 +900,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onMouseEnter={(e) => {
               handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
+              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
@@ -936,7 +936,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onMouseEnter={(e) => {
               handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
+              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
@@ -982,7 +982,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onMouseEnter={(e) => {
               handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
+              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
@@ -1007,7 +1007,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = colors.bgHover;
-            e.currentTarget.style.transform = 'translateX(4px)';
+            /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.background = 'transparent';
@@ -1046,7 +1046,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onMouseEnter={(e) => {
               handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
+              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
@@ -1403,7 +1403,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onMouseEnter={(e) => {
               handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
+              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
@@ -1489,7 +1489,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             onMouseEnter={(e) => {
               handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
+              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
@@ -1514,7 +1514,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = colors.bgHover;
-            e.currentTarget.style.transform = 'translateX(4px)';
+            /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.background = 'transparent';
@@ -1541,7 +1541,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = colors.bgHover;
-            e.currentTarget.style.transform = 'translateX(4px)';
+            /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.background = 'transparent';

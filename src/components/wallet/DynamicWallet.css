@@ -85,10 +85,6 @@
 }
 
 .dw__bbj[role='button']:hover {
-  transform: translateY(-1px);
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
 /* Shimmer sweep across the BBJ banner */
@@ -348,8 +344,6 @@
 }
 
 .dw__plus:hover {
-  transform: scale(1.1);
-  box-shadow: 0 2px 8px rgba(24, 119, 242, 0.65);
 }
 
 .dw__plus:active {

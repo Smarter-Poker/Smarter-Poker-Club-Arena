@@ -283,8 +283,6 @@
 
 .btnPrimary:hover:not(:disabled) {
   background: linear-gradient(135deg, #357ce6 0%, #1d4ed8 100%);
-  box-shadow: 0 4px 20px rgba(24, 119, 242, 0.35);
-  transform: translateY(-1px);
 }
 
 .btnPrimary:disabled {

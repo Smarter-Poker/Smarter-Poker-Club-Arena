@@ -127,8 +127,6 @@
 .supportCard:hover {
   border-color: var(--neon-cyan);
   background: linear-gradient(180deg, var(--neon-cyan-dim) 0%, var(--metal-mid) 100%);
-  box-shadow: var(--glow-cyan);
-  transform: translateY(-2px);
 }
 
 .supportIcon {

@@ -248,8 +248,6 @@
 }
 
 .admin-btn-primary:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(69, 153, 255, 0.3);
 }
 
 .admin-btn-success {
@@ -288,7 +286,6 @@
 }
 
 .admin-icon-btn:hover {
-  transform: scale(1.15);
 }
 
 /* ── Inputs ── */

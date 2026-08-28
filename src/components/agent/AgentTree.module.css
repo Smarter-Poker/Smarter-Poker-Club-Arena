@@ -69,7 +69,6 @@
 .nodeCard:hover {
   background: linear-gradient(135deg, rgba(40, 40, 55, 0.95), rgba(30, 30, 45, 0.98));
   border-color: rgba(251, 191, 36, 0.3);
-  transform: translateX(2px);
 }
 
 .nodeCard.inactive {
@@ -224,7 +223,6 @@
 
 .transferBtn:hover {
   background: rgba(251, 191, 36, 0.25);
-  transform: scale(1.1);
 }
 
 /* Children */

@@ -91,8 +91,6 @@
 }
 
 .addBtn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(251, 191, 36, 0.4);
 }
 
 /* Add Friend Row */
@@ -138,10 +136,6 @@
 }
 
 .addFriendRow button:hover {
-  transform: translateY(-1px);
-  box-shadow:
-    0 4px 16px rgba(59, 130, 246, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .addFriendRow button:disabled {
@@ -265,8 +259,4 @@
 
 .iconBtn:hover {
   background: rgba(255, 255, 255, 0.1);
-  transform: translateY(-1px);
-  box-shadow:
-    0 2px 6px rgba(255, 255, 255, 0.1),
-    0 0 0 1px rgba(255, 255, 255, 0.04);
 }

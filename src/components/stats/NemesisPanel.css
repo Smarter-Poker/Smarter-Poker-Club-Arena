@@ -60,7 +60,6 @@
 }
 
 .nemesis-card:hover {
-  transform: translateY(-1px);
 }
 
 .nemesis-card:focus-visible {
@@ -285,5 +284,9 @@
 /* These were applied in TSX with no rule defined anywhere, so the empty
    states rendered inconsistently - only .pos-radar-empty was centred. */
 
-.nemesis-empty { text-align: center; }
-.nemesis-head { text-align: left; }
+.nemesis-empty {
+  text-align: center;
+}
+.nemesis-head {
+  text-align: left;
+}

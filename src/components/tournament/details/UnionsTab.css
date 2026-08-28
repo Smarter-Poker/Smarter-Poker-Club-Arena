@@ -391,7 +391,6 @@
   transition: transform 0.16s var(--tl-ease);
 }
 .un-retry:hover {
-  transform: translateY(-1px);
 }
 .un-retry:active {
   transform: translateY(1px);

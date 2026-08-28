@@ -138,8 +138,6 @@
 
 .session-card:hover {
   border-color: rgba(0, 212, 255, 0.4);
-  transform: translateY(-2px);
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.1);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

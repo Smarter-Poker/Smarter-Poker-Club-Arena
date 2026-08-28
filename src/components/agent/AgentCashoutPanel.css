@@ -108,7 +108,6 @@
 
 .cashout-card:hover {
   background: var(--surface-elevated, #2a2a4a);
-  transform: translateY(-2px);
 }
 
 .cashout-card:last-child {
@@ -206,8 +205,6 @@
 
 .action-btn.approve:hover:not(:disabled) {
   opacity: 0.9;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 24px rgba(0, 200, 83, 0.35);
 }
 
 .action-btn.reject {

@@ -436,7 +436,6 @@
 }
 
 .hover-lift:hover {
-  transform: translateY(-4px);
 }
 
 .hover-glow {
@@ -452,7 +451,6 @@
 }
 
 .hover-scale:hover {
-  transform: scale(1.05);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

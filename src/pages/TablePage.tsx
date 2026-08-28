@@ -3597,6 +3597,45 @@ export default function TablePage({
   }, []);
   /** Reset every piece of consent-panel + reveal state (hand boundary). */
   const resetRitPanelState = useCallback(() => {
+    /* ─── THE ONE PIECE THIS FUNCTION USED TO MISS (2026-08-28) ──────────────
+     *
+     * `ritOpponent` is a DISPLAY STRING that is also load-bearing as a CONTROL
+     * FLAG: `handleInsuranceDeclineForHand` opens the RIT panel on
+     * `if (ritOpponent !== 'Opponent') setShowRIT(true)`. Its initial value,
+     * 'Opponent', is the sentinel meaning "RIT is not armed".
+     *
+     * Nothing ever put the sentinel back. This function's own docstring says it
+     * resets EVERY piece of RIT state at the hand boundary, and it reset the
+     * other fourteen — including `ritDeadlineRef` two lines below — but not this
+     * one. So `ritOpponent !== 'Opponent'` quietly changed meaning from "RIT was
+     * armed in THIS hand" to "RIT was armed at some point this session".
+     *
+     * WHAT THAT COST. `handleAllIn` (the A key) sets `ritOpponent` whenever a
+     * shove leaves two or more players all in. From that moment on, for the rest
+     * of the session, EVERY insurance decline force-opened the RIT panel — and
+     * opened it with none of the context the server path supplies:
+     *
+     *   - the countdown reads `ritDeadlineRef.current`, which this function has
+     *     just set to 0, so the timer shows 0 the instant it appears;
+     *   - `ritIsChooser`, `ritMaxRuns` and `ritPlayerCount` are stale from an
+     *     earlier hand;
+     *   - and its Accept / Decline / choose-runs buttons all call
+     *     `respondToRIT(tableId, …)`, POSTing a response to the engine for an
+     *     offer that does not exist.
+     *
+     * The real RIT path is server-driven and sets all of that (chooserId,
+     * deadline, maxRuns, playerCount, isChooser) before opening the panel on a
+     * deliberate 1500ms cadence. Restoring the sentinel here makes the gate mean
+     * what it was written to mean and costs that path nothing — it assigns
+     * `ritOpponent` itself, after this reset, on the same event that opens the
+     * panel.
+     *
+     * NOT the whole story: the ALL IN BUTTON never arms this at all, so the two
+     * shove paths still disagree about whether a later insurance decline can
+     * open RIT. That is a behaviour question for Dan, and it is deliberately
+     * left alone here — this change only stops the flag surviving the hand it
+     * belongs to. */
+    setRitOpponent('Opponent');
     setRitAllPlayerIds([]);
     setRitAcceptedIds([]);
     setRitChooserId(null);

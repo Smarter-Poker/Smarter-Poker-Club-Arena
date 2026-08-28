@@ -6784,6 +6784,18 @@ export default function TablePage({
         const payout = Number((handState as Record<string, unknown>).payout || 0);
         const won = Boolean((handState as Record<string, unknown>).won);
         const settledName = String((handState as Record<string, unknown>).username || 'Player');
+        // EV CASHOUT 2026-08-28: a locked cashout pays REGARDLESS of the
+        // board's outcome, and it is not "insurance paid" — label it right.
+        const settledKind = String((handState as Record<string, unknown>).kind || 'insurance');
+        if (settledKind === 'ev_cashout' && payout > 0) {
+          setInsurancePayoutFly({ playerId: actorId, amount: payout });
+          if (actorId === userId) {
+            toast.success(`Cashout Paid You $${payout.toLocaleString()}`, 5000);
+          } else {
+            toast.info(`Cashout Paid ${settledName} $${payout.toLocaleString()}`, 4000);
+          }
+          return;
+        }
         if (won && payout > 0) {
           // REFERENCE PARITY 2026-08-26 (Dan): "an insurance paid animation
           // should fly over to my avatar with some animation and toast

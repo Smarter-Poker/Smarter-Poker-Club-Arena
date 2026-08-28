@@ -1507,6 +1507,7 @@
     "fn_ensure_social_page_for_home_group",
     "fn_ensure_social_page_for_venue",
     "fn_ensure_upcoming_mtts",
+    "fn_evict_sitting_out_cash_players",
     "fn_execute_union_rakeback",
     "fn_expire_stale_cashouts",
     "fn_export_user_auth_backup",

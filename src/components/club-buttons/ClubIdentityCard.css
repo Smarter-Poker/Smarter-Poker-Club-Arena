@@ -31,9 +31,9 @@
 .club-identity__logo {
   position: absolute;
   z-index: 1;
-  left: 17.2%;
-  top: 22.1%;
-  width: 21.4%;
+  left: 17.05%;
+  top: 22.8%;
+  width: 21.7%;
   aspect-ratio: 1 / 1;
   display: grid;
   place-items: center;
@@ -48,6 +48,7 @@
   height: 100%;
   display: block;
   object-fit: contain;
+  object-position: center;
 }
 
 .club-identity__details {
@@ -89,7 +90,7 @@
   font-size: clamp(0.72rem, 3.65cqw, 2rem);
   font-weight: 700;
   letter-spacing: 0.01em;
-  line-height: 1;
+  line-height: 1.18;
   text-shadow: 0 2px 2px #000;
 }
 
@@ -107,6 +108,7 @@
   line-height: 1;
   text-align: left;
   text-shadow: 0 2px 2px #000;
+  transform: translateY(0.55cqw);
 }
 
 button.club-identity__line {
@@ -148,7 +150,6 @@ button.club-identity__line {
 
 .club-identity__level > span {
   display: block;
-  transform: translateY(1.44cqw);
 }
 
 .club-identity__footer {
@@ -193,6 +194,7 @@ button.club-identity__line {
   width: 7.5cqw;
   height: 7.5cqw;
   margin-left: auto;
+  margin-top: 1.4cqw;
   display: inline-grid;
   place-items: center;
   padding: 0;
@@ -201,6 +203,7 @@ button.club-identity__line {
   color: #1ea7ff;
   filter: drop-shadow(0 0 3px rgba(0, 136, 255, 0.72));
   cursor: pointer;
+  line-height: 0;
 }
 
 .club-identity__share svg {

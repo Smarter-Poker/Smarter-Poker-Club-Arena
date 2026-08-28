@@ -115,10 +115,6 @@
   box-shadow: 0 0 12px rgba(0, 150, 255, 0.3);
   flex-shrink: 0;
 }
-
-.searchButton:hover:not(:disabled) {
-}
-
 .searchButton:disabled {
   opacity: 0.5;
   cursor: not-allowed;

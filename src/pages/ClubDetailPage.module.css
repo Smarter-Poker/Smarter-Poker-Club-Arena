@@ -333,10 +333,6 @@
   color: #fff;
   box-shadow: 0 0 15px rgba(0, 212, 255, 0.4);
 }
-
-.createTableButton:hover {
-}
-
 .financialsButton {
   background: transparent;
   border: 2px solid #00ff88;
@@ -401,10 +397,6 @@
     inset 0 -1px 0 rgba(0, 0, 0, 0.2);
   transition: transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.statCard:hover {
-}
-
 .statIconWrap {
   width: 40px;
   height: 40px;

@@ -1188,10 +1188,6 @@
     transform 0.2s ease,
     box-shadow 0.2s ease;
 }
-
-.tournament-item:hover {
-}
-
 /* ── Charts: glass frames ── */
 .chart-card {
   background: linear-gradient(165deg, rgba(28, 34, 60, 0.7) 0%, rgba(13, 16, 30, 0.92) 100%);

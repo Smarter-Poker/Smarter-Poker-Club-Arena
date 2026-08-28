@@ -390,8 +390,6 @@
     0 4px 12px rgba(0, 0, 0, 0.45);
   transition: transform 0.16s var(--tl-ease);
 }
-.un-retry:hover {
-}
 .un-retry:active {
   transform: translateY(1px);
 }

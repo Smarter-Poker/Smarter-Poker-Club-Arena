@@ -858,12 +858,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             }}
             onMouseEnter={(e) => {
               handleItemHover(item.path);
-              e.currentTarget.style.background = colors.bgHover;
               /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'translateX(0)';
             }}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
@@ -899,12 +894,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             }}
             onMouseEnter={(e) => {
               handleItemHover(item.path);
-              e.currentTarget.style.background = colors.bgHover;
               /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'translateX(0)';
             }}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
@@ -935,12 +925,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             }}
             onMouseEnter={(e) => {
               handleItemHover(item.path);
-              e.currentTarget.style.background = colors.bgHover;
               /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'translateX(0)';
             }}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
@@ -981,12 +966,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             }}
             onMouseEnter={(e) => {
               handleItemHover(item.path);
-              e.currentTarget.style.background = colors.bgHover;
               /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'translateX(0)';
             }}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
@@ -1004,14 +984,6 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             animation: isOpen
               ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(12 + 17) * 30}ms both`
               : 'none',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = colors.bgHover;
-            /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.transform = 'translateX(0)';
           }}
         >
           <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
@@ -1045,12 +1017,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             }}
             onMouseEnter={(e) => {
               handleItemHover(item.path);
-              e.currentTarget.style.background = colors.bgHover;
               /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'translateX(0)';
             }}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
@@ -1402,12 +1369,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             }}
             onMouseEnter={(e) => {
               handleItemHover(item.path);
-              e.currentTarget.style.background = colors.bgHover;
               /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'translateX(0)';
             }}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
@@ -1488,12 +1450,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             }}
             onMouseEnter={(e) => {
               handleItemHover(item.path);
-              e.currentTarget.style.background = colors.bgHover;
               /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'translateX(0)';
             }}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
@@ -1511,14 +1468,6 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             animation: isOpen
               ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) 1140ms both`
               : 'none',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = colors.bgHover;
-            /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.transform = 'translateX(0)';
           }}
         >
           <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
@@ -1538,14 +1487,6 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             animation: isOpen
               ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) 1170ms both`
               : 'none',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = colors.bgHover;
-            /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.transform = 'translateX(0)';
           }}
         >
           <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.danger }}>

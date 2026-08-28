@@ -198,10 +198,6 @@
 .daily-bonus-banner {
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.daily-bonus-banner:hover {
-}
-
 .bonus-icon {
   font-size: 1.5rem;
 }
@@ -468,10 +464,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
 }
-
-.referral-banner:hover {
-}
-
 @media (max-width: 768px) {
   .promotions-page {
     /* padding: 0 !important used to wipe the bottom-nav clearance declared on

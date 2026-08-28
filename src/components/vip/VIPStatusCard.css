@@ -24,10 +24,6 @@
   transform-style: preserve-3d;
   perspective: 800px;
 }
-
-.vip-status-card:hover {
-}
-
 /* Holographic rainbow shimmer overlay */
 .vip-status-card::before {
   content: '';

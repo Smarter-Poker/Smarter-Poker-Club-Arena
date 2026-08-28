@@ -243,10 +243,6 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   transition: all 0.25s ease;
 }
-
-.mini-card:hover {
-}
-
 .mini-card.red {
   color: #e74c3c;
 }

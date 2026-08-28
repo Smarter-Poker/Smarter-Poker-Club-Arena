@@ -382,11 +382,6 @@
   box-shadow: 0 4px 12px rgba(251, 191, 36, 0.25);
   -webkit-tap-highlight-color: transparent;
 }
-
-.continueBtn:hover:not(:disabled),
-.continueBtn:active:not(:disabled) {
-}
-
 .continueBtn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -467,11 +462,6 @@
   box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
   -webkit-tap-highlight-color: transparent;
 }
-
-.confirmBtn:hover:not(:disabled),
-.confirmBtn:active:not(:disabled) {
-}
-
 .confirmBtn:disabled {
   opacity: 0.65;
   cursor: not-allowed;

@@ -83,10 +83,6 @@
   cursor: pointer;
   min-height: 44px;
 }
-
-.dw__bbj[role='button']:hover {
-}
-
 /* Shimmer sweep across the BBJ banner */
 .dw__bbj::after {
   content: '';
@@ -342,10 +338,6 @@
     transform 0.15s ease,
     box-shadow 0.15s ease;
 }
-
-.dw__plus:hover {
-}
-
 .dw__plus:active {
   transform: scale(0.95);
 }

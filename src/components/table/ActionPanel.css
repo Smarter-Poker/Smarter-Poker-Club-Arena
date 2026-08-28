@@ -1311,10 +1311,6 @@
 .raise-slider:active {
   cursor: grabbing;
 }
-
-.raise-slider::-webkit-slider-thumb:hover {
-}
-
 .raise-slider:active::-webkit-slider-thumb {
   transform: scale(1.1);
   box-shadow:
@@ -1357,10 +1353,6 @@
   /* Silver, matching the webkit fill above (Dan 2026-08-28). */
   background: linear-gradient(90deg, #f2f4f7 0%, #c3c9d1 60%, #868e99 100%);
 }
-
-.raise-slider::-moz-range-thumb:hover {
-}
-
 /* Preset Buttons Row */
 .raise-presets {
   display: flex;

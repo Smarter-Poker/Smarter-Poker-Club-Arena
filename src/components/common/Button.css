@@ -86,10 +86,6 @@
 .btn-primary:hover:not(.btn-disabled)::before {
   left: 150%;
 }
-
-.btn-primary:hover:not(.btn-disabled) {
-}
-
 .btn-primary:active:not(.btn-disabled) {
   transform: translateY(0) scale(0.98);
 }
@@ -150,24 +146,13 @@
     0 0 18px rgba(255, 215, 0, 0.5),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-
-.btn-gold:hover:not(.btn-disabled) {
-}
-
-.btn-danger:hover:not(.btn-disabled) {
-}
-
-.btn-success:hover:not(.btn-disabled) {
-}
-
-.btn-warning:hover:not(.btn-disabled) {
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
- * ICONS
- * ═══════════════════════════════════════════════════════════════════════════════ */
-
-.btn-icon {
+═══════════════════════════════════════════════════════════════════════════════
+  *
+  ICONS
+  *
+  ═══════════════════════════════════════════════════════════════════════════════
+  */
+  .btn-icon {
   display: flex;
   align-items: center;
   justify-content: center;

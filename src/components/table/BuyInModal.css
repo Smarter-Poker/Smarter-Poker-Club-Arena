@@ -249,10 +249,6 @@
     transform 0.1s ease,
     box-shadow 0.15s ease;
 }
-
-.buy-in-modal__slider::-webkit-slider-thumb:hover {
-}
-
 /* Firefox Thumb */
 .buy-in-modal__slider::-moz-range-thumb {
   width: 24px;
@@ -268,10 +264,6 @@
     transform 0.1s ease,
     box-shadow 0.15s ease;
 }
-
-.buy-in-modal__slider::-moz-range-thumb:hover {
-}
-
 .buy-in-modal__slider-labels {
   display: flex;
   justify-content: space-between;

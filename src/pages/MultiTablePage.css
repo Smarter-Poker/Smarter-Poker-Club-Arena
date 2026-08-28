@@ -476,10 +476,6 @@
     transform 0.15s ease,
     box-shadow 0.15s ease;
 }
-
-.multi-table-page__take-seat-btn:hover {
-}
-
 .multi-table-page__take-seat-btn:active {
   transform: translateY(0);
 }

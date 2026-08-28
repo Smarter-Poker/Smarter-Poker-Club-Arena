@@ -162,10 +162,6 @@
   flex-shrink: 0;
   box-shadow: 0 4px 16px rgba(255, 215, 0, 0.3);
 }
-
-.featured-redeem-btn:hover:not(:disabled) {
-}
-
 .featured-redeem-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;

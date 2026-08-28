@@ -291,10 +291,6 @@
 .player-card--hero-tilt {
   transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
-
-.hole-cards--hero:hover .player-card--hero-tilt {
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    PEEK INDICATOR (Hero)
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -360,10 +356,6 @@
 .hole-cards--hero .player-card {
   transition: transform 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.hole-cards--hero:hover .player-card {
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -413,7 +405,4 @@
   transition: transform 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   transform-style: preserve-3d;
   perspective: 300px;
-}
-
-.player-card--hero-tilt:hover {
 }

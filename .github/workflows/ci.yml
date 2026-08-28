@@ -582,6 +582,26 @@ jobs:
           # loses to a script with a plausible filename every time.
           node scripts/ci/check-no-vercel-deploy.mjs
 
+      # BLOCKING: the other half of the phantom-column question. That gate asks
+      # whether a written column EXISTS; this asks whether the columns the table
+      # REQUIRES were supplied. Postgres refuses both statements just as
+      # completely and both errors land in a catch. Four were found by hand on
+      # 2026-08-28, and two of them were phantom-column bugs as well - so
+      # repointing the wrong names, the fix that passes review, would have left
+      # the inserts failing exactly as before.
+      - name: Supabase Invariants — Required Columns
+        run: |
+          set -o pipefail
+          echo "## Required-Column Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-required-columns.mjs 2>&1 | tee /tmp/reqcol.log; then
+            echo "OK — every literal insert supplies the columns its table requires." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "An insert omits a NOT NULL column with no default, so the statement cannot" >> $GITHUB_STEP_SUMMARY
+            echo "land and the control it belongs to does nothing. See the log." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       - name: Supabase Invariants — Phantom Columns
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

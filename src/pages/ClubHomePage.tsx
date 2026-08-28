@@ -83,6 +83,7 @@ import {
 } from '../components/lobby/lobbyViewPrefs';
 import { useUserStore } from '../stores/useUserStore';
 import LobbyAdStrip from '../components/lobby/LobbyAdStrip';
+import HouseAdCard from '../components/ads/HouseAdCard';
 import AdvancedFilters, {
   loadFilters,
   saveFilters,
@@ -4115,6 +4116,24 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     <p className="empty-hint">
                       Nothing Is Running Here Right Now. New Games Open All The Time.
                     </p>
+                    {/* HOUSE ADS, `empty_state` (2026-08-28). Declared in Phase
+                        1 and wired to nothing until now.
+
+                        Deliberately ONLY this branch. The other three empty
+                        views each carry a remedy - "Show All Games" - and an
+                        advert beside a fix competes with the fix. This is the
+                        one where the club genuinely has nothing running and the
+                        player has nothing to tap, which is the entire
+                        justification for the slot: it fills space that is dead,
+                        rather than displacing something somebody came for. */}
+                    <HouseAdCard
+                      slot="empty_state"
+                      clubId={resolvedClubId}
+                      onNavigate={(path) => {
+                        haptic.selection();
+                        navigate(path);
+                      }}
+                    />
                   </>
                 ) : !narrowed ? (
                   <>

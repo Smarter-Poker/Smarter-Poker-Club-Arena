@@ -574,8 +574,25 @@ export async function setSitOut(
       headers,
       body: JSON.stringify({ tableId, sitOut }),
     });
+    /* READ THE BODY BEFORE JUDGING THE STATUS (2026-08-28).
+     *
+     * `handlers/sitout.ts` answers a refusal with HTTP 400 and the REASON in
+     * the body. This used to return `Server error (400)` on any non-2xx, so
+     * every sit-out refusal the engine could produce was replaced with a status
+     * code before a human ever saw it. That was survivable while the only
+     * refusal was "Player not found at this table"; it stops being survivable
+     * now that a 400 also means "you must play at least one hand before you can
+     * sit out" (Dan 2026-08-28), which is a rule the player has to be told or
+     * the button just looks broken.
+     *
+     * The status code is still the fallback for a response with no usable body
+     * — a proxy error page, a 502, an empty 500. */
+    const body = (await response.json().catch(() => null)) as
+      | (ActionResult & { willFoldNextHand?: boolean })
+      | null;
+    if (body && typeof body.success === 'boolean') return body;
     if (!response.ok) return { success: false, error: `Server error (${response.status})` };
-    return await response.json();
+    return { success: false, error: 'Server sent an unreadable response' };
   } catch (err: unknown) {
     reportError(err, 'GameServerAPI.setSitOut');
     return { success: false, error: 'Server unreachable' };

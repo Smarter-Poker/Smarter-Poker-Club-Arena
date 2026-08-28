@@ -753,7 +753,6 @@ export default function SettingsPage() {
          permanently disagreeing. setEnabled() updates the live engine AND
          persists BOTH gate keys (the HamburgerMenu path); volume is applied
          live for the same reason rather than waiting for a table mount. */
-      soundService.setEnabled(settings.soundEnabled);
       /* Volume is NOT applied here. `updateTableSettings` above commits it to
          the store, which applies it in `applyGateChanges` — this line applied
          the same number a second time. `setEnabled` stays because the gate keys
@@ -769,8 +768,6 @@ export default function SettingsPage() {
          permanently disagreeing. setEnabled() updates the live engine AND
          persists BOTH gate keys (the HamburgerMenu path); volume is applied
          live for the same reason rather than waiting for a table mount. */
-      soundService.setEnabled(settings.soundEnabled);
-      soundService.setMasterVolume(Math.max(0, Math.min(100, settings.soundVolume)) / 100);
 
       /* Sync theme to Zustand store so Shell.tsx applies it immediately.
          2026-08-26: "Auto (System)" was offered in the dropdown, accepted by
@@ -1062,36 +1059,6 @@ export default function SettingsPage() {
               checked={settings.showPotOdds}
               onChange={(v) => updateSetting('showPotOdds', v)}
               label="Show Pot Odds"
-            />
-          </div>
-        </section>
-
-        {/* Gameplay Settings */}
-        <section
-          ref={gameplayRef}
-          className={styles.section}
-          style={settingsSectionAnimationStyle(2)}
-        >
-          <h2>Gameplay</h2>
-
-          {/* Confirm All-In toggle REMOVED 2026-08-28: it saved and synced,
-              but ActionPanel destructures the prop to _confirmAllInDeprecated
-              and never reads it — the in-table SettingsPanel removed its copy
-              for the same documented reason ("accept the action"). A toggle
-              that does nothing is worse than no toggle. The stored field
-              stays for compatibility with old saves. */}
-
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Auto-Muck My Winning Hand</span>
-              <span className={styles.settingDesc}>
-                Skip The Show-Or-Muck Prompt When You Win Without A Showdown
-              </span>
-            </div>
-            <Toggle
-              checked={settings.autoMuckWinners}
-              onChange={(v) => updateSetting('autoMuckWinners', v)}
-              label="Auto-Muck My Winning Hand"
             />
           </div>
         </section>

@@ -2713,18 +2713,20 @@ export class HandController {
     return calculatePots(this.state.players);
   }
 
-  /** Rake + BBJ fee for the current pot, using the same rules as completeHand. */
-  public computeRakeAndBBJ(): { rake: number; bbjFee: number } {
+  /** Rake + BBJ fee for the current pot, using the same rules as completeHand.
+   *
+   * PREFLOP INSURANCE FIX 2026-08-28: `assumeFlop` prices the deductions as
+   * if the flop is already seen. An all-in runout ALWAYS deals to the river,
+   * so a PREFLOP insurance offer priced on sawFlop=false claimed zero rake
+   * and overstated "For Winning" by the full rake + BBJ drop. Default false
+   * keeps every other caller (RIT settlement, etc.) exactly as before. */
+  public computeRakeAndBBJ(assumeFlop: boolean = false): { rake: number; bbjFee: number } {
+    const flopSeen = this.state.sawFlop || assumeFlop;
     const playerCount = this.state.players.filter((p) => !p.is_sitting_out).length;
-    const rake = calculateRake(
-      this.state.pot,
-      this.state.sawFlop,
-      this.config.rakeConfig,
-      playerCount
-    );
+    const rake = calculateRake(this.state.pot, flopSeen, this.config.rakeConfig, playerCount);
     let bbjFee = 0;
     const bbjCfg = this.config.bbjConfig;
-    if (bbjCfg && bbjCfg.enabled && this.state.sawFlop) {
+    if (bbjCfg && bbjCfg.enabled && flopSeen) {
       const playersDealt = this.state.players.filter((p) => !p.is_sitting_out).length;
       const potInBB = this.state.pot / this.config.bigBlind;
       if (playersDealt >= bbjCfg.minPlayersDealt && potInBB >= bbjCfg.minPotBB) {

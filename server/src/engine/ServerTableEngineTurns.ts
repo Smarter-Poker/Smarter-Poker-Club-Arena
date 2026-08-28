@@ -1868,6 +1868,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         // Malmuth-Harville pressure model in HorseLogic.icmRisk.
         stacks: tctx.stacks,
         payoutPct: tctx.payoutPct,
+        // V26 PRIZE LANDSCAPE: what a bust is actually worth right now -
+        // how many chests are left, their mean, and whether the big one is
+        // still in the box.
+        mysteryChestsLeft: tctx.mysteryChestsLeft,
+        mysteryMeanCents: tctx.mysteryMeanCents,
+        mysteryTopCents: tctx.mysteryTopCents,
+        mysteryTopLive: tctx.mysteryTopLive,
+        meanBountyCents: tctx.meanBountyCents,
         // V23 ENDGAME: final-table flag + the blind clock (jam BEFORE the
         // blinds halve the M, not after).
         finalTable: tctx.finalTable,

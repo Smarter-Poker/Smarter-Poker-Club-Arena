@@ -189,6 +189,12 @@ export class GameServer {
   private lastPlaceOverpayChargeAt = 0;
   /** Last fn_repair_tournament_rake_attribution pass (2026-08-28). */
   private lastRakeAttributionRepairAt = 0;
+  /** Last fn_backpay_spin_unpaid_winners pass (2026-08-28 spin deep dive). */
+  private lastSpinBackpayAt = 0;
+  /** Last fn_requeue_unbanked_fees pass (2026-08-28 rake re-drive). */
+  private lastFeeRequeueAt = 0;
+  /** Last fn_pay_backed_payout_shortfalls pass (2026-08-28 backed payouts). */
+  private lastBackedPayoutAt = 0;
   private running: boolean = false;
   private startTime: number = Date.now();
 
@@ -2871,6 +2877,118 @@ export class GameServer {
             }
           } catch (attEx) {
             reportError(attEx, 'GameServer.rake_attribution_repair_threw');
+          }
+        }
+
+        // ── SPIN WINNER BACK-PAY (2026-08-28) ──
+        // v_spin_unpaid_settlements compares what the reserve pool DREW for a
+        // Spin against what reached a player's wallet. 52 events had already
+        // diverged when it was built, every one of them with exactly one
+        // player at position 1 - the prize left the bank and landed nowhere.
+        // Spin is excluded from fn_tournament_money_conservation entirely
+        // (`variant NOT IN ('spin','satellite')`), so nothing else on the
+        // platform was ever going to notice. Its own timer, for the reason
+        // written above the HU back-pay: a repair gated on another job's clock
+        // runs at boot and then effectively never.
+        if (Date.now() - this.lastSpinBackpayAt > 10 * 60 * 1000) {
+          this.lastSpinBackpayAt = Date.now();
+          try {
+            const { data: sbp, error: sbpErr } = await supabase.rpc(
+              'fn_backpay_spin_unpaid_winners',
+              { p_apply: true, p_limit: 200 }
+            );
+            if (sbpErr) {
+              reportError(
+                new Error(`[GameServer] spin winner back-pay failed: ${sbpErr.message}`),
+                'GameServer.spin_backpay_failed'
+              );
+            } else if (Number(sbp?.winners_paid) > 0) {
+              console.log(
+                `[GameServer] Spin winner back-pay: ${sbp.winners_paid} winner(s), ${sbp.chips} chips ` +
+                  `(owed ${sbp.owed_before} -> ${sbp.owed_after})`
+              );
+            }
+          } catch (sbpEx) {
+            reportError(sbpEx, 'GameServer.spin_backpay_threw');
+          }
+        }
+
+        // ── UNBANKED FEE RE-QUEUE (2026-08-28) ──
+        // queueUnbankedFee is the last line of defence: when a rake or BBJ fee
+        // cannot be banked it goes into pending_fee_distributions, and the
+        // drain above empties that. When the QUEUE INSERT itself failed - a
+        // Cloudflare 520, a PostgREST schema-cache blip - the alert was the
+        // only record left, and its text said the chips were "recoverable only
+        // by hand". They are not: since 2026-08-22 the alert carries the whole
+        // payload (pot, numPlayers, contributions), which is everything needed
+        // to put the row back in the queue.
+        //
+        // fn_requeue_unbanked_fees re-runs feeIsAccountedFor in SQL before
+        // queueing anything, because most of these alerts describe fees that
+        // were banked moments later - on the first run, 1,205 of 1,459. Without
+        // that check this would double-book the overwhelming majority of what
+        // it touches.
+        if (Date.now() - this.lastFeeRequeueAt > 30 * 60 * 1000) {
+          this.lastFeeRequeueAt = Date.now();
+          try {
+            const { data: rq, error: rqErr } = await supabase.rpc('fn_requeue_unbanked_fees', {
+              p_apply: true,
+              p_limit: 500,
+            });
+            if (rqErr) {
+              reportError(
+                new Error(`[GameServer] unbanked fee re-queue failed: ${rqErr.message}`),
+                'GameServer.fee_requeue_failed'
+              );
+            } else if (Number(rq?.requeued) > 0 || Number(rq?.already_accounted) > 0) {
+              console.log(
+                `[GameServer] Unbanked fee re-queue: ${rq.requeued} re-queued ` +
+                  `(${rq.rake_requeued} rake, ${rq.bbj_requeued} bbj), ` +
+                  `${rq.already_accounted} already banked (alerts ${rq.alerts_open_before} -> ${rq.alerts_open_after})`
+              );
+            }
+          } catch (rqEx) {
+            reportError(rqEx, 'GameServer.fee_requeue_threw');
+          }
+        }
+
+        // ── BACKED PAYOUT SHORTFALLS (2026-08-28) ──
+        // Events that finished owing an identifiable finisher money AND still
+        // hold the chips to pay it. The rule is strict and lives in the RPC:
+        // pay only where fn_tournament_conservation_delta >= total_top_up, so
+        // an event can never be pushed into deficit to make a player whole,
+        // and refuse afterwards if conservation would go negative anyway.
+        // Spins and satellites are excluded - a Spin's pool is funded by the
+        // Reserve Pool rather than its own collections, and a satellite awards
+        // seats, so neither delta means what it means elsewhere.
+        //
+        // Wired here because the playbook's own wiring check caught it as dead
+        // code: it had been run by hand and had no caller. Everything else in
+        // this block learned the same lesson the hard way - a repair that
+        // depends on someone remembering to run it does not run.
+        if (Date.now() - this.lastBackedPayoutAt > 60 * 60 * 1000) {
+          this.lastBackedPayoutAt = Date.now();
+          try {
+            const { data: bp, error: bpErr } = await supabase.rpc(
+              'fn_pay_backed_payout_shortfalls',
+              { p_apply: true, p_limit: 500 }
+            );
+            if (bpErr) {
+              reportError(
+                new Error(`[GameServer] backed payout sweep failed: ${bpErr.message}`),
+                'GameServer.backed_payout_failed'
+              );
+            } else if (
+              Number(bp?.events_paid) > 0 ||
+              Number(bp?.events_withheld_unfunded_pool) > 0
+            ) {
+              console.log(
+                `[GameServer] Backed payout sweep: ${bp.events_paid} event(s) paid ${bp.chips_paid} chips, ` +
+                  `${bp.events_withheld_unfunded_pool} withheld (${bp.chips_withheld_unfunded_pool} chips, unfunded pools)`
+              );
+            }
+          } catch (bpEx) {
+            reportError(bpEx, 'GameServer.backed_payout_threw');
           }
         }
 

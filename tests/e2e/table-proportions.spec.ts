@@ -190,6 +190,47 @@ test.describe('every device gets the same proportions', () => {
     ).toEqual([]);
   });
 
+  test("the hero's stack plate is never covered by the action bar", async ({ page }) => {
+    /* THE ONE DEPENDENCY SeatSlot.css NAMES BY ITSELF. The hero's wrapper lift
+       was retired to 0 ("Zero, not some smaller lift"), which puts the avatar's
+       CENTRE on the scaler's bottom edge and hangs half the hero block below the
+       felt. That file's own note ends:
+
+         "THE ONE THING IT DEPENDS ON: half the hero block now hangs below the
+          scaler, so --sp-hero-clear ... has to be at least that half ... Below
+          that the plate carrying the stack goes back under the bar, which is
+          the bug the lift was added for in the first place."
+
+       Every term in that sentence became a different proportional expression on
+       2026-08-28 — the avatar is a fraction of the felt, the bar is a clamp on
+       the viewport, the reserve is a constant — so the relationship that used to
+       be checkable by hand is now only knowable from layout. Hence a measurement
+       rather than arithmetic.
+
+       Measured at the time of writing: clear on all thirteen devices, but on
+       five of them the block hangs FURTHER below the felt than the reserve
+       states (86.8px against 60px on an iPad Pro 12.9). It clears on spare
+       vertical space rather than on the reserve, which is exactly the kind of
+       margin that disappears silently. This is what notices. */
+    const rows = await measureAll(page, css);
+
+    const covered = rows
+      .filter((r) => r.heroPlateBottom > r.barTop)
+      .map(
+        (r) =>
+          `${r.device} (${r.vp}): plate bottom ${r.heroPlateBottom}px is below the bar top ` +
+          `${r.barTop}px — the player cannot see their own stack`
+      );
+
+    expect(
+      covered,
+      'the hero plate is under the action bar. Either --sp-hero-clear no longer ' +
+        'covers the overhang, or the hero block grew: both are proportional now and ' +
+        'the reserve is a constant, so they can drift apart without anyone typing a ' +
+        'new number.'
+    ).toEqual([]);
+  });
+
   test('the widest hole-card row keeps a constant share of the felt', async ({ page }) => {
     /* The fit guarantee, expressed the way it is now true. Every worked example
        in SeatSlot.css used to be a hand-checked sum at four fixed widths — the

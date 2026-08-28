@@ -43,8 +43,12 @@ export default function GlobalWaitlistListener() {
   const setupChannel = useCallback(() => {
     if (!user?.id || cleanedUpRef.current) return;
 
-    // Clean up any prior channel before creating a new one
-    masterBus.removeRegisteredChannel(WAITLIST_CHANNEL_KEY);
+    // Clean up any prior channel before creating a new one.
+    // FORCED on purpose (2026-08-28): this is a reconnect path that must end
+    // up on a genuinely FRESH socket. Under the new refcount a plain release
+    // would merely decrement, and getOrCreateChannel below would then hand
+    // back the very channel this line meant to discard.
+    masterBus.forceRemoveRegisteredChannel(WAITLIST_CHANNEL_KEY);
 
     /**
      * ═══════════════════════════════════════════════════════════════════════

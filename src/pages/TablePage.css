@@ -3470,8 +3470,15 @@
   background: rgba(0, 0, 0, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: #fff;
-  width: 38px;
-  height: 38px;
+  /* 2026-08-28: the @media(max-width:768px) rule earlier in this file sets
+     44px for exactly this button, and it LOST — same specificity, and this
+     base rule comes later, so source order decided it and every phone got a
+     38px target. That is under the 44px tap minimum this file enforces eight
+     lines above it for .control-strip__btn. Sized from the same floor here so
+     the media block and the base agree instead of fighting; the button is
+     absolutely positioned, so growing it cannot reflow the felt. */
+  width: 44px;
+  height: 44px;
   border-radius: 10px;
   display: flex;
   align-items: center;

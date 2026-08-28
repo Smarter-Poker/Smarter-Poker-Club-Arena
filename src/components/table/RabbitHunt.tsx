@@ -151,8 +151,14 @@ export function RabbitHunt({
           setVipRemaining(Math.max(0, pool.limit - pool.used));
         }
       } catch (err) {
+        /* 2026-08-28: was `setIsVIP(false)`. checkVIPStatus now THROWS when the
+           read fails rather than answering "not VIP" (a failed read is not a
+           downgrade — see VIPService), so overwriting here would re-create the
+           bug one level up: a blip mid-session took a paying member's free
+           hunt away and offered them the paid path instead. Keep what we last
+           knew; `isVIP` starts false, so a failure on the very first check
+           still grants nothing. */
         reportError(err, 'RabbitHunt.Error');
-        if (!cancelled) setIsVIP(false);
       }
     };
     checkVIP();

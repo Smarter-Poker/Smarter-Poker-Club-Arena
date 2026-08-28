@@ -369,11 +369,14 @@ export default function MysteryBountyCelebration({ tournamentId }: { tournamentI
       liveRef.current = false;
       clearTimers();
       busyRef.current = false;
-      /* The channel is DELIBERATELY not removed. `t-break-<id>` is shared:
-         TournamentPage and TournamentDetails join the same topic through the
-         same registry, and removeRegisteredChannel would tear down the socket
-         under them, killing their level-up, elimination and break handling.
-         The listener above is inert once liveRef is false. */
+      /* REFCOUNTED 2026-08-28. This used to leave the channel up on purpose,
+         because `removeRegisteredChannel` tore a SHARED `t-break-<id>` down
+         under TournamentPage and TournamentDetails and killed their level-up,
+         elimination and break handling. MasterBus now counts references and
+         only tears down on the last release, so the correct move is to give
+         back the reference this effect took at getOrCreateChannel — holding
+         it forever would pin the socket open for the life of the session. */
+      masterBus.removeRegisteredChannel(`t-break-${tournamentId}`);
     };
   }, [tournamentId, rankOf, raise]);
 

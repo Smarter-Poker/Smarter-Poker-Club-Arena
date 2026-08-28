@@ -254,7 +254,28 @@ class VIPServiceClass {
       .eq('id', userId)
       .maybeSingle();
 
-    if (error || !data) {
+    /**
+     * A FAILED READ IS NOT A DOWNGRADE (2026-08-28).
+     *
+     * `error` and `!data` were collapsed into one answer: "not VIP, zero
+     * allowance". One transient network blip or RLS hiccup therefore stripped
+     * a PAYING member of the rabbit hunts, time-bank seconds, emojis and tags
+     * they bought — silently, with no retry.
+     *
+     * This repo has already ruled against this exact shape twice, in comments
+     * that are still in the tree: `WalletService.getPlayerBalance` was deleted
+     * for it ("a read that never happened is not a balance of zero"), and
+     * `useWalletStore.loadDiamonds` refuses to zero a cached count for the
+     * same reason. Nothing made VIP the exception.
+     *
+     * `!data` is a real answer — the profile row says this user is not VIP.
+     * `error` is the ABSENCE of an answer, so it throws, and the caller keeps
+     * whatever it already knew rather than acting on a fiction.
+     */
+    if (error) {
+      throw new Error(`VIP status unreadable: ${error.message || 'query failed'}`);
+    }
+    if (!data) {
       return {
         isVIP: false,
         expiresAt: null,

@@ -3244,11 +3244,11 @@
     min-height: 34px;
   }
 
-  /* Landscape action buttons — shorter but still tappable */
-  .action-btn {
-    height: 48px;
-    min-height: 44px;
-  }
+  /* DELETED 2026-08-28 — `.action-btn { height: 48px; min-height: 44px }`.
+     It never applied: (0,1,0) against the base `.action-panel .action-btn`
+     (0,2,0) in ActionPanel.css, so landscape rendered the full desktop 72px for
+     as long as this rule existed. The height term of --sp-action-btn-h does the
+     job it was written for, continuously and without a specificity race. */
 
   /* Landscape pre-action — compact */
   .pre-action-btn {
@@ -3288,9 +3288,12 @@
     font-size: 0.8125rem;
   }
 
-  .action-btn {
-    height: 56px;
-  }
+  /* DELETED 2026-08-28 — `.action-btn { height: 56px }`. Same specificity trap
+     as the landscape copy above, and it is the rule Dan's report was actually
+     about: a tablet was supposed to get 56px here and got the desktop 72px
+     instead, every time, since the day the base rule was scoped compound.
+     --sp-action-btn-h now resolves to 56px at exactly 768px wide, by
+     construction rather than by a rule that has to win a fight to be seen. */
 }
 
 @media (min-width: 1024px) {

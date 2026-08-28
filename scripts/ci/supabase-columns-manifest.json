@@ -827,6 +827,13 @@
       "hand_rank",
       "eligible"
     ],
+    "bbj_snapshot_alert_collapse_log": [
+      "id",
+      "alert_id",
+      "source",
+      "created_at",
+      "collapsed_at"
+    ],
     "bbj_stakes_tiers": [
       "id",
       "label",
@@ -4495,6 +4502,18 @@
       "uses_remaining",
       "expires_at",
       "created_at"
+    ],
+    "fee_requeue_log": [
+      "id",
+      "alert_id",
+      "pending_id",
+      "kind",
+      "table_id",
+      "hand_number",
+      "rake",
+      "bbj",
+      "outcome",
+      "requeued_at"
     ],
     "financial_alerts": [
       "id",
@@ -8740,6 +8759,14 @@
       "start_at",
       "created_at"
     ],
+    "spin_unpaid_backpay_log": [
+      "id",
+      "tournament_id",
+      "user_id",
+      "amount",
+      "verdict",
+      "paid_at"
+    ],
     "sports_clips": [
       "id",
       "video_id",
@@ -9145,7 +9172,8 @@
       "bomb_pot_trigger_mode",
       "bomb_pot_interval_seconds",
       "bomb_pot_min_players",
-      "bomb_pot_ante_fixed"
+      "bomb_pot_ante_fixed",
+      "first_button_seat"
     ],
     "theme_asset_unlocks": [
       "user_id",
@@ -11930,6 +11958,16 @@
       "withholding_amount",
       "upload_date",
       "created_at"
+    ],
+    "wallet_audit_backfill_log": [
+      "id",
+      "wallet_transaction_id",
+      "user_id",
+      "amount",
+      "category",
+      "alert_ids",
+      "duplicate_alerts",
+      "reconstructed_at"
     ],
     "wallet_credit_idempotency": [
       "key",

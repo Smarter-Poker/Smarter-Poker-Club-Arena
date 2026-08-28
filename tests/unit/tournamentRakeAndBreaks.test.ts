@@ -25,6 +25,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceMethod } from '../helpers/sourceWindow';
 
 const GAME_SERVER = readFileSync(resolve(__dirname, '../../server/src/GameServer.ts'), 'utf8');
 const BASE = readFileSync(
@@ -57,33 +58,6 @@ const RECURRING = readFileSync(
  * possible here for a reason worth stating: both are stripped first, exactly
  * as every other source-grep gate in this repo does it.
  */
-const sliceMethod = (src: string, signature: string): string => {
-  const start = src.indexOf(signature);
-  if (start < 0) throw new Error(`sliceMethod: "${signature}" not found`);
-
-  // Strings and comments can hold an unbalanced brace; behaviour cannot live
-  // in them, so neither counts toward the depth.
-  const cleaned = src
-    .slice(start)
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
-    .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length))
-    .replace(/'(?:\\.|[^'\\\n])*'/g, (m) => ' '.repeat(m.length))
-    .replace(/"(?:\\.|[^"\\\n])*"/g, (m) => ' '.repeat(m.length))
-    .replace(/`(?:\\.|[^`\\])*`/g, (m) => ' '.repeat(m.length));
-
-  const open = cleaned.indexOf('{');
-  if (open < 0) return src.slice(start);
-
-  let depth = 0;
-  for (let i = open; i < cleaned.length; i++) {
-    if (cleaned[i] === '{') depth++;
-    else if (cleaned[i] === '}') {
-      depth--;
-      if (depth === 0) return src.slice(start, start + i + 1);
-    }
-  }
-  return src.slice(start);
-};
 
 describe('synchronized breaks run :55 -> :00', () => {
   const sched = GAME_SERVER.slice(

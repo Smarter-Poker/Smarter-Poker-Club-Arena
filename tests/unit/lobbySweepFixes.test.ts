@@ -31,6 +31,7 @@ import {
 } from '../../src/components/lobby/lobbyEntries';
 import { tournamentLevel } from '../../src/components/lobby/tournamentFigures';
 import { cashBuyInLabel, cashBuyInRange } from '../../src/lib/cashBuyIn';
+import { sliceStatement } from '../helpers/sourceWindow';
 import {
   FILTER_SPECS,
   rowPassesFilter,
@@ -263,8 +264,8 @@ describe('keyboard navigation does not navigate', () => {
   it('moves a cursor rather than selecting, because selecting can route away', () => {
     expect(TABLE).toContain('setKeyboardFocusId');
     expect(TABLE).toContain('aria-activedescendant');
-    const handler = TABLE.slice(TABLE.indexOf('const handleKeyDown'));
-    expect(handler.slice(0, 1800)).not.toContain('onSelect(sorted[next])');
+    const handler = sliceStatement(TABLE, 'const handleKeyDown');
+    expect(handler).not.toContain('onSelect(sorted[next])');
   });
 });
 

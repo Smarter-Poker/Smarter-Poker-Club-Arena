@@ -28,6 +28,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceYamlBlock } from './helpers/sourceWindow';
 
 const root = (p: string) => resolve(__dirname, '..', p);
 const read = (p: string) => readFileSync(root(p), 'utf8');
@@ -227,9 +228,9 @@ describe('shipped functionality is still here', () => {
          far ahead. false lets a RUNNING build finish and only cancels a pending
          one, so each wave converges on publishing the latest main. */
       const cfg = publisher();
-      const block = cfg.slice(cfg.indexOf('concurrency:'));
+      const block = sliceYamlBlock(cfg, 'concurrency:');
       expect(
-        /cancel-in-progress:\s*false/.test(block.slice(0, 200)),
+        /cancel-in-progress:\s*false/.test(block),
         'build-for-world-hub.yml would cancel an in-flight publish again'
       ).toBe(true);
     });

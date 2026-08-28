@@ -30,6 +30,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import ActionPanel from '../../src/components/table/ActionPanel';
 import * as geometry from '../../src/components/table/tableGeometry';
+import { sliceCall, sliceBlockAfter } from '../helpers/sourceWindow';
 import {
   betChipOffsetPx,
   NOMINAL_SCALER,
@@ -671,8 +672,8 @@ describe('Audit - no path takes a buy-in without asking', () => {
       const src = code(read(f));
       const at = src.indexOf('registerMtt(');
       expect(at, `${f} must call registerMtt`).toBeGreaterThan(-1);
-      // The payload object: from the call to the first `},` that closes it.
-      const payload = src.slice(at, at + 1400);
+      // The payload object, bounded by the paren that closes the call.
+      const payload = sliceCall(src, 'registerMtt(');
       expect(payload, `${f} payload must carry club_id`).toMatch(/club_id:/);
       expect(payload, `${f} payload must carry start_time`).toMatch(/start_time:/);
       /* `status` is what the hook derives late-registration from. Every caller
@@ -904,8 +905,8 @@ describe('Second audit - the focus trap and Escape behave', () => {
   it('does not swallow Escape for the rest of the app', () => {
     // Capture-phase on window is the FIRST node in the path; stopping there
     // blocked Escape for every deeper listener while the dialog was open.
-    const esc = src.slice(src.indexOf("if (e.key === 'Escape')"));
-    expect(esc.slice(0, 200)).not.toMatch(/stopPropagation/);
+    const esc = sliceBlockAfter(src, "if (e.key === 'Escape')");
+    expect(esc).not.toMatch(/stopPropagation/);
   });
 });
 
@@ -923,8 +924,8 @@ describe('Second audit - busting cannot strand a player at a dead seat', () => {
   });
 
   it('the fallback exit re-checks the stack, so a rebuy is never ejected', () => {
-    const impl = src.slice(src.indexOf('exitIfBustedRef.current = () => {'));
-    expect(impl.slice(0, 700)).toMatch(/if \(stack > 0\) return;/);
+    const impl = sliceBlockAfter(src, 'exitIfBustedRef.current = () => {');
+    expect(impl).toMatch(/if \(stack > 0\) return;/);
   });
 
   it('the backstop does not cancel a rebuy that is mid-flight', () => {

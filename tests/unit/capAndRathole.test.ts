@@ -13,6 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceStatement, sliceBlockAfter, sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const TURNS = read('server/src/engine/ServerTableEngineTurns.ts');
@@ -32,16 +33,15 @@ describe('Cap', () => {
   it('measures the ceiling against the WHOLE HAND, not one street', () => {
     // player.bet is this street only; capping on that would let a player
     // commit the cap once per street, four times over.
-    const block = TURNS.slice(TURNS.indexOf('const capBB ='), TURNS.indexOf('const capBB =') + 900);
-    expect(block).toContain('totalInvested');
-    expect(block).not.toMatch(/capRemaining\s*=[\s\S]{0,120}player\.bet/);
+    // Two different scopes on purpose. The positive is about the cap block as
+    // a whole; the negative is about ONE statement, and widening it to the
+    // block made it read a `player.bet` belonging to something else entirely.
+    expect(sliceEnclosingBlock(TURNS, 'const capBB =')).toContain('totalInvested');
+    expect(sliceStatement(TURNS, 'const capRemaining =')).not.toMatch(/player\.bet/);
   });
 
   it('is Infinity when the table is uncapped, so every clamp is a no-op', () => {
-    const block = TURNS.slice(
-      TURNS.indexOf('const capRemaining ='),
-      TURNS.indexOf('const capRemaining =') + 220
-    );
+    const block = sliceStatement(TURNS, 'const capRemaining =');
     expect(block).toContain('Infinity');
   });
 
@@ -56,11 +56,9 @@ describe('Cap', () => {
   it('closes the all-in hole, which skips every amount clamp', () => {
     // validateAllIn returns sanitizedAmount: playerStack unconditionally, so
     // without this the cap would hold for every action EXCEPT the largest.
-    const fn = TURNS.slice(
-      TURNS.indexOf("if (normalizedAction === 'all_in' && capRemaining !== Infinity)")
-    );
-    expect(fn.slice(0, 600)).toContain('Math.min(player.stack, capRemaining)');
-    expect(fn.slice(0, 600)).toMatch(/normalizedAction = state\.currentBet > 0 \? 'raise' : 'bet'/);
+    const fn = sliceBlockAfter(TURNS, "if (normalizedAction === 'all_in' && capRemaining !== Infinity)");
+    expect(fn).toContain('Math.min(player.stack, capRemaining)');
+    expect(fn).toMatch(/normalizedAction = state\.currentBet > 0 \? 'raise' : 'bet'/);
   });
 
   it('does NOT cap a call, and says why', () => {
@@ -68,16 +66,16 @@ describe('Cap', () => {
     // a real integrity hazard. It is also unnecessary: every wager that can be
     // called has already been clamped, so a caller can never pass a ceiling
     // the bettor in front of them already respects.
-    const call = TURNS.slice(TURNS.indexOf('A CALL IS DELIBERATELY NOT CAPPED'));
-    expect(call.slice(0, 900)).toContain('side pot');
+    const call = sliceEnclosingBlock(TURNS, 'A CALL IS DELIBERATELY NOT CAPPED');
+    expect(call).toContain('side pot');
     expect(TURNS).toContain("if (normalizedAction === 'call') amount = toCall;");
   });
 
   it('leaves a capped player with chips in front of them', () => {
     // That is the whole point of a cap game: reaching the ceiling is not
     // being all-in, and the remaining stack plays the next hand.
-    const block = TURNS.slice(TURNS.indexOf('── CAP: A PER-HAND CEILING'));
-    expect(block.slice(0, 1600)).toContain('their remaining stack stays');
+    const block = sliceEnclosingBlock(TURNS, '── CAP: A PER-HAND CEILING');
+    expect(block).toContain('their remaining stack stays');
   });
 });
 

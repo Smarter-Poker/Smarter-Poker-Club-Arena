@@ -23,6 +23,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceBlockAfter } from './helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
@@ -87,7 +88,7 @@ describe('event-driven refreshes force past the window', () => {
     // refresh that actually calls loadBalances, rather than the first match.
     const candidates = [...HOOKS.matchAll(/refresh: \(\) => \{/g)].map((m) => m.index ?? -1);
     const walletRefresh = candidates
-      .map((i) => HOOKS.slice(i, i + 320))
+      .map((i) => sliceBlockAfter(HOOKS.slice(i), 'refresh: () => {'))
       .find((block) => /loadBalances\(/.test(block));
     expect(walletRefresh, 'no refresh() calling loadBalances found').toBeDefined();
     expect(walletRefresh!).toMatch(/loadBalances\([^)]*\{\s*force:\s*true\s*\}\)/);

@@ -76,6 +76,20 @@ type StatRow = { impressions: number; clicks: number; dismisses: number };
 type SlotStatRow = StatRow & { lastEventAt: string | null };
 type StatsBySlot = Record<string, Record<string, SlotStatRow>>;
 
+/* WHY A SURFACE IS QUIET. Views and clicks say what happened; they cannot say
+   what did not. A silent placement has three completely different causes - no
+   placement at all, no audience match, or everybody already capped out for the
+   day - and until this they looked identical from here.
+
+   Counted in PEOPLE over the rolling 24h window, because the operator question
+   is "can this still reach anyone", not "how many times did it fire". */
+type SuppressionRow = {
+  dailyCap: number | null;
+  servedUsers24h: number;
+  cappedUsers24h: number;
+};
+type SuppressionBySlot = Record<string, Record<string, SuppressionRow>>;
+
 const CATEGORIES = [
   'vip',
   'diamonds',
@@ -131,6 +145,7 @@ export default function HouseAdsPage() {
   const [placements, setPlacements] = useState<PlacementRow[]>([]);
   const [stats, setStats] = useState<Record<string, StatRow> | null>(null);
   const [statsBySlot, setStatsBySlot] = useState<StatsBySlot | null>(null);
+  const [suppression, setSuppression] = useState<SuppressionBySlot | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -176,6 +191,7 @@ export default function HouseAdsPage() {
         placements: PlacementRow[];
         stats: Record<string, StatRow> | null;
         statsBySlot?: StatsBySlot | null;
+        suppression?: SuppressionBySlot | null;
       }>('house-ads', {}, { method: 'GET' });
       if (!isMounted.current) return;
       setAds(res.ads || []);
@@ -185,6 +201,7 @@ export default function HouseAdsPage() {
          send it, and the panel must degrade to the blended totals rather than
          render an empty breakdown that looks like "no views on any surface". */
       setStatsBySlot(res.statsBySlot ?? null);
+      setSuppression(res.suppression ?? null);
     } catch (e) {
       reportError(e, 'HouseAdsPage.load');
       if (isMounted.current) setActionError(safeErrorMessage(e, 'Could not load the ad catalog.'));
@@ -715,6 +732,7 @@ export default function HouseAdsPage() {
                               {pls.map((p) => {
                                 const label = SLOTS.find((x) => x.id === p.slot)?.label || p.slot;
                                 const ss = statsBySlot?.[ad.id]?.[p.slot];
+                                const sup = suppression?.[ad.id]?.[p.slot];
                                 return (
                                   <div key={p.id}>
                                     <span>{label}</span>
@@ -728,6 +746,20 @@ export default function HouseAdsPage() {
                                           ? `${ss.impressions} / ${ss.clicks} (${rate(ss)})`
                                           : 'No Views Yet'}
                                     </span>
+                                    {/* Why it might be quiet. Only shown when
+                                        somebody is actually capped out: a "0
+                                        Capped" on every row would be noise, and
+                                        the number only means something next to
+                                        the number it is a fraction of. */}
+                                    {sup && sup.cappedUsers24h > 0 ? (
+                                      <span
+                                        className="admin-badge-yellow"
+                                        style={{ marginLeft: 6, fontSize: 10 }}
+                                        title="Players who have already hit this placement's daily cap in the last 24 hours, and so cannot see it again today"
+                                      >
+                                        {sup.cappedUsers24h} Of {sup.servedUsers24h} Capped Out
+                                      </span>
+                                    ) : null}
                                   </div>
                                 );
                               })}

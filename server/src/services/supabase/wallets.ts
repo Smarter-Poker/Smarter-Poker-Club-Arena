@@ -61,6 +61,50 @@ export async function autoRebuyHorse(
   }
 }
 
+/**
+ * What each of these players could actually bring back to a CASH table.
+ *
+ * Dan 2026-08-28: "IN A CASH GAME, CHECK IF THEY HAVE ENOUGH CHIPS TO REBUY,
+ * (40 BB MINIMUM). IF THEY DO, YOU GIVE THEM THE 5 SECOND PERIOD TO REBUY OR
+ * DECLINE." This is the read behind that check.
+ *
+ * `club_members.chip_balance` is the live chip pool — the same column
+ * `atomic_table_buyin` debits and `atomic_seat_cashout_locked` credits.
+ * NOT `public.wallets`, which has been frozen since 2026-08-21 with 732m chips
+ * stranded in it and nothing reading it (CLAUDE.md 11.5).
+ *
+ * Returns a Map so a caller can distinguish "balance is zero" from "we could
+ * not read this player" — an ABSENT key means unknown. That distinction is the
+ * whole point: an unreadable balance must never be treated as "cannot afford a
+ * rebuy", because the consequence of that mistake is standing a player up who
+ * had the money all along. Callers treat unknown as CAN afford, and the worst
+ * case is then a five-second pause nobody needed.
+ */
+export async function readClubChipBalances(
+  clubId: string,
+  userIds: string[]
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (!clubId || userIds.length === 0) return out;
+  try {
+    const { data, error } = await supabase
+      .from('club_members')
+      .select('user_id, chip_balance')
+      .eq('club_id', clubId)
+      .in('user_id', userIds);
+    if (error) {
+      reportError(error, 'DB.read_club_chip_balances_failed');
+      return out; // Empty -> every player reads as UNKNOWN -> nobody is stood up.
+    }
+    for (const row of (data ?? []) as Array<{ user_id: string; chip_balance: number | null }>) {
+      out.set(String(row.user_id), Number(row.chip_balance ?? 0));
+    }
+  } catch (err) {
+    reportError(err, 'DB.read_club_chip_balances_threw');
+  }
+  return out;
+}
+
 // REMOVED 2026-08-26: ensureHorseWallet.
 //
 // It had ZERO call sites in server/src or src - the "called during fleet

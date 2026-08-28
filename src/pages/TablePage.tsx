@@ -276,6 +276,7 @@ import { useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';
 // Bible V8 §11: 4-Corner Table HUD Components
 import { TableHUD } from '../components/table/TableHUD';
 import { MiniStatsCard } from '../components/table/MiniStatsCard';
+import { TournamentLobbyModal } from '../components/table/TournamentLobbyModal';
 import TournamentInfoPanel from '../components/tournament/TournamentInfoPanel';
 import HeroHubPanel from '../components/table/HeroHubPanel';
 import { TournamentHUD } from '../components/tournament/TournamentHUD';
@@ -7681,6 +7682,10 @@ export default function TablePage({
    * what is left to play for, and when do the blinds move.
    */
   const [showTournamentInfo, setShowTournamentInfo] = useState(false);
+  /* The tournament LOBBY as a 3/4 overlay, opened from the upper-right button
+     (Dan 2026-08-28). Distinct from showTournamentInfo, which is the smaller
+     four-tab summary now reached only from the hero hub's Stats tab. */
+  const [showTournamentLobby, setShowTournamentLobby] = useState(false);
   const [standUpNextBB, setStandUpNextBB] = useState(false);
 
   const [sharedHandData, setSharedHandData] = useState<any>(null);
@@ -10624,7 +10629,23 @@ export default function TablePage({
                             Date.now() - seatAcquiredAtRef.current < 15_000
                           )
                         ? 'sitting_out'
-                        : 'active',
+                        : /* CONNECTION LOSS IS VISIBLE TOO (Dan 2026-08-28):
+                             "...or is forced to sit out from connection
+                             issues." The engine has published `is_disconnected`
+                             on every snapshot since Bible V8 §2.3 and SeatSlot
+                             has rendered a DISCONNECTED label for it just as
+                             long, but this mapping collapsed straight to
+                             'active', so the status the label needs was never
+                             produced and the branch was unreachable.
+
+                             It sits BELOW sitting_out deliberately: after three
+                             consecutive timeouts a dropped player is formally
+                             sat out, and at that point the seat should read
+                             SITTING OUT rather than flapping between the two.
+                             This branch covers the window before that. */
+                          sp.is_disconnected
+                          ? 'disconnected'
+                          : 'active',
                 isHero: sp.user_id === userId,
                 showCards: sp.cards && sp.cards.length > 0 && !sp.is_folded,
               } as any;
@@ -13425,7 +13446,7 @@ export default function TablePage({
       }
     }
     return strength;
-     
+
     // are read through heroCardsRef; these keys change exactly when they do.
   }, [heroHoleKey, heroBoardKey, heroHandVariant]);
 
@@ -13999,6 +14020,118 @@ export default function TablePage({
       void supabase.removeChannel(channel);
     };
   }, [tableId, seatFirstBuyIn, playHasBegun, tableState.tournamentId, userId]);
+
+  /**
+   * ═══ EVERYONE AT THE TABLE CAN SEE WHO IS SITTING OUT (2026-08-28) ═══
+   *
+   * Dan: "YOU ALSO NEED TO ADD A SITTING OUT TAG THAT OTHER USERS CAN SEE AT
+   * THE TABLE WHEN A PLAYER IS SITTING OUT, OR IS FORCED TO SIT OUT FROM
+   * CONNECTION ISSUES."
+   *
+   * `sittingOutIdsRef` was the client's source of truth for the grey seat, and
+   * it was written in exactly TWO places: the mount-time seat read, and the
+   * hero's own Sit Out tap. Nothing kept it current afterwards.
+   *
+   * The one `table_seats` subscription that existed (`seat-first-roster`) is
+   * not a substitute and could never have been: its effect bails on
+   * `playHasBegun`, so it unsubscribes the moment the game starts, and its
+   * rebuild writes `status: 'active'` unconditionally. So once play began, no
+   * client ever learned that another player had sat out — voluntarily or after
+   * a disconnect. The tag was invisible by construction, which is exactly what
+   * was reported.
+   *
+   * This subscription is deliberately separate and ungated: it lives for the
+   * whole session, it only ever touches sit-out state, and it patches the seat
+   * status directly rather than rebuilding the roster (rebuilding is what made
+   * the other one unsafe to leave running).
+   *
+   * A ref alone cannot drive a re-render, which is the second half of the bug —
+   * even a correct ref would only have taken effect on the next engine
+   * snapshot, and on a quiet table that can be a long time. So the seat status
+   * is patched in the same pass.
+   */
+  useEffect(() => {
+    if (!tableId) return;
+    let cancelled = false;
+
+    /** Apply a set of sat-out user ids to the seats we are already rendering. */
+    const paint = (sittingOut: Set<string>) => {
+      if (cancelled) return;
+      setTableState((prev) => {
+        let changed = false;
+        const players = prev.players.map((p) => {
+          if (!p || !p.id) return p;
+          const shouldBeOut = sittingOut.has(p.id);
+          /* Never repaint a seat whose status is telling a more urgent story.
+             An all-in seat is all-in first; a folded seat has already acted
+             this hand. Sitting out is the resting state underneath both, and
+             the snapshot mapper applies the same precedence. */
+          if (p.status === 'all_in' || p.status === 'folded') return p;
+          const next = shouldBeOut ? 'sitting_out' : p.status === 'sitting_out' ? 'active' : null;
+          if (next === null || next === p.status) return p;
+          changed = true;
+          return { ...p, status: next as typeof p.status };
+        });
+        return changed ? { ...prev, players } : prev;
+      });
+    };
+
+    const reload = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('table_seats')
+          .select('user_id, is_sitting_out')
+          .eq('table_id', tableId)
+          .is('left_at', null);
+        if (error || cancelled || !data) return;
+        for (const row of data as Array<{ user_id: string; is_sitting_out: boolean | null }>) {
+          if (!row.user_id) continue;
+          /* The hero's own fresh-join grace, same 15s window and same reason as
+             the mount-time seed: a stale `true` on a seat the hero has only
+             just bought into must not paint them sitting out (Dan 2026-08-26,
+             "the AWAY tag should only be applied when you click Sit Out"). An
+             explicit tap writes the ref directly and is unaffected. */
+          const heroFreshJoin =
+            row.user_id === userId &&
+            seatAcquiredAtRef.current != null &&
+            Date.now() - seatAcquiredAtRef.current < 15_000;
+          if (row.is_sitting_out && !heroFreshJoin) sittingOutIdsRef.current.add(row.user_id);
+          else sittingOutIdsRef.current.delete(row.user_id);
+        }
+        paint(new Set(sittingOutIdsRef.current));
+      } catch {
+        /* A failed read leaves the last known state alone. Never guess someone
+           back into the game. */
+      }
+    };
+
+    let debounce: number | undefined;
+    const schedule = () => {
+      if (debounce) window.clearTimeout(debounce);
+      debounce = window.setTimeout(() => void reload(), 200);
+    };
+
+    const channel = supabase
+      .channel(`seat-sitout-${tableId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'table_seats', filter: `table_id=eq.${tableId}` },
+        schedule
+      )
+      .subscribe();
+
+    void reload();
+    // Realtime drops silently. A slow poll bounds how stale the tag can get
+    // without meaningfully loading the database — one narrow two-column read.
+    const pollId = window.setInterval(() => void reload(), 10_000);
+
+    return () => {
+      cancelled = true;
+      if (debounce) window.clearTimeout(debounce);
+      window.clearInterval(pollId);
+      void supabase.removeChannel(channel);
+    };
+  }, [tableId, userId]);
 
   //broadcastLocalHandState removed — server broadcasts state authoritatively
 
@@ -15983,22 +16116,30 @@ export default function TablePage({
             {/* Dan 2026-08-28: "REMOVE THE STATS BUTTON FROM THE UPPER LEFT
                 HAND CORNER, AND MOVE IT TO THE HERO AVATAR." The cash stats
                 icon is gone — session stats live in the hero hub's Stats tab
-                (tap your own avatar) and remain in the hamburger menu. The
-                TOURNAMENT variants stay: the 4-figure bar and the spectator
-                lobby button serve players and observers who may have no
-                seated hero avatar to tap, and they are the only route to
-                TournamentInfoPanel for a spectator. */}
+                (tap your own avatar) and remain in the hamburger menu.
+
+                Dan, same day, on what is LEFT in this corner: "ALL TOURNAMENTS
+                NEED THE STATS ICON IN THE UPPER RIGHT HAND CORNER. IT SHOULDN'T
+                SHOW THE STATS, BUT OPEN TO THE TOURNAMENT LOBBY PAGE AS A IN
+                GAME 3/4 POP UP", and "STATS SHOULD LIVE INSIDE THE HERO AVATAR
+                ... USE THE EXACT BUTTON AS IT IS."
+
+                So on a tournament this is ONE button, the existing artwork
+                untouched, and it opens the real tournament lobby
+                (TournamentDetails) as a 3/4 overlay. It no longer opens
+                TournamentInfoPanel — that four-tab summary is a subset of the
+                lobby and is still reachable from the hero hub's Stats tab. The
+                four-figure Stack/Hands/VPIP/Won bar this corner carried since
+                2026-08-25 is gone with it: those are stats, and stats now live
+                behind the hero's own avatar. */}
             {tableState.isTournament && (
               <MiniStatsCard
                 currentStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
                 totalBuyIn={totalBuyInRef.current}
-                handsPlayed={handsPlayedRef.current}
-                vpipCount={vpipCountRef.current}
-                handsWon={handsWonRef.current}
                 isSeated={tableState.heroSeat > 0}
                 isTournament={tableState.isTournament}
                 onTap={() =>
-                  tableState.tournamentId ? setShowTournamentInfo(true) : setShowSessionStats(true)
+                  tableState.tournamentId ? setShowTournamentLobby(true) : setShowSessionStats(true)
                 }
               />
             )}
@@ -19035,6 +19176,17 @@ export default function TablePage({
           onClose={() => setShowTournamentInfo(false)}
         />
       )}
+
+      {/* THE TOURNAMENT LOBBY, ON THE FELT (Dan 2026-08-28). Opened by the
+          upper-right button on every tournament — MTT, Spin, SNG and heads-up
+          alike, since `isTournament` is one test covering all of them. Mounted
+          only while open, so a cash table pays nothing for it and the lobby's
+          own realtime subscriptions do not exist until somebody asks. */}
+      <TournamentLobbyModal
+        isOpen={showTournamentLobby}
+        tournamentId={tableState.tournamentId}
+        onClose={() => setShowTournamentLobby(false)}
+      />
 
       {/* Dan 2026-08-28: the tabbed HERO HUB behind the hero's own avatar —
           Throwables / Stats / Profile / Table Settings. Replaces the removed

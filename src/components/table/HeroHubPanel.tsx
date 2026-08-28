@@ -18,9 +18,16 @@
  * never stack.
  *
  * The upper-left stats button (MiniStatsCard's cash icon) is gone from the
- * HUD in the same commit — this hub is its replacement. The tournament
- * variants of MiniStatsCard stay: the 4-figure bar and the spectator lobby
- * button serve people with no seat and therefore no hero avatar to tap.
+ * HUD in the same commit — this hub is its replacement.
+ *
+ * Updated 2026-08-28: MiniStatsCard's four-figure tournament bar is gone too.
+ * Dan: "STATS SHOULD LIVE INSIDE THE HERO AVATAR ... STATS ICON IS NOT THE
+ * TOURNAMENT LOBBY BUTTON." The upper-right corner on a tournament is now one
+ * button that opens the full tournament lobby (TournamentLobbyModal), and the
+ * Stats tab below is the only place a player's own figures are shown. A
+ * spectator has no hero avatar to tap and therefore no stats — which is
+ * correct, they have no session to have stats about; the lobby button in the
+ * corner is what serves them.
  */
 
 import { useState } from 'react';

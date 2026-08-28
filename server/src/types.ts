@@ -293,6 +293,14 @@ export interface SeatedPlayer {
    * between hands dealt cards to a player who had sat out.
    */
   is_sitting_out?: boolean;
+  /**
+   * Persisted sit-out CLOCK from `table_seats.sit_out_at` (2026-08-28). ISO
+   * string, or null when not sitting out. The boolean above already survived a
+   * restart; this is what makes the five-minute cash eviction survive one too —
+   * without it `sitOutSince` was re-stamped to now() on every engine boot and
+   * the limit could never mature. Written only by trg_stamp_sit_out_at.
+   */
+  sit_out_at?: string | null;
   /** Bible V8 §2.3: Player avatar for broadcast */
   avatar_url?: string;
   /** Equipped avatar frame token for broadcast, e.g. `frame-gold`. */

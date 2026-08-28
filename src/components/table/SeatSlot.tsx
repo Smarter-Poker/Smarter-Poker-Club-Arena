@@ -2197,6 +2197,22 @@ export const SeatSlot = memo(
             player.status !== 'all_in' && (
               <span className={`seat__status-dot seat__status-dot--${player.status}`} />
             )}
+          {/* SITTING OUT tag (Dan 2026-08-28): "you also need to add a SITTING
+              OUT tag that other users can see at the table when a player is
+              sitting out, or is forced to sit out from connection issues."
+
+              A real element rather than the `.seat__info::after` pill that used
+              to carry this, because that pill said AWAY for both states and
+              there was no way to tell the two apart — nor to assert on it from
+              a test. AWAY still exists and still means away; this says what it
+              means. The disconnect overlay below is the third state and takes
+              precedence over neither: a dropped player reads DISCONNECTED until
+              the engine formally sits them out, and SITTING OUT after. */}
+          {player.status === 'sitting_out' && (
+            <div className="seat__sitout-badge" title="This player is sitting out">
+              SITTING OUT
+            </div>
+          )}
           {/* FIX 186: Disconnected overlay — shows DISCONNECTED label + countdown */}
           {player.status === 'disconnected' && (
             <div className="seat__disconnect-overlay" title="Player disconnected">

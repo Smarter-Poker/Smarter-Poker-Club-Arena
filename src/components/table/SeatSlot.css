@@ -1386,8 +1386,11 @@
   filter: grayscale(60%);
 }
 
-.seat--away .seat__info::after,
-.seat--sitting_out .seat__info::after {
+/* AWAY only. This used to be scoped to `.seat--sitting_out` as well, so both
+   states printed the same word and a watching player could not tell "stepped
+   away" from "sat out" — and, since it is a pseudo-element, no test could read
+   it either. Sitting out now has its own badge below. */
+.seat--away .seat__info::after {
   content: 'AWAY';
   position: absolute;
   top: 50%;
@@ -1402,6 +1405,36 @@
   border-radius: 4px;
   pointer-events: none;
   z-index: 1;
+}
+
+/* ─── SITTING OUT tag (Dan 2026-08-28) ────────────────────────────────────
+   Centred over the seat, same visual family as the AWAY pill it replaces for
+   this state and as `.seat__allin-badge`.
+
+   MOBILE FIRST: a seat is only 58-66px wide on a 375px phone, so "SITTING OUT"
+   cannot sit on one line — it is allowed to wrap to two and the box is capped
+   to the seat rather than being allowed to grow past it, which is the same
+   mistake `.seat__info`'s old fixed max-width made (see the note at its
+   declaration). No gold/amber/orange, per .agent/workflows/design-guidelines.md. */
+.seat__sitout-badge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+  line-height: 1.1;
+  background: rgba(0, 0, 0, 0.78);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 5px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  pointer-events: none;
+  z-index: 3;
 }
 
 /* ─── ALL IN ──────────────────────────────────────────────────────────── */

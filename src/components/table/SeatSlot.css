@@ -35,6 +35,21 @@
      accident. With a proportional base that accident would have frozen every
      tournament top seat at 84px while the rest of the ring scaled. */
   --seat-avatar-full: clamp(50px, calc(var(--table-w, 360px) * 0.158), 124px);
+
+  /* ── --sp-wrap-overlap HAD NO BASE DECLARATION AT ALL (fixed 2026-08-28) ───
+     It was declared in exactly two places — `@media (max-width: 480px)` at 5px
+     and `380px` at 4px — and read in three, every one of them as
+     `var(--sp-wrap-overlap, 6px)`. So above 480px the "token" was fiction: all
+     three readers silently used the literal in their own fallback slot, and the
+     value could not be changed in one place because there was no place.
+
+     It is the overlap between the avatar and the name box, so it belongs to the
+     avatar rather than to the viewport, and this seat's own --seat-avatar-size
+     is the right reference — the hero's box overlaps its own larger art, which
+     a viewport rung could never express. 0.0714 is 6/84, the base pair the
+     fallbacks encoded. The 3px floor keeps the overlap visible rather than
+     sub-pixel once a small phone's slot hits its own floor. */
+  --sp-wrap-overlap: max(3px, calc(var(--seat-avatar-size, 84px) * 0.0714));
   --seat-avatar-base: var(--seat-avatar-full);
   --seat-avatar-size: var(--seat-avatar-base, 84px);
 
@@ -199,8 +214,15 @@
 /* Outer container: transparent, no border, no background.
    Size matches the coin image so the click target fills it exactly. */
 .seat--empty {
-  width: 64px;
-  height: 64px;
+  /* Proportional since 2026-08-28, replacing a 64 / 52 / 48 / 44px ladder.
+     0.76 is 64/84, the base pair; the ratio the four rungs encoded drifted only
+     between 0.76 and 0.85, so one number reproduces all of them within a few px
+     and removes three rules.
+     The 44px floor is a TOUCH target, not a legibility one: this is the "+ SIT"
+     button and it is the only thing rendered at six of nine positions on an
+     idle table, so it must stay tappable on the smallest felt. */
+  width: max(44px, calc(var(--seat-avatar-size, 84px) * 0.76));
+  height: max(44px, calc(var(--seat-avatar-size, 84px) * 0.76));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -622,10 +644,19 @@
   bottom: -10px;
   left: 50%;
   transform: translateX(-50%);
-  min-width: 22px;
-  height: 20px;
+  /* Proportional since 2026-08-28, replacing a 22/18/16/14px ladder. The four
+     rungs encoded a remarkably steady ratio to the avatar slot — 0.262, 0.273,
+     0.276, 0.269 — so one coefficient reproduces every one of them and the
+     three extra rules go.
+     The dealer PUCK on the felt was made proportional on 2026-08-25
+     (--dealer-btn-size, TableVisualHotfix.css); this chip sits beside the seat
+     and was left on the ladder, so the two markers that both say "who is on the
+     button" disagreed about how big that idea is. Height follows min-width so
+     the pill cannot go oval, and the radius follows height so it stays a pill. */
+  min-width: max(14px, calc(var(--seat-avatar-size, 84px) * 0.262));
+  height: max(14px, calc(var(--seat-avatar-size, 84px) * 0.238));
   padding: 0 4px;
-  border-radius: 10px;
+  border-radius: 999px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3130,15 +3161,12 @@
      already produce this breakpoint's numbers on this breakpoint's felt without
      a second copy to keep in step. */
 
+  /* `min-width/height` and the `.seat--empty` box DELETED 2026-08-28 — both are
+     proportional to the seat's own avatar slot on the base rules now, which
+     reproduces this rung and the two below it. Only the type tightens here. */
   .seat__position-chip {
-    min-width: 18px;
-    height: 18px;
     font-size: 0.45rem;
     padding: 0 3px;
-  }
-  .seat--empty {
-    width: 52px;
-    height: 52px;
   }
   .seat__hand-name {
     font-size: 0.6875rem;
@@ -3167,12 +3195,10 @@
     width: max(80px, calc(var(--seat-avatar-full) * 1.143));
   }
 
-  /* Only the overlap into the name box is tuned per breakpoint now; the slot
-     size itself comes from --seat-avatar-base above. On `.seat` because the
-     wrap AND the villain cluster both read it. */
-  .seat {
-    --sp-wrap-overlap: 5px;
-  }
+  /* The per-breakpoint --sp-wrap-overlap rung that was here is DELETED
+     (2026-08-28). The overlap is a proportion of this seat's own avatar slot
+     on the base rule now, so it follows the hero and the villains separately
+     and needs no rung. */
 
   .seat__info {
     min-width: 58px;
@@ -3199,19 +3225,14 @@
      block. The base guards are ratios of --sp-card2-w and reproduce these
      numbers on this breakpoint's felt. */
 
+  /* Sizes DELETED 2026-08-28 — proportional on the base rule. Type only. */
   .seat__position-chip {
-    min-width: 16px;
-    height: 16px;
     font-size: 0.4rem;
     padding: 0 2px;
   }
   .seat__action {
     font-size: 0.5625rem;
     padding: 1px 6px;
-  }
-  .seat--empty {
-    width: 48px;
-    height: 48px;
   }
   .seat__hand-name {
     font-size: 0.625rem;
@@ -3228,10 +3249,6 @@
      overruled in the direction of the smallest screen. */
   .seat {
     width: max(72px, calc(var(--seat-avatar-full) * 1.143));
-  }
-
-  .seat {
-    --sp-wrap-overlap: 4px;
   }
 
   .seat__info {
@@ -3259,15 +3276,10 @@
      nine numbers that had to be re-derived by hand whenever the two-card size
      moved are three ratios that cannot fall out of step with it. */
 
+  /* Sizes DELETED 2026-08-28 — proportional on the base rule. Type only. */
   .seat__position-chip {
-    min-width: 14px;
-    height: 14px;
     font-size: 0.35rem;
     padding: 0 2px;
-  }
-  .seat--empty {
-    width: 44px;
-    height: 44px;
   }
   .seat__hand-name {
     font-size: 0.5625rem;

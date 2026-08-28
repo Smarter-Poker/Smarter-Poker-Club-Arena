@@ -68,6 +68,53 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    */
   private dispatchedBountyAwards: Set<string> = new Set();
 
+  /**
+   * The size of the field, once it can no longer grow.
+   *
+   * SHORT-FIELD RESIDUAL 2026-08-27. computePlacePrize gives the LAST place in
+   * the structure the leftover, so the paid places sum to the pool exactly.
+   * When fewer players entered than the structure pays, that place has no
+   * finisher and the leftover was never awarded: a 9-place structure with 8
+   * entrants stranded 250.00 of a 10,000.00 pool, and eight events did it in
+   * thirty days. Trimming the structure to the field moves the residual onto
+   * the last place that a player actually reached.
+   *
+   * TWO RULES MAKE THIS SAFE, and both are about the direction that overpays.
+   *
+   *   1. UNDEFINED UNTIL ENTRY IS CLOSED. While late registration is open the
+   *      field can still grow, and a structure trimmed to a field that then
+   *      grows would have promoted an earlier place to residual holder and
+   *      overpaid it. Before prize_pool_finalized this returns undefined and
+   *      every caller keeps today's behaviour exactly. Nothing is lost:
+   *      recalculateEliminatedPrizes re-prices eliminated players through the
+   *      same resolver after finalisation and tops up the difference.
+   *
+   *   2. EVERYONE WHO EVER ENTERED, never a live seat count. tournament_players
+   *      rows are not deleted on elimination, only on an unregistration while
+   *      registration is still open, so count(*) is the entrant count. A
+   *      draining counter like current_players would shrink toward 1 and hand
+   *      the whole pool to whoever busted next; that exact defect is why
+   *      fn_spin_sweep_unbooked under-books its rake.
+   *
+   * Cached once resolved, because after finalisation the answer cannot change.
+   * A failed count returns undefined rather than a guess.
+   */
+  private finalFieldSizeCache: number | undefined;
+
+  protected async finalFieldSize(): Promise<number | undefined> {
+    if (!this.prizePoolFinalized) return undefined;
+    if (this.finalFieldSizeCache !== undefined) return this.finalFieldSizeCache;
+
+    const { count, error } = await supabase
+      .from('tournament_players')
+      .select('id', { count: 'exact', head: true })
+      .eq('tournament_id', this.tournamentId);
+
+    if (error || typeof count !== 'number' || count < 1) return undefined;
+    this.finalFieldSizeCache = count;
+    return count;
+  }
+
   protected startEliminationChecker(): void {
     this.eliminationTimer = setInterval(async () => {
       if (!this.running || this.isProcessingEliminations) return;
@@ -926,7 +973,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // Places 2..N are paid HERE, minutes before finishTournament reads the
       // same column again — so the two reads must agree, and a Spin that can
       // reconstruct its own split is how they are made to.
-      const payouts = resolvePayoutStructure(tournament as any);
+      // SHORT-FIELD RESIDUAL 2026-08-27: pay by a structure the field can
+      // actually fill, so the leftover lands on a place somebody reached. The
+      // second belt, on top of finalFieldSize's own two: never trim below the
+      // place being priced right now. A field smaller than the position being
+      // paid could only mean the count is wrong, and acting on it would
+      // promote this player to residual holder and overpay them.
+      const field = await this.finalFieldSize();
+      const safeField = field !== undefined && field >= position ? field : undefined;
+      const payouts = resolvePayoutStructure(tournament as any, safeField);
       if (payouts) {
         prize = computePlacePrize(Number(tournament.prize_pool || 0), payouts, position);
       }
@@ -1060,7 +1115,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       prize <= 0
     ) {
       try {
-        const payouts = resolvePayoutStructure(tournament as any);
+        // The same trimmed structure the prize above was priced from, so the
+        // bubble is the place after the last place that can actually be paid.
+        // In a field smaller than the structure everybody is already in the
+        // money, there is no bubble, and this correctly never fires.
+        const bubbleField = await this.finalFieldSize();
+        const payouts = resolvePayoutStructure(
+          tournament as any,
+          bubbleField !== undefined && bubbleField >= position ? bubbleField : undefined
+        );
         const paidPlaces = Array.isArray(payouts) ? payouts.length : 0;
         const refund = Math.max(0, Number((tournament as any).buy_in_amount || 0));
         if (
@@ -2146,7 +2209,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // which is the same rule both live payout sites follow — parsing the
     // column here meant a top-up computed from a DIFFERENT structure than the
     // payment it is topping up.
-    const payouts = resolvePayoutStructure(this.tournamentCache as any);
+    const payouts = resolvePayoutStructure(
+      this.tournamentCache as any,
+      await this.finalFieldSize()
+    );
     if (!payouts || payouts.length === 0) return;
 
     for (const player of eliminated) {
@@ -2666,7 +2732,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // resolvePayoutStructure returns the stored structure when it is usable
       // and, for a Spin, rebuilds it from spinTier(spin_multiplier) when it is
       // not. So a Spin never reaches the fallback below.
-      const payouts = resolvePayoutStructure(tournament as any);
+      const payouts = resolvePayoutStructure(tournament as any, await this.finalFieldSize());
       if (payouts) {
         // PAYOUT-INTEGRITY 2026-08-20: same residual rule as every other place
         // (see computePlacePrize). For a single-place structure (a 2x-5x Spin)

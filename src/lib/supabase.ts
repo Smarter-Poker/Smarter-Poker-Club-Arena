@@ -77,6 +77,40 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
  * which timed out after 10s every time, making page loads 10+ seconds.
  * Now: getSession() is instant (reads localStorage), so we use that immediately.
  */
+/**
+ * The background token refresh is THROTTLED, and that is a fix, not a
+ * micro-optimisation.
+ *
+ * `getAuthUser` is called by nearly every component that needs to know who is
+ * signed in, and the fast path below fired a fire-and-forget
+ * `supabase.auth.getUser()` on EVERY call. Measured on production 2026-08-28,
+ * opening one tournament page: **13 requests to `/auth/v1/user`**, up to 492ms
+ * each, every one of them discarded, all of them competing for the same
+ * connections as the queries the page actually needed.
+ *
+ * The client is created with `autoRefreshToken: true`, so the SDK already
+ * refreshes on its own timer — this call was only ever a nudge. One nudge a
+ * minute is a nudge; thirteen in a second is a stampede.
+ *
+ * `_authRefreshInFlight` also collapses concurrent nudges, so the very first
+ * burst on a cold page makes one request rather than one per component.
+ */
+const AUTH_REFRESH_MIN_INTERVAL_MS = 60_000;
+let _lastAuthRefreshAt = 0;
+let _authRefreshInFlight: Promise<unknown> | null = null;
+
+function nudgeTokenRefresh() {
+  if (_authRefreshInFlight) return;
+  if (Date.now() - _lastAuthRefreshAt < AUTH_REFRESH_MIN_INTERVAL_MS) return;
+  _lastAuthRefreshAt = Date.now();
+  _authRefreshInFlight = supabase.auth
+    .getUser()
+    .catch(() => {})
+    .finally(() => {
+      _authRefreshInFlight = null;
+    });
+}
+
 export async function getAuthUser(timeoutMs = 5000) {
   // FAST PATH: getSession() reads from localStorage — instant, no network call
   try {
@@ -85,8 +119,9 @@ export async function getAuthUser(timeoutMs = 5000) {
       error: sessionError,
     } = await supabase.auth.getSession();
     if (session?.user) {
-      // Fire getUser() in background to refresh the token if needed — don't await
-      supabase.auth.getUser().catch(() => {});
+      // Refresh the token in the background if it has not been nudged
+      // recently. See nudgeTokenRefresh above for why the throttle exists.
+      nudgeTokenRefresh();
       return { data: { user: session.user }, error: null };
     }
     if (sessionError) {

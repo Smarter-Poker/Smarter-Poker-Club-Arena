@@ -57,8 +57,15 @@
      them through var() fallbacks so neither component breaks if it is ever
      mounted outside the HUD. */
   --sp-hud-tile-bg: rgba(10, 12, 18, 0.72);
-  --sp-hud-tile-radius: 10px;
-  --sp-hud-tile-size: 36px;
+  /* Dan 2026-08-28: "previous hand and rabbit hunt buttons need to be
+     increased in size to be the same size as the chat button." The chat
+     button is 44px / radius 12 (TableChat.css) at every breakpoint, so the
+     tile token — which sizes prev-hand, rabbit hunt AND the time-bank tile
+     together by design — moves to match. The 44px touch-target pseudos on
+     those widgets are now simply coincident with the painted tile.
+     --sp-hero-clear budget: 44 + 8 = 52, still under the 68px reserve. */
+  --sp-hud-tile-radius: 12px;
+  --sp-hud-tile-size: 44px;
   --sp-hud-tile-fg: rgba(255, 255, 255, 0.86);
   position: fixed;
   inset: 0;

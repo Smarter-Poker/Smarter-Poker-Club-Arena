@@ -890,6 +890,22 @@ export default function SettingsPage() {
             />
           </div>
 
+          {/* Dan 2026-08-28: "add a toggle... in the Club Arena settings to
+              turn the ticker on or off." Same stored setting the in-table
+              panel writes, so either surface flips the live bar. */}
+          <div className={styles.settingRow}>
+            <div className={styles.settingInfo}>
+              <span className={styles.settingLabel}>Announcement Ticker</span>
+              <span className={styles.settingDesc}>
+                Show The Scrolling Tournament And Announcement Ticker
+              </span>
+            </div>
+            <Toggle
+              checked={settings.showTicker}
+              onChange={(v) => updateSetting('showTicker', v)}
+            />
+          </div>
+
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Animation Speed</span>

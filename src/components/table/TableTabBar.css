@@ -557,14 +557,22 @@
   }
 
   /* The hamburger is 40px square in TableMenu.css because it also lives on the
-     felt, where it is the only control in its corner. In this strip those 8
-     extra pixels are 2px off every pill, and 32px is still a legal touch
-     target. Scoped to this container so the on-felt trigger is untouched. */
+     felt, where it is the only control in its corner. Scoped to this container
+     so the on-felt trigger is untouched.
+
+     Dan 2026-08-28: "the hamburger menu icon should be larger and encompass
+     the entire area, top to bottom and left to right, where it sits." Two
+     halves: (a) 34px, the full pill height at this breakpoint — the trigger
+     now spans the strip's inner height edge to edge (it was 32px, 2px shy);
+     (b) the icon-hamburger artwork itself was re-cropped in storage to its
+     visible bounds (the old canvas carried ~20% transparent margin on every
+     side, which is why the glyph floated small inside the button). The 2px
+     comes out of the 375px budget's documented 4px slack. */
   .table-tab-bar__menu-container .table-menu__trigger {
-    width: 32px;
-    height: 32px;
-    min-width: 32px;
-    min-height: 32px;
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    min-height: 34px;
     border-radius: 8px;
   }
 

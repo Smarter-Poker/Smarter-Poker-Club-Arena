@@ -276,6 +276,7 @@ import { useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';
 import { TableHUD } from '../components/table/TableHUD';
 import { MiniStatsCard } from '../components/table/MiniStatsCard';
 import TournamentInfoPanel from '../components/tournament/TournamentInfoPanel';
+import HeroHubPanel from '../components/table/HeroHubPanel';
 import { TournamentHUD } from '../components/tournament/TournamentHUD';
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
@@ -2072,6 +2073,22 @@ export default function TablePage({
    * offering at the moment the player armed it, and map accordingly.
    */
   const preActionCanCheckRef = useRef(false);
+  /**
+   * Dan 2026-08-28 (CRITICAL): the price on the Call button at the moment the
+   * player armed it. Sent to the engine as auto_call's maxCallAmount so a
+   * raise past that price invalidates instead of auto-calling — "Call 15"
+   * can never call 65. Snapshotted in onPreActionChange beside the canCheck
+   * snapshot; the engine additionally records its own price at set time, so
+   * this is defence in depth, not the only guard.
+   */
+  const preActionCallAmountRef = useRef(0);
+  /**
+   * The last pre-action that was actually ARMED, kept for the clear path.
+   * `const armed = preAction` inside the clear branch was null by definition
+   * (that branch only runs when preAction is falsy), which made the
+   * restore-on-failed-clear dead code — see the mirror effect.
+   */
+  const lastArmedPreActionRef = useRef<'fold' | 'check' | 'call' | 'callAny' | null>(null);
 
   // Deal Animation State — triggers card dealing visual at start of new hand
   const [dealAnimationKey, setDealAnimationKey] = useState(0);
@@ -2377,48 +2394,44 @@ export default function TablePage({
                 : 'auto_call_any';
         // Tell server about pre-action so it can auto-execute on player's turn
         hadPreActionRef.current = true;
-        // 2026-08-20: `setPreAction` NEVER throws — it resolves
-        // `{ success: false }` on a non-OK status, on an unreachable engine, and
-        // for a full 30s whenever GameServerAPI's circuit breaker is open. The
-        // `.catch` was dead code and the result was discarded, so the bar lit up
-        // whether or not the engine had armed anything.
-        //
-        // Both directions cost the player a hand. A failed SET means they arm
-        // "call any", walk away, and get folded on the shot clock instead. A
-        // failed CLEAR (below) means they change their mind, the bar goes dark,
-        // and the engine still folds the hand they wanted to play — pre-actions
-        // are only disposed at hand end, so the whole rest of the hand is
-        // exposed.
-        /* RETRIED, BECAUSE ONE ATTEMPT IS NOT A DELIVERY (Dan 2026-08-27:
-           "there are bugs in the pre action buttons, they don't work and
-           function all the time").
+        lastArmedPreActionRef.current = preAction;
+        /* RETRIED FOR REAL THIS TIME (Dan 2026-08-28: "pre action buttons
+           still have a slight glitch").
 
-           `setPreAction` resolves `{ success: false }` rather than throwing -
-           on a non-OK status, on an unreachable engine, and for a FULL 30
-           SECONDS whenever GameServerAPI's circuit breaker is open. A single
-           attempt inside that window simply lost, and the player was told to
-           play it manually for a reason that had nothing to do with them.
-           Three bounded attempts cover a transient blip and a breaker that
-           closes; a genuine refusal still disarms the bar rather than lying
-           about it. */
-        void retryAsync(() => serverSetPreAction(tableId, serverAction), 2, 400)
-          .then((res: { success?: boolean; error?: string } | undefined) => {
+           `serverSetPreAction` NEVER throws — it resolves `{success:false}`
+           on a non-OK status, on an unreachable engine, and for a full 30s
+           whenever GameServerAPI's circuit breaker is open. The previous
+           `retryAsync(() => serverSetPreAction(...))` therefore resolved its
+           FIRST falsy result and retried nothing: the comment said "three
+           bounded attempts" while the code made one. The wrapper below turns
+           a falsy result into a thrown, retryable error ("network" marks it
+           retryable for retryAsync's filter), so the three attempts are now
+           real; the terminal failure lands in `.catch`, which disarms the
+           bar rather than letting it claim something the engine never armed.
+
+           Dan 2026-08-28 (CRITICAL): `auto_call` now carries the PRICE THE
+           PLAYER WAS LOOKING AT when they armed it (snapshotted in
+           onPreActionChange, same place the canCheck snapshot lives). The
+           engine also records its own price at set time, so this cap is
+           belt on top of the server's braces — either alone stops "Call 15"
+           from calling a raise to 65. */
+        const armCap = serverAction === 'auto_call' ? preActionCallAmountRef.current : undefined;
+        void retryAsync(
+          async () => {
+            const res = await serverSetPreAction(tableId, serverAction, armCap);
             if (!res?.success) {
-              reportError(
-                new Error(res?.error || 'setPreAction rejected by engine'),
-                'TablePage.PreAction_set_refused'
-              );
-              hadPreActionRef.current = false;
-              setPreAction(null); // the bar must not claim something the engine has not armed
-              toast?.error?.(res?.error || 'Could not arm that pre-action - play it manually.');
+              throw new Error(`network/preaction-arm: ${res?.error || 'engine refused'}`);
             }
-          })
-          .catch((err: unknown) => {
-            reportError(err, 'TablePage.PreAction_set_threw');
-            hadPreActionRef.current = false;
-            setPreAction(null);
-            toast?.error?.('Could not arm that pre-action - play it manually.');
-          });
+            return res;
+          },
+          2,
+          400
+        ).catch((err: unknown) => {
+          reportError(err, 'TablePage.PreAction_set_refused');
+          hadPreActionRef.current = false;
+          setPreAction(null); // the bar must not claim something the engine has not armed
+          toast?.error?.('Could Not Arm That Pre-Action, Play It Manually.');
+        });
         // Also emit to MasterBus for local telemetry
         masterBus.emit('PRE_ACTION_SET', {
           tableId,
@@ -2440,31 +2453,38 @@ export default function TablePage({
            symptom, and the old code knew it: its own comment said "the engine
            still holds the old pre-action and WILL execute it".
 
-           Two changes. It RETRIES, for the same circuit-breaker reason as the
-           arm above. And when the clear genuinely fails it puts the bar BACK
-           to what the engine is actually holding instead of leaving it dark -
-           a visible armed control the player can cancel again beats an
-           invisible one that acts for them. */
-        const armed = preAction;
-        void retryAsync(() => serverSetPreAction(tableId, 'clear'), 2, 400)
-          .then((res: { success?: boolean; error?: string } | undefined) => {
+           Two changes. It RETRIES for real (the falsy result is thrown as a
+           retryable error — the bare `retryAsync(() => serverSetPreAction…)`
+           shape resolved its first `{success:false}` and retried nothing).
+           And when the clear genuinely fails it puts the bar BACK to what the
+           engine is actually holding instead of leaving it dark — a visible
+           armed control the player can cancel again beats an invisible one
+           that acts for them.
+
+           Dan 2026-08-28: `armed` used to be `const armed = preAction` HERE,
+           inside the else-branch where `preAction` is null by definition —
+           so the restore was dead code and a failed clear left the bar dark
+           while the engine stayed armed (the exact "it acts again later"
+           glitch). The value now comes from lastArmedPreActionRef, written
+           on every successful arm. */
+        const armed = lastArmedPreActionRef.current;
+        void retryAsync(
+          async () => {
+            const res = await serverSetPreAction(tableId, 'clear');
             if (!res?.success) {
-              reportError(
-                new Error(res?.error || 'clear pre-action rejected by engine'),
-                'TablePage.PreAction_clear_refused'
-              );
-              hadPreActionRef.current = true;
-              // Show what the engine is still holding, rather than nothing.
-              if (armed) setPreAction(armed);
-              toast?.error?.('Could not cancel your pre-action - it may still run this hand.');
+              throw new Error(`network/preaction-clear: ${res?.error || 'engine refused'}`);
             }
-          })
-          .catch((err: unknown) => {
-            reportError(err, 'TablePage.PreAction_clear_threw');
-            hadPreActionRef.current = true;
-            if (armed) setPreAction(armed);
-            toast?.error?.('Could not cancel your pre-action - it may still run this hand.');
-          });
+            return res;
+          },
+          2,
+          400
+        ).catch((err: unknown) => {
+          reportError(err, 'TablePage.PreAction_clear_refused');
+          hadPreActionRef.current = true;
+          // Show what the engine is still holding, rather than nothing.
+          if (armed) setPreAction(armed);
+          toast?.error?.('Could Not Cancel Your Pre-Action, It May Still Run This Hand.');
+        });
       }
     }
   }, [preAction, tableId, userId, toast]);
@@ -2684,6 +2704,8 @@ export default function TablePage({
      or already posted). */
   const [postOrWaitOpen, setPostOrWaitOpen] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  /** Dan 2026-08-28: the tabbed hub behind the hero's own avatar. */
+  const [showHeroHub, setShowHeroHub] = useState(false);
   const [showBuyInModal, setShowBuyInModal] = useState(false);
   // 2026-04-14 per Dan: bust rebuy flow
   const [bustRebuyOpen, setBustRebuyOpen] = useState(false);
@@ -10041,7 +10063,6 @@ export default function TablePage({
     // isTournament/tournamentId are in the deps so a table whose tournament
     // identity resolves after its blinds still re-evaluates the gate; the
     // loaded-ref keeps a cash table from double-loading.
-     
   }, [tableId, tableState.blinds, tableState.isTournament, tableState.tournamentId]);
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -14851,6 +14872,7 @@ export default function TablePage({
       setShowIdentityModal(false);
       setShowProfileModal(false);
       setShowSessionStats(false);
+      setShowHeroHub(false);
       /* The one exception, and it is a money rule: the seat-first buy-in
          sheet is dismissible ONLY while nothing is in flight. `seatFirstPending`
          means a debit has been sent and not yet answered; wiping the sheet
@@ -15696,20 +15718,28 @@ export default function TablePage({
             {tableState.isTournament && tableState.tournamentId && (
               <TournamentHUD tournamentId={tableState.tournamentId} />
             )}
-            <MiniStatsCard
-              currentStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
-              totalBuyIn={totalBuyInRef.current}
-              handsPlayed={handsPlayedRef.current}
-              vpipCount={vpipCountRef.current}
-              handsWon={handsWonRef.current}
-              isSeated={tableState.heroSeat > 0}
-              isTournament={tableState.isTournament}
-              onTap={() =>
-                tableState.isTournament && tableState.tournamentId
-                  ? setShowTournamentInfo(true)
-                  : setShowSessionStats(true)
-              }
-            />
+            {/* Dan 2026-08-28: "REMOVE THE STATS BUTTON FROM THE UPPER LEFT
+                HAND CORNER, AND MOVE IT TO THE HERO AVATAR." The cash stats
+                icon is gone — session stats live in the hero hub's Stats tab
+                (tap your own avatar) and remain in the hamburger menu. The
+                TOURNAMENT variants stay: the 4-figure bar and the spectator
+                lobby button serve players and observers who may have no
+                seated hero avatar to tap, and they are the only route to
+                TournamentInfoPanel for a spectator. */}
+            {tableState.isTournament && (
+              <MiniStatsCard
+                currentStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
+                totalBuyIn={totalBuyInRef.current}
+                handsPlayed={handsPlayedRef.current}
+                vpipCount={vpipCountRef.current}
+                handsWon={handsWonRef.current}
+                isSeated={tableState.heroSeat > 0}
+                isTournament={tableState.isTournament}
+                onTap={() =>
+                  tableState.tournamentId ? setShowTournamentInfo(true) : setShowSessionStats(true)
+                }
+              />
+            )}
           </div>
         }
         bottomLeft={
@@ -16897,7 +16927,14 @@ export default function TablePage({
                   }
                   onAvatarClick={() => {
                     if (player?.isHero) {
-                      setShowProfileModal(true);
+                      /* Dan 2026-08-28: the hero's avatar opens the tabbed
+                         HERO HUB — Throwables / Stats / Profile / Table
+                         Settings. (It used to open the read-only profile
+                         modal, still reachable from the hub's Profile tab.)
+                         The throw target defaults to the hero's own seat so
+                         a throwable picked from the hub lands somewhere. */
+                      setThrowTargetSeat(seatNumber);
+                      setShowHeroHub(true);
                     } else {
                       // Open throwable selector targeting this seat
                       setThrowTargetSeat(seatNumber);
@@ -17527,6 +17564,18 @@ export default function TablePage({
                       (tableStateRef.current.currentBet || 0) <=
                       (tableStateRef.current.lastBetAmounts?.[tableStateRef.current.heroSeat - 1] ||
                         0);
+                    /* Dan 2026-08-28 (CRITICAL): snapshot the PRICE at arm
+                       time too. This is the number printed on the "Call N"
+                       button the player pressed, and it rides to the engine
+                       as auto_call's cap — a raise past it invalidates
+                       instead of calling. */
+                    preActionCallAmountRef.current = Math.max(
+                      0,
+                      (tableStateRef.current.currentBet || 0) -
+                        (tableStateRef.current.lastBetAmounts?.[
+                          tableStateRef.current.heroSeat - 1
+                        ] || 0)
+                    );
                     setPreAction(next);
                   }}
                   currentBet={Math.max(
@@ -18470,6 +18519,9 @@ export default function TablePage({
             updateSetting('confirmAllIn', settingsUpdate.confirmAllIn);
           if ((settingsUpdate as any).showBetSizePresets !== undefined)
             updateSetting('showBetSizePresets', (settingsUpdate as any).showBetSizePresets);
+          // Dan 2026-08-28: announcement ticker on/off.
+          if (settingsUpdate.showTicker !== undefined)
+            updateSetting('showTicker', settingsUpdate.showTicker);
           if (settingsUpdate.animationSpeed !== undefined) {
             /* INVERTED UNTIL 2026-08-26. `--animation-speed` is a DURATION
                MULTIPLIER — bigger is slower — as utils/animationSpeed.ts and
@@ -18683,6 +18735,26 @@ export default function TablePage({
           tournamentId={tableState.tournamentId}
           heroUserId={userId || undefined}
           onClose={() => setShowTournamentInfo(false)}
+        />
+      )}
+
+      {/* Dan 2026-08-28: the tabbed HERO HUB behind the hero's own avatar —
+          Throwables / Stats / Profile / Table Settings. Replaces the removed
+          upper-left cash stats button as the primary stats entry point. */}
+      {showHeroHub && userId && (
+        <HeroHubPanel
+          isOpen={showHeroHub}
+          onClose={() => setShowHeroHub(false)}
+          userId={userId}
+          emojiEnabled={!!v8Settings.emoji_enabled}
+          isTournament={!!tableState.isTournament}
+          onThrowableSelect={handleThrowableSelect}
+          onOpenStats={() => setShowSessionStats(true)}
+          onOpenTournamentInfo={() => setShowTournamentInfo(true)}
+          onOpenProfileView={() => setShowProfileModal(true)}
+          onOpenAvatarPicker={() => avatarService.openAvatarSelector()}
+          onOpenIdentity={() => setShowIdentityModal(true)}
+          onOpenTableSettings={() => setShowSettings(true)}
         />
       )}
 

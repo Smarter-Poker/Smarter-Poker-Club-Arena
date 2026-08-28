@@ -3425,15 +3425,11 @@
        50%: percentages here resolve against the seat's height, which is the
        one measurement CSS can read without anyone writing the plate's height
        down a second time;
-     - `.table-container` reserves exactly `--sp-action-reserve +
-       --sp-hero-clear` under the scaler. --sp-action-reserve is the height the
-       action bar is entitled to at this breakpoint (TablePage.css) — a declared
-       constant, so the strip left between the scaler and the top of the bar is
-       always the remaining --sp-hero-clear, in every state of every hand. It
-       was a live ResizeObserver measurement of the bar until 2026-08-27, which
-       is the same sentence with "always" quietly deleted: the reserve moved
-       whenever the bar did, and the whole felt rescaled with it twice a hand.
-       Reading --sp-hero-clear is
+     - `.table-container` reserves exactly `--sp-action-h + --sp-hero-clear`
+       under the scaler. --sp-action-h is the action bar's OWN measured height,
+       republished by a ResizeObserver every time the raise slider opens or
+       closes, so the strip left between the scaler and the top of the bar is
+       always the remaining --sp-hero-clear. Reading --sp-hero-clear is
        therefore how you read "the top of the action bar" from in here: hard-
        coding a pixel gap instead would be correct only while the bar happened
        to be collapsed, which is the exact bug that put the hero's stack behind

@@ -598,7 +598,7 @@ export class TournamentManager extends TournamentManagerEliminations {
         ranked[0].user_id,
         pool,
         `Satellite payout (no target seats available): ${tournament?.name || 'satellite'}`,
-        `tourney:${this.tournamentId}:prize:${ranked[0].user_id}:${ranked[0].position}`
+        `tourney:${this.tournamentId}:prize:place:${ranked[0].position}`
       );
       await supabase
         .from('tournament_players')
@@ -645,7 +645,7 @@ export class TournamentManager extends TournamentManagerEliminations {
             w.user_id,
             ticketCost,
             `Satellite seat fallback (registration failed): ${target.name || 'target'}`,
-            `tourney:${this.tournamentId}:prize:${w.user_id}:${w.position}`
+            `tourney:${this.tournamentId}:prize:place:${w.position}`
           );
         } else {
           console.log(
@@ -658,7 +658,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           w.user_id,
           ticketCost,
           `Satellite ticket cashed (target unavailable): ${tournament?.name || 'satellite'}`,
-          `tourney:${this.tournamentId}:prize:${w.user_id}:${w.position}`
+          `tourney:${this.tournamentId}:prize:place:${w.position}`
         );
       }
       await supabase

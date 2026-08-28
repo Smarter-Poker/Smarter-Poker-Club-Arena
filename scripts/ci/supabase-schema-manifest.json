@@ -1077,6 +1077,7 @@
     "check_bankroll_achievements",
     "check_duplicate_clips",
     "check_rate_limit",
+    "check_upcoming_tournament_pushes",
     "check_username_available",
     "check_username_with_suggestions",
     "checkauth",

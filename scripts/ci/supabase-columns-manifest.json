@@ -9669,7 +9669,9 @@
       "chip_count",
       "club_id",
       "is_satellite_qualifier",
-      "rebuy_prompt_until"
+      "rebuy_prompt_until",
+      "push_15m_sent",
+      "push_2m_sent"
     ],
     "tournament_rake_settlements": [
       "tournament_id",

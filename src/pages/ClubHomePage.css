@@ -128,8 +128,9 @@
 }
 
 .lobby-top__wallet {
-  grid-column: 1 / -1;
+  grid-column: 2;
   min-width: 0;
+  align-self: start;
 }
 
 .lobby-club {
@@ -2205,6 +2206,10 @@
 @media (max-width: 640px) {
   .lobby-top__main {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lobby-top__wallet {
+    grid-column: 1;
   }
 
   .lobby-bbj {

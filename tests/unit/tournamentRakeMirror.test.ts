@@ -19,22 +19,58 @@ import * as client from '../../src/utils/buyIn';
 import * as server from '../../server/src/config/buyIn';
 
 describe('server buyIn mirrors client buyIn', () => {
-  it('SNG_RAKE_RATE is 5% and identical in both copies (Dan 2026-08-25)', () => {
-    expect(server.SNG_RAKE_RATE).toBe(0.05);
-    expect(client.SNG_RAKE_RATE).toBe(server.SNG_RAKE_RATE);
+  it('the three rate constants are identical in both copies (Dan 2026-08-25)', () => {
+    // SNG_RAKE_RATE was replaced on 2026-08-27: it named a FORMAT, and the
+    // format label is exactly the thing that varied between the six writers.
+    // The rate is keyed on seats now, and lives in both copies identically.
+    expect(server.HEADS_UP_RAKE_RATE).toBe(0.05);
+    expect(client.HEADS_UP_RAKE_RATE).toBe(server.HEADS_UP_RAKE_RATE);
+    expect(server.DEFAULT_RAKE_RATE).toBe(0.1);
+    expect(client.DEFAULT_RAKE_RATE).toBe(server.DEFAULT_RAKE_RATE);
+    // A Spin's rake is engineered into its multiplier table, so its buy_in_fee
+    // is 0 and a database constraint refuses anything else.
+    expect(server.SPIN_RAKE_RATE).toBe(0);
+    expect(client.SPIN_RAKE_RATE).toBe(server.SPIN_RAKE_RATE);
+
     // A Heads-Up 50 is 47.50 + 2.50, never 45 + 5 — the split every creator
     // (recurring, scheduled, fn_create_tournament) must produce.
-    expect(server.splitBuyIn(50, server.SNG_RAKE_RATE)).toEqual({
+    expect(server.splitBuyIn(50, server.HEADS_UP_RAKE_RATE)).toEqual({
       total: 50,
       prize: 47.5,
       fee: 2.5,
     });
     // Dan's worked example: 1-chip duel -> 0.95 in, 0.05 to the house, twice.
-    expect(server.splitBuyIn(1, server.SNG_RAKE_RATE)).toEqual({
+    expect(server.splitBuyIn(1, server.HEADS_UP_RAKE_RATE)).toEqual({
       total: 1,
       prize: 0.95,
       fee: 0.05,
     });
+  });
+
+  it('rakeRateFor answers the same in both copies, and keys on SEATS', () => {
+    const subjects = [
+      { tournamentType: 'SNG', maxPlayers: 2 },
+      { tournamentType: 'MTT', maxPlayers: 2 },
+      { tournamentType: 'sng', maxPlayers: 9 },
+      { tournamentType: 'MTT', maxPlayers: 180 },
+      { tournamentType: 'SPIN', maxPlayers: 3 },
+      { variant: 'spin', maxPlayers: 3 },
+      // The label says duel, the seat count says otherwise. Seats win.
+      { variant: 'Heads-Up', maxPlayers: 9 },
+      // Unknown / unlimited field size falls to the DEFAULT rate, never the
+      // cheaper one: a misconfigured writer must not hand away margin.
+      { tournamentType: 'SNG' },
+      { tournamentType: 'MTT', maxPlayers: 0 },
+      { tournamentType: 'MTT', maxPlayers: null },
+    ];
+    for (const s of subjects) {
+      expect(client.rakeRateFor(s), JSON.stringify(s)).toBe(server.rakeRateFor(s));
+    }
+    expect(server.rakeRateFor({ tournamentType: 'MTT', maxPlayers: 2 })).toBe(0.05);
+    expect(server.rakeRateFor({ variant: 'Heads-Up', maxPlayers: 9 })).toBe(0.1);
+    expect(server.rakeRateFor({ tournamentType: 'SNG' })).toBe(0.1);
+    expect(server.rakeRateFor({ tournamentType: 'MTT', maxPlayers: 0 })).toBe(0.1);
+    expect(server.rakeRateFor({ tournamentType: 'SPIN', maxPlayers: 3 })).toBe(0);
   });
 
   it('splitBuyIn agrees on every ladder rung', () => {

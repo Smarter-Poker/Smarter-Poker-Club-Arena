@@ -2805,6 +2805,18 @@ export default function TablePage({
    * costs nothing, and a rebuy they never confirmed must never be charged.
    */
   const BUST_HOLD_MODAL_MS = 120_000;
+  const rebuyPromptDeadlineRef = useRef<number | null>(null);
+  const rebuyPromptTokenRef = useRef<string | null>(null);
+  const beginRebuyPrompt = useCallback((): string => {
+    const token = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `rebuy-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    rebuyPromptTokenRef.current = token;
+    return token;
+  }, []);
+  const endRebuyPrompt = useCallback(() => {
+    rebuyPromptTokenRef.current = null;
+    rebuyPromptDeadlineRef.current = null;
+  }, []);
+
   const bustHoldRef = useRef<{
     active: boolean;
     /** The exit that was deferred, replayed verbatim when the hold releases. */
@@ -5513,6 +5525,7 @@ export default function TablePage({
       const tournament = await tournamentService.getTournament(tableState.tournamentId);
       if (tournament) {
         const quote = tournamentService.quoteFromTournament(tournament, 'rebuy');
+        beginRebuyPrompt();
         setRebuyData({ cost: quote.baseCost, fee: quote.fee, chips: quote.chips });
         setShowRebuyModal(true);
       }
@@ -5739,6 +5752,7 @@ export default function TablePage({
           if (!bustHoldRef.current.active) return;
           if (tournament) {
             const quote = tournamentService.quoteFromTournament(tournament, 'rebuy');
+            beginRebuyPrompt();
             setRebuyData({ cost: quote.baseCost, fee: quote.fee, chips: quote.chips });
             setShowRebuyModal(true);
             /* The modal IS the pause now, so the 5s deadline must not fire out
@@ -18014,7 +18028,8 @@ export default function TablePage({
           if (!tableState.tournamentId || !userId) return;
           setRebuyProcessing(true);
           try {
-            await tournamentService.processRebuy(tableState.tournamentId, userId);
+            const token = rebuyPromptTokenRef.current ?? beginRebuyPrompt();
+            await tournamentService.processRebuy(tableState.tournamentId, userId, token);
             /* Set BEFORE anything else can run. The stack that proves this
                purchase arrives over the engine feed a moment from now, and
                `exitIfBusted` must not be allowed to look at the stale zero in
@@ -18022,6 +18037,7 @@ export default function TablePage({
             rebuyJustSucceededRef.current = true;
             toast?.success('Rebuy successful - chips added to your stack');
             setShowRebuyModal(false);
+            endRebuyPrompt();
             /* Dan 2026-08-25: the player REBOUGHT, so any exit the elimination
                broadcast deferred into the bust hold must be thrown away rather
                than replayed — replaying it would navigate a player with a fresh
@@ -18036,6 +18052,7 @@ export default function TablePage({
         }}
         onCloseRebuyModal={() => {
           setShowRebuyModal(false);
+          endRebuyPrompt();
           /* Declined: "unless the user declines the rebuy, then it starts the
              next hand right away." Release immediately — no waiting out the
              rest of the 5 seconds. This runs BEFORE the manual exit below so a

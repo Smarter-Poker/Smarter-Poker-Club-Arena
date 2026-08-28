@@ -626,6 +626,30 @@ export class GameServer {
     // asks the database instead. See services/DealRateVerifier.ts.
     const dealRate = this.dealRateVerifier.snapshot();
 
+    /**
+     * ── TABLE PROGRESS VETOES A DISCOVERY-STALL DEATH (2026-08-24) ─────────
+     *
+     * OBSERVED LIVE tonight: discoveryLoopStalledMs read 87s (one discovery
+     * CYCLE blocked inside a slow database call, so no new attempt was
+     * stamped) while 123 tables were active, 0 were stalled, and hand_history
+     * showed a hand completing every second. liveness said 'dead' anyway —
+     * inviting sp-autoheal to restart a demonstrably dealing engine and void
+     * every one of those tables. A blocked discovery cycle pauses NEW table
+     * adoption; it does not stop play. If any table made progress inside the
+     * last 2 minutes the process cannot be dead, so a discovery stall alone
+     * must not kill it.
+     *
+     * BOUNDED, because the opposite failure is real too: a discovery loop
+     * wedged forever on a hung await would otherwise never be restarted while
+     * horses keep tables "progressing" indefinitely. Past 15 minutes of no
+     * discovery attempts the restart is the correct answer regardless.
+     */
+    const anyTableProgressedRecently = tableLiveness.some((t) => t.msSinceProgress < 120_000);
+    const discoveryLoopDead =
+      !stillBooting &&
+      (discoveryLoopStalledMs > 900_000 ||
+        (discoveryLoopStalledMs > 60_000 && !anyTableProgressedRecently));
+
     let totalHands = 0;
     // FIX 153: Aggregate telemetry from all table engines for health endpoint
     const tableMetrics: any[] = [];
@@ -688,9 +712,7 @@ export class GameServer {
        */
       liveness: !isLeader()
         ? 'standby'
-        : deadStalledCount > 0 ||
-            (!stillBooting && discoveryLoopStalledMs > 60_000) ||
-            dealRate.dbConfirmedDead
+        : deadStalledCount > 0 || discoveryLoopDead || dealRate.dbConfirmedDead
           ? 'dead'
           : 'ok',
       /**

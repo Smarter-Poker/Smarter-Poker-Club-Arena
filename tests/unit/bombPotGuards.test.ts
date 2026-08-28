@@ -124,9 +124,9 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
   });
 
   it('the award-unit ledger writes only settled multi-board bomb hands, idempotently', () => {
-    const idx = SETTLEMENT.indexOf("from('bomb_pot_award_units')");
-    expect(idx).toBeGreaterThan(-1);
-    const window = SETTLEMENT.slice(Math.max(0, idx - 1200), idx + 600);
+    // The multi-board gate and the write are siblings in one `if` block, so
+    // that block is the window — bounded by structure, never a byte count.
+    const window = sliceEnclosingBlock(SETTLEMENT, "from('bomb_pot_award_units')", 0, 2);
     expect(window).toMatch(/board_count \?\? 1\) >= 2/);
     expect(window).toMatch(/onConflict: 'hand_history_id,pot_index,board,side,user_id'/);
     expect(window).toMatch(/ignoreDuplicates: true/);
@@ -150,9 +150,10 @@ describe('ROUND 5 (2026-08-28) — clone hygiene and manual-trigger ordering', (
   });
 
   it('a swept multi-board pot is announced with sound, not in silence', () => {
-    const idx = PAGE.indexOf('setScoopBanner({');
-    expect(idx).toBeGreaterThan(-1);
-    const window = PAGE.slice(idx, idx + 900);
+    // Bounded by the block that encloses the banner call, never a byte count
+    // (tests/helpers/sourceWindow — a fixed window drifts off the code it
+    // guards the moment a comment is added above it).
+    const window = sliceEnclosingBlock(PAGE, 'setScoopBanner({');
     expect(window).toMatch(/soundService\.isEnabled\(\) && ambientSoundsAllowedRef\.current/);
     expect(window).toMatch(/playBigWin\(\)/);
   });

@@ -146,11 +146,6 @@ begin
     raise exception 'fn_ad_daily impressions do not sum to ad_event over the same window';
   end if;
 
-  for v_rows in
-    select 1 from pg_constraint
-     where conrelid = 'public.ad_catalog'::regclass
-       and conname in ('ad_catalog_weight_positive', 'ad_catalog_flight_window_ordered')
-  loop end loop;
   if (select count(*) from pg_constraint
        where conrelid = 'public.ad_catalog'::regclass
          and conname in ('ad_catalog_weight_positive','ad_catalog_flight_window_ordered')) <> 2 then

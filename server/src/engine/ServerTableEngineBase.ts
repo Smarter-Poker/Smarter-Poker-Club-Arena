@@ -3254,7 +3254,29 @@ export abstract class ServerTableEngineBase {
       if (p.is_sitting_out !== true) continue;
       if (this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) continue;
       this.disconnectEngine.registerPlayer(this.tableId, p.user_id);
-      this.disconnectEngine.sitOut(this.tableId, p.user_id, 'voluntary');
+      /* THE CLOCK COMES FROM THE DATABASE, NOT FROM now() (2026-08-28).
+       *
+       * This call used to omit the fourth argument, so sitOut() stamped
+       * `sitOutSince = Date.now()`. That single line is why the five-minute
+       * cash eviction never fired in production: this method runs on every
+       * pass of BOTH the start-up wait loop and the dealing loop, so every
+       * engine restart — deploy, lease change, killForRestart, watchdog —
+       * silently handed every sat-out seat a fresh five minutes. A table whose
+       * engine recycled more often than that could never evict anyone, and the
+       * player kept the seat indefinitely.
+       *
+       * `sit_out_at` is written by a database trigger on the transition into
+       * sitting out and cleared on the way out, so it is the only stamp in the
+       * system that a restart cannot move. Falling back to now() when it is
+       * absent keeps a pre-migration row working rather than pinning it at
+       * epoch 0 and evicting it instantly. */
+      const stampedAt = p.sit_out_at ? Date.parse(p.sit_out_at) : NaN;
+      this.disconnectEngine.sitOut(
+        this.tableId,
+        p.user_id,
+        'voluntary',
+        Number.isFinite(stampedAt) ? stampedAt : undefined
+      );
       // Report the OUTCOME, not the attempt.
       if (this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) {
         console.log(

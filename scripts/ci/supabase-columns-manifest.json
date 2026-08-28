@@ -9029,7 +9029,8 @@
       "auto_rebuy",
       "time_bank_remaining",
       "time_bank_uses_remaining",
-      "club_id"
+      "club_id",
+      "sit_out_at"
     ],
     "table_sessions": [
       "id",
@@ -9668,7 +9669,9 @@
       "chip_count",
       "club_id",
       "is_satellite_qualifier",
-      "rebuy_prompt_until"
+      "rebuy_prompt_until",
+      "push_15m_sent",
+      "push_2m_sent"
     ],
     "tournament_rake_settlements": [
       "tournament_id",

@@ -19,7 +19,10 @@ import { resolve } from 'node:path';
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MiniStatsCard } from '../../src/components/table/MiniStatsCard';
-import { sliceMethod, sliceMethod } from '../helpers/sourceWindow';
+// `sliceMethod` was imported twice here (a duplicate named import, TS2300).
+// Pre-existing on main and harmless only because tests/ sits outside the app
+// tsconfig; corrected in passing, 2026-08-28.
+import { sliceMethod } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const tsCode = (src: string) =>
@@ -169,58 +172,62 @@ describe('MiniStatsCard Tournament Stats Bar', () => {
    * Split in two, with fixtures that can occur: a SEATED player gets the
    * figures, an observer gets the lobby button and no zeroes.
    */
-  it('renders the real stats bar for a seated tournament player', () => {
+  /**
+   * ── 2026-08-28: THE FIGURES LEFT THIS CORNER ALTOGETHER ──────────────────
+   *
+   * Dan, ruling on this control: "ALL TOURNAMENTS NEED THE STATS ICON IN THE
+   * UPPER RIGHT HAND CORNER. IT SHOULDN'T SHOW THE STATS, BUT OPEN TO THE
+   * TOURNAMENT LOBBY PAGE AS A IN GAME 3/4 POP UP", and then: "STATS SHOULD
+   * LIVE INSIDE THE HERO AVATAR, WHEN YOU CLICK IT YOU SHOULD SEE STATS INSIDE
+   * THERE. STATS ICON IS NOT THE TOURNAMENT LOBBY BUTTON. USE THE EXACT BUTTON
+   * AS IT IS."
+   *
+   * So the seated/observer split this block used to draw is gone: BOTH now get
+   * the same single button, and it opens the lobby. The 2026-08-25 four-figure
+   * bar these specs were rewritten to protect has been removed — its numbers
+   * are shown behind the hero's own avatar (HeroHubPanel's Stats tab) instead.
+   *
+   * Updated here in the same commit as the change, per CLAUDE.md §5.8 and rule
+   * 8: a spec that pins behaviour we deliberately replaced must move with it,
+   * never be left for someone else.
+   */
+  it('gives a seated tournament player one lobby button, with no figures on it', () => {
     const handleTap = vi.fn();
     render(
       <MiniStatsCard
         currentStack={12345}
         totalBuyIn={0}
-        handsPlayed={20}
-        vpipCount={5}
-        handsWon={3}
         isSeated={true}
         isTournament={true}
         onTap={handleTap}
       />
     );
 
-    const statsBtn = screen.getByRole('button', { name: /tournament stats/i });
-    expect(statsBtn).toBeInTheDocument();
+    const btn = screen.getByRole('button', { name: /tournament lobby/i });
+    expect(btn).toBeInTheDocument();
 
-    // Figures, not a placeholder glyph. Stack is the one a tournament player
-    // actually needs; hands/VPIP/won are the session colour beside it.
-    expect(statsBtn).toHaveTextContent('Stack');
-    expect(statsBtn).toHaveTextContent('12,345');
-    expect(statsBtn).toHaveTextContent('Hands');
-    expect(statsBtn).toHaveTextContent('20');
-    expect(statsBtn).toHaveTextContent('VPIP');
-    expect(statsBtn).toHaveTextContent('25%');
-    expect(statsBtn).toHaveTextContent('Won');
+    // The corner is a door, not a readout. Asserted so nobody reinstates the
+    // bar: these figures now live behind the hero avatar.
+    expect(btn).not.toHaveTextContent('Stack');
+    expect(btn).not.toHaveTextContent('12,345');
+    expect(btn).not.toHaveTextContent('VPIP');
+    expect(btn).not.toHaveTextContent(/Buy-In/i);
+    expect(btn).not.toHaveTextContent(/P&L/i);
 
-    // Buy-In and P&L are deliberately absent: in a tournament the buy-in is
-    // money and the stack is chips, so subtracting one from the other is
-    // meaningless. Asserted so nobody "restores" them.
-    expect(statsBtn).not.toHaveTextContent(/Buy-In/i);
-    expect(statsBtn).not.toHaveTextContent(/P&L/i);
-
-    fireEvent.click(statsBtn);
+    fireEvent.click(btn);
     expect(handleTap).toHaveBeenCalledTimes(1);
   });
 
-  it('shows an observer the lobby button, not four zeroes', () => {
+  it('gives an observer the same lobby button, and no zeroes', () => {
     /* The fixture a spectator actually produces: heroSeat 0, so every session
-       figure is 0. Printing "Stack 0 · Hands 0 · VPIP 0% · Won 0" reads as a
+       figure is 0. Printing "Stack 0 · Hands 0 · VPIP 0% · Won 0" read as a
        broken HUD rather than as "you are watching". The BUTTON must survive —
-       it is how an observer reaches standings, payouts and the clock — so this
-       asserts both halves: still tappable, no zero readout. */
+       it is how an observer reaches standings, payouts and the clock. */
     const handleTap = vi.fn();
     render(
       <MiniStatsCard
         currentStack={0}
         totalBuyIn={0}
-        handsPlayed={0}
-        vpipCount={0}
-        handsWon={0}
         isSeated={false}
         isTournament={true}
         onTap={handleTap}
@@ -239,15 +246,7 @@ describe('MiniStatsCard Tournament Stats Bar', () => {
 
   it('renders nothing when not seated in non-tournament cash game', () => {
     const { container } = render(
-      <MiniStatsCard
-        currentStack={0}
-        totalBuyIn={0}
-        handsPlayed={0}
-        vpipCount={0}
-        handsWon={0}
-        isSeated={false}
-        isTournament={false}
-      />
+      <MiniStatsCard currentStack={0} totalBuyIn={0} isSeated={false} isTournament={false} />
     );
 
     expect(container.firstChild).toBeNull();

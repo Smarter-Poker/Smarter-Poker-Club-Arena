@@ -88,7 +88,8 @@ function getOrdinal(n: number): string {
  */
 export default function TournamentDetails({
   tournamentIdOverride,
-}: { tournamentIdOverride?: string } = {}) {
+  suppressAutoOpenTable = false,
+}: { tournamentIdOverride?: string; suppressAutoOpenTable?: boolean } = {}) {
   const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
 
   const { tournamentId: routeTournamentId } = useParams<{ tournamentId: string }>();
@@ -317,6 +318,17 @@ export default function TournamentDetails({
    * trap the player on the table route and break the back button.
    */
   useEffect(() => {
+    /* NOT WHEN WE ARE ALREADY AT THE TABLE (2026-08-28).
+     *
+     * The tournament lobby now also opens as a 3/4 popup ON the felt
+     * (TournamentLobbyModal), reached from the upper-right button. In that
+     * context this effect is not a service, it is a hazard: the player is
+     * already seated at the table it wants to send them to, and firing
+     * `navigate` from inside an overlay at a live table is at best a redundant
+     * route change and at worst yanks a multi-tabling player off the table they
+     * were watching. The embedder says so explicitly rather than this effect
+     * trying to infer where it is being rendered. */
+    if (suppressAutoOpenTable) return;
     if (tournament?.status !== 'RUNNING') return;
     if (!user?.id) return;
     if (autoOpenedTableRef.current) return;
@@ -329,7 +341,7 @@ export default function TournamentDetails({
 
     autoOpenedTableRef.current = true;
     navigate(`/table/${myEntry.table_id}`);
-  }, [tournament?.status, entries, user?.id, navigate]);
+  }, [tournament?.status, entries, user?.id, navigate, suppressAutoOpenTable]);
 
   // ── Realtime subscription: live tournament updates ──
   useEffect(() => {

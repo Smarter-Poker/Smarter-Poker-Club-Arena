@@ -42,17 +42,24 @@ function harness(startingBoardLength = 0) {
 
   engine.handController = controller;
   engine.running = true;
-  engine.broadcastCurrentState = vi.fn();
+  // Stamped 2026-08-28: the state broadcast is the moment the street reaches
+  // the client, and the equity broadcast must land AFTER it has been seen.
+  // Without it in the timeline that ordering cannot be asserted at all.
+  engine.broadcastCurrentState = vi.fn().mockImplementation(() => {
+    stamp('state');
+  });
   engine.broadcastAllInEquity = vi.fn().mockImplementation(async () => {
     stamp('equity');
   });
 
   // Keep the test fast without removing the ordering the pacing creates. The
-  // real values are 1000/1400/1200; what is under test is the SEQUENCE and the
-  // fact that time passes between cards at all, not the specific durations.
+  // real values are 2000/1400/1200 with a 1250ms reveal gate; what is under
+  // test is the SEQUENCE and the fact that time passes between cards at all,
+  // not the specific durations.
   engine.allInFirstPauseMs = 5;
   engine.allInStreetPauseMs = 10;
   engine.allInPreShowdownPauseMs = 5;
+  engine.allInStreetRevealMs = 25;
   engine.sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   return { engine, timeline, controller, getBoard: () => board };
@@ -79,8 +86,58 @@ describe('pacedAllInRunout', () => {
     const { engine, timeline } = harness(0);
     await engine.pacedAllInRunout(PLAYERS, 1000);
 
-    const order = timeline.filter((e) => e.what !== 'complete').map((e) => e.what);
+    const order = timeline
+      .filter((e) => e.what !== 'complete' && e.what !== 'state')
+      .map((e) => e.what);
     expect(order).toEqual(['deal:flop', 'equity', 'deal:turn', 'equity', 'deal:river', 'equity']);
+  });
+
+  /**
+   * THE STREET MUST BE SEEN BEFORE THE NUMBERS MOVE (Dan 2026-08-28).
+   *
+   * Verbatim: "EQUITY CHANGES ONLY AFTER THE FLOP IS DISPLAYED, (NOT BEFORE
+   * OR DURING)". The run-out used to broadcast state and equity back to back
+   * in the same instant, so the percentages flipped to the outcome while the
+   * card that caused it was still animating in. On the reported hand the
+   * villain read 0% and the hero 100% before the river was face up.
+   */
+  it('never moves the percentages until the street has had time to be seen', async () => {
+    const { engine, timeline } = harness(0);
+    await engine.pacedAllInRunout(PLAYERS, 1000);
+
+    const order = timeline.filter((e) => e.what !== 'complete').map((e) => e.what);
+    expect(order).toEqual([
+      'deal:flop',
+      'state',
+      'equity',
+      'deal:turn',
+      'state',
+      'equity',
+      'deal:river',
+      'state',
+      'equity',
+    ]);
+
+    // Not merely ordered — actually separated, by the reveal gate.
+    const states = timeline.filter((e) => e.what === 'state');
+    const equities = timeline.filter((e) => e.what === 'equity');
+    expect(states).toHaveLength(3);
+    expect(equities).toHaveLength(3);
+    for (let i = 0; i < 3; i++) {
+      expect(
+        equities[i].at - states[i].at,
+        `street ${i + 1}: equity moved before the card could be seen`
+      ).toBeGreaterThanOrEqual(20);
+    }
+  });
+
+  it('uses the shared reveal constant rather than a local magic number', async () => {
+    const { HAND_COMPLETION } = await import('../config/handCompletionSpec.js');
+    const engine = new ServerTableEngine(TABLE) as never as { allInStreetRevealMs: number };
+    expect(engine.allInStreetRevealMs).toBe(HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS);
+    // Long enough for a flop to finish turning over (0.30s land, 0.75s hold,
+    // flip complete at 1.25s per CommunityCards.css).
+    expect(HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS).toBeGreaterThanOrEqual(1250);
   });
 
   it('completes the hand once, at the end', async () => {

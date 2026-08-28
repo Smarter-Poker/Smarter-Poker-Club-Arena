@@ -49,8 +49,16 @@ export async function loadSeatedPlayers(tableId: string) {
     // this column on every sit-out and sit-back and never read it back, so an
     // engine restart between hands dealt cards to players who had sat out —
     // while the column, and therefore every client, still said they were out.
+    //
+    // sit_out_at added 2026-08-28, and it is the half that makes the eviction
+    // actually fire. The boolean survived a restart; the CLOCK did not, because
+    // it was a field on an in-memory Map. restoreSitOutsFromSeats() re-stamped
+    // it to Date.now() on every boot, so on a table whose engine recycled more
+    // often than every five minutes the 5-minute limit could never mature and
+    // the seat was held forever. Dan 2026-08-28: "FOR SOME REASON THIS NEVER
+    // KICKS THE USER OFF THE CASH GAME AFTER THE 5 MIN."
     .select(
-      'user_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining, is_sitting_out'
+      'user_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining, is_sitting_out, sit_out_at'
     )
     .eq('table_id', tableId)
     .is('left_at', null)
@@ -122,6 +130,10 @@ export async function loadSeatedPlayers(tableId: string) {
         time_bank_remaining: seat.time_bank_remaining || 0,
         time_bank_uses_remaining: seat.time_bank_uses_remaining || 0,
         is_sitting_out: seat.is_sitting_out === true,
+        /* The persisted sit-out clock. Null whenever is_sitting_out is false —
+           a database trigger (trg_stamp_sit_out_at) owns both, so the pair can
+           never disagree regardless of which writer touched the row. */
+        sit_out_at: (seat as { sit_out_at?: string | null }).sit_out_at ?? null,
         avatar_url: profile.avatar_url || '',
         /* Cosmetics ride the avatar's pipeline rather than getting one of their
            own: same query, same snapshot field group, same client mapper. They

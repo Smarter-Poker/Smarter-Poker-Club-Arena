@@ -657,7 +657,7 @@
   container-type: inline-size;
   width: 100%;
   min-height: 0;
-  aspect-ratio: 1088 / 548;
+  aspect-ratio: 1800 / 380;
   display: block;
   padding: 0;
   overflow: hidden;
@@ -676,10 +676,18 @@
   background: transparent;
 }
 
-.dw__row--wallet-art .dw__row-shell {
+.dw__row--wallet-art .dw__row-picture {
   position: absolute;
   inset: 0;
   z-index: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
+.dw__row--wallet-art .dw__row-shell {
   width: 100%;
   height: 100%;
   display: block;
@@ -707,10 +715,10 @@
 .dw__row--wallet-art .dw__row-value {
   position: absolute;
   z-index: 1;
-  left: 11%;
-  right: 11%;
-  top: 60%;
-  bottom: 10%;
+  left: 52%;
+  right: 8%;
+  top: 18%;
+  bottom: 18%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -721,7 +729,7 @@
     BlinkMacSystemFont,
     'Segoe UI',
     sans-serif;
-  font-size: clamp(0.72rem, 8cqw, 1.45rem);
+  font-size: clamp(0.72rem, 4.6cqw, 1.35rem);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.025em;
@@ -739,19 +747,24 @@
 .dw__row--wallet-art .dw__plus {
   position: absolute;
   z-index: 2;
-  right: 8%;
-  bottom: 15%;
+  inset: 10% 1.5% 10% auto;
+  width: 12%;
+  height: auto;
+  min-height: 44px;
+  opacity: 0;
+  transform: none;
 }
 
 .dw--lobby-board .dw__rows {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .dw--lobby-board .dw__row--wallet-art,
 .dw--lobby-board .dw__row--wallet-art.dw__row--actionable {
   min-height: 0;
-  aspect-ratio: 1088 / 548;
+  aspect-ratio: 1800 / 380;
   display: block;
   padding: 0;
   border: 0;
@@ -772,18 +785,23 @@
 }
 
 .dw--lobby-board .dw__row--wallet-art .dw__row-value {
+  width: auto;
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  white-space: nowrap;
   color: #eef2f7;
-  font-size: clamp(0.58rem, 9cqw, 0.95rem);
+  font-size: clamp(0.68rem, 4.6cqw, 1.08rem);
   text-shadow:
     0 1px 2px #000,
     0 0 6px rgba(82, 167, 255, 0.2);
 }
 
-@media (max-width: 390px) {
-  .dw--lobby-board .dw__rows,
-  .dw--lobby-board .dw__rows--count-3 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 5px;
+@media (min-width: 641px) {
+  .dw__row--wallet-art,
+  .dw--lobby-board .dw__row--wallet-art,
+  .dw--lobby-board .dw__row--wallet-art.dw__row--actionable {
+    aspect-ratio: 1800 / 273;
   }
 }
 

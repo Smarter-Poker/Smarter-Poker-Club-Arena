@@ -1009,8 +1009,14 @@ export default function TablePage({
 
      The ref is the second half of the same pass: the hook's background-tab
      effect used to write its class onto `document.querySelector('.table-page')`,
-     which is table one's root no matter which instance is asking. */
-  useTableEnvironment(tableId, pageRootRef);
+     which is table one's root no matter which instance is asking.
+
+     MOVED further down this file on 2026-08-28: it now also takes the table's
+     NAME and whether this table is in front, so the browser tab is named after
+     the table the player is actually looking at instead of a raw UUID from
+     whichever instance mounted last. `tableState` is declared below, so the
+     call has to be below it. Still unconditional and still called exactly
+     once per render, which is all hook order requires. */
 
   // Get current user
   const [userId, setUserId] = useState<string>('guest');
@@ -1592,6 +1598,15 @@ export default function TablePage({
     if (!tableState.tournamentId) return;
     return restoreMysteryBountyState();
   }, [tableState.tournamentId, restoreMysteryBountyState]);
+
+  /* Document title, viewport lock, wake lock and the background-tab pause.
+     See the note where this call used to sit, above `useTabKeepAlive`. It is
+     here rather than there for one reason: it needs `tableState.tableName`, so
+     the tab says "NLH 0.25/0.50" instead of a table UUID. */
+  useTableEnvironment(tableId, pageRootRef, {
+    isActive,
+    displayName: tableState.tableName,
+  });
 
   // REST fetch for initial seats while WS connects (3-5s speedup)
   //
@@ -9468,13 +9483,26 @@ export default function TablePage({
     setIsStraddleEnabled(payload.enabled);
   });
 
+  /* THE tableId GUARD IS NOT OPTIONAL ON THIS BUS (2026-08-28).
+     These two were the only subscriptions in this block without it, and the
+     emitters go out of their way to make it possible: both `case
+     'RAKEBACK_DISTRIBUTED'` and `case 'TABLE_BALANCE_EXECUTED'` further down
+     this file stamp `tableId` onto the payload before `masterBus.emit`, for
+     exactly this purpose. MasterBus is app-wide and MultiTablePage keeps four
+     TablePages mounted, so an unguarded subscription fires once per open table:
+     four identical toasts for one rakeback. The Toast layer's dedup was hiding
+     it, which is why it survived — a swallowed duplicate is still a duplicate,
+     and the moment somebody legitimately turns dedup off for a message it
+     becomes four popups. */
   useMasterBusSubscription('RAKEBACK_DISTRIBUTED', (payload: any) => {
+    if (payload.tableId !== tableId) return;
     if (payload.distributions && payload.distributions[userId]) {
       toast?.success?.(`Received +$${payload.distributions[userId].toFixed(2)} rakeback!`);
     }
   });
 
   useMasterBusSubscription('TABLE_BALANCE_EXECUTED', (payload: any) => {
+    if (payload.tableId !== tableId) return;
     if (payload.moves?.some((m: any) => m.playerId === userId)) {
       toast?.info?.('You were moved to balance the tables.');
     }

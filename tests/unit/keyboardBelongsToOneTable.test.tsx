@@ -192,3 +192,43 @@ describe('TablePage has no second keyboard system', () => {
     expect(code).not.toMatch(/const handleCall\s*=/);
   });
 });
+
+describe('nothing app-wide is written by four tables at once (2026-08-28)', () => {
+  const code = TABLE_TSX.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+  const ENV_TS = readFileSync(
+    resolve(__dirname, '../../src/hooks/useTableEnvironment.ts'),
+    'utf8'
+  ).replace(/\/\*[\s\S]*?\*\//g, '');
+
+  it('guards every MasterBus toast on tableId', () => {
+    /* MasterBus is app-wide and four TablePages subscribe to it, so an
+       unguarded handler fires once per open table — four identical toasts for
+       one rakeback. Both emitters stamp `tableId` onto the payload for exactly
+       this purpose; RAKEBACK_DISTRIBUTED and TABLE_BALANCE_EXECUTED were the
+       only two subscriptions in the block that did not read it. The Toast
+       layer's dedup was hiding it, which is why it survived. */
+    for (const evt of ['RAKEBACK_DISTRIBUTED', 'TABLE_BALANCE_EXECUTED']) {
+      const at = code.indexOf(`useMasterBusSubscription('${evt}'`);
+      expect(at, `${evt} subscription not found`).toBeGreaterThan(-1);
+      // The guard must be the first statement of the handler.
+      const head = code.slice(at, at + 260);
+      expect(head, `${evt} does not guard on tableId`).toMatch(
+        /payload\.tableId\s*!==\s*tableId\)\s*return/
+      );
+    }
+  });
+
+  it('lets only the ACTIVE table name the browser tab, and never with a UUID', () => {
+    /* `document.title` is one string. Four instances wrote it, so the tab was
+       named after whichever table mounted last — and it printed the raw table
+       UUID, which is also what went into any bookmark of a table. */
+    expect(ENV_TS).toMatch(/if\s*\(!isActive\)\s*return;/);
+    expect(ENV_TS, 'the title still interpolates the raw tableId first').not.toMatch(
+      /document\.title\s*=\s*`\$\{tableId\}/
+    );
+    expect(ENV_TS, 'the title does not prefer the table name').toMatch(/displayName/);
+    // ...and TablePage has to actually pass both, or the hook's default wins.
+    expect(code).toMatch(/useTableEnvironment\(tableId,\s*pageRootRef,\s*\{/);
+    expect(code).toMatch(/displayName:\s*tableState\.tableName/);
+  });
+});

@@ -1,0 +1,7 @@
+{
+  "_comment": "SECURITY DEFINER functions that write, that a browser role can execute, and that do not consult auth.uid()/auth.role()/auth.jwt(). Read scripts/ci/check-definer-authorization.mjs before adding to this. This list must only ever SHRINK. Each entry needs a reason that explains why a caller cannot point the function at anything that matters - not why it is inconvenient to fix.",
+  "reviewedExceptions": {
+    "get_current_settlement_period": "Takes no arguments at all, so there is nothing for a caller to aim. It returns the one open weekly settlement period and creates it only when none is open, refuses outright when there is not exactly one union to own it, and inserts ON CONFLICT DO NOTHING. The worst an attacker achieves is causing the current week's period to exist, which the platform creates anyway. Caller: src/services/SettlementService.ts:122.",
+    "recalculate_leaderboard_ranks": "Recomputes dense_rank() over scores that are already in promotion_leaderboards for one promotion. It reads no input beyond the promotion id, writes no new value, moves no money, and is idempotent, so the worst an attacker achieves is the correct answer. Caller: src/services/PromotionService.ts:365, immediately after the RLS-gated score upsert."
+  }
+}

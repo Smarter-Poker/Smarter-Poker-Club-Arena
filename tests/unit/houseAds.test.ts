@@ -15,6 +15,7 @@ const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8'
 const SERVICE = read('src/services/AdService.ts');
 const STRIP = read('src/components/lobby/LobbyAdStrip.tsx');
 const ADMIN = read('src/pages/admin/HouseAdsPage.tsx');
+const CAP_MIGRATION = read('supabase/migrations/20260828032000_ad_cap_is_per_surface.sql');
 
 describe('VIP members see house ads (Dan 2026-08-27)', () => {
   /* "even vips will see ads remove that for now." The ad-free promise had been
@@ -108,5 +109,174 @@ describe('the admin panel is platform staff only, and fails closed', () => {
        audits kept finding. */
     expect(ADMIN).toMatch(/stats === null \? '-'/);
     expect(ADMIN).toMatch(/Could Not Be Read/i);
+  });
+});
+
+describe('the frequency cap belongs to one surface, and its refusals are countable', () => {
+  /* 2026-08-28. The World Hub ad surface shipped, deployed, and rendered
+     nothing. Two independently written Hub clients both showed an empty
+     surface while the Club Arena lobby kept serving normally.
+
+     The cap subquery counted a player's impressions of a campaign across
+     EVERY slot, while `daily_cap` is a property of one placement on one
+     surface. The account that found it had 36 lobby impressions of
+     spins_jackpot and 24 of bbj_running; every hub_promotions placement caps
+     at 2 or 3, so all of them were over cap before the Hub had shown a single
+     advert. `fn_resolve_ads('hub_promotions')` returned 3 rows as postgres
+     and 0 as the authenticated player.
+
+     Left alone, every future slot inherits a cap an active player has already
+     spent somewhere else. This is PR #1505 in a different costume: a
+     suppression rule whose every refusal was silent and therefore
+     indistinguishable from "no campaigns are running". */
+
+  it('scopes the cap to the placement own slot', () => {
+    const cap = CAP_MIGRATION.slice(
+      CAP_MIGRATION.indexOf('Frequency cap, PER SURFACE'),
+      CAP_MIGRATION.indexOf('ORDER BY c.weight DESC')
+    );
+    expect(cap).toMatch(/AND e\.slot = pl\.slot/);
+    expect(cap).toMatch(/e\.event_type = 'impression'/);
+  });
+
+  it('ships a way to tell "capped" apart from "nothing is running"', () => {
+    /* Dan 2026-08-28: "if you add a cap or a hold, make it rotate, and make a
+       suppressed ad countable." The rolling 24h window is the rotating half.
+       This is the countable half, and it was the part that was missing. */
+    expect(CAP_MIGRATION).toMatch(/create or replace function public\.fn_ad_cap_status/);
+    expect(CAP_MIGRATION).toMatch(/suppressed_by_cap/);
+    expect(CAP_MIGRATION).toMatch(
+      /grant execute on function public\.fn_ad_cap_status\(text\) to anon, authenticated/
+    );
+  });
+
+  it('asserts the regression itself rather than describing it', () => {
+    /* A migration that only says what it fixes cannot fail when it does not.
+       This one aborts if the busiest lobby reader still has no eligible
+       hub_promotions placement. */
+    expect(CAP_MIGRATION).toMatch(/the cap is still leaking across surfaces/);
+    expect(CAP_MIGRATION).toMatch(/raise exception/i);
+  });
+
+  it('keeps VIP suppression absent, in both directions', () => {
+    // Dan 2026-08-27: "even vips will see ads remove that for now."
+    const body = CAP_MIGRATION.slice(CAP_MIGRATION.indexOf('RETURN QUERY'));
+    expect(body).not.toMatch(/NOT v_vip[\s\S]{0,40}AND NOT/);
+    // The quote is wrapped across a comment line break in the migration, so
+    // the gap is part of the pattern rather than something to normalise away.
+    expect(CAP_MIGRATION).toMatch(/even vips will[\s\S]{0,12}see ads/i);
+  });
+});
+
+describe('an ad destination is resolved by the server, never by a template a client must expand', () => {
+  /* 2026-08-28 03:32 UTC, observed in production. ad_catalog.target_url was
+     changed to carry `{clubId}`, to be substituted by the Club Arena client.
+     The data change went live; the client that understands it had not shipped.
+     A real click on the lobby strip landed on
+     /hub/club-arena/invite/%7BclubId%7D -- the literal placeholder -- and the
+     page said "Club not found or invitation expired".
+
+     Three clients across two repos and two deploy pipelines read this column.
+     A placeholder only one of them expands is a literal string in the other
+     two, and every future slot inherits the same trap. */
+  const TEMPLATE_MIGRATION = read(
+    'supabase/migrations/20260828034000_ad_destination_template_is_resolved_server_side.sql'
+  );
+
+  it('substitutes the club the resolver was already handed', () => {
+    expect(TEMPLATE_MIGRATION).toMatch(/replace\(/);
+    expect(TEMPLATE_MIGRATION).toMatch(/'\{clubId\}'/);
+    expect(TEMPLATE_MIGRATION).toMatch(/p_club_id::text/);
+  });
+
+  it('refuses to serve a destination it could not resolve', () => {
+    /* No club in context means the placeholder cannot be honoured. Showing one
+       advert fewer beats sending a player to an error page. */
+    expect(TEMPLATE_MIGRATION).toMatch(/r\.target_url NOT LIKE '%\{%'/);
+  });
+
+  it('does not lose the per-surface cap while rewriting the resolver', () => {
+    // The previous migration's fix has to survive every later CREATE OR REPLACE.
+    expect(TEMPLATE_MIGRATION).toMatch(/AND e\.slot = pl\.slot/);
+    expect(TEMPLATE_MIGRATION).toMatch(/the per-surface frequency cap was lost in this rewrite/);
+  });
+});
+
+describe('the last two Club Arena slots are wired, and only where they earn it', () => {
+  /* Phase 1 declared five slots and wired one. `empty_state` and
+     `session_summary` had never carried a single placement row: the CHECK
+     permitted them, the resolver served them, and nothing ever named them. A
+     slot with no inventory renders nothing, which is indistinguishable from a
+     slot nobody ever built. */
+  const CARD = read('src/components/ads/HouseAdCard.tsx');
+  const LOBBY_PAGE = read('src/pages/ClubHomePage.tsx');
+  const SESSION = read('src/components/session/SessionSummaryHost.tsx');
+  const SLOTS_MIGRATION = read(
+    'supabase/migrations/20260828040000_house_ads_empty_state_and_session_summary.sql'
+  );
+
+  it('both surfaces actually render the card', () => {
+    // The house bug shape: a component that exists and nothing imports.
+    expect(LOBBY_PAGE).toMatch(/import HouseAdCard from '\.\.\/components\/ads\/HouseAdCard'/);
+    expect(LOBBY_PAGE).toMatch(/<HouseAdCard\s+slot="empty_state"/);
+    expect(SESSION).toMatch(/import HouseAdCard from '\.\.\/ads\/HouseAdCard'/);
+    expect(SESSION).toMatch(/<HouseAdCard slot="session_summary"/);
+  });
+
+  it('empty_state appears only where the player has nothing to tap', () => {
+    /* The lobby has four empty views. Three carry a remedy ("Show All Games"),
+       and an advert beside a fix competes with the fix. Only the branch where
+       the club is genuinely running nothing is dead space. */
+    const emptyBlock = LOBBY_PAGE.slice(
+      LOBBY_PAGE.indexOf("'No Tournaments Yet' : 'No Tables Yet'"),
+      LOBBY_PAGE.indexOf('Nothing On This Tab Right Now')
+    );
+    expect(emptyBlock).toMatch(/<HouseAdCard/);
+    // And nowhere else in the page.
+    expect(LOBBY_PAGE.match(/<HouseAdCard/g)?.length).toBe(1);
+  });
+
+  it('the card logs the click before it navigates', () => {
+    const activate = CARD.slice(CARD.indexOf('const activate'), CARD.indexOf('const inner'));
+    expect(activate.indexOf('AdService.logClick')).toBeGreaterThan(-1);
+    expect(activate.indexOf('AdService.logClick')).toBeLessThan(activate.indexOf('onNavigate?.'));
+  });
+
+  it('the card decides nothing about who is eligible', () => {
+    const code = CARD.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(code).not.toMatch(/is_?[Vv]ip/);
+    expect(code).not.toMatch(/audience/);
+    expect(code).not.toMatch(/profitLoss/);
+  });
+
+  it('is not activatable when there is nowhere to go', () => {
+    /* Without this the card was still focusable, still showed a pointer, and
+       did nothing when tapped - the same defect the lobby strip had. */
+    expect(CARD).toMatch(/const activatable = Boolean\(ad\.targetUrl\) && Boolean\(onNavigate\)/);
+    expect(CARD).toMatch(/house-ad--static/);
+  });
+
+  it('gives session_summary destinations that do not need a club', () => {
+    /* That host lives at the app root and survives the navigate() off the
+       table, so it calls the resolver with NULL. A {clubId} destination there
+       is dropped by the resolver and the slot looks empty for a reason nobody
+       can see. */
+    expect(SLOTS_MIGRATION).toMatch(/'tournaments_daily', 'session_summary'[^\n]*'\/tournaments'/);
+    expect(SLOTS_MIGRATION).toMatch(
+      /session_summary destination\(s\) need a club this surface never has/
+    );
+  });
+
+  it('does not ask a player who just lost to buy chips', () => {
+    /* The one entry that is a judgement rather than a mechanic: roughly half
+       the players seeing Session Complete have just lost, and diamonds_store
+       is the only house campaign that asks somebody to spend money. Placing it
+       there should be Dan's decision, not a side effect of placing everything
+       everywhere. */
+    const inserts = SLOTS_MIGRATION.slice(
+      SLOTS_MIGRATION.indexOf('join (values'),
+      SLOTS_MIGRATION.indexOf('as v(ad_key')
+    );
+    expect(inserts).not.toMatch(/diamonds_store/);
   });
 });

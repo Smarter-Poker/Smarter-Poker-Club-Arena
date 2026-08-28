@@ -166,6 +166,22 @@ export interface TableInfo {
    * half across them at showdown.
    */
   bomb_pot_double_board?: boolean;
+  /* ── BOMB POT STANDARDIZATION 2026-08-27 (Dan's spec) ──────────────────
+     The canonical configuration surface. The legacy trio above
+     (frequency / ante multiplier / double board) still works and is what
+     old rows carry; these override it when present. Every field here must
+     also be in the loadTable select in services/supabase/tables.ts AND in
+     the throttled re-read in ServerTableEngineBase. */
+  /** Boards dealt on a bomb-pot hand: 1, 2 or 3. Overrides bomb_pot_double_board. */
+  bomb_pot_board_count?: number;
+  /** 'every_n_hands' | 'once_per_orbit' | 'timed' | 'bomb_pot_only' */
+  bomb_pot_trigger_mode?: string | null;
+  /** TIMED mode: seconds between bomb pots (server clock, next hand boundary). */
+  bomb_pot_interval_seconds?: number | null;
+  /** A due bomb stays pending until this many players are dealt in. Default 3. */
+  bomb_pot_min_players?: number;
+  /** FIXED ante mode: exact chip amount. When > 0, overrides the BB multiplier. */
+  bomb_pot_ante_fixed?: number | null;
   /** Bible V8 §2.1: Minimum players to start a hand */
   min_players?: number;
   /** Bible V8 §2.1: Table display name */
@@ -287,8 +303,28 @@ export interface HandConfig {
      * DOUBLE-BOARD BOMB POT 2026-08-20: deal two boards and split every pot
      * across them. HandController downgrades to a single board when the deck
      * cannot cover players × holeCards + 10 board cards.
+     *
+     * BOMB POT STANDARDIZATION 2026-08-27: legacy alias for boardCount 2.
+     * boardCount wins when both are present.
      */
     doubleBoard?: boolean;
+    /**
+     * BOMB POT STANDARDIZATION 2026-08-27 (Dan's spec §3): boards dealt this
+     * hand — 1, 2 or 3. HandController downgrades stepwise (3 → 2 → 1) when
+     * the deck cannot cover players × holeCards + 5 × boards cards.
+     */
+    boardCount?: 1 | 2 | 3;
+    /**
+     * FIXED ante (spec §3 anteMode FIXED): exact chip amount per participant.
+     * When > 0 it overrides bigBlind × anteMultiplier.
+     */
+    anteFixed?: number;
+    /**
+     * Why this hand is a bomb pot — frozen into the hand config so hand
+     * history can explain the trigger (spec §20). One of
+     * 'every_n_hands' | 'once_per_orbit' | 'timed' | 'bomb_pot_only'.
+     */
+    triggerReason?: string;
   };
   /** Bible V8 §2.8 / §4.20: Whether Run It Twice is enabled for this hand */
   ritEnabled?: boolean;
@@ -325,6 +361,12 @@ export interface GameState {
    * communityCards (3/4/5 cards at flop/turn/river).
    */
   communityCards2: Card[];
+  /**
+   * TRIPLE-BOARD BOMB POT 2026-08-27 (Dan's spec §9): the third board. Empty
+   * on every hand except an active triple-board bomb pot, where it fills in
+   * lockstep with communityCards and communityCards2.
+   */
+  communityCards3: Card[];
   pot: number;
   currentBet: number;
   lastRaise: number;
@@ -351,6 +393,8 @@ export interface HandStateBroadcast {
   community_cards: Card[];
   /** DOUBLE-BOARD BOMB POT 2026-08-20: second board (empty unless active). */
   community_cards2?: Card[];
+  /** TRIPLE-BOARD BOMB POT 2026-08-27: third board (empty unless active). */
+  community_cards3?: Card[];
   current_bet: number;
   current_player: string; // user_id of player whose turn it is
   dealer_seat: number;
@@ -402,11 +446,21 @@ export type HandEvent =
       cards: Card[];
       /** DOUBLE-BOARD BOMB POT 2026-08-20: the second board's new cards for this street. */
       cards2?: Card[];
+      /** TRIPLE-BOARD BOMB POT 2026-08-27: the third board's new cards for this street. */
+      cards3?: Card[];
     }
   | { type: 'PLAYER_ACTION'; seat: number; action: ActionType; amount: number }
   | { type: 'POT_UPDATE'; pot: number; pots: Pot[] }
   | { type: 'TURN_CHANGE'; seat: number; availableActions: ActionType[] }
-  | { type: 'ALL_IN_RUNOUT'; board: Card[]; board2?: Card[]; pot: number; players: SeatPlayer[] }
+  | {
+      type: 'ALL_IN_RUNOUT';
+      board: Card[];
+      board2?: Card[];
+      /** TRIPLE-BOARD BOMB POT 2026-08-27: third board (present only when active). */
+      board3?: Card[];
+      pot: number;
+      players: SeatPlayer[];
+    }
   | { type: 'PINEAPPLE_DISCARD_REQUIRED'; seats: number[] } // FIX 120: Crazy Pineapple
   | { type: 'SHOWDOWN'; results: ShowdownResult[] }
   | {
@@ -418,7 +472,12 @@ export type HandEvent =
        * cannot say "Alice took the top board with a flush, Bob the bottom
        * with a straight". Only present on double-board hands.
        */
-      winnersByBoard?: Array<{ board: 1 | 2; userId: string; amount: number; handName?: string }>;
+      winnersByBoard?: Array<{
+        board: 1 | 2 | 3;
+        userId: string;
+        amount: number;
+        handName?: string;
+      }>;
       /**
        * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the unmerged per-pot(-half)
        * award breakdown — see PerPotAward. Amounts here are already POST-rake:
@@ -446,6 +505,14 @@ export type HandEvent =
       /** DOUBLE-BOARD BOMB POT 2026-08-20: whether this hand deals two boards. */
       doubleBoard?: boolean;
       /**
+       * BOMB POT STANDARDIZATION 2026-08-27: boards actually dealt this hand
+       * (after any deck-feasibility downgrade). 1, 2 or 3. Clients badge the
+       * intro with DOUBLE BOARD / TRIPLE BOARD from this, never from config.
+       */
+      boardCount?: number;
+      /** Why this hand is a bomb pot — spec §20 trigger reason (frozen). */
+      triggerReason?: string;
+      /**
        * Per-seat ante postings so the client can render each ante in front of
        * its seat and sweep them into the pot (reference parity). Presentation
        * data only — the pot math already happened atomically server-side.
@@ -466,6 +533,8 @@ export interface ShowdownResult {
   hand: EvaluatedHand;
   /** DOUBLE-BOARD BOMB POT 2026-08-20: the same hole cards evaluated on board 2. */
   hand2?: EvaluatedHand;
+  /** TRIPLE-BOARD BOMB POT 2026-08-27: the same hole cards evaluated on board 3. */
+  hand3?: EvaluatedHand;
   /**
    * SHOWDOWN SYSTEM 2026-08-25 (Dan spec sections 3-10): position in the
    * table's reveal sequence. 0 = shows first (final-street last aggressor,

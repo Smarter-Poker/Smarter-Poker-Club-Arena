@@ -215,6 +215,18 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
       FAIL=1
     fi
   fi
+  # A SECURITY DEFINER function that writes and that a browser can call must
+  # consult the request. Nineteen did not on 2026-08-27; one let any member
+  # rewrite a club's member_count, another pays chips. Scoped to the migrations
+  # this branch adds, because supabase/migrations/ is intentionally stale.
+  if [ -f scripts/ci/check-definer-authorization.mjs ]; then
+    DEF_BASE=$(git merge-base HEAD origin/main 2>/dev/null || echo "HEAD~1")
+    if ! node scripts/ci/check-definer-authorization.mjs "$DEF_BASE"; then
+      echo "[club-arena pre-push] BLOCKED: a SECURITY DEFINER writer a browser can reach"
+      echo "                      never asks who is calling. See the remedy above."
+      FAIL=1
+    fi
+  fi
 
   # 0b. TYPE CHECK — added 2026-08-27, re-justified 2026-08-28.
   #

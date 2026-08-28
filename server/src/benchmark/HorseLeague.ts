@@ -687,6 +687,13 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'v21_river_endgame', pairs: 6000, a: {}, b: { v21River: false } },
   // Deep-stack discipline only differs past 120bb — deal it at 250bb.
   { name: 'v21_deep_250bb', stackBB: 250, pairs: 6000, a: {}, b: { v21Deep: false } },
+  // ── V23 (2026-08-28) ── the cash-measurable slices. The endgame and spin
+  // layers only fire in tournament/spin modes the league does not deal;
+  // they ship scenario-tested with telemetry, the way V16 real ICM did.
+  { name: 'v23_raise_plans', pairs: 6000, a: {}, b: { v23Plan: false } },
+  { name: 'v23_river_reads', pairs: 6000, a: {}, b: { v23Reads: false } },
+  { name: 'shortdeck_v23', variant: 'short_deck', pairs: 6000, a: {}, b: { v23Variants: false } },
+  { name: 'plo8_v23_lowdraw', variant: 'plo8', pairs: 6000, a: {}, b: { v23Variants: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
   { name: 'mind_layer', a: {}, b: { mind: false } },
@@ -724,6 +731,11 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v20Mzone: false,
       v21River: false,
       v21Deep: false,
+      v23Endgame: false,
+      v23Plan: false,
+      v23Reads: false,
+      v23Variants: false,
+      v23Spin: false,
       mind: false,
       streetIQ: false,
       handReading: false,
@@ -893,7 +905,38 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
   const dayIndex = Math.floor(Date.parse(date) / 86_400_000);
   const rotateBy =
     ((dayIndex % LEAGUE_MATCHUPS.length) + LEAGUE_MATCHUPS.length) % LEAGUE_MATCHUPS.length;
-  const card = LEAGUE_MATCHUPS.slice(rotateBy).concat(LEAGUE_MATCHUPS.slice(0, rotateBy));
+  let card = LEAGUE_MATCHUPS.slice(rotateBy).concat(LEAGUE_MATCHUPS.slice(0, rotateBy));
+  // STALENESS-FIRST (2026-08-27, Phase 2): rotation alone walks the start
+  // index by ONE per night while the budget covers ~4-6 matchups, so a new
+  // layer's matchup could wait a week for its first measurement — and the
+  // v16_ratio decision needs THREE significant runs. Order the card by how
+  // long each matchup has gone unmeasured (never-run first, then oldest),
+  // with the rotation order as the deterministic tie-break. The DB is the
+  // authority on what has been measured; if it cannot answer, rotation alone
+  // still runs the night.
+  try {
+    const { data, error } = await supabase
+      .from('horse_league_results')
+      .select('matchup, run_date')
+      .order('run_date', { ascending: false })
+      .limit(2000);
+    if (!error && data) {
+      const lastRun = new Map<string, string>();
+      for (const r of data as Array<{ matchup: string; run_date: string }>) {
+        if (!lastRun.has(r.matchup)) lastRun.set(r.matchup, r.run_date);
+      }
+      const pos = new Map(card.map((m, i) => [m.name, i]));
+      card = card
+        .slice()
+        .sort(
+          (a, b) =>
+            (lastRun.get(a.name) ?? '0000').localeCompare(lastRun.get(b.name) ?? '0000') ||
+            pos.get(a.name)! - pos.get(b.name)!
+        );
+    }
+  } catch {
+    /* staleness ordering is best-effort — rotation already covers the night */
+  }
   console.log(
     `[HorseLeague] run ${date} starting: ${card.length} matchups x ` +
       `${PAIRS_PER_MATCHUP} pairs (budget ${Math.round(MAX_RUN_MS / 60000)} min), ` +

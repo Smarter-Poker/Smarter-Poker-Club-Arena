@@ -108,7 +108,15 @@ interface TableConfig {
   // no say.
   bombPotFrequency: number;
   bombPotAnteBB: number;
-  doubleBoard: boolean;
+  // BOMB POT STANDARDIZATION 2026-08-27 (Dan's spec §3): the trigger schedule
+  // and board count are the host's now. every_n_hands keeps the legacy
+  // frequency slider; timed uses the interval; bomb_pot_only makes every hand
+  // a bomb. Boards 1-3 supersede the old double-board boolean (still written
+  // for old readers). minPlayers holds a due bomb pending below the floor.
+  bombPotTriggerMode: 'every_n_hands' | 'once_per_orbit' | 'timed' | 'bomb_pot_only';
+  bombPotIntervalMinutes: number;
+  bombPotBoards: number;
+  bombPotMinPlayers: number;
   pineappleHoldem: boolean;
   sevenDeuceEnabled: boolean;
   sevenDeuceAmountBB: number;
@@ -273,10 +281,13 @@ const DEFAULT_CONFIG: TableConfig = {
 
   // Game Variants
   bombPotEnabled: false,
+  bombPotTriggerMode: 'every_n_hands',
+  bombPotIntervalMinutes: 30,
+  bombPotBoards: 2,
+  bombPotMinPlayers: 3,
   // Bible V8 section 4.22 defaults, previously hard-coded in buildTableData.
   bombPotFrequency: 10,
   bombPotAnteBB: 2,
-  doubleBoard: false,
   pineappleHoldem: false,
   sevenDeuceEnabled: false,
   sevenDeuceAmountBB: 2,
@@ -859,11 +870,21 @@ export default function TableConfigPage() {
     // they were hard-coded 10 / 2 "until the UI exposes knobs", and it does.
     bomb_pot_frequency: config.bombPotEnabled ? config.bombPotFrequency : 0,
     bomb_pot_ante_multiplier: config.bombPotEnabled ? config.bombPotAnteBB : 0,
-    // DOUBLE-BOARD BOMB POT 2026-08-20: the existing Double Board toggle,
-    // combined with Bomb Pot, now means "bomb pots deal two boards" — the
-    // engine reads bomb_pot_double_board and splits every pot across them.
-    bomb_pot_double_board: config.bombPotEnabled && config.doubleBoard,
-    double_board: config.doubleBoard,
+    // BOMB POT STANDARDIZATION 2026-08-27 (spec §3): the canonical config —
+    // trigger mode, timed interval, board count (1-3) and minimum players.
+    // The engine's BombPotScheduler reads these; the legacy pair below stays
+    // in lockstep for old readers (lobby badges, old engine builds).
+    bomb_pot_trigger_mode: config.bombPotEnabled ? config.bombPotTriggerMode : 'every_n_hands',
+    bomb_pot_interval_seconds:
+      config.bombPotEnabled && config.bombPotTriggerMode === 'timed'
+        ? Math.max(60, Math.round(config.bombPotIntervalMinutes * 60))
+        : null,
+    bomb_pot_board_count: config.bombPotEnabled ? config.bombPotBoards : 1,
+    bomb_pot_min_players: config.bombPotEnabled ? config.bombPotMinPlayers : 3,
+    // DOUBLE-BOARD BOMB POT 2026-08-20 (legacy pair, kept in sync): the
+    // engine used to read bomb_pot_double_board; board_count supersedes it.
+    bomb_pot_double_board: config.bombPotEnabled && config.bombPotBoards >= 2,
+    double_board: config.bombPotEnabled && config.bombPotBoards >= 2,
     // triple_board is no longer written (2026-08-27): the column has zero
     // readers, so the toggle that fed it promised a game that never existed.
     /**
@@ -1363,15 +1384,73 @@ export default function TableConfigPage() {
             />
             {config.bombPotEnabled && (
               <>
-                <Slider
-                  label="Bomb Pot Every"
-                  value={config.bombPotFrequency}
-                  onChange={(v) => updateConfig('bombPotFrequency', v)}
-                  min={5}
-                  max={50}
-                  step={5}
-                  suffix=" hands"
-                />
+                {/* BOMB POT STANDARDIZATION 2026-08-27 (spec §2.1): the host
+                    picks WHEN bombs fire — the legacy every-N-hands cadence,
+                    once per dealer-button orbit, on a timer, or every hand
+                    (a dedicated bomb-pot table). */}
+                <div className="config-radio-group">
+                  <span className="radio-group-label">Bomb Pot Schedule</span>
+                  <div className="radio-options">
+                    <label className="radio-option">
+                      <input
+                        type="radio"
+                        name="bombSchedule"
+                        checked={config.bombPotTriggerMode === 'every_n_hands'}
+                        onChange={() => updateConfig('bombPotTriggerMode', 'every_n_hands')}
+                      />
+                      <span>Every N Hands</span>
+                    </label>
+                    <label className="radio-option">
+                      <input
+                        type="radio"
+                        name="bombSchedule"
+                        checked={config.bombPotTriggerMode === 'once_per_orbit'}
+                        onChange={() => updateConfig('bombPotTriggerMode', 'once_per_orbit')}
+                      />
+                      <span>Once Per Orbit</span>
+                    </label>
+                    <label className="radio-option">
+                      <input
+                        type="radio"
+                        name="bombSchedule"
+                        checked={config.bombPotTriggerMode === 'timed'}
+                        onChange={() => updateConfig('bombPotTriggerMode', 'timed')}
+                      />
+                      <span>Timed</span>
+                    </label>
+                    <label className="radio-option">
+                      <input
+                        type="radio"
+                        name="bombSchedule"
+                        checked={config.bombPotTriggerMode === 'bomb_pot_only'}
+                        onChange={() => updateConfig('bombPotTriggerMode', 'bomb_pot_only')}
+                      />
+                      <span>Every Hand</span>
+                    </label>
+                  </div>
+                </div>
+                {config.bombPotTriggerMode === 'every_n_hands' && (
+                  <Slider
+                    label="Bomb Pot Every"
+                    value={config.bombPotFrequency}
+                    onChange={(v) => updateConfig('bombPotFrequency', v)}
+                    min={5}
+                    max={50}
+                    step={5}
+                    suffix=" hands"
+                  />
+                )}
+                {config.bombPotTriggerMode === 'timed' && (
+                  <Slider
+                    label="Bomb Pot Interval"
+                    value={config.bombPotIntervalMinutes}
+                    onChange={(v) => updateConfig('bombPotIntervalMinutes', v)}
+                    min={10}
+                    max={60}
+                    step={5}
+                    suffix=" minutes"
+                  />
+                )}
                 <Slider
                   label="Bomb Pot Ante"
                   value={config.bombPotAnteBB}
@@ -1381,15 +1460,56 @@ export default function TableConfigPage() {
                   step={0.5}
                   suffix=" Big Blind"
                 />
+                <Slider
+                  label="Bomb Pot Min Players"
+                  value={config.bombPotMinPlayers}
+                  onChange={(v) => updateConfig('bombPotMinPlayers', v)}
+                  min={2}
+                  max={6}
+                  step={1}
+                  suffix=" players"
+                />
+                {/* Spec §8/§9: each pot layer splits across the boards; the
+                    engine downgrades when the deck cannot cover the boards. */}
+                <div className="config-radio-group">
+                  <span className="radio-group-label">Bomb Pot Boards</span>
+                  <div className="radio-options">
+                    <label className="radio-option">
+                      <input
+                        type="radio"
+                        name="bombBoards"
+                        checked={config.bombPotBoards <= 1}
+                        onChange={() => updateConfig('bombPotBoards', 1)}
+                      />
+                      <span>Single</span>
+                    </label>
+                    <label className="radio-option">
+                      <input
+                        type="radio"
+                        name="bombBoards"
+                        checked={config.bombPotBoards === 2}
+                        onChange={() => updateConfig('bombPotBoards', 2)}
+                      />
+                      <span>Double Board</span>
+                    </label>
+                    <label className="radio-option">
+                      <input
+                        type="radio"
+                        name="bombBoards"
+                        checked={config.bombPotBoards >= 3}
+                        onChange={() => updateConfig('bombPotBoards', 3)}
+                      />
+                      <span>Triple Board</span>
+                    </label>
+                  </div>
+                </div>
               </>
             )}
-            <Toggle
-              label="Double Board"
-              value={config.doubleBoard}
-              onChange={(v) => updateConfig('doubleBoard', v)}
-            />
-            {/* Triple Board removed 2026-08-27: its column has zero readers.
-                The switch promised a game the engine cannot deal. */}
+            {/* The freestanding Double Board toggle moved into the Bomb Pot
+                Boards group above (2026-08-27) — it only ever meant "bomb
+                pots deal two boards", so it belongs behind the Bomb Pot
+                switch it modifies. Triple Board is back as a real choice now
+                that the engine deals and settles three boards. */}
             {SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase()) && (
               <Toggle
                 label="Seven-Deuce"

@@ -1146,6 +1146,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           bbjAmount: this.currentHandBBJFee,
           communityCards: this.currentHandCommunityCards,
           communityCards2: this.currentHandCommunityCards2,
+          // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 + the frozen bomb facts
+          // (trigger reason, ante, board count — spec §20).
+          communityCards3: this.currentHandCommunityCards3,
+          bombPot: this.currentHandBombPot,
           // COMPLETENESS PASS 2026-08-26: RIT boards 2..N, first-class. The
           // rit_board_N pseudo-actions in `actions` stay for old readers.
           ritBoards: this.currentHandRitExtraBoards,

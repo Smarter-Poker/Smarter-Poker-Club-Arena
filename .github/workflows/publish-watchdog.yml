@@ -75,3 +75,53 @@ jobs:
           GH_TOKEN_ISSUES: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: bash .github/scripts/publish-watchdog.sh
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # THE SAME QUESTION, ASKED OF THE ENGINE.
+  #
+  # The job above asks whether the CLIENT bundle is main. Nothing asked it of
+  # the ENGINE, and the engine is where the money is.
+  #
+  # auto-deploy-hetzner.yml coalesces a restart inside MIN_RESTART_SPACING_SEC
+  # and exits 0, and its drain gate defers while hands are in flight and exits
+  # 0. Both are correct, and both report SUCCESS - so a green deploy run says
+  # nothing about what production is running. A `*/20` catch-up is meant to land
+  # the deferred commit, but GitHub schedules are best-effort: on 2026-08-27 a
+  # merged engine fix sat unshipped for about two hours behind a green tick on
+  # every run, and only landed when a human dispatched the workflow by hand.
+  #
+  # Separate job, not a step, so an engine problem and a bundle problem cannot
+  # mask each other in the log or in the summary.
+  # ───────────────────────────────────────────────────────────────────────────
+  engine:
+    name: The engine is running main
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout main with full history
+        uses: actions/checkout@v4.3.1
+        with:
+          ref: main
+          # `git merge-base --is-ancestor` needs real history on both sides: the
+          # question is whether the engine is at OR AHEAD OF the newest
+          # engine-affecting commit, and a shallow clone cannot answer it.
+          fetch-depth: 0
+
+      - name: Mint a GitHub App installation token
+        id: app-token
+        if: vars.AUTOPILOT_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.AUTOPILOT_APP_ID }}
+          private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
+
+      - name: Compare the engine against main
+        env:
+          # Dispatching the deploy needs `actions: write`, which the App token
+          # carries; the alarm is written with GITHUB_TOKEN for the same reason
+          # the job above does it that way.
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN_ISSUES: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ENGINE_URL: https://engine.smarter.poker
+        run: bash .github/scripts/engine-watchdog.sh

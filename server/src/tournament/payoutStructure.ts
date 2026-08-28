@@ -114,10 +114,63 @@ export function spinPayoutStructure(multiplier: number | null | undefined): Payo
  * whose structure never wrote), but they must CAP it: see
  * `remainingPoolAfterAwards`.
  */
-export function resolvePayoutStructure(t: PayoutSubject | null | undefined): PayoutPlace[] | null {
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A STRUCTURE CANNOT PAY A PLACE NOBODY REACHED
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * SHORT-FIELD RESIDUAL 2026-08-27. `computePlacePrize` gives the LAST place in
+ * the structure whatever is left over, so the paid places sum to the pool to
+ * the cent. Nothing trimmed the structure to the size of the field, so when
+ * fewer players entered than the structure pays, the residual sat on a place no
+ * finisher ever held and was never awarded at all.
+ *
+ * Sunday Midway Major: a 9-place structure, 8 entrants, 250.00 of a 10,000.00
+ * pool never left the house. PLO Daily 18155d71: 5 places, 4 entrants, 52.50
+ * stranded. Eight events in thirty days, and every one of them also left
+ * fn_tournament_payout_reconcile holding a `no_finisher_recorded` critical it
+ * refuses, correctly, to resolve on its own.
+ *
+ * Trimming is all that is needed. The residual rule then lands the leftover on
+ * the last place that DOES have a finisher, which is the smallest real prize -
+ * the same "adjustment lands on the smallest prize, never a headline one"
+ * principle the rule already follows. No renormalisation: the dropped place's
+ * share flows into the residual by construction.
+ *
+ * TRIMMING IS THE DANGEROUS DIRECTION, so this is deliberately timid:
+ *
+ *   * an absent, non-finite, non-integer or non-positive fieldSize trims
+ *     nothing, so every existing caller keeps its exact behaviour;
+ *   * a fieldSize at or above the structure trims nothing;
+ *   * a trim that would leave no places returns the structure untouched.
+ *
+ * A fieldSize that is too SMALL would promote an earlier place to residual
+ * holder and overpay it, so callers must pass the count of everyone who ever
+ * entered - never a live seat count, which drains as players bust - and must
+ * not pass one at all until entry is closed and that count can no longer grow.
+ */
+export function trimStructureToField(
+  places: PayoutPlace[] | null,
+  fieldSize?: number | null
+): PayoutPlace[] | null {
+  if (!Array.isArray(places) || places.length === 0) return places;
+  if (fieldSize == null) return places;
+  const field = Number(fieldSize);
+  if (!Number.isInteger(field) || field < 1) return places;
+
+  const kept = places.filter((p) => Number(p.place) <= field);
+  if (kept.length === 0 || kept.length === places.length) return places;
+  return kept;
+}
+
+export function resolvePayoutStructure(
+  t: PayoutSubject | null | undefined,
+  fieldSize?: number | null
+): PayoutPlace[] | null {
   const stored = parsePayoutStructure(t?.payout_structure);
-  if (stored) return stored;
-  if (isSpinTournament(t)) return spinPayoutStructure(t?.spin_multiplier);
+  if (stored) return trimStructureToField(stored, fieldSize);
+  if (isSpinTournament(t))
+    return trimStructureToField(spinPayoutStructure(t?.spin_multiplier), fieldSize);
   return null;
 }
 

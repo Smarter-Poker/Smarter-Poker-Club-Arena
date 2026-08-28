@@ -76,8 +76,12 @@ export interface EnginePublishedState {
   community_cards: Array<{ rank: string; suit: string }>;
   /** DOUBLE-BOARD BOMB POT 2026-08-20: second board (empty unless active). */
   community_cards2?: Array<{ rank: string; suit: string }>;
+  /** TRIPLE-BOARD BOMB POT 2026-08-27: third board (empty unless active). */
+  community_cards3?: Array<{ rank: string; suit: string }>;
   /** ROUND 3 (2026-08-20): hands until the next bomb pot (1 = next hand); null = no bomb pots. */
   bomb_pot_in?: number | null;
+  /** BOMB POT STANDARDIZATION 2026-08-27: timed mode — epoch ms when the next bomb is due. */
+  bomb_pot_next_at?: number | null;
   current_bet: number;
   current_player: string | null; // user_id
   dealer_seat: number;
@@ -122,8 +126,12 @@ export interface MappedTableStatePatch {
   communityCards: Array<{ rank: string; suit: string }>;
   /** DOUBLE-BOARD BOMB POT 2026-08-20: second board (empty unless active). */
   communityCards2: Array<{ rank: string; suit: string }>;
+  /** TRIPLE-BOARD BOMB POT 2026-08-27: third board (empty unless active). */
+  communityCards3: Array<{ rank: string; suit: string }>;
   /** ROUND 3 (2026-08-20): hands until the next bomb pot; null = no bomb pots. */
   bombPotIn: number | null;
+  /** BOMB POT STANDARDIZATION 2026-08-27: timed mode — epoch ms of the next due bomb. */
+  bombPotNextAt: number | null;
   boardStage: string; // matches TableState['boardStage']
   dealerSeat: number;
   currentPlayerSeat: number;
@@ -369,7 +377,11 @@ export function mapEngineSnapshot(
     pot: rawPots.length > 0 ? rawPots[0].amount : (s.pot ?? 0),
     communityCards: s.community_cards ?? [],
     communityCards2: s.community_cards2 ?? [],
+    // TRIPLE-BOARD BOMB POT 2026-08-27: third board (empty unless active).
+    communityCards3: s.community_cards3 ?? [],
     bombPotIn: typeof s.bomb_pot_in === 'number' ? s.bomb_pot_in : null,
+    // BOMB POT STANDARDIZATION 2026-08-27: timed-mode due timestamp (epoch ms).
+    bombPotNextAt: typeof s.bomb_pot_next_at === 'number' ? s.bomb_pot_next_at : null,
     boardStage: s.stage ?? 'preflop',
     dealerSeat: s.dealer_seat ?? 0,
     currentPlayerSeat,

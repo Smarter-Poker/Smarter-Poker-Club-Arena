@@ -1,0 +1,394 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  SEAT KNOCKOUT — the glove, the burst, the stamp (2026-08-28)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Every number in this file was measured off Dan's PokerBros capture
+ * (KO VIDEO.MOV, 30fps). The reference plays the whole knockout AT THE SEAT of
+ * the player who busted — nothing goes full-screen, and the felt stays live
+ * underneath. Measured beats, taking the frame the glove first appears as t0:
+ *
+ *     t0        a red glove slides in from the LEFT of the busted seat
+ *     +430ms    it has crept to about a third of the way across
+ *     +460ms    IMPACT — a white-hot spiked star, the glove already through
+ *     +600ms    the star decays into embers, the glove rotates away right
+ *     +860ms    the glove is gone
+ *     +930ms    the red KO stamp SLAMS onto the seat
+ *     +2400ms   the stamp fades; by now the seat itself reads EMPTY
+ *
+ * The stamp deliberately OUTLIVES the seat. In the reference the avatar, the
+ * cards and the name are gone while "KO" is still burning over the empty
+ * chair — that is what tells you which chair just emptied and why, and it is
+ * the reason this layer is a sibling of the seats rather than a child of one.
+ *
+ * ─── @keyframes is a GLOBAL namespace ───────────────────────────────────────
+ * 772 of them in this app. Everything here is prefixed `sko`.
+ *
+ * ─── Why every duration is a calc() ─────────────────────────────────────────
+ * `--animation-speed` is the player's own duration multiplier. The retired
+ * full-screen knockout scaled only its JS beats, so at 0.5x its CSS ran at
+ * double speed against its own timers and the stamp was stripped mid-keyframe.
+ * The JS timers in SeatKnockout.tsx multiply by getAnimationSpeed(); these
+ * multiply by the same variable, so the two cannot drift.
+ */
+
+.sko-layer {
+  position: absolute;
+  inset: 0;
+  /* A knockout lands while you may be IN a hand. An overlay that swallowed a
+     click on the fold button would be strictly worse than no animation. */
+  pointer-events: none;
+  z-index: 615; /* over seats and chip fans, under .pot-win-float (620) */
+}
+
+.sko {
+  position: absolute;
+  /* --sko-x / --sko-y are the seat's own hero-rotated percentages, the same
+     ones the seat ring, the dealer button and the deal animation render from.
+     Percentages rather than pixels so a resize or a multi-table rescale moves
+     the knockout with the seat instead of stranding it. */
+  left: var(--sko-x, 50%);
+  top: var(--sko-y, 50%);
+  /* Sized off the seat avatar token, so the effect grows and shrinks with the
+     seat at every breakpoint instead of being right on one phone. */
+  --sko-unit: var(--seat-avatar-base, 84px);
+  width: calc(var(--sko-unit) * 1.9);
+  height: calc(var(--sko-unit) * 1.25);
+  margin-left: calc(var(--sko-unit) * -0.95);
+  margin-top: calc(var(--sko-unit) * -0.625);
+  pointer-events: none;
+  contain: layout paint size;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE GLOVE
+   Enters left, creeps, strikes through, rotates away right. The creep is the
+   part that sells it: in the reference the glove spends 430ms travelling the
+   first third and 30ms travelling the rest, so the strike reads as a strike
+   rather than a pan. The cubic-bezier does that shape; the percentages below
+   place the keys.
+   ───────────────────────────────────────────────────────────────────────────── */
+.sko__glove {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: calc(var(--sko-unit) * 0.92);
+  height: calc(var(--sko-unit) * 0.69);
+  margin-top: calc(var(--sko-unit) * -0.345);
+  transform-origin: 50% 50%;
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: skoGloveStrike calc(0.93s * var(--animation-speed, 1)) cubic-bezier(0.62, 0, 0.3, 1)
+    forwards;
+}
+
+.sko__glove svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(
+    0 calc(var(--sko-unit) * 0.03) calc(var(--sko-unit) * 0.05) rgba(0, 0, 0, 0.6)
+  );
+}
+
+@keyframes skoGloveStrike {
+  0% {
+    opacity: 0;
+    transform: translateX(-78%) scale(0.52) rotate(-9deg);
+  }
+  7% {
+    opacity: 1;
+  }
+  43% {
+    /* the creep — a third of the way across, still winding up */
+    transform: translateX(4%) scale(0.74) rotate(-5deg);
+  }
+  50% {
+    /* THE STRIKE. Everything between 43% and 50% is 65ms. */
+    transform: translateX(58%) scale(1.08) rotate(5deg);
+  }
+  65% {
+    opacity: 1;
+    transform: translateX(72%) scale(1) rotate(9deg);
+  }
+  /* The glove is still on screen, rotating away, while the star is already
+     breaking up — measured at +860ms in the capture, which is 92% of this
+     930ms pass. Cutting it at 65% (the first draft) left a 300ms hole between
+     the hit and the stamp with nothing in it. */
+  82% {
+    opacity: 1;
+    transform: translateX(92%) scale(0.86) rotate(13deg);
+  }
+  96% {
+    opacity: 0;
+    transform: translateX(108%) scale(0.7) rotate(16deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(106%) scale(0.7) rotate(15deg);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE IMPACT STAR
+   The reference's burst is not a ring — it is an irregular spiked star, white
+   at the core and gold at the tips, about 1.2x the height of the seat plate.
+   Twelve rays with two alternating lengths reproduce that irregularity; a ring
+   of even spokes reads as a cartoon sun instead.
+   ───────────────────────────────────────────────────────────────────────────── */
+.sko__burst {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+
+.sko__core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  /* Deliberately SMALLER than the spikes. The first cut had a 0.78-unit core
+     and 0.62-unit rays, and photographing it against the capture showed the
+     obvious: the glow swallowed the star and the hit read as a soft flare.
+     The reference is spikes first, bloom second. */
+  width: calc(var(--sko-unit) * 0.58);
+  height: calc(var(--sko-unit) * 0.58);
+  margin: calc(var(--sko-unit) * -0.29) 0 0 calc(var(--sko-unit) * -0.29);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    #fffdf2 0%,
+    #fff3c4 26%,
+    rgba(255, 196, 74, 0.55) 52%,
+    rgba(255, 140, 30, 0) 74%
+  );
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: skoCoreFlash calc(0.34s * var(--animation-speed, 1)) ease-out
+    calc(0.46s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes skoCoreFlash {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  18% {
+    opacity: 0.92;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+}
+
+.sko__ray {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--sko-unit) * 0.042);
+  height: calc(var(--sko-unit) * 0.88);
+  margin-left: calc(var(--sko-unit) * -0.021);
+  transform-origin: 50% 0%;
+  border-radius: 50% 50% 2px 2px;
+  /* White-hot at the root, gold at the tip. The first cut ran gold the whole
+     length and photographed as a cartoon sun; the reference's spikes are
+     almost white for their inner half and only warm at the ends. */
+  background: linear-gradient(
+    to bottom,
+    #ffffff 0%,
+    #fffaf0 22%,
+    #ffe07a 52%,
+    rgba(255, 170, 50, 0.8) 78%,
+    rgba(255, 120, 20, 0) 100%
+  );
+  opacity: 0;
+  will-change: transform, opacity;
+  /* rotate is applied per-ray from --sko-ray-i so one rule serves all twelve */
+  animation: skoRay calc(0.32s * var(--animation-speed, 1)) cubic-bezier(0.1, 0.8, 0.3, 1)
+    calc(0.46s * var(--animation-speed, 1)) forwards;
+}
+
+/* Alternating spike lengths — this is what makes it a STAR and not a sun.
+   Scoped to .sko__burst's own children: the core and the embers are siblings
+   elsewhere in .sko, and an unscoped :nth-child would have retuned those too. */
+.sko__burst > .sko__ray:nth-child(even) {
+  height: calc(var(--sko-unit) * 0.42);
+  width: calc(var(--sko-unit) * 0.03);
+  margin-left: calc(var(--sko-unit) * -0.015);
+}
+
+/* A THIRD length, after the even rule so it overrides some of them. Two
+   alternating lengths still read as a pattern; the reference's star has no
+   pattern in it at all, and 12 / 2 / 3 is the cheapest way to break one
+   without hand-writing twelve rules or scattering the spikes randomly (which
+   would re-scatter them on any re-render mid-flight). */
+.sko__burst > .sko__ray:nth-child(3n) {
+  height: calc(var(--sko-unit) * 0.63);
+  width: calc(var(--sko-unit) * 0.036);
+  margin-left: calc(var(--sko-unit) * -0.018);
+}
+
+@keyframes skoRay {
+  0% {
+    opacity: 0;
+    transform: rotate(calc(var(--sko-ray-i) * 30deg)) translateY(0) scaleY(0.1);
+  }
+  22% {
+    opacity: 1;
+    transform: rotate(calc(var(--sko-ray-i) * 30deg)) translateY(0) scaleY(1);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(calc(var(--sko-ray-i) * 30deg)) translateY(calc(var(--sko-unit) * 0.12))
+      scaleY(0.55);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   EMBERS — the star does not switch off, it comes apart. In the reference the
+   spikes break into drifting sparks that fall down and left for about 400ms.
+   ───────────────────────────────────────────────────────────────────────────── */
+.sko__ember {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--sko-unit) * 0.055);
+  height: calc(var(--sko-unit) * 0.055);
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff7d6 0%, #ffb43c 70%, rgba(255, 140, 20, 0) 100%);
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: skoEmber calc(0.44s * var(--animation-speed, 1)) ease-out
+    calc(0.54s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes skoEmber {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(
+        calc(-50% + var(--sko-ember-x) * var(--sko-unit)),
+        calc(-50% + var(--sko-ember-y) * var(--sko-unit))
+      )
+      scale(0.2);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE KO STAMP
+   Bright red, heavy, with a dark red edge and a red bloom — measured off the
+   reference, where it slams in at full size rather than growing into place.
+   It is the only element here that carries information rather than drama,
+   which is why it is the only one marked data-motion="keep".
+   ───────────────────────────────────────────────────────────────────────────── */
+.sko__stamp {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-family: 'Arial Black', 'Arial Bold', Impact, system-ui, sans-serif;
+  font-weight: 900;
+  /* 0.55 was wider than the two hole cards it sits on. In the capture KO
+     spans the plate and stops. */
+  font-size: calc(var(--sko-unit) * 0.46);
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: #ff1f1f;
+  -webkit-text-stroke: calc(var(--sko-unit) * 0.014) #6d0000;
+  text-shadow:
+    0 0 calc(var(--sko-unit) * 0.07) rgba(255, 42, 42, 0.95),
+    0 0 calc(var(--sko-unit) * 0.17) rgba(255, 0, 0, 0.6),
+    0 calc(var(--sko-unit) * 0.022) 0 #7d0000;
+  opacity: 0;
+  white-space: nowrap;
+  will-change: transform, opacity;
+  animation: skoStampLife calc(1.47s * var(--animation-speed, 1)) ease-out
+    calc(0.93s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes skoStampLife {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.3) rotate(-9deg);
+  }
+  12% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.9) rotate(3deg);
+  }
+  20% {
+    transform: translate(-50%, -50%) scale(1.04) rotate(-1deg);
+  }
+  27% {
+    transform: translate(-50%, -50%) scale(1) rotate(0deg);
+  }
+  82% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.22) rotate(0deg);
+  }
+}
+
+/* The hero's own knockouts get a warmer bloom. The reference draws hero and
+   villain knockouts identically — this is the one deliberate addition, and it
+   changes only the glow, never a timing, so a spectator and the puncher still
+   watch the same animation on the same frames. */
+.sko--hero .sko__stamp {
+  text-shadow:
+    0 0 calc(var(--sko-unit) * 0.08) rgba(255, 90, 60, 0.98),
+    0 0 calc(var(--sko-unit) * 0.24) rgba(255, 170, 40, 0.55),
+    0 calc(var(--sko-unit) * 0.022) 0 #7d0000;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   REDUCED MOTION — remove the motion, never the meaning.
+   The glove, the star and the embers are pure drama and collapse to nothing.
+   The stamp is the ANSWER to "why did that chair just empty", so it keeps a
+   real, readable hold: the global 1ms collapse in reducedMotion.css would
+   flash it for one frame, which is the same as deleting it. data-motion="keep"
+   exempts it there; the !important below defends it from any later blanket
+   rule as well.
+   ───────────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .sko__glove,
+  .sko__core,
+  .sko__ray,
+  .sko__ember {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  .sko__stamp {
+    animation: skoStampReduced calc(1.1s * var(--animation-speed, 1)) ease-out forwards !important;
+  }
+
+  @keyframes skoStampReduced {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(1);
+    }
+    10% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+    82% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(1);
+    }
+  }
+}

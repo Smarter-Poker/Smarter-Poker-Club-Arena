@@ -1326,8 +1326,11 @@
   display: flex;
   gap: 6px;
   margin-bottom: 12px;
-  /* Dan 2026-08-23 (item 9) added 2.5X, so the widest row is now SEVEN
-     buttons: 2X 2.5X 3X 4X 5X POT ALL IN (no-limit, facing a bet postflop).
+  /* Dan 2026-08-28 (mobile pass item 1) took the row from seven buttons to
+     SIX: 2.5X 3X 3.5X 4X POT ALL IN (no-limit, facing a bet). It was
+     2X 2.5X 3X 4X 5X POT ALL IN, and at seven across a 375px phone ALL IN was
+     clipped at the right edge — which is the screenshot he sent.
+
      Wrapping would push a second row up into the table felt, so the row must
      SHRINK instead - see min-width on the button below, without which a flex
      item refuses to go under its own text width and the row overflows the
@@ -1338,7 +1341,7 @@
 .raise-preset {
   /* `flex: 1` leaves min-width at its `auto` default, which pins each button
      to its label width - that is the overflow. Basis 0 + min-width 0 lets all
-     seven share the row evenly. */
+     six share the row evenly. */
   flex: 1 1 0;
   min-width: 0;
   padding: 0 2px;
@@ -1579,17 +1582,21 @@
     gap: 4px;
   }
 
-  /* Seven buttons across a 390px phone: (390 - 24 padding - 24 gaps) / 7 is
-     about 49px each, and "ALL IN" at 0.6875rem needs roughly 41px of that.
-     Dropping a step keeps a comfortable margin instead of a hairline one. */
-  /* AUDIT 2026-08-25 — the HEIGHT is back to 44px.
+  /* SIX buttons across a 390px phone since 2026-08-28: (390 - 24 padding - 20
+     gaps) / 6 is about 57px each, against 49px when the row was seven. "ALL IN"
+     is the longest label and needs roughly 41px at 0.6875rem, so the label size
+     goes back UP a step — the drop to 0.625rem existed only to make seven fit,
+     and dropping a button is a better way to buy the room than shrinking the
+     text a player is reading on a 15-second clock.
+
+     AUDIT 2026-08-25 — the HEIGHT is 44px and stays there.
      It had been dropped to 40px in the same edit that made the labels smaller,
-     but the constraint the comment above describes is entirely HORIZONTAL:
-     seven buttons have to share the width. Height was never what made them fit,
-     and 40px puts a control the player presses inside a 15-second shot clock
-     under the 44px minimum touch target. The four pixels come out of the
-     overlay, which is `position: fixed` and simply grows upward over the felt —
-     nothing below it moves and the published --sp-bottom-row-h is untouched.
+     but the constraint above is entirely HORIZONTAL: the buttons share the
+     WIDTH. Height was never what made them fit, and 40px puts a control the
+     player presses inside a shot clock under the 44px minimum touch target. The
+     four pixels come out of the overlay, which is `position: fixed` and simply
+     grows upward over the felt — nothing below it moves and the published
+     --sp-bottom-row-h is untouched.
 
      The hit area cannot be grown with a pseudo-element here: `.raise-preset`
      is `overflow: hidden` (it clips the ::after sheen to the rounded corner),
@@ -1599,7 +1606,7 @@
      different bet. */
   .raise-preset {
     height: 44px;
-    font-size: 0.625rem;
+    font-size: 0.6875rem;
     letter-spacing: 0.3px;
   }
 

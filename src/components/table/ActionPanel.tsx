@@ -406,13 +406,47 @@ export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
     return { label, raw, value: exact, cappedByMax: false };
   };
 
+  /**
+   * ── THE MULTIPLIER ROW (Dan 2026-08-28, mobile pass item 1) ───────────────
+   *
+   * Verbatim: "WE DON'T NEED ALL OF THOSE MULTIPLIERS. 2.5X 3X 3.5X 4X POT AND
+   * ALL IN ARE FINE. (REMOVE 2X AND 5X)"
+   *
+   * So the row is `MULTIPLES` + POT, and ALL IN is appended by the renderer.
+   * Seven buttons became six, and on a 375px phone that is the difference
+   * between a comfortable hit area and a row of slivers — the previous set had
+   * ALL IN clipped at the right edge in Dan's screenshot.
+   *
+   * WHY THESE FOUR. 2X was never a raise anyone makes: preflop it is a min-open
+   * and postflop it is a min-raise, both of which the slider already reaches and
+   * neither of which wants a dedicated button. 5X is past the point where a
+   * player sizes by multiple rather than by pot. What is left is the band people
+   * actually open and 3-bet into, and 3.5X — which the row never had — is the
+   * gap between the 3X and 4X it sat between.
+   *
+   * NO POT BUTTON PREFLOP IN NO-LIMIT, and this is deliberate rather than an
+   * omission — I added one while making the row uniform and had to take it back
+   * out. Preflop unopened the pot is just the blinds, so a pot-sized raise at
+   * 1/2 is a raise TO 4: SMALLER than the 2.5X button sitting to its left. The
+   * row is read left to right as ascending sizes, and a POT that undercuts every
+   * multiple beside it breaks that reading. Pot-limit keeps its preflop POT
+   * because that sizing is the game.
+   */
+  const MULTIPLES = [2.5, 3, 3.5, 4];
+
+  /**
+   * Pot-limit truncates the row, and this is not a style choice: `maxRaise` is
+   * pinned to the pot cap, so every multiple above it clamps onto that same
+   * number. Left alone, PLO would draw three or four buttons that all bet the
+   * identical amount. Preflop the cap is far enough out that all four are
+   * distinct; facing a bet postflop it bites at 3X.
+   */
+  const potLimited = (all: number[], cap: number) => all.filter((n) => n <= cap);
+
   if (isPreflop) {
     // The bet being faced. Unopened pot -> the big blind.
     const base = Math.max(currentBet, bigBlind) || bigBlind || 1;
-    // Dan 2026-08-23 (item 9): "2.5X should be an option." It sits between 2X
-    // and 3X because the row is read left to right as ascending sizes, and a
-    // 2.5X open is the modern default the row had no button for at all.
-    const multiples = isPotLimit ? [2, 2.5, 3, 4] : [2, 2.5, 3, 4, 5];
+    const multiples = isPotLimit ? potLimited(MULTIPLES, 4) : MULTIPLES;
     const presets = multiples.map((n) => finalizeExact(`${n}X`, base * n));
     if (isPotLimit) {
       presets.push(finalize('POT', potSizedRaiseTo(currentBet, pot, callAmount)));
@@ -424,13 +458,8 @@ export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
   // clickable options." Postflop FACING A BET mirrors the preflop grammar —
   // exact multiples of the bet being faced (rule 7: base = the last bet) —
   // plus POT. Fractions only make sense when nobody has bet yet.
-  //
-  // 5X joins the row in no-limit (Dan 2026-08-21 named 3X/4X/5X explicitly).
-  // Pot-limit still stops at 3X: with maxRaise pinned to the pot cap, every
-  // higher multiple clamps onto that same number and you get a row of buttons
-  // that all do the same thing.
   if (currentBet > 0) {
-    const multiples = isPotLimit ? [2, 2.5, 3] : [2, 2.5, 3, 4, 5];
+    const multiples = isPotLimit ? potLimited(MULTIPLES, 3) : MULTIPLES;
     const presets = multiples.map((n) => finalizeExact(`${n}X`, currentBet * n));
     presets.push(finalize('POT', potSizedRaiseTo(currentBet, pot, callAmount)));
     return presets;

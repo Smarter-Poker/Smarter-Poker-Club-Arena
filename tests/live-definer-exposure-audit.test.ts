@@ -28,6 +28,9 @@ const MIG = read('supabase/migrations/20260828050000_the_definer_sweep_becomes_a
 const MIG2 = read(
   'supabase/migrations/20260828070000_the_auditor_learns_the_shape_that_slipped_past_it.sql'
 );
+const MIG3 = read(
+  'supabase/migrations/20260828080000_pinned_search_paths_and_a_watch_on_rls_off_tables.sql'
+);
 
 /** Comments quote the very things the code must not do. Strip them first. */
 const code = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
@@ -208,5 +211,78 @@ describe('the auditor learns the shape that slipped past it', () => {
     expect(SCRIPT).toContain('if (anonWriters.length > 0)');
     expect(SCRIPT).toContain('A LOGGED-OUT CALLER CAN EXECUTE A WRITING FUNCTION');
     expect(SCRIPT).toContain('(must be 0)');
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  A TABLE WITH RLS OFF HAS NO GUARD AT ALL: THE GRANT IS THE WHOLE STORY
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * The single ERROR-level Supabase advisory: spatial_ref_sys sits in `public`
+ * with RLS disabled while anon and authenticated hold every write privilege.
+ * Confirmed reachable with the public anon key - GET returns rows, OPTIONS
+ * advertises POST - and find_live_games_nearby resolves coordinates through
+ * PostGIS, so corrupting SRID 4326 breaks venue search for everybody.
+ *
+ * It could NOT be fixed from the MCP connection: the table is owned by
+ * supabase_admin and the grants were made BY supabase_admin, so postgres's
+ * REVOKE is a silent no-op and SET ROLE supabase_admin is denied 42501. Both
+ * were tried. So it is baselined with that reasoning and watched daily, which
+ * is the honest response to something you cannot close: make sure it cannot be
+ * forgotten, and make sure a NEW one still fails loudly.
+ */
+describe('a table with RLS off that a browser can write is watched daily', () => {
+  it('the audit asks the question', () => {
+    expect(MIG3).toContain("'rls_disabled_writable'");
+    expect(MIG3).toContain('NOT c.relrowsecurity');
+    expect(MIG3).toContain("has_table_privilege('anon', c.oid, 'INSERT')");
+    // The owner is reported, because the owner decides whether a REVOKE can work.
+    expect(MIG3).toContain('pg_get_userbyid(c.relowner)');
+  });
+
+  it('the script fails on any table that is not baselined', () => {
+    expect(SCRIPT).toContain('A TABLE WITH RLS OFF IS WRITABLE FROM A BROWSER');
+    expect(SCRIPT).toContain('const newTables = rlsOffWritable.filter');
+    expect(SCRIPT).toContain('(${newTables.length} new)');
+  });
+
+  it('and tells the reader why a REVOKE may do nothing', () => {
+    // The trap that made the first attempt at this fix a silent no-op.
+    expect(SCRIPT).toContain('A REVOKE only removes grants YOU made');
+  });
+
+  it('baselines spatial_ref_sys with what was actually tried', () => {
+    const baseline = JSON.parse(read('scripts/ci/definer-exposure-baseline.json'));
+    const why = baseline.reviewedTables?.spatial_ref_sys as string;
+    expect(why).toBeTruthy();
+    expect(why).toContain('42501');
+    expect(why).toContain('silent no-op');
+    expect(why).toContain('owner-level action');
+  });
+
+  it('does not pretend the advisory was resolved', () => {
+    expect(MIG3).toContain('I COULD NOT FIX IT');
+    expect(MIG3).toContain('SET LOCAL ROLE supabase_admin        -> 42501 permission denied');
+  });
+});
+
+describe('four search paths are pinned, and said to be the smaller fix they are', () => {
+  it('pins all four with ALTER FUNCTION rather than rewriting correct bodies', () => {
+    for (const fn of ['fn_horse_hash(text)', 'fn_horse_hash_fnv(text)', 'fn_horse_lane(text)']) {
+      expect(MIG3).toContain(`ALTER FUNCTION public.${fn}`);
+    }
+    expect(MIG3).toContain('fn_place_entitlement(numeric, anyelement, integer)');
+    expect(MIG3).toContain("SET search_path TO 'public', 'pg_temp'");
+  });
+
+  it('says plainly that these are SECURITY INVOKER, so not the escalation shape', () => {
+    // Overstating a small fix is how a report stops being worth reading.
+    expect(MIG3).toContain('All four are SECURITY INVOKER');
+    expect(MIG3).toContain('NOT the privilege-escalation shape');
+  });
+
+  it('proves the pin took instead of assuming it', () => {
+    expect(MIG3).toContain("RAISE EXCEPTION 'search_path is still unpinned on: %', bad");
   });
 });

@@ -115,10 +115,14 @@
 /* ── Club identity + wallet, side by side ──────────────────────────────────
    The wallet column is capped rather than fixed at 220px: at 375px a rigid
    220px column left the club card 115px, which truncated the club name to a
-   couple of characters. Below 420px the two stack instead. */
+   couple of characters. At compact phone widths the two stack instead. */
 .lobby-top__main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(190px, 250px);
+  /* Keep the BBJ plaque on the same one-third rhythm as the three wallet
+     tiles below it. The plaque has an intrinsic aspect ratio, so the old
+     capped 250px track combined with `align-items: stretch` made the item
+     solve its width from the club-card height and spill outside its track. */
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   align-items: stretch;
   gap: 10px;
 }
@@ -2128,6 +2132,9 @@
 .lobby-bbj {
   position: relative;
   container-type: inline-size;
+  width: 100%;
+  max-width: 100%;
+  align-self: center;
   min-height: 0;
   aspect-ratio: 1600 / 560;
   display: block;

@@ -65,6 +65,17 @@ interface PlacementRow {
 
 type StatRow = { impressions: number; clicks: number; dismisses: number };
 
+/* PER-SURFACE NUMBERS (2026-08-28). Until today this panel showed one blended
+   total per campaign, which was right when one slot existed. `bbj_running` now
+   runs on four surfaces, and a single number told an operator nothing about
+   which of them is working - while the obvious action on a poor blended
+   number, turning the campaign off, can be exactly the wrong one.
+
+   Keyed adId -> slot -> counts. `null` still means COULD NOT COUNT and still
+   renders as a dash, never as a zero. */
+type SlotStatRow = StatRow & { lastEventAt: string | null };
+type StatsBySlot = Record<string, Record<string, SlotStatRow>>;
+
 const CATEGORIES = [
   'vip',
   'diamonds',
@@ -119,6 +130,7 @@ export default function HouseAdsPage() {
   const [ads, setAds] = useState<AdRow[]>([]);
   const [placements, setPlacements] = useState<PlacementRow[]>([]);
   const [stats, setStats] = useState<Record<string, StatRow> | null>(null);
+  const [statsBySlot, setStatsBySlot] = useState<StatsBySlot | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -163,11 +175,16 @@ export default function HouseAdsPage() {
         ads: AdRow[];
         placements: PlacementRow[];
         stats: Record<string, StatRow> | null;
+        statsBySlot?: StatsBySlot | null;
       }>('house-ads', {}, { method: 'GET' });
       if (!isMounted.current) return;
       setAds(res.ads || []);
       setPlacements(res.placements || []);
       setStats(res.stats ?? null);
+      /* Optional on the wire: an older deployment of the API route does not
+         send it, and the panel must degrade to the blended totals rather than
+         render an empty breakdown that looks like "no views on any surface". */
+      setStatsBySlot(res.statsBySlot ?? null);
     } catch (e) {
       reportError(e, 'HouseAdsPage.load');
       if (isMounted.current) setActionError(safeErrorMessage(e, 'Could not load the ad catalog.'));
@@ -683,14 +700,38 @@ export default function HouseAdsPage() {
                                left as an empty cell. */
                             <span className="admin-badge-yellow">Not Placed</span>
                           ) : (
-                            pls
-                              .map(
-                                (p) =>
-                                  `${SLOTS.find((x) => x.id === p.slot)?.label || p.slot}${
-                                    p.audience && p.audience !== 'all' ? ` (${p.audience})` : ''
-                                  }`
-                              )
-                              .join(', ')
+                            /* PER SURFACE, NOT BLENDED (2026-08-28). Each
+                               placement carries its own numbers, because one
+                               campaign on four surfaces used to report a
+                               single total that could not tell an operator
+                               which surface was carrying it and which was
+                               dragging it down.
+
+                               A placement with no events yet reads "No Views
+                               Yet" rather than 0/0, and an unreadable rollup
+                               still reads as a dash - a confident zero is the
+                               lie this whole panel exists to avoid. */
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                              {pls.map((p) => {
+                                const label = SLOTS.find((x) => x.id === p.slot)?.label || p.slot;
+                                const ss = statsBySlot?.[ad.id]?.[p.slot];
+                                return (
+                                  <div key={p.id}>
+                                    <span>{label}</span>
+                                    {p.audience && p.audience !== 'all' ? (
+                                      <span className="admin-text-secondary"> ({p.audience})</span>
+                                    ) : null}
+                                    <span className="admin-mono" style={{ marginLeft: 6 }}>
+                                      {statsBySlot === null
+                                        ? '-'
+                                        : ss
+                                          ? `${ss.impressions} / ${ss.clicks} (${rate(ss)})`
+                                          : 'No Views Yet'}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           )}
                         </td>
                         <td className="admin-mono">

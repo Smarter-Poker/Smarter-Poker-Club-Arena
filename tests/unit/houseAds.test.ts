@@ -280,3 +280,68 @@ describe('the last two Club Arena slots are wired, and only where they earn it',
     expect(inserts).not.toMatch(/diamonds_store/);
   });
 });
+
+describe('the panel can finally say WHICH surface works', () => {
+  /* Until 2026-08-28 the rollup was keyed on ad_id alone, which was right when
+     one slot existed. bbj_running now runs on four surfaces and reported one
+     blended number, so an operator could not tell whether the lobby was
+     carrying the campaign or dragging it down - and the obvious action on a
+     poor blended number, turning the campaign off, can be exactly wrong. */
+  const STATS_MIGRATION = read(
+    'supabase/migrations/20260828050000_ad_stats_by_slot_and_a_slot_that_must_be_real.sql'
+  );
+
+  it('counts per ad AND per slot', () => {
+    expect(STATS_MIGRATION).toMatch(/create or replace function public\.fn_ad_stats/);
+    expect(STATS_MIGRATION).toMatch(/GROUP BY e\.ad_id, e\.slot/);
+    // A surface that has STOPPED reporting must be as visible as one that
+    // never started.
+    expect(STATS_MIGRATION).toMatch(/max\(e\.created_at\)\s*AS last_event_at/);
+  });
+
+  it('does not let a player read the event log, even in aggregate', () => {
+    /* ad_event deliberately has no select policy: one player must never be
+       able to enumerate another's viewing history. A SECURITY DEFINER function
+       granted to `authenticated` would hand back exactly that. */
+    expect(STATS_MIGRATION).toMatch(
+      /revoke all on function public\.fn_ad_stats\(\) from public, anon, authenticated/
+    );
+    expect(STATS_MIGRATION).toMatch(
+      /grant execute on function public\.fn_ad_stats\(\) to service_role/
+    );
+    expect(STATS_MIGRATION).toMatch(/fn_ad_stats is executable by players/);
+  });
+
+  it('constrains ad_event.slot the way ad_placement.slot has always been', () => {
+    /* Three clients across two repos write that column by hand. One typo -
+       'lobby-strip', a stale constant - and the writes keep succeeding while
+       that surface's rollup silently splits in two. Nothing would go red. */
+    expect(STATS_MIGRATION).toMatch(/add constraint ad_event_slot_check/);
+    expect(STATS_MIGRATION).toMatch(/table_between_hands/);
+    // And it must refuse to constrain data it would retroactively reject.
+    expect(STATS_MIGRATION).toMatch(/inspect them before constraining/);
+  });
+
+  it('the panel shows each placement its own numbers', () => {
+    expect(ADMIN).toMatch(/statsBySlot\?\.\[ad\.id\]\?\.\[p\.slot\]/);
+    expect(ADMIN).toMatch(/No Views Yet/);
+  });
+
+  it('still renders a dash, never a zero, when the breakdown is unreadable', () => {
+    const start = ADMIN.indexOf('PER SURFACE, NOT BLENDED');
+    expect(start).toBeGreaterThan(-1);
+    // Slice forward from the marker: the first `</td>` in the file is many
+    // cells earlier, so bounding on it produced an empty string and a test
+    // that could only ever fail.
+    const cell = ADMIN.slice(start, ADMIN.indexOf('</td>', start));
+    expect(cell).toMatch(/statsBySlot === null\s*\?\s*'-'/);
+  });
+
+  it('degrades instead of lying when the API is older than the panel', () => {
+    /* An older deployment of the route sends no statsBySlot. Rendering an
+       empty breakdown would read as "no views on any surface", which is a
+       confident zero wearing a new hat. */
+    expect(ADMIN).toMatch(/statsBySlot\?: StatsBySlot \| null/);
+    expect(ADMIN).toMatch(/setStatsBySlot\(res\.statsBySlot \?\? null\)/);
+  });
+});

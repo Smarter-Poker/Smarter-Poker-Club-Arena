@@ -59,6 +59,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
+import PushEnableBanner from '../components/notifications/PushEnableBanner';
 import './NotificationsPage.css';
 
 /** Club Arena's router basename. Paths under it are handled in-SPA. */
@@ -504,6 +505,13 @@ export default function NotificationsPage() {
           </button>
         )}
       </header>
+
+      {/* The way back into push enrolment. FirstRunPushPrompt asks once and
+        then never again, which is right for a modal and wrong as the only
+        door: this page is where somebody goes when they wonder why their
+        phone has been quiet. Renders nothing when this device is already
+        subscribed or the player has explicitly turned push off. */}
+      <PushEnableBanner />
 
       <div className="ca-notif__list">
         {showSkeleton ? (

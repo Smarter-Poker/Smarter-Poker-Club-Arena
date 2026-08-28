@@ -119,6 +119,8 @@ interface TableConfig {
   bombPotMinPlayers: number;
   /** FIXED ante mode (spec §3): exact chip amount; 0 = use the BB multiple. */
   bombPotAnteFixed: number;
+  /** VARIANT OVERRIDE (spec §10.1): '' = same as table, else nlh/plo4/plo5/plo6. */
+  bombPotVariant: '' | 'nlh' | 'plo4' | 'plo5' | 'plo6';
   pineappleHoldem: boolean;
   sevenDeuceEnabled: boolean;
   sevenDeuceAmountBB: number;
@@ -288,6 +290,7 @@ const DEFAULT_CONFIG: TableConfig = {
   bombPotBoards: 2,
   bombPotMinPlayers: 3,
   bombPotAnteFixed: 0,
+  bombPotVariant: '',
   // Bible V8 section 4.22 defaults, previously hard-coded in buildTableData.
   bombPotFrequency: 10,
   bombPotAnteBB: 2,
@@ -309,7 +312,11 @@ const DEFAULT_CONFIG: TableConfig = {
   smallBlind: 0.05,
   bigBlind: 0.1,
   minBuyInBB: 40,
-  maxBuyInBB: 100,
+  /* Dan 2026-08-28: cash buy-ins are 40BB-200BB across the platform (the
+     fleet, the horse launcher and the create-table API all write bb*40 /
+     bb*200). This default was 100BB, so every table a club owner created
+     through this page was born capped at half the platform ceiling. */
+  maxBuyInBB: 200,
   anteBB: 0,
   careerPercentMin: 0,
   maintainPercentMin: 0,
@@ -887,6 +894,9 @@ export default function TableConfigPage() {
     // FIXED ante mode (spec §3): a positive amount overrides the multiplier.
     bomb_pot_ante_fixed:
       config.bombPotEnabled && config.bombPotAnteFixed > 0 ? config.bombPotAnteFixed : null,
+    // VARIANT OVERRIDE (spec §10.1): NULL = bomb hands play the table's own
+    // game. The engine whitelists; the DB CHECK mirrors it.
+    bomb_pot_variant: config.bombPotEnabled && config.bombPotVariant ? config.bombPotVariant : null,
     // DOUBLE-BOARD BOMB POT 2026-08-20 (legacy pair, kept in sync): the
     // engine used to read bomb_pot_double_board; board_count supersedes it.
     bomb_pot_double_board: config.bombPotEnabled && config.bombPotBoards >= 2,
@@ -1520,6 +1530,35 @@ export default function TableConfigPage() {
                   step={1}
                   suffix=" players"
                 />
+                {/* VARIANT OVERRIDE (spec §10.1): the bomb hand can play a
+                    different game from the table — the classic is an NLH
+                    table whose bombs are PLO4 double boards. The engine
+                    whitelists the value and skips the override if the deck
+                    cannot cover the seats (9-handed PLO6). */}
+                <div className="config-radio-group">
+                  <span className="radio-group-label">Bomb Pot Game</span>
+                  <div className="radio-options">
+                    {(
+                      [
+                        ['', 'Same As Table'],
+                        ['nlh', 'NLH'],
+                        ['plo4', 'PLO4'],
+                        ['plo5', 'PLO5'],
+                        ['plo6', 'PLO6'],
+                      ] as const
+                    ).map(([value, label]) => (
+                      <label className="radio-option" key={value || 'same'}>
+                        <input
+                          type="radio"
+                          name="bombVariant"
+                          checked={config.bombPotVariant === value}
+                          onChange={() => updateConfig('bombPotVariant', value)}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
                 {/* Spec §8/§9: each pot layer splits across the boards; the
                     engine downgrades when the deck cannot cover the boards. */}
                 <div className="config-radio-group">
@@ -1694,9 +1733,13 @@ export default function TableConfigPage() {
                 </span>
               </div>
               <div className="buyin-sliders">
+                {/* Dan 2026-08-28: cash buy-ins are 40BB-200BB. The min
+                    slider used to reach down to 2BB, which is precisely the
+                    shape of the broken "NLH 25/50, buy-in 100-200" row — a
+                    2BB/4BB band nobody could play. 40BB is the floor. */}
                 <input
                   type="range"
-                  min={2}
+                  min={40}
                   max={config.maxBuyInBB}
                   value={config.minBuyInBB}
                   onChange={(e) => updateConfig('minBuyInBB', Number(e.target.value))}
@@ -1704,7 +1747,7 @@ export default function TableConfigPage() {
                 />
                 <input
                   type="range"
-                  min={config.minBuyInBB}
+                  min={Math.max(config.minBuyInBB, 40)}
                   max={500}
                   value={config.maxBuyInBB}
                   onChange={(e) => updateConfig('maxBuyInBB', Number(e.target.value))}

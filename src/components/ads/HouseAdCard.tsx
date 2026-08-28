@@ -33,7 +33,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { AdService, type AdSlot, type HouseAd } from '../../services/AdService';
+import { AdService, isSafeAdImage, type AdSlot, type HouseAd } from '../../services/AdService';
 import './HouseAdCard.css';
 
 interface HouseAdCardProps {
@@ -48,6 +48,10 @@ interface HouseAdCardProps {
 
 export default function HouseAdCard({ slot, clubId = null, onNavigate }: HouseAdCardProps) {
   const [ad, setAd] = useState<HouseAd | null>(null);
+  /* An image that 404s must not leave a broken-image icon sitting in the card.
+     Falling back to the glyph is the same graceful degradation the rest of this
+     component uses: render something honest, never an error. */
+  const [imageFailed, setImageFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,6 +60,7 @@ export default function HouseAdCard({ slot, clubId = null, onNavigate }: HouseAd
       const resolved = await AdService.resolve(slot, clubId, 1);
       if (cancelled) return;
       setAd(resolved[0] ?? null);
+      setImageFailed(false);
     })();
     return () => {
       cancelled = true;
@@ -84,9 +89,22 @@ export default function HouseAdCard({ slot, clubId = null, onNavigate }: HouseAd
     onNavigate?.(ad.targetUrl as string);
   };
 
+  const showImage = isSafeAdImage(ad.imageUrl) && !imageFailed;
+
   const inner = (
     <>
-      {ad.glyph ? (
+      {showImage ? (
+        <img
+          className="house-ad__image"
+          src={ad.imageUrl as string}
+          alt=""
+          /* Decorative: the headline beside it carries the meaning, and a
+             screen reader reading a filename helps nobody. */
+          aria-hidden="true"
+          loading="lazy"
+          onError={() => setImageFailed(true)}
+        />
+      ) : ad.glyph ? (
         <span className="house-ad__glyph" aria-hidden="true">
           {ad.glyph}
         </span>

@@ -10,7 +10,7 @@ import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
-import { digitsOnly, isWholeBuyIn, money, splitBuyIn } from '../../utils/buyIn';
+import { digitsOnly, isWholeBuyIn, money, rakeRateFor, splitBuyIn } from '../../utils/buyIn';
 import { tournamentScheduleService } from '../../services/TournamentScheduleService';
 import WeeklyScheduleEditor, {
   DEFAULT_WEEKLY_SCHEDULE,
@@ -189,14 +189,36 @@ export default function CreateTournamentModal({
 
   // ── The buy-in, split ──
   // total = what the player pays (the typed whole number)
-  // fee   = the house cut OUT of it — and the RATE IS PER FORMAT
-  //         (2026-08-27): fn_create_tournament charges 5% on an SNG, 0 on a
-  //         Spin, 10% on everything else. This preview used a flat 10% for
-  //         all of them, so every Heads Up / SNG advertised double the fee
-  //         the server actually took.
+  // fee   = the house cut for THIS format, floored to cents
   // prize = total - fee, what reaches the prize pool.
-  const feeRate = format === 'spin' ? 0 : format === 'sng' ? 0.05 : 0.1;
-  const split = useMemo(() => splitBuyIn(Number(buyIn) || 0, feeRate), [buyIn, feeRate]);
+  //
+  // THE RATE IS NOT ALWAYS 10% (fixed 2026-08-27). A heads-up game pays 5% and
+  // a Spin pays nothing at all (its rake lives in the multiplier distribution),
+  // but this modal quoted a flat 10% for all three. fn_create_tournament is
+  // authoritative and recomputes the split correctly, so no money moved wrong —
+  // the owner was simply SHOWN a different price from the one that was written.
+  // A 20-chip duel was quoted "18 + 2" and stored 19 + 1.
+  //
+  // The rate is asked for rather than restated: the ternary that used to live
+  // here was a SIXTH copy of the rule, keyed on the format LABEL, so a duel
+  // created under any other label still quoted 10%. rakeRateFor keys on seats.
+  // NOTE: `isSngOrSpin` is declared further down and cannot be used here — a
+  // const referenced above its declaration is a TDZ ReferenceError at render,
+  // not a lint warning. The same condition, inline.
+  const quotedRakeRate = useMemo(
+    () =>
+      rakeRateFor({
+        variant: format,
+        // Only an SNG or a Spin has a fixed field size; an MTT sends 0, which
+        // rakeRateFor reads as "unknown seats" and prices at the default rate.
+        maxPlayers: format === 'sng' || format === 'spin' ? parseInt(maxPlayers) || 0 : 0,
+      }),
+    [format, maxPlayers]
+  );
+  const split = useMemo(
+    () => splitBuyIn(Number(buyIn) || 0, quotedRakeRate),
+    [buyIn, quotedRakeRate]
+  );
 
   // ── Auto-select payout structure ──
   // SNG/Spin: based on max players. MTT/Bounty/PKO/Mystery: default MTT structure (no max player cap)
@@ -396,10 +418,12 @@ export default function CreateTournamentModal({
       }
 
       const parsedBuyIn = Math.round(Number(buyIn));
-      // The house fee is a CUT OF the buy-in, not a surcharge on top, at the
-      // per-format rate (5% SNG / 0 Spin / 10% otherwise — see feeRate above).
-      // fn_create_tournament recomputes the identical split server-side.
-      const parsedRake = splitBuyIn(parsedBuyIn, feeRate).fee;
+      // The house fee is a CUT OF the buy-in, not a surcharge on top, and prize
+      // + fee is exactly what the player pays. The RATE comes from rakeRateFor
+      // (10% MTT, 5% heads-up, 0 on a Spin) so what is quoted here is what
+      // fn_create_tournament writes, rather than a flat 10% the server then
+      // silently disagreed with.
+      const parsedRake = splitBuyIn(parsedBuyIn, quotedRakeRate).fee;
 
       // ── Bounty validation (defense-in-depth) ──
       if (isBountyFormat) {
@@ -414,7 +438,7 @@ export default function CreateTournamentModal({
         // prize half of the split — otherwise the prize pool would go negative
         // and registration would reject every entrant with
         // 'misconfigured_bounty'.
-        if (ba > splitBuyIn(parsedBuyIn, feeRate).prize) {
+        if (ba > splitBuyIn(parsedBuyIn, quotedRakeRate).prize) {
           toast.error(
             `Bounty ${money(ba)} plus the ${money(parsedRake)} fee exceeds the ${money(parsedBuyIn)} buy-in. Lower the bounty or raise the buy-in.`
           );
@@ -940,9 +964,9 @@ export default function CreateTournamentModal({
                     whole number, so the player pays exactly the figure typed on
                     the left and never a decimal. */}
                 <label>
-                  {feeRate === 0
+                  {quotedRakeRate === 0
                     ? 'Fee (Spins Carry None)'
-                    : `Fee (${Math.round(feeRate * 100)}% Of Buy-In)`}
+                    : `Fee (${Math.round(quotedRakeRate * 100)}% Of Buy-In)`}
                 </label>
                 <input
                   type="number"

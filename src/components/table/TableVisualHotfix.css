@@ -232,10 +232,17 @@
 
 /* ── 6. Pot column clear of the community cards ─────────────────────────── */
 .table-page .pot-area {
-  /* Dan 2026-08-17 (audit): 24% left the pot box kissing the board cards'
-     top edge on the live table. 19% restores clear air between pot and
-     board while staying under the felt masthead. */
-  top: 19% !important;
+  /* Dan 2026-08-28: "the pot and the chips in the pot never moved down, it
+     needs to move down enough so that the villain on the top's chips never
+     touch the pot pill or the chips in the pot." At 19% the pill's top edge
+     sat ~1px under the top seat's bet-chip stack on a 393px phone — a
+     collision on every top-seat bet. 23% buys ~23px of clear air above the
+     pill while the pot column still ends ~20px short of the board's top edge
+     (which is what the old 24% was walked back from on 2026-08-17; the board
+     has since moved to 42.5%, so 23% no longer kisses it).
+     MUST MOVE TOGETHER: POT_ANCHOR_PCT.y in TablePage.tsx mirrors this
+     number — chip flights aim at it. */
+  top: 23% !important;
 }
 .table-page .pot-display__side-pots {
   margin-top: 2px !important;

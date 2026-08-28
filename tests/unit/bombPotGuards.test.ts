@@ -40,6 +40,48 @@ describe('RIT and insurance stay suppressed on any multi-board hand (spec §14/�
   });
 });
 
+describe('the LIVE hand variant is the one seam (spec §10.1)', () => {
+  const BASE = read('server/src/engine/ServerTableEngineBase.ts');
+  const ENGINE = read('server/src/engine/ServerTableEngine.ts');
+  const TURNS = read('server/src/engine/ServerTableEngineTurns.ts');
+  const SETTLEMENT = read('server/src/engine/ServerTableEngineSettlement.ts');
+  const DEALING = read('server/src/engine/ServerTableEngineDealing.ts');
+
+  it('Base exposes activeHandVariant reading the live HandController', () => {
+    expect(BASE).toMatch(
+      /activeHandVariant\(\): string \{\s*return this\.handController\?\.getGameVariant\?\.\(\) \?\? this\.dealtGameVariant\(\);/
+    );
+  });
+
+  it('the snapshot betting structure reads the HAND variant', () => {
+    const fn = ENGINE.slice(ENGINE.indexOf('private bettingStructureFields'));
+    expect(fn.slice(0, 800)).toMatch(/this\.activeHandVariant\(\)/);
+    expect(fn.slice(0, 800)).not.toMatch(/tableInfo\?\.game_variant/);
+  });
+
+  it('the legal-action pot-limit clamp reads the HAND variant', () => {
+    const idx = TURNS.indexOf('const structure = bettingStructureFor(variant)');
+    const window = TURNS.slice(Math.max(0, idx - 400), idx);
+    expect(window).toMatch(/this\.activeHandVariant\(\)/);
+  });
+
+  it('horses evaluate the HAND variant', () => {
+    expect(TURNS).toMatch(/gameVariant: \(this\.activeHandVariant\(\) \|\| 'nlh'\)/);
+  });
+
+  it('hand history records the variant the hand was DEALT as', () => {
+    expect(SETTLEMENT).toMatch(
+      /gameVariant: this\.currentHandVariant \|\| this\.tableInfo\.game_variant \|\| 'nlh'/
+    );
+  });
+
+  it('an override that cannot cover the seats yields to the table variant', () => {
+    // 9-handed PLO6 needs 54 hole cards from 52. The override must yield,
+    // never the deal.
+    expect(DEALING).toMatch(/holeNeed <= deckSizeFor\(resolved\)/);
+  });
+});
+
 describe('the table page reads bomb rules from the COLUMNS (spec §15.2)', () => {
   const PAGE = read('src/pages/TablePage.tsx');
 

@@ -138,24 +138,36 @@
   overscroll-behavior: none;
 }
 
-/* Spectating: no action bar can ever appear, so reserving for one would be a
-   band of dead page under the felt for a viewer who will never see a button.
-   What the wrapper carries instead is the one-line footer, and its height is
-   declared next to the padding that produces it (`--sp-spectator-line-h`,
-   ActionPanel.css).
-
-   This is the ONLY thing that moves the felt now, and it moves it exactly once:
-   at the moment the player takes a seat or leaves one. That is a change they
-   made themselves, in response to their own tap, and it is the difference
-   between a table that responds and a table that twitches.
-
-   Declared on `.table-page`, not on `.table-container`, because the HUD stack,
-   the chat button and the post-BB pill are all `position: fixed` OUTSIDE the
-   container and read this same reserve. Specificity 0,2,0 beats the 0,1,0
-   declaration above on the same element. */
-.table-page[data-hero='false'] {
-  --sp-action-reserve: calc(var(--sp-spectator-line-h, 22px) + env(safe-area-inset-bottom, 0px));
-}
+/* ─── THERE IS NO SPECTATOR SIZE. THERE IS ONE SIZE. (Dan 2026-08-28) ───────
+ *
+ * A `.table-page[data-hero='false']` rule used to sit here, shrinking the
+ * reserve to the 22px spectator line, with a matching
+ * `--sp-hero-clear: 6px` at the foot of this file. Between them they cut
+ * `--sp-table-bottom` from 156px to 28px on desktop — so the felt jumped 128px
+ * the instant a spectator took a seat, and jumped back when they stood up.
+ *
+ * I shipped that on purpose and told Dan it was an acceptable residual, because
+ * the player caused it with their own tap. He was right and I was wrong:
+ *
+ *   "NO, THAT SHOULD NEVER HAPPEN, PREVENT IT AND FIX IT. THAT'S A GLITCH,
+ *    NOT CODE"
+ *
+ * A table that changes size is a glitch whatever triggered it. "The user asked
+ * for it" is not a defence: nobody taps an open seat in order to resize the
+ * felt. Both rules are deleted. The oval is one size at a given viewport, in
+ * every state — spectating, seated, folded, all-in, between hands — and the
+ * only thing that may ever change it is the viewport itself.
+ *
+ * WHAT THIS COSTS, stated plainly so nobody "optimises" it back: a spectator
+ * now has `--sp-action-reserve + --sp-hero-clear` of page under the felt that
+ * holds nothing, because they have neither an action bar nor a hero plate. That
+ * space is the price of the table holding still, and on 2026-08-25 it was
+ * reclaimed for exactly the opposite reason ("a spectator has no hero plate
+ * hanging below the scaler, so the whole strip is dead space and the felt
+ * should take it back"). Latest instruction wins, and this one is absolute.
+ *
+ * If that dead band is ever worth addressing, address it WITHOUT changing the
+ * felt's size — move what is drawn in the band, not the box above it. */
 
 /* ─────────────────────────────────────────────────────────────────────────────
    EMBEDDED IN MULTI-TABLE (Dan 2026-08-23: "+ does not create the action box")
@@ -668,7 +680,32 @@
      which fits the space only while --sp-table-h IS the space. Over-state it
      and `max-height: 100%` clamps the height while the width stays put, and a
      clamped box is a box whose ratio is no longer 605/1000: every seat
-     percentage is then measured against a frame that is not the painted one. */
+     percentage is then measured against a frame that is not the painted one.
+
+     ─── WHY THIS IS `dvh` HERE AND `svh` A FEW LINES BELOW (Dan 2026-08-28) ───
+
+     `dvh` is the DYNAMIC viewport height: on a phone it grows and shrinks as
+     the browser's own URL bar collapses and reappears. That is the right unit
+     for `.table-page`'s `height`, which should always fill whatever the
+     viewport currently is. It is the WRONG unit for this, because this is not a
+     height — it is the number the felt SIZES ITSELF FROM. Left as dvh, a
+     scroll gesture anywhere near the address bar rescales the whole oval, which
+     is the same class of glitch as the ResizeObserver this file already
+     replaced, arriving through a different door.
+
+     `svh` is the SMALL viewport height — the viewport with the browser chrome
+     fully shown. It is a constant for a given device and orientation, so a felt
+     sized from it cannot move when the URL bar does. The cost is the height of
+     that bar: when the chrome is hidden the felt is a little smaller than the
+     space available. That is the correct trade, and it is Dan's rule —
+     the table does not resize, for any reason, ever.
+
+     This declaration stays `dvh` and the `@supports` block below overrides it,
+     rather than writing `svh` here directly: a custom property accepts any
+     token sequence, so on a browser without `svh` the invalid unit would not be
+     caught here — it would poison `--sp-table-h`'s calc() at computed-value
+     time and take the scaler's whole `width` with it. `@supports` asks the
+     question before the answer can do damage. */
   --sp-page-h: 100dvh;
   --sp-table-h: calc(var(--sp-page-h) - var(--sp-table-top) - var(--sp-table-bottom));
 
@@ -755,6 +792,49 @@
 @media (max-width: 480px) {
   .table-page--embedded .table-container {
     --sp-page-h: calc(100dvh - var(--sp-tabbar-h, calc(43px + env(safe-area-inset-top, 0px))));
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   A VIEWPORT UNIT THAT MOVES IS A TABLE THAT MOVES (Dan 2026-08-28)
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Every `--sp-page-h` above is written in `dvh`, and `dvh` is the DYNAMIC
+   viewport height: it grows and shrinks as a phone browser's URL bar collapses
+   and reappears. `.table-page`'s own `height: 100dvh` should track that — it is
+   a box that must fill the screen. But `--sp-page-h` is not a height, it is the
+   felt's SIZE (see --sp-table-h above), so in dvh the oval rescales whenever
+   the browser chrome animates. Same glitch as the ResizeObserver this file
+   already deleted, through a different door.
+
+   `svh` is the SMALL viewport height: the viewport with the browser chrome
+   fully shown. Constant for a given device and orientation. A felt sized from
+   it cannot move when the URL bar does.
+
+   ONE BLOCK, ALL THREE DECLARATIONS, and it must stay that way — the route
+   case, the embedded case and the <=480px embedded case have to agree, or the
+   table is one size in the lobby and another in a tab. The media query is
+   nested inside the @supports so the cascade order is identical to the three
+   rules it overrides.
+
+   `@supports` rather than writing `svh` above: a custom property accepts any
+   token sequence, so a browser that does not know `svh` would store it happily
+   and then fail at computed-value time inside --sp-table-h's calc(), taking the
+   scaler's entire `width` down with it. Asking first means an old browser keeps
+   today's dvh behaviour instead of losing the table. */
+@supports (height: 100svh) {
+  .table-container {
+    --sp-page-h: 100svh;
+  }
+
+  .table-page--embedded .table-container {
+    --sp-page-h: calc(100svh - var(--sp-tabbar-h, calc(49px + env(safe-area-inset-top, 0px))));
+  }
+
+  @media (max-width: 480px) {
+    .table-page--embedded .table-container {
+      --sp-page-h: calc(100svh - var(--sp-tabbar-h, calc(43px + env(safe-area-inset-top, 0px))));
+    }
   }
 }
 
@@ -1755,6 +1835,15 @@
   z-index: 10;
 }
 
+/* Dan 2026-08-28 (equity smart placement): a seat carrying an all-in equity
+   badge rises above the neighbouring wrappers so the badge cannot be sealed
+   under a DOM-later neighbour's avatar (every wrapper is a stacking context
+   — the badge's own z-index: 50 only counts INSIDE its wrapper). 28, so a
+   seat actually tabling its cards (--showing, z 30) still wins. */
+.seat-wrapper--equity:not(.seat-wrapper--showing) {
+  z-index: 28;
+}
+
 /* HERO LIFT — the HOOK survives; the values are retired (Dan 2026-08-25 r2).
 
    Hero is the only seat at y:100 (see SEAT_LAYOUTS in lib/tableSeatGeometry.ts),
@@ -2612,11 +2701,28 @@
   transition: background-color 0.4s ease;
   animation: equityPop calc(0.45s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.3, 1.4);
 }
-/* Dan 2026-08-26 mobile pass, item 13: the badge may never block a revealed
-   hand. Villain cards fan OUTBOARD (tableSeatGeometry.seatCardSide), so the
-   badge docks on the seat's INBOARD side — vertically centred on the seat,
-   fully off the card fan's airspace. The hero seat keeps the below-seat
-   position (its cards render in the corner panel, not at the seat). */
+/* Dan 2026-08-28 (smart placement): "PERCENTAGES SHOULD ALWAYS BE ABOVE THE
+   AVATAR WHEN POSSIBLE, NOT BELOW, AND NOT TO THE RIGHT." Every seat now
+   defaults to `--above`: the badge rides the strip above the seat box, past
+   the action badge's -26..-3px slot so ALL IN and the percentage can both
+   show. The side docks below remain for the TOP-CAP seats only — the BBJ
+   banner owns the space above those — and TablePage.tsx picks WHICH side at
+   render time, swinging away from a neighbouring all-in badge. */
+.equity-overlay--above {
+  bottom: calc(100% + 28px);
+  top: auto;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+@media (max-width: 640px) {
+  .equity-overlay--above {
+    /* Phone action badges are shorter; hug the seat a little closer so the
+       badge stays inside the felt on the shallow top rows. */
+    bottom: calc(100% + 22px);
+  }
+}
+
 .equity-overlay--inboard-right {
   bottom: auto;
   top: 50%;
@@ -3714,11 +3820,26 @@ button.post-bb-overlay-button:hover {
    top of the slider (hiding the handle) and the chat button covered ALL IN.
    They are irrelevant while sizing a raise, so they yield to it.
    ═══════════════════════════════════════════════════════════════════════════ */
-body.ca-raising .table-hud__lower,
-body.ca-raising .tbc-widget,
-body.ca-raising .prev-hand-card-wrapper,
-body.ca-raising .chat-collapsed,
-body.ca-raising .bankroll-widget {
+/* SCOPED TO THE TABLE, NOT THE DOCUMENT (2026-08-28). These were
+   `body.ca-raising …`, and ActionPanel set the class on `document.body`. With
+   four tables mounted that is one flag for four panels: in tile view, opening
+   the slider on one table blanked these four widgets on all four, and either
+   view let a second panel's close (or unmount) strip the class out from under a
+   panel that was still open — putting the timebank pill back on top of the
+   slider handle, which is the defect this rule exists to prevent. The class now
+   goes on the panel's own `.table-page` ancestor. Specificity rises from 0,2,1
+   to 0,3,0, so nothing it used to beat can now beat it.
+
+   `.bankroll-widget` was the fifth selector in this list and it is DELETED
+   (2026-08-28): nothing in src/ renders that class, verified by grep across
+   every .tsx. A selector that matches no element is not free — it is a claim
+   that a widget exists, and the next person to read this rule has to go and
+   find out that it does not. If the bankroll widget is ever built, add it back
+   in the same commit that renders it. */
+.table-page.ca-raising .table-hud__lower,
+.table-page.ca-raising .tbc-widget,
+.table-page.ca-raising .prev-hand-card-wrapper,
+.table-page.ca-raising .chat-collapsed {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease;
@@ -4130,23 +4251,24 @@ body.ca-raising .bankroll-widget {
   }
 }
 
-/* A spectator has no hero plate hanging below the scaler, so the whole
-   --sp-hero-clear strip is dead space and the felt should take it back.
-
-   MUST target .table-container, not .table-page (Dan 2026-08-25). This rule
-   used to sit on the page root and never once fired: .table-container DECLARES
-   --sp-hero-clear on itself, and an element's own declaration always beats an
-   inherited one, so the reserve (34px then, 88px on a phone now) was applied to
-   spectators too and the collapse this rule exists for silently did nothing.
-   It matters more at 88 than it did at 34: a spectator has neither a hero plate
-   nor a time-bank tile, so both of the things that number is sized for are
-   absent. Same shape
-   of bug as the --seat-avatar-size cap SeatSlot.css documents at
-   `.seat-wrapper--top .seat`, and the same fix: declare it on the element that
-   reads it. Specificity 0,2,1 vs .table-container's 0,1,0. */
-.table-page[data-hero='false'] .table-container {
-  --sp-hero-clear: 6px;
-}
+/* ─── THE SECOND HALF OF THE SIT-DOWN JUMP, ALSO DELETED (Dan 2026-08-28) ───
+ *
+ * This rule was `.table-page[data-hero='false'] .table-container {
+ * --sp-hero-clear: 6px }`, added 2026-08-25 to give a spectator back the strip
+ * their absent hero plate does not need. Correct in isolation, and half of a
+ * glitch in combination: with the spectator `--sp-action-reserve` at the top of
+ * this file it took `--sp-table-bottom` from 156px to 28px, so the felt changed
+ * size the moment anybody sat down or stood up.
+ *
+ * Dan, 2026-08-28: "NO, THAT SHOULD NEVER HAPPEN, PREVENT IT AND FIX IT.
+ * THAT'S A GLITCH, NOT CODE."
+ *
+ * `--sp-hero-clear` is now one number per breakpoint for everybody, so
+ * `--sp-table-bottom` is one number, so the felt is one size. Do not
+ * reintroduce a state-dependent value for either — see the long note beside
+ * --sp-action-reserve at the top of this file, and
+ * tests/unit/feltReserveIsStatic.test.ts, which fails if the felt's geometry
+ * gains an input that any state can change. */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    RIT STATUS STRIP (2026-08-26, parity pass)
@@ -4221,4 +4343,19 @@ body.ca-raising .bankroll-widget {
 .add-chips-icon-btn:hover {
   background: transparent !important;
   filter: brightness(1.1);
+}
+
+/* Dan 2026-08-28 (icon backgrounds sweep): two leftovers the 2026-08-26 pass
+   missed. The :active rule at line ~3407 still flashed a white box on every
+   tap of the add-screen button, and the control strip's ::after "glass"
+   gradient repainted a faint tile over buttons whose own background had been
+   stripped — a pseudo-element is untouched by `background: none` on the
+   button itself. */
+.add-chips-icon-btn:active {
+  background: transparent !important;
+  filter: brightness(0.9);
+}
+.control-strip__btn--icon-img::after,
+.control-strip__btn::after {
+  display: none !important;
 }

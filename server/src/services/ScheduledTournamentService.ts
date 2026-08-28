@@ -34,7 +34,7 @@
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
-import { DEFAULT_RAKE_RATE, SNG_RAKE_RATE, buyInFor, wholeChips } from '../config/buyIn.js';
+import { buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { TournamentRecurringService } from './TournamentRecurringService.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -775,23 +775,52 @@ export class ScheduledTournamentService {
       return null;
     }
 
-    // Whole-chip pricing. buyIn is the TOTAL the player pays; 0 stays a
-    // freeroll with 0/0 columns, and a spin's fee lives in its multiplier
-    // distribution rather than the fee column.
-    const buyIn = wholeChips(cfg.buyIn);
-    // Dan 2026-08-25: Heads-Up (the only SNG shape) is a 5% cut, not the 10%
-    // every other tournament pays. Before this, a Heads-Up created from a
-    // SCHEDULE was priced at 10% while the recurring generator priced the
-    // identical game at 5% — two prices for one product.
-    const split =
-      buyIn > 0
-        ? buyInFor(buyIn, isSng ? SNG_RAKE_RATE : DEFAULT_RAKE_RATE)
-        : { total: 0, prize: 0, fee: 0 };
-    const buyInAmount = isSpin ? buyIn : split.prize;
-    const buyInFee = isSpin ? 0 : split.fee;
-
+    /**
+     * THE FIELD SIZE IS RESOLVED FIRST, because the price depends on it.
+     * It used to be computed four lines BELOW the split that needs it, which
+     * is why the rate could only ever be keyed on the format label.
+     */
     const maxPlayers = clampInt(cfg.maxPlayers, 2, 10000, 0) || (isSpin ? 3 : isSng ? 6 : 100);
     const minPlayers = Math.min(Math.max(clampInt(cfg.minPlayers, 2, 10000, 3), 2), maxPlayers);
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  THIS IS THE PATH THAT ACTUALLY CHARGED THE WRONG RAKE
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Whole-chip pricing. buyIn is the TOTAL the player pays; 0 stays a freeroll
+     * with 0/0 columns, and a spin's fee lives in its multiplier distribution
+     * rather than the fee column.
+     *
+     * Until 2026-08-27 this called `buyInFor(buyIn)` — the 10% default — for
+     * every format including a two-seat SNG. Six creation paths computed a
+     * heads-up fee, five of them at 10%, and for four of those it was only a
+     * misquote: `fn_create_tournament` is authoritative, knows the rule, and
+     * rewrote the split before it reached a column.
+     *
+     * THIS ONE DOES NOT GO THROUGH THE RPC. It builds the row and writes
+     * `buy_in_amount` / `buy_in_fee` directly, so any schedule row carrying
+     * `type: 'sng'` with two seats produced a REAL 10% heads-up game — twice the
+     * rake Dan set, charged to real players, on a recurring schedule. Measured
+     * 2026-08-27: 18 heads-up scheduled rows written at 6.67% instead of 5%.
+     *
+     * rakeRateFor is now the single source of truth for which rate a format
+     * pays, and it is keyed on seats rather than on the word "SNG".
+     */
+    const buyIn = wholeChips(cfg.buyIn);
+    const rakeRate = rakeRateFor({
+      tournamentType: isSng ? 'SNG' : isSpin ? 'SPIN' : 'MTT',
+      variant: type,
+      maxPlayers,
+    });
+    const split = buyIn > 0 ? buyInFor(buyIn, rakeRate) : { total: 0, prize: 0, fee: 0 };
+    // rakeRateFor already returns 0 for a Spin, so these two ternaries are now
+    // belt and braces rather than the rule. Kept because the whole buy-in
+    // reaching buy_in_amount (rather than a snapped `split.prize`) is a Spin
+    // invariant the tournaments_spin_no_extra_rake constraint enforces, and it
+    // should not depend on a helper somewhere else staying correct.
+    const buyInAmount = isSpin ? buyIn : split.prize;
+    const buyInFee = isSpin ? 0 : split.fee;
 
     // Bounty head: absolute bountyAmount wins; else the recurring service's
     // percent-of-total convention (default 30), never exceeding the prize half.
@@ -913,7 +942,20 @@ export class ScheduledTournamentService {
       label_as_new: asBool(cfg.labelAsNew),
       hide_club_name: asBool(cfg.hideClubName),
       action_time_seconds: clampInt(cfg.actionTimeSeconds, 5, 60, 15),
-      table_size: clampInt(cfg.tableSize, 2, 10, 9),
+      /**
+       * 2026-08-27: the default was a flat 9, which is right for an MTT and
+       * wrong for every game that fits at ONE table. A two-seat SNG scheduled
+       * here was written claiming nine seats, and TournamentBrainContext then
+       * resolved it to 'mtt' — the horses played a duel with ICM and bubble
+       * ranges. A single-table format defaults to its own field size; an MTT is
+       * unchanged.
+       */
+      table_size: clampInt(
+        cfg.tableSize,
+        2,
+        10,
+        isSng || isSpin ? Math.min(10, Math.max(2, maxPlayers)) : 9
+      ),
       accelerated_mtt: asBool(cfg.acceleratedMtt),
       addon_break_minutes: clampInt(cfg.addonBreakMinutes, 1, 10, 1),
       big_blind_ante: asBool(cfg.bigBlindAnte),
@@ -939,6 +981,9 @@ export class ScheduledTournamentService {
       row.spin_locked_tiers = null;
       row.max_players = 3;
       row.min_players = 3;
+      // Forced with the seat count it forces: a Spin is 3-handed by definition,
+      // so a table_size carried in from cfg cannot be allowed to disagree.
+      row.table_size = 3;
     }
 
     return row;

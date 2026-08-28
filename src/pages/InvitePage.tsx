@@ -2,14 +2,13 @@
  * 📨 INVITE PAGE — Club Invitation
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { ClubsService } from '../services/ClubsService';
 import { useToast } from '../components/common/Toast';
-import { QRCodeSVG } from 'qrcode.react';
 import { masterBus } from '../core/MasterBus';
 import './InvitePage.css';
 import { resolveClubIdFilter } from '../utils/clubIdResolver';
@@ -18,7 +17,6 @@ import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { reportError } from '../utils/errorReporter';
 import { MEDIA_BASE } from '../utils/mediaBase';
-import { SHARK_CLUB_ID } from '../lib/constants';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 const inviteStepAnimationStyle = {
@@ -26,6 +24,29 @@ const inviteStepAnimationStyle = {
   transform: 'translateY(12px)',
   animation: 'animationsFadeInUp 0.6s ease-out forwards',
 };
+
+/**
+ * Inline SVG, never emoji — house rule 5, and emoji break the SWC compiler.
+ * `currentColor` so each one takes the gold or red from the CSS around it
+ * rather than carrying a second copy of the palette.
+ */
+const MembersIcon = () => (
+  <svg className="invite-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M9 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7.5 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM9 14c-3.3 0-6 1.8-6 4v2h12v-2c0-2.2-2.7-4-6-4Zm7.5 0c-.7 0-1.4.1-2 .2 1.2.9 2 2.2 2 3.8v2H22v-2c0-2.2-2.5-4-5.5-4Z" />
+  </svg>
+);
+
+const ShieldCheckIcon = () => (
+  <svg className="invite-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M12 2 4 5v6.2c0 4.9 3.4 9.5 8 10.8 4.6-1.3 8-5.9 8-10.8V5l-8-3Zm-1.2 14L7 12.2l1.4-1.4 2.4 2.4 5-5L17.2 9l-6.4 7Z" />
+  </svg>
+);
+
+const AlertIcon = () => (
+  <svg className="invite-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M12 2.6 1.2 21.4h21.6L12 2.6Zm.9 15.2h-1.8V16h1.8v1.8Zm0-3.4h-1.8V9.6h1.8v4.8Z" />
+  </svg>
+);
 
 interface ClubInfo {
   id: string;
@@ -51,12 +72,31 @@ export default function InvitePage() {
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [alreadyMember, setAlreadyMember] = useState(false);
   const [pendingApproval, setPendingApproval] = useState(false);
-  const [inviteUrl, setInviteUrl] = useState('');
-  const [copied, setCopied] = useState(false);
-  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const toast = useToast();
+
+  /**
+   * Go into the club and leave nothing behind in history.
+   *
+   * Used by all three ways a viewer stops being a prospect: an existing member
+   * landing here at all, a pending request that redeems on load, and a
+   * successful Join. All three used to `navigate()` (a PUSH) from three places
+   * with slightly different arguments; a push leaves the invite page on the
+   * stack, so Back from the club lands here, the member check runs again and
+   * throws them forward — a Back button that does nothing, which is worse than
+   * one that goes somewhere unexpected.
+   *
+   * `setLoading(true)` holds the skeleton up for the frame between the decision
+   * and the route change, so the invite copy never flashes at somebody who is
+   * already in.
+   */
+  const enterClub = useCallback(
+    (slugOrId: string) => {
+      setLoading(true);
+      navigate(`/clubs/${slugOrId}`, { replace: true });
+    },
+    [navigate]
+  );
 
   const loadClubInfo = useCallback(
     async (getIsMounted?: () => boolean) => {
@@ -146,18 +186,35 @@ export default function InvitePage() {
 
             if (redeemed?.status && redeemed.status !== 'pending') {
               setPendingApproval(false);
-              setAlreadyMember(true);
-              setLoading(false);
               toast.success(`Welcome to ${clubData.name}!`);
-              navigate(`/clubs/${clubData.slug || clubData.id}`);
+              enterClub(clubData.slug || clubData.id);
               return;
             }
 
             setPendingApproval(true);
-            setAlreadyMember(false);
+          } else if (membership) {
+            /* ── A MEMBER NEVER SEES THIS PAGE (Dan 2026-08-28, item 4) ──────
+               Verbatim: "IF YOU ARE ALREADY A MEMBER YOU SHOULD NEVER EVER EVER
+               SEE THIS."
+
+               There used to be an `alreadyMember` state that rendered a
+               "You're Already A Member!" panel with an Enter Club button — a
+               dead-end screen whose only purpose was to make the member press
+               one more button to get where they were already entitled to be.
+               Every path INTO this page for a member is an accident: a stale
+               link someone re-sent, their own share link opened on their own
+               phone, a bookmark. So we go straight in.
+
+               `replace: true` is the important half. A push would leave the
+               invite page in history, so Back from the club lands here and
+               redirects forward again — the user is trapped and the Back button
+               looks broken. Replacing means Back goes to wherever they were
+               before the link. */
+            setPendingApproval(false);
+            enterClub(clubData.slug || clubData.id);
+            return;
           } else {
             setPendingApproval(false);
-            setAlreadyMember(!!membership);
           }
         }
       } catch (err) {
@@ -169,7 +226,10 @@ export default function InvitePage() {
       }
       if (!getIsMounted || getIsMounted()) setLoading(false);
     },
-    [clubId, inviteCode, refCode, user?.id, toast, navigate]
+    // `enterClub` was missing here and eslint was warning about it: the member
+    // redirect below calls it, so a stale closure would have navigated with a
+    // stale club. It is a useCallback on [navigate], so adding it costs nothing.
+    [clubId, inviteCode, refCode, user?.id, toast, enterClub]
   );
 
   useVisibilityRefresh(() => loadClubInfo());
@@ -203,41 +263,23 @@ export default function InvitePage() {
     }
   }, [club?.id, refCode]);
 
-  // Generate invite URL and simple QR code when club loads
-  useEffect(() => {
-    if (club?.id) {
-      const baseUrl = `${window.location.origin}/hub/club-arena/invite/${club.slug || club.id}`;
-      if (user?.id) {
-        supabase
-          .from('profiles')
-          .select('player_number')
-          .eq('id', user.id)
-          // .maybeSingle(), never .single(): on zero rows .single() resolves
-          // with a PGRST116 error and null data, so the invite link quietly
-          // fell back to the raw user uuid instead of the player number.
-          .maybeSingle()
-          .then(({ data }) => {
-            const r = data?.player_number || user.id;
-            setInviteUrl(`${baseUrl}?ref=${r}`);
-          });
-      } else {
-        setInviteUrl(refCode ? `${baseUrl}?ref=${refCode}` : baseUrl);
-      }
-    }
-  }, [club?.id, club?.slug, refCode, user?.id]);
+  /* ── THE SHARE PANEL LIVED HERE, AND IT IS GONE ──────────────────────────
+     It rendered only inside the `alreadyMember` branch, and since 2026-08-28 a
+     member is redirected into the club before this page paints — so the panel,
+     the invite-URL effect that fed it (a `profiles` round trip on every load
+     purely to build a `?ref=`), the clipboard handler and the `qrcode.react`
+     import were all unreachable code. Deleted rather than left behind: dead
+     code that still runs a query is worse than dead code.
 
-  const handleCopyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(inviteUrl);
-      setCopied(true);
-      toast.success('Invite link copied!');
-      clearTimeout(copiedTimerRef.current);
-      copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
-    } catch (e) {
-      reportError(e, 'InvitePage.setTimeout');
-      toast.error('Failed to copy link');
-    }
-  };
+     NOTHING WAS LOST, verified before deleting rather than assumed. A member
+     can still get this club's invite link, with a `?ref=` of their own player
+     number, from three places that do not require any role:
+       - the share button in the club lobby header  (ClubHomePage.tsx)
+       - "Share Club" on Club Settings, one tap from the bottom nav
+       - the referral banner on the club Promotions page (ReferralModal)
+     The QR CODE, however, existed only here — it was the sole `QRCodeSVG` in
+     `src/`. Flagged to Dan; it belongs on one of the three surfaces above,
+     not on a page a member is no longer allowed to reach. */
 
   const handleJoin = async () => {
     if (!club) return;
@@ -279,7 +321,7 @@ export default function InvitePage() {
       // by one on every invite-page join — the only join path that did.
 
       toast.success(`Welcome to ${club.name}!`);
-      navigate(`/clubs/${club.slug || club.id}`);
+      enterClub(club.slug || club.id);
     } catch (err: any) {
       reportError(err, 'InvitePage.Failed_to_join');
       toast.error(err.message || 'Failed to join club');
@@ -301,115 +343,125 @@ export default function InvitePage() {
   if (error || !club) {
     return (
       <div className="invite-page">
-        <div className="error-state">
-          <span className="error-icon"></span>
-          <h2>Oops!</h2>
-          <p>{error || 'Invalid invitation'}</p>
-          <button className="btn btn-primary" onClick={() => navigate('/clubs-list')}>
-            Browse Clubs
-          </button>
+        <div className="invite-frame">
+          <div className="invite-card error-state" style={inviteStepAnimationStyle}>
+            {/* No club to name, so the plaque says what the page IS. The logo
+                slot keeps the card's proportions rather than leaving the frame
+                top-heavy with a bare heading. */}
+            <div className="club-avatar">
+              <span aria-hidden="true">?</span>
+            </div>
+
+            <div className="invite-plaque">Club Invite</div>
+
+            <hr className="invite-divider" />
+
+            <div className="invite-alert">
+              <AlertIcon />
+            </div>
+
+            <h2>
+              This Invite
+              <br />
+              Did Not Work
+            </h2>
+            <p>{error || 'That invitation link is invalid or has expired.'}</p>
+            <button
+              className="invite-btn invite-btn--primary"
+              onClick={() => navigate('/clubs-list')}
+            >
+              Browse Clubs
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
+  const logo = club.logo_url || club.avatar_url;
+  const memberCount = club.member_count.toLocaleString('en-US');
+
   return (
     <div className="invite-page">
-      <div className="invite-card" style={inviteStepAnimationStyle}>
-        <div className="club-avatar">
-          {club.logo_url || club.avatar_url ? (
-            <img
-              src={sizedStorageUrl(club.logo_url || club.avatar_url || '', 96)}
-              alt={club.name}
-              loading="lazy"
-            />
-          ) : club.name?.toUpperCase().includes('SHARK') ? (
-            <img src={`${MEDIA_BASE}images/shark-club-logo.jpg`} alt={club.name} loading="lazy" />
+      {/* `.invite-frame` IS the brushed-steel bezel and its padding is the
+          bezel's thickness; `.invite-card` is the black glass inside it. Two
+          elements because one box cannot be both, and the frame's two
+          pseudo-elements are the blue neon down the long edges. */}
+      <div className="invite-frame">
+        <div className="invite-card" style={inviteStepAnimationStyle}>
+          <div className="club-avatar">
+            {logo ? (
+              <img src={sizedStorageUrl(logo, 208)} alt="" loading="lazy" />
+            ) : club.name?.toUpperCase().includes('SHARK') ? (
+              <img src={`${MEDIA_BASE}images/shark-club-logo.jpg`} alt="" loading="lazy" />
+            ) : (
+              <span aria-hidden="true">{club.name[0]?.toUpperCase()}</span>
+            )}
+          </div>
+
+          <h1 className="club-name">{club.name}</h1>
+
+          {club.description && <p className="club-description">{club.description}</p>}
+
+          {/* A gold-bordered chip, as in Dan's reference. Singular/plural
+              because "1 members" on a new club is the kind of detail that makes
+              a product look unfinished. */}
+          <p className="club-stats">
+            <MembersIcon />
+            <span className="stat-value">{memberCount}</span>
+            <span>{club.member_count === 1 ? 'Member' : 'Members'}</span>
+          </p>
+
+          <hr className="invite-divider" />
+
+          {/* The club's own name is picked out in gold inside the sentence,
+              rather than repeated in the same silver as the words around it.
+
+              "You Are", not "You've": `check-title-case` capitalises the first
+              letter of EVERY word and an apostrophe starts a new one, so
+              "You've" comes out of the fixer as "You&apos;Ve". That artifact is
+              visible in Dan's own mockup ("Club'S Tables"). Writing round the
+              contraction satisfies the rule and reads properly, instead of
+              satisfying the rule and looking broken. */}
+          <p className="invite-message">
+            You Are Invited To Join <span className="invite-club">{club.name}</span>
+          </p>
+          <p className="invite-sub">
+            {pendingApproval
+              ? 'Your request is with the club owner.'
+              : 'Join to play at this club’s tables, tournaments and promotions.'}
+          </p>
+
+          {pendingApproval ? (
+            <>
+              <div className="invite-pending">
+                <div className="invite-pending-head">
+                  <ShieldCheckIcon />
+                  Request Submitted
+                </div>
+                {/* No contraction here either - see the note on the headline. */}
+                <p>
+                  This Club Requires Owner Approval. Access Is Granted Once Your Request Is
+                  Reviewed.
+                </p>
+              </div>
+              <button
+                className="invite-btn invite-btn--secondary"
+                onClick={() => navigate('/clubs-list')}
+              >
+                Browse Other Clubs
+              </button>
+            </>
           ) : (
-            <span>{club.name[0]?.toUpperCase()}</span>
+            <button
+              className="invite-btn invite-btn--primary"
+              onClick={handleJoin}
+              disabled={joining}
+            >
+              {joining ? 'Joining…' : 'Join Club'}
+            </button>
           )}
         </div>
-
-        <h1 className="club-name">{club.name}</h1>
-
-        {club.description && <p className="club-description">{club.description}</p>}
-
-        <div className="club-stats">
-          <div className="stat">
-            <span className="stat-value">{club.member_count}</span>
-            <span className="stat-label">Members</span>
-          </div>
-        </div>
-
-        <p className="invite-message">
-          YOU'VE BEEN INVITED...
-          <br />
-          TO JOIN THIS POKER CLUB
-        </p>
-
-        {pendingApproval ? (
-          <div className="already-member">
-            <span>Request Submitted - Pending Approval.</span>
-            <p style={{ color: '#aaa', fontSize: '0.85rem', margin: '8px 0 12px' }}>
-              This Club Requires Owner Approval. You'll Gain Access Once Your Request Is Reviewed.
-            </p>
-            <button className="btn btn-primary" onClick={() => navigate('/clubs-list')}>
-              Browse Clubs
-            </button>
-          </div>
-        ) : alreadyMember ? (
-          <>
-            <div className="already-member">
-              <span>You're Already A Member!</span>
-              <button
-                className="btn btn-primary"
-                onClick={() => navigate(`/clubs/${club.slug || club.id}`)}
-              >
-                Enter Club
-              </button>
-            </div>
-
-            {/* Shareable Invite Section */}
-            <div className="share-invite-panel">
-              <h3 className="share-invite-title">Share Invite</h3>
-              <QRCodeSVG
-                value={inviteUrl || window.location.href}
-                size={120}
-                bgColor="#0a0a14"
-                fgColor="#00d4ff"
-                level="M"
-                includeMargin={false}
-                style={{
-                  display: 'block',
-                  margin: '0 auto 12px',
-                  borderRadius: 8,
-                  cursor: 'pointer',
-                  border: '1px solid rgba(0, 212, 255, 0.3)',
-                  boxShadow: '0 0 15px rgba(0, 212, 255, 0.15)',
-                }}
-                title="Click to copy invite link"
-                onClick={handleCopyLink}
-              />
-              <div className="share-link-row">
-                <input
-                  readOnly
-                  value={inviteUrl || window.location.href}
-                  className="share-link-input"
-                />
-                <button
-                  onClick={handleCopyLink}
-                  className={`share-copy-btn ${copied ? 'copied' : ''}`}
-                >
-                  {copied ? 'Copied!' : 'Copy'}
-                </button>
-              </div>
-            </div>
-          </>
-        ) : (
-          <button className="btn btn-primary join-btn" onClick={handleJoin} disabled={joining}>
-            {joining ? 'Joining...' : 'Join Club'}
-          </button>
-        )}
       </div>
       {clubId && <ClubBottomNav clubId={clubId} />}
     </div>

@@ -944,9 +944,20 @@ export const SeatSlot = memo(
       // Only animate for a player who was already sitting here.
       if (diff !== 0 && sameOccupant) {
         setStackDelta(diff);
-        // 2026-08-27: scaled + 100ms cushion so the float's fade completes
-        // at every Animation Speed before the element is removed.
-        const t = setTimeout(() => setStackDelta(0), 2000 * getAnimationSpeed() + 100);
+        /* 2026-08-28: scaled, because the keyframe is. `stackDeltaFloat` became
+           `calc(2s * var(--animation-speed, 1))` in SeatSlot.css and this window
+           stayed at a flat 2000ms, so the two disagreed the moment a player
+           changed animation speed — and --animation-speed is a DURATION
+           multiplier that runs up to 3 (see utils/animationSpeed.ts), so on the
+           "slow" setting the float ran six seconds while React unmounted the
+           node after two. The +/- indicator simply vanished a third of the way
+           through its own animation, on the setting chosen by the players most
+           likely to want to read it.
+
+           Same +50ms cushion as the all-in shake below: an exact tie races the
+           final frame at speed 1. Overshooting is harmless — the keyframe ends
+           at opacity 0 with `forwards`, so the extra moments are invisible. */
+        const t = setTimeout(() => setStackDelta(0), 2000 * getAnimationSpeed() + 50);
         return () => clearTimeout(t);
       }
       // A new occupant must not inherit the last one's floating delta.
@@ -1007,11 +1018,7 @@ export const SeatSlot = memo(
       if (isWinner && !prevIsWinnerRef.current) {
         setWinnerPop(true);
         if (winnerTimerRef.current) clearTimeout(winnerTimerRef.current);
-        // 2026-08-27: scaled with the keyframe (+50ms cushion off the tie).
-        winnerTimerRef.current = setTimeout(
-          () => setWinnerPop(false),
-          600 * getAnimationSpeed() + 50
-        );
+        winnerTimerRef.current = setTimeout(() => setWinnerPop(false), 600);
       } else if (!isWinner) {
         // Win cleared — reset so the next win at this seat replays the bounce.
         setWinnerPop(false);
@@ -1410,8 +1417,7 @@ export const SeatSlot = memo(
         const percentChange = Math.abs(player.stack - prev) / prev;
         if (percentChange > 0.2) {
           setStackGlow(true);
-          // 2026-08-27: scaled with the keyframe (+50ms cushion off the tie).
-          const timer = setTimeout(() => setStackGlow(false), 600 * getAnimationSpeed() + 50);
+          const timer = setTimeout(() => setStackGlow(false), 600);
           return () => clearTimeout(timer);
         }
       }

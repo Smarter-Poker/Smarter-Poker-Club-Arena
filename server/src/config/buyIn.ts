@@ -28,16 +28,55 @@
 export const DEFAULT_RAKE_RATE = 0.1;
 
 /**
- * Heads-Up / SNG rake (Dan 2026-08-25): "HEADS UP EVENTS ARE ONLY A 5% RAKE,
- * SO A 1 CHIP BUY IN X 2 PLAYERS = 5% OF 2 CHIPS ... WINNER TAKES ALL = 1.90".
- * ONE home for the number: TournamentRecurringService re-exports it and
- * ScheduledTournamentService prices sng-type schedules with it, so a
- * scheduled Heads-Up and a recurring one can never disagree on the cut.
- * fn_create_tournament applies the same 5% for owner-created SNGs
- * (migration 20260827_tournament_rake_attribution_and_creation_caps).
- * MIRROR of src/utils/buyIn.ts — change one, change both.
+ * Dan 2026-08-25: "HEADS UP EVENTS ARE ONLY A 5% RAKE, SO A 1 CHIP BUY IN X 2
+ * PLAYERS = 5% OF 2 CHIPS, SO WINNER TAKES ALL = 1.90 PAYOUT."
  */
-export const SNG_RAKE_RATE = 0.05;
+export const HEADS_UP_RAKE_RATE = 0.05;
+
+/**
+ * A Spin charges the buy-in and NOTHING else — its rake is engineered into the
+ * multiplier distribution (server/src/config/spinSpec.ts) and `buy_in_fee` must
+ * be 0. The tournaments_spin_no_extra_rake constraint refuses a fee-bearing Spin.
+ */
+export const SPIN_RAKE_RATE = 0;
+
+/** Mirror of RakeSubject in src/utils/buyIn.ts. */
+export interface RakeSubject {
+  /** tournaments.tournament_type — 'MTT' | 'SNG' | 'SPIN'. Any case. */
+  tournamentType?: string | null;
+  /** tournaments.variant, or a creation form's format string. Any case. */
+  variant?: string | null;
+  /** Seats in the game. tournaments.max_players, or a form's field size. */
+  maxPlayers?: number | null;
+}
+
+/**
+ * THE SINGLE SOURCE OF TRUTH FOR WHICH RATE A FORMAT PAYS. Full reasoning in
+ * src/utils/buyIn.ts; the short version is that `SNG_RAKE_RATE` used to live in
+ * TournamentRecurringService with one consumer while five other creation paths
+ * quoted 10% on a two-seat game — and ScheduledTournamentService, which writes
+ * the money columns directly rather than through fn_create_tournament, CHARGED
+ * it.
+ *
+ * Keyed on SEATS, not on the word "SNG": a two-handed game is a duel whatever
+ * its label says, and the label is the thing that varies between writers.
+ *
+ * MIRROR of src/utils/buyIn.ts — change one, change both.
+ * tests/unit/tournamentRakeMirror.test.ts pins them together.
+ */
+export function rakeRateFor(subject: RakeSubject): number {
+  const type = String(subject?.tournamentType ?? '').toUpperCase();
+  const variant = String(subject?.variant ?? '').toLowerCase();
+  if (type === 'SPIN' || variant === 'spin') return SPIN_RAKE_RATE;
+
+  const seats = Number(subject?.maxPlayers);
+  // `> 0` matters: 0 means "unlimited field" to some callers, and 0 is not a
+  // heads-up game. An unknown seat count falls through to the DEFAULT rate,
+  // never to the cheaper one.
+  if (Number.isFinite(seats) && seats > 0 && seats <= 2) return HEADS_UP_RAKE_RATE;
+
+  return DEFAULT_RAKE_RATE;
+}
 
 /**
  * Generator price points. The fee is whole at every rung (splitBuyIn rounds

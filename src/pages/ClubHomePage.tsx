@@ -1174,6 +1174,46 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           return;
         }
 
+        // ── HOP TO THE SIBLING (Dan 2026-08-28: "THIS TABLE IS NO LONGER
+        // OPEN" dead ends) ────────────────────────────────────────────────
+        // The fleet recycles these games continuously: when one completes,
+        // its REPLACEMENT is a brand-new tournament id under the same name
+        // and buy-in, and the tile the player tapped still holds the old id.
+        // The header comment above always promised the hop to an open
+        // sibling; this is it. Identity is name + buy-in + variant, which is
+        // exactly what the tile showed the player, so the game they land in
+        // is the game they chose — just the running edition of it.
+        const { data: sibs, error: sibErr } = await supabase
+          .from('tournaments')
+          .select('id')
+          .eq('status', 'REGISTERING')
+          .eq('variant', variant === 'sng' ? 'sng' : 'spin')
+          .eq('name', t.name)
+          .eq('buy_in_amount', t.buy_in_amount)
+          .neq('id', t.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (sibErr) {
+          reportError?.(sibErr, 'ClubHomePage.spinQuickJoin_sibling_lookup');
+        }
+        const sibId = (sibs || [])[0]?.id as string | undefined;
+        if (sibId && !spinJoinCancelRef.current) {
+          const { data: sibTbls } = await supabase
+            .from('tables')
+            .select('id, created_at')
+            .eq('tournament_id', sibId)
+            .neq('status', 'closed')
+            .order('created_at', { ascending: false })
+            .limit(1);
+          if (spinJoinCancelRef.current) return;
+          const sibTableId = (sibTbls || [])[0]?.id as string | undefined;
+          if (sibTableId) {
+            setSpinJoin(null);
+            navigate(`/table/${sibTableId}`);
+            return;
+          }
+        }
+
         // Still nothing open: this game has finished or is being rebuilt. Say
         // so plainly instead of sending the player at a table that is not there.
         return fail(
@@ -1986,7 +2026,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands'
         );
       // ONE rule, applied. Union clubs see the UNION's tables plus their OWN
       // private games; another club's private game is never visible.

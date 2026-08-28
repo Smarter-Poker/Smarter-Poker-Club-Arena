@@ -84,7 +84,21 @@ const DEFAULT_SETTINGS: TableUserSettings = {
 import { STORAGE_KEYS } from '../lib/storage';
 const STORAGE_KEY = STORAGE_KEYS.TABLE_SETTINGS;
 const CSS_VAR_ANIMATION_SPEED = '--animation-speed';
-const DOM_ATTR_THEME = 'data-theme';
+/**
+ * Dan 2026-08-28 (settings must apply live): `data-theme` was owned by TWO
+ * unrelated systems at once — this hook wrote the table COLOR theme
+ * ('black'/'green'/'blue'/...) into it, while the Theme Studio's Interface
+ * toggle, Shell.tsx, useSettingsStore and MasterBus all write 'light'/'dark'
+ * into the same attribute. Whichever wrote last won, so picking Light mode
+ * held only until this hook's effect re-ran (every table mount) and stamped
+ * it back to a color name — the "doesn't stick until reload" symptom.
+ *
+ * The color theme now rides its own attribute. design-tokens.css matches
+ * BOTH `[data-theme=…]` and `[data-color-theme=…]` for every palette, so no
+ * skin changes; `data-theme` itself now belongs exclusively to the
+ * light/dark interface mode.
+ */
+const DOM_ATTR_THEME = 'data-color-theme';
 
 export function useTableSettings() {
   // Load from localStorage on mount

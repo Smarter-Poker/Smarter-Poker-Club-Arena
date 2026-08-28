@@ -128,6 +128,9 @@ export interface TableModalsLayerProps {
     animationSpeed: number;
     fourColorDeck: boolean;
     confirmAllIn: boolean;
+    /* Dan 2026-08-28: read back into the settings panel instead of the old
+       hardcoded `true` that snapped the toggle ON every render. */
+    showBetSizePresets: boolean;
     theme: string;
   };
   isSoundEnabled: boolean;
@@ -182,6 +185,8 @@ export interface TableModalsLayerProps {
   onInsuranceAccept: (amount?: number) => void;
   onInsuranceDecline: () => void;
   onInsuranceDeclineForHand: () => void;
+  /** EV CASHOUT 2026-08-28: lock pot x equity now instead of insuring. */
+  onInsuranceEvCashout?: (amount?: number) => void;
 
   // Hand Reveal (show/muck)
   showHandRevealModal: boolean;
@@ -479,6 +484,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     onInsuranceAccept,
     onInsuranceDecline,
     onInsuranceDeclineForHand,
+    onInsuranceEvCashout,
     // Hand Reveal
     showHandRevealModal,
     handRevealWinnerId,
@@ -903,6 +909,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           onAccept={onInsuranceAccept}
           onDecline={onInsuranceDecline}
           onDeclineForHand={onInsuranceDeclineForHand}
+          onEvCashout={onInsuranceEvCashout}
           offer={insuranceOffer}
           timeRemaining={15}
         />
@@ -1182,20 +1189,32 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           soundVolume: userSettings.soundVolume,
           hapticEnabled: userSettings.isHapticEnabled,
           showPotOdds: userSettings.showPotOdds,
+          /* Dan 2026-08-28 (settings must read back live): `--animation-speed`
+             is a DURATION MULTIPLIER — bigger is slower. The writer in
+             TablePage maps slow -> 1.5 and fast -> 0.5 (fixed 2026-08-26),
+             but this read-back was still the OLD inverted mapping, so picking
+             "Slow" made the select snap to "Fast" while the table genuinely
+             slowed down. Derived to match the writer exactly. */
           animationSpeed:
-            userSettings.animationSpeed === 0.5
+            userSettings.animationSpeed >= 1.5
               ? 'slow'
-              : userSettings.animationSpeed === 1.5 || userSettings.animationSpeed === 2
+              : userSettings.animationSpeed <= 0.5
                 ? 'fast'
                 : 'normal',
           fourColorDeck: userSettings.fourColorDeck,
           showStackInBB: v8Settings.show_stack_in_bb,
-          showBetSizePresets: true,
+          /* Was hardcoded `true`, so the toggle snapped back ON on every
+             render even though the table honoured the stored value. */
+          showBetSizePresets: userSettings.showBetSizePresets,
           confirmAllIn: userSettings.confirmAllIn,
           sitOutNextHand,
           tableTheme: userSettings.theme,
         }}
         onSettingsChange={onSettingsChange}
+        /* Dan 2026-08-28: the panel's avatar row rendered a generated
+           placeholder forever — this prop was simply never passed, so the
+           row could not update when the player changed their avatar. */
+        currentAvatarUrl={heroAvatarUrl}
         userId={userId}
         userDiamonds={localDiamonds}
         ownedCardBacks={ownedCardBacks}

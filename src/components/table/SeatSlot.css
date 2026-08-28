@@ -1087,6 +1087,38 @@
   border-color: rgba(255, 215, 0, 0.25);
 }
 
+/* ── HERO ACTION BADGE + BET CHIPS SWAP (Dan 2026-08-28) ──────────────────
+   "THE HERO'S ACTION DISPLAY 'ALL IN' NEEDS TO BE DIRECTLY ABOVE HIS HEAD.
+   AND THE CHIPS 200 SHOULD BE IN THE LOCATION WHERE THE 'ALL IN' IS
+   CURRENTLY LOCATED."
+
+   Before this, the hero read top-down as: action badge (top: -26px), bet
+   chips (geometry offset toward the pot), avatar — badge farthest away,
+   chips in between. Dan wants the two swapped: the badge hugs the hero's
+   head and the chip stack takes the badge's old airspace, farther out
+   toward the pot.
+
+   Hero only. Villains keep the shared geometry — their badges already sit
+   directly over their heads because a villain pod has no tall card row
+   between badge and avatar. */
+.seat--hero .seat__action {
+  /* Just clear of the avatar's crown. -26px was the old slot; -8px puts the
+     badge's bottom edge a breath above the head. */
+  top: -8px;
+}
+
+.seat--hero .seat__bet-chips {
+  /* Lift the chip stack ~30px past its geometry rest point — into the band
+     the action badge vacated (its old -26..-3px slot above the seat). The
+     geometry offset still carries the toward-the-pot direction; this only
+     adds the extra climb, so every hand size and breakpoint keeps its
+     existing lateral placement. */
+  transform: translate(
+    calc(-50% + var(--bet-offset-x, 0px)),
+    calc(-50% + var(--bet-offset-y, 0px) - 30px)
+  );
+}
+
 /* Dan 2026-08-15, verbatim: "HERO SHOULD NEVER BE FADED UNTIL THEY FOLD, EVEN
    WHEN ACTION ISN'T ON THEM. They should never be faded while they have a
    live hand." seat--in-hand is present exactly while status is active/all_in
@@ -1544,22 +1576,44 @@
   z-index: 14;
 }
 
-/* THE TOP ROW REVEALS DOWNWARD.
-   A top-cap seat sits under the Bad Beat Jackpot banner with no felt above
-   it, so a reveal anchored beside/above the avatar is drawn straight into
-   the banner — which is exactly the screenshot. These seats drop their
-   revealed hand BELOW the nameplate instead, onto the felt, where there is
-   nothing to collide with. Centred on the pod rather than mirrored, because
-   a centred row under a top seat cannot reach either neighbour.
+/* THE TOP ROW REVEALS UPWARD, LIKE EVERY OTHER SEAT.
+   Dan 2026-08-28, verbatim: "THE SHOW DOWN CARDS MUST ALWAYS BE ON TOP OF THE
+   AVATAR, NEVER BELOW, THE TOP VILLAINS CARDS ARE COVERING THE POT."
+
+   THIS RULE USED TO DO THE OPPOSITE. It read `top: auto; bottom: calc(-1 *
+   var(--vh-card-h) - 6px)`, which dropped a top-cap seat's tabled hand a full
+   card height BELOW its own nameplate, onto the felt. The felt directly under
+   the top seats is where the pot lives (`.pot-display`, top 38%), and
+   `.seat-wrapper--showing` is z-index 30 against the pot's 20, so the hand
+   painted straight over the pot total. That is the screenshot.
+
+   THE REASON IT WAS WRITTEN IS NO LONGER TRUE, which is worth stating so it is
+   not re-introduced. It was added to stop a top-cap reveal being drawn into the
+   Bad Beat Jackpot banner above it. Measure the reveal as it actually is now: a
+   top-cap seat's avatar token is 56px, so a revealed card is
+   max(17px, 56 * 0.346 * 1.6) = 31px tall, and the cluster's bottom edge is
+   pinned 1px above the plate at 56 - 6 - 1 = 49px down the seat. The row's top
+   edge therefore lands 18px BELOW the seat's own top edge — it does not reach
+   the top of the seat, let alone the banner above it. The collision it was
+   guarding against cannot happen at this size; the collision it CAUSED happens
+   every showdown.
+
+   So the vertical anchor is the base one (`top` + translateY(-100%)), which is
+   what makes the hand grow up over the avatar. Only the horizontal centring is
+   kept from the old rule: a centred row under a top seat cannot reach either
+   neighbour, and these seats have no outboard direction worth hugging.
 
    Scoped to `.seat-wrapper--top .seat` (0-3-0 with the class pair below) so
-   it beats the generic left/right anchors without touching any other seat. */
+   it beats the generic left/right anchors without touching any other seat.
+   The transform must restate translateY(-100%) — it is a single property, and
+   a bare translateX here would silently drop the bottom-edge anchoring and put
+   the row back over the plate. */
 .seat-wrapper--top .seat .seat__cards--opponent.seat__cards--revealed {
-  top: auto;
-  bottom: calc(-1 * var(--vh-card-h) - 6px);
+  top: calc(var(--seat-avatar-size, 84px) - var(--sp-wrap-overlap, 6px) - 1px);
+  bottom: auto;
   left: 50%;
   right: auto;
-  transform: translateX(-50%);
+  transform: translate(-50%, -100%);
 }
 
 /* The reveal GROWS instead of snapping: the size/position deltas between the
@@ -1605,11 +1659,16 @@
    felt. It now keeps the same centred anchor and only lifts the z-index so the
    shown hand paints above neighbouring seats.
 
-   The revealed row's own anchor is owned by the showdown rule further down
-   this file (search `bottom: calc(100% - 10px)`), which already centres it on
-   the seat and lifts it over the avatar. Nothing to declare here - two rules
-   of equal specificity fighting over the same anchor is what produced the
-   crooked showdown row in the first place. */
+   The revealed row's own anchor is owned by the reveal rule further UP this
+   file — search `.seat-wrapper--top .seat .seat__cards--opponent` — which
+   centres it on the seat and grows it upward over the avatar. Nothing to
+   declare here: two rules of equal specificity fighting over the same anchor
+   is what produced the crooked showdown row in the first place.
+
+   (This pointer said `search bottom: calc(100% - 10px)` until 2026-08-28. No
+   such declaration existed anywhere in the repo — the anchor had moved twice
+   since the note was written, and a reader following it found nothing and
+   reasonably concluded the row was unowned.) */
 
 /* Hero cards — PokerBros signature: cards sit to the RIGHT of the avatar,
  * 2026-04-17 Dan rewrite: landscape-racetrack layout puts hero at bottom
@@ -3425,15 +3484,11 @@
        50%: percentages here resolve against the seat's height, which is the
        one measurement CSS can read without anyone writing the plate's height
        down a second time;
-     - `.table-container` reserves exactly `--sp-action-reserve +
-       --sp-hero-clear` under the scaler. --sp-action-reserve is the height the
-       action bar is entitled to at this breakpoint (TablePage.css) — a declared
-       constant, so the strip left between the scaler and the top of the bar is
-       always the remaining --sp-hero-clear, in every state of every hand. It
-       was a live ResizeObserver measurement of the bar until 2026-08-27, which
-       is the same sentence with "always" quietly deleted: the reserve moved
-       whenever the bar did, and the whole felt rescaled with it twice a hand.
-       Reading --sp-hero-clear is
+     - `.table-container` reserves exactly `--sp-action-h + --sp-hero-clear`
+       under the scaler. --sp-action-h is the action bar's OWN measured height,
+       republished by a ResizeObserver every time the raise slider opens or
+       closes, so the strip left between the scaler and the top of the bar is
+       always the remaining --sp-hero-clear. Reading --sp-hero-clear is
        therefore how you read "the top of the action bar" from in here: hard-
        coding a pixel gap instead would be correct only while the bar happened
        to be collapsed, which is the exact bug that put the hero's stack behind
@@ -3662,8 +3717,11 @@
    on screen, so a row anchored inside it cannot leave the screen either -
    while its innermost card still lies squarely on the avatar, which is the
    PokerBros read. Card stacking keeps the outboard card on top, matching the
-   reference close-ups. The top-cap override further down (0-4-0) still wins
-   for the seats under the banner, whose reveal drops below the plate. */
+   reference close-ups. The top-cap override (0-3-0, further UP this file)
+   still wins for the seats under the banner: their row is centred on the pod
+   rather than hugging an outboard edge. Since 2026-08-28 it grows UPWARD over
+   the avatar like every other seat — it used to drop below the plate and onto
+   the pot, which is what Dan reported. */
 .seat--cards-right .seat__cards--opponent.seat__cards--revealed {
   left: auto;
   right: calc(50% - var(--seat-avatar-size, 84px) / 2);
@@ -3711,7 +3769,7 @@
   right: auto;
 }
 
-/* The top-cap seats' revealed row is CENTRED under the pod (see the reveal
+/* The top-cap seats' revealed row is CENTRED on the pod (see the reveal
    rule further up) rather than anchored to the avatar's outboard edge, so it
    would run out of its own container if it were mirrored. Kept as its own
    rule because it must also beat the `.seat--cards-*` pair for a hero-side

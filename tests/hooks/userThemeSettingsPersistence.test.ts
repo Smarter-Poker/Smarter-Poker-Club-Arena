@@ -125,6 +125,24 @@ describe('pickThemeRow', () => {
   it('an ALL row is used verbatim when ALL is what was asked for', () => {
     expect(pickThemeRow([ALL, RAW_PLO], 'ALL')).toBe(ALL);
   });
+
+  // Dan 2026-08-28: an Apply-To-ALL save must not silently lose to an older
+  // per-variant row on the next rejoin — last write wins.
+  it('a NEWER ALL row beats an older bucket row', () => {
+    const oldPLO = { game_type: 'PLO', table_id: 'dark-felt', updated_at: '2026-08-01T00:00:00Z' };
+    const newALL = { game_type: 'ALL', table_id: 'ice_cavern', updated_at: '2026-08-28T00:00:00Z' };
+    expect(pickThemeRow([oldPLO, newALL], 'PLO')).toBe(newALL);
+  });
+
+  it('a NEWER bucket row still beats an older ALL row', () => {
+    const newPLO = { game_type: 'PLO', table_id: 'dark-felt', updated_at: '2026-08-28T00:00:00Z' };
+    const oldALL = { game_type: 'ALL', table_id: 'ice_cavern', updated_at: '2026-08-01T00:00:00Z' };
+    expect(pickThemeRow([newPLO, oldALL], 'PLO')).toBe(newPLO);
+  });
+
+  it('without timestamps the bucket row keeps its historical precedence', () => {
+    expect(pickThemeRow([ALL, EXACT_PLO], 'PLO')).toBe(EXACT_PLO);
+  });
 });
 
 // ─── SABOTAGE: prove each guard actually fires ───────────────────────────────

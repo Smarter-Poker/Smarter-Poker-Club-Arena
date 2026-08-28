@@ -1102,6 +1102,18 @@ export class HandController {
         // possible betting with cards still to come. Every live hand must be
         // exposed at showdown — no muck option. completeHandInner reads this.
         this.allInShowdownLocked = true;
+        // INSURANCE POT FIX 2026-08-28 (Dan's recording, hand #3158299): the
+        // pot emitted here fed insurance pricing while still holding the
+        // UNCALLED portion of the final bet. A shove over a micro all-in was
+        // therefore "insured" against the shover's own returned chips: the
+        // dialog priced a 62-chip contested pot as 317.61 (fee 75.62,
+        // "For Winning: 241.99" — an amount the hand could never pay).
+        // Betting is over the moment this branch is taken, so the textbook
+        // refund is determinable NOW. returnUncalledBet() also decrements the
+        // bettor's totalInvested, which fixes the offer's atRisk (Break Even
+        // preset) in the same stroke. Idempotent: completeHand/RIT call it
+        // again later and get 0.
+        this.returnUncalledBet();
         this.emit({
           type: 'ALL_IN_RUNOUT',
           board: [...this.state.communityCards],
@@ -2233,6 +2245,18 @@ export class HandController {
   /** TRIPLE-BOARD 2026-08-27: how many boards this hand actually deals (1-3). */
   public getActiveBoardCount(): number {
     return this.activeBoardCount;
+  }
+
+  /**
+   * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is being
+   * played under. Identical to the table's variant on every normal hand; on a
+   * variant-override bomb pot it is the bomb variant, and every consumer that
+   * asks "what game is this hand" — betting structure, legal-action clamps,
+   * horse evaluation, hand history — must read it from here rather than from
+   * the table row. See ServerTableEngineBase.activeHandVariant().
+   */
+  public getGameVariant(): string {
+    return this.config.gameVariant;
   }
 
   private getActivePlayers(): SeatPlayer[] {

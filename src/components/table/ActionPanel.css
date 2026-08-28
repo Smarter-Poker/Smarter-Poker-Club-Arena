@@ -109,18 +109,24 @@
    overlay, and collapsing the button row underneath it, are both invisible to
    the measurement.
 
-   That is a fact about the current markup, not a guarantee. `body.ca-raising`
-   is set by ActionPanel for exactly as long as the sizing overlay is open, so
-   pin the height to the same figure the floor already resolves to for exactly
-   that long. It changes nothing that renders today, and it means a future
-   change that puts a row back in flow — or adds one — still cannot resize the
-   table mid-drag. It can only fail loudly, in the panel, where whoever made
-   the change will see it.
+   That is a fact about the current markup, not a guarantee. `ca-raising` is set
+   by ActionPanel for exactly as long as the sizing overlay is open, so pin the
+   height to the same figure the floor already resolves to for exactly that
+   long. It changes nothing that renders today, and it means a future change
+   that puts a row back in flow — or adds one — still cannot resize the table
+   mid-drag. It can only fail loudly, in the panel, where whoever made the
+   change will see it.
 
    `height`, not `max-height`: the point is that it can move neither way.
    Border-box everywhere (globals.css), so this is the identical computation to
-   the floor and the env() inset is inside it, not on top of it. */
-body.ca-raising .table-page .action-panel-wrapper {
+   the floor and the env() inset is inside it, not on top of it.
+
+   2026-08-28: the selector was `body.ca-raising .table-page …` and the class was
+   on `document.body`, so with four tables mounted one panel's flag pinned every
+   table's wrapper and one panel's close released them all. ActionPanel writes it
+   on its own `.table-page` ancestor now. 0,3,0 still beats the 0,2,0 floor rule
+   above, which is the comparison that has to hold. */
+.table-page.ca-raising .action-panel-wrapper {
   height: calc(var(--sp-bottom-row-h, 96px) + env(safe-area-inset-bottom, 0px));
 }
 
@@ -1197,9 +1203,14 @@ body.ca-raising .table-page .action-panel-wrapper {
 }
 
 /* PokerBros premium slider — 2026-04-14 polish.
- * Track: 14px chunky rail with inner-shadow depth + dark-base + gold fill.
- * Thumb: 48px metallic gold disc with rim, 3D shadow stack, subtle glow halo.
- * Active state: thumb pulses with stronger glow so the player feels their drag. */
+ * Track: 14px chunky rail with inner-shadow depth + dark-base + SILVER fill.
+ * Thumb: 48px blue disc with white rim, 3D shadow stack, subtle glow halo.
+ * Active state: thumb pulses with stronger glow so the player feels their drag.
+ *
+ * Dan 2026-08-28: "THE BET SLIDER SHOULD BE SILVER AND NOT YELLOW." The fill
+ * used to read var(--color-raise), which design-tokens.css sets to amber
+ * (#f59e0b) — that token also paints the RAISE button, so it stays amber and
+ * the slider hardcodes brushed silver instead of borrowing it. */
 .raise-slider {
   width: 100%;
   height: 14px;
@@ -1209,9 +1220,9 @@ body.ca-raising .table-page .action-panel-wrapper {
   appearance: none;
   background: linear-gradient(
     90deg,
-    #9ecbff 0%,
-    var(--color-raise, #2f80ed) calc(var(--slider-progress, 50%) - 12%),
-    var(--color-raise-dark, #1b5fc4) var(--slider-progress, 50%),
+    #f2f4f7 0%,
+    #c3c9d1 calc(var(--slider-progress, 50%) - 12%),
+    #868e99 var(--slider-progress, 50%),
     rgba(0, 0, 0, 0.45) var(--slider-progress, 50%),
     rgba(0, 0, 0, 0.55) 100%
   );
@@ -1243,7 +1254,7 @@ body.ca-raising .table-page .action-panel-wrapper {
     0 6px 16px rgba(0, 0, 0, 0.6),
     0 2px 4px rgba(0, 0, 0, 0.5),
     0 0 0 2px rgba(255, 255, 255, 0.18),
-    0 0 22px var(--color-raise-glow, rgba(47, 128, 237, 0.55)),
+    0 0 22px rgba(47, 128, 237, 0.55),
     inset 0 2px 3px rgba(255, 255, 255, 0.4),
     inset 0 -3px 6px rgba(10, 40, 90, 0.45);
   transition:
@@ -1261,15 +1272,15 @@ body.ca-raising .table-page .action-panel-wrapper {
   box-shadow:
     0 4px 12px rgba(0, 0, 0, 0.5),
     0 0 0 3px rgba(255, 255, 255, 0.25),
-    0 0 24px var(--color-raise-glow, rgba(47, 128, 237, 0.6));
+    0 0 24px rgba(47, 128, 237, 0.6);
 }
 
 .raise-slider:active::-webkit-slider-thumb {
   transform: scale(1.1);
   box-shadow:
     0 2px 6px rgba(0, 0, 0, 0.6),
-    0 0 0 4px var(--color-raise-glow, rgba(47, 128, 237, 0.5)),
-    0 0 32px var(--color-raise-glow, rgba(47, 128, 237, 0.5));
+    0 0 0 4px rgba(47, 128, 237, 0.5),
+    0 0 32px rgba(47, 128, 237, 0.5);
 }
 
 .raise-slider::-moz-range-thumb {
@@ -1287,7 +1298,7 @@ body.ca-raising .table-page .action-panel-wrapper {
   border: 2px solid #ffffff;
   box-shadow:
     0 6px 16px rgba(0, 0, 0, 0.6),
-    0 0 22px var(--color-raise-glow, rgba(47, 128, 237, 0.55)),
+    0 0 22px rgba(47, 128, 237, 0.55),
     inset 0 2px 3px rgba(255, 255, 255, 0.4),
     inset 0 -3px 6px rgba(10, 40, 90, 0.45);
 }
@@ -1303,12 +1314,8 @@ body.ca-raising .table-page .action-panel-wrapper {
 .raise-slider::-moz-range-progress {
   height: 14px;
   border-radius: 8px;
-  background: linear-gradient(
-    90deg,
-    #9ecbff 0%,
-    var(--color-raise, #2f80ed) 60%,
-    var(--color-raise-dark, #1b5fc4) 100%
-  );
+  /* Silver, matching the webkit fill above (Dan 2026-08-28). */
+  background: linear-gradient(90deg, #f2f4f7 0%, #c3c9d1 60%, #868e99 100%);
 }
 
 .raise-slider::-moz-range-thumb:hover {
@@ -1320,8 +1327,11 @@ body.ca-raising .table-page .action-panel-wrapper {
   display: flex;
   gap: 6px;
   margin-bottom: 12px;
-  /* Dan 2026-08-23 (item 9) added 2.5X, so the widest row is now SEVEN
-     buttons: 2X 2.5X 3X 4X 5X POT ALL IN (no-limit, facing a bet postflop).
+  /* Dan 2026-08-28 (mobile pass item 1) took the row from seven buttons to
+     SIX: 2.5X 3X 3.5X 4X POT ALL IN (no-limit, facing a bet). It was
+     2X 2.5X 3X 4X 5X POT ALL IN, and at seven across a 375px phone ALL IN was
+     clipped at the right edge — which is the screenshot he sent.
+
      Wrapping would push a second row up into the table felt, so the row must
      SHRINK instead - see min-width on the button below, without which a flex
      item refuses to go under its own text width and the row overflows the
@@ -1332,7 +1342,7 @@ body.ca-raising .table-page .action-panel-wrapper {
 .raise-preset {
   /* `flex: 1` leaves min-width at its `auto` default, which pins each button
      to its label width - that is the overflow. Basis 0 + min-width 0 lets all
-     seven share the row evenly. */
+     six share the row evenly. */
   flex: 1 1 0;
   min-width: 0;
   padding: 0 2px;
@@ -1573,17 +1583,21 @@ body.ca-raising .table-page .action-panel-wrapper {
     gap: 4px;
   }
 
-  /* Seven buttons across a 390px phone: (390 - 24 padding - 24 gaps) / 7 is
-     about 49px each, and "ALL IN" at 0.6875rem needs roughly 41px of that.
-     Dropping a step keeps a comfortable margin instead of a hairline one. */
-  /* AUDIT 2026-08-25 — the HEIGHT is back to 44px.
+  /* SIX buttons across a 390px phone since 2026-08-28: (390 - 24 padding - 20
+     gaps) / 6 is about 57px each, against 49px when the row was seven. "ALL IN"
+     is the longest label and needs roughly 41px at 0.6875rem, so the label size
+     goes back UP a step — the drop to 0.625rem existed only to make seven fit,
+     and dropping a button is a better way to buy the room than shrinking the
+     text a player is reading on a 15-second clock.
+
+     AUDIT 2026-08-25 — the HEIGHT is 44px and stays there.
      It had been dropped to 40px in the same edit that made the labels smaller,
-     but the constraint the comment above describes is entirely HORIZONTAL:
-     seven buttons have to share the width. Height was never what made them fit,
-     and 40px puts a control the player presses inside a 15-second shot clock
-     under the 44px minimum touch target. The four pixels come out of the
-     overlay, which is `position: fixed` and simply grows upward over the felt —
-     nothing below it moves and the published --sp-bottom-row-h is untouched.
+     but the constraint above is entirely HORIZONTAL: the buttons share the
+     WIDTH. Height was never what made them fit, and 40px puts a control the
+     player presses inside a shot clock under the 44px minimum touch target. The
+     four pixels come out of the overlay, which is `position: fixed` and simply
+     grows upward over the felt — nothing below it moves and the published
+     --sp-bottom-row-h is untouched.
 
      The hit area cannot be grown with a pseudo-element here: `.raise-preset`
      is `overflow: hidden` (it clips the ::after sheen to the rounded corner),
@@ -1593,7 +1607,7 @@ body.ca-raising .table-page .action-panel-wrapper {
      different bet. */
   .raise-preset {
     height: 44px;
-    font-size: 0.625rem;
+    font-size: 0.6875rem;
     letter-spacing: 0.3px;
   }
 

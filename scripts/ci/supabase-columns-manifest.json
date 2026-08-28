@@ -90,7 +90,9 @@
       "weight",
       "created_by",
       "created_at",
-      "updated_at"
+      "updated_at",
+      "experiment_key",
+      "image_url"
     ],
     "ad_event": [
       "id",
@@ -100,6 +102,11 @@
       "event_type",
       "club_id",
       "created_at"
+    ],
+    "ad_event_retention_policy": [
+      "id",
+      "event_retention_days",
+      "updated_at"
     ],
     "ad_placement": [
       "id",
@@ -5475,6 +5482,20 @@
       "idx_scan",
       "index_bytes"
     ],
+    "insurance_offer_events": [
+      "id",
+      "table_id",
+      "club_id",
+      "hand_number",
+      "player_id",
+      "event",
+      "equity_percent",
+      "premium",
+      "insured_amount",
+      "pot",
+      "street",
+      "created_at"
+    ],
     "insurance_transactions": [
       "id",
       "table_id",
@@ -5490,7 +5511,8 @@
       "net_result",
       "bank_type",
       "bank_entity_id",
-      "created_at"
+      "created_at",
+      "kind"
     ],
     "jarvis_conversations": [
       "id",
@@ -9173,7 +9195,9 @@
       "bomb_pot_interval_seconds",
       "bomb_pot_min_players",
       "bomb_pot_ante_fixed",
-      "first_button_seat"
+      "first_button_seat",
+      "bomb_pot_variant",
+      "bomb_pot_next_due_at"
     ],
     "theme_asset_unlocks": [
       "user_id",
@@ -9523,6 +9547,12 @@
       "status",
       "award_id",
       "created_at"
+    ],
+    "tournament_conservation_baseline": [
+      "tournament_id",
+      "amount",
+      "reason",
+      "recorded_at"
     ],
     "tournament_deal_votes": [
       "tournament_id",
@@ -11351,6 +11381,28 @@
       "home_win_prob",
       "home_edge"
     ],
+    "v_insurance_activity": [
+      "club_id",
+      "day",
+      "offers",
+      "accepted",
+      "declined",
+      "timeouts",
+      "cashouts",
+      "avg_offer_equity",
+      "avg_offer_pot"
+    ],
+    "v_insurance_pnl": [
+      "club_id",
+      "union_id",
+      "kind",
+      "day",
+      "contracts",
+      "paid_out",
+      "bank_in",
+      "bank_out",
+      "bank_net"
+    ],
     "v_model_health": [
       "latest_as_of",
       "hours_stale",
@@ -12023,6 +12075,11 @@
       "first_seen_at",
       "last_seen_at",
       "resolved"
+    ],
+    "ad_event_retention_policy": [
+      "id",
+      "event_retention_days",
+      "updated_at"
     ]
   }
 }

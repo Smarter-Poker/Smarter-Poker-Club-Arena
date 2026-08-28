@@ -405,3 +405,67 @@ describe('an operator can see WHY a surface is quiet', () => {
     expect(ADMIN).toMatch(/sup && sup\.cappedUsers24h > 0/);
   });
 });
+
+describe('a click is attention, not a result', () => {
+  /* Everything measured before today answered "did anyone look at it", which
+     was the point and was worth building. It cannot answer the question an
+     operator acts on: did the advert work. vip_upsell having clicks says
+     nothing about whether anybody subscribed, and the panel showed the same
+     two numbers for a campaign converting a third of its clicks and one
+     converting none. */
+  const CONV = read('supabase/migrations/20260828060000_did_the_advert_actually_work.sql');
+
+  it('asks whether the same player did the thing, inside a window', () => {
+    expect(CONV).toMatch(/create or replace function public\.fn_ad_conversions/);
+    expect(CONV).toMatch(/p_window_hours integer default 24/);
+    expect(CONV).toMatch(/v\.created_at >= k\.created_at/);
+  });
+
+  it('names itself after what it measures, not what it would like to prove', () => {
+    /* Correlation inside a window is not causation: a player who was going to
+       subscribe anyway is counted. So the column is clicks_followed_by, and
+       nothing in the file calls it "caused". */
+    expect(CONV).toMatch(/clicks_followed_by/);
+    /* Strip the SQL comments before the negative assertion. The header
+       explains the naming by quoting the phrase it refuses to use, so a search
+       over the whole file finds the explanation and fails on it — the same
+       trap this suite hit once already on the World Hub side. */
+    const sql = CONV.replace(/^\s*--.*$/gm, '');
+    expect(sql).not.toMatch(/conversions caused by/i);
+    expect(ADMIN).toMatch(/Followed Through/);
+    expect(ADMIN).toMatch(/Correlation, not proof of cause/);
+  });
+
+  it('counts a purchase only when it completed', () => {
+    // An abandoned checkout is not a purchase, and a started one is not either.
+    expect(CONV).toMatch(/d\.completed_at IS NOT NULL/);
+  });
+
+  it('returns NULL, never 0, for a campaign with no defined outcome', () => {
+    /* bbj_running promotes reading a jackpot page, which is not a database
+       event. A confident 0 would read as "converts nobody" when the truth is
+       "success is undefined here". Inventing a metric to avoid an empty cell
+       is how a reporting system starts lying. */
+    expect(CONV).toMatch(/ELSE NULL END AS clicks_followed_by/);
+    expect(CONV).toMatch(/bbj_running reported a conversion count/);
+    expect(ADMIN).toMatch(/No Outcome Defined/);
+  });
+
+  it('asserts its own denominator', () => {
+    // If the click count drifts from ad_event, the panel divides by a number
+    // that is not the clicks.
+    expect(CONV).toMatch(/fn_ad_conversions counted % clicks; ad_event holds %/);
+  });
+
+  it('is staff-only, like every other aggregate over ad_event', () => {
+    expect(CONV).toMatch(
+      /revoke all on function public\.fn_ad_conversions\(integer\) from public, anon, authenticated/
+    );
+    expect(CONV).toMatch(/it joins ad_event to purchase history/);
+  });
+
+  it('does not do arithmetic on nothing', () => {
+    // A conversion line under a placement with no clicks says nothing.
+    expect(ADMIN).toMatch(/conv && conv\.clicks > 0/);
+  });
+});

@@ -106,6 +106,12 @@ export function deriveBlindClock(
     const startedMs = Date.parse(levelStartedAt);
     if (!isFinite(startedMs)) return none;
     const elapsedMin = (nowMs - startedMs) / 60_000;
+    // STALE-CLOCK GUARD (2026-08-28 polish sweep): if the level has been
+    // "about to end" for three whole level-lengths, the writer stopped
+    // advancing current_level (a paused event, or a stalled manager). A
+    // clock that reads zero forever would keep the M-zones on a permanently
+    // shrunken M — unknown is the honest answer.
+    if (elapsedMin > durMin * 3) return none;
     const left = Math.max(0, durMin - elapsedMin);
     return {
       nextBlindInMin: Math.round(left * 10) / 10,

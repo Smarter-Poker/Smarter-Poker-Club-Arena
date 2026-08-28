@@ -264,6 +264,9 @@ class SoundService {
         this.masterGain.connect(this.ctx.destination);
       }
     } catch (e: unknown) {
+      // SOUND AUDIT 2026-08-27: surfaced to telemetry — this used to be the
+      // only diagnostic in the whole engine, and it reached nobody.
+      reportError(e, 'SoundService.init');
       console.warn('[SoundService] Web Audio API not supported');
     }
     // ANIMATION/SOUND AUDIT 2026-08-19: mobile autoplay unlock. This context

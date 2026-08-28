@@ -944,7 +944,9 @@ export const SeatSlot = memo(
       // Only animate for a player who was already sitting here.
       if (diff !== 0 && sameOccupant) {
         setStackDelta(diff);
-        const t = setTimeout(() => setStackDelta(0), 2000);
+        // 2026-08-27: scaled + 100ms cushion so the float's fade completes
+        // at every Animation Speed before the element is removed.
+        const t = setTimeout(() => setStackDelta(0), 2000 * getAnimationSpeed() + 100);
         return () => clearTimeout(t);
       }
       // A new occupant must not inherit the last one's floating delta.
@@ -1005,7 +1007,11 @@ export const SeatSlot = memo(
       if (isWinner && !prevIsWinnerRef.current) {
         setWinnerPop(true);
         if (winnerTimerRef.current) clearTimeout(winnerTimerRef.current);
-        winnerTimerRef.current = setTimeout(() => setWinnerPop(false), 600);
+        // 2026-08-27: scaled with the keyframe (+50ms cushion off the tie).
+        winnerTimerRef.current = setTimeout(
+          () => setWinnerPop(false),
+          600 * getAnimationSpeed() + 50
+        );
       } else if (!isWinner) {
         // Win cleared — reset so the next win at this seat replays the bounce.
         setWinnerPop(false);
@@ -1404,7 +1410,8 @@ export const SeatSlot = memo(
         const percentChange = Math.abs(player.stack - prev) / prev;
         if (percentChange > 0.2) {
           setStackGlow(true);
-          const timer = setTimeout(() => setStackGlow(false), 600);
+          // 2026-08-27: scaled with the keyframe (+50ms cushion off the tie).
+          const timer = setTimeout(() => setStackGlow(false), 600 * getAnimationSpeed() + 50);
           return () => clearTimeout(timer);
         }
       }

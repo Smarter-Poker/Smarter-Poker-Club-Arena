@@ -1995,6 +1995,23 @@ export default function TablePage({
   // Deal Animation State — triggers card dealing visual at start of new hand
   const [dealAnimationKey, setDealAnimationKey] = useState(0);
   /**
+   * THE BUTTON BEAT (Dan 2026-08-27): "...PAUSE 1 SECOND, MOVE THE BUTTON
+   * ANIMATION... START DEALING NEXT HAND." The dealer puck's new seat arrives
+   * WITH the HAND_STARTED state, and until today the deal animation started in
+   * the same frame — the puck glided underneath the flying cards instead of
+   * being its own beat. This timer holds the deal (and its shuffle/deal
+   * sounds) for BUTTON_MOVE_MS x speed so the sequence reads: pot pushed →
+   * one-second rest (engine hold, POST_PUSH_PAUSE_MS) → button glides to its
+   * seat → cards fly.
+   */
+  const dealStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (dealStartTimerRef.current) clearTimeout(dealStartTimerRef.current);
+    },
+    []
+  );
+  /**
    * Dan 2026-08-23: "before any single hand is started there MUST BE a deal
    * animation, where all players (small blind first) get dealt cards from the
    * center of the table. Only after all cards are dealt out does the action
@@ -10452,37 +10469,51 @@ export default function TablePage({
         setWinnerParticle((prev) => ({ ...prev, active: false }));
         setIsAllInMode(false);
         setAllInEquities([]);
-        // Trigger deal animation (legacy DealAnimation already wired to
-        // dealAnimationKey; bump it so the cards fly from the dealer).
-        setDealAnimationKey((k) => k + 1);
+        // Hold the action panel from this instant — the button beat below is
+        // part of the deal, and a player must not act into it.
         beginDealHold();
-        // Bible V8 §10.1: per-seat card slide-in animation
-        setIsSeatDealing(true);
-        // CA-19: track so unmount can cancel — prevents setIsSeatDealing on dead page
-        if (seatDealTimerRef.current) clearTimeout(seatDealTimerRef.current);
-        seatDealTimerRef.current = setTimeout(
+        // THE BUTTON BEAT (Dan 2026-08-27, see dealStartTimerRef): the puck's
+        // CSS glide to its new seat (0.6s x speed) plays FIRST, alone. Only
+        // then do the cards fly. The snapshot that carries the new dealerSeat
+        // landed in this same frame, so the glide is already running.
+        if (dealStartTimerRef.current) clearTimeout(dealStartTimerRef.current);
+        const heardHere = ambientSoundsAllowed;
+        dealStartTimerRef.current = setTimeout(
           () => {
-            seatDealTimerRef.current = null;
-            setIsSeatDealing(false);
+            dealStartTimerRef.current = null;
+            // Trigger deal animation (legacy DealAnimation already wired to
+            // dealAnimationKey; bump it so the cards fly from the dealer).
+            setDealAnimationKey((k) => k + 1);
+            // Bible V8 §10.1: per-seat card slide-in animation
+            setIsSeatDealing(true);
+            // CA-19: track so unmount can cancel — prevents setIsSeatDealing on dead page
+            if (seatDealTimerRef.current) clearTimeout(seatDealTimerRef.current);
+            seatDealTimerRef.current = setTimeout(
+              () => {
+                seatDealTimerRef.current = null;
+                setIsSeatDealing(false);
+              },
+              // IMPROVEMENT PASS 2026-08-19: scales with --animation-speed like
+              // the cardDealIn keyframe it gates.
+              700 * getAnimationSpeed()
+            );
+            // Bible V8 §5.3: new hand indicator + card dealing sound
+            // #175 gated for multi-table: only play on the active tab
+            if (soundService.isEnabled() && heardHere) {
+              // COMPETITOR-PARITY 2026-08-19: shuffle riffle before the deal —
+              // every major room marks the fresh hand with a shuffle.
+              soundService.playShuffle();
+              setTimeout(() => soundService.playNewHand(), 260);
+              // DealAnimation owns the per-card deal sounds (staggered with its
+              // visuals). Only when the card-slide animation is disabled does the
+              // page play a single deal slide as the audio fallback.
+              /* The single-deal audio fallback for `card_slide: false` is gone with
+                 the branch that could disable the animation: DealAnimation always
+                 runs now and owns the per-card deal sounds. */
+            }
           },
-          // IMPROVEMENT PASS 2026-08-19: scales with --animation-speed like
-          // the cardDealIn keyframe it gates.
-          700 * getAnimationSpeed()
+          Math.round(HAND_COMPLETION.BUTTON_MOVE_MS * getAnimationSpeed())
         );
-        // Bible V8 §5.3: new hand indicator + card dealing sound
-        // #175 gated for multi-table: only play on the active tab
-        if (soundService.isEnabled() && ambientSoundsAllowed) {
-          // COMPETITOR-PARITY 2026-08-19: shuffle riffle before the deal —
-          // every major room marks the fresh hand with a shuffle.
-          soundService.playShuffle();
-          setTimeout(() => soundService.playNewHand(), 260);
-          // DealAnimation owns the per-card deal sounds (staggered with its
-          // visuals). Only when the card-slide animation is disabled does the
-          // page play a single deal slide as the audio fallback.
-          /* The single-deal audio fallback for `card_slide: false` is gone with
-             the branch that could disable the animation: DealAnimation always
-             runs now and owns the per-card deal sounds. */
-        }
         break;
       }
       case 'BOMB_POT_TRIGGERED': {
@@ -14273,8 +14304,15 @@ export default function TablePage({
           // MID-FLIGHT. Extract the epoch-millis token regardless of format.
           const m = a.id.match(/(\d{13,})/);
           const ts = m ? parseInt(m[1], 10) : 0;
-          // Unparseable id → keep (never destroy an animation we can't date).
-          return ts === 0 || ts > cutoff;
+          if (ts === 0) {
+            // Unparseable id → never destroy an animation we can't date, but
+            // 2026-08-27: START its clock now instead of keeping it forever.
+            // A future id format without an epoch token would otherwise be
+            // immortal and the array would grow for the session.
+            chipAnimStartedAtRef.current.set(a.id, Date.now());
+            return true;
+          }
+          return ts > cutoff;
         });
         if (fresh.length === prev.length) return prev;
         // Stop the map growing for the life of the session.

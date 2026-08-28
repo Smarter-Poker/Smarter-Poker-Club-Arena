@@ -328,6 +328,8 @@ export interface TableSettings {
   bomb_pot_interval_seconds?: number | null;
   bomb_pot_min_players?: number;
   bomb_pot_ante_fixed?: number | null;
+  /** VARIANT OVERRIDE (spec §10.1): bomb hand variant; NULL = same as table. */
+  bomb_pot_variant?: 'nlh' | 'plo4' | 'plo5' | 'plo6' | null;
   double_board: boolean;
 
   // Table Rules

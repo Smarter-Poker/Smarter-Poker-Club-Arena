@@ -37,6 +37,7 @@ import { ThrowEvent } from '../../services/ThrowableService';
 import type { ThrowPhysics } from '../../services/ThrowableService';
 import { throwableSoundService } from '../../services/ThrowableSoundService';
 import { throwableVoice } from '../../services/ThrowableVoice';
+import { reportError } from '../../utils/errorReporter';
 import { ThrowableImage } from './ThrowableImage';
 import './ThrowAnimation.css';
 // Per-item signature FX -- MUST load after ThrowAnimation.css so its
@@ -302,6 +303,23 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
   // table's seat. Scope every lookup to THIS throw's own table via the root.
   const rootRef = useRef<HTMLDivElement | null>(null);
 
+  // ANIMATION LAW TELEMETRY 2026-08-28: a throw with no resolvable target
+  // position renders NOTHING — the item was paid for and broadcast, and the
+  // failure used to be invisible. One report per event.
+  useEffect(() => {
+    if (!toPos) {
+      try {
+        reportError(
+          new Error(`ThrowAnimation: no position for target seat ${event.toSeat}`),
+          'AnimationLaw.throw_target_unresolved'
+        );
+      } catch {
+        /* telemetry must never break the table */
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event.id]);
+
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
     const at = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
@@ -390,6 +408,8 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
   if (!fromPos || !toPos || phase === 'done') {
     return null;
   }
+  // (An unresolvable TARGET seat renders nothing — reported from the effect
+  // below so a paid throw can never vanish silently again.)
 
   const colorVars = {
     '--c1': t.color,

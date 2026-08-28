@@ -236,13 +236,18 @@ export function randomTable(rnd: () => number): FuzzConfig {
     config.straddles = [{ seat: straddleSeat, amount: cents(bb * 2) }];
   }
   if (rnd() < 0.08) {
+    // Round 2 (2026-08-20): multi-board bomb pots ride the standing
+    // chip-conservation corpus, not just their own test file. TRIPLE-BOARD
+    // 2026-08-28: the mix is now one third each of 1, 2 and 3 boards, and a
+    // quarter of bomb hands use the FIXED-ante mode instead of the BB
+    // multiple. HandController downgrades itself when the deck cannot cover
+    // the requested boards.
+    const boardCount = ([1, 2, 3] as const)[Math.floor(rnd() * 3)];
     config.bombPot = {
       anteMultiplier: [1, 2, 5][Math.floor(rnd() * 3)],
-      // Round 2 (2026-08-20): half the fuzzed bomb pots run the double-board
-      // variant so the split-pot settlement and lockstep dealing sit inside
-      // the standing chip-conservation corpus, not just their own test file.
-      // HandController downgrades itself when the deck cannot cover it.
-      doubleBoard: rnd() < 0.5,
+      boardCount,
+      doubleBoard: boardCount >= 2,
+      anteFixed: rnd() < 0.25 ? cents(bb * (1 + rnd() * 4)) : undefined,
     };
   }
   if (rnd() < 0.12) {

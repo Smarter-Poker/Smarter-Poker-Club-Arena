@@ -1507,7 +1507,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // Pot-limit max raise SIZE = pot + toCall (the pot after you call).
     // Raise TO = currentBet + (pot + toCall). The old formula had an extra toCall
     // which allowed raises ~toCall higher than legal pot-limit max.
-    const variant = this.tableInfo?.game_variant;
+    // VARIANT OVERRIDE 2026-08-28: the LIVE hand's variant — the pot-limit
+    // clamp must bind on a PLO bomb hand even at an NLH table.
+    const variant = this.activeHandVariant();
     const structure = bettingStructureFor(variant);
     let betSize: number | undefined;
     if (structure === 'pot_limit') {
@@ -1838,6 +1840,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         // Malmuth-Harville pressure model in HorseLogic.icmRisk.
         stacks: tctx.stacks,
         payoutPct: tctx.payoutPct,
+        // V23 ENDGAME: final-table flag + the blind clock (jam BEFORE the
+        // blinds halve the M, not after).
+        finalTable: tctx.finalTable,
+        nextBlindInMin: tctx.nextBlindInMin,
+        nextBlindMult: tctx.nextBlindMult,
       },
     };
   }
@@ -1875,7 +1882,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       currentBet: state.currentBet,
       minRaise: state.minRaise,
       stage: state.stage,
-      gameVariant: (this.tableInfo?.game_variant || 'nlh') as string,
+      // VARIANT OVERRIDE 2026-08-28: horses evaluate the hand they were DEALT
+      // — PLO equity on a PLO bomb hand, whatever the table's label says.
+      gameVariant: (this.activeHandVariant() || 'nlh') as string,
       bigBlind: this.tableInfo?.big_blind || 2,
       // AUDIT V2: position + action context for the V2 decision engine
       dealerSeat: fullState?.dealerSeat ?? this.currentHandDealerSeat,

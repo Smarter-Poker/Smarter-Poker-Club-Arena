@@ -103,6 +103,10 @@ export interface PreflopCtx {
   /** V21 DEEP-STACK DISCIPLINE: scale cash 4-bet/5-bet stack-off thresholds
    *  with depth past 120bb. Undefined/false = legacy behavior. */
   deepDiscipline?: boolean;
+  /** V23 BLIND CLOCK: minutes until the next blind level (undefined = unknown). */
+  nextBlindInMin?: number;
+  /** V23 BLIND CLOCK: next level's bb over the current bb (1/undefined = flat). */
+  nextBlindMult?: number;
   /** V18 STRADDLE: the pot is straddled (2xBB posted blind, no
    *  ActionRecord). The unopened test and open sizing key off the straddle
    *  instead of the big blind. */
@@ -276,7 +280,20 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   const players20 = ctx.tableSize ?? Math.max(2, ctx.oppsLeft + 1);
   const orbitBB20 = 1.5 + Math.max(0, ctx.anteBB ?? 0) * players20;
   const mzOn = isTourney && ctx.anteBB !== undefined;
-  const effM = mzOn ? (stackBB / orbitBB20) * Math.min(1, players20 / 10) : Infinity;
+  let effM = mzOn ? (stackBB / orbitBB20) * Math.min(1, players20 / 10) : Infinity;
+  // ═══ V23 BLIND CLOCK (2026-08-28) ═══ the M that matters is the one the
+  // NEXT level gives you. Within three minutes of a level that raises the
+  // blinds, play the shrunken M now — the fold that "waits for a better
+  // spot" is choosing to jam a 40% shorter stack two hands later.
+  if (
+    mzOn &&
+    effM !== Infinity &&
+    typeof ctx.nextBlindInMin === 'number' &&
+    ctx.nextBlindInMin <= 3 &&
+    (ctx.nextBlindMult ?? 1) > 1.15
+  ) {
+    effM = effM / (ctx.nextBlindMult ?? 1);
+  }
   const v20Wired = ctx.anteBB !== undefined; // layer on (cash or tournament)
 
   // ── Short stacks: push/fold and reshove stacks ──

@@ -378,18 +378,22 @@ describe('the bottom reserve cannot move under a player mid-drag', () => {
    * "--sp-action-h is MEASURED from this panel's real height", so collapsing
    * the row would shrink the reserve and resize the table under the thumb.
    *
-   * It is not measured from the panel. `actionPanelRef` — and the name is what
-   * made it look that way — is attached to `.action-panel-wrapper`, and
-   * `.action-panel` is `position: fixed`, so it is out of that wrapper's flow
-   * and contributes nothing to its height whatever it contains. These three
-   * assertions are that argument, in the order it has to hold.
+   * It was not measured from the panel — the ref was on `.action-panel-wrapper`
+   * and the panel is `position: fixed`, out of that wrapper's flow.
+   *
+   * 2026-08-27: nothing is measured at all now. The wrapper's height was still
+   * reaching the felt by a different door — it collapses to 1px whenever the
+   * hero has no action, which rescaled the whole table twice a hand (Dan: "the
+   * screen is moving in and out constantly"). The reserve is a declared
+   * constant, so the guarantee this section is about no longer rests on an
+   * argument about which element a ref happens to be attached to.
    */
-  it('measures the WRAPPER, not the panel', () => {
-    expect(TABLE_TSX).toContain('className="action-panel-wrapper" ref={actionPanelRef}');
-    expect(TABLE_TSX).toContain("root.style.setProperty('--sp-action-h'");
+  it('takes no measurement of the bottom chrome at all', () => {
+    expect(TABLE_TSX).not.toContain('actionPanelRef');
+    expect(TABLE_TSX).not.toContain("setProperty('--sp-action-h'");
   });
 
-  it('keeps the panel out of the measured wrapper flow', () => {
+  it('keeps the panel out of the wrapper flow', () => {
     expect(rule(ACTION_CSS, '.action-panel')).toMatch(/position:\s*fixed/);
   });
 
@@ -397,14 +401,18 @@ describe('the bottom reserve cannot move under a player mid-drag', () => {
     // Belt and braces: this makes the no-reflow guarantee structural rather
     // than a fact about today's markup. `height`, not `max-height` — the point
     // is that it can move neither way.
-    const pinned = rule(ACTION_CSS, 'body.ca-raising .table-page .action-panel-wrapper');
+    // 2026-08-28: was `body.ca-raising .table-page .action-panel-wrapper`. The
+    // flag is per-TABLE now, not per-document — see the scoping test below.
+    const pinned = rule(ACTION_CSS, '.table-page.ca-raising .action-panel-wrapper');
     expect(pinned).toMatch(/height:\s*calc\(\s*var\(--sp-bottom-row-h/);
     expect(pinned).toMatch(/env\(safe-area-inset-bottom/);
     expect(pinned).not.toMatch(/max-height/);
   });
 
   it('arms that pin for exactly the life of the overlay', () => {
-    // A pin nothing sets is a comment. The body class is what turns it on.
+    // A pin nothing sets is a comment. The class is what turns it on. Mounted
+    // with no `.table-page` above it, the panel falls back to <body> — which is
+    // what keeps this component testable in isolation.
     atWidth(PHONE);
     render(<ActionPanel {...base} onAction={vi.fn()} />);
     expect(document.body.classList.contains('ca-raising')).toBe(false);
@@ -412,6 +420,32 @@ describe('the bottom reserve cannot move under a player mid-drag', () => {
     expect(document.body.classList.contains('ca-raising')).toBe(true);
     fireEvent.click(screen.getByLabelText('Back'));
     expect(document.body.classList.contains('ca-raising')).toBe(false);
+  });
+
+  it('flags THIS table, not the document, when a table root is above it', () => {
+    /* Dan multi-tables. MultiTablePage keeps up to four TablePages mounted, and
+       until 2026-08-28 this flag went on `document.body`: in tile view one
+       panel's slider blanked the timebank pill, previous-hand card and chat
+       button on all four tables, and one panel closing stripped the class from
+       under a panel that was still open — putting those widgets straight back
+       over the slider handle, which is the exact defect the flag prevents.
+
+       So: the class must land on the panel's OWN `.table-page` ancestor, and
+       <body> must stay clean. */
+    atWidth(PHONE);
+    const host = document.createElement('div');
+    host.className = 'table-page';
+    document.body.appendChild(host);
+    try {
+      render(<ActionPanel {...base} onAction={vi.fn()} />, { container: host });
+      openPanel();
+      expect(host.classList.contains('ca-raising')).toBe(true);
+      expect(document.body.classList.contains('ca-raising')).toBe(false);
+      fireEvent.click(screen.getByLabelText('Back'));
+      expect(host.classList.contains('ca-raising')).toBe(false);
+    } finally {
+      host.remove();
+    }
   });
 });
 

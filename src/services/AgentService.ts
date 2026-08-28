@@ -678,11 +678,20 @@ class AgentServiceClass {
     const assignedBy = currentUser?.userId || 'system';
     await supabase
       .from('audit_trail')
+      // The columns are actor_id / target_type / target_id / after_state, and
+      // actor_role and target_type are NOT NULL with no default. This insert
+      // named three columns that do not exist and omitted two that are
+      // required, so the agent audit trail has never recorded a single
+      // assignment: every write was rejected into the catch below.
       .insert({
         action: 'ASSIGN_PLAYER_TO_AGENT',
-        performed_by: assignedBy,
-        target_user_id: playerId,
-        details: {
+        actor_id: assignedBy,
+        actor_role: 'club_admin',
+        target_type: 'user',
+        target_id: playerId,
+        club_id: resolvedClubId,
+        agent_id: agentRecord.id,
+        after_state: {
           agent_user_id: agentUserId,
           agent_record_id: agentRecord.id,
           club_id: resolvedClubId,

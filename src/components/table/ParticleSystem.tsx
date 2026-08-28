@@ -277,7 +277,16 @@ export function ParticleSystem({
       }
     };
 
-    animFrameRef.current = requestAnimationFrame(animate);
+    // ANIMATION AUDIT 2026-08-27 (multi-table): a background table is
+    // display:none, not unmounted — its canvas can paint nothing, yet the
+    // rAF loop still burned frames for the whole burst on every hidden
+    // table. If the canvas has no client rects (hidden ancestor), skip the
+    // draw loop entirely; the wall-clock backstop below still completes the
+    // burst on schedule so the parent's gating state clears.
+    const hiddenTable = canvas.getClientRects().length === 0;
+    if (!hiddenTable) {
+      animFrameRef.current = requestAnimationFrame(animate);
+    }
 
     // ANIMATION AUDIT 2026-08-27: hidden tabs get no rAF — without this the
     // burst never completed there and the parent's `winnerParticle.active`

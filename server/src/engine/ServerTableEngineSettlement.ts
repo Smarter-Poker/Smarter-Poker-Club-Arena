@@ -290,7 +290,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // come", it is noise the player would be charged five diamonds for. There is
     // also nothing to rabbit hunt on a hand that ran out twice to showdown.
     const ranItTwice = (this.currentHandRitBoards ?? 0) >= 2;
-    if (this.handController && !ranItTwice) {
+    // A MULTI-BOARD BOMB POT IS NEVER OFFERED A RABBIT HUNT EITHER
+    // (Dan's bomb pot spec §19). Same defect shape as RIT: the boards were
+    // dealt interleaved from one deck, so `remainingDeck.slice(0, 5)` is not
+    // "what board 1 would have run" — it is noise the player would be charged
+    // five diamonds for, and there are two or three boards it could belong to.
+    const multiBoardBomb = this.handController?.isDoubleBoardActive?.() ?? false;
+    if (this.handController && !ranItTwice && !multiBoardBomb) {
       try {
         const state = this.handController.getState();
         const remainingDeck = this.handController.getRemainingDeck();
@@ -470,8 +476,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           }
         }
 
-        // ALL insured players: premium deducted from their stack at end (like rake)
-        // For losers: payout - premium = net gain. For winners: -premium = net cost.
+        // POKERBROS PARITY 2026-08-28 (Dan's ruling): the fee is charged only
+        // when the insured player WINS — settle() reports premium 0 on a loss,
+        // so a losing leader receives the insured amount whole ("For Losing"
+        // in the dialog is literal) and only a winner pays the fee here.
         if (settlement.premium > 0) {
           // AUDIT M16: the clamps below silently absorb (Math.max(0, ...)) any
           // premium the stack cannot cover. A premium larger than the stack it
@@ -1138,7 +1146,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           nitGame: this.tableInfo.nit_game === true,
           tournamentId: this.tableInfo.tournament_id || undefined,
           handNumber: this.handCount,
-          gameVariant: this.tableInfo.game_variant || 'nlh',
+          // VARIANT OVERRIDE 2026-08-28 (spec §10.1/§20): the variant this
+          // hand was DEALT as — plo4 on a PLO4 bomb hand at an NLH table.
+          // Falling back to the table label only when the capture is absent.
+          gameVariant: this.currentHandVariant || this.tableInfo.game_variant || 'nlh',
           smallBlind: this.tableInfo.small_blind,
           bigBlind: this.tableInfo.big_blind,
           potSize: this.currentHandPotSize,

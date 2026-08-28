@@ -1140,6 +1140,12 @@ function AuditLogTab({ clubId }: { clubId: string }) {
 // TAB 4: ANNOUNCEMENTS
 // ═══════════════════════════════════════════════════════════════════════════════
 function AnnouncementsTab({ clubId }: { clubId: string }) {
+  // club_announcements.author_id is NOT NULL with no default and has a foreign
+  // key to profiles(id). The insert below never supplied it, so creating an
+  // announcement has always been rejected: Save cleared the form, closed the
+  // editor and reloaded a list that had not changed. Editing an existing one
+  // worked, which is why it read as a save that "sometimes" did nothing.
+  const { user } = useAuthUser();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<any>(null);
@@ -1174,6 +1180,12 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
 
   const handleSave = async () => {
     if (!title.trim()) return;
+    // An author is required by the table, so refuse with a readable message
+    // rather than sending a statement the database will refuse silently.
+    if (!editing && !user?.id) {
+      setActionError('Your session could not be identified, so this announcement was not saved.');
+      return;
+    }
     setSaving(true);
     setActionError(null);
     try {
@@ -1187,7 +1199,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
       } else {
         const { error: insErr } = await supabase
           .from('club_announcements')
-          .insert({ club_id: uuid, title, content });
+          .insert({ club_id: uuid, title, content, author_id: user!.id });
         if (insErr) throw insErr;
       }
       setTitle('');
@@ -1231,7 +1243,10 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
       setActionError(null);
       const { error: pinErr } = await supabase
         .from('club_announcements')
-        .update({ pinned: !item.pinned })
+        // `pinned` is a SELECT alias for `is_pinned` (see the query above). An
+        // alias is a read-side name: writing through it made every Pin and
+        // Unpin a rejected statement, so the button did nothing and said nothing.
+        .update({ is_pinned: !item.pinned })
         .eq('id', item.id);
       if (pinErr) throw pinErr;
       load();

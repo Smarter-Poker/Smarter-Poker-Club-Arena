@@ -681,10 +681,30 @@ export function TableTabBar({
                     }
               }
             >
-              {/* PokerBros parity (Dan 2026-08-20): a tab where the hero holds
+              {/* ── CARDS WIN, ALWAYS (Dan 2026-08-28, mobile pass item 3) ──
+                  Verbatim: "THE ACTION PILL SHOULD ONLY EVER SHOW THE CARDS
+                  (CENTERED IN THE PILL) AND THE DISAPPEARING TIMER BAR...
+                  THATS IT, NO COUNTDOWN CLOCK OR ANYTHING ELSE."
+
+                  `hasCards` is now the FIRST branch. It used to be third, so a
+                  decision prompt or an engaged time bank REPLACED the hero's
+                  hand with a text countdown — and both of those only ever fire
+                  while the hero is holding cards, which made them the common
+                  case rather than the exception.
+
+                  Nothing is lost by it: the pill already flashes
+                  (`--flash` under 5s) and the timer bar already drains and goes
+                  red, so the urgency those labels carried is on the pill twice
+                  over without a digit on it. The label branches below still
+                  render when there is genuinely no hand to show, so a state can
+                  never fall through to a blank pill.
+
+                  PokerBros parity (Dan 2026-08-20): a tab where the hero holds
                   live cards previews THOSE CARDS; the name only shows between
                   hands / after folding. */}
-              {decisionLabel ? (
+              {hasCards ? (
+                <MiniCards cards={tab.holeCards!} />
+              ) : decisionLabel ? (
                 <span className="table-tab-bar__tab-label">
                   <span className="table-tab-bar__tab-name">{decisionLabel}</span>
                   <span className="table-tab-bar__tab-sub">
@@ -699,8 +719,6 @@ export function TableTabBar({
                   <span className="table-tab-bar__tab-name">TIME BANK</span>
                   <span className="table-tab-bar__tab-sub">{timeBankLeft}s</span>
                 </span>
-              ) : hasCards ? (
-                <MiniCards cards={tab.holeCards!} />
               ) : (
                 <span className="table-tab-bar__tab-label">
                   {/* Dan 2026-08-21: no hand here, so say WHAT GAME THIS IS.
@@ -723,19 +741,31 @@ export function TableTabBar({
                 </span>
               )}
 
-              {/* Transient last-action chip ("Fold", "Call", ...) */}
+              {/* Transient last-action chip ("Fold", "Call", ...). Only ever on
+                  a tab where it is NOT the hero's turn, so it never shares the
+                  pill with the timer bar and never pushes the cards off centre
+                  at the moment Dan is looking at them. */}
               {flash && !isMyTurn && (
                 <span className="table-tab-bar__action-chip">{ACTION_LABEL[flash] ?? flash}</span>
               )}
 
-              {/* Turn indicator — show timer or pulsing dot */}
-              {!isActive && isMyTurn && (
-                <span className="table-tab-bar__turn-dot">
-                  {tab.timeRemaining !== undefined && tab.timeRemaining < 15
-                    ? `${tab.timeRemaining}s`
-                    : ''}
-                </span>
-              )}
+              {/* ── THE COUNTDOWN BADGE IS GONE (Dan 2026-08-28, item 3) ──────
+                  There used to be a `.table-tab-bar__turn-dot` here rendering
+                  `${tab.timeRemaining}s` — the green "14s" pill in Dan's
+                  screenshot. Two things were wrong with it:
+
+                    1. He asked for no countdown clock on this pill at all. The
+                       draining bar below IS the clock, and it reads faster than
+                       a number does when you are watching four tables.
+                    2. It was an in-flow sibling of the mini-cards inside a pill
+                       that centres its children, so the cards sat OFF CENTRE
+                       exactly while it was the hero's turn — the one moment the
+                       pill is being looked at. That is the "(CENTERED IN THE
+                       PILL)" half of the same sentence: it is fixed by deleting
+                       this, not by adding alignment.
+
+                  `isUrgent` still drives `--urgent` on the pill and on the bar,
+                  so nothing about urgency was carried by the badge alone. */}
 
               {/* Depleting turn-timer bar (PokerBros parity): rides the bottom
                   edge of the pill whenever it is the hero's turn at this

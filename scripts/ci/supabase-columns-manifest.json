@@ -7312,7 +7312,8 @@
       "arena_avatar_url",
       "equipped_frame",
       "equipped_aura",
-      "use_avatar_as_profile_pic"
+      "use_avatar_as_profile_pic",
+      "status_text"
     ],
     "promo_code_redemptions": [
       "id",
@@ -9146,7 +9147,9 @@
       "bomb_pot_trigger_mode",
       "bomb_pot_interval_seconds",
       "bomb_pot_min_players",
-      "bomb_pot_ante_fixed"
+      "bomb_pot_ante_fixed",
+      "bomb_pot_variant",
+      "bomb_pot_next_due_at"
     ],
     "theme_asset_unlocks": [
       "user_id",

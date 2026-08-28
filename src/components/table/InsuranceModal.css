@@ -53,6 +53,24 @@
   -webkit-backdrop-filter: blur(16px) saturate(1.4);
 }
 
+/* CLIPPED-BUTTONS FIX 2026-08-28 (Dan's recording, hand #3158299): with
+   `max-height: 90vh; overflow: hidden` and no scroll container, everything
+   past the outcomes row — including the No/Insure actions — was cut off on
+   phones. The player could not accept or decline; the window timed out into
+   a final auto-decline. The body scrolls; header and actions never move. */
+.insurance-modal__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.insurance-modal__header,
+.insurance-modal__actions {
+  flex-shrink: 0;
+}
+
 @keyframes insuranceSlideUpModal {
   from {
     opacity: 0;

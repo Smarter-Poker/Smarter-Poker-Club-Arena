@@ -90,6 +90,29 @@ export function bombPotSettingsFromTable(t: {
   };
 }
 
+/**
+ * VARIANT OVERRIDE (spec §10.1): the variants a bomb hand may deal when it
+ * differs from the table's game. Whitelisted — an unknown value silently
+ * playing Hold'em rules on six-card hands is exactly the class of bug the
+ * override must never introduce, so anything outside this set means "same as
+ * table". Mirrored by the tables_bomb_pot_variant_check DB constraint.
+ */
+const BOMB_VARIANT_WHITELIST = new Set(['nlh', 'plo4', 'plo5', 'plo6']);
+
+/**
+ * Resolve the variant a bomb hand actually deals: the configured override
+ * when it is whitelisted and genuinely different, otherwise the table's own
+ * variant. Pure, so the whitelist rule is unit-testable.
+ */
+export function resolveBombPotVariant(
+  tableVariant: string,
+  override: string | null | undefined
+): string {
+  const o = String(override ?? '').toLowerCase();
+  if (!o || !BOMB_VARIANT_WHITELIST.has(o)) return tableVariant;
+  return o;
+}
+
 export class BombPotScheduler {
   /** every_n_hands: hands dealt since the last bomb (or since enable). */
   private handsSinceBomb = 0;
@@ -235,6 +258,20 @@ export class BombPotScheduler {
   /** Whether a due bomb is waiting for the next valid hand (any mode). */
   isPending(): boolean {
     return this.pending;
+  }
+
+  /**
+   * TIMED PERSISTENCE (2026-08-28, spec §4.3): seed the timed clock from the
+   * persisted tables.bomb_pot_next_due_at so an engine restart resumes the
+   * cycle instead of restarting it. Only fills an EMPTY clock — once the
+   * scheduler is running, its own state is the truth. A past timestamp is
+   * accepted as-is: noteHandStart turns it into the pending token, which is
+   * exactly what "the bomb came due while we were deploying" should mean.
+   */
+  seedNextDueAt(ms: number): void {
+    if (this.nextDueAtMs === null && Number.isFinite(ms) && ms > 0) {
+      this.nextDueAtMs = ms;
+    }
   }
 
   private reset(): void {

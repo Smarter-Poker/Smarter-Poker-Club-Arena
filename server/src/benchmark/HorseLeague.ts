@@ -687,6 +687,13 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'v21_river_endgame', pairs: 6000, a: {}, b: { v21River: false } },
   // Deep-stack discipline only differs past 120bb — deal it at 250bb.
   { name: 'v21_deep_250bb', stackBB: 250, pairs: 6000, a: {}, b: { v21Deep: false } },
+  // ── V23 (2026-08-28) ── the cash-measurable slices. The endgame and spin
+  // layers only fire in tournament/spin modes the league does not deal;
+  // they ship scenario-tested with telemetry, the way V16 real ICM did.
+  { name: 'v23_raise_plans', pairs: 6000, a: {}, b: { v23Plan: false } },
+  { name: 'v23_river_reads', pairs: 6000, a: {}, b: { v23Reads: false } },
+  { name: 'shortdeck_v23', variant: 'short_deck', pairs: 6000, a: {}, b: { v23Variants: false } },
+  { name: 'plo8_v23_lowdraw', variant: 'plo8', pairs: 6000, a: {}, b: { v23Variants: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
   { name: 'mind_layer', a: {}, b: { mind: false } },
@@ -724,6 +731,11 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v20Mzone: false,
       v21River: false,
       v21Deep: false,
+      v23Endgame: false,
+      v23Plan: false,
+      v23Reads: false,
+      v23Variants: false,
+      v23Spin: false,
       mind: false,
       streetIQ: false,
       handReading: false,
@@ -746,6 +758,15 @@ const LEAGUE_HOUR_UTC = 4;
 const LEAGUE_CHECK_MS = 10 * 60 * 1000;
 /** Hours after LEAGUE_HOUR_UTC during which a missed run is still picked up. */
 const LEAGUE_CATCHUP_HOURS = 3;
+/** V23 (2026-08-28): a SECOND daily window. One 90-minute budget covers 4-6
+ *  matchups against a ~30-matchup card — even staleness-first, a matchup got
+ *  measured every ~5 nights and a new layer waited most of a week for its
+ *  first read. The afternoon window doubles throughput: the staleness-first
+ *  ordering naturally hands it the matchups the night window did not reach
+ *  (their run_date is older), and (run_date, matchup) upserts make any
+ *  overlap harmless. Claimed under its own job name so leader/standby pairs
+ *  cannot both run it. */
+const LEAGUE_PM_HOUR_UTC = 16;
 /** Settle time before the boot check, so it never competes with table startup. */
 const LEAGUE_BOOT_DELAY_MS = 90 * 1000;
 // V12.3: raised 1500 -> 10000. At 1500 pairs the standard error was ~7 bb/100
@@ -839,25 +860,46 @@ async function alreadyRanToday(date: string): Promise<boolean> {
   }
 }
 
+let lastLeaguePmDate: string | null = null;
+
 async function maybeRunLeague(): Promise<void> {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const hour = now.getUTCHours();
   const inWindow = hour >= LEAGUE_HOUR_UTC && hour < LEAGUE_HOUR_UTC + LEAGUE_CATCHUP_HOURS;
-  if (!inWindow || leagueRunning || lastLeagueDate === today) return;
-  if (await alreadyRanToday(today)) {
-    lastLeagueDate = today; // remember for the rest of this process's life
-    return;
-  }
-  // V13.1: leader/standby means TWO containers boot the full engine path and
-  // both reach this line within seconds. Claim the night before working it.
-  if (!(await claimNightlyJob('league', today))) {
+  const inPmWindow = hour >= LEAGUE_PM_HOUR_UTC && hour < LEAGUE_PM_HOUR_UTC + LEAGUE_CATCHUP_HOURS;
+  if (leagueRunning) return;
+
+  if (inWindow && lastLeagueDate !== today) {
+    if (await alreadyRanToday(today)) {
+      lastLeagueDate = today; // remember for the rest of this process's life
+      return;
+    }
+    // V13.1: leader/standby means TWO containers boot the full engine path and
+    // both reach this line within seconds. Claim the night before working it.
+    if (!(await claimNightlyJob('league', today))) {
+      lastLeagueDate = today;
+      console.log(`[HorseLeague] run ${today} claimed by another instance - standing down`);
+      return;
+    }
     lastLeagueDate = today;
-    console.log(`[HorseLeague] run ${today} claimed by another instance - standing down`);
+    await runLeague(today);
     return;
   }
-  lastLeagueDate = today;
-  await runLeague(today);
+
+  // V23 PM WINDOW: no alreadyRanToday here — the night run's rows exist by
+  // design. The claim itself is the dedup (unique on job + run_date), and
+  // the staleness-first card ordering serves the matchups the night window
+  // left unmeasured.
+  if (inPmWindow && lastLeaguePmDate !== today) {
+    if (!(await claimNightlyJob('league_pm', today))) {
+      lastLeaguePmDate = today;
+      console.log(`[HorseLeague] pm run ${today} claimed by another instance - standing down`);
+      return;
+    }
+    lastLeaguePmDate = today;
+    await runLeague(today);
+  }
 }
 
 export function startHorseLeague(): void {

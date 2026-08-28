@@ -406,6 +406,49 @@ export default function MultiTablePage() {
   // removed. Seat at a 2nd/3rd/4th table in the lobby, come back, and every
   // seat is a tab again — the PokerBros flow.
   const droppedRef = useRef(0);
+  /**
+   * A TABLE THE SERVER MOVED YOU OFF MUST NOT STAY ON SCREEN
+   * (Dan 2026-08-28, bug 1).
+   *
+   * Reported: "the connection failed (or maybe the server restarted). when it
+   * reconnected, it created 2 tables, and was displaying future hands on the
+   * table on the left that havent yet been dealt to the table on the right."
+   *
+   * Reproduced from production. In `Union PKO Afternoon (PLO4)` the balancer
+   * moved the hero from Table 1 seat 5 to Table 2 seat 2 at 17:30:21 — the
+   * source seat's `left_at` and the destination's `joined_at` are 270ms apart,
+   * so the SERVER did this correctly. The client did not follow:
+   *
+   *   - TABLE_SEATED fired for Table 2, so a second tab appeared;
+   *   - nothing fires for the table you were moved OFF (`TABLE_LEFT` is for a
+   *     leave the player initiated), so Table 1's tab stayed;
+   *   - its TablePage stayed mounted, frozen on hand #3299868 — a hand with no
+   *     `hand_history` row at all, because it never completed for him.
+   *
+   * That is the whole report: two tabs, both drawing the hero's last-delivered
+   * hole cards (SeatSlot keeps those alive on purpose), one of them stopped on
+   * a hand that was never finished anywhere. Which tab looks "ahead" depends
+   * only on which one you are looking at.
+   *
+   * Two things were missing, and it takes both.
+   *
+   * (a) THIS REBUILD ONLY EVER ADDED. It merges seats in additively so an
+   *     observer tab is never removed — right for observers, wrong for a tab
+   *     that says `seated: true` about a seat the server has since closed.
+   *     Those are pruned now. Observer and lobby tabs are still untouchable.
+   *
+   * (b) IT RAN ONCE, ON MOUNT. Its dep array is `[user?.id]`, so the one
+   *     moment it most needs to re-read server truth — a reconnect after the
+   *     socket dropped, which is when the client's picture is most likely to
+   *     be stale — was the one moment it never ran. `seatResyncToken` is
+   *     bumped by WS_CONNECTED.
+   *
+   * A failed read is UNKNOWN and prunes nothing: the early return on `seatErr`
+   * below is load-bearing, because an empty list would otherwise read as "you
+   * hold no seats" and close every table the player is sitting at.
+   */
+  const [seatResyncToken, setSeatResyncToken] = useState(0);
+  const prunedRef = useRef(0);
   useEffect(() => {
     if (!user?.id) return;
     let cancelled = false;
@@ -474,8 +517,54 @@ export default function MultiTablePage() {
             seated: true,
           };
         });
-        return additions.length > 0 ? [...prev, ...additions] : prev;
+        /**
+         * PRUNE (Dan 2026-08-28, bug 1). A tab claiming `seated: true` for a
+         * table that is NOT in the live seat set is a table the server moved
+         * the player off, or closed under them. Its TablePage is frozen on
+         * whatever it last saw.
+         *
+         * Only `seated` tabs. An observer tab has no seat by definition, and a
+         * lobby tab is not a table — pruning either would delete something the
+         * player deliberately opened.
+         */
+        const liveSeatIds = new Set(ids);
+        const survivors = prev.filter(
+          (t) => !(t.kind === 'table' && t.seated === true && !liveSeatIds.has(t.id))
+        );
+        prunedRef.current = prev.length - survivors.length;
+
+        if (prunedRef.current === 0 && additions.length === 0) return prev;
+        return [...survivors, ...additions];
       });
+
+      /**
+       * KEEP THE PLAYER ON THE TABLE THEY WERE LOOKING AT (Dan 2026-08-28,
+       * section 10.6: "YOU CAN NEVER EVER AUTO CHANGE TABLES FOR A USER").
+       *
+       * `activeIndex` is a POSITION, and a prune above it shifts every
+       * position after it down one. Leaving the index alone would therefore
+       * land the player on a DIFFERENT table without them touching anything —
+       * which is the auto-switch the law forbids, arriving by accident rather
+       * than by design. The existing clamp only catches an index past the end,
+       * not one that silently now means something else.
+       *
+       * So the identity is what is preserved, not the number. If the table
+       * they were watching survived, follow it to its new position; that is an
+       * index correction and moves nobody. If it is the one that was pruned,
+       * the clamp puts them somewhere valid — there is nothing else to honour.
+       *
+       * Deferred a tick for the same reason the focus restore below is:
+       * `tablesRef` reflects the committed array, and the setTables above has
+       * not committed at this line.
+       */
+      if (!cancelled) {
+        const watchedId = tablesRef.current[activeIndexRef.current]?.id;
+        setTimeout(() => {
+          if (cancelled || !watchedId) return;
+          const idx = tablesRef.current.findIndex((t) => t.id === watchedId);
+          if (idx !== -1 && idx !== activeIndexRef.current) setActiveIndex(idx);
+        }, 0);
+      }
       // Audit round 3: after a reload the rebuild used to land the player on
       // whichever seat sorted first. If the table they were LOOKING AT before
       // the reload came back, focus it. The id lives in sessionStorage; a
@@ -500,6 +589,18 @@ export default function MultiTablePage() {
       // pure — React may run it twice under StrictMode, and this file has been
       // bitten by side effects in updaters twice already (see TABLE_LEFT and
       // CLOSE_TABLE_TAB above).
+      if (!cancelled && prunedRef.current > 0) {
+        const n = prunedRef.current;
+        prunedRef.current = 0;
+        // Silently closing a table someone was playing is worse than saying
+        // so. Toast layer applies the house capitalisation; no em dashes.
+        toast.info(
+          n === 1
+            ? 'You were moved to a new table. The old one has been closed.'
+            : `You were moved from ${n} tables. They have been closed.`,
+          6000
+        );
+      }
       if (!cancelled && droppedRef.current > 0) {
         const n = droppedRef.current;
         droppedRef.current = 0;
@@ -513,7 +614,9 @@ export default function MultiTablePage() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    // seatResyncToken: bumped by WS_CONNECTED so a reconnect re-reads server
+    // truth. See the block comment above (b).
+  }, [user?.id, seatResyncToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useMasterBusSubscription('TABLE_SEATED', (payload: SeatedPayload) => {
     const e = payload;
@@ -771,7 +874,13 @@ export default function MultiTablePage() {
   const [realtimeDown, setRealtimeDown] = useState(false);
   useMasterBusSubscription('WS_DISCONNECTED', () => setRealtimeDown(true));
   useMasterBusSubscription('WS_RECONNECTING', () => setRealtimeDown(true));
-  useMasterBusSubscription('WS_CONNECTED', () => setRealtimeDown(false));
+  useMasterBusSubscription('WS_CONNECTED', () => {
+    setRealtimeDown(false);
+    // Dan 2026-08-28 bug 1: a reconnect is exactly when this client's picture
+    // of "which tables am I at" is most likely to be stale — the balancer may
+    // have moved the player while the socket was down. Re-read server truth.
+    setSeatResyncToken((n) => n + 1);
+  });
 
   // ─── Derived state ───────────────────────────────────────────────────
   const activeTableId = tables[activeIndex]?.id || '';

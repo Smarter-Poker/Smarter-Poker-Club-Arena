@@ -508,3 +508,60 @@ describe('the referral funnel the ads point at does not drop the referral', () =
     expect(share).toMatch(/writeText\(`\$\{shareText\} \$\{url\}`\)/);
   });
 });
+
+describe('weight is a share of voice, not a queue position', () => {
+  /* fn_resolve_ads ordered by `weight DESC, created_at DESC` from Phase 1.
+     That is deterministic: the same player on the same surface got the same
+     advert in the same position every time until a cap moved.
+
+     It did not matter while one slot returned six adverts and rotated through
+     them client-side. It matters now: empty_state and session_summary are
+     single-card surfaces, so the highest-weighted eligible campaign won EVERY
+     draw and a campaign with no cap never ran out. A player seeing the surface
+     twice a day saw the same two campaigns forever.
+
+     Everywhere else in this industry a weight means "roughly this share of the
+     impressions", and the admin panel offers a weight box that quietly meant
+     something else. */
+  const DRAW = read(
+    'supabase/migrations/20260828070000_weight_is_a_share_of_voice_not_a_queue_position.sql'
+  );
+
+  it('draws proportionally instead of ranking', () => {
+    // Efraimidis-Spirakis: key = random()^(1/weight), take the largest k.
+    expect(DRAW).toMatch(/ORDER BY random\(\) \^ \(1\.0 \/ GREATEST\(r\.weight, 1\)\) DESC/);
+    expect(DRAW).not.toMatch(/ORDER BY r\.weight DESC/);
+  });
+
+  it('guards the exponent, because weight has no CHECK', () => {
+    /* A 0 or a negative typed into the panel would divide by zero or invert
+       the ordering. 0 now means "vanishingly unlikely", which is the kinder
+       reading of what somebody typing 0 probably meant. */
+    expect(DRAW).toMatch(/GREATEST\(r\.weight, 1\)/);
+  });
+
+  it('is VOLATILE, or the planner undoes the whole change', () => {
+    /* A STABLE function may evaluate random() once and reuse it within a
+       statement, which is exactly the behaviour this replaces. */
+    expect(DRAW).toMatch(/^volatile$/m);
+    expect(DRAW).toMatch(/a STABLE function may evaluate random\(\) once and reuse it/);
+  });
+
+  it('keeps every rule that is not the ordering', () => {
+    /* Each of these has its own migration and its own incident behind it, and
+       a CREATE OR REPLACE is where they get silently dropped. */
+    expect(DRAW).toMatch(/AND e\.slot = pl\.slot/);
+    expect(DRAW).toMatch(/'\{clubId\}'/);
+    expect(DRAW).toMatch(/NOT LIKE '%\{%'/);
+    expect(DRAW).toMatch(/the per-surface frequency cap was lost in this rewrite/);
+    expect(DRAW).toMatch(/the club placeholder substitution was lost in this rewrite/);
+    expect(DRAW).toMatch(/the unresolved-placeholder guard was lost in this rewrite/);
+  });
+
+  it('proves it varies rather than asserting that it should', () => {
+    // Twenty single draws from a six-campaign slot; a deterministic ORDER BY
+    // returns the same advert every time.
+    expect(DRAW).toMatch(/for i in 1\.\.20 loop/);
+    expect(DRAW).toMatch(/all returned the same advert; the draw is not weighted/);
+  });
+});

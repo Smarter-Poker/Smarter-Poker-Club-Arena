@@ -202,17 +202,29 @@ describe('the hero row opens out when the hand is shown, and only then', () => {
     ).toBe(true);
   });
 
-  it('scales the revealed card off --sp-card2-w, so it retunes at every breakpoint', () => {
-    // --sp-card2-* is already retuned in all four responsive blocks on `.seat`
+  it('scales the revealed card off --sp-cardrev-w, so it retunes at every breakpoint', () => {
+    // --sp-cardrev-* is retuned in all four responsive blocks on `.seat`
     // (pinned by HeroCardRowGeometry). Deriving from it means the revealed row
     // needs no breakpoint block of its own - and cannot acquire three copies
     // of the same number.
+    //
+    // IT WAS --sp-card2-w UNTIL 2026-08-27, and the split is the point of this
+    // beat now. Dan asked for hold-em hole cards to be the same size as PLO's,
+    // so --sp-card2-* took the PLO4 numbers - a 36% jump. The tabled row lays
+    // out WHOLE cards with a 1px gap rather than overlapping them, so the same
+    // jump there would have taken a tabled PLO6 hand on a 375px phone from
+    // 137px to 195px against 151px of room: the row would run off the screen
+    // at exactly the moment other players are trying to read it.
     for (const n of [4, 5, 6]) {
       const rule = rulesFor(`.seat__cards--hero.seat__cards--revealed:has(> :nth-child(${n}))`);
       expect(rule.length, `the revealed hero size for ${n} cards is missing`).toBe(1);
-      expect(rule[0].body, `${n}-card revealed width must derive from --sp-card2-w`).toMatch(
-        /--sp-hero-card-w:\s*calc\(var\(--sp-card2-w[^)]*\)\s*\*\s*0?\.\d+\)/
+      expect(rule[0].body, `${n}-card revealed width must derive from --sp-cardrev-w`).toMatch(
+        /--sp-hero-card-w:\s*calc\(var\(--sp-cardrev-w[^)]*\)\s*\*\s*0?\.\d+\)/
       );
+      expect(
+        rule[0].body,
+        `${n}-card revealed width must NOT read the private two-card token`
+      ).not.toMatch(/--sp-card2-w/);
     }
   });
 

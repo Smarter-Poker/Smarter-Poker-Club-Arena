@@ -27,6 +27,7 @@ import { ThemeSettingsModal } from '../table/ThemeSettingsModal';
 import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
+import { soundService } from '../../services/SoundService';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { isCardBackUnlocked } from '../table/CardImage';
@@ -416,6 +417,12 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     updateSetting(STORAGE_KEYS.SOUNDS, 'sounds_enabled', newValue, () =>
       setSoundsEnabled(!newValue)
     );
+    // SOUND AUDIT 2026-08-27: this toggle wrote only STORAGE_KEYS.SOUNDS.
+    // The shared gate fails closed on EITHER key, so a player who had muted
+    // in-table ('ca_sound_enabled'='false') and then flipped this switch ON
+    // got a switch reading ON with a still-silent app. setEnabled() persists
+    // the choice to BOTH gate keys so the switches always agree.
+    soundService.setEnabled(newValue);
     masterBus.emit('SETTINGS_CHANGED', { setting: 'isSoundEnabled', value: newValue });
   };
 

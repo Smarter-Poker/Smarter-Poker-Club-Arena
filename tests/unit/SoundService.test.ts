@@ -91,8 +91,11 @@ describe('SoundService', () => {
       expect(soundService.getMasterVolume()).toBe(0.7);
     });
 
-    it('getEffectsVolume should return default 0.5', () => {
-      expect(soundService.getEffectsVolume()).toBe(0.5);
+    it('getEffectsVolume should return default 1.0', () => {
+      // SOUND AUDIT 2026-08-27: default raised from 0.5 — the only caller of
+      // setEffectsVolume is the Settings -> Sound panel, whose own default is
+      // 100%. A player who never opened it ran at half gain forever.
+      expect(soundService.getEffectsVolume()).toBe(1.0);
     });
 
     it('setMasterVolume should clamp to [0, 1]', () => {

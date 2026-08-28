@@ -218,7 +218,12 @@ class SoundService {
   private ctx: AudioContext | null = null;
   private enabled: boolean = true;
   private masterVolume: number = 0.7;
-  private effectsVolume: number = 0.5;
+  // SOUND AUDIT 2026-08-27: was 0.5 — but setEffectsVolume's ONLY caller is
+  // the Settings → Sound panel (whose default is 100%). A player who never
+  // opened that panel ran at half the intended effects gain forever, and the
+  // in-table volume slider (master only) topped out at 0.5. Default matches
+  // the panel's default now; restoreStoredConfig() applies any saved value.
+  private effectsVolume: number = 1.0;
   private masterGain: GainNode | null = null;
   /**
    * The idling engine under the starting tree. Retained because it must be
@@ -236,6 +241,9 @@ class SoundService {
   // Sound priority system: tracks the highest-priority sound played this frame
   private currentFramePriority: number = -1;
   private priorityResetTimer: ReturnType<typeof setTimeout> | null = null;
+  // playPotCollect bypasses the rank window (it accompanies the win fanfare
+  // rather than competing with it) and dedupes itself with this stamp instead.
+  private lastPotCollectMs = 0;
 
   // Category-level gates (driven by SoundSettings sub-toggles)
   private categoryEnabled: Record<SoundCategory, boolean> = {
@@ -265,6 +273,45 @@ class SoundService {
     // Resume on the FIRST user gesture (the only place browsers allow it),
     // and again whenever the tab returns to the foreground.
     this.installUnlockListeners();
+    this.restoreStoredConfig();
+  }
+
+  /**
+   * SOUND AUDIT 2026-08-27: category sub-toggles and volume sliders were
+   * in-memory only — the ONLY writer was the Settings → Sound panel's mount
+   * effect, so a player who disabled "Chat Message Sounds" got it back on
+   * every reload (and the panel's checkboxes disagreed with the running
+   * engine for the whole session). Restore the saved config at boot.
+   * Key/shape must match SoundSettings.tsx (not imported — a service must
+   * not depend on a component).
+   */
+  private restoreStoredConfig() {
+    try {
+      const stored = localStorage.getItem('sp_sound_settings');
+      if (!stored) return;
+      const cfg = JSON.parse(stored) as Record<string, unknown>;
+      const num = (v: unknown): number | null =>
+        typeof v === 'number' && Number.isFinite(v) ? v : null;
+      const mv = num(cfg.masterVolume);
+      if (mv !== null) this.setMasterVolume(Math.max(0, Math.min(100, mv)) / 100);
+      const ev = num(cfg.effectsVolume);
+      if (ev !== null) this.setEffectsVolume(Math.max(0, Math.min(100, ev)) / 100);
+      const bool = (v: unknown, fallback: boolean): boolean =>
+        typeof v === 'boolean' ? v : fallback;
+      this.categoryEnabled = {
+        action: bool(cfg.enableActionSounds, true),
+        chat: bool(cfg.enableChatSounds, true),
+        turn_alert: bool(cfg.enableTurnAlert, true),
+        win: bool(cfg.enableWinSound, true),
+        event: bool(cfg.enableEventSounds, true),
+      };
+      // Deliberately NOT applying cfg.enableSounds here: the master mute is
+      // owned by the shared gate (soundGate.ts), which shouldPlay consults on
+      // every call. Applying a third key's opinion over it is exactly the bug
+      // that let opening the settings panel un-mute the app.
+    } catch {
+      /* corrupt storage — defaults stand */
+    }
   }
 
   // ─── Context Management ──────────────────────────────────────────────
@@ -599,6 +646,26 @@ class SoundService {
     this.createSweptNoiseBurst(t, 0.1, 0.13, 5600, 900, 0.85);
     this.createSweptNoiseBurst(t + 0.012, 0.075, 0.05, 2400, 500, 1.4);
 
+    haptic.light();
+  }
+
+  /**
+   * SOUND AUDIT 2026-08-27: the whole deal's card slides, scheduled ONCE on
+   * the AudioContext clock. DealAnimation used one setTimeout per card, and
+   * under main-thread load two timers could bunch inside the 50ms priority
+   * window — the second card's slide was silently dropped, so a busy deal
+   * played fewer sounds than cards. The audio clock cannot bunch. One gate
+   * check covers the sequence (it is one gesture: "the deal").
+   */
+  playDealSequence(delaysMs: number[]) {
+    if (delaysMs.length === 0) return;
+    if (!this.shouldPlay('deal', 'action') || !this.ensureContext()) return;
+    const t0 = this.ctx!.currentTime;
+    for (const d of delaysMs) {
+      const t = t0 + Math.max(0, d) / 1000;
+      this.createSweptNoiseBurst(t, 0.1, 0.13, 5600, 900, 0.85);
+      this.createSweptNoiseBurst(t + 0.012, 0.075, 0.05, 2400, 500, 1.4);
+    }
     haptic.light();
   }
 
@@ -1142,7 +1209,8 @@ class SoundService {
    * Button Click — soft UI tap
    */
   playButtonClick() {
-    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    // SOUND AUDIT 2026-08-27: category added (see playSeatTaken).
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     const osc = this.ctx!.createOscillator();
@@ -1186,10 +1254,20 @@ class SoundService {
    * Pot Collect — chips sweep to winner (satisfying collection sound)
    */
   playPotCollect() {
-    // AUDIT-2 FIX 2026-08-20: was ('win','win') — identical rank to the
-    // playWin/playBigWin that always precedes it in the same frame, so it was
-    // suppressed 100% of the time on hero wins. Own rank (88) now.
-    if (!this.shouldPlay('pot_collect', 'win') || !this.ensureContext()) return;
+    // AUDIT-2 FIX 2026-08-20 gave this its own rank (88) — but that moved it
+    // in the WRONG direction: the gate is `rank <= currentFramePriority`, and
+    // playWin (90) / playBigWin (95) always precede it in the same frame, so
+    // 88 was rejected 100% of the time. The hero STILL never heard the pot
+    // sweep on their own wins.
+    // SOUND AUDIT 2026-08-27: the sweep is a companion to the fanfare, not a
+    // competitor — bypass the rank window entirely and dedupe with its own
+    // short throttle instead, so it plays every time the pot ships.
+    if (!this.enabled || !isSoundAllowed()) return;
+    if (!this.categoryEnabled['win']) return;
+    const nowMs = Date.now();
+    if (nowMs - this.lastPotCollectMs < 250) return;
+    this.lastPotCollectMs = nowMs;
+    if (!this.ensureContext()) return;
 
     // Rapid ascending chip clicks (collecting chips)
     for (let i = 0; i < 6; i++) {
@@ -1221,7 +1299,9 @@ class SoundService {
    * Seat Taken — short chime when a new player sits down
    */
   playSeatTaken() {
-    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    // SOUND AUDIT 2026-08-27: category added — bypassed the Event Sounds
+    // sub-toggle before (same fix playPlayerLeft got on 2026-08-20).
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
     const now = this.ctx!.currentTime;
     const gain = this.createGain(0.12);
 
@@ -1285,7 +1365,8 @@ class SoundService {
    * Descending tone sequence to indicate connection lost
    */
   playDisconnect() {
-    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    // SOUND AUDIT 2026-08-27: category added (see playSeatTaken).
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
     const now = this.ctx!.currentTime;
     const gain = this.createGain(0.1);
 
@@ -1312,7 +1393,8 @@ class SoundService {
    * Reconnect — connection restored sound
    */
   playReconnect() {
-    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    // SOUND AUDIT 2026-08-27: category added (see playSeatTaken).
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
     const now = this.ctx!.currentTime;
     const gain = this.createGain(0.15);
 
@@ -1731,16 +1813,21 @@ class SoundService {
   playBountyCollected() {
     if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
 
+    // SOUND AUDIT 2026-08-27: this whole block (and every cue below written in
+    // the same 2026-08-20 pass) called playTone with volume and delay SWAPPED —
+    // the author was thinking in ThrowableSoundService's (freq,dur,vol,type,
+    // glide,delay) order. Six cues were fully silent (volume 0), three were
+    // 3-7x too loud. Args restored to (freq, duration, VOLUME, type, DELAY).
     // Metallic strike — the "ching"
     [1567.98, 2093.0].forEach((freq, i) => {
-      this.playTone(freq, 0.28, 0.06 + i * 0.02, 'triangle', 0.32);
+      this.playTone(freq, 0.28, 0.32, 'triangle', 0.06 + i * 0.02);
     });
     // Coin shimmer tail
     [2637.02, 3135.96].forEach((freq, i) => {
-      this.playTone(freq, 0.22, 0.14 + i * 0.05, 'sine', 0.18);
+      this.playTone(freq, 0.22, 0.18, 'sine', 0.14 + i * 0.05);
     });
     // Low confirmation thump so it lands on small speakers too
-    this.playTone(220.0, 0.24, 0.0, 'sine', 0.26);
+    this.playTone(220.0, 0.24, 0.26, 'sine', 0.0);
 
     haptic.mysteryReveal();
   }
@@ -1774,7 +1861,7 @@ class SoundService {
 
     // The lever: a dry mechanical thunk, no tail.
     this.createNoiseBurst(t, 0.06, 0.22, 2600);
-    this.playTone(160, 0.1, 0.0, 'square', 0.16);
+    this.playTone(160, 0.1, 0.16, 'square', 0.0);
 
     this.stopSpinBed(0);
 
@@ -1822,8 +1909,8 @@ class SoundService {
   playSpinCountdownLight(step: number) {
     if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
     const f = [330, 392, 784][Math.max(0, Math.min(2, Math.floor(step)))];
-    this.playTone(f, 0.22, 0, 'square', 0.13);
-    this.playTone(f * 1.5, 0.16, 0.01, 'triangle', 0.06);
+    this.playTone(f, 0.22, 0.13, 'square', 0);
+    this.playTone(f * 1.5, 0.16, 0.06, 'triangle', 0.01);
     this.createNoiseBurst(this.ctx!.currentTime, 0.04, 0.09, 1800);
 
     // Throttle blip. Filter and gain only — see playSpinStart on why nothing
@@ -1988,7 +2075,7 @@ class SoundService {
 
     // The stop: the wheel seating against its last peg.
     this.createNoiseBurst(t, 0.08, 0.26, 2200);
-    this.playTone(150, 0.16, 0.0, 'sine', 0.26);
+    this.playTone(150, 0.16, 0.26, 'sine', 0.0);
 
     const level = multiplier >= 100 ? 1 : multiplier >= 25 ? 0.9 : multiplier >= 5 ? 0.8 : 0.72;
 
@@ -2081,8 +2168,8 @@ class SoundService {
     const t = this.ctx!.currentTime;
 
     // Weight: low thud
-    this.playTone(70, 0.34, 0.0, 'sine', 0.4);
-    this.playTone(105, 0.22, 0.01, 'triangle', 0.22);
+    this.playTone(70, 0.34, 0.4, 'sine', 0.0);
+    this.playTone(105, 0.22, 0.22, 'triangle', 0.01);
     // Timber: broadband knock
     this.createNoiseBurst(t, 0.1, 0.24, 600);
     // Iron fittings rattling from the drop
@@ -2119,7 +2206,7 @@ class SoundService {
 
     // Latch pops first — you hear the lock give before the hinge moves.
     this.createNoiseBurst(t, 0.04, 0.26, 3600);
-    this.playTone(880, 0.07, 0.0, 'square', 0.12);
+    this.playTone(880, 0.07, 0.12, 'square', 0.0);
 
     // Hinge groan: detuned saw pair sliding up, band-passed so it reads as
     // wood-and-iron rather than as a synth sweep.
@@ -2146,7 +2233,7 @@ class SoundService {
 
     // Light escaping the seam — a shimmer that promises the payoff.
     [1975.53, 2637.02, 3520.0].forEach((f, i) => {
-      this.playTone(f, 0.5, 0.35 + i * 0.07, 'sine', 0.07);
+      this.playTone(f, 0.5, 0.07, 'sine', 0.35 + i * 0.07);
     });
 
     haptic.strong();
@@ -2179,12 +2266,12 @@ class SoundService {
     const coins = [2093.0, 2637.02, 3135.96, 3520.0, 4186.01];
     for (let i = 0; i < 14; i++) {
       const f = coins[i % coins.length] * (0.94 + Math.random() * 0.12);
-      this.playTone(f, 0.16, 0.12 + Math.random() * 0.6, 'triangle', 0.055);
+      this.playTone(f, 0.16, 0.055, 'triangle', 0.12 + Math.random() * 0.6);
     }
 
     // Triumphant major chord landing under the shower.
     [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
-      this.playTone(f, 0.9, 0.18 + i * 0.03, 'sine', 0.13);
+      this.playTone(f, 0.9, 0.13, 'sine', 0.18 + i * 0.03);
     });
 
     haptic.jackpot();

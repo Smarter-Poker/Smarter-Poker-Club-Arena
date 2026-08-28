@@ -298,7 +298,17 @@ describe('the engine pause outlasts the break', () => {
 
 describe('tournament rake is actually collected', () => {
   const start = RECURRING.indexOf('private async registerHorses');
-  const registerFn = RECURRING.slice(start, start + 7000);
+  // 2026-08-28: the window was `start + 7000`, a size that silently stopped
+  // covering the function the day the NO-CEILING entrant paging (Dan
+  // 2026-08-27) grew registerHorses past 7,000 characters — the RPC call the
+  // assertions below pin moved to offset ~7,440 and three of them went red on
+  // main with nothing wrong in the code. Slice to the end of the METHOD
+  // instead: the next class-member declaration, or EOF while registerHorses
+  // is the last member, so the window can never again be outrun by the body
+  // it is meant to watch.
+  const nextMember = RECURRING.slice(start + 10).search(/\n {2}(?:private|public|protected) /);
+  const registerFn =
+    nextMember === -1 ? RECURRING.slice(start) : RECURRING.slice(start, start + 10 + nextMember);
 
   it('horses register through the money path, not a raw insert', () => {
     expect(registerFn).toContain('fn_register_horse_for_tournament');

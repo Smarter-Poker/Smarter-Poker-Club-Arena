@@ -59,7 +59,13 @@ export async function logHandHistory(params: {
    * many boards were actually dealt. Written to hand_history.bomb_pot as
    * jsonb; NULL on every normal hand.
    */
-  bombPot?: { trigger_reason: string; ante_amount: number; board_count: number } | null;
+  bombPot?: {
+    trigger_reason: string;
+    ante_amount: number;
+    board_count: number;
+    /** VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant the bomb hand was dealt as. */
+    variant?: string;
+  } | null;
   /**
    * COMPLETENESS PASS 2026-08-26: run-it-twice boards 2..N (engine card
    * strings, run order). Written to hand_history.rit_boards — NULL on every

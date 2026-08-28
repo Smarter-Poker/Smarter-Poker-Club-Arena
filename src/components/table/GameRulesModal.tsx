@@ -44,6 +44,8 @@ export interface GameRulesModalProps {
     triggerMode?: string;
     /** Timed mode: seconds between bombs. */
     intervalSeconds?: number;
+    /** VARIANT OVERRIDE (spec §10.1): bomb hand variant; null = same as table. */
+    variant?: string | null;
   } | null;
 }
 
@@ -500,6 +502,16 @@ export function GameRulesModal({
                             : '1'}
                       </span>
                     </div>
+                    {/* VARIANT OVERRIDE (spec §10.1): only shown when the bomb
+                        hand plays a different game from the table. */}
+                    {bombPotRules.variant && (
+                      <div className="rules-modal__item">
+                        <span className="rules-modal__label">Played As</span>
+                        <span className="rules-modal__value">
+                          {bombPotRules.variant.toUpperCase()}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

@@ -9145,7 +9145,9 @@
       "bomb_pot_trigger_mode",
       "bomb_pot_interval_seconds",
       "bomb_pot_min_players",
-      "bomb_pot_ante_fixed"
+      "bomb_pot_ante_fixed",
+      "bomb_pot_variant",
+      "bomb_pot_next_due_at"
     ],
     "theme_asset_unlocks": [
       "user_id",

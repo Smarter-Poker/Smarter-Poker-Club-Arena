@@ -78,6 +78,9 @@ const GAMEPLAY_COLUMNS = [
   'bomb_pot_interval_seconds',
   'bomb_pot_min_players',
   'bomb_pot_ante_fixed',
+  // VARIANT OVERRIDE + TIMED PERSISTENCE 2026-08-28 (spec §10.1/§4.3)
+  'bomb_pot_variant',
+  'bomb_pot_next_due_at',
   'seven_deuce_enabled',
   'time_bank_enabled',
   'wait_for_big_blind',

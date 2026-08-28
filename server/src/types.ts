@@ -182,6 +182,19 @@ export interface TableInfo {
   bomb_pot_min_players?: number;
   /** FIXED ante mode: exact chip amount. When > 0, overrides the BB multiplier. */
   bomb_pot_ante_fixed?: number | null;
+  /**
+   * VARIANT OVERRIDE (spec §10.1): the bomb HAND's variant when it differs
+   * from the table's — e.g. an NLH table dealing PLO4 double-board bombs.
+   * NULL = same as table. Whitelisted in resolveBombPotVariant AND by the
+   * tables_bomb_pot_variant_check constraint.
+   */
+  bomb_pot_variant?: string | null;
+  /**
+   * TIMED PERSISTENCE (spec §4.3): the timed mode's next due timestamp,
+   * written by the engine when the clock is (re)set and read back at boot so
+   * a deploy no longer restarts the cycle.
+   */
+  bomb_pot_next_due_at?: string | null;
   /** Bible V8 §2.1: Minimum players to start a hand */
   min_players?: number;
   /** Bible V8 §2.1: Table display name */
@@ -395,6 +408,11 @@ export interface HandStateBroadcast {
   community_cards2?: Card[];
   /** TRIPLE-BOARD BOMB POT 2026-08-27: third board (empty unless active). */
   community_cards3?: Card[];
+  /**
+   * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is being
+   * played as — differs from the table's game on a variant-override bomb pot.
+   */
+  hand_variant?: string;
   current_bet: number;
   current_player: string; // user_id of player whose turn it is
   dealer_seat: number;

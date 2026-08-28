@@ -13310,18 +13310,51 @@ export default function TablePage({
    */
   const [cachedHandStrength, setCachedHandStrength] = useState<string | null>(null);
 
-  const heroHandStrength = useMemo<string | null>(() => {
-    const hero = tableState.players[tableState.heroSeat - 1];
-    if (!hero || !hero.isHero || hero.status === 'folded') {
-      return null;
-    }
-    const hole = (hero.holeCards || []).filter((c): c is Card => !!c);
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * PERF 2026-08-28 — THE COMMENT ABOVE WAS ASPIRATIONAL, NOT TRUE.
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * "Memoised on the cards and the variant, so it runs when the board changes
+   * rather than on every timer tick." It did not. The dep array carried
+   * `tableState.players`, and mapEngineSnapshot builds a FRESH players array
+   * on every snapshot, so the memo was invalidated on every snapshot — and it
+   * also listed `cachedHandStrength`, which the effect below sets FROM this
+   * value, so it re-ran on its own output.
+   *
+   * `bestFive` is combinatorial: 21 five-card scorings for Hold'em, 60 for
+   * PLO4, 150 for PLO6, each with a sort and a Map build. Four PLO6 tables
+   * mounted at once put ~600 hand evaluations per snapshot round on the main
+   * thread, straight through the 16ms budget useFrameBudgetMonitor watches.
+   *
+   * The fix keys the memo on WHAT THE CARDS ARE rather than on the identity
+   * of the array that holds them: two cheap join()s over at most six and five
+   * cards. The card objects themselves are read through a ref, which is
+   * sound precisely because the keys change whenever those objects change.
+   * The hand-over branch moved OUT of the memo — it was the reason
+   * `cachedHandStrength` and `isHandInProgress` were deps at all.
+   */
+  const hero = tableState.players[tableState.heroSeat - 1];
+  const heroIsLive = Boolean(hero && hero.isHero && hero.status !== 'folded');
+  const heroHoleCards = useMemo(
+    () => (heroIsLive ? (hero?.holeCards || []).filter((c): c is Card => !!c) : []),
+    [heroIsLive, hero?.holeCards]
+  );
+  const heroBoardCards = useMemo(
+    () => (tableState.communityCards || []).filter((c): c is Card => !!c),
+    [tableState.communityCards]
+  );
+  /** Identity-independent keys: the memo below re-runs only on real changes. */
+  const heroHoleKey = heroHoleCards.map(cardKey).join(',');
+  const heroBoardKey = heroBoardCards.map(cardKey).join(',');
+  const heroHandVariant = tableState.handVariant || tableState.gameType;
+  const heroCardsRef = useRef({ hole: heroHoleCards, board: heroBoardCards });
+  heroCardsRef.current = { hole: heroHoleCards, board: heroBoardCards };
+
+  const heroHandStrengthLive = useMemo<string | null>(() => {
+    const hole = heroCardsRef.current.hole;
     if (hole.length < 2) return null;
-
-    // If the hand is over, preserve the last known hand strength so it doesn't drop to "King High" as cards clear.
-    if (!tableState.isHandInProgress) return cachedHandStrength;
-
-    const board = (tableState.communityCards || []).filter((c): c is Card => !!c);
+    const board = heroCardsRef.current.board;
 
     let strength: string | null = null;
     if (board.length === 0) {
@@ -13345,28 +13378,27 @@ export default function TablePage({
       }
     } else {
       try {
-        const best = bestFive(hole, board, tableState.handVariant || tableState.gameType);
+        const best = bestFive(hole, board, heroHandVariant);
         strength = best?.name ?? null;
       } catch {
         strength = null;
       }
     }
     return strength;
-  }, [
-    tableState.players,
-    tableState.heroSeat,
-    tableState.communityCards,
-    tableState.handVariant,
-    tableState.gameType,
-    tableState.isHandInProgress,
-    cachedHandStrength,
-  ]);
+     
+    // are read through heroCardsRef; these keys change exactly when they do.
+  }, [heroHoleKey, heroBoardKey, heroHandVariant]);
+
+  /* Once the hand is over, hold the last known strength rather than letting
+     it decay to "King High" as the cards clear. This used to live INSIDE the
+     memo, which is why the memo depended on its own output. */
+  const heroHandStrength = tableState.isHandInProgress ? heroHandStrengthLive : cachedHandStrength;
 
   useEffect(() => {
     if (tableState.isHandInProgress) {
-      setCachedHandStrength(heroHandStrength);
+      setCachedHandStrength(heroHandStrengthLive);
     }
-  }, [heroHandStrength, tableState.isHandInProgress]);
+  }, [heroHandStrengthLive, tableState.isHandInProgress]);
 
   // Handle seat click (sit down at empty seat)
   const handleSeatClick = (seatNumber: number) => {

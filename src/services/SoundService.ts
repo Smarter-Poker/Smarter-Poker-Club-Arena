@@ -299,8 +299,38 @@ class SoundService {
    * effect, so a player who disabled "Chat Message Sounds" got it back on
    * every reload (and the panel's checkboxes disagreed with the running
    * engine for the whole session). Restore the saved config at boot.
-   * Key/shape must match SoundSettings.tsx (not imported — a service must
-   * not depend on a component).
+   *
+   * ───────────────────────────────────────────────────────────────────────
+   * 2026-08-28 — THE WRITER THIS READ WAS WRITTEN FOR NO LONGER EXISTS.
+   * ───────────────────────────────────────────────────────────────────────
+   *
+   * The note above named `SoundSettings.tsx` as the owner of this key. That
+   * file was DELETED THE DAY BEFORE this function was written, in "delete the
+   * unreachable settings UI and its orphaned styles" (#1316) — the whole
+   * `src/components/settings/` folder was verified to be a closed loop that
+   * nothing imported. So this read was born pointing at a key with no writer:
+   * `localStorage.getItem('sp_sound_settings')` can only ever return null,
+   * `setCategoryEnabled` and `setCategoryStates` have zero callers, and
+   * `setEffectsVolume` is called from nowhere but here.
+   *
+   * KEPT, NOT DELETED, and deliberately:
+   *
+   *  - the category GATE itself is live and correct — `shouldPlay` consults
+   *    `categoryEnabled` on all 50 categorised call sites, so the mechanism
+   *    works; only its input is missing;
+   *  - the shape below is the contract any future sound-category UI must
+   *    write, and deleting it would mean rediscovering it;
+   *  - a hydrate that reads a key nothing writes costs one localStorage read
+   *    at boot and cannot misbehave — the defaults stand.
+   *
+   * WHAT IS ACTUALLY MISSING is a UI. Today the app offers exactly two sound
+   * controls in three places (SettingsPage Audio, HamburgerMenu, the in-table
+   * SettingsPanel): a master on/off and a master volume. The five per-category
+   * switches and the effects volume are unreachable, so they sit at their
+   * constructor defaults. That is a product decision — which categories are
+   * worth exposing, and where — not something to invent here. Until it is
+   * made, this stays a no-op hydrate rather than a promise the UI does not
+   * keep.
    */
   /* ── `restoreStoredConfig` REMOVED 2026-08-29 ──────────────────────────
      It read `localStorage['sp_sound_settings']`, a key that appeared EXACTLY

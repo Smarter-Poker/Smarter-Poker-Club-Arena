@@ -44,6 +44,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceBlockAfter, sliceEnclosingBlock, sliceMethod, sliceStatement } from '../testHelpers/sourceWindow.js';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
@@ -111,7 +112,7 @@ describe('a cash entrant either waits for the big blind or posts it', () => {
     const seating = strip(read('src/engine/ServerTableEngineSeating.ts'));
     const at = seating.indexOf('public registerWaitForBB');
     expect(at).toBeGreaterThan(-1);
-    const body = seating.slice(at, at + 300);
+    const body = sliceMethod(seating, 'public registerWaitForBB');
     expect(body).not.toMatch(/wait_for_big_blind/);
     expect(body).toMatch(/if \(!this\.isTournamentTable\(\)\)/);
   });
@@ -121,7 +122,7 @@ describe('a cash entrant either waits for the big blind or posts it', () => {
     const seating = strip(read('src/engine/ServerTableEngineSeating.ts'));
     const at = seating.indexOf('public postBBToEnter');
     expect(at).toBeGreaterThan(-1);
-    const body = seating.slice(at, at + 900);
+    const body = sliceMethod(seating, 'public postBBToEnter');
     const guard = body.indexOf('getSBSeatIndex');
     const release = body.indexOf('this.waitingForBB.delete(userId)');
     expect(guard, 'no small-blind guard on postBBToEnter').toBeGreaterThan(-1);
@@ -134,7 +135,7 @@ describe('a cash entrant either waits for the big blind or posts it', () => {
   it('none of this touches tournaments', () => {
     const seating = strip(read('src/engine/ServerTableEngineSeating.ts'));
     const at = seating.indexOf('public registerWaitForBB');
-    expect(seating.slice(at, at + 300)).toMatch(/isTournamentTable\(\)/);
+    expect(sliceMethod(seating, 'public registerWaitForBB')).toMatch(/isTournamentTable\(\)/);
   });
 
   it('a post tapped before registration is QUEUED, not refused (race fix 2026-08-27)', () => {
@@ -146,10 +147,10 @@ describe('a cash entrant either waits for the big blind or posts it', () => {
     // seat just became the big blind can never be billed twice.
     const seating = strip(read('src/engine/ServerTableEngineSeating.ts'));
     const at = seating.indexOf('public postBBToEnter');
-    expect(seating.slice(at, at + 400)).toMatch(/queuePostToEnter/);
+    expect(sliceMethod(seating, 'public postBBToEnter')).toMatch(/queuePostToEnter/);
     const helper = seating.indexOf('protected queuePostToEnter');
     expect(helper).toBeGreaterThan(-1);
-    const helperBody = seating.slice(helper, helper + 300);
+    const helperBody = sliceMethod(seating, 'protected queuePostToEnter');
     expect(helperBody).toMatch(/isTournamentTable\(\)/);
     expect(helperBody).toMatch(/knownPlayerIds/);
     expect(helperBody).toMatch(/pendingPostToEnter\.add/);
@@ -162,7 +163,7 @@ describe('a cash entrant either waits for the big blind or posts it', () => {
     // Replay comes AFTER the natural-BB release (double-charge guard).
     expect(replay).toBeGreaterThan(release);
     // And it goes through the guarded public method, never the sets directly.
-    const replayBody = dealing.slice(replay, replay + 400);
+    const replayBody = sliceEnclosingBlock(dealing, 'pendingPostToEnter.size > 0');
     expect(replayBody).toMatch(/waitingForBB\.has/);
     expect(replayBody).toMatch(/this\.postBBToEnter\(/);
   });
@@ -195,13 +196,13 @@ describe('a new player never receives the button', () => {
     // roster after every deploy and the rule is unenforceable for an orbit.
     const at = DEALING.indexOf('if (this.dealingLoopFirstIteration)');
     expect(at).toBeGreaterThan(-1);
-    expect(DEALING.slice(at, at + 500)).toMatch(/this\.dealtInUserIds\.add\(p\.user_id\)/);
+    expect(sliceBlockAfter(DEALING, 'if (this.dealingLoopFirstIteration)')).toMatch(/this\.dealtInUserIds\.add\(p\.user_id\)/);
   });
 
   it('the rotation itself walks the eligible roster, not the raw deal roster', () => {
     const at = DEALING.indexOf('const buttonRoster');
     expect(at, 'buttonRoster not found').toBeGreaterThan(-1);
-    const block = DEALING.slice(at, at + 700);
+    const block = sliceEnclosingBlock(DEALING, 'const buttonRoster');
     expect(block).toMatch(/this\.buttonEligible\(players\)/);
     expect(block).toMatch(/getNextSeat\(prevButtonSeat,\s*buttonRoster\)/);
   });
@@ -211,7 +212,7 @@ describe('a new player never receives the button', () => {
     // it buttonEligible returns [] and the rotation has nothing to choose.
     const at = BASE.indexOf('protected buttonEligible');
     expect(at, 'buttonEligible not found').toBeGreaterThan(-1);
-    expect(BASE.slice(at, at + 400)).toMatch(/veterans\.length > 0 \? veterans : roster/);
+    expect(sliceMethod(BASE, 'protected buttonEligible')).toMatch(/veterans\.length > 0 \? veterans : roster/);
   });
 
   it('taking the seat the button is about to reach cannot hand it to a new player', () => {
@@ -231,7 +232,7 @@ describe('a new player never receives the button', () => {
     // survives, because posting must not buy past the rule either.
     const seating = strip(read('src/engine/ServerTableEngineSeating.ts'));
     const at = seating.indexOf('public postBBToEnter');
-    const body = seating.slice(at, at + 900);
+    const body = sliceMethod(seating, 'public postBBToEnter');
     expect(body).toMatch(/getButtonSeatIndex/);
     expect(body).toMatch(/seat\.seat_number === buttonSeatIndex/);
   });
@@ -258,7 +259,7 @@ describe('a new player never receives the button', () => {
     // balanced table is mostly players this set has never seen.
     const at = BASE.indexOf('protected buttonEligible');
     expect(at).toBeGreaterThan(-1);
-    expect(BASE.slice(at, at + 300)).toMatch(/if \(this\.isTournamentTable\(\)\) return roster;/);
+    expect(sliceMethod(BASE, 'protected buttonEligible')).toMatch(/if \(this\.isTournamentTable\(\)\) return roster;/);
   });
 
   it('the button always moves, so nobody posts the same blind twice', () => {
@@ -280,6 +281,6 @@ describe('a new player never receives the button', () => {
     // makes a returning player a new joiner again, consistent with knownPlayerIds.
     const at = DEALING.indexOf('for (const id of this.dealtInUserIds)');
     expect(at, 'dealtInUserIds pruning not found').toBeGreaterThan(-1);
-    expect(DEALING.slice(at, at + 200)).toMatch(/currentIds\.has\(id\)/);
+    expect(sliceBlockAfter(DEALING, 'for (const id of this.dealtInUserIds)')).toMatch(/currentIds\.has\(id\)/);
   });
 });

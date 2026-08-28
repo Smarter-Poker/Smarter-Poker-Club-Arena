@@ -40,6 +40,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { SPIN_TIERS } from '../../server/src/config/spinSpec';
+import { sliceStatement } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const sqlCode = (src: string) => src.replace(/^[ \t]*--.*$/gm, '');
@@ -147,7 +148,7 @@ describe('the engine no longer starts a Spin on an unchecked write', () => {
     expect(engine).toMatch(/'Tournament\.spin_draw_row_write_failed'/);
     // No `return` / stand-down was added to this path.
     const start = engine.indexOf('let spinRowWritten');
-    const block = engine.slice(start, start + 2000);
+    const block = sliceStatement(engine, 'let spinRowWritten');
     expect(block).not.toMatch(/this\.running = false/);
   });
 });

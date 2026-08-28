@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve, join } from 'node:path';
+import { sliceStatement, sliceCall } from '../helpers/sourceWindow';
 
 /**
  * Dan 2026-08-21: "you assign an avatar to every horse, and they use that in
@@ -51,7 +52,7 @@ describe('Club Arena never touches the social media photo column', () => {
       const re = /\.from\(\s*['"]profiles['"]\s*\)/g;
       let m: RegExpExecArray | null;
       while ((m = re.exec(src))) {
-        const slice = src.slice(m.index, m.index + 500);
+        const slice = sliceStatement(src.slice(m.index), '.from(');
         const sel = /\.select\(/.exec(slice);
         if (!sel) continue;
         const intervening = slice.slice(0, sel.index);
@@ -107,7 +108,7 @@ describe('Club Arena never touches the social media photo column', () => {
       const re = /\.from\(\s*['"]profiles['"]\s*\)[\s\S]{0,400}?\.(update|upsert|insert)\(/g;
       let m: RegExpExecArray | null;
       while ((m = re.exec(src))) {
-        const tail = src.slice(m.index, m.index + 600);
+        const tail = sliceCall(src.slice(m.index), `.${m[1]}(`);
         if (/(?<!arena_)\bavatar_url\b\s*:/.test(tail)) {
           offenders.push(`${file.replace(ROOT + '/', '')} -> .${m[1]}({ avatar_url: ... })`);
         }
@@ -156,7 +157,7 @@ describe('Club Arena never touches the social media photo column', () => {
       const re = /\.from\(\s*['"]profiles['"]\s*\)[\s\S]{0,400}?\.(update|upsert|insert)\(/g;
       let m: RegExpExecArray | null;
       while ((m = re.exec(src))) {
-        if (/\barena_avatar_url\b\s*:/.test(src.slice(m.index, m.index + 600))) {
+        if (/\barena_avatar_url\b\s*:/.test(sliceCall(src.slice(m.index), `.${m[1]}(`))) {
           offenders.push(`${rel} -> .${m[1]}({ arena_avatar_url: ... })`);
         }
       }

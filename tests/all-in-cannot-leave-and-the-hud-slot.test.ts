@@ -60,6 +60,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceEnclosingBlock } from './helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -126,7 +127,7 @@ describe('an all-in player cannot leave the table', () => {
     // It skips that player and keeps evicting the rest, rather than aborting
     // the whole sweep.
     const at = body.indexOf('evictSelf?.is_all_in');
-    expect(body.slice(at, at + 300)).toMatch(/continue;/);
+    expect(sliceEnclosingBlock(body, 'evictSelf?.is_all_in')).toMatch(/continue;/);
   });
 
   it('is_all_in is still only read from the live hand, not a stale seat row', () => {

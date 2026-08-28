@@ -21,6 +21,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { DisconnectEngine } from './DisconnectEngine.js';
+import { sliceEnclosingBlock, sliceMethod, sliceStatement } from '../testHelpers/sourceWindow.js';
 
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 
@@ -132,7 +133,7 @@ describe('the eviction runs where the table actually is', () => {
     // sits out and nothing can remove them.
     const at = BASE.indexOf('start_wait_for_players');
     expect(at).toBeGreaterThan(-1);
-    const loop = BASE.slice(at, at + 2000);
+    const loop = sliceEnclosingBlock(BASE, 'start_wait_for_players');
     expect(loop).toMatch(/evictExpiredSitOuts\(\{ countOrbit: false \}\)/);
   });
 
@@ -143,7 +144,7 @@ describe('the eviction runs where the table actually is', () => {
   it('counts the orbit at the DEAL, which is the only place one passes', () => {
     const at = DEALING.indexOf('this.lastButtonSeat = dealerSeat');
     expect(at).toBeGreaterThan(-1);
-    const after = DEALING.slice(at, at + 1200);
+    const after = sliceEnclosingBlock(DEALING, 'this.lastButtonSeat = dealerSeat');
     expect(after).toMatch(/countOrbit: true/);
   });
 
@@ -151,7 +152,7 @@ describe('the eviction runs where the table actually is', () => {
     // A tournament sit-out is blinded off by design; removing the seat would
     // break the tournament.
     const at = BASE.indexOf('protected async evictExpiredSitOuts');
-    const body = BASE.slice(at, at + 400);
+    const body = sliceMethod(BASE, 'protected async evictExpiredSitOuts');
     expect(body).toMatch(/if \(this\.isTournamentTable\(\)\) return;/);
   });
 });
@@ -168,7 +169,7 @@ describe('Leave Table overrides everything', () => {
 
   it('a folded player is not treated as being in the hand', () => {
     const at = SEATING.indexOf('const playerInLiveHand');
-    const body = SEATING.slice(at, at + 260);
+    const body = sliceStatement(SEATING, 'const playerInLiveHand');
     expect(body).toMatch(/!p\.is_folded/);
   });
 
@@ -184,7 +185,7 @@ describe('Leave Table overrides everything', () => {
 
   it('a swept leave tears down the same per-player state settlement does', () => {
     const at = DEALING.indexOf("'leave_pending'");
-    const body = DEALING.slice(at, at + 900);
+    const body = sliceEnclosingBlock(DEALING, "'leave_pending'");
     expect(body).toMatch(/unregisterPlayer/);
     expect(body).toMatch(/timeBankEngine\.removePlayer/);
     expect(body).toMatch(/seatedPlayers = this\.seatedPlayers\.filter/);

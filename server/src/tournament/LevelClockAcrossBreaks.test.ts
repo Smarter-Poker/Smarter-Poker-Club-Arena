@@ -38,6 +38,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { sliceBlockAfter } from '../testHelpers/sourceWindow.js';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
@@ -123,7 +124,7 @@ describe('the blind clock survives a synchronized break', () => {
     expect(BASE).not.toMatch(/tournament\.on_break\s*&&\s*tournament\.break_ends_at/);
     const at = BASE.indexOf('if (tournament.on_break)');
     expect(at, 'resume() must react to on_break on its own').toBeGreaterThan(-1);
-    const block = BASE.slice(at, at + 1400);
+    const block = sliceBlockAfter(BASE, 'if (tournament.on_break)');
     expect(block).toMatch(/this\.suspendLevelClock\(\)/);
     // The missing end time is reconstructed from break_started_at, not treated
     // as "there is no break".

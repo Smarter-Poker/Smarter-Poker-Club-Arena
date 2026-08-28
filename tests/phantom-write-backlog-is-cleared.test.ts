@@ -25,6 +25,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceStatement } from './helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
@@ -41,7 +42,7 @@ const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\
 const writeTo = (src: string, table: string): string => {
   const at = code(src).indexOf(`from('${table}')`);
   if (at < 0) throw new Error(`no write to ${table}`);
-  return code(src).slice(at, at + 700);
+  return sliceStatement(code(src), `from('${table}')`);
 };
 
 describe('the backlog is empty and may only ever shrink', () => {

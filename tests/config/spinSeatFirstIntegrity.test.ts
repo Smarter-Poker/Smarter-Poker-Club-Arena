@@ -32,6 +32,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceMethod } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const tsCode = (src: string) =>
@@ -176,12 +177,15 @@ describe('horses take seats, not just places on a list', () => {
   });
 
   it('both callers batch, so neither loops a query', () => {
-    for (const caller of ['createOpenSeatTable', 'topUpWithHorses']) {
-      const start = recurring.indexOf(caller);
-      expect(start, `${caller} is gone`).toBeGreaterThan(-1);
-      // 6000: the held-empty gates (Dan 2026-08-26) sit between each entry
-      // point and its pickFreeHorses call; the call is still a single batch.
-      const body = recurring.slice(start, start + 6000);
+    // Anchored on the DEFINITION, not the first mention: the first occurrence of
+    // `createOpenSeatTable` is a call site, and slicing a method from there
+    // returns the call, not the body.
+    for (const caller of ['private async createOpenSeatTable(', 'async topUpWithHorses(']) {
+      expect(recurring.indexOf(caller), `${caller} is gone`).toBeGreaterThan(-1);
+      // The held-empty gates (Dan 2026-08-26) sit between each entry point and
+      // its pickFreeHorses call, so the window has to be the whole method - a
+      // byte count here only says how long the gates happened to be that day.
+      const body = sliceMethod(recurring, caller);
       expect(body).toMatch(/pickFreeHorses\(/);
     }
   });

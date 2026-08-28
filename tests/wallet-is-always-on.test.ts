@@ -26,7 +26,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { sliceBlockAfter } from './helpers/sourceWindow';
+import { sliceBlockAfter, sliceEnclosingBlock } from './helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
@@ -106,7 +106,7 @@ describe('balance changes reach the player on every page', () => {
     // The 2026-04 billing incident was UNFILTERED table-wide listeners. A
     // filtered one is cheap; an unfiltered one must never come back.
     const at = SYNC_HOOKS.indexOf("table: 'wallets'");
-    const walletsBlock = SYNC_HOOKS.slice(at, at + 200);
+    const walletsBlock = sliceEnclosingBlock(SYNC_HOOKS, "table: 'wallets'");
     expect(walletsBlock).toMatch(/filter:\s*`user_id=eq\.\$\{userId\}`/);
   });
 

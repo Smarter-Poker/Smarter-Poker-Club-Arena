@@ -216,7 +216,9 @@ export default function XMTTPage() {
       masterBus.subscribeDebounced('TOURNAMENT_COMPLETE', refresh, 500),
       // Phase 4: Cross-page sync (ported from World Hub xmtt.js)
       masterBus.subscribeDebounced('TOURNAMENT_CANCELLED', refresh, 500),
-      masterBus.subscribeDebounced('TOURNAMENT_LEVEL_CHANGE', refresh, 1000),
+      // TOURNAMENT_LEVEL_CHANGE removed 2026-08-28: nothing emits it on the
+      // client bus — BlindsTab documents that it is DELIBERATELY not emitted
+      // (levels arrive on the snapshot), so this refresh never fired.
       // Phase 13: Waitlist position changes trigger tournament card refresh
       masterBus.subscribeDebounced('WAITLIST_POSITION_CHANGED', refresh, 500),
       masterBus.subscribeDebounced('WAITLIST_PROMOTED', refresh, 500),

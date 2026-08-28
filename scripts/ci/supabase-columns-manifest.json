@@ -891,6 +891,26 @@
       "blocked_id",
       "created_at"
     ],
+    "bomb_pot_award_units": [
+      "id",
+      "hand_history_id",
+      "table_id",
+      "hand_number",
+      "pot_index",
+      "board",
+      "side",
+      "user_id",
+      "amount",
+      "hand_name",
+      "created_at"
+    ],
+    "bomb_pot_manual_requests": [
+      "id",
+      "table_id",
+      "club_id",
+      "requested_by",
+      "requested_at"
+    ],
     "bot_profiles": [
       "id",
       "username",
@@ -9009,7 +9029,8 @@
       "auto_rebuy",
       "time_bank_remaining",
       "time_bank_uses_remaining",
-      "club_id"
+      "club_id",
+      "sit_out_at"
     ],
     "table_sessions": [
       "id",
@@ -9197,7 +9218,11 @@
       "bomb_pot_ante_fixed",
       "first_button_seat",
       "bomb_pot_variant",
-      "bomb_pot_next_due_at"
+      "bomb_pot_next_due_at",
+      "bomb_pot_sched_state",
+      "bomb_pot_manual_pending",
+      "bomb_pot_button_policy",
+      "bomb_pot_announce_seconds"
     ],
     "theme_asset_unlocks": [
       "user_id",
@@ -9644,7 +9669,9 @@
       "chip_count",
       "club_id",
       "is_satellite_qualifier",
-      "rebuy_prompt_until"
+      "rebuy_prompt_until",
+      "push_15m_sent",
+      "push_2m_sent"
     ],
     "tournament_rake_settlements": [
       "tournament_id",
@@ -11284,7 +11311,21 @@
       "multi_desktop_alerts",
       "multi_shared_socket",
       "blue_buttons_enabled",
-      "show_ticker"
+      "show_ticker",
+      "sound_enabled",
+      "sound_volume",
+      "haptic_enabled",
+      "animation_speed",
+      "color_theme",
+      "four_color_deck",
+      "show_pot_odds",
+      "show_bet_size_presets",
+      "auto_muck",
+      "auto_muck_explicit",
+      "auto_muck_winners",
+      "auto_post_blinds",
+      "confirm_all_in",
+      "card_back"
     ],
     "user_theme_settings": [
       "id",
@@ -11349,6 +11390,29 @@
       "bets_won",
       "bets_lost",
       "updated_at"
+    ],
+    "v_bomb_pot_daily": [
+      "day",
+      "trigger_reason",
+      "board_count",
+      "variant",
+      "hands",
+      "avg_pot",
+      "total_rake",
+      "avg_ante"
+    ],
+    "v_bomb_pot_outcomes": [
+      "day",
+      "multi_board_hands",
+      "full_scoops",
+      "split_hands",
+      "avg_award_units"
+    ],
+    "v_bomb_pot_vs_normal": [
+      "day",
+      "is_bomb",
+      "hands",
+      "avg_pot"
     ],
     "v_chip_ledger": [
       "id",
@@ -12075,11 +12139,6 @@
       "first_seen_at",
       "last_seen_at",
       "resolved"
-    ],
-    "ad_event_retention_policy": [
-      "id",
-      "event_retention_days",
-      "updated_at"
     ]
   }
 }

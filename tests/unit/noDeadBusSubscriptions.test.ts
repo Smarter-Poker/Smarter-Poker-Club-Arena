@@ -62,7 +62,12 @@ function scan() {
         if (!subscribed.has(n[1])) subscribed.set(n[1], rel);
       }
     }
-    for (const m of src.matchAll(/masterBus\.subscribe\(\s*'([A-Z0-9_]+)'/g)) {
+    // BLIND SPOT (fixed 2026-08-28): this matched only `masterBus.subscribe(`
+    // and could never match `masterBus.subscribeDebounced(` — the single most
+    // common direct idiom in the repo. Nine dead subscriptions hid behind
+    // that one missing word while the suite stayed green, including three
+    // security dashboards and the VIP points feed.
+    for (const m of src.matchAll(/masterBus\.subscribe(?:Debounced)?\(\s*'([A-Z0-9_]+)'/g)) {
       if (!subscribed.has(m[1])) subscribed.set(m[1], rel);
     }
     for (const m of src.matchAll(/masterBus\.emit\(\s*'([A-Z0-9_]+)'/g)) emitted.add(m[1]);

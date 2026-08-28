@@ -28,6 +28,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { sliceMethod, sliceCall } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
@@ -144,8 +145,8 @@ describe('rebuys and add-ons actually happen', () => {
   });
 
   it('the add-on call sits inside triggerAddOnPeriod, not orphaned', () => {
-    const trigger = code(BASE).slice(code(BASE).indexOf('triggerAddOnPeriod(): Promise<void>'));
-    expect(trigger.slice(0, 4000)).toMatch(/tryTournamentAddOns\(\)/);
+    const trigger = sliceMethod(code(BASE), 'triggerAddOnPeriod(): Promise<void>');
+    expect(trigger).toMatch(/tryTournamentAddOns\(\)/);
   });
 });
 
@@ -368,7 +369,7 @@ describe('no seating path may write a second live seat in the same tournament', 
     // Checked BEFORE the source seat is stamped, so a refusal touches nothing.
     expect(claim).toBeLessThan(vacate);
     // The source table is the one seat that does not count against the move.
-    expect(fn.slice(claim, claim + 200)).toContain('move.fromTableId');
+    expect(sliceCall(fn, 'mayTakeSeat(')).toContain('move.fromTableId');
     expect(fn).toMatch(/Move_aborted_player_already_seated_twice/);
   });
 });

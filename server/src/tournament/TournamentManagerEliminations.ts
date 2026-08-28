@@ -468,33 +468,131 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // Places are now taken from the set that is actually still FREE,
           // walking down, so a collision is impossible by construction rather
           // than by arithmetic that assumed a stable count.
-          const { data: takenRows } = await supabase
+          /**
+           * ═══════════════════════════════════════════════════════════════
+           *  THE LADDER IS COUNTED FROM UNPLACED PLAYERS, AND IT NEVER
+           *  RUNS OUT (2026-08-28)
+           * ═══════════════════════════════════════════════════════════════
+           *
+           * Union PKO Afternoon (PLO4) 4f42d847 deadlocked heads-up and sat
+           * there: 39 entrants, places 2..38 handed out with no gap and no
+           * duplicate, place 39 never used, one player at 0 chips left
+           * `status='playing'` forever. Blinds kept escalating through four
+           * levels, the table stopped dealing after the final hand, the
+           * champion was never crowned and nobody was paid first prize.
+           *
+           * TWO DEFECTS, and it takes both to hang an event.
+           *
+           * (a) THE SEED WAS A LIVE `playing` COUNT. `playingCount` reads
+           *     `status='playing'`, and an entrant who has not yet been
+           *     promoted out of `registered` by ensureLateRegSeated is not in
+           *     it. On 4f42d847 the first bust was seeded at 38 while 39
+           *     players were in the event, so the WHOLE ladder was short by
+           *     one from that moment on. Nothing detected it, because a
+           *     ladder that is uniformly one place high is gapless and
+           *     collision-free — it looks perfect right up until the last
+           *     busted player asks for a place and there is none left.
+           *
+           *     The count that cannot drift is the number of players who
+           *     hold NO place yet: exactly the field still in contention
+           *     plus the ones busting in this sweep, `registered` entrants
+           *     included. If the ladder is healthy the free places are
+           *     precisely 1..unplaced, so the worst finisher takes
+           *     `unplaced`. Over-counting (a withdrawn row that keeps
+           *     position NULL) is the SAFE direction: it leaves an unclaimed
+           *     gap, which the payout trim already handles, instead of a
+           *     collision that pays a place twice.
+           *
+           * (b) EXHAUSTION WAS A `break`. When the walk down found nothing
+           *     free it logged and abandoned the player MID-SWEEP, leaving
+           *     them `status='playing'` at 0 chips. `remainingCount` can then
+           *     never reach 1, so finishTournament is unreachable — for the
+           *     rest of the process's life, every 5 seconds, forever. One
+           *     mislabelled place is a bookkeeping error a human can renumber.
+           *     Refusing to eliminate anybody strands the entire field's
+           *     money, the champion's included. So a busted player is ALWAYS
+           *     eliminated: if no place is free at or below the seed, take
+           *     the lowest free place above it and shout about it.
+           *
+           * (c) THE TAKEN-PLACES READ WAS UNCHECKED. `takenRows || []` turned
+           *     a failed query into "every place is free", which is the
+           *     collision this block exists to prevent. An unreadable list is
+           *     UNKNOWN — defer the eliminations to the next sweep.
+           */
+          const { data: takenRows, error: takenErr } = await supabase
             .from('tournament_players')
             .select('position')
             .eq('tournament_id', this.tournamentId)
             .not('position', 'is', null);
+
+          if (takenErr || !takenRows) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] taken-places list unreadable (${takenErr?.message ?? 'null rows'}) — deferring ${bustedOrdered.length} elimination(s) rather than assigning a place that may already be paid`
+              ),
+              'Tournament.taken_places_unavailable'
+            );
+            return; // the finally block clears isProcessingEliminations
+          }
+
           const takenPositions = new Set<number>(
-            (takenRows || [])
+            takenRows
               .map((r) => Number((r as { position: unknown }).position))
               .filter((n) => Number.isFinite(n))
           );
 
-          let nextPosition = Math.max(playingCount, bustedOrdered.length + 1);
+          // Players who hold no finishing place yet. Monotonic, and immune to
+          // the late-reg promotion that made `playingCount` drift.
+          const { count: unplacedCount, error: unplacedErr } = await supabase
+            .from('tournament_players')
+            .select('*', { count: 'exact', head: true })
+            .eq('tournament_id', this.tournamentId)
+            .is('position', null);
+
+          if (unplacedErr || unplacedCount === null || unplacedCount === undefined) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] unplaced-player count unavailable (${unplacedErr?.message ?? 'null count'}) — deferring ${bustedOrdered.length} elimination(s)`
+              ),
+              'Tournament.unplaced_count_unavailable'
+            );
+            return; // the finally block clears isProcessingEliminations
+          }
+
+          let nextPosition = Math.max(unplacedCount, playingCount, bustedOrdered.length + 1);
           for (let i = 0; i < bustedOrdered.length; i++) {
             // Place 1 belongs to the winner and is never handed out here.
-            while (nextPosition >= 2 && takenPositions.has(nextPosition)) nextPosition--;
-            if (nextPosition < 2) {
+            let place = nextPosition;
+            while (place >= 2 && takenPositions.has(place)) place--;
+
+            if (place < 2) {
+              // The ladder is already corrupt — every place from the seed down
+              // to 2 is spoken for. Do NOT abandon the player: that is the
+              // deadlock. Take the lowest place above the seed that is free.
+              let up = nextPosition + 1;
+              const ceiling = nextPosition + takenPositions.size + 2;
+              while (up <= ceiling && takenPositions.has(up)) up++;
+              if (up > ceiling) {
+                reportError(
+                  new Error(
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: no finishing place free in [2, ${ceiling}] for ${bustedOrdered[i].user_id.slice(0, 8)} — cannot eliminate, tournament will not finish without intervention`
+                  ),
+                  'TournamentManager.no_free_finishing_place'
+                );
+                break;
+              }
+              place = up;
               reportError(
                 new Error(
-                  `No free finishing place left for ${bustedOrdered[i].user_id} in tournament ${this.tournamentId}`
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] finishing ladder exhausted downward at seed ${nextPosition} — ${bustedOrdered[i].user_id.slice(0, 8)} placed at ${place} instead. Places already handed out are one or more too high; the event will still finish but the standings need renumbering.`
                 ),
-                'TournamentManager.no_free_finishing_place'
+                'TournamentManager.finishing_ladder_exhausted'
               );
-              break;
             }
-            await this.eliminatePlayer(bustedOrdered[i].user_id, nextPosition);
-            takenPositions.add(nextPosition);
-            nextPosition--;
+
+            await this.eliminatePlayer(bustedOrdered[i].user_id, place);
+            takenPositions.add(place);
+            nextPosition = Math.min(nextPosition, place) - 1;
           }
         }
 
@@ -1128,8 +1226,21 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // P1 FIX (2026-07-24): idempotency key so a committed-but-timed-out
           // credit is a no-op on the next retry attempt (no double prize mint),
           // and so the recovery path dedupes against this main path — SAME format
-          // (`tourney:{id}:prize:{user}:{position}`).
-          p_idempotency_key: `tourney:${this.tournamentId}:prize:${userId}:${position}`,
+          // (`tourney:{id}:prize:place:{position}`).
+          //
+          // PLACE-SCOPED, NOT USER-SCOPED (2026-08-28). This key used to be
+          // `...:prize:{user}:{position}`, so it deduped a repeated USER and
+          // not a repeated PLACE — two different players stamped the same
+          // place produced two different keys and BOTH were paid. Observed
+          // live the same day: Union PKO Afternoon (PLO4) 4f42d847 paid
+          // `position 2` twice, an hour apart, to two players, and disbursed
+          // 720.00 against a 600.00 pool — 120% of the prize pool, the extra
+          // being exactly one place-2 prize. The engine had priced each
+          // payment correctly for the position it believed at the time; a
+          // later arrival shifted the field and the real 2nd place was then
+          // paid again. Keying on the PLACE makes a second payment for a
+          // place a no-op no matter who holds it or which path pays it.
+          p_idempotency_key: `tourney:${this.tournamentId}:prize:place:${position}`,
           p_category: 'prize',
           p_description: `Tournament prize: position ${position}`,
           p_related_entity_id: this.tournamentId,
@@ -2884,7 +2995,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // under exactly `tourney:{id}:prize:{user}:1` - a key this path never
           // wrote, so the winner could be paid twice across the two paths.
           // Using the identical format makes them dedupe against each other.
-          p_idempotency_key: `tourney:${this.tournamentId}:prize:${winnerId}:1`,
+          p_idempotency_key: `tourney:${this.tournamentId}:prize:place:1`,
           p_category: 'prize',
           p_description: `Tournament winner prize: 1st place`,
           p_related_entity_id: this.tournamentId,

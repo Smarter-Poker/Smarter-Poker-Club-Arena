@@ -24,6 +24,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceEnclosingBlock, sliceCall } from './helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
@@ -34,7 +35,9 @@ const BRIDGE = read('src/lib/settingsBridge.ts');
 function upsertBody(): string {
   const start = SETTINGS.indexOf("from('user_notification_preferences').upsert(");
   expect(start, 'the notification preferences upsert has moved or gone').toBeGreaterThan(-1);
-  return SETTINGS.slice(start, start + 400);
+  // Anchored past `from(` on purpose: sliceCall binds the FIRST paren after the
+  // anchor, and `from(` would hand back that call instead of the upsert.
+  return sliceCall(SETTINGS, "user_notification_preferences').upsert(");
 }
 
 describe('the notifications section writes only its own switches', () => {

@@ -64,6 +64,7 @@ import { formatBuyIn, money } from '../../../utils/buyIn';
 import { spinMultiplierLabel } from '../../../utils/spinReveal';
 import { useToast } from '../../common/Toast';
 import RegistrationApprovalsPanel from '../RegistrationApprovalsPanel';
+import TournamentLobbyCard from '../TournamentLobbyCard';
 import { HandForHandBanner } from '../HandForHandBanner';
 import {
   activationStatusLine,
@@ -147,6 +148,35 @@ interface InfoItem {
   tone?: 'accent' | 'danger';
 }
 
+function mapSupabaseRowToCard(sat: any) {
+  const tournType = String(sat.tournament_type || '').toLowerCase();
+  let type: any = 'mtt';
+  if (sat.is_satellite || tournType === 'satellite') type = 'satellite';
+  else if (tournType === 'spin') type = 'spin';
+  else if (tournType === 'sng') type = 'sng';
+  else if (sat.is_mystery_bounty) type = 'mystery';
+  else if (sat.is_pko) type = 'pko';
+  else if (sat.is_bounty) type = 'bounty';
+  let status: any = 'finished';
+  const rawStatus = String(sat.status || '').toUpperCase();
+  if (['ANNOUNCED', 'REGISTERING', 'LATE_REG'].includes(rawStatus)) status = 'registering';
+  else if (['RUNNING'].includes(rawStatus)) status = 'running';
+  else if (['CANCELLED', 'ABORTED'].includes(rawStatus)) status = 'cancelled';
+  return {
+    id: sat.id,
+    name: sat.name || 'Satellite',
+    type,
+    buyIn: Number(sat.buy_in) || 0,
+    prizePool: Number(sat.guarantee) || 0,
+    blindStructure: 'regular',
+    maxPlayers: Number(sat.max_players) || 0,
+    registeredPlayers: Number(sat.current_players) || 0,
+    startsAt: sat.start_time,
+    status,
+    blindDuration: Number(sat.blind_duration) || undefined,
+  };
+}
+
 export default function DetailOverviewTab({
   tournament,
   entries,
@@ -157,6 +187,36 @@ export default function DetailOverviewTab({
   mysteryBounty,
   onOpenTab,
 }: TournamentTabProps) {
+  const [satellites, setSatellites] = useState<any[]>([]);
+  const [satLoading, setSatLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    async function fetchSatellites() {
+      if (!tournament?.id) return;
+      try {
+        setSatLoading(true);
+        const { data, error: fetchErr } = await supabase
+          .from('tournaments')
+          .select('*')
+          .eq('satellite_target_id', tournament.id)
+          .in('status', ['ANNOUNCED', 'REGISTERING', 'LATE_REG', 'RUNNING'])
+          .order('start_time', { ascending: true });
+
+        if (fetchErr) throw fetchErr;
+        if (mounted) setSatellites(data || []);
+      } catch (err) {
+        reportError(err, 'DetailOverviewTab.fetchSatellites');
+      } finally {
+        if (mounted) setSatLoading(false);
+      }
+    }
+    void fetchSatellites();
+    return () => {
+      mounted = false;
+    };
+  }, [tournament?.id]);
+
   const toast = useToast();
 
   /* ── The one-second heartbeat. Only runs when something on screen actually
@@ -777,30 +837,84 @@ export default function DetailOverviewTab({
       )}
 
       {/* ── BAND 4 — the definition grid the long list became ── */}
-      <div className="tl-panel dov-info tl-scroll">
-        <dl className="dov-info__grid">
-          {info.map((item) => (
-            <div
-              key={item.key}
-              className={`dov-info__item${item.wide ? ' dov-info__item--wide' : ''}`}
+      <div className="tl-panel dov-info tl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1,
+            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+          }}
+        >
+          {/* TOURNAMENT DETAILS */}
+          <div style={{ padding: 16, backgroundColor: 'var(--surface)' }}>
+            <h3
+              style={{
+                fontSize: 13,
+                textTransform: 'uppercase',
+                letterSpacing: 1,
+                color: 'var(--text-muted)',
+                marginBottom: 16,
+                marginTop: 0,
+              }}
             >
-              <dt className="dov-info__label">{item.label}</dt>
-              <dd className={`dov-info__value${item.tone ? ` dov-info__value--${item.tone}` : ''}`}>
-                {item.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
+              Tournament Details
+            </h3>
+            <dl className="dov-info__grid">
+              {info.map((item) => (
+                <div
+                  key={item.key}
+                  className={`dov-info__item${item.wide ? ' dov-info__item--wide' : ''}`}
+                >
+                  <dt className="dov-info__label">{item.label}</dt>
+                  <dd
+                    className={`dov-info__value${item.tone ? ` dov-info__value--${item.tone}` : ''}`}
+                  >
+                    {item.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            {Boolean(tournament.is_mystery_bounty) && onOpenTab && (
+              <button
+                type="button"
+                className="dov-ladder-link"
+                onClick={() => onOpenTab('rewards')}
+              >
+                Open The Full Mystery Ladder
+              </button>
+            )}
+          </div>
 
-        {/* The full chest ladder lives on Rewards, because Dan asked that tab
-            for "the total bounty pool and whats left or 'still available' in
-            the mystery bounty pool" - the same question. This is the link, not
-            a second copy of the ladder. */}
-        {Boolean(tournament.is_mystery_bounty) && onOpenTab && (
-          <button type="button" className="dov-ladder-link" onClick={() => onOpenTab('rewards')}>
-            Open The Full Mystery Ladder
-          </button>
-        )}
+          {/* SATELLITE DETAILS */}
+          <div style={{ padding: 16, backgroundColor: 'var(--surface)' }}>
+            <h3
+              style={{
+                fontSize: 13,
+                textTransform: 'uppercase',
+                letterSpacing: 1,
+                color: 'var(--text-muted)',
+                marginBottom: 16,
+                marginTop: 0,
+              }}
+            >
+              Satellite Details
+            </h3>
+            {satLoading ? (
+              <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading Satellites...</div>
+            ) : satellites.length === 0 ? (
+              <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                NO SATELITTES AVAILABLE FOR THIS TOURNAMENT
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {satellites.map((sat) => (
+                  <TournamentLobbyCard key={sat.id} tournament={mapSupabaseRowToCard(sat)} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </section>
   );

@@ -291,12 +291,23 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         needsAuth: true,
       };
     }
-    if (entry.kind === 'sng') {
+    /* ONLY A HEADS-UP SNG IS SEAT-FIRST (2026-08-28).
+       `classifyTournament` calls anything with max_players <= 10 an 'sng',
+       but the database's seat-first rule is `variant='spin' OR max_players
+       <= 2`, and every other surface applies that split (LobbyTable's action
+       column, ClubHomePage's lobbyCtx and handleRegister). This panel did
+       not: it sent 6-max and 9-max SNGs down the seat-first path too, where
+       `fn_take_seat_and_buy_in` answers not_a_seat_first_game. The player was
+       navigated to a table whose seats are inert, never registered and never
+       charged — a CTA whose only effect was to relocate them, and no
+       reachable entry path to a multi-seat SNG from this panel at all.
+       Those are registration games; they fall through to the MTT branch. */
+    if (entry.kind === 'sng' && entry.capacity > 0 && entry.capacity <= 2) {
       if (registered)
         return { label: 'Return To Table', kind: 'gold' as const, run: () => onSpinJoin(t, 'sng') };
       if (st === 'completed' || st === 'closed')
         return { label: 'Game Over', kind: 'disabled' as const };
-      const full = entry.capacity > 0 && entry.players >= entry.capacity;
+      const full = entry.players >= entry.capacity;
       // Same rule as spins: no seat exists at 2/2, whatever the status label.
       if (full) return { label: 'Table Full', kind: 'disabled' as const };
       return {

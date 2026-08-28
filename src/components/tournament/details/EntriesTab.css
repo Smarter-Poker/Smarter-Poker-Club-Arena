@@ -129,7 +129,11 @@
   }
 
   .et-scroll {
-    max-height: min(54vh, 460px);
+    /* The 460px cap that lived here is GONE - see the flex-fill note at the
+       bottom of this file. It sits BEFORE that rule in source order and at the
+       same specificity, so leaving it would have been decorative: the later
+       `max-height: none` wins regardless of viewport. A cap that cannot fire
+       is worse than no cap, because the next reader budgets for it. */
     padding: 5px;
   }
 }
@@ -196,4 +200,44 @@
   background: linear-gradient(180deg, rgba(239, 68, 68, 0.12) 0%, rgba(19, 27, 40, 0.7) 100%);
   border: 1px solid rgba(239, 68, 68, 0.3);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* -------------------------------------------------------------------------
+   THE PANEL WAS TALLER THAN THE LIST INSIDE IT (Dan, 2026-08-28, screenshot)
+   -------------------------------------------------------------------------
+   `.et-scroll` carried `max-height: min(58vh, 520px)` while the tab body
+   stretches `.et-panel` to whatever height the modal gives it. Measured on
+   production before this change: panel 860px, list 520px, list content
+   1108px. So 340px of the panel was EMPTY while the list it contains was
+   scrolling - the reader was handed a scrollbar and a void at the same time.
+
+   A cap is the wrong tool for "do not exceed the panel". The panel already
+   knows its own height; the list only has to fill it. So the panel becomes a
+   flex column and the list takes the remaining space, which is what the cap
+   was approximating with two guessed numbers.
+
+   `min-height: 0` on both is load-bearing: a flex item defaults to
+   `min-height: auto`, which refuses to shrink below its content, and an
+   overflow container that cannot shrink does not scroll - it pushes the panel
+   taller and the footer off-screen instead.
+
+   The 420px cap above was deleted rather than left in place: it sits earlier
+   in this file at the same specificity, so it could never have won against
+   this rule. The fill is correct on a phone for the same reason it is correct
+   here - the panel's height is the constraint, and the panel knows it.
+
+   Verified live before shipping: this exact CSS injected into production moved
+   the list from 520px to 726px inside the 860px panel, 9 visible rows to 12,
+   no dead space, footer still pinned.
+   ------------------------------------------------------------------------- */
+.et-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.et-scroll {
+  flex: 1 1 auto;
+  max-height: none;
+  min-height: 160px;
 }

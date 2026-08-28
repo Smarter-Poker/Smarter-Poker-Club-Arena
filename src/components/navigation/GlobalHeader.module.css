@@ -103,7 +103,6 @@
 
 .headerImgBtn:hover {
   opacity: 0.85;
-  transform: scale(1.05);
 }
 
 .headerImgBtn:active {
@@ -136,7 +135,6 @@
 
 .hamburgerBtn:hover {
   opacity: 0.8;
-  transform: scale(1.1);
 }
 
 .hamburgerBtn:active {
@@ -168,7 +166,6 @@
 
 .orbBtn:hover {
   opacity: 0.8;
-  transform: scale(1.1);
 }
 
 .orbBtn:active {
@@ -192,7 +189,6 @@
 
 .orbLink:hover {
   opacity: 0.8;
-  transform: scale(1.1);
 }
 
 .orbLink:active {
@@ -259,7 +255,6 @@
 
 .profileOrb:hover {
   opacity: 0.85;
-  transform: scale(1.08);
 }
 
 .profileOrb:active {

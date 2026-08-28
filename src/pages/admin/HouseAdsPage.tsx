@@ -133,6 +133,24 @@ type ConversionsBySlot = Record<string, Record<string, ConversionRow>>;
 type DailyRow = { day: string; impressions: number; clicks: number; viewers: number };
 type DailyBySlot = Record<string, Record<string, DailyRow[]>>;
 
+/**
+ * WHAT THE RETENTION POLICY WOULD DELETE, BEFORE IT DELETES IT.
+ *
+ * `fn_prune_ad_events` shipped with no caller at all - a loaded delete with no
+ * schedule and no preview. It cannot be scheduled here either: CLAUDE.md
+ * section 11 makes Open Claw the only sanctioned scheduler and 11.3 fails CI
+ * on a net-new cron route. So it belongs to the operator, and an operator is
+ * owed the exact number of rows before the button, not after it.
+ */
+type RetentionStatus = {
+  retentionDays: number;
+  cutoff: string | null;
+  totalEvents: number;
+  prunableEvents: number;
+  oldestEvent: string | null;
+  newestEvent: string | null;
+};
+
 const CATEGORIES = [
   'vip',
   'diamonds',
@@ -193,6 +211,9 @@ export default function HouseAdsPage() {
   const [suppression, setSuppression] = useState<SuppressionBySlot | null>(null);
   const [conversions, setConversions] = useState<ConversionsBySlot | null>(null);
   const [daily, setDaily] = useState<DailyBySlot | null>(null);
+  const [retention, setRetention] = useState<RetentionStatus | null>(null);
+  const [pruneArmed, setPruneArmed] = useState(false);
+  const [pruneBusy, setPruneBusy] = useState(false);
   const [truncated, setTruncated] = useState<{
     ads: number | null;
     placements: number | null;
@@ -258,6 +279,7 @@ export default function HouseAdsPage() {
         conversions?: ConversionsBySlot | null;
         daily?: DailyBySlot | null;
         truncated?: { ads: number | null; placements: number | null } | null;
+        retention?: RetentionStatus | null;
       }>('house-ads', {}, { method: 'GET' });
       if (!isMounted.current) return;
       setAds(res.ads || []);
@@ -271,6 +293,7 @@ export default function HouseAdsPage() {
       setConversions(res.conversions ?? null);
       setDaily(res.daily ?? null);
       setTruncated(res.truncated ?? null);
+      setRetention(res.retention ?? null);
     } catch (e) {
       reportError(e, 'HouseAdsPage.load');
       if (isMounted.current) setActionError(safeErrorMessage(e, 'Could not load the ad catalog.'));
@@ -486,6 +509,55 @@ export default function HouseAdsPage() {
       setActionError(safeErrorMessage(e, 'Could not remove that placement.'));
     } finally {
       setPlacementBusy(false);
+    }
+  };
+
+  /**
+   * THE ONLY CALLER fn_prune_ad_events HAS.
+   *
+   * Two deliberate properties:
+   *
+   * 1. The COUNT IS SHOWN BEFORE THE BUTTON, and the button carries it. An
+   *    operator should never learn the size of a delete from its result.
+   * 2. NO "how many days" input. The server reads the policy itself, so the
+   *    number in the confirmation and the number the delete uses cannot
+   *    drift apart between the render and the click.
+   *
+   * The disarm on refusal matters too: leaving it armed means the next stray
+   * click deletes, which is precisely the slow-afternoon accident.
+   */
+  const pruneEvents = async () => {
+    if (!retention || retention.prunableEvents <= 0) return;
+    const ok = await confirmDialog({
+      title: 'Prune Old Ad Events',
+      message: `${retention.prunableEvents.toLocaleString()} Events Older Than ${retention.retentionDays} Days Will Be Deleted Permanently. Reporting Older Than The Cutoff Will Go With Them.`,
+      confirmText: 'Prune',
+      variant: 'danger',
+    });
+    if (!ok) {
+      setPruneArmed(false);
+      return;
+    }
+    setPruneBusy(true);
+    setActionError(null);
+    try {
+      const res = await callClubArenaApi<{ deleted?: number }>(
+        'house-ads',
+        {},
+        { method: 'POST', query: { kind: 'prune' } }
+      );
+      const n = Number(res?.deleted) || 0;
+      /* "0 Deleted" is a real and useful answer - it means another operator or
+         an earlier run got there first - so it is reported rather than
+         swallowed as a no-op. */
+      setNotice(`${n.toLocaleString()} Old Events Pruned.`);
+      setPruneArmed(false);
+      await load();
+    } catch (e) {
+      reportError(e, 'HouseAdsPage.pruneEvents');
+      setActionError(safeErrorMessage(e, 'Could not prune those events.'));
+    } finally {
+      setPruneBusy(false);
     }
   };
 
@@ -930,6 +1002,80 @@ export default function HouseAdsPage() {
                 ? `${truncated.ads ? ', ' : ': '}${placements.length} Of ${truncated.placements} Placements`
                 : ''}
               . Performance Figures Cover Everything; The Rows Below Do Not.
+            </div>
+          ) : null}
+
+          {/* ── RETENTION ────────────────────────────────────────────────────
+              fn_prune_ad_events shipped with NO CALLER: a permanent delete
+              with no schedule, no preview and no way to reach it. Open Claw is
+              the only sanctioned scheduler here (CLAUDE.md 11) and a net-new
+              cron route fails CI (11.3), so the honest home for it is the
+              operator's hands - with the blast radius stated first.
+
+              The button carries the count. Nobody should learn the size of a
+              delete from its result. And when there is nothing to prune the
+              control is absent rather than disabled, because a dead button on
+              a destructive action invites the experimental click that finds
+              out what it does. */}
+          {!loading && retention ? (
+            <div
+              className="admin-panel-soft"
+              style={{
+                fontSize: 12,
+                marginBottom: 10,
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <span>
+                Event Retention: {retention.retentionDays} Days.{' '}
+                {retention.totalEvents.toLocaleString()} Events Stored
+                {retention.oldestEvent
+                  ? `, Oldest ${new Date(retention.oldestEvent).toLocaleDateString()}`
+                  : ''}
+                .
+              </span>
+              {retention.prunableEvents > 0 ? (
+                <>
+                  <span className="admin-badge-yellow">
+                    {retention.prunableEvents.toLocaleString()} Past The Cutoff
+                  </span>
+                  {pruneArmed ? (
+                    <>
+                      <button
+                        type="button"
+                        className="admin-btn-danger"
+                        onClick={() => void pruneEvents()}
+                        disabled={pruneBusy}
+                      >
+                        {pruneBusy
+                          ? 'Pruning...'
+                          : `Delete ${retention.prunableEvents.toLocaleString()} Events`}
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-btn-ghost"
+                        onClick={() => setPruneArmed(false)}
+                        disabled={pruneBusy}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="admin-btn-ghost"
+                      onClick={() => setPruneArmed(true)}
+                    >
+                      Prune Old Events
+                    </button>
+                  )}
+                </>
+              ) : (
+                <span style={{ opacity: 0.7 }}>Nothing Past The Cutoff.</span>
+              )}
             </div>
           ) : null}
 

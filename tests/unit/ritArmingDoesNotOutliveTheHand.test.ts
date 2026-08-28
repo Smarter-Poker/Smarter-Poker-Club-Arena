@@ -1,36 +1,50 @@
 /**
- * A DISPLAY STRING WAS ALSO A CONTROL FLAG, AND IT NEVER RESET.
+ * THE ENGINE OPENS THE RIT PANEL. THE CLIENT DOES NOT.
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * `ritOpponent` holds the name shown on the Run-It-Twice consent panel. It is
- * ALSO the only thing gating a client-side open of that panel:
+ * ─── WHAT THIS FILE PINNED FIRST, AND WHY IT CHANGED ───────────────────────
+ *
+ * `ritOpponent` holds the name shown on the Run-It-Twice consent panel. It was
+ * ALSO the only thing gating a second, client-side way into that panel:
  *
  *     handleInsuranceDeclineForHand:
  *       if (ritOpponent !== 'Opponent') setShowRIT(true);
  *
- * `'Opponent'` is its initial value and its sentinel — "RIT is not armed".
+ * `'Opponent'` is its initial value and its sentinel — "RIT is not armed" — and
+ * nothing ever put the sentinel back. `resetRitPanelState`'s own docstring says
+ * it resets every piece of RIT state at the hand boundary; it reset fourteen of
+ * them, including `ritDeadlineRef`, but missed this one. So the gate silently
+ * changed meaning from "RIT was armed in THIS hand" to "RIT was armed at some
+ * point this session", and after one `A`-key shove every later insurance
+ * decline force-opened the panel.
  *
- * `resetRitPanelState` is the hand-boundary reset. Its own docstring says it
- * resets every piece of RIT state, and it reset fourteen of them — including
- * `ritDeadlineRef`, which the panel's countdown reads — but not this one. So
- * the gate silently changed meaning from "RIT was armed in THIS hand" to "RIT
- * was armed at some point this session".
+ * That was fixed by restoring the sentinel. This file then went further, with
+ * Dan's go-ahead, and removed the client-side open ENTIRELY — so the gate this
+ * file used to assert on no longer exists, and the assertion that pinned it is
+ * replaced rather than deleted.
  *
- * `handleAllIn` (the A key) sets `ritOpponent` whenever a shove leaves two or
- * more players all in. After that, for the rest of the session, every insurance
- * decline force-opened the RIT panel with a 0-second countdown, stale chooser
- * context, and buttons that POST `respondToRIT` for an offer that does not
- * exist.
+ * ─── THE RULE NOW ─────────────────────────────────────────────────────────
  *
- * This is a source-level guard rather than a render test on purpose: the bug is
- * a missing line in a reset function, and what has to stay true is that the
- * function resets the field it gates on. A render test would need the whole
- * 16k-line TablePage plus an engine socket to reach the same conclusion.
+ * The engine is the sole authority on Run It Twice. `handleAllInRunout`
+ * broadcasts `rit_offer` (server/src/engine — see RunItTwice.offerpath.test.ts,
+ * "THE OFFER FIRES: a 2-way all-in on a RIT cash table emits rit_offer"), and
+ * the `eventType === 'rit_offer'` handler in TablePage opens the panel with the
+ * real chooser, deadline, maxRuns and playerCount.
+ *
+ * The client open had none of that: a countdown reading a `ritDeadlineRef` the
+ * hand-boundary reset had just zeroed, stale chooser context, and Accept /
+ * Decline / choose-runs buttons that POST `respondToRIT` for an offer that does
+ * not exist.
+ *
+ * Source-level guard on purpose: the invariants are "no second door into this
+ * panel" and "one shove path". A render test would need the whole 16k-line
+ * TablePage plus a live engine socket to reach the same conclusion.
  */
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceStatement } from '../helpers/sourceWindow';
 
 const TABLE_TSX = readFileSync(resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8');
 /* Comments in this file quote its own bugs at length, so every scan runs on
@@ -46,33 +60,58 @@ function resetBody(): string {
   return CODE.slice(at, end);
 }
 
-describe('RIT arming cannot outlive the hand it belongs to', () => {
-  it('still gates the client-side RIT open on the ritOpponent sentinel', () => {
-    // Sanity: if this gate is ever removed or renamed, the rest of this file is
-    // asserting about something that no longer exists — which would be a
-    // vacuous pass. Fail loudly instead so the next reader re-derives it.
-    expect(CODE, 'the ritOpponent gate changed — re-read this test before deleting it').toMatch(
-      /ritOpponent\s*!==\s*'Opponent'/
+describe('only the engine opens the RIT panel', () => {
+  it('has no client-side open gated on the ritOpponent display string', () => {
+    expect(
+      CODE,
+      'the legacy client-side RIT open is back. It opens the panel with a dead ' +
+        'countdown and stale chooser context, and its buttons POST respondToRIT ' +
+        'for an offer the engine never made.'
+    ).not.toMatch(/ritOpponent\s*!==\s*'Opponent'/);
+  });
+
+  it('still handles the engine rit_offer event — the ONLY way in', () => {
+    // Sanity, and the reason the assertion above is safe: removing the client
+    // door is only correct while the engine door exists. If this ever fails,
+    // RIT has no way to open at all.
+    expect(CODE, 'the rit_offer handler is gone — RIT can no longer open').toMatch(
+      /eventType === 'rit_offer'/
     );
   });
 
-  it('resets ritOpponent to its sentinel at the hand boundary', () => {
+  it('resets ritOpponent at the hand boundary, with the rest of the RIT state', () => {
+    /* It is a display string again rather than a flag, but it is still per-hand
+       state and it still belongs in the reset whose docstring claims all of it.
+       Leaving it out is how it became a session-scoped value the first time. */
     const body = resetBody();
-    expect(
-      body,
-      'resetRitPanelState does not restore the ritOpponent sentinel. The flag ' +
-        'will survive the hand, and every later insurance decline will open a ' +
-        'RIT panel with a dead timer and buttons that POST to a nonexistent offer.'
-    ).toMatch(/setRitOpponent\(\s*'Opponent'\s*\)/);
-  });
-
-  it('resets it alongside the rest of the RIT state, not somewhere else', () => {
-    /* The whole defect was one field escaping a reset whose contract already
-       covered it. Pinning that it lives IN this function — next to
-       `ritDeadlineRef.current = 0`, which the panel's countdown depends on —
-       is what stops it drifting back out to a caller that forgets one path. */
-    const body = resetBody();
+    expect(body, 'resetRitPanelState does not restore ritOpponent').toMatch(
+      /setRitOpponent\(\s*'Opponent'\s*\)/
+    );
     expect(body).toMatch(/ritDeadlineRef\.current\s*=\s*0/);
     expect(body).toMatch(/setRitChooserId\(null\)/);
+  });
+});
+
+describe('there is one shove path', () => {
+  it('routes the A key through the same function the ALL IN button runs', () => {
+    expect(CODE).toMatch(/onAllIn:\s*\(\)\s*=>\s*void handleActionPanelAction\('allin'\)/);
+  });
+
+  it('has deleted the parallel handleAllIn implementation', () => {
+    /* It skipped the VPIP/PFR counting the button path does, and it armed the
+       legacy client RIT prompt the button never armed — so a shove meant
+       different things depending on which control the player used. */
+    expect(CODE, 'a second all-in implementation is back').not.toMatch(/const handleAllIn\s*=/);
+  });
+
+  it('keeps the guarantees that implementation carried, in the surviving path', () => {
+    // Sanity that the delete removed drift and not behaviour: the panel path
+    // must still take the lock, validate, mark all-in mode and revert on refusal.
+    const at = CODE.indexOf('const handleActionPanelAction');
+    expect(at).toBeGreaterThan(-1);
+    const body = sliceStatement(CODE, 'const handleActionPanelAction');
+    expect(body).toMatch(/validateAndExecuteAction\('allin'\)/);
+    expect(body).toMatch(/setIsAllInMode\(true\)/);
+    expect(body).toMatch(/applyOptimisticHeroAction\('allin'/);
   });
 });

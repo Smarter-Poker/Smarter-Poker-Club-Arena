@@ -187,7 +187,33 @@ export function shouldActivateMysteryBounty(
 export function mysteryPoolCents(
   bountyPoolCents: number,
   mysteryPercent: number | null | undefined,
-  regularPercent: number | null | undefined
+  regularPercent: number | null | undefined,
+  /**
+   * ═══ 2026-08-28: THE CAP THE DATABASE APPLIES AND THE ENGINE DID NOT ═════
+   *
+   * MEASURED IN PRODUCTION. `fn_mystery_bounty_seed` refused 23 times in 24
+   * hours with `inventory_mismatch`, and ZERO mystery bounties have ever been
+   * awarded: 104 chests worth $1,833 created across 27 completed events, all
+   * of them voided, `tournament_bounty_awards` completely empty. Every
+   * knockout kept paying the flat pre-activation bounty instead.
+   *
+   * The seed function reduces the mystery half by whatever the REGULAR half
+   * has already paid out:
+   *
+   *     IF v_pool_cents > v_bounty_cents - bounty_pool_paid THEN
+   *       v_pool_cents := GREATEST(0, v_bounty_cents - bounty_pool_paid)
+   *
+   * The engine built its chest list from the UNREDUCED number, so the moment
+   * a single pre-activation knockout had been paid the two disagreed and the
+   * seed was refused - which produced more flat knockouts, which grew
+   * bounty_pool_paid, which guaranteed the next attempt failed too. A
+   * self-reinforcing loop that no mystery bounty could ever escape.
+   *
+   * Applying the identical cap here is the whole fix. Passing 0 (or nothing)
+   * reproduces the old arithmetic exactly, which is what the unit tests
+   * written before this parameter existed still assert.
+   */
+  alreadyPaidCents: number = 0
 ): number {
   if (!Number.isInteger(bountyPoolCents) || bountyPoolCents <= 0) return 0;
   const m = Math.max(0, Number(mysteryPercent ?? 50) || 0);
@@ -198,5 +224,8 @@ export function mysteryPoolCents(
   // knockout against a pool that is checked for exhaustion on every payment,
   // whereas the mystery half is committed to a fixed inventory up front and
   // an extra cent there would leave the event unable to reconcile.
-  return Math.floor((bountyPoolCents * m) / total);
+  const half = Math.floor((bountyPoolCents * m) / total);
+  const paid = Math.max(0, Math.round(Number(alreadyPaidCents) || 0));
+  // The same GREATEST(0, ...) the seed applies, in the same order.
+  return Math.max(0, Math.min(half, bountyPoolCents - paid));
 }

@@ -28,6 +28,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -184,7 +185,7 @@ describe('every game is booked', () => {
   it('reports loudly rather than swallowing a failed settlement', () => {
     const i = engine.indexOf("supabase.rpc('fn_spin_settle_game'");
     expect(i, 'expected a call to fn_spin_settle_game').toBeGreaterThan(-1);
-    const block = engine.slice(i, i + 2600);
+    const block = sliceEnclosingBlock(engine, "supabase.rpc('fn_spin_settle_game'", 0, 2);
     expect(block).toMatch(/reportError/);
     expect(block).toMatch(/unbooked/i);
   });

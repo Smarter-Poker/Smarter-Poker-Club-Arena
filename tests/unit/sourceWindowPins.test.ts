@@ -14,6 +14,11 @@ import {
   sliceBlockAfter,
   sliceEnclosingBlock,
   sliceCssRule,
+  sliceSqlStatement,
+  sliceDollarQuoted,
+  sliceStatement,
+  sliceYamlBlock,
+  sliceBetween,
 } from '../helpers/sourceWindow';
 
 describe('a pin bounded by structure cannot be outrun by the code it watches', () => {
@@ -89,5 +94,68 @@ describe('a pin bounded by structure cannot be outrun by the code it watches', (
     expect(() => sliceMethod('class X {}', 'nope(')).toThrow(/not found/);
     expect(() => sliceCall('const a = 1;', 'nope(')).toThrow(/not found/);
     expect(() => sliceCssRule('.a {}', '.nope')).toThrow(/not found/);
+  });
+});
+
+describe('SQL pins are bounded by the statement, not by a byte count', () => {
+  const MIG = [
+    'CREATE OR REPLACE FUNCTION public.f()',
+    'RETURNS void',
+    'LANGUAGE plpgsql',
+    'SECURITY DEFINER',
+    'SET search_path = public, pg_temp',
+    'AS $$',
+    'BEGIN',
+    '  PERFORM 1; PERFORM 2;',
+    'END;',
+    '$$;',
+    'CREATE POLICY "p" ON t FOR INSERT WITH CHECK (user_id = auth.uid());',
+  ].join('\n');
+
+  it('does not stop at a semicolon inside a dollar-quoted body', () => {
+    const fn = sliceSqlStatement(MIG, 'CREATE OR REPLACE FUNCTION public.f()');
+    expect(fn).toContain('SET search_path = public, pg_temp');
+    expect(fn).toContain('PERFORM 2;');
+    expect(fn.trimEnd().endsWith('$$;')).toBe(true);
+    expect(fn).not.toContain('CREATE POLICY');
+  });
+
+  it('ends a plain statement at its own semicolon', () => {
+    const pol = sliceSqlStatement(MIG, 'CREATE POLICY "p"');
+    expect(pol).toContain('auth.uid()');
+    expect(pol.trimEnd().endsWith(');')).toBe(true);
+  });
+
+  it('takes a dollar-quoted block by its matching tag', () => {
+    const src = 'DO $preflight$ BEGIN RAISE; END $preflight$; AFTER;';
+    const b = sliceDollarQuoted(src, '$preflight$');
+    expect(b).toContain('RAISE');
+    expect(b).not.toContain('AFTER');
+  });
+});
+
+describe('statement and YAML pins are bounded by their own shape', () => {
+  it('takes a declaration to its semicolon, not a guessed prefix', () => {
+    const src = "const S = new Set(['nlh', 'plo; not really']);\nconst OTHER = 'plo';";
+    const d = sliceStatement(src, 'const S =');
+    expect(d).toContain("'nlh'");
+    expect(d).not.toContain('OTHER');
+  });
+
+  it('takes a YAML job by indentation, however many keys it gains', () => {
+    const y = ['jobs:', '  build:', '    needs: prep', '    env:', '      A: 1', '  other:', '    needs: nope'].join('\n');
+    const b = sliceYamlBlock(y, '  build:');
+    expect(b).toContain('needs: prep');
+    expect(b).toContain('A: 1');
+    expect(b).not.toContain('nope');
+  });
+});
+
+describe('a section is bounded by the section after it', () => {
+  it('runs from one marker to the next, not for N characters', () => {
+    const sql = ['-- GUARD 1: kill switch', "  IF x THEN RETURN 'disabled'; END IF;", '-- GUARD 2: other', "  RETURN 'other';"].join('\n');
+    const g1 = sliceBetween(sql, 'GUARD 1', 'GUARD 2');
+    expect(g1).toContain("'disabled'");
+    expect(g1).not.toContain("'other'");
   });
 });

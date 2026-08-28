@@ -85,7 +85,6 @@
 }
 
 .error-actions .btn:hover {
-  transform: scale(1.05) translateY(-1px);
 }
 
 .btn-primary {

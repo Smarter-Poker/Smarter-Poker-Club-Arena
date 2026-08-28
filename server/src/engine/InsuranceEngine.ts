@@ -86,6 +86,13 @@ export interface InsuranceOffer {
   evCashoutAmount?: number;
   /** Set when the player takes the cashout (status 'cashed_out'). */
   cashoutAmount?: number;
+  /**
+   * PREFLOP OFFER 2026-08-28: the board size this offer was made on. Decline
+   * finality depends on it — a PREFLOP decline is street-only (the flop
+   * changes everything; Dan: "OFFERED PRE FLOP, AND REOFFERED ON THE FLOP"),
+   * while flop/turn declines stay FINAL for the hand (Dan 2026-08-26).
+   */
+  boardLength: number;
   // Phase 1.2 PR-G-real: timeouts routed through DeadlineScheduler singleton via
   // the engine's private `scheduler` ref, keyed by
   // eventId = `insurance_offer:${playerId}` on the offer's tableId. The raw
@@ -214,9 +221,16 @@ export class InsuranceEngine {
 
     const existing = this.activeOffers.get(tableId) ?? [];
     // If the leader already locked coverage on an earlier street, don't re-offer.
+    // EV CASHOUT RE-OFFER GUARD 2026-08-28: 'cashed_out' belongs here too —
+    // without it a leader who cashed out on the flop was offered AGAIN on the
+    // turn and could double-dip (cash out twice, or cash out AND insure) on
+    // equity the bank had already bought. Found in line-by-line review, pinned
+    // by InsuranceEvCashout.test.ts before any real chips could hit it.
     if (
       existing.some(
-        (o) => o.playerId === leader.playerId && (o.status === 'accepted' || o.status === 'settled')
+        (o) =>
+          o.playerId === leader.playerId &&
+          (o.status === 'accepted' || o.status === 'settled' || o.status === 'cashed_out')
       )
     ) {
       return [];
@@ -316,6 +330,7 @@ export class InsuranceEngine {
       status: 'offered',
       declinedForHand: false,
       evCashoutAmount,
+      boardLength: board.length,
     };
 
     // Phase 1.2 PR-G-real: expiry via DeadlineScheduler.
@@ -328,7 +343,10 @@ export class InsuranceEngine {
           // POKERBROS PARITY 2026-08-26 (Dan): a decline is FINAL for the hand.
           // "IF A PLAYER DECLINES, THEY DON'T GET OFFERED AGAIN." A timeout is
           // a decline, so it is final too - the player had their window.
-          this.decline(tableId, leader.playerId, true, 'timeout');
+          // PREFLOP OFFER 2026-08-28 (Dan): a PREFLOP decline/timeout is
+          // street-only — the same leader is re-offered on the flop, where
+          // the finality rule takes over.
+          this.decline(tableId, leader.playerId, offer.boardLength >= 3, 'timeout');
         }
       },
     });

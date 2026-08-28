@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceBlockAfter } from '../helpers/sourceWindow';
 
 /**
  * Dan 2026-08-23: "when you click the + button to add a second table, it
@@ -112,8 +113,8 @@ describe('the add-table button does not lose a race with its own lookup', () => 
     expect(HANDLER).toMatch(/if \(activeTableId && !activeRow\)/);
     expect(HANDLER).toMatch(/\.eq\('id', activeTableId\)/);
     // The rare-miss lookup must not be able to hang the sheet.
-    const miss = HANDLER.slice(HANDLER.indexOf('if (activeTableId && !activeRow)'));
-    expect(miss.slice(0, 400)).toMatch(/withTimeout/);
+    const miss = sliceBlockAfter(HANDLER, 'if (activeTableId && !activeRow)');
+    expect(miss).toMatch(/withTimeout/);
   });
 
   it('the stakes label is the lobby formatter, not string interpolation', () => {

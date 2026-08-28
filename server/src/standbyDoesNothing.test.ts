@@ -24,6 +24,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { sliceEnclosingBlock } from './testHelpers/sourceWindow.js';
 
 const SRC = readFileSync(new URL('./GameServer.ts', import.meta.url), 'utf8');
 
@@ -39,7 +40,7 @@ describe('start() resolves leadership before it touches anything', () => {
 
   it('returns immediately when it is a standby', () => {
     const decide = SRC.indexOf('await renewLeadership()');
-    const window = SRC.slice(decide, decide + 900);
+    const window = sliceEnclosingBlock(SRC, 'await renewLeadership()');
     expect(window).toMatch(/role === 'standby'/);
     expect(window).toMatch(/return;/);
   });

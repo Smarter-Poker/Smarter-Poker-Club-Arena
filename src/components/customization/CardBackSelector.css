@@ -60,7 +60,6 @@
 .card-back-item:hover:not(.cbs-locked) {
   background: rgba(0, 0, 0, 0.3);
   border-color: rgba(255, 255, 255, 0.2);
-  transform: translateY(-2px);
 }
 .card-back-item.cbs-selected {
   border-color: #ffd700;
@@ -119,7 +118,6 @@
   transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 .card-back-item:hover .card-shape {
-  transform: rotateY(5deg);
 }
 .card-back-preview-img {
   width: 100%;
@@ -283,7 +281,6 @@
 }
 .cbs-confirm__btn--buy:hover {
   filter: brightness(1.1);
-  transform: translateY(-1px);
 }
 .cbs-confirm__btn--disabled {
   opacity: 0.5;

@@ -130,7 +130,6 @@
 
 .diamond-wallet-modal__buy-btn:hover {
   background: linear-gradient(135deg, rgba(0, 212, 255, 0.35), rgba(0, 150, 255, 0.35));
-  transform: scale(1.03);
 }
 
 /* ── Filters ───────────────────────────────────────────────────── */

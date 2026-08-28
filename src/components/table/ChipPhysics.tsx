@@ -31,6 +31,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { visualChipStacks, type ChipStackVisual } from '../../lib/chipDenominations';
 import './ChipPhysics.css';
+import { formatTableChips } from '../../utils/format';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DENOMINATION SYSTEM — see src/lib/chipDenominations.ts for the ladder, why
@@ -167,12 +168,8 @@ export function ChipPhysics({
 }
 
 function formatChipAmount(amount: number): string {
-  if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
-  if (amount >= 10000) return `${(amount / 1000).toFixed(1)}K`;
-  // Always show whole numbers for amounts >= 1. Sub-dollar shows 2 decimals.
-  if (amount >= 1) return Math.round(amount).toLocaleString();
-  if (amount > 0) return amount.toFixed(2);
-  return '0';
+  // Dan 2026-08-28: pot and bet chips on the felt show the real number.
+  return formatTableChips(amount);
 }
 
 export default ChipPhysics;

@@ -9,6 +9,12 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import {
+  sliceMethod,
+  sliceEnclosingBlock,
+  sliceSqlStatement,
+  sliceDollarQuoted,
+} from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const ENGINE = read('server/src/engine/ServerTableEngine.ts');
@@ -22,13 +28,13 @@ describe('Anonymous Table', () => {
   });
 
   it('scrubs the two fields that are a name on screen, and only those', () => {
-    const fn = ENGINE.slice(ENGINE.indexOf('protected seatIdentity('));
+    const fn = sliceMethod(ENGINE, 'protected seatIdentity(');
     expect(fn).toContain('username');
     expect(fn).toContain('avatar_url');
     // user_id must survive: the client keys the hero seat, current_player,
     // winner_ids and disconnect_states off it. Scrubbing it breaks the table
     // rather than anonymising it.
-    expect(fn.slice(0, 600)).not.toMatch(/user_id:\s*''/);
+    expect(fn).not.toMatch(/user_id:\s*''/);
   });
 
   it('is applied by EVERY serializer, not three of four', () => {
@@ -49,10 +55,7 @@ describe('Anonymous Table', () => {
   it('is uniform, not per-viewer', () => {
     // TableStateHub publishes ONE payload to every subscriber. A hero
     // exception would mean a payload per seat.
-    const fn = ENGINE.slice(
-      ENGINE.indexOf('protected seatIdentity('),
-      ENGINE.indexOf('protected seatIdentity(') + 900
-    );
+    const fn = sliceMethod(ENGINE, 'protected seatIdentity(');
     expect(fn).not.toContain('requestingUserId');
   });
 });
@@ -71,8 +74,7 @@ describe('Restrict Observers', () => {
   });
 
   it('never caches the SEAT, only the table setting', () => {
-    const fn = WS.slice(WS.indexOf('private async isRestrictedObserver('));
-    const body = fn.slice(0, fn.indexOf('\n  }\n'));
+    const body = sliceMethod(WS, 'private async isRestrictedObserver(');
     // A player who has just bought in connects within the same second; a
     // stale "not seated" locks them out of the seat they just paid for.
     expect(body).toContain('observerRestrictionCache');
@@ -81,8 +83,8 @@ describe('Restrict Observers', () => {
   });
 
   it('fails open, like every other gate on this path', () => {
-    const fn = WS.slice(WS.indexOf('private async isRestrictedObserver('));
-    expect(fn.slice(0, 1800)).toMatch(/catch\s*\{\s*return false;/);
+    const fn = sliceMethod(WS, 'private async isRestrictedObserver(');
+    expect(fn).toMatch(/catch\s*\{\s*return false;/);
   });
 });
 
@@ -108,8 +110,8 @@ describe('Ban Chat', () => {
   it('leaves chat ENABLED when the read fails', () => {
     // The RLS policy is the enforcement; a failed read must not silence a
     // table nobody muted.
-    const eff = CHAT.slice(CHAT.indexOf("supabase.rpc('fn_table_chat_is_silenced'"));
-    expect(eff.slice(0, 900)).toContain('the policy is the enforcement');
+    const eff = sliceEnclosingBlock(CHAT, "supabase.rpc('fn_table_chat_is_silenced'");
+    expect(eff).toContain('the policy is the enforcement');
   });
 
   /* A mute arrives mid-session and there is no realtime feed for one, so the
@@ -176,7 +178,7 @@ describe('Multi-Day MTT is refused, not faked', () => {
     expect(tail).toContain('totalDays: undefined');
     // The old mapping read the config. If either of these comes back, the
     // database trigger will refuse the write and the create will simply fail.
-    expect(tail.slice(0, 200)).not.toContain('config.multiDayMtt');
+    expect(sliceEnclosingBlock(BUILD, 'isMultiDay:')).not.toContain('config.multiDayMtt');
   });
 
   it('offers no control that could set it', () => {
@@ -205,11 +207,11 @@ describe('Chat ban enforcement lives in the database', () => {
      silently become no-ops that still read as correct. */
   it('reads the ban through SECURITY DEFINER, or it is blind to the banned', () => {
     for (const fn of ['fn_table_chat_is_silenced', 'fn_club_chat_is_silenced']) {
-      const body = MIG.slice(MIG.indexOf(`CREATE OR REPLACE FUNCTION public.${fn}`));
-      expect(body.slice(0, 400)).toContain('SECURITY DEFINER');
+      const body = sliceSqlStatement(MIG, `CREATE OR REPLACE FUNCTION public.${fn}`);
+      expect(body).toContain('SECURITY DEFINER');
       // A SECURITY DEFINER function with a caller-controlled search_path is
       // how you hand out postgres.
-      expect(body.slice(0, 400)).toContain('SET search_path = public, pg_temp');
+      expect(body).toContain('SET search_path = public, pg_temp');
     }
   });
 
@@ -225,18 +227,18 @@ describe('Chat ban enforcement lives in the database', () => {
   });
 
   it('treats a club ban with no expiry as permanent, not as expired', () => {
-    const fn = MIG.slice(MIG.indexOf('CREATE OR REPLACE FUNCTION public.fn_club_chat_is_silenced'));
-    expect(fn.slice(0, 800)).toContain('b.expires_at IS NULL OR b.expires_at > now()');
+    const fn = sliceSqlStatement(MIG, 'CREATE OR REPLACE FUNCTION public.fn_club_chat_is_silenced');
+    expect(fn).toContain('b.expires_at IS NULL OR b.expires_at > now()');
   });
 
   it('keeps the rules the old policies already enforced', () => {
-    const pol = MIG.slice(MIG.indexOf('CREATE POLICY "table_chat_insert"'));
-    expect(pol.slice(0, 400)).toContain('user_id = auth.uid()');
-    expect(pol.slice(0, 400)).toContain("message_type = 'player'");
+    const pol = sliceSqlStatement(MIG, 'CREATE POLICY "table_chat_insert"');
+    expect(pol).toContain('user_id = auth.uid()');
+    expect(pol).toContain("message_type = 'player'");
     // The club membership predicate is carried over byte for byte; widening it
     // is a separate change with a separate risk profile.
-    const club = MIG.slice(MIG.indexOf('CREATE POLICY "Members can insert club chat"'));
-    expect(club.slice(0, 600)).toContain("club_members.status = 'active'");
+    const club = sliceSqlStatement(MIG, 'CREATE POLICY "Members can insert club chat"');
+    expect(club).toContain("club_members.status = 'active'");
   });
 
   it('ships a rollback', () => {
@@ -260,8 +262,8 @@ describe('Multi-Day MTT enforcement lives in the database', () => {
   });
 
   it('refuses to install itself if any tournament already carries the flag', () => {
-    const pre = MIG.slice(MIG.indexOf('$preflight$'));
-    expect(pre.slice(0, 900)).toContain('refusing to install the guard');
+    const pre = sliceDollarQuoted(MIG, '$preflight$');
+    expect(pre).toContain('refusing to install the guard');
   });
 
   it('ships a rollback', () => {

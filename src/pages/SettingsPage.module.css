@@ -61,8 +61,6 @@
 }
 
 .saveButton:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(0, 212, 255, 0.6);
 }
 
 .saveButton:disabled {
@@ -335,7 +333,6 @@
 }
 
 .colorOption:hover {
-  transform: scale(1.1);
   border-color: #6a7a8a;
 }
 
@@ -367,8 +364,6 @@
 .actionButton:hover {
   border-color: #00d4ff;
   color: #00d4ff;
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
-  transform: translateY(-1px);
 }
 
 .actionButtonSecondary {

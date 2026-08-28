@@ -65,7 +65,6 @@
 }
 
 .sheet-action:hover {
-  transform: translateY(-2px);
 }
 
 .sheet-action:last-child {

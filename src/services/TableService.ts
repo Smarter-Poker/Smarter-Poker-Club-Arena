@@ -831,6 +831,43 @@ class TableService {
    * `if (error) { reportError; return [] }` meant the admin seat list was
    * simply always empty.
    */
+  /**
+   * THE TABLE A TOURNAMENT IS ACTUALLY ON (2026-08-28).
+   *
+   * Four client sites used to answer this with "newest non-closed table",
+   * which is the wrong answer whenever a duplicate exists: the players sit on
+   * the FIRST table and the empty duplicate is NEWER (measured 2026-08-24 —
+   * 12 of 28 blocked seat-first games had an empty table outranking the one
+   * holding every player). The database already owns the canonical election —
+   * fn_tournament_primary_table, occupancy first, oldest to break the tie,
+   * identical to the engine's own choice — so the client asks it and can
+   * never disagree with the engine about which table is the game.
+   *
+   * The newest-non-closed query stays as the fallback for an RPC outage:
+   * a degraded answer beats a dead end, and with one live table per game
+   * (the normal case) the two answers are identical.
+   */
+  async resolveTournamentLiveTable(tournamentId: string): Promise<string | null> {
+    const { data, error } = await supabase.rpc('fn_tournament_primary_table', {
+      p_tournament_id: tournamentId,
+    });
+    if (!error && typeof data === 'string' && data.length > 0) return data;
+    if (error) reportError(error, 'TableService.resolveTournamentLiveTable_rpc');
+
+    const { data: tbls, error: qErr } = await supabase
+      .from('tables')
+      .select('id, created_at')
+      .eq('tournament_id', tournamentId)
+      .neq('status', 'closed')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (qErr) {
+      reportError(qErr, 'TableService.resolveTournamentLiveTable_fallback');
+      return null;
+    }
+    return ((tbls || [])[0]?.id as string | undefined) ?? null;
+  }
+
   async getSeatedPlayers(tableId: string) {
     const { data, error } = await supabase
       .from('table_seats')

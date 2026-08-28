@@ -49,7 +49,6 @@
 .prev-hand-card:hover {
   background: var(--sp-hud-tile-bg-hover, rgba(16, 20, 28, 0.85));
   color: #fff;
-  transform: translateY(-1px);
 }
 
 .prev-hand-card:active {

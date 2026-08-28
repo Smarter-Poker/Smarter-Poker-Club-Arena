@@ -60,6 +60,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceEnclosingBlock } from './helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -126,7 +127,7 @@ describe('an all-in player cannot leave the table', () => {
     // It skips that player and keeps evicting the rest, rather than aborting
     // the whole sweep.
     const at = body.indexOf('evictSelf?.is_all_in');
-    expect(body.slice(at, at + 300)).toMatch(/continue;/);
+    expect(sliceEnclosingBlock(body, 'evictSelf?.is_all_in')).toMatch(/continue;/);
   });
 
   it('is_all_in is still only read from the live hand, not a stale seat row', () => {
@@ -228,7 +229,9 @@ describe('the bottom-left HUD slot', () => {
  */
 describe('every widget in the bottom-left HUD corner is the same tile', () => {
   it('the size is declared once, on .table-hud, as a token', () => {
-    expect(strip(HUD_CSS)).toMatch(/--sp-hud-tile-size:\s*36px/);
+    // 44px since 2026-08-28 (Dan: same size as the chat button, which is
+    // 44px at every breakpoint in TableChat.css).
+    expect(strip(HUD_CSS)).toMatch(/--sp-hud-tile-size:\s*44px/);
   });
 
   it('all three read that token for width and height', () => {
@@ -280,7 +283,7 @@ describe('every widget in the bottom-left HUD corner is the same tile', () => {
       Number(m[1])
     );
     expect(declared.length, '--sp-hero-clear is never declared').toBeGreaterThan(0);
-    const TILE = 36;
+    const TILE = 44; // 2026-08-28: chat-button parity (was 36)
     const LINE = 8;
     for (const px of declared) {
       if (px <= LINE) continue; // the data-hero='false' collapse

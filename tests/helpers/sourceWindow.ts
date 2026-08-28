@@ -139,7 +139,12 @@ export const sliceCall = (src: string, signature: string): string => {
  *
  * `occurrence` picks which appearance of `needle` to use when it repeats.
  */
-export const sliceEnclosingBlock = (src: string, needle: string, occurrence = 0): string => {
+export const sliceEnclosingBlock = (
+  src: string,
+  needle: string,
+  occurrence = 0,
+  levels = 1
+): string => {
   let at = -1;
   for (let i = 0; i <= occurrence; i++) {
     at = src.indexOf(needle, at + 1);
@@ -162,6 +167,26 @@ export const sliceEnclosingBlock = (src: string, needle: string, occurrence = 0)
     }
   }
   if (open < 0) throw new Error(`sliceEnclosingBlock: no enclosing block for "${needle}"`);
+
+  // `levels` climbs outward. Needed when the thing asserted sits in a SIBLING
+  // statement rather than the same object - a filter applied just before the
+  // emit it protects, for instance. One level would take only the emit.
+  for (let up = 1; up < levels; up++) {
+    let d = 0;
+    let outer = -1;
+    for (let i = open - 1; i >= 0; i--) {
+      if (cleaned[i] === '}') d++;
+      else if (cleaned[i] === '{') {
+        if (d === 0) {
+          outer = i;
+          break;
+        }
+        d--;
+      }
+    }
+    if (outer < 0) break;
+    open = outer;
+  }
 
   const end = matchForward(cleaned, open, '{');
   return end < 0 ? src.slice(open) : src.slice(open, end + 1);
@@ -192,4 +217,145 @@ export const sliceCssRule = (css: string, selector: string): string => {
   if (start < 0) throw new Error(`sliceCssRule: "${selector}" not found`);
   const end = css.indexOf('}', start);
   return end < 0 ? css.slice(start) : css.slice(start, end + 1);
+};
+
+/**
+ * One SQL statement, from `anchor` through the semicolon that ends it.
+ *
+ * Dollar-quote aware, which is the whole difficulty: a function body lives in
+ * `AS $$ ... $$;` and is full of semicolons that do NOT end the statement. The
+ * scanner tracks the opening tag (`$$`, `$function$`, `$preflight$`) and only
+ * accepts a semicolon once the body has closed.
+ *
+ * Replaces `MIG.slice(MIG.indexOf('CREATE ...')).slice(0, 400)`, which asserts
+ * against however much of a migration happens to fit in 400 characters and
+ * quietly stops covering the clause it was written for.
+ */
+export const sliceSqlStatement = (sql: string, anchor: string): string => {
+  const start = sql.indexOf(anchor);
+  if (start < 0) throw new Error(`sliceSqlStatement: "${anchor}" not found`);
+  const tagRe = /\$[A-Za-z_]*\$/g;
+  let i = start;
+  let tag: string | null = null;
+  while (i < sql.length) {
+    if (tag) {
+      const close = sql.indexOf(tag, i);
+      if (close < 0) return sql.slice(start);
+      i = close + tag.length;
+      tag = null;
+      continue;
+    }
+    tagRe.lastIndex = i;
+    const m = tagRe.exec(sql);
+    const semi = sql.indexOf(';', i);
+    if (semi >= 0 && (!m || semi < m.index)) return sql.slice(start, semi + 1);
+    if (!m) return sql.slice(start);
+    tag = m[0];
+    i = m.index + m[0].length;
+  }
+  return sql.slice(start);
+};
+
+/**
+ * The contents of a dollar-quoted block, opening and closing tag included -
+ * `$preflight$ ... $preflight$`, `$$ ... $$`.
+ */
+export const sliceDollarQuoted = (sql: string, tag: string): string => {
+  const start = sql.indexOf(tag);
+  if (start < 0) throw new Error(`sliceDollarQuoted: "${tag}" not found`);
+  const end = sql.indexOf(tag, start + tag.length);
+  return end < 0 ? sql.slice(start) : sql.slice(start, end + tag.length);
+};
+
+/**
+ * One statement, from `anchor` to the semicolon that ends it at depth zero.
+ *
+ * For `const SEVEN_DEUCE_VARIANTS = new Set([...]);` and friends, where the
+ * declaration grows every time a variant is added and a fixed window silently
+ * stops covering the newest one - the exact case a `not.toContain` is there to
+ * catch.
+ */
+export const sliceStatement = (src: string, anchor: string): string => {
+  const start = src.indexOf(anchor);
+  if (start < 0) throw new Error(`sliceStatement: "${anchor}" not found`);
+  const cleaned = blankNonCode(src.slice(start));
+  let depth = 0;
+  for (let i = 0; i < cleaned.length; i++) {
+    const c = cleaned[i];
+    if (c === '{' || c === '(' || c === '[') depth++;
+    else if (c === '}' || c === ')' || c === ']') depth--;
+    else if (c === ';' && depth <= 0) return src.slice(start, start + i + 1);
+  }
+  return src.slice(start);
+};
+
+/**
+ * One YAML block, from the line introducing `key` to the next line indented at
+ * or below it.
+ *
+ * A workflow job is defined by its indentation and nothing else, so a byte
+ * count is doubly wrong here: adding one `env:` entry to a job pushes the
+ * `needs:` line the assertion is about out of a 260-character window, and the
+ * gate that guards publishing stops guarding it.
+ */
+export const sliceYamlBlock = (yaml: string, key: string): string => {
+  const start = yaml.indexOf(key);
+  if (start < 0) throw new Error(`sliceYamlBlock: "${key}" not found`);
+  const lineStart = yaml.lastIndexOf('\n', start) + 1;
+  const indent = /^[ \t]*/.exec(yaml.slice(lineStart))?.[0] ?? '';
+  const lines = yaml.slice(lineStart).split('\n');
+  let end = lines.length;
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    const thisIndent = /^[ \t]*/.exec(line)?.[0] ?? '';
+    if (thisIndent.length <= indent.length) {
+      end = i;
+      break;
+    }
+  }
+  return lines.slice(0, end).join('\n');
+};
+
+/**
+ * The YAML list entry (a workflow STEP) that contains `key`.
+ *
+ * `sliceYamlBlock` takes the block a key OWNS; a step's `id:` owns nothing, so
+ * asking for it returns one line and an assertion about its sibling `if:`
+ * fails. This climbs to the `- ` that starts the entry and takes the whole of
+ * it.
+ */
+export const sliceYamlEntry = (yaml: string, key: string): string => {
+  const at = yaml.indexOf(key);
+  if (at < 0) throw new Error(`sliceYamlEntry: "${key}" not found`);
+  const lines = yaml.split('\n');
+  let idx = yaml.slice(0, at).split('\n').length - 1;
+  while (idx >= 0 && !/^\s*- /.test(lines[idx])) idx--;
+  if (idx < 0) throw new Error(`sliceYamlEntry: no list entry around "${key}"`);
+  const indent = (/^[ \t]*/.exec(lines[idx]) ?? [''])[0];
+  let end = lines.length;
+  for (let i = idx + 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const ind = (/^[ \t]*/.exec(lines[i]) ?? [''])[0];
+    if (ind.length <= indent.length) {
+      end = i;
+      break;
+    }
+  }
+  return lines.slice(idx, end).join('\n');
+};
+
+/**
+ * From `from` up to the next `to`, exclusive.
+ *
+ * For a section that is delimited by the thing that comes after it - numbered
+ * guards in a migration, banner comments in a long function - where the honest
+ * bound is "until the next one starts" and a byte count is a guess that goes
+ * stale the moment the section gains a line.
+ */
+export const sliceBetween = (src: string, from: string, to: string): string => {
+  const start = src.indexOf(from);
+  if (start < 0) throw new Error(`sliceBetween: "${from}" not found`);
+  const end = src.indexOf(to, start + from.length);
+  return end < 0 ? src.slice(start) : src.slice(start, end);
 };

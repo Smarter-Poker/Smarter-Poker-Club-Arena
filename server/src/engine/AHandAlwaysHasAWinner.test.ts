@@ -23,6 +23,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { determineWinners } from './PokerEngine.js';
+import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -127,7 +128,7 @@ describe('nothing is settled by list position', () => {
     const at = src.indexOf('no_winners_recheck');
     expect(at).toBeGreaterThan(-1);
     // the re-evaluation must come AFTER the alarm, in the same block
-    expect(src.slice(at, at + 1200)).toContain('determineWinners(');
+    expect(sliceEnclosingBlock(src, 'no_winners_recheck')).toContain('determineWinners(');
   });
 
   it('the last resort splits among contenders rather than picking one', () => {

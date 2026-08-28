@@ -89,6 +89,45 @@ describe('the fixed action bar cannot cover the hero plate or the HUD', () => {
     }
   });
 
+  /**
+   * ADDED 2026-08-28, because the claim it checks had been false since it was
+   * written.
+   *
+   * ActionPanel.css's header says the row height "is named ONCE here and the
+   * three consumers read it", naming `.pre-action-bar` as the second. That file
+   * contained NO reference to the token — only literals (52px, then rungs of 44
+   * and 46) that happened to agree with the action row on a phone.
+   *
+   * They stopped agreeing the moment the action button became a clamp: at
+   * 1440px the wrapper reserved 85px for a row that drew 61px, leaving 24px of
+   * dead black under the pre-action pills — the same defect Dan reported about
+   * the action bar itself ("too much wasted space at the bottom"), surviving in
+   * the row nobody re-measured.
+   *
+   * A comment cannot enforce a mirror. This can.
+   */
+  it('the OTHER bottom row reads the same height token, not a literal', () => {
+    const PRE_ACTION_CSS = read('src/components/table/PreActionBar.css');
+
+    expect(
+      PRE_ACTION_CSS,
+      'PreActionBar.css must size its pill from --sp-action-btn-h. Two rows share ' +
+        'one wrapper and one reserve; a literal here is a row that disagrees with the ' +
+        'space reserved for it at every width except the one somebody checked.'
+    ).toMatch(/min-height:\s*var\(\s*--sp-action-btn-h/);
+
+    // And no rung may put it back on a ladder. The token already interpolates
+    // through every value the four deleted rungs stated.
+    const rungs = PRE_ACTION_CSS.replace(/\/\*[\s\S]*?\*\//g, '').match(
+      /\.pre-action-btn\s*\{[^}]*min-height:\s*\d+px/g
+    );
+    expect(
+      rungs ?? [],
+      'a px min-height came back on .pre-action-btn — that is a rung, and the ' +
+        'worst of the deleted ones (44px) was below the 44px touch minimum'
+    ).toEqual([]);
+  });
+
   it('reserves at least as much as the bar can occupy, so the plate cannot be covered', () => {
     // The 2026-08-23 bug in one line: the reserve has to restate the bar's own
     // floor, not a number somebody typed next to it. Both sides read

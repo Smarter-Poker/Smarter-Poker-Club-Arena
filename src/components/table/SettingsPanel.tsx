@@ -41,6 +41,8 @@ export interface TableSettings {
   confirmAllIn: boolean;
   sitOutNextHand: boolean;
   tableTheme: string;
+  /** Dan 2026-08-28: the scrolling tournament/announcement ticker. */
+  showTicker: boolean;
 }
 
 export interface SettingsPanelProps {
@@ -87,6 +89,7 @@ export const DEFAULT_TABLE_SETTINGS: TableSettings = {
   confirmAllIn: true,
   sitOutNextHand: false,
   tableTheme: 'black',
+  showTicker: true,
 };
 
 /** Available table themes from design-tokens.css */
@@ -308,6 +311,16 @@ export function SettingsPanel({
               description="Show Quick Bet Size Buttons"
               checked={settings.showBetSizePresets}
               onChange={() => handleToggle('showBetSizePresets')}
+            />
+
+            {/* Dan 2026-08-28: "add a toggle in the table settings... to turn
+                the ticker on or off." Governs the scrolling tournament and
+                announcement marquee at the top of club and table pages. */}
+            <SettingToggle
+              label="Announcement Ticker"
+              description="Show The Scrolling Tournament And Announcement Ticker"
+              checked={settings.showTicker}
+              onChange={() => handleToggle('showTicker')}
             />
 
             <div className="settings-item">

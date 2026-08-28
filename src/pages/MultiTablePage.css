@@ -40,10 +40,6 @@
 
 .multi-table-page--empty button:hover {
   filter: brightness(1.1);
-  transform: translateY(-2px);
-  box-shadow:
-    0 0 20px rgba(37, 99, 235, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -291,10 +287,6 @@
 .tile-toggle-btn:hover {
   background: rgba(255, 255, 255, 0.15);
   color: rgba(255, 255, 255, 0.9);
-  transform: translateY(-1px);
-  box-shadow:
-    0 0 12px rgba(255, 255, 255, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -486,8 +478,6 @@
 }
 
 .multi-table-page__take-seat-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.55);
 }
 
 .multi-table-page__take-seat-btn:active {

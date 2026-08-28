@@ -141,11 +141,21 @@ test.describe('Watching a running tournament', () => {
     await expect(body).not.toContainText(/Something went wrong|This page ran into an issue/i);
   });
 
-  test('a tournament felt shows the stats bar in the right corner', async ({ page }) => {
-    /* Dan: "tournaments are still missing the stats bar in the right corner."
-       It was missing for two independent reasons: MiniStatsCard bailed out to a
-       bare glyph for tournaments, and TournamentHUD was rendered outside the
-       fixed HUD layer entirely, with nothing to anchor it. */
+  test('a tournament felt shows the lobby button in the right corner', async ({ page }) => {
+    /* Dan 2026-08-25: "tournaments are still missing the stats bar in the right
+       corner." It was missing for two independent reasons: MiniStatsCard bailed
+       out to a bare glyph for tournaments, and TournamentHUD was rendered
+       outside the fixed HUD layer entirely, with nothing to anchor it.
+
+       UPDATED 2026-08-28. Dan has since ruled on what that corner holds: "ALL
+       TOURNAMENTS NEED THE STATS ICON IN THE UPPER RIGHT HAND CORNER. IT
+       SHOULDN'T SHOW THE STATS, BUT OPEN TO THE TOURNAMENT LOBBY PAGE AS A IN
+       GAME 3/4 POP UP", and "STATS SHOULD LIVE INSIDE THE HERO AVATAR."
+
+       So the four-figure bar is gone and the assertion below inverts: the
+       corner must carry the LOBBY BUTTON, and it must open the lobby. What has
+       not changed, and is the thing this test has always really been for, is
+       that the corner is not empty on a tournament felt. */
     const ok = await openRunningTournament(page);
     test.skip(!ok, 'no running tournament on production right now');
 
@@ -171,14 +181,44 @@ test.describe('Watching a running tournament', () => {
       timeout: 25_000,
     });
 
-    /* The tournament bar carries labelled FIGURES. The bug was a button that
-       said only "STATS" — a link to a panel, not a stats bar. Only asserted
-       when the bar is present at all: a spectator with no seat legitimately
-       has no stack to show. */
-    const bar = corner.locator('.mini-stats-card--tournament-stats');
-    if ((await bar.count()) > 0) {
-      await expect(bar).toContainText(/Stack/i);
-      await expect(bar).not.toHaveText(/^\s*STATS\s*$/);
-    }
+    /* ONE button, and it is the lobby door. Seated or watching, the corner
+       carries the same control now — the seated/observer split went with the
+       figures. */
+    const lobbyBtn = corner.getByRole('button', { name: /tournament lobby/i });
+    await expect(
+      lobbyBtn,
+      'every tournament felt must carry the tournament lobby button'
+    ).toBeVisible({ timeout: 25_000 });
+
+    /* The figures must NOT be here. This is the assertion that would catch the
+       2026-08-25 bar being reinstated in the corner Dan has now said is a
+       door. */
+    await expect(corner.locator('.mini-stats-card--tournament-stats')).toHaveCount(0);
+    await expect(lobbyBtn).not.toContainText(/Stack|VPIP/i);
+
+    /* And it opens the LOBBY as a 3/4 popup — not TournamentInfoPanel, which
+       is what it used to open and is now reached from the hero avatar. */
+    await lobbyBtn.click();
+    const lobby = page.locator('.tlm-panel');
+    await expect(lobby, 'the corner button must open the tournament lobby overlay').toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(lobby).toContainText(/Tournament Lobby/i);
+
+    /* Clicking off closes it — Dan's standing rule for every 3/4 popup: "when
+       it's 3/4 page you should be able to click off to close as well."
+
+       The backdrop is the remaining quarter, and WHICH quarter depends on the
+       layout: on desktop the panel is 75vw down the LEFT so the bare strip is
+       on the right; on a phone it is a 75dvh sheet at the BOTTOM so the strip
+       is on top. The top-right corner is backdrop in both, which is why the
+       click is aimed there rather than at a fixed offset — (5,5) would land on
+       the panel itself on desktop and the test would pass for the wrong reason
+       only until someone ran it on a phone profile. */
+    const vp = page.viewportSize();
+    await page
+      .locator('.tlm-overlay')
+      .click({ position: { x: Math.max((vp?.width ?? 1280) - 6, 6), y: 6 } });
+    await expect(lobby).toBeHidden({ timeout: 10_000 });
   });
 });

@@ -164,6 +164,12 @@ export const CardBackSelector: React.FC<CardBackSelectorProps> = ({
   );
 
   const handleConfirmPurchase = useCallback(async () => {
+    // 2026-08-28: `busy` was checked by handleSelect but NOT here, and
+    // `setConfirmPurchase(null)` below is a state write, not a synchronous
+    // latch — so two clicks inside one commit both read confirmPurchase
+    // non-null and both reached onPurchase (fn_purchase_feature, no lock of
+    // its own). This is reachable from inside the persistent table layer.
+    if (busy) return;
     if (!confirmPurchase || confirmPurchase.price <= 0) return;
     if (userDiamonds < confirmPurchase.price) return;
 

@@ -21,6 +21,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceBetween } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -61,8 +62,8 @@ describe('The compactor cannot lose a hand', () => {
 
 describe('The compactor cannot run away', () => {
   it('has a kill switch that is checked before anything else', () => {
-    const body = RESUME.slice(RESUME.indexOf('GUARD 1'));
-    expect(body.slice(0, 500)).toContain("'disabled'");
+    const body = sliceBetween(RESUME, 'GUARD 1', 'GUARD 2');
+    expect(body).toContain("'disabled'");
     expect(RESUME).toContain('hand_history_compaction_policy');
   });
 

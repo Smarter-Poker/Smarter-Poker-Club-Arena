@@ -36,7 +36,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sliceCall } from '../helpers/sourceWindow';
+import { sliceCall, sliceCall } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -100,7 +100,7 @@ function selectedColumns(src: string, table = 'tournaments'): Set<string> {
     const before = src.slice(0, m.index ?? 0);
     const lastFrom = before.lastIndexOf('.from(');
     if (lastFrom === -1) continue;
-    const fromArg = before.slice(lastFrom, lastFrom + 80).match(/\.from\(\s*['"]([^'"]+)['"]/);
+    const fromArg = sliceCall(before.slice(lastFrom), '.from(').match(/\.from\(\s*['"]([^'"]+)['"]/);
     if (!fromArg || fromArg[1] !== table) continue;
     for (const raw of m[2].split(',')) {
       const col = raw

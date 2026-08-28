@@ -22,6 +22,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceStatement } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
 
@@ -44,9 +45,9 @@ describe('the bust/rebuy pause is identical for horses and humans', () => {
         ? src.indexOf('Dan’s Rebuy Pause')
         : src.indexOf("Dan's Rebuy Pause");
     expect(start).toBeGreaterThan(-1);
-    const block = src.slice(start, start + 2500);
     // The filter that decides WHO the table waits for may not consult is_horse.
-    const filterLine = block.match(/const justBustedPlayers = [^;]+;/)?.[0] ?? '';
+    // Pinned to the declaration itself, so it cannot drift out of a window.
+    const filterLine = sliceStatement(src, 'const justBustedPlayers =');
     expect(filterLine).not.toMatch(/is_horse/);
   });
 

@@ -267,27 +267,6 @@ export default function LobbyAdStrip({
   };
   const text = ad.title ? (ad.body ? `${ad.title} - ${ad.body}` : ad.title) : ad.body;
 
-  /* Not a tablist: there are no tabpanels, no aria-controls and no roving
-     tabindex, so a screen reader announced "tab 1 of 6" for controls whose
-     arrow keys did nothing. They pick which announcement is showing, which is
-     what aria-current says. (Title Case, per the popup rule - it is read
-     aloud.) */
-  const dots =
-    ads.length > 1 ? (
-      <div className="lobby-ads__dots" role="group" aria-label="Announcements">
-        {ads.map((a, i) => (
-          <button
-            key={a.id}
-            type="button"
-            aria-current={i === index ? 'true' : undefined}
-            aria-label={`Announcement ${i + 1} Of ${ads.length}`}
-            className={`lobby-ads__dot ${i === index ? 'is-active' : ''}`}
-            onClick={() => setIndex(i)}
-          />
-        ))}
-      </div>
-    ) : null;
-
   /* A button only when there is something to open. `onOpen` is optional, and
      without it the strip was still focusable, still showed a pointer cursor
      and a focus ring, and did nothing when clicked. */
@@ -313,7 +292,6 @@ export default function LobbyAdStrip({
         >
           ✕
         </button>
-        {dots}
       </div>
     );
   }
@@ -345,8 +323,6 @@ export default function LobbyAdStrip({
       >
         ✕
       </button>
-
-      {dots}
     </div>
   );
 }

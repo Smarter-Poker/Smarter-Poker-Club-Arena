@@ -306,7 +306,35 @@ export function useTableTimer({
     heroFiredRef.current = null;
   }, [turnDeadlineMs, activeSeatKey]);
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * PERF 2026-08-28 — THE LOOP RAN FOR TABLES WITH NOBODY ON THE CLOCK.
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The driver below is deliberately mounted once for the hook's lifetime and
+   * deliberately never torn down at zero (see the note at the end of `tick`)
+   * — both correct. But `deps: []` also meant it ran whenever the hook was
+   * MOUNTED, and up to four TablePages are mounted at once inside the
+   * persistent table layer. Four permanent rAF loops plus four 500ms
+   * watchdogs, three of them for tables where no clock is running at all.
+   *
+   * A deadline is the only thing this loop can ever act on, so it now starts
+   * when one exists and stops when it does not. That is the same gate
+   * MultiTablePage puts on its shared 1s clock (`anyTurnLive`), and it does
+   * not weaken the "hold at zero" rule: holding at zero happens WHILE a
+   * deadline is set, and the next deadline change restarts the driver.
+   */
+  const hasDeadline = Boolean(turnDeadlineMs);
+
   useEffect(() => {
+    if (!hasDeadline) {
+      /* No deadline means no countdown to run — but the ring must not be left
+         frozen on whatever second the last turn ended at. One forced publish
+         settles it, then nothing ticks until a deadline exists again. */
+      publish(true);
+      return;
+    }
+
     let rafId = 0;
     let cancelled = false;
     let lastEvalAt = -Infinity;
@@ -366,7 +394,10 @@ export function useTableTimer({
       cancelAnimationFrame(rafId);
       clearInterval(watchdogId);
     };
-  }, []); // Subscribe once for the hook's lifetime.
+    // Gated on the PRESENCE of a deadline, not its value: the value is read
+    // through turnDeadlineRef inside the loop, so a new deadline on a table
+    // that already has one does NOT restart the drivers.
+  }, [hasDeadline, publish]);
 
   // Timer warning sound.
   //

@@ -116,6 +116,26 @@ describe('EV cashout — accept + settle', () => {
     expect(e.acceptPartial('t1', LEADER, 100)).toBe(false); // and no late insure either
   });
 
+  it('RE-OFFER GUARD: a cashed-out leader is NOT offered again on a later street', () => {
+    // Found in line-by-line review 2026-08-28: the no-re-offer guard checked
+    // accepted/settled but not cashed_out, so a flop cashout could be offered
+    // again on the turn — double-dipping on equity the bank already bought.
+    const e = mkEngine();
+    offerLeader(e);
+    expect(e.acceptEvCashout('t1', LEADER).ok).toBe(true);
+    // Next street: the per-street flow clears pending offers and re-creates.
+    e.clearPendingOffers('t1');
+    const reoffer = offerLeader(e);
+    expect(reoffer).toHaveLength(0);
+    // The locked cashout is untouched and still settles exactly once.
+    const kept = e.getOffers('t1');
+    expect(kept).toHaveLength(1);
+    expect(kept[0].status).toBe('cashed_out');
+    const settlements = e.settle('t1', LEADER);
+    expect(settlements).toHaveLength(1);
+    expect(settlements[0].kind).toBe('ev_cashout');
+  });
+
   it('classic insurance settlements carry kind "insurance"', () => {
     const e = mkEngine();
     offerLeader(e);

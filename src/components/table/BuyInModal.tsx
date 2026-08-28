@@ -163,6 +163,25 @@ export function BuyInModal({
   }, [hasEnoughBalance]);
 
   /**
+   * ESCAPE CLOSES THE SHEET (2026-08-28). Before this, the ONLY way out was
+   * clicking the backdrop — unreachable by keyboard, and easy to miss on a
+   * phone where the sheet fills the screen. Attached only while open so it
+   * cannot swallow Escape for whatever is behind it, and it does not fire
+   * mid-buy-in: a confirm already in flight must not be abandoned halfway.
+   */
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (isProcessing) return;
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, isProcessing, onClose]);
+
+  /**
    * 2026-08-20: the MAX BUY-IN was not reachable by dragging.
    *
    * `<input type="range">` only emits values on the grid `min + n*step`, and
@@ -209,16 +228,33 @@ export function BuyInModal({
   if (!isOpen) return null;
 
   return (
-    <div className="buy-in-modal__overlay" onClick={onClose}>
-      <div className="buy-in-modal" onClick={(e) => e.stopPropagation()}>
+    /**
+     * ACCESSIBILITY 2026-08-28. This is the modal every player passes through
+     * to sit down, and it had no dialog semantics at all: no role, no
+     * aria-modal, no accessible name, and no Escape handler — the backdrop
+     * click was the only way out, which is not reachable by keyboard. The
+     * overlay is marked aria-hidden because it is a redundant affordance for
+     * the same action Escape now performs (the pattern TableMenu already
+     * uses).
+     */
+    <div className="buy-in-modal__overlay" onClick={onClose} aria-hidden="true">
+      <div
+        className="buy-in-modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="buy-in-modal-title"
+      >
         {/* Header */}
         <div className="buy-in-modal__header">
           {countdown !== undefined && (
             <span className="buy-in-modal__countdown">{countdown}s (Close)</span>
           )}
-          <h2 className="buy-in-modal__title">BUY-IN</h2>
-          <button className="buy-in-modal__close" onClick={onClose}>
-            ×
+          <h2 className="buy-in-modal__title" id="buy-in-modal-title">
+            BUY-IN
+          </h2>
+          <button className="buy-in-modal__close" onClick={onClose} aria-label="Close Buy-In">
+            <span aria-hidden="true">×</span>
           </button>
         </div>
 

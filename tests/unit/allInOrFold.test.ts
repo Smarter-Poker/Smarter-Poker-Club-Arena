@@ -22,6 +22,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { HandController } from '../../server/src/engine/HandController';
 import type { HandConfig, SeatPlayer } from '../../server/src/types';
+import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 function mkPlayers(stacks: number[]): SeatPlayer[] {
   return stacks.map(
@@ -145,7 +146,7 @@ describe('AoF: engine wiring (source pins)', () => {
     const turns = read('server/src/engine/ServerTableEngineTurns.ts');
     const at = turns.indexOf('all_in_or_fold');
     expect(at).toBeGreaterThan(-1);
-    const block = turns.slice(at, at + 400);
+    const block = sliceEnclosingBlock(turns, 'all_in_or_fold');
     expect(block).toMatch(/action !== 'fold'/);
     expect(block).toMatch(/action = 'all_in'/);
   });

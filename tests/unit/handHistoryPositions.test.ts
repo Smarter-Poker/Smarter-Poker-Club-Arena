@@ -23,6 +23,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { derivePositions } from '../../src/utils/pokerPositions';
+import { sliceStatement } from '../helpers/sourceWindow';
 
 const SRC = readFileSync(resolve(__dirname, '../../src/services/HandHistoryService.ts'), 'utf8');
 
@@ -47,7 +48,7 @@ describe('hand history reads the real button', () => {
     // The floor is allowed to mention it; the primary read must be the column.
     const idx = SRC.indexOf('const buttonSeat');
     expect(idx).toBeGreaterThan(-1);
-    const decl = SRC.slice(idx, idx + 400);
+    const decl = sliceStatement(SRC, 'const buttonSeat');
     expect(decl).toContain('button_seat');
   });
 

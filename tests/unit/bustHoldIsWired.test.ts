@@ -40,6 +40,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceStatement } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 /** Comments quote the very things these tests ban. Never match against them. */
@@ -113,8 +114,7 @@ describe('the bust hold reaches a real exit', () => {
     /* The comment at goToLobbyWithResult records that an earlier version
        published the card and navigated and nothing else, leaving the finished
        table in the player's tab bar with their status still "playing at". */
-    const fn = src.slice(src.indexOf('const goToLobbyWithResult = ('));
-    const body = fn.slice(0, 4000);
+    const body = sliceStatement(src, 'const goToLobbyWithResult = (');
     expect(body).toMatch(/SESSION_ENDED/);
     expect(body).toMatch(/clearPlayingAt/);
     expect(body).toMatch(/TABLE_LEFT/);

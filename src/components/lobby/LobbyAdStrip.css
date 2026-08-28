@@ -8,24 +8,22 @@
  */
 
 .lobby-ads {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: block;
   padding: 0 1rem 0.5rem;
+  position: relative;
 }
 
 .lobby-ads__strip {
-  flex: 1;
-  min-width: 0; /* lets the text child ellipsis instead of forcing the row wide */
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 44px;
   /* 32px was the primary clickable element of this component on a phone. */
-  padding: 0 10px;
+  padding: 0 36px 0 10px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.09);
-  background: linear-gradient(90deg, rgba(40, 40, 62, 0.85) 0%, rgba(26, 26, 46, 0.85) 100%);
+  background: #000000;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
   cursor: pointer;
   text-align: left;
@@ -126,7 +124,7 @@
   flex: 1;
   min-width: 0;
   font-size: 0.75rem;
-  color: #c3cbd8;
+  color: #ffffff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -144,61 +142,12 @@
   }
 }
 
-/* ── Position dots ────────────────────────────────────────────────────────── */
-.lobby-ads__dots {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.lobby-ads__dot {
-  position: relative;
-  width: 6px;
-  height: 6px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.22);
-  cursor: pointer;
-  transition:
-    background 0.2s ease,
-    transform 0.2s ease;
-}
-
-.lobby-ads__dot.is-active {
-  background: #ffb800;
-  transform: scale(1.25);
-}
-
-/* 6px is far under the 44px touch guideline. The visible dot stays small; the
-   tap target is extended by a transparent overlay, same pattern as .dw__plus. */
-/* Sized to the DOT PITCH, not to 28px. The dots are 6px with a 4px gap - 10px
-   of pitch - so a 28px overlay overlapped its neighbours by 18px, and because
-   the later dot's overlay paints on top, tapping the right half of dot 1
-   selected dot 2. Full height, exact pitch: a 44px target that belongs to
-   exactly one dot. */
-.lobby-ads__dot::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 10px;
-  height: 44px;
-  transform: translate(-50%, -50%);
-}
-
 /* The strip renders as a plain div when it has nothing to open. */
 .lobby-ads__strip--static {
   cursor: default;
 }
 .lobby-ads__strip--static:hover {
   border-color: inherit;
-}
-
-.lobby-ads__dot:focus-visible {
-  outline: 2px solid rgba(255, 184, 0, 0.7);
-  outline-offset: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -209,6 +158,10 @@
 
 /* ── Dismiss Button ───────────────────────────────────────────────────────── */
 .lobby-ads__dismiss {
+  position: absolute;
+  right: calc(1rem + 8px);
+  top: 8px;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;

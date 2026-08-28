@@ -25,6 +25,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceMethod, sliceCall } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -81,6 +82,10 @@ const GAMEPLAY_COLUMNS = [
   // VARIANT OVERRIDE + TIMED PERSISTENCE 2026-08-28 (spec §10.1/§4.3)
   'bomb_pot_variant',
   'bomb_pot_next_due_at',
+  // BOMB POT MAX 2026-08-28: scheduler state, button policy, announce window
+  'bomb_pot_sched_state',
+  'bomb_pot_button_policy',
+  'bomb_pot_announce_seconds',
   'seven_deuce_enabled',
   'time_bank_enabled',
   'wait_for_big_blind',
@@ -136,8 +141,8 @@ describe('AutoStart is one predicate, shared', () => {
   });
 
   it('a tournament table ignores the cash slider', () => {
-    const fn = base.slice(base.indexOf('protected minPlayersToDeal()'));
-    expect(fn.slice(0, 300)).toContain('isTournamentTable()');
+    const fn = sliceMethod(base, 'protected minPlayersToDeal()');
+    expect(fn).toContain('isTournamentTable()');
   });
 
   it('the loop and the watchdog use the SAME predicate', () => {
@@ -176,8 +181,8 @@ describe('mandatory run-it modes are additive, never subtractive', () => {
      * gated `enabled` would have switched the feature off platform-wide. The
      * mode may only ever remove the QUESTION.
      */
-    const cfg = base.slice(base.indexOf('this.runItTwiceEngine.configure('));
-    expect(cfg.slice(0, 400)).toContain('enabled: ritEffective');
-    expect(cfg.slice(0, 400)).not.toMatch(/enabled:\s*ritEffective\s*&&/);
+    const cfg = sliceCall(base, 'this.runItTwiceEngine.configure(');
+    expect(cfg).toContain('enabled: ritEffective');
+    expect(cfg).not.toMatch(/enabled:\s*ritEffective\s*&&/);
   });
 });

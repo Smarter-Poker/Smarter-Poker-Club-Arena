@@ -20,15 +20,6 @@
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.card:hover {
-  transform: translateY(-6px) scale(1.01);
-  border-color: rgba(111, 220, 255, 0.4);
-  box-shadow:
-    0 12px 32px rgba(0, 0, 0, 0.4),
-    0 0 20px rgba(111, 220, 255, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
 .header {
   display: flex;
   justify-content: space-between;
@@ -333,10 +324,6 @@
 }
 
 .registerBtn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow:
-    0 8px 20px rgba(111, 220, 255, 0.3),
-    0 0 12px rgba(111, 220, 255, 0.2);
 }
 
 .registerBtn:disabled {
@@ -358,7 +345,6 @@
 }
 
 .unregisterBtn:hover {
-  transform: translateY(-1px);
 }
 
 .playBtn {
@@ -377,8 +363,6 @@
 }
 
 .playBtn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(16, 185, 129, 0.3);
 }
 
 /* ── Mobile ≤480px ── */

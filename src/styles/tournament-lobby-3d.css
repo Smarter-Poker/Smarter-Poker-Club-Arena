@@ -267,12 +267,7 @@
    downline row - i.e. exactly the rows worth tabbing to. A real outline,
    offset so it sits outside the bevel rather than fighting it. */
 .tl-row--interactive:focus-visible {
-  transform: translateY(-2px);
   border-color: rgba(111, 220, 255, 0.4);
-  box-shadow:
-    var(--tl-bevel-strong),
-    var(--tl-cast),
-    0 0 16px rgba(111, 220, 255, 0.22);
   outline: 2px solid var(--tl-accent);
   outline-offset: 2px;
 }

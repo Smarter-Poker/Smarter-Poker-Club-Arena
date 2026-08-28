@@ -29,12 +29,6 @@
 
 .iconBox:hover:not(:disabled) {
   border-color: var(--metal-glow-cyan);
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 2px 8px rgba(0, 0, 0, 0.4),
-    0 4px 16px rgba(0, 212, 255, 0.25),
-    0 0 20px rgba(0, 212, 255, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .iconBox:hover:not(:disabled) .glowEffect {

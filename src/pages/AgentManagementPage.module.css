@@ -88,8 +88,6 @@
 }
 
 .addButton:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(var(--accent-rgb), 0.4);
 }
 
 /* Summary Cards */
@@ -115,7 +113,6 @@
 }
 
 .summaryCard:hover {
-  transform: translateY(-1px);
 }
 
 .summaryCard.attention {
@@ -201,10 +198,6 @@
 
 .agentCard:hover {
   border-color: rgba(255, 255, 255, 0.2);
-  transform: translateY(-2px);
-  box-shadow:
-    0 8px 20px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .agentCard.inactive {
@@ -949,7 +942,6 @@
 
 .roleOption:hover {
   background: rgba(255, 255, 255, 0.1);
-  transform: translateY(-1px);
 }
 
 .roleOption.selected {
@@ -1033,7 +1025,6 @@
 }
 
 .slider::-webkit-slider-thumb:hover {
-  transform: scale(1.1);
 }
 
 .sliderValue {

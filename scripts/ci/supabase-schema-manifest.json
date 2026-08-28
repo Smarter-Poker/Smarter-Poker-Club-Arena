@@ -1200,6 +1200,7 @@
     "fn_action_player_report",
     "fn_actor_can_manage_club_treasury",
     "fn_ad_cap_status",
+    "fn_ad_stats",
     "fn_add_chips",
     "fn_add_diamonds",
     "fn_add_member_to_group_conversation",

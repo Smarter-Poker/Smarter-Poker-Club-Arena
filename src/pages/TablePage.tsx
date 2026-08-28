@@ -74,6 +74,7 @@ import { useState, useEffect, useCallback, useRef, startTransition, useMemo } fr
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
 import { SeatSlot } from '../components/table/SeatSlot';
 import { PotDisplay } from '../components/table/PotDisplay';
@@ -1369,8 +1370,22 @@ export default function TablePage({
       }
     };
   }, [tableId]);
-  const [username, setUsername] = useState<string>('Player');
-  const [heroAvatarUrl, setHeroAvatarUrl] = useState<string>('');
+  /**
+   * FIRST-PAINT IDENTITY (2026-08-28, flash sweep): these began at
+   * 'Player' / '' and the real name and avatar arrived only after
+   * getAuthUser() PLUS a profiles round trip — so the hero's own seat opened
+   * as an anonymous stranger on every table mount. The persisted session
+   * gives us the user id synchronously (a paint hint, not authentication),
+   * and lib/cachedIdentity keys the cached name/face to that id so another
+   * account's identity can never paint. initUser below still fetches the
+   * profile and overwrites both state and cache — the database stays truth.
+   */
+  const [username, setUsername] = useState<string>(
+    () => hydrateIdentity(cachedAuthUserId()).displayName || 'Player'
+  );
+  const [heroAvatarUrl, setHeroAvatarUrl] = useState<string>(
+    () => hydrateIdentity(cachedAuthUserId()).avatarUrl || ''
+  );
   // ANIMATION AUDIT 2026-08-19: boardStageKey is GONE. It re-keyed (and so
   // unmounted + remounted) the whole .community-area on every stage change —
   // one frame after CommunityCards had marked the new cards as newly dealt.
@@ -1417,8 +1432,15 @@ export default function TablePage({
           .eq('id', user.id)
           .maybeSingle();
         if (isMounted.current) {
-          setUsername(profile?.display_name || profile?.username || 'Player');
+          const resolvedName = profile?.display_name || profile?.username || 'Player';
+          setUsername(resolvedName);
           setHeroAvatarUrl(profile?.avatar_url || '');
+          // Refresh the first-paint cache with what the database just said,
+          // so the NEXT table open (and the header) wear it immediately.
+          persistIdentity(user.id, {
+            displayName: resolvedName === 'Player' ? null : resolvedName,
+            avatarUrl: profile?.avatar_url || null,
+          });
         }
       } catch (err) {
         reportError(err, 'TablePage.initUser_profile_failed');
@@ -1445,6 +1467,8 @@ export default function TablePage({
     const url = payload.avatarUrl ?? payload.avatar_url;
     if (typeof url === 'string' && url && isMounted.current) {
       setHeroAvatarUrl(url);
+      // Keep the first-paint cache current with the newly picked avatar.
+      persistIdentity(userId, { avatarUrl: url });
     }
   });
 

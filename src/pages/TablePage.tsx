@@ -4205,9 +4205,29 @@ export default function TablePage({
         reportError(result.error, 'TablePage.Decline_for_hand_failed');
       }
     }
-    if (ritOpponent !== 'Opponent') {
-      setShowRIT(true);
-    }
+    /* ─── THE CLIENT DOES NOT OPEN THE RIT PANEL. THE ENGINE DOES. (2026-08-28)
+     *
+     * `if (ritOpponent !== 'Opponent') setShowRIT(true);` used to sit here — a
+     * legacy second way into the Run-It-Twice panel, gated on a DISPLAY STRING
+     * being something other than its initial value.
+     *
+     * It opened a panel with none of the context the panel needs. The countdown
+     * reads `ritDeadlineRef.current`, which the hand-boundary reset had zeroed,
+     * so it appeared already expired; `ritIsChooser`, `ritMaxRuns` and
+     * `ritPlayerCount` were stale from an earlier hand; and its Accept, Decline
+     * and choose-runs buttons all call `respondToRIT(tableId, …)` — POSTing a
+     * response to the engine for an offer that does not exist.
+     *
+     * The engine is the authority and always was. `handleAllInRunout` broadcasts
+     * `rit_offer` (server/src/engine — see RunItTwice.offerpath.test.ts, "THE
+     * OFFER FIRES: a 2-way all-in on a RIT cash table emits rit_offer"), and the
+     * `eventType === 'rit_offer'` handler further down THIS file sets chooserId,
+     * the real deadline, maxRuns, playerCount and isChooser before opening the
+     * panel on a deliberate 1500ms cadence.
+     *
+     * So declining insurance no longer opens anything. If RIT applies, the
+     * engine offers it — after the insurance decision, which is exactly what the
+     * old comment beside `handleAllIn` described this hook as doing. */
   };
 
   // Insurance auto-decline timeout — prevents hand from stalling if player AFK
@@ -14446,55 +14466,37 @@ export default function TablePage({
   // ActionPanel's own confirm -> handleActionPanelAction('raise', amount), which
   // does the same clamping and optimistic update. Two copies of a money-moving
   // path, one of them unreachable, is how they drift.
-  const handleAllIn = async () => {
-    if (actionLockRef.current) return;
-    const heroSeat = tableState.heroSeat;
-    const hero = getPlayerAtSeat(heroSeat);
-    const heroStack = hero?.stack || 0;
-    if (heroStack <= 0) return;
-    if (!validateAndExecuteAction('allin')) return;
-    actionLockRef.current = true;
-    setTimeout(() => {
-      actionLockRef.current = false;
-    }, 300);
-    try {
-      //Local engine call removed — server is authoritative
-      soundService.playAllIn(); // SoundService handles haptic (strong) per Bible V8 §5.4
-      setIsAllInMode(true);
-      // BUG 026: optimistic update for instant visual feedback
-      const revert = applyOptimisticHeroAction('allin', heroStack);
-      if (tableId) {
-        const ok = await submitActionWithToast(tableId, userId, 'allin', heroStack, 'handleAllIn');
-        if (!ok) revert();
-      }
-    } catch (err) {
-      console.warn('[TablePage] All-in error:', err);
-    }
+  /* ─── `handleAllIn` USED TO BE HERE. THERE IS ONE SHOVE PATH NOW. ──────────
+   *
+   * The comment directly above says it: "Two copies of a money-moving path, one
+   * of them unreachable, is how they drift." That was written about
+   * handleConfirmRaise. The same sentence applied, unnoticed, to the function
+   * that used to sit right below it.
+   *
+   * The ALL IN BUTTON ran `handleActionPanelAction('allin')`. The A KEY ran
+   * `handleAllIn`. They had drifted in both directions:
+   *
+   *   - the button's path counts VPIP and PFR (the hero-stats block inside it);
+   *     `handleAllIn` did not, so a player who shoved by keyboard had their own
+   *     HUD stats under-count every one of those hands;
+   *   - `handleAllIn` armed the legacy client-side RIT prompt (`setRitOpponent`
+   *     + `setRitTimer`) and the button never did — so whether a later insurance
+   *     decline opened a RIT panel depended on WHICH CONTROL you shoved with.
+   *
+   * That arming is gone with it. The engine broadcasts `rit_offer` from
+   * `handleAllInRunout` and the `eventType === 'rit_offer'` handler in this file
+   * opens the panel with the real chooser, deadline, maxRuns and playerCount —
+   * see the note in `handleInsuranceDeclineForHand` above.
+   *
+   * Everything `handleAllIn` did that MATTERED is in the panel path already: the
+   * debounce lock, `validateAndExecuteAction('allin')`, the all-in sound,
+   * `setIsAllInMode(true)`, the optimistic update and the revert-on-refusal. The
+   * only behaviour deleted is the drift.
+   */
 
-    // Check for all-in scenario triggers (after slight delay to let state update)
-    workerTimeout(() => {
-      if (!isMounted.current) return;
-      // Use tableStateRef.current instead of stale tableState closure
-      const currentState = tableStateRef.current;
-      const activePlayers = currentState.players.filter(
-        (p) => p && p.status === 'active' && p.stack > 0
-      );
-      const allInPlayers = currentState.players.filter((p) => p && p.status === 'all_in');
-
-      // FIX 89: Insurance offers are now SERVER-AUTHORITATIVE.
-      // The server's InsuranceEngine creates offers and broadcasts via Realtime
-      // (event type: 'insurance_offers'). The client listens in the subscribeToHandState
-      // callback and shows InsuranceModal when the hero receives an offer.
-      // No local insurance calculation — server uses MonteCarloEquity with 5000 iterations.
-      //
-      // RIT prompt: triggered after insurance decision completes (in handleInsuranceDecline)
-      if (activePlayers.length === 0 && allInPlayers.length >= 2) {
-        const opponent = allInPlayers.find((p) => p?.id !== hero?.id);
-        setRitOpponent(opponent?.name || 'Opponent');
-        setRitTimer(10);
-      }
-    }, 500);
-  };
+  // handleConfirmRaise was removed on 2026-08-20 for the same reason — it was
+  // the confirm handler for a slider that never existed, so nothing could reach
+  // it, while the live path did the same clamping and optimistic update.
 
   // Keyboard Shortcuts — wired to table actions (Phase 8)
   // ONE keyboard system since 2026-08-28; TablePage's own duplicate listener is
@@ -14542,11 +14544,12 @@ export default function TablePage({
       void handleActionPanelAction(canCheckRightNow() ? 'check' : 'call');
     },
     onRaise: handleRaise,
-    /* NOT handleActionPanelAction('allin') — see the note above handleCheck.
-       The two all-in paths genuinely differ (VPIP counting vs the client RIT
-       prompt) and merging them is its own decision. This keeps the A key doing
-       exactly what it did before this commit. */
-    onAllIn: handleAllIn,
+    /* The SAME function the ALL IN button runs. Until 2026-08-28 this was
+       `handleAllIn`, a second implementation that skipped VPIP/PFR counting and
+       armed a legacy client-side RIT prompt the button never armed — so a shove
+       meant something different depending on which control you used. Deleted;
+       see the gravestone where it stood. */
+    onAllIn: () => void handleActionPanelAction('allin'),
     onToggleSound: () => setIsSoundEnabled(!isSoundEnabled),
     // FIX 199: onToggleHandStrength REMOVED — not allowed for live online gameplay
     onToggleStats: () => updateSetting('showHUD', !userSettings.showHUD),

@@ -681,6 +681,12 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // deal (gameMode: 'cash'), so it is validated by scenario tests instead —
   // same position V16 real ICM shipped from.
   { name: 'v20_multiway', pairs: 6000, a: {}, b: { v20Multiway: false } },
+  // ── V21 (2026-08-27, Phase 2) ── river endgame: NLH nut status, dominated
+  // caps, the raise-war governor. Measured on the standard NLH card where
+  // the -500bb river wars actually happened.
+  { name: 'v21_river_endgame', pairs: 6000, a: {}, b: { v21River: false } },
+  // Deep-stack discipline only differs past 120bb — deal it at 250bb.
+  { name: 'v21_deep_250bb', stackBB: 250, pairs: 6000, a: {}, b: { v21Deep: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
   { name: 'mind_layer', a: {}, b: { mind: false } },
@@ -716,6 +722,8 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v18Families: false,
       v20Multiway: false,
       v20Mzone: false,
+      v21River: false,
+      v21Deep: false,
       mind: false,
       streetIQ: false,
       handReading: false,

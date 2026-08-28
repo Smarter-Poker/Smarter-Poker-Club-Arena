@@ -1231,7 +1231,10 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
       setActionError(null);
       const { error: pinErr } = await supabase
         .from('club_announcements')
-        .update({ pinned: !item.pinned })
+        // `pinned` is a SELECT alias for `is_pinned` (see the query above). An
+        // alias is a read-side name: writing through it made every Pin and
+        // Unpin a rejected statement, so the button did nothing and said nothing.
+        .update({ is_pinned: !item.pinned })
         .eq('id', item.id);
       if (pinErr) throw pinErr;
       load();

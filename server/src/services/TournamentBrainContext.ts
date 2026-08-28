@@ -39,6 +39,12 @@ export interface TournamentBrainContext {
   stacks: number[];
   /** V16 ICM: payout percentages by place (1st first), capped at 9 places. */
   payoutPct: number[];
+  /** V23: at the final table (MTT, nine or fewer left, in or at the money) */
+  finalTable: boolean;
+  /** V23 BLIND CLOCK: minutes until the next level (null = unknown/last level) */
+  nextBlindInMin: number | null;
+  /** V23 BLIND CLOCK: next level's bb as a multiple of the current bb (1 = flat) */
+  nextBlindMult: number;
 }
 
 interface TournamentRowLite {
@@ -51,6 +57,63 @@ interface TournamentRowLite {
   bounty_pool: number | null;
   is_pko: boolean | null;
   is_bounty: boolean | null;
+  /** V23 blind clock inputs (all optional — absent means clock unknown). */
+  blind_structure?: unknown;
+  current_level?: number | null;
+  level_started_at?: string | null;
+}
+
+/** V23: one level of a blind structure, as stored (two duration spellings). */
+interface BlindLevelRow {
+  level?: number;
+  smallBlind?: number;
+  bigBlind?: number;
+  ante?: number;
+  duration?: number; // seconds in one historical shape
+  durationMinutes?: number; // minutes in the other
+}
+
+/** V23 pure: minutes until the next level and its bb multiple. Exported for
+ *  tests. Returns nulls/1 whenever any input is missing or malformed —
+ *  the blind clock degrades to "unknown", never to a guess. */
+export function deriveBlindClock(
+  structure: unknown,
+  currentLevel: number | null | undefined,
+  levelStartedAt: string | null | undefined,
+  nowMs: number
+): { nextBlindInMin: number | null; nextBlindMult: number } {
+  const none = { nextBlindInMin: null, nextBlindMult: 1 };
+  try {
+    if (!Array.isArray(structure) || structure.length === 0) return none;
+    const lvl = typeof currentLevel === 'number' && currentLevel >= 1 ? currentLevel : null;
+    if (lvl == null || !levelStartedAt) return none;
+    const levels = structure as BlindLevelRow[];
+    const cur = levels.find((l) => l?.level === lvl);
+    const next = levels.find((l) => l?.level === lvl + 1);
+    if (!cur || !next) return none; // last level: the clock stops mattering
+    const curBB = Number(cur.bigBlind) || 0;
+    const nextBB = Number(next.bigBlind) || 0;
+    // duration: `durationMinutes` is minutes; `duration` >= 45 is seconds
+    // (no real level is shorter), below that it is minutes.
+    const rawDur = cur.durationMinutes ?? cur.duration ?? 0;
+    const durMin =
+      cur.durationMinutes != null
+        ? Number(rawDur)
+        : Number(rawDur) >= 45
+          ? Number(rawDur) / 60
+          : Number(rawDur);
+    if (!(durMin > 0)) return none;
+    const startedMs = Date.parse(levelStartedAt);
+    if (!isFinite(startedMs)) return none;
+    const elapsedMin = (nowMs - startedMs) / 60_000;
+    const left = Math.max(0, durMin - elapsedMin);
+    return {
+      nextBlindInMin: Math.round(left * 10) / 10,
+      nextBlindMult: curBB > 0 && nextBB > 0 ? nextBB / curBB : 1,
+    };
+  } catch {
+    return none;
+  }
 }
 
 /** Pure derivation — unit-tested. */
@@ -111,6 +174,13 @@ export function deriveContext(
     .sort((a, b) => b - a)
     .slice(0, 200);
 
+  // V23: the blind clock and the final-table flag ride the same derivation.
+  const clock = deriveBlindClock(
+    row.blind_structure,
+    row.current_level,
+    row.level_started_at,
+    Date.now()
+  );
   return {
     format,
     entrants: Math.max(entrants, playersLeft),
@@ -122,6 +192,9 @@ export function deriveContext(
     bountyFactor: Math.max(0, Math.min(1, bountyFactor)),
     stacks,
     payoutPct,
+    finalTable: format === 'mtt' && playersLeft >= 2 && playersLeft <= 9,
+    nextBlindInMin: clock.nextBlindInMin,
+    nextBlindMult: clock.nextBlindMult,
   };
 }
 
@@ -191,7 +264,7 @@ async function refresh(tournamentId: string, e: CacheEntry): Promise<void> {
         supabase
           .from('tournaments')
           .select(
-            'tournament_type, variant, max_players, table_size, payout_structure, spin_multiplier, prize_pool, bounty_pool, is_pko, is_bounty'
+            'tournament_type, variant, max_players, table_size, payout_structure, spin_multiplier, prize_pool, bounty_pool, is_pko, is_bounty, blind_structure, current_level, level_started_at'
           )
           .eq('id', tournamentId)
           .maybeSingle(),

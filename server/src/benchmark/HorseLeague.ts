@@ -687,6 +687,13 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'v21_river_endgame', pairs: 6000, a: {}, b: { v21River: false } },
   // Deep-stack discipline only differs past 120bb — deal it at 250bb.
   { name: 'v21_deep_250bb', stackBB: 250, pairs: 6000, a: {}, b: { v21Deep: false } },
+  // ── V23 (2026-08-28) ── the cash-measurable slices. The endgame and spin
+  // layers only fire in tournament/spin modes the league does not deal;
+  // they ship scenario-tested with telemetry, the way V16 real ICM did.
+  { name: 'v23_raise_plans', pairs: 6000, a: {}, b: { v23Plan: false } },
+  { name: 'v23_river_reads', pairs: 6000, a: {}, b: { v23Reads: false } },
+  { name: 'shortdeck_v23', variant: 'short_deck', pairs: 6000, a: {}, b: { v23Variants: false } },
+  { name: 'plo8_v23_lowdraw', variant: 'plo8', pairs: 6000, a: {}, b: { v23Variants: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
   { name: 'mind_layer', a: {}, b: { mind: false } },
@@ -724,6 +731,11 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v20Mzone: false,
       v21River: false,
       v21Deep: false,
+      v23Endgame: false,
+      v23Plan: false,
+      v23Reads: false,
+      v23Variants: false,
+      v23Spin: false,
       mind: false,
       streetIQ: false,
       handReading: false,

@@ -41,17 +41,7 @@
     "fn_promo_wallet_send": "Migration is stealth applied"
   },
   "phantomColumns": {
-    "tables": ["bomb_pot_double_board"],
-    "hand_history": ["community_cards2"],
-    "friend_challenges": ["winner_id", "resolved_at"],
     "_comment": "BUILT columns whose columns-manifest entry is pending regeneration (deploy blocked by PAT rotation 2026-07-29). Remove once the manifest is regenerated.",
-    "profiles": ["current_streak", "longest_streak", "status_text", "tutorial_completed"],
-    "club_announcements": ["pinned"],
-    "audit_trail": ["details", "performed_by", "target_user_id"],
-    "hands": ["pot_size"],
-    "tournament_players": ["buy_in_amount"],
-    "referrals": ["bonus_amount", "promotion_id", "referred_id"],
-    "table_activity": ["activity_type", "data"],
-    "_comment_write_backlog_2026_08_27": "WRITE-PAYLOAD BACKLOG 2026-08-27. The gate now inspects .update()/.insert()/.upsert() payloads, not just .select(). It found these pre-existing writes naming columns that do not exist \u2014 each is a control that 400s at runtime, the same class as the Settings save, Delete Table and Save Note failures fixed the same day. Listed here so the gate BLOCKS NEW ones immediately instead of waiting for the backlog to clear. This list must only ever SHRINK: verify against the live schema, fix the write, delete the entry."
+    "_comment_write_backlog_2026_08_27": "CLEARED 2026-08-28. The nineteen entries that lived here were writes naming columns that do not exist, so each statement was rejected at runtime and the control it belonged to silently did nothing. All nineteen are fixed: four were already stale (tables.bomb_pot_double_board, hand_history.community_cards2, friend_challenges.winner_id and .resolved_at all exist), the rest were repointed at the real columns, given the real columns, or removed where nothing read them. This list may only ever SHRINK - check-phantom-columns blocks a new one immediately, which is what an empty list is for."
   }
 }

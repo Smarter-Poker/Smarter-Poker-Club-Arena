@@ -7310,7 +7310,8 @@
       "arena_avatar_url",
       "equipped_frame",
       "equipped_aura",
-      "use_avatar_as_profile_pic"
+      "use_avatar_as_profile_pic",
+      "status_text"
     ],
     "promo_code_redemptions": [
       "id",

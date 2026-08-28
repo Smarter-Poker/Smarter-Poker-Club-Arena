@@ -514,11 +514,15 @@ class TableService {
       }
 
       // Record in table history
+      // The columns are `action`, `metadata` and `chips_cashed_out`. Writing
+      // `activity_type` and `data` was rejected on every leave, so the table
+      // history recorded nobody leaving at all.
       await supabase.from('table_activity').insert({
         table_id: tableId,
         user_id: userId,
-        activity_type: 'leave',
-        data: { chips_cashed_out: chipsToReturn },
+        action: 'leave',
+        chips_cashed_out: chipsToReturn,
+        metadata: { chips_cashed_out: chipsToReturn },
       });
 
       // Note: Transaction already logged via WalletService.logTransaction above

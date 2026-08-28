@@ -486,11 +486,19 @@ class PromotionServiceClass {
     masterBus.emit('BALANCE_UPDATED', { source: 'promotion_referral_bonus', userId: referrer.id });
 
     // Record the referral
+    // The column is `referee_id`, not `referred_id`; `promotion_id` and
+    // `bonus_amount` do not exist on this table at all; and
+    // `referral_code_used` is NOT NULL with no default. Every one of these rows
+    // was rejected, so the bonus above was paid and the referral it paid for
+    // was never recorded. The amount is not lost with the two dropped fields:
+    // WalletService.logTransaction wrote it a few lines above.
     const { error: refInsertErr } = await supabase.from('referrals').insert({
       referrer_id: referrer.id,
-      referred_id: referredUserId,
-      promotion_id: promo.id,
-      bonus_amount: promo.prizePool || 10,
+      referee_id: referredUserId,
+      referral_code_used: referrerCode,
+      status: 'completed',
+      reward_claimed_referrer: true,
+      completed_at: new Date().toISOString(),
     });
     if (refInsertErr) {
       reportError(refInsertErr, 'PromotionService.Referral_record_insert_failed');

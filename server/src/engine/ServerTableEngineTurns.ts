@@ -1838,6 +1838,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         // Malmuth-Harville pressure model in HorseLogic.icmRisk.
         stacks: tctx.stacks,
         payoutPct: tctx.payoutPct,
+        // V23 ENDGAME: final-table flag + the blind clock (jam BEFORE the
+        // blinds halve the M, not after).
+        finalTable: tctx.finalTable,
+        nextBlindInMin: tctx.nextBlindInMin,
+        nextBlindMult: tctx.nextBlindMult,
       },
     };
   }

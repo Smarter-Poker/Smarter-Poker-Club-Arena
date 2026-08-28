@@ -161,7 +161,50 @@ describe('every payout site shares the one rounding rule', () => {
     // A bare JSON.parse of the cached column cannot rebuild a Spin's split
     // from its multiplier, so the top-up used a different structure than the
     // payment.
-    expect(code(ELIM)).toMatch(/resolvePayoutStructure\(this\.tournamentCache/);
+    expect(code(ELIM)).toMatch(/resolvePayoutStructure\(\s*this\.tournamentCache/);
+    // STRONGER 2026-08-27: and it must resolve with the FIELD SIZE, like every
+    // other payout site, or the top-up would price a short field by a
+    // structure that still contains the place nobody reached.
+    expect(code(ELIM)).toMatch(
+      /resolvePayoutStructure\(\s*this\.tournamentCache[\s\S]{0,90}?finalFieldSize\(\)/
+    );
+  });
+
+  it('every payout site trims the structure to the field it can actually fill', () => {
+    /**
+     * SHORT-FIELD RESIDUAL 2026-08-27. computePlacePrize gives the LAST place
+     * the leftover. With fewer entrants than the structure pays, that place has
+     * no finisher and the leftover was never awarded: 250.00 of a 10,000.00
+     * pool on one event, eight events in thirty days, and a
+     * no_finisher_recorded critical on each that the reconciler will not
+     * resolve on its own.
+     *
+     * All four sites must pass a field size, or the ones that do not would pay
+     * a different structure from the ones that do - the exact "two formulas
+     * for one number" defect the rest of this file exists to prevent.
+     */
+    const src = code(ELIM);
+    const resolves = src.match(/resolvePayoutStructure\(/g) ?? [];
+    const withField = src.match(/resolvePayoutStructure\([\s\S]{0,140}?[Ff]ield/g) ?? [];
+    expect(resolves.length).toBeGreaterThan(0);
+    expect(withField.length).toBe(resolves.length);
+  });
+
+  it('the field size is everyone who entered, and only once entry is closed', () => {
+    /**
+     * The two rules that make trimming safe, because trimming is the direction
+     * that OVERPAYS: a field size that is too small promotes an earlier place
+     * to residual holder.
+     *
+     *   - undefined until prize_pool_finalized, because late registration can
+     *     still grow the field;
+     *   - counted from tournament_players, never from a live seat counter like
+     *     current_players, which drains toward 1 as players bust.
+     */
+    const src = code(ELIM);
+    expect(src).toMatch(/if\s*\(!this\.prizePoolFinalized\)\s*return undefined;/);
+    expect(src).toMatch(/from\('tournament_players'\)[\s\S]{0,160}count: 'exact'/);
+    expect(src).not.toMatch(/finalFieldSize[\s\S]{0,400}current_players/);
   });
 });
 

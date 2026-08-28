@@ -771,6 +771,18 @@ export interface HorseDecideOpts {
    *  overbets + blocker overbet bluffs, extended blocker-aware catches
    *  (defaults to the v12 master flag) */
   v12River?: boolean;
+  /** disable the V20 multiway discipline layer (Dan 2026-08-27): NLH-family
+   *  structural equity caps when raised after aggression or facing serious
+   *  all-ins (the T8o "two pair calls off two all-ins" hand), weak-two-pair
+   *  demotion on paired boards, and a committed-branch call bar that finally
+   *  respects the field size and the all-in count (default: enabled) */
+  v20Multiway?: boolean;
+  /** disable the V20 tournament M-zone layer (Dan 2026-08-27): effective-M
+   *  computed from the real orbit cost (blinds + antes), Harrington-zone
+   *  jam/reshove behavior (red jam-or-fold, orange open-jam, no raise-fold
+   *  when committed), ICM-priced shove-calling, and Omaha short-stack jams
+   *  (default: enabled) */
+  v20Mzone?: boolean;
 }
 
 /**
@@ -1103,6 +1115,14 @@ export class HorseLogic {
       // the preflop layer keeps exact legacy behavior in ablation runs).
       mode: opts.v11 !== false ? (isTournamentMode(gs) ? 'tournament' : 'cash') : undefined,
       anteInPlay: opts.v11 !== false && (gs.ante ?? 0) > 0,
+      // V20 M-ZONES: the real per-orbit cost needs the ante SIZE and the
+      // table size, not just "an ante exists". Undefined when the layer is
+      // ablated so the preflop engine keeps exact legacy behavior.
+      anteBB: (opts.v20Mzone ?? true) !== false && bb > 0 ? (gs.ante ?? 0) / bb : undefined,
+      tableSize:
+        (opts.v20Mzone ?? true) !== false
+          ? gs.players.filter((p) => !p.is_sitting_out).length
+          : undefined,
       // V12: table format — spins widen (winner-take-all chip EV), HU SNGs
       // ride the heads-up ranges.
       // V13: `format` is a V12 field and now answers to the v12 flag.
@@ -1142,6 +1162,10 @@ export class HorseLogic {
       v13: opts.v13 !== false,
       rand: fastRandom,
     });
+    // V20 proof-of-receipt: the M-zone wiring reached the preflop engine.
+    if (telemetryOn(opts) && (opts.v20Mzone ?? true) !== false && isTournamentMode(gs) && bb > 0) {
+      noteFire('v20_mzone_wired');
+    }
 
     switch (intent.a) {
       case 'jam':
@@ -1622,6 +1646,43 @@ export class HorseLogic {
         }
       }
     }
+    // ═══ V20 MULTIWAY PRESSURE READ (2026-08-27) ═══
+    // raisedAfterAggr only fires when HERO bet and got raised. The hand Dan
+    // watched (T8o, 779 flop, 8 turn) was the other shape: hero CALLED, then
+    // faced bet -> check-raise -> all-in -> all-in cold. Nobody in that chain
+    // is bluffing into a field. Count the street's opponent aggression and
+    // its serious all-ins so the discipline below can price the line, not
+    // just the last bet.
+    const useV20 = opts.v20Multiway !== false;
+    let oppAggr20 = 0; // opponent bet/raise/serious-all-in actions this street
+    let seriousAllIns20 = 0; // all-ins big enough to be a range statement
+    if (useV20 && facingBet && gs.actionHistory) {
+      const potNow20 = Math.max(1e-9, pot);
+      for (const a of gs.actionHistory) {
+        if (a.stage !== street || a.userId === player.user_id) continue;
+        if (a.action === 'bet' || a.action === 'raise') oppAggr20++;
+        else if (a.action === 'all_in') {
+          // A short call-off says nothing; a full-raise jam (or one worth at
+          // least a quarter of the pot / half the price) says everything.
+          const serious =
+            a.isFullRaise !== false || (a.amount ?? 0) >= Math.max(potNow20 * 0.25, toCall * 0.5);
+          if (serious) {
+            oppAggr20++;
+            seriousAllIns20++;
+          }
+        }
+      }
+    }
+    // 0 = a single bet (normal). Each raise past the first aggressor, the
+    // hero-bet-got-raised line, and a second serious all-in each add one.
+    const pressure20 = !useV20
+      ? 0
+      : Math.min(
+          3,
+          Math.max(0, oppAggr20 - 1) + (raisedAfterAggr ? 1 : 0) + (seriousAllIns20 >= 2 ? 1 : 0)
+        );
+    if (tele15 && pressure20 >= 1) noteFire('v20_pressure_read');
+
     // V15 SMALL BALL (plo5/plo6): more hole cards squeeze equities together,
     // so the value edge per bet shrinks — sizing shrinks with it. Nut-class
     // hands are exempt (they still build the pot geometrically).
@@ -2093,6 +2154,29 @@ export class HorseLogic {
         }
       }
     }
+    // ═══ V20 WEAK TWO PAIR ON A PAIRED BOARD (the T8o-on-7798 leak) ═══
+    // "Two pair" where the board supplies one of the pairs is one pair plus
+    // community cards: every trips, every bigger pocket pair turned two-pair,
+    // and every boat in the raising range dominates it. It pays the same kind
+    // of explicit premium the V11 underpair pays — the MC cannot see that a
+    // check-raise on a paired board IS trips most of the time.
+    if (
+      useV20 &&
+      useIQ &&
+      !vi.isOmaha &&
+      cat === 3 &&
+      pairedBoard &&
+      (pressure20 >= 1 || potFrac >= 0.45)
+    ) {
+      const holeRanks20 = player.cards.map((c) => c.rank);
+      const boardPairNotHeld = Object.entries(rankCounts).some(
+        ([r, n]) => n >= 2 && !holeRanks20.includes(r as Card['rank'])
+      );
+      if (boardPairNotHeld) {
+        dominationPenalty += 0.05 + (potFrac >= 0.8 ? 0.03 : 0) + Math.min(2, pressure20) * 0.02;
+        if (tele15) noteFire('v20_weak2p_demote');
+      }
+    }
     // ═══ V15 OMAHA DOMINATION (the "small flush pays off" leak) ═══
     // The MC prices PLO opponents by preflop range; it cannot see that a big
     // bet or a raise on a three-flush board IS a bigger flush most of the
@@ -2148,10 +2232,47 @@ export class HorseLogic {
       }
     }
 
+    // ═══ V20 NLH-FAMILY EQUITY CAP — the V15 cap, ported off Omaha ═══
+    // The MC prices opponents by ranges that cannot see a check-raise or a
+    // cold all-in chain. On the 7798 board Dan watched, T8o's two pair read
+    // high against sampled ranges while the LINE (bet, check-raise, all-in,
+    // all-in) said trips-or-better everywhere. When the structural pressure
+    // is on, the equity USED for the decision is capped by hand class.
+    // Sets, straights and better are untouched — folding range-top hands to
+    // pressure is a worse leak than the one this fixes.
+    if (useV20 && !vi.isOmaha && pressure20 >= 1 && cat >= 1 && cat <= 4) {
+      const isSet20 =
+        cat === 4 && player.cards.length === 2 && player.cards[0].rank === player.cards[1].rank;
+      if (!isSet20) {
+        const weakTrips = cat === 4; // trips via the board's pair
+        let cap20 = Infinity;
+        if (pressure20 >= 3) cap20 = weakTrips ? 0.42 : cat === 3 ? 0.34 : 0.3;
+        else if (pressure20 === 2) cap20 = weakTrips ? 0.5 : cat === 3 ? 0.44 : 0.4;
+        else if (potFrac >= 0.6 || seriousAllIns20 >= 1)
+          cap20 = weakTrips ? 0.62 : cat === 3 ? 0.56 : 0.52;
+        if (cap20 !== Infinity) {
+          if (!isRiver) cap20 += 0.08; // outs to boats/better two pair remain
+          eq15 = Math.min(eq15, Math.max(0.05, cap20));
+          if (tele15 && eq15 < equity) noteFire('v20_pressure_cap');
+        }
+      }
+    }
+
     // Low-SPR commitment: with the money effectively in, play equity directly.
     const committed = spr < 1.2 || toCall >= stack;
     if (committed) {
-      const required = potOdds + 0.02 + dominationPenalty * 0.5;
+      // V20: the flat-call bar here was potOdds + 0.02 regardless of how many
+      // players were in or how many of them were ALL IN — the exact door the
+      // T8o call-off walked through. The bar now carries half the multiway
+      // tightening plus a premium per serious all-in in front.
+      const commit20 = !useV20
+        ? 0
+        : Math.min(
+            0.12,
+            Math.max(0, mw) * 0.5 + seriousAllIns20 * 0.04 + (pressure20 >= 2 ? 0.03 : 0)
+          );
+      if (tele15 && commit20 > 0.04) noteFire('v20_commit_bar');
+      const required = potOdds + 0.02 + dominationPenalty * 0.5 + commit20;
       if (eq15 >= Math.max(required, 0.42 + mw + dominationPenalty * 0.5)) {
         // V15: a dominated flush/straight that still clears the (penalized)
         // bar CALLS rather than jams — shoving it has zero fold equity

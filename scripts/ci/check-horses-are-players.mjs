@@ -93,9 +93,17 @@ const REGISTER = {
     why: 'humansSeated() drives the DEPLOY DRAIN gate: a server push restarts engines and voids the hand in flight. Chips are preserved either way, so nothing is taken from the horse; and because this platform is horse-heavy, counting horses here would mean no deploy could ever drain, which is an outage, not equal treatment. Raised for Dan in the 2026-08-27 audit.',
   },
   'server/src/engine/ServerTableEngineDealing.ts': {
-    allowed: 1,
-    kind: 'EQUAL OUTCOME',
-    why: "The five second rebuy pause. This is the law's OWN worked example: a horse has no browser, so a pause built for human reaction time is not owed to it, but the thing the pause protects - the chance to rebuy before removal - is, and the horse gets it through autoRebuyHorse.",
+    allowed: 2,
+    kind: 'IDENTIFICATION',
+    why: [
+      'BOTH are the horse INPUT DEVICE, which is the law\'s second sanctioned exemption, and in both the horse ends up BETTER protected than a human rather than worse.',
+      '',
+      '(1) anyBustedPlayerCanAffordARebuy - `const humans = busted.filter(p => !p.is_horse)`. This decides whether the felt holds five seconds for a bust, and it decides it by reading club_members.chip_balance. A horse HAS no member wallet: it is funded from the club treasury through autoRebuyHorse/fn_horse_fund_from_treasury. Asking the wrong ledger about a horse would answer "cannot afford" and DENY it the pause. So the horse is asked its own question first, immediately above, and any horse below its two-rebuy stop-loss returns true - the pause is granted before a single wallet is read. A horse can therefore only ever gain a pause from this branch, never lose one.',
+      '',
+      '(2) standUpBustedCashPlayers - `const seated = this.seatedPlayers.filter(p => p.user_id && !p.is_horse)`. Busted horses are removed by recoverBustedSeatedHorses(), which runs on the SAME tick a few lines above this and is strictly more generous: it retries a treasury rebuy every 30s and only stands the horse up at stop-loss or on an empty treasury. Including horses here would let this sweep remove a horse DURING that 30s throttle, before its next funding attempt - taking a rebuy away that a human in the same position would have kept. The exclusion is what makes the two equal; removing it would be the bug.',
+      '',
+      'Neither branch withholds anything a human receives. Both were added 2026-08-28 with the busted-seat release (Dan: "make sure that the user gets removed from the table as soon as they have no chips"), which until then existed for horses and not for humans at all.',
+    ].join('\n'),
   },
   'server/src/engine/ServerTableEngineSettlement.ts': {
     allowed: 1,

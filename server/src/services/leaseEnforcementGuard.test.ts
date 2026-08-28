@@ -25,6 +25,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
@@ -46,7 +47,7 @@ describe('two dealers at one table can never happen again', () => {
     // every table heartbeatTables() reports lost.
     const i = GAME_SERVER.indexOf('heartbeatTables([...this.tableEngines.keys()])');
     expect(i, 'lease renewal missing from discovery loop').toBeGreaterThan(-1);
-    const block = GAME_SERVER.slice(i, i + 900);
+    const block = sliceEnclosingBlock(GAME_SERVER, 'heartbeatTables([...this.tableEngines.keys()])');
     expect(block).toMatch(/engine\.stop\(\)/);
     expect(block).toMatch(/this\.tableEngines\.delete\(/);
   });

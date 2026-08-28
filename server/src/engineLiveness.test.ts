@@ -21,6 +21,7 @@
  * was good.
  */
 import { describe, it, expect } from 'vitest';
+import { sliceEnclosingBlock, sliceStatement, sliceBetween } from './testHelpers/sourceWindow.js';
 
 /**
  * The liveness expression from GameServer.getStatus(), isolated. Kept as a
@@ -151,7 +152,7 @@ describe('the rule in the source matches the rule tested here', () => {
     const src = readFileSync(new URL('./GameServer.ts', import.meta.url), 'utf8');
     const i = src.indexOf('liveness:');
     expect(i, 'liveness field missing from getStatus').toBeGreaterThan(-1);
-    const expr = src.slice(i, i + 260);
+    const expr = sliceEnclosingBlock(src, 'liveness:');
     // 2026-08-24: the discovery clause moved into `discoveryLoopDead`, which
     // is vetoed by recent table progress and capped at 15 minutes. The
     // liveness expression must use it, and its definition must keep the boot
@@ -159,14 +160,14 @@ describe('the rule in the source matches the rule tested here', () => {
     expect(expr).toMatch(/discoveryLoopDead/);
     const d = src.indexOf('const discoveryLoopDead');
     expect(d, 'discoveryLoopDead definition missing').toBeGreaterThan(-1);
-    const def = src.slice(d, d + 300);
+    const def = sliceStatement(src, 'const discoveryLoopDead');
     expect(def).toMatch(/stillBooting/);
     expect(def).toMatch(/discoveryLoopStalledMs > 60_000/);
     expect(def).toMatch(/anyTableProgressedRecently/);
     expect(def).toMatch(/discoveryLoopStalledMs > 900_000/);
     // The regression this guards: reinstating the ok-based signal would make a
     // slow database restart the container again.
-    expect(src.slice(i, i + 260)).not.toMatch(/discoveryStaleMs > 60_000/);
+    expect(sliceEnclosingBlock(src, 'liveness:')).not.toMatch(/discoveryStaleMs > 60_000/);
   });
 
   it('the prometheus gauge agrees with getStatus', async () => {
@@ -174,7 +175,7 @@ describe('the rule in the source matches the rule tested here', () => {
     const src = readFileSync(new URL('./GameServer.ts', import.meta.url), 'utf8');
     const i = src.indexOf('poker_engine_liveness ${');
     expect(i).toBeGreaterThan(-1);
-    const expr = src.slice(i, i + 160);
+    const expr = sliceBetween(src, 'poker_engine_liveness ${', '\n');
     expect(expr).toMatch(/lastDiscoveryAttemptAt/);
     expect(expr).not.toMatch(/lastDiscoveryOkAt/);
   });

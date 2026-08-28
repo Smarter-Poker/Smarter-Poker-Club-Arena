@@ -15,6 +15,7 @@ import { join } from 'node:path';
  * engines both believing they lead is the one outcome worse than a restart.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const rpc = vi.fn();
 vi.mock('./supabase/client.js', () => ({ supabase: { rpc: (...a: unknown[]) => rpc(...a) } }));
@@ -283,8 +284,8 @@ describe('a promoted standby restarts instead of leading in name only', () => {
   });
 
   it('clears the flag on reset so tests cannot leak state into each other', () => {
-    const reset = code.slice(code.indexOf('export function __resetLeadership'));
-    expect(reset.slice(0, 200)).toMatch(/bootedAsStandby = false/);
+    const reset = sliceMethod(code, 'export function __resetLeadership');
+    expect(reset).toMatch(/bootedAsStandby = false/);
   });
 });
 
@@ -353,7 +354,7 @@ describe('restartIntoLeaderBoot is idempotent', () => {
   });
 
   it('clears the guard on reset', () => {
-    const reset = code.slice(code.indexOf('export function __resetLeadership'));
-    expect(reset.slice(0, 300)).toMatch(/restartScheduled = false/);
+    const reset = sliceMethod(code, 'export function __resetLeadership');
+    expect(reset).toMatch(/restartScheduled = false/);
   });
 });

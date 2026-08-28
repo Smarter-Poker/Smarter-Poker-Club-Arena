@@ -33,6 +33,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 const BASE = fs.readFileSync(
   path.join(process.cwd(), 'src/tournament/TournamentManagerBase.ts'),
@@ -66,9 +67,9 @@ describe('a spin draw that could not be read is UNKNOWN, not the lowest tier', (
 
   it('stands the start down rather than resolving to a value', () => {
     expect(CODE).toMatch(/spin_draw_unavailable/);
-    const failure = CODE.slice(CODE.indexOf('spin_draw_unavailable'));
+    const failure = sliceEnclosingBlock(CODE, 'spin_draw_unavailable');
     // The stand-down pattern the short-field and unpaid-seat gates already use.
-    expect(failure.slice(0, 600)).toMatch(/this\.running\s*=\s*false/);
+    expect(failure).toMatch(/this\.running\s*=\s*false/);
     // And the old error tag, which named a state that no longer exists, is gone.
     expect(CODE).not.toMatch(/spin_draw_rpc_down/);
   });
@@ -106,8 +107,8 @@ describe('the drawn multiplier reaches the row, or keeps trying', () => {
 
 describe('the reveal asks the hub to hold it (D3)', () => {
   it('the wheel event carries its own replay deadline', () => {
-    const emit = CODE.slice(CODE.indexOf("type: 'spin_reveal'"));
-    expect(emit.slice(0, 800)).toMatch(/replay_until:\s*holdUntil/);
+    const emit = sliceEnclosingBlock(CODE, "type: 'spin_reveal'");
+    expect(emit).toMatch(/replay_until:\s*holdUntil/);
   });
 
   it('the post-reveal beats carry one too, ending when dealing may start', () => {

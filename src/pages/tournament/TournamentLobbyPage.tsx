@@ -163,14 +163,8 @@ export default function TournamentLobbyPage() {
       300
     );
 
-    const unsubMerge = masterBus.subscribeDebounced(
-      'TABLE_MERGED',
-      () => {
-        // Refresh tournament list to reflect table changes
-        loadTournamentsRef.current();
-      },
-      500
-    );
+    // TABLE_MERGED listener removed 2026-08-28: nothing emits it client-side
+    // (see TournamentDetails for the full note).
 
     // Refresh profile/wallet when balance changes (e.g., after register/unregister)
     const unsubBalance = masterBus.subscribeDebounced(
@@ -192,7 +186,6 @@ export default function TournamentLobbyPage() {
 
     return () => {
       unsubElim();
-      unsubMerge();
       unsubBalance();
       unsubTableCreated();
     };

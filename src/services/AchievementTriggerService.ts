@@ -462,8 +462,16 @@ export default achievementTriggerService;
 // entrant with the userId in the payload, so it works for every player rather
 // than only the one whose client happens to run the completion path.
 // ════════════════════════════════════════════════════════════════════════════════════
-masterBus.subscribe('TOURNAMENT_REGISTERED', async (payload: any) => {
+masterBus.subscribe('TOURNAMENT_REGISTERED', async (event: any) => {
   try {
+    // WRAPPER BUG (fixed 2026-08-28): masterBus hands subscribers the EVENT
+    // WRAPPER ({ type, payload, timestamp }), not the raw payload. This
+    // handler read `payload?.userId` off the wrapper, got undefined every
+    // time, and fell through to getAuthUser() — crediting the tournament
+    // challenge to the LOCALLY signed-in user instead of the entrant in the
+    // payload, which inverts the stated design intent in the comment above.
+    // Same defect class as the 2026-08-19 UI_THEME_CHANGED audit.
+    const payload = event?.payload ?? event;
     let userId: string | undefined = payload?.userId;
     if (!userId) {
       const {

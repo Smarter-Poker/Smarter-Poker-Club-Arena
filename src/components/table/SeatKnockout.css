@@ -119,13 +119,10 @@
     opacity: 1;
     transform: translateX(92%) scale(0.86) rotate(13deg);
   }
-  96% {
-    opacity: 0;
-    transform: translateX(108%) scale(0.7) rotate(16deg);
-  }
+  96%,
   100% {
     opacity: 0;
-    transform: translateX(106%) scale(0.7) rotate(15deg);
+    transform: translateX(108%) scale(0.7) rotate(16deg);
   }
 }
 
@@ -133,8 +130,9 @@
    THE IMPACT STAR
    The reference's burst is not a ring — it is an irregular spiked star, white
    at the core and gold at the tips, about 1.2x the height of the seat plate.
-   Twelve rays with two alternating lengths reproduce that irregularity; a ring
-   of even spokes reads as a cartoon sun instead.
+   Twelve rays across THREE lengths reproduce that irregularity; a ring of even
+   spokes reads as a cartoon sun, and two alternating lengths still read as a
+   pattern (both were photographed against the capture before this landed).
    ───────────────────────────────────────────────────────────────────────────── */
 .sko__burst {
   position: absolute;

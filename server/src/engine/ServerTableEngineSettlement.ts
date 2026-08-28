@@ -1790,22 +1790,48 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
 
     // SETTLEMENT STEP 15: Unlock table — authoritative recount, ready for next hand
     await runStep('table_unlock', true, async () => {
-      const { count: dbPlayerCount } = await supabase
+      // PAYOUT-INTEGRITY 2026-08-28: this ran `dbPlayerCount ?? 0` on a count
+      // whose error was never destructured. It is the AUTHORITATIVE recount at
+      // the end of EVERY hand, so a single failed read wrote
+      // current_players = 0 on a live table, flipped it to 'waiting', and
+      // broadcast seated_count 0 to everyone sitting at it. TableService does
+      // the identical recount and checks the error first (TableService.ts:465);
+      // this path was the one without the guard.
+      //
+      // Same house rule as everywhere else in this engine: a count we could not
+      // read is UNKNOWN, not zero. Leave the table's status exactly as it is
+      // and let the next hand's recount settle it.
+      const { count: dbPlayerCount, error: countErr } = await supabase
         .from('table_seats')
         .select('*', { count: 'exact', head: true })
         .eq('table_id', this.tableId)
         .is('left_at', null);
-      const finalCount = dbPlayerCount ?? 0;
-      await updateTableStatus(this.tableId, finalCount, finalCount >= 2 ? 'running' : 'waiting');
+      let finalCount: number | null = null;
+      if (countErr || dbPlayerCount === null || dbPlayerCount === undefined) {
+        reportError(
+          new Error(
+            `[Table:${this.tableId.slice(0, 8)}] table_unlock: seat count unavailable (${countErr?.message ?? 'null count'}) - table status left unchanged`
+          ),
+          'ServerTableEngine.table_unlock_count_unavailable'
+        );
+      } else {
+        finalCount = dbPlayerCount;
+        await updateTableStatus(this.tableId, finalCount, finalCount >= 2 ? 'running' : 'waiting');
+      }
 
       // Phase X5 (2026-04-28): emit table_unlocked event paired with the
       // table_locked emitted at the start of settlement. Bible V8 §1.16.
+      // If the DB recount was unavailable, fall back to the engine's in-memory
+      // seat list for the event only: the unlock event must still pair with
+      // table_locked, and the in-memory roster is known state, not a
+      // fabricated zero. Table status itself was left unchanged above.
+      const unlockedCount = finalCount ?? this.seatedPlayers.length;
       this.hub?.emitEvent(this.tableId, {
         type: 'table_unlocked',
         table_id: this.tableId,
         hand_number: this.handCount,
-        seated_count: finalCount,
-        next_state: finalCount >= 2 ? 'running' : 'waiting',
+        seated_count: unlockedCount,
+        next_state: unlockedCount >= 2 ? 'running' : 'waiting',
         timestamp: Date.now(),
       });
     });

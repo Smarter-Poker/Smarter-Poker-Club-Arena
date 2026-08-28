@@ -73,7 +73,17 @@ type StatRow = { impressions: number; clicks: number; dismisses: number };
 
    Keyed adId -> slot -> counts. `null` still means COULD NOT COUNT and still
    renders as a dash, never as a zero. */
-type SlotStatRow = StatRow & { lastEventAt: string | null };
+/* PEOPLE, NOT EVENTS. The lobby logs one impression per advert per page load,
+   so a player who reloads thirty times is thirty impressions and one person.
+   Production on the day this shipped: spins_jackpot had 65 impressions on
+   lobby_strip and 5 viewers. Read as reach, 65 is a campaign doing well; 5 is
+   the truth. Both are shown, because the ratio between them is frequency, and
+   frequency is the difference between working and nagging. */
+type SlotStatRow = StatRow & {
+  viewers: number;
+  clickers: number;
+  lastEventAt: string | null;
+};
 type StatsBySlot = Record<string, Record<string, SlotStatRow>>;
 
 /* WHY A SURFACE IS QUIET. Views and clicks say what happened; they cannot say
@@ -163,6 +173,10 @@ export default function HouseAdsPage() {
   const [statsBySlot, setStatsBySlot] = useState<StatsBySlot | null>(null);
   const [suppression, setSuppression] = useState<SuppressionBySlot | null>(null);
   const [conversions, setConversions] = useState<ConversionsBySlot | null>(null);
+  const [truncated, setTruncated] = useState<{
+    ads: number | null;
+    placements: number | null;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -210,6 +224,7 @@ export default function HouseAdsPage() {
         statsBySlot?: StatsBySlot | null;
         suppression?: SuppressionBySlot | null;
         conversions?: ConversionsBySlot | null;
+        truncated?: { ads: number | null; placements: number | null } | null;
       }>('house-ads', {}, { method: 'GET' });
       if (!isMounted.current) return;
       setAds(res.ads || []);
@@ -221,6 +236,7 @@ export default function HouseAdsPage() {
       setStatsBySlot(res.statsBySlot ?? null);
       setSuppression(res.suppression ?? null);
       setConversions(res.conversions ?? null);
+      setTruncated(res.truncated ?? null);
     } catch (e) {
       reportError(e, 'HouseAdsPage.load');
       if (isMounted.current) setActionError(safeErrorMessage(e, 'Could not load the ad catalog.'));
@@ -687,6 +703,23 @@ export default function HouseAdsPage() {
             </div>
           )}
 
+          {/* A SUBSET SAYS SO (2026-08-28). The catalog read stops at 200 rows
+              and the placement read at 1,000. Those ceilings are fine - loading
+              ten thousand rows into an editor helps nobody - but until now the
+              page would simply stop mentioning anything past them and look
+              complete. Same shape as the 50,000-row stats ceiling that was
+              silently under-counting until it was removed. */}
+          {!loading && truncated && (truncated.ads || truncated.placements) ? (
+            <div className="admin-badge-yellow" style={{ fontSize: 12, marginBottom: 10 }}>
+              Showing Part Of The List Only
+              {truncated.ads ? `: ${ads.length} Of ${truncated.ads} Campaigns` : ''}
+              {truncated.placements
+                ? `${truncated.ads ? ', ' : ': '}${placements.length} Of ${truncated.placements} Placements`
+                : ''}
+              . Performance Figures Cover Everything; The Rows Below Do Not.
+            </div>
+          ) : null}
+
           {loading ? (
             <>
               <div className="admin-skeleton" style={{ height: 36, marginBottom: 8 }} />
@@ -763,7 +796,9 @@ export default function HouseAdsPage() {
                                       {statsBySlot === null
                                         ? '-'
                                         : ss
-                                          ? `${ss.impressions} / ${ss.clicks} (${rate(ss)})`
+                                          ? `${ss.impressions} Views To ${ss.viewers ?? '?'} ${
+                                              ss.viewers === 1 ? 'Person' : 'People'
+                                            } / ${ss.clicks} (${rate(ss)})`
                                           : 'No Views Yet'}
                                     </span>
                                     {/* Why it might be quiet. Only shown when

@@ -565,3 +565,54 @@ describe('weight is a share of voice, not a queue position', () => {
     expect(DRAW).toMatch(/all returned the same advert; the draw is not weighted/);
   });
 });
+
+describe('impressions are not people, and a subset says so', () => {
+  /* fn_ad_stats counted EVENTS. Right for "how often was this shown", wrong
+     for almost every question an operator asks, and the two can differ by two
+     orders of magnitude with nothing on the panel saying which you are reading.
+
+     Production the day this shipped: spins_jackpot had 65 impressions on
+     lobby_strip and FIVE viewers - thirteen views each, because the lobby logs
+     one impression per advert per page load and a test account was reloading.
+     Read as reach, 65 is a campaign doing well. Five is the truth. */
+  const REACH = read('supabase/migrations/20260828080000_impressions_are_not_people.sql');
+
+  it('counts people beside events, not instead of them', () => {
+    expect(REACH).toMatch(
+      /count\(DISTINCT e\.user_id\) FILTER \(WHERE e\.event_type = 'impression'\) AS viewers/
+    );
+    expect(REACH).toMatch(
+      /count\(DISTINCT e\.user_id\) FILTER \(WHERE e\.event_type = 'click'\)\s+AS clickers/
+    );
+    // The event counts stay: the ratio between them is frequency.
+    expect(REACH).toMatch(/AS impressions/);
+    expect(REACH).toMatch(/AS clicks/);
+  });
+
+  it('refuses to report more people than events', () => {
+    /* If reach ever exceeds frequency the DISTINCT is on the wrong column and
+       every ratio built on it is wrong in a way nobody would spot by eye. */
+    expect(REACH).toMatch(/viewers > impressions or clickers > clicks/);
+    expect(REACH).toMatch(/report more people than events/);
+  });
+
+  it('stays staff-only through the rewrite', () => {
+    expect(REACH).toMatch(
+      /revoke all on function public\.fn_ad_stats\(\) from public, anon, authenticated/
+    );
+  });
+
+  it('the panel says people, in words, beside the views', () => {
+    expect(ADMIN).toMatch(/Views To \$\{ss\.viewers/);
+    expect(ADMIN).toMatch(/ss\.viewers === 1 \? 'Person' : 'People'/);
+  });
+
+  it('the panel admits when the list it shows is a subset', () => {
+    /* The catalog read stops at 200 rows and placements at 1,000. Those limits
+       are fine; silently presenting a partial list as the whole one is not -
+       the same shape as the 50,000-row stats ceiling that under-counted for as
+       long as it existed. */
+    expect(ADMIN).toMatch(/Showing Part Of The List Only/);
+    expect(ADMIN).toMatch(/truncated && \(truncated\.ads \|\| truncated\.placements\)/);
+  });
+});

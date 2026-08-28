@@ -837,3 +837,46 @@ describe('a NULL club is a value, not a wildcard', () => {
     expect(KEY).toMatch(/resolve them before tightening the key/);
   });
 });
+
+describe('retention is reachable, and shows its blast radius first', () => {
+  /* fn_prune_ad_events shipped in 20260828100000 with NO CALLER anywhere: a
+     permanent delete that could not be scheduled (CLAUDE.md 11 makes Open Claw
+     the only sanctioned scheduler, and 11.3 fails CI on a net-new cron route)
+     and could not be reached. Dead code on a DELETE is worse than dead code. */
+  const page = readFileSync(resolve(__dirname, '../../src/pages/admin/HouseAdsPage.tsx'), 'utf8');
+
+  it('calls the prune route, so the function is no longer unreachable', () => {
+    expect(page).toMatch(/kind: 'prune'/);
+    expect(page).toMatch(/const pruneEvents = async/);
+    // And the handler is actually bound to something clickable.
+    expect(page).toMatch(/onClick=\{\(\) => void pruneEvents\(\)\}/);
+  });
+
+  it('states the count before the delete, and puts it on the button', () => {
+    /* An operator must never learn the size of a permanent delete from its
+       result. The confirm carries the number and so does the control. */
+    expect(page).toMatch(
+      /Events Older Than \$\{retention\.retentionDays\} Days Will Be Deleted Permanently/
+    );
+    expect(page).toMatch(/Delete \$\{retention\.prunableEvents\.toLocaleString\(\)\} Events/);
+  });
+
+  it('offers no prune control at all when there is nothing to prune', () => {
+    /* Not a disabled button. A dead control on a destructive action invites
+       the experimental click that finds out what it does. */
+    expect(page).toMatch(/retention\.prunableEvents > 0 \?/);
+    expect(page).toMatch(/Nothing Past The Cutoff\./);
+  });
+
+  it('disarms when the operator backs out', () => {
+    // Leaving it armed means the next stray click deletes.
+    expect(page).toMatch(/if \(!ok\) \{\s*setPruneArmed\(false\);\s*return;\s*\}/);
+  });
+
+  it('sends no day count, so the preview and the delete cannot disagree', () => {
+    /* The server reads ad_event_retention_policy itself. A "days" parameter on
+       the wire would let the number shown at render differ from the number
+       used at click. */
+    expect(page).not.toMatch(/kind: 'prune'[^}]*days/);
+  });
+});

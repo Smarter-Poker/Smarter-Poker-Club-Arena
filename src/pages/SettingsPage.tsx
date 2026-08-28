@@ -12,7 +12,29 @@ import { STORAGE_KEYS } from '../lib/storage';
 import { identityDNA } from '../core/IdentityDNA';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { notificationService } from '../services/NotificationService';
+/**
+ * Push, 2026-08-27. This page used to call
+ * `notificationService.requestPermission()`, which does nothing but await
+ * `Notification.requestPermission()` and hand back a boolean. It created no
+ * subscription, told the server nothing, and then toasted "Push notifications
+ * enabled!" and rendered a green Active badge. `pushEnabled` was read from
+ * `Notification.permission` alone, so the badge stayed Active forever while
+ * the account could not receive a single push. Every one of the 2,432 seat
+ * offers skipped for `no_subscription` in the week before this was fixed
+ * belonged to somebody who may well have pressed that button.
+ *
+ * It now drives the real VAPID flow, and its state comes from whether a
+ * subscription actually exists on this device.
+ */
+import {
+  disablePush,
+  enablePush,
+  hasLocalSubscription,
+  isIos,
+  isIosStandalonePwa,
+  isWebPushSupported,
+  notificationPermission,
+} from '../lib/pushClient';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import UserProfileEdit from '../components/social/UserProfileEdit';
 import { useSettingsStore } from '../stores/useSettingsStore';
@@ -501,27 +523,66 @@ export default function SettingsPage() {
     check2FAStatus();
   }, []);
 
-  // Check push notification status
+  // Does THIS device hold a push subscription? Not "did the OS dialog get
+  // accepted at some point", which is the question the old code asked.
   useEffect(() => {
-    if ('Notification' in window) {
-      setPushEnabled(Notification.permission === 'granted');
-    }
+    let cancelled = false;
+    void (async () => {
+      const subscribed = await hasLocalSubscription();
+      if (!cancelled) setPushEnabled(subscribed);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
+  /**
+   * DELIBERATE: enablePush() is awaited directly out of the click handler with
+   * nothing before it. iOS only honours Notification.requestPermission() while
+   * the originating tap gesture is alive, so any await placed ahead of it can
+   * eat the gesture window and the OS prompt then never appears at all.
+   */
   const handleEnablePush = async () => {
     setPushLoading(true);
     try {
-      const granted = await notificationService.requestPermission();
-      setPushEnabled(granted);
-      if (granted) {
-        // Push notifications enabled successfully
-        toast.success('Push notifications enabled!');
+      const result = await enablePush();
+      setPushEnabled(result.ok);
+      if (result.ok) {
+        toast.success('Push notifications are on for this device');
+      } else if (isIos() && !isIosStandalonePwa()) {
+        // The one instruction that unblocks an iPhone. Web push does not exist
+        // in mobile Safari until the site is installed to the Home Screen.
+        toast.error('Add Smarter Poker to your Home Screen first, then open it from there');
       } else {
-        toast.error('Push notifications denied. Please allow in browser settings.');
+        toast.error(result.error || 'Could not enable push notifications');
       }
     } catch (err) {
       reportError(err, 'SettingsPage.Failed_to_enable_push');
-      toast.error('Failed to enable push notifications.');
+      toast.error('Failed to enable push notifications');
+    }
+    setPushLoading(false);
+  };
+
+  /**
+   * Off means off. This unsubscribes locally, deactivates the row server-side,
+   * and records the opt-out marker that stops PushSubscriptionSync quietly
+   * re-subscribing the device on the next boot. Without that marker the
+   * repair loop would undo this within the hour, because the OS permission
+   * stays granted after an unsubscribe.
+   */
+  const handleDisablePush = async () => {
+    setPushLoading(true);
+    try {
+      const result = await disablePush();
+      if (result.ok) {
+        setPushEnabled(false);
+        toast.success('Push notifications are off for this device');
+      } else {
+        toast.error(result.error || 'Could not turn off push notifications');
+      }
+    } catch (err) {
+      reportError(err, 'SettingsPage.Failed_to_disable_push');
+      toast.error('Failed to turn off push notifications');
     }
     setPushLoading(false);
   };
@@ -882,20 +943,41 @@ export default function SettingsPage() {
             />
           </div>
 
+          {/* Push. The description states what is true of THIS device, and the
+            button is reachable in every state: an iPhone that has not been
+            installed to the Home Screen gets the instruction rather than a
+            dead control, a blocked browser is told where to unblock, and a
+            subscribed device can turn it back off. The previous version had
+            no off switch at all, so a player who enabled push had no way to
+            change their mind from inside the app. */}
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Push Notifications</span>
               <span className={styles.settingDesc}>
-                {pushEnabled ? 'Enabled' : 'Allow browser notifications'}
+                {pushEnabled
+                  ? 'On for this device'
+                  : !isWebPushSupported() && isIos() && !isIosStandalonePwa()
+                    ? 'Add to your Home Screen first, then open it from there'
+                    : !isWebPushSupported()
+                      ? 'Not supported by this browser'
+                      : notificationPermission() === 'denied'
+                        ? 'Blocked. Allow notifications in your browser settings'
+                        : 'Get alerted the moment your seat opens'}
               </span>
             </div>
             {pushEnabled ? (
-              <span className={styles.statusBadge}>Active</span>
+              <button
+                className={styles.actionButton}
+                onClick={handleDisablePush}
+                disabled={pushLoading}
+              >
+                {pushLoading ? 'Turning Off...' : 'Turn Off'}
+              </button>
             ) : (
               <button
                 className={styles.actionButton}
                 onClick={handleEnablePush}
-                disabled={pushLoading}
+                disabled={pushLoading || !isWebPushSupported()}
               >
                 {pushLoading ? 'Enabling...' : 'Enable'}
               </button>

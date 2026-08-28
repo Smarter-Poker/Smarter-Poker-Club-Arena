@@ -127,11 +127,11 @@ because the ruleset makes the pull-request path the only path.
 
 Two documents disagree with the API and are wrong. Believe the API.
 
-  - Section 1.1.5 above is titled "prepared, not yet active". It is active.
-  - `.husky/pre-push` check 0 says "making the repos private ... silently
-    disabled required status checks and rulesets ... nothing enforces it
-    server-side any more". That was true when it was written and is not true
-    now.
+- Section 1.1.5 above is titled "prepared, not yet active". It is active.
+- `.husky/pre-push` check 0 says "making the repos private ... silently
+  disabled required status checks and rulesets ... nothing enforces it
+  server-side any more". That was true when it was written and is not true
+  now.
 
 THE ONE REAL GAP, and it is a live one: `ci.yml` gates `unit`, `server` and
 `build` behind the `changes` job, and A RULESET COUNTS A SKIPPED REQUIRED CHECK
@@ -458,6 +458,35 @@ restart path, not just the deploy workflow that remembered to ask.
 
 Both items above were open questions when this section was first written.
 They are now decided; see Dan's rulings.
+
+---
+
+## 10.6 ANIMATION LAW + NO AUTO TABLE SWITCHING (Dan 2026-08-28, BINDING)
+
+**1. ANIMATIONS MUST ALWAYS PLAY.** Dan, verbatim: "MAKE SURE THAT ANIMATIONS
+CAN'T REGRESS, ONLY IMPROVE FROM HERE ON OUT. YOU NEED TO MAKE IT LAW THAT
+THEY MUST ALWAYS PLAY." Every animation and its sound plays every time it is
+owed, for its full duration, at the player's chosen Animation Speed. The
+enforcement is `tests/animations-always-play.law.test.ts` (plus
+`tests/unit/handCompletionLaw.test.ts` for the end-of-hand cadence): every pin
+in it is a bug that actually shipped — a silent celebration cue, a skipped
+deal, a flip cancelled mid-hold, a shake on the wrong table. If your change
+turns a pin red, you are re-shipping one of those bugs. Fix your change; never
+weaken a pin. If you deliberately replace a mechanism with a better one, move
+the pin to the new mechanism IN THE SAME COMMIT and say so in the PR.
+Corollaries: no new toggle may disable an animation outright (speed scaling
+via `--animation-speed` is the only sanctioned control; `skip_animations` is
+dead and stays dead), reduced-motion collapses motion but never meaning
+(`data-motion="keep"` for duration-carrying animation), and a sound cue with a
+literal volume of 0 is a bug by definition.
+
+**2. NEVER AUTO-CHANGE TABLES.** Dan, verbatim: "YOU CAN NEVER EVER AUTO
+CHANGE TABLES FOR A USER, THEY MUST CHANGE IT BY THEM SELF." The urgency
+auto-switch and the post-action queue advance are DELETED from MultiTablePage;
+their setting keys are tombstoned. Alerts (bell, flash, haptics, tab title)
+are welcome; moving `activeIndex` without a user gesture is forbidden, no
+matter what setting, however opt-in, is proposed to gate it. Enforced by
+`tests/no-auto-table-switch.law.test.ts`.
 
 ---
 

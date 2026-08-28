@@ -31,6 +31,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
+import HouseAdCard from '../ads/HouseAdCard';
 import {
   clearSessionSummary,
   peekSessionSummary,
@@ -126,6 +128,9 @@ function ordinal(n: number): string {
 
 export function SessionSummaryHost() {
   const [payload, setPayload] = useState<SessionSummaryPayload | null>(() => peekSessionSummary());
+  /* This host is mounted outside <Routes> but inside <BrowserRouter>, so it can
+     route. It needs to: a house ad in this card carries its own destination. */
+  const navigate = useNavigate();
 
   useEffect(() => subscribeSessionSummary(setPayload), []);
 
@@ -428,6 +433,17 @@ export function SessionSummaryHost() {
             </div>
           ))}
         </div>
+
+        {/* HOUSE ADS, `session_summary` (2026-08-28). Declared in Phase 1 and
+            wired to nothing until now. It sits under the numbers and above the
+            actions, so it never comes between a player and Done.
+
+            No club is passed: this host lives at the app root and survives the
+            navigate() off the table, so it has no club in hand. The resolver
+            drops any destination carrying an unresolved {clubId} rather than
+            serving a link it knows is broken, so this surface simply gets the
+            campaigns whose placement names its own destination. */}
+        <HouseAdCard slot="session_summary" onNavigate={(path) => navigate(path)} />
 
         {/* Dan 2026-08-23: "add a share button to this." Uses the platform
             share sheet where there is one (every phone, and desktop Safari),

@@ -518,6 +518,12 @@ export interface HorseGameStateV2 extends HorseGameState {
     /** V16 ICM: live stacks (chips, desc) + payout percentages by place. */
     stacks?: number[];
     payoutPct?: number[];
+    /** V23 ENDGAME: at the final table (MTT, <= 9 left). */
+    finalTable?: boolean;
+    /** V23 BLIND CLOCK: minutes to the next level (null/undefined = unknown). */
+    nextBlindInMin?: number | null;
+    /** V23 BLIND CLOCK: next level's bb over the current bb (1 = flat). */
+    nextBlindMult?: number;
   };
   /** V12: table format. Spins are winner-take-all chip-EV (no ICM), HU SNGs
    *  play heads-up ranges, MTTs get the full survival model. */
@@ -553,15 +559,62 @@ function isTournamentMode(gs: HorseGameStateV2): boolean {
  */
 /** PROOF OF RECEIPT: which path the last icmRisk call took. Module-level is
  *  safe for the same reason difficultyHint is: decisions are synchronous. */
-let lastIcmPath: 'real' | 'legacy' | 'none' = 'none';
+let lastIcmPath: 'real' | 'legacy' | 'spin_cev' | 'warming' | 'none' = 'none';
 
-function icmRisk(gs: HorseGameStateV2, stackBB: number, useV16Icm: boolean = true): number {
+/**
+ * ═══ V23 TOURNAMENT ENDGAME (2026-08-28) ═══ adjustments the MH bubble
+ * factor understates. Exported for tests — pure in (risk, context, stack).
+ *  - HU of an MTT: the payout difference is fixed and every chip plays for
+ *    it proportionally — survival premium collapses to chip EV.
+ *  - Final-table ladder: each shorter stack still alive is money hero earns
+ *    by folding; a hero who IS the short stack has no ladder to protect and
+ *    takes its flips.
+ */
+export function endgameAdjust(
+  risk: number,
+  gs: HorseGameStateV2,
+  stackBB: number,
+  on: boolean
+): number {
+  const t = gs.tournament;
+  if (!on || !t) return risk;
+  if ((t.playersLeft ?? 0) === 2) return Math.min(risk, 0.01);
+  if (t.finalTable === true && (t.inMoney ?? true)) {
+    const stacks = t.stacks;
+    const heroChips = stackBB * (gs.bigBlind || 0);
+    if (Array.isArray(stacks) && stacks.length >= 2 && heroChips > 0) {
+      const shorter = stacks.filter((s) => s < heroChips * 0.75).length;
+      if (shorter === 0) {
+        // Hero is (near-)shortest: the ladder is not hero's to protect.
+        return Math.max(0, risk - 0.02);
+      }
+      return risk + Math.min(0.045, 0.015 * shorter);
+    }
+  }
+  return risk;
+}
+
+function icmRisk(
+  gs: HorseGameStateV2,
+  stackBB: number,
+  useV16Icm: boolean = true,
+  useV23End: boolean = true
+): number {
   lastIcmPath = 'legacy';
   // icmRisk v2 (V12, 2026-08-22): real bubble model from TournamentBrainContext.
   const explicit = gs.tournament;
   if (!isTournamentMode(gs)) return 0;
   // Spins are winner-take-all — pure chip EV, zero survival premium.
-  if (gs.format === 'spin' && (explicit?.spotsPaid ?? 1) <= 1) return 0;
+  // V22 telemetry honesty (2026-08-27): this CORRECT no-ICM answer used to
+  // leave lastIcmPath on whatever the previous call set, so 7,000 spins a day
+  // were counted as "legacy" fallbacks in the proof-of-receipt numbers. Same
+  // for a context that simply has not arrived yet (empty tournament object
+  // during the first fetch): that is "warming", not a degraded model.
+  if (gs.format === 'spin' && (explicit?.spotsPaid ?? 1) <= 1) {
+    lastIcmPath = 'spin_cev';
+    return 0;
+  }
+  if (!explicit || (explicit.playersLeft ?? 0) === 0) lastIcmPath = 'warming';
 
   // ═══ V16 REAL ICM (2026-08-26) ═══
   // When the context carries the live stack distribution and the payout
@@ -600,7 +653,7 @@ function icmRisk(gs: HorseGameStateV2, stackBB: number, useV16Icm: boolean = tru
       // PKO: bounty share still trims pressure — covered all-ins pay.
       if ((explicit.bountyFactor ?? 0) >= 0.2) premium = Math.max(0, premium - 0.02);
       lastIcmPath = 'real';
-      return premium;
+      return Math.min(endgameAdjust(premium, gs, stackBB, useV23End), 0.15);
     } catch {
       /* fall through to the legacy heuristic */
     }
@@ -637,7 +690,7 @@ function icmRisk(gs: HorseGameStateV2, stackBB: number, useV16Icm: boolean = tru
     // says — trim the premium so the horses fight for bounties.
     if ((explicit.bountyFactor ?? 0) >= 0.2) risk = Math.max(0, risk - 0.02);
   }
-  return Math.min(risk, 0.12);
+  return Math.min(endgameAdjust(Math.min(risk, 0.12), gs, stackBB, useV23End), 0.15);
 }
 
 /** V3/V4/V5 decision options (benchmark/test hooks — production uses defaults). */
@@ -795,6 +848,26 @@ export interface HorseDecideOpts {
    *  thresholds scale with depth — 4-bet/5-bet pots demand closer to the
    *  nuts at 250bb than at 100bb (default: enabled) */
   v21Deep?: boolean;
+  /** disable the V23 tournament endgame layer (2026-08-28): final-table
+   *  ladder pressure, HU-of-MTT chip-EV play, PKO bounty pricing on covered
+   *  call-offs, and blind-clock anticipation (jam before the level hits)
+   *  (default: enabled) */
+  v23Endgame?: boolean;
+  /** disable the V23 raise-response plans: the bet decides at bet time what
+   *  a raise back means — commit, call once, or fold — and the answer to
+   *  the raise is the one the bet already gave (default: enabled; plans are
+   *  mind state, so mind:false disables them too) */
+  v23Plan?: boolean;
+  /** disable the V23 river reads: per-villain fold-to-river-bet frequency
+   *  scales river bluffs up against folders and thin value down against
+   *  stations (default: enabled; rides the mind layer) */
+  v23Reads?: boolean;
+  /** disable the V23 variant polish: short-deck draw/thin-value recalibration
+   *  and plo8 low-only draw discipline (default: enabled) */
+  v23Variants?: boolean;
+  /** disable the V23 spin overlay: winner-take-all hypers reward aggression —
+   *  bluff volume up, value thresholds down a notch (default: enabled) */
+  v23Spin?: boolean;
 }
 
 /**
@@ -820,6 +893,12 @@ function moodOf(userId: string): number {
  * single-threaded, and the consumer resets it every read.
  */
 let difficultyHint = 0;
+
+/** V23 RAISE-RESPONSE PLAN — set per postflop decision, consumed by
+ *  betSize/raiseTo (the only places a postflop chip goes in), recorded into
+ *  HorseMind so the SAME street's raise gets the answer the bet chose.
+ *  Module-level is safe for the same reason difficultyHint is. */
+let pendingRaisePlan: import('./HorseMind.js').RaiseResponsePlan | null = null;
 
 /** V9 SIZING — human bet-size families. Continuous uniform sizing is a subtle
  *  tell: real players think in pot fractions (third, half, two-thirds,
@@ -1119,7 +1198,7 @@ export class HorseLogic {
       sizingMultiplier: params.sizingMultiplier,
       isOmaha: vi.isOmaha,
       isPotLimit: vi.isPotLimit,
-      riskAdd: icmRisk(gs, stackBB, opts.v16Icm !== false),
+      riskAdd: icmRisk(gs, stackBB, opts.v16Icm !== false, opts.v23Endgame !== false),
       // NLH only: widening the iso range vs limpers is an NLH edge; PLO limped
       // pots play multiway/postflop where a wide iso bloats pots out of line.
       isoWiden: (opts.v10Iso ?? opts.v10) !== false && !vi.isOmaha ? 0.06 : 0,
@@ -1137,6 +1216,12 @@ export class HorseLogic {
           : undefined,
       // V21: deep-stack cash stack-off discipline.
       deepDiscipline: (opts.v21Deep ?? true) !== false,
+      // V23 BLIND CLOCK: jam BEFORE the level halves the M, not after.
+      nextBlindInMin:
+        (opts.v23Endgame ?? true) !== false
+          ? (gs.tournament?.nextBlindInMin ?? undefined)
+          : undefined,
+      nextBlindMult: (opts.v23Endgame ?? true) !== false ? gs.tournament?.nextBlindMult : undefined,
       // V12: table format — spins widen (winner-take-all chip EV), HU SNGs
       // ride the heads-up ranges.
       // V13: `format` is a V12 field and now answers to the v12 flag.
@@ -1494,7 +1579,12 @@ export class HorseLogic {
     // opponent tightens HARDER in PLO — thresholds tuned on NLH gaps overplay
     // Omaha hands multiway.
     const risk = useV7
-      ? icmRisk(gs, gs.bigBlind > 0 ? stack / gs.bigBlind : 100, opts.v16Icm !== false)
+      ? icmRisk(
+          gs,
+          gs.bigBlind > 0 ? stack / gs.bigBlind : 100,
+          opts.v16Icm !== false,
+          opts.v23Endgame !== false
+        )
       : 0;
     if (tele15 && useV7 && isTournamentMode(gs)) noteFire(`icm_${lastIcmPath}`);
     // V15: equities cluster tighter still with 5 and 6 hole cards, so the
@@ -1762,6 +1852,37 @@ export class HorseLogic {
     let bluffScale =
       exploit.bluffMod * blockerMod * posMod * Math.max(0.5, 1 - 2 * risk) * (quartered ? 0.6 : 1);
     if (huOn) bluffScale *= 1.12;
+    // ═══ V23 RIVER READS (2026-08-28) ═══ heads-up on the river, the one
+    // number that prices a bluff is whether THIS player folds rivers. Scale
+    // bluff volume by their observed fold-to-river-bet; push thin value the
+    // other way (a river folder pays thin value less, a station pays more).
+    let thinAdj23 = 0;
+    if ((opts.v23Reads ?? true) !== false && useMind && isRiver && oppCount === 1) {
+      try {
+        const rfr = HorseMind.riverFoldRate(opponents[0].user_id);
+        if (rfr !== null) {
+          bluffScale *= 1 + Math.max(-0.25, Math.min(0.35, (rfr - 0.45) * 0.8));
+          thinAdj23 = Math.max(-0.03, Math.min(0.05, (rfr - 0.45) * 0.1));
+          if (tele15) noteFire('v23_river_read');
+        }
+      } catch {
+        /* reads are best-effort */
+      }
+    }
+    // ═══ V23 SPIN OVERLAY (2026-08-28) ═══ winner-take-all hypers pay
+    // aggression: every chip won is worth every chip lost, stacks are
+    // shallow, and blinds eat the passive. League cannot deal spins, so the
+    // sizes here are small and the flag exists for ablation.
+    const spin23 = (opts.v23Spin ?? true) !== false && gs.format === 'spin';
+    if (spin23) {
+      bluffScale *= 1.12;
+      if (tele15) noteFire('v23_spin');
+    }
+    // ═══ V23 VARIANT POLISH ═══ short deck: straights arrive more often and
+    // draws complete more — draws earn a touch more implied credit, while
+    // one-pair thin value shrinks (everyone has more).
+    const useV23Var = (opts.v23Variants ?? true) !== false;
+    if (useV23Var && vi.isShortDeck && cat === 2) thinAdj23 += 0.03;
     // ═══ V18 SELF-IMAGE ═══ the table watched hero's recent line too. A
     // horse coming off a bluff-heavy stretch gets called down - throttle the
     // bluffs until the image cools; a rock's rare bets get instant credit -
@@ -1840,6 +1961,20 @@ export class HorseLogic {
         HorseMind.notePlan(handKey, player.user_id, fastRandom() < 0.35);
       }
     };
+
+    // ═══ V23 RAISE-RESPONSE PLAN (2026-08-28) ═══ every postflop bet decides
+    // NOW what a raise back means. betSize/raiseTo record it; the facing-bet
+    // path below consults it when raisedAfterAggr — so the bet and the
+    // response to the raise are one decision, not two dice rolls. The
+    // bet_fold_line/big_fold_river reviews are exactly this incoherence.
+    const useV23Plan = (opts.v23Plan ?? true) !== false && opts.mind !== false;
+    pendingRaisePlan = !useV23Plan
+      ? null
+      : equity >= 0.62 || cat >= 5
+        ? 'commit'
+        : equity >= 0.33
+          ? 'callOnce'
+          : 'foldToRaise';
 
     const useV11 = opts.v11 !== false;
 
@@ -1951,7 +2086,7 @@ export class HorseLogic {
       // V5 river polarization: medium made hands stop thin-betting into
       // non-stations on the river — they get called by better and fold out
       // worse. Check back and win at showdown instead.
-      if (equity >= 0.52 + mw - (exploit.valueThinMod - 1) * 0.08) {
+      if (equity >= 0.52 + mw + thinAdj23 - (exploit.valueThinMod - 1) * 0.08) {
         if (dangered) return { action: 'check', thinkTime: 0 };
         // V10: when hero HELD THE INITIATIVE and the river checks to us, the
         // opponent's range is capped (they would have raised their value along
@@ -2352,6 +2487,26 @@ export class HorseLogic {
       }
     }
 
+    // ═══ V23 PLAN CONSULT ═══ hero bet this street and got raised: the
+    // answer was decided at bet time. foldToRaise folds (unless the price is
+    // trivially too good); callOnce may continue but never escalates.
+    let planCallOnly23 = false;
+    if (useV23Plan && raisedAfterAggr) {
+      const plan23 = HorseMind.getRaisePlan(
+        HorseMind.handKeyOf(gs.actionHistory),
+        player.user_id,
+        street
+      );
+      if (plan23 === 'foldToRaise' && potOdds >= 0.15) {
+        if (tele15) noteFire('v23_plan_fold');
+        return { action: 'fold', thinkTime: 0 };
+      }
+      if (plan23 === 'callOnce') {
+        planCallOnly23 = true;
+        if (tele15) noteFire('v23_plan_callonce');
+      }
+    }
+
     // Low-SPR commitment: with the money effectively in, play equity directly.
     const committed = spr < 1.2 || toCall >= stack;
     if (committed) {
@@ -2372,7 +2527,27 @@ export class HorseLogic {
       // -on-a-three-diamond-river hand from the review table pays this.
       const scare21 = useV21 && dangered ? 0.05 : 0;
       if (tele15 && scare21 > 0) noteFire('v21_scare_commit');
-      const required = potOdds + 0.02 + dominationPenalty * 0.5 + commit20 + scare21;
+      // ═══ V23 PKO BOUNTY PRICING (2026-08-28) ═══ calling off against an
+      // all-in hero COVERS pays the bounty on top of the pot — the required
+      // equity drops by a share of the bounty factor. Only when hero truly
+      // covers: an uncovered call risks hero's own bounty instead.
+      let bounty23 = 0;
+      if (
+        (opts.v23Endgame ?? true) !== false &&
+        isTournamentMode(gs) &&
+        (gs.tournament?.bountyFactor ?? 0) >= 0.1 &&
+        seriousAllIns20 >= 1
+      ) {
+        let biggestAllIn = 0;
+        for (const o of opponents) {
+          if (o.is_all_in && isFinite(o.bet) && o.bet > biggestAllIn) biggestAllIn = o.bet;
+        }
+        if (biggestAllIn > 0 && stack + player.bet >= biggestAllIn) {
+          bounty23 = Math.min(0.04, (gs.tournament?.bountyFactor ?? 0) * 0.12);
+          if (tele15) noteFire('v23_bounty_call');
+        }
+      }
+      const required = potOdds + 0.02 + dominationPenalty * 0.5 + commit20 + scare21 - bounty23;
       if (eq15 >= Math.max(required, 0.42 + mw + dominationPenalty * 0.5)) {
         // V15: a dominated flush/straight that still clears the (penalized)
         // bar CALLS rather than jams — shoving it has zero fold equity
@@ -2403,7 +2578,8 @@ export class HorseLogic {
     // raises for value, and the domination premium gates the raise band too
     // (QQ on AKx was sailing straight into this branch off inflated
     // no-reads equity and calling/raising the barrel off).
-    const valueRaiseThresh = 0.68 + mw + (isRiver ? 0.04 : 0) + sprAdj + dominationPenalty;
+    const valueRaiseThresh =
+      0.68 + mw + (isRiver ? 0.04 : 0) + sprAdj + dominationPenalty + (spin23 ? -0.02 : 0);
     if (eq15 >= valueRaiseThresh) {
       // V8 O8: never raise into a likely quarter — flat and see the split.
       if (quartered) return { action: 'call', amount: toCall, thinkTime: 0 };
@@ -2440,11 +2616,12 @@ export class HorseLogic {
         cat === 4 && player.cards.length === 2 && player.cards[0].rank === player.cards[1].rank;
       const dryTop21 = ns21 != null && !ns21.flushPossible && ns21.maxStraightTop === 0;
       if (
-        useV21 &&
-        !vi.isOmaha &&
-        (dominated21 || (raisedAfterAggr && (cat <= 3 || (cat === 4 && !(set21 && dryTop21)))))
+        planCallOnly23 ||
+        (useV21 &&
+          !vi.isOmaha &&
+          (dominated21 || (raisedAfterAggr && (cat <= 3 || (cat === 4 && !(set21 && dryTop21))))))
       ) {
-        if (isRiver || raisedAfterAggr || pressure20 >= 2) {
+        if (planCallOnly23 || isRiver || raisedAfterAggr || pressure20 >= 2) {
           if (tele15) noteFire('v21_war_gate');
           return { action: 'call', amount: toCall, thinkTime: 0 };
         }
@@ -2474,6 +2651,7 @@ export class HorseLogic {
     // only — made hands in the band call instead of bloating the pot.
     // V8: Omaha raise semi-bluffs demand draw QUALITY too.
     if (
+      !planCallOnly23 &&
       drawsLive &&
       equity >= 0.33 &&
       equity < 0.52 &&
@@ -2502,6 +2680,7 @@ export class HorseLogic {
     // V16 RATIO (flagged OFF, league-measured): the 0.6 gate reads as
     // bet/(pot+bet) intent — on the bet/pot scale the equivalent is 1.5.
     if (
+      !planCallOnly23 &&
       useNlhX &&
       !ip &&
       scare.any &&
@@ -2520,6 +2699,7 @@ export class HorseLogic {
     // V8 NLH: river blocker raise-bluff — polarizing raise with air that
     // blocks the nuts. Low frequency; makes the value raises unexploitable.
     if (
+      !planCallOnly23 &&
       useNlhX &&
       isRiver &&
       oppCount === 1 &&
@@ -2542,7 +2722,15 @@ export class HorseLogic {
     // V11: a dominated pair has REVERSE implied odds (improving to a set can
     // still lose to a higher set / straight the same range makes) — it gets
     // no implied-odds allowance.
-    const impliedBonus = drawsLive && equity >= 0.25 && dominationPenalty === 0 ? 0.04 : 0;
+    // V23 VARIANTS: a plo8 draw whose value is ONE-WAY LOW is drawing at half
+    // the pot with quarter risk — it gets no implied credit at all; short
+    // deck draws complete more often and earn a bit extra.
+    const loOnly23 =
+      useV23Var && useHiLo && !!hiLoSplit && hiLoSplit.hi < 0.15 && hiLoSplit.lo > 0.3;
+    const impliedBonus =
+      drawsLive && equity >= 0.25 && dominationPenalty === 0 && !loOnly23
+        ? 0.04 + (useV23Var && vi.isShortDeck ? 0.02 : 0)
+        : 0;
     let respect = 2 - exploit.callDownMod; // maniac 0.8, neutral 1, passive 1.15
     if (dangered) respect += 0.15;
     // V12 ANTI-EXPLOIT: when the CURRENT street's bettor has been hunting
@@ -2625,7 +2813,8 @@ export class HorseLogic {
     // V8: OOP calls tighten further multiway — equity realization out of
     // position degrades with every extra live opponent.
     const posEdge = useIQ ? (ip ? -0.012 : 0.008 * (useNlhX ? 1 + 0.3 * (oppCount - 1) : 1)) : 0;
-    const sizingPenalty = (Math.min(0.06, betRatio * 0.04) + mw * 0.5) * respect;
+    const sizingPenalty =
+      (Math.min(0.06, betRatio * 0.04) + mw * 0.5) * respect + (loOnly23 ? 0.03 : 0);
     if (
       eq15 + impliedBonus >=
       potOdds + 0.03 * respect + sizingPenalty + posEdge + dominationPenalty
@@ -2698,6 +2887,16 @@ export class HorseLogic {
     snap: boolean = true
   ): HorseDecision {
     const frac = snap ? snapFraction(fraction, params.familyBias ?? 0.5) : fraction;
+    // V23: a chip is actually going in — record the raise-response plan.
+    if (pendingRaisePlan && gs.stage !== 'preflop') {
+      HorseMind.noteRaisePlan(
+        HorseMind.handKeyOf(gs.actionHistory),
+        player.user_id,
+        gs.stage,
+        pendingRaisePlan
+      );
+      pendingRaisePlan = null;
+    }
     return this.legalize(
       { action: 'bet', amount: pot * frac * params.sizingMultiplier, thinkTime: 0 },
       player,
@@ -2714,6 +2913,16 @@ export class HorseLogic {
     vi: VariantInfo
   ): HorseDecision {
     const action = gs.currentBet > 0 ? 'raise' : 'bet';
+    // V23: same recording as betSize — every postflop raise carries its plan.
+    if (pendingRaisePlan && gs.stage !== 'preflop') {
+      HorseMind.noteRaisePlan(
+        HorseMind.handKeyOf(gs.actionHistory),
+        player.user_id,
+        gs.stage,
+        pendingRaisePlan
+      );
+      pendingRaisePlan = null;
+    }
     return this.legalize({ action, amount: target, thinkTime: 0 }, player, gs, vi);
   }
 

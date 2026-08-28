@@ -76,6 +76,8 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSou
   const [phase, setPhase] = useState<BombPhase>('idle');
   const [anteAmount, setAnteAmount] = useState(0);
   const [doubleBoard, setDoubleBoard] = useState(false);
+  /** TRIPLE-BOARD 2026-08-27: boards actually dealt (1-3), for the badge. */
+  const [boardCount, setBoardCount] = useState(1);
   const [bbMultiplier, setBBMultiplier] = useState(0);
   const [artFailed, setArtFailed] = useState(false);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -118,6 +120,7 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSou
     if (payload?.tableId !== tableId) return;
     setAnteAmount(payload.anteAmount || 0);
     setDoubleBoard(payload.doubleBoard || false);
+    setBoardCount(Number(payload.boardCount) || (payload.doubleBoard ? 2 : 1));
     setBBMultiplier(payload.bbMultiplier || 0);
 
     // Restart the sequence cleanly if a stale one is somehow still running
@@ -277,7 +280,11 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSou
               );
             })}
           </div>
-          <div className="bpo-subtitle">{doubleBoard ? 'DOUBLE BOARD' : 'ALL PLAYERS IN'}</div>
+          {/* Spec §6.1 step 5: the badge names the board count before the
+              first board is shown — TRIPLE BOARD / DOUBLE BOARD / single. */}
+          <div className="bpo-subtitle">
+            {boardCount >= 3 ? 'TRIPLE BOARD' : doubleBoard ? 'DOUBLE BOARD' : 'ALL PLAYERS IN'}
+          </div>
           {anteAmount > 0 && (
             <div className="bpo-ante">
               Everyone Antes {anteAmount.toLocaleString()}

@@ -46,7 +46,15 @@ export interface GameRulesModalProps {
     intervalSeconds?: number;
     /** VARIANT OVERRIDE (spec §10.1): bomb hand variant; null = same as table. */
     variant?: string | null;
+    /** ANNOUNCE WINDOW (spec §3): clock shows within this many seconds. */
+    announceSeconds?: number;
   } | null;
+  /**
+   * MANUAL_NEXT_HAND (spec §2.1/§15.3): drawn only for club staff. The RPC
+   * behind onManualBombPot re-checks the role and writes the audit row.
+   */
+  canManualBombPot?: boolean;
+  onManualBombPot?: () => void;
 }
 
 type TabType = 'info' | 'rules' | 'limits' | 'rankings';
@@ -301,6 +309,8 @@ export function GameRulesModal({
   currency = '',
   customRules = [],
   bombPotRules = null,
+  canManualBombPot = false,
+  onManualBombPot,
 }: GameRulesModalProps) {
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('rules');
@@ -513,6 +523,18 @@ export function GameRulesModal({
                       </div>
                     )}
                   </div>
+                  {/* MANUAL_NEXT_HAND (spec §2.1/§15.3): club staff only.
+                      The RPC re-checks the role and logs the request — this
+                      button is presentation, never the gate. */}
+                  {canManualBombPot && onManualBombPot && (
+                    <button
+                      type="button"
+                      className="rules-modal__manual-bomb"
+                      onClick={onManualBombPot}
+                    >
+                      Bomb Pot Next Hand
+                    </button>
+                  )}
                 </div>
               )}
 

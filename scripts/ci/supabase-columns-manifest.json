@@ -877,6 +877,26 @@
       "blocked_id",
       "created_at"
     ],
+    "bomb_pot_award_units": [
+      "id",
+      "hand_history_id",
+      "table_id",
+      "hand_number",
+      "pot_index",
+      "board",
+      "side",
+      "user_id",
+      "amount",
+      "hand_name",
+      "created_at"
+    ],
+    "bomb_pot_manual_requests": [
+      "id",
+      "table_id",
+      "club_id",
+      "requested_by",
+      "requested_at"
+    ],
     "bot_profiles": [
       "id",
       "username",
@@ -9147,7 +9167,11 @@
       "bomb_pot_min_players",
       "bomb_pot_ante_fixed",
       "bomb_pot_variant",
-      "bomb_pot_next_due_at"
+      "bomb_pot_next_due_at",
+      "bomb_pot_sched_state",
+      "bomb_pot_manual_pending",
+      "bomb_pot_button_policy",
+      "bomb_pot_announce_seconds"
     ],
     "theme_asset_unlocks": [
       "user_id",

@@ -81,6 +81,10 @@ const GAMEPLAY_COLUMNS = [
   // VARIANT OVERRIDE + TIMED PERSISTENCE 2026-08-28 (spec §10.1/§4.3)
   'bomb_pot_variant',
   'bomb_pot_next_due_at',
+  // BOMB POT MAX 2026-08-28: scheduler state, button policy, announce window
+  'bomb_pot_sched_state',
+  'bomb_pot_button_policy',
+  'bomb_pot_announce_seconds',
   'seven_deuce_enabled',
   'time_bank_enabled',
   'wait_for_big_blind',

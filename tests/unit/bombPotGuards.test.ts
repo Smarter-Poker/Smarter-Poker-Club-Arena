@@ -82,6 +82,56 @@ describe('the LIVE hand variant is the one seam (spec §10.1)', () => {
   });
 });
 
+describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
+  const DEALING = read('server/src/engine/ServerTableEngineDealing.ts');
+  const RUNOUT = read('server/src/engine/ServerTableEngineRunout.ts');
+  const SETTLEMENT = read('server/src/engine/ServerTableEngineSettlement.ts');
+  const HORSE = read('server/src/engine/HorseLogic.ts');
+  const TURNS = read('server/src/engine/ServerTableEngineTurns.ts');
+
+  it('the manual trigger fails CLOSED when the flag cannot be cleared', () => {
+    // A bomb that fires twice is worse than one that arrives a hand late.
+    const idx = DEALING.indexOf('bomb_pot_manual_pending: false');
+    expect(idx).toBeGreaterThan(-1);
+    const window = DEALING.slice(idx, idx + 700);
+    expect(window).toMatch(/if \(clearErr\)/);
+    expect(window).toMatch(/deferring/);
+  });
+
+  it('the separate bomb button rewinds the regular rotation on bomb hands', () => {
+    expect(DEALING).toMatch(/bomb_pot_button_policy \?\? 'regular'\) === 'separate'/);
+    expect(DEALING).toMatch(/this\.lastButtonSeat = prevButtonSeat > 0 \? prevButtonSeat/);
+  });
+
+  it('scheduler state persists and is restored before the first hand', () => {
+    expect(DEALING).toMatch(/this\.bombPotScheduler\.restoreState\(persistedState\)/);
+    expect(DEALING).toMatch(/bomb_pot_sched_state: snapObj/);
+  });
+
+  it('multi-board all-in equity is COMPUTED per board, not suppressed', () => {
+    expect(RUNOUT).toMatch(/if \(allInPlayers\.length >= 2\) \{/);
+    expect(RUNOUT).not.toMatch(/allInPlayers\.length >= 2 && !doubleBoardHand/);
+    expect(RUNOUT).toMatch(/perBoard\.reduce/);
+    // RIT and insurance stay suppressed on multi-board hands.
+    expect(RUNOUT).toMatch(/insuranceEngine\.isEnabled\(this\.tableId\) && !doubleBoardHand/);
+  });
+
+  it('horses average per-board equity on multi-board hands', () => {
+    expect(HORSE).toMatch(/gs\.communityCards2/);
+    expect(HORSE).toMatch(/equity = sum \/ boards\.length/);
+    expect(TURNS).toMatch(/communityCards2: fullState\?\.communityCards2 \?\? \[\]/);
+  });
+
+  it('the award-unit ledger writes only settled multi-board bomb hands, idempotently', () => {
+    const idx = SETTLEMENT.indexOf("from('bomb_pot_award_units')");
+    expect(idx).toBeGreaterThan(-1);
+    const window = SETTLEMENT.slice(Math.max(0, idx - 1200), idx + 600);
+    expect(window).toMatch(/board_count \?\? 1\) >= 2/);
+    expect(window).toMatch(/onConflict: 'hand_history_id,pot_index,board,side,user_id'/);
+    expect(window).toMatch(/ignoreDuplicates: true/);
+  });
+});
+
 describe('the table page reads bomb rules from the COLUMNS (spec §15.2)', () => {
   const PAGE = read('src/pages/TablePage.tsx');
 

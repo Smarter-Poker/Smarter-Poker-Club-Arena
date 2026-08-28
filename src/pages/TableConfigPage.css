@@ -716,3 +716,19 @@
     font-size: 0.9rem;
   }
 }
+
+/* HOST PRESETS (spec 3.2, 2026-08-28): one-tap bomb pot bundles. */
+.config-preset-chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 158, 44, 0.45);
+  background: rgba(38, 24, 8, 0.6);
+  color: #ffcf7d;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.config-preset-chip:hover {
+  filter: brightness(1.2);
+}

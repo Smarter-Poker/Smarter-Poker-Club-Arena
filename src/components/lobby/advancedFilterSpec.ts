@@ -99,6 +99,11 @@ const CASH_FEATURES: FeatureOption[] = [
     match: ['run_it_twice', 'run_it_twice_enabled', 'allow_run_it_twice'],
   },
   { key: 'bomb_pot', label: 'BombPot', match: ['bomb_pot_enabled'] },
+  /* MULTI-BOARD DISCOVERY (2026-08-28): the double-board boolean is kept in
+     lockstep with bomb_pot_board_count >= 2 by every writer, and the lobby
+     query fetches it — so this chip really narrows, unlike the fourteen
+     ghosts removed on 2026-08-25. */
+  { key: 'bomb_multi_board', label: 'Multi-Board Bomb', match: ['bomb_pot_double_board'] },
   /* seven_deuce_enabled is the column; the old key was `seven_deuce`, off by a
      suffix, so the chip never matched the table it names. */
   { key: 'seven_deuce', label: 'Seven-Deuce', match: ['seven_deuce_enabled'] },

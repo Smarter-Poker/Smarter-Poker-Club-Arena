@@ -25,7 +25,11 @@ import {
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
-import { bombPotSettingsFromTable, resolveBombPotVariant } from './BombPotScheduler.js';
+import {
+  bombPotSettingsFromTable,
+  resolveBombPotVariant,
+  type BombPotDecision,
+} from './BombPotScheduler.js';
 
 import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
@@ -1104,49 +1108,131 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     let bombHandVariant: string | null = null;
     {
       const schedulerSettings = bombPotSettingsFromTable(this.tableInfo);
-      // TIMED PERSISTENCE (spec §4.3): resume the persisted clock on the
-      // scheduler's first hand after an engine restart. seedNextDueAt only
-      // fills an EMPTY clock, so this is a no-op every hand thereafter.
-      if (schedulerSettings.enabled && schedulerSettings.triggerMode === 'timed') {
-        const persisted = Date.parse(this.tableInfo.bomb_pot_next_due_at ?? '');
-        if (Number.isFinite(persisted)) this.bombPotScheduler.seedNextDueAt(persisted);
+      // FULL SCHEDULER PERSISTENCE (2026-08-28): restore the trigger state —
+      // every-N counter, orbit anchor, pending token, timed clock, separate
+      // bomb button — on the first hand after an engine restart. restoreState
+      // fills a FRESH scheduler only, so this is a no-op ever after. The
+      // legacy bomb_pot_next_due_at column stays as a timed-mode fallback for
+      // rows written before the jsonb existed.
+      if (schedulerSettings.enabled) {
+        const persistedState = this.tableInfo.bomb_pot_sched_state;
+        this.bombPotScheduler.restoreState(persistedState);
+        if (
+          this.bombButtonSeat == null &&
+          persistedState &&
+          typeof (persistedState as { b?: unknown }).b === 'number'
+        ) {
+          this.bombButtonSeat = (persistedState as { b: number }).b;
+        }
+        if (schedulerSettings.triggerMode === 'timed') {
+          const persisted = Date.parse(this.tableInfo.bomb_pot_next_due_at ?? '');
+          if (Number.isFinite(persisted)) this.bombPotScheduler.seedNextDueAt(persisted);
+        }
       }
-      const decision = this.bombPotScheduler.noteHandStart(
-        schedulerSettings,
-        dealerSeat,
-        players.length,
-        Date.now()
-      );
-      // Persist the timed clock whenever it moved — the first sighting sets
-      // it, and a consumed bomb resets it. Fire-and-forget: a failed write
-      // costs at most one interval of drift after the NEXT restart, which is
-      // exactly what it costs today on every restart.
-      if (schedulerSettings.enabled && schedulerSettings.triggerMode === 'timed') {
+
+      // MANUAL_NEXT_HAND (spec §2.1/§15.3): an authorized host can schedule
+      // exactly one bomb for the next valid hand via
+      // fn_request_manual_bomb_pot (role-gated + audited server-side). The
+      // flag is read FRESH each hand — the throttled tableInfo re-read is too
+      // slow for "next hand" — and only on bomb-enabled tables, so the rest
+      // of the fleet pays nothing. Fail closed: if the flag cannot be cleared
+      // the bomb does not fire, because a bomb that fires twice is worse than
+      // one that arrives a hand late.
+      let manualBomb = false;
+      if (this.tableInfo.bomb_pot_enabled === true) {
+        try {
+          const { data: manualRow } = await supabase
+            .from('tables')
+            .select('bomb_pot_manual_pending')
+            .eq('id', this.tableId)
+            .maybeSingle();
+          if (
+            (manualRow as { bomb_pot_manual_pending?: boolean } | null)?.bomb_pot_manual_pending ===
+            true
+          ) {
+            const minP = Math.max(2, Math.floor(this.tableInfo.bomb_pot_min_players ?? 3));
+            if (players.length >= minP) {
+              const { error: clearErr } = await supabase
+                .from('tables')
+                .update({ bomb_pot_manual_pending: false })
+                .eq('id', this.tableId);
+              if (clearErr) {
+                console.warn('[BombPot] manual flag clear failed — deferring:', clearErr.message);
+              } else {
+                manualBomb = true;
+              }
+            }
+            // Below the floor the request simply stays pending (spec §3.1).
+          }
+        } catch (err) {
+          console.warn('[BombPot] manual-pending read failed:', err);
+        }
+      }
+
+      const decision: BombPotDecision = manualBomb
+        ? { isBombPot: true, triggerReason: 'manual_next_hand' }
+        : this.bombPotScheduler.noteHandStart(
+            schedulerSettings,
+            dealerSeat,
+            players.length,
+            Date.now()
+          );
+
+      // Persist the scheduler whenever its serialized state moved (counter
+      // ticks, token set/consumed, clock reset, bomb button advanced). One
+      // small row write per hand, bomb-enabled tables only. Fire-and-forget:
+      // a lost write costs one cycle of drift after the NEXT restart — the
+      // exact cost every restart carried before persistence existed.
+      if (schedulerSettings.enabled) {
         const dueAt = this.bombPotScheduler.nextBombDueAt(schedulerSettings);
         const dueAtIso = dueAt !== null ? new Date(dueAt).toISOString() : null;
-        if (dueAtIso !== (this.tableInfo.bomb_pot_next_due_at ?? null)) {
+        const snapObj = { ...this.bombPotScheduler.exportState(), b: this.bombButtonSeat ?? null };
+        const snap = JSON.stringify(snapObj);
+        if (snap !== this.bombPotSchedPersistedJson) {
+          this.bombPotSchedPersistedJson = snap;
+          this.tableInfo.bomb_pot_sched_state = snapObj;
           this.tableInfo.bomb_pot_next_due_at = dueAtIso;
           // Promise.resolve turns the PostgrestBuilder thenable into a real
           // Promise so the house .catch rule (noUnhandledRejections.test.ts)
-          // is satisfiable — a transport throw must never surface as an
-          // unhandled rejection.
+          // is satisfiable.
           void Promise.resolve(
             supabase
               .from('tables')
-              .update({ bomb_pot_next_due_at: dueAtIso })
+              .update({ bomb_pot_sched_state: snapObj, bomb_pot_next_due_at: dueAtIso })
               .eq('id', this.tableId)
           )
             .then(({ error }) => {
               if (error) {
-                console.warn('[BombPot] timed due-at persistence failed:', error.message);
+                console.warn('[BombPot] scheduler persistence failed:', error.message);
               }
             })
             .catch((err: unknown) => {
-              console.warn('[BombPot] timed due-at persistence threw:', err);
+              console.warn('[BombPot] scheduler persistence threw:', err);
             });
         }
       }
       if (decision.isBombPot) {
+        // SEPARATE BOMB BUTTON (spec §5.3, buttonPolicy SEPARATE_BOMB_BUTTON):
+        // bomb hands keep their own button rotation and the REGULAR button
+        // does not move — the next normal hand resumes exactly where it would
+        // have been had the bomb hand not happened. That is the "intervening
+        // hands" definition the spec demands be explicit: normal rotation is
+        // simply blind to bomb hands. The bomb button starts on the current
+        // regular button and advances clockwise among the seats dealt into
+        // each bomb hand (getNextSeat skips vacated seats — dead-button
+        // behaviour matches the regular rotation's own).
+        if ((this.tableInfo.bomb_pot_button_policy ?? 'regular') === 'separate') {
+          const bombSeat =
+            this.bombButtonSeat != null
+              ? this.getNextSeat(this.bombButtonSeat, players)
+              : dealerSeat;
+          this.bombButtonSeat = bombSeat;
+          // Rewind the regular rotation: it advanced above for what is now a
+          // bomb hand. prevButtonSeat is this function's pre-rotation state.
+          this.lastButtonSeat = prevButtonSeat > 0 ? prevButtonSeat : this.lastButtonSeat;
+          dealerSeat = bombSeat;
+          this.currentHandDealerSeat = bombSeat;
+        }
         // Board count: the canonical 1-3 column wins; the legacy double-board
         // boolean maps to 2. HandController still downgrades stepwise if the
         // deck cannot cover players × holeCards + 5 × boards (spec §3.1).

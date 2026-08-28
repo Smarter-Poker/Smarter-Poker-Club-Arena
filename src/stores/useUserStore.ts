@@ -11,6 +11,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import { clearCachedIdentity } from '../lib/cachedIdentity';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -110,6 +111,10 @@ export const useUserStore = create<UserState>()(
           currentClubId: null,
           totalChips: 0,
         });
+        // First-paint identity cache (2026-08-28): forget the name/face on
+        // logout so the next account on this device cannot cold-open as the
+        // previous one.
+        clearCachedIdentity();
       },
 
       updateProfile: (updates: Partial<UserProfile>) => {

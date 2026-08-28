@@ -16,6 +16,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 
 import styles from './GlobalHeader.module.css';
 import { generateDefaultAvatar, getAvatarWithFallback } from '../../utils/avatarGenerator';
+import { cachedAuthUserId, hydrateIdentity } from '../../lib/cachedIdentity';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
@@ -70,15 +71,33 @@ export default function GlobalHeader() {
    */
   const [avatarFailed, setAvatarFailed] = useState(false);
 
+  /**
+   * FIRST-PAINT IDENTITY (2026-08-28, flash sweep): before auth resolves,
+   * `authUser` is null and `avatarUrl` (header store) is unhydrated — so the
+   * most-seen chrome in the app cold-opened as the monogram for the literal
+   * seed 'player', then swapped to the real face. The persisted session
+   * yields the user id synchronously (a paint hint, never authentication),
+   * and the identity cache is keyed to that id, so the first frame already
+   * wears the signed-in player's name and face. Auth + the store's own
+   * fetch then take over as truth.
+   */
+  const cachedIdentity = useMemo(() => hydrateIdentity(cachedAuthUserId()), []);
+
   const displayName =
     (authUser as { display_name?: string; username?: string } | null)?.display_name ||
     (authUser as { username?: string } | null)?.username ||
+    cachedIdentity.displayName ||
     'Player';
 
   const avatarSrc = useMemo(() => {
     if (avatarFailed) return generateDefaultAvatar();
-    return getAvatarWithFallback(avatarUrl, authUser?.id || 'player', displayName, 40);
-  }, [avatarFailed, avatarUrl, authUser?.id, displayName]);
+    return getAvatarWithFallback(
+      avatarUrl || cachedIdentity.avatarUrl,
+      authUser?.id || cachedAuthUserId() || 'player',
+      displayName,
+      40
+    );
+  }, [avatarFailed, avatarUrl, authUser?.id, displayName, cachedIdentity]);
 
   // A new avatar deserves a fresh attempt; the old one's failure is not its.
   useEffect(() => {

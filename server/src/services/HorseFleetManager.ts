@@ -412,8 +412,15 @@ export class HorseFleetManager {
           // config from 1/2 to 25/50 and the reactivated row kept a 40BB
           // band computed against the OLD big blind (the exact shape of the
           // "25/50 with buy-in 100-200" bug). 40BB-200BB, always.
-          const wantMinBuyIn = config.bigBlind * 40;
-          const wantMaxBuyIn = config.bigBlind * 200;
+          //
+          // ROUNDED TO CENTS on purpose. bigBlind * 40 on a fractional stake
+          // can land off an exact cent in IEEE754; if a numeric(…,2) column
+          // then rounds it on write, read-back never equals the recomputed
+          // value, this comparison stays true forever, and the update path
+          // below resets current_players every cycle — the exact standing
+          // hazard the V23 note documents. Chips are cents; compare cents.
+          const wantMinBuyIn = Math.round(config.bigBlind * 40 * 100) / 100;
+          const wantMaxBuyIn = Math.round(config.bigBlind * 200 * 100) / 100;
           if (Number((existing as { min_buy_in?: number }).min_buy_in) !== wantMinBuyIn)
             updates.min_buy_in = wantMinBuyIn;
           if (Number((existing as { max_buy_in?: number }).max_buy_in) !== wantMaxBuyIn)

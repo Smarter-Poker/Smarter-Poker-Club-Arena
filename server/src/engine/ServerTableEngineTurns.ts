@@ -1169,7 +1169,20 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // Bible V8 §4.14: PLO variants are pot-limit; flh/flo8 are fixed-limit
     // (2026-08-23). BettingStructure decides — this used to be an inline
     // `startsWith('plo')`, which silently made every non-PLO variant no-limit.
-    const variant = this.tableInfo?.game_variant;
+    // VARIANT OVERRIDE FOLLOW-UP 2026-08-28: read the LIVE HAND's variant, not
+    // the table row. `activeHandVariant()` was introduced the same day for
+    // exactly this, and its docblock names "the legal-action clamps in Turns"
+    // as one of the four sites that must use it — getLegalActions (1512) and
+    // the horse snapshot (1887) were converted, THIS clamp and its horse twin
+    // below were missed. On a bomb-pot hand whose override differs from the
+    // table's variant that mismatch is silent and expensive: a PLO table with
+    // an nlh override clamped a player's shove down to the pot, and a
+    // fixed-limit table with an nlh override REWROTE the wager to the table's
+    // limit size — in both cases the player was committed to an amount they
+    // never chose. The reverse (NLH table, PLO bomb) enforced no pot ceiling
+    // here at all and left HandController to reject the action, burning the
+    // player's clock on "Action rejected by engine".
+    const variant = this.activeHandVariant();
     const isPotLimit = isPotLimitVariant(variant);
     const isFixedLimit = isFixedLimitVariant(variant);
     let potLimitMaxBet = Infinity;
@@ -2029,7 +2042,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // fall through to the check/fold degradation below — a limit table full of
       // bots that never bet. Snap to the street's legal wager instead, exactly
       // as the human path does.
-      const horseFlBetSize = isFixedLimitVariant(this.tableInfo?.game_variant)
+      // Same 2026-08-28 override correction as the human clamp above: the
+      // hand's variant, not the table's.
+      const horseFlBetSize = isFixedLimitVariant(this.activeHandVariant())
         ? // The horse snapshot types `stage` as a bare string; the values are
           // the same HandStage literals the controller emits.
           fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage as HandStage)

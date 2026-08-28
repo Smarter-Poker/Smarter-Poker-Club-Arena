@@ -30,6 +30,26 @@ import { bombPotSettingsFromTable, resolveBombPotVariant } from './BombPotSchedu
 import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { handCompletionHoldMs, boardClearMs } from '../config/handCompletionSpec.js';
+
+/**
+ * The number of award groups the CLIENT will animate for this hand.
+ *
+ * Must stay in step with TablePage's `buildAwardGroups`, which groups the
+ * pot_awards payload by (board, pot index, hi/lo half) and fires one chip fan
+ * plus one "+N" float per group, POT_AWARD_STAGGER_MS apart. The engine needs
+ * the COUNT (not the contents) so its post-hand hold covers the last group.
+ */
+function countAwardGroups(
+  awards: Array<{ potIndex: number; low: boolean; board?: number; amount: number }>
+): number {
+  const keys = new Set<string>();
+  for (const a of awards) {
+    // A zero-amount entry animates nothing, so it must not lengthen the hold.
+    if (!(a.amount > 0)) continue;
+    keys.add(`${a.board ?? 1}:${a.potIndex}:${a.low ? 'lo' : 'hi'}`);
+  }
+  return Math.max(1, keys.size);
+}
 import { collectNitEvictions } from '../services/supabase/nitGame.js';
 
 export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
@@ -597,6 +617,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             // Streets each board still deals: flop at 3 cards, turn at 4,
             // river at 5 — count the stops past the shared base board.
             ritStreetsPerRun: [3, 4, 5].filter((n) => n > this.currentHandRitBaseBoardCount).length,
+            // MULTI-POT FIX 2026-08-28: how many award groups the client is
+            // about to animate, counted the SAME way it groups them — one per
+            // (board, pot, hi/lo half) that actually pays. Without this the
+            // hold was flat and the last winner's "+N" float was cut off by
+            // the board clear on every side pot and every hi-lo split.
+            potAwardGroups: countAwardGroups(this.currentHandPerPotAwards),
           });
 
           // Phase 1: the completion sequence actually plays out.

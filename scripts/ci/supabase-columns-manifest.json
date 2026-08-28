@@ -9029,7 +9029,8 @@
       "auto_rebuy",
       "time_bank_remaining",
       "time_bank_uses_remaining",
-      "club_id"
+      "club_id",
+      "sit_out_at"
     ],
     "table_sessions": [
       "id",

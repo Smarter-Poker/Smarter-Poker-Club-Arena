@@ -1144,7 +1144,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           nitGame: this.tableInfo.nit_game === true,
           tournamentId: this.tableInfo.tournament_id || undefined,
           handNumber: this.handCount,
-          gameVariant: this.tableInfo.game_variant || 'nlh',
+          // VARIANT OVERRIDE 2026-08-28 (spec §10.1/§20): the variant this
+          // hand was DEALT as — plo4 on a PLO4 bomb hand at an NLH table.
+          // Falling back to the table label only when the capture is absent.
+          gameVariant: this.currentHandVariant || this.tableInfo.game_variant || 'nlh',
           smallBlind: this.tableInfo.small_blind,
           bigBlind: this.tableInfo.big_blind,
           potSize: this.currentHandPotSize,

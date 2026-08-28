@@ -141,6 +141,10 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           (event as any).boardCount ??
           this.handController?.getActiveBoardCount?.() ??
           ((event as any).doubleBoard ? 2 : 1);
+        // VARIANT OVERRIDE 2026-08-28 (spec §10.1): what game this bomb hand
+        // is being played as — clients label the intro ("PLO4 DOUBLE BOARD")
+        // and adjust villain card-backs from it.
+        const bpVariant = this.handController?.getGameVariant?.() ?? this.dealtGameVariant();
         this.hub?.emitEvent(this.tableId, {
           type: 'bomb_pot_triggered',
           table_id: this.tableId,
@@ -153,6 +157,10 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           // TRIPLE-BOARD 2026-08-27: the actual board count (1-3, after any
           // deck-feasibility downgrade) — the overlay badges from this.
           board_count: bpBoardCount,
+          // VARIANT OVERRIDE (spec §10.1): the hand's variant, always sent —
+          // clients compare it to the table's own game to decide whether to
+          // badge the override.
+          variant: bpVariant,
           postings: (event as any).postings ?? [],
           timestamp: Date.now(),
         });
@@ -163,6 +171,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           trigger_reason: (event as any).triggerReason ?? 'every_n_hands',
           ante_amount: (event as any).anteAmount ?? 0,
           board_count: bpBoardCount,
+          variant: bpVariant,
         };
         break;
       }

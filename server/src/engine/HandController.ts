@@ -2235,6 +2235,18 @@ export class HandController {
     return this.activeBoardCount;
   }
 
+  /**
+   * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is being
+   * played under. Identical to the table's variant on every normal hand; on a
+   * variant-override bomb pot it is the bomb variant, and every consumer that
+   * asks "what game is this hand" — betting structure, legal-action clamps,
+   * horse evaluation, hand history — must read it from here rather than from
+   * the table row. See ServerTableEngineBase.activeHandVariant().
+   */
+  public getGameVariant(): string {
+    return this.config.gameVariant;
+  }
+
   private getActivePlayers(): SeatPlayer[] {
     return this.state.players.filter((p) => !p.is_folded && !p.is_sitting_out);
   }

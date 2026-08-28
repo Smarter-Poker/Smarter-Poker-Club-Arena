@@ -358,6 +358,8 @@ export interface CashFeatureSource {
   bomb_pot_board_count?: number | null;
   bomb_pot_trigger_mode?: string | null;
   bomb_pot_interval_seconds?: number | null;
+  /** VARIANT OVERRIDE (spec §10.1): the bomb hand's game when it differs. */
+  bomb_pot_variant?: string | null;
   ante_enabled?: boolean | null;
   ante?: number | null;
   seven_deuce_enabled?: boolean | null;
@@ -466,8 +468,19 @@ export function cashRuleMedallions(row: CashFeatureSource): RuleMedallion[] {
     (bombMode === 'timed' && bombIntervalMin > 0) ||
     (bombMode === 'every_n_hands' && bombFreq > 0);
   if (bombOn && bombModeLive) {
+    // VARIANT OVERRIDE (spec §10.1/§15.1): "NLH • PLO4 bomb pots" must be
+    // visible before a player sits. Named in the tip when set.
+    const bombVariant =
+      (typeof row.bomb_pot_variant === 'string' && row.bomb_pot_variant) ||
+      (typeof s.bomb_pot_variant === 'string' && s.bomb_pot_variant) ||
+      '';
+    const variantTip = bombVariant ? `, played as ${bombVariant.toUpperCase()}` : '';
     const boardsTip =
-      bombBoards >= 3 ? ', dealt on three boards' : bombBoards === 2 ? ', dealt on two boards' : '';
+      (bombBoards >= 3
+        ? ', dealt on three boards'
+        : bombBoards === 2
+          ? ', dealt on two boards'
+          : '') + variantTip;
     const byMode: Record<string, { label: string; detail?: string; tip: string }> = {
       every_n_hands: {
         label: 'BOMB POTS',

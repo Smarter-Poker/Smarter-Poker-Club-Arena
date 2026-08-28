@@ -476,6 +476,13 @@ interface TableState {
   bombPotIn: number | null;
   /** BOMB POT STANDARDIZATION 2026-08-27: timed mode — epoch ms of next due bomb. */
   bombPotNextAt: number | null;
+  /**
+   * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is played
+   * as — differs from gameType on a variant-override bomb pot (e.g. a PLO4
+   * bomb at an NLH table). Null until the engine reports one; every consumer
+   * falls back to gameType.
+   */
+  handVariant: string | null;
   boardStage: BoardStage;
   /**
    * The engine's OWN stage string, unnormalised.
@@ -1558,6 +1565,7 @@ export default function TablePage({
       communityCards3: [],
       bombPotIn: null,
       bombPotNextAt: null,
+      handVariant: null,
       boardStage: 'preflop',
       engineStage: 'preflop',
       dealerSeat: 0,
@@ -1853,6 +1861,7 @@ export default function TablePage({
         communityCards3: nextCards3,
         bombPotIn: mapped.bombPotIn,
         bombPotNextAt: mapped.bombPotNextAt,
+        handVariant: mapped.handVariant,
         boardStage: nextStage,
         engineStage: mapped.boardStage,
         dealerSeat: mapped.dealerSeat,
@@ -3681,7 +3690,7 @@ export default function TablePage({
         const rawHole = winnerPlayer?.holeCards ?? [];
         const hole = rawHole.filter((c): c is Card => c != null);
         if (hole.length > 0) {
-          const evalResult = bestFive(hole, cards, tableState.gameType);
+          const evalResult = bestFive(hole, cards, tableState.handVariant || tableState.gameType);
           if (evalResult) {
             winnerHandName = evalResult.name;
             const playedKeySet = new Set(evalResult.cards.map(cardKey));
@@ -3703,7 +3712,7 @@ export default function TablePage({
         for (const p of tableState.players) {
           const hole = (p?.holeCards ?? []).filter((c): c is Card => c != null);
           if (hole.length > 0) {
-            const evalResult = bestFive(hole, cards, tableState.gameType);
+            const evalResult = bestFive(hole, cards, tableState.handVariant || tableState.gameType);
             if (evalResult) {
               winnerHandName = evalResult.name;
               const playedKeySet = new Set(evalResult.cards.map(cardKey));
@@ -3741,6 +3750,7 @@ export default function TablePage({
   }, [
     ritResult,
     tableState.players,
+    tableState.handVariant,
     tableState.gameType,
     ritRevealCounts,
     ritRevealDone,
@@ -3773,7 +3783,11 @@ export default function TablePage({
       const winnerPlayer = tableState.players.find((p) => p?.id === wid);
       const hole = (winnerPlayer?.holeCards ?? []).filter((c): c is Card => c != null);
       if (hole.length === 0) continue;
-      const evalResult = bestFive(hole, tableState.communityCards2, tableState.gameType);
+      const evalResult = bestFive(
+        hole,
+        tableState.communityCards2,
+        tableState.handVariant || tableState.gameType
+      );
       if (evalResult) {
         const playedKeySet = new Set(evalResult.cards.map(cardKey));
         return tableState.communityCards2
@@ -3782,7 +3796,13 @@ export default function TablePage({
       }
     }
     return [];
-  }, [tableState.communityCards2, winnerInfo.playerIds, tableState.players, tableState.gameType]);
+  }, [
+    tableState.communityCards2,
+    winnerInfo.playerIds,
+    tableState.players,
+    tableState.handVariant,
+    tableState.gameType,
+  ]);
 
   // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 highlights, same derivation.
   const board3HighlightedIndices = useMemo(() => {
@@ -3791,7 +3811,11 @@ export default function TablePage({
       const winnerPlayer = tableState.players.find((p) => p?.id === wid);
       const hole = (winnerPlayer?.holeCards ?? []).filter((c): c is Card => c != null);
       if (hole.length === 0) continue;
-      const evalResult = bestFive(hole, tableState.communityCards3, tableState.gameType);
+      const evalResult = bestFive(
+        hole,
+        tableState.communityCards3,
+        tableState.handVariant || tableState.gameType
+      );
       if (evalResult) {
         const playedKeySet = new Set(evalResult.cards.map(cardKey));
         return tableState.communityCards3
@@ -3800,7 +3824,13 @@ export default function TablePage({
       }
     }
     return [];
-  }, [tableState.communityCards3, winnerInfo.playerIds, tableState.players, tableState.gameType]);
+  }, [
+    tableState.communityCards3,
+    winnerInfo.playerIds,
+    tableState.players,
+    tableState.handVariant,
+    tableState.gameType,
+  ]);
 
   // ─── Multi-table info reporting ─────────────────────────────────────
   // When embedded in MultiTablePage, report table name/pot/turn status
@@ -4386,6 +4416,8 @@ export default function TablePage({
     triggerMode: string;
     /** Timed mode: seconds between bombs (0 in other modes). */
     intervalSeconds: number;
+    /** VARIANT OVERRIDE (spec §10.1): bomb hand variant; null = same as table. */
+    variant: string | null;
   } | null>(null);
 
   /**
@@ -7382,6 +7414,7 @@ export default function TablePage({
         bomb_pot_board_count: number | null;
         bomb_pot_trigger_mode: string | null;
         bomb_pot_interval_seconds: number | null;
+        bomb_pot_variant: string | null;
       };
       let table: TableBootstrapRow | null = null;
       let error: unknown = null;
@@ -7393,7 +7426,7 @@ export default function TablePage({
         const res = await supabase
           .from('tables')
           .select(
-            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds'
+            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant'
           )
           .eq('id', tableId)
           .maybeSingle();
@@ -7537,6 +7570,12 @@ export default function TablePage({
                   Number(table.bomb_pot_interval_seconds) ||
                   Number(settings.bomb_pot_interval_seconds) ||
                   0,
+                // VARIANT OVERRIDE (spec §10.1): the bomb hand's game when it
+                // differs from the table's. Null = same as table.
+                variant:
+                  (typeof table.bomb_pot_variant === 'string' && table.bomb_pot_variant) ||
+                  (typeof settings.bomb_pot_variant === 'string' && settings.bomb_pot_variant) ||
+                  null,
               }
             : null
         );
@@ -10615,6 +10654,15 @@ export default function TablePage({
               bbMultiplier: Number(d?.bb_multiplier) || 0,
               // TRIPLE-BOARD 2026-08-27: actual boards dealt (post-downgrade).
               boardCount: Number(d?.board_count) || (d?.double_board ? 2 : 1),
+              // VARIANT OVERRIDE 2026-08-28 (spec §10.1): badge the intro
+              // with the bomb variant when it differs from the table's game.
+              variantLabel:
+                typeof d?.variant === 'string' &&
+                d.variant &&
+                d.variant.toLowerCase() !==
+                  String(tableStateRef.current.gameType || '').toLowerCase()
+                  ? String(d.variant).toUpperCase()
+                  : undefined,
             });
           } catch {
             /* bus publish is best-effort */
@@ -12647,9 +12695,13 @@ export default function TablePage({
      variant. Neither depends on the seat. One table-wide value each, recomputed
      only when the input actually changes. */
   const seatBigBlind = useMemo(() => safeBB(tableState.blinds), [tableState.blinds]);
+  /* VARIANT OVERRIDE 2026-08-28 (spec §10.1): the LIVE hand's variant wins —
+     a PLO4 bomb hand at an NLH table draws four card-backs per villain, and
+     the winner-highlight evaluators below pick the right combination rule. */
+  const effectiveHandVariant = tableState.handVariant || tableState.gameType;
   const seatHoleCardCount = useMemo(
-    () => holeCardCountFor(tableState.gameType),
-    [tableState.gameType]
+    () => holeCardCountFor(effectiveHandVariant),
+    [effectiveHandVariant]
   );
 
   // Throw targets in scaler pixels, keyed by 1-indexed seat number to match
@@ -12734,7 +12786,7 @@ export default function TablePage({
       }
     } else {
       try {
-        const best = bestFive(hole, board, tableState.gameType);
+        const best = bestFive(hole, board, tableState.handVariant || tableState.gameType);
         strength = best?.name ?? null;
       } catch {
         strength = null;
@@ -12745,6 +12797,7 @@ export default function TablePage({
     tableState.players,
     tableState.heroSeat,
     tableState.communityCards,
+    tableState.handVariant,
     tableState.gameType,
     tableState.isHandInProgress,
     cachedHandStrength,

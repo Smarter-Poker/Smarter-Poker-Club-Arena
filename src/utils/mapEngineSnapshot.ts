@@ -82,6 +82,8 @@ export interface EnginePublishedState {
   bomb_pot_in?: number | null;
   /** BOMB POT STANDARDIZATION 2026-08-27: timed mode — epoch ms when the next bomb is due. */
   bomb_pot_next_at?: number | null;
+  /** VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is played as. */
+  hand_variant?: string;
   current_bet: number;
   current_player: string | null; // user_id
   dealer_seat: number;
@@ -132,6 +134,13 @@ export interface MappedTableStatePatch {
   bombPotIn: number | null;
   /** BOMB POT STANDARDIZATION 2026-08-27: timed mode — epoch ms of the next due bomb. */
   bombPotNextAt: number | null;
+  /**
+   * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is played
+   * as; null when the engine predates the field. Clients size villain
+   * card-backs and evaluate winner highlights from it, falling back to the
+   * table's own game.
+   */
+  handVariant: string | null;
   boardStage: string; // matches TableState['boardStage']
   dealerSeat: number;
   currentPlayerSeat: number;
@@ -382,6 +391,8 @@ export function mapEngineSnapshot(
     bombPotIn: typeof s.bomb_pot_in === 'number' ? s.bomb_pot_in : null,
     // BOMB POT STANDARDIZATION 2026-08-27: timed-mode due timestamp (epoch ms).
     bombPotNextAt: typeof s.bomb_pot_next_at === 'number' ? s.bomb_pot_next_at : null,
+    // VARIANT OVERRIDE 2026-08-28: the hand's own variant (null on old engines).
+    handVariant: typeof s.hand_variant === 'string' && s.hand_variant ? s.hand_variant : null,
     boardStage: s.stage ?? 'preflop',
     dealerSeat: s.dealer_seat ?? 0,
     currentPlayerSeat,

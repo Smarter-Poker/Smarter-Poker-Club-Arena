@@ -507,7 +507,16 @@ export abstract class ServerTableEngineBase {
     trigger_reason: string;
     ante_amount: number;
     board_count: number;
+    /** VARIANT OVERRIDE 2026-08-28: the variant the bomb hand was dealt as. */
+    variant?: string;
   } | null = null;
+  /**
+   * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant the CURRENT hand
+   * was dealt as, captured at hand start. Settlement writes hand_history from
+   * this rather than from tableInfo.game_variant, which lies on every
+   * variant-override bomb hand. Null between hands.
+   */
+  protected currentHandVariant: string | null = null;
   /**
    * Round 2: per-board winner breakdown from the WINNERS event (double board
    * only). Amounts are PRE-rake shares — clients use board + handName for
@@ -1187,6 +1196,21 @@ export abstract class ServerTableEngineBase {
    * "Pineapple PLO" is not a game and a stray flag must not silently turn a
    * PLO table into one.
    */
+  /**
+   * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant of the hand that is
+   * LIVE right now — the HandController's own config when a hand is running
+   * (which carries the bomb-pot override variant on override hands), the
+   * table's dealt variant otherwise. This is the ONE seam every "what game is
+   * this hand" consumer reads: bettingStructureFields (the snapshot the
+   * client's bet slider obeys), the legal-action clamps in Turns, the horse
+   * evaluator's variant, and the hand-history write. Reading
+   * tableInfo.game_variant directly at any of those sites would deal a PLO
+   * bomb hand and then price it like Hold'em.
+   */
+  protected activeHandVariant(): string {
+    return this.handController?.getGameVariant?.() ?? this.dealtGameVariant();
+  }
+
   protected dealtGameVariant(): string {
     const variant = String(this.tableInfo?.game_variant || 'nlh').toLowerCase();
     if (variant === 'pineapple') return 'pineapple';
@@ -2745,7 +2769,7 @@ export abstract class ServerTableEngineBase {
           // BOMB POT STANDARDIZATION 2026-08-27: the five new canonical
           // columns ride along — board count, trigger mode, timed interval,
           // minimum players and fixed ante.
-          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed'
+          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant'
         )
         .eq('id', this.tableId)
         .maybeSingle();
@@ -2762,6 +2786,7 @@ export abstract class ServerTableEngineBase {
           (tableRow as any).bomb_pot_interval_seconds ?? null;
         this.tableInfo.bomb_pot_min_players = (tableRow as any).bomb_pot_min_players ?? undefined;
         this.tableInfo.bomb_pot_ante_fixed = (tableRow as any).bomb_pot_ante_fixed ?? null;
+        this.tableInfo.bomb_pot_variant = (tableRow as any).bomb_pot_variant ?? null;
       }
       const clubId = this.tableInfo?.club_id;
       if (clubId) {

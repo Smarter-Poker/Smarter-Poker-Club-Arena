@@ -49,3 +49,38 @@ the seat path answers with the rule instead of crashing on it.
 
 Regression-checked in the same session: a player NOT at the cap still buys a
 seat — `{"ok":true,"cost":50,"seat_reserved":true,"seats_taken":1}`.
+
+---
+
+## Follow-on in the same PR: every cash refusal names its own rule
+
+Reading `atomic_table_buyin` end to end turned up the same failure sixteen
+times over. It refuses a seat for sixteen distinct reasons — six of them
+already tagged for a machine to read (`IS_TEMPLATE`, `VIP_ONLY`, `NIT_GAME`,
+`TABLE_SIZE`, `NO_RATHOLE`, `TABLE_CAP_REACHED`) — and **nothing in the client
+had ever read one of those tags**. Banned from the club, VIP-only table, career
+VPIP under the table's floor, table full, buy-in under the minimum or over the
+maximum, club treasury short: all sixteen arrived as
+
+    "Buy-in failed. Please try again or check your balance."
+
+Wrong in the specific way that wastes an evening — it names the one thing that
+is usually not the problem and sends the player to the cashier to look for it.
+A player refused for a 400 minimum tops up, tries again, and is refused
+identically.
+
+`cashBuyInRefusalText()` now lives in `src/lib/cashBuyIn.ts`, beside the range
+helpers, because that file is already the single place cash buy-in truth is
+kept. It carries the server's own numbers through wherever the server sent them
+("The Minimum Buy In At This Table Is 400", "You Are Already At 4 Cash Tables,
+The Limit Is 4") — a minimum a player cannot see is a minimum they cannot meet.
+
+It returns `null` for anything unrecognised, so a new server refusal keeps the
+generic text AND stays visible to `reportError` rather than being quietly
+relabelled into a sentence that might be wrong.
+
+`tests/unit/cashBuyInRefusalText.test.ts` pins all sixteen against the raise
+texts read out of production with `pg_get_functiondef`, plus the null cases.
+10 tests, green. If somebody edits a message server-side without updating the
+mapper, that test fails instead of the refusal silently reverting to
+"check your balance".

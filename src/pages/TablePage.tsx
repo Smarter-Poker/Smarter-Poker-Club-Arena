@@ -107,7 +107,7 @@ import { normalizeCardBack } from '../components/table/CardImage';
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import { useButtonImage } from '../hooks/useButtonImage';
 
-import { cashBuyInRange } from '../lib/cashBuyIn';
+import { cashBuyInRange, cashBuyInRefusalText } from '../lib/cashBuyIn';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { parseBlindStructure } from '../utils/parseBlindStructure';
@@ -18765,17 +18765,15 @@ export default function TablePage({
               } catch (error) {
                 reportError(error, 'TablePage.Buyin_FAILED');
                 revertSeat();
-                /* THE CAP IS NOT A BALANCE PROBLEM (2026-08-28). The four-table
-                   triggers raise 23514 and that message arrives here through
-                   the rpcErr rethrow above. The blanket text sent a player who
-                   is simply in four games to the cashier to inspect a balance
-                   that was never the issue. Name the actual rule instead. */
-                const failureText = String((error as { message?: string })?.message ?? error ?? '');
-                toast.error(
-                  /FOUR TABLE LIMIT|table_limit_reached/.test(failureText)
-                    ? 'You Are Already In Four Games, Leave One To Join Another'
-                    : 'Buy-in failed. Please try again or check your balance.'
-                );
+                /* NAME THE RULE THAT FIRED (2026-08-28). atomic_table_buyin
+                   refuses for sixteen distinct reasons and this branch used to
+                   answer all of them with "check your balance" - the one thing
+                   that is usually NOT the problem. cashBuyInRefusalText returns
+                   null for anything it does not recognise, so an unknown
+                   refusal keeps the old text and the reportError above still
+                   carries the raw message. */
+                const refusal = cashBuyInRefusalText(error);
+                toast.error(refusal ?? 'Buy-in failed. Please try again or check your balance.');
               }
             } else {
               reportError(

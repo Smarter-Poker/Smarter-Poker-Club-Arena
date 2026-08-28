@@ -27,6 +27,7 @@ import { getUserMemberships } from '../services/ClubsService';
 import { exportToCSV } from '../lib/export';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
+import ConfirmModal from '../components/common/ConfirmModal';
 import { PlayerAvatar } from '../components/avatars/PlayerAvatar';
 import type { VipTier } from '../components/avatars/PlayerAvatar';
 import './LeaderboardPage.css';
@@ -160,6 +161,9 @@ export default function LeaderboardPage() {
   const [periodOffset, setPeriodOffset] = useState<number>(0);
   const [metric, setMetric] = useState<LeaderboardMetric>('profit');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  /** Payout confirmation — replaced a raw window.confirm (2026-08-28). */
+  const [confirmPayout, setConfirmPayout] = useState(false);
+  const [payingOut, setPayingOut] = useState(false);
   const [totalRanked, setTotalRanked] = useState<number | null>(null);
   const [baselineDate, setBaselineDate] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -801,28 +805,14 @@ export default function LeaderboardPage() {
 
         {isOwner && scope !== 'global' && activeTab === 'rankings' && (
           <div className="filter-group ml-auto" style={{ display: 'flex', gap: '8px' }}>
+            {/* 2026-08-28: this was a raw window.confirm on a MONEY action —
+                unstyled OS chrome, no Title Case, un-dismissable by tapping
+                outside, and it blocks the JS thread. ConfirmModal is the
+                in-repo replacement (8 other callers) and is keyboard- and
+                mobile-correct. */}
             <button
               className="lb-filter-chip"
-              onClick={async () => {
-                if (window.confirm(`Pay out ${period} ${metric} leaderboard now?`)) {
-                  try {
-                    const { start, end } = LeaderboardService.getPeriodBoundaries(
-                      period,
-                      periodOffset
-                    );
-                    await LeaderboardService.payoutLeaderboardPeriod(
-                      selectedClubId as string,
-                      period,
-                      metric,
-                      start.toISOString().split('T')[0],
-                      end.toISOString().split('T')[0]
-                    );
-                    toast.success('Payouts issued successfully!');
-                  } catch (err: any) {
-                    toast.error(err.message || 'Payout failed');
-                  }
-                }
-              }}
+              onClick={() => setConfirmPayout(true)}
               title="Pay Out Current Leaderboard"
               style={{
                 padding: '0 12px',
@@ -1459,6 +1449,42 @@ export default function LeaderboardPage() {
           </div>
         </div>
       )}
+
+      {/* Payout confirmation (2026-08-28, replaced window.confirm). `loading`
+          keeps the button latched while the payout RPC is in flight, so a
+          double tap cannot issue two payouts. */}
+      <ConfirmModal
+        isOpen={confirmPayout}
+        title="Pay Out Leaderboard"
+        message={`Pay Out The ${period} ${metric} Leaderboard Now? This Issues Prizes To The Ranked Players And Cannot Be Undone.`}
+        confirmText="Pay Out"
+        cancelText="Cancel"
+        variant="danger"
+        loading={payingOut}
+        onCancel={() => {
+          if (!payingOut) setConfirmPayout(false);
+        }}
+        onConfirm={async () => {
+          if (payingOut) return;
+          setPayingOut(true);
+          try {
+            const { start, end } = LeaderboardService.getPeriodBoundaries(period, periodOffset);
+            await LeaderboardService.payoutLeaderboardPeriod(
+              selectedClubId as string,
+              period,
+              metric,
+              start.toISOString().split('T')[0],
+              end.toISOString().split('T')[0]
+            );
+            toast.success('Payouts Issued.');
+            setConfirmPayout(false);
+          } catch (err: any) {
+            toast.error(err?.message || 'Payout Failed.');
+          } finally {
+            setPayingOut(false);
+          }
+        }}
+      />
     </div>
   );
 }

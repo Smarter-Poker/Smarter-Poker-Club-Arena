@@ -48,16 +48,32 @@ export default function WaitlistBanner() {
 
   return (
     <div
+      /**
+       * MOBILE FIX 2026-08-28 — THIS BANNER SAT ON TOP OF THE ACTION ROW.
+       *
+       * It was `bottom: 80` with `zIndex: 9999`, mounted app-wide from
+       * App.tsx. The action bar is `position: fixed; bottom: 0` with
+       * `--sp-bottom-row-h: 52px` on mobile PLUS env(safe-area-inset-bottom)
+       * — on a notched iPhone that band is ~86px tall, so 80 lands INSIDE
+       * it, and 9999 beats `--z-action-panel: 100`. A player waiting on a
+       * seat had fold / call / raise covered mid-hand by a banner about a
+       * different table.
+       *
+       * Now it clears the action bar by construction: the same 52px +
+       * safe-area the bar reserves, plus a 12px gap. z-index drops to the
+       * token scale — above overlays, below modals and toasts — instead of
+       * a number chosen to beat everything.
+       */
       style={{
         position: 'fixed',
-        bottom: 80,
+        bottom: 'calc(52px + env(safe-area-inset-bottom, 0px) + 12px)',
         left: '50%',
         transform: 'translateX(-50%)',
-        zIndex: 9999,
+        zIndex: 300,
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
-        maxWidth: '90vw',
+        maxWidth: 'min(90vw, 420px)',
       }}
     >
       {entries.map((entry, index) => (
@@ -125,8 +141,15 @@ export default function WaitlistBanner() {
           </div>
 
           {/* Close button */}
+          {/* 2026-08-28: was a 22x22 tap target with no accessible name —
+              half the 44px floor, and a screen reader announced nothing.
+              Painted size is unchanged; the hit area is expanded to 44x44
+              with a pseudo-element, the pattern ActionPanel already uses for
+              its raise-adjust buttons. */}
           <button
             onClick={() => dismiss(entry.tableId)}
+            aria-label={`Dismiss The Waitlist Notice For ${entry.tableName}`}
+            className="waitlist-banner__dismiss"
             style={{
               background: 'rgba(255, 255, 255, 0.05)',
               border: '1px solid rgba(255, 255, 255, 0.1)',
@@ -141,10 +164,11 @@ export default function WaitlistBanner() {
               fontSize: '0.65rem',
               flexShrink: 0,
               transition: 'all 0.2s',
+              position: 'relative',
             }}
             title="Dismiss"
           >
-            ✕
+            <span aria-hidden="true">✕</span>
           </button>
         </div>
       ))}
@@ -157,6 +181,16 @@ export default function WaitlistBanner() {
                 @keyframes waitlistPulse {
                     0%, 100% { opacity: 0.5; transform: scale(0.8); }
                     50% { opacity: 1; transform: scale(1.2); }
+                }
+                /* 44x44 hit area around the 22px dismiss dot (2026-08-28). */
+                .waitlist-banner__dismiss::after {
+                    content: '';
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    width: 44px;
+                    height: 44px;
+                    transform: translate(-50%, -50%);
                 }
             `}</style>
     </div>

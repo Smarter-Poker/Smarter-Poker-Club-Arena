@@ -101,10 +101,8 @@ describe('the club header counts what it says it counts', () => {
   it('counts players from the seats, never from the stale column', () => {
     expect(countsSql).toMatch(/count\(DISTINCT ts\.user_id\)/);
     expect(countsSql).toMatch(/still carries the stale clubs\.online_count/);
-    // The header renders the live figure and nothing else.
-    expect(clubHome).toMatch(
-      /<strong>\{playersPlaying\.toLocaleString\(\)\}<\/strong> Playing Now/
-    );
+    // The header passes the live figure into the shared identity card.
+    expect(clubHome).toContain('playersPlaying={playersPlaying}');
     expect(clubHome).not.toMatch(/club\.online_count\.toLocaleString/);
   });
 });

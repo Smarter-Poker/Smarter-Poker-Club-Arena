@@ -3804,15 +3804,16 @@ button.post-bb-overlay-button:hover {
    goes on the panel's own `.table-page` ancestor. Specificity rises from 0,2,1
    to 0,3,0, so nothing it used to beat can now beat it.
 
-   `.bankroll-widget` is kept in this list and it is DEAD as of this commit: no
-   component in src/ renders that class. Left in place rather than deleted
-   because it costs nothing and the widget may simply be unbuilt; if you are
-   auditing dead CSS, this one is confirmed and safe to remove. */
+   `.bankroll-widget` was the fifth selector in this list and it is DELETED
+   (2026-08-28): nothing in src/ renders that class, verified by grep across
+   every .tsx. A selector that matches no element is not free — it is a claim
+   that a widget exists, and the next person to read this rule has to go and
+   find out that it does not. If the bankroll widget is ever built, add it back
+   in the same commit that renders it. */
 .table-page.ca-raising .table-hud__lower,
 .table-page.ca-raising .tbc-widget,
 .table-page.ca-raising .prev-hand-card-wrapper,
-.table-page.ca-raising .chat-collapsed,
-.table-page.ca-raising .bankroll-widget {
+.table-page.ca-raising .chat-collapsed {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease;

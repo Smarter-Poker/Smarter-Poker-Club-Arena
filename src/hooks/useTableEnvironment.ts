@@ -57,12 +57,46 @@ let viewportMetaCreated: HTMLMetaElement | null = null;
 
 export function useTableEnvironment(
   tableId: string | undefined,
-  pageRootRef?: RefObject<HTMLElement | null>
+  pageRootRef?: RefObject<HTMLElement | null>,
+  /**
+   * Is this the table in front, and what is it called? Only the active table
+   * names the browser tab — see the title effect. `isActive` defaults to true
+   * so a single-table caller (or a test) behaves exactly as before.
+   */
+  opts?: { isActive?: boolean; displayName?: string }
 ) {
-  // ─── PAGE TITLE ───
+  const isActive = opts?.isActive ?? true;
+  const displayName = opts?.displayName;
+  /* ─── PAGE TITLE — the ACTIVE table names the tab, and it uses its NAME ────
+   *
+   * Two defects here until 2026-08-28, both from the same cause as the rest of
+   * this file: `document.title` is one string and four TablePages were writing
+   * it.
+   *
+   *   1. WHICHEVER TABLE MOUNTED LAST WON. The tab was named after a table the
+   *      player might not even be looking at, and it never followed them as
+   *      they switched tabs, because a mounted instance's effect does not
+   *      re-run when a sibling becomes active. Gated on `isActive` now, so the
+   *      one table in front is the one that names the tab — and exactly one
+   *      instance writes at a time.
+   *   2. IT PRINTED A RAW UUID. `${tableId} | Smarter Poker` put
+   *      "f2c86e7a-e7c9-4d3c-b496-cd09ab33215d | Smarter Poker" in the browser
+   *      tab and in every bookmark anybody made of a table. `displayName` is
+   *      the table's real name ("NLH 0.25/0.50"), which is what a tab strip is
+   *      for. It falls back to the id only while the name is still loading, so
+   *      the tab is never blank.
+   *
+   * NOT restored on unmount, deliberately: MultiTablePage's "YOUR TURN" badge
+   * effect owns the restore, and it captures `document.title` at the moment it
+   * badges precisely so it hands back the CURRENT title rather than a
+   * mount-time one (see the AUDIT 2026-08-25 note there). A restore here would
+   * fight it.
+   */
   useEffect(() => {
-    document.title = tableId ? `${tableId} | Smarter Poker` : 'Table | Smarter Poker';
-  }, [tableId]);
+    if (!isActive) return;
+    const name = displayName && displayName !== 'Loading...' ? displayName : tableId;
+    document.title = name ? `${name} | Smarter Poker` : 'Table | Smarter Poker';
+  }, [tableId, displayName, isActive]);
 
   // ─── MOBILE VIEWPORT LOCK — Prevent accidental pinch-zoom during poker play ───
   useEffect(() => {

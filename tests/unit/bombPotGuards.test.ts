@@ -124,12 +124,50 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
   });
 
   it('the award-unit ledger writes only settled multi-board bomb hands, idempotently', () => {
-    const idx = SETTLEMENT.indexOf("from('bomb_pot_award_units')");
-    expect(idx).toBeGreaterThan(-1);
-    const window = SETTLEMENT.slice(Math.max(0, idx - 1200), idx + 600);
+    // The multi-board gate and the write are siblings in one `if` block, so
+    // that block is the window — bounded by structure, never a byte count.
+    const window = sliceEnclosingBlock(SETTLEMENT, "from('bomb_pot_award_units')", 0, 2);
     expect(window).toMatch(/board_count \?\? 1\) >= 2/);
     expect(window).toMatch(/onConflict: 'hand_history_id,pot_index,board,side,user_id'/);
     expect(window).toMatch(/ignoreDuplicates: true/);
+  });
+});
+
+describe('ROUND 5 (2026-08-28) — clone hygiene and manual-trigger ordering', () => {
+  const DEALING = read('server/src/engine/ServerTableEngineDealing.ts');
+  const PAGE = read('src/pages/TablePage.tsx');
+
+  it('the scheduler decides BEFORE the manual flag is read', () => {
+    // Cost (no extra round trip on hands that are already bombs) AND intent
+    // (a host's extra-bomb request is not swallowed by a scheduled one).
+    const schedIdx = DEALING.indexOf('let decision: BombPotDecision = this.bombPotScheduler');
+    const manualIdx = DEALING.indexOf('bomb_pot_manual_pending');
+    expect(schedIdx).toBeGreaterThan(-1);
+    expect(manualIdx).toBeGreaterThan(schedIdx);
+    expect(DEALING).toMatch(
+      /if \(!decision\.isBombPot && this\.tableInfo\.bomb_pot_enabled === true\)/
+    );
+  });
+
+  it('a swept multi-board pot is announced with sound, not in silence', () => {
+    // Bounded by the block that encloses the banner call, never a byte count
+    // (tests/helpers/sourceWindow — a fixed window drifts off the code it
+    // guards the moment a comment is added above it).
+    const window = sliceEnclosingBlock(PAGE, 'setScoopBanner({');
+    expect(window).toMatch(/soundService\.isEnabled\(\) && ambientSoundsAllowedRef\.current/);
+    expect(window).toMatch(/playBigWin\(\)/);
+  });
+
+  it('the clone migration resets bomb LIVE state and keeps bomb CONFIG', () => {
+    const sql = read('supabase/migrations/20260828_clone_never_inherits_bomb_scheduler_state.sql');
+    // The three engine-written columns are reset...
+    expect(sql).toMatch(/'bomb_pot_sched_state',\s*NULL/);
+    expect(sql).toMatch(/'bomb_pot_next_due_at',\s*NULL/);
+    expect(sql).toMatch(/'bomb_pot_manual_pending', false/);
+    // ...and the host's CONFIG is deliberately left to travel with the
+    // template, which is the entire point of a template.
+    expect(sql).not.toMatch(/'bomb_pot_board_count',\s*NULL/);
+    expect(sql).not.toMatch(/'bomb_pot_trigger_mode',\s*NULL/);
   });
 });
 

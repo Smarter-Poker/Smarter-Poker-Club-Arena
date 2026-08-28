@@ -2,6 +2,41 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-08-28 — BOMB POT ROUND 5: a clone must not inherit a bomb
+
+Post-ship audit of my own round-4 work. One real bug, found by asking "what
+else touches these columns", and two improvements.
+
+1. **BUG (mine, shipped in round 4): a cloned table inherited bomb scheduler
+   LIVE state.** `fn_clone_table_row` copies the whole `tables` row and resets
+   an explicit identity/live-state list — and the three columns the bomb
+   engine WRITES were not on it: `bomb_pot_sched_state` (including the PENDING
+   TOKEN), `bomb_pot_next_due_at`, and `bomb_pot_manual_pending`. Both callers
+   made it reachable: `fn_launch_table_from_template` and — worse —
+   `fn_table_lifecycle_pass`, the AUTOMATIC restart/extension sweep. A
+   restarted or template-launched table could therefore deal a bomb pot on its
+   first hand from an inherited token, or immediately from a due timestamp
+   hours old, or fire a manual bomb a host armed on a DIFFERENT table.
+   Migration `clone_never_inherits_bomb_scheduler_state` adds the three to the
+   reset list; the CONFIG columns are deliberately left carrying over, because
+   configuration is exactly what a template is for. Proved with a
+   ROLLED-BACK probe (CLAUDE.md §11.5): armed the live table with a pending
+   token, a two-hour-old due time and a manual flag, cloned it, and confirmed
+   all three reset while enabled/boards/mode/ante all carried — then rolled
+   back with zero rows left behind.
+2. **The scheduler now decides BEFORE the manual flag is read.** Two wins: no
+   extra per-hand round trip on hands that are already bombs, and a host's
+   manual request is no longer silently swallowed by a scheduled bomb that was
+   coming anyway (spec §4.3 collapses two SCHEDULED triggers; a manual request
+   is a separate intent, so it is preserved for the next non-bomb hand).
+3. **A swept pot is no longer announced in silence.** The scoop banner lands
+   ~2.2s after the awards, by which time the pot fanfare has finished, so it
+   had no cue at all. It now plays the big-win sound, gated for a muted player
+   and for background multi-table tabs (#175).
+
+Three new guard pins. 112 client + 31 server tests green on the touched
+surface, tsc clean on both tsconfigs.
+
 ## Cowork session 2026-08-28 — BOMB POT MAX (round 4: every remaining item)
 
 Dan: "GO AHEAD AND FULLY BUILD ALL OF THESE." All thirteen open items from the

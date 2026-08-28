@@ -8431,7 +8431,19 @@ export default function TablePage({
               Boolean(tournData.level_started_at) ||
               Boolean(tournData.started_at) ||
               !['REGISTERING', 'ANNOUNCED'].includes(String(tournData.status ?? ''));
-            if (durSec > 0 && levelHasStarted) {
+            /* A FINISHED GAME HAS NO ROUND LEFT (2026-08-28, found by the
+               hostile-state pass in the compliance check).
+
+               `levelHasStarted` is true for a COMPLETED game — it has a
+               `started_at` — so opening a dead table through an old bookmark
+               drew a live-looking countdown clamped at "Round Ends In 0:00"
+               over a game that ended hours ago. It was always wrong; putting
+               the clock on its own masthead line is what made it obvious.
+               A round belongs to a game that is still running. */
+            const gameIsOver = ['COMPLETED', 'CANCELLED', 'FINISHED'].includes(
+              String(tournData.status ?? '').toUpperCase()
+            );
+            if (durSec > 0 && levelHasStarted && !gameIsOver) {
               const startedAtMs = tournData.level_started_at
                 ? Date.parse(tournData.level_started_at as string)
                 : Date.now();
@@ -14537,6 +14549,14 @@ export default function TablePage({
             level_started_at?: string;
           } | null;
           const status = String(row?.status ?? '').toUpperCase();
+          /* The game ENDED under us: no round is running, so the countdown
+             comes off rather than sitting at 0:00 forever (2026-08-28). This
+             is the live twin of the mount-time `gameIsOver` guard. */
+          if (['COMPLETED', 'CANCELLED', 'FINISHED'].includes(status)) {
+            setPlayHasBegun(true);
+            setLevelClock(null);
+            return;
+          }
           if (status && status !== 'REGISTERING' && status !== 'ANNOUNCED') {
             // The game left the selling state under us. Take the sheet down
             // now — the D8 effect clears seatFirstBuyIn off this latch.

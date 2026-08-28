@@ -1257,12 +1257,15 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // insert conflicts and does nothing, exactly as spec §17.2 demands.
         // Fire-and-forget: the ledger narrates money that logHandHistory has
         // already recorded; it must never be able to fail a hand.
-        if (
-          v_handHistoryId &&
-          this.currentHandBombPot &&
-          (this.currentHandBombPot.board_count ?? 1) >= 2 &&
-          this.currentHandPerPotAwards.length > 0
-        ) {
+        // SCOPE 2026-08-28: EVERY bomb hand, not only multi-board ones. The
+        // first cut gated on board_count >= 2 because that is where the
+        // reconstruction is hardest, but it made the ledger a partial record
+        // of a feature — `v_bomb_pot_outcomes` could not tell a single-board
+        // bomb from a hand that never happened, and a single-board bomb with
+        // three side pots is exactly as hard to rebuild from the merged
+        // winners list. `board` is 1 for those, which the UNIQUE key already
+        // accommodates.
+        if (v_handHistoryId && this.currentHandBombPot && this.currentHandPerPotAwards.length > 0) {
           const ledgerRows = this.currentHandPerPotAwards.map((a) => ({
             hand_history_id: v_handHistoryId,
             table_id: this.tableId,

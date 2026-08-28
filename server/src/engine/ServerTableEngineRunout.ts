@@ -1713,15 +1713,22 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       // budget is split across boards so a triple-board hand costs what a
       // single-board hand always has.
       const perBoardIters = Math.max(400, Math.ceil(1000 / allBoards.length));
-      const perBoard: number[][] = [];
-      for (const b of allBoards) {
-        perBoard.push(
-          await getEquityPool().estimateEquity(hands, b, [], perBoardIters, {
+      // PARALLEL 2026-08-28: the boards were priced one after another with an
+      // `await` inside the loop, so a triple-board all-in cost three times the
+      // latency it needed to. That latency sits between the reveal gate and
+      // the percentages appearing — exactly the window Dan's "equity only
+      // AFTER the street lands" rule is measured in, so a slow computation
+      // there pushes the numbers further from the card that caused them. The
+      // worker pool is concurrent by construction; ask it for every board at
+      // once.
+      const perBoard: number[][] = await Promise.all(
+        allBoards.map((b) =>
+          getEquityPool().estimateEquity(hands, b, [], perBoardIters, {
             shortDeck: isShortDeck,
             omaha: isOmaha,
           })
-        );
-      }
+        )
+      );
       const fractions = hands.map(
         (_, i) => perBoard.reduce((s, f) => s + (f[i] ?? 0), 0) / allBoards.length
       );

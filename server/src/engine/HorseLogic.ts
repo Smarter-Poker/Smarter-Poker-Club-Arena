@@ -1640,8 +1640,16 @@ export class HorseLogic {
      * misplayed the other half (or two-thirds) of the pot. The iteration
      * budget is split across boards so a bomb decision costs what a normal
      * decision always has. Texture/blockers/nut-status stay board-1 reads —
-     * they steer style, not the money — and the plo8 hi-lo decomposition
-     * stays single-board (its accumulator cannot be averaged meaningfully).
+     * they steer style, not the money.
+     *
+     * PLO8 2026-08-28: the hi-lo decomposition is averaged per board too.
+     * Passing `undefined` here (the first cut) left the accumulator at all
+     * zeros on every multi-board hand, and the strategy below reads it —
+     * `scoopy`, the quarter check and the V23 low-only branch all saw "no
+     * hi, no lo" and played the hand as if it had no low potential at all.
+     * Each board pays an equal share of every pot layer, so the mean of the
+     * per-board hi/lo/scoop/quarter probabilities is exactly the right
+     * expectation for the money.
      */
     const extraBoards: Card[][] = [];
     if (Array.isArray(gs.communityCards2) && gs.communityCards2.length >= 3) {
@@ -1667,7 +1675,16 @@ export class HorseLogic {
       const boards = [gs.communityCards, ...extraBoards];
       const perBoardIters = Math.max(150, Math.ceil(vi.iterations / boards.length));
       let sum = 0;
+      const loAcc: HiLoSplit | undefined = hiLoSplit
+        ? { hi: 0, lo: 0, scoop: 0, quarter: 0 }
+        : undefined;
       for (const b of boards) {
+        // A FRESH accumulator per board — simulateEquity adds into the one it
+        // is handed, so reusing a single object across boards would sum four
+        // probabilities into fields that must stay in 0..1.
+        const perBoardSplit: HiLoSplit | undefined = hiLoSplit
+          ? { hi: 0, lo: 0, scoop: 0, quarter: 0 }
+          : undefined;
         sum += simulateEquity(
           player.cards,
           b,
@@ -1676,11 +1693,23 @@ export class HorseLogic {
           perBoardIters,
           bands,
           useAdaptiveMC,
-          undefined,
+          perBoardSplit,
           oppReads
         );
+        if (loAcc && perBoardSplit) {
+          loAcc.hi += perBoardSplit.hi;
+          loAcc.lo += perBoardSplit.lo;
+          loAcc.scoop += perBoardSplit.scoop;
+          loAcc.quarter += perBoardSplit.quarter;
+        }
       }
       equity = sum / boards.length;
+      if (hiLoSplit && loAcc) {
+        hiLoSplit.hi = loAcc.hi / boards.length;
+        hiLoSplit.lo = loAcc.lo / boards.length;
+        hiLoSplit.scoop = loAcc.scoop / boards.length;
+        hiLoSplit.quarter = loAcc.quarter / boards.length;
+      }
     }
 
     // V9 TIMING: how CLOSE is this decision? Distance of the MC equity from
